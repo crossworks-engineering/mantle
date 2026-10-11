@@ -275,7 +275,10 @@ export async function createScratchDatabaseBefore(
   url: string;
   name: string;
   drop: () => Promise<void>;
-  migrateRest: () => Promise<void>;
+  /** Applies `tag` and every later migration, or only those before
+   *  `untilTag` when given (a test of one migration stops before the next
+   *  one that rewrites the same rows), then the grants. */
+  migrateRest: (untilTag?: string) => Promise<void>;
 }> {
   const journal = JSON.parse(
     readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf8'),
@@ -294,10 +297,12 @@ export async function createScratchDatabaseBefore(
     throw err;
   }
   await sql.end();
-  const migrateRest = async () => {
+  const migrateRest = async (untilTag?: string) => {
+    const until = untilTag ? journal.entries.findIndex((e) => e.tag === untilTag) : -1;
+    if (untilTag && until < 0) throw new Error(`migrateRest: no migration ${untilTag}`);
     const rest = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
     try {
-      await applyMigrations(rest, all.slice(at));
+      await applyMigrations(rest, until < 0 ? all.slice(at) : all.slice(at, until));
       await applyViewerGrants(rest);
     } finally {
       await rest.end();

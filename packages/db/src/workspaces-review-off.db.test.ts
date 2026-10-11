@@ -46,6 +46,9 @@ import {
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const BEFORE = '0264_workspaces_review_off';
+// W6b (0267) moves the space items into the brain: these suites stop before it
+// (workspaces-spaces-fold.db.test.ts picks up from here).
+const FOLD = '0267_workspaces_spaces_fold';
 
 type Sql = ReturnType<typeof postgres>;
 type Home = {
@@ -289,7 +292,7 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
     archiveBefore.bundles = c!.b;
     workspacesBefore = c!.w;
 
-    await scratch.migrateRest();
+    await scratch.migrateRest(FOLD);
     expect(await queued()).toBe(queueBefore);
   }, 240_000);
 
@@ -689,7 +692,7 @@ describe.skipIf(!URL)('a brain not on workspaces gets its homes when it switches
       values (${ids.submitted!}, ${ids.submitted!}, 0)`;
     await sql`insert into space_submissions (space_id, node_id) values (${space}, ${ids.submitted!})`;
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toMatch(/^clients present/);
-    await scratch.migrateRest();
+    await scratch.migrateRest(FOLD);
   }, 240_000);
 
   afterAll(async () => {
@@ -770,7 +773,7 @@ describe.skipIf(!URL)('one Former user workspace per former user (0264)', () => 
     }
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toMatch(/^clients present/);
     // 0264 archives the items while both logins still exist.
-    await scratch.migrateRest();
+    await scratch.migrateRest(FOLD);
     await sql`delete from auth.users where id in (${memberA}, ${memberB}, ${client})`;
     await sql`select * from mantle_ws_migrate_locked()`;
   }, 240_000);
@@ -855,7 +858,7 @@ describe.skipIf(!URL)('a login deleted after 0264 leaves no stranded home (0264)
       }
     }
     // 0264 records the homes in each member's private workspace.
-    await scratch.migrateRest();
+    await scratch.migrateRest(FOLD);
     for (const login of [member, other]) {
       privateWs[login] = (
         await sql<{ id: string }[]>`
@@ -1031,7 +1034,7 @@ describe.skipIf(!URL)('an accepted item kept in Team gets no snapshot copy (0264
       await tx`insert into item_grants (node_id, workspace_id, is_home)
         values (${ids.teamKept!}, ${team}, true)`;
     });
-    await scratch.migrateRest();
+    await scratch.migrateRest(FOLD);
   }, 240_000);
 
   afterAll(async () => {
@@ -1105,7 +1108,7 @@ describe.skipIf(!URL)('a read given since the switch does not stop 0264', () => 
   });
 
   it('migrates, and its own check is clean', async () => {
-    await scratch.migrateRest();
+    await scratch.migrateRest(FOLD);
     expect(await reviewCheck(sql)).toMatchObject({
       'items without a home': 0,
       'rows not archived': 0,

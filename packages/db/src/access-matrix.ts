@@ -559,6 +559,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.private_workspaces', 'system'),
   none('public.former_user_workspaces', 'system'),
   none('public.space_item_homes', 'system'),
+  // The personal spaces and their items as they folded into the brain
+  // (0267, W6b).
+  none('public.archive_spaces', 'system'),
+  none('public.space_fold_items', 'system'),
 ];
 
 /** Columns no LEVEL role may ever read, whatever the matrix says (the

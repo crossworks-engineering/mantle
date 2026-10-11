@@ -81,6 +81,10 @@ export const spaceItemHomes = pgTable(
     sharingBefore: text('sharing_before').notNull(),
     authorRole: text('author_role'),
     snapshot: boolean('snapshot').notNull().default(false),
+    /** The author's snapshot copy (S3) once the app made it (0267, W6b:
+     *  snapshot-copies.ts). No foreign key: a copy the author deletes leaves
+     *  the record. */
+    snapshotNodeId: uuid('snapshot_node_id'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
@@ -90,4 +94,35 @@ export const spaceItemHomes = pgTable(
       sql`NOT ${t.snapshot} OR ${t.stateBefore} = 'accepted'`,
     ),
   ],
+);
+
+/**
+ * The spaces fold (migration 0267, W6b): one row per item a personal space
+ * owned, moved into the brain (owner_id = the brain), with where it came
+ * from (its space and login, its path and slug) and what it became (its
+ * home, the Admin and Team grants, its new path and slug when a brain name
+ * clashed). sharing and deleted_at are the space_items state it had at the
+ * move (the member app trash). No foreign key: the record outlives the node
+ * and the space. Read by the proof and workspaces:check; no grant to any
+ * role.
+ */
+export const spaceFoldItems = pgTable(
+  'space_fold_items',
+  {
+    nodeId: uuid('node_id').primaryKey(),
+    spaceId: uuid('space_id').notNull(),
+    loginId: uuid('login_id'),
+    nodeType: text('node_type').notNull(),
+    homeWorkspaceId: uuid('home_workspace_id').notNull(),
+    grantAdmin: boolean('grant_admin').notNull(),
+    grantTeam: boolean('grant_team').notNull(),
+    sharing: text('sharing'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    oldPath: text('old_path').notNull(),
+    newPath: text('new_path').notNull(),
+    oldSlug: text('old_slug'),
+    newSlug: text('new_slug'),
+    foldedAt: timestamp('folded_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('space_fold_items_home_idx').on(t.homeWorkspaceId)],
 );

@@ -161,7 +161,7 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
     // The bridge decided the top shared folder "removed here" for Team.
     expect((await grants(ids.folderShared!)).Team).toMatchObject({ excluded: true });
 
-    await scratch.migrateRest();
+    await scratch.migrateRest('0267_workspaces_spaces_fold'); // W6b folds the spaces
   }, 240_000);
 
   afterAll(async () => {
@@ -543,7 +543,7 @@ describe.skipIf(!URL)('0261 leaves a brain that is not on workspaces alone (H2)'
     // The 0251 pass skips this brain: clients are set up by hand.
     const [w] = await sql<{ why: string | null }[]>`select mantle_ws_skip_reason() as why`;
     expect(w!.why).toMatch(/^clients present/);
-    await scratch.migrateRest();
+    await scratch.migrateRest('0267_workspaces_spaces_fold'); // W6b folds the spaces
   }, 240_000);
 
   afterAll(async () => {
@@ -624,7 +624,7 @@ describe.skipIf(!URL)('the boot switch gives up at its time budget (L4)', () => 
       values (${owner}, 'l4o@example.invalid', 'x', 'admin', true)`;
     await sql`insert into nodes (id, owner_id, type, title, path, audience)
       values (${randomUUID()}, ${owner}, 'page', 'l4 page', 'pages', 'team')`;
-    await scratch.migrateRest();
+    await scratch.migrateRest('0267_workspaces_spaces_fold'); // W6b folds the spaces
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBe('no workspaces yet');
   }, 240_000);
 

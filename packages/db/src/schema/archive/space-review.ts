@@ -51,3 +51,15 @@ export const archiveSpaceItemBundles = pgTable(
   },
   (t) => [primaryKey({ columns: [t.rootId, t.nodeId] })],
 );
+
+/** Every personal space row as it was when the spaces folded into the brain
+ *  (migration 0267, W6b). The spaces rows stay (a kind root still names its
+ *  space); this is the record. */
+export const archiveSpaces = pgTable('archive_spaces', {
+  id: uuid('id').primaryKey(),
+  kind: text('kind').notNull(),
+  loginId: uuid('login_id'),
+  orphanedAt: timestamp('orphaned_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  archivedAt: timestamp('archived_at', { withTimezone: true }).defaultNow().notNull(),
+});
