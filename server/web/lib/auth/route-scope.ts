@@ -71,12 +71,12 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   // An Admin user's own private items (its personal space, until W6b).
   ['/api/admin', 'self'],
   // The member routes (W7e): every one that reads brain items runs in the
-  // login's request scope ('content'); its own things (the home pin, its MCP
-  // clients, push devices, the live stream and the old shell) are the
-  // login's own, as an Admin user's /api/push and /api/realtime are. Only
-  // these 'self' member routes still hold their own rule (getMemberOr401).
+  // login's request scope ('content'), the member home too (it reads team
+  // pages and apps); its own things (its MCP clients, push devices, the live
+  // stream and the old shell) are the login's own, as an Admin user's
+  // /api/push and /api/realtime are. Only these 'self' member routes still
+  // hold their own rule (getMemberOr401).
   ['/api/member', 'content'],
-  ['/api/member/home', 'self'],
   ['/api/member/mcp', 'self'],
   ['/api/member/push', 'self'],
   ['/api/member/realtime', 'self'],
@@ -292,6 +292,32 @@ export const MEMBER_OPEN_WRITES: readonly string[] = [
 ];
 
 const MEMBER_WRITE: ReadonlySet<string> = new Set(MEMBER_OPEN_WRITES);
+
+/**
+ * The owner routes W7e opened to a non-Admin login that a CLIENT login still
+ * may not call (W7e fix round 1, M1): running an app and a drawing's SVG.
+ * Clients do not run brain apps yet; before W7e every one of these refused
+ * a client, and it still does (403 client-login on the session guard, 401
+ * on the byte guard, as before). MEMBER_OPEN_READS and MEMBER_OPEN_WRITES
+ * are shared by members and clients; this list takes these back from the
+ * client.
+ */
+export const CLIENT_CLOSED_ROUTES: readonly string[] = [
+  'POST /api/apps/:id/frame-ticket',
+  'POST /api/apps/:id/db-broker',
+  'POST /api/apps/:id/tool-broker',
+  'GET /api/draws/:id/svg',
+];
+
+const CLIENT_CLOSED: ReadonlySet<string> = new Set(CLIENT_CLOSED_ROUTES);
+
+/** Whether `method pattern` is closed to a client login though it is open
+ *  to a member (CLIENT_CLOSED_ROUTES; HEAD as GET). */
+export function clientClosed(method: string, pattern: string | null): boolean {
+  if (pattern === null) return false;
+  const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
+  return CLIENT_CLOSED.has(`${m} ${pattern}`);
+}
 
 /** Whether a non-Admin login may write through `method pattern` (W6b). */
 export function memberMayWrite(method: string, pattern: string | null): boolean {

@@ -15,6 +15,11 @@ const APP = '33333333-3333-4333-8333-333333333333';
 const h = vi.hoisted(() => ({
   callers: [] as unknown[],
   frameViewers: [] as unknown[],
+  /** The login kind the session guard answers (W7e fix round 1, M1). */
+  kind: 'admin' as 'admin' | 'client',
+  /** Whether the frame ticket's actor is still an active Admin user. */
+  adminActive: true,
+  actorsChecked: [] as string[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -29,8 +34,10 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
       isOwner: false,
     },
   })),
-  // The owner runner routes take every login since W7e: here an Admin user.
+  // The owner runner routes take every login since W7e: here an Admin user,
+  // or a client (refused: W7e fix round 1, M1).
   getOwnerOr401WithLogin: vi.fn(async () => ({
+    kind: h.kind,
     user: {
       id: OWNER,
       email: 'admin@example.invalid',
@@ -44,6 +51,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     source: 'web',
     member: null,
   })),
+  adminLoginActive: vi.fn(async (id: string) => (h.actorsChecked.push(id), h.adminActive)),
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
@@ -77,6 +85,9 @@ beforeAll(() => {
 beforeEach(() => {
   h.callers.length = 0;
   h.frameViewers.length = 0;
+  h.kind = 'admin';
+  h.adminActive = true;
+  h.actorsChecked.length = 0;
 });
 
 const params = () => ({ params: Promise.resolve({ id: APP }) });
@@ -119,5 +130,53 @@ describe('owner frame: host.me()', () => {
     expect(h.frameViewers).toEqual([
       { ownerId: OWNER, appId: APP, subject: { kind: 'admin', loginId: ADMIN_LOGIN } },
     ]);
+  });
+});
+
+describe('a client login on the owner runner routes (W7e fix round 1, M1)', () => {
+  it('is refused 403 client-login on the frame ticket, the db broker and the tool broker', async () => {
+    h.kind = 'client';
+    const { getAppRuntime } = await import('@mantle/content');
+    vi.mocked(getAppRuntime).mockClear();
+    const routes = {
+      'frame-ticket': (await import('./[id]/frame-ticket/route')).POST,
+      'db-broker': (await import('./[id]/db-broker/route')).POST,
+      'tool-broker': (await import('./[id]/tool-broker/route')).POST,
+    };
+    for (const [name, POST] of Object.entries(routes)) {
+      const body = name === 'db-broker' ? { op: 'query', sql: 'select 1' } : { slug: 'x' };
+      const res = await POST(post(body), params());
+      expect(res.status, name).toBe(403);
+      expect(((await res.json()) as { reason?: string }).reason, name).toBe('client-login');
+    }
+    // Never the admin path: no app was looked up, no SQL ran.
+    expect(getAppRuntime).not.toHaveBeenCalled();
+    expect(h.callers).toEqual([]);
+  });
+
+  it('the owner frame refuses an owner ticket whose login is not an active Admin user', async () => {
+    const frame = (await import('./[id]/frame/route')).GET;
+    const { buildAppFrameTicket } = await import('@/lib/auth');
+    const req = (t: string) =>
+      new Request(`https://brain.example.invalid/api/apps/${APP}/frame?t=${encodeURIComponent(t)}`);
+    // What the owner ticket route minted for a client before this fix: an
+    // owner ticket naming the client login as its actor.
+    h.adminActive = false;
+    const named = buildAppFrameTicket({ ownerId: OWNER, appId: APP, actorId: ADMIN_LOGIN });
+    expect((await frame(req(named), params())).status).toBe(401);
+    expect(h.actorsChecked).toEqual([ADMIN_LOGIN]);
+    // An owner ticket naming nobody.
+    h.adminActive = true;
+    const nobody = buildAppFrameTicket({ ownerId: OWNER, appId: APP });
+    expect((await frame(req(nobody), params())).status).toBe(401);
+    // A client's own ticket.
+    const client = buildAppFrameTicket({
+      ownerId: OWNER,
+      appId: APP,
+      loginId: ADMIN_LOGIN,
+      clientEpoch: 0,
+    });
+    expect((await frame(req(client), params())).status).toBe(401);
+    expect(h.frameViewers).toEqual([]);
   });
 });

@@ -23,6 +23,10 @@ import { isBusy, isScopeWriteRefusal } from '@mantle/db';
 import { callerMayReadEmail } from '@/lib/api-v1';
 
 const IdParams = z.object({ id: z.string().uuid() });
+/** A file's raw bytes are read in the login's scope (W7e): never stored. */
+const RAW_CACHE = 'private, no-store';
+/** A thumbnail is kept privately but revalidated on every use (its etag). */
+const THUMB_CACHE = 'private, no-cache';
 const PatchBody = z.union([
   z.object({ content: z.string().max(2_000_000) }),
   z.object({ rename: z.string().min(1).max(200) }),
@@ -76,7 +80,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (!sha) return NextResponse.json({ error: 'no thumbnail' }, { status: 404 });
     const etag = `"${sha}.thumb"`;
     if (_req.headers.get('if-none-match') === etag) {
-      return new Response(null, { status: 304, headers: { etag } });
+      return new Response(null, { status: 304, headers: { etag, 'cache-control': THUMB_CACHE } });
     }
     const thumb = await thumbnailFor({
       sha256: sha,
@@ -93,9 +97,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         'content-type': 'image/jpeg',
         'content-length': String(thumb.byteLength),
         // Keyed by content hash server-side; the URL is stable per file id, so
-        // cache privately and revalidate via etag when the content changes.
+        // cache privately and revalidate via etag on every use: the etag
+        // check above runs after the scoped lookup, so a login that lost the
+        // file stops getting it at once (W7e fix round 1, L2).
         etag,
-        'cache-control': 'private, max-age=3600',
+        'cache-control': THUMB_CACHE,
       },
     });
   }
@@ -107,6 +113,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       headers: {
         ...safeDownloadHeaders(res.row.mimeType, res.row.filename),
         'content-length': String(res.bytes.byteLength),
+        // Never kept by a shared cache or the browser (W7e fix round 1, L2).
+        'cache-control': RAW_CACHE,
       },
     });
   }

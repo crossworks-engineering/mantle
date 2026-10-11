@@ -60,6 +60,14 @@ describe('token login: adminsOnly', () => {
     expect(state.inserts).toBe(0);
   });
 
+  it('refuses a client 403 client-login, never "Update the app" (W7e fix round 1)', async () => {
+    state.role = 'client';
+    const res = await login(true);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { reason: string }).reason).toBe('client-login');
+    expect(state.inserts).toBe(0);
+  });
+
   it('admits an admin', async () => {
     const res = await login(true);
     expect(res.status).toBe(200);

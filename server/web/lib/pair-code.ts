@@ -98,7 +98,10 @@ export async function claimPairCode(
         ),
       )
       .limit(1);
-    if (peek && peek.role !== 'admin') return 'update-app';
+    // A member's code only: a client is never served by a phone build yet,
+    // so its code (a login made a client since) claims nothing (W7e fix
+    // round 1): the one 401 below.
+    if (peek && peek.role === 'member') return 'update-app';
   }
   // Single-use, atomically: only an unclaimed, unexpired row flips.
   const [won] = await db

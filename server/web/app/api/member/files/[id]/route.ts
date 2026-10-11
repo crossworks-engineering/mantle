@@ -10,6 +10,8 @@ import { fileById, openFileById, readFileById } from '@/lib/files';
 import { memberBytesGate } from '@/lib/member-space';
 
 const IdParams = z.object({ id: z.string().uuid() });
+/** A thumbnail is kept privately but revalidated on every use (its etag). */
+const THUMB_CACHE = 'private, no-cache';
 
 /**
  * GET /api/member/files/:id : a file's bytes for a MEMBER (member logins,
@@ -40,7 +42,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (!meta?.sha256) return NextResponse.json({ error: 'not found' }, { status: 404 });
     const etag = `"${meta.sha256}.thumb"`;
     if (req.headers.get('if-none-match') === etag) {
-      return new Response(null, { status: 304, headers: { etag } });
+      return new Response(null, { status: 304, headers: { etag, 'cache-control': THUMB_CACHE } });
     }
     const thumb = await thumbnailFor({
       sha256: meta.sha256,
@@ -54,7 +56,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         'content-type': 'image/jpeg',
         'content-length': String(thumb.byteLength),
         etag,
-        'cache-control': 'private, max-age=3600',
+        // Revalidated on every use, after the scoped lookup (W7e fix round 1).
+        'cache-control': THUMB_CACHE,
       },
     });
   }
@@ -67,6 +70,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     headers: {
       ...safeDownloadHeaders(opened.row.mimeType, opened.row.filename),
       'content-length': String(opened.size),
+      // Never kept by a shared cache or the browser (W7e fix round 1, L2).
+      'cache-control': 'private, no-store',
     },
   });
 }

@@ -877,7 +877,9 @@ export function runInSystemTx<T>(
  *    exactly those ids, no credential (W7a).
  *  - `owner-preferences`: the brain owner's profile preferences (time zone,
  *    purpose, house style) in a scope that holds Admin, for the Admin
- *    assistant answering another Admin user (profile-preferences.ts, W7a).
+ *    assistant answering another Admin user (profile-preferences.ts, W7a);
+ *    and the brain's home pin and site name for a member's home (GET
+ *    /api/member/home, in the member's request scope since W7e fix round 1).
  *  - `lexeme-stats`: the table-wide document frequency of the caller's own
  *    query terms (pg_stats, which Postgres hides from a role under row
  *    security, and capped counts): numbers that pick which terms the keyword

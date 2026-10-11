@@ -327,8 +327,14 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     expect(apps.outcome).toMatchObject({ kind: 'user', loginId: mem });
     expect(JSON.stringify(apps.json)).toContain(teamApp);
     expect(JSON.stringify(apps.json)).not.toContain(sideApp);
-    // Its own things hold their own rule ('self').
-    expect((await call('/api/member/home', mem)).outcome).toMatchObject({ kind: 'own-rule' });
+    // The member home reads team pages and apps: in its scope too (W7e fix
+    // round 1, L1). Its own things (its push devices) hold their own rule.
+    const home = await call('/api/member/home', mem);
+    expect(home.status, home.text.slice(0, 200)).toBe(200);
+    expect(home.outcome).toMatchObject({ kind: 'user', loginId: mem });
+    expect((await call('/api/member/push/subscriptions', mem)).outcome).toMatchObject({
+      kind: 'own-rule',
+    });
   });
 
   it('whoami answers the workspaces, the areas and isOwner (the shell builder)', async () => {

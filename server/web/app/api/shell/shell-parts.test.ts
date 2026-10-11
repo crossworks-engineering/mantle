@@ -231,10 +231,9 @@ describe('shell chrome reads never fail the shell', () => {
       });
       const { READER_TREE_KINDS } = await import('@mantle/content/tree');
       expect(body.treeKinds).toEqual([...READER_TREE_KINDS]);
-      // A client's asset token is the short one (10 minutes, audit B23).
-      expect(h.minted).toEqual([
-        { anchorId: ANCHOR, loginId: LOGIN, ttlSeconds: role === 'client' ? 600 : undefined },
-      ]);
+      // A non-Admin login's asset token is the short one (10 minutes): a
+      // client's (audit B23), a member's too (W7e fix round 1, L3).
+      expect(h.minted).toEqual([{ anchorId: ANCHOR, loginId: LOGIN, ttlSeconds: 600 }]);
     });
 
     it.each(['brand', 'own preferences', 'workspaces', 'asset token'])(

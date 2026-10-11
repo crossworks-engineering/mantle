@@ -24,7 +24,8 @@
  * brokers refuse such tools outright: nobody there can confirm.
  *
  * Every login since W7e: a member's run goes through lib/app-runner.ts (the
- * team rules, the member broker's, on a team surface naming the login).
+ * team rules, the member broker's, on a team surface naming the login). A
+ * client login is refused (403 client-login), never the admin path below.
  */
 import { createHash } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
@@ -34,6 +35,7 @@ import { memberToolBroker } from '@/lib/app-runner';
 import {
   buildAppToolConfirmToken,
   getOwnerOr401WithLogin,
+  loginRefused,
   verifyAppToolConfirmToken,
   type AppToolConfirmClaims,
 } from '@/lib/auth';
@@ -56,9 +58,10 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const got = await getOwnerOr401WithLogin();
   if (got instanceof Response) return got;
+  if (got.kind === 'client') return loginRefused('client');
   const { id } = await ctx.params;
   // A member's run (W7e): the team rules, never a confirmation.
-  if (got.member) return memberToolBroker(req, got.member, id);
+  if (got.kind === 'member') return memberToolBroker(req, got.member, id);
   const user = got.user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success)

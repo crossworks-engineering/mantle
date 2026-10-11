@@ -108,15 +108,14 @@ const MEMBER_SCOPE_SYSTEM_WRITES = [
 /**
  * The reads a member route ('own-rule') sends to the system pool, by route
  * and calling file. Since W7e only the member routes about the login's own
- * things hold their own rule (route-scope.ts classes them 'self': the home
- * pin, its MCP clients, push devices, the live stream, the old shell): its
- * preferences and the brain's home pin, its MCP clients and switches, its
- * push devices. Every member route that reads brain items runs in the
+ * things hold their own rule (route-scope.ts classes them 'self': its MCP
+ * clients, push devices, the live stream, the old shell): its preferences,
+ * its MCP clients and switches, its push devices. The member home reads team
+ * items, so it runs in the login's scope (W7e fix round 1, L1). Every member route that reads brain items runs in the
  * login's request scope (W7e), so no member route reads content on the
  * system pool. The list only shrinks, and holds only 'self' routes (tested).
  */
 const OWN_RULE_SYSTEM_READS: ReadonlySet<string> = new Set([
-  'GET /api/member/home packages/content/src/profile-preferences.ts',
   'GET /api/member/mcp packages/content/src/profile-preferences.ts',
   'GET /api/member/mcp packages/tools/src/external-access.ts',
   'GET /api/member/mcp server/web/app/api/member/mcp/route.ts',

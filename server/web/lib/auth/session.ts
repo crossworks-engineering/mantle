@@ -65,6 +65,7 @@ import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
   CREATE_ROUTES,
+  clientClosed,
   isReadRequest,
   itemWriteTarget,
   memberMayRead,
@@ -749,15 +750,23 @@ export async function getOwnerOr401WithSource(): Promise<
   return got instanceof NextResponse ? got : { user: got.user, source: got.source };
 }
 
+/** What getOwnerOr401WithLogin answers: the login's kind, and `member` set
+ *  exactly when it is a member (a client's is null, as an Admin user's). */
+export type OwnerRouteLogin =
+  | { kind: 'admin'; user: SessionUser; source: AuthSource; member: null }
+  | { kind: 'member'; user: SessionUser; source: AuthSource; member: MemberCaller }
+  | { kind: 'client'; user: SessionUser; source: AuthSource; member: null };
+
 /**
- * getOwnerOr401WithSource, plus WHO the login is: `member` set for a
- * non-Admin login on an owner route open to it (W7e: the app runner routes
+ * getOwnerOr401WithSource, plus WHO the login is: its `kind`, and `member`
+ * set for a member on an owner route open to it (W7e: the app runner routes
  * run a member at the team rules, an Admin user at the app's). A client is
- * refused on every owner route but the open ones, as before.
+ * refused on every owner route but the open ones, as before, and on the
+ * routes W7e opened to members only (CLIENT_CLOSED_ROUTES: 403
+ * client-login). A caller that branches on `member` must refuse a `kind`
+ * 'client' itself before it takes an Admin path.
  */
-export async function getOwnerOr401WithLogin(): Promise<
-  { user: SessionUser; source: AuthSource; member: MemberCaller | null } | NextResponse
-> {
+export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextResponse> {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (res.kind !== 'admin') {
@@ -768,6 +777,9 @@ export async function getOwnerOr401WithLogin(): Promise<
     // sweeps check both).
     const { method, pattern } = routeOfRequest();
     if (!hasRequestSlot()) return loginRefused(res.kind);
+    // W7e opened app runs (and a drawing's SVG) to members; a client still
+    // may not call them (W7e fix round 1, M1).
+    if (res.kind === 'client' && clientClosed(method, pattern)) return loginRefused('client');
     const login = res.kind === 'member' ? res.member : res.client;
     const user: SessionUser = {
       id: login.anchorId,
@@ -779,10 +791,13 @@ export async function getOwnerOr401WithLogin(): Promise<
         isOwner: false,
       },
     };
-    const member = res.kind === 'member' ? res.member : null;
+    const who: OwnerRouteLogin =
+      res.kind === 'member'
+        ? { kind: 'member', user, source: res.source, member: res.member }
+        : { kind: 'client', user, source: res.source, member: null };
     if (memberMayRead(method, pattern)) {
       await enterLoginScope(login.loginId, requestMode(true));
-      return { user, source: res.source, member };
+      return who;
     }
     if (!memberMayWrite(method, pattern) || !(await brainOnWorkspacesNow())) {
       return loginRefused(res.kind);
@@ -796,12 +811,12 @@ export async function getOwnerOr401WithLogin(): Promise<
     noteRequestCreateHome(home);
     await enterLoginScope(login.loginId, requestMode(true));
     await auditMutation(user);
-    return { user, source: res.source, member };
+    return who;
   }
   const refused = await adminRouteGate(res.user.actor.id);
   if (refused) return refused;
   await auditMutation(res.user);
-  return { user: res.user, source: res.source, member: null };
+  return { kind: 'admin', user: res.user, source: res.source, member: null };
 }
 
 // ── The request scope (workspaces W6a, plan 2.4 and T4) ─────────────────────

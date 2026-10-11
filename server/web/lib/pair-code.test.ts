@@ -232,6 +232,13 @@ describe('claimPairCode', () => {
     expect(verifyMobileToken(claimed.token)?.uid).toBe('user-2');
   });
 
+  it('a client code from an older phone app is null, never update-app (W7e fix round 1)', async () => {
+    dbState.updateResults = [[{ id: 'row-1', userId: 'user-3' }], []];
+    dbState.selectResults = [[{ role: 'client' }], [{ ...MEMBER_ROW, role: 'client' }]];
+    expect(await mod.claimPairCode('the-code-the-code-1234', 'Phone')).toBeNull();
+    expect(dbState.inserts).toHaveLength(0);
+  });
+
   it('a client code is null even from a workspace phone build', async () => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-3' }], []];
     dbState.selectResults = [[{ ...MEMBER_ROW, role: 'client' }]];

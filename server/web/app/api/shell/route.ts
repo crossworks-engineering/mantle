@@ -76,8 +76,10 @@ async function handleGET() {
     : null;
   // Short-lived asset-access token so a detached client's <img>/<iframe>/
   // download srcs (which can't carry a bearer) can load bytes. `act` = this
-  // login: each byte route re-checks the login's role. A client's lasts 10
-  // minutes (audit B23).
+  // login: each byte route re-checks the login's role. Every non-Admin
+  // login's lasts 10 minutes: a client's (audit B23), and a member's since
+  // its token opens the brain's byte routes in its scope (W7e fix round 1,
+  // L3). An Admin user's keeps the two hours.
   const assetToken = await shellPart(
     'shell',
     'asset token',
@@ -85,7 +87,7 @@ async function handleGET() {
       mintAssetToken(
         anchorId,
         loginId,
-        login.kind === 'client' ? { ttlSeconds: CLIENT_ASSET_TOKEN_TTL_SECONDS } : {},
+        login.kind === 'admin' ? {} : { ttlSeconds: CLIENT_ASSET_TOKEN_TTL_SECONDS },
       ),
     undefined,
   );
