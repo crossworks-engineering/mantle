@@ -8,6 +8,8 @@
  *  - L-1: a PATCH from another Admin user that the guard refuses (403)
  *    writes nothing else in its body: `enabled` and the outbound token stay
  *    as they were.
+ *  - Fix round 6: an owner PATCH that binds the peer to itself with a blank
+ *    outbound token answers 400 before anything is written.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w6b-fix5.db.test.ts
  */
@@ -196,5 +198,21 @@ describe.skipIf(!URL)('W6b fix round 5', () => {
       status: 'active',
       outbound: before.outbound,
     });
+  });
+
+  it('fix round 6: a blank outbound token is refused (400) before the owner re-key writes', async () => {
+    let r = await call('/api/peers', owner, 'POST', peerBody('r6', { actsAs: mem }));
+    expect(r.status, r.text.slice(0, 200)).toBe(201);
+    const peer = (r.json.peer as Json).id as string;
+    const made = r.json.inboundToken as string;
+    const before = await peerRow(peer);
+    expect(before).toMatchObject({ acts: mem });
+
+    r = await call(`/api/peers/${peer}`, owner, 'PATCH', { actsAs: 'owner', outboundToken: '   ' });
+    expect(r.status, r.text.slice(0, 200)).toBe(400);
+    expect(r.json.inboundToken).toBeUndefined();
+    const after = await peerRow(peer);
+    expect(after).toMatchObject({ acts: mem, hash: before.hash, outbound: before.outbound });
+    expect(await authenticates(made)).toBe(true);
   });
 });

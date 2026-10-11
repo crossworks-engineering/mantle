@@ -14,7 +14,9 @@ import {
 const PatchBody = z
   .object({
     enabled: z.boolean().optional(),
-    outboundToken: z.string().min(1).max(8192).optional(),
+    // Trimmed before the length check: a blank token is refused here, before
+    // the access write commits (fix round 6), not inside setOutboundToken.
+    outboundToken: z.string().trim().min(1).max(8192).optional(),
   })
   .extend(PeerAccessBody.shape);
 
