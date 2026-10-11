@@ -284,6 +284,8 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
     displayName: row.displayName,
     via: 'peer',
     peerId: peer.id,
+    // The owner's own peer: bound to the anchor login and made by it.
+    peerByOwner: row.role === 'admin' && row.id === peer.ownerId && peer.createdBy === peer.ownerId,
     write: login ? peer.writeEnabled && row.mcpWrite === true : peer.writeEnabled,
     riskyAllowed: row.role === 'admin' ? (peer.allowedRiskyTools ?? []) : [],
   };

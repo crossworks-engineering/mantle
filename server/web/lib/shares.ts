@@ -181,6 +181,36 @@ export function servedIds(share: Pick<Share, 'nodeId' | 'settings'>): Set<string
   return new Set([share.nodeId.toLowerCase(), ...shareServedIds(share.settings)]);
 }
 
+/** The ids among `ids` that are the owner's read-only snapshot copies (W6b),
+ *  lower-case. */
+async function snapshotCopyIds(ownerId: string, ids: Iterable<string>): Promise<Set<string>> {
+  const list = [...ids].filter((id) => isUuid(id));
+  if (!list.length) return new Set();
+  const rows = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        sql`${nodes.id} = any (${`{${list.join(',')}}`}::uuid[])`,
+        sql`coalesce(${nodes.data} ? 'snapshot_of', false)`,
+      ),
+    );
+  return new Set(rows.map((r) => r.id.toLowerCase()));
+}
+
+/** {@link servedIds} as served now: a read-only snapshot copy is never
+ *  served, whatever a list made before the rule holds (W6b fix round 3,
+ *  L-1). */
+export async function liveServedIds(share: Share): Promise<Set<string>> {
+  const served = servedIds(share);
+  const self = share.nodeId.toLowerCase();
+  for (const id of await snapshotCopyIds(share.ownerId, served)) {
+    if (id !== self) served.delete(id);
+  }
+  return served;
+}
+
 /**
  * Does this share serve `nodeId` (plan 8.1)? Its own item, always. An open
  * link: an id on its served list, and for a folder link one that still sits
@@ -194,9 +224,12 @@ export async function isServed(share: Share, nodeId: string): Promise<boolean> {
   if (!isUuid(nodeId)) return false;
   const id = nodeId.toLowerCase();
   if (id === share.nodeId.toLowerCase()) return true;
-  if (share.contactId) return true;
+  // A read-only snapshot copy stays in its private workspace: no link and
+  // no contact share serves it (W6b fix round 3, L-1).
+  const notCopy = async () => !(await snapshotCopyIds(share.ownerId, [id])).has(id);
+  if (share.contactId) return notCopy();
   if (!servedIds(share).has(id)) return false;
-  if (share.nodeType !== 'branch') return true;
+  if (share.nodeType !== 'branch') return notCopy();
   const root = alias(nodes, 'share_root');
   const [hit] = await db
     .select({ id: nodes.id })
@@ -211,6 +244,7 @@ export async function isServed(share: Share, nodeId: string): Promise<boolean> {
         eq(nodes.ownerId, share.ownerId),
         sql`${nodes.path} <@ ${root.path}`,
         sql`${nodes.id} <> ${root.id}`,
+        sql`not coalesce(${nodes.data} ? 'snapshot_of', false)`,
       ),
     )
     .limit(1);
@@ -239,7 +273,7 @@ export async function isDrawServable(
   if (!row) return false;
   if (opts.self && !(await isServed(share, drawId))) return false;
   if (share.contactId) return true;
-  const served = servedIds(share);
+  const served = await liveServedIds(share);
   return drawPlacedFileIds(row.scene, row.fileRefs).every((f) => served.has(f.toLowerCase()));
 }
 
@@ -284,7 +318,7 @@ async function loadNode(ownerId: string, nodeId: string) {
  *  if the underlying node vanished (deleted after the link was minted). */
 export async function loadShareView(share: Share): Promise<ShareView | null> {
   const { ownerId, nodeId, nodeType } = share;
-  const served = servedIds(share);
+  const served = await liveServedIds(share);
   switch (nodeType) {
     // An open link is read by anyone: a page or note shows only what its
     // link serves (plan 8.1). A mention, a link or a child page card of an

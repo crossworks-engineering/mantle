@@ -155,6 +155,20 @@ describe('pending_approve', () => {
     expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, undefined);
   });
 
+  it('names the approving login of its connection (W6b fix round 3, L-2)', async () => {
+    const mcp: ToolHandlerContext = {
+      ownerId: 'o1',
+      surface: { kind: 'owner', via: 'mcp', loginId: 'a2' },
+    };
+    await approve.handler({ id: ROW_ID }, mcp);
+    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, { approverLoginId: 'a2' });
+    await approve.handler({ id: ROW_ID, answer: 'yes' }, mcp);
+    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, {
+      answer: 'yes',
+      approverLoginId: 'a2',
+    });
+  });
+
   it('reports a missing or already-decided row as a refusal', async () => {
     vi.mocked(approvePendingCall).mockResolvedValue(null);
     const res = await approve.handler({ id: ROW_ID }, ctx);

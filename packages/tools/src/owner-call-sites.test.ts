@@ -55,9 +55,12 @@ const SITES: Record<string, Site> = {
   },
   'packages/tools/src/pending.ts': {
     calls: 1,
-    surface: OWNER('pending'),
+    // The approving login rides along when the path names one (W6b fix
+    // round 3, L-2): server-set, never from model arguments.
+    surface:
+      /surface: \{\s*kind: 'owner',\s*via: 'pending',\s*\.\.\.\(opts\?\.approverLoginId \? \{ loginId: opts\.approverLoginId \} : \{\}\),?\s*\}/,
     scope: 'call',
-    why: 'only the owner approves a pending call',
+    why: 'an Admin user approves a pending call, on the owner surface',
   },
   'server/web/lib/runs/execute-item.ts': {
     calls: 1,

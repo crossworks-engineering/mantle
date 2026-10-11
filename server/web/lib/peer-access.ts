@@ -5,8 +5,8 @@
  * id, or null (a share-only peer, as before).
  */
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
-import { authUsers, db } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
+import { authUsers, db, mantlePeers } from '@mantle/db';
 
 /** A tool name the owner allows on a peer bound to the owner (a risky one:
  *  see PEER_RISKY_TOOL_SLUGS in @mantle/mcp-core). An unknown name allows
@@ -18,6 +18,45 @@ export const PeerAccessBody = z.object({
   writeEnabled: z.boolean().optional(),
   allowedRiskyTools: z.array(RiskyName).max(64).optional(),
 });
+
+/** The refusal an Admin user who is not the owner gets for a peer that acts
+ *  as the owner (W6b fix round 3, M-1). */
+export const PEER_OWNER_ONLY = 'Only the brain owner may link a brain that acts as the owner.';
+
+/**
+ * Whether this change to a peer needs the brain owner (the anchor login,
+ * `actor.isOwner`): binding it to the owner, naming risky owner tools on it,
+ * or, on a peer bound to the owner now (`boundToOwner`), its Write switch,
+ * its risky tools and a new token. Each of these hands its holder the
+ * owner's tools; any other Admin user gets 403 (W6b fix round 3, M-1).
+ */
+export function peerChangeNeedsOwner(
+  change: {
+    actsAs?: 'owner' | string | null;
+    writeEnabled?: boolean;
+    allowedRiskyTools?: readonly string[];
+    rotate?: boolean;
+  },
+  boundToOwner = false,
+): boolean {
+  if (change.actsAs === 'owner') return true;
+  if ((change.allowedRiskyTools?.length ?? 0) > 0) return true;
+  if (!boundToOwner) return false;
+  return (
+    change.writeEnabled !== undefined || change.allowedRiskyTools !== undefined || !!change.rotate
+  );
+}
+
+/** Whether peer `id` of this brain acts as the owner now (bound to the
+ *  anchor login). */
+export async function peerBoundToOwner(anchorId: string, id: string): Promise<boolean> {
+  const [row] = await db
+    .select({ login: mantlePeers.actsAsLoginId })
+    .from(mantlePeers)
+    .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, anchorId)))
+    .limit(1);
+  return !!row && row.login === anchorId;
+}
 
 /** The login a peer is to act as, with its current role, or an error. */
 export async function resolvePeerActsAs(

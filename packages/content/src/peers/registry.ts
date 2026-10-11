@@ -114,6 +114,9 @@ export type CreatePeerInput = {
    */
   outboundToken?: string;
   description?: string;
+  /** The login registering it (W6b fix round 3, M-1): only a peer the
+   *  owner made deletes apps as the owner. */
+  createdBy?: string;
 };
 
 /**
@@ -165,6 +168,7 @@ export async function createPeer(
       inboundTokenHash: hashToken(inboundToken),
       status: outbound ? 'active' : 'pending',
       enabled: true,
+      createdBy: input.createdBy ?? null,
     })
     .returning();
   if (!row) throw new Error('createPeer: peer insert returned no row');
@@ -279,6 +283,10 @@ export async function setPeerAccess(
     actsAs?: { loginId: string; role: 'admin' | 'member' | 'client' } | null;
     writeEnabled?: boolean;
     allowedRiskyTools?: string[];
+    /** The owner binding a peer made before 0267 (no maker recorded) to
+     *  itself: recorded as its maker (W6b fix round 3, M-1). A peer another
+     *  login made keeps that login. */
+    adoptBy?: string;
   },
 ): Promise<PeerRow | null> {
   const set: Partial<typeof mantlePeers.$inferInsert> = { updatedAt: new Date() };
@@ -310,6 +318,10 @@ export async function setPeerAccess(
         sql`(${access.writeEnabled} and ${mantlePeers.actsAsLoginId} is not null)` as unknown as boolean;
     }
     if (risky !== undefined) set.allowedRiskyTools = risky;
+  }
+  if (access.adoptBy) {
+    set.createdBy =
+      sql`coalesce(${mantlePeers.createdBy}, ${access.adoptBy}::uuid)` as unknown as string;
   }
   const [row] = await db
     .update(mantlePeers)

@@ -246,7 +246,8 @@ export async function listServeCandidates(
   );
   if (!ids.length) return [];
   const rights = await linkRights(ownerId, loginId, ids, q);
-  const ok = ids.filter((id) => rights.get(id)?.edit === true);
+  // A read-only snapshot copy is never offered (W6b fix round 3, L-1).
+  const ok = ids.filter((id) => rights.get(id)?.edit === true && !rights.get(id)?.snapshotCopy);
   if (!ok.length) return [];
   const rows = await q
     .select({ id: nodes.id, title: nodes.title, type: nodes.type })
@@ -283,12 +284,18 @@ export async function checkServeList(
   q: ShareDb = db,
 ): Promise<string[]> {
   const self = item.id.toLowerCase();
-  const list = shareServedIds({ served: serve }).filter((id) => id !== self);
+  const asked = shareServedIds({ served: serve }).filter((id) => id !== self);
   const held = new Set(shareServedIds({ served: current }));
+  const rights = await linkRights(ownerId, loginId, asked, q);
+  // A read-only snapshot copy is never served (W6b fix round 3, L-1): one
+  // the list holds already is dropped from it, one added is refused.
+  const list = asked.filter((id) => !(held.has(id) && rights.get(id)?.snapshotCopy));
   const added = list.filter((id) => !held.has(id));
   if (!added.length) return list;
-  const rights = await linkRights(ownerId, loginId, added, q);
   if (added.some((id) => !rights.get(id)?.read)) throw NOT_FOUND();
+  if (added.some((id) => rights.get(id)?.snapshotCopy)) {
+    throw new LinkRefusedError(403, 'forbidden', SNAPSHOT_COPY_NO_SHARE);
+  }
   const candidates = await serveCandidates(ownerId, item, added, q);
   for (const id of added) {
     if (!candidates.has(id) || !rights.get(id)?.edit) {

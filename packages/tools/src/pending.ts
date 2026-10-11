@@ -329,7 +329,15 @@ export async function rejectPendingCall(
 export async function approvePendingCall(
   ownerId: string,
   id: string,
-  opts?: { answer?: string; answers?: readonly HumanFormAnswer[] },
+  opts?: {
+    answer?: string;
+    answers?: readonly HumanFormAnswer[];
+    /** The login approving it (its session's actor, its MCP connection's
+     *  login), set by the server, never from model arguments (W6b fix round
+     *  3, L-2): the call runs naming it, so the owner's own confirmed
+     *  app_delete is purged after 30 days and anyone else's is held. */
+    approverLoginId?: string;
+  },
 ): Promise<PendingSummary | null> {
   // Atomic claim — only act if still pending.
   const [claimed] = await db
@@ -408,8 +416,13 @@ export async function approvePendingCall(
         async (handle) => {
           const res = await dispatchTool(tool, (claimed.args ?? {}) as Record<string, unknown>, {
             ownerId,
-            // Only the owner approves a pending call, so it runs for the owner.
-            surface: { kind: 'owner', via: 'pending' },
+            // An Admin user approves a pending call, so it runs on the owner
+            // surface, naming the approver when the path names one.
+            surface: {
+              kind: 'owner',
+              via: 'pending',
+              ...(opts?.approverLoginId ? { loginId: opts.approverLoginId } : {}),
+            },
             step: {
               setMeta: (m) => handle.setMeta(m),
               setOutput: (o) => handle.setOutput(o),

@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createPeer, listPeers, setPeerAccess } from '@mantle/content';
 import { firstIssue } from '@/lib/zod-issue';
-import { PeerAccessBody, resolvePeerActsAs } from '@/lib/peer-access';
+import {
+  PEER_OWNER_ONLY,
+  PeerAccessBody,
+  peerChangeNeedsOwner,
+  resolvePeerActsAs,
+} from '@/lib/peer-access';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -30,11 +35,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { actsAs, writeEnabled, allowedRiskyTools, ...input } = parsed.data;
+  // A brain that acts as the owner, or one with risky owner tools, is the
+  // owner's to link (W6b fix round 3, M-1).
+  if (!user.actor.isOwner && peerChangeNeedsOwner({ actsAs, allowedRiskyTools })) {
+    return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
+  }
   const bound = actsAs ? await resolvePeerActsAs(user.id, actsAs) : null;
   if (bound && 'error' in bound) return NextResponse.json({ error: bound.error }, { status: 400 });
   try {
     // `inboundToken` is the plaintext to hand the peer — surfaced ONCE here.
-    const created = await createPeer(user.id, input);
+    const created = await createPeer(user.id, { ...input, createdBy: user.actor.id });
     let peer = created.peer;
     if (bound) {
       peer =

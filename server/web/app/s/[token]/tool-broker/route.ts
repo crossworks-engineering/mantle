@@ -24,6 +24,7 @@ import { NextResponse } from '@/server/http-compat';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { SHARE_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 import { withViewer } from '@mantle/db';
+import { liveServedIds } from '@/lib/shares';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
 import { contactAppToolVerdict, dispatchTool, outsideCallLogDetail } from '@mantle/tools';
 
@@ -96,9 +97,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   if (!verdict.ok) {
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
-  // A link reads no workspace, only what it serves (plan 8.1, R6).
-  const listed = (share.settings as { served?: unknown } | null)?.served;
-  const served = [share.nodeId, ...(Array.isArray(listed) ? listed.map(String) : [])];
+  // A link reads no workspace, only what it serves (plan 8.1, R6), never a
+  // snapshot copy (W6b fix round 3, L-1).
+  const served = [...(await liveServedIds(share))];
   const result = await withViewer('public', { link: { served } }, () =>
     dispatchTool(verdict.tool, input, {
       ownerId: share.ownerId,

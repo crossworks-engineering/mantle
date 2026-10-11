@@ -14,6 +14,7 @@ import { and, eq } from 'drizzle-orm';
 import { agentGroups, agents, db } from '@mantle/db';
 import { ASK_HUMAN_FORM_LIMITS as FORM_LIMITS } from '@mantle/client-types';
 import { type BuiltinToolDef } from './types';
+import { ownerSurfaceLoginId } from './surface';
 import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
 import {
   approvePendingCall,
@@ -124,7 +125,13 @@ export const pending_approve: BuiltinToolDef = {
       answer || answers?.length
         ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
         : undefined;
-    const row = await approvePendingCall(ctx.ownerId, id, decision as never);
+    // The approver is this connection's login (W6b fix round 3, L-2).
+    const approver = ownerSurfaceLoginId(ctx.surface);
+    const row = await approvePendingCall(
+      ctx.ownerId,
+      id,
+      (approver ? { ...decision, approverLoginId: approver } : decision) as never,
+    );
     if (!row) return { ok: false, error: 'not found or already decided' };
     return { ok: true, output: row };
   },

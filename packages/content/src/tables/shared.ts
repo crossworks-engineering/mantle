@@ -87,7 +87,7 @@ export async function assertTableNotAppBound(tableNodeId: string): Promise<void>
   // on the system pool, yes or no, so a member's own table write or delete
   // is checked rather than failing on the grant (W6b fix round 2). The
   // app's name below is read in the caller's scope.
-  const link = await asSystem(() => appExportLinkOf(tableNodeId), 'kind-root');
+  const link = await asSystem(() => appExportLinkOf(tableNodeId), 'export-link');
   if (!link) return;
   const [app] = await db
     .select({ title: nodes.title })

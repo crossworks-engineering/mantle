@@ -819,11 +819,13 @@ export function runInSystemTx<T>(
  *  - `kind-root`: structure with no content, looked up whatever the
  *    caller's scope holds: a kind's root folder row (the files root; a
  *    member's scope does not hold the Admin-homed root) so it is not made
- *    again (W6b); whether a file name is taken in a folder, its id and flags
- *    only, so a write never lands on bytes its caller cannot read (W6b fix
- *    round 1, H3: @mantle/files fileNameTaken); whether a table is bound to
- *    an app's export, yes or no, so a login's own table write or delete is
- *    checked (W6b fix round 2: assertTableNotAppBound).
+ *    again (W6b).
+ *  - `name-taken`: whether a file name is taken in a folder, its id and
+ *    flags only, so a write never lands on bytes its caller cannot read
+ *    (W6b fix round 1, H3: @mantle/files fileNameTaken).
+ *  - `export-link`: whether a table is bound to an app's export, yes or
+ *    no, so a login's own table write or delete is checked (W6b fix round
+ *    2: assertTableNotAppBound).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -840,6 +842,8 @@ export const AS_SYSTEM_TURN_REASONS = [
   'app-data',
   'rule-in-query',
   'kind-root',
+  'name-taken',
+  'export-link',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 

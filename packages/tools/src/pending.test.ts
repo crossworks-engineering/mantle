@@ -56,6 +56,9 @@ vi.mock('@mantle/runs', () => ({
 }));
 
 vi.mock('./dispatch', () => ({ dispatchTool: (...a: unknown[]) => h.dispatchTool(...a) }));
+vi.mock('./dispatch-bridge', () => ({
+  dispatchViaBridge: (...a: unknown[]) => h.dispatchTool(...a),
+}));
 vi.mock('./pending-notify', () => ({ notifyPendingChanged: vi.fn(async () => {}) }));
 vi.mock('@mantle/tracing', () => ({
   startTrace: async (_i: unknown, fn: () => Promise<unknown>) => fn(),
@@ -355,5 +358,25 @@ describe('claim semantics', () => {
     expect(res).toBeNull();
     expect(h.applyHumanAnswer).not.toHaveBeenCalled();
     expect(h.applyBudgetDecision).not.toHaveBeenCalled();
+  });
+});
+
+describe('a tool call approved (W6b fix round 3, L-2)', () => {
+  const toolRow = () => ({ ...askRow(), toolSlug: 'app_delete', args: { id: 'app-1' } });
+  const surfaceOf = () =>
+    (h.dispatchTool.mock.calls[0]![2] as { surface: Record<string, unknown> }).surface;
+
+  it('runs naming its approver, so the owner deletes as the owner', async () => {
+    fake.queue('pending_tool_calls', [toolRow()]);
+    fake.queue('tools', [{ slug: 'app_delete', ownerId: OWNER, enabled: true }]);
+    await approvePendingCall(OWNER, ROW_ID, { approverLoginId: 'login-a' });
+    expect(surfaceOf()).toEqual({ kind: 'owner', via: 'pending', loginId: 'login-a' });
+  });
+
+  it('names no login when the path names none (held for the owner)', async () => {
+    fake.queue('pending_tool_calls', [toolRow()]);
+    fake.queue('tools', [{ slug: 'app_delete', ownerId: OWNER, enabled: true }]);
+    await approvePendingCall(OWNER, ROW_ID);
+    expect(surfaceOf()).toEqual({ kind: 'owner', via: 'pending' });
   });
 });

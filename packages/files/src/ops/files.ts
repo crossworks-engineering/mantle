@@ -321,6 +321,11 @@ export async function upsertFile(args: {
   // Heads first (workspaces plan U1): the chunk delete below needs them.
   const updated = await withDeadlockRetry(() =>
     withHeads([row.id], 'update', async (tx) => {
+      // Only the watcher's own row takes a create's stamp and home: a row
+      // another create made in the meantime is that create's item, never
+      // turned into this one's copy (W6b fix round 3, L-3). Checked under
+      // its heads, before anything is written; refused as a taken name (409).
+      if (stamp && !(await isWatcherInsert(tx, row.id))) throw new FileNameTakenError(filename);
       const [u] = await tx
         .update(nodes)
         .set({
@@ -348,6 +353,33 @@ export async function upsertFile(args: {
   }
 
   return fileRowFromNode(updated);
+}
+
+/**
+ * Whether a file row a create raced to is the files watcher's insert (see
+ * upsertFile): not a snapshot copy or a folded member file; no grant on it
+ * that a login made (granted_by: nobody has shared it); and its home, if it
+ * has one, is where the database homes a create that names no workspace
+ * (its folder's home, else Admin), never a workspace a create chose. Any
+ * other row is another create's item (W6b fix round 3, L-3).
+ * @heads-held by upsertFile (withHeads on the row).
+ */
+async function isWatcherInsert(
+  tx: Parameters<Parameters<typeof withHeads>[2]>[0],
+  id: string,
+): Promise<boolean> {
+  const [r] = (await tx.execute(sql`
+    select not coalesce(n.data ? 'snapshot_of' or n.data ? 'space_file', false)
+           and not exists (select 1 from item_grants g
+                            where g.node_id = n.id and g.granted_by is not null)
+           and (n.home_ws is null
+                or n.home_ws = (select f.home_ws from nodes f
+                                 where f.id = "public"."mantle_parent_folder"(n.owner_id, n.type, n.path))
+                or n.home_ws = (select w.id from workspaces w
+                                 where w.owner_id = n.owner_id and w.is_admin limit 1)) as ok
+      from nodes n
+     where n.id = ${id}::uuid`)) as unknown as { ok: boolean }[];
+  return r?.ok === true;
 }
 
 /**
@@ -1009,7 +1041,7 @@ export class FileNameTakenError extends Error {
  * Whether a file in `parentPath` has `filename` (ignoring case), asked on
  * the system pool whatever the caller's scope: its id, whether it is a
  * folded member file and whether its name is exactly `filename`, never its
- * content (asSystem 'kind-root': structure). The exact match first, then a
+ * content (asSystem 'name-taken': structure). The exact match first, then a
  * tree file before a folded one.
  */
 export async function fileNameTaken(
@@ -1028,7 +1060,7 @@ export async function fileNameTaken(
            and (lower(n.data->>'filename') = lower(${filename}) or lower(n.slug) = lower(${filename}))
          order by exact desc, folded, n.id
          limit 1`),
-    'kind-root',
+    'name-taken',
   )) as unknown as { id: string; folded: boolean; exact: boolean }[];
   return rows[0] ?? null;
 }

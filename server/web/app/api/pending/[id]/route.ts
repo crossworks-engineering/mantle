@@ -59,13 +59,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const { answer, answers } = parsed.data;
     const row =
       parsed.data.decision === 'approve'
-        ? await approvePendingCall(
-            user.id,
-            idParsed.data.id,
-            answer || answers?.length
-              ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
-              : undefined,
-          )
+        ? await approvePendingCall(user.id, idParsed.data.id, {
+            ...(answer ? { answer } : {}),
+            ...(answers?.length ? { answers } : {}),
+            // Who approves: the signed-in login (W6b fix round 3, L-2).
+            approverLoginId: user.actor.id,
+          })
         : await rejectPendingCall(user.id, idParsed.data.id);
     if (!row) {
       return NextResponse.json(

@@ -540,8 +540,17 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
 
   it('the list stays small', () => {
     // 11 since W6a: 'rule-in-query' for the any-login libraries in a
-    // request scope.
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(11);
+    // request scope. 13 since W6b fix round 3: 'kind-root' named three
+    // unrelated lookups, so the file name check ('name-taken') and the
+    // export link check ('export-link') each carry their own reason, and
+    // the log says which door was used. Each is yes or no structure.
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(13);
+  });
+
+  it('each W6b structure lookup names its own reason (W6b fix round 3)', () => {
+    for (const r of ['kind-root', 'name-taken', 'export-link']) {
+      expect(AS_SYSTEM_TURN_REASONS).toContain(r);
+    }
   });
 });
 

@@ -65,6 +65,12 @@ vi.mock('@/lib/shares', () => ({
   resolveActiveShareByToken: vi.fn(async (token: string) => (token === 'live' ? SHARE : null)),
   // The /s gate (contact shares, 0214) resolves through this one.
   resolveActiveShareRowByToken: vi.fn(async (token: string) => byToken[token] ?? null),
+  // What the link serves now (its item and list; snapshot copies dropped,
+  // w6b-fix3.db.test.ts): the list as it is here.
+  liveServedIds: vi.fn(
+    async (s: { nodeId: string; settings?: { served?: string[] } }) =>
+      new Set([s.nodeId, ...(s.settings?.served ?? [])]),
+  ),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({

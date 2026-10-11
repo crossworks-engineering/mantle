@@ -1169,6 +1169,16 @@ CREATE TRIGGER "nodes_create_stamp" BEFORE INSERT ON "public"."nodes"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_nodes_create_stamp_trg"();
 --> statement-breakpoint
 
+-- ── 3c. Who made a peer (W6b fix round 3, M-1) ──────────────────────────────
+-- The login that registered a linked brain. An app_delete through a peer
+-- bound to the owner is the owner's (purged after 30 days) only when the
+-- owner made the peer too; any other peer's waits in the trash for the owner.
+-- Peers made before this have none: the owner records itself when it binds
+-- one to the owner again.
+ALTER TABLE "public"."mantle_peers" ADD COLUMN IF NOT EXISTS "created_by" uuid
+  REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+--> statement-breakpoint
+
 -- ── 4. Run it ────────────────────────────────────────────────────────────────
 
 DO $$

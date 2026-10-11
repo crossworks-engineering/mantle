@@ -90,6 +90,10 @@ export type McpCaller = {
   riskyAllowed?: readonly string[];
   /** The peer whose token this is (its own rate budget). */
   peerId?: string;
+  /** A peer bound to the owner that the owner registered itself (W6b fix
+   *  round 3, M-1): only then is its app_delete the owner's (purged after
+   *  30 days). Any other peer's waits in the trash for the owner. */
+  peerByOwner?: boolean;
   /** The inbound API key this is (migration 0232): its own rate budget. */
   keyId?: string;
   /** The OAuth client of an OAuth grant: the app data audit names it. */
@@ -600,7 +604,9 @@ export function registerPreparedTools(
     // its areas too (plan 7.5 and 7.6: it narrows, never widens).
     registerMantleTools(server, caller.anchorId, {
       transport: opts.transport ?? 'http',
-      loginId: caller.loginId,
+      // A peer the owner did not register names no login to the builtins:
+      // its app_delete is held for the owner (W6b fix round 3, M-1).
+      ...(caller.via === 'peer' && !caller.peerByOwner ? {} : { loginId: caller.loginId }),
       via: caller.via === 'key' ? 'api' : 'federation',
       allow: (slug) => ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller),
       // A key without Search does not reach email through Files (M4).

@@ -83,6 +83,10 @@ export const mantlePeers = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    /** The login that registered this peer (0267, W6b fix round 3): an
+     *  app_delete through a peer bound to the owner is the owner's only when
+     *  the owner made it. Null before 0267 until the owner binds it again. */
+    createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

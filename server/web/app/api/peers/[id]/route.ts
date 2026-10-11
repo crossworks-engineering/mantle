@@ -3,7 +3,13 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deletePeer, setOutboundToken, setPeerAccess, setPeerEnabled } from '@mantle/content';
 import { firstIssue } from '@/lib/zod-issue';
-import { PeerAccessBody, resolvePeerActsAs } from '@/lib/peer-access';
+import {
+  PEER_OWNER_ONLY,
+  PeerAccessBody,
+  peerBoundToOwner,
+  peerChangeNeedsOwner,
+  resolvePeerActsAs,
+} from '@/lib/peer-access';
 
 const PatchBody = z
   .object({
@@ -20,6 +26,18 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
+  const { actsAs, writeEnabled, allowedRiskyTools } = parsed.data;
+  // Checked before anything changes: a brain that acts as the owner is the
+  // owner's to bind, arm and keep armed (W6b fix round 3, M-1).
+  if (
+    !user.actor.isOwner &&
+    peerChangeNeedsOwner(
+      { actsAs, writeEnabled, allowedRiskyTools },
+      await peerBoundToOwner(user.id, id),
+    )
+  ) {
+    return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
+  }
   let touched = false;
   if (parsed.data.enabled !== undefined) {
     const ok = await setPeerEnabled(user.id, id, parsed.data.enabled);
@@ -31,7 +49,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
     touched = true;
   }
-  const { actsAs, writeEnabled, allowedRiskyTools } = parsed.data;
   if (actsAs !== undefined || writeEnabled !== undefined || allowedRiskyTools !== undefined) {
     const bound = actsAs === undefined ? undefined : await resolvePeerActsAs(user.id, actsAs);
     if (bound && 'error' in bound) {
@@ -41,6 +58,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       ...(bound !== undefined ? { actsAs: bound } : {}),
       ...(writeEnabled !== undefined ? { writeEnabled } : {}),
       ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
+      // The owner binding a peer made before its maker was recorded.
+      ...(actsAs === 'owner' && user.actor.isOwner ? { adoptBy: user.actor.id } : {}),
     });
     if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
     touched = true;
