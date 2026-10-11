@@ -400,9 +400,9 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(who.loginId).toBe(admin);
     expect(String(who.brainId)).toMatch(/^[0-9a-f-]{36}$/);
     // Past the admin gate (a malformed id is the handler's own 400).
-    expect(
-      (await call('/api/pending/not-a-uuid', { bearer: body.token as string })).status,
-    ).toBe(400);
+    expect((await call('/api/pending/not-a-uuid', { bearer: body.token as string })).status).toBe(
+      400,
+    );
 
     const wrong = await deviceLogin(emailOf('member'), 'not the password');
     expect(wrong.status).toBe(401);
