@@ -87,6 +87,7 @@ import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
 import {
   asSystem,
   db as scopedDb,
+  loginScopeFor,
   nodes as nodesTable,
   scopeHoldsAdmin,
   withCreateHome,
@@ -1315,11 +1316,17 @@ const app_snapshot_delete: BuiltinToolDef = {
  * for these: a home the caller moderates (mantle_may_manage), or, for a
  * snapshot that names no home (taken before W6a), the brain's anchor
  * login. Outside a workspace scope: null (the trash as before).
+ *
+ * The anchor's own chat (W7 integration fix 2): its turn scope holds only
+ * Admin, so it would miss the apps of the other workspaces it moderates;
+ * for the anchor the homes are those of its full login scope. Anyone else
+ * keeps the scope it runs in.
  */
 async function manageableDeletedApps(ownerId: string): Promise<Map<string, string | null> | null> {
   const scope = currentWorkspaceScope();
   if (!scope) return null;
-  const mod = new Set(scope.modWs);
+  const anchor = scope.loginId !== null && scope.loginId.toLowerCase() === ownerId.toLowerCase();
+  const mod = new Set(anchor ? (await loginScopeFor(scope.loginId!)).modWs : scope.modWs);
   const all = await asSystem(() => deletedAppHomes(ownerId), 'app-trash');
   const out = new Map<string, string | null>();
   for (const [id, home] of all) {
