@@ -100,6 +100,12 @@ export const TOOL_ADMIN_AREAS: ReadonlyMap<string, ScopeArea> = new Map<string, 
   ['tool_group_list', 'assistants'],
   ['worker_group_ensure', 'assistants'],
   ['worker_group_list', 'assistants'],
+  // The owner's heartbeats (the /api/heartbeats routes are this area). The
+  // firing heartbeat's own tools (complete, snooze, state) are not listed:
+  // a non-Admin assistant's fire reaches its own row (heartbeats/tools.ts),
+  // and in an Admin scope they check this area themselves.
+  ['heartbeat_list', 'assistants'],
+  ['heartbeat_fire', 'assistants'],
   // Connectors: API tools, recipes, linked brains, Telegram.
   ['api_tool_create', 'connectors'],
   ['api_tool_delete', 'connectors'],
@@ -125,8 +131,13 @@ export const TOOL_ADMIN_AREAS: ReadonlyMap<string, ScopeArea> = new Map<string, 
   ['telegram_react', 'connectors'],
   ['telegram_pending', 'connectors'],
   ['telegram_mark_processed', 'connectors'],
-  // Mail out through the brain's mail account (its sealed credentials).
+  // The brain's mail (an Admin-only kind) through its mail accounts, whose
+  // sealed credentials the workspace role never reads (the email routes are
+  // the connectors area too, W6a).
   ['email_send', 'connectors'],
+  ['email_list', 'connectors'],
+  ['email_get', 'connectors'],
+  ['email_page', 'connectors'],
   // Keys and secrets.
   ['secret_create', 'keys'],
   ['api_key_refs', 'keys'],

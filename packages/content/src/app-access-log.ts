@@ -29,7 +29,7 @@
  * APP_ERROR_LOG_RETENTION_DAYS, at most APP_ERROR_LOG_KEEP_PER_APP per app.
  */
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
-import { db, systemDb, appAccessLog, authUsers, nodes } from '@mantle/db';
+import { db, isUnscoped, systemDb, appAccessLog, authUsers, nodes } from '@mantle/db';
 
 export type AppAccessKind = 'auth' | 'tool' | 'db' | 'error';
 
@@ -214,15 +214,20 @@ export async function listAppAccess(
   limit = 100,
   opts: { kind?: AppAccessKind; since?: Date } = {},
 ): Promise<AppAccessRow[]> {
+  // A login's email is never granted to the workspace role: in a scope (an
+  // Admin user, the Admin assistant, W7a) the name is its display name only.
+  const actorName = isUnscoped()
+    ? sql<
+        string | null
+      >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`
+    : sql<string | null>`nullif(trim(${authUsers.displayName}), '')`;
   const rows = await db
     .select({
       id: appAccessLog.id,
       contactId: appAccessLog.contactId,
       contactName: nodes.title,
       actorId: appAccessLog.actorId,
-      actorName: sql<
-        string | null
-      >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`,
+      actorName,
       kind: appAccessLog.kind,
       detail: appAccessLog.detail,
       createdAt: appAccessLog.createdAt,

@@ -34,9 +34,21 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { asSystem, db, heartbeats, type Heartbeat } from '@mantle/db';
+import {
+  asSystem,
+  db,
+  heartbeats,
+  scopeHasArea,
+  scopeHoldsAdmin,
+  type Heartbeat,
+} from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
-import { registerBuiltin, type BuiltinToolDef, type ToolHandlerResult } from '@mantle/tools';
+import {
+  adminAreaError,
+  registerBuiltin,
+  type BuiltinToolDef,
+  type ToolHandlerResult,
+} from '@mantle/tools';
 import { currentHeartbeat, MAX_HEARTBEAT_DEPTH } from './context';
 import { forceFire } from './fire';
 import { computeNextFireAt } from './schedule';
@@ -46,10 +58,14 @@ import { computeNextFireAt } from './schedule';
  * reads none of it. A heartbeat of a non-Admin workspace (its fire runs in a
  * turn scope, W4b fix round 1) reaches only the row of the heartbeat that is
  * firing (resolveTargetHeartbeat refuses any other), on the system pool with
- * a named reason. Outside a workspace scope: as before.
+ * a named reason. In a scope that holds Admin (the Admin assistant, W7a) the
+ * owner's heartbeats as before, on the system pool after the assistants
+ * area check (resolveTargetHeartbeat). Outside a workspace scope: as before.
  */
-function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
-  return currentWorkspaceScope() ? asSystem(fn, 'heartbeat-own-row') : fn();
+async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
+  if (!currentWorkspaceScope()) return fn();
+  if (await scopeHoldsAdmin()) return asSystem(fn, 'admin-area');
+  return asSystem(fn, 'heartbeat-own-row');
 }
 
 async function loadOwnedHeartbeatById(ownerId: string, id: string): Promise<Heartbeat | null> {
@@ -83,7 +99,12 @@ async function resolveTargetHeartbeat(
   ownerId: string,
 ): Promise<{ ok: true; hb: Heartbeat; via: 'slug' | 'als' } | { ok: false; error: string }> {
   const slugInput = typeof input.slug === 'string' && input.slug.trim() ? input.slug.trim() : null;
-  if (currentWorkspaceScope()) {
+  const scoped = currentWorkspaceScope() !== null;
+  const adminScope = scoped && (await scopeHoldsAdmin());
+  if (adminScope && !(await scopeHasArea('assistants'))) {
+    return { ok: false, error: adminAreaError('assistants') };
+  }
+  if (scoped && !adminScope) {
     // A workspace turn: only the heartbeat that is firing, never another.
     const firing = currentHeartbeat();
     if (!firing || (slugInput && slugInput !== firing.slug)) {
@@ -97,13 +118,13 @@ async function resolveTargetHeartbeat(
     return { ok: true, hb, via: 'als' };
   }
   if (slugInput) {
-    const hb = await loadOwnedHeartbeatBySlug(ownerId, slugInput);
+    const hb = await heartbeatRow(() => loadOwnedHeartbeatBySlug(ownerId, slugInput));
     if (!hb) return { ok: false, error: `heartbeat '${slugInput}' not found for this owner` };
     return { ok: true, hb, via: 'slug' };
   }
   const ctx = currentHeartbeat();
   if (ctx) {
-    const hb = await loadOwnedHeartbeatById(ownerId, ctx.heartbeatId);
+    const hb = await heartbeatRow(() => loadOwnedHeartbeatById(ownerId, ctx.heartbeatId));
     if (!hb) return { ok: false, error: 'heartbeat row not found (race?)' };
     return { ok: true, hb, via: 'als' };
   }

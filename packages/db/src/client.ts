@@ -147,14 +147,20 @@ function turnScopedClient(base: PgSql): PgSql {
   // reserved connection: one round trip, not three (W6a: `begin` waits for
   // BEGIN, and COMMIT is a trip of its own). A failing statement aborts the
   // transaction; the COMMIT then rolls back, and the first error is thrown.
-  const run = async (query: string, params: unknown[] | undefined, values: boolean) => {
+  const run = async (
+    query: string,
+    params: unknown[] | undefined,
+    mode: 'rows' | 'values' | 'simple',
+  ) => {
     const settings = turnScopeParams();
     const conn = await base.reserve();
     try {
       const begin = conn.unsafe('begin');
       const scope = conn.unsafe(SCOPE_SETTINGS_SQL, settings);
       const q = conn.unsafe(query, (params ?? []) as never[]);
-      const main = values ? q.values() : q;
+      // A raw caller's simple protocol (a parameterless query with its own
+      // literals, entities.ts graph paths) works in a scope too (W7a).
+      const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
       const commit = conn.unsafe('commit');
       const out = await Promise.allSettled([begin, scope, main, commit]);
       const failed = out.find((r) => r.status === 'rejected');
@@ -168,9 +174,10 @@ function turnScopedClient(base: PgSql): PgSql {
     options: base.options,
     unsafe(query: string, params?: unknown[]) {
       let pending: Promise<unknown> | null = null;
-      const once = () => (pending ??= run(query, params, false));
+      const once = () => (pending ??= run(query, params, 'rows'));
       return {
-        values: () => run(query, params, true),
+        values: () => run(query, params, 'values'),
+        simple: () => run(query, params, 'simple'),
         then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
         catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
         finally: (fn?: () => void) => once().finally(fn),
