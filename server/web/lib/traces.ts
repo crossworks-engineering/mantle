@@ -1,5 +1,14 @@
 import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
-import { agents, db, traceSteps, traces, type TraceStep } from '@mantle/db';
+import {
+  agents,
+  db,
+  heartbeatFires,
+  runItems,
+  runs,
+  traceSteps,
+  traces,
+  type TraceStep,
+} from '@mantle/db';
 import type {
   TraceDetail,
   TraceFilter,
@@ -106,7 +115,68 @@ export async function countTraces(userId: string, filter: TraceFilter = {}): Pro
   return row?.n ?? 0;
 }
 
-export async function getTrace(userId: string, traceId: string): Promise<TraceDetail | null> {
+/**
+ * The login whose turn trace `traceId` records, or null for system work (W7
+ * integration fix 2, H2): a heartbeat fire's answerer
+ * (heartbeat_fires.answered_by, null the anchor), else the login the trace
+ * names (traces.login_id), else the login of the run it planned or ran
+ * (runs.login_id, by origin_turn_id or an item's trace_ref). The brain
+ * owner's login comes back as the owner id.
+ */
+async function traceTurnLogin(ownerId: string, traceId: string): Promise<string | null> {
+  const [fire] = await db
+    .select({ by: heartbeatFires.answeredBy })
+    .from(heartbeatFires)
+    .where(eq(heartbeatFires.traceId, traceId))
+    .limit(1);
+  if (fire) return fire.by ?? ownerId;
+  const [t] = await db
+    .select({ login: traces.loginId })
+    .from(traces)
+    .where(and(eq(traces.id, traceId), eq(traces.ownerId, ownerId)))
+    .limit(1);
+  if (t?.login) return t.login;
+  const [planned] = await db
+    .select({ login: runs.loginId })
+    .from(runs)
+    .where(and(eq(runs.ownerId, ownerId), eq(runs.originTurnId, traceId)))
+    .limit(1);
+  if (planned?.login) return planned.login;
+  const [ran] = await db
+    .select({ login: runs.loginId })
+    .from(runItems)
+    .innerJoin(runs, eq(runs.id, runItems.runId))
+    .where(and(eq(runs.ownerId, ownerId), eq(runItems.traceRef, traceId)))
+    .limit(1);
+  return ran?.login ?? null;
+}
+
+/**
+ * Whether `reader` (the signed-in login; null or the owner id for the brain
+ * owner) may read trace `traceId` (W7 integration fix 2, H2): each user
+ * reads only their own turns. Another login reads only the traces of turns
+ * it was answered in; the brain owner reads its own and the system's
+ * (no login), never another login's.
+ */
+export async function traceReadable(
+  ownerId: string,
+  traceId: string,
+  reader: string | null,
+): Promise<boolean> {
+  const norm = (l: string | null) =>
+    l && l.toLowerCase() !== ownerId.toLowerCase() ? l.toLowerCase() : null;
+  return norm(await traceTurnLogin(ownerId, traceId)) === norm(reader);
+}
+
+/** One trace with its steps, or null when it is not the owner's or not
+ *  `reader`'s to read (traceReadable). `reader`: the signed-in login, null
+ *  for the brain owner. */
+export async function getTrace(
+  userId: string,
+  traceId: string,
+  reader: string | null,
+): Promise<TraceDetail | null> {
+  if (!(await traceReadable(userId, traceId, reader))) return null;
   const [t] = await db
     .select({
       id: traces.id,

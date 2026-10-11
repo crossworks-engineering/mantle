@@ -284,9 +284,14 @@ export async function getLiveActivity(userId: string): Promise<LiveActivity> {
   return { active, recent, failures };
 }
 
-/** A single action + the brain layers it produced. */
-export async function getJourney(userId: string, traceId: string): Promise<JourneyDetail | null> {
-  const detail = await getTrace(userId, traceId);
+/** A single action + the brain layers it produced. `reader`: the signed-in
+ *  login, null for the brain owner; only its own turns (getTrace). */
+export async function getJourney(
+  userId: string,
+  traceId: string,
+  reader: string | null,
+): Promise<JourneyDetail | null> {
+  const detail = await getTrace(userId, traceId, reader);
   if (!detail) return null;
   let landed: LandedLayers | null = null;
   if (detail.subjectKind === 'node' && detail.subjectId) {
