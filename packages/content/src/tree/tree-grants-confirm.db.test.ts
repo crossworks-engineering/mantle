@@ -71,10 +71,12 @@ describe.skipIf(!URL)('the tree confirm on grants', () => {
     await tree.ensureKindRoot(owner, 'pages');
   }, 180_000);
 
+  // Dropping the scratch database can wait on other suites' connections on
+  // a busy box: give the hook room instead of the 10 s default.
   afterAll(async () => {
     await m?.closeDb();
     await scratch?.drop();
-  });
+  }, 60_000);
 
   it('a new page in a folder Sales reads names Sales; Admin only or the top level asks nothing', async () => {
     const f = await folder('Sales folder');

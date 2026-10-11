@@ -281,9 +281,9 @@ contacts, secrets) cannot be shared.
   `@mantle/content-core/tree`): the most open of the item's own level, its
   inherited share and its embedded level. Tree rows carry it in `level`,
   with `inherited` naming the folder share and `embedded` the share it is
-  read at through an embedder. A page's indexed text is folded for it
-  (`itemLevel`, `packages/content/src/item-level.ts`): text folded for the
-  more open reader is safe for every reader of the row.
+  read at through an embedder. Since workspaces W5b2 a page's indexed text
+  is folded by the workspaces that hold it, and the level helpers
+  (`item-level.ts`) were removed in W5c.
 - **Confirm first.** A share change, an item or folder move, and a folder
   delete that lifts its contents are computed dry first
   (`packages/content/src/tree/visibility.ts`). If who can see anything would
@@ -345,8 +345,8 @@ via }` (`readThroughEmbeds`) names the nearest items that embed it and
   then answers 409 "try again", never SQL (`withBusyRetry`, `@mantle/db`).
 - **Members and clients** read a folder-shared item wherever they read
   items, by the row policy's union rule: its own level, its inherited share
-  or its embedded level is one of the reader's levels (`isReadAt` /
-  `readAtSql`, `packages/content/src/item-level.ts`). The member Library and the
+  or its embedded level is one of the reader's levels (the level helpers,
+  removed in W5c: members read by workspace grants since W5b2). The member Library and the
   client's "Shared with you" (list, open, the `client_shared_*` tools), a
   client's redaction (which references keep their names), drawing and chat
   images, and apps (an app runs at its effective level, so an admin app in
