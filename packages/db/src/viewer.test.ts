@@ -554,7 +554,10 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // snapshots for a caller who moderates its home ('app-trash'). 22 since
     // W7c fix round 2: the anchor's own Telegram history in its replay
     // ('owner-telegram'), owner-only until W7d and granted to no role.
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(22);
+    // 21 since the W7 integration fix: 'member-request' went with the
+    // member request tools (W7b), and no call site names it.
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(21);
+    expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
   });
 
   it('each W7a exit names its own reason', () => {

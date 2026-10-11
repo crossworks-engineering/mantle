@@ -831,9 +831,6 @@ export function runInSystemTx<T>(
  *    (external-access.ts); the rule is in the query.
  *  - `runs-scope-check`: enqueue checks the runs it names carry the scope
  *    (runs boss.ts); the rule is in the query.
- *  - `member-request`: team_request_create files a task on the member's
- *    behalf (builtins-team.ts), the one write a member turn makes;
- *    client_request_create does the same for a client (builtins-client.ts).
  *  - `heartbeat-own-row`: a heartbeat's control tools change the row of the
  *    heartbeat that is firing, and only that one (heartbeats/tools.ts).
  *  - `client-sourced-check`: the client-sourced taint checks and the
@@ -842,10 +839,10 @@ export function runInSystemTx<T>(
  *  - `app-data`: the app_data tools on a login's own MCP
  *    (builtins-app-data.ts) run the app's SQLite work, its registry rows and
  *    its undo snapshot as the system, only after the lookup in the login's
- *    scope found the app (as the app brokers run that work); the my_app_*
- *    tools (builtins-my-apps.ts) the same for an app's files, builds and
- *    history, after the edit check in the login's scope (W6b; they used
- *    'own-space' while member apps lived in personal spaces).
+ *    scope found the app (as the app brokers run that work). (The member's
+ *    my_app_* tools, which used it for an app's files, builds and history,
+ *    went with W7b: every login builds apps with the app tools in its own
+ *    workspaces.)
  *  - `rule-in-query`: inside a REQUEST scope (W6a), the any-login libraries
  *    that hold the workspace rule in their own SQL on the system pool
  *    (lib/workspaces.ts, lib/grants.ts, the shell, access keys): the rule
@@ -894,6 +891,9 @@ export function runInSystemTx<T>(
  *    hides once the app's row is gone (0265), read only for the deleted
  *    apps whose home the caller moderates, checked first (app_deleted_list
  *    and app_undelete, W7b fix round 1).
+ *  - `owner-telegram`: the anchor's own Telegram history in its replay
+ *    (builtins-replay.ts), owner-only until W7d and granted to no role
+ *    (W7c fix round 2).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -904,7 +904,6 @@ export const AS_SYSTEM_TURN_REASONS = [
   'connector-call',
   'workspace-resources',
   'runs-scope-check',
-  'member-request',
   'heartbeat-own-row',
   'client-sourced-check',
   'app-data',
@@ -951,8 +950,8 @@ function strictTurnExits(): boolean {
 
 /**
  * Run `fn` OUTSIDE any viewer scope, on the admin pool: the escape hatch for
- * the rare WRITE a limited caller needs (team_request_create files an
- * admin-level task on the member's behalf). Never for reads. Few call sites,
+ * the rare WRITE a limited caller needs (a heartbeat's control tools change
+ * the firing heartbeat's own row). Never for reads. Few call sites,
  * each one audited; grep for `asSystem(` to list them.
  *
  * Inside a turn scope (W4b) the call must name its `reason` from
