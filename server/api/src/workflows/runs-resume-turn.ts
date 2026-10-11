@@ -77,7 +77,7 @@ import {
   runResponderLoop,
 } from '@mantle/runtime/assistant';
 import { getApiKeyById } from '@mantle/api-keys';
-import { loadProfilePreferences } from '@mantle/content';
+import { loadProfilePreferences, TEAM_PRIVATE_READ_SLUGS } from '@mantle/content';
 import { runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 
@@ -218,6 +218,15 @@ export async function runsResumeTurnImpl(
         .where(eq(runs.id, runId));
       const runLoginId = planned?.loginId ?? null;
 
+      // The surface first: a run of a workspace other than Admin resumes as
+      // its web chat runs (W7d fix round 1, M1), wherever it was planned.
+      const surface = await resumeSurface(
+        run.ownerId,
+        run.originChannel,
+        runLoginId,
+        planned?.workspaceId ?? null,
+      );
+      const workspaceTurn = surface.kind === 'team';
       const prefs = await loadProfilePreferences(run.ownerId);
       const assembled = await assembleResponderTurn({
         ownerId: run.ownerId,
@@ -227,8 +236,13 @@ export async function runsResumeTurnImpl(
         loginId: runLoginId,
         prefs,
         logPrefix: '[runs]',
-        withThinking: true,
-        allowDelegation: true,
+        // A workspace run: no identity block, no owner thinking budget, no
+        // delegation and no private reads, as runTeamTurn.
+        withThinking: !workspaceTurn,
+        allowDelegation: !workspaceTurn,
+        ...(workspaceTurn
+          ? { includeIdentity: false, excludeToolSlugs: TEAM_PRIVATE_READ_SLUGS }
+          : {}),
       });
 
       // The at-most-once token, claimed LAST — after every precondition that
@@ -238,12 +252,6 @@ export async function runsResumeTurnImpl(
       // workflow owns this resume" begins exactly here (plan §4 WP2).
       const claimed = await runDurableStep('claim_resume', () => claimResume(db, groupId));
       if (!claimed) return { resumed: false, outcome: 'duplicate' };
-
-      const surface = await resumeSurface(
-        run.originChannel,
-        runLoginId,
-        planned?.workspaceId ?? null,
-      );
 
       const outcome = await startTrace(
         {
@@ -367,37 +375,46 @@ export async function runsResumeTurnImpl(
 }
 
 /**
- * The surface a resumed run's turn runs under. Channel-routed resumes (0134):
- * a telegram-origin run gets the telegram surface so channel-aware tools
- * behave as they would in the originating chat. Otherwise the run's login:
- * on the web (an owner surface) only for a run of the Admin workspace (NULL
- * = Admin); a run of any other workspace is a member's, so its login gets a
- * team surface, which owner-only tools refuse (W7c fix round 2). No login:
- * the web with none (send tools refuse cleanly).
+ * The surface a resumed run's turn runs under. A run of a workspace other
+ * than Admin is a workspace user's: a team surface for its login, which
+ * owner-only tools refuse (W7c fix round 2), the Telegram-origin run too
+ * (W7d fix round 1, M1: its report still goes back to the chat, delivery is
+ * keyed off the run's origin channel, never the surface kind). Otherwise a
+ * telegram-origin run gets the telegram surface (0134), with the chat's own
+ * bot when the chat is still paired to the run's login (none: the anchor's
+ * run), so channel-aware tools behave as they would in the originating chat;
+ * then the web, with the run's login or none (send tools refuse cleanly).
  */
 export async function resumeSurface(
+  ownerId: string,
   originChannel: { kind: 'telegram'; chat_id: string } | null | undefined,
   loginId: string | null,
   workspaceId: string | null,
 ): Promise<NonNullable<ToolHandlerContext['surface']>> {
-  if (originChannel?.kind === 'telegram') {
-    // The chat's own user (W7d): the run's login, which is the login of the
-    // Telegram turn that planned it.
-    return {
-      kind: 'telegram',
-      telegramChatId: originChannel.chat_id,
-      ...(loginId ? { loginId } : {}),
-    };
-  }
-  if (!loginId) return { kind: 'web' };
-  if (workspaceId) {
+  if (loginId && workspaceId) {
     const [ws] = await db
       .select({ isAdmin: workspaces.isAdmin })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId))
       .limit(1);
-    if (!ws?.isAdmin) return { kind: 'team', loginId };
+    if (!ws?.isAdmin) return { kind: 'team', loginId, privateReads: false };
   }
+  if (originChannel?.kind === 'telegram') {
+    // The chat's own user (W7d): the run's login, which is the login of the
+    // Telegram turn that planned it.
+    const chat = await pairedChatOf({
+      ownerId,
+      loginId: loginId ?? ownerId,
+      telegramChatId: originChannel.chat_id,
+    }).catch(() => null);
+    return {
+      kind: 'telegram',
+      telegramChatId: originChannel.chat_id,
+      ...(chat ? { accountId: chat.accountId } : {}),
+      ...(loginId ? { loginId } : {}),
+    };
+  }
+  if (!loginId) return { kind: 'web' };
   return { kind: 'web', loginId };
 }
 

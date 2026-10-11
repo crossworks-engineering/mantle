@@ -80,6 +80,11 @@ export type ToolHandlerContext = {
          *  its own chats. Absent on a path that names none (a run resumed
          *  into its origin chat, a heartbeat's surface). */
         loginId?: string;
+        /** The bot account the chat belongs to (telegram_chats.account_id,
+         *  W7d fix round 1, L7): set by the runtime from the chat row, so a
+         *  tool sends through the chat's own bot, never the first enabled
+         *  one. Absent on a path that names none. */
+        accountId?: string;
         /** When set, voice/text replies thread under this Telegram
          *  message_id. Optional because a tool-initiated send might
          *  not have a natural parent message. */

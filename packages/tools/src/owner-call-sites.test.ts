@@ -92,26 +92,31 @@ const SITES: Record<string, Site> = {
   },
   'server/api/src/agent/telegram/turn.ts': {
     calls: 1,
-    surface: /surface: \{\s*kind: 'telegram',/,
+    // A workspace assistant's chat is a team surface (W7d fix round 1, M1);
+    // the Admin assistant's and a helper's keep the telegram surface.
+    surface:
+      /surface: workspaceTurn\s*\? \{ kind: 'team', loginId, privateReads \}\s*: \{\s*kind: 'telegram',/,
     scope: 'call',
-    why: "the owner's Telegram chat",
+    why: "a Telegram chat: its paired user's (a workspace assistant's on a team surface)",
   },
   'packages/runtime/src/heartbeats/fire.ts': {
     calls: 1,
     // The Telegram chat only when the fire answers the anchor (W7
     // integration fix 3, F1: telegramChat is null for any other login).
-    surface: /\? \{ kind: 'telegram', telegramChatId: telegramChat \}\s*: \{ kind: 'web' \}/,
+    surface:
+      /: telegramChat && pairedTelegram\s*\? \{\s*kind: 'telegram',\s*telegramChatId: telegramChat,[^}]*accountId: pairedTelegram\.accountId,\s*\}\s*: \{ kind: 'web' \}/,
     scope: 'call',
     why: "the owner's heartbeat, on its telegram or web surface",
   },
   'server/api/src/workflows/runs-resume-turn.ts': {
     calls: 1,
-    // resumeSurface: the origin Telegram chat (naming the run's login, the
-    // chat's own user, W7d), else the run's login on the web for an Admin
-    // run and on a team surface for any other workspace's (W7c fix round 2),
-    // else the web with none. Built before the call.
+    // resumeSurface: a team surface for a run of any workspace but Admin
+    // (W7c fix round 2), its Telegram-origin run too (W7d fix round 1, M1);
+    // else the origin Telegram chat (naming the run's login, the chat's own
+    // user, W7d, and its bot), else the run's login on the web, else the web
+    // with none. Built before the call.
     surface:
-      /kind: 'telegram',\s*telegramChatId: originChannel\.chat_id,\s*\.\.\.\(loginId \? \{ loginId \} : \{\}\),[\s\S]*if \(!loginId\) return \{ kind: 'web' \};[\s\S]*if \(!ws\?\.isAdmin\) return \{ kind: 'team', loginId \};[\s\S]*return \{ kind: 'web', loginId \};/,
+      /if \(!ws\?\.isAdmin\) return \{ kind: 'team', loginId, privateReads: false \};[\s\S]*kind: 'telegram',\s*telegramChatId: originChannel\.chat_id,\s*\.\.\.\(chat \? \{ accountId: chat\.accountId \} : \{\}\),\s*\.\.\.\(loginId \? \{ loginId \} : \{\}\),[\s\S]*if \(!loginId\) return \{ kind: 'web' \};[\s\S]*return \{ kind: 'web', loginId \};/,
     scope: 'file',
     why: "a run resuming on its origin channel, as its login (a member's run on a team surface)",
   },

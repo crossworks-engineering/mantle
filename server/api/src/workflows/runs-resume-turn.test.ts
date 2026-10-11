@@ -127,7 +127,10 @@ vi.mock('@mantle/runtime/assistant', () => ({
 }));
 
 vi.mock('@mantle/api-keys', () => ({ getApiKeyById: async () => h.apiKey }));
-vi.mock('@mantle/content', () => ({ loadProfilePreferences: async () => ({ timezone: 'UTC' }) }));
+vi.mock('@mantle/content', () => ({
+  loadProfilePreferences: async () => ({ timezone: 'UTC' }),
+  TEAM_PRIVATE_READ_SLUGS: ['email_list'],
+}));
 vi.mock('@mantle/voice', () => ({
   getChatAdapter: () => h.adapter,
   stripAudioTags: (t: string) => ({ text: t }),
@@ -443,8 +446,22 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
   // W7c fix round 2: a member's run (a workspace other than Admin) resumes
   // on a team surface, which owner-only tools refuse; an Admin run (its
   // workspace Admin, or NULL = Admin) on the web as its login.
-  const surfaceFor = async (run: Record<string, unknown>, wsRows?: Record<string, unknown>[]) => {
-    seedHappyPath({ run });
+  const surfaceFor = async (
+    run: Record<string, unknown>,
+    wsRows?: Record<string, unknown>[],
+    tg?: { originChannel: { kind: 'telegram'; chat_id: string }; chat?: Record<string, unknown> },
+  ) => {
+    seedHappyPath({
+      run,
+      ...(tg
+        ? {
+            originChannel: tg.originChannel,
+            ...(tg.chat
+              ? { telegramChat: [tg.chat], telegramAccount: [{ id: 'acct-9', enabled: true }] }
+              : {}),
+          }
+        : {}),
+    });
     if (wsRows) fake.queue('workspaces', wsRows);
     let seen = '';
     h.runResponderLoop = vi.fn(async (...a: unknown[]) => {
@@ -458,7 +475,7 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
   it("resumes a member's run (another workspace) on a team surface", async () => {
     expect(
       await surfaceFor({ loginId: 'login-m', workspaceId: 'ws-team' }, [{ isAdmin: false }]),
-    ).toBe('{"kind":"team","loginId":"login-m"}');
+    ).toBe('{"kind":"team","loginId":"login-m","privateReads":false}');
   });
 
   it('resumes an Admin run as its login on the web', async () => {
@@ -473,9 +490,40 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
     );
   });
 
+  // W7d fix round 1, M1: a Telegram-origin run of a workspace other than
+  // Admin is that user's, not the owner's: a team surface and the team
+  // assembly; its report still goes back to the chat (keyed off the origin).
+  it("resumes a member's Telegram-origin run on a team surface, report still to the chat", async () => {
+    const seen = await surfaceFor(
+      { loginId: 'login-m', workspaceId: 'ws-team' },
+      [{ isAdmin: false }],
+      {
+        originChannel: { kind: 'telegram', chat_id: '555' },
+        chat: { id: 'chat-1', accountId: 'acct-9', telegramChatId: '555' },
+      },
+    );
+    expect(seen).toBe('{"kind":"team","loginId":"login-m","privateReads":false}');
+    expect(h.assembleArgs[0]).toMatchObject({
+      includeIdentity: false,
+      withThinking: false,
+      allowDelegation: false,
+      excludeToolSlugs: ['email_list'],
+    });
+    expect(h.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("an Admin Telegram-origin run keeps the telegram surface with the chat's own bot (L7)", async () => {
+    const seen = await surfaceFor({ loginId: null, workspaceId: null }, undefined, {
+      originChannel: { kind: 'telegram', chat_id: '555' },
+      chat: { id: 'chat-1', accountId: 'acct-9', telegramChatId: '555' },
+    });
+    expect(seen).toBe('{"kind":"telegram","telegramChatId":"555","accountId":"acct-9"}');
+    expect(h.assembleArgs[0]).toMatchObject({ withThinking: true, allowDelegation: true });
+  });
+
   it('a gone workspace is not Admin: team surface, never the owner one', async () => {
     expect(await surfaceFor({ loginId: 'login-m', workspaceId: 'ws-gone' }, [])).toBe(
-      '{"kind":"team","loginId":"login-m"}',
+      '{"kind":"team","loginId":"login-m","privateReads":false}',
     );
   });
 });

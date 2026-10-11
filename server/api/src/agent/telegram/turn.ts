@@ -15,7 +15,13 @@
 import { eq } from 'drizzle-orm';
 import { db, agents, type Agent } from '@mantle/db';
 import { accountById } from '@mantle/telegram';
-import { loadProfilePreferences, noteInboundChannel } from '@mantle/content';
+import {
+  isTeamPrivateReadsEnabled,
+  loadProfilePreferences,
+  noteInboundChannel,
+  teamHiddenNodeTypes,
+  TEAM_PRIVATE_READ_SLUGS,
+} from '@mantle/content';
 import { getChatAdapter } from '@mantle/voice';
 import { getAgentTtsWorker } from '@mantle/db';
 import { runDurableStep, step } from '@mantle/tracing';
@@ -112,6 +118,14 @@ export async function runTelegramTurn(args: {
   // gating as the web /assistant path — one implementation, no drift.
   const audioTagInstructions = args.textOnly ? '' : await audioTagInstructionsFor(ownerId, agent);
   const prefs = await loadProfilePreferences(ownerId);
+  // An assistant of a workspace other than Admin runs as its web chat does
+  // (runTeamTurn, W7c): no identity or Journal block, no persona notes, no
+  // owner thinking budget, no delegation, the private reads behind the
+  // owner's switch (default off), and a team surface, so an owner-only tool
+  // refuses (W7d fix round 1, M1). The reply still goes back to this chat:
+  // delivery below is keyed off the chat row, never the surface kind.
+  const workspaceTurn = args.textOnly === true;
+  const privateReads = workspaceTurn && isTeamPrivateReadsEnabled(prefs);
   const assembled = await assembleResponderTurn({
     ownerId,
     agent,
@@ -121,10 +135,22 @@ export async function runTelegramTurn(args: {
     prefs,
     logPrefix: '[agent]',
     systemPromptSuffix: audioTagInstructions,
-    heartbeatSurface: { kind: 'telegram', chatId: row.telegramChatId },
-    // Decider delegation hint (see assemble-turn). No previous-turn context
-    // on this surface yet; the hint is skipped for short messages anyway.
-    inboundText: row.text,
+    ...(workspaceTurn
+      ? {
+          includeIdentity: false,
+          withThinking: false,
+          allowDelegation: false,
+          excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
+          volatileExtras: [
+            `Workspace user: ${row.fromName ?? 'unknown name'} (user ${loginId}), on Telegram. You are serving this person, not the brain's owner.`,
+          ],
+        }
+      : {
+          heartbeatSurface: { kind: 'telegram' as const, chatId: row.telegramChatId },
+          // Decider delegation hint (see assemble-turn). No previous-turn
+          // context on this surface yet; skipped for short messages anyway.
+          inboundText: row.text,
+        }),
   });
   // Replay the open-heartbeats check as a step so /traces keeps its
   // "influenced by heartbeat X" pivot (meta.related_slugs) — the query
@@ -173,6 +199,11 @@ export async function runTelegramTurn(args: {
       agent,
       loginId, // the chat's login, as above
       inboundText: row.text,
+      // A workspace turn reads as its web chat does: no Journal, and the
+      // private corpus hidden unless the owner's switch is on.
+      ...(workspaceTurn
+        ? { includeJournal: false, excludeNodeTypes: teamHiddenNodeTypes(privateReads) }
+        : {}),
       // Exclude the inbound we just recorded; only look before it.
       excludeMessageId: convInbound.id,
       // `new Date(...)` because on a crash-resume replay the journaled
@@ -207,9 +238,10 @@ export async function runTelegramTurn(args: {
             provider: agent.provider,
             systemPrompt: assembled.effectiveSystemPrompt,
             volatileContext: assembled.volatileContext,
-            personaNotes: ctx.personaNotes,
-            journalBlock: assembled.journalBlock,
-            journalRelevant: ctx.journalRelevant,
+            // A workspace turn: no owner persona notes or Journal (as runTeamTurn).
+            personaNotes: workspaceTurn ? [] : ctx.personaNotes,
+            journalBlock: workspaceTurn ? '' : assembled.journalBlock,
+            journalRelevant: workspaceTurn ? undefined : ctx.journalRelevant,
             facts: ctx.facts,
             digests: ctx.digests,
             corpusMap: ctx.corpusMap,
@@ -230,13 +262,17 @@ export async function runTelegramTurn(args: {
       // Surface lets worker-delegation tools (synthesize_speech,
       // etc.) target the right Telegram chat. The replyTo is the
       // message that triggered this turn so the bot's outbound
-      // threads under it.
-      surface: {
-        kind: 'telegram',
-        telegramChatId: row.telegramChatId,
-        loginId,
-        ...(row.telegramMessageId ? { replyToTelegramMessageId: row.telegramMessageId } : {}),
-      },
+      // threads under it. A workspace turn is a team surface (M1): not
+      // the owner's, so owner-only and send tools refuse there.
+      surface: workspaceTurn
+        ? { kind: 'team', loginId, privateReads }
+        : {
+            kind: 'telegram',
+            telegramChatId: row.telegramChatId,
+            accountId: row.accountId,
+            loginId,
+            ...(row.telegramMessageId ? { replyToTelegramMessageId: row.telegramMessageId } : {}),
+          },
     });
 
   // Run via the shared image-fallback wrapper: if the responder errors

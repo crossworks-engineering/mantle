@@ -458,8 +458,13 @@ async function fireInner(
                 surface:
                   scoped && !adminAssistant
                     ? { kind: 'team', privateReads: false }
-                    : telegramChat
-                      ? { kind: 'telegram', telegramChatId: telegramChat }
+                    : telegramChat && pairedTelegram
+                      ? {
+                          kind: 'telegram',
+                          telegramChatId: telegramChat,
+                          // The chat's own bot (W7d fix round 1, L7).
+                          accountId: pairedTelegram.accountId,
+                        }
                       : { kind: 'web' },
               }),
             ),

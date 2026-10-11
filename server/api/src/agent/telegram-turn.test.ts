@@ -207,7 +207,7 @@ vi.mock('@mantle/runtime/agent', () => ({
     return `${text}\n[attachment kind=${info.kind} transcript=${info.transcript ?? ''} node=${info.nodeId ?? ''}]`;
   },
   composeSystemPromptWithSkills: (prompt: string) => prompt,
-  effectiveToolSlugs: () => [] as string[],
+  effectiveToolSlugs: vi.fn(() => [] as string[]),
   extractAttachmentForTurn: vi.fn(async () => h.extractResult),
   invokeAgent: vi.fn(),
   archiveAgentChat: (...a: unknown[]) => h.archiveAgentChat(...a),
@@ -230,7 +230,9 @@ vi.mock('@mantle/runtime/agent', () => ({
   }),
   resolveAgentSkills: vi.fn(async () => []),
   resolveAgentToolGroups: vi.fn(async () => []),
-  resolveAgentTools: vi.fn(async () => []),
+  resolveAgentTools: vi.fn(async (_o: string, slugs: string[] = []) =>
+    slugs.map((slug) => ({ slug })),
+  ),
   resolveBackupAdapter: vi.fn(async () => undefined),
   // Used by run-turn via the real @mantle/runtime/assistant barrel.
   summarizeToolOutcomes: vi.fn(() => ({
@@ -319,7 +321,9 @@ vi.mock('@mantle/content', () => ({
   updateTeamMessageOutcome: vi.fn(),
   recentTeamMessages: vi.fn(async () => []),
   isTeamPrivateReadsEnabled: () => false,
-  TEAM_PRIVATE_READ_SLUGS: [] as string[],
+  // The private reads a workspace turn hides (W7d fix round 1, M1).
+  TEAM_PRIVATE_READ_SLUGS: ['email_list', 'journal_get'],
+  teamHiddenNodeTypes: () => ['credential', 'email', 'journal'],
 }));
 vi.mock('@mantle/content/table-storage', () => ({ sweepLegacyTables: vi.fn(async () => {}) }));
 vi.mock('@mantle/files', () => ({
@@ -620,8 +624,13 @@ describe('handleTelegramMessage: Telegram per paired user (workspaces W7d)', () 
     expect(outboundTurns()[0]).toMatchObject({ loginId: 'member-1' });
     expect(load).toHaveBeenCalledWith(expect.objectContaining({ loginId: 'member-1' }));
     expect(h.traces[0]!.init).toMatchObject({ loginId: 'member-1' });
-    // The tool loop's surface names the member, never the anchor.
-    expect(h.loopCalls[0].surface).toMatchObject({ kind: 'telegram', loginId: 'member-1' });
+    // The tool loop's surface names the member, never the anchor: a team
+    // surface, as its web chat (W7d fix round 1, M1).
+    expect(h.loopCalls[0].surface).toEqual({
+      kind: 'team',
+      loginId: 'member-1',
+      privateReads: false,
+    });
     // Its reminder channel, not the anchor's.
     expect(h.noteInboundChannel).toHaveBeenCalledWith('member-1', 'telegram');
     // A login that is not an Admin user takes a slot of its daily cap.
@@ -684,6 +693,59 @@ describe('handleTelegramMessage: Telegram per paired user (workspaces W7d)', () 
     expect(h.upsertFile).not.toHaveBeenCalled();
     expect(h.loopCalls).toHaveLength(0);
     expect(h.sendMessage.mock.calls[0]![2]).toMatch(/typed messages only/);
+  });
+
+  it("a workspace assistant's chat is not the owner's: no owner-only tool, no private read, no identity (M1)", async () => {
+    h.wsKind = 'workspace';
+    const agentMod = await import('@mantle/runtime/agent');
+    const content = await import('@mantle/content');
+    vi.mocked(agentMod.effectiveToolSlugs).mockReturnValue([
+      'search_nodes',
+      'email_list',
+      'journal_get',
+    ]);
+    const resolve = vi.mocked(agentMod.resolveAgentTools);
+    const load = vi.mocked(agentMod.loadConversationContext);
+    const identity = vi.mocked(content.buildIdentityContext);
+    resolve.mockClear();
+    load.mockClear();
+    identity.mockClear();
+    try {
+      // The anchor too: a workspace assistant's chat is never the owner's.
+      await runTurn(makeMsgRow({ allowlistStatus: 'allowed' }), makeAgent({ slug: 'team' }));
+    } finally {
+      vi.mocked(agentMod.effectiveToolSlugs).mockReturnValue([]);
+    }
+    expect(h.loopCalls).toHaveLength(1);
+    const call = h.loopCalls[0];
+    // A surface the owner-only tools refuse: isOwnerSurface passes only web,
+    // telegram and owner (the db test runs the real dispatch).
+    expect(['web', 'telegram', 'owner']).not.toContain(call.surface.kind);
+    expect(call.surface).toEqual({ kind: 'team', loginId: 'owner-1', privateReads: false });
+    // The private reads never reach the model.
+    expect(call.tools.map((t: { slug: string }) => t.slug)).toEqual(['search_nodes']);
+    // No identity block, no persona notes, no Journal, no delegation, no
+    // owner thinking budget.
+    expect(identity).not.toHaveBeenCalled();
+    expect(h.buildArgs[0]).toMatchObject({ personaNotes: [], journalBlock: '' });
+    expect(call.delegateTo ?? []).toEqual([]);
+    expect(call.thinkingBudget).toBeUndefined();
+    expect(load).toHaveBeenCalledWith(
+      expect.objectContaining({ includeJournal: false, excludeNodeTypes: expect.any(Array) }),
+    );
+    // The reply still goes back to the chat it came from.
+    expect(h.sendMessage).toHaveBeenCalledTimes(1);
+    expect(h.sendMessage.mock.calls[0]![1]).toBe('777');
+  });
+
+  it("the Admin assistant's chat keeps the telegram surface, with the chat's own bot (L7)", async () => {
+    await runTurn(makeMsgRow({ allowlistStatus: 'allowed' }));
+    expect(h.loopCalls[0].surface).toMatchObject({
+      kind: 'telegram',
+      telegramChatId: '777',
+      accountId: 'acct-1',
+      loginId: 'owner-1',
+    });
   });
 
   it('a member past the daily cap gets one plain reply and no turn', async () => {
@@ -1003,6 +1065,7 @@ describe('handleTelegramMessage — parity-drift resolutions (audit #5c)', () =>
     expect(h.loopCalls[0].surface).toEqual({
       kind: 'telegram',
       telegramChatId: '777',
+      accountId: 'acct-1',
       loginId: 'owner-1',
       replyToTelegramMessageId: '555',
     });

@@ -29,7 +29,7 @@ export {
   downloadTelegramFile,
   reactToMessage,
   editMessage,
-  accountForChat,
+  accountForSurface,
   accountById,
   sendApprovalCard,
   editApprovalCard,

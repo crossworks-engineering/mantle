@@ -31,7 +31,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
+import { accountForSurface, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { ensureAutoFiledFolder, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
 import type { ImageGenModelInfo, ImageGenParam, TtsParam } from '@mantle/voice';
@@ -223,7 +223,7 @@ const synthesize_speech: BuiltinToolDef = {
 
     if (ctx.surface.kind === 'telegram') {
       try {
-        const account = await accountForChat(ctx.surface.telegramChatId);
+        const account = await accountForSurface(ctx.surface.accountId);
         if (!account) {
           return {
             ok: false,
@@ -352,7 +352,7 @@ const extract_from_image: BuiltinToolDef = {
           error: 'telegram_file_id only works inside a Telegram turn. Use node_id instead.',
         };
       }
-      const account = await accountForChat(ctx.surface.telegramChatId);
+      const account = await accountForSurface(ctx.surface.accountId);
       if (!account) {
         return {
           ok: false,
@@ -753,7 +753,7 @@ const generate_image: BuiltinToolDef = {
     let telegramMessageId: number | null = null;
     if (ctx.surface?.kind === 'telegram') {
       try {
-        const account = await accountForChat(ctx.surface.telegramChatId);
+        const account = await accountForSurface(ctx.surface.accountId);
         if (account) {
           const caption =
             result.revisedPrompt && result.revisedPrompt !== prompt

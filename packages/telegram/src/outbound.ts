@@ -371,27 +371,25 @@ export async function editMessage(
 }
 
 /**
- * Lookup helper for tools that get `chat_id` (Telegram's id) but need the
- * underlying account. Picks the first enabled account that has seen this
- * chat — good enough for v1 since users typically run one bot.
+ * The enabled bot a tool on a Telegram surface sends through (W7d fix round
+ * 1, L7): the chat's own account, which the runtime stamps on the surface
+ * from the chat row. None stamped, or that bot off: null, never the first
+ * enabled bot of the box (that was `accountForChat`, which ignored the chat
+ * and could reach a chat through another user's bot).
  */
-export async function accountForChat(_chatId: string): Promise<TelegramAccount | null> {
-  // For now, just return the first enabled account; multi-bot routing comes
-  // later. Lookup is by chat would require a join through telegram_chats,
-  // and we'd need to handle the "chat hasn't been seen yet" case anyway.
-  const [account] = await db
-    .select()
-    .from(telegramAccounts)
-    .where(eq(telegramAccounts.enabled, true))
-    .limit(1);
-  return account ?? null;
+export async function accountForSurface(
+  accountId: string | null | undefined,
+): Promise<TelegramAccount | null> {
+  if (!accountId) return null;
+  const account = await accountById(accountId);
+  return account?.enabled ? account : null;
 }
 
 /**
  * The account (bot) a known message arrived on. Inbound rows carry the
  * `account_id` of the bot that received them, so replies + file downloads use
- * the *same* bot — the multi-bot-correct counterpart to `accountForChat`'s
- * "first enabled" shortcut.
+ * the *same* bot — the multi-bot-correct lookup (the old
+ * `accountForChat` returned the first enabled account; removed in W7d).
  */
 export async function accountById(id: string): Promise<TelegramAccount | null> {
   const [account] = await db

@@ -74,7 +74,7 @@ vi.mock('@mantle/api-keys', async (importOriginal) => {
 });
 vi.mock('@mantle/telegram', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/telegram')>();
-  return { ...actual, accountForChat: vi.fn(), sendPhoto: vi.fn(), sendVoice: vi.fn() };
+  return { ...actual, accountForSurface: vi.fn(), sendPhoto: vi.fn(), sendVoice: vi.fn() };
 });
 vi.mock('@mantle/voice', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/voice')>();
@@ -113,7 +113,7 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
 
 import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { accountForChat, sendPhoto, sendVoice } from '@mantle/telegram';
+import { accountForSurface, sendPhoto, sendVoice } from '@mantle/telegram';
 import { getImageGenAdapter, getSttAdapter, getTtsAdapter } from '@mantle/voice';
 import {
   createFolder,
@@ -143,7 +143,13 @@ const ctx: ToolHandlerContext = { ownerId: 'o1' };
 const WEB_CTX: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const TG_CTX: ToolHandlerContext = {
   ownerId: 'o1',
-  surface: { kind: 'telegram', telegramChatId: '42', replyToTelegramMessageId: '7' },
+  // The chat's own bot, stamped from the chat row (W7d fix round 1, L7).
+  surface: {
+    kind: 'telegram',
+    telegramChatId: '42',
+    accountId: 'acct-7',
+    replyToTelegramMessageId: '7',
+  },
 };
 const TEAM_CTX: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'team', contactId: 'c1' } };
 
@@ -290,7 +296,7 @@ beforeEach(() => {
   vi.mocked(upsertFile).mockResolvedValue({ id: 'n1' } as never);
   vi.mocked(fileById).mockResolvedValue(null);
   vi.mocked(readFileById).mockResolvedValue(null);
-  vi.mocked(accountForChat).mockResolvedValue({ id: 'acc' } as never);
+  vi.mocked(accountForSurface).mockResolvedValue({ id: 'acc' } as never);
   vi.mocked(sendPhoto).mockResolvedValue(777);
   vi.mocked(sendVoice).mockResolvedValue(99);
   vi.mocked(mediaSidecarEnabled).mockReturnValue(true);
@@ -489,7 +495,7 @@ describe('generate_image', () => {
 
   it('delivers on Telegram via sendPhoto and reports the message id', async () => {
     const out = outputOf(await generateImage.handler({ prompt: 'A red fox' }, TG_CTX));
-    expect(accountForChat).toHaveBeenCalledWith('42');
+    expect(accountForSurface).toHaveBeenCalledWith('acct-7');
     expect(sendPhoto).toHaveBeenCalledWith({ id: 'acc' }, '42', PNG, {
       replyTo: '7',
       caption: '🎨 A red fox',
@@ -585,7 +591,7 @@ describe('synthesize_speech', () => {
   it('on Telegram: opus, sendVoice threaded under the inbound message, no artifact', async () => {
     const res = await synthesizeSpeech.handler({ text: 'hi' }, TG_CTX);
     expect(ttsAdapter.synthesize).toHaveBeenCalledWith(expect.objectContaining({ format: 'opus' }));
-    expect(accountForChat).toHaveBeenCalledWith('42');
+    expect(accountForSurface).toHaveBeenCalledWith('acct-7');
     expect(sendVoice).toHaveBeenCalledWith({ id: 'acc' }, '42', MP3, { replyTo: '7' });
     expect(outputOf(res)).toMatchObject({
       sent: true,
@@ -596,11 +602,11 @@ describe('synthesize_speech', () => {
   });
 
   it('on Telegram: a missing account or a failed send is a tool error', async () => {
-    vi.mocked(accountForChat).mockResolvedValue(null);
+    vi.mocked(accountForSurface).mockResolvedValue(null);
     expect(errorOf(await synthesizeSpeech.handler({ text: 'hi' }, TG_CTX))).toMatch(
       /No Telegram account configured for chat 42/,
     );
-    vi.mocked(accountForChat).mockResolvedValue({ id: 'acc' } as never);
+    vi.mocked(accountForSurface).mockResolvedValue({ id: 'acc' } as never);
     vi.mocked(sendVoice).mockRejectedValue(new Error('403 bot blocked'));
     expect(errorOf(await synthesizeSpeech.handler({ text: 'hi' }, TG_CTX))).toBe('403 bot blocked');
   });
@@ -931,7 +937,7 @@ describe('show_image', () => {
     vi.mocked(fileById).mockResolvedValue(META as never);
     vi.mocked(readFileById).mockResolvedValue({ bytes: PNG } as never);
     const res = await showImage.handler({ file_id: 'f1', caption: 'The APN screen' }, TG_CTX);
-    expect(accountForChat).toHaveBeenCalledWith('42');
+    expect(accountForSurface).toHaveBeenCalledWith('acct-7');
     expect(sendPhoto).toHaveBeenCalledWith({ id: 'acc' }, '42', PNG, {
       replyTo: '7',
       caption: 'The APN screen',

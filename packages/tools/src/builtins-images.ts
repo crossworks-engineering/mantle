@@ -28,7 +28,7 @@
  */
 
 import { fileById, readFileById } from '@mantle/files';
-import { accountForChat, sendPhoto } from '@mantle/telegram';
+import { accountForSurface, sendPhoto } from '@mantle/telegram';
 import { nodeUrl } from '@mantle/content';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 import { str } from './coerce';
@@ -110,7 +110,7 @@ const show_image: BuiltinToolDef = {
     let telegramMessageId: number | null = null;
     if (ctx.surface?.kind === 'telegram') {
       try {
-        const account = await accountForChat(ctx.surface.telegramChatId);
+        const account = await accountForSurface(ctx.surface.accountId);
         if (account) {
           telegramMessageId = await sendPhoto(account, ctx.surface.telegramChatId, fetched.bytes, {
             replyTo: ctx.surface.replyToTelegramMessageId,
