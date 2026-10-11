@@ -165,7 +165,8 @@ async function callerFromLoginToken(token: string): Promise<McpCaller | null> {
  * An inbound API key (`mtlk_`, migration 0232): it acts as its login (that
  * login's workspaces, workspaces plan 7.5) and only narrows it: the one MCP
  * surface in the login's scope, held to the key's write switch, its risky
- * tools and its areas (W7b: a member key as an admin key).
+ * tools and its areas (W7b: a member key as an admin key). An `api_only`
+ * key (0268) is refused here and works on /api/v1 only.
  * A refused key is a 401 like any bad bearer; the failed try counts
  * against the caller's address, as on /api/v1.
  */
@@ -188,6 +189,19 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
     return null;
   }
   const key = check.grant;
+  // A key made for /api/v1 by a login that never had MCP (0268, W7b fix
+  // round 2): it keeps working there and never reaches MCP. Refused like a
+  // bad bearer, but not counted as a failed try (the key is real).
+  if (key.apiOnly) {
+    auditKeyRefusal({
+      keyId: key.id,
+      reason: 'api_only',
+      method: req.method,
+      path: '/api/mcp',
+      ...requestMetaFrom(req),
+    });
+    return null;
+  }
   const anchorId = await resolveSingleOwnerId();
   if (!anchorId) return null;
   const keyWrite = key.access === 'read_write';

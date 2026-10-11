@@ -122,6 +122,9 @@ export type AccessKeyGrant = {
   createdBy: string | null;
   /** The login row the key was checked against on this request. */
   login: LoginRow;
+  /** The key works on /api/v1 only (0268, W7b fix round 2): /api/mcp
+   *  refuses it. Absent = both. */
+  apiOnly?: true;
 };
 
 export type AccessKeyRefusal = 'malformed' | 'unknown' | 'revoked' | 'expired' | 'login';
@@ -206,6 +209,7 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
       riskyTools: row.loginRole === 'admin' ? row.riskyTools : [],
       createdBy: row.createdBy,
       login,
+      ...(row.apiOnly ? { apiOnly: true as const } : {}),
     },
   };
 }

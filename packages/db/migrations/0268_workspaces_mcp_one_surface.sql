@@ -26,7 +26,14 @@
 --    disabled; a login whose MCP was on with Write off keeps its OAuth
 --    grants and its peers read-only (the grant's scope carries
 --    `mantle:read-only`, which a refresh keeps; the peer's write switch
---    off). Only credentials made before the archive are touched. It only
+--    off). The API keys (mtlk_) by the same switch (W7b fix round 2, M-b):
+--    a key of a login whose MCP was off is revoked, one of a login whose
+--    Write was off is read-only. A member or client login with no switch
+--    row never reached MCP: its keys were made for /api/v1, so they stay
+--    there (`api_only`, which resolveMcpCaller refuses), and a peer bound
+--    to it is disabled. Only credentials made before the archive are
+--    touched (for a login with no row, before the first run: the earliest
+--    archived_at, which every record of this migration shares). It only
 --    narrows, starts no work, and a second run changes nothing.
 
 -- The triggers below take a lock on agents and tool_groups: wait at most
@@ -157,3 +164,42 @@ UPDATE "public"."mantle_peers" p SET "write_enabled" = false
   FROM "public"."archive_mcp_login_access" a
  WHERE p."acts_as_login_id" = a."login_id" AND a."enabled" AND NOT a."write_enabled"
    AND p."write_enabled" AND p."created_at" <= a."archived_at";
+--> statement-breakpoint
+
+-- The API keys (W7b fix round 2, M-b). `api_only`: the key works on
+-- /api/v1 only, never on /api/mcp. Set here only; a new key is made
+-- without it (every login reaches MCP since W7b).
+ALTER TABLE "public"."access_keys"
+  ADD COLUMN IF NOT EXISTS "api_only" boolean NOT NULL DEFAULT false;
+--> statement-breakpoint
+UPDATE "public"."access_keys" k SET "revoked_at" = now()
+  FROM "public"."archive_mcp_login_access" a
+ WHERE k."login_id" = a."login_id" AND NOT a."enabled"
+   AND k."revoked_at" IS NULL AND k."created_at" <= a."archived_at";
+--> statement-breakpoint
+UPDATE "public"."access_keys" k SET "access" = 'read'
+  FROM "public"."archive_mcp_login_access" a
+ WHERE k."login_id" = a."login_id" AND a."enabled" AND NOT a."write_enabled"
+   AND k."access" <> 'read' AND k."revoked_at" IS NULL AND k."created_at" <= a."archived_at";
+--> statement-breakpoint
+UPDATE "public"."access_keys" k SET "api_only" = true
+ WHERE k."login_role" IN ('member', 'client') AND NOT k."api_only" AND k."revoked_at" IS NULL
+   AND NOT EXISTS (SELECT 1 FROM "public"."archive_mcp_login_access" a
+                    WHERE a."login_id" = k."login_id")
+   AND k."created_at" <= coalesce(
+         (SELECT min(x."archived_at") FROM (
+            SELECT "archived_at" FROM "public"."archive_mcp_login_access"
+            UNION ALL
+            SELECT "archived_at" FROM "public"."archive_tool_levels") x),
+         now());
+--> statement-breakpoint
+UPDATE "public"."mantle_peers" p SET "enabled" = false
+ WHERE p."acts_as_role" IN ('member', 'client') AND p."enabled"
+   AND NOT EXISTS (SELECT 1 FROM "public"."archive_mcp_login_access" a
+                    WHERE a."login_id" = p."acts_as_login_id")
+   AND p."created_at" <= coalesce(
+         (SELECT min(x."archived_at") FROM (
+            SELECT "archived_at" FROM "public"."archive_mcp_login_access"
+            UNION ALL
+            SELECT "archived_at" FROM "public"."archive_tool_levels") x),
+         now());

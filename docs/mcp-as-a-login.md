@@ -26,7 +26,13 @@ the switch gone, no credential it had stopped comes back (W7b fix round 1):
 grants revoked and the peers bound to it disabled; a login whose MCP was on
 with Write off keeps its grants read-only (their scope carries
 `mantle:read-only`, which a refresh keeps; `MCP_READ_ONLY_SCOPE` in
-`server/web/lib/mcp-oauth.ts`) and its peers' write switch off. A read-only
+`server/web/lib/mcp-oauth.ts`) and its peers' write switch off. Its API
+keys (`mtlk_`) go the same way (W7b fix round 2): revoked where MCP was
+off, read-only where Write was off. A member or client login with no
+switch row never reached MCP: its keys were made for `/api/v1`, so 0268
+marks them `api_only` (they keep working there; `/api/mcp` refuses them)
+and disables the peers bound to it. Only credentials made before the
+archive are touched; a key made since has no `api_only`. A read-only
 connection lists only the tools that read. The box-level remote MCP
 switch still gates everything, as a pause: while it is off `/api/mcp`, the
 consent page, client registration and the token endpoint all answer 404, so
@@ -78,8 +84,11 @@ may change): the `spends` builtins (a web search, an image, a summary),
 `ask_as_responder` (`spendsOwnerKeys` in
 `packages/mcp-core/src/login-surface.ts`). A tool not listed is not
 registered, so a direct call is refused too. `search_chunks` stays (its
-query embedding is the one `search_nodes` makes). A workspace assistant's
-turn keeps its own rules (the member turn ledger).
+query embedding is the one `search_nodes` makes), but on such a connection
+it never runs its paid step, the `passage_scoring` decider (W7b fix round
+2): the connection carries `ownerKeysOff` (`LoginMcpChannel`) and the
+search returns the plain ranking. A workspace assistant's turn keeps its
+own rules (the member turn ledger).
 
 ## Where a create lands (W7b)
 
@@ -101,7 +110,10 @@ the rule, never in Admin, and the database refuses a kind that lives only
 in Admin. Those creates (`ADMIN_KIND_CREATE_TOOL_SLUGS`: a contact, a
 journal entry, a saved place) are not listed for such a user and are
 refused before they run. An app such a user makes, copies or imports is
-made at team rules with that user named its author.
+made at team rules with that user named its author. A user outside Admin
+who is in no workspace has no private workspace: each of its creates is
+refused with a reply that says so (`NO_WORKSPACE_CREATE_ERROR`), before the
+database would refuse the row.
 
 A deleted app's snapshots are hidden from a scope once its row is gone, so
 `app_deleted_list` and `app_undelete` read the trash on the system pool by
@@ -157,7 +169,9 @@ of its workspaces (`listLoginConnectorTools`). A tool with the admin's
 read-only mark is a read; one without is a write and is offered only with
 the connection's write. A tool that needs a confirmation is never offered.
 A connector tool is in no key area, so only an all-areas key reaches it.
-The call runs in the login's scope and dispatch checks the connector again
+The call runs in the login's scope and under its create home, on the same
+server as every builtin (`loginToolServer` in
+`packages/mcp-core/src/build-server.ts`), and dispatch checks the connector again
 (`connectorScopeRefused`): a resource of the scope's workspaces, and for a
 write that resource's Write on where the login is a Moderator. Every call
 lands an `audit_log` row (`mcp.connector.read` / `mcp.connector.write`)
