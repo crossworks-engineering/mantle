@@ -48,6 +48,7 @@ import {
   isBuiltinReadOnly,
   isBuiltinSpending,
   listLoginConnectorTools,
+  loginConnectorRefused,
   type AdminGateView,
   type LoginMcpChannel,
 } from '@mantle/tools';
@@ -393,6 +394,19 @@ async function callConnectorTool(caller: McpCaller, row: Tool, args: Record<stri
       ],
       isError: true,
     };
+  }
+  // The connector as a workspace resource (W4b fix round 1, M3), checked
+  // here too: it must be one of the login's workspaces' resources, and a
+  // write needs that resource's Write tick in a workspace the login
+  // moderates. Dispatch checks the call's scope again.
+  const refused = await loginConnectorRefused(
+    caller.anchorId,
+    caller.loginId,
+    (row.handler as { group: string }).group,
+    write,
+  );
+  if (refused) {
+    return { content: [{ type: 'text' as const, text: `Error: ${refused}` }], isError: true };
   }
   logConnectorCall(caller, row, args, write);
   try {

@@ -269,7 +269,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       });
       expect(gated).toEqual([]);
       // The member reads Team's note and its own, never the Admin one.
-      const found = text(await c.call('search', { q: tag }));
+      const found = text(await c.call('note_list', {}));
       expect(found).toContain(MARK.team);
       expect(found).not.toContain(MARK.admin);
       expect(found).not.toContain(MARK.other);
@@ -390,7 +390,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       expect(text(refused)).toMatch(/keys area is on/);
     } finally {
       await c.close();
-      await x(sql`update workspace_users set limits = null
+      await x(sql`update workspace_users set limits = '{}'::jsonb
         where workspace_id = ${adminWs} and login_id = ${admin2}`);
     }
   }, 300_000);

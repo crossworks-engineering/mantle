@@ -318,19 +318,21 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       await setTeamResource(null);
       const out = await call(member);
       expect(out.isError).toBe(true);
-      expect(out.text).toMatch(/not one of this workspace.s resources/);
+      expect(out.text).toMatch(/not a resource of any of your workspaces/);
     });
 
     it('a write tool refused with Write off', async () => {
       await setTeamResource({ write: false });
-      expect((await call(member)).text).toMatch(/Write switched on in this workspace/);
+      expect((await call(member)).text).toMatch(
+        /Write switched on in a workspace where you are a Moderator/,
+      );
     });
 
     it('a write tool refused when the login moderates no workspace holding it', async () => {
       await setTeamResource({ write: true });
       await x(sql`update workspace_users set moderator = false
         where workspace_id = ${team} and login_id = ${member2}`);
-      expect((await call(member2)).text).toMatch(/to be a Moderator here/);
+      expect((await call(member2)).text).toMatch(/where you are a Moderator/);
     });
 
     it('a login with no workspace on a migrated brain is refused', async () => {
