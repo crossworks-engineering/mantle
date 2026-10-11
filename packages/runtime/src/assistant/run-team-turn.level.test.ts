@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
     id: string;
     slug: string;
     name: string;
+    workspaceId?: string;
   } | null,
   appended: 0,
   /** What the agent's groups resolve to (the assembly's allowedTools). */
@@ -230,6 +231,16 @@ describe('runTeamTurn runs in the agent scope', () => {
       runTeamTurn('owner-1', 'hello', { loginId: 'login-1', agentSlug: 'admin-assistant' }),
     ).rejects.toThrow(/not the Team workspace's assistant/);
     expect(h.levels).toEqual(['team-assistant:admin']);
+  });
+
+  it('control: an assistant that does not answer in the Team workspace is refused (fail closed)', async () => {
+    // The resource names it, but its own workspace is another one (or none):
+    // the turn would not run in the Team scope, so it never runs.
+    h.team = { id: 'agent-1', slug: 'team-responder', name: 'Team', workspaceId: 'ws-team' };
+    await expect(runTeamTurn('owner-1', 'hello', { loginId: 'login-1' })).rejects.toThrow(
+      /does not answer in the Team workspace/,
+    );
+    expect(h.levels).toEqual(['team-assistant:admin', 'agent:admin']);
   });
 
   it('a member turn keeps what its groups grant', async () => {

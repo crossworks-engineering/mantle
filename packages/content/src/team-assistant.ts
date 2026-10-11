@@ -11,12 +11,13 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { agents, db, workspaceResources, workspaces } from '@mantle/db';
 
-export type TeamAssistant = { id: string; slug: string; name: string };
+/** The assistant, and the Team workspace it answers in. */
+export type TeamAssistant = { id: string; slug: string; name: string; workspaceId: string };
 
 /** The enabled assistant of the brain's live Team workspace, or null. */
 export async function teamAssistant(ownerId: string): Promise<TeamAssistant | null> {
   const [row] = await db
-    .select({ id: agents.id, slug: agents.slug, name: agents.name })
+    .select({ id: agents.id, slug: agents.slug, name: agents.name, workspaceId: workspaces.id })
     .from(workspaces)
     .innerJoin(
       workspaceResources,

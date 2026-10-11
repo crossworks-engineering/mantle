@@ -159,6 +159,14 @@ async function resolveMemberAgent(ownerId: string, slug: string | undefined): Pr
       "Team chat isn't provisioned on this brain: the Team workspace has no enabled assistant.",
     );
   }
+  // The turn scope comes from the agent's own workspace (withAgentViewer):
+  // it must be the Team workspace, or the turn would run in another scope
+  // (none at all would fall back to the agent's stored level). Fail closed.
+  if (agent.workspaceId !== team.workspaceId) {
+    throw new Error(
+      `Agent '${agent.slug}' does not answer in the Team workspace: a member turn is refused.`,
+    );
+  }
   return agent;
 }
 
