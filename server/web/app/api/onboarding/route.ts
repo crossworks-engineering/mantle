@@ -15,7 +15,8 @@ import {
   saveStep,
   testKey,
 } from '@/lib/onboarding-steps';
-import { vaultPairRefusalFor } from '@/lib/tools';
+import { loadProfilePreferences } from '@mantle/content';
+import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's
@@ -33,6 +34,12 @@ export async function GET() {
   return NextResponse.json(await onboardingState(user.id));
 }
 
+/** Whether the saved Models step pins the routes to an Azure endpoint. */
+async function provisionsAzureRoute(ownerId: string): Promise<boolean> {
+  const models = (await loadProfilePreferences(ownerId)).onboardingModels;
+  return models?.route === 'azure' && !!models.azureBaseUrl;
+}
+
 /** Step dispatcher. Body is `{ action, ...payload }`. */
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
@@ -43,10 +50,14 @@ export async function POST(req: Request) {
   // with the vault's 'custom' key, is the keys area's, not the settings
   // area's (W7a fix round 4, @mantle/tools secret-ref-gate.ts). The anchor
   // login always may.
+  // Provisioning writes the saved Azure endpoint and the 'custom' key onto
+  // the model routes: that pairing is the provisioner's too (W7 integration
+  // fix), whoever saved the Models step.
   const touchesVault =
     body.action === 'saveKey' ||
     (body.action === 'embedding' && String(body.plaintext ?? '').trim() !== '') ||
-    (body.action === 'models' && body.route === 'azure');
+    (body.action === 'models' && body.route === 'azure') ||
+    (body.action === 'provision' && (await provisionsAzureRoute(user.id)));
   if (touchesVault) {
     const refused = await vaultPairRefusalFor(user);
     if (refused) {
@@ -70,7 +81,7 @@ export async function POST(req: Request) {
     case 'testKey':
       return NextResponse.json(await testKey(user.id, String(body.service ?? '')));
     case 'provision':
-      return NextResponse.json(await provision(user.id));
+      return NextResponse.json(await provision(user.id, toolMakerFor(user)));
     case 'infra':
       return NextResponse.json(
         await runInfraChecks(req.headers.get('x-forwarded-host') ?? req.headers.get('host')),

@@ -536,7 +536,7 @@ export async function run(o: Options, io: Io): Promise<number> {
 
   if (reached('provision')) {
     hd('Set up');
-    const r = await provision(owner.id);
+    const r = await provision(owner.id, null); // the anchor, at the terminal
     ok(`Provisioned${r.assistantAgentId ? ': your assistant is ready' : ''}`);
     await advance('sanity');
   }

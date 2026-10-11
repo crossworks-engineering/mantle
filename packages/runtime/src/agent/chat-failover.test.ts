@@ -66,6 +66,7 @@ const ROUTES: ChatRoutes = {
     apiKeyId: null,
     baseUrl: null,
     viaTailnet: false,
+    configuredBy: null,
   },
   backup: {
     provider: 'backup',
@@ -73,6 +74,7 @@ const ROUTES: ChatRoutes = {
     apiKeyId: null,
     baseUrl: null,
     viaTailnet: false,
+    configuredBy: null,
   },
 };
 const OPTS = { messages: [{ role: 'user' as const, content: 'hi' }] };
@@ -134,6 +136,7 @@ describe('chatWithFailover', () => {
         apiKeyId: null,
         baseUrl: 'http://gpu-box:11434/v1',
         viaTailnet: true,
+        configuredBy: null,
       },
       backup: null,
     };
@@ -154,6 +157,7 @@ describe('chatWithFailover', () => {
         apiKeyId: null,
         baseUrl: 'http://primary-box:11434/v1',
         viaTailnet: true,
+        configuredBy: null,
       },
       backup: {
         provider: 'backup',
@@ -161,6 +165,7 @@ describe('chatWithFailover', () => {
         apiKeyId: null,
         baseUrl: null,
         viaTailnet: false,
+        configuredBy: null,
       },
     };
     const r = await chatWithFailover('o', routes, OPTS);
@@ -183,6 +188,7 @@ describe('resolveChatRoutes', () => {
     backupEnabled: true,
     backupBaseUrl: null,
     backupViaTailnet: false,
+    configuredBy: null,
   };
 
   it('maps primary + enabled backup (incl. per-route baseUrl/viaTailnet)', () => {
@@ -244,25 +250,25 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
   it('returns the local-keyless sentinel for provider=local with no key', async () => {
     h.apiKeyByIdReturn = null;
     h.apiKeyByServiceReturn = null;
-    const r = await resolveChatKey('o', { provider: 'local', apiKeyId: null });
+    const r = await resolveChatKey('o', { provider: 'local', apiKeyId: null, configuredBy: null });
     expect(r).toEqual({ ok: true, apiKey: 'local' });
   });
 
   it('honours a pinned key even for local (e.g. a token-guarded proxy)', async () => {
     h.apiKeyByIdReturn = 'pinned';
-    const r = await resolveChatKey('o', { provider: 'local', apiKeyId: 'key-id' });
+    const r = await resolveChatKey('o', { provider: 'local', apiKeyId: 'key-id', configuredBy: null });
     expect(r).toEqual({ ok: true, apiKey: 'pinned' });
   });
 
   it('returns the resolved key for a cloud provider that has one', async () => {
-    const r = await resolveChatKey('o', { provider: 'anthropic', apiKeyId: 'key-id' });
+    const r = await resolveChatKey('o', { provider: 'anthropic', apiKeyId: 'key-id', configuredBy: null });
     expect(r).toEqual({ ok: true, apiKey: 'k' });
   });
 
   it('misses with no_api_key_id when a cloud provider has NO key configured', async () => {
     h.apiKeyByIdReturn = null;
     h.apiKeyByServiceReturn = null;
-    const r = await resolveChatKey('o', { provider: 'openrouter', apiKeyId: null });
+    const r = await resolveChatKey('o', { provider: 'openrouter', apiKeyId: null, configuredBy: null });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.disposition).toBe('no_api_key_id');
   });
@@ -271,7 +277,7 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
     // apiKeyId is set, but neither the pinned lookup nor the service key resolves.
     h.apiKeyByIdReturn = null;
     h.apiKeyByServiceReturn = null;
-    const r = await resolveChatKey('o', { provider: 'anthropic', apiKeyId: 'deleted-id' });
+    const r = await resolveChatKey('o', { provider: 'anthropic', apiKeyId: 'deleted-id', configuredBy: null });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.disposition).toBe('api_key_not_decryptable');
   });

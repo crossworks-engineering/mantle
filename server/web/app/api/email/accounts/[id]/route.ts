@@ -32,7 +32,7 @@ const EditBody = z.object({
 
 /** The refusal of a host or port change that would reuse the stored password. */
 const MAIL_HOST_NEEDS_PASSWORD =
-  "This moves the account's IMAP or SMTP host or port, and a blank password would send the stored one there: re-enter the app password with the new host, or ask a user with the keys area to make this change.";
+  "This moves the account's IMAP or SMTP host or port, or turns its TLS off, and a blank password would send the stored one there: re-enter the app password with the new host, or ask a user with the keys area to make this change.";
 
 const sameHost = (a: string | null | undefined, b: string | null | undefined) =>
   (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
@@ -41,18 +41,31 @@ const sameHost = (a: string | null | undefined, b: string | null | undefined) =>
  * Whether `input` points the account's sealed password at a host or port
  * other than the stored ones (W7a fix round 5): the IMAP host or port, or an
  * SMTP host or port set and different. Removing the SMTP server sends
- * nothing anywhere.
+ * nothing anywhere. Turning TLS off on either side (secure or smtpSecure,
+ * true to false) is a move too (W7 integration fix): the same host, reached
+ * without implicit TLS, can be a different listener or an interceptor.
  */
 function mailDestinationMoved(
   stored: {
     imapHost: string | null;
     imapPort: number | null;
+    imapSecure: boolean;
     smtpHost: string | null;
     smtpPort: number | null;
+    smtpSecure: boolean;
   },
-  input: { host: string; port: number; smtpHost?: string | null; smtpPort?: number | null },
+  input: {
+    host: string;
+    port: number;
+    secure: boolean;
+    smtpHost?: string | null;
+    smtpPort?: number | null;
+    smtpSecure: boolean;
+  },
 ): boolean {
   if (!sameHost(input.host, stored.imapHost) || input.port !== stored.imapPort) return true;
+  if (stored.imapSecure && !input.secure) return true;
+  if (stored.smtpSecure && !input.smtpSecure) return true;
   if (input.smtpHost && !sameHost(input.smtpHost, stored.smtpHost)) return true;
   return input.smtpPort != null && input.smtpPort !== stored.smtpPort;
 }
@@ -63,8 +76,9 @@ function mailDestinationMoved(
  * A blank password reuses the sealed one, and the probe (test or save) sends
  * it to the host and port in the body. That is a vault secret paired with a
  * host of the writer's choosing (W7a fix round 5, @mantle/tools
- * secret-ref-gate.ts): with a host or port other than the stored ones, the
- * password must be typed again, unless the login holds the keys area.
+ * secret-ref-gate.ts): with a host or port other than the stored ones, or
+ * with TLS turned off, the password must be typed again, unless the login
+ * holds the keys area.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();

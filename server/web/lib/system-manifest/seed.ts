@@ -155,6 +155,20 @@ export async function seedManifestWorkers(
   return { created, skipped };
 }
 
+/** The host fields a manifest route writes over a stored one (the Studio
+ *  reset, the config adopt): no base URL and no tailnet on either route, so
+ *  the vault key it sets goes to the provider's own host, and configured_by
+ *  null (nothing is paired, the anchor's). The backup's base URL is cleared
+ *  too: configured_by covers both routes, and a null stamp must not vouch
+ *  for a backup host some other login paired. */
+const MANIFEST_ROUTE_HOST = {
+  baseUrl: null,
+  viaTailnet: false,
+  backupBaseUrl: null,
+  backupViaTailnet: false,
+  configuredBy: null,
+} as const;
+
 function union(a: readonly string[], b: readonly string[]): string[] {
   const out = [...a];
   for (const x of b) if (!out.includes(x)) out.push(x);
@@ -342,6 +356,12 @@ async function upsertAgent(
         name: def.name,
         description: def.description,
         role: def.role,
+        // The manifest route is the provider's own host: a reset must not
+        // leave the manifest key paired with a stored base URL (W7 integration
+        // fix). With no base URL on either route nothing is paired, so the
+        // configurer is the anchor's (null).
+        ...MANIFEST_ROUTE_HOST,
+        provider: 'openrouter',
         model,
         apiKeyId,
         systemPrompt: def.systemPrompt ?? '',
@@ -726,6 +746,8 @@ async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
       provider: route.provider,
       model: route.model,
       apiKeyId: keys[route.keyService]!,
+      // The manifest route is the provider's own host (see MANIFEST_ROUTE_HOST).
+      ...MANIFEST_ROUTE_HOST,
       // The decider keeps its operator switchboard (uses, gates); see adoptWorkerParams.
       params: adoptWorkerParams(kind, existing.params, route.params),
     });

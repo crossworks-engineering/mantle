@@ -53,6 +53,7 @@ const ROUTES: ChatRoutes = {
     apiKeyId: null,
     baseUrl: null,
     viaTailnet: false,
+    configuredBy: null,
   },
   backup: null,
 };

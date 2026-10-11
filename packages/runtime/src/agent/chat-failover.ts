@@ -42,8 +42,9 @@ export interface ChatRoute {
    *  MagicDNS name reaches a NAT'd box. Inert unless the tailnet proxy is up. */
   viaTailnet: boolean;
   /** The login that paired this route's key with its base URL (W7a fix
-   *  round 5, the row's configured_by). Null or absent: the brain owner's. */
-  configuredBy?: string | null;
+   *  round 5, the row's configured_by). Null: the brain owner's. Required,
+   *  so a route built by hand cannot leave it out. */
+  configuredBy: string | null;
 }
 
 /** The active + optional backup routes resolved from a row. */
@@ -65,8 +66,9 @@ export interface ChatRouteRow {
   backupEnabled: boolean;
   backupBaseUrl: string | null;
   backupViaTailnet: boolean;
-  /** configured_by (W7a fix round 5): it covers both routes. */
-  configuredBy?: string | null;
+  /** configured_by (W7a fix round 5): it covers both routes. Null: the
+   *  brain owner. */
+  configuredBy: string | null;
 }
 
 /** Split a row into its active (primary) + optional backup routes. The backup
@@ -190,7 +192,11 @@ export type ChatKeyResult =
 export async function resolveChatKey(
   ownerId: string,
   route: Pick<ChatRoute, 'provider' | 'apiKeyId'> &
-    Partial<Pick<ChatRoute, 'baseUrl' | 'configuredBy'>>,
+    Partial<Pick<ChatRoute, 'baseUrl'>> & {
+      /** Required (W7 integration fix): a caller that forgets it would read
+       *  as the brain owner's pairing. Null: the brain owner. */
+      configuredBy: string | null;
+    },
 ): Promise<ChatKeyResult> {
   // Keyless providers: `local` needs no credential. Pinned/service keys are
   // still honoured if present (e.g. a proxy that wants a token), but their

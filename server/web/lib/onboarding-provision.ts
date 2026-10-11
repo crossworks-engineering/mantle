@@ -87,7 +87,18 @@ async function keyIdByService(ownerId: string): Promise<Record<string, string>> 
   return map;
 }
 
-export async function provisionDefaults(ownerId: string): Promise<ProvisionResult> {
+/**
+ * `opts.configuredBy`: the login provisioning (null for the anchor). On the
+ * Azure route the provisioner pairs the vault's 'custom' key with the Azure
+ * endpoint, so the route it writes records it as configured_by and resolves
+ * the key at run time only while that login holds the keys area (W7
+ * integration fix; the route handler refuses a provision of an Azure route
+ * by a login without the keys area).
+ */
+export async function provisionDefaults(
+  ownerId: string,
+  opts: { configuredBy: string | null },
+): Promise<ProvisionResult> {
   const keys = await keyIdByService(ownerId);
   const openrouter = keys['openrouter'] ?? null;
 
@@ -124,6 +135,7 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
               provider: 'custom',
               baseUrl: modelOverlay.azureBaseUrl ?? null,
               apiKeyId: customKey,
+              configuredBy: opts.configuredBy,
             }
           : { model: modelOverlay.workerModel },
       );
@@ -173,6 +185,7 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
           : (modelOverlay?.assistantModel ?? PERSONA_MANIFEST.model),
         apiKeyId: azureRoute ? customKey : openrouter,
         baseUrl: azureRoute ? (modelOverlay?.azureBaseUrl ?? null) : null,
+        configuredBy: azureRoute ? opts.configuredBy : null,
         ttsWorkerId,
         // Name-agnostic: the prompt carries `{{name}}` and resolves from the
         // `name` set above, so renaming the persona later actually renames it.

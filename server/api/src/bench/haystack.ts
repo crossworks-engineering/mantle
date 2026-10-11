@@ -233,6 +233,7 @@ async function callModel(
     apiKeyId: null,
     baseUrl: null,
     viaTailnet: false,
+    configuredBy: null,
   });
   const res = await route.adapter.chat({
     apiKey: route.apiKey,

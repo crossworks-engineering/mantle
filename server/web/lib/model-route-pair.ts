@@ -37,7 +37,9 @@ const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 
 /** One route's pairing: with a base URL, its key id or else the provider's
  *  vault key, sent to that host; with none, no pairing (the provider's own
- *  host). */
+ *  host). The provider is part of a keyed pairing too: the adapter (and so
+ *  the header the key travels in) follows it, so a provider change on a
+ *  keyed route with a base URL is a new pairing. */
 export function modelRoutePairing(
   apiKeyId: unknown,
   baseUrl: unknown,
@@ -45,7 +47,9 @@ export function modelRoutePairing(
 ): VaultPairing {
   const dest = text(baseUrl);
   if (!dest) return { key: '', dest };
-  return { key: text(apiKeyId) || `provider:${text(provider)}`, dest };
+  const keyId = text(apiKeyId);
+  const via = `provider:${text(provider)}`;
+  return { key: keyId ? `${keyId}|${via}` : via, dest };
 }
 
 /** Whether `patch` names any field of `routes`. */

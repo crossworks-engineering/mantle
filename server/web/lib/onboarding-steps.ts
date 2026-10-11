@@ -276,6 +276,8 @@ export async function runSanityChecks(userId: string): Promise<SanityCheck[]> {
       model: cfg.model,
       baseUrl: cfg.primary.baseUrl,
       apiKeyId: cfg.primary.apiKeyId,
+      // The saved route's configurer answers for its key-to-host pairing.
+      configuredBy: cfg.primary.configuredBy ?? null,
     });
     checks.push({
       label: 'Embeddings (memory search)',
@@ -545,7 +547,13 @@ export async function saveEmbedding(
   }
 
   try {
-    const dim = await probeEmbeddingRoute(userId, { provider, model: slug, apiKeyId: keyId });
+    // No base URL: the provider's own host, so no login answers for a pairing.
+    const dim = await probeEmbeddingRoute(userId, {
+      provider,
+      model: slug,
+      apiKeyId: keyId,
+      configuredBy: null,
+    });
     if (dim !== 768) {
       return {
         saved: true,
@@ -617,6 +625,7 @@ async function defaultEmbeddingBackup(
       provider: suggestion.provider,
       model,
       apiKeyId: suggestion.apiKeyId,
+      configuredBy: null, // no base URL: the provider's own host
     });
     return dim === 768 ? suggestion : null;
   } catch {
@@ -638,8 +647,11 @@ export async function testKey(userId: string, service: string): Promise<KeyTest>
   return probeApiKey(key.id, service);
 }
 
-export async function provision(userId: string) {
-  const result = await provisionDefaults(userId);
+/** `configuredBy`: the login running the step (null for the anchor); it
+ *  answers for the Azure route's key-to-endpoint pairing, if any (W7
+ *  integration fix). */
+export async function provision(userId: string, configuredBy: string | null) {
+  const result = await provisionDefaults(userId, { configuredBy });
   await savePreferencesFor(userId, { onboardingStep: 'sanity' });
   // The wizard's resume-state snapshot predates this agent (fresh brain →
   // assistantAgentId was null at mount), so hand the id back here for the

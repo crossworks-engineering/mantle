@@ -109,6 +109,8 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
         model,
         baseUrl: cfg.primary.baseUrl,
         apiKeyId: cfg.primary.apiKeyId,
+        // The saved route's configurer answers for its key-to-host pairing.
+        configuredBy: cfg.primary.configuredBy ?? null,
       });
       const detail = `${provider} · ${model} · ${Date.now() - t0}ms`;
       remoteEmbedCache.set(userId, { at: Date.now(), up: true, detail });

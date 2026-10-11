@@ -354,8 +354,9 @@ export async function probeEmbeddingRoute(
     apiKeyId?: string | null;
     /** The login answering for the key-to-host pairing (W7a fix round 5):
      *  a saved route's configurer, or the login probing an unsaved one.
-     *  Null or absent: the brain owner. */
-    configuredBy?: string | null;
+     *  Null: the brain owner. Required, so a caller cannot leave it out and
+     *  probe as the owner by accident. */
+    configuredBy: string | null;
   },
 ): Promise<number> {
   const adapter = getEmbeddingAdapter(route.provider);
@@ -364,7 +365,7 @@ export async function probeEmbeddingRoute(
     provider: route.provider,
     baseUrl: route.baseUrl ?? null,
     apiKeyId: route.apiKeyId ?? null,
-    configuredBy: route.configuredBy ?? null,
+    configuredBy: route.configuredBy,
   });
   if (!apiKey) throw new Error(`no api key for provider '${route.provider}'`);
   const res = await adapter.embed({
