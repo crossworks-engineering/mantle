@@ -28,7 +28,7 @@
  */
 import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, count, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import { contactShareCodes, db, nodes, shareAccessLog, shares } from '@mantle/db';
+import { asSystem, contactShareCodes, db, nodes, shareAccessLog, shares } from '@mantle/db';
 import { env } from '@mantle/config';
 
 export const CONTACT_CODE_LENGTH = 8;
@@ -141,22 +141,29 @@ export async function contactSharingByContact(
 ): Promise<Map<string, ContactSharingStatus>> {
   const out = new Map<string, ContactSharingStatus>();
   if (contactIds.length === 0) return out;
-  const rows = await db
-    .select({
-      contactId: contactShareCodes.contactId,
-      createdAt: contactShareCodes.createdAt,
-      rotatedAt: contactShareCodes.rotatedAt,
-      lastUsedAt: contactShareCodes.lastUsedAt,
-      lockedUntil: contactShareCodes.lockedUntil,
-    })
-    .from(contactShareCodes)
-    .where(
-      and(
-        eq(contactShareCodes.ownerId, ownerId),
-        inArray(contactShareCodes.contactId, [...contactIds]),
-        isNotNull(contactShareCodes.codeHash),
-      ),
-    );
+  // The codes table is never granted to the workspace role: the status of
+  // contacts the caller already read (the id list is the rule), read on
+  // the system pool by its named reason in a scope (W7a).
+  const rows = await asSystem(
+    () =>
+      db
+        .select({
+          contactId: contactShareCodes.contactId,
+          createdAt: contactShareCodes.createdAt,
+          rotatedAt: contactShareCodes.rotatedAt,
+          lastUsedAt: contactShareCodes.lastUsedAt,
+          lockedUntil: contactShareCodes.lockedUntil,
+        })
+        .from(contactShareCodes)
+        .where(
+          and(
+            eq(contactShareCodes.ownerId, ownerId),
+            inArray(contactShareCodes.contactId, [...contactIds]),
+            isNotNull(contactShareCodes.codeHash),
+          ),
+        ),
+    'contact-sharing',
+  );
   if (rows.length === 0) return out;
   const counts = await db
     .select({ contactId: shares.contactId, n: count() })

@@ -21,6 +21,7 @@ import { OpenRouter } from '@openrouter/sdk';
 import { openrouterClientMeta } from '@mantle/voice';
 import {
   apiKeys,
+  asSystem,
   db,
   getDefaultWorker,
   bumpWorkerUsage,
@@ -45,11 +46,17 @@ const FALLBACK_SEARCH_MODEL = env('MANTLE_WEB_SEARCH_MODEL') || 'perplexity/sona
 export async function resolveOpenRouterKey(ownerId: string): Promise<string | null> {
   const k = await getApiKey(ownerId, 'openrouter');
   if (k) return k;
-  const [row] = await db
-    .select({ id: apiKeys.id })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')))
-    .limit(1);
+  // The id of a key on file: infrastructure the call itself uses, read on
+  // the system pool by its named reason in a scope (W7a).
+  const [row] = await asSystem(
+    () =>
+      db
+        .select({ id: apiKeys.id })
+        .from(apiKeys)
+        .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')))
+        .limit(1),
+    'provider-key',
+  );
   return row ? await getApiKeyById(row.id) : null;
 }
 

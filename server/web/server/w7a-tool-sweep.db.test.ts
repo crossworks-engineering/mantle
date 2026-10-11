@@ -32,6 +32,25 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
+/** Every database error a tool turned into text (errorMessage), with its
+ *  SQLSTATE and the database's own message: a drizzle error's message is
+ *  its SQL, the permission error is its cause. */
+const seen = vi.hoisted(() => ({ db: [] as { code: string; text: string }[] }));
+
+vi.mock('@mantle/std', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@mantle/std')>();
+  return {
+    ...orig,
+    errorMessage: (err: unknown) => {
+      const e = err as { code?: unknown; message?: unknown; cause?: unknown } | null;
+      const c = (e?.cause ?? null) as { code?: unknown; message?: unknown } | null;
+      const code = String(e?.code ?? c?.code ?? '');
+      if (code) seen.db.push({ code, text: String(c?.message ?? e?.message ?? '') });
+      return orig.errorMessage(err);
+    },
+  };
+});
+
 type Json = Record<string, unknown>;
 type Schema = {
   type?: string | string[];
@@ -228,6 +247,9 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const scopes = new Set<string>();
     const surface = { kind: 'web' as const, loginId: owner };
     let createsDone = false;
+    let ran = 0;
+    const errs: string[] = [];
+    seen.db.length = 0;
     for (const def of defs) {
       if (!createsDone && !isCreate(def.slug)) {
         await refreshIds();
@@ -250,13 +272,23 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
         ),
       );
       if (res === 'timeout') continue;
+      if (res.ok) ran += 1;
+      else errs.push(`${def.slug}: ${String(res.error).slice(0, 100)}`);
       if (!res.ok) {
         const e = String(res.error);
         if ((BAD.test(e) && !ITEM_WS.test(e)) || e.startsWith('THROWN')) {
           bad.push(`${def.slug}: ${e.slice(0, 240)}`);
         }
       }
+      for (const d of seen.db.splice(0)) {
+        if (d.code === '42501' && !ITEM_WS.test(d.text)) {
+          bad.push(`${def.slug}: 42501 ${d.text.slice(0, 200)}`);
+          break;
+        }
+      }
     }
+    if (process.env.W7A_SWEEP_LOG) console.info(`ran ${ran}\n${errs.join('\n')}`);
+    expect(ran).toBeGreaterThan(60);
     expect(bad).toEqual([]);
     expect([...scopes]).toEqual([`assistant:${adminWs}`]);
   }, 1_200_000);

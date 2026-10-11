@@ -859,6 +859,12 @@ export function runInSystemTx<T>(
  *    area check (scopeHasArea): its system tables (model pools, agents,
  *    tool groups, connectors, secrets, peers) are never granted to the
  *    workspace role. It reads no brain items there.
+ *  - `provider-key`: the id of a provider's API key on file (OpenRouter,
+ *    Firecrawl) that a tool calls out with (builtins-research.ts,
+ *    builtins-crawl.ts): infrastructure, like a connector's keys (W7a).
+ *  - `contact-sharing`: the sharing status (dates and a lock, never the
+ *    code) of contacts the caller already read in its scope
+ *    (contactSharingByContact): the rule is the id list (W7a).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -878,6 +884,8 @@ export const AS_SYSTEM_TURN_REASONS = [
   'name-taken',
   'export-link',
   'admin-area',
+  'provider-key',
+  'contact-sharing',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 

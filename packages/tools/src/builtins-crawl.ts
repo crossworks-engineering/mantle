@@ -25,7 +25,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { Firecrawl } from 'firecrawl';
-import { apiKeys, db, docCollections, type DocCollection } from '@mantle/db';
+import { apiKeys, asSystem, db, docCollections, type DocCollection } from '@mantle/db';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { createDocCollection, slugifyFolder, upsertDocFromDisk } from '@mantle/files';
 import { recordIngest, step } from '@mantle/tracing';
@@ -43,11 +43,17 @@ const KEY_HINT =
 async function resolveFirecrawlKey(ownerId: string): Promise<string | null> {
   const k = await getApiKey(ownerId, 'firecrawl');
   if (k) return k;
-  const [row] = await db
-    .select({ id: apiKeys.id })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'firecrawl')))
-    .limit(1);
+  // The id of a key on file: infrastructure the call itself uses, read on
+  // the system pool by its named reason in a scope (W7a).
+  const [row] = await asSystem(
+    () =>
+      db
+        .select({ id: apiKeys.id })
+        .from(apiKeys)
+        .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'firecrawl')))
+        .limit(1),
+    'provider-key',
+  );
   return row ? await getApiKeyById(row.id) : null;
 }
 
