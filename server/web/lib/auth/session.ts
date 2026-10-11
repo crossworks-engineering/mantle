@@ -28,7 +28,7 @@ import {
   hasRequestSlot,
   loginScopeFor,
   brainOnWorkspacesNow,
-  withScope,
+  withViewer,
   noteRequestSystem,
   noteRequestOwnRule,
   type RequestScopeMode,
@@ -833,7 +833,7 @@ async function adminItemWriteGate(
   const target = path ? itemWriteTarget(method, pattern, path) : null;
   if (!target || !ITEM_ID_RE.test(target.id)) return null;
   if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return null;
-  const rows = (await withScope(await loginScopeFor(loginId), () =>
+  const rows = (await withViewer('team', { login: loginId }, () =>
     db.execute(sql`
       select "public"."mantle_may_edit"(home_ws, write_ws) as edit,
              "public"."mantle_may_manage"(home_ws) as manage
