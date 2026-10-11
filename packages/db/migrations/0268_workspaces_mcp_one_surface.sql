@@ -13,7 +13,10 @@
 --    update keeps the old value (no error, so the manifest's own writers,
 --    which W8 removes, never fail a boot). A new row still takes what it is
 --    given. A tool group is system-wide or adminOnly (tool_groups.admin_only,
---    0254); an assistant reads its workspace. Nothing reads the level.
+--    0254); an assistant reads its workspace. The frozen level is still
+--    read as it stands: agentLevel (an agent's turn level), groupsWithinLevel
+--    (the manifest reconcile) and packages/telegram/src/level.ts (the
+--    pairing check).
 --
 -- Both freezes yield to a named migration bypass (mantle_heads_bypass_on),
 -- like the item levels' (0261). Nothing here changes who reads what.
@@ -21,8 +24,8 @@
 -- 3. No credential comes back to life (W7b fix round 1, M3). With the
 --    switch gone, a credential the switch had stopped would work again, so
 --    it is ended or narrowed here, by the archived switch: every static
---    login token (mtlmcpk_; minting is retired) is revoked; a login whose
---    MCP was off has its OAuth grants revoked and the peers bound to it
+--    login token (mtlmcpk_; minting is retired) is revoked; a member or
+--    client login whose MCP was off has its OAuth grants revoked and the peers bound to it
 --    disabled; a login whose MCP was on with Write off keeps its OAuth
 --    grants and its peers read-only (the grant's scope carries
 --    `mantle:read-only`, which a refresh keeps; the peer's write switch
@@ -173,40 +176,54 @@ ALTER TABLE "public"."access_keys"
 -- lock_timeout, above); reads of the other four tables go on. access_keys
 -- is not read either until the commit: the ALTER above already holds its
 -- ACCESS EXCLUSIVE lock, which a transaction keeps to its end.
--- The order is the one the code takes them in (access_keys, then the
--- OAuth code, then the OAuth tokens: server/web/lib/mcp-oauth.ts
--- exchangeClaimed), then the peers and the login tokens, which nothing
--- locks together with these: no deadlock with a token exchange.
+-- A token exchange (server/web/lib/mcp-oauth.ts exchangeClaimed) deletes
+-- the OAuth code, then inserts the tokens: taking the codes before the
+-- tokens here, as it does, is what keeps the two from deadlocking.
+-- access_keys first (the ALTER above already holds it); the peers and the
+-- login tokens, which nothing locks together with these, last.
 LOCK TABLE "public"."access_keys", "public"."oauth_auth_codes", "public"."oauth_access_tokens",
   "public"."mantle_peers", "public"."mcp_login_tokens" IN SHARE ROW EXCLUSIVE MODE;
 --> statement-breakpoint
 UPDATE "public"."mcp_login_tokens" SET "revoked_at" = now() WHERE "revoked_at" IS NULL;
 --> statement-breakpoint
+-- The OAuth grants and the peers by the switch, a member's or a client's
+-- only (W7 integration fix 2): an admin login's never went through it, so a
+-- leftover switch row of an admin changes none of them (as for its keys).
 UPDATE "public"."oauth_access_tokens" t SET "revoked_at" = now()
   FROM "public"."archive_mcp_login_access" a
  WHERE t."actor_id" = a."login_id" AND NOT a."enabled"
-   AND t."revoked_at" IS NULL AND t."created_at" <= a."archived_at";
+   AND t."revoked_at" IS NULL AND t."created_at" <= a."archived_at"
+   AND EXISTS (SELECT 1 FROM auth.users u
+                WHERE u."id" = a."login_id" AND u."role" IN ('member', 'client'));
 --> statement-breakpoint
 DELETE FROM "public"."oauth_auth_codes" c
  USING "public"."archive_mcp_login_access" a
- WHERE c."actor_id" = a."login_id" AND NOT a."enabled" AND c."created_at" <= a."archived_at";
+ WHERE c."actor_id" = a."login_id" AND NOT a."enabled" AND c."created_at" <= a."archived_at"
+   AND EXISTS (SELECT 1 FROM auth.users u
+                WHERE u."id" = a."login_id" AND u."role" IN ('member', 'client'));
 --> statement-breakpoint
 UPDATE "public"."mantle_peers" p SET "enabled" = false
   FROM "public"."archive_mcp_login_access" a
  WHERE p."acts_as_login_id" = a."login_id" AND NOT a."enabled"
-   AND p."enabled" AND p."created_at" <= a."archived_at";
+   AND p."enabled" AND p."created_at" <= a."archived_at"
+   AND EXISTS (SELECT 1 FROM auth.users u
+                WHERE u."id" = a."login_id" AND u."role" IN ('member', 'client'));
 --> statement-breakpoint
 UPDATE "public"."oauth_access_tokens" t
    SET "scope" = btrim(t."scope" || ' mantle:read-only')
   FROM "public"."archive_mcp_login_access" a
  WHERE t."actor_id" = a."login_id" AND a."enabled" AND NOT a."write_enabled"
    AND t."revoked_at" IS NULL AND t."created_at" <= a."archived_at"
-   AND NOT ('mantle:read-only' = ANY (string_to_array(t."scope", ' ')));
+   AND NOT ('mantle:read-only' = ANY (string_to_array(t."scope", ' ')))
+   AND EXISTS (SELECT 1 FROM auth.users u
+                WHERE u."id" = a."login_id" AND u."role" IN ('member', 'client'));
 --> statement-breakpoint
 UPDATE "public"."mantle_peers" p SET "write_enabled" = false
   FROM "public"."archive_mcp_login_access" a
  WHERE p."acts_as_login_id" = a."login_id" AND a."enabled" AND NOT a."write_enabled"
-   AND p."write_enabled" AND p."created_at" <= a."archived_at";
+   AND p."write_enabled" AND p."created_at" <= a."archived_at"
+   AND EXISTS (SELECT 1 FROM auth.users u
+                WHERE u."id" = a."login_id" AND u."role" IN ('member', 'client'));
 --> statement-breakpoint
 -- The API keys by the same switch, a member's or a client's only: an admin
 -- login's keys never went through it (W7b fix round 3).

@@ -194,6 +194,24 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
     await insertKey('admOff', admOff, 'admin');
     await insertKey('admRo', admRo, 'admin');
     await insertPeer('owner', owner, 'admin');
+    // An admin's OAuth grant, code and peer with a leftover switch row (W7
+    // integration fix 2): they never went through the switch.
+    for (const [login, label] of [
+      [admOff, 'admOff'],
+      [admRo, 'admRo'],
+    ] as const) {
+      const oauth = `mtlmcp_at_${randomUUID().replace(/-/g, '')}`;
+      tokens[label] = { oauth, static: '', peer: '' };
+      await sql`insert into oauth_access_tokens
+          (token_hash, owner_id, actor_id, client_id, scope, expires_at, session_epoch)
+        values (${sha(oauth)}, ${owner}, ${login}, ${client}, 'mcp',
+                now() + interval '1 hour', 0)`;
+      await sql`insert into oauth_auth_codes
+          (code_hash, client_id, owner_id, actor_id, code_challenge, redirect_uri, expires_at, session_epoch)
+        values (${sha(`${oauth}-code`)}, ${client}, ${owner}, ${login}, 'x',
+                'https://client.example.invalid/cb', now() + interval '5 minutes', 0)`;
+      await insertPeer(label, login, 'admin');
+    }
     await scratch.migrateRest();
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -361,6 +379,20 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
         via: 'key',
         write: true,
       });
+    }
+  });
+
+  it('an admin with a leftover switch row keeps its OAuth grant, code and peer (W7 integration fix 2)', async () => {
+    for (const label of ['admOff', 'admRo'] as const) {
+      const token = tokens[label]!.oauth;
+      const [g] = await sql`select scope, revoked_at from oauth_access_tokens
+                             where token_hash = ${sha(token)}`;
+      expect(g, label).toEqual({ scope: 'mcp', revoked_at: null });
+      const codes = await sql`select 1 from oauth_auth_codes where code_hash = ${sha(`${token}-code`)}`;
+      expect(codes.length, label).toBe(1);
+      const [p] = await sql`select enabled, write_enabled from mantle_peers
+                             where id = ${peerIds[label]!}`;
+      expect(p, label).toEqual({ enabled: true, write_enabled: true });
     }
   });
 
