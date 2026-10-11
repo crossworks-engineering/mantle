@@ -98,8 +98,9 @@ const SITES: Record<string, Site> = {
   },
   'packages/runtime/src/heartbeats/fire.ts': {
     calls: 1,
-    surface:
-      /\? \{ kind: 'telegram', telegramChatId: hb\.surface\.chat_id \}\s*: \{ kind: 'web' \}/,
+    // The Telegram chat only when the fire answers the anchor (W7
+    // integration fix 3, F1: telegramChat is null for any other login).
+    surface: /\? \{ kind: 'telegram', telegramChatId: telegramChat \}\s*: \{ kind: 'web' \}/,
     scope: 'call',
     why: "the owner's heartbeat, on its telegram or web surface",
   },
