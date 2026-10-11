@@ -7,8 +7,11 @@ import { brainIdField } from '@/lib/brain-identity';
  * (docs/mobile-companion-backend.md, "Three roles on the phone"). The phone
  * app holds one bearer and must learn which of the three shells to call;
  * before this it had to try each. About the login only, never brain data:
- * the role, the login, its name, and the two route prefixes that differ per
- * role. A stranger, a dead token or a role this code does not know gets 401.
+ * the role, the login, its name, its shell and its push prefix. Since
+ * workspaces W5c every role's shell is GET /api/shell (the old member and
+ * client shells answer 410), and a client's push routes answer 410 (the
+ * client portal is gone). A stranger, a dead token or a role this code does
+ * not know gets 401.
  *
  * `brainId` (migration 0226) names this brain: with `loginId` it is the key a
  * device holding several logins, on several brains, files the session under,
@@ -17,8 +20,8 @@ import { brainIdField } from '@/lib/brain-identity';
  */
 const ROUTES = {
   admin: { shell: '/api/shell', pushBase: '/api/push' },
-  member: { shell: '/api/member/shell', pushBase: '/api/member/push' },
-  client: { shell: '/api/client/shell', pushBase: '/api/client/push' },
+  member: { shell: '/api/shell', pushBase: '/api/member/push' },
+  client: { shell: '/api/shell', pushBase: '/api/client/push' },
 } as const;
 
 export async function GET() {

@@ -6,36 +6,7 @@
  */
 import type { AccessLevel, MemberItemAuthor } from './access';
 import type { MemberItemKind } from '../member-kinds';
-import type { TreeKind } from '../tree';
 export type { MemberItemFilter } from '../member-kinds';
-
-/** GET /api/member/shell */
-export type MemberShell = {
-  role: 'member';
-  loginId: string;
-  displayName: string | null;
-  email: string;
-  avatar: { style: string; seed: string; parts: unknown } | null;
-  avatarPhotoVersion: string | null;
-  /** Append as `?at=` to /api/member/files/* and /api/member/draws/* srcs. */
-  assetToken: string;
-  siteName: string | null;
-  colorTheme: string | null;
-  fontLogo: string | null;
-  fontTitle: string | null;
-  fontUi: string | null;
-  fontProse: string | null;
-  fontSize: string | null;
-  fontLogoSize: string | null;
-  fontTitleSize: string | null;
-  fontProseSize: string | null;
-  logoVersion: string | null;
-  logoDarkVersion: string | null;
-  /** The kinds this login browses as a read-only folder tree (GET
-   *  /api/{member,client}/tree/:kind). Absent from brains before folder
-   *  sharing: the client keeps its flat lists there. */
-  treeKinds?: TreeKind[];
-};
 
 export type MemberLibraryKind = MemberItemKind;
 

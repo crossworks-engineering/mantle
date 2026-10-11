@@ -6,6 +6,9 @@
  * them everywhere else outside their own lists. Keep it short.
  */
 export const ANY_LOGIN_ROUTES: readonly string[] = [
+  // The one (app) shell's chrome (W5c, plan 7.1): every login reads the same
+  // shape, `role` says which. Admin-only parts answer empty for the others.
+  'GET /api/shell',
   // Public API v1: who the credential (or API key) acts as.
   'GET /api/v1/whoami',
   // Inbound API keys: each login makes, lists and revokes its own keys

@@ -88,7 +88,6 @@ export type {
   MemberLibraryPage,
   MemberLibraryRow,
   MemberReviewState,
-  MemberShell,
   MemberSpaceFile,
   MemberSpaceItem,
   MemberSpaceItemBody,
@@ -166,7 +165,6 @@ export type {
   ClientSharedTable,
   ClientSharedTableColumn,
   ClientSharedTableRow,
-  ClientShell,
   ClientSigninLinkCreated,
   ClientSigninLinkRow,
   ClientItemSource,
@@ -243,6 +241,8 @@ export type {
   WorkspaceUserSearchResponse,
   WorkspaceUsersResponse,
 } from './dto/workspaces';
+// GET /api/shell: the one shell, for every login (W5c).
+export type { Shell, ShellFeatures, ShellRole } from './dto/shell';
 export type {
   GrantAddBody,
   GrantContactShare,
