@@ -5,7 +5,9 @@
  *  - the `login_notice` event fires for a finished reply in a login's own
  *    chat thread and for a review result (accepted, returned, taken), and
  *    for nothing else (an inbound or pending row, a failed reply, a portal
- *    thread, a submit, a recall, a save; comments are gone, 2026-10-09);
+ *    thread, a submit, a recall, a save; comments are gone, 2026-10-09).
+ *    The admin's review was removed in workspaces W5c: a result is set in
+ *    SQL here;
  *  - the message built from an event is for the ONE login it concerns, with
  *    words that login could read by opening the app: never an admin, never a
  *    disabled login, never a stale row, never a thread the reader may not
@@ -32,8 +34,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
   type Db = typeof import('@mantle/db');
   let m: Db;
   let sp: typeof import('./member-space');
-  let rv: typeof import('./member-review');
-  let tk: typeof import('./member-takeover');
   let tm: typeof import('./team-messages');
   let ln: typeof import('./login-notices');
   let ts: typeof import('@mantle/db/test-support');
@@ -56,7 +56,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     m.withSpace({ spaceId: spaceOf[login]!, loginId: login }, fn);
   const exec = async <T>(q: ReturnType<typeof sqlTag>) =>
     (await m.systemDb.execute(q)) as unknown as T[];
-  const actorA = () => ({ loginId: adminA, spaceId: spaceOf[adminA]! });
   const say = (text: string) => ({
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
@@ -98,6 +97,11 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       )
     ).id;
   const submit = (login: string, id: string) => as(login, () => sp.submitItem(spaceOf[login]!, id));
+  /** What an admin's Return did to the row (review was removed in W5c). */
+  const returnRow = (id: string) =>
+    m.systemDb.execute(sqlTag`
+      update space_items set review_state = 'returned', reviewed_by = ${adminA},
+        reviewed_at = now(), updated_at = now() where node_id = ${id}`);
   const reply = (loginId: string, text: string, extra: Record<string, unknown> = {}) =>
     tm.appendTeamMessage({
       ownerId: anchor,
@@ -118,8 +122,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     process.env.MANTLE_FILES_ROOT = path.join(root, 'files');
     m = await import('@mantle/db');
     sp = await import('./member-space');
-    rv = await import('./member-review');
-    tk = await import('./member-takeover');
     tm = await import('./team-messages');
     ln = await import('./login-notices');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -273,9 +275,9 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     ).toEqual([]);
   });
 
-  it('Return tells the author', async () => {
+  it('a returned row tells the author', async () => {
     await submit(member, pageId);
-    expect(await sent(() => rv.returnReviewItem(pageId, { loginId: adminA }))).toEqual([
+    expect(await sent(() => returnRow(pageId))).toEqual([
       { kind: 'review', loginId: member, id: pageId, state: 'returned' },
     ]);
     expect(await ln.reviewResultNotice(member, 'returned', [pageId])).toEqual({
@@ -295,69 +297,10 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     expect(await ln.reviewResultNotice(member, 'accepted', [pageId])).toBeNull();
   });
 
-  it('Take over tells the author under the title it had; Give back and Accept tell them too', async () => {
-    await submit(member, pageId);
-    expect(await sent(() => rv.takeOverReviewItem(pageId, actorA()))).toEqual([
-      { kind: 'review', loginId: member, id: pageId, state: 'taken' },
-    ]);
-    // The admin renames its working copy: the author never reads that title.
-    await m.systemDb.execute(
-      sqlTag`update nodes set title = 'ADMIN WORKING TITLE' where id = ${pageId}`,
-    );
-    const taken = await ln.reviewResultNotice(member, 'taken', [pageId]);
-    expect(taken).toMatchObject({
-      title: 'With an admin',
-      body: `An admin is working on "${tag} spec".`,
-      deepLink: '/portal/items',
-      state: 'taken',
-    });
-    expect(JSON.stringify(taken)).not.toContain('ADMIN WORKING TITLE');
-    await m.systemDb.execute(
-      sqlTag`update nodes set title = ${`${tag} spec`} where id = ${pageId}`,
-    );
-
-    expect(await sent(() => tk.giveBackTakenItem(anchor, actorA(), pageId))).toEqual([
-      { kind: 'review', loginId: member, id: pageId, state: 'returned' },
-    ]);
-
-    await submit(member, pageId);
-    expect(await sent(() => rv.acceptReviewItem(anchor, pageId, { loginId: adminA }))).toEqual([
-      { kind: 'review', loginId: member, id: pageId, state: 'accepted' },
-    ]);
-    expect(await ln.reviewResultNotice(member, 'accepted', [pageId])).toMatchObject({
-      title: 'Accepted',
-      body: `"${tag} spec" was accepted.`,
-      deepLink: `/portal/items/${pageId}`,
-    });
-    // The item is the brain's now. An admin renames it: the author is told
-    // by the title it was accepted with, never the admin's new one.
-    await m.systemDb.execute(
-      sqlTag`update nodes set title = 'ADMIN RENAMED IT' where id = ${pageId}`,
-    );
-    const after = await ln.reviewResultNotice(member, 'accepted', [pageId]);
-    expect(after?.body).toBe(`"${tag} spec" was accepted.`);
-    expect(JSON.stringify(after)).not.toContain('ADMIN RENAMED IT');
-    // A result that is old tells nobody (the database's clock).
-    await m.systemDb.execute(sqlTag`
-      update space_items set updated_at = now() - interval '31 minutes' where node_id = ${pageId}`);
-    expect(await ln.reviewResultNotice(member, 'accepted', [pageId])).toBeNull();
-  });
-
-  it('a bundle is one message, named after its main item', async () => {
-    const note = await newNote(member, `${tag} part`);
-    const page = await newPage(member, `${tag} whole`);
-    for (const id of [note, page]) {
-      await submit(member, id);
-      await rv.acceptReviewItem(anchor, id, { loginId: adminA });
-    }
-    const n = await ln.reviewResultNotice(member, 'accepted', [note, page]);
-    expect(n).toMatchObject({ itemId: page, body: `"${tag} whole" was accepted.` });
-  });
-
   it('a client author is told as a client', async () => {
     const id = await newNote(client, `${tag} request`);
     await submit(client, id);
-    expect(await sent(() => rv.returnReviewItem(id, { loginId: adminA }))).toEqual([
+    expect(await sent(() => returnRow(id))).toEqual([
       { kind: 'review', loginId: client, id, state: 'returned' },
     ]);
     expect(await ln.reviewResultNotice(client, 'returned', [id])).toMatchObject({

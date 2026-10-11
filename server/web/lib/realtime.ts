@@ -110,11 +110,12 @@ async function ensureListening(): Promise<void> {
     const subPending = await sql.listen(PENDING_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: 'pending_tool_call', id: '' });
     });
-    // "Needs you" (migration 0186 triggers): a Review item or a team request
-    // started or stopped waiting for an admin. Owner-id payload, like
-    // pending_changed. It reaches admin sessions only: /api/realtime is the
-    // owner stream (members are refused there), and the member stream reads
-    // spaceSubs, never this. The client refetches /api/team-admin/needs-you.
+    // "Needs you" (migration 0186 triggers): a provider outage started or
+    // cleared (0230; review and team requests went in W5c, their triggers
+    // still fire). Owner-id payload, like pending_changed. It reaches admin
+    // sessions only: /api/realtime is the owner stream (members are refused
+    // there), and the member stream reads spaceSubs, never this. The client
+    // refetches /api/embedding (its provider alerts).
     const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, (ownerId) => {
       if (ownerId) broadcast({ ownerId, type: NEEDS_YOU_REALTIME_TYPE, id: '' });
     });

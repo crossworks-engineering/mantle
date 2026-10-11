@@ -338,7 +338,7 @@ A no-credits 429 no longer waits through the rate-limit backoff (2, 4, 8, 16 s):
 What admins (owner and admin logins) see, and members and clients never see:
 
 - the app-shell banner and the Settings, Embedding page: "Embeddings are failing since 08:14: The provider account has no credits or quota left. New files are not indexed and search has less context. 30 items wait." with the fix (add credits, check the key, switch provider, add a backup route) and a **Try again** button;
-- the "Needs you" feed (`GET /api/team-admin/needs-you`, field `providers`), which the live stream refreshes: the table's trigger raises `needs_you_changed` when what an admin sees changes;
+- the live stream: the table's trigger raises `needs_you_changed` when what an admin sees changes, and the client refetches the alerts (the "Needs you" feed, `GET /api/team-admin/needs-you`, was removed in W5c);
 - one phone push per outage to admin devices ("Embeddings are failing"), on the same toggle as other "things waiting for you".
 
 `GET /api/embedding/recover` returns the shown alerts; `GET /api/embedding` returns them with the config.

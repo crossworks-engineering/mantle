@@ -13,7 +13,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, assistantMessages, parkedExtractions } from '@mantle/db';
 import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { countPending, listPendingCalls } from '@mantle/tools';
-import { loadNeedsYou, loadProfilePreferences } from '@mantle/content';
+import { loadProfilePreferences, loadProviderAlerts } from '@mantle/content';
 import { needsYouArrivals, needsYouMessage, rememberArrivals } from './needs-you';
 import { errorMessage } from '@mantle/std';
 import { derivedSecret } from '../auth/tokens';
@@ -347,12 +347,13 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
 }
 
 /**
- * Push a "needs you" notice (a member submitted an item for review, or filed
- * a team request) to the devices of ACTIVE ADMIN logins only, never a
- * member's. Only an arrival pushes (see needsYouArrivals): the same NOTIFY
- * fires when something leaves a queue. `seen` is the caller's per-process
- * memory of what was pushed; the caller runs one call at a time. Title and
- * author only, never content (and sealed to the device like every push).
+ * Push a "needs you" notice (a provider outage, a parked extraction) to the
+ * devices of ACTIVE ADMIN logins only, never a member's. Only an arrival
+ * pushes (see needsYouArrivals): the same NOTIFY fires when something
+ * clears. `seen` is the caller's per-process memory of what was pushed; the
+ * caller runs one call at a time. Fixed text only (and sealed to the device
+ * like every push). The review and team request pushes were removed in
+ * workspaces W5c.
  * Gated by the approvals toggle ("things waiting for you"); unlike an
  * approval it does not follow reminderChannel: there is no Telegram card for
  * it to double. Collapses on "needs-you" so a newer notice replaces an older.
@@ -368,11 +369,11 @@ export async function pushNeedsYou(
   const prefs = await getPushPrefs();
   if (!prefs.approvals) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
 
-  const [n, parked] = await Promise.all([
-    loadNeedsYou(ownerId),
+  const [providers, parked] = await Promise.all([
+    loadProviderAlerts(ownerId),
     parkedExtractions(ownerId).catch(() => null),
   ]);
-  const arrivals = needsYouArrivals(n, seen, now, undefined, parked);
+  const arrivals = needsYouArrivals(providers, seen, now, parked);
   if (arrivals.length === 0) {
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
   }
@@ -383,7 +384,7 @@ export async function pushNeedsYou(
   if (devices.length === 0)
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
 
-  const m = needsYouMessage(arrivals[0]!, n.total);
+  const m = needsYouMessage(arrivals[0]!);
   const payload: PushContent = { v: 1, t: m.title, b: m.body, deepLink: m.deepLink, ts: now };
   const { delivered, dropped } = await sendToDevices(instance, devices, payload, 'needs-you');
   return { attempted: devices.length, delivered, dropped };

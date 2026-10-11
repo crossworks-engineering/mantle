@@ -1,15 +1,7 @@
 /**
- * GET /api/team-admin/submissions : what waits for an admin (member logins
- * Phase 4, plan 6): items members submitted for review, oldest first, then
- * the team-shared items deactivated logins left behind. Never a private item
- * (S3): the queue query names both conditions.
+ * /api/team-admin/submissions: gone. Review (a member submits, an admin accepts) was removed in workspaces W5c: items are shared with Grant Access.
+ * The stub answers 410 `{ error, code: 'gone' }` to an admin, 401 without a session.
  */
-import { NextResponse } from '@/server/http-compat';
-import { listReviewQueue } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { gone } from '@/lib/gone';
 
-export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
-  return NextResponse.json(await listReviewQueue());
-}
+export const GET = gone('owner', 'Review was removed. Share items with Grant Access.');

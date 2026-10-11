@@ -14,13 +14,9 @@
  * link). The database keeps the edges (node_embeds, migration 0208); the
  * Grant Access panel and the share pages read them.
  */
-import { db, type ViewerLevel } from '@mantle/db';
+import type { ViewerLevel } from '@mantle/db';
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { referencedDrawIds, referencedFileIds } from './doc-assets';
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-/** The pool, or a caller's transaction. */
-export type ClosureDb = typeof db | Tx;
 
 /** The kinds that embed other items. */
 export const EMBEDDING_KINDS: readonly string[] = ['page', 'draw', 'note'];
@@ -61,14 +57,10 @@ export function drawPlacedFileIds(scene: unknown, fileRefs: unknown): string[] {
   return [...out];
 }
 
-// ── Deprecated no-ops ────────────────────────────────────────────────────────
-// Removed in W5b2; callers go in the writers/links helpers. The embed closure
-// no longer lowers anything: these keep access.ts, shares.ts, member-review.ts
-// and access-shadow.ts compiling until their own level engine goes, and do
-// nothing.
-
-/** @deprecated removed in W5b2; callers go in the writers/links helpers. */
-export type EmbedItem = { id: string; type: string; title: string; audience: ViewerLevel };
+// ── Deprecated type ──────────────────────────────────────────────────────────
+// Removed in W5b2: the embed closure no longer lowers anything. The member
+// review accept that used the other no-ops was removed in W5c; this type
+// keeps the share tool's answer compiling.
 
 /** @deprecated removed in W5b2; callers go in the writers/links helpers. */
 export type LoweredItem = {
@@ -78,57 +70,3 @@ export type LoweredItem = {
   from: ViewerLevel;
   to: ViewerLevel;
 };
-
-/** @deprecated removed in W5b2; callers go in the writers/links helpers. */
-export type LowerEmbedsResult = { lowered: LoweredItem[]; ceiling: EmbedItem[] };
-
-/** @deprecated removed in W5b2; callers go in the writers/links helpers. */
-export type EmbedClosureGap = EmbedItem & { above: EmbedItem[] };
-
-const RANK: Record<ViewerLevel, number> = { public: 0, client: 1, team: 2, admin: 3 };
-
-/** @deprecated removed in W5b2; callers go in the writers/links helpers. */
-export function levelAbove(a: ViewerLevel, b: ViewerLevel): boolean {
-  return RANK[a] > RANK[b];
-}
-
-/** @deprecated removed in W5b2 (no-op: nothing follows an item any more);
- *  callers go in the writers/links helpers. */
-export async function embedClosure(
-  _ownerId: string,
-  _nodeId: string,
-  _q: ClosureDb = db,
-): Promise<EmbedItem[]> {
-  return [];
-}
-
-/** @deprecated removed in W5b2 (no-op); callers go in the writers/links helpers. */
-export async function brainEmbedsOf(
-  _brainId: string,
-  _fromOwnerId: string,
-  _items: readonly { id: string; type: string }[],
-  _q: ClosureDb = db,
-  _exclude: readonly string[] = [],
-): Promise<EmbedItem[]> {
-  return [];
-}
-
-/** @deprecated removed in W5b2 (no-op: an embed keeps its grants); callers go
- *  in the writers/links helpers. */
-export async function lowerEmbedClosure(
-  _ownerId: string,
-  _nodeId: string,
-  _level: ViewerLevel,
-  _q: ClosureDb = db,
-): Promise<LowerEmbedsResult> {
-  return { lowered: [], ceiling: [] };
-}
-
-/** @deprecated removed in W5b2 (no-op: there is no closure to close); callers
- *  go in the writers/links helpers. */
-export async function findEmbedClosureGaps(
-  _ownerId: string,
-  _q: ClosureDb = db,
-): Promise<EmbedClosureGap[]> {
-  return [];
-}

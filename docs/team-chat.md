@@ -229,14 +229,13 @@ provenance, that's the point of "please update X, attached".)
    (the tool answers an error past either). The task is **extract-exempt
    until an admin acts on it** (`packages/db/src/extract-exempt.ts`): member
    text reaches no model before an admin has read it. Editing or closing it
-   through the task routes or tools, or replying from Requests, stamps
-   `data.reviewed_at` and announces it once; from then on it is an ordinary
-   task. `GET /api/team-admin/requests` rows carry `loginId` (the member
-   login that filed it; `contactId` is null for a login's request).
-2. Owner works the **Requests** tab on `/team-admin` (or the tasks screen
-   filtered by tag), the human review surface. Open-request count badges the
-   tab.
-3. **Reply** posts the owner's answer straight into the member's thread
+   through the task routes or tools stamps `data.reviewed_at` and announces
+   it once; from then on it is an ordinary task.
+2. Owner works it on the tasks screen (filtered by tag). The Team admin
+   **Requests** tab, its list (`GET /api/team-admin/requests`) and its Reply
+   (`POST /api/team-admin/notify`) were removed in W5c; both answer 410
+   `gone`.
+3. (Before W5c) **Reply** posted the owner's answer straight into the member's thread
    (`notifyTeamRequester`; stamps `notifiedAt`, optional mark-done). The loop
    closes in the same channel the request came from.
 

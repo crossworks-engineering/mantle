@@ -1,5 +1,12 @@
 # Workspace review pattern
 
+> **Superseded in workspaces W5c:** review was removed (members no longer
+> submit, admins no longer approve or read "Shared by members"); items are
+> shared with Grant Access. The removed routes answer 410 `gone`. The code
+> this plan names (app-review-test.ts, member-items-shared.ts, the review
+> parts of member-review.ts and member-space-apps.ts) was deleted. Kept as
+> history.
+
 Status: decided 2026-10-09. Apps are built. "Waiting for approval" and
 "Shared by members" for pages, notes, tables, draws and files are built
 (part 2 of dissolving Team admin, 2026-10-09).
@@ -71,7 +78,7 @@ Brain (mantle):
   `packages/content/src/member-space-apps.ts`: the two lists and the detail,
   on the `adminVisible` rule. `sendBackSpaceApp(id, reviewer)` replaces the
   old return with a note.
-- `packages/content/src/app-review-test.ts`: the throwaway test copy under
+- app-review-test.ts (deleted in W5c): the throwaway test copy under
   `APP_DB_DIR/_tmp/review/<admin login>/<app>.sqlite`. Rows only, informational
   apps read only, host.me() without touching the real registry, 30 minute
   idle sweep, at most 3 copies per admin, and the nightly `_tmp` sweep as the
@@ -132,7 +139,7 @@ Jason decided (2026-10-09, option 1): admins see what the team shares.
 This widens admin reads to items active members shared with the team; see
 docs/access-levels.md section 7c.
 
-Brain (mantle), `packages/content/src/member-items-shared.ts`:
+Brain (mantle), member-items-shared.ts (deleted in W5c):
 
 - One rule in SQL picks what an admin may reach: an item kind in the
   space of an active member (role member, not deactivated), shared with

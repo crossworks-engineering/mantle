@@ -3,8 +3,8 @@
  * member's app lives in their personal space at the team author ceiling;
  * a draft is private (a teammate neither lists nor runs it); sharing with
  * the team lets teammates run the published version; submit freezes it;
- * accept moves it into the brain with its id, its database and its history;
- * send back gives it back, with no note; the author restores from its history.
+ * the author restores from its history. An admin's review (accept, send
+ * back, test runs, the review lists) was removed in workspaces W5c.
  * Seeds its own brain and logins on random ids; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-space-apps.db.test.ts
  */
@@ -45,13 +45,15 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     schemaSql: 'CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT);',
     schemaVersion: 1,
   };
-  let teamWs = '';
   const me = () => ({ loginId: author, spaceId: authorSpace });
-  /** What the admin was shown: the version and the review hash. */
-  const shown = async (id: string) => {
-    const r = await sa.getMemberAppForReview(id);
-    if (!r?.reviewHash) throw new Error('not waiting for review');
-    return { version: r.version, reviewHash: r.reviewHash };
+  /** A member-era app in the brain, as an Accept before W5c left it: the
+   *  node, its database and its history re-owned to the brain. */
+  const intoBrain = async (id: string) => {
+    await m.asSystem(() => apps.ensureAppsRoot(brain));
+    await admin`update nodes set owner_id = ${brain}, path = 'apps' where id = ${id}`;
+    await admin`update app_databases set owner_id = ${brain} where app_node_id = ${id}`;
+    await admin`update node_snapshots set owner_id = ${brain} where node_id = ${id}`;
+    await admin`update space_items set review_state = 'accepted' where node_id = ${id}`;
   };
   const them = () => ({ loginId: mate, spaceId: mateSpace });
 
@@ -73,11 +75,6 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
       (${author}, ${`msa-${tag}-a@example.invalid`}, 'x', 'member'),
       (${mate}, ${`msa-${tag}-b@example.invalid`}, 'x', 'member')`;
     await admin`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})`;
-    // Its Team workspace: an Accept at team gives Team a read grant (W5b2).
-    teamWs = (
-      await admin<{ id: string }[]>`insert into workspaces (owner_id, name, bridge_key)
-        values (${brain}, 'Team', 'team') returning id::text as id`
-    )[0]!.id;
     const rows = await admin<{ id: string; login_id: string }[]>`
       select id, login_id from spaces where kind = 'personal' and login_id in (${author}, ${mate})`;
     authorSpace = rows.find((r) => r.login_id === author)!.id;
@@ -172,140 +169,14 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     });
     expect(await sa.getRunnableSpaceApp(author, id)).toMatchObject({ dataReadOnly: true });
     expect((await sa.listSpaceApps(me())).find((a) => a.id === id)?.dataAccess).toBe('read');
-    expect((await sa.listMemberAppsForReview()).waiting.map((s) => s.id)).toContain(id);
-    const review = await sa.getMemberAppForReview(id);
-    expect(review?.files['App.tsx']).toBe('export default () => "one";');
 
     await sa.recallSpaceApp(me(), id);
     expect(await sa.authorSpaceApp(me(), id, { write: true })).toMatchObject({
       reviewState: 'draft',
     });
-    expect(await sa.getMemberAppForReview(id)).toBeNull();
-  });
-
-  it('accept moves it into the brain: same id, its data and history, the ceiling kept', async () => {
-    const id = await publishedSpaceApp('accepted');
-    await sa.submitSpaceApp(me(), id);
-    const res = await sa.acceptSpaceApp(
-      brain,
-      id,
-      { loginId: brain },
-      { level: 'team', trustTools: false, ...(await shown(id)) },
-    );
-    expect(res).toEqual({ id, level: 'team', authorLevel: 'team' });
-    // No level is written (W5b2): Team reads it by a grant, Write off,
-    // logged as the Accept's.
-    const [row] = await admin<
-      { owner_id: string; audience: string; author_level: string; team_reads: boolean }[]
-    >`
-      select n.owner_id, n.audience, a.author_level, ${teamWs}::uuid = any(n.read_ws) as team_reads
-        from nodes n join apps a on a.node_id = n.id
-       where n.id = ${id}`;
-    expect(row).toEqual({
-      owner_id: brain,
-      audience: 'admin',
-      author_level: 'team',
-      team_reads: true,
-    });
-    const grants = await admin<{ write: boolean }[]>`
-      select write from item_grants where node_id = ${id} and workspace_id = ${teamWs}`;
-    expect(grants).toEqual([{ write: false }]);
-    const events = await admin<{ by: string; actor: string }[]>`
-      select subject->>'by' as by, actor_id::text as actor from workspace_events
-       where workspace_id = ${teamWs} and action = 'grant.add' and subject->>'node' = ${id}`;
-    expect(events).toEqual([{ by: 'accept', actor: brain }]);
-    // Its database followed: the row the author wrote reads under the brain.
-    const rows = await m.asSystem(() =>
-      broker.appDbQuery(brain, id, 'SELECT name FROM items', [], schema),
-    );
-    expect(rows.map((r) => r.name)).toEqual(['a']);
-    // Its history followed too.
-    const history = await m.asSystem(() => snaps.listAppSnapshots(brain, id));
-    expect(history.map((e) => e.trigger)).toContain('publish');
-    // It is the brain's now: members run it by its level, not as a space app.
-    expect(await sa.getRunnableSpaceApp(author, id)).toBeNull();
-    expect(await m.asSystem(() => ma.getMemberRunnableApp(brain, id))).toMatchObject({
-      id,
-    });
-    const runtime = await m.asSystem(() => apps.getAppRuntime(brain, id));
-    expect(runtime?.authorLevel).toBe('team');
-    await expect(sa.authorSpaceApp(me(), id)).rejects.toMatchObject({ code: 'not-found' });
-  });
-
-  it('accept with the tools reviewed lifts the ceiling; send back gives it back, no note', async () => {
-    const trusted = await publishedSpaceApp('trusted');
-    await sa.submitSpaceApp(me(), trusted);
-    expect(
-      await sa.acceptSpaceApp(
-        brain,
-        trusted,
-        { loginId: brain },
-        { level: 'admin', trustTools: true, ...(await shown(trusted)) },
-      ),
-    ).toMatchObject({ level: 'admin', authorLevel: 'admin' });
-
-    const back = await publishedSpaceApp('returned');
-    await sa.submitSpaceApp(me(), back);
-    await sa.sendBackSpaceApp(back, { loginId: brain });
-    expect(await sa.authorSpaceApp(me(), back, { write: true })).toMatchObject({
-      reviewState: 'returned',
-    });
-    // Review flows carry no messages: the old column is never written.
-    const [noted] = await admin<{ returned_note: string | null }[]>`
-      select returned_note from space_items where node_id = ${back}`;
-    expect(noted?.returned_note).toBeNull();
-    await expect(sa.sendBackSpaceApp(back, { loginId: brain })).rejects.toMatchObject({
-      code: 'not-submitted',
-    });
-    // Returned is editable and submits again.
-    await sa.submitSpaceApp(me(), back);
-    expect((await sa.listMemberAppsForReview()).waiting.map((w) => w.id)).toContain(back);
   });
 
   // M3 audit, high 1: only the version the admin read can enter the brain.
-  it('accept refuses a version the admin was not shown', async () => {
-    const id = await publishedSpaceApp('swapped');
-    await sa.submitSpaceApp(me(), id);
-    const old = await shown(id);
-    // The member recalls, changes the code and the tools, publishes, resubmits.
-    await sa.recallSpaceApp(me(), id);
-    await sa.withAuthorWrite(me(), id, async () => {
-      await apps.writeDraftFile(authorSpace, id, 'App.tsx', 'export default () => "two";');
-      await apps.setManifest(authorSpace, id, { toolSlugs: ['email_send'] });
-      await apps.setDraftBuild(authorSpace, id, { ...GREEN, sha256: 'two' });
-      await apps.publishApp(authorSpace, id, { actor: 'member', actorLoginId: author });
-    });
-    await sa.submitSpaceApp(me(), id);
-    await expect(
-      sa.acceptSpaceApp(
-        brain,
-        id,
-        { loginId: brain },
-        { level: 'admin', trustTools: true, ...old },
-      ),
-    ).rejects.toMatchObject({ code: 'changed' });
-    // A forged hash with the right version is refused too.
-    const now = await shown(id);
-    await expect(
-      sa.acceptSpaceApp(
-        brain,
-        id,
-        { loginId: brain },
-        { level: 'team', trustTools: false, version: now.version, reviewHash: '0'.repeat(64) },
-      ),
-    ).rejects.toMatchObject({ code: 'changed' });
-    // What it was shown now goes through, and the review shows the new tools.
-    expect((await sa.getMemberAppForReview(id))?.declaredTools).toEqual(['email_send']);
-    expect(
-      await sa.acceptSpaceApp(
-        brain,
-        id,
-        { loginId: brain },
-        { level: 'team', trustTools: false, ...now },
-      ),
-    ).toMatchObject({ authorLevel: 'team' });
-  });
-
   // M3 audit, medium 3: a change holds the state row; none starts after Submit.
   it('a change never runs on a submitted app', async () => {
     const id = await publishedSpaceApp('locked');
@@ -340,17 +211,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     const pkg = await import('./app-package');
     const trash = await import('./app-trash');
     const id = await publishedSpaceApp('ceiling');
-    await sa.submitSpaceApp(me(), id);
-    await sa.acceptSpaceApp(
-      brain,
-      id,
-      { loginId: brain },
-      {
-        level: 'team',
-        trustTools: false,
-        ...(await shown(id)),
-      },
-    );
+    await intoBrain(id);
     const level = async (appId: string) =>
       (await m.asSystem(() => apps.getAppRuntime(brain, appId)))?.authorLevel;
 
@@ -410,22 +271,16 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     expect(rows.map((r) => r.name)).toEqual(['a']);
   });
 
-  // Access matrix N2: the admin's kill switch, and the author's state.
-  it('a shared app stops when its author is disabled or demoted; an admin lists and unshares it', async () => {
+  // Access matrix N2: the author's state.
+  it('a shared app stops when its author is disabled or demoted', async () => {
     const id = await publishedSpaceApp('kill');
     await sa.setSpaceAppSharing(me(), id, 'team');
     expect(await sa.getRunnableSpaceApp(mate, id)).toMatchObject({ id });
-    // A private draft never shows to an admin; a shared one does.
-    const listed = (await sa.listMemberAppsForReview()).shared.find((a) => a.id === id);
-    expect(listed).toMatchObject({ author: { loginId: author, active: true } });
 
     await admin`update auth.users set disabled_at = now() where id = ${author}`;
     try {
       expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
       expect((await sa.listSpaceApps(them())).map((a) => a.id)).not.toContain(id);
-      expect(
-        (await sa.listMemberAppsForReview()).shared.find((a) => a.id === id)?.author.active,
-      ).toBe(false);
     } finally {
       await admin`update auth.users set disabled_at = null where id = ${author}`;
     }
@@ -437,46 +292,6 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     } finally {
       await admin`update auth.users set role = 'member' where id = ${author}`;
     }
-
-    expect(await sa.adminUnshareSpaceApp(id)).toBe(true);
-    expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
-    expect(await sa.adminSpaceApp(id)).toBeNull();
-    expect(await sa.adminUnshareSpaceApp(id)).toBe(false);
-  });
-
-  // M4 audit, medium 2: an admin's delete can be undone from the brain's
-  // normal trash, with the app's data, history and activity.
-  it("an admin's delete of a member app lands in the brain's trash and comes back", async () => {
-    const trash = await import('./app-trash');
-    const id = await publishedSpaceApp('admin-delete');
-    await sa.setSpaceAppSharing(me(), id, 'team');
-    await admin`insert into app_access_log (owner_id, app_node_id, kind, detail)
-      values (${authorSpace}, ${id}, 'tool', ${JSON.stringify({ via: 'member', slug: 'x' })}::jsonb)`;
-
-    expect(await sa.adminDeleteSpaceApp(brain, id)).toBe(true);
-    expect(await sa.adminSpaceApp(id)).toBeNull();
-    expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
-    const inTrash = (await m.asSystem(() => trash.listDeletedApps(brain))).find((d) => d.id === id);
-    expect(inTrash).toMatchObject({ id, hasData: true });
-    // Nothing of it stays under the member's space.
-    const [left] = await admin<{ snaps: number; log: number; items: number }[]>`
-      select (select count(*)::int from node_snapshots where node_id = ${id} and owner_id = ${authorSpace}) as snaps,
-             (select count(*)::int from app_access_log where app_node_id = ${id} and owner_id = ${authorSpace}) as log,
-             (select count(*)::int from space_items where node_id = ${id}) as items`;
-    expect(left).toEqual({ snaps: 0, log: 0, items: 0 });
-
-    // An admin restores it: the brain's, admin only, at team rules, with its data.
-    await m.asSystem(() => trash.restoreDeletedApp(brain, id));
-    const [node] = await admin<{ owner_id: string; audience: string }[]>`
-      select owner_id, audience from nodes where id = ${id}`;
-    expect(node).toEqual({ owner_id: brain, audience: 'admin' });
-    expect((await m.asSystem(() => apps.getAppRuntime(brain, id)))?.authorLevel).toBe('team');
-    const rows = await m.asSystem(() =>
-      broker.appDbQuery(brain, id, 'SELECT name FROM items', [], schema),
-    );
-    expect(rows.map((r) => r.name)).toEqual(['a']);
-    // It is the brain's now, no longer a member app an admin acts on here.
-    expect(await sa.adminDeleteSpaceApp(brain, id)).toBe(false);
   });
 
   // Access matrix N6 (option A): a member deletes their own app to a trash
@@ -498,7 +313,6 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     expect(await sa.getRunnableSpaceApp(author, id)).toBeNull();
     expect((await sa.listSpaceApps(them())).map((a) => a.id)).not.toContain(id);
     expect((await sa.listSpaceApps(me())).map((a) => a.id)).not.toContain(id);
-    expect(await sa.adminSpaceApp(id)).toBeNull();
     // Every change refuses; a second delete says it is already there.
     await expect(sa.authorSpaceApp(me(), id)).rejects.toMatchObject({ code: 'deleted' });
     await expect(sa.withAuthorWrite(me(), id, async () => undefined)).rejects.toMatchObject({
@@ -546,33 +360,16 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     await expect(sa.undeleteSpaceApp(me(), id)).rejects.toMatchObject({ code: 'not-deleted' });
   });
 
-  it('a submitted app the member deletes leaves the review queue, and an admin cannot reach it', async () => {
+  it('a submitted app the member deletes stays in their space and comes back a draft', async () => {
     const id = await publishedSpaceApp('trash submitted');
     await sa.submitSpaceApp(me(), id);
-    const pinned = await shown(id);
-    expect((await sa.listMemberAppsForReview()).waiting.map((s) => s.id)).toContain(id);
 
     expect(await sa.deleteSpaceApp(me(), id)).toMatchObject({ wasSubmitted: true });
-    expect((await sa.listMemberAppsForReview()).waiting.map((s) => s.id)).not.toContain(id);
-    expect(await sa.getMemberAppForReview(id)).toBeNull();
-    await expect(
-      sa.acceptSpaceApp(
-        brain,
-        id,
-        { loginId: brain },
-        { level: 'team', trustTools: false, ...pinned },
-      ),
-    ).rejects.toMatchObject({ code: 'not-found' });
-    await expect(sa.sendBackSpaceApp(id, { loginId: brain })).rejects.toMatchObject({
-      code: 'not-submitted',
-    });
-    expect(await sa.adminDeleteSpaceApp(brain, id)).toBe(false);
     const [node] = await admin<{ owner_id: string }[]>`select owner_id from nodes where id = ${id}`;
     expect(node?.owner_id).toBe(authorSpace);
 
-    // It comes back a private draft: never straight back to the queue.
+    // It comes back a private draft, never submitted again.
     expect(await sa.undeleteSpaceApp(me(), id)).toMatchObject({ reviewState: 'draft' });
-    expect((await sa.listMemberAppsForReview()).waiting.map((s) => s.id)).not.toContain(id);
   });
 
   it("a member deletes only their own manual snapshots, and that frees their budget; the app's data stays", async () => {
@@ -645,28 +442,6 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     }
   });
 
-  // Access matrix N3: what a member's app did shows on the brain app after
-  // Accept.
-  it("Accept moves the app's activity rows to the brain", async () => {
-    const id = await publishedSpaceApp('activity');
-    await admin`insert into app_access_log (owner_id, app_node_id, kind, detail)
-      values (${authorSpace}, ${id}, 'tool', ${JSON.stringify({ via: 'member', slug: 'x' })}::jsonb)`;
-    await sa.submitSpaceApp(me(), id);
-    await sa.acceptSpaceApp(
-      brain,
-      id,
-      { loginId: brain },
-      {
-        level: 'team',
-        trustTools: false,
-        ...(await shown(id)),
-      },
-    );
-    const [row] = await admin<{ owner_id: string }[]>`
-      select owner_id from app_access_log where app_node_id = ${id}`;
-    expect(row?.owner_id).toBe(brain);
-  });
-
   it('the author restores their own app from its history', async () => {
     const id = await publishedSpaceApp('restore');
     const snap = await m.asSystem(() =>
@@ -694,134 +469,5 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     const [who] = await admin<{ actor: string; actor_login_id: string }[]>`
       select actor, actor_login_id from node_snapshots where id = ${snap!.id}`;
     expect(who).toEqual({ actor: 'member', actor_login_id: author });
-  });
-
-  // Workspace review pattern (2026-10-09): members' apps in the admin's Apps
-  // screen, two lists, the normal app screen, a test run on a copy.
-  it('the review lists show submitted and shared apps, never a private draft', async () => {
-    const hidden = await publishedSpaceApp('private draft');
-    const shared = await publishedSpaceApp('team shared');
-    await sa.setSpaceAppSharing(me(), shared, 'team');
-    const waiting = await publishedSpaceApp('waiting');
-    await sa.setSpaceAppSharing(me(), waiting, 'team');
-    await sa.submitSpaceApp(me(), waiting);
-
-    const lists = await sa.listMemberAppsForReview();
-    const all = [...lists.waiting, ...lists.shared].map((a) => a.id);
-    expect(all).not.toContain(hidden);
-    expect(lists.shared.find((a) => a.id === shared)).toMatchObject({
-      author: { loginId: author, active: true },
-      runnable: true,
-    });
-    // Submitted and shared: once, under Waiting, at the version sent.
-    expect(lists.shared.map((a) => a.id)).not.toContain(waiting);
-    expect(lists.waiting.find((a) => a.id === waiting)).toMatchObject({
-      version: (await shown(waiting)).version,
-    });
-
-    expect(await sa.getMemberAppForReview(hidden)).toBeNull();
-    // The admin reads the PUBLISHED source, never the author's draft.
-    await m.asSystem(() =>
-      apps.writeDraftFile(authorSpace, shared, 'App.tsx', 'export default () => "secret";'),
-    );
-    const detail = await sa.getMemberAppForReview(shared);
-    expect(detail?.files['App.tsx']).toBe('export default () => "one";');
-    expect(detail?.reviewHash).toBeNull();
-    // A waiting app carries what an Approve sends back.
-    expect((await sa.getMemberAppForReview(waiting))?.reviewHash).toBe(
-      (await shown(waiting)).reviewHash,
-    );
-  });
-
-  it('a test run works on a throwaway copy; the real data never changes', async () => {
-    const t = await import('./app-review-test');
-    const id = await publishedSpaceApp('tested');
-    await sa.setSpaceAppSharing(me(), id, 'team');
-    const app = (await sa.getMemberAppForReview(id))!;
-    const tester = { loginId: brain };
-    // No test started: nothing runs.
-    await expect(t.reviewTestSql(tester, app, 'query', 'SELECT 1', [])).rejects.toBeInstanceOf(
-      t.ReviewTestGoneError,
-    );
-    await t.startReviewTest(tester, app);
-    await t.reviewTestSql(tester, app, 'exec', "INSERT INTO items (name) VALUES ('test')", []);
-    const onCopy = (await t.reviewTestSql(
-      tester,
-      app,
-      'query',
-      'SELECT name FROM items ORDER BY id',
-      [],
-    )) as { name: string }[];
-    expect(onCopy.map((r) => r.name)).toEqual(['a', 'test']);
-    // The member's own file is as it was.
-    const real = await m.asSystem(() =>
-      broker.appDbQuery(authorSpace, id, 'SELECT name FROM items ORDER BY id', [], schema),
-    );
-    expect(real.map((r) => r.name)).toEqual(['a']);
-    // Team rules: rows only, never the schema.
-    await expect(
-      t.reviewTestSql(tester, app, 'exec', 'CREATE TABLE extra (x INTEGER)', []),
-    ).rejects.toThrow();
-    // host.me() is the admin, filled by the server.
-    const me1 = (await t.reviewTestSql(tester, app, 'query', 'SELECT :host_me_kind AS k', [])) as {
-      k: string;
-    }[];
-    expect(me1[0]?.k).toBe('admin');
-    // Ending it removes the copy; a restart starts from the real data again.
-    await t.endReviewTest(brain, id);
-    await expect(t.reviewTestSql(tester, app, 'query', 'SELECT 1', [])).rejects.toBeInstanceOf(
-      t.ReviewTestGoneError,
-    );
-    await t.startReviewTest(tester, app);
-    const fresh = (await t.reviewTestSql(tester, app, 'query', 'SELECT name FROM items', [])) as {
-      name: string;
-    }[];
-    expect(fresh.map((r) => r.name)).toEqual(['a']);
-    // An idle copy goes by itself.
-    expect(await t.sweepReviewTests(Date.now() + t.REVIEW_TEST_IDLE_MS + 60_000)).toBeGreaterThan(
-      0,
-    );
-    await expect(t.reviewTestSql(tester, app, 'query', 'SELECT 1', [])).rejects.toBeInstanceOf(
-      t.ReviewTestGoneError,
-    );
-  });
-
-  it('a test run of an app with no data provisions nothing on the real app', async () => {
-    const t = await import('./app-review-test');
-    const created = await sa.createSpaceApp(me(), { title: `${tag} empty` });
-    await m.asSystem(async () => {
-      await apps.writeDraftFile(authorSpace, created.id, 'App.tsx', 'export default () => 1;');
-      await apps.setManifest(authorSpace, created.id, { sqlite: schema });
-      await apps.setDraftBuild(authorSpace, created.id, GREEN);
-      await apps.publishApp(authorSpace, created.id, {
-        note: 'first',
-        actor: 'member',
-        actorLoginId: author,
-      });
-    });
-    await sa.setSpaceAppSharing(me(), created.id, 'team');
-    const app = (await sa.getMemberAppForReview(created.id))!;
-    const tester = { loginId: brain };
-    await t.startReviewTest(tester, app);
-    await t.reviewTestSql(tester, app, 'exec', "INSERT INTO items (name) VALUES ('x')", []);
-    await t.reviewTestSql(tester, app, 'query', 'SELECT :host_me_id AS id', []);
-    const [reg] = await admin<{ n: number }[]>`
-      select count(*)::int as n from app_databases where app_node_id = ${created.id}`;
-    expect(reg?.n).toBe(0);
-    await t.endReviewTest(brain, created.id);
-  });
-
-  it('a test run of an informational app reads only', async () => {
-    const t = await import('./app-review-test');
-    const id = await publishedSpaceApp('informational');
-    await sa.setSpaceAppSharing(me(), id, 'team');
-    await admin`update apps set data_read_only = true where node_id = ${id}`;
-    const app = (await sa.getMemberAppForReview(id))!;
-    const tester = { loginId: brain };
-    await t.startReviewTest(tester, app);
-    await expect(
-      t.reviewTestSql(tester, app, 'exec', "INSERT INTO items (name) VALUES ('x')", []),
-    ).rejects.toBeInstanceOf(t.ReviewTestReadOnlyError);
-    await t.endReviewTest(brain, id);
   });
 });

@@ -10,13 +10,9 @@
  *  - the save-time embed rule reads as the author (W5b2: the author's
  *    workspaces): a client draft may name its own items and items its
  *    client workspace holds, never an item only Team holds;
- *  - Accept of a client-authored item defaults to team, and client or
- *    public needs an explicit confirmation (a member's item keeps admin);
- *    since W5b2 an Accept takes nothing down with it (an embed keeps its
- *    own grants), so the confirmation is of the level alone;
- *  - give back after Take over checks the item as the author reads:
- *    refused while it names an item only Team holds, allowed with an item
- *    the client's workspace holds.
+ *
+ * Accept, Take over and Give back were removed with the rest of review in
+ * workspaces W5c.
  *
  * Brain items belong to the shared test anchor (mantle_brain_id()); the
  * workspaces (the client's, and a team one with the member in it) are this
@@ -31,31 +27,22 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and give back', () => {
+describe.skipIf(!URL)('a client login’s space: its level and embeds', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let sp: typeof import('./member-space');
-  let rv: typeof import('./member-review');
-  let tk: typeof import('./member-takeover');
-  let sh: typeof import('./shares');
   let sqlTag: typeof import('drizzle-orm').sql;
   const tag = `cspace-${randomUUID().slice(0, 8)}`;
   let brain = '';
   const client = randomUUID();
   const member = randomUUID();
   const adminA = randomUUID();
-  // Accept moves items into a brain of this test's own (it creates the
-  // brain's root folders, which the shared anchor must never gain from a test).
-  const acceptBrain = randomUUID();
   const logins = [client, member, adminA];
   const spaceOf: Record<string, string> = {};
   const brainItems = { team: randomUUID(), client: randomUUID(), pub: randomUUID() };
   // The client's workspace (the client item), and a team one the member is
   // in (the team and client items); the public note no workspace holds.
   const ws = { client: randomUUID(), team: randomUUID() };
-  // A file of the Accept brain, at client: a client's page embeds it (audit
-  // A28, the closure an Accept takes down).
-  const acceptFile = randomUUID();
   const created: string[] = [];
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-cspace-'));
 
@@ -63,18 +50,6 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     m.withSpace({ spaceId: spaceOf[login]!, loginId: login }, fn);
   const exec = async <T>(q: ReturnType<typeof sqlTag>) =>
     (await m.systemDb.execute(q)) as unknown as T[];
-  const audienceOf = async (id: string) =>
-    (await exec<{ audience: string }>(sqlTag`select audience from nodes where id = ${id}`))[0]
-      ?.audience;
-  /** Whether the Accept brain's Team workspace reads the item: since W5b2 an
-   *  Accept at team or wider gives Team a grant, and writes no level. */
-  const teamReads = async (id: string) =>
-    (
-      await exec<{ ok: boolean }>(sqlTag`
-        select exists (select 1 from nodes n join workspaces w
-                        on w.owner_id = ${acceptBrain} and w.bridge_key = 'team'
-                       where n.id = ${id} and w.id = any(n.read_ws)) as ok`)
-    )[0]?.ok;
   const mention = (id: string) => ({
     type: 'paragraph',
     content: [{ type: 'mention', attrs: { id, ref: 'node' } }],
@@ -92,12 +67,6 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     expect(res.ok, `save ${title}`).toBe(true);
     return id;
   };
-  const submitted = async (login: string, title: string, refs: string[] = []) => {
-    const id = await page(login, title, refs);
-    await as(login, () => sp.submitItem(spaceOf[login]!, id));
-    return id;
-  };
-
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -106,9 +75,6 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     process.env.MANTLE_FILES_ROOT = path.join(root, 'files');
     m = await import('@mantle/db');
     sp = await import('./member-space');
-    rv = await import('./member-review');
-    tk = await import('./member-takeover');
-    sh = await import('./shares');
     sqlTag = (await import('drizzle-orm')).sql;
     const { ensureTestAnchor } = await import('@mantle/db/test-support');
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
@@ -119,12 +85,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client', 'Cleo Client'),
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', null),
-        (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', null),
-        (${acceptBrain}, ${`${tag}-b@example.invalid`}, 'x', 'admin', null)`);
-    await m.systemDb.execute(sqlTag`
-      insert into spaces (id, kind, login_id) values (${acceptBrain}, 'brain', ${acceptBrain})`);
-    await m.systemDb.execute(sqlTag`
-      insert into workspaces (owner_id, name, bridge_key) values (${acceptBrain}, 'Team', 'team')`);
+        (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', null)`);
     const rows = await exec<{ id: string; login_id: string }>(sqlTag`
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${client}, ${member}, ${adminA})`);
@@ -133,8 +94,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${brainItems.team}, ${brain}, 'note', ${`${tag} team note`}, 'notes', 'team'),
         (${brainItems.client}, ${brain}, 'note', ${`${tag} client note`}, 'notes', 'client'),
-        (${brainItems.pub}, ${brain}, 'note', ${`${tag} public note`}, 'notes', 'public'),
-        (${acceptFile}, ${acceptBrain}, 'file', ${`${tag} plan.png`}, 'files', 'client')`);
+        (${brainItems.pub}, ${brain}, 'note', ${`${tag} public note`}, 'notes', 'public')`);
     await m.systemDb.execute(sqlTag`
       insert into workspaces (id, owner_id, name) values
         (${ws.client}, ${brain}, ${`${tag} client`}), (${ws.team}, ${brain}, ${`${tag} team`})`);
@@ -147,15 +107,9 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
           (${brainItems.client}, ${ws.client}), (${brainItems.client}, ${ws.team}),
           (${brainItems.team}, ${ws.team})`);
     });
-    // Imports the review, take-over and share modules: a loaded run needs time.
   }, 60_000);
 
   afterAll(async () => {
-    await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${acceptBrain}`);
-    await m.systemDb.execute(
-      sqlTag`delete from spaces where id = ${acceptBrain} or login_id = ${acceptBrain}`,
-    );
-    await m.systemDb.execute(sqlTag`delete from auth.users where id = ${acceptBrain}`);
     for (const id of [...created, ...Object.values(brainItems)]) {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
     }
@@ -223,248 +177,5 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     await expect(
       as(member, () => sp.saveMinePage(spaceOf[member]!, mid, say('x', [mention(id)]))),
     ).rejects.toThrow('only your own items and Library items.');
-  });
-
-  it('Accept of a client’s item defaults to team; client needs a confirmation', async () => {
-    const reviewer = { loginId: adminA };
-    const first = await submitted(client, `${tag} request 1`, [brainItems.client]);
-    const res = await rv.acceptReviewItem(acceptBrain, first, reviewer);
-    expect(res.audience).toBe('team');
-    expect(await teamReads(first)).toBe(true);
-
-    const second = await submitted(client, `${tag} request 2`);
-    for (const audience of ['client', 'public'] as const) {
-      await expect(
-        rv.acceptReviewItem(acceptBrain, second, reviewer, { audience }),
-      ).rejects.toMatchObject({ reason: 'confirm-level' });
-    }
-    expect(await audienceOf(second)).toBe('admin'); // still the client's, untouched
-    const confirmed = await rv.acceptReviewItem(acceptBrain, second, reviewer, {
-      audience: 'client',
-      lowerConfirmed: true,
-    });
-    expect(confirmed.audience).toBe('client');
-    expect(await teamReads(second)).toBe(true);
-
-    // A member's item (control): admin by default, as before.
-    const third = await submitted(member, `${tag} member request`);
-    expect((await rv.acceptReviewItem(acceptBrain, third, reviewer)).audience).toBe('admin');
-  });
-
-  it('acceptAudience: the rule by role, with no database', () => {
-    expect(rv.acceptAudience('member', {})).toBe('admin');
-    expect(rv.acceptAudience(null, {})).toBe('admin');
-    expect(rv.acceptAudience('client', {})).toBe('team');
-    expect(rv.acceptAudience('client', { audience: 'admin' })).toBe('admin');
-    expect(() => rv.acceptAudience('client', { audience: 'client' })).toThrow(/client wrote/);
-    expect(rv.acceptAudience('client', { audience: 'public', lowerConfirmed: true })).toBe(
-      'public',
-    );
-    expect(rv.acceptAudience('member', { audience: 'client' })).toBe('client');
-  });
-
-  it('give back after Take over checks the item as the author (a client) reads', async () => {
-    const id = await submitted(client, `${tag} to take`);
-    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
-    await rv.takeOverReviewItem(id, actor);
-    const from = await tk.takenFromOf(actor.spaceId, [id]);
-    expect(from.get(id)).toMatchObject({ loginId: client, name: 'Cleo Client', canGiveBack: true });
-
-    // The admin names an item only Team holds while it is theirs: a member
-    // could take that back, a client may not.
-    const A = actor.spaceId;
-    const writer = { adminOfBrain: brain };
-    expect(
-      (
-        await as(adminA, () =>
-          sp.saveMinePage(A, id, say('admin', [mention(brainItems.team)]), writer),
-        )
-      ).ok,
-    ).toBe(true);
-    await expect(tk.giveBackTakenItem(brain, actor, id)).rejects.toMatchObject({
-      reason: 'embed',
-      ids: [brainItems.team],
-    });
-    // With a client item instead, it goes back to the client.
-    expect(
-      (
-        await as(adminA, () =>
-          sp.saveMinePage(A, id, say('admin', [mention(brainItems.client)]), writer),
-        )
-      ).ok,
-    ).toBe(true);
-    const back = await tk.giveBackTakenItem(brain, actor, id);
-    expect(back.returned.map((b) => b.id)).toEqual([id]);
-    const [row] = await exec<{ owner_id: string }>(
-      sqlTag`select owner_id from nodes where id = ${id}`,
-    );
-    expect(row?.owner_id).toBe(spaceOf[client]);
-  });
-  it('give back reads an absolute URL into this brain as the item it names (audit L2)', async () => {
-    const id = await submitted(client, `${tag} linked`);
-    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
-    await rv.takeOverReviewItem(id, actor);
-    const A = actor.spaceId;
-    const writer = { adminOfBrain: brain };
-    // The admin links a TEAM item by its absolute URL while it is theirs.
-    const linked = async (href: string) => {
-      const doc = say('admin', [
-        {
-          type: 'paragraph',
-          content: [
-            { type: 'text', text: 'Team plan', marks: [{ type: 'link', attrs: { href } }] },
-          ],
-        },
-      ]);
-      expect((await as(adminA, () => sp.saveMinePage(A, id, doc, writer))).ok, href).toBe(true);
-    };
-    const before = process.env.MANTLE_PUBLIC_URL;
-    process.env.MANTLE_PUBLIC_URL = 'https://brain.example.invalid';
-    try {
-      for (const href of [
-        `https://brain.example.invalid/pages/${brainItems.team}`,
-        `https://other.example.invalid/n/${brainItems.team}`,
-      ]) {
-        await linked(href);
-        await expect(tk.giveBackTakenItem(brain, actor, id), href).rejects.toMatchObject({
-          reason: 'embed',
-          ids: [brainItems.team],
-        });
-      }
-      // An external link still goes back.
-      await linked('https://example.com/plan');
-      const back = await tk.giveBackTakenItem(brain, actor, id);
-      expect(back.returned.map((b) => b.id)).toEqual([id]);
-    } finally {
-      if (before === undefined) delete process.env.MANTLE_PUBLIC_URL;
-      else process.env.MANTLE_PUBLIC_URL = before;
-    }
-  });
-
-  /** Make a submitted page embed the Accept brain's file (written by hand:
-   *  the save rule reads the shared anchor, and Accept runs in its own). */
-  const embedAcceptFile = async (id: string) => {
-    const doc = say('with an image', [{ type: 'image', attrs: { nodeId: acceptFile, src: 'x' } }]);
-    await m.systemDb.execute(
-      sqlTag`update pages set doc = ${JSON.stringify(doc)}::jsonb where node_id = ${id}`,
-    );
-  };
-
-  it('the review queue names a client author by role, and its counts agree (T7, A28)', async () => {
-    const mine = await submitted(client, `${tag} queued`);
-    const theirs = await submitted(member, `${tag} queued by a member`);
-    await m.systemDb.transaction(async (tx) => {
-      await tx.execute(sqlTag`set transaction isolation level repeatable read`);
-      const queue = await rv.listReviewQueue(tx);
-      expect(queue.items.find((i) => i.id === mine)).toMatchObject({
-        reason: 'submitted',
-        author: { loginId: client, name: 'Cleo Client', role: 'client', inactive: false },
-      });
-      expect(queue.items.find((i) => i.id === theirs)?.author.role).toBe('member');
-      // One snapshot: the counts are the list's, the client row included.
-      expect(await rv.countReviewQueue(tx)).toEqual(queue.counts);
-      expect(await rv.countSubmitted(tx)).toBe(
-        queue.items.filter((i) => i.reviewState === 'submitted' || i.reviewState === 'taken')
-          .length,
-      );
-    });
-    // Return goes back to the client, with the note.
-    await rv.returnReviewItem(mine, { loginId: adminA });
-    const [row] = await exec<{ review_state: string; returned_note: string }>(
-      sqlTag`select review_state, returned_note from space_items where node_id = ${mine}`,
-    );
-    expect(row).toEqual({ review_state: 'returned', returned_note: null });
-    expect((await rv.listReviewQueue()).items.map((i) => i.id)).not.toContain(mine);
-    await rv.returnReviewItem(theirs, { loginId: adminA });
-  });
-
-  it('Accept of a client item at client makes no link, and needs no tick for what it embeds (A31)', async () => {
-    const id = await submitted(client, `${tag} at client`);
-    await embedAcceptFile(id);
-    // Since W5b2 an Accept takes nothing down (an embed keeps its own
-    // grants): the closure is empty, the level confirmation is enough.
-    const preview = await rv.previewAccept(id, acceptBrain);
-    expect(preview?.closure).toEqual([]);
-    const res = await rv.acceptReviewItem(
-      acceptBrain,
-      id,
-      { loginId: adminA },
-      {
-        audience: 'client',
-        lowerConfirmed: true,
-      },
-    );
-    expect(res.audience).toBe('client');
-    expect(await teamReads(id)).toBe(true);
-    expect(await sh.getActiveShareForNode(acceptBrain, id)).toBeNull();
-    expect(await audienceOf(acceptFile)).toBe('client');
-  });
-
-  it('Accept of a client item at public needs the level confirmed; nothing it embeds goes down (A28)', async () => {
-    const reviewer = { loginId: adminA };
-    const id = await submitted(client, `${tag} at public`);
-    await embedAcceptFile(id);
-    // Since W5b2 nothing goes down with an Accept (the embed closure is
-    // gone): the list is empty, and the level still needs its confirmation.
-    const goingDown: unknown[] = [];
-    const refused = rv.acceptReviewItem(acceptBrain, id, reviewer, { audience: 'public' });
-    await expect(refused).rejects.toMatchObject({ reason: 'confirm-level', goingDown });
-    await expect(refused).rejects.toThrow(
-      /anyone with its open link reads it; client logins do not/,
-    );
-    // A tick is no confirmation of the level.
-    await expect(
-      rv.acceptReviewItem(acceptBrain, id, reviewer, {
-        audience: 'public',
-        confirmedIds: [acceptFile],
-      }),
-    ).rejects.toMatchObject({ reason: 'confirm-level', goingDown });
-    expect(await audienceOf(acceptFile)).toBe('client');
-    expect(await audienceOf(id)).toBe('admin'); // still the client's, untouched
-    // The level confirmed: accepted, and nothing it embeds changes (the
-    // levels are frozen; contract change 22).
-    const res = await rv.acceptReviewItem(acceptBrain, id, reviewer, {
-      audience: 'public',
-      lowerConfirmed: true,
-    });
-    expect(res.audience).toBe('public');
-    expect(res.alsoLowered).toEqual([]);
-    expect(await audienceOf(acceptFile)).toBe('client');
-  });
-
-  it("an admin's own Accept after Take over follows the client rule (A6)", async () => {
-    const id = await submitted(client, `${tag} taken then accepted`);
-    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
-    await rv.takeOverReviewItem(id, actor);
-    for (const audience of ['client', 'public'] as const) {
-      await expect(rv.acceptOwnItem(acceptBrain, actor, id, { audience })).rejects.toMatchObject({
-        reason: 'confirm-level',
-      });
-    }
-    expect(await audienceOf(id)).not.toBe('client');
-    // Default: team, as for a reviewed Accept of a client's item.
-    const res = await rv.acceptOwnItem(acceptBrain, actor, id);
-    expect(res.audience).toBe('team');
-    expect(await teamReads(id)).toBe(true);
-  });
-
-  it('a taken client item cannot be deleted while the client can take it back (T7)', async () => {
-    const id = await submitted(client, `${tag} taken, then deleted`);
-    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
-    await rv.takeOverReviewItem(id, actor);
-    await expect(as(adminA, () => sp.deleteMineItem(actor.spaceId, id))).rejects.toMatchObject({
-      reason: 'taken',
-    });
-    // A deactivated client cannot take it back: then it may go.
-    await m.systemDb.execute(
-      sqlTag`update auth.users set disabled_at = now() where id = ${client}`,
-    );
-    try {
-      expect(await as(adminA, () => sp.deleteMineItem(actor.spaceId, id))).toBe(true);
-    } finally {
-      await m.systemDb.execute(
-        sqlTag`update auth.users set disabled_at = null where id = ${client}`,
-      );
-    }
   });
 });

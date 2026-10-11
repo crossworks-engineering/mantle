@@ -173,24 +173,31 @@ describe.skipIf(!hasManifest)('admin private-space routes', () => {
     }
   });
 
-  // Audit F07: Take over lands in the ACTING admin's own space.
-  it("take-over: admin only, into the acting login's own space", async () => {
-    const path = '/api/team-admin/submissions/not-a-uuid/take-over';
-    expect((await app.request(path, { method: 'POST' })).status).toBe(401);
-    const asMember = await app.request(path, {
-      method: 'POST',
-      headers: { cookie: cookieFor(MEMBER_ID) },
-    });
-    expect(asMember.status).toBe(403);
-    expect(((await asMember.json()) as { reason?: string }).reason).toBe('member-login');
-    h.spaceLookups.length = 0;
-    const asAdmin = await app.request(path, {
-      method: 'POST',
-      headers: { cookie: cookieFor(ADMIN_ID) },
-    });
-    // A malformed id is a 404 before any content read, after the space.
-    expect(asAdmin.status).toBe(404);
-    expect(h.spaceLookups).toEqual([ADMIN_ID]);
+  // Take over, Accept and Give back were removed in W5c: the stubs keep the
+  // admin gate (401, a member's 403) and answer an admin 410 `gone` without
+  // opening any space.
+  it('take-over, accept and give-back: admin gate, then 410 gone', async () => {
+    for (const path of [
+      '/api/team-admin/submissions/not-a-uuid/take-over',
+      '/api/admin/space/not-a-uuid/accept',
+      '/api/admin/space/not-a-uuid/give-back',
+    ]) {
+      expect((await app.request(path, { method: 'POST' })).status, path).toBe(401);
+      const asMember = await app.request(path, {
+        method: 'POST',
+        headers: { cookie: cookieFor(MEMBER_ID) },
+      });
+      expect(asMember.status, path).toBe(403);
+      expect(((await asMember.json()) as { reason?: string }).reason, path).toBe('member-login');
+      h.spaceLookups.length = 0;
+      const asAdmin = await app.request(path, {
+        method: 'POST',
+        headers: { cookie: cookieFor(ADMIN_ID) },
+      });
+      expect(asAdmin.status, path).toBe(410);
+      expect(((await asAdmin.json()) as { code?: string }).code, path).toBe('gone');
+      expect(h.spaceLookups, path).toEqual([]);
+    }
   });
 
   it('bytes: an owner ?at= token acts for the login named in `act`', async () => {

@@ -264,8 +264,8 @@ missing share, an open link) is the same 401 after the same steps. Limits:
 per address (an IPv4 address or an IPv6 /64) 10 a minute and 30 an hour;
 per share 10 failures an hour (counted from `share_access_log`); per
 contact 30 failures a day, then a 24-hour lock, an audit row
-(`contact.sharing_locked`) and a "Needs you" notice
-(docs/member-logins.md section 12). A try the per-share limit already
+(`contact.sharing_locked`) and the contact's "Locked" badge (the "Needs
+you" notice went with Team admin in W5c). A try the per-share limit already
 refused is logged on the share (`code_failed`) but not counted on the
 contact, after the same work: one holder of one link cannot lock all of
 the contact's links. The share and contact counters live in the database,

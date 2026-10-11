@@ -16,7 +16,7 @@ vi.mock('@mantle/db', () => ({
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({
   loadProfilePreferences: vi.fn(),
-  loadNeedsYou: vi.fn(),
+  loadProviderAlerts: vi.fn(),
   chatReplyNotice: vi.fn(),
   reviewResultNotice: vi.fn(),
 }));

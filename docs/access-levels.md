@@ -548,16 +548,13 @@ rule written in the query (the team role cannot read a space).
 
 `apps.author_level` (migration 0235) is the AUTHOR CEILING: 'team' for a
 member's app, so `appToolLevel` never gives it admin rules, whoever runs
-it. It stays 'team' after an admin's accept unless the admin reviewed the
-declared tools ("trust its tools"). The level an app is accepted at is
-admin or team; client and public stay an admin's later choice.
+it. A member-era app that an admin accepted before W5c stays 'team' unless
+the admin trusted its tools. The admin's review of member apps (accept,
+send back, test runs, activity, Unshare, Delete) was removed in workspaces
+W5c; members still build apps and share them with the team.
 
 The ceiling never lifts by itself (M3 audit):
 
-- Accept is pinned to what the admin read: the review answers the version
-  and a hash of the published source, manifest and build; Accept sends
-  both back, and the locked accept refuses (409 `changed`) when either
-  moved or a draft is pending.
 - A copy keeps its source's ceiling (`duplicateApp`), an import starts at
   'team', an undelete of a member-era app (a history row by a member, or
   one taken at 'team') comes back at 'team', and restoring the code of such
@@ -567,16 +564,12 @@ The ceiling never lifts by itself (M3 audit):
   `PATCH /api/apps/:id { trustTools: true }` (false puts it back). No tool,
   agent or API key writes it.
 - A member's change to their own app runs holding the app's state row
-  (`withAuthorWrite`): a Submit, a Recall or an Accept waits for it, and no
-  change starts after a Submit.
+  (`withAuthorWrite`): a Submit or a Recall waits for it, and no change
+  starts after a Submit.
 
 A member's app runs only while its author is an active member (not
 disabled, still a member): the run and list queries say so (access matrix
-N2). An admin sees and stops the team-shared and submitted ones (Apps,
-above the brain's own: activity, Unshare, Delete keeping a snapshot); a private draft
-stays the author's alone. An admin who tests a submitted or shared app in Apps
-runs it on a copy of its current data (submitting or sharing it is consent to
-that review); the copy is the admin's alone and goes when the test ends.
+N2). A private draft stays the author's alone.
 
 Every app list carries `dataAccess` ('read' or 'read_write'): what the
 viewer may do with the app's data, worked out with the rule its db broker
@@ -584,36 +577,14 @@ applies (an admin always writes; a member by `memberMayWriteAppData`; a
 client a client app unless informational; a member-built app unless under
 review). The client shows it as the R and R/W pill and never derives it.
 
-## 7c. Admins read what members share with the team (2026-10-09)
+## 7c. Review was removed (workspaces W5c)
 
-Jason decided (2026-10-09, option 1) that admins see what the team
-shares. Before this, an admin read a member's personal item only when it
-was submitted, or team-shared by a login that is gone (member-review.ts
-`reviewable`). Now an admin also reads every item an ACTIVE MEMBER shared
-with the team, in the item's own workspace ("Shared by members" in Pages,
-Notes, Tables, Draw and Files; Apps already did, N2 above).
-
-How it stays narrow:
-
-- One rule (`member-items-shared.ts`, on the admin pool, in SQL): an item
-  kind in the personal space of a login with role member that is not
-  deactivated, shared with the team, in draft or returned. Never a client's
-  item, an admin's own, a folder, a submitted item (it waits for approval),
-  or a deactivated or deleted author's item (it stays "left behind" in the
-  review queue for Approve or Discard). The list, the item, its bytes and
-  SVG, and Unshare all apply it.
-- The reads then run on the team role with `mantle.human` on
-  (`withTeamDrafts`), through the same team-drafts queries a member uses
-  for a teammate's shared items (member-space.ts), so row security confirms
-  every row. The admin reads the SAVED version, never the working draft.
-- Routes: `/api/team-admin/member-items` (list per kind, one item, its
-  bytes and SVG, Unshare), each behind `getOwnerOr401` (or the owner asset
-  token for bytes and SVG). Bytes and SVG serve the item itself, or an item
-  in its bundle (what it embeds) that is itself shared with the team.
-- One write: Unshare, a guarded update of the state row back to private
-  (`adminUnshareMemberItem`), under the same rule, re-checked on the
-  locked row. Nothing is deleted; the author keeps the item. It writes a
-  `member_item.unshared` audit row naming the item, its kind and author.
+Review is gone: members no longer submit items for an admin to accept,
+and admins no longer read members' team-shared items through Team admin
+or a "Shared by members" list. Items are shared with Grant Access
+(workspace grants), and every removed route answers 410 `{ error, code:
+'gone' }` (`server/web/lib/gone.ts`). The rows review left behind
+(`space_items` states) stay in the database; personal items move in W6b.
 
 ## 8. Clients in the database (client logins C1 to C5)
 

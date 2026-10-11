@@ -1,23 +1,7 @@
 /**
- * POST /api/team-admin/submissions/:id/discard : delete an item a
- * deactivated (or deleted) login left behind, shared with the team or
- * submitted (plan 6.4). An active author's item is refused (409): return it
- * instead.
+ * /api/team-admin/submissions/[id]/discard: gone. Review (a member submits, an admin accepts) was removed in workspaces W5c: items are shared with Grant Access.
+ * The stub answers 410 `{ error, code: 'gone' }` to an admin, 401 without a session.
  */
-import { NextResponse } from '@/server/http-compat';
-import { discardLeftBehind } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
-import { SubmissionParams, reviewErrorResponse, reviewNotFound } from '@/lib/member-review';
+import { gone } from '@/lib/gone';
 
-export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
-  const params = SubmissionParams.safeParse(await ctx.params);
-  if (!params.success) return reviewNotFound();
-  try {
-    await discardLeftBehind(params.data.id);
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    return reviewErrorResponse(err);
-  }
-}
+export const POST = gone('owner', 'Review was removed. Share items with Grant Access.');

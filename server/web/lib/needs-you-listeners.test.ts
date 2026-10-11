@@ -31,7 +31,7 @@ describe('needs_you_changed listeners', () => {
       .sort();
     expect(hits).toEqual([
       'packages/content/src/index-team.ts',
-      'packages/content/src/needs-you.ts',
+      'packages/content/src/provider-alerts.ts',
       // A sender, not a listener: a parked extraction raises the event so
       // the push worker can tell an admin (W1 audit, LOW 4).
       'server/api/src/agent/extract-heads-park.ts',

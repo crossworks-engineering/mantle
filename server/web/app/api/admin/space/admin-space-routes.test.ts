@@ -3,8 +3,8 @@
  * the content functions are stood in, so these pin what the ROUTES pass
  * them. Every route acts for the calling admin's OWN space (the acting
  * login's, inside withSpace), every write carries the admin embed rule's
- * writer (the brain the admin administers), and Accept passes the brain, the
- * own space and the login, with the team-admin accept body and answer. The
+ * writer (the brain the admin administers). Accept and Give back were
+ * removed in workspaces W5c (review-gone-routes.test.ts pins their 410). The
  * rules themselves are proven on Postgres in
  * packages/content/src/admin-space.viewer.db.test.ts.
  */
@@ -19,7 +19,6 @@ const h = vi.hoisted(() => ({
   calls: [] as Array<[string, unknown[]]>,
   scopes: [] as unknown[],
   rowType: 'page' as 'page' | 'draw' | 'table' | 'note',
-  accept: null as null | (() => Promise<unknown>),
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -61,12 +60,6 @@ vi.mock('@mantle/content', async (importOriginal) => {
     saveMineDraw: rec('saveMineDraw', () => ({ ok: true })),
     saveMineTable: rec('saveMineTable', () => item),
     getMineItem: rec('getMineItem', () => item),
-    acceptOwnItem: vi.fn(async (...args: unknown[]) => {
-      h.calls.push(['acceptOwnItem', args]);
-      return h.accept
-        ? h.accept()
-        : { id: ITEM, audience: 'admin', moved: [], linksStayingBehind: 0 };
-    }),
   };
 });
 
@@ -84,7 +77,6 @@ beforeEach(() => {
   h.calls.length = 0;
   h.scopes.length = 0;
   h.rowType = 'page';
-  h.accept = null;
 });
 
 describe('admin private-space routes', () => {
@@ -128,71 +120,5 @@ describe('admin private-space routes', () => {
     h.rowType = 'table';
     expect((await POST(json({}), ctx)).status).toBe(200);
     expect(callOf('saveMineTable')).toEqual([SPACE, ITEM, undefined, writer]);
-  });
-
-  it('Accept passes the brain, the own space and login, and the team-admin body', async () => {
-    const { POST } = await import('./[id]/accept/route');
-    const body = { audience: 'team', parentPageId: null, folderPath: 'files/x' };
-    const res = await POST(json(body), ctx);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      id: ITEM,
-      audience: 'admin',
-      moved: [],
-      linksStayingBehind: 0,
-    });
-    expect(callOf('acceptOwnItem')).toEqual([
-      ANCHOR,
-      { spaceId: SPACE, loginId: ADMIN },
-      ITEM,
-      body,
-    ]);
-  });
-
-  it('Accept after Take over passes the confirmation and the ticked ids (audit A6)', async () => {
-    const { POST } = await import('./[id]/accept/route');
-    const FILE = '77777777-7777-4777-8777-777777777777';
-    const body = { audience: 'public', lowerConfirmed: true, confirmedIds: [FILE] };
-    expect((await POST(json(body), ctx)).status).toBe(200);
-    expect(callOf('acceptOwnItem')?.[3]).toEqual(body);
-    // A refusal carries what would go down with it, for the dialog to tick.
-    const { ReviewError } = await import('@mantle/content');
-    const goingDown = [{ id: FILE, type: 'file', title: 'plan.pdf', audience: 'client' }];
-    h.accept = async () => {
-      throw new ReviewError('confirm-level', 'A client wrote this.', goingDown as never);
-    };
-    const res = await POST(json({ audience: 'public', lowerConfirmed: true }), ctx);
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({
-      error: 'A client wrote this.',
-      reason: 'confirm-level',
-      goingDown,
-    });
-    h.accept = null;
-    expect((await POST(json({ confirmedIds: ['nope'] }), ctx)).status).toBe(400);
-  });
-
-  it('Accept answers the refusals: 409 unsaved-draft, 404, 400', async () => {
-    const { POST } = await import('./[id]/accept/route');
-    const { ReviewError, SpaceItemStateError } = await import('@mantle/content');
-    h.accept = async () => {
-      throw new SpaceItemStateError('unsaved-draft', 'Save first.');
-    };
-    const res = await POST(json({}), ctx);
-    expect([res.status, ((await res.json()) as { reason?: string }).reason]).toEqual([
-      409,
-      'unsaved-draft',
-    ]);
-    h.accept = async () => {
-      throw new SpaceItemStateError('not-found', 'Not found.');
-    };
-    expect((await POST(json({}), ctx)).status).toBe(404);
-    h.accept = async () => {
-      throw new ReviewError('invalid', 'Pick a folder under Files.');
-    };
-    expect((await POST(json({}), ctx)).status).toBe(400);
-    expect((await POST(json({ audience: 'everyone' }), ctx)).status).toBe(400);
-    const bad = await POST(json({}), { params: Promise.resolve({ id: 'nope' }) });
-    expect(bad.status).toBe(404);
   });
 });

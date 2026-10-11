@@ -1,17 +1,10 @@
 /**
- * GET /api/apps/members: the members' apps an admin meets in the Apps
- * screen (workspace review pattern, 2026-10-09), in two lists. `waiting`:
- * submitted for approval (title, author, sent when, version), oldest first.
- * `shared`: shared with the team and not submitted (title, author, whether
- * the author is still an active member, last activity). Never a private
- * draft (rule S3). Replaces Team admin > App review and > Member apps.
+ * /api/apps/members: gone. Member app review (accept, send back, test, activity) was removed in workspaces W5c. Members still build apps and share them with the team.
+ * The stub answers 410 `{ error, code: 'gone' }` to an admin, 401 without a session.
  */
-import { NextResponse } from '@/server/http-compat';
-import { listMemberAppsForReview } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { gone } from '@/lib/gone';
 
-export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
-  return NextResponse.json(await listMemberAppsForReview());
-}
+export const GET = gone(
+  'owner',
+  'Member app review was removed. Members share apps with the team in the app.',
+);

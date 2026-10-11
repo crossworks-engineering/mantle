@@ -420,23 +420,8 @@ A member files its drafts in the brain's tree and keeps private folders there.
   drafts one level up with everything else (into the folder a subfolder
   merged into, when it merged), and anything past three levels is cut to
   fit, so a member's private folders never block the admin.
-- **Accept claims in place** (`packages/content/src/accept-place.ts`). An
-  accepted draft lands in the brain folder it was filed in; the author's own
-  folders below it become brain folders (merging by name, keeping name and
-  look, cut to three levels), and the author's emptied folders go. The admin
-  may pick another folder (`folderId`; null = the top level): the author's
-  folders still go below the pick. The rest of the bundle lands in place. The
-  preview names the default (`AcceptPreview.place`, with `share`: what a
-  shared folder there makes it read at; `?folderId=` previews a pick). A
-  page lands like a note (phase 7); the request's old `parentPageId` is
-  ignored.
-- **Accept asks before a folder share applies.** In a shared folder an item
-  is read at the more open of its level and the folder's share. When the
-  item, or anything of its bundle, would be read above the level the admin
-  chose, Accept answers 409 `visibility` with the list (`changes`, `total`)
-  and moves nothing; the same call with `visibilityConfirmed: true` goes
-  ahead. A client's item read at client that way needs the usual level
-  confirmation too, and what it embeds goes down to the level it is read at.
+- **Accept** (claiming a draft's folder in place, asking before a folder
+  share applies) was removed with review in workspaces W5c.
 - **A submitted draft stays put.** It never moves on its own, and a member's
   folder holding one is not renamed, moved or deleted until the review is
   done: Accept lands it where the admin reviewed it.

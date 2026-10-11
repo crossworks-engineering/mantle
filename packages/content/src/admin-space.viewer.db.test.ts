@@ -1,16 +1,15 @@
 /**
  * An ADMIN's private items on a real, migrated Postgres (member logins
  * Phase 7, Jason 2026-09-28): an admin keeps items in their own personal
- * space, saves them under the admin embed rule (the brain's items at any
- * level), and accepts them into the brain themselves. Nobody else ever reads
- * them: not another admin (by id, or through the brain), not a member (team
- * drafts, even with a 'team' row), not the review queue. Nothing is
- * announced to the extractor before Accept, and Accept announces each moved
- * item once and leaves no author record (no member-authored badge).
+ * space and saves them under the admin embed rule (the brain's items at any
+ * level). Nobody else ever reads them: not another admin (by id, or through
+ * the brain), not a member (team drafts, even with a 'team' row). Nothing is
+ * announced to the extractor. The admin's own Accept and the review queue
+ * were removed in workspaces W5c.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/admin-space.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -24,8 +23,6 @@ describe.skipIf(!URL)('admin private items', () => {
   let m: Db;
   let sp: typeof import('./member-space');
   let sf: typeof import('./member-space-files');
-  let rv: typeof import('./member-review');
-  let ma: typeof import('./member-accepted');
   let er: typeof import('./embed-refs');
   let fp: typeof import('@mantle/files');
   let draft: typeof import('./pages/draft');
@@ -83,8 +80,6 @@ describe.skipIf(!URL)('admin private items', () => {
     m = await import('@mantle/db');
     sp = await import('./member-space');
     sf = await import('./member-space-files');
-    rv = await import('./member-review');
-    ma = await import('./member-accepted');
     er = await import('./embed-refs');
     fp = await import('@mantle/files');
     draft = await import('./pages/draft');
@@ -250,86 +245,14 @@ describe.skipIf(!URL)('admin private items', () => {
     const { getNote } = await import('./notes');
     expect(await getPage(anchor, pageId)).toBeNull();
     expect(await getNote(anchor, bNoteId)).toBeNull();
-    // Nor does B accept A's item into the brain.
-    await expect(
-      rv.acceptOwnItem(anchor, { spaceId: B, loginId: adminB }, pageId),
-    ).rejects.toMatchObject({ reason: 'not-found' });
-    // A's space with B's login: the space must be the caller's own.
-    await expect(
-      rv.acceptOwnItem(anchor, { spaceId: spaceOf[adminA]!, loginId: adminB }, pageId),
-    ).rejects.toMatchObject({ reason: 'not-found' });
     expect(await ownerOf(pageId)).toBe(spaceOf[adminA]);
   });
 
-  it('an admin’s item never reaches the review queue, the count or the review tools', async () => {
-    // Force the states an admin cannot set (a promoted member's leftovers).
-    await m.systemDb.execute(sqlTag`
-      update space_items set sharing = 'team', review_state = 'submitted',
-        submitted_at = now() where node_id = ${bNoteId}`);
-    // A client's submitted item is in the queue as well (audit A3: the count
-    // below once took every role but member for an admin, so it failed
-    // whenever a client item was submitted at the same moment).
-    const C = spaceOf[client]!;
-    const cNoteId = (
-      await as(client, () =>
-        sp.createMineItem(C, { type: 'note', title: `${tag} c`, content: 'client stuff' }),
-      )
-    ).id;
-    await as(client, () => sp.submitItem(C, cNoteId));
-    // The badge count, on one snapshot (other test files submit in parallel):
-    // every submitted personal item, less the ones an admin wrote.
-    await m.systemDb.transaction(async (tx) => {
-      await tx.execute(sqlTag`set transaction isolation level repeatable read`);
-      const [c] = (await tx.execute(sqlTag`
-        select count(*)::int as total,
-               count(*) filter (where u.role = 'admin')::int as admins
-          from space_items si
-          join nodes n on n.id = si.node_id
-          join spaces s on s.id = n.owner_id and s.kind = 'personal'
-          left join auth.users u on u.id = si.author_login_id
-         where si.review_state = 'submitted'`)) as unknown as { total: number; admins: number }[];
-      expect(c!.admins).toBeGreaterThanOrEqual(1);
-      expect(await rv.countSubmitted(tx)).toBe(c!.total - c!.admins);
-    });
-    expect((await rv.listReviewQueue()).items.map((i) => i.id)).toContain(cNoteId);
-    await as(client, () => sp.recallItem(C, cNoteId));
-    expect((await rv.listReviewQueue()).items.map((i) => i.id)).not.toContain(bNoteId);
-    expect(await rv.getReviewItem(bNoteId)).toBeNull();
-    expect(await rv.previewAccept(bNoteId)).toBeNull();
-    const reviewer = { loginId: anchor, name: 'Reviewer' };
-    await expect(rv.acceptReviewItem(anchor, bNoteId, reviewer)).rejects.toMatchObject({
-      reason: 'not-found',
-    });
-    await expect(rv.returnReviewItem(bNoteId, reviewer)).rejects.toMatchObject({
-      reason: 'not-found',
-    });
-    expect(await ownerOf(bNoteId)).toBe(spaceOf[adminB]);
-    // Left behind (deactivated, shared) is still not a member's.
-    await m.systemDb.execute(sqlTag`
-      update space_items set review_state = 'draft', submitted_at = null
-       where node_id = ${bNoteId}`);
-    await m.systemDb.execute(
-      sqlTag`update auth.users set disabled_at = now() where id = ${adminB}`,
-    );
-    try {
-      expect((await rv.listReviewQueue()).items.map((i) => i.id)).not.toContain(bNoteId);
-      await expect(rv.discardLeftBehind(bNoteId)).rejects.toMatchObject({ reason: 'not-found' });
-    } finally {
-      await m.systemDb.execute(
-        sqlTag`update auth.users set disabled_at = null where id = ${adminB}`,
-      );
-    }
-
-    // The contrast: the member's submitted item IS listed.
-    const M = spaceOf[member]!;
-    await as(member, () => sp.submitItem(M, mNoteId));
-    expect((await rv.listReviewQueue()).items.map((i) => i.id)).toContain(mNoteId);
-    await as(member, () => sp.recallItem(M, mNoteId));
-  });
-
   it('a member never reads an admin’s item, even with a team row (0179)', async () => {
-    // bNoteId still says sharing 'team' (forced above). The member's own
-    // shared note is the contrast.
+    // Force a 'team' row an admin cannot set (a promoted member's
+    // leftover). The member's own shared note is the contrast.
+    await m.systemDb.execute(sqlTag`
+      update space_items set sharing = 'team' where node_id = ${bNoteId}`);
     const M = spaceOf[member]!;
     await as(member, () => sp.setSharing(M, mNoteId, 'team'));
     // Read from another member's side: a second member login.
@@ -356,77 +279,5 @@ describe.skipIf(!URL)('admin private items', () => {
       await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${other}`);
       await m.systemDb.execute(sqlTag`delete from auth.users where id = ${other}`);
     }
-  });
-
-  it('self-accept refuses unsaved edits, and a member never self-accepts', async () => {
-    const A = spaceOf[adminA]!;
-    await as(adminA, () => draft.saveDraft(A, pageId, text('unsaved')));
-    await expect(
-      rv.acceptOwnItem(anchor, { spaceId: A, loginId: adminA }, pageId),
-    ).rejects.toMatchObject({ reason: 'unsaved-draft' });
-    await as(adminA, () => draft.discardDraft(A, pageId));
-
-    // Unsaved edits on an item the page shows refuse too (audit F04): Accept
-    // would move its saved version and drop the draft.
-    const { saveDrawDraft } = await import('./draws');
-    const d = (await as(adminA, () => sp.createMineItem(A, { type: 'draw', title: `${tag} d` })))
-      .id;
-    const p = (await as(adminA, () => sp.createMineItem(A, { type: 'page', title: `${tag} p2` })))
-      .id;
-    const shows = { type: 'doc', content: [{ type: 'drawing', attrs: { drawId: d } }] };
-    expect((await as(adminA, () => sp.saveMinePage(A, p, shows))).ok).toBe(true);
-    await as(adminA, () => saveDrawDraft(A, d, { type: 'excalidraw', elements: [], appState: {} }));
-    await expect(
-      rv.acceptOwnItem(anchor, { spaceId: A, loginId: adminA }, p),
-    ).rejects.toMatchObject({ reason: 'unsaved-draft', ids: [d] });
-    expect(await ownerOf(p)).toBe(A);
-    expect(await ownerOf(d)).toBe(A);
-    await as(adminA, () => sp.deleteMineItem(A, p));
-    await as(adminA, () => sp.deleteMineItem(A, d));
-
-    const M = spaceOf[member]!;
-    await expect(
-      rv.acceptOwnItem(anchor, { spaceId: M, loginId: member }, mNoteId),
-    ).rejects.toMatchObject({ reason: 'not-found' });
-    expect(await ownerOf(mNoteId)).toBe(M);
-  });
-
-  it('self-accept moves the item and its bundle; each announced once; no author', async () => {
-    const A = spaceOf[adminA]!;
-    const spaceBytes = fp.spaceFilePath(A, imageId);
-    expect(existsSync(spaceBytes)).toBe(true);
-    const res = await rv.acceptOwnItem(anchor, { spaceId: A, loginId: adminA }, pageId, {
-      audience: 'team',
-    });
-    moved.push(pageId, imageId);
-    expect(res.moved.map((b) => b.id)).toEqual([pageId, imageId]);
-    expect(res.audience).toBe('team');
-    expect(await ownerOf(pageId)).toBe(anchor);
-    expect(await ownerOf(imageId)).toBe(anchor);
-    const [f] = await exec<{ path: string; data: Record<string, unknown> }>(
-      sqlTag`select path::text as path, data from nodes where id = ${imageId}`,
-    );
-    expect(f?.path).toBe('files');
-    const disk = fp.diskPathForFile('files', String(f?.data.filename));
-    expect(disk && readFileSync(disk, 'utf8')).toBe('PNGBYTES');
-    expect(existsSync(spaceBytes)).toBe(false);
-
-    // No author record: no member-authored badge, not a member's accepted item.
-    const rows = await exec<{ node_id: string }>(
-      sqlTag`select node_id from space_items where node_id in (${pageId}, ${imageId})`,
-    );
-    expect(rows).toEqual([]);
-    expect((await ma.acceptedAuthors(anchor, [pageId, imageId])).size).toBe(0);
-    expect((await ma.listAccepted(anchor, adminA)).items).toEqual([]);
-
-    // Gone from the admin's space; a second Accept finds nothing.
-    expect(await as(adminA, () => sp.getMineRow(A, pageId))).toBeNull();
-    await expect(
-      rv.acceptOwnItem(anchor, { spaceId: A, loginId: adminA }, pageId),
-    ).rejects.toMatchObject({ reason: 'not-found' });
-
-    await settle();
-    const seen = announced.filter((id) => [pageId, imageId, bNoteId, mNoteId].includes(id));
-    expect(seen.sort()).toEqual([pageId, imageId].sort());
   });
 });

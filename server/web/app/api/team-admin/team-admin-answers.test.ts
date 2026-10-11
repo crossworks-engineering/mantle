@@ -5,8 +5,9 @@
  * set, so a retired field coming back fails here:
  *
  * - badges: `{ openRequestCount }` (no `openRequests`, no `pendingUploadCount`)
- * - GET requests: `{ badges, requests }` (no `uploads`, no `moreUploads`)
  * - GET settings: no `dashboardTags`; `teamAgent` is the team-responder's level
+ *
+ * GET requests was removed in W5c (review-gone-routes.test.ts pins its 410).
  *
  * GET members (the Chat archive) was removed on 2026-10-09; auth-sweep.test.ts
  * pins its 404.
@@ -25,11 +26,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
-  listTeamRequests: vi.fn(async (_owner: string, opts: { status: string }) =>
-    opts.status === 'open'
-      ? Array.from({ length: h.openRequests }, (_, i) => ({ taskId: `t${i}` }))
-      : [{ taskId: 't0' }],
-  ),
   countOpenTeamRequests: vi.fn(async () => h.openRequests),
   loadProfilePreferences: vi.fn(async () => ({ teamHubAppId: APP, teamHubTags: ['faq'] })),
   isTeamPrivateReadsEnabled: vi.fn(() => false),
@@ -51,17 +47,6 @@ describe('teamAdminBadges', () => {
   it('is exactly { openRequestCount }', async () => {
     const { teamAdminBadges } = await import('@/lib/team-admin-overview');
     expect(await teamAdminBadges(ANCHOR)).toStrictEqual({ openRequestCount: 2 });
-  });
-});
-
-describe('GET /api/team-admin/requests', () => {
-  it('answers { badges, requests } and nothing about uploads', async () => {
-    const { GET } = await import('./requests/route');
-    const res = await GET();
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(keys(body)).toEqual(['badges', 'requests']);
-    expect(body.badges).toStrictEqual({ openRequestCount: 2 });
   });
 });
 

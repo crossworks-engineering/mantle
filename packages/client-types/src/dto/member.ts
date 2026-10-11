@@ -135,15 +135,16 @@ export type MemberSpaceList = {
 
 // ── An admin's private space and Take over (audit F07) ──────────────────
 
-/** Who wrote an item an admin took over from the Review queue. */
+/** Who wrote an item an admin took over from the Review queue (Take over
+ *  and review were removed in workspaces W5c; an item taken before that
+ *  still names its author). */
 export type AdminTakenFrom = {
   /** The member login; null once that login is deleted. */
   loginId: string | null;
   /** Display name, else the email's local part; "Removed member" once the
    *  login is deleted. */
   name: string;
-  /** False when the member is deactivated, deleted or no longer a member:
-   *  give-back is refused (409 `author-inactive`), accept or delete it. */
+  /** Always false since W5c: Give back was removed. */
   canGiveBack: boolean;
   takenAt: string | null;
 };
@@ -164,25 +165,6 @@ export type AdminSpaceList = {
 export type AdminSpaceItem<TDoc = unknown, TTable = unknown> = {
   row: AdminSpaceItemRow;
   body: MemberSpaceItemBody<TDoc, TTable>;
-};
-
-/** An item that moved with a Take over or a Give back. */
-export type MovedSpaceItem = { id: string; type: MemberItemKind; title: string };
-
-/** POST /api/team-admin/submissions/:id/take-over -> 200 */
-export type TakeOverResult = {
-  /** The taken item: now in the acting admin's private space, same id. */
-  id: string;
-  /** It and its bundle, in bundle order. */
-  moved: MovedSpaceItem[];
-};
-
-/** POST /api/admin/space/:id/give-back { note } -> 200 */
-export type GiveBackResult = {
-  id: string;
-  /** Back in the member's space: the item `returned` with the note, the rest
-   *  of what was taken with it as drafts. */
-  returned: MovedSpaceItem[];
 };
 
 /** A space file's metadata; the bytes stream from the item's bytes route. */
