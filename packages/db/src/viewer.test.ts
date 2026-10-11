@@ -543,8 +543,25 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // request scope. 13 since W6b fix round 3: 'kind-root' named three
     // unrelated lookups, so the file name check ('name-taken') and the
     // export link check ('export-link') each carry their own reason, and
-    // the log says which door was used. Each is yes or no structure.
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(13);
+    // the log says which door was used. Each is yes or no structure. 18
+    // since W7a: the Admin assistant and the Admin MCP surface run in a
+    // scope, and leave it for an Admin-area tool after its area check
+    // ('admin-area'), a provider key's id ('provider-key'), contact sharing
+    // dates ('contact-sharing'), login names on rows already read
+    // ('login-names') and the owner's preferences ('owner-preferences').
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(18);
+  });
+
+  it('each W7a exit names its own reason', () => {
+    for (const r of [
+      'admin-area',
+      'provider-key',
+      'contact-sharing',
+      'login-names',
+      'owner-preferences',
+    ]) {
+      expect(AS_SYSTEM_TURN_REASONS).toContain(r);
+    }
   });
 
   it('each W6b structure lookup names its own reason (W6b fix round 3)', () => {
