@@ -34,6 +34,8 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({
   session: null as unknown,
   sent: [] as Array<{ chatId: string; text: string }>,
+  /** The chats paired to each login (W7d: telegram_chats.login_id). */
+  paired: {} as Record<string, string[]>,
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -46,7 +48,12 @@ vi.mock('@mantle/api-keys', async (importOriginal) => ({
 }));
 vi.mock('@mantle/telegram', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  accountForChat: vi.fn(async () => ({ id: 'acct', botToken: 'x', enabled: true })),
+  accountById: vi.fn(async () => ({ id: 'acct', botToken: 'x', enabled: true })),
+  pairedChatOf: vi.fn(async (a: { loginId: string; telegramChatId: string }) =>
+    h.paired[a.loginId]?.includes(a.telegramChatId)
+      ? { id: 'chat', accountId: 'acct', telegramChatId: a.telegramChatId }
+      : null,
+  ),
   sendMessage: vi.fn(async (_a: unknown, chatId: string, text: string) => {
     h.sent.push({ chatId, text });
     return [1];
@@ -296,6 +303,8 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
   });
 
   it("F1: a fire that answers another login never reaches the anchor's Telegram chat", async () => {
+    // The chat is the anchor's (W7d: paired to the anchor login).
+    h.paired = { [owner]: ['424242'] };
     const surface = { kind: 'telegram', chat_id: '424242' };
     const theirs = await newHeartbeat(`${tag}-hb-tg-l`, agent.slug, maker, surface);
     const fired = await hbs.tickFire(theirs);

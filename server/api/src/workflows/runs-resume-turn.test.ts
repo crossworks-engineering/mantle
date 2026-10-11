@@ -28,6 +28,8 @@ import {
 } from './workflow-test-kit';
 
 const h = vi.hoisted(() => ({
+  pairedChat: null as Record<string, unknown> | null,
+  pairedChatCalls: [] as unknown[],
   journal: null as unknown as {
     runStep: (fn: () => Promise<unknown>, o: { name: string }) => unknown;
   },
@@ -99,7 +101,11 @@ vi.mock('@mantle/runs', () => ({
   RUNS_RESUME_TURN_WORKFLOW: 'runsResumeTurnWorkflow',
 }));
 
-vi.mock('@mantle/telegram', () => ({ sendMessage: (...a: unknown[]) => h.sendMessage(...a) }));
+vi.mock('@mantle/telegram', () => ({
+  sendMessage: (...a: unknown[]) => h.sendMessage(...a),
+  // The chat paired to the run's login (W7d), else none.
+  pairedChatOf: async (args: unknown) => (h.pairedChatCalls.push(args), h.pairedChat),
+}));
 
 vi.mock('@mantle/runtime/agent', () => ({
   buildChatMessages: () => [],
@@ -172,7 +178,8 @@ function seedHappyPath(
   fake.queue('run_items', [item], [item]);
   fake.queue('runs', [run]);
   fake.queue('agents', [AGENT], [AGENT]);
-  if (opts.telegramChat) fake.queue('telegram_chats', opts.telegramChat);
+  h.pairedChat = opts.telegramChat?.[0] ?? null;
+  h.pairedChatCalls = [];
   if (opts.telegramAccount) fake.queue('telegram_accounts', opts.telegramAccount);
   h.compiled = {
     run: {
@@ -318,6 +325,8 @@ describe('runs resume turn — channel-routed delivery', () => {
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
     expect(h.recordTurn.mock.calls[0]![0]).toMatchObject({ channel: 'telegram' });
     expect(journal.recordedSteps()).toContain('deliver_telegram');
+    // Only a chat paired to the run's own login (none: the anchor's), W7d.
+    expect(h.pairedChatCalls[0]).toMatchObject({ ownerId: 'owner-1', loginId: 'owner-1', telegramChatId: '555' });
   });
 
   it('falls back to web-only when the chat is unpaired — the report is never lost', async () => {

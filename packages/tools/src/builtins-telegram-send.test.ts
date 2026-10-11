@@ -5,48 +5,33 @@
  * the transport. A test that only checks the error string would pass for a
  * tool that sent the message and then complained.
  *
- * Two gates sit in front of the wire, in order: an enabled account must own
- * the chat, and the chat must be on THIS owner's allowlist. The account lookup
- * is `accountForChat` from @mantle/telegram; the allowlist is a
- * `db.select().from(telegramChats).where().limit()` chain. Both are stubbed;
- * the tool's ordering and guards are real.
+ * Telegram per paired user (workspaces W7d): the chat must be allowlisted
+ * AND paired to the caller's own login (`pairedChatOf` in @mantle/telegram,
+ * stubbed here), and the message goes out on THAT chat's bot (`accountById`),
+ * never the first enabled bot on the box. The tool's ordering and guards are
+ * real.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const chatRows: Array<{ status: string }> = [];
-/** Every where clause the allowlist select is handed, in call order. Recorded
- *  rather than waved through: a `mockReturnThis()` where accepts any clause, so
- *  dropping the owner-id term from the handler would leave this file green. */
-const whereArgs: unknown[] = [];
-
-vi.mock('@mantle/db', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@mantle/db')>();
-  const chain = {
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn(function (this: unknown, clause: unknown) {
-      whereArgs.push(clause);
-      return this;
-    }),
-    limit: vi.fn(async () => chatRows),
-  };
-  return { ...actual, db: { ...actual.db, select: vi.fn(() => chain) } };
-});
 vi.mock('@mantle/telegram', () => ({
-  accountForChat: vi.fn(),
+  pairedChatOf: vi.fn(),
+  accountById: vi.fn(),
   sendMessage: vi.fn(),
   editMessage: vi.fn(),
   reactToMessage: vi.fn(),
+  pairChatWithCode: vi.fn(),
 }));
 
-import { accountForChat, sendMessage } from '@mantle/telegram';
-import { paramsOf } from './test-support';
-import { telegram_send } from './builtins-telegram';
+import { accountById, pairedChatOf, sendMessage } from '@mantle/telegram';
+import { telegram_send, TELEGRAM_NO_LOGIN_ERROR } from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
-const ACCOUNT = { id: 'acct-1', token: 'secret' };
+/** A signed-in login's web chat with its assistant. */
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web', loginId: 'login-a' } };
+const ACCOUNT = { id: 'acct-2', token: 'secret', enabled: true };
 const CHAT = '12345';
+const PAIRED = { id: 'chat-pk', accountId: 'acct-2', telegramChatId: CHAT };
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
 
@@ -62,20 +47,27 @@ function outputOf(res: Result): Record<string, unknown> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // clearAllMocks clears CALLS, not implementations — re-establish every
-  // default so no test inherits a value set by the one before it.
-  chatRows.splice(0, chatRows.length, { status: 'allowed' });
-  whereArgs.length = 0;
-  vi.mocked(accountForChat).mockResolvedValue(ACCOUNT as never);
+  vi.mocked(pairedChatOf).mockResolvedValue(PAIRED as never);
+  vi.mocked(accountById).mockResolvedValue(ACCOUNT as never);
   vi.mocked(sendMessage).mockResolvedValue([42] as never);
 });
 
 describe('telegram_send', () => {
-  it('scopes the allowlist lookup to the caller', async () => {
-    // Drop `eq(telegramChats.userId, ...)` and any owner's allowlisted chat
-    // would satisfy the gate — the brain would message a stranger's contact.
+  it("looks the chat up among the caller's own paired chats only (W7d)", async () => {
     await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, ctx);
-    expect(paramsOf(whereArgs[0])).toEqual(expect.arrayContaining(['o1', CHAT]));
+    expect(pairedChatOf).toHaveBeenCalledWith({
+      ownerId: 'o1',
+      loginId: 'login-a',
+      telegramChatId: CHAT,
+    });
+  });
+
+  it('a Telegram turn sends only to chats of the login its chat is paired to', async () => {
+    await telegram_send.handler(
+      { chat_id: CHAT, text: 'hi' },
+      { ownerId: 'o1', surface: { kind: 'telegram', telegramChatId: '9', loginId: 'login-b' } },
+    );
+    expect(vi.mocked(pairedChatOf).mock.calls[0]![0]).toMatchObject({ loginId: 'login-b' });
   });
 
   it('is confirm-gated — a message leaves the brain', () => {
@@ -89,38 +81,37 @@ describe('telegram_send', () => {
     expect(errorOf(await telegram_send.handler({ text: 'hi' }, ctx))).toMatch(
       /chat_id \+ text required/,
     );
-    expect(accountForChat).not.toHaveBeenCalled();
+    expect(pairedChatOf).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('refuses when no enabled account owns the chat, before the wire', async () => {
-    vi.mocked(accountForChat).mockResolvedValue(null as never);
+  it('refuses a call that names no login, before any lookup', async () => {
+    const res = await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, { ownerId: 'o1' });
+    expect(errorOf(res)).toBe(TELEGRAM_NO_LOGIN_ERROR);
+    expect(pairedChatOf).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("refuses another user's chat (or an unpaired one) like an unknown one, before the wire", async () => {
+    vi.mocked(pairedChatOf).mockResolvedValue(null as never);
     const res = await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, ctx);
-    expect(errorOf(res)).toMatch(/no enabled telegram account/);
+    expect(errorOf(res)).toMatch(/not one of your paired chats/);
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('refuses a chat that is not on the allowlist, before the wire', async () => {
-    chatRows.splice(0, chatRows.length, { status: 'pending' });
+  it("refuses when the chat's bot is gone or off, before the wire", async () => {
+    vi.mocked(accountById).mockResolvedValue({ ...ACCOUNT, enabled: false } as never);
     const res = await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, ctx);
-    // The allowlist is the trust boundary for who may talk to the brain at
-    // all; an unlisted chat must never receive a message either.
-    expect(errorOf(res)).toMatch(/not allowlisted/);
+    expect(errorOf(res)).toMatch(/no enabled telegram bot/);
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('treats an unknown chat exactly like a blocked one', async () => {
-    chatRows.splice(0, chatRows.length);
-    const res = await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, ctx);
-    expect(errorOf(res)).toMatch(/not allowlisted/);
-    expect(sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('sends through the resolved account with threading and markdown options', async () => {
+  it("sends on the chat's own bot with threading and markdown options", async () => {
     const res = await telegram_send.handler(
       { chat_id: CHAT, text: 'hello', reply_to: '7', markdown: true },
       ctx,
     );
+    expect(accountById).toHaveBeenCalledWith('acct-2');
     expect(sendMessage).toHaveBeenCalledWith(ACCOUNT, CHAT, 'hello', {
       replyTo: '7',
       markdown: true,

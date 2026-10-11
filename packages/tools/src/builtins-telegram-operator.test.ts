@@ -1,23 +1,17 @@
 /**
- * Behavioural tests for the owner's Telegram operator tools: telegram_pair,
- * telegram_edit, telegram_react, telegram_mark_processed. The send tool has
- * its own file; these four had nothing.
+ * Behavioural tests for each user's Telegram operator tools: telegram_pair,
+ * telegram_edit, telegram_react, telegram_mark_processed, telegram_pending.
+ * The send tool has its own file.
  *
- * `telegram_pair` is the one that matters most. It moves the allowlist, the
- * trust boundary that decides who may talk to the brain at all, so the test
- * pins EXACTLY what it writes: status flips to allowed, the pairing code and
- * its expiry are cleared (a code must not be reusable), the reply counter
- * resets. It also pins the guards that keep a stale or foreign code from
- * pairing anything: the lookup is scoped to the caller's owner id, an
- * expired code refuses, an already-allowed chat is a no-op. The confirmation
- * DM is best-effort and must never undo a pairing that already landed.
- *
- * `edit` and `react` are outward-facing like send: every guard must hold
- * before the transport is touched. `mark_processed` is a single UPDATE whose
- * only interesting property is that a miss is reported, not swallowed.
- *
- * The transport (@mantle/telegram) is stubbed; the db chains are stubbed at
- * select/update with a queue of select results consumed in call order.
+ * Telegram per paired user (workspaces W7d): every tool here acts only on
+ * the chats paired to the caller's own login, the anchor included (its own
+ * chats, no longer every chat), and `telegram_pair` pairs a chat to the
+ * caller and nobody else: the login comes from the call (its MCP
+ * connection, its scope, the anchor's stdio), never from the arguments.
+ * The pairing rules themselves (the code, the workspace, the race) live in
+ * @mantle/telegram pairing.ts and are proved against a database in
+ * server/web/server/w7d-telegram.db.test.ts; here the transport and that
+ * module are stubbed, the tools' wiring and guards are real.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -53,12 +47,12 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...actual,
     db: { ...actual.db, select: vi.fn(() => select), update: vi.fn(() => update) },
-    __update: update,
   };
 });
 vi.mock('@mantle/telegram', () => ({
-  accountForChat: vi.fn(),
-  belowAdminChatAgent: vi.fn(),
+  accountById: vi.fn(),
+  pairedChatOf: vi.fn(),
+  pairChatWithCode: vi.fn(),
   sendMessage: vi.fn(),
   editMessage: vi.fn(),
   reactToMessage: vi.fn(),
@@ -66,21 +60,15 @@ vi.mock('@mantle/telegram', () => ({
 
 import * as dbmod from '@mantle/db';
 import {
-  accountForChat,
-  belowAdminChatAgent,
+  accountById,
   editMessage,
+  pairChatWithCode,
+  pairedChatOf,
   reactToMessage,
   sendMessage,
 } from '@mantle/telegram';
-import {
-  TELEGRAM_OPERATOR_ANCHOR_ONLY,
-  TELEGRAM_OPERATOR_TOOLS,
-  TELEGRAM_PAIR_ANCHOR_ONLY,
-  telegram_send,
-} from './builtins-telegram';
+import { TELEGRAM_NO_LOGIN_ERROR, TELEGRAM_OPERATOR_TOOLS, telegram_send } from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
-
-const update = (dbmod as unknown as { __update: { set: ReturnType<typeof vi.fn> } }).__update;
 
 const pair = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_pair')!;
 const edit = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_edit')!;
@@ -88,11 +76,23 @@ const react = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_react')!;
 const markProcessed = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_mark_processed')!;
 const pending = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_pending')!;
 
+const ANCHOR = 'o1';
 // The anchor's own stdio MCP: an owner surface that names no login.
-const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
-const ACCOUNT = { id: 'acct-1', token: 'secret', channelId: null };
+const stdio: ToolHandlerContext = { ownerId: ANCHOR, surface: { kind: 'owner', via: 'mcp' } };
+// A member's own MCP connection (one surface for every login since W7b).
+const member: ToolHandlerContext = {
+  ownerId: ANCHOR,
+  surface: { kind: 'owner', via: 'mcp', loginId: 'member-1' },
+};
+// A peer that names no login.
+const noLogin: ToolHandlerContext = {
+  ownerId: ANCHOR,
+  surface: { kind: 'owner', via: 'federation' },
+};
+const ACCOUNT = { id: 'acct-1', token: 'secret', enabled: true };
 const CHAT = '12345';
 const CODE = 'a1b2c3';
+const PAIRED = { id: 'chat-row-1', accountId: 'acct-1', telegramChatId: CHAT };
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
 
@@ -115,30 +115,18 @@ function paramsOf(node: unknown, out: unknown[] = []): unknown[] {
   return out;
 }
 
-/** A chat row mid-pairing: code issued, not yet allowed, not yet expired. */
-function pendingChat(extra: Record<string, unknown> = {}) {
-  return {
-    id: 'chat-row-1',
-    accountId: 'acct-1',
-    userId: 'o1',
-    telegramChatId: CHAT,
-    title: 'Alex',
-    username: null,
-    allowlistStatus: 'pending',
-    pairingCode: CODE,
-    pairingExpiresAt: new Date(Date.now() + 60_000),
-    pairingReplies: 2,
-    ...extra,
-  };
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   selectQueue.length = 0;
   whereArgs.length = 0;
   updateReturn = [];
-  vi.mocked(accountForChat).mockResolvedValue(ACCOUNT as never);
-  vi.mocked(belowAdminChatAgent).mockResolvedValue(null);
+  vi.mocked(accountById).mockResolvedValue(ACCOUNT as never);
+  vi.mocked(pairedChatOf).mockResolvedValue(PAIRED as never);
+  vi.mocked(pairChatWithCode).mockResolvedValue({
+    ok: true,
+    already: false,
+    chat: { id: 'chat-row-1', telegramChatId: CHAT, label: 'Alex', agentName: 'Saskia' },
+  } as never);
   vi.mocked(sendMessage).mockResolvedValue([1] as never);
   vi.mocked(editMessage).mockResolvedValue(undefined as never);
   vi.mocked(reactToMessage).mockResolvedValue(undefined as never);
@@ -146,299 +134,143 @@ beforeEach(() => {
 
 describe('operator surface', () => {
   it('is MCP-only: none of these can ever be granted to an agent', () => {
-    for (const t of [pair, edit, react, markProcessed]) {
+    for (const t of [pair, edit, react, markProcessed, pending]) {
       expect(t.mcpOnly, `${t.slug} must be mcpOnly`).toBe(true);
     }
   });
 });
 
-describe('telegram_pair: the anchor only until W7d (W7c fix round 2, M-b)', () => {
-  const refusedFor = async (c: ToolHandlerContext) => {
-    selectQueue.push([pendingChat()], [ACCOUNT]);
-    const err = errorOf(await pair.handler({ code: CODE }, c));
-    expect(err).toBe(TELEGRAM_PAIR_ANCHOR_ONLY);
-    expect(dbmod.db.select).not.toHaveBeenCalled();
-    expect(dbmod.db.update).not.toHaveBeenCalled();
-    expect(sendMessage).not.toHaveBeenCalled();
-  };
-
-  it("refuses another Admin user's MCP connection, writing nothing", async () => {
-    await refusedFor({ ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'b2' } });
+describe('telegram_pair: only the user pairs their own chat (W7d, answer 1A)', () => {
+  it("pairs the chat to the caller's own login: a member's MCP connection", async () => {
+    const res = await pair.handler({ code: CODE }, member);
+    expect(pairChatWithCode).toHaveBeenCalledWith({
+      ownerId: ANCHOR,
+      loginId: 'member-1',
+      code: CODE,
+    });
+    expect(outputOf(res)).toMatch(/paired chat 12345 \(Alex\) to you/);
   });
 
-  it("refuses another Admin user's API key and web chat", async () => {
-    await refusedFor({ ownerId: 'o1', surface: { kind: 'owner', via: 'api', loginId: 'b2' } });
-    await refusedFor({ ownerId: 'o1', surface: { kind: 'web', loginId: 'b2' } });
+  it("the anchor's stdio MCP pairs to the anchor", async () => {
+    await pair.handler({ code: CODE }, stdio);
+    expect(vi.mocked(pairChatWithCode).mock.calls[0]![0]).toMatchObject({ loginId: ANCHOR });
   });
 
-  it('refuses a call that names no caller, and a peer that names no login', async () => {
-    await refusedFor({ ownerId: 'o1' });
-    await refusedFor({ ownerId: 'o1', surface: { kind: 'owner', via: 'federation' } });
+  it('never takes a login from the arguments', async () => {
+    await pair.handler({ code: CODE, login_id: 'someone-else', loginId: 'someone-else' }, member);
+    expect(vi.mocked(pairChatWithCode).mock.calls[0]![0]).toMatchObject({ loginId: 'member-1' });
   });
 
-  it("pairs for the anchor's own login (its MCP connection) and its stdio MCP", async () => {
-    selectQueue.push([pendingChat()], [ACCOUNT]);
-    const own = await pair.handler(
-      { code: CODE },
-      { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'O1' } },
-    );
-    expect(own.ok).toBe(true);
-    expect(dbmod.db.update).toHaveBeenCalledTimes(1);
+  it('a call that names no login pairs nothing', async () => {
+    expect(errorOf(await pair.handler({ code: CODE }, noLogin))).toBe(TELEGRAM_NO_LOGIN_ERROR);
+    expect(pairChatWithCode).not.toHaveBeenCalled();
+  });
+
+  it("hands the pairing module's refusal back as the error", async () => {
+    vi.mocked(pairChatWithCode).mockResolvedValue({
+      ok: false,
+      error: 'you are not a user of this workspace',
+      code: 'not_a_workspace_user',
+    } as never);
+    expect(errorOf(await pair.handler({ code: CODE }, member))).toMatch(/not a user/);
+  });
+
+  it('a chat already paired to the caller is a no-op', async () => {
+    vi.mocked(pairChatWithCode).mockResolvedValue({
+      ok: true,
+      already: true,
+      chat: { id: 'c', telegramChatId: CHAT, label: 'Alex', agentName: null },
+    } as never);
+    expect(outputOf(await pair.handler({ code: CODE }, member))).toBe('already paired to you');
+  });
+
+  it('refuses a malformed code before any lookup', async () => {
+    expect(errorOf(await pair.handler({ code: 'zzz' }, member))).toMatch(/six hex digits/);
+    expect(pairChatWithCode).not.toHaveBeenCalled();
   });
 });
 
-describe('telegram_pair', () => {
-  it('rejects a malformed code without a lookup', async () => {
-    expect(errorOf(await pair.handler({ code: 'xyz' }, ctx))).toMatch(/six hex digits/);
-    expect(errorOf(await pair.handler({ code: 'a1b2c3d' }, ctx))).toMatch(/six hex digits/);
-    expect(dbmod.db.select).not.toHaveBeenCalled();
-  });
-
-  it("looks the code up under the CALLER's owner id and writes nothing on a miss", async () => {
-    selectQueue.push([]);
-    const res = await pair.handler({ code: CODE }, ctx);
-    expect(errorOf(res)).toMatch(/no pending pairing/);
-    // Another owner's pending code must not be approvable from here.
-    expect(paramsOf(whereArgs[0])).toEqual([CODE, 'o1']);
-    expect(dbmod.db.update).not.toHaveBeenCalled();
-    expect(sendMessage).not.toHaveBeenCalled();
-  });
-
-  it("refuses a below-admin agent's bot, naming its level, and writes nothing (T21)", async () => {
-    selectQueue.push([pendingChat({ responderAgentId: 'agent-pin' })]);
-    vi.mocked(belowAdminChatAgent).mockResolvedValue({
-      id: 'agent-team',
-      slug: 'helper',
-      name: 'Helper',
-      audience: 'team',
+describe('telegram_edit / telegram_react: own chats only, before the wire', () => {
+  it("looks the chat up among the caller's own chats and edits on that chat's bot", async () => {
+    const res = await edit.handler({ chat_id: CHAT, message_id: '9', text: 'new' }, member);
+    expect(pairedChatOf).toHaveBeenCalledWith({
+      ownerId: ANCHOR,
+      loginId: 'member-1',
+      telegramChatId: CHAT,
     });
-    const err = errorOf(await pair.handler({ code: CODE }, ctx));
-    expect(err).toMatch(/Helper is a team-level agent/);
-    expect(err).toMatch(/Only an admin-level agent's bot can be paired/);
-    expect(err).toMatch(/acts as the owner/);
-    // Both of the chat's agents are asked about: the bot's and the pinned one.
-    expect(belowAdminChatAgent).toHaveBeenCalledWith('o1', 'acct-1', 'agent-pin');
-    expect(dbmod.db.update).not.toHaveBeenCalled();
-    expect(sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('treats an already-allowed chat as done, writing nothing', async () => {
-    selectQueue.push([pendingChat({ allowlistStatus: 'allowed' })]);
-    expect(outputOf(await pair.handler({ code: CODE }, ctx))).toBe('already paired');
-    expect(dbmod.db.update).not.toHaveBeenCalled();
-    expect(sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('refuses an expired code without touching the allowlist', async () => {
-    selectQueue.push([pendingChat({ pairingExpiresAt: new Date(Date.now() - 1) })]);
-    const res = await pair.handler({ code: CODE }, ctx);
-    expect(errorOf(res)).toMatch(/code expired/);
-    expect(dbmod.db.update).not.toHaveBeenCalled();
-    expect(sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('allowlists the chat and burns the code in ONE write, then confirms by DM', async () => {
-    selectQueue.push([pendingChat()], [ACCOUNT]);
-    const res = await pair.handler({ code: CODE.toUpperCase() }, ctx);
-    // Exactly this shape: status flips, the code and its expiry go (a code
-    // must not pair twice), the reply counter resets for any future re-pair.
-    expect(update.set).toHaveBeenCalledTimes(1);
-    expect(update.set).toHaveBeenCalledWith({
-      allowlistStatus: 'allowed',
-      pairingCode: null,
-      pairingExpiresAt: null,
-      pairingReplies: 0,
-      updatedAt: expect.any(Date),
-    });
-    // ...against the resolved row, not the code (whereArgs: chat lookup,
-    // then the update, then the account lookup).
-    expect(paramsOf(whereArgs[1])).toEqual(['chat-row-1']);
-    expect(sendMessage).toHaveBeenCalledWith(ACCOUNT, CHAT, 'Paired! Say hi to your assistant.');
-    expect(outputOf(res)).toBe(`paired chat ${CHAT} (Alex)`);
-  });
-
-  it('names the agent bound to the bot in the confirmation', async () => {
-    selectQueue.push([pendingChat()], [{ ...ACCOUNT, channelId: 'ch-1' }], [{ name: 'Nova' }]);
-    await pair.handler({ code: CODE }, ctx);
-    expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'acct-1' }),
-      CHAT,
-      'Paired! Say hi to Nova.',
-    );
-  });
-
-  it('keeps the pairing when the confirmation DM fails', async () => {
-    selectQueue.push([pendingChat()], [ACCOUNT]);
-    vi.mocked(sendMessage).mockRejectedValue(new Error('403 blocked'));
-    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      const res = await pair.handler({ code: CODE }, ctx);
-      // The allowlist change already landed; a failed courtesy DM must not
-      // read as "not paired" and invite a retry that finds no code.
-      expect(outputOf(res)).toMatch(/^paired chat/);
-      expect(update.set).toHaveBeenCalledTimes(1);
-    } finally {
-      quiet.mockRestore();
-    }
-  });
-
-  it('still pairs when the bot account row is gone, just without a DM', async () => {
-    selectQueue.push([pendingChat()], []);
-    const res = await pair.handler({ code: CODE }, ctx);
-    expect(outputOf(res)).toMatch(/^paired chat/);
-    expect(sendMessage).not.toHaveBeenCalled();
-  });
-});
-
-describe('telegram_edit', () => {
-  it('requires chat_id, message_id and text, touching nothing without them', async () => {
-    expect(errorOf(await edit.handler({ chat_id: CHAT, message_id: '7' }, ctx))).toMatch(
-      /chat_id \+ message_id \+ text required/,
-    );
-    expect(errorOf(await edit.handler({ chat_id: CHAT, text: 'x' }, ctx))).toMatch(/required/);
-    expect(accountForChat).not.toHaveBeenCalled();
-    expect(editMessage).not.toHaveBeenCalled();
-  });
-
-  it('refuses when no enabled account owns the chat, before the wire', async () => {
-    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
-    vi.mocked(accountForChat).mockResolvedValue(null as never);
-    const res = await edit.handler({ chat_id: CHAT, message_id: '7', text: 'x' }, ctx);
-    expect(errorOf(res)).toMatch(/no enabled telegram account/);
-    expect(editMessage).not.toHaveBeenCalled();
-  });
-
-  it('edits through the resolved account with the markdown flag', async () => {
-    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
-    const res = await edit.handler(
-      { chat_id: CHAT, message_id: '7', text: 'done', markdown: true },
-      ctx,
-    );
-    expect(editMessage).toHaveBeenCalledWith(ACCOUNT, CHAT, '7', 'done', { markdown: true });
+    expect(accountById).toHaveBeenCalledWith('acct-1');
+    expect(editMessage).toHaveBeenCalledWith(ACCOUNT, CHAT, '9', 'new', expect.anything());
     expect(outputOf(res)).toBe('edited');
   });
 
-  it('surfaces a transport failure as a tool error, not a throw', async () => {
-    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
-    vi.mocked(editMessage).mockRejectedValue(new Error('message is not modified'));
-    const res = await edit.handler({ chat_id: CHAT, message_id: '7', text: 'x' }, ctx);
-    expect(errorOf(res)).toMatch(/edit failed: message is not modified/);
-  });
-});
-
-describe('telegram_react', () => {
-  it('requires all three fields, touching nothing without them', async () => {
-    expect(errorOf(await react.handler({ chat_id: CHAT, message_id: '7' }, ctx))).toMatch(
-      /chat_id \+ message_id \+ emoji required/,
-    );
-    expect(accountForChat).not.toHaveBeenCalled();
+  it("refuses another user's chat (the anchor's included) and touches nothing", async () => {
+    vi.mocked(pairedChatOf).mockResolvedValue(null as never);
+    expect(
+      errorOf(await edit.handler({ chat_id: CHAT, message_id: '9', text: 'x' }, member)),
+    ).toMatch(/not one of your paired chats/);
+    expect(
+      errorOf(await react.handler({ chat_id: CHAT, message_id: '9', emoji: '👍' }, member)),
+    ).toMatch(/not one of your paired chats/);
+    expect(editMessage).not.toHaveBeenCalled();
     expect(reactToMessage).not.toHaveBeenCalled();
   });
 
-  it('refuses when no enabled account owns the chat, before the wire', async () => {
-    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
-    vi.mocked(accountForChat).mockResolvedValue(null as never);
-    const res = await react.handler({ chat_id: CHAT, message_id: '7', emoji: '👍' }, ctx);
-    expect(errorOf(res)).toMatch(/no enabled telegram account/);
+  it('a call that names no login touches nothing', async () => {
+    expect(
+      errorOf(await react.handler({ chat_id: CHAT, message_id: '9', emoji: '👍' }, noLogin)),
+    ).toBe(TELEGRAM_NO_LOGIN_ERROR);
+    expect(pairedChatOf).not.toHaveBeenCalled();
     expect(reactToMessage).not.toHaveBeenCalled();
   });
 
-  it('reacts through the resolved account', async () => {
-    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
-    const res = await react.handler({ chat_id: CHAT, message_id: '7', emoji: '👍' }, ctx);
-    expect(reactToMessage).toHaveBeenCalledWith(ACCOUNT, CHAT, '7', '👍');
-    expect(outputOf(res)).toBe('reacted');
-  });
-
-  it('surfaces a rejected emoji as a tool error', async () => {
-    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
+  it('surfaces a transport failure as a tool error', async () => {
     vi.mocked(reactToMessage).mockRejectedValue(new Error('REACTION_INVALID'));
-    const res = await react.handler({ chat_id: CHAT, message_id: '7', emoji: '🦆' }, ctx);
+    const res = await react.handler({ chat_id: CHAT, message_id: '9', emoji: '🦄' }, stdio);
     expect(errorOf(res)).toMatch(/react failed: REACTION_INVALID/);
   });
 });
 
-describe('telegram_mark_processed', () => {
-  it('requires an id and writes nothing without one', async () => {
-    expect(errorOf(await markProcessed.handler({}, ctx))).toMatch(/id required/);
+describe('telegram_pending / telegram_mark_processed: own chats only', () => {
+  it("lists only the caller's own allowed chats", async () => {
+    selectQueue.push([]);
+    await pending.handler({}, member);
+    const params = paramsOf(whereArgs[0]);
+    expect(params).toEqual(expect.arrayContaining([ANCHOR, 'member-1', 'allowed']));
+  });
+
+  it("the anchor lists its own chats, no longer every user's", async () => {
+    selectQueue.push([]);
+    await pending.handler({}, stdio);
+    expect(paramsOf(whereArgs[0])).toEqual(expect.arrayContaining([ANCHOR, 'allowed']));
+    // Two ANCHOR values: the brain and the login.
+    expect(paramsOf(whereArgs[0]).filter((p) => p === ANCHOR)).toHaveLength(2);
+  });
+
+  it("marks a message only in the caller's own chat, else reports the miss", async () => {
+    selectQueue.push([]); // not one of member-1's chats
+    const res = await markProcessed.handler({ id: 'm1' }, member);
+    expect(errorOf(res)).toMatch(/no such message in your chats/);
+    expect(paramsOf(whereArgs[0])).toEqual(expect.arrayContaining([ANCHOR, 'member-1']));
     expect(dbmod.db.update).not.toHaveBeenCalled();
   });
 
-  it('reports a miss rather than a silent success', async () => {
-    selectQueue.push([{ id: 'm1' }]); // the owner-scoped message lookup
-    updateReturn = [];
-    expect(errorOf(await markProcessed.handler({ id: 'm-ghost' }, ctx))).toMatch(/no such message/);
-  });
-
-  it('flips processed with a timestamp on the named row', async () => {
-    selectQueue.push([{ id: 'm1' }]); // the owner-scoped message lookup
+  it('marks it when it is theirs', async () => {
+    selectQueue.push([{ id: 'm1' }]);
     updateReturn = [{ id: 'm1' }];
-    const res = await markProcessed.handler({ id: 'm1' }, ctx);
-    expect(update.set).toHaveBeenCalledWith({ processed: true, processedAt: expect.any(Date) });
-    expect(outputOf(res)).toBe('marked processed');
+    expect(outputOf(await markProcessed.handler({ id: 'm1' }, member))).toBe('marked processed');
   });
 });
 
-describe('the inbox tools: the anchor only (W7 integration fix 2, M1)', () => {
-  const OTHER: ToolHandlerContext[] = [
-    { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'b2' } },
-    { ownerId: 'o1', surface: { kind: 'owner', via: 'api', loginId: 'b2' } },
-    { ownerId: 'o1', surface: { kind: 'owner', via: 'federation' } },
-    { ownerId: 'o1', surface: { kind: 'web', loginId: 'b2' } },
-  ];
-  const calls: Array<[BuiltinToolDef, Record<string, unknown>]> = [
-    [pending, {}],
-    [react, { chat_id: CHAT, message_id: '7', emoji: '👍' }],
-    [edit, { chat_id: CHAT, message_id: '7', text: 'x' }],
-    [markProcessed, { id: 'm1' }],
-  ];
-
-  it("refuses another Admin user's connection, key, peer and chat, touching nothing", async () => {
-    for (const c of OTHER) {
-      for (const [tool, input] of calls) {
-        selectQueue.push([{ status: 'allowed' }], [{ id: 'm1' }]);
-        updateReturn = [{ id: 'm1' }];
-        expect(errorOf(await tool.handler(input, c)), tool.slug).toBe(
-          TELEGRAM_OPERATOR_ANCHOR_ONLY,
-        );
-      }
-    }
-    expect(dbmod.db.select).not.toHaveBeenCalled();
-    expect(dbmod.db.update).not.toHaveBeenCalled();
-    expect(editMessage).not.toHaveBeenCalled();
-    expect(reactToMessage).not.toHaveBeenCalled();
+describe('telegram_send on direct MCP: only to the caller own chats (W7d)', () => {
+  it("a member's MCP sends only to a chat paired to that member", async () => {
+    await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, member);
+    expect(vi.mocked(pairedChatOf).mock.calls[0]![0]).toMatchObject({ loginId: 'member-1' });
   });
 
-  it("still serves the anchor's own login and its stdio MCP", async () => {
-    selectQueue.push([{ id: 'r1' }]);
-    expect(outputOf(await pending.handler({}, ctx))).toEqual([{ id: 'r1' }]);
-    selectQueue.push([{ id: 'r2' }]);
-    const own: ToolHandlerContext = {
-      ownerId: 'o1',
-      surface: { kind: 'owner', via: 'mcp', loginId: 'o1' },
-    };
-    expect(outputOf(await pending.handler({}, own))).toEqual([{ id: 'r2' }]);
-  });
-
-  it('telegram_send refuses another login on a direct owner path only', async () => {
-    for (const c of OTHER.slice(0, 3)) {
-      const res = await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, c);
-      expect(errorOf(res)).toBe(TELEGRAM_OPERATOR_ANCHOR_ONLY);
-    }
-    expect(dbmod.db.select).not.toHaveBeenCalled();
+  it("refuses the anchor's chat to another login's MCP", async () => {
+    vi.mocked(pairedChatOf).mockResolvedValue(null as never);
+    const res = await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, member);
+    expect(res.ok).toBe(false);
     expect(sendMessage).not.toHaveBeenCalled();
-    // A chat turn keeps its own rules (the tool is confirm gated there).
-    selectQueue.push([{ status: 'allowed' }]);
-    const turn = await telegram_send.handler(
-      { chat_id: CHAT, text: 'hi' },
-      { ownerId: 'o1', surface: { kind: 'web', loginId: 'o1' } },
-    );
-    expect(turn.ok).toBe(true);
-    selectQueue.push([{ status: 'allowed' }]);
-    const anchorMcp = await telegram_send.handler(
-      { chat_id: CHAT, text: 'hi' },
-      { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'o1' } },
-    );
-    expect(anchorMcp.ok).toBe(true);
   });
 });

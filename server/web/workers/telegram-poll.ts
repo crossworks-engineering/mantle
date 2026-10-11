@@ -20,16 +20,9 @@
  * Env loading via `--env-file-if-exists=.env.local` in package.json.
  */
 import { eq } from 'drizzle-orm';
-import {
-  channels,
-  db,
-  loginHasArea,
-  telegramAccounts,
-  type Channel,
-  type TelegramAccount,
-} from '@mantle/db';
-import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
-import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
+import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
+import { pollOnce, evictBot } from '@mantle/telegram';
+import { telegramApprovalHandlers } from '../lib/telegram-approval';
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { runWorker } from './_runner';
@@ -67,55 +60,6 @@ const REGISTRY: Partial<Record<Channel['type'], ChannelPoller>> = {
 
 /** Active per-channel loops keyed by channel id. */
 const loops = new Map<string, { stop: () => void }>();
-
-/**
- * Approval-card button handler, injected into the poller so the telegram
- * package can apply decisions without importing @mantle/tools (which would
- * close a dependency cycle). The owner is resolved by the poller from the
- * tapped chat's allowlist row — never trusted from the callback itself.
- */
-const approvalHandlers: PollHandlers = {
-  onApproval: async ({ ownerId, loginId, decision, pendingId }) => {
-    try {
-      // A tap decides as the chat's own login (workspaces W7d), by the rule
-      // of /api/pending: only a login holding the settings area decides, and
-      // it decides only the calls queued for it (the anchor: every call).
-      if (!(await loginHasArea(loginId, 'settings'))) {
-        return { ok: false, text: 'You cannot decide approvals: ask an Admin user to.' };
-      }
-      // Telegram announces runner questions; it never answers them. Current
-      // question notices ship with no buttons at all, so this only catches a
-      // card sent by an older build that is still sitting in a chat — but
-      // tapping it must not record a yes/no as the operator's answer to a
-      // question that asked something else entirely.
-      const existing = await getPendingCall(ownerId, pendingId);
-      if (existing?.toolSlug === 'ask_human') {
-        return {
-          ok: false,
-          text: 'This is a question, not a yes/no approval — answer it in Mantle (Pending approvals).',
-        };
-      }
-      const row =
-        decision === 'approve'
-          ? await approvePendingCall(ownerId, pendingId, { approverLoginId: loginId })
-          : await rejectPendingCall(ownerId, pendingId, loginId);
-      if (!row) return { ok: false, text: 'Already decided, or no longer pending.' };
-      if (decision === 'reject') return { ok: true, text: `Rejected ${row.toolSlug}.` };
-      if (row.error) {
-        return {
-          ok: true,
-          text: `Approved ${row.toolSlug} — it ran but failed: ${row.error.slice(0, 120)}`,
-        };
-      }
-      return { ok: true, text: `Approved & ran ${row.toolSlug}.` };
-    } catch (err) {
-      return {
-        ok: false,
-        text: err instanceof Error ? err.message.slice(0, 150) : 'Failed to apply.',
-      };
-    }
-  },
-};
 
 runWorker('channel-poll', async () => {
   if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
@@ -209,7 +153,7 @@ function startTelegramLoop(channel: Channel): { stop: () => void } {
       }
       accountId = account.id;
       try {
-        const { delivered, updatesReceived } = await pollOnce(account, 25, approvalHandlers);
+        const { delivered, updatesReceived } = await pollOnce(account, 25, telegramApprovalHandlers);
         if (updatesReceived > 0) {
           console.log(
             `[channel-poll] ${channel.displayName} — ${updatesReceived} updates, ${delivered} delivered`,

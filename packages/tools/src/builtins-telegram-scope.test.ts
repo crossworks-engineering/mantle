@@ -58,7 +58,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 
 vi.mock('@mantle/telegram', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  accountForChat: vi.fn(async () => ({ id: 'acc-1', botToken: 't', enabled: true })),
+  accountById: vi.fn(async () => ({ id: 'acc-1', botToken: 't', enabled: true })),
   reactToMessage: vi.fn(async (...a: unknown[]) => void h.reacted.push(a)),
   editMessage: vi.fn(async (...a: unknown[]) => void h.edited.push(a)),
   sendMessage: vi.fn(async () => ({ message_id: 1 })),
@@ -68,9 +68,10 @@ import { paramsOf } from './test-support';
 import { TELEGRAM_TOOLS, TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
-const OWNER = 'owner-1';
-// The anchor's own stdio MCP: the inbox tools answer the anchor only (W7
-// integration fix 2, M1).
+const OWNER = '00000000-0000-4000-8000-000000000001';
+const LOGIN_B = '00000000-0000-4000-8000-000000000002';
+// The anchor's own stdio MCP: the tools act on the anchor's own chats only
+// (W7d: each login its own).
 const ctx: ToolHandlerContext = { ownerId: OWNER, surface: { kind: 'owner', via: 'mcp' } };
 const all = [...TELEGRAM_TOOLS, ...TELEGRAM_OPERATOR_TOOLS];
 const tool = (slug: string): BuiltinToolDef => {
@@ -93,14 +94,26 @@ describe.each([
   ['telegram_edit', { chat_id: '123', message_id: '9', text: 'x' }, () => h.edited],
 ])('%s', (slug, input, sent) => {
   it('checks the chat belongs to the caller before touching the wire', async () => {
-    h.selectQueue.push([{ status: 'allowed' }]);
+    h.selectQueue.push([{ id: 'c1', accountId: 'acc-1', telegramChatId: '123' }]);
     await tool(slug).handler(input, ctx);
     expect(h.whereArgs.length, 'no chat lookup at all').toBeGreaterThan(0);
     expect(scoped(), 'chat lookup not scoped to the owner').toBe(true);
+    expect(paramsOf(h.whereArgs[0]), 'not the allowed chats only').toContain('allowed');
+    expect(sent()).toHaveLength(1);
   });
 
-  it('REFUSES a chat that is not on the allowlist, and sends nothing', async () => {
-    h.selectQueue.push([{ status: 'pending' }]);
+  it("looks up the chats of the caller's own login (W7d)", async () => {
+    h.selectQueue.push([]);
+    await tool(slug).handler(input, {
+      ownerId: OWNER,
+      surface: { kind: 'owner', via: 'mcp', loginId: LOGIN_B },
+    });
+    expect(paramsOf(h.whereArgs[0])).toEqual(expect.arrayContaining([OWNER, LOGIN_B, '123']));
+  });
+
+  it('REFUSES a chat that is not allowlisted or paired to another login, and sends nothing', async () => {
+    // The lookup asks for an allowed chat of the caller's login: none.
+    h.selectQueue.push([]);
     const res = await tool(slug).handler(input, ctx);
     expect(res.ok).toBe(false);
     expect(sent(), 'reached Telegram despite the allowlist').toEqual([]);
@@ -123,6 +136,16 @@ describe('telegram_mark_processed', () => {
       anywhere.some((w) => paramsOf(w).includes(OWNER)),
       'unscoped update',
     ).toBe(true);
+  });
+
+  it("scopes the message to the caller's own login (W7d)", async () => {
+    h.selectQueue.push([]);
+    await tool('telegram_mark_processed').handler(
+      { id: 'm1' },
+      { ownerId: OWNER, surface: { kind: 'owner', via: 'mcp', loginId: LOGIN_B } },
+    );
+    expect(paramsOf(h.whereArgs[0])).toEqual(expect.arrayContaining([OWNER, LOGIN_B]));
+    expect(h.updateWhere).toEqual([]);
   });
 
   it('refuses a message the caller does not own', async () => {

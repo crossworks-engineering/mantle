@@ -73,6 +73,13 @@ const h = vi.hoisted(() => {
     recordIngest: vi.fn(),
     upsertFile: vi.fn(),
     noteInboundChannel: vi.fn(),
+    /** The chat login rule (W7d): null = the login may use the chat. */
+    chatRefusal: null as string | null,
+    /** The answering agent's workspace kind (W7d). */
+    wsKind: 'admin' as 'admin' | 'workspace' | 'none',
+    /** Whether the chat's login is an Admin user (the daily cap skips it). */
+    holdsAdmin: true,
+    claimMemberTurn: vi.fn(),
   };
   return state;
 });
@@ -168,6 +175,7 @@ vi.mock('@mantle/db', () => {
     telegramChats: table('telegramChats'),
     telegramAccounts: table('telegramAccounts'),
     waitForOwner: async () => 'owner-1',
+    loginHoldsAdmin: vi.fn(async () => h.holdsAdmin),
     getDefaultWorker: vi.fn(async () => h.sttWorker),
     getAgentTtsWorker: vi.fn(async () => h.ttsWorker),
     bumpWorkerUsage: vi.fn(async () => {}),
@@ -176,6 +184,8 @@ vi.mock('@mantle/db', () => {
 
 // ── Telegram HTTP boundary ────────────────────────────────────────────────
 vi.mock('@mantle/telegram', () => ({
+  chatLoginRefusal: vi.fn(async () => h.chatRefusal),
+  TELEGRAM_UNPAIRED_REPLY: 'UNPAIRED',
   accountById: vi.fn(async () => h.account),
   downloadTelegramFile: (...a: unknown[]) => h.downloadTelegramFile(...a),
   sendChatAction: (...a: unknown[]) => h.sendChatAction(...a),
@@ -201,6 +211,7 @@ vi.mock('@mantle/runtime/agent', () => ({
   extractAttachmentForTurn: vi.fn(async () => h.extractResult),
   invokeAgent: vi.fn(),
   archiveAgentChat: (...a: unknown[]) => h.archiveAgentChat(...a),
+  agentWorkspaceKind: vi.fn(async () => h.wsKind),
   ChatArchiveBusyError: class ChatArchiveBusyError extends Error {},
   loadConversationContext: vi.fn(async () => ({
     personaNotes: [],
@@ -296,6 +307,8 @@ vi.mock('@mantle/content', () => ({
   profileThinking: () => ({ budget: 0, effort: undefined }),
   resolveAgentThinking: () => ({ budget: 0, effort: undefined }),
   noteInboundChannel: (...a: unknown[]) => (h.noteInboundChannel(...a), Promise.resolve()),
+  claimMemberTurn: (...a: unknown[]) => h.claimMemberTurn(...a),
+  memberDailyLimits: () => ({ dailyTurns: 100, dailyTokens: 0 }),
   isStreamThoughtsEnabled: () => h.thoughtsOn,
   isPersistThoughtsEnabled: () => h.thoughtsOn,
   // Used by run-turn/run-team-turn via the real @mantle/runtime/assistant
@@ -400,6 +413,8 @@ function makeMsgRow(overrides: Record<string, unknown> = {}) {
     accountId: 'acct-1',
     responderAgentId: null,
     channelAgentId: 'agent-1',
+    // Paired to the anchor (0271 stamps every chat paired before W7d so).
+    chatLoginId: 'owner-1',
     attachments: [] as unknown[],
     ...overrides,
   };
@@ -454,6 +469,10 @@ beforeEach(() => {
   h.recordIngest.mockReset().mockResolvedValue(undefined);
   h.upsertFile.mockReset().mockResolvedValue({ id: 'file-node-1', sizeBytes: 8 });
   h.noteInboundChannel.mockReset();
+  h.chatRefusal = null;
+  h.wsKind = 'admin';
+  h.holdsAdmin = true;
+  h.claimMemberTurn.mockReset().mockResolvedValue({ ok: true, fresh: true });
 });
 
 describe('handleTelegramMessage: /new starts a new chat', () => {
@@ -463,7 +482,11 @@ describe('handleTelegramMessage: /new starts a new chat', () => {
       open: { id: 't-2' },
     });
     await runTurn(makeMsgRow({ text: '/new' }));
-    expect(h.archiveAgentChat).toHaveBeenCalledWith({ ownerId: 'owner-1', agentId: 'agent-1' });
+    expect(h.archiveAgentChat).toHaveBeenCalledWith({
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      loginId: 'owner-1',
+    });
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
     const reply = h.sendMessage.mock.calls[0]![2] as string;
     expect(reply).toContain('New chat started');
@@ -488,12 +511,20 @@ describe('handleTelegramMessage: /new starts a new chat', () => {
     expect(h.loopCalls).toHaveLength(1);
   });
 
-  it("the owner's bot reads the anchor's own thread (W7 integration fix)", async () => {
+  it("the anchor's chat reads the anchor's own thread (W7d: its paired login)", async () => {
     const agentMod = await import('@mantle/runtime/agent');
     const load = vi.mocked(agentMod.loadConversationContext);
     load.mockClear();
     await runTurn(makeMsgRow({ text: 'what did we decide yesterday?' }));
-    expect(load).toHaveBeenCalledWith(expect.objectContaining({ ownerLoginId: 'owner-1' }));
+    expect(load).toHaveBeenCalledWith(expect.objectContaining({ loginId: 'owner-1' }));
+  });
+
+  it("/new archives the chat login's own thread (W7d)", async () => {
+    h.archiveAgentChat.mockReset().mockResolvedValue({ archived: null });
+    await runTurn(makeMsgRow({ text: '/new', chatLoginId: 'member-1' }));
+    expect(h.archiveAgentChat).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: 'agent-1', loginId: 'member-1' }),
+    );
   });
 });
 
@@ -570,59 +601,97 @@ describe('handleTelegramMessage: a pinned agent that is off (access matrix M8)',
   });
 });
 
-describe('handleTelegramMessage: only an admin-level agent answers (access matrix T21)', () => {
-  const REFUSAL =
-    'This chat is turned off: only an admin-level agent answers on Telegram. Ask the owner.';
-
-  it('a paired chat whose agent is team-level gets one plain reply and no turn', async () => {
+describe('handleTelegramMessage: Telegram per paired user (workspaces W7d)', () => {
+  it("a member's chat with the Team assistant runs as that member", async () => {
+    h.wsKind = 'workspace';
+    h.holdsAdmin = false;
+    const agentMod = await import('@mantle/runtime/agent');
+    const load = vi.mocked(agentMod.loadConversationContext);
+    load.mockClear();
     await runTurn(
-      makeMsgRow({ allowlistStatus: 'allowed', channelAgentAudience: 'team' }),
-      makeAgent({ audience: 'team' }),
+      makeMsgRow({ chatLoginId: 'member-1', allowlistStatus: 'allowed' }),
+      // The workspace scope itself is withAgentScope's (its own tests);
+      // here the agent answers at its level.
+      makeAgent({ id: 'agent-team', slug: 'team' }),
     );
+    expect(h.loopCalls).toHaveLength(1);
+    // Its own thread: both turns, the context and the trace name the member.
+    expect(inboundTurns()[0]).toMatchObject({ loginId: 'member-1', channel: 'telegram' });
+    expect(outboundTurns()[0]).toMatchObject({ loginId: 'member-1' });
+    expect(load).toHaveBeenCalledWith(expect.objectContaining({ loginId: 'member-1' }));
+    expect(h.traces[0]!.init).toMatchObject({ loginId: 'member-1' });
+    // The tool loop's surface names the member, never the anchor.
+    expect(h.loopCalls[0].surface).toMatchObject({ kind: 'telegram', loginId: 'member-1' });
+    // Its reminder channel, not the anchor's.
+    expect(h.noteInboundChannel).toHaveBeenCalledWith('member-1', 'telegram');
+    // A login that is not an Admin user takes a slot of its daily cap.
+    expect(h.claimMemberTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ loginId: 'member-1', turnId: 'tg-msg-1' }),
+    );
+  });
+
+  it("the anchor's chat is unchanged: the anchor's thread, no daily cap", async () => {
+    await runTurn(makeMsgRow({ allowlistStatus: 'allowed' }));
+    expect(h.loopCalls).toHaveLength(1);
+    expect(inboundTurns()[0]).toMatchObject({ loginId: 'owner-1' });
+    expect(outboundTurns()[0]).toMatchObject({ loginId: 'owner-1' });
+    expect(h.noteInboundChannel).toHaveBeenCalledWith('owner-1', 'telegram');
+    expect(h.claimMemberTurn).not.toHaveBeenCalled();
+  });
+
+  it('a user removed from the workspace is refused on the next message', async () => {
+    h.chatRefusal = 'not_a_user';
+    await runTurn(makeMsgRow({ chatLoginId: 'member-1', allowlistStatus: 'allowed' }));
     expect(h.loopCalls).toHaveLength(0);
     expect(h.traces).toHaveLength(0);
     expect(h.recordTurnCalls).toHaveLength(0);
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
-    expect(h.sendMessage.mock.calls[0]![2]).toBe(REFUSAL);
+    expect(h.sendMessage.mock.calls[0]![2]).toBe('UNPAIRED');
   });
 
-  it('an agent lowered to client after its chat was paired is refused the same way', async () => {
-    // The chat is still allowed: only the agent's level changed since.
-    await runTurn(makeMsgRow({ allowlistStatus: 'allowed' }), makeAgent({ audience: 'client' }));
+  it('a chat with no login is refused the same way', async () => {
+    h.chatRefusal = 'no_login';
+    await runTurn(makeMsgRow({ chatLoginId: null, allowlistStatus: 'allowed' }));
     expect(h.loopCalls).toHaveLength(0);
-    expect(h.sendMessage.mock.calls[0]![2]).toBe(REFUSAL);
-  });
-
-  it("an admin override on a below-admin agent's bot is refused too", async () => {
-    await runTurn(
-      makeMsgRow({ responderAgentId: 'agent-admin', channelAgentAudience: 'public' }),
-      makeAgent({ id: 'agent-admin', audience: 'admin' }),
-    );
-    expect(h.loopCalls).toHaveLength(0);
-    expect(h.sendMessage.mock.calls[0]![2]).toBe(REFUSAL);
+    expect(h.sendMessage.mock.calls[0]![2]).toBe('UNPAIRED');
   });
 
   it('a refused chat runs no /new and ingests no attachment', async () => {
+    h.chatRefusal = 'not_a_user';
     h.archiveAgentChat.mockReset();
-    await runTurn(makeMsgRow({ text: '/new' }), makeAgent({ audience: 'team' }));
+    await runTurn(makeMsgRow({ text: '/new' }));
     expect(h.archiveAgentChat).not.toHaveBeenCalled();
     await runTurn(
       makeMsgRow({
         text: '(photo)',
         attachments: [{ kind: 'photo', file_id: 'pf-1', mime: 'image/jpeg' }],
       }),
-      makeAgent({ audience: 'team' }),
     );
     expect(h.downloadTelegramFile).not.toHaveBeenCalled();
     expect(h.upsertFile).not.toHaveBeenCalled();
   });
 
-  it('an admin agent on an admin bot still answers', async () => {
+  it("a workspace assistant's chat takes text only: a photo is not saved", async () => {
+    h.wsKind = 'workspace';
     await runTurn(
-      makeMsgRow({ allowlistStatus: 'allowed', channelAgentAudience: 'admin' }),
-      makeAgent({ audience: 'admin' }),
+      makeMsgRow({
+        text: '(photo)',
+        chatLoginId: 'member-1',
+        attachments: [{ kind: 'photo', file_id: 'pf-1', mime: 'image/jpeg' }],
+      }),
     );
-    expect(h.loopCalls).toHaveLength(1);
+    expect(h.downloadTelegramFile).not.toHaveBeenCalled();
+    expect(h.upsertFile).not.toHaveBeenCalled();
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.sendMessage.mock.calls[0]![2]).toMatch(/typed messages only/);
+  });
+
+  it('a member past the daily cap gets one plain reply and no turn', async () => {
+    h.holdsAdmin = false;
+    h.claimMemberTurn.mockResolvedValue({ ok: false, reason: 'daily_cap', used: 100 });
+    await runTurn(makeMsgRow({ chatLoginId: 'member-1' }));
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.sendMessage.mock.calls[0]![2]).toMatch(/Daily message limit/);
   });
 });
 
@@ -934,6 +1003,7 @@ describe('handleTelegramMessage — parity-drift resolutions (audit #5c)', () =>
     expect(h.loopCalls[0].surface).toEqual({
       kind: 'telegram',
       telegramChatId: '777',
+      loginId: 'owner-1',
       replyToTelegramMessageId: '555',
     });
   });
