@@ -129,6 +129,14 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
         sql`select "public"."mantle_ws_private_workspace"(${login}::uuid)::text as ws`,
       )
     )[0]!.ws;
+  const homeIn = (id: string, ws: string) =>
+    sys(() =>
+      m.withHeads([id], 'update', async (tx) => {
+        await tx.execute(sql`delete from item_grants where node_id = ${id}`);
+        await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
+                             values (${id}, ${ws}, true)`);
+      }),
+    );
   const readOnlyIn = (id: string, ws: string) =>
     sys(() =>
       m.withHeads([id], 'update', async (tx) => {
@@ -247,6 +255,8 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
         }),
       )
     ).id;
+    // A file in a folder takes its folder's home: put it in the member's.
+    await homeIn(docsFile, memWs);
     await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience)
       values (${owner}, ${groupSlug}, 'W7a API', ${'{}'}::text[], 'admin')`);
     // An Admin folder that is on disk, to mount.
@@ -326,6 +336,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
         }),
       )
     ).id;
+    await homeIn(olderRule, memWs);
   }, 240_000);
 
   afterAll(async () => {
@@ -414,17 +425,24 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
   });
 
   it('a non-canonical uuid is refused, never dropped', async () => {
-    const before = await nodeState(roNote);
-    const bare = roNote.replace(/-/g, '');
-    const res = await inAdminTurn(owner, async () => ({
-      bare: await dispatchAs(owner, 'note_update', { id: bare, content: 'changed' }),
-      braces: await dispatchAs(owner, 'note_update', { id: `{${roNote}}`, content: 'changed' }),
-    }));
-    for (const r of [res.bare, res.braces]) {
-      expect(r.ok).toBe(false);
-      expect(errorOf(r)).toMatch(/is not written as a uuid is/);
-    }
-    expect(await nodeState(roNote)).toBe(before);
+    // A tool whose own precondition does not refuse such an id (an array
+    // argument, a resolver) still meets the edit check: it refuses the id
+    // rather than dropping it and letting the write through.
+    const forms = [
+      roNote.replace(/-/g, ''),
+      `{${roNote}}`,
+      roNote.toUpperCase().replace(/-/g, ''),
+      `${roNote.slice(0, 4)}-${roNote.slice(4).replace(/-/g, '')}`,
+    ];
+    const res = await inAdminTurn(owner, async () =>
+      Promise.all(forms.map((id) => m.itemWriteRefusal([id], 'edit'))),
+    );
+    for (const r of res) expect(r).toMatch(/is not written as a uuid is/);
+    // The canonical form is checked as before (Read only: refused).
+    const canonical = await inAdminTurn(owner, () => m.itemWriteRefusal([roNote], 'edit'));
+    expect(canonical).toMatch(/You cannot change this item/);
+    // Not a uuid at all: left to the tool's own error.
+    expect(await inAdminTurn(owner, () => m.itemWriteRefusal(['notes.x'], 'edit'))).toBeNull();
   });
 
   it('N3: api_docs_set onto a file the scope cannot edit is refused; api_docs_get never reads it', async () => {
@@ -464,7 +482,8 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
           add: { kind: 'style', content: `${tag} prefers a formal tone in every reply` },
         }),
       );
-      expect(JSON.stringify(res)).not.toContain('formal tone in every reply"]');
+      // The older rule is neither retired nor returned.
+      expect(JSON.stringify(res)).not.toMatch(/"retired":\[/);
       if (res.ok) {
         expect((res.output as { retired?: unknown }).retired).toBeUndefined();
       }

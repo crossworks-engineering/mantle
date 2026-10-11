@@ -2,10 +2,10 @@
  * W7a fix round 2: every tool of AREA_SYSTEM_TOOLS (the Admin-area tools
  * that run WHOLE on the system pool after the area check) reads and writes
  * system tables only. Each runs here in an Admin turn, with the system pool
- * closed to the item tables: any statement it sends to the system pool,
- * after the asSystem that left the turn's scope, that reads or writes nodes,
- * chunks, windows, facts, grants, pages, tables, secrets or mail throws, and
- * is recorded. Every listed tool must pass, whatever its own answer is (the
+ * closed to the item tables: any statement it sends to the system pool that
+ * reads or writes nodes, chunks, windows, facts, grants, pages, tables,
+ * secrets or mail throws, and is recorded (its scope's own reads go to the
+ * scoped pools, which are not closed). Every listed tool must pass, whatever its own answer is (the
  * sandbox daemon, the linked brains and Telegram are offline here).
  *
  * A name-based test pins the same list's shape (item-write-gate.test.ts);
@@ -31,7 +31,6 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
   let m: typeof import('@mantle/db');
   let t: typeof import('@mantle/tools');
   let rt: typeof import('@mantle/runtime/agent');
-  let viewer: typeof import('@mantle/db/viewer');
   let dir = '';
   const owner = randomUUID();
   const tag = `w7asw${randomUUID().slice(0, 6)}`;
@@ -40,8 +39,7 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
   /** Set while a listed tool runs: the statements it sent that broke the rule. */
   let armed: string[] | null = null;
 
-  /** The system pool's client, with item statements refused while armed and
-   *  the code runs on the system pool after leaving a workspace scope. */
+  /** The system pool's client, with item statements refused while armed. */
   const trapped = <T extends object>(client: T): T =>
     new Proxy(client, {
       get(target, prop, receiver) {
@@ -50,7 +48,9 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
         const fn = v as (...a: unknown[]) => unknown;
         if (prop === 'unsafe') {
           return (query: string, ...rest: unknown[]) => {
-            if (armed && viewer.scopeLeftForSystem() && ITEM_TABLE_RE.test(String(query))) {
+            // Any statement on the system pool while a listed tool runs: the
+            // tool runs whole there (its scope's reads use the scoped pools).
+            if (armed && ITEM_TABLE_RE.test(String(query))) {
               armed.push(String(query).slice(0, 200));
               throw new Error(`item table on the system pool: ${String(query).slice(0, 120)}`);
             }
@@ -87,7 +87,6 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
       'fetch',
       vi.fn(async () => new Response('{"error":"offline in the sweep"}', { status: 503 })),
     );
-    viewer = await import('@mantle/db/viewer');
     const postgres = (await import('postgres')).default;
     const g = globalThis as unknown as { __mantleSql?: unknown; __mantleDb?: unknown };
     // The system pool is made lazily from this client (client.ts getAdminDb).
@@ -205,7 +204,7 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
     expect(broke).toEqual({});
   });
 
-  it('the trap is live: an item read on the system pool after leaving a scope is caught', async () => {
+  it('the trap is live: an item read on the system pool is caught', async () => {
     const hits: string[] = [];
     armed = hits;
     try {
@@ -213,7 +212,10 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
         { id: agent.id, audience: 'admin', workspaceId: adminWs },
         () =>
           m
-            .asSystem(() => m.db.select({ id: m.nodes.id }).from(m.nodes).limit(1), 'admin-area')
+            .asSystem(
+              async () => await m.db.select({ id: m.nodes.id }).from(m.nodes).limit(1),
+              'admin-area',
+            )
             .catch(() => null),
         { ownerLoginId: owner },
       );
