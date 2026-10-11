@@ -34,6 +34,13 @@ export function scopeExactMaxRows(): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** The most items a scope may hold for the exact path (W6a). Default 500;
+ *  MANTLE_SCOPE_EXACT_MAX_ITEMS changes it. */
+export function scopeExactMaxItems(): number {
+  const n = Math.floor(Number(env('MANTLE_SCOPE_EXACT_MAX_ITEMS') ?? 500));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 const counted = new WeakMap<WorkspaceScope, Map<ScopeTable, Promise<number>>>();
 
 /** The scope's items, as one array (at most `cap`, on the GIN index). */
@@ -96,6 +103,11 @@ export async function smallScope(table: ScopeTable = 'nodes'): Promise<boolean> 
   };
   // Too many items is too many rows (and too long an id list) for any table.
   if ((await count('nodes')) > max) return false;
+  // The exact path filters each item's rows by `node_id = any(<the scope's
+  // items>)`, checked per item: its cost grows with the square of the item
+  // count (W6a: an Admin user's 1,600 items took 400 ms on a dev copy). A
+  // scope with more items than scopeExactMaxItems() takes the HNSW path.
+  if ((await count('nodes')) > scopeExactMaxItems()) return false;
   return table === 'nodes' || (await count(table)) <= max;
 }
 
