@@ -318,7 +318,10 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
       )[0]!.n,
     ).toBe(0);
     // Without a base URL nothing pairs: the provider's own host.
-    const plain = await one.PATCH(json({ provider: 'openrouter' }, 'PATCH'), params('id', keyless.id));
+    const plain = await one.PATCH(
+      json({ provider: 'openrouter' }, 'PATCH'),
+      params('id', keyless.id),
+    );
     expect(plain.status, await plain.clone().text()).toBe(200);
   });
 
@@ -382,7 +385,9 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
     );
     // A connector with no key: the spec URL is L's to change.
     as(owner);
-    const bare = await route.POST(json({ slug: `${tag}b`, specUrl: 'https://9.9.9.9/openapi.json' }));
+    const bare = await route.POST(
+      json({ slug: `${tag}b`, specUrl: 'https://9.9.9.9/openapi.json' }),
+    );
     expect(bare.status, await bare.clone().text()).toBe(201);
     as(second);
     const ok = await one.PATCH(
@@ -468,7 +473,10 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
 
     const rowOf = async (table: 'agents' | 'aiWorkers', id: string) => {
       const tbl = table === 'agents' ? m.agents : m.aiWorkers;
-      const [row] = await m.systemDb.select().from(tbl).where(sql`${tbl.id} = ${id}`);
+      const [row] = await m.systemDb
+        .select()
+        .from(tbl)
+        .where(sql`${tbl.id} = ${id}`);
       return row!;
     };
     const keyOf = async (table: 'agents' | 'aiWorkers', id: string) =>
@@ -487,7 +495,10 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
     }
     await expect(
       sys(async () =>
-        rt.resolveRouteAdapter(owner, rt.resolveChatRoutes(await rowOf('agents', routedId)).primary),
+        rt.resolveRouteAdapter(
+          owner,
+          rt.resolveChatRoutes(await rowOf('agents', routedId)).primary,
+        ),
       ),
     ).rejects.toThrow(/does not hold the keys area/);
     // The anchor re-pairs it: the route is the anchor's again.
@@ -563,7 +574,10 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
     await newHeartbeat(`${tag}-hb-usage`, grantee.slug, `${tag}-other`);
     as(second);
     const one = await import('@/app/api/skills/[id]/route');
-    const res = await one.PATCH(json({ instructions: 'Call it L’s way.' }, 'PATCH'), params('id', skillId));
+    const res = await one.PATCH(
+      json({ instructions: 'Call it L’s way.' }, 'PATCH'),
+      params('id', skillId),
+    );
     expect(res.status, await res.clone().text()).toBe(200);
     expect(await hbMaker(`${tag}-hb-usage`)).toBe(second);
   });

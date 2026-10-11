@@ -25,20 +25,12 @@ export async function POST(req: Request) {
   // back to) to the base URL: a pair not already saved on a route is the
   // keys area's; a saved one answers to the login that paired it (W7a fix
   // rounds 4 and 5, lib/model-route-pair.ts).
-  const probe = modelRoutePairing(
-    parsed.data.apiKeyId,
-    parsed.data.baseUrl,
-    parsed.data.provider,
-  );
+  const probe = modelRoutePairing(parsed.data.apiKeyId, parsed.data.baseUrl, parsed.data.provider);
   let configuredBy: string | null = null;
   if (probe.key) {
     const stored = await getEmbeddingConfig(user.id);
     const saved = [
-      modelRoutePairing(
-        stored?.primaryApiKeyId,
-        stored?.primaryBaseUrl,
-        stored?.primaryProvider,
-      ),
+      modelRoutePairing(stored?.primaryApiKeyId, stored?.primaryBaseUrl, stored?.primaryProvider),
       modelRoutePairing(stored?.backupApiKeyId, stored?.backupBaseUrl, stored?.backupProvider),
     ].some((p) => p.key === probe.key && p.dest === probe.dest);
     const refused = saved ? null : await vaultPairRefusalFor(user);

@@ -44,7 +44,12 @@ const sameHost = (a: string | null | undefined, b: string | null | undefined) =>
  * nothing anywhere.
  */
 function mailDestinationMoved(
-  stored: { imapHost: string | null; imapPort: number | null; smtpHost: string | null; smtpPort: number | null },
+  stored: {
+    imapHost: string | null;
+    imapPort: number | null;
+    smtpHost: string | null;
+    smtpPort: number | null;
+  },
   input: { host: string; port: number; smtpHost?: string | null; smtpPort?: number | null },
 ): boolean {
   if (!sameHost(input.host, stored.imapHost) || input.port !== stored.imapPort) return true;
