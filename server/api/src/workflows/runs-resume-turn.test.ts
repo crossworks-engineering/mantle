@@ -130,6 +130,8 @@ vi.mock('@mantle/api-keys', () => ({ getApiKeyById: async () => h.apiKey }));
 vi.mock('@mantle/content', () => ({
   loadProfilePreferences: async () => ({ timezone: 'UTC' }),
   TEAM_PRIVATE_READ_SLUGS: ['email_list'],
+  teamHiddenNodeTypes: (privateReads: boolean) =>
+    privateReads ? ['secret_type'] : ['secret_type', 'email'],
 }));
 vi.mock('@mantle/voice', () => ({
   getChatAdapter: () => h.adapter,
@@ -502,7 +504,11 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
         chat: { id: 'chat-1', accountId: 'acct-9', telegramChatId: '555' },
       },
     );
-    expect(seen).toBe('{"kind":"team","loginId":"login-m","privateReads":false}');
+    // The surface carries the chat (W7d+e), so a run planned in the resumed
+    // turn reports back to it too.
+    expect(seen).toBe(
+      '{"kind":"team","loginId":"login-m","privateReads":false,"originTelegramChatId":"555"}',
+    );
     expect(h.assembleArgs[0]).toMatchObject({
       includeIdentity: false,
       withThinking: false,
@@ -519,6 +525,50 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
     });
     expect(seen).toBe('{"kind":"telegram","telegramChatId":"555","accountId":"acct-9"}');
     expect(h.assembleArgs[0]).toMatchObject({ withThinking: true, allowDelegation: true });
+  });
+
+  // W7d+e: the workspace is checked first, whatever the login.
+  it('a non-Admin run with no login is a team surface without a login, never the owner one', async () => {
+    expect(await surfaceFor({ loginId: null, workspaceId: 'ws-team' }, [{ isAdmin: false }])).toBe(
+      '{"kind":"team","privateReads":false}',
+    );
+    expect(
+      await surfaceFor({ loginId: null, workspaceId: 'ws-team' }, [{ isAdmin: false }], {
+        originChannel: { kind: 'telegram', chat_id: '555' },
+      }),
+    ).toBe('{"kind":"team","privateReads":false,"originTelegramChatId":"555"}');
+  });
+
+  it('a workspace run reads its context as its web chat: no Journal, private types hidden (W7d+e)', async () => {
+    h.contextArgs = [];
+    seedHappyPath({ run: { loginId: 'login-m', workspaceId: 'ws-team' } });
+    fake.queue('workspaces', [{ isAdmin: false }]);
+    h.runResponderLoop = vi.fn(async (...a: unknown[]) => {
+      await (a[0] as { loadContext: () => Promise<unknown> }).loadContext();
+      return { reply: h.loopReply, toolCalls: [] };
+    });
+    await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
+    expect(h.contextArgs).toEqual([
+      expect.objectContaining({
+        loginId: 'login-m',
+        includeJournal: false,
+        excludeNodeTypes: ['secret_type', 'email'],
+      }),
+    ]);
+  });
+
+  it('an Admin run reads its full context (no workspace exclusions)', async () => {
+    h.contextArgs = [];
+    seedHappyPath({ run: { loginId: 'login-b', workspaceId: 'ws-admin' } });
+    fake.queue('workspaces', [{ isAdmin: true }]);
+    h.runResponderLoop = vi.fn(async (...a: unknown[]) => {
+      await (a[0] as { loadContext: () => Promise<unknown> }).loadContext();
+      return { reply: h.loopReply, toolCalls: [] };
+    });
+    await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
+    expect(h.contextArgs).toHaveLength(1);
+    expect(h.contextArgs[0]).not.toHaveProperty('includeJournal');
+    expect(h.contextArgs[0]).not.toHaveProperty('excludeNodeTypes');
   });
 
   it('a gone workspace is not Admin: team surface, never the owner one', async () => {

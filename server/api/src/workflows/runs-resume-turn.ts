@@ -77,7 +77,11 @@ import {
   runResponderLoop,
 } from '@mantle/runtime/assistant';
 import { getApiKeyById } from '@mantle/api-keys';
-import { loadProfilePreferences, TEAM_PRIVATE_READ_SLUGS } from '@mantle/content';
+import {
+  loadProfilePreferences,
+  teamHiddenNodeTypes,
+  TEAM_PRIVATE_READ_SLUGS,
+} from '@mantle/content';
 import { runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 
@@ -277,6 +281,12 @@ export async function runsResumeTurnImpl(
                 agent,
                 inboundText: promptText,
                 loginId: runLoginId,
+                // A workspace run reads as its web chat does (W7d+e): no
+                // Journal, and the private corpus hidden (a run turn never
+                // reads the owner's switch: off).
+                ...(workspaceTurn
+                  ? { includeJournal: false, excludeNodeTypes: teamHiddenNodeTypes(false) }
+                  : {}),
               }),
             contextStepInput: { run_id: runId },
             buildMessages: (c) =>
@@ -285,9 +295,11 @@ export async function runsResumeTurnImpl(
                 provider: agent.provider,
                 systemPrompt: assembled.effectiveSystemPrompt,
                 volatileContext: assembled.volatileContext,
-                personaNotes: c.personaNotes,
-                journalBlock: assembled.journalBlock,
-                journalRelevant: c.journalRelevant,
+                // A workspace run: no owner persona notes or Journal
+                // (W7d+e, as the Telegram and web workspace turns).
+                personaNotes: workspaceTurn ? [] : c.personaNotes,
+                journalBlock: workspaceTurn ? '' : assembled.journalBlock,
+                journalRelevant: workspaceTurn ? undefined : c.journalRelevant,
                 facts: c.facts,
                 digests: c.digests,
                 corpusMap: c.corpusMap,
@@ -379,7 +391,10 @@ export async function runsResumeTurnImpl(
  * than Admin is a workspace user's: a team surface for its login, which
  * owner-only tools refuse (W7c fix round 2), the Telegram-origin run too
  * (W7d fix round 1, M1: its report still goes back to the chat, delivery is
- * keyed off the run's origin channel, never the surface kind). Otherwise a
+ * keyed off the run's origin channel, never the surface kind; the surface
+ * carries the chat, W7d+e). The workspace is checked first (W7d+e): a
+ * non-Admin run with no login is still a team surface, with no login and no
+ * private reads, never the web or Telegram owner surface. Otherwise a
  * telegram-origin run gets the telegram surface (0134), with the chat's own
  * bot when the chat is still paired to the run's login (none: the anchor's
  * run), so channel-aware tools behave as they would in the originating chat;
@@ -391,13 +406,22 @@ export async function resumeSurface(
   loginId: string | null,
   workspaceId: string | null,
 ): Promise<NonNullable<ToolHandlerContext['surface']>> {
-  if (loginId && workspaceId) {
+  if (workspaceId) {
     const [ws] = await db
       .select({ isAdmin: workspaces.isAdmin })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId))
       .limit(1);
-    if (!ws?.isAdmin) return { kind: 'team', loginId, privateReads: false };
+    if (!ws?.isAdmin) {
+      return {
+        kind: 'team',
+        ...(loginId ? { loginId } : {}),
+        privateReads: false,
+        ...(originChannel?.kind === 'telegram'
+          ? { originTelegramChatId: originChannel.chat_id }
+          : {}),
+      };
+    }
   }
   if (originChannel?.kind === 'telegram') {
     // The chat's own user (W7d): the run's login, which is the login of the
