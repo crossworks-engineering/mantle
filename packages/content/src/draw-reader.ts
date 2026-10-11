@@ -24,6 +24,7 @@ import {
   asSystem,
   currentSpaceScope,
   db,
+  draftAllowed,
   draws,
   nodes,
   inTurnScope,
@@ -67,7 +68,9 @@ export async function readableDraw(ownerId: string, id: string): Promise<Readabl
       data: nodes.data,
       // The draft columns are never granted to the level roles: asking for
       // them there fails the whole query.
-      hasDraft: readsDrafts() ? sql<boolean>`${draws.draftScene} IS NOT NULL` : sql<boolean>`false`,
+      hasDraft: readsDrafts()
+        ? sql<boolean>`(${draftAllowed()} and ${draws.draftScene} IS NOT NULL)`
+        : sql<boolean>`false`,
       hasSvg: sql<boolean>`${draws.sceneSvg} IS NOT NULL`,
     })
     .from(nodes)

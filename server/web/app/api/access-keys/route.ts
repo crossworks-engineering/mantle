@@ -51,6 +51,7 @@ import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
+import { ruleInQuery } from '@/lib/auth/rule-in-query';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 /** Keys a login may make an hour (final audit F6): a make-and-revoke loop
@@ -75,7 +76,7 @@ const Body = z
   // rather than quietly ignored.
   .strict();
 
-export async function GET() {
+async function handleGET() {
   const login = await getLoginOr401();
   if (login instanceof Response) return login;
   const keys = await listAccessKeys(login.kind === 'admin' ? null : login.loginId);
@@ -95,7 +96,7 @@ export async function GET() {
   );
 }
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   const login = await getLoginOr401();
   if (login instanceof Response) return login;
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -228,3 +229,6 @@ export async function POST(req: Request) {
     { status: 201, headers: NO_STORE },
   );
 }
+
+export const GET = ruleInQuery(handleGET);
+export const POST = ruleInQuery(handlePOST);

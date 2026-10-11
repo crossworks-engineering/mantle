@@ -38,6 +38,7 @@ import {
   withDeadlockRetry,
   withHeads,
   withSubtreeHeads,
+  asSystem,
 } from '@mantle/db';
 import type {
   GrantContactShare,
@@ -97,7 +98,10 @@ export async function grantsRoute(
   const caller = await workspaceCaller();
   if (caller instanceof Response) return caller;
   try {
-    return NextResponse.json(await fn(caller), { status: okStatus });
+    // The rule is in this library's own SQL on the system pool: it leaves
+    // the request scope the guard entered by name (W6a).
+    const out = await asSystem(() => fn(caller), 'rule-in-query');
+    return NextResponse.json(out, { status: okStatus });
   } catch (err) {
     if (err instanceof GrantError || err instanceof WsError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });

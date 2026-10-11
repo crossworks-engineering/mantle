@@ -17,7 +17,7 @@
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { apps, db, nodes, teamReadsSql } from '@mantle/db';
+import { apps, db, draftColumn, nodes, teamReadsSql } from '@mantle/db';
 import type {
   AppNavEntry,
   AppNavFolder,
@@ -62,7 +62,7 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       updatedAt: nodes.updatedAt,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
-      draftBuild: apps.draftBuild,
+      draftBuild: draftColumn<{ ok?: boolean } | null>(apps.draftBuild),
       mcpAccess: apps.mcpAccess,
       // Read below admin (workspaces W5b1: the Team grant, not the levels).
       teamReads: teamReadsSql(),

@@ -1,4 +1,6 @@
 import type { Context, Hono } from 'hono';
+import { runInRequestSlot } from '@mantle/db';
+import { getRequestContext } from './request-context';
 
 /**
  * Registers the generated route manifest (route-manifest.gen.ts) on a Hono
@@ -81,7 +83,11 @@ export function registerRoutes(app: Hono, manifest: RouteEntry[]): void {
         if (typeof handler !== 'function') {
           return Response.json({ error: 'method not allowed' }, { status: 405 });
         }
-        return handler(c.req.raw, { params: Promise.resolve(params) });
+        // The request slot (workspaces W6a): the session guard fills it with
+        // the login's scope, which then holds for the rest of the handler.
+        const ctx = getRequestContext();
+        if (ctx) ctx.pattern = entry.pattern;
+        return runInRequestSlot(() => handler(c.req.raw, { params: Promise.resolve(params) }));
       };
 
       app.on(method, entry.pattern, handle);

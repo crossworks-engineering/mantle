@@ -10,6 +10,7 @@ import { shellPart } from '@/lib/shell-part';
 import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
 import { shellWorkspaces, type WsCaller } from '@/lib/workspaces';
+import { ruleInQuery } from '@/lib/auth/rule-in-query';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
@@ -33,7 +34,7 @@ type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
  * setup wizard. `isOnboarded` is idempotent (it self-stamps an established
  * install), so it's safe in a GET.
  */
-export async function GET() {
+async function handleGET() {
   const login = await getLoginOr401();
   if (login instanceof Response) return login;
   const caller: WsCaller =
@@ -155,3 +156,5 @@ export async function GET() {
   };
   return NextResponse.json(body);
 }
+
+export const GET = ruleInQuery(handleGET);

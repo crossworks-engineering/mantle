@@ -503,7 +503,9 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
   });
 
   it('the list stays small', () => {
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(10);
+    // 11 since W6a: 'rule-in-query' for the any-login libraries in a
+    // request scope.
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(11);
   });
 });
 

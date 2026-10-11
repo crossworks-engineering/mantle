@@ -30,6 +30,7 @@ import {
   viewerDatabaseUrl,
   viewerRolePassword,
   type PoolRole,
+  currentRequestMode,
 } from './viewer';
 
 declare global {
@@ -301,7 +302,11 @@ export async function withSpace<T>(
 export async function withSystemTx<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
-  if (!isSystemScope() || currentScopeTx()) {
+  // A MUTATING request's scope (W6a) writes through here: writes stay on
+  // the system pool with their rule in the statement (plan 2.3). A read
+  // request does not write (fails loudly).
+  const writer = currentRequestMode()?.writes === true;
+  if ((!isSystemScope() && !writer) || currentScopeTx()) {
     throw new Error('withSystemTx: only outside a viewer scope and any other transaction');
   }
   const hooks = newTxHooks();
@@ -734,7 +739,29 @@ export async function withViewer<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   if (level === 'admin') return fn();
+  // Inside the request scope of this very login (W6a): that scope is the
+  // one withViewer would build, read once by the session guard. No second
+  // lookup per call (the W5b2 member search cost).
+  const open = currentWorkspaceScope();
+  if (
+    'login' in actsFor &&
+    !actsFor.app &&
+    currentRequestMode() &&
+    open?.kind === 'user' &&
+    open.loginId === actsFor.login.toLowerCase()
+  ) {
+    return fn();
+  }
   return runInViewerScope(await viewerScopeFor(actsFor), fn);
+}
+
+/**
+ * The scope the session guard enters for a signed-in login (W6a): the
+ * union of its live workspaces, Moderator where it is one (a disabled
+ * login: none). The same scope `withViewer(…, { login }, …)` builds.
+ */
+export async function loginScopeFor(loginId: string): Promise<WorkspaceScope> {
+  return viewerScopeFor({ login: loginId });
 }
 
 /** The live workspaces beyond Admin an app run reads through (AppRunFor):
@@ -839,9 +866,52 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
  */
 export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
+    // A mutating request's scope (W6a, plan 2.3): writes stay on the system
+    // pool with their rule in the statement; reads run in the scope.
+    if (currentRequestMode()?.writes === true && !currentScopeTx()) {
+      if (prop === 'insert' || prop === 'update' || prop === 'delete' || prop === 'transaction') {
+        return Reflect.get(getAdminDb() as object, prop);
+      }
+      if (prop === 'execute') return requestExecute;
+    }
     return Reflect.get(getDb() as object, prop);
   },
 });
+
+/**
+ * Whether a raw statement writes (W6a): a leading write verb, or a write
+ * clause anywhere (a data-modifying CTE, a row lock). Only for routing a
+ * MUTATING request's raw statements to the system pool; a read request
+ * sends every statement to the workspace role.
+ */
+export function isWriteSql(text: string): boolean {
+  const body = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+  if (
+    /^\s*\(?\s*(insert|update|delete|merge|truncate|lock|refresh|notify|call|do|create|alter|drop)\b/i.test(
+      body,
+    )
+  ) {
+    return true;
+  }
+  return /\b(insert\s+into|delete\s+from|update\s+[\w".]+\s+(as\s+\w+\s+)?set|for\s+(no\s+key\s+)?update|for\s+(key\s+)?share|pg_notify|pg_advisory_x?act_lock|pg_advisory_lock|nextval|setval)\b/i.test(
+    body,
+  );
+}
+
+const requestExecute = ((query: Parameters<PostgresJsDatabase<typeof schema>['execute']>[0]) => {
+  const admin = getAdminDb();
+  const text =
+    typeof query === 'string'
+      ? query
+      : (
+          admin as unknown as { dialect: { sqlToQuery: (q: unknown) => { sql: string } } }
+        ).dialect.sqlToQuery(
+          typeof (query as { getSQL?: unknown }).getSQL === 'function'
+            ? (query as unknown as { getSQL: () => unknown }).getSQL()
+            : query,
+        ).sql;
+  return (isWriteSql(text) ? admin : getDb()).execute(query);
+}) as PostgresJsDatabase<typeof schema>['execute'];
 
 /**
  * Infrastructure handle: always the admin pool, whatever the viewer. For the

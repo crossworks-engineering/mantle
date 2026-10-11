@@ -16,6 +16,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// W6a: the session guard reads the login's workspaces (loginScopeFor) and,
+// on a management route, its area (requireArea) from the database. This
+// file runs without one: an empty scope and every area stand in (the scope
+// itself is proved in w6a-route-sweep.db.test.ts).
+vi.mock('../lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/workspaces')>()),
+  requireArea: async () => true,
+}));
+
 const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';
 const MEMBER_A = '22222222-2222-4222-8222-222222222222';
 const MEMBER_B = '99999999-9999-4999-8999-999999999999';
@@ -48,6 +57,7 @@ vi.mock('../lib/auth/login-row', () => ({
 vi.mock('@mantle/db', async (orig) => ({
   ...(await orig<typeof import('@mantle/db')>()),
   withSpace: async (_ctx: unknown, fn: () => Promise<unknown>) => fn(),
+  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
 }));
 
 vi.mock('@mantle/content', async (orig) => {

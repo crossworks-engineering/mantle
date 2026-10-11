@@ -30,6 +30,8 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
   withWriterHeads,
+  draftAllowed,
+  draftColumn,
 } from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
@@ -283,7 +285,7 @@ export async function listDraws(
       hasSvg: sql<boolean>`${draws.sceneSvg} IS NOT NULL`,
       // The draft's CONTENT never leaves the editor; only its existence does,
       // so the list can tell the user their uncommitted work is safe.
-      hasDraft: sql<boolean>`${draws.draftScene} IS NOT NULL`,
+      hasDraft: sql<boolean>`(${draftAllowed()} and ${draws.draftScene} IS NOT NULL)`,
     })
     .from(nodes)
     .leftJoin(draws, eq(draws.nodeId, nodes.id))
@@ -322,9 +324,10 @@ export async function getDraw(ownerId: string, id: string): Promise<DrawDetail |
     .select({
       node: nodes,
       scene: draws.scene,
-      draft: draws.draftScene,
-      draftUpdatedAt: draws.draftUpdatedAt,
-      draftRev: draws.draftRev,
+      // The rule is in the query (W6a): a draft only where the caller may.
+      draft: draftColumn<Record<string, unknown>>(draws.draftScene),
+      draftUpdatedAt: draftColumn<Date>(draws.draftUpdatedAt),
+      draftRev: draftColumn<number>(draws.draftRev),
       fileRefs: draws.fileRefs,
       hasSvg: sql<boolean>`${draws.sceneSvg} IS NOT NULL`,
     })
@@ -367,7 +370,7 @@ export async function getDrawMeta(
       title: nodes.title,
       tags: nodes.tags,
       data: nodes.data,
-      hasDraft: sql<boolean>`${draws.draftScene} IS NOT NULL`,
+      hasDraft: sql<boolean>`(${draftAllowed()} and ${draws.draftScene} IS NOT NULL)`,
       hasSvg: sql<boolean>`${draws.sceneSvg} IS NOT NULL`,
     })
     .from(nodes)

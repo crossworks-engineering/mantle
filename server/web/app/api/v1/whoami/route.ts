@@ -2,13 +2,14 @@ import { NextResponse } from '@/server/http-compat';
 import { getLoginOr401 } from '@/lib/auth';
 import { getRequestContext } from '@/server/request-context';
 import type { ApiV1Whoami } from '@mantle/client-types';
+import { ruleInQuery } from '@/lib/auth/rule-in-query';
 
 /**
  * GET /api/v1/whoami (public API v1): who the credential acts as, and, for
  * an API key, what the key may do. Every credential works here; any role.
  * About the login and the key only, never brain data.
  */
-export async function GET() {
+async function handleGET() {
   const login = await getLoginOr401();
   if (login instanceof NextResponse) return login;
   const displayName =
@@ -37,3 +38,5 @@ export async function GET() {
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
+
+export const GET = ruleInQuery(handleGET);

@@ -34,6 +34,8 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
   withWriterHeads,
+  draftAllowed,
+  draftColumn,
 } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
 import { notifyAppNavChanged } from './app-nav';
@@ -260,7 +262,7 @@ export async function listApps(
           updatedAt: nodes.updatedAt,
         },
         manifest: apps.manifest,
-        hasDraft: sql<boolean>`${apps.draftSource} is not null`,
+        hasDraft: sql<boolean>`(${draftAllowed()} and ${apps.draftSource} is not null)`,
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
         mcpAccess: apps.mcpAccess,
@@ -326,15 +328,15 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
       .select({
         node: nodes,
         source: apps.source,
-        draftSource: apps.draftSource,
+        draftSource: draftColumn<AppSource>(apps.draftSource),
         manifest: apps.manifest,
-        draftBuild: apps.draftBuild,
+        draftBuild: draftColumn<BuildRef>(apps.draftBuild),
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
         mcpAccess: apps.mcpAccess,
         authorLevel: apps.authorLevel,
         authorCeilingSeen: apps.authorCeilingSeen,
-        draftUpdatedAt: apps.draftUpdatedAt,
+        draftUpdatedAt: draftColumn<Date>(apps.draftUpdatedAt),
         shareSettings: shares.settings,
         shareExpiresAt: shares.expiresAt,
       })
@@ -413,7 +415,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
       title: nodes.title,
       heldBeyondAdmin,
       manifest: apps.manifest,
-      draftBuild: apps.draftBuild,
+      draftBuild: draftColumn<BuildRef>(apps.draftBuild),
       publishedBuild: apps.publishedBuild,
       dataReadOnly: apps.dataReadOnly,
       authorLevel: apps.authorLevel,
@@ -652,10 +654,10 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string) {
   const [row] = await tx
     .select({
       source: apps.source,
-      draft: apps.draftSource,
+      draft: draftColumn<AppSource>(apps.draftSource),
       manifest: apps.manifest,
-      draftBuild: apps.draftBuild,
-      draftUpdatedAt: apps.draftUpdatedAt,
+      draftBuild: draftColumn<BuildRef>(apps.draftBuild),
+      draftUpdatedAt: draftColumn<Date>(apps.draftUpdatedAt),
       publishedBuild: apps.publishedBuild,
       restoredFromSeq: apps.restoredFromSeq,
     })

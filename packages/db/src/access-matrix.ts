@@ -101,11 +101,26 @@ export type TableAccess = {
    * 0242 (the row's workspaces meet the scope), not the level rules.
    * 'level': the same columns as `read`.
    */
-  user?: LimitedRead | 'level';
+  user?: LimitedRead | 'level' | 'level+drafts';
+};
+
+/** The draft columns of the item tables. The level roles never read them;
+ *  the workspace role does since W6a (plan 14): an Admin user's editor reads
+ *  the draft, and every reader asks for it only for an item the user may
+ *  edit (draftColumn, draft-read.ts: the rule is in the query). */
+export const DRAFT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  'public.pages': ['draft_doc', 'draft_updated_at', 'draft_rev'],
+  'public.draws': ['draft_scene', 'draft_updated_at', 'draft_rev'],
+  'public.tables': ['draft_data', 'draft_updated_at', 'draft_rev'],
+  'public.apps': ['draft_source', 'draft_updated_at', 'draft_build'],
 };
 
 /** What the workspace role may SELECT on `t`. */
 export function userReadFor(t: TableAccess): LimitedRead {
+  if (t.user === 'level+drafts') {
+    if (!Array.isArray(t.read)) throw new Error(`${t.table}: level+drafts needs named columns`);
+    return [...(t.read as readonly string[]), ...(DRAFT_COLUMNS[t.table] ?? [])];
+  }
   return t.user === 'level' ? t.read : (t.user ?? 'none');
 }
 
@@ -153,7 +168,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { table: 'public.facts', read: 'all', user: 'all', rule: 'source-node', writer: 'content' },
   {
     table: 'public.pages',
-    user: 'level',
+    user: 'level+drafts',
     read: ['node_id', 'doc', 'doc_text', 'version', 'created_at', 'updated_at'],
     rule: 'follows-node',
     writer: 'content',
@@ -161,7 +176,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.draws',
-    user: 'level',
+    user: 'level+drafts',
     read: [
       'node_id',
       'scene',
@@ -179,7 +194,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.tables',
-    user: 'level',
+    user: 'level+drafts',
     read: [
       'node_id',
       'data',
@@ -199,7 +214,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.apps',
-    user: 'level',
+    user: 'level+drafts',
     read: [
       'node_id',
       'source',
@@ -528,7 +543,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.space_item_homes', 'system'),
 ];
 
-/** Columns no viewer role may ever read, whatever the matrix says. */
+/** Columns no LEVEL role may ever read, whatever the matrix says (the
+ *  workspace role reads the draft columns since W6a: DRAFT_COLUMNS). */
 export const NEVER_GRANTED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   'public.pages': ['draft_doc', 'draft_updated_at', 'draft_rev'],
   'public.draws': ['draft_scene', 'draft_updated_at', 'draft_rev'],

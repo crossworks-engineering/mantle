@@ -120,12 +120,26 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { CLIENT_ROUTES, isClientRoute } from '../lib/auth/client-routes';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
+import { memberMayRead } from '../lib/auth/route-scope';
 import {
   PUBLIC_SESSION_ROUTES,
   RENDER_PAGES,
   SESSION_READER_RE,
   drivePublic,
 } from './public-session-routes';
+
+// W6a: the session guard reads the login's workspaces (loginScopeFor) and,
+// on a management route, its area (requireArea) from the database. This
+// file runs without one: an empty scope and every area stand in (the scope
+// itself is proved in w6a-route-sweep.db.test.ts).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+}));
+vi.mock('../lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/workspaces')>()),
+  requireArea: async () => true,
+}));
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -385,6 +399,10 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         // proved per role against a database (access-keys.db.test.ts), as
         // the client routes are in client-sweep.test.ts.
         if (isAnyLoginRoute(method, pattern)) return true;
+        // The owner reads open to every login in its scope since W6a
+        // (MEMBER_OPEN_READS): proved against a database in
+        // w6a-route-sweep.db.test.ts.
+        if (memberMayRead(method, pattern)) return true;
         return (
           (status === 403 && body?.reason === 'client-login') ||
           (status === 401 && body?.error === 'unauthorized') ||

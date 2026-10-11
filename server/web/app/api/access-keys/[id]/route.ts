@@ -15,10 +15,11 @@ import { z } from 'zod';
 import { accessKeys, db } from '@mantle/db';
 import { getLoginOr401 } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
+import { ruleInQuery } from '@/lib/auth/rule-in-query';
 
 const Params = z.object({ id: z.string().uuid() });
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function handleDELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = await getLoginOr401();
   if (login instanceof Response) return login;
   const params = Params.safeParse(await ctx.params);
@@ -56,3 +57,5 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   });
   return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }
+
+export const DELETE = ruleInQuery(handleDELETE);

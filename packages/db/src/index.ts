@@ -33,6 +33,8 @@ export {
   onSpaceRows,
   lockMoreHeads,
   withDeadlockRetry,
+  loginScopeFor,
+  isWriteSql,
   type Db,
 } from './client';
 export {
@@ -78,8 +80,18 @@ export {
   type AppRunFor,
   type CurrentScope,
   type TurnStamp,
+  runInRequestSlot,
+  hasRequestSlot,
+  enterRequestScope,
+  noteRequestSystem,
+  currentRequestOutcome,
+  currentRequestMode,
+  narrowsWorkspaceScope,
+  type RequestScopeMode,
+  type RequestOutcome,
 } from './viewer';
 export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
+export { draftColumn, draftAllowed } from './draft-read';
 export {
   CONCURRENT_INDEXES,
   ensureConcurrentIndexes,

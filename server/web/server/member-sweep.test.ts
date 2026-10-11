@@ -130,7 +130,21 @@ vi.mock('../lib/mcp-oauth', async (importOriginal) => {
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
+import { memberMayRead } from '../lib/auth/route-scope';
 import { PUBLIC_SESSION_ROUTES, RENDER_PAGES, drivePublic } from './public-session-routes';
+
+// W6a: the session guard reads the login's workspaces (loginScopeFor) and,
+// on a management route, its area (requireArea) from the database. This
+// file runs without one: an empty scope and every area stand in (the scope
+// itself is proved in w6a-route-sweep.db.test.ts).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+}));
+vi.mock('../lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/workspaces')>()),
+  requireArea: async () => true,
+}));
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -231,7 +245,10 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
           if (
             method === 'OPTIONS' ||
             isMemberRoute(method, entry.pattern) ||
-            isAnyLoginRoute(method, entry.pattern)
+            isAnyLoginRoute(method, entry.pattern) ||
+            // Open to every login in its scope since W6a: proved against a
+            // database in w6a-route-sweep.db.test.ts.
+            memberMayRead(method, entry.pattern)
           ) {
             continue;
           }

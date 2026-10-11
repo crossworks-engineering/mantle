@@ -26,6 +26,19 @@ import {
 } from '../lib/body-limit';
 import { readJsonNoNul } from '../lib/strip-nul';
 
+// W6a: the session guard reads the login's workspaces (loginScopeFor) and,
+// on a management route, its area (requireArea) from the database. This
+// file runs without one: an empty scope and every area stand in (the scope
+// itself is proved in w6a-route-sweep.db.test.ts).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+}));
+vi.mock('../lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/workspaces')>()),
+  requireArea: async () => true,
+}));
+
 const CLIENT_ID = '12121212-1212-4212-8212-121212121212';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';

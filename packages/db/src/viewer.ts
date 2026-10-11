@@ -193,7 +193,32 @@ type Scope = {
   /** A turn scope (workspaces W4b): no transaction of its own; every query
    *  opens a short one on the workspace role (client.ts). */
   perQuery?: true;
+  /** A REQUEST scope (workspaces W6a): the session guard entered it for the
+   *  rest of the request (enterRequestScope). Reads run as a turn scope's
+   *  do; see RequestScopeMode for writes and drafts. */
+  request?: RequestScopeMode;
 };
+
+/**
+ * How a request scope treats writes and drafts (workspaces W6a, plan 2.3):
+ *  - `writes`: a mutating request (POST, PUT, PATCH, DELETE). Writes stay on
+ *    the system pool with their rule in the statement (plan 2.3): `db`
+ *    sends insert, update, delete, a transaction and a writing `execute`
+ *    there (client.ts). A read request sends every statement to the
+ *    workspace role, so a stray write fails loudly (42501), never unscoped.
+ *  - `drafts`: whether `readsDrafts()` says yes (an Admin user's editor
+ *    reads the draft of an item it may write; the rule is in each query).
+ */
+export type RequestScopeMode = { writes: boolean; drafts: boolean };
+
+/** What the session guard did for this request (the W6a route sweep reads
+ *  it): entered the login's scope, let an Admin user through on the system
+ *  pool (a management area, or an Admin write), or nothing yet. */
+export type RequestOutcome =
+  | { kind: 'user'; loginId: string; writes: boolean }
+  | { kind: 'system'; why: 'area' | 'admin-write' | 'admin-reads-flag' | 'login-self' };
+
+type RequestSlot = { scope: Scope | null; outcome: RequestOutcome | null };
 
 /** Work a scope's transaction owes the world outside the database, run once
  *  it ends: `commit` after a commit, `rollback` after a rollback. */
@@ -224,7 +249,7 @@ export async function runTxHooks(list: (() => unknown)[], what: string): Promise
  * failure rolls the delete back and the bytes are still there.
  */
 export async function afterCommit(fn: () => unknown): Promise<void> {
-  const hooks = store.getStore()?.hooks;
+  const hooks = active()?.hooks;
   if (hooks) hooks.commit.push(fn);
   else await fn();
 }
@@ -235,10 +260,90 @@ export async function afterCommit(fn: () => unknown): Promise<void> {
  * Outside such a scope the write has already committed, so this does nothing.
  */
 export function afterRollback(fn: () => unknown): void {
-  store.getStore()?.hooks?.rollback.push(fn);
+  active()?.hooks?.rollback.push(fn);
 }
 
 const store = new AsyncLocalStorage<Scope>();
+
+/** The store value of code that left every scope (`asSystem`): it masks a
+ *  request scope around it, which `store.exit` could not (the request
+ *  scope lives in its own slot). Never returned by `active()`. */
+const SYSTEM_EXIT: Scope = Object.freeze({ level: 'admin' as const });
+
+/** One slot per HTTP request (workspaces W6a): the route loader opens it
+ *  around each handler (runInRequestSlot); the session guard fills it
+ *  (enterRequestScope) and the scope holds for the rest of the request. */
+const requestSlots = new AsyncLocalStorage<RequestSlot>();
+
+/** The scope the current code runs in: an explicit one (withViewer,
+ *  withSpace, a turn, a transaction), else the request's, else none.
+ *  `asSystem` masks both. */
+function active(): Scope | undefined {
+  const s = store.getStore();
+  if (s) return s === SYSTEM_EXIT ? undefined : s;
+  return requestSlots.getStore()?.scope ?? undefined;
+}
+
+/**
+ * Run one HTTP handler with a request slot (workspaces W6a). Only the route
+ * loader calls this; the session guard fills the slot (enterRequestScope).
+ */
+export function runInRequestSlot<T>(fn: () => T): T {
+  return requestSlots.run({ scope: null, outcome: null }, fn);
+}
+
+/** Whether the current code runs inside a request slot (an HTTP handler). */
+export function hasRequestSlot(): boolean {
+  return requestSlots.getStore() !== undefined;
+}
+
+/**
+ * Enter `ws` for the rest of the request (workspaces W6a, plan 2.4): every
+ * `db` read after this, after any await, runs on the workspace role in its
+ * own short transaction that sets the scope (as a turn scope). Called by the
+ * session guard, before the handler touches the database. False outside a
+ * request slot (a test calling a handler directly, a worker): the caller
+ * decides (the guard refuses a non-Admin login then). The same scope again
+ * is a no-op; another scope throws (a scope is never swapped or widened).
+ */
+export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): boolean {
+  const slot = requestSlots.getStore();
+  if (!slot) return false;
+  if (slot.scope?.ws) {
+    if (sameWorkspaceScope(slot.scope.ws, ws)) return true;
+    throw new Error('enterRequestScope: this request already runs in another scope');
+  }
+  if (store.getStore() && store.getStore() !== SYSTEM_EXIT) {
+    throw new Error('enterRequestScope: only outside any other scope');
+  }
+  slot.scope = Object.freeze({
+    level: 'public' as const,
+    ws,
+    perQuery: true as const,
+    request: Object.freeze({ ...mode }),
+  });
+  slot.outcome = { kind: 'user', loginId: ws.loginId ?? '', writes: mode.writes };
+  return true;
+}
+
+/** Record that the guard let this request through on the system pool (the
+ *  route sweep asserts it is an Admin user's). No-op outside a slot. */
+export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' }>['why']): void {
+  const slot = requestSlots.getStore();
+  if (slot && !slot.scope) slot.outcome = { kind: 'system', why };
+}
+
+/** What the guard did for the current request, or null (no slot, no
+ *  guard yet). */
+export function currentRequestOutcome(): RequestOutcome | null {
+  return requestSlots.getStore()?.outcome ?? null;
+}
+
+/** The request scope's mode when the current code runs in it directly (not
+ *  in a narrower scope entered inside it), else null. */
+export function currentRequestMode(): RequestScopeMode | null {
+  return active()?.request ?? null;
+}
 
 /**
  * @deprecated Workspaces plan S2: no product code reads this (the
@@ -256,7 +361,7 @@ export function currentViewerLevel(): ViewerLevel {
  *  runs at its login's level ('team' for an admin or a member, 'client' for
  *  a client), so everything that refuses a limited caller refuses it too. */
 export function currentScope(): CurrentScope {
-  const scope = store.getStore();
+  const scope = active();
   if (!scope) return { kind: 'system' };
   if (scope.ws) return { ...scope.ws };
   if (scope.level === 'admin') return { kind: 'system' };
@@ -300,12 +405,12 @@ export type ScopeArea = (typeof SCOPE_AREAS)[number];
 
 /** The workspace scope the current code runs in, if any. */
 export function currentWorkspaceScope(): WorkspaceScope | null {
-  return store.getStore()?.ws ?? null;
+  return active()?.ws ?? null;
 }
 
 /** The personal-space scope the current code runs in, if any. */
 export function currentSpaceScope(): SpaceScope | null {
-  return store.getStore()?.space ?? null;
+  return active()?.space ?? null;
 }
 
 /**
@@ -317,7 +422,8 @@ export function currentSpaceScope(): SpaceScope | null {
 export function readsDrafts(): boolean {
   // A workspace scope reads published columns only (they are all the
   // workspace role is granted).
-  if (store.getStore()?.ws) return false;
+  const scope = active();
+  if (scope?.ws) return scope.request?.drafts === true;
   return isSystemScope() || currentSpaceScope() !== null;
 }
 
@@ -328,19 +434,19 @@ export function readsDrafts(): boolean {
  * "is this the owner's unlimited path?".
  */
 export function isUnscoped(): boolean {
-  const scope = store.getStore();
+  const scope = active();
   if (!scope) return true;
   return !scope.ws && !scope.space && !scope.tx && scope.level === 'admin';
 }
 
 /** Whether the current code runs in a turn scope (per-query transactions). */
 export function inTurnScope(): boolean {
-  return store.getStore()?.perQuery === true;
+  return active()?.perQuery === true;
 }
 
 /** The transaction the current scope runs in, if it carries one. */
 export function currentScopeTx(): unknown {
-  return store.getStore()?.tx ?? null;
+  return active()?.tx ?? null;
 }
 
 /**
@@ -354,9 +460,15 @@ export function currentScopeTx(): unknown {
  * calls this, with a validated, frozen scope.
  */
 export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
-  const open = store.getStore();
+  const open = active();
   if (open?.ws) {
     if (sameWorkspaceScope(open.ws, ws)) return fn();
+    // Inside a request scope a narrower scope may be entered (an app run,
+    // an assistant of one of the login's workspaces): it reads less, never
+    // more (workspaces W6a).
+    if (open.request && narrowsWorkspaceScope(open.ws, ws)) {
+      return store.run({ level: 'public', ws, perQuery: true }, async () => await fn());
+    }
     return Promise.reject(new Error('withViewer: already inside another workspace scope'));
   }
   // Awaited INSIDE the scope: a callback that returns a query builder (a
@@ -390,7 +502,11 @@ export function runInTxScope<T>(
   scope: { level: LimitedLevel; space?: SpaceScope; tx: unknown; hooks?: TxHooks },
   fn: () => Promise<T>,
 ): Promise<T> {
-  const level = lowerLevel(levelOfScope(currentScope()), scope.level) as LimitedLevel;
+  // A personal space opened inside a request scope (a member's own items
+  // until W6b) runs at its own level: the request scope has no level.
+  const level = (
+    active()?.request ? scope.level : lowerLevel(levelOfScope(currentScope()), scope.level)
+  ) as LimitedLevel;
   return store.run({ ...scope, level }, fn);
 }
 
@@ -401,7 +517,7 @@ export function runInWorkspaceTx<T>(
   scope: { ws: WorkspaceScope; tx: unknown; hooks: TxHooks },
   fn: () => Promise<T>,
 ): Promise<T> {
-  if (store.getStore()) {
+  if (active()) {
     return Promise.reject(new Error('runInWorkspaceTx: only outside any other scope'));
   }
   // `level` is never read inside (levelOfScope throws); 'public' is the
@@ -419,12 +535,28 @@ export function runInWorkspaceTx<T>(
  * client.ts calls this (`withTurnScope`), with a validated, frozen scope.
  */
 export function runInTurnScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
-  const open = store.getStore();
+  const open = active();
   if (open) {
     if (open.perQuery && open.ws && sameWorkspaceScope(open.ws, ws)) return fn();
+    // An assistant turn inside a request scope: only one that reads within
+    // the login's own scope (its workspace is one of the login's).
+    if (open.request && open.ws && narrowsWorkspaceScope(open.ws, ws)) {
+      return store.run({ level: 'public', ws, perQuery: true }, fn);
+    }
     return Promise.reject(new Error('withTurnScope: already inside another scope'));
   }
   return store.run({ level: 'public', ws, perQuery: true }, fn);
+}
+
+/** Whether `inner` reads and edits no more than `outer`: its workspaces
+ *  and Moderator workspaces are subsets, and a user scope stays its
+ *  login's. */
+export function narrowsWorkspaceScope(outer: WorkspaceScope, inner: WorkspaceScope): boolean {
+  if (inner.kind === 'user' && inner.loginId !== outer.loginId) return false;
+  if (inner.kind === 'link') return false;
+  const ws = new Set(outer.ws);
+  const mod = new Set(outer.modWs);
+  return inner.ws.every((w) => ws.has(w)) && inner.modWs.every((w) => mod.has(w));
 }
 
 /** Two workspace scopes that read and write exactly the same. */
@@ -454,7 +586,7 @@ export function withTurnStamp<T>(stamp: TurnStamp, fn: () => Promise<T>): Promis
 
 /** The current turn's stamp: the turn scope's, else the carried one. */
 export function currentTurnStamp(): TurnStamp | null {
-  const ws = store.getStore()?.ws;
+  const ws = active()?.ws;
   if (ws) {
     return ws.ws.length === 1 ? { workspaceId: ws.ws[0]!, loginId: ws.loginId } : null;
   }
@@ -474,7 +606,10 @@ export function runInSystemTx<T>(
   scope: { tx: unknown; hooks: TxHooks },
   fn: () => Promise<T>,
 ): Promise<T> {
-  if (store.getStore()) {
+  // A request scope around it is fine: a system transaction is the write
+  // path of a mutating request (plan 2.3, the rule in the statement).
+  const open = active();
+  if (open && !open.request) {
     return Promise.reject(new Error('runInSystemTx: only outside a viewer scope'));
   }
   return store.run({ level: 'admin', tx: scope.tx, hooks: scope.hooks }, fn);
@@ -517,6 +652,13 @@ export function runInSystemTx<T>(
  *    (builtins-app-data.ts) run the app's SQLite work, its registry rows and
  *    its undo snapshot as the system, only after the lookup in the login's
  *    scope found the app (as the app brokers run that work).
+ *  - `rule-in-query`: inside a REQUEST scope (W6a), the any-login libraries
+ *    that hold the workspace rule in their own SQL on the system pool
+ *    (lib/workspaces.ts, lib/grants.ts, the shell, access keys): the rule
+ *    is the query's, as it was before the request scope.
+ *
+ * A request scope (W6a) is held to the same list: inside it, `asSystem`
+ * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
  */
 export const AS_SYSTEM_TURN_REASONS = [
   'agent-workspace',
@@ -529,6 +671,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'heartbeat-own-row',
   'client-sourced-check',
   'app-data',
+  'rule-in-query',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 
@@ -569,7 +712,7 @@ function strictTurnExits(): boolean {
  * reason) in production.
  */
 export function asSystem<T>(fn: () => Promise<T>, reason?: AsSystemReason): Promise<T> {
-  if (store.getStore()?.perQuery) {
+  if (active()?.perQuery) {
     const listed =
       reason !== undefined && (AS_SYSTEM_TURN_REASONS as readonly string[]).includes(reason);
     if (!listed) {
@@ -586,7 +729,7 @@ export function asSystem<T>(fn: () => Promise<T>, reason?: AsSystemReason): Prom
       console.info(`[db] a turn scope leaves for the system pool: ${reason}`);
     }
   }
-  return store.exit(fn);
+  return store.run(SYSTEM_EXIT, fn);
 }
 
 /**
@@ -669,7 +812,7 @@ export function isSystemDbModule(file: string): boolean {
  * access to `systemDb` in a turn scope; `stack` is for tests.
  */
 export function assertSystemDbCaller(stack?: string): void {
-  if (!store.getStore()?.perQuery) return;
+  if (!active()?.perQuery) return;
   const caller = systemDbCallerOf(stack ?? new Error().stack ?? '');
   if (caller && isSystemDbModule(caller)) return;
   const message =
@@ -691,7 +834,7 @@ export function assertSystemDbCaller(stack?: string): void {
  * turn cannot queue work at all (plan section 2b).
  */
 export function assertNoViewer(what: string): void {
-  if (store.getStore()?.ws) {
+  if (active()?.ws) {
     // A workspace scope never hands work on without carrying it (plan 5.4,
     // U5): a caller that carries it checks with assertScopeCarried instead.
     throw new Error(

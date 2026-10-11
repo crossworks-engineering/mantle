@@ -54,6 +54,19 @@ vi.mock('../lib/auth/login-row', () => {
 
 import { SESSION_COOKIE_NAME } from '../lib/auth-constants';
 
+// W6a: the session guard reads the login's workspaces (loginScopeFor) and,
+// on a management route, its area (requireArea) from the database. This
+// file runs without one: an empty scope and every area stand in (the scope
+// itself is proved in w6a-route-sweep.db.test.ts).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+}));
+vi.mock('../lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/workspaces')>()),
+  requireArea: async () => true,
+}));
+
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
 // vitest.global-setup.ts generates the manifest; in CI a missing one is a

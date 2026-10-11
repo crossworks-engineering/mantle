@@ -1,0 +1,364 @@
+/**
+ * W6a route sweep (workspaces plan 11, T4, U5), on a migrated scratch
+ * database through the real app (createApp), with signed session cookies.
+ * The route loader opens a request slot around every handler and the
+ * session guard fills it; this file reads what the guard did per request.
+ *
+ *  - an Admin user: every GET of an owner route of brain items reads in the
+ *    user's own scope (kind 'user'); nothing answers 500;
+ *  - an Admin user with every area switched off: every management route
+ *    refuses it (403 reason 'area') before its handler runs;
+ *  - a member: every route, every method. Never the system pool (except
+ *    the sign-in routes about its own login row); the owner routes refuse it
+ *    except the reads opened to every login (MEMBER_OPEN_READS), which run
+ *    in its scope; nothing answers 500;
+ *  - no admin screen shows another user's private item: a member's private
+ *    workspace item and an item of a workspace the Admin user is not in
+ *    appear on no list, search or item route for the Admin user. The W6a
+ *    rollback switch (MANTLE_ADMIN_READS=system) shows the pre-W6a answer.
+ *  - drafts: an Admin user reads the draft of an item it may edit; a member
+ *    never reads a draft on the owner routes.
+ *
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w6a-route-sweep.db.test.ts
+ */
+import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { RequestOutcome } from '@mantle/db';
+import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
+import { isClientRoute } from '../lib/auth/client-routes';
+import { isMemberRoute } from '../lib/auth/member-routes';
+import { memberMayRead, routeClass } from '../lib/auth/route-scope';
+
+const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+const seen = vi.hoisted(() => ({ last: null as unknown }));
+
+// Read what the guard did, inside the request's own slot, once the handler
+// is done.
+vi.mock('@mantle/db', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@mantle/db')>();
+  return {
+    ...orig,
+    runInRequestSlot: <T>(fn: () => T) =>
+      orig.runInRequestSlot(async () => {
+        try {
+          return await fn();
+        } finally {
+          seen.last = orig.currentRequestOutcome();
+        }
+      }),
+  };
+});
+
+type Json = Record<string, unknown>;
+
+/** Streams that never end, and routes that reach outside this box. Their
+ *  gate is the same function as their siblings'; they are skipped here. */
+const SKIP = [
+  /\/stream$/,
+  /^\/api\/realtime$/,
+  /^\/api\/member\/realtime$/,
+  /^\/api\/updates/,
+  /^\/api\/mcp(\/|$)/,
+  /^\/api\/oauth(\/|$)/,
+];
+
+describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
+  type Ts = typeof import('@mantle/db/test-support');
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
+  let m: typeof import('@mantle/db');
+  let app: import('hono').Hono;
+  let manifest: Array<{ pattern: string; methods: string[] }>;
+  let cookieOf: (id: string) => string;
+  const owner = randomUUID(); // the anchor, an Admin user
+  const noArea = randomUUID(); // an Admin user with every area off
+  const mem = randomUUID(); // a member (Team), with a private workspace
+  const mem2 = randomUUID(); // a member (Team), alone in "Side"
+  const tag = `w6a${randomUUID().slice(0, 6)}`;
+  const teamNote = randomUUID();
+  const adminNote = randomUUID();
+  const sideNote = randomUUID();
+  const privNote = randomUUID();
+  const teamPage = randomUUID();
+  let team = '';
+  let side = '';
+  let priv = '';
+
+  const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await m.systemDb.execute(q)) as unknown as T[];
+  const email = (who: string) => `${tag}-${who}@example.invalid`;
+
+  const call = async (
+    path: string,
+    as: string | null,
+    method = 'GET',
+    body?: unknown,
+  ): Promise<{ status: number; text: string; outcome: RequestOutcome | null }> => {
+    seen.last = null;
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (as) headers.cookie = cookieOf(as);
+    const res = await Promise.race([
+      app.request(path, {
+        method,
+        headers,
+        ...(method === 'GET' || method === 'HEAD' ? {} : { body: JSON.stringify(body ?? {}) }),
+      }),
+      new Promise<null>((r) => setTimeout(() => r(null), 20_000)),
+    ]);
+    if (!res) return { status: 0, text: 'timeout', outcome: null };
+    const text = method === 'HEAD' ? '' : await res.text().catch(() => '');
+    return { status: res.status, text, outcome: seen.last as RequestOutcome | null };
+  };
+
+  const homeIn = async (id: string, ws: string) => {
+    await m.withHeads([id], 'update', async (tx) => {
+      await tx.execute(sql`delete from item_grants where node_id = ${id}`);
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
+                           values (${id}, ${ws}, true)
+                           on conflict (node_id, workspace_id)
+                           do update set is_home = true, via_folder_id = null, excluded = false`);
+    });
+  };
+  const alsoIn = async (id: string, ws: string) => {
+    await m.withHeads([id], 'update', async (tx) => {
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id) values (${id}, ${ws})
+                           on conflict do nothing`);
+    });
+  };
+
+  /** A concrete path for `pattern`: the Team note or page for an item id,
+   *  'notes' for a tree kind, a fresh uuid for anything else. */
+  const concrete = (pattern: string, real: boolean): string =>
+    pattern
+      .split('/')
+      .map((seg) => {
+        if (seg === '*') return 'x';
+        if (!seg.startsWith(':')) return seg;
+        if (seg === ':kind') return 'notes';
+        if (real && (seg === ':id' || seg === ':nodeId')) {
+          return pattern.startsWith('/api/pages') ? teamPage : teamNote;
+        }
+        return randomUUID();
+      })
+      .join('/');
+
+  beforeAll(async () => {
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    process.env.SESSION_SECRET = 'w6a-route-sweep-secret-at-least-32-characters';
+    delete process.env.MANTLE_DETACHED_DEV;
+    delete process.env.MANTLE_ADMIN_READS;
+    m = await import('@mantle/db');
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+      (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
+      (${noArea}, ${email('noarea')}, 'x', false, 'admin', 'Nora Noarea'),
+      (${mem}, ${email('mem')}, 'x', false, 'member', 'Mia Member'),
+      (${mem2}, ${email('mem2')}, 'x', false, 'member', 'Max Member')`);
+    await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
+      on conflict (id) do nothing`);
+    await x(sql`select * from mantle_ws_migrate()`);
+    const ws = await x<{ id: string; key: string | null }>(sql`
+      select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
+    team = ws.find((w) => w.key === 'team')!.id;
+    const admin = ws.find((w) => w.key === 'admin')!.id;
+    await x(
+      sql`update workspace_users set limits = ${JSON.stringify({
+        areas: { settings: false, users: false, assistants: false, connectors: false, keys: false },
+      })}::jsonb where workspace_id = ${admin} and login_id = ${noArea}`,
+    );
+    const tokens = await import('../lib/auth/tokens');
+    cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
+    const { createApp } = await import('./app');
+    app = await createApp();
+    manifest = (await import('./route-manifest.gen')).routeManifest;
+    // Two workspaces through the real routes: Side (mem2 only) and the
+    // member's private one (mem only).
+    side = JSON.parse((await call('/api/workspaces', mem2, 'POST', { name: 'Side' })).text).id;
+    priv = JSON.parse(
+      (await call('/api/workspaces', mem, 'POST', { name: 'Mia private' })).text,
+    ).id;
+    expect(side && priv).toBeTruthy();
+    // The items (made on the system pool, homed in Admin by the trigger).
+    for (const [id, title] of [
+      [teamNote, `${tag} team note`],
+      [adminNote, `${tag} admin note`],
+      [sideNote, `${tag} side note`],
+      [privNote, `${tag} private note`],
+    ] as const) {
+      await x(sql`insert into nodes (id, owner_id, type, title, path)
+                  values (${id}, ${owner}, 'note', ${title}, 'notes')`);
+    }
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+                values (${teamPage}, ${owner}, 'page', ${`${tag} team page`}, 'pages')`);
+    await x(sql`insert into pages (node_id, doc, draft_doc, draft_rev, draft_updated_at)
+                values (${teamPage}, '{"type":"doc","content":[]}'::jsonb,
+                        '{"type":"doc","content":[{"type":"paragraph"}]}'::jsonb, 1, now())`);
+    await alsoIn(teamNote, team);
+    await alsoIn(teamPage, team);
+    await homeIn(sideNote, side);
+    await homeIn(privNote, priv);
+  }, 240_000);
+
+  afterAll(async () => {
+    await m?.closeDb();
+    await scratch?.drop();
+  });
+
+  const skipped = (pattern: string) => SKIP.some((re) => re.test(pattern));
+  const isOwnerRoute = (method: string, pattern: string) =>
+    pattern.startsWith('/api/') &&
+    !isMemberRoute(method, pattern) &&
+    !isClientRoute(method, pattern) &&
+    !isAnyLoginRoute(method, pattern) &&
+    routeClass(pattern) !== null;
+
+  it('an Admin user: every read of brain items runs in its scope, none answers 500', async () => {
+    const failures: string[] = [];
+    let scoped = 0;
+    for (const e of manifest) {
+      if (skipped(e.pattern) || !e.methods.includes('GET')) continue;
+      const cls = routeClass(e.pattern);
+      const anyLogin = isAnyLoginRoute('GET', e.pattern);
+      if (!anyLogin && cls?.kind !== 'content') continue;
+      if (isMemberRoute('GET', e.pattern) || isClientRoute('GET', e.pattern)) continue;
+      const r = await call(concrete(e.pattern, true), owner);
+      const key = `GET ${e.pattern}`;
+      if (r.status >= 500 || r.status === 0)
+        failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
+      else if (r.status !== 401 && r.status !== 403 && r.outcome?.kind !== 'user') {
+        failures.push(`${key} ran as ${JSON.stringify(r.outcome)}`);
+      } else scoped += 1;
+    }
+    expect(failures).toEqual([]);
+    expect(scoped).toBeGreaterThan(60);
+  }, 600_000);
+
+  it('an Admin user without an area: every management route refuses it before its handler', async () => {
+    const failures: string[] = [];
+    let checked = 0;
+    for (const e of manifest) {
+      const cls = routeClass(e.pattern);
+      if (cls?.kind !== 'area' || skipped(e.pattern)) continue;
+      for (const method of e.methods) {
+        if (method === 'OPTIONS' || !isOwnerRoute(method, e.pattern)) continue;
+        const r = await call(concrete(e.pattern, false), noArea, method);
+        checked += 1;
+        const body = (() => {
+          try {
+            return JSON.parse(r.text) as Json;
+          } catch {
+            return {};
+          }
+        })();
+        if (r.status !== 403 || body.reason !== 'area' || r.outcome?.kind === 'system') {
+          failures.push(`${method} ${e.pattern} ${r.status} ${r.text.slice(0, 120)}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(checked).toBeGreaterThan(100);
+  }, 600_000);
+
+  it('a member: never the system pool, owner routes refused but the open reads, none answers 500', async () => {
+    const failures: string[] = [];
+    let opened = 0;
+    for (const e of manifest) {
+      if (!e.pattern.startsWith('/api/') || skipped(e.pattern)) continue;
+      for (const method of e.methods) {
+        if (method === 'OPTIONS') continue;
+        const read = method === 'GET';
+        const r = await call(concrete(e.pattern, read), mem, method);
+        const key = `${method} ${e.pattern}`;
+        if (r.status >= 500 || r.status === 0) {
+          failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
+          continue;
+        }
+        if (r.outcome?.kind === 'system' && r.outcome.why !== 'login-self') {
+          failures.push(`${key} ran on the system pool (${r.outcome.why})`);
+        }
+        if (r.outcome?.kind === 'system' && !e.pattern.startsWith('/api/auth/')) {
+          failures.push(`${key} ran as login-self outside /api/auth`);
+        }
+        if (isOwnerRoute(method, e.pattern)) {
+          if (memberMayRead(method, e.pattern)) {
+            opened += 1;
+            if (r.status === 403 || r.outcome?.kind !== 'user') {
+              failures.push(`${key} open read: ${r.status} ${JSON.stringify(r.outcome)}`);
+            }
+          } else if (r.status !== 403) {
+            failures.push(`${key} not refused: ${r.status}`);
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(opened).toBeGreaterThan(20);
+  }, 900_000);
+
+  it('no admin screen shows another user’s private item (nor an item of a workspace it is not in)', async () => {
+    const hidden = [privNote, sideNote, `${tag} private note`, `${tag} side note`];
+    const lists = [
+      '/api/notes',
+      '/api/pages',
+      '/api/tree/notes',
+      `/api/tree/notes/search?q=${tag}`,
+      `/api/search?q=${tag}`,
+      `/api/mentions/search?q=${tag}`,
+      '/api/apps',
+      '/api/tables',
+      '/api/draws',
+      '/api/files/files',
+      '/api/tasks',
+      '/api/activity',
+      '/api/dashboard',
+    ];
+    const leaks: string[] = [];
+    let sawTeam = false;
+    for (const path of lists) {
+      const r = await call(path, owner);
+      expect(r.status, `${path} ${r.text.slice(0, 200)}`).toBeLessThan(500);
+      for (const h of hidden) if (r.text.includes(h)) leaks.push(`${path} shows ${h}`);
+      if (r.text.includes(teamNote)) sawTeam = true;
+    }
+    for (const id of [privNote, sideNote]) {
+      for (const path of [`/api/nodes/${id}`, `/api/notes/${id}`, `/api/grants/${id}`]) {
+        const r = await call(path, owner);
+        if (r.status !== 404) leaks.push(`${path} answers ${r.status}`);
+      }
+    }
+    expect(leaks).toEqual([]);
+    expect(sawTeam).toBe(true);
+    // Each item's own user reads it; the other member does not.
+    expect((await call(`/api/notes/${privNote}`, mem)).status).toBe(200);
+    expect((await call(`/api/notes/${sideNote}`, mem2)).status).toBe(200);
+    expect((await call(`/api/notes/${sideNote}`, mem)).status).toBe(404);
+    expect((await call(`/api/notes/${adminNote}`, mem)).status).toBe(404);
+    expect((await call(`/api/notes/${adminNote}`, owner)).status).toBe(200);
+  }, 300_000);
+
+  it('the rollback switch puts Admin reads back on the system pool (the pre-W6a answer)', async () => {
+    process.env.MANTLE_ADMIN_READS = 'system';
+    try {
+      const r = await call(`/api/notes/${privNote}`, owner);
+      expect(r.status).toBe(200);
+      expect(r.outcome).toEqual({ kind: 'system', why: 'admin-reads-flag' });
+      // Members stay scoped whatever it says.
+      const mr = await call(`/api/notes/${sideNote}`, mem);
+      expect(mr.status).toBe(404);
+      expect(mr.outcome?.kind).toBe('user');
+    } finally {
+      delete process.env.MANTLE_ADMIN_READS;
+    }
+    expect((await call(`/api/notes/${privNote}`, owner)).status).toBe(404);
+  });
+
+  it('drafts: an Admin user reads the draft of an item it may edit, a member none', async () => {
+    const a = JSON.parse((await call(`/api/pages/${teamPage}`, owner)).text) as Json;
+    const b = JSON.parse((await call(`/api/pages/${teamPage}`, mem)).text) as Json;
+    expect(JSON.stringify(a)).toContain('paragraph');
+    expect(JSON.stringify(b)).not.toContain('paragraph');
+  });
+});

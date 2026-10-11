@@ -8,7 +8,7 @@
  * edit: no version bump, no re-index, fire-and-forget.
  */
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, emailAttachmentSql, entityEdges, nodes, pages } from '@mantle/db';
+import { db, draftColumn, emailAttachmentSql, entityEdges, nodes, pages } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { Backlink, PageRow, PageSort } from '@mantle/client-types';
 import { EMPTY_DOC, PAGES_ROOT_LABEL, detailOf, rowOf, type PageDetail } from './shared';
@@ -111,9 +111,11 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
     .select({
       node: nodes,
       doc: pages.doc,
-      draft: published ? sql<null>`null` : pages.draftDoc,
-      draftUpdatedAt: published ? sql<null>`null` : pages.draftUpdatedAt,
-      draftRev: published ? sql<null>`null` : pages.draftRev,
+      // An Admin user's request scope reads a draft only of an item it may
+      // edit (draftColumn: the rule is in the query, W6a).
+      draft: published ? sql<null>`null` : draftColumn<unknown>(pages.draftDoc),
+      draftUpdatedAt: published ? sql<null>`null` : draftColumn<Date>(pages.draftUpdatedAt),
+      draftRev: published ? sql<null>`null` : draftColumn<number>(pages.draftRev),
     })
     .from(nodes)
     .leftJoin(pages, eq(pages.nodeId, nodes.id))

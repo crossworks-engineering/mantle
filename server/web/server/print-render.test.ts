@@ -27,6 +27,12 @@ const ITEM = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const h = vi.hoisted(() => ({ fileReads: [] as string[] }));
 
+// W6a: the session guard reads the login's workspaces (loginScopeFor) from
+// the database; this file runs without one (an empty scope stands in).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+}));
 vi.mock('../lib/auth/login-row', () => {
   const rows: Record<string, Record<string, unknown>> = {
     '33333333-3333-4333-8333-333333333333': { isOwner: true, role: 'admin', disabledAt: null },

@@ -9,7 +9,7 @@ import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
 import { fileStats, resolveStoragePath } from '@mantle/tabledb';
 import { draftAbsFor } from '../table-storage';
-import { db, emailAttachmentSql, nodes, tables } from '@mantle/db';
+import { db, draftColumn, emailAttachmentSql, nodes, tables } from '@mantle/db';
 import type { TableRow, TableDetail, TableSort } from '@mantle/content-core/table-model';
 import { countsFromRegistry, detailOf, docsOf, rowOf, tabsFromStats } from './shared';
 import { readsDrafts } from '@mantle/db/viewer';
@@ -116,9 +116,11 @@ export async function getTable(
     .select({
       node: nodes,
       data: tables.data,
-      draft: published ? sql<null>`null` : tables.draftData,
+      // An Admin user's request scope reads a draft only of an item it may
+      // edit (draftColumn: the rule is in the query, W6a).
+      draft: published ? sql<null>`null` : draftColumn<unknown>(tables.draftData),
       storagePath: tables.storagePath,
-      draftRev: published ? sql<null>`null` : tables.draftRev,
+      draftRev: published ? sql<null>`null` : draftColumn<number>(tables.draftRev),
       stats: tables.stats,
     })
     .from(nodes)

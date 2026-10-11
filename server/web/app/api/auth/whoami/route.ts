@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getLoginOr401 } from '@/lib/auth';
 import { brainIdField } from '@/lib/brain-identity';
+import { ruleInQuery } from '@/lib/auth/rule-in-query';
 
 /**
  * GET /api/auth/whoami: who a credential belongs to, for any role
@@ -24,7 +25,7 @@ const ROUTES = {
   client: { shell: '/api/shell', pushBase: '/api/client/push' },
 } as const;
 
-export async function GET() {
+async function handleGET() {
   const login = await getLoginOr401();
   if (login instanceof NextResponse) return login;
   const displayName =
@@ -45,3 +46,5 @@ export async function GET() {
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
+
+export const GET = ruleInQuery(handleGET);

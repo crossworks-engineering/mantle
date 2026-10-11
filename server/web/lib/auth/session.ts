@@ -23,6 +23,12 @@ import {
   isBusy,
   isWriteRefused,
   pgErrorCode,
+  currentRequestOutcome,
+  enterRequestScope,
+  hasRequestSlot,
+  loginScopeFor,
+  noteRequestSystem,
+  type RequestScopeMode,
 } from '@mantle/db';
 import {
   loadAnchorId,
@@ -48,6 +54,8 @@ import { isAccessKey, isApiV1Path, lockLoginKeys } from '../access-keys';
 import { keyMayCall, matchApiV1Route } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
+import { isReadRequest, memberMayRead, routeClass } from './route-scope';
+import { isAnyLoginRoute } from './any-login-routes';
 import {
   SESSION_COOKIE_NAME,
   buildAssetToken,
@@ -180,6 +188,16 @@ type Resolved =
  * reaches X's bytes. Returns a 401 JSON `Response` like `getOwnerOr401`.
  */
 export async function getOwnerForAsset(req: Request): Promise<SessionUser | NextResponse> {
+  const user = await ownerForAsset(req);
+  if (user instanceof NextResponse) return user;
+  // The bytes of an item are a read of that item: the Admin user's scope
+  // (W6a), as on the other owner routes (a render cookie acts for the admin
+  // who asked for the print).
+  const refused = await adminRouteGate(user.actor.id);
+  return refused ?? user;
+}
+
+async function ownerForAsset(req: Request): Promise<SessionUser | NextResponse> {
   const user = await getSessionUser();
   if (user) return user;
   const at = new URL(req.url).searchParams.get('at');
@@ -242,6 +260,14 @@ async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | n
  * or demoted login's token stops at once. The route reads at the team level.
  */
 export async function getMemberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
+  const member = await memberForAsset(req);
+  if (member instanceof NextResponse) return member;
+  // The member's scope for the rest of the request (W6a, plan T4).
+  await enterLoginScope(member.loginId, requestMode(false));
+  return member;
+}
+
+async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
   const res = await resolveLogin();
   if (res?.kind === 'member') return res.member;
   const at = new URL(req.url).searchParams.get('at');
@@ -654,12 +680,127 @@ export async function getOwnerOr401WithSource(): Promise<
 > {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  // Deny by default: every admin gate takes an admin and nothing else. A
-  // member or a client is refused (member routes use getMemberOr401 and are
-  // listed in MEMBER_ROUTES; the auth sweeps check both).
-  if (res.kind !== 'admin') return loginRefused(res.kind);
+  if (res.kind !== 'admin') {
+    // A member or a client reaches an owner route only to READ brain items
+    // in its own scope (W6a, MEMBER_OPEN_READS); every other owner route
+    // refuses it (member routes use getMemberOr401; the sweeps check both).
+    const { method, pattern } = routeOfRequest();
+    if (!hasRequestSlot() || !memberMayRead(method, pattern)) return loginRefused(res.kind);
+    const login = res.kind === 'member' ? res.member : res.client;
+    await enterLoginScope(login.loginId, requestMode(false));
+    return {
+      user: {
+        id: login.anchorId,
+        email: login.email,
+        actor: {
+          id: login.loginId,
+          email: login.email,
+          displayName: login.displayName,
+          isOwner: false,
+        },
+      },
+      source: res.source,
+    };
+  }
+  const refused = await adminRouteGate(res.user.actor.id);
+  if (refused) return refused;
   await auditMutation(res.user);
   return { user: res.user, source: res.source };
+}
+
+// ── The request scope (workspaces W6a, plan 2.4 and T4) ─────────────────────
+
+/** The method and manifest pattern of the current request (pattern null
+ *  outside the route loader). */
+function routeOfRequest(): { method: string; pattern: string | null } {
+  const ctx = getRequestContext();
+  return { method: ctx?.method ?? 'GET', pattern: ctx?.pattern ?? null };
+}
+
+/**
+ * The W6a rollback switch: MANTLE_ADMIN_READS=system puts an Admin user's
+ * reads back on the system pool (as before W6a). Default: scoped. Plan 14
+ * and R9: it stays on every box until B2 has run clean there two weeks.
+ * Members and clients are scoped whatever it says (plan T4).
+ */
+export function adminReadsOnSystemPool(): boolean {
+  return (env('MANTLE_ADMIN_READS') ?? '').trim().toLowerCase() === 'system';
+}
+
+/** The mode of a request scope for the current request. */
+function requestMode(drafts: boolean): RequestScopeMode {
+  const { method, pattern } = routeOfRequest();
+  return { writes: !isReadRequest(method, pattern), drafts };
+}
+
+/** Enter `loginId`'s scope for the rest of the request (no-op when it is
+ *  already in, or outside a routed request). */
+async function enterLoginScope(loginId: string, mode: RequestScopeMode): Promise<boolean> {
+  if (!hasRequestSlot()) return false;
+  const done = currentRequestOutcome();
+  if (done?.kind === 'user' && done.loginId === loginId.toLowerCase()) return true;
+  return enterRequestScope(await loginScopeFor(loginId), mode);
+}
+
+/** Whether the login holds `area` (requireArea's rule: the Admin workspace
+ *  and its limits; a brain not on workspaces: any admin). */
+async function loginHoldsArea(
+  loginId: string,
+  area: import('@mantle/client-types').WorkspaceArea,
+): Promise<boolean> {
+  const anchorId = await getAnchorId();
+  if (!anchorId) return false;
+  const { requireArea } = await import('../workspaces');
+  return requireArea({ kind: 'admin', loginId, anchorId, user: null }, area);
+}
+
+/**
+ * What an Admin login's owner request runs as (W6a): a management route
+ * needs its area and runs on the system pool; the login's own things run
+ * there too; a READ of brain items enters the login's scope (unless the
+ * rollback switch is on); a write stays on the system pool, as before.
+ * Outside the route loader (a test calling a handler) nothing changes.
+ * Returns the refusal, or null to go on.
+ */
+async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
+  const { method, pattern } = routeOfRequest();
+  if (!hasRequestSlot() || pattern === null) return null;
+  const cls = routeClass(pattern);
+  if (!cls) {
+    return NextResponse.json(
+      { error: 'forbidden', reason: 'unclassified-route', message: 'This route is not open.' },
+      { status: 403 },
+    );
+  }
+  if (cls.kind === 'area') {
+    if (!(await loginHoldsArea(loginId, cls.area))) {
+      return NextResponse.json(
+        {
+          error: 'forbidden',
+          reason: 'area',
+          area: cls.area,
+          message: 'You cannot manage this part of the brain.',
+        },
+        { status: 403 },
+      );
+    }
+    noteRequestSystem('area');
+    return null;
+  }
+  if (cls.kind === 'self') {
+    noteRequestSystem('login-self');
+    return null;
+  }
+  if (!isReadRequest(method, pattern)) {
+    noteRequestSystem('admin-write');
+    return null;
+  }
+  if (adminReadsOnSystemPool()) {
+    noteRequestSystem('admin-reads-flag');
+    return null;
+  }
+  await enterLoginScope(loginId, requestMode(true));
+  return null;
 }
 
 /**
@@ -683,6 +824,8 @@ export async function getClientOr401(): Promise<ClientCaller | NextResponse> {
     );
   }
   await auditClientMutation(res.client);
+  // No request scope: every client route answers 410 since W5c (the client
+  // portal went; clients read owner routes in their scope, MEMBER_OPEN_READS).
   return res.client;
 }
 
@@ -736,6 +879,8 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
       actor: { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false },
     });
   }
+  // The member's scope for the rest of the request (W6a, plan T4).
+  await enterLoginScope(res.member.loginId, requestMode(false));
   return res.member;
 }
 
@@ -827,6 +972,7 @@ export async function getLoginOr401(): Promise<
 > {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  await anyLoginScope(res);
   switch (res.kind) {
     case 'admin':
       return {
@@ -856,6 +1002,35 @@ export async function getLoginOr401(): Promise<
         client: res.client,
       };
   }
+}
+
+/**
+ * The request scope of getLoginOr401 (W6a). On an any-login route
+ * (ANY_LOGIN_ROUTES: shell, workspaces, grants, access keys, whoami) every
+ * login enters its scope, an Admin user's write excepted (system pool, as
+ * on the owner routes); those libraries hold their rule in their own SQL
+ * and leave the scope by name (asSystem 'rule-in-query'). Anywhere else
+ * (sign-out, change password, OAuth consent: the login's own row, never
+ * brain data) the request stays on the system pool.
+ */
+async function anyLoginScope(res: Resolved): Promise<void> {
+  const { method, pattern } = routeOfRequest();
+  if (!hasRequestSlot() || pattern === null) return;
+  if (!isAnyLoginRoute(method, pattern)) {
+    noteRequestSystem('login-self');
+    return;
+  }
+  const loginId =
+    res.kind === 'admin'
+      ? res.user.actor.id
+      : res.kind === 'member'
+        ? res.member.loginId
+        : res.client.loginId;
+  if (res.kind === 'admin') {
+    if (!isReadRequest(method, pattern)) return noteRequestSystem('admin-write');
+    if (adminReadsOnSystemPool()) return noteRequestSystem('admin-reads-flag');
+  }
+  await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
 }
 
 /**

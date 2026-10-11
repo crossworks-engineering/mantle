@@ -9,7 +9,9 @@ import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import * as schema from './schema';
 import {
   ACCESS_MATRIX,
+  DRAFT_COLUMNS,
   NEVER_GRANTED_COLUMNS,
+  userReadFor,
   readFor,
   ruleFor,
   viewerGrantStatements,
@@ -44,6 +46,27 @@ describe('access matrix', () => {
       if (entry.read === 'none') continue;
       for (const c of banned) expect(entry.read, `${table}.${c}`).not.toContain(c);
     }
+  });
+
+  it('grants the workspace role the draft columns of the item tables and no login secret (W6a)', () => {
+    for (const t of ACCESS_MATRIX) {
+      const read = userReadFor(t);
+      if (!Array.isArray(read)) continue;
+      for (const [table, banned] of Object.entries(NEVER_GRANTED_COLUMNS)) {
+        if (table !== t.table) continue;
+        const drafts = DRAFT_COLUMNS[table] ?? [];
+        for (const c of banned) {
+          if (drafts.includes(c)) expect(read, `${table}.${c}`).toContain(c);
+          else expect(read, `${table}.${c}`).not.toContain(c);
+        }
+      }
+    }
+    expect(Object.keys(DRAFT_COLUMNS).sort()).toEqual([
+      'public.apps',
+      'public.draws',
+      'public.pages',
+      'public.tables',
+    ]);
   });
 
   it('never grants the private corpus or credentials', () => {
