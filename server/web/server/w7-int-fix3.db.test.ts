@@ -369,9 +369,6 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
   // ── L1 ─────────────────────────────────────────────────────────────────
 
   it('L1: under the rollback switch only a login that holds Admin reads on the system pool', async () => {
-    expect(await m.loginHoldsAdmin(maker)).toBe(true);
-    expect(await m.loginHoldsAdmin(owner)).toBe(true);
-    expect(await m.loginHoldsAdmin(outsider)).toBe(false);
     process.env.MANTLE_ADMIN_READS = 'system';
     try {
       const { runInOwnerMcpScope } = await import('@mantle/mcp-core');
@@ -390,6 +387,10 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
     } finally {
       delete process.env.MANTLE_ADMIN_READS;
     }
+    // What the session guard asks (session.ts): the Admin workspace, not the role.
+    expect(await m.loginHoldsAdmin(maker)).toBe(true);
+    expect(await m.loginHoldsAdmin(owner)).toBe(true);
+    expect(await m.loginHoldsAdmin(outsider)).toBe(false);
   });
 
   // ── L2 ─────────────────────────────────────────────────────────────────
