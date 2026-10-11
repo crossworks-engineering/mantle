@@ -27,7 +27,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { executeWrite } from '@mantle/db';
 
 /** The Postgres channel server/api LISTENs on. Exported so the
  *  listener and the notifiers reference the same string — typo
@@ -48,7 +48,7 @@ export async function notifyHeartbeatDue(ownerId: string): Promise<void> {
   try {
     // The channel name is a string literal (no operator-controlled
     // value) and the payload is parameterised — safe from injection.
-    await db.execute(sql`SELECT pg_notify(${HEARTBEAT_DUE_CHANNEL}, ${ownerId})`);
+    await executeWrite(sql`SELECT pg_notify(${HEARTBEAT_DUE_CHANNEL}, ${ownerId})`);
   } catch (err) {
     console.error(
       `[heartbeats:notify] pg_notify failed (next regular tick will catch up):`,

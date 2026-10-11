@@ -10,7 +10,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { publicErrorMessage } from '@mantle/std';
-import { db, nodes, isBusy, BUSY_MESSAGE } from '@mantle/db';
+import { BUSY_MESSAGE, db, isBusy, isScopeWriteRefusal, nodes, executeWrite } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
   moveFileById,
@@ -59,14 +59,14 @@ export const TREE_CHANGED_CHANNEL = 'tree_changed';
  *  their own node events. */
 export async function notifyTreeChanged(ownerId: string, kind: TreeKind): Promise<void> {
   try {
-    await db.execute(
+    await executeWrite(
       sql`SELECT pg_notify(${TREE_CHANGED_CHANNEL}, ${JSON.stringify({ ownerId, kind })})`,
     );
     // A client from before the tree draws Apps from /api/app-nav and refetches
     // on this (app-nav.ts APP_NAV_CHANGED_CHANNEL; named here to keep the
     // tree module free of the app-nav one).
     if (kind === 'apps')
-      await db.execute(sql`SELECT pg_notify('app_nav_changed', ${ownerId}::text)`);
+      await executeWrite(sql`SELECT pg_notify('app_nav_changed', ${ownerId}::text)`);
   } catch (err) {
     console.error('[tree] notify failed:', err instanceof Error ? err.message : err);
   }
@@ -154,6 +154,9 @@ function refusingError(err: unknown): never {
   if (err instanceof TreeError) throw err;
   if (err instanceof NodeOpRefusal) throw new TreeError(err.code, err.message);
   if (err instanceof FilesMergeRefusal) throw new TreeError('conflict', err.message);
+  // The database refused it under the caller's workspaces (W6a fix round 1):
+  // the HTTP layer answers 403 item-workspace, never the SQL.
+  if (isScopeWriteRefusal(err)) throw err;
   const message = err instanceof Error ? err.message : String(err);
   throw new TreeError(/already exists|unique/i.test(message) ? 'conflict' : 'invalid', message);
 }

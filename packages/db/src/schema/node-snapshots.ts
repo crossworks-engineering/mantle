@@ -104,6 +104,11 @@ export type AppSnapshotMeta = {
   icon?: string;
   color?: string;
   tags: string[];
+  /** The workspace the app was homed in when it was taken (workspaces W6a
+   *  fix round 1): a deleted app's purge and restore are checked against
+   *  it (mantle_may_manage). Absent on older snapshots: the Admin
+   *  workspace. */
+  homeWs?: string;
 };
 
 export type NodeSnapshot = typeof nodeSnapshots.$inferSelect;

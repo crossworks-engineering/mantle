@@ -9,6 +9,7 @@ import {
   isFormulaSpecError,
 } from '@/lib/formulas';
 import { firstIssue } from '@/lib/zod-issue';
+import { isScopeWriteRefusal } from '@mantle/db';
 
 const PAGE_SIZE = 50;
 
@@ -57,6 +58,8 @@ export async function POST(req: Request) {
     if (isFormulaSpecError(err)) {
       return NextResponse.json({ error: err.message, errors: err.errors }, { status: 400 });
     }
+    // A workspace check refused the write (W6a): app.onError answers 403.
+    if (isScopeWriteRefusal(err)) throw err;
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'invalid input' },
       { status: 400 },

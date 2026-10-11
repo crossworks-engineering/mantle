@@ -694,6 +694,13 @@ decides. An app that was informational at the switch keeps the Team row
 the bridge gave it (Write off): turning it off later does not give the
 team Write until an admin turns Write on in the app's Grant Access panel.
 
+**Deleted apps (W6a).** Purging or restoring a deleted app follows the
+workspace it was homed in: its last snapshot (taken at the delete) stores
+that workspace, and only a Moderator of it may purge or restore the app. A
+snapshot taken before W6a stores none and so does not say where the app
+lived: only the brain's owner may purge or restore that app. Any other
+Admin user gets 403 (reason `item-workspace`).
+
 ## Rollback
 
 ```bash

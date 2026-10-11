@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db } from './client';
+import { executeWrite } from './client';
 import { currentSpaceScope } from './viewer';
 
 /**
@@ -22,7 +22,7 @@ export async function notifyNodeIngested(nodeId: string): Promise<void> {
   // extractor gate's owner check stays the lock behind this.
   if (currentSpaceScope()) return;
   try {
-    await db.execute(sql`SELECT pg_notify('node_ingested', ${nodeId}::text)`);
+    await executeWrite(sql`SELECT pg_notify('node_ingested', ${nodeId}::text)`);
   } catch (err) {
     console.error('[db] notifyNodeIngested failed:', err instanceof Error ? err.message : err);
   }
@@ -38,7 +38,7 @@ export async function notifyNodeIngested(nodeId: string): Promise<void> {
  */
 export async function notifyNodeIndexed(nodeId: string): Promise<void> {
   try {
-    await db.execute(sql`SELECT pg_notify('node_indexed', ${nodeId}::text)`);
+    await executeWrite(sql`SELECT pg_notify('node_indexed', ${nodeId}::text)`);
   } catch (err) {
     console.error('[db] notifyNodeIndexed failed:', err instanceof Error ? err.message : err);
   }

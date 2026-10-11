@@ -17,7 +17,7 @@
  * into months; the file watcher runs it before it starts watching.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, isUniqueViolation, nodes } from '@mantle/db';
+import { db, isUniqueViolation, nodes, executeWrite } from '@mantle/db';
 import { dashToLtree, slugifyFolder } from './slug';
 import { FILES_ROOT_LABEL } from './paths';
 import { ensureFilesRootBranch } from './ops/shared';
@@ -304,12 +304,12 @@ export async function reconcileAutoFiled(ownerId: string): Promise<AutoFiledRepo
     // Folders that came from before Auto-filed get its names and its lock.
     for (const source of report.moved) {
       const spec: SourceSpec = AUTO_FILED_SOURCES[source];
-      await db.execute(sql`
+      await executeWrite(sql`
         update nodes set title = ${spec.name}, updated_at = now()
          where owner_id = ${ownerId} and type = 'branch'
            and path = ${autoFiledSourcePath(source)}::ltree`);
     }
-    await db.execute(sql`
+    await executeWrite(sql`
       update nodes set data = coalesce(data, '{}'::jsonb) || '{"system": true}'::jsonb
        where owner_id = ${ownerId} and type = 'branch'
          and path <@ ${AUTO_FILED_PATH}::ltree

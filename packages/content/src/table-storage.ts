@@ -2,7 +2,15 @@ import { copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
-import { acceptedSnapshots, db, nodes, readsDrafts, tables } from '@mantle/db';
+import {
+  acceptedSnapshots,
+  currentWorkspaceScope,
+  db,
+  draftAllowed,
+  nodes,
+  readsDrafts,
+  tables,
+} from '@mantle/db';
 import {
   ENGINE_VERSION,
   MATERIALIZE_MAX,
@@ -146,7 +154,13 @@ export function loadDocsFromFile(
   // and `publishedOnly` keeps it from a reader on the admin pool who must not
   // see it (the author of an accepted item, member-accepted.ts).
   let draftClipped: ReturnType<typeof readDocClipped> | null = null;
-  if (!opts.publishedOnly && readsDrafts() && existsSync(draftAbs)) {
+  // In a workspace scope (an Admin user's request) the draft is readable
+  // only for an item the user may edit, which this function cannot see: the
+  // caller asks the row (draftAllowed) and says so with publishedOnly: false.
+  // Without that answer it reads the published workbook (W6a fix round 1).
+  const mayReadDraft =
+    opts.publishedOnly === false || (!opts.publishedOnly && !currentWorkspaceScope());
+  if (mayReadDraft && readsDrafts() && existsSync(draftAbs)) {
     try {
       draftClipped = readDocClipped(draftAbs, MATERIALIZE_MAX, opts.tabId);
     } catch (err) {
@@ -285,16 +299,18 @@ export function registryFileColumns(
 export async function tableSqlSurface(
   ownerId: string,
   nodeId: string,
-): Promise<{ abs: string; tabs: WorkbookTabRef[] } | null> {
+): Promise<{ abs: string; tabs: WorkbookTabRef[]; draftOk: boolean } | null> {
   const [row] = await db
-    .select({ storagePath: tables.storagePath })
+    .select({ storagePath: tables.storagePath, draftOk: draftAllowed() })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(and(eq(tables.nodeId, nodeId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row?.storagePath) return null;
   const abs = resolveStoragePath(row.storagePath);
-  return { abs, tabs: describeWorkbook(abs) };
+  // draftOk: whether the caller may read the draft workbook (draftAllowed:
+  // mantle_may_edit in a workspace scope, false below admin, W6a).
+  return { abs, tabs: describeWorkbook(abs), draftOk: row.draftOk === true };
 }
 
 /** How many leading rows land in dataText — list-ILIKE routing for

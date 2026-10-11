@@ -33,7 +33,11 @@ import { PUBLIC_PATHS } from '../lib/auth-constants';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-const seen = vi.hoisted(() => ({ last: null as unknown, reads: [] as readonly string[] }));
+const seen = vi.hoisted(() => ({
+  last: null as unknown,
+  reads: [] as readonly string[],
+  writes: [] as readonly string[],
+}));
 
 // Read what the guard did, inside the request's own slot, once the handler
 // is done.
@@ -48,10 +52,50 @@ vi.mock('@mantle/db', async (importOriginal) => {
         } finally {
           seen.last = orig.currentRequestOutcome();
           seen.reads = orig.ownRuleSystemReads();
+          seen.writes = orig.requestSystemWrites();
         }
       }),
   };
 });
+
+/**
+ * The writes a request scope sends to the system pool (W6a fix round 1,
+ * L2), by login kind, route and calling file (the first outside
+ * @mantle/db): the typed writes (insert, update, delete), executeWrite and,
+ * since fix round 2 (L-c), each system transaction (withSystemTx and the
+ * heads helpers) of a READ request in the login's scope. The system's own
+ * bookkeeping only:
+ *  - GET /api/activity: journey.ts closes abandoned running traces (the
+ *    self-heal before the read);
+ *  - GET /api/app-nav: tree/apps-nav.ts moves the pre-tree sidebar layout
+ *    and the login's own pins and opens into the tree, once; the apps
+ *    kind root (tree/node-ops.ts ensureKindRoot) when it is missing;
+ *  - GET /api/docs/reader: files/docs.ts registers the documentation
+ *    collection on first read;
+ *  - GET /api/files/files: files/ops/shared.ts makes the files root row
+ *    when it is missing;
+ *  - GET /api/pages/:id: pages/read.ts stores missing block ids, only for a
+ *    reader who may edit the page (mayEdit);
+ *  - GET /api/tree/:kind (an Admin user and a member): tree/node-ops.ts
+ *    makes the kind's root row when the reader does not see one (insert on
+ *    conflict do nothing; it returns no row to the reader).
+ * The list only shrinks; a new entry needs review.
+ */
+const REQUEST_SCOPE_SYSTEM_WRITES: ReadonlySet<string> = new Set<string>([
+  'admin GET /api/activity update server/web/lib/journey.ts',
+  'admin GET /api/app-nav executeWrite packages/content/src/tree/apps-nav.ts',
+  'admin GET /api/app-nav withSystemTx packages/content/src/tree/node-ops.ts',
+  'admin GET /api/docs/reader insert packages/files/src/docs.ts',
+  'admin GET /api/files/files withSystemTx packages/files/src/ops/shared.ts',
+  'admin GET /api/pages/:id update packages/content/src/pages/read.ts',
+  'admin GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
+  'member GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
+]);
+
+/** The member entries of that list: a member's read writes nothing else. */
+const MEMBER_SCOPE_SYSTEM_WRITES = [
+  'member GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
+];
 
 /**
  * The reads a member route ('own-rule', W6a) sends to the system pool, by
@@ -149,9 +193,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     text: string;
     outcome: RequestOutcome | null;
     reads: readonly string[];
+    writes: readonly string[];
   }> => {
     seen.last = null;
     seen.reads = [];
+    seen.writes = [];
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (as?.startsWith('mtlk_')) headers.authorization = `Bearer ${as}`;
     else if (as) headers.cookie = cookieOf(as);
@@ -163,13 +209,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       }),
       new Promise<null>((r) => setTimeout(() => r(null), 20_000)),
     ]);
-    if (!res) return { status: 0, text: 'timeout', outcome: null, reads: [] };
+    if (!res) return { status: 0, text: 'timeout', outcome: null, reads: [], writes: [] };
     const text = method === 'HEAD' ? '' : await res.text().catch(() => '');
     return {
       status: res.status,
       text,
       outcome: seen.last as RequestOutcome | null,
       reads: seen.reads,
+      writes: seen.writes,
     };
   };
 
@@ -271,6 +318,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   });
 
   const skipped = (pattern: string) => SKIP.some((re) => re.test(pattern));
+  /** The request-scope writes the sweeps saw (L2), checked at the end. */
+  const scopeWrites = new Set<string>();
+  const noteWrites = (who: 'admin' | 'member', key: string, writes: readonly string[]) => {
+    for (const w of writes) {
+      const file = w.replace(/^\S+ /, '').replace(/^.*?((packages|server)\/)/, '$1');
+      scopeWrites.add(`${who} ${key} ${w.split(' ')[0]} ${file}`);
+    }
+  };
   const isPublic = (pattern: string) =>
     PUBLIC_PATHS.some((p) => pattern === p || pattern.startsWith(`${p}/`));
   const isOwnerRoute = (method: string, pattern: string) =>
@@ -292,6 +347,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       if (isMemberRoute('GET', e.pattern) || isClientRoute('GET', e.pattern)) continue;
       const r = await call(concrete(e.pattern, true), owner);
       const key = `GET ${e.pattern}`;
+      noteWrites('admin', key, r.writes);
       if (r.status >= 500 || r.status === 0)
         failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
       else if (r.status !== 401 && r.status !== 403 && r.outcome?.kind !== 'user') {
@@ -340,6 +396,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         const read = method === 'GET';
         const r = await call(concrete(e.pattern, read), mem, method);
         const key = `${method} ${e.pattern}`;
+        noteWrites('member', key, r.writes);
         if (r.status >= 500 || r.status === 0) {
           failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
           continue;
@@ -482,7 +539,9 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         if (!isOwnerRoute(method, e.pattern)) continue;
         if (routeClass(e.pattern)?.kind !== 'content') continue;
         const probe = concrete(e.pattern, false);
-        if (!itemWriteTarget(method, e.pattern, probe)) continue;
+        // Routes whose id names another row (a share, a revision, a
+        // deleted app) are checked in w6a-fix-sweep.db.test.ts.
+        if (itemWriteTarget(method, e.pattern, probe)?.ref !== 'node') continue;
         for (const id of [privNote, sideNote]) {
           const parts = probe.split('/');
           parts[e.pattern.split('/').indexOf(':id')] = id;
@@ -517,6 +576,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       delete process.env.MANTLE_ADMIN_READS;
     }
   }, 600_000);
+
+  it('L2: the system-pool writes of request scopes are the pinned list', () => {
+    // Runs after the Admin and member sweeps above (same file, in order).
+    expect([...scopeWrites].filter((w) => !REQUEST_SCOPE_SYSTEM_WRITES.has(w)).sort()).toEqual([]);
+    expect([...scopeWrites].filter((w) => w.startsWith('member ')).sort()).toEqual(
+      MEMBER_SCOPE_SYSTEM_WRITES,
+    );
+  });
 
   it('drafts: an Admin user reads the draft of an item it may edit, a member none', async () => {
     const a = JSON.parse((await call(`/api/pages/${teamPage}`, owner)).text) as Json;

@@ -6,7 +6,7 @@
  * that would fail the same way. An admin's phone hears of it.
  */
 import { eq, sql } from 'drizzle-orm';
-import { db, extractParkedStamp, isHeadsCheckError, nodes } from '@mantle/db';
+import { db, isHeadsCheckError, nodes, executeWrite, extractParkedStamp } from '@mantle/db';
 
 /** The parking queue; /debug/integrity lists what waits on it. */
 export const HEADS_DEAD_QUEUE = 'mantle.extract.heads';
@@ -63,5 +63,5 @@ export async function stampExtractParked(nodeId: string): Promise<void> {
  *  push worker reads the parked count and pushes a new one to admin devices.
  *  Notify only; nothing that listens starts LLM work. */
 export async function notifyParked(ownerId: string): Promise<void> {
-  await db.execute(sql`SELECT pg_notify('needs_you_changed', ${ownerId}::text)`);
+  await executeWrite(sql`SELECT pg_notify('needs_you_changed', ${ownerId}::text)`);
 }

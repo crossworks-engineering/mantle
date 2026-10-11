@@ -9,7 +9,7 @@ import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
 import { fileStats, resolveStoragePath } from '@mantle/tabledb';
 import { draftAbsFor } from '../table-storage';
-import { db, draftColumn, emailAttachmentSql, nodes, tables } from '@mantle/db';
+import { db, draftAllowed, draftColumn, emailAttachmentSql, nodes, tables } from '@mantle/db';
 import type { TableRow, TableDetail, TableSort } from '@mantle/content-core/table-model';
 import { countsFromRegistry, detailOf, docsOf, rowOf, tabsFromStats } from './shared';
 import { readsDrafts } from '@mantle/db/viewer';
@@ -111,16 +111,19 @@ export async function getTable(
   // Below admin (member logins Phase 0b) the draft is not readable: the
   // published table only, and no draft file from disk either. A member's own
   // space (Phase 2) reads its own draft.
-  const published = opts.publishedOnly === true || !readsDrafts();
+  const askedPublished = opts.publishedOnly === true || !readsDrafts();
   const [row] = await db
     .select({
       node: nodes,
       data: tables.data,
+      // Whether this caller may read the draft at all (W6a: the draft file
+      // on disk follows the same rule as the draft columns).
+      draftOk: askedPublished ? sql<boolean>`false` : draftAllowed(),
       // An Admin user's request scope reads a draft only of an item it may
       // edit (draftColumn: the rule is in the query, W6a).
-      draft: published ? sql<null>`null` : draftColumn<unknown>(tables.draftData),
+      draft: askedPublished ? sql<null>`null` : draftColumn<unknown>(tables.draftData),
       storagePath: tables.storagePath,
-      draftRev: published ? sql<null>`null` : draftColumn<number>(tables.draftRev),
+      draftRev: askedPublished ? sql<null>`null` : draftColumn<number>(tables.draftRev),
       stats: tables.stats,
     })
     .from(nodes)
@@ -128,6 +131,9 @@ export async function getTable(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return null;
+  // An Admin user with Read only, or a reader below admin: the published
+  // table, and no draft file from disk (W6a fix round 1, H1).
+  const published = askedPublished || row.draftOk !== true;
   // Tab list: the DRAFT file's when one exists (a tab added/renamed in the
   // draft must show), else registry stats (published, no file open needed).
   let tabs = row.storagePath ? tabsFromStats(row.stats) : undefined;

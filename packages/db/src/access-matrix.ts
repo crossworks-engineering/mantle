@@ -102,6 +102,12 @@ export type TableAccess = {
    * 'level': the same columns as `read`.
    */
   user?: LimitedRead | 'level' | 'level+drafts';
+  /**
+   * The workspace role's row rule where it differs from `rule` (W6a fix
+   * round 2). 'own-login': the login's own row, the brain's row, or every
+   * row when the scope holds the Admin workspace (profiles, migration 0266).
+   */
+  userRule?: 'own-login';
 };
 
 /** The draft columns of the item tables. The level roles never read them;
@@ -352,12 +358,14 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // column list would fail a client-level turn (C4). Narrow it there.
   { table: 'public.ai_workers', read: 'all', user: 'all', rule: 'all-rows', writer: 'admin' },
   // The client role reads the preferences only (loadProfilePreferences), not
-  // the owner's display name (audit A27).
+  // the owner's display name (audit A27). The workspace role reads its own
+  // login's row and the brain's, every row only in an Admin scope (0266).
   {
     table: 'public.profiles',
     read: 'all',
     user: 'all',
     rule: 'all-rows',
+    userRule: 'own-login',
     writer: 'admin',
     byRole: { client: { read: ['user_id', 'preferences'] } },
   },

@@ -1,5 +1,6 @@
 import { sql as sqlTag } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import postgres from 'postgres';
 import * as schema from './schema/index';
 import { env, envFlag } from '@mantle/config';
@@ -32,6 +33,8 @@ import {
   type PoolRole,
   currentRequestMode,
   noteOwnRuleSystemRead,
+  noteRequestSystemWrite,
+  requestWriteScope,
   requestScopeMemo,
 } from './viewer';
 
@@ -318,10 +321,34 @@ export async function withSystemTx<T>(
   if ((!isSystemScope() && !inRequest) || currentScopeTx()) {
     throw new Error('withSystemTx: only outside a viewer scope and any other transaction');
   }
+  // Tests and development: a request scope's system transaction is one of
+  // its writes (W6a fix round 2, L-c), pinned by the route sweep with the
+  // file that opened it.
+  if (inRequest) noteRequestSystemWrite('withSystemTx');
+  // An Admin user's write request (W6a fix round 1, M1): the login's scope
+  // on the transaction, so the database checks moves (0241/0245), creates in
+  // a folder and deletes (0266) against its workspaces. mantle.login_id is
+  // left unset: the 0250 stamp would otherwise mark trace, run and chat rows
+  // made in the same transaction as this login's, which nothing asks for.
+  const writeScope = requestWriteScope();
+  const settings = writeScope
+    ? [
+        uuidArrayLiteral(writeScope.ws, 'write scope ws'),
+        uuidArrayLiteral(writeScope.modWs, 'write scope modWs'),
+      ]
+    : null;
   const hooks = newTxHooks();
   let result: T;
   try {
-    result = await getAdminDb().transaction((tx) => runInSystemTx({ tx, hooks }, () => fn(tx)));
+    result = await getAdminDb().transaction(async (tx) => {
+      if (settings) {
+        await tx.execute(
+          sqlTag`select set_config('mantle.ws', ${settings[0]}, true),
+                        set_config('mantle.mod_ws', ${settings[1]}, true)`,
+        );
+      }
+      return runInSystemTx({ tx, hooks }, () => fn(tx));
+    });
   } catch (err) {
     await runTxHooks(hooks.rollback, 'rollback');
     throw err;
@@ -786,6 +813,55 @@ function memoScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope> {
 }
 
 /**
+ * The login's workspaces and Moderator ones, as SQL columns of a query on
+ * auth.users (W6a fix round 1, the bench): the session's one login read
+ * carries them, and seedLoginScope keeps them as this request's scope, so
+ * the guard needs no second lookup. The same rule as viewerScopeFor: live
+ * workspaces only, none for a disabled login. The login is a bound id, not
+ * the outer column: drizzle writes a single-table query's columns without
+ * their table, and a bare "id" in the subquery would be the workspace's.
+ */
+export function loginScopeColumns(loginId: string, disabledAt: AnyPgColumn) {
+  return {
+    scopeWs: sqlTag<string[]>`case when ${disabledAt} is null then coalesce((
+        select array_agg(u.workspace_id::text order by u.workspace_id)
+          from workspace_users u
+          join workspaces w on w.id = u.workspace_id and w.archived_at is null
+         where u.login_id = ${loginId}::uuid), '{}') else '{}' end`,
+    scopeModWs: sqlTag<string[]>`case when ${disabledAt} is null then coalesce((
+        select array_agg(u.workspace_id::text order by u.workspace_id)
+          from workspace_users u
+          join workspaces w on w.id = u.workspace_id and w.archived_at is null
+         where u.login_id = ${loginId}::uuid and u.moderator), '{}') else '{}' end`,
+  };
+}
+
+/** Keep a login's scope, read with its row (loginScopeColumns), as this
+ *  request's: loginScopeFor and withViewer for that login reuse it. No-op
+ *  outside a request, or when the request already looked it up. */
+export function seedLoginScope(
+  loginId: string,
+  ws: readonly string[],
+  modWs: readonly string[],
+): void {
+  const memo = requestScopeMemo();
+  if (!memo || !UUID_RE.test(loginId)) return;
+  const key = `login:${loginId.toLowerCase()}:`;
+  if (memo.has(key)) return;
+  memo.set(
+    key,
+    Promise.resolve(
+      Object.freeze({
+        kind: 'user' as const,
+        loginId: loginId.toLowerCase(),
+        ws: Object.freeze([...ws]),
+        modWs: Object.freeze([...modWs]),
+      }),
+    ),
+  );
+}
+
+/**
  * The scope the session guard enters for a signed-in login (W6a): the
  * union of its live workspaces, Moderator where it is one (a disabled
  * login: none). The same scope `withViewer(…, { login }, …)` builds.
@@ -918,7 +994,9 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     // A request scope (W6a, plan 2.3): writes stay on the system pool with
     // their rule in the statement; reads run in the scope. A transaction is
     // a write in a mutating request, and stays in the scope in a read
-    // request (a search step that needs one transaction).
+    // request (a search step that needs one transaction). A raw execute
+    // always runs in the scope (fix round 1, M3): a raw write says so with
+    // executeWrite.
     const mode = currentRequestMode();
     if (mode && !currentScopeTx()) {
       if (
@@ -927,9 +1005,15 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
         prop === 'delete' ||
         (prop === 'transaction' && mode.writes)
       ) {
-        return Reflect.get(getAdminDb() as object, prop);
+        noteRequestSystemWrite(String(prop));
+        // Bound to the system handle (W6a fix round 2): drizzle's builders
+        // read `this.session`, which on this proxy is the scope's session, so
+        // an unbound method ran the write on the workspace role (a page's
+        // block-id backfill failed with permission denied).
+        const admin = getAdminDb();
+        const fn = Reflect.get(admin as object, prop) as (...args: unknown[]) => unknown;
+        return fn.bind(admin);
       }
-      if (prop === 'execute') return requestExecute;
     }
     if (prop === 'select' || prop === 'selectDistinct' || prop === 'execute' || prop === 'query') {
       noteOwnRuleSystemRead(String(prop));
@@ -940,9 +1024,10 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
 
 /**
  * Whether a raw statement writes (W6a): a leading write verb, or a write
- * clause anywhere (a data-modifying CTE, a row lock). For routing a request
- * scope's raw statements: a write to the system pool, a read to the
- * workspace role.
+ * clause anywhere (a data-modifying CTE, a row lock). No longer routes a
+ * request scope's raw statements (fix round 1, M3: a read it took for a
+ * write ran unscoped); executeWrite uses it to refuse a statement that does
+ * not write.
  */
 export function isWriteSql(text: string): boolean {
   const body = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
@@ -958,20 +1043,45 @@ export function isWriteSql(text: string): boolean {
   );
 }
 
-const requestExecute = ((query: Parameters<PostgresJsDatabase<typeof schema>['execute']>[0]) => {
-  const admin = getAdminDb();
-  const text =
-    typeof query === 'string'
-      ? query
-      : (
-          admin as unknown as { dialect: { sqlToQuery: (q: unknown) => { sql: string } } }
-        ).dialect.sqlToQuery(
-          typeof (query as { getSQL?: unknown }).getSQL === 'function'
-            ? (query as unknown as { getSQL: () => unknown }).getSQL()
-            : query,
-        ).sql;
-  return (isWriteSql(text) ? admin : getDb()).execute(query);
-}) as PostgresJsDatabase<typeof schema>['execute'];
+/** The SQL text of a drizzle query or a string. */
+function sqlTextOf(query: unknown): string {
+  if (typeof query === 'string') return query;
+  const admin = getAdminDb() as unknown as {
+    dialect: { sqlToQuery: (q: unknown) => { sql: string } };
+  };
+  return admin.dialect.sqlToQuery(
+    typeof (query as { getSQL?: unknown }).getSQL === 'function'
+      ? (query as { getSQL: () => unknown }).getSQL()
+      : query,
+  ).sql;
+}
+
+/** A statement that only reads, sent to executeWrite. */
+export class NotAWriteError extends Error {
+  constructor() {
+    super('executeWrite: the statement does not write; read through db in the caller’s scope.');
+    this.name = 'NotAWriteError';
+  }
+}
+
+/**
+ * A raw WRITE, said so (W6a fix round 1, M3). Inside a request scope
+ * `db.execute` always runs in the scope, on the workspace role, where a
+ * write fails loudly; a raw statement that writes comes here and runs on
+ * the system pool, as the typed writes (db.insert, update, delete) do there.
+ * Anywhere else it is exactly `db.execute`. Refuses a statement that does
+ * not write (isWriteSql), so it is never a door for a read.
+ */
+export function executeWrite(
+  query: Parameters<PostgresJsDatabase<typeof schema>['execute']>[0],
+): ReturnType<PostgresJsDatabase<typeof schema>['execute']> {
+  if (!isWriteSql(sqlTextOf(query))) throw new NotAWriteError();
+  if (currentRequestMode() && !currentScopeTx()) {
+    noteRequestSystemWrite('executeWrite');
+    return getAdminDb().execute(query);
+  }
+  return getDb().execute(query);
+}
 
 /**
  * Infrastructure handle: always the admin pool, whatever the viewer. For the

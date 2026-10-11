@@ -19,11 +19,12 @@ import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   authUsers,
   db,
-  nodes,
   type Node,
+  nodes,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  executeWrite,
 } from '@mantle/db';
 import {
   deriveContactTitle,
@@ -336,7 +337,7 @@ export async function recordContactSent(
   // coalesce keeps `data` a valid object even on rows that somehow lack one.
   const countsPath = `{contact_counts,${m}}`;
   const lastAtPath = `{last_contacted_at,${m}}`;
-  const result = await db.execute(sql`
+  const result = await executeWrite(sql`
     update ${nodes}
     set data = jsonb_set(
                  jsonb_set(

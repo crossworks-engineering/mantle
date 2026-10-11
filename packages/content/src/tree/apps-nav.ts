@@ -18,7 +18,7 @@
  * needed and no migration.
  */
 import { sql } from 'drizzle-orm';
-import { db, takeShareReadLock, withDeadlockRetry, withHeads } from '@mantle/db';
+import { takeShareReadLock, db, withDeadlockRetry, withHeads, executeWrite } from '@mantle/db';
 import type { AppNavEntry, AppNavFolder } from '@mantle/client-types';
 import { EMPTY_APP_NAV } from '@mantle/client-types/app-nav';
 import { TREE_MAX_DEPTH } from '@mantle/client-types/tree';
@@ -51,7 +51,7 @@ async function rootData(ownerId: string): Promise<RootData> {
  *  call holds a fresh claim. */
 async function claimAppNavMove(ownerId: string): Promise<boolean> {
   const staleBefore = new Date(Date.now() - CLAIM_STALE_MS).toISOString();
-  const claimed = (await db.execute(sql`
+  const claimed = (await executeWrite(sql`
     update nodes
        set data = coalesce(data, '{}'::jsonb)
                   || jsonb_build_object('appNavMigratingAt', ${new Date().toISOString()}::text)
@@ -63,7 +63,7 @@ async function claimAppNavMove(ownerId: string): Promise<boolean> {
 }
 
 async function markAppNavMoved(ownerId: string): Promise<void> {
-  await db.execute(sql`
+  await executeWrite(sql`
     update nodes
        set data = (coalesce(data, '{}'::jsonb) - 'appNavMigratingAt')
                   || jsonb_build_object('appNavMigratedAt', ${new Date().toISOString()}::text)
@@ -236,7 +236,7 @@ async function copyAppMarks(ownerId: string, actorId: string): Promise<boolean> 
   for (const [i, id] of pins.entries()) {
     if (!live.has(id)) continue;
     const at = new Date(base + i * 1000).toISOString();
-    await db.execute(sql`
+    await executeWrite(sql`
       insert into item_marks (actor_id, node_id, pinned_at)
       values (${actorId}, ${id}, ${at}::timestamptz)
       on conflict (actor_id, node_id)
@@ -244,14 +244,14 @@ async function copyAppMarks(ownerId: string, actorId: string): Promise<boolean> 
   }
   for (const [id, stat] of opens) {
     if (!live.has(id)) continue;
-    await db.execute(sql`
+    await executeWrite(sql`
       insert into item_marks (actor_id, node_id, open_count, opened_at)
       values (${actorId}, ${id}, ${stat.n}, ${stat.at}::timestamptz)
       on conflict (actor_id, node_id)
       do update set open_count = greatest(item_marks.open_count, excluded.open_count),
                     opened_at = greatest(item_marks.opened_at, excluded.opened_at)`);
   }
-  await db.execute(sql`
+  await executeWrite(sql`
     update nodes
        set data = jsonb_set(
              coalesce(data, '{}'::jsonb), '{appMarksMigrated}',

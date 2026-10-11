@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
-import { db, nodes, tables } from '@mantle/db';
+import { db, draftAllowed, nodes, tables } from '@mantle/db';
 import {
   distinctColumnValues,
   draftPathFor,
@@ -14,8 +14,8 @@ import { hiddenFromKey } from '@/lib/api-v1';
 
 /**
  * Keyset page of rows for the grid's lazy-load (P3). Draft-first like every
- * other read surface: ?draft=1 reads the draft file when one exists (falls
- * back to published when not). Cursor = the last row of the previous page
+ * other read surface: ?draft=1 reads the draft file when one exists and the
+ * caller may edit the table (draftAllowed); published otherwise. Cursor = the last row of the previous page
  * (after_pos + after_rid); omit for the first page.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -26,8 +26,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if ((await hiddenFromKey(user.id, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
+  // draftOk: whether this caller may read the draft (W6a: the rule is in
+  // the query, mantle_may_edit in a workspace scope; false below admin).
   const [row] = await db
-    .select({ storagePath: tables.storagePath })
+    .select({ storagePath: tables.storagePath, draftOk: draftAllowed() })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(and(eq(tables.nodeId, id), eq(nodes.ownerId, user.id), eq(nodes.type, 'table')))
@@ -52,7 +54,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const publishedAbs = resolveStoragePath(row.storagePath);
   const draftAbs = draftPathFor(publishedAbs);
-  const file = wantDraft && existsSync(draftAbs) ? draftAbs : publishedAbs;
+  // A caller who may not edit the table reads the published file, whatever
+  // it asks for (a member with Read, an Admin user with Read only).
+  const file = wantDraft && row.draftOk === true && existsSync(draftAbs) ? draftAbs : publishedAbs;
   try {
     // Distinct values of one column — the option list a reference column's
     // editor offers (?distinct=<columnId>, optional ?prefix= typeahead).

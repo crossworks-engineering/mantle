@@ -1,6 +1,8 @@
 /**
- * isWriteSql (workspaces W6a): which raw statements of a request scope go to
- * the system pool (writes, row locks) and which run in the scope (reads).
+ * isWriteSql (workspaces W6a): which raw statements write (writes, row
+ * locks). Since fix round 1 (M3) it no longer routes a request scope's raw
+ * statements (they all run in the scope); executeWrite refuses a statement
+ * it does not take for a write.
  */
 import { describe, expect, it } from 'vitest';
 import { isWriteSql } from './client';

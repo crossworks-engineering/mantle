@@ -5,7 +5,7 @@
  * cache so a change takes effect immediately.
  */
 import { eq, sql } from 'drizzle-orm';
-import { db, embeddingConfig, type EmbeddingConfigRow } from '@mantle/db';
+import { db, type EmbeddingConfigRow, embeddingConfig, executeWrite } from '@mantle/db';
 import { clearEmbeddingModelCache, EMBEDDING_DIMS } from '@mantle/embeddings';
 
 export { EMBEDDING_DIMS };
@@ -66,7 +66,7 @@ export async function upsertEmbeddingConfig(
  */
 export async function notifyProviderRecover(ownerId: string): Promise<void> {
   try {
-    await db.execute(sql`SELECT pg_notify('provider_recover', ${ownerId}::text)`);
+    await executeWrite(sql`SELECT pg_notify('provider_recover', ${ownerId}::text)`);
   } catch {
     /* best-effort */
   }
