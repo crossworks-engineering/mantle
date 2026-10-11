@@ -456,7 +456,7 @@ async function runTeamTurnSteps(
         provider: agent.provider,
         systemPrompt: assembled.effectiveSystemPrompt,
         volatileContext,
-        // HARD isolation: no persona notes — owner-personal context never
+        // HARD isolation: no persona notes; owner-personal context never
         // reaches a workspace turn. The digests are this login's own (0269).
         personaNotes: [],
         facts: ctx.facts,

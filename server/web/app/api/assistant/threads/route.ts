@@ -6,9 +6,9 @@ import { archiveResponse } from '@/lib/chat-archive-http';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
 
 /**
- * GET  /api/assistant/threads[?agent=<slug>] — the login's OWN threads with
+ * GET  /api/assistant/threads[?agent=<slug>]: the login's OWN threads with
  *      the agent, newest first (the open one on top).
- * POST /api/assistant/threads { agent? } — "New chat": archive the login's
+ * POST /api/assistant/threads { agent? }: "New chat", archive the login's
  *      own open thread with the agent and open a new one.
  *
  * Any login (W7c): each user has their own threads with each assistant and

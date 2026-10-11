@@ -106,7 +106,7 @@ function rangeConds(range: ThreadRange | undefined): SQL[] {
 
 /**
  * Recent transcript for one (owner, agent, login) thread, chronological
- * (oldest → newest). `agentId` and `loginId` are required — there is no
+ * (oldest → newest). `agentId` and `loginId` are required: there is no
  * cross-agent or cross-login view: each user has their own thread with each
  * agent (0269, W7c), and reads only that. The shared brain
  * (nodes/facts/entities) is what agents have in common; the conversation is

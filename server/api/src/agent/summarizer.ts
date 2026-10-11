@@ -467,7 +467,7 @@ async function summarizeThread(o: {
                         ...(vec ? { embedding: vec } : {}),
                         data: {
                           kind: 'conversation_digest',
-                          // The conversational agent this digest belongs to — the key
+                          // The conversational agent this digest belongs to: the key
                           // loadConversationContext filters digests by (per agent,
                           // cross-channel). NOT the summarizer worker.
                           agent_id: agentId,
@@ -499,10 +499,10 @@ async function summarizeThread(o: {
                   // empty/garbled turn_indexes everywhere): throwing rolls back and
                   // surfaces an errored trace. Silently returning here would leave
                   // the batch undigested and re-bill the same LLM call on every
-                  // subsequent insert — an unbounded spend leak.
+                  // subsequent insert: an unbounded spend leak.
                   if (out.length === 0) {
                     throw new Error(
-                      'summarizer: topics parsed but none resolved to turns — not persisting',
+                      'summarizer: topics parsed but none resolved to turns, not persisting',
                     );
                   }
 

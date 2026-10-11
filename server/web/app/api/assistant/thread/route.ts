@@ -8,7 +8,7 @@ import { chatThreadRow, threadRange } from '@/lib/chat-threads';
 import { getAgentExperience } from '@/lib/agent-experience';
 
 /**
- * GET /api/assistant/thread[?agent=<slug>][&withMessages=0] — the /assistant
+ * GET /api/assistant/thread[?agent=<slug>][&withMessages=0]: the /assistant
  * bundle: the agents this login may chat with, the selected one, the login's
  * OWN open thread with it (messages and thread row), and (an Admin user) its
  * assigned assistant and the agent's level badge.
