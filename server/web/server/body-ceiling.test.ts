@@ -33,6 +33,7 @@ import { readJsonNoNul } from '../lib/strip-nul';
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/db')>()),
   loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+  brainOnWorkspacesNow: async () => true,
 }));
 vi.mock('../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/workspaces')>()),

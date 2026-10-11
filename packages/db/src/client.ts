@@ -764,6 +764,25 @@ export async function loginScopeFor(loginId: string): Promise<WorkspaceScope> {
   return viewerScopeFor({ login: loginId });
 }
 
+let brainOnWorkspaces = false;
+
+/**
+ * Whether this brain is on workspaces: it has an Admin workspace (the
+ * workspaces migration ran). A brain the migration skipped (a box with
+ * client logins, set up by hand first, plan 21.9) keeps today's rule for an
+ * Admin user: reads on the system pool, as before W6a. Read on the system
+ * pool; a yes is kept for the life of the process (no box goes back).
+ */
+export async function brainOnWorkspacesNow(): Promise<boolean> {
+  if (brainOnWorkspaces) return true;
+  const rows = (await getAdminDb().execute(
+    sqlTag`select exists (select 1 from workspaces
+                           where owner_id = mantle_brain_id() and is_admin) as on`,
+  )) as unknown as { on: boolean }[];
+  brainOnWorkspaces = rows[0]?.on === true;
+  return brainOnWorkspaces;
+}
+
 /** The live workspaces beyond Admin an app run reads through (AppRunFor):
  *  a brain app's holders from its grants; the brain's Team workspace (team
  *  rules) only for `{ team: true }` or a brain app with no row beyond Admin

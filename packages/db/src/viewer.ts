@@ -220,7 +220,10 @@ export type RequestOutcome =
   // routes): its handler holds its own rule, a withViewer per read as since
   // W5b2, and its writes on the system pool.
   | { kind: 'own-rule'; loginId: string }
-  | { kind: 'system'; why: 'area' | 'admin-write' | 'admin-reads-flag' | 'login-self' };
+  | {
+      kind: 'system';
+      why: 'area' | 'admin-write' | 'admin-reads-flag' | 'login-self' | 'not-on-workspaces';
+    };
 
 type RequestSlot = { scope: Scope | null; outcome: RequestOutcome | null };
 

@@ -27,6 +27,7 @@ import {
   enterRequestScope,
   hasRequestSlot,
   loginScopeFor,
+  brainOnWorkspacesNow,
   noteRequestSystem,
   noteRequestOwnRule,
   type RequestScopeMode,
@@ -799,6 +800,10 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     noteRequestSystem('admin-reads-flag');
     return null;
   }
+  if (!(await brainOnWorkspacesNow())) {
+    noteRequestSystem('not-on-workspaces');
+    return null;
+  }
   await enterLoginScope(loginId, requestMode(true));
   return null;
 }
@@ -1031,6 +1036,7 @@ async function anyLoginScope(res: Resolved): Promise<void> {
   if (res.kind === 'admin') {
     if (!isReadRequest(method, pattern)) return noteRequestSystem('admin-write');
     if (adminReadsOnSystemPool()) return noteRequestSystem('admin-reads-flag');
+    if (!(await brainOnWorkspacesNow())) return noteRequestSystem('not-on-workspaces');
   }
   await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
 }

@@ -58,6 +58,7 @@ vi.mock('@mantle/db', async (orig) => ({
   ...(await orig<typeof import('@mantle/db')>()),
   withSpace: async (_ctx: unknown, fn: () => Promise<unknown>) => fn(),
   loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+  brainOnWorkspacesNow: async () => true,
 }));
 
 vi.mock('@mantle/content', async (orig) => {

@@ -34,6 +34,7 @@ export {
   lockMoreHeads,
   withDeadlockRetry,
   loginScopeFor,
+  brainOnWorkspacesNow,
   isWriteSql,
   type Db,
 } from './client';
