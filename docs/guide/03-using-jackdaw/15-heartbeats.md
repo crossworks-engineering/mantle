@@ -31,7 +31,7 @@ Gates default to nothing. A heartbeat with no gates fires exactly on schedule, a
 ## Manage heartbeats
 
 - **Pause** and **Resume** stop and restart a heartbeat.
-- **Fire now** runs it once, straight away.
+- **Fire now** runs it once, straight away. Only the user who set up the heartbeat can fire it.
 - Open a heartbeat to see its state and recent firings, including the ones a gate skipped. Each run links to its trace.
 
 When you reply to a heartbeat's message, the normal assistant answers, knowing the heartbeat is open, and updates or completes it.

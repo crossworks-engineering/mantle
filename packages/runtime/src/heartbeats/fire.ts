@@ -116,8 +116,9 @@ export async function forceFire(hb: Heartbeat, opts: FireOpts = {}): Promise<Fir
  *  so the turn answers that caller's login, never the anchor.
  *
  *  `answeredBy` (W7 integration fix 2, H1): the login that fired (Fire now,
- *  heartbeat_fire), null for the brain owner (the anchor login). A forced
- *  fire answers its firer, the anchor included; with no `inCaller` it runs
+ *  heartbeat_fire), null for the brain owner (the anchor login). Both
+ *  callers let only the heartbeat's maker fire it (W7 integration fix 4), so
+ *  a forced fire answers the maker, as the tick does; with no `inCaller` it runs
  *  in that login's own scope (loginCaller). Left out (the tick), the fire
  *  answers the heartbeat's maker (heartbeats.created_by, null the anchor).
  *  The fire row records it (heartbeat_fires.answered_by): only that login
@@ -151,7 +152,8 @@ const MAKER_GONE =
  * The scope a fire with no caller runs heartbeat `hb` in, for the login it
  * answers: the tick's is the login that set it up (heartbeats.created_by,
  * W7a fix round 3; null is the anchor), a forced fire's is its firer
- * (FireOpts.answeredBy, W7 integration fix 2, H1).
+ * (FireOpts.answeredBy, W7 integration fix 2, H1), the maker too since
+ * only the maker fires it (W7 integration fix 4).
  * The Admin assistant runs in that login's turn scope of Admin; a helper
  * with no workspace (the replay agent, a specialist) takes the branch a
  * chat with it takes (W7c fix round 2, H1; W7 integration fix): that

@@ -76,8 +76,9 @@ handler in fix round 2) run there whole, and a turn one of them starts (a
 heartbeat fired) answers the calling login, never the brain owner. A login
 works only in the sandboxes it made; only the brain owner mounts a folder
 into one. A heartbeat answers the login that set it up
-(heartbeats.created_by): Fire now fires in the signed-in login's scope, and
-the tick fires a heartbeat another Admin login set up or edited in that
+(heartbeats.created_by): only that login fires it now (Fire now and
+`heartbeat_fire`; anyone else is refused), in its own scope, and the tick
+fires a heartbeat another Admin login set up or edited in that
 login's scope. A tool template that sends a vault key (`{{secret:...}}`,
 `{{oauth:...}}`, an OAuth2 group's token or base URL) is the keys area's:
 writing or testing one needs it, and a tool another login wrote resolves its
