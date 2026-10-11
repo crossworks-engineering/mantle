@@ -237,6 +237,10 @@ describe('one surface for every login (W7b): what a scope lists', () => {
       expect(preparedAllows(admin, s), s).toBe(true);
     }
     for (const s of OWNER_KEY_SPENDING_TOOLS) expect(spendsOwnerKeys(s), s).toBe(true);
+    // The owner's Mapbox key (W7 integration fix 2, M4).
+    expect(spendsOwnerKeys('route_map')).toBe(true);
+    expect(preparedAllows(p, 'route_map')).toBe(false);
+    expect(preparedAllows(admin, 'route_map')).toBe(true);
   });
 
   it('H2: outside Admin no Admin-only kind is created; task, event and map creates land by the rule', () => {

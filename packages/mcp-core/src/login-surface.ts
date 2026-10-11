@@ -319,11 +319,13 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
 /**
  * The tools that spend on the brain owner's provider keys besides the
  * registry's `spends` builtins: a crawl (Firecrawl credits), a re-run of the
- * extractor (model work per node), and a turn of another agent or of a
- * responder (W7b fix round 1, M4).
+ * extractor (model work per node), a turn of another agent or of a
+ * responder (W7b fix round 1, M4), and a route map (the owner's Mapbox
+ * key, W7 integration fix 2, M4).
  */
 export const OWNER_KEY_SPENDING_TOOLS: ReadonlySet<string> = new Set([
   'web_crawl',
+  'route_map',
   'process_extraction',
   'invoke_agent',
   'ask_responder',

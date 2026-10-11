@@ -772,23 +772,28 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
   }, 300_000);
 
   it('M4: nothing that spends on the owner’s keys is listed for a member, or reached', async () => {
+    // Every spending builtin (search_chunks keeps its free ranking) and every
+    // other tool on the owner's keys (W7 integration fix 2: route_map too).
+    const { BUILTIN_TOOLS } = await import('@mantle/tools');
+    const { OWNER_KEY_SPENDING_TOOLS } = await import('@mantle/mcp-core');
     const spending = [
-      'web_search_pro',
-      'generate_image',
-      'summarize_text',
-      'process_extraction',
-      'invoke_agent',
-      'ask_responder',
+      ...BUILTIN_TOOLS.filter((d) => d.spends && d.slug !== 'search_chunks').map((d) => d.slug),
+      ...OWNER_KEY_SPENDING_TOOLS,
     ];
+    expect(spending).toContain('route_map');
     for (const via of ['oauth', 'key', 'peer'] as const) {
       const c = await connect(memberCaller(via));
       try {
         const listed = new Set(c.tools.map((tool) => tool.slug));
-        for (const slug of spending) expect(listed.has(slug), `${via} ${slug}`).toBe(false);
-        const r = await c.call('web_search_pro', { query: `${tag} search` });
-        expect(isRefused(r), `${via} web_search_pro`).toBe(true);
-        const a = await c.call('invoke_agent', { agent: 'researcher', task: 'x' });
-        expect(isRefused(a), `${via} invoke_agent`).toBe(true);
+        for (const slug of spending) {
+          expect(listed.has(slug), `${via} ${slug}`).toBe(false);
+          // Not registered: refused as an unknown tool, before any handler.
+          const r = await c.call(slug, {});
+          expect(isRefused(r), `${via} ${slug}`).toBe(true);
+          expect(r === 'timeout' ? r : text(r), `${via} ${slug}`).toMatch(
+            new RegExp(`Tool ${slug} not found`),
+          );
+        }
       } finally {
         await c.close();
       }
