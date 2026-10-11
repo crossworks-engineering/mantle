@@ -139,19 +139,26 @@ type PgSql = ReturnType<typeof postgres>;
  * search step that needs one transaction (withHnswPool) keeps the scope.
  */
 function turnScopedClient(base: PgSql): PgSql {
-  const run = (query: string, params: unknown[] | undefined, values: boolean) => {
-    let settings: [string, string, string];
+  // BEGIN, the settings, the query and COMMIT go out together on one
+  // reserved connection: one round trip, not three (W6a: `begin` waits for
+  // BEGIN, and COMMIT is a trip of its own). A failing statement aborts the
+  // transaction; the COMMIT then rolls back, and the first error is thrown.
+  const run = async (query: string, params: unknown[] | undefined, values: boolean) => {
+    const settings = turnScopeParams();
+    const conn = await base.reserve();
     try {
-      settings = turnScopeParams();
-    } catch (err) {
-      return Promise.reject(err);
+      const begin = conn.unsafe('begin');
+      const scope = conn.unsafe(SCOPE_SETTINGS_SQL, settings);
+      const q = conn.unsafe(query, (params ?? []) as never[]);
+      const main = values ? q.values() : q;
+      const commit = conn.unsafe('commit');
+      const out = await Promise.allSettled([begin, scope, main, commit]);
+      const failed = out.find((r) => r.status === 'rejected');
+      if (failed) throw (failed as PromiseRejectedResult).reason;
+      return (out[2] as PromiseFulfilledResult<unknown>).value;
+    } finally {
+      conn.release();
     }
-    return base
-      .begin((t) => {
-        const q = t.unsafe(query, (params ?? []) as never[]);
-        return [t.unsafe(SCOPE_SETTINGS_SQL, settings), values ? q.values() : q] as const;
-      })
-      .then((out) => (out as unknown as unknown[])[1]);
   };
   const client = {
     options: base.options,
