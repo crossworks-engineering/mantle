@@ -98,6 +98,14 @@ the owner chose and can write nothing back into the file store — and mounting
 the Files ROOT is refused outright, so a sandbox sees only what it was given.
 `sandbox_import` remains the answer for a one-off file.
 
+**Whose sandbox.** On a brain on workspaces a sandbox records the login that
+made it. Any Admin user whose settings area is on may make sandboxes, but
+works only in its own (exec, ls, the toolbelt, export, import, publish,
+autostart, stop, rm); the brain owner's login works in every one, and a
+sandbox made before this was recorded counts as the brain owner's. Only the
+brain owner's login mounts a folder: the mount shows the folder's whole
+directory, files the caller may not read included.
+
 **Networks.** Sandboxes never join the app network. `full`-tier sandboxes
 live on `mantle_sandbox` (internet via NAT, no route to the brain);
 `balanced` sandboxes live on `mantle_sandbox_restricted` (`internal: true`,

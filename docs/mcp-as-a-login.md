@@ -47,8 +47,11 @@ matching area switched on. Such a tool still runs in the login's workspaces
 page it mails, a folder it mounts are read there, and a file it exports is
 written there with the normal checks. Only its own system tables (sandbox
 rows, peers, mail accounts, tool groups) are read on the system pool; the
-tools that touch nothing else (`AREA_SYSTEM_TOOLS` in admin-gate.ts) run
-there whole. A write to an item (an edit, a delete, a move, a link) is
+tools that touch nothing else (`AREA_SYSTEM_TOOLS` in admin-gate.ts, each
+checked handler by handler in fix round 2) run there whole, and a turn one
+of them starts (a heartbeat fired) answers the calling login, never the
+brain owner. A login works only in the sandboxes it made; only the brain
+owner mounts a folder into one. A write to an item (an edit, a delete, a move, a link) is
 checked against the login's rights on that item first, as the item routes
 do (`packages/tools/src/item-write-gate.ts`): an item shared with Read only
 is refused. `MANTLE_ADMIN_READS=system` puts the whole surface back on the
