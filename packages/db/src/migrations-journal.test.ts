@@ -114,8 +114,8 @@ describe('migrations journal', () => {
         .filter((l) => !l.trimStart().startsWith('--'))
         .join('\n');
       const altered = new Set(
-        [...body.matchAll(/ALTER TABLE\s+(?:IF EXISTS\s+)?(?:"?public"?\.)?"?(\w+)"?/gi)].map(
-          (m) => m[1]!.toLowerCase(),
+        [...body.matchAll(/ALTER TABLE\s+(?:IF EXISTS\s+)?(?:"?public"?\.)?"?(\w+)"?/gi)].map((m) =>
+          m[1]!.toLowerCase(),
         ),
       );
       if (altered.size < 2) continue;

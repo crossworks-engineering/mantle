@@ -43,11 +43,7 @@ import {
   withTurnScope,
   type Heartbeat,
 } from '@mantle/db';
-import {
-  currentRequestMode,
-  currentWorkspaceScope,
-  scopeLeftForSystem,
-} from '@mantle/db/viewer';
+import { currentRequestMode, currentWorkspaceScope, scopeLeftForSystem } from '@mantle/db/viewer';
 import {
   adminAreaError,
   areaSystem,

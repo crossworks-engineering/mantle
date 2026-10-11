@@ -96,10 +96,7 @@ describe('telegram_pending', () => {
 
   it('scopes the chat lookup too when a chat id is given', async () => {
     selectQueue.push([{ id: 'chat-pk' }], []);
-    await tool(TELEGRAM_OPERATOR_TOOLS, 'telegram_pending').handler(
-      { chat_id: '123' },
-      anchorMcp,
-    );
+    await tool(TELEGRAM_OPERATOR_TOOLS, 'telegram_pending').handler({ chat_id: '123' }, anchorMcp);
     expect(paramsOf(whereArgs[0]), 'chat lookup unscoped').toContain(OWNER);
   });
 });

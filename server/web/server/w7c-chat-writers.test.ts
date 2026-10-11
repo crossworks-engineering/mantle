@@ -104,7 +104,9 @@ function inserts(src: string, table: string): string[] {
   const out: string[] = [];
   const re = new RegExp(`\\.insert\\(${table}\\)\\s*\\.values\\(`, 'g');
   for (let m = re.exec(src); m; m = re.exec(src)) {
-    const arg = balanced(src, m.index + m[0].length - 1).slice(1, -1).trim();
+    const arg = balanced(src, m.index + m[0].length - 1)
+      .slice(1, -1)
+      .trim();
     if (arg.startsWith('{')) out.push(arg);
     else {
       const name = /^\w+/.exec(arg)?.[0];

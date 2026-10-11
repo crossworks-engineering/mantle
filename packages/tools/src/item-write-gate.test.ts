@@ -195,8 +195,7 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       .filter((d) => !d.readOnly && !ITEM_WRITE_TARGETS.has(d.slug))
       .filter((d) =>
         Object.keys(
-          ((d.inputSchema as { properties?: Record<string, unknown> }).properties ??
-            {}) as object,
+          ((d.inputSchema as { properties?: Record<string, unknown> }).properties ?? {}) as object,
         ).some((p) => p === 'id' || /_ids?$/.test(p)),
       )
       .map((d) => d.slug)

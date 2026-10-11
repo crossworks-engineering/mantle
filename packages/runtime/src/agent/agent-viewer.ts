@@ -275,9 +275,8 @@ export async function withAgentScope<T>(
     // emergency switch: see the module comment), for an Admin user only,
     // and its gates still ask that login (W7 integration fix 2, M6).
     if (adminReadsOnSystemPool()) {
-      return withGateScope(
-        { kind: 'assistant', loginId: asked, ws: [admin.wsId], modWs },
-        () => stamped(null),
+      return withGateScope({ kind: 'assistant', loginId: asked, ws: [admin.wsId], modWs }, () =>
+        stamped(null),
       );
     }
     return withTurnStamp({ workspaceId: admin.wsId, loginId: asked }, () =>

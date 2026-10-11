@@ -388,7 +388,8 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
       const [g] = await sql`select scope, revoked_at from oauth_access_tokens
                              where token_hash = ${sha(token)}`;
       expect(g, label).toEqual({ scope: 'mcp', revoked_at: null });
-      const codes = await sql`select 1 from oauth_auth_codes where code_hash = ${sha(`${token}-code`)}`;
+      const codes =
+        await sql`select 1 from oauth_auth_codes where code_hash = ${sha(`${token}-code`)}`;
       expect(codes.length, label).toBe(1);
       const [p] = await sql`select enabled, write_enabled from mantle_peers
                              where id = ${peerIds[label]!}`;

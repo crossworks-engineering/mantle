@@ -149,16 +149,12 @@ export async function PUT(req: Request) {
     purposeArchetype: isPurposeArchetype(archetype) ? archetype : undefined,
     siteName: siteName !== undefined ? siteName.trim().slice(0, SITE_NAME_MAX) : undefined,
     peerName: peerName !== undefined ? peerName.trim().slice(0, PEER_NAME_MAX) : undefined,
-    houseStyle:
-      houseStyle !== undefined ? houseStyle.trim().slice(0, HOUSE_STYLE_MAX) : undefined,
+    houseStyle: houseStyle !== undefined ? houseStyle.trim().slice(0, HOUSE_STYLE_MAX) : undefined,
   };
   const maker = toolMakerFor(user);
   let brainChanged: string[] = [];
   if (maker) {
-    const current = (await loadPreferencesFor(user.actor.id)) as unknown as Record<
-      string,
-      unknown
-    >;
+    const current = (await loadPreferencesFor(user.actor.id)) as unknown as Record<string, unknown>;
     brainChanged = Object.entries(brainSet)
       .filter(([k, v]) => v !== undefined && v !== String(current[k] ?? ''))
       .map(([k]) => k);

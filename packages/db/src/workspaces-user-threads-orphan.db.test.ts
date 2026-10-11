@@ -36,8 +36,10 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
       (${member}, 'uo-m@example.invalid', 'x', 'member', false, 'Member')`;
     await sql`select * from mantle_ws_migrate_locked()`;
     teamWs = String(
-      (await sql`select id::text as id from workspaces
-                  where owner_id = ${owner} and bridge_key = 'team'`)[0]!.id,
+      (
+        await sql`select id::text as id from workspaces
+                  where owner_id = ${owner} and bridge_key = 'team'`
+      )[0]!.id,
     );
     await sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${member}, false) on conflict do nothing`;
