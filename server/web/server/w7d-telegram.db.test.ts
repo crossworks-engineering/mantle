@@ -41,6 +41,12 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   getChatLoginOr401: vi.fn(async () => h.login),
   getOwnerOr401: vi.fn(async () => h.session),
 }));
+// The route's per-login rate limit (10 a minute) is its own concern: the
+// pairing rules here make more calls than that for one login.
+vi.mock('@/lib/rate-limit', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  rateLimit: vi.fn(() => ({ ok: true, retryAfterSec: 0, remaining: 1 })),
+}));
 vi.mock('@mantle/telegram', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   sendMessage: vi.fn(async (_a: unknown, chatId: string, text: string) => {

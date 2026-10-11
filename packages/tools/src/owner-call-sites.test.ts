@@ -92,10 +92,11 @@ const SITES: Record<string, Site> = {
   },
   'server/api/src/agent/telegram/turn.ts': {
     calls: 1,
-    // A workspace assistant's chat is a team surface (W7d fix round 1, M1);
-    // the Admin assistant's and a helper's keep the telegram surface.
+    // A workspace assistant's chat is a team surface (W7d fix round 1, M1),
+    // carrying its chat for a run's report (W7d+e); the Admin assistant's
+    // and a helper's keep the telegram surface.
     surface:
-      /surface: workspaceTurn\s*\? \{ kind: 'team', loginId, privateReads \}\s*: \{\s*kind: 'telegram',/,
+      /surface: workspaceTurn\s*\? \{ kind: 'team', loginId, privateReads, originTelegramChatId: row\.telegramChatId \}\s*: \{\s*kind: 'telegram',/,
     scope: 'call',
     why: "a Telegram chat: its paired user's (a workspace assistant's on a team surface)",
   },
@@ -111,12 +112,13 @@ const SITES: Record<string, Site> = {
   'server/api/src/workflows/runs-resume-turn.ts': {
     calls: 1,
     // resumeSurface: a team surface for a run of any workspace but Admin
-    // (W7c fix round 2), its Telegram-origin run too (W7d fix round 1, M1);
+    // (W7c fix round 2), its Telegram-origin run too (W7d fix round 1, M1),
+    // checked first whatever the login (W7d+e: none names no login);
     // else the origin Telegram chat (naming the run's login, the chat's own
     // user, W7d, and its bot), else the run's login on the web, else the web
     // with none. Built before the call.
     surface:
-      /if \(!ws\?\.isAdmin\) return \{ kind: 'team', loginId, privateReads: false \};[\s\S]*kind: 'telegram',\s*telegramChatId: originChannel\.chat_id,\s*\.\.\.\(chat \? \{ accountId: chat\.accountId \} : \{\}\),\s*\.\.\.\(loginId \? \{ loginId \} : \{\}\),[\s\S]*if \(!loginId\) return \{ kind: 'web' \};[\s\S]*return \{ kind: 'web', loginId \};/,
+      /if \(workspaceId\) \{[\s\S]*if \(!ws\?\.isAdmin\) \{\s*return \{\s*kind: 'team',\s*\.\.\.\(loginId \? \{ loginId \} : \{\}\),\s*privateReads: false,[\s\S]*kind: 'telegram',\s*telegramChatId: originChannel\.chat_id,\s*\.\.\.\(chat \? \{ accountId: chat\.accountId \} : \{\}\),\s*\.\.\.\(loginId \? \{ loginId \} : \{\}\),[\s\S]*if \(!loginId\) return \{ kind: 'web' \};[\s\S]*return \{ kind: 'web', loginId \};/,
     scope: 'file',
     why: "a run resuming on its origin channel, as its login (a member's run on a team surface)",
   },

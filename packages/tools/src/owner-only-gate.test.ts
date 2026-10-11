@@ -264,6 +264,9 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   ],
   // read_result binds a client's or member's turn to its own spills.
   'builtins-tool-results.ts': ["if (kind !== 'client' && kind !== 'team') return undefined;"],
+  // run_plan's origin channel: a workspace assistant's Telegram turn carries
+  // its chat on the team surface (W7d+e).
+  'builtins-runs.ts': ["if (surface?.kind === 'team') return surface.originTelegramChatId;"],
   // draw_get's picture follows a member's own image rule (draw-reader.ts).
   'builtins-draws.ts': [
     "if (s?.kind === 'team' && s.loginId) return { kind: 'member', loginId: s.loginId };",
