@@ -263,6 +263,49 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
     expect((await fires(hb.id))[0]!.by).toBeNull();
   });
 
+  it("W7e: a non-anchor Admin login firing a null-maker Team assistant's heartbeat is refused (M5 negative)", async () => {
+    const team = await newAgent(`${tag}-team-neg`, { workspaceId: teamWs, role: 'responder' });
+    await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+      values (${teamWs}, 'assistant', ${team.id}, true) on conflict do nothing`);
+    const hb = await newHeartbeat(`${tag}-hb-team-neg`, team.slug, null);
+    for (const login of [maker, other]) {
+      const res = await fireTool(login, hb.slug);
+      expect(res.ok, login).toBe(false);
+      const now = await fireNow(login, hb.id);
+      expect(now.status, login).toBe(403);
+    }
+    expect(h.scope).toBeNull();
+    expect(await fires(hb.id)).toEqual([]);
+  });
+
+  it("W7e: a skipped fire's trace names the login it answers, as a fired one does", async () => {
+    const hb = await newHeartbeat(`${tag}-hb-skip`, agent.slug, maker);
+    await x(sql`update heartbeats set earliest_at = now() + interval '1 day' where id = ${hb.id}`);
+    const [row] = await m.systemDb
+      .select()
+      .from(m.heartbeats)
+      .where(sql`${m.heartbeats.id} = ${hb.id}`);
+    const out = await hbs.tickFire(row!);
+    expect(out.disposition).toBe('skipped_earliest');
+    const [fire] = await fires(hb.id);
+    expect(fire!.by).toBe(maker);
+    const [trace] = await x<{ login: string | null; status: string }>(sql`
+      select login_id::text as login, status from traces where id = ${fire!.trace}`);
+    expect(trace).toEqual({ login: maker, status: 'skipped' });
+    // The anchor's own heartbeat: its skip names no login (the anchor's).
+    const own = await newHeartbeat(`${tag}-hb-skip-o`, agent.slug, null);
+    await x(sql`update heartbeats set earliest_at = now() + interval '1 day' where id = ${own.id}`);
+    const [ownRow] = await m.systemDb
+      .select()
+      .from(m.heartbeats)
+      .where(sql`${m.heartbeats.id} = ${own.id}`);
+    await hbs.tickFire(ownRow!);
+    const [ownFire] = await fires(own.id);
+    const [ownTrace] = await x<{ login: string | null }>(sql`
+      select login_id::text as login from traces where id = ${ownFire!.trace}`);
+    expect(ownTrace).toEqual({ login: null });
+  });
+
   // ── F3 ─────────────────────────────────────────────────────────────────
 
   it("F3: under the rollback switch another login's state patch moves the heartbeat and clears its state", async () => {

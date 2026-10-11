@@ -11,8 +11,9 @@
  *   - "sign out everywhere": POST /api/auth/logout {everywhere:true}, and an
  *     admin's PATCH /api/users/:id {signOut:true}.
  *
- * Probes: GET /api/member/library/not-a-uuid (a member past the gate gets
- * the handler's 400; no session is 401) and GET /api/pending/not-a-uuid (the
+ * Probes: GET /api/member/files/not-a-uuid (a member past the gate gets
+ * the handler's 400; no session is 401; the Library route this used answers
+ * 410 since W7e) and GET /api/pending/not-a-uuid (the
  * same for an admin). The personal-space routes these used answer 410 since
  * W6b.
  *
@@ -76,7 +77,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
       (await sql<Row[]>`select session_epoch from auth.users where id = ${id}`)[0]!.session_epoch,
     );
   const memberProbe = (auth: { cookie?: string; bearer?: string }) =>
-    call('/api/member/library/not-a-uuid', auth).then((r) => r.status);
+    call('/api/member/files/not-a-uuid', auth).then((r) => r.status);
   const adminProbe = (auth: { cookie?: string; bearer?: string }) =>
     call('/api/pending/not-a-uuid', auth).then((r) => r.status);
   /** A bearer for `login`: a mobile_tokens row and its signed token. */

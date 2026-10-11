@@ -22,14 +22,20 @@
  * sees the ticket (the host builds the request body from the slug and input
  * only), so app code cannot confirm for the owner. The member and client
  * brokers refuse such tools outright: nobody there can confirm.
+ *
+ * Every login since W7e: a member's run goes through lib/app-runner.ts (the
+ * team rules, the member broker's, on a team surface naming the login). A
+ * client login is refused (403 client-login), never the admin path below.
  */
 import { createHash } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { withViewer } from '@mantle/db';
+import { memberToolBroker } from '@/lib/app-runner';
 import {
   buildAppToolConfirmToken,
-  getOwnerOr401,
+  getOwnerOr401WithLogin,
+  loginRefused,
   verifyAppToolConfirmToken,
   type AppToolConfirmClaims,
 } from '@/lib/auth';
@@ -50,9 +56,13 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const got = await getOwnerOr401WithLogin();
+  if (got instanceof Response) return got;
+  if (got.kind === 'client') return loginRefused('client');
   const { id } = await ctx.params;
+  // A member's run (W7e): the team rules, never a confirmation.
+  if (got.kind === 'member') return memberToolBroker(req, got.member, id);
+  const user = got.user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });

@@ -558,7 +558,11 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // 21 since the W7 integration fix: 'member-request' went with the
     // member request tools (W7b), and no call site names it. 22 since W7
     // integration fix 2: a turn's own open heartbeats ('heartbeat-context').
+    // Still 22 with W7d and W7e joined: W7d renamed 'owner-telegram' to
+    // 'login-telegram' and W7e reuses 'owner-preferences' for a member's
+    // home, so neither adds a reason.
     expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(22);
+    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(22);
     expect(AS_SYSTEM_TURN_REASONS).toContain('heartbeat-context');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('owner-telegram');

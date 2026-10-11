@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { resolveGapEntry } from '@/lib/journal';
@@ -33,6 +34,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       author: 'user',
     });
   } catch (err) {
+    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
+    if (isScopeWriteRefusal(err)) throw err;
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'invalid input' },
       { status: 400 },

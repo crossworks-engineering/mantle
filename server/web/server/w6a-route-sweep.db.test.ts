@@ -11,7 +11,9 @@
  *  - a member: every route, every method. Never the system pool (except
  *    the sign-in routes about its own login row); the owner routes refuse it
  *    except the reads opened to every login (MEMBER_OPEN_READS), which run
- *    in its scope; nothing answers 500;
+ *    in its scope; the member routes that read brain items run in its scope
+ *    too (W7e), only its own things ('self') hold their own rule; nothing
+ *    answers 500;
  *  - no admin screen shows another user's private item: a member's private
  *    workspace item and an item of a workspace the Admin user is not in
  *    appear on no list, search or item route for the Admin user. The W6a
@@ -104,42 +106,16 @@ const MEMBER_SCOPE_SYSTEM_WRITES = [
 ];
 
 /**
- * The reads a member route ('own-rule', W6a) sends to the system pool, by
- * route and calling file: each is filtered to the member's own rows by its
- * own rule (its personal space and its apps there, the items it authored
- * with their accepted snapshots, its preferences, push devices and MCP
- * clients, its Team assistant's workspace row; the tree search sorts a list
- * it was handed, no table). Every brain item it reads beyond those goes
- * through withViewer. The list only shrinks: these routes move into the
- * request scope in W7/W8.
+ * The reads a member route ('own-rule') sends to the system pool, by route
+ * and calling file. Since W7e only the member routes about the login's own
+ * things hold their own rule (route-scope.ts classes them 'self': its MCP
+ * clients, push devices, the live stream, the old shell): its preferences,
+ * its MCP clients and switches, its push devices. The member home reads team
+ * items, so it runs in the login's scope (W7e fix round 1, L1). Every member route that reads brain items runs in the
+ * login's request scope (W7e), so no member route reads content on the
+ * system pool. The list only shrinks, and holds only 'self' routes (tested).
  */
 const OWN_RULE_SYSTEM_READS: ReadonlySet<string> = new Set([
-  'GET /api/member/accepted packages/content/src/member-accepted.ts',
-  'GET /api/member/accepted/:id packages/content/src/member-accepted.ts',
-  'GET /api/member/draws/:id/svg packages/content/src/member-accepted.ts',
-  'GET /api/member/files/:id packages/content/src/member-accepted.ts',
-  'GET /api/member/items packages/content/src/member-accepted.ts',
-  'GET /api/member/library packages/content/src/member-accepted.ts',
-  'GET /api/member/library/:id packages/content/src/member-accepted.ts',
-  'GET /api/member/items packages/content/src/member-space.ts',
-  'GET /api/member/space packages/content/src/member-space.ts',
-  'GET /api/member/space/:id packages/content/src/member-space.ts',
-  'GET /api/member/space/:id/bytes packages/content/src/member-space.ts',
-  'PATCH /api/member/space/:id packages/content/src/member-space.ts',
-  'DELETE /api/member/space/:id packages/content/src/member-space.ts',
-  'POST /api/member/space/:id/save packages/content/src/member-space.ts',
-  'PUT /api/member/space/:id/draft packages/content/src/member-space.ts',
-  'GET /api/member/my-apps packages/content/src/member-space-apps.ts',
-  'GET /api/member/my-apps/deleted packages/content/src/member-space-apps.ts',
-  'GET /api/member/my-apps/:id/history packages/content/src/member-space-apps.ts',
-  'DELETE /api/member/my-apps/:id/history/:snapshotId packages/content/src/member-space-apps.ts',
-  'POST /api/member/my-apps/:id/delete packages/content/src/member-space-apps.ts',
-  'POST /api/member/my-apps/:id/undelete packages/content/src/member-space-apps.ts',
-  'POST /api/member/apps/:id/frame-ticket packages/content/src/member-space-apps.ts',
-  'GET /api/member/chat packages/content/src/team-assistant.ts',
-  'POST /api/member/chat packages/content/src/team-assistant.ts',
-  'GET /api/member/apps packages/content/src/profile-preferences.ts',
-  'GET /api/member/home packages/content/src/profile-preferences.ts',
   'GET /api/member/mcp packages/content/src/profile-preferences.ts',
   'GET /api/member/mcp packages/tools/src/external-access.ts',
   'GET /api/member/mcp server/web/app/api/member/mcp/route.ts',
@@ -147,7 +123,6 @@ const OWN_RULE_SYSTEM_READS: ReadonlySet<string> = new Set([
   'GET /api/member/push/preferences server/web/lib/push/store.ts',
   'PUT /api/member/push/preferences server/web/lib/push/store.ts',
   'GET /api/member/push/subscriptions server/web/lib/push/store.ts',
-  'GET /api/member/tree/:kind/search packages/content/src/tree/member-tree.ts',
 ]);
 
 type Json = Record<string, unknown>;
@@ -418,6 +393,19 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         if (r.outcome?.kind === 'own-rule' && !isMemberRoute(method, e.pattern)) {
           failures.push(`${key} ran by its own rule outside the member routes`);
         }
+        // W7e: only a member route about the login's own things holds its
+        // own rule; one that reads brain items runs in the login's scope.
+        if (r.outcome?.kind === 'own-rule' && routeClass(e.pattern)?.kind !== 'self') {
+          failures.push(`${key} ran by its own rule, not in the login's scope`);
+        }
+        if (
+          isMemberRoute(method, e.pattern) &&
+          routeClass(e.pattern)?.kind === 'content' &&
+          r.status !== 401 &&
+          r.outcome?.kind !== 'user'
+        ) {
+          failures.push(`${key} member content route ran as ${JSON.stringify(r.outcome)}`);
+        }
         if (r.outcome?.kind === 'own-rule') {
           ownRule += 1;
           for (const read of r.reads) {
@@ -453,7 +441,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     // A member route reads the system pool only by its own rule, and only
     // where it did when W6a shipped.
     expect([...systemReads].filter((r) => !OWN_RULE_SYSTEM_READS.has(r))).toEqual([]);
-    expect(ownRule).toBeGreaterThan(40);
+    // The own-rule list holds only 'self' routes (W7e).
+    for (const entry of OWN_RULE_SYSTEM_READS) {
+      expect(routeClass(entry.split(' ')[1]!), entry).toEqual({ kind: 'self' });
+    }
+    expect(ownRule).toBeGreaterThanOrEqual(8);
     expect(failures).toEqual([]);
     expect(opened).toBeGreaterThan(20);
     expect(openWrites).toBeGreaterThan(30);

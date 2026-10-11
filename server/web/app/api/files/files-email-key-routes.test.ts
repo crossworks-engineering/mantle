@@ -25,6 +25,8 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => ({ id: OWNER })),
   getOwnerForAsset: vi.fn(async () => ({ id: OWNER })),
+  // The byte route serves every login since W7e: here an Admin user.
+  getReaderForAsset: vi.fn(async () => ({ user: { id: OWNER }, member: null })),
 }));
 
 const row = (id: string) => ({ id, filename: `${id.slice(0, 4)}.pdf`, updatedAt: '2026-10-01' });

@@ -1,42 +1,17 @@
-import { NextResponse } from '@/server/http-compat';
-import { recordAppAccess } from '@mantle/content';
-import { buildAppFrameTicket, getMemberOr401 } from '@/lib/auth';
-import { memberAppOr404 } from '@/lib/member-apps';
-import { rateLimit } from '@/lib/rate-limit';
+import { getMemberOr401 } from '@/lib/auth';
+import { memberFrameTicket } from '@/lib/app-runner';
 
 /**
  * POST /api/member/apps/:id/frame-ticket: the seconds-lived ticket the
- * sandbox iframe presents to GET /api/member/apps/:id/frame (member logins
- * Phase 4b). The member authenticates HERE; the frame navigation carries only
- * the ticket. The ticket names the login (`mem`), so the owner frame route,
- * which serves drafts, refuses it. 404 unless the member may run the app.
+ * sandbox iframe presents to the frame route (member logins Phase 4b).
+ *
+ * @deprecated Workspaces W7e: every login runs an app through POST
+ * /api/apps/:id/frame-ticket (lib/app-runner.ts, the same rules). Kept this
+ * release for an older UI; it answers 410 once the UI pair has moved.
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
-  // One ticket per frame load; a burst beyond this is a token-mint loop.
-  const gate = rateLimit(`member-frame-ticket:${member.loginId}`, { max: 30, windowMs: 60_000 });
-  if (!gate.ok) {
-    return NextResponse.json(
-      { ok: false, error: 'too many requests' },
-      { status: 429, headers: { 'retry-after': String(gate.retryAfterSec) } },
-    );
-  }
   const { id } = await ctx.params;
-  const app = await memberAppOr404(member.anchorId, id, member.loginId);
-  if (app instanceof Response) return app;
-  recordAppAccess({
-    ownerId: app.ownerId,
-    appNodeId: app.id,
-    actorId: member.loginId,
-    kind: 'auth',
-    detail: { via: 'member' },
-  });
-  return NextResponse.json({
-    ticket: buildAppFrameTicket({
-      ownerId: member.anchorId,
-      appId: app.id,
-      loginId: member.loginId,
-    }),
-  });
+  return memberFrameTicket(member, id);
 }

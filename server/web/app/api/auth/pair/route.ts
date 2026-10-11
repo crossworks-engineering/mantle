@@ -1,13 +1,16 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { auditLoginMutation, getLoginOr401, loginRefused } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
 
 /**
  * POST /api/auth/pair — mint a one-time pairing code for "Sign in on your
- * phone". Owner session required (this is a login surface, so `/api/auth`
- * being a public prefix does not excuse it: the gate is here). The code is
+ * phone". A signed-in session required (this is a login surface, so
+ * `/api/auth` being a public prefix does not excuse it: the gate is here):
+ * an admin, or since workspaces W7e a member (only the person pairs their
+ * own phone; the claim then needs the phone build that serves every login,
+ * else 426). A client signs in on its phone with its emailed code. The code is
  * bound to the login that asked, expires in {@link PAIR_CODE_TTL_SEC}, and
  * is claimed once at /api/auth/pair/claim. Rate-limited per login so a page
  * cannot mint thousands.
@@ -17,10 +20,12 @@ import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-cod
  * GET /api/auth/pair/[id] polls.
  */
 export async function POST() {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  const login = await getLoginOr401();
+  if (login instanceof NextResponse) return login;
+  if (login.kind === 'client') return loginRefused('client');
+  await auditLoginMutation(login);
 
-  const limit = rateLimit(`auth:pair-issue:${user.actor.id}`, { max: 10, windowMs: 60_000 });
+  const limit = rateLimit(`auth:pair-issue:${login.loginId}`, { max: 10, windowMs: 60_000 });
   if (!limit.ok) {
     return NextResponse.json(
       { error: 'Too many codes. Try again in a minute.' },
@@ -28,7 +33,7 @@ export async function POST() {
     );
   }
 
-  const issued = await issuePairCode(user.actor.id);
+  const issued = await issuePairCode(login.loginId);
   return NextResponse.json(
     {
       id: issued.id,

@@ -306,7 +306,7 @@ export {
   type ClientQuotaReason,
   type ClientQuotaRefusal,
 } from './client-quota-log';
-export { memberDrawSvg, memberVisibleDrawFileIds } from './member-draw-images';
+export { memberDrawSvg, memberVisibleDrawFileIds, scopedDrawSvg } from './member-draw-images';
 export { takenFromOf } from './admin-space-taken';
 export {
   SNAPSHOT_TABLE_OWNER,

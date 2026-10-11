@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerForAsset } from '@/lib/auth';
-import { getDrawSvg } from '@mantle/content';
+import { getReaderForAsset } from '@/lib/auth';
+import { getDrawSvg, scopedDrawSvg } from '@mantle/content';
+import { isUuid } from '@mantle/std';
 import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
 
 /**
@@ -22,11 +23,18 @@ import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
  * Owner-authed, so this is one of the surfaces allowed to FILL the snapshot
  * cache: a drawing whose snapshot is missing or stale is re-rendered by the
  * browser sidecar on first view.
+ *
+ * Every login since W7e (getReaderForAsset): a member reads a drawing its
+ * workspaces hold, the cache only, with only the images it may read; a
+ * drawing it does not read is a 404 (raw) or `{ svg: null }` (JSON), the
+ * same answer as an id no row has.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerForAsset(req);
-  if (user instanceof Response) return user;
+  const reader = await getReaderForAsset(req);
+  if (reader instanceof Response) return reader;
+  const user = reader.user;
   const { id } = await ctx.params;
+  if (!isUuid(id)) return new Response('Invalid id', { status: 400 });
   const url = new URL(req.url);
   // `nofill=1` = read the cache, never render. The print surface sets it
   // because that page is ITSELF loaded by the browser sidecar: a render
@@ -34,10 +42,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // is still blocked waiting for this image, and with CONCURRENT=2 two
   // simultaneous exports would deadlock until the session timeout. The export
   // route warms the cache before printing instead.
-  const svg =
-    url.searchParams.get('nofill') === '1'
+  //
+  // A member (W7e) reads the cache only, in its own scope, and gets only the
+  // images whose file its workspaces read (an Admin image in a shared
+  // drawing is taken out, its frame shows empty).
+  const cached =
+    reader.member || url.searchParams.get('nofill') === '1'
       ? await getDrawSvg(user.id, id)
       : await getDrawSvgOrRender(user.id, id, { actorId: user.actor.id });
+  const svg = reader.member && cached ? await scopedDrawSvg(user.id, id, cached) : cached;
 
   if (url.searchParams.get('raw') !== '1') {
     return NextResponse.json({ svg });

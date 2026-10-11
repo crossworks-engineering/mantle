@@ -2,18 +2,28 @@
  * POST /api/apps/[id]/frame-ticket — mint the seconds-lived signed ticket the
  * sandbox iframe presents to GET /api/apps/[id]/frame (an iframe navigation
  * carries no cookie — the frame is sandboxed without allow-same-origin — and
- * no bearer, so THIS session-authed call is where the owner authenticates).
+ * no bearer, so THIS session-authed call is where the login authenticates).
  * 404 when the app has never built green, so the sandbox can show its
  * "hasn't been built yet" state without navigating anywhere.
+ *
+ * Every login since W7e: an Admin user gets the owner ticket (draft build
+ * allowed, as before); a member a member ticket for an app its workspaces
+ * hold, published build only (lib/app-runner.ts). An app the member does not
+ * read is a 404. A client login is refused (403 client-login): clients do
+ * not run brain apps, and it must never reach the owner ticket below.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401, buildAppFrameTicket } from '@/lib/auth';
+import { getOwnerOr401WithLogin, buildAppFrameTicket, loginRefused } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
+import { memberFrameTicket } from '@/lib/app-runner';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const got = await getOwnerOr401WithLogin();
+  if (got instanceof Response) return got;
+  if (got.kind === 'client') return loginRefused('client');
   const { id } = await ctx.params;
+  if (got.kind === 'member') return memberFrameTicket(got.member, id);
+  const user = got.user;
   const app = await getAppRuntime(user.id, id);
   if (!app) return new NextResponse('not found', { status: 404 });
 

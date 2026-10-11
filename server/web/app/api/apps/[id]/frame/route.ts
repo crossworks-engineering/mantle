@@ -1,26 +1,40 @@
 /**
- * GET /api/apps/[id]/frame — the OWNER-surface sandbox frame document. Auth is
- * the `?t=` frame ticket minted by POST /api/apps/[id]/frame-ticket (the
- * sandboxed iframe's navigation carries no other credential); the middleware
- * gate admits this path on a valid kind-'f' token and the route re-verifies.
- * Serves the DRAFT build when present (preview of unpublished work), else the
- * published build — same choice as /bundle.
+ * GET /api/apps/[id]/frame: the sandbox frame document. Auth is the `?t=`
+ * frame ticket minted by POST /api/apps/[id]/frame-ticket (the sandboxed
+ * iframe's navigation carries no other credential); the middleware gate
+ * admits this path on a valid kind-'f' token and the route re-verifies.
+ *
+ * An owner ticket (an Admin user's) serves the DRAFT build when present
+ * (preview of unpublished work), else the published build: the same choice as
+ * /bundle. A member ticket (W7e: every login runs apps here) serves the
+ * PUBLISHED build of an app the member's workspaces hold, after re-checking
+ * the login (lib/app-runner.ts).
+ *
+ * An owner ticket opens the frame only while the login it names (`act`) is
+ * an active Admin user, re-read here as the member frame re-reads its
+ * member (W7e fix round 1, M1): a ticket that names a client, a member, a
+ * disabled login or nobody is refused, so no non-Admin login reaches the
+ * draft through it. A client's own ticket (`cep`) is refused as before.
  */
 import { NextResponse } from '@/server/http-compat';
-import { verifyAppFrameTicket } from '@/lib/auth';
+import { adminLoginActive, verifyAppFrameTicket } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
 import { renderAppFrame } from '@/lib/app-frame';
+import { isMemberFrameTicket, memberFrame } from '@/lib/app-runner';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const t = new URL(req.url).searchParams.get('t');
   const ticket = t ? verifyAppFrameTicket(t) : null;
-  // A share-scoped ticket (`shareId` set) or a member's (`loginId` set) must
-  // not open the owner frame: it was minted for a published build, and this
-  // route serves the owner's DRAFT. Nor may a review test ticket: it opens
-  // only the test frame of a member's app.
+  if (ticket && isMemberFrameTicket(ticket, id)) return memberFrame(req, id, ticket);
+  // Any other login ticket (a client's), a share-scoped ticket or a review
+  // test ticket must not open the owner frame: this route serves the
+  // owner's DRAFT.
   if (!ticket || ticket.appId !== id || ticket.shareId || ticket.loginId || ticket.reviewTest) {
     return new NextResponse('frame ticket required', { status: 401 });
+  }
+  if (!ticket.actorId || !(await adminLoginActive(ticket.actorId))) {
+    return new NextResponse('admin session required', { status: 401 });
   }
 
   const app = await getAppRuntime(ticket.ownerId, id);
@@ -34,8 +48,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   // host.me(): the admin login the ticket names (app identity).
   return renderAppFrame(req, build, {
-    viewer: ticket.actorId
-      ? { ownerId: ticket.ownerId, appId: id, subject: { kind: 'admin', loginId: ticket.actorId } }
-      : undefined,
+    viewer: {
+      ownerId: ticket.ownerId,
+      appId: id,
+      subject: { kind: 'admin', loginId: ticket.actorId },
+    },
   });
 }

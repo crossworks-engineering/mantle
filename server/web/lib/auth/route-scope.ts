@@ -70,6 +70,17 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/version', 'self'],
   // An Admin user's own private items (its personal space, until W6b).
   ['/api/admin', 'self'],
+  // The member routes (W7e): every one that reads brain items runs in the
+  // login's request scope ('content'), the member home too (it reads team
+  // pages and apps); its own things (its MCP clients, push devices, the live
+  // stream and the old shell) are the login's own, as an Admin user's
+  // /api/push and /api/realtime are. Only these 'self' member routes still
+  // hold their own rule (getMemberOr401).
+  ['/api/member', 'content'],
+  ['/api/member/mcp', 'self'],
+  ['/api/member/push', 'self'],
+  ['/api/member/realtime', 'self'],
+  ['/api/member/shell', 'self'],
   // Management: settings.
   ['/api/onboarding', 'settings'],
   // The brain overview: counts over every store, telegram and mail included.
@@ -204,6 +215,10 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/files/folders',
   'GET /api/files/folders/:id',
   'GET /api/tree/:kind/marks',
+  // W7e: a drawing's committed SVG (JSON, or ?raw=1 as an image), in the
+  // login's scope: an image whose file the login does not read is taken
+  // out. Never a render for a non-Admin login (the cache only).
+  'GET /api/draws/:id/svg',
 ];
 
 const MEMBER_OPEN: ReadonlySet<string> = new Set(MEMBER_OPEN_READS);
@@ -220,8 +235,8 @@ const MEMBER_OPEN: ReadonlySet<string> = new Set(MEMBER_OPEN_READS);
  * login moderates it, else in the folder it is made in when the login may
  * edit that, else in the login's private workspace (mantle_default_home).
  * Not here: Admin-only kinds, app review and purge, bulk deletes, imports,
- * history and snapshot restores, the app runner routes (members run apps
- * through /api/member/apps).
+ * history and snapshot restores. The app runner routes are here since W7e
+ * (the /api/member/apps runner routes are deprecated, kept this release).
  */
 export const MEMBER_OPEN_WRITES: readonly string[] = [
   'POST /api/pages',
@@ -267,9 +282,42 @@ export const MEMBER_OPEN_WRITES: readonly string[] = [
   'POST /api/tree/:kind/move',
   'POST /api/tree/items/:id/opened',
   'PUT /api/tree/items/:id/pin',
+  // W7e: running an app, for every login in its scope (lib/app-runner.ts):
+  // the frame ticket, the app's own database and its declared tools. A
+  // non-Admin login runs the PUBLISHED build at the team rules; an app it
+  // does not read is a 404 (never the item-workspace 403).
+  'POST /api/apps/:id/frame-ticket',
+  'POST /api/apps/:id/db-broker',
+  'POST /api/apps/:id/tool-broker',
 ];
 
 const MEMBER_WRITE: ReadonlySet<string> = new Set(MEMBER_OPEN_WRITES);
+
+/**
+ * The owner routes W7e opened to a non-Admin login that a CLIENT login still
+ * may not call (W7e fix round 1, M1): running an app and a drawing's SVG.
+ * Clients do not run brain apps yet; before W7e every one of these refused
+ * a client, and it still does (403 client-login on the session guard, 401
+ * on the byte guard, as before). MEMBER_OPEN_READS and MEMBER_OPEN_WRITES
+ * are shared by members and clients; this list takes these back from the
+ * client.
+ */
+export const CLIENT_CLOSED_ROUTES: readonly string[] = [
+  'POST /api/apps/:id/frame-ticket',
+  'POST /api/apps/:id/db-broker',
+  'POST /api/apps/:id/tool-broker',
+  'GET /api/draws/:id/svg',
+];
+
+const CLIENT_CLOSED: ReadonlySet<string> = new Set(CLIENT_CLOSED_ROUTES);
+
+/** Whether `method pattern` is closed to a client login though it is open
+ *  to a member (CLIENT_CLOSED_ROUTES; HEAD as GET). */
+export function clientClosed(method: string, pattern: string | null): boolean {
+  if (pattern === null) return false;
+  const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
+  return CLIENT_CLOSED.has(`${m} ${pattern}`);
+}
 
 /** Whether a non-Admin login may write through `method pattern` (W6b). */
 export function memberMayWrite(method: string, pattern: string | null): boolean {

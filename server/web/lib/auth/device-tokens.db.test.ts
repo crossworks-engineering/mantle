@@ -87,7 +87,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   const clientProbe = (auth: { cookie?: string; bearer?: string }) =>
     call('/api/shell', auth).then((r) => r.status);
   const memberProbe = (auth: { cookie?: string; bearer?: string }) =>
-    call('/api/member/library/not-a-uuid', auth).then((r) => r.status);
+    call('/api/member/files/not-a-uuid', auth).then((r) => r.status);
   const deviceLogin = (email: string, password = PASSWORD, deviceName?: string) =>
     call('/api/auth/device-login', { method: 'POST', body: { email, password, deviceName } });
 
@@ -229,7 +229,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     // The one shell (W5c) answers a member as a member.
     const shell = await call('/api/shell', { bearer });
     expect(shell.status).toBe(200);
-    expect(await json(shell)).toMatchObject({ role: 'member', loginId: member, areas: [] });
+    const shellBody = await json(shell);
+    expect(shellBody).toMatchObject({ role: 'member', loginId: member, areas: [] });
     for (const path of ['/api/client/shell', '/api/push/subscriptions']) {
       const refused = await call(path, { bearer });
       expect(refused.status, path).toBe(403);
@@ -244,6 +245,10 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       pushBase: '/api/member/push',
       // v1.1: this brain's one row, the id every push names.
       brainId: await brainId(),
+      // W7e: the shell's workspaces (the same list), no areas, not the owner.
+      workspaces: shellBody.workspaces,
+      areas: [],
+      isOwner: false,
     });
     // Listed under the login's devices, and revocable there.
     const devices = await json(await call(`/api/users/${member}/devices`, { cookie: asAdmin() }));
@@ -416,7 +421,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(none).toHaveLength(0);
   });
 
-  it('the frozen mobile-login is unchanged: admins only, no role in the answer', async () => {
+  it('the frozen mobile-login: admins only, no role in the answer; a member gets 426 (W7e)', async () => {
     const adminRes = await call('/api/auth/mobile-login', {
       method: 'POST',
       body: { email: emailOf('admin'), password: PASSWORD },
@@ -429,8 +434,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       method: 'POST',
       body: { email: emailOf('member'), password: PASSWORD },
     });
-    expect(memberRes.status).toBe(403);
-    expect((await json(memberRes)).reason).toBe('member-login');
+    expect(memberRes.status).toBe(426);
+    expect((await json(memberRes)).reason).toBe('update-app');
   });
 
   // ── Client: the emailed code in device mode ─────────────────────────────
@@ -458,6 +463,10 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       shell: '/api/shell',
       pushBase: '/api/client/push',
       brainId: await brainId(),
+      // W7e: the shell's workspaces, areas and owner flag.
+      workspaces: [],
+      areas: [],
+      isOwner: false,
     });
     for (const path of ['/api/push/subscriptions', '/api/member/shell', '/api/member/chat']) {
       const refused = await call(path, { bearer });

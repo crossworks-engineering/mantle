@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { withViewer } from '@mantle/db';
+import { asSystem, withViewer } from '@mantle/db';
 import {
   libraryCounts,
   listLibrary,
@@ -26,11 +26,17 @@ const SECTION_LIMIT = 30;
  * newest team pages as sections (`token` is the page id: the member shell
  * opens it in the Library), Library counts, and the other apps the member may
  * run as launcher cards (`token` is the app id). Read at the team level.
+ *
+ * It reads team items, so it runs in the member's request scope (route-scope
+ * classes it 'content', W7e fix round 1, L1). The brain's home pin and site
+ * name are the anchor's preferences, which the member's scope does not read:
+ * they are read by the named door ('owner-preferences'), the brand only,
+ * as GET /api/shell answers the same site name to every login.
  */
 export async function GET() {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
-  const prefs = await loadProfilePreferences(member.anchorId);
+  const prefs = await asSystem(() => loadProfilePreferences(member.anchorId), 'owner-preferences');
   const homeApp = await withViewer('team', { login: member.loginId }, () =>
     resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId),
   );

@@ -158,6 +158,28 @@ export type ShellWorkspace = {
 };
 export type ShellWorkspaces = { workspaces: ShellWorkspace[]; areas: WorkspaceArea[] };
 
+/**
+ * GET /api/auth/whoami (the phone app's first call with a bearer, workspaces
+ * W7e): who the credential is, and the same workspaces, areas and owner
+ * flag GET /api/shell gives (its builder). `areas` is empty for a login
+ * outside the Admin workspace; `isOwner` is the brain's anchor login.
+ * `brainId` is left out only while the database is behind the code.
+ */
+export type AuthWhoami = {
+  role: 'admin' | 'member' | 'client';
+  loginId: string;
+  email: string;
+  displayName: string | null;
+  /** Every role's shell route: '/api/shell'. */
+  shell: string;
+  /** The push routes' base path for this role. */
+  pushBase: string;
+  brainId?: string;
+  workspaces: ShellWorkspace[];
+  areas: WorkspaceArea[];
+  isOwner: boolean;
+};
+
 /** Every `code` a /api/workspaces refusal carries. */
 export type WorkspaceErrorCode =
   | 'invalid'

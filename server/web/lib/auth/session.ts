@@ -65,6 +65,7 @@ import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
   CREATE_ROUTES,
+  clientClosed,
   isReadRequest,
   itemWriteTarget,
   memberMayRead,
@@ -279,8 +280,59 @@ async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | n
 export async function getMemberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
   const member = await memberForAsset(req);
   if (member instanceof NextResponse) return member;
-  noteRequestOwnRule(member.loginId);
+  await memberRouteScope(member.loginId);
   return member;
+}
+
+/**
+ * The byte routes of brain items for EVERY login (W7e): an Admin user as
+ * getOwnerForAsset (its session, an asset token, the render cookie; `member`
+ * null); a member by its session or a member `?at=` token (an <img> src
+ * carries no bearer), on a route open to it (memberMayRead), in its own
+ * request scope (`member` set). An item the login does not read is the
+ * route's own 404. A client: 401 (clients read no brain items yet).
+ */
+export async function getReaderForAsset(
+  req: Request,
+): Promise<{ user: SessionUser; member: MemberCaller | null } | NextResponse> {
+  const owner = await getOwnerForAsset(req);
+  if (!(owner instanceof NextResponse)) return { user: owner, member: null };
+  if (owner.status !== 401) return owner;
+  const member = await memberForAsset(req);
+  if (member instanceof NextResponse) return owner;
+  const { method, pattern } = routeOfRequest();
+  if (!hasRequestSlot() || !memberMayRead(method, pattern)) return loginRefused('member');
+  await enterLoginScope(member.loginId, requestMode(true));
+  return {
+    user: {
+      id: member.anchorId,
+      email: member.email,
+      actor: {
+        id: member.loginId,
+        email: member.email,
+        displayName: member.displayName,
+        isOwner: false,
+      },
+    },
+    member,
+  };
+}
+
+/**
+ * Where a member route's handler runs (W7e): a route that reads brain items
+ * (route-scope.ts classes /api/member as 'content') runs in the login's
+ * request scope, as an owner route a member may read does; only the login's
+ * own things ('self': the home pin, its MCP clients, push devices, the live
+ * stream) still hold their own rule ('own-rule', their reads about the
+ * login itself). Outside the route loader nothing changes.
+ */
+async function memberRouteScope(loginId: string): Promise<void> {
+  const { pattern } = routeOfRequest();
+  if (!hasRequestSlot() || pattern === null || routeClass(pattern)?.kind === 'self') {
+    noteRequestOwnRule(loginId);
+    return;
+  }
+  await enterLoginScope(loginId, requestMode(true));
 }
 
 async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
@@ -694,6 +746,27 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
 export async function getOwnerOr401WithSource(): Promise<
   { user: SessionUser; source: AuthSource } | NextResponse
 > {
+  const got = await getOwnerOr401WithLogin();
+  return got instanceof NextResponse ? got : { user: got.user, source: got.source };
+}
+
+/** What getOwnerOr401WithLogin answers: the login's kind, and `member` set
+ *  exactly when it is a member (a client's is null, as an Admin user's). */
+export type OwnerRouteLogin =
+  | { kind: 'admin'; user: SessionUser; source: AuthSource; member: null }
+  | { kind: 'member'; user: SessionUser; source: AuthSource; member: MemberCaller }
+  | { kind: 'client'; user: SessionUser; source: AuthSource; member: null };
+
+/**
+ * getOwnerOr401WithSource, plus WHO the login is: its `kind`, and `member`
+ * set for a member on an owner route open to it (W7e: the app runner routes
+ * run a member at the team rules, an Admin user at the app's). A client is
+ * refused on every owner route but the open ones, as before, and on the
+ * routes W7e opened to members only (CLIENT_CLOSED_ROUTES: 403
+ * client-login). A caller that branches on `member` must refuse a `kind`
+ * 'client' itself before it takes an Admin path.
+ */
+export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextResponse> {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (res.kind !== 'admin') {
@@ -704,6 +777,9 @@ export async function getOwnerOr401WithSource(): Promise<
     // sweeps check both).
     const { method, pattern } = routeOfRequest();
     if (!hasRequestSlot()) return loginRefused(res.kind);
+    // W7e opened app runs (and a drawing's SVG) to members; a client still
+    // may not call them (W7e fix round 1, M1).
+    if (res.kind === 'client' && clientClosed(method, pattern)) return loginRefused('client');
     const login = res.kind === 'member' ? res.member : res.client;
     const user: SessionUser = {
       id: login.anchorId,
@@ -715,9 +791,13 @@ export async function getOwnerOr401WithSource(): Promise<
         isOwner: false,
       },
     };
+    const who: OwnerRouteLogin =
+      res.kind === 'member'
+        ? { kind: 'member', user, source: res.source, member: res.member }
+        : { kind: 'client', user, source: res.source, member: null };
     if (memberMayRead(method, pattern)) {
       await enterLoginScope(login.loginId, requestMode(true));
-      return { user, source: res.source };
+      return who;
     }
     if (!memberMayWrite(method, pattern) || !(await brainOnWorkspacesNow())) {
       return loginRefused(res.kind);
@@ -731,12 +811,12 @@ export async function getOwnerOr401WithSource(): Promise<
     noteRequestCreateHome(home);
     await enterLoginScope(login.loginId, requestMode(true));
     await auditMutation(user);
-    return { user, source: res.source };
+    return who;
   }
   const refused = await adminRouteGate(res.user.actor.id);
   if (refused) return refused;
   await auditMutation(res.user);
-  return { user: res.user, source: res.source };
+  return { kind: 'admin', user: res.user, source: res.source, member: null };
 }
 
 // ── The request scope (workspaces W6a, plan 2.4 and T4) ─────────────────────
@@ -974,6 +1054,12 @@ async function itemWriteGate(
         sql`select 1 from nodes where id = ${nodeId}`,
       )) as unknown as unknown[];
       if (seen.length === 0) return null;
+      // A non-Admin login that only needs to read the item (running an app,
+      // its own marks) is told nothing about an item it does not read: the
+      // same 404 as an id no row has (W7e).
+      if (target.need === 'read' && !_opts.admin) {
+        return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+      }
     }
   }
   return NextResponse.json(
@@ -1145,10 +1231,9 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
       actor: { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false },
     });
   }
-  // A member route holds its own rule (a withViewer per read since W5b2,
-  // writes on the system pool): no request scope around it (W6a). The
-  // owner routes a member may read run in its scope (MEMBER_OPEN_READS).
-  noteRequestOwnRule(res.member.loginId);
+  // A member route that reads brain items runs in the login's request scope
+  // (W7e); one about the login's own things holds its own rule (W6a).
+  await memberRouteScope(res.member.loginId);
   return res.member;
 }
 

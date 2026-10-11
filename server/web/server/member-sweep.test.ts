@@ -106,6 +106,17 @@ vi.mock('../lib/auth/login-row', () => ({
   loadPersonalSpaceId: async () => SPACE_ID,
 }));
 
+// QR pairing (W7e: a member pairs its own phone): the code store stood in.
+vi.mock('../lib/pair-code', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  issuePairCode: async () => ({
+    id: '00000000-0000-4000-8000-0000000000c0',
+    code: 'sweep-code-sweep-code-sweep',
+    expiresAt: new Date(Date.now() + 90_000),
+  }),
+  pairCodeStatus: async () => ({ status: 'pending', deviceLabel: null }),
+}));
+
 // MCP as a login: a member's or client's MCP access is off here (the
 // default), so the consent page refuses them as it always did.
 vi.mock('../lib/mcp-auth', () => ({
@@ -335,9 +346,10 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
       expect(res.status, path).toBe(403);
       expect(body?.reason, path).toBe('member-login');
     }
-    // Admin bytes: a plain 401 (no session of that role).
+    // The brain's byte route serves every login in its scope since W7e: a
+    // member device token gets past the gate (the handler's 400 here).
     for (const path of ['/api/files/files/not-a-uuid?raw=1']) {
-      expect((await app.request(path, { headers })).status, path).toBe(401);
+      expect((await app.request(path, { headers })).status, path).toBe(400);
     }
   });
 
@@ -376,11 +388,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   // The positive half: a member session gets PAST the gate on member routes.
   // A malformed id is used so each handler answers its own 400 before any
   // database read; the admin on the same path is stopped at the gate.
-  const PAST_THE_GATE = [
-    '/api/member/library/not-a-uuid',
-    '/api/member/files/not-a-uuid',
-    '/api/member/accepted/not-a-uuid',
-  ];
+  const PAST_THE_GATE = ['/api/member/files/not-a-uuid', '/api/member/draws/not-a-uuid/svg'];
 
   // Removed in workspaces W5c (team drafts, client requests, member submit,
   // recall and share): still member routes, so a member's old app reaches
@@ -402,6 +410,11 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     'POST /api/member/chat',
     'GET /api/member/chat/unread',
     'POST /api/member/chat/read',
+    // W7e: the Library and accepted-item routes (unused since W6b).
+    'GET /api/member/library',
+    'GET /api/member/library/:id',
+    'GET /api/member/accepted',
+    'GET /api/member/accepted/:id',
   ];
 
   it('answers 410 code gone to a member on every route removed in W5c; an admin is still refused', async () => {
@@ -478,7 +491,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   // F06: a session ends when the login's epoch moves on. The cookie and the
   // `?at=` token carry the epoch they were minted at; the row is re-read.
   describe('session epoch', () => {
-    const PAST = '/api/member/library/not-a-uuid';
+    const PAST = '/api/member/files/not-a-uuid';
 
     it('refuses a cookie minted before the last bump', async () => {
       const { buildSessionCookie } = await import('../lib/auth/tokens');

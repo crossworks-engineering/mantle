@@ -954,6 +954,10 @@ export async function recordSkippedTrace(init: {
   subjectId?: string;
   subjectKind?: string;
   agentId?: string | null;
+  /** The login the skipped work answered (traces.login_id, as startTrace's
+   *  loginId): its trace is listed to that login only; null the anchor's
+   *  (W7e). */
+  loginId?: string | null;
   disposition: string;
   details?: Record<string, unknown>;
 }): Promise<string | null> {
@@ -967,6 +971,7 @@ export async function recordSkippedTrace(init: {
       subjectId: init.subjectId ?? null,
       subjectKind: init.subjectKind ?? null,
       agentId: init.agentId ?? null,
+      loginId: init.loginId ?? null,
       status: 'skipped',
       startedAt: now,
       finishedAt: now,

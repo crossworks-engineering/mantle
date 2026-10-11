@@ -23,6 +23,11 @@ export const GONE_MESSAGE = 'This feature was removed. Update the app.';
 export const SPACE_FOLDED_MESSAGE =
   'Your own items are in your private workspace now. Open them from the normal lists.';
 
+/** The member Library and accepted-item routes (/api/member/library*,
+ *  /api/member/accepted*), removed in workspaces W7e: unused since W6b. */
+export const LIBRARY_GONE_MESSAGE =
+  'The Library is gone: open the items of your workspaces from the normal lists. Update the app.';
+
 /** The per-login MCP switches and static login tokens (/api/mcp-logins),
  *  removed in workspaces W7b: every login has the one MCP surface in its
  *  own workspaces. */

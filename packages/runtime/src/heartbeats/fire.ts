@@ -236,6 +236,10 @@ async function fireInner(
         kind: 'heartbeat_fire',
         subjectKind: 'heartbeat',
         subjectId: hb.id,
+        // The login the fire answers, as a fired trace names it (W7e): the
+        // skip is listed to that login only, the anchor's (null) to the
+        // anchor (traceListedFor).
+        loginId: answeredBy,
         disposition: gate.reason,
         details: {
           heartbeat_slug: hb.slug,

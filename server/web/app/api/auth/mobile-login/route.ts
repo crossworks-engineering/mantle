@@ -9,8 +9,11 @@ import { handleTokenLogin } from '@/lib/token-login';
  * Kept as a stable alias of the shared token-login flow (lib/token-login.ts)
  * with the original 1-year TTL — every shipped companion build depends on this
  * path and response shape. The web client uses /api/auth/token (30d + refresh).
- * Admins only: the companion calls admin routes only, so a member login is
- * refused here (403 `member-login`) instead of getting a broken app.
+ * Admins only: the companion calls admin routes only, so a non-Admin login
+ * is refused here instead of getting a broken app: a member gets 426
+ * `update-app` "Update the app" since workspaces W7e (the build that serves
+ * every login signs in through /api/auth/device-login or QR pairing); a
+ * client gets 403 `client-login`, as before (no phone build serves it yet).
  */
 export async function POST(req: Request) {
   return handleTokenLogin(req, {

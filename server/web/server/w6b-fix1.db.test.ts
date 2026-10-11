@@ -596,7 +596,8 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     expect(d.status, d.text.slice(0, 200)).toBe(200);
     expect(d.json.file).toMatchObject({ id: mine, mayEdit: true, mayManage: true });
     expect(d.json.content).toBe('MINE');
-    expect((await call(`/api/files/files/${mine}?raw=1`, mem)).status).toBe(401);
+    // Its bytes on the same route since W7e (every login, in its scope).
+    expect((await call(`/api/files/files/${mine}?raw=1`, mem)).status).toBe(200);
     // An Admin file: not found for the member.
     const adminFile = await brainText('admin-only.txt', 'ADMIN');
     expect((await call(`/api/files/files/${adminFile}`, mem)).status).toBe(404);

@@ -348,7 +348,7 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     });
 
     it('keeps the year-long cookie for admins and members (only clients are capped)', async () => {
-      const member = await app.request('/api/member/library/not-a-uuid', {
+      const member = await app.request('/api/member/files/not-a-uuid', {
         headers: { cookie: `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(MEMBER_ID).value}` },
       });
       expect(member.status).toBe(400);

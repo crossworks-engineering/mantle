@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { db, authUsers, mobileTokens, pairingCodes, and, eq, gt, isNull, lt } from '@mantle/db';
-import { buildMobileToken } from '@/lib/auth';
+import { WEB_TOKEN_TTL_SECONDS, buildMobileToken } from '@/lib/auth';
 
 /**
  * "Sign in on your phone" — the pairing-code half of QR sign-in.
@@ -14,9 +14,12 @@ import { buildMobileToken } from '@/lib/auth';
  * its SHA-256; it lives {@link PAIR_CODE_TTL_SEC}; it is single-use — the
  * claim is one conditional UPDATE (unclaimed AND unexpired) so two claims of
  * the same frame cannot both win; it is bound to the login that asked for
- * it, and claims only while that login is still an admin that is not
- * disabled. Every failure to claim is the same `null`: the phone shows one
- * line.
+ * it, and claims only while that login is not disabled and is still an
+ * admin, or (workspaces W7e) a member claiming from a phone build that
+ * serves every login (`nonAdmin`). Every failure to claim is the same
+ * `null`: the phone shows one line. A member's code scanned by an older
+ * phone app is `'update-app'` (426 "Update the app"), and the code stays
+ * unused, so the person can scan it again with the new app.
  */
 export const PAIR_CODE_TTL_SEC = 90;
 
@@ -69,13 +72,37 @@ export type ClaimedPairCode = {
 };
 
 /** Trade a scanned code for a mobile bearer. `null` for an unknown, expired
- *  or already-claimed code — the caller must not say which. */
+ *  or already-claimed code: the caller must not say which. `nonAdmin`: the
+ *  phone build serves every login (W7e), so a member's code is claimed (a
+ *  30-day token, rotated like device-login's); without it a member's code
+ *  answers `'update-app'` and is not used up. */
 export async function claimPairCode(
   code: string,
   deviceName: string | undefined,
   now = new Date(),
-): Promise<ClaimedPairCode | null> {
+  opts: { nonAdmin?: boolean } = {},
+): Promise<ClaimedPairCode | 'update-app' | null> {
   const codeHash = hashPairCode(code);
+  if (!opts.nonAdmin) {
+    // Read before the claim, so the code is not spent on an app that cannot
+    // use it. Only a live, unclaimed code of a non-Admin login says so.
+    const [peek] = await db
+      .select({ role: authUsers.role })
+      .from(pairingCodes)
+      .innerJoin(authUsers, eq(authUsers.id, pairingCodes.userId))
+      .where(
+        and(
+          eq(pairingCodes.codeHash, codeHash),
+          isNull(pairingCodes.claimedAt),
+          gt(pairingCodes.expiresAt, now),
+        ),
+      )
+      .limit(1);
+    // A member's code only: a client is never served by a phone build yet,
+    // so its code (a login made a client since) claims nothing (W7e fix
+    // round 1): the one 401 below.
+    if (peek && peek.role === 'member') return 'update-app';
+  }
   // Single-use, atomically: only an unclaimed, unexpired row flips.
   const [won] = await db
     .update(pairingCodes)
@@ -92,18 +119,24 @@ export async function claimPairCode(
 
   // The login is re-read, not trusted from the code: lockout drops unclaimed
   // codes, but a claim racing it (or a row that outlived it) must not mint a
-  // bearer for a login that is gone, disabled or no longer an admin. Pairing
-  // is admin-only (POST /api/auth/pair), and so is the companion app.
+  // bearer for a login that is gone, disabled or of a role this phone build
+  // cannot serve. An admin always; a member only from a build that serves
+  // every login (W7e). A client signs in with its emailed code instead.
   const [user] = await db
     .select({ email: authUsers.email, role: authUsers.role, disabledAt: authUsers.disabledAt })
     .from(authUsers)
     .where(eq(authUsers.id, won.userId))
     .limit(1);
-  if (!user || user.disabledAt || user.role !== 'admin') return null;
+  const member = user?.role === 'member' && opts.nonAdmin === true;
+  if (!user || user.disabledAt || (user.role !== 'admin' && !member)) return null;
 
   const label = deviceName?.trim() || 'Mobile device (paired by QR)';
   const jti = randomUUID();
-  const minted = buildMobileToken(won.userId, jti);
+  // An admin's bearer as mobile-login mints it (every shipped build depends
+  // on it); a member's as device-login does (30 days, refreshed).
+  const minted = member
+    ? buildMobileToken(won.userId, jti, WEB_TOKEN_TTL_SECONDS)
+    : buildMobileToken(won.userId, jti);
   await db.insert(mobileTokens).values({
     id: jti,
     userId: won.userId,

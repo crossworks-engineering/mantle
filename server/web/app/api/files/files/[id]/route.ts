@@ -1,7 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
-import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
+import { getOwnerOr401, getReaderForAsset } from '@/lib/auth';
+import { memberBytesGate } from '@/lib/member-space';
 import {
   deleteFileById,
   fileById,
@@ -22,6 +23,10 @@ import { isBusy, isScopeWriteRefusal } from '@mantle/db';
 import { callerMayReadEmail } from '@/lib/api-v1';
 
 const IdParams = z.object({ id: z.string().uuid() });
+/** A file's raw bytes are read in the login's scope (W7e): never stored. */
+const RAW_CACHE = 'private, no-store';
+/** A thumbnail is kept privately but revalidated on every use (its etag). */
+const THUMB_CACHE = 'private, no-cache';
 const PatchBody = z.union([
   z.object({ content: z.string().max(2_000_000) }),
   z.object({ rename: z.string().min(1).max(200) }),
@@ -37,19 +42,19 @@ const PatchBody = z.union([
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  // getOwnerForAsset (not getOwnerOr401): the `?raw=1` bytes are loaded as an
+  // getReaderForAsset (not getOwnerOr401): the `?raw=1` bytes are loaded as an
   // <img>/<iframe>/download src that can't carry a bearer, so a detached client
   // authenticates via the `?at=` asset token. Session (cookie/bearer) still wins.
-  let user = await getOwnerForAsset(_req);
-  // A member or a client (W6b fix round 1): the file's detail in its own
-  // scope (MEMBER_OPEN_READS), never the bytes here: ?raw and ?thumb stay a
-  // plain 401 for them (the bytes are on /api/member/files/:id).
-  if (user instanceof Response) {
-    const asked = new URL(_req.url).searchParams;
-    if (user.status !== 401 || asked.has('raw') || asked.has('thumb')) return user;
-    const login = await getOwnerOr401();
-    if (login instanceof Response) return login;
-    user = login;
+  // Every login since W7e: a member reads the detail AND the bytes of a file
+  // in its own scope (MEMBER_OPEN_READS); a file it does not read is a 404.
+  const reader = await getReaderForAsset(_req);
+  if (reader instanceof Response) return reader;
+  const user = reader.user;
+  // A member's bytes are rate limited per login, as on the member routes.
+  const bytesAsked = new URL(_req.url).searchParams;
+  if (reader.member && (bytesAsked.has('raw') || bytesAsked.has('thumb'))) {
+    const limited = memberBytesGate(_req, reader.member);
+    if (limited) return limited;
   }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
@@ -75,7 +80,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (!sha) return NextResponse.json({ error: 'no thumbnail' }, { status: 404 });
     const etag = `"${sha}.thumb"`;
     if (_req.headers.get('if-none-match') === etag) {
-      return new Response(null, { status: 304, headers: { etag } });
+      return new Response(null, { status: 304, headers: { etag, 'cache-control': THUMB_CACHE } });
     }
     const thumb = await thumbnailFor({
       sha256: sha,
@@ -92,9 +97,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         'content-type': 'image/jpeg',
         'content-length': String(thumb.byteLength),
         // Keyed by content hash server-side; the URL is stable per file id, so
-        // cache privately and revalidate via etag when the content changes.
+        // cache privately and revalidate via etag on every use: the etag
+        // check above runs after the scoped lookup, so a login that lost the
+        // file stops getting it at once (W7e fix round 1, L2).
         etag,
-        'cache-control': 'private, max-age=3600',
+        'cache-control': THUMB_CACHE,
       },
     });
   }
@@ -106,6 +113,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       headers: {
         ...safeDownloadHeaders(res.row.mimeType, res.row.filename),
         'content-length': String(res.bytes.byteLength),
+        // Never kept by a shared cache or the browser (W7e fix round 1, L2).
+        'cache-control': RAW_CACHE,
       },
     });
   }
@@ -208,6 +217,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     });
     return NextResponse.json({ file });
   } catch (err) {
+    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
+    if (isScopeWriteRefusal(err)) throw err;
     if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     const msg = errorMessage(err);
     if (msg.includes('already exists')) {

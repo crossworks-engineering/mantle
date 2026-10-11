@@ -52,11 +52,19 @@ beforeEach(() => {
 });
 
 describe('token login: adminsOnly', () => {
-  it('refuses a member with 403 member-login and mints nothing', async () => {
+  it('answers a member 426 update-app (W7e) and mints nothing', async () => {
     state.role = 'member';
     const res = await login(true);
+    expect(res.status).toBe(426);
+    expect(((await res.json()) as { reason: string }).reason).toBe('update-app');
+    expect(state.inserts).toBe(0);
+  });
+
+  it('refuses a client 403 client-login, never "Update the app" (W7e fix round 1)', async () => {
+    state.role = 'client';
+    const res = await login(true);
     expect(res.status).toBe(403);
-    expect(((await res.json()) as { reason: string }).reason).toBe('member-login');
+    expect(((await res.json()) as { reason: string }).reason).toBe('client-login');
     expect(state.inserts).toBe(0);
   });
 

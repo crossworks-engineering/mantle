@@ -120,7 +120,12 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { CLIENT_ROUTES, isClientRoute } from '../lib/auth/client-routes';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
-import { memberMayRead, memberMayWrite } from '../lib/auth/route-scope';
+import {
+  CLIENT_CLOSED_ROUTES,
+  clientClosed,
+  memberMayRead,
+  memberMayWrite,
+} from '../lib/auth/route-scope';
 import {
   PUBLIC_SESSION_ROUTES,
   RENDER_PAGES,
@@ -406,6 +411,15 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         // proved per role against a database (access-keys.db.test.ts), as
         // the client routes are in client-sweep.test.ts.
         if (isAnyLoginRoute(method, pattern)) return true;
+        // The routes W7e opened to members only (running an app, a
+        // drawing's SVG) refuse a client as before (W7e fix round 1, M1):
+        // 403 client-login from the session guard, 401 from the byte guard.
+        if (clientClosed(method, pattern)) {
+          return (
+            (status === 403 && body?.reason === 'client-login') ||
+            (status === 401 && body?.error === 'unauthorized')
+          );
+        }
         // The owner reads open to every login in its scope since W6a
         // (MEMBER_OPEN_READS): proved against a database in
         // w6a-route-sweep.db.test.ts.
@@ -422,7 +436,9 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
       expect(checked).toBeGreaterThan(300);
       expect(failures).toEqual([]);
       // Every allow-list the callback consults was reached (none is dead).
-      expect([...TICKET_GATED, ...CLIENT_ROUTES].filter((k) => !visited.has(k))).toEqual([]);
+      expect(
+        [...TICKET_GATED, ...CLIENT_ROUTES, ...CLIENT_CLOSED_ROUTES].filter((k) => !visited.has(k)),
+      ).toEqual([]);
     },
     300_000,
   );
