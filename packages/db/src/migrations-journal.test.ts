@@ -93,4 +93,41 @@ describe('migrations journal', () => {
         `mis-resolved _journal.json merge: ${mismatched.join('; ')}`,
     ).toEqual([]);
   });
+
+  it('no slot is skipped: a later-added lower number would never run (W7 integration fix 2)', () => {
+    // migrate.ts skips an entry whose `when` is at or below the highest one
+    // applied, so a gap filled later is skipped on every box that rolled
+    // past it. 0211 is the one historical gap, never to be filled.
+    const idxs = new Set(journal.entries.map((e) => e.idx));
+    const last = Math.max(...idxs);
+    const gaps: number[] = [];
+    for (let i = 0; i <= last; i++) if (!idxs.has(i) && i !== 211) gaps.push(i);
+    expect(gaps).toEqual([]);
+  });
+
+  it('a migration from 0270 on that alters several tables locks them all in one statement first', () => {
+    const late = files.filter((f) => Number(f.slice(0, 4)) >= 270);
+    expect(late).toContain('0270_sandboxes_created_by');
+    for (const f of late) {
+      const body = readFileSync(join(dir, `${f}.sql`), 'utf8')
+        .split('\n')
+        .filter((l) => !l.trimStart().startsWith('--'))
+        .join('\n');
+      const altered = new Set(
+        [...body.matchAll(/ALTER TABLE\s+(?:IF EXISTS\s+)?(?:"?public"?\.)?"?(\w+)"?/gi)].map(
+          (m) => m[1]!.toLowerCase(),
+        ),
+      );
+      if (altered.size < 2) continue;
+      const lock = /LOCK TABLE([^;]*?)IN ACCESS EXCLUSIVE MODE/i.exec(body);
+      expect(lock, `${f}: one LOCK TABLE for every table it alters`).not.toBeNull();
+      const locked = new Set(
+        [...lock![1]!.matchAll(/(?:"?public"?\.)?"?(\w+)"?/g)].map((m) => m[1]!.toLowerCase()),
+      );
+      for (const t of altered) expect(locked.has(t), `${f}: ${t} locked`).toBe(true);
+      expect(lock!.index, `${f}: the lock comes before the first ALTER`).toBeLessThan(
+        body.search(/ALTER TABLE/i),
+      );
+    }
+  });
 });
