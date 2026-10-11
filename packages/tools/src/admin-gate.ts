@@ -174,8 +174,9 @@ export function toolAdminArea(slug: string, ref?: string): ScopeArea | null {
  *    curated_models and the provider's model catalog.
  *  - sandbox_autostart, sandbox_exec, sandbox_list, sandbox_ls,
  *    sandbox_mcp_call, sandbox_mcp_tools, sandbox_publish, sandbox_rm,
- *    sandbox_stop: sandbox rows and the sandbox daemon (publish: an API key
- *    and a tool group). A sandbox is its maker's: the brain owner's login
+ *    sandbox_stop: sandbox rows and the sandbox daemon (publish: the proxy
+ *    API key, only with the keys area, and the sandbox's own tool group,
+ *    never another group, fix round 3). A sandbox is its maker's: the brain owner's login
  *    works in every one, any other login only in its own (callerScope), and
  *    only the brain owner mounts a folder (sandbox/common.ts).
  *  - agent_list, agent_grant_tool_group, agent_set_thinking_effort,

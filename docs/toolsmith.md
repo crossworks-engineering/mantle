@@ -176,6 +176,12 @@ client browse and test the registry.
   `dispatchTool` (templating + vault secrets + timeouts). Refuses
   non-http targets: "testing" a shell tool would otherwise be an
   unconfirmed execution side-channel.
+- On a brain on workspaces, a template that sends a vault key (a
+  `{{secret:…}}` or `{{oauth:…}}` ref, or an OAuth2 group's token URL or base
+  URL) is the keys area's: creating, updating or testing such a tool needs
+  it, and a tool written by a login other than the brain owner resolves its
+  refs at run time only while that login holds it (tools.created_by,
+  `packages/tools/src/secret-ref-gate.ts`).
 - `api_key_refs`, vault entries as `{{secret:service/label}}` refs,
   masked previews only; plaintext never leaves the dispatcher.
 - `tool_group_list / tool_group_ensure`, capability bundles, with

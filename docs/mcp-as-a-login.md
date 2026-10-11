@@ -51,7 +51,14 @@ tools that touch nothing else (`AREA_SYSTEM_TOOLS` in admin-gate.ts, each
 checked handler by handler in fix round 2) run there whole, and a turn one
 of them starts (a heartbeat fired) answers the calling login, never the
 brain owner. A login works only in the sandboxes it made; only the brain
-owner mounts a folder into one. A write to an item (an edit, a delete, a move, a link) is
+owner mounts a folder into one. A heartbeat answers the login that set it up
+(heartbeats.created_by): Fire now fires in the signed-in login's scope, and
+the tick fires a heartbeat another Admin login set up or edited in that
+login's scope. A tool template that sends a vault key (`{{secret:...}}`,
+`{{oauth:...}}`, an OAuth2 group's token or base URL) is the keys area's:
+writing or testing one needs it, and a tool another login wrote resolves its
+refs only while that login holds it (`packages/tools/src/secret-ref-gate.ts`,
+tools.created_by). A write to an item (an edit, a delete, a move, a link) is
 checked against the login's rights on that item first, as the item routes
 do (`packages/tools/src/item-write-gate.ts`): an item shared with Read only
 is refused. `MANTLE_ADMIN_READS=system` puts the whole surface back on the
