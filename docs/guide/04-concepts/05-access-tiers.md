@@ -8,7 +8,7 @@ A brain has four tiers of access: Admin, Member, Client and Public. Each tier se
 |---|---|---|---|
 | **Admin** | You, and any co-owner | The whole brain and every setting | Email and password, on every [way in](01-ways-to-control.md) |
 | **Member** | Your team | Items at Team, Client or Public level, their own personal space, and a chat with the team agent. No admin screens. | An invite link, then their own password. Web, desktop, phone app or MCP. |
-| **Client** | People at your client company | Items at Client level, their own drafts and requests, and a chat with the client assistant | A sign-in link or an emailed code, no password. Web, phone app or MCP. |
+| **Client** | People at your client company | What a workspace they belong to holds. No client portal, chat or drafts any more. | An emailed code, no password. Web or phone app. |
 | **Public** | Anyone with a link | The one item behind the link | A link you share. No login. |
 
 A member or client cannot change your brain. When they ask for a change, it comes to you as a request in **Team > Requests**.
@@ -32,7 +32,7 @@ The rules sit in the database, not in each screen. A member or client gets the s
 |---|---|
 | Admin | **Settings > Logins > Add login**, role Admin. See [Member and client logins](../05-admin/07-logins.md). |
 | Member | **Settings > Logins > Invite**, then set the team agent to Team level once. See [Team and members](../03-using-jackdaw/12-team.md). |
-| Client | **Settings > Logins > Clients > Add client**, then issue a sign-in link. See [Member and client logins](../05-admin/07-logins.md). |
+| Client | New client logins can no longer be added. An existing one signs in with an emailed code. See [Member and client logins](../05-admin/07-logins.md). |
 | Public | Share the item to make a link. See [Sharing and federation](06-sharing-and-federation.md). |
 
 Set item levels before you let anyone in. Use **Access** in the header of a page, note, table, file, folder, drawing or app.

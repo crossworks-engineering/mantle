@@ -336,6 +336,20 @@ opens the right one on a tap (section 2, "Push routing on a device with
 several logins"). Additive only: an app built for v1 ignores the new fields,
 and the payload's `v` stays `1`.
 
+**Workspaces W5c (2026-10-11): one shell for every login.** `GET /api/shell`
+now answers an admin, a member and a client with the SAME shape (`Shell` in
+`@mantle/client-types`): `role` (`admin`, `member` or `client`), `loginId`,
+the login's own face (`displayName`, `email`, `avatar`,
+`avatarPhotoVersion`, `navFavorites`), the brain's brand, `features`,
+`assetToken` (a client's lasts 10 minutes), `maxUploadBytes`, `workspaces`,
+`areas` (always `[]` for a member or a client), `onboarded` (always true for
+them), `pendingApprovals` (always 0 for them) and `treeKinds`.
+`GET /api/member/shell` and `GET /api/client/shell` answer their own role
+410 `{ error, code: "gone" }`, and whoami names `/api/shell` as every role's
+shell. The client portal is gone too: every `/api/client/*` route (chat,
+unread, push, bytes) answers a client 410. A client still signs in with an
+emailed code (device mode below) and refreshes its token as before.
+
 Everything above this section still holds for admins and for shipped builds.
 `POST /api/auth/mobile-login` stays frozen: admins only, 1 year, same shape.
 
@@ -472,7 +486,7 @@ For example, a member's phone token:
       "loginId": "5d1f0c2a-7b4e-4f61-9a0d-2c8e6b3f1a77",
       "email": "member@example.invalid",
       "displayName": "Mia Member",
-      "shell": "/api/member/shell",
+      "shell": "/api/shell",
       "pushBase": "/api/member/push",
       "brainId": "0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f"
     }
@@ -489,11 +503,15 @@ answers carry. `brainId` is missing only on a brain
 whose database is behind its code (migration 0226 not applied) and on brains
 older than v1.1: treat that session as having no `brainId` (below).
 
-| role   | shell               | pushBase           |
-| ------ | ------------------- | ------------------ |
-| admin  | `/api/shell`        | `/api/push`        |
-| member | `/api/member/shell` | `/api/member/push` |
-| client | `/api/client/shell` | `/api/client/push` |
+| role   | shell        | pushBase           |
+| ------ | ------------ | ------------------ |
+| admin  | `/api/shell` | `/api/push`        |
+| member | `/api/shell` | `/api/member/push` |
+| client | `/api/shell` | `/api/client/push` |
+
+Before W5c a member's shell was `/api/member/shell` and a client's
+`/api/client/shell`; both now answer 410. A client's `pushBase` routes
+answer 410 as well (the client portal went in W5c).
 
 **Sign-out: `POST /api/auth/mobile-logout`** (Authorization: Bearer). Always
 200 `{ ok: true }`. It revokes this device's token and removes the push
@@ -717,15 +735,16 @@ are sent as they are (the "needs you" notice holds only those). The helper is
 the app keeps its own strip as a fallback for older brains.
 
 **Version 1 is push plus refetch.** On a `chat` push the app refetches
-`GET /api/member/chat` or `GET /api/client/chat`. There is no token stream for
-these roles yet.
+`GET /api/member/chat`. There is no token stream for members yet. (The client
+chat, `GET /api/client/chat`, answers 410 since W5c, and a client gets no
+chat push.)
 
 ### 3. Unread for the member and client chat
 
     GET  /api/member/chat/unread     200 { unread, lastReadAt }
     POST /api/member/chat/read       { at? }   200 { unread, lastReadAt }
-    GET  /api/client/chat/unread     same
-    POST /api/client/chat/read       same
+    GET  /api/client/chat/unread     410 since W5c
+    POST /api/client/chat/read       410 since W5c
 
 `unread` counts finished replies in the login's own thread newer than
 `lastReadAt`. A login starts with nothing unread: the first call sets
@@ -741,9 +760,9 @@ marked read even when it was written later in the same millisecond.
 ### 4. Pictures in a member or client thread
 
 A reply is markdown. Image links are relative paths to the reader's own
-routes: `/api/member/files/<id>`, `/api/member/draws/<id>/svg`,
-`/api/client/files/<id>`, `/api/client/draws/<id>/svg`. Images the reader may
-not read are already removed. Two ways to load one:
+routes: `/api/member/files/<id>`, `/api/member/draws/<id>/svg`. (The client
+byte routes answer 410 since W5c.) Images the reader may not read are
+already removed. Two ways to load one:
 
 1. Send the bearer: `Authorization: Bearer <token>` on the image request.
    Preferred in a native app.

@@ -177,14 +177,14 @@ app; `PUT /api/app-nav/pins` and the open counter keep working through
 `item_marks`. Tree writes to apps also notify `app_nav_changed`, so an older
 client refetches.
 
-### Apps for members and clients
+### Apps for members
 
-Apps are not a reader tree kind (`READER_TREE_KINDS`): a member or a client
-RUNS an app, and that rule is not the Library's read rule (a green published
-build, never through an embed, and for a client the client level exactly).
-So their launcher gets its folders from the list that already holds the
-rule: `GET /api/member/apps` and `GET /api/client/apps` answer `folders`
-next to `apps` (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
+Apps are not a reader tree kind (`READER_TREE_KINDS`): a member RUNS an app,
+and that rule is not the Library's read rule (a green published build, never
+through an embed). So the launcher gets its folders from the list that
+already holds the rule: `GET /api/member/apps` answers `folders` next to
+`apps` (the client launcher, `GET /api/client/apps`, answers 410 since
+workspaces W5c) (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
 `appIds`; `packages/content/src/app-folders.ts`).
 
 - **One rule.** `appLauncher(anchor, reader)` reads the apps the reader may
@@ -356,10 +356,10 @@ via }` (`readThroughEmbeds`) names the nearest items that embed it and
   and the admin usage report check the same rule, without the embedded
   level: `readAtSql(levels, { embeds: false })`). Unsharing the folder, or
   moving the item out, hides the thread below admin again.
-- **The member and client trees.** `GET /api/member/tree/:kind` and
-  `/api/client/tree/:kind` (with `/search`) serve the kinds a Library holds
-  (`READER_TREE_KINDS`: files, notes, drawings, tables; the shells list them
-  in `treeKinds`), read only (`packages/content/src/tree/reader.ts`). Items
+- **The member tree.** `GET /api/member/tree/:kind` (with `/search`)
+  serves the kinds a Library holds (`READER_TREE_KINDS`: files, notes,
+  drawings, tables; `GET /api/shell` lists them in `treeKinds` for a member
+  or a client; the client tree answers 410 since workspaces W5c), read only (`packages/content/src/tree/reader.ts`). Items
   are read AS the reader, at the Library's levels by the union rule, without
   extracted image fragments. Folders are read as the brain (a shared folder's
   own row is not the reader's: it inherits only from above itself) and show
