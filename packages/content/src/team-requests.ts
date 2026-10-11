@@ -33,10 +33,10 @@ export const CLIENT_REQUESTS_PER_DAY = 10;
 
 /**
  * Team requests already filed: those stamped with this inbound message (the
- * turn), or by this requester since `since`. The tasks are admin level: a
- * caller on the limited team role (the team turn) must run this inside
- * `asSystem`, as `team_request_create` does, or it counts nothing and the cap
- * never closes.
+ * turn), or by this requester since `since`. The tasks are homed in the
+ * Admin workspace: a caller in a scope that does not read them must count
+ * on the system pool (asSystem with a named reason), or it counts nothing
+ * and the cap never closes.
  */
 export async function countTeamRequestsFiled(
   ownerId: string,
@@ -72,8 +72,8 @@ export async function countTeamRequestsFiled(
  * 0197): those of this inbound message (the turn), or by this client login
  * since `since`. A row is written for every request filed and never removed
  * with the task, so deleting a request never gives the quota back (C5 audit
- * fix I12). Admin level: run it inside `asSystem`, as client_request_create
- * does.
+ * fix I12). The ledger is system data: count it on the system pool
+ * (asSystem with a named reason inside a scope).
  */
 export async function countClientRequestFilings(
   ownerId: string,

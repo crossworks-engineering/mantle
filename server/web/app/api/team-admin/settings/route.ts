@@ -26,8 +26,8 @@ export async function GET() {
     teamAdminBadges(user.id),
     loadProfilePreferences(user.id),
     listApps(user.id, { limit: 200 }),
-    // Who a member chats with: the Team workspace's assistant (the same
-    // lookup /api/member/chat makes).
+    // Who a member chats with: the Team workspace's assistant, in the
+    // member's own thread (/api/member/chat answers 410 since W7c).
     teamAssistant(user.id),
   ]);
   // Designation candidates: published apps only (the PATCH API enforces it

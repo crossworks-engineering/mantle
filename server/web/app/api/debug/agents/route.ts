@@ -3,7 +3,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { isAnchorLogin } from '@/lib/agents';
 import { listAgentActivity, listPersonaNotes } from '@/lib/debug';
 
-/** GET /api/debug/agents — configured agents + the reflector's persona notes
+/** GET /api/debug/agents: configured agents + the reflector's persona notes
  *  (the anchor login's only: other logins get none, W7 integration fix). */
 export async function GET() {
   const user = await getOwnerOr401();

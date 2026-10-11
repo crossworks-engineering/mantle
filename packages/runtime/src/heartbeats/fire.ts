@@ -13,7 +13,7 @@
  *   6. deliver the reply text to the surface (telegram sendMessage)
  *   7. record heartbeat_fires row + reschedule next_fire_at
  *
- * Errors at step 2 (config) auto-pause the heartbeat — operator
+ * Errors at step 2 (config) auto-pause the heartbeat: operator
  * intervention required. Errors during the tool loop (LLM, network)
  * record disposition='error' but leave the heartbeat active so the
  * next tick can retry.
@@ -74,7 +74,7 @@ const HEARTBEAT_CONTROL_TOOLS = [
   'heartbeat_fire',
 ];
 
-/** Tools that reach OUT of the brain — email + web. When the operator
+/** Tools that reach OUT of the brain: email + web. When the operator
  *  enables `heartbeatEgressGate`, these are force-confirmed for an
  *  unattended fire so they park for approval instead of running inline.
  *  The heartbeat's own surface reply is delivered separately (not a tool)
@@ -136,7 +136,7 @@ function answerer(hb: Heartbeat, login: string | null | undefined): string | nul
 /** Tick-driven fire: runs gate checks, fires if all pass.
  *  The tick loop already filters in-flight rows out before calling
  *  this, but we wrap defensively in case a future caller skips the
- *  filter — exclusion still holds. A heartbeat another Admin login set up
+ *  filter: exclusion still holds. A heartbeat another Admin login set up
  *  (heartbeats.created_by, W7a fix round 3) fires as that login
  *  (loginCaller), never as the brain owner. */
 export async function tickFire(hb: Heartbeat): Promise<FireResult> {
@@ -197,8 +197,8 @@ async function fireInner(
     if (!gate.ok) {
       // Soft-skip: don't burn fire_count, but bump next_fire_at so
       // the tick loop doesn't churn on this row every minute. The
-      // bump is conservative — half the cooldown if there is one,
-      // else 10 minutes — so the gate is re-checked reasonably soon.
+      // bump is conservative (half the cooldown if there is one,
+      // else 10 minutes), so the gate is re-checked reasonably soon.
       const bumpMs = hb.cooldownMinutes ? hb.cooldownMinutes * 30_000 : 10 * 60_000;
       await db
         .update(heartbeats)
@@ -209,10 +209,10 @@ async function fireInner(
         .where(eq(heartbeats.id, hb.id));
       // Record a skipped trace so /traces shows the skip too. Cheap.
       // Capture the trace id back so the heartbeat_fires row can
-      // link to it — the detail page's "trace →" link depends on
+      // link to it: the detail page's "trace →" link depends on
       // this. (Audit: P-trace-1.)
       // Note: no agentId on this skip trace. traces.agent_id FKs to
-      // agents.id (NOT ai_workers, NOT heartbeats) — putting any other
+      // agents.id (NOT ai_workers, NOT heartbeats): putting any other
       // uuid here triggers the silent FK violation documented in
       // observability.md §12. The heartbeat link lives on subject_id.
       const skippedTraceId = await recordSkippedTrace({
@@ -301,7 +301,7 @@ async function fireInner(
   // 3. Compose system prompt -----------------------------------
   //    Agent's normal persistent skills go in (these are general
   //    behaviour packs like "format dates as en-GB"). The HEARTBEAT
-  //    skill is NOT injected here — it goes into the user-role
+  //    skill is NOT injected here: it goes into the user-role
   //    synthetic prompt below, because it's situational to this
   //    fire, not a persistent persona trait.
   const persistentSkills = await resolveAgentSkills(hb.ownerId, agent.skillSlugs ?? [], {
@@ -316,7 +316,7 @@ async function fireInner(
 
   // Resolve tool allowlist = the agent's effective set (from its granted tool
   // groups; P6) + the heartbeat control tools (always granted on a heartbeat
-  // turn). The bound heartbeat skill is pure teaching (P4) — it contributes
+  // turn). The bound heartbeat skill is pure teaching (P4): it contributes
   // instructions via the synthetic prompt, never tools.
   // In a workspace scope the heartbeat's own control tools are the ones
   // that change the firing heartbeat; list and fire reach every heartbeat
@@ -347,7 +347,7 @@ async function fireInner(
   // queued call fires a Telegram approval card (see @mantle/tools
   // notifyPendingCreated, reached via the tool-loop's requires_confirm
   // path), so the operator can clear it from a phone. No effect when the
-  // preference is off — the common case.
+  // preference is off: the common case.
   const tools = prefs.heartbeatEgressGate
     ? resolvedTools.map((t) =>
         HEARTBEAT_EGRESS_SLUGS.has(t.slug) ? { ...t, requiresConfirm: true } : t,
@@ -369,7 +369,7 @@ async function fireInner(
       ? humanizeAgo(now.getTime() - hb.lastFiredAt.getTime())
       : undefined,
   });
-  // Direct construction — heartbeats are episodic, no history to fold in.
+  // Direct construction: heartbeats are episodic, no history to fold in.
   // The synthetic user prompt is the "task to do right now"; the agent's
   // persistent persona + persistent skills are in systemPrompt.
   const initialMessages: ChatMessage[] = [
@@ -384,7 +384,7 @@ async function fireInner(
   try {
     // Both the LLM tool loop AND the surface delivery run inside
     // the same startTrace block so their steps attach to the same
-    // trace row. step() is a no-op outside a trace context — moving
+    // trace row. step() is a no-op outside a trace context: moving
     // delivery out of the trace would lose the deliver_surface step
     // we want for debugging delivery failures. (Audit P-trace-4.)
     const { reply, replySurfaceRef, delivered } = await startTrace(
@@ -402,7 +402,7 @@ async function fireInner(
         },
       },
       async () => {
-        // currentTrace() is safe to read here — we're inside the
+        // currentTrace() is safe to read here: we're inside the
         // AsyncLocalStorage scope startTrace just opened.
         openedTraceId = currentTrace()?.id ?? null;
         const hbBackup = await resolveBackupAdapter(hb.ownerId, agent);
@@ -446,7 +446,7 @@ async function fireInner(
         );
         const replyText = result.reply;
 
-        // Deliver — own step so a telegram outage shows up
+        // Deliver: own step so a telegram outage shows up
         // distinctly in the trace graph (kind='send', so it sits
         // visually next to the LLM 'llm_call' steps).
         //
@@ -486,7 +486,7 @@ async function fireInner(
                 return { kind: 'telegram', message_ids: ids } as Record<string, unknown>;
               } catch (err) {
                 // Network / Telegram API failure. Don't throw out
-                // of the trace closure — keep the LLM work
+                // of the trace closure: keep the LLM work
                 // recorded, mark the outer disposition
                 // fired_undelivered, let the operator decide.
                 h.setMeta({
@@ -500,7 +500,7 @@ async function fireInner(
           );
         } else if (replyText.trim() && hb.surface.kind !== 'telegram') {
           // Web surface (and any future surface without an outbound
-          // channel) has no in-process delivery — the reply text
+          // channel) has no in-process delivery: the reply text
           // would surface via the assistant message stream. v1
           // heartbeats targeting kind:'web' have no realtime push;
           // delivered=true is a small lie that says "we did what we
@@ -530,7 +530,7 @@ async function fireInner(
     // updated next_fire_at to something further in the future than
     // the schedule would naturally produce, honour it. We only do
     // this when `after.nextFireAt` differs from what we saw at fire
-    // start AND is later than the computed value — otherwise the
+    // start AND is later than the computed value: otherwise the
     // schedule wins. This treats snooze as "at least until X",
     // never as a way to fire SOONER than the schedule would.
     let nextFireAt = computedNextFireAt;
@@ -592,11 +592,11 @@ async function fireInner(
       stateAfter: null,
       errorMessage: msg,
       // openedTraceId may be set if the trace opened before the throw
-      // (most common case) — capture it so operators can click into
+      // (most common case): capture it so operators can click into
       // the partial trace and see where it died.
       traceId: openedTraceId,
     });
-    // Don't pause on transient errors — push next_fire forward a bit
+    // Don't pause on transient errors: push next_fire forward a bit
     // so we don't tight-loop, but leave status active.
     await db
       .update(heartbeats)
@@ -617,7 +617,7 @@ async function autoPause(
   // Distinct from the catch-block 'error' path: auto-pause is for
   // config issues caught BEFORE the LLM runs (agent missing,
   // skill missing, key undecryptable). The heartbeat is moved to
-  // status=paused — operator must intervene. 'error' (catch block)
+  // status=paused: operator must intervene. 'error' (catch block)
   // is for transient mid-fire failures that the next tick will
   // retry. Splitting the disposition lets /heartbeats/[id] colour
   // them differently so triage is at-a-glance. P1-2 from audit.
