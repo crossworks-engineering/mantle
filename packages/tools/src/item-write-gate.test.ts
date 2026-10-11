@@ -45,7 +45,44 @@ const READS_ITS_ITEM: ReadonlySet<string> = new Set([
   'peer_file_copy',
   'email_page',
   'app_import',
-  'app_export',
+]);
+
+/**
+ * Writes that take an item-like id but are not on the item write list, each
+ * with why (W7 integration fix 2, hardening): the id names something that is
+ * not an item the scope edits, a source the tool only reads, or a folder a
+ * create lands in (the database's create check), or the handler checks it.
+ */
+const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
+  ['app_data_write', "the app's MCP access switch and the login's Write switch, in the handler"],
+  ['app_import', 'reads the file it imports; the new app is a create'],
+  ['app_undelete', "a deleted app: its home's Moderators only, in the handler (app-trash)"],
+  ['export_node', 'reads the item it exports'],
+  ['file_copy', 'reads the source; the copy is a create'],
+  ['folder_copy', 'reads the source; the copy is a create'],
+  ['generate_image', 'reads its input images; the image is a create'],
+  ['invoke_agent', "hands item ids to a child turn that runs in the caller's scope"],
+  ['note_from_file', 'reads the source; the note is a create'],
+  ['note_from_page', 'reads the source; the note is a create'],
+  ['page_create', "a create: the folder's create check is the database's"],
+  ['page_from_journal', 'reads the entries; the page is a create'],
+  ['peer_file_copy', "reads a linked brain's file; the copy is a create"],
+  ['pending_approve', "a pending call, not an item: the caller's own (approvePendingCall)"],
+  ['pending_reject', "a pending call, not an item: the caller's own (rejectPendingCall)"],
+  ['run_append', 'a run, not an item: the runs scope check'],
+  ['run_audit', 'a run, not an item: the runs scope check'],
+  ['run_cancel', 'a run, not an item: the runs scope check'],
+  ['sandbox_create', 'only the brain owner mounts a folder (the sandbox maker rule)'],
+  ['sandbox_import', 'reads the file it imports into a sandbox'],
+  ['show_image', 'reads the image it shows'],
+  ['table_from_file', 'reads the source; the table is a create'],
+  ['table_row_get', 'reads one row'],
+  ['telegram_edit', "the anchor's Telegram chat and message ids: the anchor only"],
+  ['telegram_mark_processed', "the anchor's Telegram inbox row: the anchor only"],
+  ['telegram_react', "the anchor's Telegram chat and message ids: the anchor only"],
+  ['telegram_send', "the anchor's Telegram chat id: allowlisted chats only"],
+  ['tree_folder_create', "a create: the parent's create check is the database's"],
+  ['video_ingest', 'reads the video file; the transcript is a create'],
 ]);
 
 describe('the Admin gate lists (W7a fix round 1)', () => {
@@ -150,6 +187,39 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       ) => Promise<{ ids: string[]; need: string }[]>;
       expect(await resolve(input, 'o'), slug).toEqual([{ ids, need: 'edit' }]);
       expect(await resolve({ ...input, supersede_source: false }, 'o'), slug).toEqual([]);
+    }
+  });
+
+  it('every write with an id argument is on the item write list or says why not', () => {
+    const missing = listBuiltins()
+      .filter((d) => !d.readOnly && !ITEM_WRITE_TARGETS.has(d.slug))
+      .filter((d) =>
+        Object.keys(
+          ((d.inputSchema as { properties?: Record<string, unknown> }).properties ??
+            {}) as object,
+        ).some((p) => p === 'id' || /_ids?$/.test(p)),
+      )
+      .map((d) => d.slug)
+      .filter((slug) => !NOT_AN_ITEM_WRITE.has(slug));
+    expect(missing).toEqual([]);
+    for (const slug of NOT_AN_ITEM_WRITE.keys()) {
+      expect(getBuiltin(slug), `${slug} is no builtin now: drop it from the list`).not.toBeNull();
+    }
+  });
+
+  it('a copy of an app with its data needs an edit; the code alone a read (M3)', async () => {
+    for (const slug of ['app_duplicate', 'app_export']) {
+      const resolve = ITEM_WRITE_TARGETS.get(slug) as (
+        i: Record<string, unknown>,
+        o: string,
+      ) => Promise<{ ids: string[]; need: string }[]>;
+      expect(typeof resolve, slug).toBe('function');
+      expect(await resolve({ id: 'not-a-uuid' }, 'o'), slug).toEqual([
+        { ids: ['not-a-uuid'], need: 'edit' },
+      ]);
+      expect(await resolve({ id: 'a1', with_data: false }, 'o'), slug).toEqual([
+        { ids: ['a1'], need: 'read' },
+      ]);
     }
   });
 });

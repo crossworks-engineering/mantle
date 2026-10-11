@@ -16,7 +16,14 @@
  * Outside a workspace scope nothing is checked: the surface rules decide.
  */
 import { and, eq } from 'drizzle-orm';
-import { db, itemWriteRefusal, recallMaps, recallRevisions, type ItemNeed } from '@mantle/db';
+import {
+  apps,
+  db,
+  itemWriteRefusal,
+  recallMaps,
+  recallRevisions,
+  type ItemNeed,
+} from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { mapRef } from './builtins-recall-write';
 
@@ -45,6 +52,24 @@ const recallMap =
     const map = await mapRef(ownerId, ref);
     return map ? [{ ids: [map.id], need }] : [];
   };
+
+/**
+ * A copy of an app (app_duplicate, app_export; W7 integration fix 2, M3):
+ * the code needs a read of the app, its data (with_data, on by default) the
+ * whole SQLite database every holder shares, so an edit right on the app,
+ * unless the app's MCP access switch opens its data to every reader's own
+ * connection anyway. An app the scope cannot see needs the edit (fail
+ * closed).
+ */
+const appCopy: Resolver = async (input) => {
+  const id = typeof input.id === 'string' ? input.id.trim() : '';
+  if (!id) return [];
+  if (input.with_data === false) return [{ ids: [id], need: 'read' }];
+  const [row] = /^[0-9a-f-]{36}$/i.test(id)
+    ? await db.select({ mcp: apps.mcpAccess }).from(apps).where(eq(apps.nodeId, id)).limit(1)
+    : [];
+  return [{ ids: [id], need: row?.mcp ? 'read' : 'edit' }];
+};
 
 /** The write tools that name an item, by slug (and by a builtin's ref). */
 export const ITEM_WRITE_TARGETS: ReadonlyMap<string, readonly Target[] | Resolver> = new Map<
@@ -167,7 +192,8 @@ export const ITEM_WRITE_TARGETS: ReadonlyMap<string, readonly Target[] | Resolve
   ['app_snapshot_restore', [edit('id')]],
   ['app_snapshot_delete', [edit('id')]],
   ['app_delete', [manage('id')]],
-  ['app_duplicate', [read('id')]],
+  ['app_duplicate', appCopy],
+  ['app_export', appCopy],
   // Recall maps (named by slug or id).
   ['recall_map_update', recallMap('edit')],
   ['recall_card_put', recallMap('edit')],
