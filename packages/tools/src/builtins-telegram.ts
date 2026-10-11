@@ -100,7 +100,7 @@ export const telegram_send: BuiltinToolDef = {
   slug: 'telegram_send',
   name: 'Send a Telegram message',
   description:
-    "Send a Telegram DM to one of the user's own paired chats. Use only when explicitly asked to message someone — never on the user's initiative without confirmation.",
+    "Send a Telegram DM to one of the user's own paired chats. Use only when explicitly asked to message someone, never on the user's initiative without confirmation.",
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
@@ -230,7 +230,7 @@ export const telegram_edit: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Edit a sent Telegram message',
   description:
-    'Edit a previously-sent Telegram message in one of your own paired chats, in place. Useful for progress updates. Edits do not trigger push notifications — send a new reply when a long task completes.',
+    'Edit a previously-sent Telegram message in one of your own paired chats, in place. Useful for progress updates. Edits do not trigger push notifications: send a new reply when a long task completes.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -306,7 +306,10 @@ export const telegram_mark_processed: BuiltinToolDef = {
         .returning({ id: telegramMessages.id });
     }, 'login-telegram');
     if (rows.length === 0) {
-      return { ok: false, error: 'no such message in your chats: take the id from telegram_pending' };
+      return {
+        ok: false,
+        error: 'no such message in your chats: take the id from telegram_pending',
+      };
     }
     return { ok: true, output: 'marked processed' };
   },
@@ -351,7 +354,7 @@ export const telegram_pair: BuiltinToolDef = {
 /** Send a Telegram message from the responder's own bot. */
 export const TELEGRAM_TOOLS: readonly BuiltinToolDef[] = [telegram_send];
 
-/** Each user's own Telegram chat controls — MCP-only, never granted. */
+/** Each user's own Telegram chat controls: MCP-only, never granted. */
 export const TELEGRAM_OPERATOR_TOOLS: readonly BuiltinToolDef[] = [
   telegram_pending,
   telegram_react,

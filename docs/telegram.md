@@ -19,35 +19,45 @@ the next Claude Code session can pick up without re-deriving context.
 > `telegram_accounts.responder_agent_id` (migration 0050). Pairing requests are
 > approved with one click there (`telegram_pair` MCP tool remains the fallback).
 
-> **Who a paired chat is (access matrix T21).** Every paired chat runs as the
-> owner: the turn's surface is `telegram`, which `isOwnerSurface`
-> (packages/tools/src/surface.ts) counts as the owner, so it gets the owner's
-> context and every tool the bot's agent holds. So only an admin-level agent
-> is on Telegram (T21 option 3, the owner's decision). The rules live in
-> `@mantle/telegram/level` (packages/telegram/src/level.ts); "a chat's agent"
-> is the bot's channel agent and the chat's `responder_agent_id`, both
-> counted:
+> **Who a paired chat is (workspaces W7d).** A bot belongs to an assistant
+> (`channels.agent_id`), so to that assistant's workspace (an assistant with
+> no workspace counts the Admin workspace). A paired chat belongs to a USER:
+> `telegram_chats.login_id` (migration 0271, which stamped every chat paired
+> before it with the anchor login). The rules live in `@mantle/telegram`
+> (packages/telegram/src/chat-login.ts and pairing.ts); the old rule that only
+> an admin-level agent is on Telegram (access matrix T21) is gone.
 >
-> - **Pairing** is refused when a chat's agent is team, client or public:
->   `telegram_pair` and `POST /api/agents/:id/telegram/chats` (status
->   `allowed`) answer with the agent's level and why, the route with
->   `code: 'agent_below_admin'`. Blocking stays open.
-> - **Linking a bot** to a below-admin agent (`POST /api/agents/:id/telegram`)
->   and **pinning a chat** to one (`PATCH /api/telegram/chats/:id`) are refused
->   with the same code, before the token reaches Telegram.
-> - **Lowering** an agent that has an enabled telegram channel, or that an
->   allowed chat is pinned to, is refused by `setAgentAudience` (code
->   `telegram_paired`, which names the fix: disconnect the bot, or give the
->   chat another agent or block it).
-> - **Turns**: `handleTelegramMessage` reads both levels with the message, so
->   a chat whose agent was lowered after pairing is caught. Such a chat gets
->   one plain reply ("This chat is turned off: only an admin-level agent
->   answers on Telegram. Ask the owner.") and no turn: no model call, no
->   tool, no `/new`, no attachment ingest. An approval-card tap in that chat
->   is refused the same way.
->
-> The guide (docs/guide/02-first-steps/05-connect-telegram.md) still says to
-> pair only the owner's own account and to give anyone else a login instead.
+> - **Pairing** is the user's own: the bot sends the person a code; signed in
+>   (web, phone, or their own MCP client), they enter it: `POST
+>   /api/telegram/pair` or the `telegram_pair` tool. The chat is paired to the
+>   CALLER's login, never anyone else's, and only when that login is a user of
+>   the workspace of every assistant the chat runs as (the bot's, and the
+>   chat's responder override). A client login never pairs. The owner's
+>   Settings route no longer pairs (`POST /api/agents/:id/telegram/chats` with
+>   `status: 'allowed'` answers 403, `code: 'pair_with_code'`).
+> - **Block and unpair**: the chat's own user, a Moderator of its bot's
+>   workspace, or an Admin user with the users area (`POST
+>   /api/telegram/chats/:id/block|unpair`, `DELETE /api/telegram/my-chats/:id`,
+>   and the Settings route with `denied` or `pending`). Nobody pairs a chat to
+>   someone else.
+> - **Turns** run as the chat's login, in the workspace of its assistant: its
+>   own thread, digests, trace and reminder channel (`noteInboundChannel` per
+>   login). A chat with no login, or whose login is gone, disabled or no
+>   longer a user of the workspace, gets one plain reply and no turn (no model
+>   call, no tool, no `/new`, no attachment ingest), read at every message, so
+>   a user removed from the workspace loses the bot at once. An assistant of a
+>   workspace other than Admin takes text only, and a login that is not an
+>   Admin user takes a slot of its daily turn cap (the member turn ledger).
+> - **Approvals**: a card goes only to a chat of the queued call's own login
+>   (the anchor's for a call with none), while that login holds the settings
+>   area; a tap decides as the chat's login, by the rule of `/api/pending`.
+> - **Outbound**: `telegram_send` and the operator tools (`telegram_pending`,
+>   `telegram_react`, `telegram_edit`, `telegram_mark_processed`) act only on
+>   chats paired to the caller's own login (the anchor: its own chats). A
+>   heartbeat fire reaches its named chat only when it is paired to the login
+>   the fire answered (its maker); a run's report only a chat of the run's
+>   login; reminders only the anchor's chats. Replay reads only the asking
+>   login's own Telegram messages.
 
 ## TL;DR
 

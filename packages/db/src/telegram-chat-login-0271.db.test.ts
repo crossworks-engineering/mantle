@@ -135,9 +135,9 @@ describe.skipIf(!URL)('0271: a Telegram chat belongs to a user', () => {
     expect(Number((await sql`select count(*)::int as n from workspace_users`)[0]!.n)).toBe(
       usersBefore,
     );
-    expect(
-      (await sql`select 1 from workspace_users where workspace_id = ${ws.ops}`).length,
-    ).toBe(0);
+    expect((await sql`select 1 from workspace_users where workspace_id = ${ws.ops}`).length).toBe(
+      0,
+    );
   });
 
   it('the login key nulls on a deleted login', async () => {

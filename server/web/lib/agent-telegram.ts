@@ -242,7 +242,7 @@ function nameOf(row: { displayName: string | null; email: string | null }): stri
 
 /**
  * Chats this agent's bot has seen — pending pairing requests first, then
- * allowed, then denied; recent within each — each with the user it is
+ * allowed, then denied; recent within each, each with the user it is
  * paired to (workspaces W7d). For the Settings screen of the bot, where a
  * Moderator or an Admin user blocks or unpairs a chat; pairing itself is the
  * user's own, with the chat's code (pairMyTelegramChat).

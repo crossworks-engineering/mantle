@@ -109,8 +109,7 @@ const TELEGRAM_TEXT_ONLY_REPLY =
   'This assistant takes typed messages only here. Please send your message as text.';
 
 /** A login past its daily turn cap (the member turn ledger, W7d). */
-const TELEGRAM_DAILY_CAP_REPLY =
-  'Daily message limit reached for this chat. Try again tomorrow.';
+const TELEGRAM_DAILY_CAP_REPLY = 'Daily message limit reached for this chat. Try again tomorrow.';
 
 /** Midnight UTC today: where the daily cap's window starts. */
 function startOfUtcDay(): Date {

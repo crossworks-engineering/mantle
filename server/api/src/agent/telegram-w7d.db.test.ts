@@ -73,7 +73,9 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
     (await m.systemDb.execute(q)) as unknown as T[];
   /** One inbound message on a chat, as the poller stores it. */
   const inbound = async (chatId: string, login: string | null, text: string): Promise<string> => {
-    const [node] = await x<{ id: string }>(sql`insert into nodes (owner_id, type, title, path, login_id)
+    const [node] = await x<{
+      id: string;
+    }>(sql`insert into nodes (owner_id, type, title, path, login_id)
       values (${owner}, 'telegram_message', ${text}, 'inbox.telegram_test', ${login})
       returning id::text`);
     seq += 1;
@@ -173,7 +175,7 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
     h.scopes = [];
   });
 
-  it("a member chats with the Team assistant as themselves: their own thread, their rows", async () => {
+  it('a member chats with the Team assistant as themselves: their own thread, their rows', async () => {
     await handleTelegramMessage(await inbound(chat.member, member, 'what did I ask before?'));
     expect(h.prompts).toHaveLength(1);
     expect(h.prompts[0]).toContain(`${tag} my earlier question`);
@@ -204,7 +206,9 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
 
   it('a user removed from the workspace is refused on the next message', async () => {
     const before = (await turnsOf(agent.team)).length;
-    await x(sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${member}`);
+    await x(
+      sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${member}`,
+    );
     await handleTelegramMessage(await inbound(chat.member, member, 'still there?'));
     expect(h.prompts).toHaveLength(0);
     expect(h.sent.map((s) => s.text)).toEqual([expect.stringMatching(/not paired to a user/)]);

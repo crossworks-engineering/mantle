@@ -256,7 +256,11 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     const res = await pairRoute(outsider, code.outsider);
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ code: 'not_a_workspace_user' });
-    expect(await chatRow(chat.outsider)).toEqual({ s: 'pending', login: null, code: code.outsider });
+    expect(await chatRow(chat.outsider)).toEqual({
+      s: 'pending',
+      login: null,
+      code: code.outsider,
+    });
     // A member is not a user of Admin: the Admin assistant's bot is not theirs.
     const admin = await pairRoute(member, code.memberOnAdminBot);
     expect(admin.status).toBe(403);
@@ -339,7 +343,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     expect(await chatRow(chat.member)).toEqual({ s: 'pending', login: null, code: null });
   });
 
-  it("the moderated list holds only the bots the login moderates", async () => {
+  it('the moderated list holds only the bots the login moderates', async () => {
     const list = async (login: string) => {
       as(login);
       const route = await import('@/app/api/telegram/moderated-chats/route');
@@ -361,7 +365,9 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     await allow(chat.member, member);
     const pending = async (login: string | null) =>
       (
-        await x<{ id: string }>(sql`insert into pending_tool_calls (owner_id, tool_slug, args, login_id)
+        await x<{
+          id: string;
+        }>(sql`insert into pending_tool_calls (owner_id, tool_slug, args, login_id)
           values (${owner}, 'note_create', '{}'::jsonb, ${login}) returning id::text`)
       )[0]!.id;
     const forAdmin2 = await pending(admin2);
@@ -372,7 +378,12 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     // A member has a paired chat but decides no approvals: no card.
     expect(await t.resolveApprovalChat(owner, member)).toBeNull();
     for (const id of [forAdmin2, forAnchor, forMember]) {
-      await t.notifyPendingCreated({ ownerId: owner, pendingId: id, toolSlug: 'note_create', args: {} });
+      await t.notifyPendingCreated({
+        ownerId: owner,
+        pendingId: id,
+        toolSlug: 'note_create',
+        args: {},
+      });
     }
     expect(h.cards).toEqual([
       { chatId: '8004', pendingId: forAdmin2 },
@@ -382,13 +393,22 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     // A tap decides as the chat's login, by /api/pending's rule.
     const { telegramApprovalHandlers } = await import('@/lib/telegram-approval');
     const tap = (loginId: string, pendingId: string) =>
-      telegramApprovalHandlers.onApproval!({ ownerId: owner, loginId, decision: 'reject', pendingId });
+      telegramApprovalHandlers.onApproval!({
+        ownerId: owner,
+        loginId,
+        decision: 'reject',
+        pendingId,
+      });
     expect((await tap(member, forMember)).ok).toBe(false);
     expect((await tap(admin2, forAnchor)).ok).toBe(false);
     expect((await tap(admin2, forAdmin2)).ok).toBe(true);
     expect((await tap(owner, forAnchor)).ok).toBe(true);
     const status = async (id: string) =>
-      (await x<{ s: string }>(sql`select status::text as s from pending_tool_calls where id = ${id}`))[0]!.s;
+      (
+        await x<{ s: string }>(
+          sql`select status::text as s from pending_tool_calls where id = ${id}`,
+        )
+      )[0]!.s;
     expect(await status(forMember)).toBe('pending');
     expect(await status(forAdmin2)).toBe('rejected');
     expect(await status(forAnchor)).toBe('rejected');
@@ -399,7 +419,9 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
   it("replay and the operator tools read only the asking login's own chats", async () => {
     await allow(chat.member, member);
     const message = async (chatId: string, text: string, login: string | null) => {
-      const [node] = await x<{ id: string }>(sql`insert into nodes (owner_id, type, title, path, login_id)
+      const [node] = await x<{
+        id: string;
+      }>(sql`insert into nodes (owner_id, type, title, path, login_id)
         values (${owner}, 'telegram_message', ${text}, 'inbox.telegram_test', ${login})
         returning id::text`);
       await x(sql`insert into telegram_messages (node_id, account_id, chat_id, telegram_message_id,
@@ -446,10 +468,12 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     expect(anchorInbox).not.toContain(`${tag} member secret`);
 
     const { pairedChatOf } = await import('@mantle/telegram');
-    expect(await pairedChatOf({ ownerId: owner, loginId: member, telegramChatId: '8001' })).toMatchObject(
-      { id: chat.member },
-    );
-    expect(await pairedChatOf({ ownerId: owner, loginId: owner, telegramChatId: '8001' })).toBeNull();
+    expect(
+      await pairedChatOf({ ownerId: owner, loginId: member, telegramChatId: '8001' }),
+    ).toMatchObject({ id: chat.member });
+    expect(
+      await pairedChatOf({ ownerId: owner, loginId: owner, telegramChatId: '8001' }),
+    ).toBeNull();
   });
 
   it('a user removed from the workspace no longer serves the chat', async () => {
@@ -463,7 +487,9 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
         responderAgentId: null,
       });
     expect(await ask()).toBeNull();
-    await x(sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${member}`);
+    await x(
+      sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${member}`,
+    );
     expect(await ask()).toBe('not_a_user');
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${member}, false)`);

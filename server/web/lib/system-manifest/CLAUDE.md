@@ -73,8 +73,8 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 - An **agent's level** (`agents.audience`): frozen since 0268 (workspaces
   W7b, `archive_tool_levels` keeps each as it was). An update keeps the old
   value; a new row still takes what it is given. An assistant reads its
-  workspace, not a level; the frozen value is still read by `agentLevel`,
-  `groupsWithinLevel` and `packages/telegram/src/level.ts`. The reconcile also adds
+  workspace, not a level; the frozen value is still read by `agentLevel`
+  and `groupsWithinLevel` (Telegram no longer reads it since W7d). The reconcile also adds
   a manifest group to an agent only when the agent's level reads it
   (`groupsWithinLevel`), so a team-level responder never gets `team-read-admin`
   back.

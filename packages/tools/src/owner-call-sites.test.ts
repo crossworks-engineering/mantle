@@ -106,11 +106,12 @@ const SITES: Record<string, Site> = {
   },
   'server/api/src/workflows/runs-resume-turn.ts': {
     calls: 1,
-    // resumeSurface: the origin Telegram chat, else the run's login on the
-    // web for an Admin run and on a team surface for any other workspace's
-    // (W7c fix round 2), else the web with none. Built before the call.
+    // resumeSurface: the origin Telegram chat (naming the run's login, the
+    // chat's own user, W7d), else the run's login on the web for an Admin
+    // run and on a team surface for any other workspace's (W7c fix round 2),
+    // else the web with none. Built before the call.
     surface:
-      /return \{ kind: 'telegram', telegramChatId: originChannel\.chat_id \};[\s\S]*if \(!loginId\) return \{ kind: 'web' \};[\s\S]*if \(!ws\?\.isAdmin\) return \{ kind: 'team', loginId \};[\s\S]*return \{ kind: 'web', loginId \};/,
+      /kind: 'telegram',\s*telegramChatId: originChannel\.chat_id,\s*\.\.\.\(loginId \? \{ loginId \} : \{\}\),[\s\S]*if \(!loginId\) return \{ kind: 'web' \};[\s\S]*if \(!ws\?\.isAdmin\) return \{ kind: 'team', loginId \};[\s\S]*return \{ kind: 'web', loginId \};/,
     scope: 'file',
     why: "a run resuming on its origin channel, as its login (a member's run on a team surface)",
   },

@@ -67,7 +67,11 @@ import {
   reactToMessage,
   sendMessage,
 } from '@mantle/telegram';
-import { TELEGRAM_NO_LOGIN_ERROR, TELEGRAM_OPERATOR_TOOLS, telegram_send } from './builtins-telegram';
+import {
+  TELEGRAM_NO_LOGIN_ERROR,
+  TELEGRAM_OPERATOR_TOOLS,
+  telegram_send,
+} from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const pair = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_pair')!;

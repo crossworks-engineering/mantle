@@ -153,7 +153,11 @@ function startTelegramLoop(channel: Channel): { stop: () => void } {
       }
       accountId = account.id;
       try {
-        const { delivered, updatesReceived } = await pollOnce(account, 25, telegramApprovalHandlers);
+        const { delivered, updatesReceived } = await pollOnce(
+          account,
+          25,
+          telegramApprovalHandlers,
+        );
         if (updatesReceived > 0) {
           console.log(
             `[channel-poll] ${channel.displayName} — ${updatesReceived} updates, ${delivered} delivered`,

@@ -35,7 +35,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (parsed.data.status === 'allowed') {
     return NextResponse.json(
       {
-        error: "Only the chat's own user pairs it: signed in, they enter the code the bot sent them.",
+        error:
+          "Only the chat's own user pairs it: signed in, they enter the code the bot sent them.",
         code: PAIR_WITH_CODE,
       },
       { status: 403 },

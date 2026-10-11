@@ -326,7 +326,11 @@ describe('runs resume turn — channel-routed delivery', () => {
     expect(h.recordTurn.mock.calls[0]![0]).toMatchObject({ channel: 'telegram' });
     expect(journal.recordedSteps()).toContain('deliver_telegram');
     // Only a chat paired to the run's own login (none: the anchor's), W7d.
-    expect(h.pairedChatCalls[0]).toMatchObject({ ownerId: 'owner-1', loginId: 'owner-1', telegramChatId: '555' });
+    expect(h.pairedChatCalls[0]).toMatchObject({
+      ownerId: 'owner-1',
+      loginId: 'owner-1',
+      telegramChatId: '555',
+    });
   });
 
   it('falls back to web-only when the chat is unpaired — the report is never lost', async () => {
