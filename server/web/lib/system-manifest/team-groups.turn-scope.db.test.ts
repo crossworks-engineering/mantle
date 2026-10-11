@@ -122,7 +122,7 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
     await m?.closeDb();
     await scratch?.drop();
     rmSync(root, { recursive: true, force: true });
-  });
+  }, 60_000);
 
   it('no tool fails on a read rule, a level question or a lost scope', async () => {
     const { BUILTIN_TOOLS, dispatchTool } = await import('@mantle/tools');

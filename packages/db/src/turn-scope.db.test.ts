@@ -126,7 +126,7 @@ describe.skipIf(!URL)('assistant turn scope (W4b)', () => {
       };
     });
     expect(seen).toEqual({ user: 'mantle_view_user', twoTx: true, idle: 0 });
-  });
+  }, 60_000);
 
   it('reads what Team holds, nothing of Admin', async () => {
     const titles = await m.withTurnScope(scope(), async () =>

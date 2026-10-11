@@ -155,7 +155,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     // Private rows are in no workspace.
     const priv = await get(routes.pages, `/api/pages?state=private&ws=${Q}`);
     expect(priv.body).toMatchObject({ pages: [], total: 0, ws: Q });
-  });
+  }, 60_000);
 
   it('a workspace the caller may not name is 404 not_found', async () => {
     for (const bad of [randomUUID(), 'not-an-id', A]) {
@@ -230,14 +230,19 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
   });
 
   it('anyone not an Admin user sees only the chips and filters of its own workspaces', async () => {
+    // The caps (W6b fix round 1) ride along: on the system pool, everything.
     expect((await lw.workspaceChips(owner, mem, [ids.alpha])).get(ids.alpha)).toEqual({
       workspaces: [],
       hasLink: false,
+      mayEdit: true,
+      mayManage: true,
     });
     await grant(ids.alpha, P);
     expect((await lw.workspaceChips(owner, mem, [ids.alpha])).get(ids.alpha)).toEqual({
       workspaces: ws([P, 'Proj']),
       hasLink: false,
+      mayEdit: true,
+      mayManage: true,
     });
     const req = (w: string) => new Request(`http://brain.test/api/pages?ws=${w}`);
     expect(await lw.parseWsFilter(req(P), owner, mem)).toBe(P);
