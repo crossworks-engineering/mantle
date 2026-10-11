@@ -1,8 +1,14 @@
--- Workspaces W7a fix rounds 2 and 3: the login that made a sandbox, a
--- heartbeat and an API tool.
+-- Workspaces W7a fix rounds 2 to 5 and the W7 integration fix 2: the login
+-- that made a sandbox, a heartbeat and an API tool, that configured a tool
+-- group, an agent, an AI worker and the embedding config, and that a
+-- heartbeat fire answered.
 --
--- Numbered 0271: 0268 (W7b), 0269 (W7c) and 0270 (W7d) are taken by the
--- W7 parts built alongside. It lands after them (journal when).
+-- Re-runnable: every column is added only when missing.
+--
+-- Numbered 0270 (W7 integration fix 2; built as 0271): migrate.ts skips a
+-- migration whose journal `when` is at or below the highest one applied, so
+-- this one takes the slot right after 0269 and W7d takes 0271 or later with
+-- a higher `when`.
 --
 -- Any Admin user whose settings area is on may use the sandbox tools, and a
 -- sandbox may mount a Files folder read-only (sandbox_create's inbox). So a
@@ -36,10 +42,40 @@
 -- when that is not the brain owner: a route with a base URL resolves its key
 -- only while that login holds the keys area. Null: the brain owner's.
 --
+-- A heartbeat fire (W7 integration fix 2) records the login it answered;
+-- see the last statement.
+--
 -- No foreign keys: a login that is gone leaves its rows to the rules above
 -- (a sandbox to the brain owner; a heartbeat pauses; a tool's or a
 -- connector's secrets stop resolving).
-SET LOCAL lock_timeout = '30s';
+SET LOCAL lock_timeout = '3s';
+--> statement-breakpoint
+-- Every table this migration alters in one statement with a short wait and a
+-- retry, like 0269: waiting on one while holding the others would stall
+-- every reader.
+DO $$
+DECLARE
+  attempt int := 0;
+BEGIN
+  LOOP
+    attempt := attempt + 1;
+    BEGIN
+      LOCK TABLE "public"."sandboxes", "public"."heartbeats", "public"."tools",
+                 "public"."tool_groups", "public"."agents", "public"."ai_workers",
+                 "public"."embedding_config", "public"."heartbeat_fires"
+        IN ACCESS EXCLUSIVE MODE;
+      EXIT;
+    EXCEPTION WHEN lock_not_available THEN
+      IF attempt >= 20 THEN
+        RAISE EXCEPTION '0270: the tables stayed busy for 20 attempts; run the migration again at a quieter time'
+          USING ERRCODE = 'lock_not_available';
+      END IF;
+      RAISE NOTICE '0270: tables busy (attempt %), retrying', attempt;
+      PERFORM pg_sleep(least(attempt, 5));
+    END;
+  END LOOP;
+END
+$$;
 --> statement-breakpoint
 ALTER TABLE sandboxes ADD COLUMN IF NOT EXISTS created_by uuid;
 --> statement-breakpoint
