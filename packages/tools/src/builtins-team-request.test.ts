@@ -11,7 +11,7 @@
  *    talking to), tagged `team-request`, with the member named in the body so
  *    a specialist knows who asked;
  *  - the inbound message id and its attachments come from the member's own
- *    thread (`listTeamThread` scoped to owner + contact), never from args, and
+ *    thread (`threadMessageById` scoped to owner + login, W7c), never from args, and
  *    the thread is not read at all when the turn has no inbound message;
  *  - a store failure is reported, not thrown.
  *
@@ -72,7 +72,7 @@ beforeEach(() => {
   vi.mocked(createTask).mockImplementation(
     async (_ownerId, args) => ({ id: 'task-new', title: args.title }) as never,
   );
-  vi.mocked(listTeamThread).mockResolvedValue([]);
+  vi.mocked(threadMessageById).mockResolvedValue(null);
   vi.mocked(countTeamRequestsFiled).mockResolvedValue(0);
 });
 
@@ -117,7 +117,7 @@ describe('team_request_create write path', () => {
 
   it('does not read the thread when the turn has no inbound message', async () => {
     outputOf(await request.handler(ARGS, teamCtx));
-    expect(listTeamThread).not.toHaveBeenCalled();
+    expect(threadMessageById).not.toHaveBeenCalled();
   });
 
   it("stamps the inbound message and its attachments from the member's own thread (by login)", async () => {
@@ -148,11 +148,11 @@ describe('team_request_create write path', () => {
   });
 
   it('records no attachments when the inbound message is not in the thread', async () => {
-    vi.mocked(listTeamThread).mockResolvedValue([{ id: 'other', attachments: [] }] as never);
+    vi.mocked(threadMessageById).mockResolvedValue(null);
     outputOf(
       await request.handler(ARGS, {
         ownerId: 'owner-1',
-        surface: { kind: 'team', contactId: 'contact-9', inboundMessageId: 'gone' },
+        surface: { kind: 'team', loginId: 'login-9', inboundMessageId: 'gone' },
       }),
     );
     const { args, teamRequest } = written();
