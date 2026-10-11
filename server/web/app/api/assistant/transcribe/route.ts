@@ -21,7 +21,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getChatLoginOr401 } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
-import { getDefaultWorker } from '@mantle/db';
+import { asSystem, getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
@@ -59,7 +59,9 @@ export async function POST(req: Request) {
   const mimeType = file.type && file.type.length > 0 ? file.type : 'audio/webm';
   const language = (formData.get('language') as string | null) ?? undefined;
 
-  const worker = await getDefaultWorker(login.ownerId, 'stt');
+  // The brain's STT worker and its key: system configuration the workspace
+  // role does not read.
+  const worker = await asSystem(() => getDefaultWorker(login.ownerId, 'stt'), 'rule-in-query');
   if (!worker?.apiKeyId) {
     return NextResponse.json(
       {
@@ -69,7 +71,8 @@ export async function POST(req: Request) {
       { status: 412 },
     );
   }
-  const apiKey = await getApiKeyById(worker.apiKeyId);
+  const keyId = worker.apiKeyId;
+  const apiKey = await asSystem(() => getApiKeyById(keyId), 'rule-in-query');
   if (!apiKey) {
     return NextResponse.json(
       { error: `STT worker '${worker.slug}' api_key could not be decrypted.` },

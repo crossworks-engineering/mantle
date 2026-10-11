@@ -28,10 +28,11 @@ vi.mock('@mantle/content', () => ({
   listTeamAccess: vi.fn(),
   listTeamMemberActivity: vi.fn(),
   listTeamThread: vi.fn(),
+  threadMessageById: vi.fn(),
   nodeUrl: (id: string) => `https://brain.test/n/${id}`,
 }));
 
-import { countTeamRequestsFiled, createTask, listTeamThread } from '@mantle/content';
+import { countTeamRequestsFiled, createTask, threadMessageById } from '@mantle/content';
 import { TEAM_TOOLS, TEAM_REQUEST_TAG } from './builtins-team';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -119,14 +120,15 @@ describe('team_request_create write path', () => {
     expect(listTeamThread).not.toHaveBeenCalled();
   });
 
-  it('stamps the inbound message and its attachments from the member thread, scoped to owner + contact', async () => {
-    vi.mocked(listTeamThread).mockResolvedValue([
-      { id: 'm0', attachments: [{ nodeId: 'someone-elses' }] },
-      { id: 'm1', attachments: [{ nodeId: 'n1' }, { nodeId: '' }, { name: 'no node' }] },
-    ] as never);
+  it("stamps the inbound message and its attachments from the member's own thread (by login)", async () => {
+    // W7c (0269): the member's own row of its thread, by owner + login + id.
+    vi.mocked(threadMessageById).mockResolvedValue({
+      id: 'm1',
+      attachments: [{ nodeId: 'n1' }, { nodeId: '' }, { name: 'no node' }],
+    } as never);
     const ctx: ToolHandlerContext = {
       ownerId: 'owner-1',
-      surface: { kind: 'team', contactId: 'contact-9', contactName: 'Sam', inboundMessageId: 'm1' },
+      surface: { kind: 'team', loginId: 'login-9', contactName: 'Sam', inboundMessageId: 'm1' },
     };
     const setMeta = vi.fn();
     outputOf(
@@ -135,14 +137,14 @@ describe('team_request_create write path', () => {
         step: { setMeta, setOutput: vi.fn(), addTokens: vi.fn(), addCost: vi.fn() },
       }),
     );
-    expect(listTeamThread).toHaveBeenCalledWith('owner-1', 'contact-9', { limit: 200 });
+    expect(threadMessageById).toHaveBeenCalledWith('owner-1', 'login-9', 'm1');
     const { args, teamRequest } = written();
     expect(teamRequest.threadMessageId).toBe('m1');
     expect(teamRequest.attachments).toEqual(['n1']);
     expect(args.body).toContain('**Attachments:**');
     expect(args.body).toContain('[attached file](https://brain.test/n/n1)');
     expect(args.body).not.toContain('someone-elses');
-    expect(setMeta).toHaveBeenCalledWith({ contactId: 'contact-9', attachments: 1 });
+    expect(setMeta).toHaveBeenCalledWith({ contactId: undefined, attachments: 1 });
   });
 
   it('records no attachments when the inbound message is not in the thread', async () => {

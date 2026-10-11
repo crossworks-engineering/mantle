@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getChatThread } from '@mantle/db';
+import { asSystem, getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { summarizeChatThread } from '@mantle/runtime/agent';
 import { getChatLoginOr401 } from '@/lib/auth';
@@ -25,7 +25,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
   }
   try {
-    const updated = await summarizeChatThread(login.ownerId, id, login.loginId);
+    const updated = await asSystem(() => summarizeChatThread(login.ownerId, id, login.loginId), 'rule-in-query');
     return NextResponse.json({ thread: await chatThreadRow(login.ownerId, updated ?? thread) });
   } catch (err) {
     console.warn('[api/assistant/threads] summarize failed:', err);

@@ -4,6 +4,7 @@
  * errors to responses, so the routes stay thin and agree.
  */
 import { NextResponse } from '@/server/http-compat';
+import { asSystem } from '@mantle/db';
 import {
   ChatArchiveBusyError,
   ChatThreadNotFoundError,
@@ -21,7 +22,9 @@ export async function archiveResponse(o: {
   continueFrom?: string | null;
 }): Promise<Response> {
   try {
-    const r = await archiveAgentChat(o);
+    // The login's own thread, named here: the archive and its summary note
+    // are written on the system pool (the workspace role writes neither).
+    const r = await asSystem(() => archiveAgentChat(o), 'rule-in-query');
     const body: ChatArchiveResponse = {
       archived: r.archived ? await chatThreadRow(o.ownerId, r.archived) : null,
       open: r.open ? await chatThreadRow(o.ownerId, r.open) : null,

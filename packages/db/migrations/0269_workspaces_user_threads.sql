@@ -230,13 +230,30 @@ ON CONFLICT ("id") DO NOTHING;
 --> statement-breakpoint
 
 -- A team-portal contact's rows (no login): history only, never a thread.
+-- Columns spelled out (not LIKE): a copied NOT NULL keeps team_messages'
+-- constraint names, which a restore then hands to the wrong table.
 CREATE TABLE IF NOT EXISTS "public"."archive_team_messages" (
-  LIKE "public"."team_messages" INCLUDING DEFAULTS,
-  "archived_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("id")
+  "id" uuid PRIMARY KEY,
+  "owner_id" uuid NOT NULL,
+  "contact_id" uuid,
+  "direction" text NOT NULL,
+  "text" text NOT NULL,
+  "agent_id" uuid,
+  "model" text,
+  "channel" text NOT NULL,
+  "attachments" jsonb NOT NULL DEFAULT '[]'::jsonb,
+  "trace_id" uuid,
+  "status" text NOT NULL,
+  "error" text,
+  "login_id" uuid,
+  "used_private" boolean NOT NULL DEFAULT false,
+  "created_at" timestamp with time zone NOT NULL,
+  "archived_at" timestamp with time zone NOT NULL DEFAULT now()
 );
 --> statement-breakpoint
 ALTER TABLE "public"."archive_team_messages" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+REVOKE ALL ON "public"."archive_team_messages" FROM PUBLIC;
 --> statement-breakpoint
 INSERT INTO "public"."archive_team_messages"
   ("id", "owner_id", "contact_id", "direction", "text", "agent_id", "model", "channel",

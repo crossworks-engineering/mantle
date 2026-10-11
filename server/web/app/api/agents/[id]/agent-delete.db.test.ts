@@ -74,7 +74,7 @@ describe.skipIf(!URL)('DELETE /api/agents/:id conversation handling on Postgres'
          ARRAY['conversation-digest', ${`agent:${slug}`}]::text[],
          ${JSON.stringify({ kind: 'conversation_digest', agent_id: id, agent_slug: slug })}::jsonb)`);
     await m.db.execute(sqlTag`
-      insert into assistant_read_cursors (owner_id, agent_id) values (${owner}, ${id})`);
+      insert into assistant_read_cursors (owner_id, agent_id, login_id) values (${owner}, ${id}, ${owner})`);
     return id;
   };
 

@@ -70,7 +70,7 @@ import {
   memberMayWrite,
   routeClass,
 } from './route-scope';
-import { isAnyLoginRoute, isChatLoginRoute } from './any-login-routes';
+import { isAnyLoginRoute } from './any-login-routes';
 import {
   SESSION_COOKIE_NAME,
   buildAssetToken,
@@ -1286,19 +1286,20 @@ export type ChatLogin = {
 /**
  * The chat gate (W7c, the owner's answer of 2026-10-11): every login chats
  * with the assistants of its workspaces, each in its own thread, and reads
- * only its own threads. An Admin user's request runs as on the owner routes
- * (route class `self`: the system pool, audited); a member's or a client's
- * runs on the system pool for the login's own things ('login-self'), audited
- * as its own gate audits (a client always, a member's API-key writes). Every
- * chat helper names the login (lib/assistant.ts, lib/assistant-chat.ts);
- * which assistant a login may reach is decided there, per route.
+ * only its own threads. The chat routes are any-login routes
+ * (CHAT_LOGIN_ROUTES): a read runs in the login's scope, where row security
+ * holds the messages and threads to its own login (0269); a member's or a
+ * client's write runs there too, an Admin user's write on the system pool
+ * (anyLoginScope). Every chat helper also names the login (lib/assistant.ts,
+ * lib/assistant-chat.ts), and the few writes and bookkeeping reads the
+ * workspace role has no grant for leave the scope by name (asSystem
+ * 'rule-in-query'). Audited as each role's own gate audits.
  */
 export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  await anyLoginScope(res);
   if (res.kind === 'admin') {
-    const refused = await adminRouteGate(res.user.actor.id);
-    if (refused) return refused;
     await auditMutation(res.user);
     return {
       kind: 'admin',
@@ -1310,7 +1311,6 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
       email: res.user.actor.email,
     };
   }
-  if (hasRequestSlot()) noteRequestSystem('login-self');
   const login = res.kind === 'member' ? res.member : res.client;
   const user: SessionUser = {
     id: login.anchorId,
@@ -1347,7 +1347,7 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
 async function anyLoginScope(res: Resolved): Promise<void> {
   const { method, pattern } = routeOfRequest();
   if (!hasRequestSlot() || pattern === null) return;
-  if (!isAnyLoginRoute(method, pattern) || isChatLoginRoute(method, pattern)) {
+  if (!isAnyLoginRoute(method, pattern)) {
     noteRequestSystem('login-self');
     return;
   }

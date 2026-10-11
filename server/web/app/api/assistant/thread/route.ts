@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getChatLoginOr401 } from '@/lib/auth';
 import { recentAssistantMessages } from '@/lib/assistant';
 import { listChatAgents, resolveChatAgent } from '@/lib/assistant-chat';
-import { openChatThread } from '@mantle/db';
+import { asSystem, openChatThread } from '@mantle/db';
 import { getAssignedAgentSummary } from '@/lib/agents';
 import { chatThreadRow, threadRange } from '@/lib/chat-threads';
 import { getAgentExperience } from '@/lib/agent-experience';
@@ -33,7 +33,9 @@ export async function GET(req: Request) {
   const [agents, agent, assigned] = await Promise.all([
     listChatAgents(login),
     resolveChatAgent(login, slug),
-    isAdmin ? getAssignedAgentSummary(login.ownerId, login.loginId) : null,
+    isAdmin
+      ? asSystem(() => getAssignedAgentSummary(login.ownerId, login.loginId), 'rule-in-query')
+      : null,
   ]);
   const open = agent ? await openChatThread(login.ownerId, agent.id, login.loginId) : null;
   const [messages, experience, thread] = await Promise.all([
@@ -41,7 +43,9 @@ export async function GET(req: Request) {
       ? recentAssistantMessages(login.ownerId, agent.id, login.loginId, 100, threadRange(open))
       : [],
     // The header shows the active agent's level badge (an Admin user's view).
-    agent && isAdmin ? getAgentExperience(login.ownerId, agent.id) : null,
+    agent && isAdmin
+      ? asSystem(() => getAgentExperience(login.ownerId, agent.id), 'rule-in-query')
+      : null,
     open ? chatThreadRow(login.ownerId, open) : null,
   ]);
   const agentOut = agent
