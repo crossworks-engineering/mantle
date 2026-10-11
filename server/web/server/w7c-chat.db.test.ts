@@ -293,7 +293,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
-  });
+  }, 60_000);
 
   // ── H1 ────────────────────────────────────────────────────────────────
 
