@@ -548,8 +548,9 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // scope, and leave it for an Admin-area tool after its area check
     // ('admin-area'), a provider key's id ('provider-key'), contact sharing
     // dates ('contact-sharing'), login names on rows already read
-    // ('login-names') and the owner's preferences ('owner-preferences').
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(18);
+    // ('login-names') and the owner's preferences ('owner-preferences'). 19: the search vocabulary's table-wide
+    // statistics ('lexeme-stats'), hidden from a role under row security.
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(19);
   });
 
   it('each W7a exit names its own reason', () => {
@@ -559,6 +560,7 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
       'contact-sharing',
       'login-names',
       'owner-preferences',
+      'lexeme-stats',
     ]) {
       expect(AS_SYSTEM_TURN_REASONS).toContain(r);
     }

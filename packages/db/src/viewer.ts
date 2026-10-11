@@ -871,6 +871,10 @@ export function runInSystemTx<T>(
  *  - `owner-preferences`: the brain owner's profile preferences (time zone,
  *    purpose, house style) in a scope that holds Admin, for the Admin
  *    assistant answering another Admin user (profile-preferences.ts, W7a).
+ *  - `lexeme-stats`: ANALYZE's table-wide statistics of the search
+ *    vocabulary (pg_stats most_common_elems and their frequencies, the
+ *    table's size), which Postgres hides from a role under row security;
+ *    planner statistics, never a row (@mantle/search keyword-query.ts, W7a).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -894,6 +898,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'contact-sharing',
   'login-names',
   'owner-preferences',
+  'lexeme-stats',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 
