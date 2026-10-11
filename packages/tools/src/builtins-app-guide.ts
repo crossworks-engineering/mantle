@@ -79,8 +79,8 @@ export function findGuideSections(sections: GuideSection[], query: string): Guid
   return sections.filter((s) => norm(s.heading).includes(q));
 }
 
-/** The guide, whole or one section: shared with `my_app_guide` (a member's
- *  own MCP, team apps Phase 3). */
+/** The guide, whole or one section (every login's MCP since W7b; the
+ *  member-only my_app_guide was retired). */
 export async function appGuideHandler(input: Record<string, unknown>): Promise<ToolHandlerResult> {
   const md = await readGuide();
   if (md === null) {

@@ -350,8 +350,8 @@ export function registerMantleTools(
   // Renders a page/note → .docx or a table → .xlsx into /files/auto-filed/exports and returns
   // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
   registerBuiltinTools(EXPORT_TOOLS);
-  // Levels (member logins Phase 0b): the owner sets item / agent / tool-group
-  // levels from Claude before the UI exists.
+  // Who reads an item (its grants); access_set only explains that nothing
+  // has a level any more (W7b).
   registerBuiltinTools(ACCESS_TOOLS);
 
   // ─── Spreadsheet authoring ───────────────────────────────────────────────────
