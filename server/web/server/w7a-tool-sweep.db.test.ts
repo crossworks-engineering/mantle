@@ -14,7 +14,15 @@
  *  - in a scope that does not hold the Admin workspace (the Team
  *    assistant's turn; an Admin-role login's MCP once it is no user of
  *    Admin), every adminOnly or ownerOnly tool, and every tool of an Admin
- *    area, is refused before it runs.
+ *    area, is refused before it runs;
+ *  - (W7a fix round 1) every call either succeeds or fails with an EXPECTED
+ *    reason (input, not found, offline, missing context, an item refusal);
+ *    anything else fails the sweep, and so does a call that times out. The
+ *    MCP sweep runs as the anchor AND as a second Admin login;
+ *  - (W7a fix round 1, M2 and H1) every write tool that names an item,
+ *    pointed at an item shared to Admin with Read only, or at another
+ *    user's private item, is refused (in an Admin turn and on MCP, as both
+ *    logins), and none of those items changes.
  *
  * Arguments are made from each tool's input schema (its required fields,
  * ids of items the sweep made first). Network is stubbed: nothing leaves
@@ -72,8 +80,49 @@ const BAD =
 const ITEM_WS =
   /not allowed to (add items to that folder|delete this item|move this item)|placing this app adds a workspace you do not moderate|a node's login can only be your own/i;
 
-/** Tools that take a long road outside the box even when stubbed. */
+/** Tools that take a long road outside the box even when stubbed. A call
+ *  that runs this long fails the sweep (W7a fix round 1). */
 const CALL_TIMEOUT_MS = 30_000;
+
+/** The refusals of a write to an item the scope may not change (W7a fix
+ *  round 1, M2: @mantle/db item-rights.ts). */
+const ITEM_RIGHTS =
+  /You cannot change this item in your workspaces|read-only copy of an accepted item|is not in your workspaces: it is in a workspace you are not in/;
+
+/**
+ * Why a sweep call may fail (W7a fix round 1: no catch-all). Each class
+ * names what the call lacked: the sweep's made-up arguments, an item it did
+ * not make, a service that is off in the test, a turn context it is not
+ * in, or an item refusal. Any other error fails the sweep.
+ */
+const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
+  [
+    'input',
+    /is required|must be|must match|must name|must decode|pass (one of|either|content_|a branch id)|Provide either|nothing to (change|update)|needs at least|invalid|non-empty|specify a destination|unknown (pool|worker)|not a recognised|Undefined symbol|already exists in|is not a spreadsheet|is a binary file|not an image|no top-level heading|no h1 headings|not a \.mantleapp|is not allowlisted|validation|expected|code must be|is not deleted|from must be|\brequired\b|pass `|pass folder_id|already exists|not empty|no tab '|is not under files|has no mantleapp\.json|is not in Recently deleted/i,
+  ],
+  [
+    'not found',
+    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured)|no such message|no entry|not found or already decided|no indexed passages/i,
+  ],
+  ['wrong type', /is an? \w+, not an? \w+ . pass/],
+  [
+    'offline',
+    /offline in the W7a|cannot resolve host|returned 503|failed: 503|not enabled on this box|no \w+ API key configured|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
+  ],
+  [
+    'context',
+    /No one to act for|only runs on the team surface|can only run inside an agent turn|no heartbeat context|missing parent agent context|No enabled assistant agent|made by Mantle and found by its path/i,
+  ],
+  ['item rights', ITEM_RIGHTS],
+  ['item workspace', ITEM_WS],
+];
+
+/** The class of an expected failure, or null (the sweep fails on it). */
+const expected = (text: string): string | null => {
+  if (BAD.test(text) && !ITEM_WS.test(text)) return null;
+  for (const [name, re] of EXPECTED) if (re.test(text)) return name;
+  return null;
+};
 
 const isDelete = (slug: string) =>
   /(_delete|_remove|_rm|_unshare|_cancel|_discard_draft|_reject)$/.test(slug) ||
@@ -88,7 +137,7 @@ const FAMILY_TYPE: ReadonlyArray<readonly [RegExp, string]> = [
   [/^table/, 'table'],
   [/^sheet/, 'table'],
   [/^file/, 'file'],
-  [/^folder|^tree_folder/, 'folder'],
+  [/^folder|^tree_folder/, 'branch'],
   [/^draw/, 'draw'],
   [/^app|^my_app/, 'app'],
   [/^task/, 'task'],
@@ -117,9 +166,16 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
   const owner = randomUUID(); // the anchor
   const admin2 = randomUUID(); // an Admin-role login, later no user of Admin
   const mem = randomUUID();
+  /** Items homed in the member's private workspace (W7a fix round 1):
+   *  shared to Admin with Read only, and private (no grant), by type. */
+  const readOnly = new Map<string, string>();
+  const privateItems = new Map<string, string>();
   const tag = `w7a${randomUUID().slice(0, 6)}`;
   let adminWs = '';
   let teamWs = '';
+  /** Each sweep pass names what it makes apart (a create never meets the
+   *  same name from an earlier pass). */
+  let pass = '';
   /** Item ids by node type, made before the sweep. */
   const ids = new Map<string, string>();
 
@@ -146,9 +202,9 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
       if (s?.format === 'date-time' || /(_at|At|date|since|until|start|end)$/i.test(key)) {
         return new Date().toISOString();
       }
-      if (/slug/i.test(key)) return `${tag}-${slug.replace(/_/g, '-')}`;
+      if (/slug/i.test(key)) return `${tag}${pass}-${slug.replace(/_/g, '-')}`;
       if (/sql|query/i.test(key)) return 'select 1';
-      return `${tag} ${slug}`;
+      return `${tag}${pass} ${slug}`;
     }
     if (type === 'number' || type === 'integer') return s?.minimum ?? 1;
     if (type === 'boolean') return false;
@@ -225,7 +281,85 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     teamWs = ws.find((w) => w.key === 'team')!.id;
     const files = await import('@mantle/files');
     await m.asSystem(() => files.ensureFilesRootBranch(owner));
+
+    // Items of another user (the member's private workspace): one set shared
+    // to Admin with Read only, one set private (W7a fix round 1).
+    const c = await import('@mantle/content');
+    const memWs = (
+      await x<{ ws: string }>(
+        sql`select "public"."mantle_ws_private_workspace"(${mem}::uuid)::text as ws`,
+      )
+    )[0]!.ws;
+    const makeAll = async (label: string): Promise<Map<string, string>> => {
+      const made = new Map<string, string>();
+      await m.asSystem(() =>
+        m.withCreateHome({ createWs: memWs, privateWs: null, quiet: true }, async () => {
+          made.set('page', (await c.createPage(owner, { title: `${tag} ${label} page` })).id);
+          made.set(
+            'note',
+            (await c.createNote(owner, { title: `${tag} ${label} note`, content: 'x' })).id,
+          );
+          made.set('task', (await c.createTask(owner, { title: `${tag} ${label} task` })).id);
+          made.set(
+            'event',
+            (
+              await c.createEvent(owner, {
+                title: `${tag} ${label} event`,
+                startsAt: new Date().toISOString(),
+              })
+            ).id,
+          );
+          made.set('table', (await c.createTable(owner, { title: `${tag} ${label} table` })).id);
+          const folder = await files.createFolder({
+            ownerId: owner,
+            parentPath: 'files',
+            slug: `${tag}-${label}-dir`,
+          });
+          made.set('branch', folder.id);
+          const file = await files.upsertFile({
+            ownerId: owner,
+            parentPath: 'files',
+            filename: `${tag}-${label}.txt`,
+            bytes: Buffer.from(`${label} secret bytes`),
+          });
+          made.set('file', file.id);
+        }),
+      );
+      return made;
+    };
+    for (const [k, v] of await makeAll('ro')) readOnly.set(k, v);
+    for (const [k, v] of await makeAll('private')) privateItems.set(k, v);
+    for (const id of readOnly.values()) {
+      await m.asSystem(() =>
+        m.withHeads([id], 'update', async (tx) => {
+          await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+                               values (${id}, ${adminWs}, false) on conflict do nothing`);
+        }),
+      );
+    }
   }, 240_000);
+
+  /** What must not change of the other user's items. */
+  const otherItemsState = async () => {
+    const all = `{${[...readOnly.values(), ...privateItems.values()].join(',')}}`;
+    return JSON.stringify(
+      await x(sql`select n.id::text, n.updated_at, n.title, n.data, n.home_ws, n.superseded_by,
+                         n.salience,
+                         (select count(*) from shares s where s.node_id = n.id) as shares,
+                         (select count(*) from item_grants g where g.node_id = n.id) as grants
+                    from nodes n where n.id = any(${all}::uuid[]) order by n.id`),
+    );
+  };
+
+  /** The item type a write tool's id argument names, for the other user's
+   *  items (null: a kind no other user holds here). */
+  const otherTypeFor = (slug: string): string | null => {
+    if (/^(content_supersede|access_set|process_extraction|node_share|node_unshare)$/.test(slug)) {
+      return 'page';
+    }
+    for (const [re, type] of FAMILY_TYPE) if (re.test(slug)) return type;
+    return null;
+  };
 
   afterAll(async () => {
     vi.unstubAllGlobals();
@@ -243,6 +377,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
   };
 
   it('every builtin in an Admin assistant turn: no permission error, no lost scope', async () => {
+    pass = 't';
     const defs = ordered(t.listBuiltins());
     expect(defs.length).toBeGreaterThan(150);
     const bad: string[] = [];
@@ -273,13 +408,16 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
           { ownerLoginId: owner },
         ),
       );
-      if (res === 'timeout') continue;
+      if (res === 'timeout') {
+        bad.push(`${def.slug}: timed out after ${CALL_TIMEOUT_MS} ms`);
+        continue;
+      }
       if (res.ok) ran += 1;
       else errs.push(`${def.slug}: ${String(res.error).slice(0, 100)}`);
       if (!res.ok) {
         const e = String(res.error);
-        if ((BAD.test(e) && !ITEM_WS.test(e)) || e.startsWith('THROWN')) {
-          bad.push(`${def.slug}: ${e.slice(0, 240)}`);
+        if (e.startsWith('THROWN') || !expected(e)) {
+          bad.push(`${def.slug}: unexpected ${e.slice(0, 240)}`);
         }
       }
       for (const d of seen.db.splice(0)) {
@@ -295,72 +433,189 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     expect([...scopes]).toEqual([`assistant:${adminWs}`]);
   }, 1_200_000);
 
-  it('every tool of the Admin MCP surface: no permission error, no protocol error', async () => {
-    await refreshIds();
+  it.each([
+    ['the anchor', () => owner],
+    ['a second Admin login', () => admin2],
+  ])(
+    'every tool of the Admin MCP surface as %s: succeeds or an expected refusal',
+    async (_who, login) => {
+      pass = login() === owner ? 'o' : 'l';
+      await refreshIds();
+      const ls = await import('@mantle/mcp-core');
+      const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+      const { Client } = await import('@modelcontextprotocol/client');
+      const logged: string[] = [];
+      const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        logged.push(args.map((a) => (typeof a === 'string' ? a : inspect(a))).join(' '));
+      });
+      try {
+        const caller = {
+          role: 'admin' as const,
+          anchorId: owner,
+          loginId: login(),
+          via: 'oauth' as const,
+          write: true,
+        };
+        const server = new McpServer({ name: 'test', version: '0' });
+        ls.registerPreparedTools(server, await ls.prepareCallerTools(caller));
+        const [a, b] = InMemoryTransport.createLinkedPair();
+        const c = new Client({ name: 'test-client', version: '0' });
+        await Promise.all([server.connect(a), c.connect(b)]);
+        const tools = ordered(
+          (await c.listTools()).tools.map((tool) => ({
+            slug: tool.name,
+            schema: tool.inputSchema as Schema,
+          })),
+        );
+        expect(tools.length).toBeGreaterThan(150);
+        const bad: string[] = [];
+        for (const tool of tools) {
+          if (tool.slug === 'run_terminal') continue;
+          logged.length = 0;
+          let thrown: unknown = null;
+          const reply = await timed(
+            c
+              .callTool({ name: tool.slug, arguments: argsFor(tool.schema, tool.slug) })
+              .catch((err: unknown) => {
+                thrown = err;
+                return null;
+              }),
+          );
+          if (reply === 'timeout') {
+            bad.push(`${tool.slug}: timed out after ${CALL_TIMEOUT_MS} ms`);
+            continue;
+          }
+          const r = (reply ?? {}) as { isError?: boolean; content?: { text?: string }[] };
+          const text = (r.content ?? []).map((p) => p.text ?? '').join(' ');
+          if (BAD.test(text) && !ITEM_WS.test(text)) {
+            bad.push(`${tool.slug}: reply ${text.slice(0, 200)}`);
+          } else if (reply && r.isError && !expected(text)) {
+            bad.push(`${tool.slug}: unexpected ${text.slice(0, 200)}`);
+            if (process.env.W7A_SWEEP_LOG)
+              console.info(tool.slug, logged.join('\n').slice(0, 2000));
+          }
+          if (thrown && !/validation|invalid|required|expected/i.test(String(thrown))) {
+            bad.push(`${tool.slug}: protocol ${String(thrown).slice(0, 200)}`);
+          }
+          for (const line of logged) {
+            if (BAD.test(line) && !ITEM_WS.test(line)) {
+              bad.push(`${tool.slug}: ${line.replace(/\s+/g, ' ').slice(0, 240)}`);
+              break;
+            }
+          }
+        }
+        await c.close();
+        expect(bad).toEqual([]);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+    1_200_000,
+  );
+
+  it('write tools on another user’s Read-only or private item are refused; nothing changes', async () => {
+    const before = await otherItemsState();
+    const writes = t.listBuiltins().filter((d) => {
+      const targets = t.itemWriteTargetsOf(d.slug);
+      return Array.isArray(targets) && otherTypeFor(d.slug) !== null;
+    });
+    /** A write that only needs to read its item (process_extraction, an
+     *  app's copy) runs on a Read-only item; refused only when private. */
+    const needsRead = new Set(
+      writes
+        .filter((d) =>
+          (t.itemWriteTargetsOf(d.slug) as readonly { need: string }[]).every(
+            (x) => x.need === 'read',
+          ),
+        )
+        .map((d) => d.slug),
+    );
+    expect(writes.length).toBeGreaterThan(40);
+    const argsAt = (def: { slug: string; inputSchema?: unknown }, id: string): Json => {
+      const input = argsFor((def.inputSchema ?? {}) as Schema, def.slug);
+      const targets = t.itemWriteTargetsOf(def.slug) as readonly { param: string }[];
+      for (const { param } of targets) input[param] = param.endsWith('_ids') ? [id] : id;
+      return input;
+    };
+    const notRefused: string[] = [];
+    const check = (where: string, slug: string, ok: boolean, text: string, want: RegExp) => {
+      if (ok || !want.test(text)) {
+        notRefused.push(`${where} ${slug}: ${ok ? 'ran' : text.slice(0, 160)}`);
+      }
+    };
+    // Read only: the item rights refusal. Private: not found (its
+    // precondition, in the scope) or not in the workspaces.
+    const RO_WANT = ITEM_RIGHTS;
+    const PRIVATE_WANT = /not found|is not in your workspaces/;
+    const surface = { kind: 'web' as const, loginId: owner };
+    for (const def of writes) {
+      const type = otherTypeFor(def.slug)!;
+      for (const [items, want, label] of [
+        [readOnly, RO_WANT, 'turn read-only'],
+        [privateItems, PRIVATE_WANT, 'turn private'],
+      ] as const) {
+        const id = items.get(type);
+        if (!id || (items === readOnly && needsRead.has(def.slug))) continue;
+        const res = await timed(
+          rt.withAgentScope(
+            { audience: 'admin', workspaceId: adminWs },
+            () => t.dispatchTool(toolRow(def), argsAt(def, id), { ownerId: owner, surface }),
+            { ownerLoginId: owner },
+          ),
+        );
+        if (res === 'timeout') notRefused.push(`${label} ${def.slug}: timed out`);
+        else check(label, def.slug, res.ok, res.ok ? '' : String(res.error), want);
+      }
+    }
+    // On the Admin MCP surface, as the anchor and as a second Admin login.
     const ls = await import('@mantle/mcp-core');
     const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
     const { Client } = await import('@modelcontextprotocol/client');
-    const logged: string[] = [];
-    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-      logged.push(args.map((a) => (typeof a === 'string' ? a : inspect(a))).join(' '));
-    });
-    try {
-      const caller = {
-        role: 'admin' as const,
-        anchorId: owner,
-        loginId: owner,
-        via: 'oauth' as const,
-        write: true,
-      };
+    for (const login of [owner, admin2]) {
       const server = new McpServer({ name: 'test', version: '0' });
-      ls.registerPreparedTools(server, await ls.prepareCallerTools(caller));
+      ls.registerPreparedTools(
+        server,
+        await ls.prepareCallerTools({
+          role: 'admin',
+          anchorId: owner,
+          loginId: login,
+          via: 'oauth',
+          write: true,
+        }),
+      );
       const [a, b] = InMemoryTransport.createLinkedPair();
       const c = new Client({ name: 'test-client', version: '0' });
       await Promise.all([server.connect(a), c.connect(b)]);
-      const tools = ordered(
-        (await c.listTools()).tools.map((tool) => ({
-          slug: tool.name,
-          schema: tool.inputSchema as Schema,
-        })),
-      );
-      expect(tools.length).toBeGreaterThan(150);
-      const bad: string[] = [];
-      for (const tool of tools) {
-        if (tool.slug === 'run_terminal') continue;
-        logged.length = 0;
-        let thrown: unknown = null;
-        const reply = await timed(
-          c
-            .callTool({ name: tool.slug, arguments: argsFor(tool.schema, tool.slug) })
-            .catch((err: unknown) => {
-              thrown = err;
-              return null;
-            }),
-        );
-        const text =
-          reply && reply !== 'timeout'
-            ? ((reply as { content?: { text?: string }[] }).content ?? [])
-                .map((p) => p.text ?? '')
-                .join(' ')
-            : '';
-        if (BAD.test(text) && !ITEM_WS.test(text)) {
-          bad.push(`${tool.slug}: reply ${text.slice(0, 200)}`);
-        }
-        if (thrown && !/validation|invalid|required|expected/i.test(String(thrown))) {
-          bad.push(`${tool.slug}: protocol ${String(thrown).slice(0, 200)}`);
-        }
-        for (const line of logged) {
-          if (BAD.test(line) && !ITEM_WS.test(line)) {
-            bad.push(`${tool.slug}: ${line.replace(/\s+/g, ' ').slice(0, 240)}`);
-            break;
+      const listed = new Set((await c.listTools()).tools.map((tool) => tool.name));
+      for (const def of writes) {
+        if (!listed.has(def.slug)) continue;
+        const type = otherTypeFor(def.slug)!;
+        for (const [items, want, label] of [
+          [readOnly, RO_WANT, 'mcp read-only'],
+          [privateItems, PRIVATE_WANT, 'mcp private'],
+        ] as const) {
+          const id = items.get(type);
+          if (!id || (items === readOnly && needsRead.has(def.slug))) continue;
+          const reply = await timed(
+            c.callTool({ name: def.slug, arguments: argsAt(def, id) }).catch((err: unknown) => ({
+              isError: true,
+              content: [{ text: `THROWN ${String(err)}` }],
+            })),
+          );
+          if (reply === 'timeout') {
+            notRefused.push(`${label} ${def.slug}: timed out`);
+            continue;
           }
+          const r = reply as { isError?: boolean; content?: { text?: string }[] };
+          const text = (r.content ?? []).map((p) => p.text ?? '').join(' ');
+          const who = login === owner ? 'anchor' : 'admin2';
+          check(`${label} ${who}`, def.slug, r.isError !== true, text, want);
         }
       }
       await c.close();
-      expect(bad).toEqual([]);
-    } finally {
-      spy.mockRestore();
     }
+    expect(notRefused).toEqual([]);
+    expect(await otherItemsState()).toBe(before);
   }, 1_200_000);
 
   it('outside Admin: every adminOnly, ownerOnly or Admin-area tool is refused', async () => {

@@ -758,8 +758,16 @@ describe('the request scope (workspaces W6a)', () => {
     expect(v.narrowsWorkspaceScope(outer, { kind: 'user', loginId: W1, ws: [W1], modWs: [] })).toBe(
       false,
     );
+    // An assistant turn inside the login's scope answers that login (W7a
+    // fix round 1, M1): another login, or none, would take other areas.
+    expect(
+      v.narrowsWorkspaceScope(outer, { kind: 'assistant', loginId: A, ws: [W2], modWs: [] }),
+    ).toBe(true);
     expect(
       v.narrowsWorkspaceScope(outer, { kind: 'assistant', loginId: null, ws: [W2], modWs: [] }),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      v.narrowsWorkspaceScope(outer, { kind: 'assistant', loginId: W1, ws: [W2], modWs: [] }),
+    ).toBe(false);
   });
 });

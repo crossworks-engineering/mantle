@@ -13,6 +13,20 @@
  *    reads its own private item there, not another user's.
  *  - MANTLE_ADMIN_READS=system: both paths behave as before (the system
  *    pool, every item).
+ *  - W7a fix round 1, on MCP as a second Admin login L (Admin, not a
+ *    Moderator, its keys area off) and as the anchor:
+ *    H1: sandbox_import, peer_file_copy and email_page (includeLink) on
+ *    another user's private file or page are refused or not found and
+ *    nothing leaves (no outbound call, no link); sandbox_export onto a
+ *    same-named file the scope cannot edit is refused and the file is
+ *    unchanged.
+ *    M1: ask_responder's nested Admin turn (no login named) answers L, not
+ *    the anchor: L's areas (keys off), and it still reads Admin.
+ *    M2: update tools on a Read-only shared item are refused in an Admin
+ *    turn and on MCP, the item unchanged; on an editable item they work.
+ *    M3: run_terminal needs the settings area.
+ *    L1, L2, L5: process_extraction, the owner preferences and
+ *    unsupersedeNode never reach outside the scope.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w7a-admin-scope.db.test.ts
  */
@@ -35,11 +49,19 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
   let dir = '';
   const owner = randomUUID(); // the anchor
   const mem = randomUUID(); // a member: its private workspace
+  const second = randomUUID(); // L: a second Admin login, no Moderator, keys off
   const tag = `w7as${randomUUID().slice(0, 6)}`;
   let adminWs = '';
   let adminPage = '';
   let privatePage = '';
   let ownerPrivatePage = '';
+  let roPage = ''; // the member's, shared to Admin with Read only
+  let roNote = '';
+  let memFile = ''; // the member's private file
+  let takenFile = ''; // the member's, in the sandbox exports folder
+  const takenName = `${tag}-taken.txt`;
+  /** Every outbound request the code made (the stub answers them). */
+  const outbound: string[] = [];
   let agent: import('@mantle/db').Agent;
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -69,6 +91,37 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     );
   const seesNode = async (id: string) =>
     (await m.db.select({ id: m.nodes.id }).from(m.nodes).where(eq(m.nodes.id, id))).length === 1;
+  const homeIn = (id: string, ws: string) =>
+    sys(() =>
+      m.withHeads([id], 'update', async (tx) => {
+        await tx.execute(sql`delete from item_grants where node_id = ${id}`);
+        await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
+                             values (${id}, ${ws}, true)`);
+      }),
+    );
+  const readOnlyIn = (id: string, ws: string) =>
+    sys(() =>
+      m.withHeads([id], 'update', async (tx) => {
+        await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+                             values (${id}, ${ws}, false) on conflict do nothing`);
+      }),
+    );
+  const nodeState = async (id: string) =>
+    JSON.stringify(
+      await x(sql`select title, data, updated_at, superseded_by, superseded_reason, salience,
+                         (select count(*) from shares s where s.node_id = n.id) as shares
+                    from nodes n where id = ${id}`),
+    );
+  const dispatchAs = (slug: string, input: Record<string, unknown>) =>
+    t.dispatchTool(
+      {
+        slug,
+        handler: { kind: 'builtin', ref: slug },
+        inputSchema: {},
+      } as unknown as import('@mantle/db').Tool,
+      input,
+      { ownerId: owner, surface: { kind: 'web', loginId: owner } },
+    );
   const mcpCall = async (loginId: string, name: string, args: Record<string, unknown>) => {
     const ls = await import('@mantle/mcp-core');
     const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
@@ -107,9 +160,21 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     delete process.env.MANTLE_ADMIN_READS;
+    // The sandbox daemon is wired (its calls are stubbed): the sandbox
+    // tools run up to the point where they would send bytes out.
+    process.env.SANDBOXD_URL = 'http://sandboxd.invalid';
+    process.env.SANDBOXD_TOKEN = 'w7a-sandboxd-token';
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('offline in the W7a test', { status: 503 })),
+      vi.fn(async (input: unknown) => {
+        const url = String(input instanceof Request ? input.url : input);
+        outbound.push(url);
+        // A sandbox export answers bytes: sandbox_export then writes a file.
+        if (url.includes('sandboxd.invalid') && url.endsWith('/export')) {
+          return new Response('bytes from the sandbox', { status: 200 });
+        }
+        return new Response('offline in the W7a test', { status: 503 });
+      }),
     );
     m = await import('@mantle/db');
     c = await import('@mantle/content');
@@ -117,7 +182,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     rt = await import('@mantle/runtime/agent');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
-      (${mem}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
+      (${mem}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member'),
+      (${second}, ${`${tag}-l@example.invalid`}, 'x', false, 'admin', 'Second Admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
@@ -137,6 +203,57 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
         c.createPage(owner, { title: `${tag} owner private page` }),
       )
     ).id;
+    // L: a user of Admin, not a Moderator there, its keys area off.
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator, limits)
+                values (${adminWs}, ${second}, false, ${JSON.stringify({ areas: { keys: false } })}::jsonb)
+                on conflict (workspace_id, login_id)
+                do update set moderator = false, limits = excluded.limits`);
+    // The member's items: a page and a note shared to Admin with Read only,
+    // a private file, and a file in the sandbox exports folder.
+    const memWs = await privateFor(mem);
+    roPage = (await makeIn(memWs, () => c.createPage(owner, { title: `${tag} read-only page` })))
+      .id;
+    roNote = (
+      await makeIn(memWs, () =>
+        c.createNote(owner, { title: `${tag} read-only note`, content: 'kept' }),
+      )
+    ).id;
+    await readOnlyIn(roPage, adminWs);
+    await readOnlyIn(roNote, adminWs);
+    const files = await import('@mantle/files');
+    await sys(() => files.ensureFilesRootBranch(owner));
+    memFile = (
+      await makeIn(memWs, () =>
+        files.upsertFile({
+          ownerId: owner,
+          parentPath: 'files',
+          filename: `${tag}-member-secret.txt`,
+          bytes: Buffer.from('the member secret'),
+        }),
+      )
+    ).id;
+    const exportsPath = await sys(() => files.ensureAutoFiledFolder(owner, 'sandbox-exports'));
+    takenFile = (
+      await makeIn(memWs, () =>
+        files.upsertFile({
+          ownerId: owner,
+          parentPath: exportsPath,
+          filename: takenName,
+          bytes: Buffer.from('the member export'),
+        }),
+      )
+    ).id;
+    await homeIn(takenFile, memWs);
+    await sys(() =>
+      c.createSandboxRow({
+        id: randomUUID(),
+        ownerId: owner,
+        name: `${tag}-box`,
+        image: 'test/image',
+        status: 'running',
+        containerId: 'c1',
+      }),
+    );
     // The Admin assistant, its history, a Journal entry, an entity.
     const [row] = await m.systemDb
       .insert(m.agents)
@@ -170,6 +287,9 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
   afterAll(async () => {
     vi.unstubAllGlobals();
     delete process.env.MANTLE_ADMIN_READS;
+    delete process.env.SANDBOXD_URL;
+    delete process.env.SANDBOXD_TOKEN;
+    delete process.env.MANTLE_MCP_TERMINAL;
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
@@ -289,5 +409,195 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       delete process.env.MANTLE_ADMIN_READS;
     }
     expect(await rt.agentTurnScoped({ audience: 'admin', workspaceId: adminWs })).toBe(true);
+  });
+  it('H1: area tools never read another user’s private item, nor overwrite one', async () => {
+    const before = {
+      file: await nodeState(memFile),
+      page: await nodeState(privatePage),
+      ro: await nodeState(roPage),
+      taken: await nodeState(takenFile),
+    };
+    for (const login of [second, owner]) {
+      outbound.length = 0;
+      const imp = await mcpCall(login, 'sandbox_import', {
+        sandbox: `${tag}-box`,
+        file_id: memFile,
+      });
+      expect(imp.isError, imp.text).toBe(true);
+      expect(imp.text).toMatch(/not found/);
+      const copy = await mcpCall(login, 'peer_file_copy', { peer: 'any', file_id: memFile });
+      expect(copy.isError, copy.text).toBe(true);
+      expect(copy.text).toMatch(/not found|no file/);
+      const mail = await mcpCall(login, 'email_page', {
+        pageId: privatePage,
+        to: 'nobody@example.invalid',
+        includeLink: true,
+      });
+      expect(mail.isError, mail.text).toBe(true);
+      expect(mail.text).toMatch(/not found/);
+      // A page it reads but may not link: refused before anything is sent.
+      const roMail = await mcpCall(login, 'email_page', {
+        pageId: roPage,
+        to: 'nobody@example.invalid',
+        includeLink: true,
+      });
+      expect(roMail.isError, roMail.text).toBe(true);
+      expect(roMail.text).toMatch(/Nothing was sent: You cannot change this item/);
+      // Nothing left the box: no import, no peer, no mail transport.
+      expect(outbound.filter((u) => !u.includes('embed'))).toEqual([]);
+      // sandbox_export onto the member's same-named file: refused, unchanged.
+      const exp = await mcpCall(login, 'sandbox_export', {
+        sandbox: `${tag}-box`,
+        path: takenName,
+        raw: true,
+      });
+      expect(exp.isError, exp.text).toBe(true);
+      expect(exp.text).toMatch(/already exists/);
+    }
+    expect(await nodeState(memFile)).toBe(before.file);
+    expect(await nodeState(privatePage)).toBe(before.page);
+    expect(await nodeState(roPage)).toBe(before.ro);
+    expect(await nodeState(takenFile)).toBe(before.taken);
+    const files = await import('@mantle/files');
+    const bytes = await sys(() => files.readFileById({ ownerId: owner, fileId: takenFile }));
+    expect(bytes?.bytes.toString('utf8')).toBe('the member export');
+  });
+
+  it('M1: ask_responder’s nested Admin turn answers the calling login, with its areas', async () => {
+    const mcp = await import('@mantle/mcp-core');
+    const seen = await m.runInRequestSlot(() =>
+      mcp.runInOwnerMcpScope(second, 'ask_responder', () =>
+        // As run-sim-turn calls it: a web surface that names no login.
+        rt.withAgentScope({ id: agent.id, audience: 'admin', workspaceId: adminWs }, async () => {
+          const s = m.currentScope();
+          return {
+            login: 'loginId' in s ? s.loginId : null,
+            mod: 'modWs' in s ? s.modWs : [],
+            keys: await m.scopeHasArea('keys'),
+            settings: await m.scopeHasArea('settings'),
+            keyTool: await dispatchAs('api_key_refs', {}),
+            reads: await seesNode(adminPage),
+          };
+        }),
+      ),
+    );
+    expect(seen).toMatchObject({
+      login: second,
+      mod: [],
+      keys: false,
+      settings: true,
+      reads: true,
+    });
+    const keyTool = (seen as { keyTool: { ok: boolean; error?: string } }).keyTool;
+    expect(keyTool.ok).toBe(false);
+    expect(keyTool.error).toMatch(/manages the brain's keys/);
+    // Naming another login inside L's scope is refused (never widened).
+    await expect(
+      m.runInRequestSlot(() =>
+        mcp.runInOwnerMcpScope(second, 'ask_responder', () =>
+          rt.withAgentScope(
+            { id: agent.id, audience: 'admin', workspaceId: adminWs },
+            async () => m.currentScope(),
+            { loginId: owner },
+          ),
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('M2: update tools on a Read-only shared item are refused; on an editable one they work', async () => {
+    const before = { page: await nodeState(roPage), note: await nodeState(roNote) };
+    const inTurn = await inAdminTurn(
+      async () => ({
+        page: await dispatchAs('page_update', { id: roPage, title: 'changed' }),
+        note: await dispatchAs('note_update', { id: roNote, content: 'changed' }),
+        block: await dispatchAs('page_block_append', { page_id: roPage, markdown: 'added' }),
+        own: await dispatchAs('page_update', { id: adminPage, title: `${tag} admin page v2` }),
+      }),
+      owner,
+    );
+    expect(inTurn.page.ok).toBe(false);
+    expect(String(inTurn.page.ok ? '' : inTurn.page.error)).toMatch(/You cannot change this item/);
+    expect(inTurn.note.ok).toBe(false);
+    expect(inTurn.block.ok).toBe(false);
+    expect(inTurn.own.ok, JSON.stringify(inTurn.own).slice(0, 200)).toBe(true);
+    for (const login of [owner, second]) {
+      const page = await mcpCall(login, 'page_update', { id: roPage, title: 'changed' });
+      expect(page.isError, page.text).toBe(true);
+      expect(page.text).toMatch(/You cannot change this item/);
+      const note = await mcpCall(login, 'note_update', { id: roNote, content: 'changed' });
+      expect(note.isError, note.text).toBe(true);
+      expect(note.text).toMatch(/You cannot change this item/);
+    }
+    // The anchor moderates Admin: its own Admin page it edits on MCP.
+    const own = await mcpCall(owner, 'page_update', {
+      id: adminPage,
+      title: `${tag} admin page v3`,
+    });
+    expect(own.isError, own.text.slice(0, 200)).toBe(false);
+    // L reads Admin but moderates nothing: the same edit is refused.
+    const notMod = await mcpCall(second, 'page_update', { id: adminPage, title: 'by L' });
+    expect(notMod.isError, notMod.text).toBe(true);
+    expect(await nodeState(roPage)).toBe(before.page);
+    expect(await nodeState(roNote)).toBe(before.note);
+  });
+
+  it('M3: run_terminal needs the settings area', async () => {
+    process.env.MANTLE_MCP_TERMINAL = '1';
+    await x(sql`update workspace_users
+                   set limits = ${JSON.stringify({ areas: { keys: false, settings: false } })}::jsonb
+                 where workspace_id = ${adminWs} and login_id = ${second}`);
+    try {
+      const res = await mcpCall(second, 'run_terminal', { command: 'echo w7a' });
+      expect(res.isError, res.text).toBe(true);
+      expect(res.text).toMatch(/manages the brain's settings/);
+      expect(t.toolAdminArea('run_terminal')).toBe('settings');
+      expect(t.ADMIN_ONLY_TOOL_SLUGS.has('run_terminal')).toBe(true);
+    } finally {
+      delete process.env.MANTLE_MCP_TERMINAL;
+      await x(sql`update workspace_users
+                     set limits = ${JSON.stringify({ areas: { keys: false } })}::jsonb
+                   where workspace_id = ${adminWs} and login_id = ${second}`);
+    }
+  });
+
+  it('L1, L2, L5: extraction, preferences and unsupersede stay in the scope', async () => {
+    // L1: the handler itself reads the node in the scope first.
+    const fired = await inAdminTurn(
+      () =>
+        t
+          .getBuiltin('process_extraction')!
+          .handler(
+            { node_id: privatePage },
+            { ownerId: owner, surface: { kind: 'web', loginId: owner } },
+          ),
+      owner,
+    );
+    expect(fired.ok).toBe(false);
+    expect(String(fired.ok ? '' : fired.error)).toMatch(/not found/);
+    // L2: only the brain owner's row is read on the system pool
+    // (profile-preferences-owner-exit.test.ts proves which exit is taken);
+    // another login's row is read in the scope, where the profiles row rule
+    // (0266) shows every row to a scope that holds Admin.
+    await x(sql`insert into profiles (user_id, preferences) values
+      (${owner}, ${JSON.stringify({ timezone: 'Europe/Berlin' })}::jsonb),
+      (${mem}, ${JSON.stringify({ timezone: 'Pacific/Auckland' })}::jsonb)
+      on conflict (user_id) do update set preferences = excluded.preferences`);
+    const mcp = await import('@mantle/mcp-core');
+    const prefs = await m.runInRequestSlot(() =>
+      mcp.runInOwnerMcpScope(second, 'set_timezone', async () => ({
+        owner: (await c.loadProfilePreferences(owner)).timezone,
+        member: (await c.loadProfilePreferences(mem)).timezone,
+      })),
+    );
+    expect(prefs).toEqual({ owner: 'Europe/Berlin', member: 'Pacific/Auckland' });
+    // L5: a node the scope does not read is never un-superseded.
+    await x(sql`update nodes set superseded_reason = 'outdated', salience = 0.3
+                 where id = ${privatePage}`);
+    const before = await nodeState(privatePage);
+    await expect(inAdminTurn(() => c.unsupersedeNode(owner, privatePage), owner)).rejects.toThrow(
+      /not found/,
+    );
+    expect(await nodeState(privatePage)).toBe(before);
   });
 });

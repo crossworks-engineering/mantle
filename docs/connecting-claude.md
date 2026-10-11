@@ -25,14 +25,14 @@ are.
 
 Both register the same tools from `@mantle/mcp-core`, so they cannot drift.
 
-| | Remote connector (HTTP) | Local process (stdio) |
-|---|---|---|
-| Entry | `https://<your host>/api/mcp` ([`route.ts`](../server/web/app/api/mcp/route.ts)) | [`server/mcp`](../server/mcp/src/server.ts), spawned by the client |
-| Turned on by | **Settings > MCP > Remote MCP connector**. Off by default; while off the endpoint answers 404. | Nothing. The client spawns the process. |
-| Auth | OAuth sign-in and consent. A missing or bad token gets a 401 that points the client at the authorization server. | None. Whoever can spawn the process has the owner's full data access. |
-| Who it acts as | The login that signed in. An admin gets the owner's tools; a member or client gets their own role's tools at their level ([`mcp-as-a-login.md`](./mcp-as-a-login.md)). | The owner. |
-| Reach | claude.ai, Claude Desktop, Claude Code, phones | Claude Desktop and Claude Code, local or over SSH |
-| Limits | Rate limited per IP and per login. `run_terminal` off unless `MANTLE_MCP_TERMINAL=1`. | `run_terminal` on unless `MANTLE_MCP_TERMINAL=0`. |
+|                | Remote connector (HTTP)                                                                                                                                                | Local process (stdio)                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Entry          | `https://<your host>/api/mcp` ([`route.ts`](../server/web/app/api/mcp/route.ts))                                                                                       | [`server/mcp`](../server/mcp/src/server.ts), spawned by the client    |
+| Turned on by   | **Settings > MCP > Remote MCP connector**. Off by default; while off the endpoint answers 404.                                                                         | Nothing. The client spawns the process.                               |
+| Auth           | OAuth sign-in and consent. A missing or bad token gets a 401 that points the client at the authorization server.                                                       | None. Whoever can spawn the process has the owner's full data access. |
+| Who it acts as | The login that signed in. An admin gets the owner's tools; a member or client gets their own role's tools at their level ([`mcp-as-a-login.md`](./mcp-as-a-login.md)). | The owner.                                                            |
+| Reach          | claude.ai, Claude Desktop, Claude Code, phones                                                                                                                         | Claude Desktop and Claude Code, local or over SSH                     |
+| Limits         | Rate limited per IP and per login. `run_terminal` off unless `MANTLE_MCP_TERMINAL=1`.                                                                                  | `run_terminal` on unless `MANTLE_MCP_TERMINAL=0`.                     |
 
 Use the remote connector unless you need a client with no network path to the
 box. Never wrap the stdio server in your own network listener: it has no auth
@@ -204,8 +204,9 @@ login over the remote connector gets its role's tools instead; see
   process already grants the owner's full data access on a machine you control.
   Over the **HTTP connector** it is off, because a stolen bearer would become a
   root shell on the box; set `MANTLE_MCP_TERMINAL=1` in the box's `.env` to turn
-  it on anyway, or `=0` to turn it off for stdio too. `sandbox_exec` is the
-  contained alternative and is always available on both.
+  it on anyway, or `=0` to turn it off for stdio too. Even then it runs only for
+  a user of the Admin workspace whose settings area is on (W7a). `sandbox_exec`
+  is the contained alternative and is always available on both.
 - **`synthesize_speech`** — needs a live delivery surface (a Telegram chat, the
   web reply stream) to play audio into. Over MCP it could only ever error.
 

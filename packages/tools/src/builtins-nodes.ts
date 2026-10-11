@@ -273,7 +273,7 @@ export const process_extraction: BuiltinToolDef = {
       if (!seen) {
         return {
           ok: false,
-          error: `node ${nodeId} not found — find the id with search_nodes, then re-issue.`,
+          error: `node ${nodeId} not found: find the id with search_nodes, then re-issue.`,
         };
       }
       await notifyNodeIngested(nodeId);

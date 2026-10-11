@@ -40,9 +40,18 @@ user's private workspace is not found. Before a tool runs, its gate
 (`packages/tools/src/admin-gate.ts`) asks the same scope: an owner-only or
 Admin-only tool needs a login that is a user of the Admin workspace, and a
 tool that manages the brain (model pools, assistants and tool groups,
-connectors, Telegram, mail, peers, sandboxes, secrets, the team access log)
-needs that login's matching area switched on; such a tool then runs on the
-system pool. `MANTLE_ADMIN_READS=system` puts the whole surface back on the
+connectors, Telegram, mail, peers, sandboxes, secrets, the team access log,
+and `run_terminal`, which needs the settings area) needs that login's
+matching area switched on. Such a tool still runs in the login's workspaces
+(W7a fix round 1): a file it imports into a sandbox or copies to a peer, a
+page it mails, a folder it mounts are read there, and a file it exports is
+written there with the normal checks. Only its own system tables (sandbox
+rows, peers, mail accounts, tool groups) are read on the system pool; the
+tools that touch nothing else (`AREA_SYSTEM_TOOLS` in admin-gate.ts) run
+there whole. A write to an item (an edit, a delete, a move, a link) is
+checked against the login's rights on that item first, as the item routes
+do (`packages/tools/src/item-write-gate.ts`): an item shared with Read only
+is refused. `MANTLE_ADMIN_READS=system` puts the whole surface back on the
 system pool, as before.
 
 ## A member's or client's tools
