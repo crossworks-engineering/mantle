@@ -9,7 +9,6 @@
  *  - races: two parallel creates at the last item place, two parallel
  *    submits at the last daily place, two clients' parallel uploads at the
  *    last bytes of the total: exactly one passes each time;
- *  - give back into a client's space holds the client limits;
  *  - space_items.author_role never changes after insert;
  *  - refusals are recorded (reason and login), and the record stays small;
  *  - the admin reads: the storage rows (a former client flagged); a deleted
@@ -38,13 +37,11 @@ import { holdTestLock } from '@mantle/db/test-support';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MB = 1024 * 1024;
 
-describe.skipIf(!URL)('client abuse limits: text, races, give back', () => {
+describe.skipIf(!URL)('client abuse limits: text and races', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let sp: typeof import('./member-space');
   let sf: typeof import('./member-space-files');
-  let rv: typeof import('./member-review');
-  let tk: typeof import('./member-takeover');
   let ql: typeof import('./client-quota-log');
   let au: typeof import('./client-admin-usage');
   let fp: typeof import('@mantle/files');
@@ -163,8 +160,6 @@ describe.skipIf(!URL)('client abuse limits: text, races, give back', () => {
     m = await import('@mantle/db');
     sp = await import('./member-space');
     sf = await import('./member-space-files');
-    rv = await import('./member-review');
-    tk = await import('./member-takeover');
     ql = await import('./client-quota-log');
     au = await import('./client-admin-usage');
     fp = await import('@mantle/files');
@@ -401,62 +396,6 @@ describe.skipIf(!URL)('client abuse limits: text, races, give back', () => {
     }
     const reasons = [...(await refusals(c.totalA)), ...(await refusals(c.totalB))];
     expect(reasons.map((r) => r.reason)).toEqual(['total']);
-  });
-
-  // ── Give back holds the client limits (I7) ──────────────────────────────
-
-  it('give back into a client’s full space is refused; with room it goes', async () => {
-    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
-    const id = await page(c.back, `${tag} back`);
-    await submit(c.back, id);
-    await rv.takeOverReviewItem(id, actor);
-    // While it is away the client fills the space to its 500 items.
-    await fakeItems(c.back, 500);
-    await expect(tk.giveBackTakenItem(brain, actor, id)).rejects.toMatchObject({
-      reason: 'quota',
-    });
-    const [still] = await exec<{ owner_id: string; review_state: string }>(sqlTag`
-      select n.owner_id, si.review_state from nodes n join space_items si on si.node_id = n.id
-       where n.id = ${id}`);
-    expect(still).toEqual({ owner_id: actor.spaceId, review_state: 'taken' });
-    expect((await refusals(c.back)).map((r) => r.reason)).toEqual(['give-back']);
-    // One place free: it goes back.
-    await m.systemDb.execute(sqlTag`
-      delete from nodes where id = (select id from nodes where owner_id = ${spaceOf[c.back]!}
-                                      and title like ${`${tag} fake %`} limit 1)`);
-    const res = await tk.giveBackTakenItem(brain, actor, id);
-    expect(res.id).toBe(id);
-  });
-
-  it('give back is refused past the client’s 200 MB, and past the total', async () => {
-    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
-    // The item limit is not this test's rule: make room first.
-    await m.systemDb.execute(sqlTag`
-      delete from nodes where owner_id = ${spaceOf[c.back]!} and title like ${`${tag} fake %`}`);
-    const id = await page(c.back, `${tag} back bytes`);
-    await submit(c.back, id);
-    await rv.takeOverReviewItem(id, actor);
-    const used = await as(c.back, () => sf.spaceStorageUsed(spaceOf[c.back]!));
-    const big = await fakeFile(c.back, 200 * MB - used);
-    try {
-      await expect(tk.giveBackTakenItem(brain, actor, id)).rejects.toMatchObject({
-        reason: 'quota',
-      });
-    } finally {
-      await dropNode(big);
-    }
-    // A total the client spaces are already over (1 byte): other test files
-    // change client bytes while this runs, so the total is not set from a
-    // live sum; any give back that brings bytes back is refused.
-    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = '1';
-    try {
-      await expect(tk.giveBackTakenItem(brain, actor, id)).rejects.toMatchObject({
-        reason: 'quota',
-      });
-    } finally {
-      delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
-    }
-    expect((await tk.giveBackTakenItem(brain, actor, id)).id).toBe(id);
   });
 
   // ── author_role never changes (0194) ────────────────────────────────────

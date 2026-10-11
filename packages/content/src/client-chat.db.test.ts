@@ -4,9 +4,6 @@
  *     epoch, a disabled login, a member or an unknown login does not.
  *   - clientChatUsageSince: a client login's queued turns and its client
  *     turn tokens today; a member's use is not a client's.
- *   - a client request (client_request_create's task): an admin's action
- *     marks it reviewed (it may be indexed from then on), and the Requests
- *     list flags it fromClient.
  * Seeds its own rows on a random owner; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/client-chat.db.test.ts
  */
@@ -21,7 +18,6 @@ describe.skipIf(!URL)('client chat helpers', () => {
   let admin: Parameters<Db['ensureViewerRoles']>[0];
   let logins: typeof import('./client-logins');
   let ledger: typeof import('./member-turn-ledger');
-  let requests: typeof import('./team-requests');
   const clientTask = randomUUID();
   const memberTask = randomUUID();
   const owner = randomUUID();
@@ -37,7 +33,6 @@ describe.skipIf(!URL)('client chat helpers', () => {
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     logins = await import('./client-logins');
     ledger = await import('./member-turn-ledger');
-    requests = await import('./team-requests');
     const e = (id: string) => `cc-${id.slice(0, 8)}@example.invalid`;
     await admin`insert into auth.users (id, email, password_hash, role, session_epoch, disabled_at) values
       (${owner}, ${e(owner)}, 'x', 'admin', 0, null),
@@ -92,20 +87,5 @@ describe.skipIf(!URL)('client chat helpers', () => {
     const usage = await ledger.clientChatUsageSince(owner, since);
     expect(usage.get(client)).toEqual({ turns: 3, tokens: 700 });
     expect(usage.has(member)).toBe(false);
-  });
-
-  it('the Requests list flags a client request; a member request is not flagged', async () => {
-    const rows = await requests.listTeamRequests(owner, { status: 'all' });
-    const by = new Map(rows.map((r) => [r.taskId, r]));
-    expect(by.get(clientTask)).toMatchObject({ loginId: client, fromClient: true });
-    expect(by.get(memberTask)?.fromClient).toBeUndefined();
-  });
-
-  it("an admin's action marks a client request reviewed, once", async () => {
-    expect(await requests.markTeamRequestReviewed(owner, clientTask)).toBe(true);
-    expect(await requests.markTeamRequestReviewed(owner, clientTask)).toBe(false);
-    const [row] = await admin<{ reviewed: string | null }[]>`
-      select data->>'reviewed_at' as reviewed from nodes where id = ${clientTask}`;
-    expect(row!.reviewed).toBeTruthy();
   });
 });

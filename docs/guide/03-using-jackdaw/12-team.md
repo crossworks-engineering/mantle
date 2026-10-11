@@ -4,7 +4,7 @@ Invite people to sign in to your brain as members, read their chats and handle t
 
 A member signs in with their own login. They read items you set to **Team** level and chat with the team agent. They cannot change your brain. When they ask for a change, it comes to you as a request.
 
-Invites and each member's chat are in **Settings > Logins**. Requests, review and team settings are on the **Team** screen (under Review).
+Invites and each member's chat are in **Settings > Logins**. Team settings are on the **Team** screen.
 
 ## Before you start
 
@@ -40,32 +40,11 @@ Open **Settings > Logins**, select a member, and click **Chat** in its header. I
 
 ## Handle requests
 
-When a member asks for a change ("please add the new pump to the site register"), the team agent files a request, stamped with who asked.
+When a member asks for a change ("please add the new pump to the site register"), the team agent files a request, stamped with who asked. It is a task tagged `team-request`: open it on the **Tasks** board, make the change yourself or decide not to, and mark it done.
 
-1. Open **Team > Requests**.
-2. Read the request and make the change yourself, or decide not to.
-3. Type a reply and click **Send reply**, or **Send & mark done**.
+## Sharing with members
 
-The reply appears in the member's chat.
-
-## Approve what members submit
-
-Members can write their own pages, notes, tables, drawings and files, and submit them. A submitted item waits in its own screen: a page in **Pages**, a note in **Notes**, a table in **Tables**, a drawing in **Draw**, a file in **Files**, an app in **Apps**.
-
-1. Open the screen. **Waiting for approval** sits above the folders. It shows only when something waits.
-2. Click the item. It opens beside the folders, read only, as it was sent.
-3. Click **Info** (the i button) to see who sent it and when.
-4. Pick one:
-   - **Approve**: choose who can see it and where it goes. It becomes a brain item you can edit. You approve the version on screen: if the author sent it again since, Approve stops and shows the new one.
-   - **Reject**: it goes back to its author, who can change it and submit it again. No note is sent.
-   - **Take over**: it moves into your own private items, so you can change it before you approve it or give it back.
-   - **Discard**: only for an item a removed login left shared with the team. It is deleted and never enters the brain.
-
-The **Team** tab strip shows "2 waiting in Pages" and so on while something waits.
-
-## See what members share with the team
-
-Below **Waiting for approval**, each screen lists **Shared by members**: what your members shared with the team, with who shared it and when it last changed. Click one to read it, as the team sees it. Click **Unshare** to make it private again: nothing is deleted, and its author keeps it.
+Review is gone: members no longer submit items for you to approve, and there is no **Waiting for approval** or **Shared by members** list. To let members read an item, share it with **Grant Access**.
 
 ## Other tabs
 

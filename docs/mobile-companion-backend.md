@@ -521,7 +521,7 @@ login it concerns, and only while the token that enrolled the device is live.
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Owner assistant message                  | Devices of active ADMIN logins. If the agent is assigned to one login, only that login's devices.                                              |
 | Approval waiting                         | Devices of active admin logins.                                                                                                                |
-| "Needs you" (review queue, team request) | Devices of active admin logins.                                                                                                                |
+| "Needs you" (provider outage, parked)    | Devices of active admin logins.                                                                                                                |
 | Reply in a member or client chat         | Devices of that ONE login.                                                                                                                     |
 | Review result on an item                 | Devices of the item's author.                                                                                                                  |
 | Comment on an item                       | Devices of the item's author (not when the author wrote it). On a client-level item's client thread: every active client login but the writer. |

@@ -60,10 +60,9 @@ const HUMAN_VIEWER_CALLERS: Record<string, readonly string[]> = {
     'server/web/app/api/member/team-drafts/[id]/bytes/route.ts',
     'server/web/app/api/member/draws/[id]/svg/route.ts',
     'server/web/app/api/member/items/route.ts',
-    // The member's tree (teammates' team drafts next to their own) and the
-    // admin's list of team-shared member items: the same team drafts reads.
+    // The member's tree (teammates' team drafts next to their own): the same
+    // team drafts reads.
     'packages/content/src/tree/member-tree.ts',
-    'packages/content/src/member-items-shared.ts',
   ],
 };
 

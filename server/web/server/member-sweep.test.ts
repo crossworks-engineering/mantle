@@ -145,12 +145,7 @@ const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 /** Routes that authenticate with their own short-lived ticket instead of the
  *  session, minted only by an admin- or client-gated route (so a member never
  *  holds one). They answer a plain-text 401 without it. */
-const TICKET_GATED = new Set([
-  'GET /api/apps/:id/frame',
-  'GET /api/client/apps/:id/frame',
-  // An admin's test run of a member's app (workspace review pattern).
-  'GET /api/apps/members/:id/test/frame',
-]);
+const TICKET_GATED = new Set(['GET /api/apps/:id/frame', 'GET /api/client/apps/:id/frame']);
 
 function isPublic(path: string): boolean {
   return PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));

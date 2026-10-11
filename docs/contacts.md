@@ -157,7 +157,7 @@ team (docs/sharing.md section 4b has the full rules).
 - **Regenerate.** A new code, shown once; the old code, and every browser
   the contact opened links in, stops at once. It also clears a lock.
 - **Locked.** 30 wrong codes in a day lock the contact for 24 hours: a
-  "Locked" badge on the contact and an admin notice in "Needs you".
+  "Locked" badge on the contact.
   Regenerate unlocks.
 - **Switch off.** Asks first and names how many shares end: every live
   share of the contact is revoked with the code. Enable again later gives a

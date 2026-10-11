@@ -26,7 +26,7 @@ const h = vi.hoisted(() => ({
   sent: [] as string[],
   /** What was sealed, by public key. */
   sealed: [] as Array<{ publicKey: string; payload: Record<string, unknown> }>,
-  needsYou: null as unknown,
+  alerts: [] as unknown[],
 }));
 
 // The relay and the sealing: record instead of sending.
@@ -65,7 +65,7 @@ vi.mock('@mantle/tools', async (importOriginal) => ({
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   loadProfilePreferences: async () => ({ reminderChannel: 'mobile' }),
-  loadNeedsYou: async () => h.needsYou,
+  loadProviderAlerts: async () => h.alerts,
 }));
 
 describe.skipIf(!URL)('push targeting: who a push goes to', () => {
@@ -212,16 +212,20 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
   });
 
   it('a "needs you" notice goes to active admin devices only', async () => {
-    const at = new Date().toISOString();
-    h.needsYou = {
-      review: {
-        submitted: 1,
-        leftBehind: 0,
-        newest: { id: randomUUID(), title: 'Pump spec', from: 'Mia', at },
+    h.alerts = [
+      {
+        subject: 'embedding',
+        code: 'quota',
+        permanent: true,
+        reason: 'The provider account has no credits or quota left.',
+        provider: null,
+        model: null,
+        since: new Date().toISOString(),
+        paused: true,
+        nextProbeAt: null,
+        waiting: 0,
       },
-      requests: { open: 0, newest: null },
-      total: 1,
-    };
+    ];
     const res = await notify.pushNeedsYou(brain, new Set());
     expect(res).toMatchObject({ attempted: 2, delivered: 2 });
     expect(sentTo()).toEqual(ADMIN_DEVICES);

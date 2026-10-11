@@ -1,24 +1,10 @@
 /**
- * POST /api/apps/members/:id/unshare: an admin stops a member's team-shared
- * app (access matrix N2). It goes back to private, its author's alone;
- * nothing is deleted. 404 for an app an admin may not reach, 409 when it was
- * not shared.
+ * /api/apps/members/[id]/unshare: gone. Member app review (accept, send back, test, activity) was removed in workspaces W5c. Members still build apps and share them with the team.
+ * The stub answers 410 `{ error, code: 'gone' }` to an admin, 401 without a session.
  */
-import { NextResponse } from '@/server/http-compat';
-import { adminSpaceApp, adminUnshareSpaceApp } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
-import { spaceAppId, spaceAppNotFound } from '@/lib/space-apps';
+import { gone } from '@/lib/gone';
 
-export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
-  const id = spaceAppId((await ctx.params).id);
-  if (!id || !(await adminSpaceApp(id))) return spaceAppNotFound();
-  if (!(await adminUnshareSpaceApp(id))) {
-    return NextResponse.json(
-      { ok: false, error: 'This app is not shared with the team.' },
-      { status: 409 },
-    );
-  }
-  return NextResponse.json({ ok: true });
-}
+export const POST = gone(
+  'owner',
+  'Member app review was removed. Members share apps with the team in the app.',
+);

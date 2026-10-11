@@ -56,23 +56,11 @@ export type {
   RetiredClientLinkRow,
 } from './dto/access';
 export type {
-  AcceptConfirmLevelRefusal,
-  AcceptPlace,
-  AcceptPreview,
-  AcceptRequest,
-  AcceptVisibilityRefusal,
-  ReviewAuthorRole,
-  ReviewAuthorView,
-} from './dto/review';
-export type {
   AdminPrivateListRow,
   AdminSpaceItem,
   AdminSpaceItemRow,
   AdminSpaceList,
   AdminTakenFrom,
-  GiveBackResult,
-  MovedSpaceItem,
-  TakeOverResult,
   MemberAcceptedItem,
   MemberAcceptedPage,
   MemberAcceptedRow,

@@ -27,11 +27,6 @@ export const LEVEL_READ_PATTERN =
 /** @type {Record<string, { lines: number, phase: 'W5b2' | 'W5c' | 'W6b' | 'W7' | 'W8' | 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
   // ── W5c (member and client review, the client portal) ──
-  'packages/content/src/embed-closure.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'deprecated no-op EmbedItem type: goes with the member review accept closure that still names it (member-review.ts)',
-  },
   'packages/content/src/item-level.ts': {
     lines: 24,
     phase: 'W5c',
@@ -51,16 +46,6 @@ export const LEVEL_READ_ALLOWLIST = {
     lines: 4,
     phase: 'W5c',
     why: 'DTO: member Library and review rows level',
-  },
-  'packages/client-types/src/dto/review.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'DTO: accept request level (review goes)',
-  },
-  'packages/content/src/accept-place.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'display: share the accepted item would inherit',
   },
   'packages/content/src/app-table-exports.ts': {
     lines: 3,
@@ -107,11 +92,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'member Library (team levels without public)',
   },
-  'packages/content/src/member-review.ts': {
-    lines: 24,
-    phase: 'W5c',
-    why: 'review: accept sets levels',
-  },
   'packages/content/src/tree/member-tree.ts': {
     lines: 1,
     phase: 'W5c',
@@ -132,11 +112,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'one-off client counts',
   },
-  'server/web/app/api/admin/space/[id]/accept/route.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'review accept level',
-  },
   'server/web/app/api/client/apps/[id]/db-broker/route.ts': {
     lines: 1,
     phase: 'W5c',
@@ -151,11 +126,6 @@ export const LEVEL_READ_ALLOWLIST = {
     lines: 2,
     phase: 'W5c',
     why: 'member chat agent level',
-  },
-  'server/web/app/api/team-admin/submissions/[id]/accept/route.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'review accept level',
   },
   // ── W6b (personal-space rows, accepted-item author path) ──
   'packages/content/src/member-accepted.ts': {

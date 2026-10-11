@@ -116,7 +116,7 @@ describe('team_request_create member accept-path provenance', () => {
 
 describe('team-request tag', () => {
   it('is the same literal the content requests view filters on (no drift)', () => {
-    // team_request_create tags with this; listTeamRequests filters on it. They
+    // team_request_create tags with this; countOpenTeamRequests filters on it. They
     // live in different packages, so lock them together.
     expect(TEAM_REQUEST_TAG).toBe(CONTENT_TEAM_REQUEST_TAG);
     expect(TEAM_REQUEST_TAG).toBe('team-request');

@@ -6,6 +6,13 @@
 > comment pushes. User-to-user talk moves to the forum (dev-brain plan Forum
 > v2). The `node_comments` table and its rows stay, unread and unwritten.
 
+> **Update W5c (workspaces): review and Team admin review are removed.** An
+> admin no longer reviews, accepts, sends back, takes over or gives back a
+> member's item or app, and Team admin > Review, Requests and "Shared by
+> members" are gone. Items are shared with Grant Access. The removed routes
+> answer 410 `{ error, code: 'gone' }` (`server/web/lib/gone.ts`). Sections
+> 6, 11 and 12 below are cut down to what is left.
+
 > Phase 1 of the member logins plan (dev-brain plan v3.1). A member is a user
 > of the brain with the member role: users are the team. Member logins are
 > always on (Phase 6 removed the `MANTLE_MEMBERS` flag).
@@ -509,166 +516,18 @@ with no import, tab editing or cross-tab references. The page editor keeps
 
 ## 6. Review and accept (Phase 4)
 
-**What an admin sees of a space.** Exactly two things, named in every query
-of `packages/content/src/member-review.ts` (the admin pool bypasses row
-security, so the rule lives in the query): an item SUBMITTED for review, and
-an item a deactivated (or deleted) login left SHARED with the team. Never a
-private item: every review route answers an id of a private item, of a
-recalled item and of one another admin already handled with the same 404,
-so nothing tells them apart. Chat replies marked `used_private` stay
-redacted for admins (section 5).
-
-**Routes** (owner only, `/team-admin` > Review in the client):
-
-| Route                                               | What                                                                                |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `GET /api/team-admin/submissions`                   | The queue: submitted (oldest first), left behind                                    |
-| `GET /api/team-admin/submissions/:id[?tab=]`        | The saved body (never a draft) and the thread                                       |
-| `GET /api/team-admin/submissions/:id/bundle`        | What Accept would move, what stays behind, and `closure`                            |
-| `GET /api/team-admin/submissions/:id/bytes[?node=]` | The file, or a file in its bundle (`?thumb=1`)                                      |
-| `GET /api/team-admin/submissions/:id/svg[?node=]`   | A drawing's saved SVG, or one in its bundle                                         |
-| `GET/POST /api/team-admin/submissions/:id/comments` | The thread; the reviewer's review talk                                              |
-| `DELETE …/submissions/:id/comments/:commentId`      | Take back an own review comment                                                     |
-| `POST /api/team-admin/submissions/:id/accept`       | `{ audience?, parentPageId?, folderPath?, lowerConfirmed?, confirmedIds? }` (below) |
-| `POST /api/team-admin/submissions/:id/return`       | `{ note }`: back to the author                                                      |
-| `POST /api/team-admin/submissions/:id/take-over`    | Into the acting admin's own space (section 11)                                      |
-| `POST /api/team-admin/submissions/:id/discard`      | Delete a left-behind item (inactive author only)                                    |
-
-**The thread.** The reviewer writes review talk (`thread_scope` 'review',
-author kind `owner`): the author reads it in their own thread, teammates
-never do. The admin reads the review talk, plus the team's comments while
-the item is shared with the team. Comments are open while the item is
-submitted.
-
-Each queue row names its author's role (`author.role`: member or client;
-null when the login is gone), so the dialog knows which Accept rule applies.
-
-**Return** puts a submitted item back to `returned` with the note (the
-member sees it as a banner, edits, and submits again).
-
-**Take over** (audit F07, section 11) moves a submitted item and its
-bundle into the acting admin's own private space to work on it; it leaves
-the queue. A taken item whose admin is deactivated or deleted comes back to
-the queue (reviewState `taken`, reason `submitted`, or `left-behind` when
-its author is gone too): Accept, Return, Take over and Discard then work on
-it and on what was taken with it.
-
-**Accept** (plan 6.2) is one transaction per bundle. The bundle
-(`member-bundle.ts`) is the item plus everything that renders inside it,
-repeated until nothing new joins:
-`embed-refs.ts` splits every reference into EMBEDS (an id, `src` or `href`
-on a node: an image, a file embed, an embedded drawing or child page; a
-drawing's file refs) and LINKS (a link mark, a mention chip, a drawing's
-element link, a table cell). Embeds of the author's own items move; links
-stay where they are, and the dialog says how many point at items that stay
-in a personal space. A submitted item moves the bundle recorded at Submit
-(section 5: frozen since, so what the admin reviewed is what moves). A
-left-behind item (never submitted) takes only items that are themselves
-shared with the team or submitted (audit F18): its author's private embeds
-stay behind, count as staying behind, and the review file and SVG routes
-never serve them. The bundle's rows are locked still in the space: an item
-another Accept moved first (a shared embed) is dropped, never moved twice.
-Every moved item keeps its node id (links stay valid),
-goes to the brain at the level the admin picks (admin by default; team by
-default for an item a CLIENT wrote, client logins C1: the author reads the
-accepted item from the snapshot whatever its level, so publishing one
-client's request to every client login is an explicit choice). Accepting a
-client-authored item at client or public needs `lowerConfirmed: true` (the
-admin confirmed that it, and what it embeds, goes down to where every client
-login reads it) AND the id of every brain item that goes down with it in
-`confirmedIds`. The bundle preview lists those brain items in `closure`
-(what the bundle embeds, transitively, at their current levels; the ones
-above the chosen level go down). A missing confirmation or a missing tick
-answers 409 `confirm-level` with the list in `goingDown`, checked on the
-locked rows, and nothing moves. A member-authored item needs no
-confirmation. The admin's own Accept after Take over
-(`POST /api/admin/space/:id/accept`, section 11) follows the same rule for
-an item a client wrote: team by default, and client or public only with
-`lowerConfirmed` and every going-down item in `confirmedIds`. The moved item loses any
-leftover draft, and its `space_items` row goes to `accepted` with the
-reviewer (the row stays: it records the author), and its author's
-accepted snapshot is recorded (section 11). Below admin, the brain items
-the accepted item embeds (a Library image a member placed, say) go down to
-its level in the same transaction: embedding means sharing
-(docs/access-levels.md section 1), and the answer lists them in
-`alsoLowered`. A page lands at the top of
-Pages or under a chosen brain page; files land in a chosen Files folder
-(`files` by default) under a safe, unique name. Bytes move beside the rows:
-a file is copied into the folder under a dot name the files watcher ignores,
-renamed into place after the commit, and its space copy removed; a table's
-workbook is snapshotted into `TABLE_DB_DIR/<brain>/` and the old one removed
-after the commit. A rollback removes what was staged. Accept is the ONE
-place a personal item is announced to the extractor: once per moved item,
-after the commit and after the bytes are renamed into place, so the
-extractor never opens a file that is not there yet (never for a rollback).
-The recorded bundle is removed. A Recall that lands first wins (Accept then
-answers 404). A DB test walks every table with an
-`owner_id` column and asserts no row keeps the space as owner of a moved
-item (the owner-copy registry).
-
-**Deactivation** (plan 6.4). Deactivate a login in Settings > Users (never
-delete it). Its sessions stop at once, and stay stopped if it is enabled
-again (the session epoch, section 1). What it shared with the team, and
-what it submitted, shows up in the Review queue as "left behind": accept or
-discard. Its private items are purged 30 days after the deactivation by the
-nightly `space-purge` maintenance task (`pnpm -C server/web space:purge`
-for a dry run, `--apply` to run it by hand): rows and bytes, counts only,
-never titles. A deleted login's space is purged the same way, 30 days after
-it lost its login (`spaces.orphaned_at`). The purge keeps every private
-item that a shared or submitted item shows (its bundle), so nothing an
-admin may still accept loses a piece; once that item is accepted or
-discarded, the rest goes the next night. The purge and Discard delete only
-rows still in the space: an Accept that re-owns a row to the brain at the
-same moment wins, and the delete matches nothing (audit F03). Discard locks
-the item's state row as Accept does. The purge never deletes a TAKEN item
-(section 11): it is a member's work in an admin's space, and when that
-admin's space is purged the taken items stay and are offered in the queue.
-
-Tests: `packages/content/src/member-bundle.viewer.db.test.ts` (Postgres: the
-bundle refused with unsaved edits, recorded, frozen, forgotten on Recall,
-Return and Accept, and Accept moving exactly the record; left-behind
-bundles; the purge keeping bundles and taking a deleted login's space; the
-purge and Discard racing an Accept on a second connection; Submit and
-Recall losing races) and `packages/db/src/spaces.db.test.ts` (the frozen
-rule and the bundle rules in SQL, a deleted member in team drafts, EXECUTE
-on the space functions). A space the purge leaves empty loses its
-`MANTLE_SPACES_ROOT/<space>` and `TABLE_DB_DIR/<space>` directories (audit
-D6). The purge refuses to run where the spaces root is missing or
-read-only, so it never deletes rows and keeps their bytes. A login enabled
-again before the 30 days keeps everything.
-
-**What the author keeps** (plan 6.2 and 6.3, 0.232.285). Accept takes the
-item out of Mine, but its `space_items` row stays and names the author, so:
-
-| Route                          | What                                             |
-| ------------------------------ | ------------------------------------------------ |
-| `GET /api/member/accepted`     | The author's accepted items, newest accept first |
-| `GET /api/member/accepted/:id` | One of them, as ACCEPTED, at any level           |
-
-- **Read access, at any level, to the version accepted.** The author reads
-  what they wrote even when the admin accepted it at admin, and reads it as
-  it was ACCEPTED: the accepted snapshot (section 11), never the brain's
-  current version, so an admin's later edits (saved or draft) stay the
-  brain's. `/api/member/files/:id` and `/api/member/draws/:id/svg` fall back
-  to the same rule after the team-level lookup misses, so an accepted image
-  still renders in the author's other drafts, but only while the brain file
-  holds exactly the bytes accepted; after an admin changed it, the file
-  route is a 404 and the item says `changedByAdmin: true`. Nobody else gets
-  anything new: another member, a returned or recalled item and an item of
-  another brain are all a plain 404.
-- **The rule lives in the query.** An item above the member's level is not
-  visible to the team role and the limited roles hold no grant on
-  `space_items`, so `packages/content/src/member-accepted.ts` runs on the
-  admin pool and writes the rule into every query: the row names this login
-  as the author, its state is `accepted`, and the item belongs to this brain.
-  It refuses to run inside a viewer scope.
-- **The member-authored badge.** The Library (list and item) and the admin's
-  Access panel (`GET /api/access/nodes/:id`) carry `author: { name,
-acceptedAt, role }` on an accepted item: the login's display name, "A
-  member" without one (never the email), "Removed member" once the login is
-  deleted. `role` names the author's role, and an item a client wrote shows
-  "A client" without a display name, never "A member".
-  An admin's own item has no author (section 10).
+Removed in workspaces W5c. The admin side of review (the queue, Accept,
+Return, Discard, the bundle preview, the review bytes and SVG) is gone, and
+so is the admin's read of members' team-shared items. These routes answer
+410 `{ error, code: 'gone' }` to an admin and 401 without a session:
+`/api/team-admin/submissions` (and `:id`, `:id/accept`, `:id/bundle`,
+`:id/bytes`, `:id/discard`, `:id/return`, `:id/svg`, `:id/take-over`) and
+`/api/team-admin/member-items` (and `:id`, `:id/bytes`, `:id/svg`,
+`:id/unshare`). The same goes for the admin's review of member apps,
+`/api/apps/members` and everything under it. Items are shared with Grant
+Access. The `space_items` rows review left behind stay in the database;
+personal items move in W6b. Tests:
+`server/web/app/api/team-admin/review-gone-routes.test.ts`.
 
 ## 7. Apps for members (Phase 4b)
 
@@ -1172,10 +1031,9 @@ is a member login. Nobody hands a password around. The table is
 **In the client.** `/invite` drops the code (`#code=` or an old `?code=`)
 from the address as soon as it is read. A password over 1024 characters is
 reported as too long. A contact whose invite was accepted shows "Has a
-member login" instead of "Invite as member". Team admin > Requests shows
-Reply and "View their chat" for a request with a login or a contact
-(`TeamRequest.loginId`); a login's chat link opens Member chats for that
-login. "Sign out everywhere" sits in the account menu (admins and members)
+member login" instead of "Invite as member". (Team admin > Requests, with
+its Reply, was removed in W5c: a team request is a task on the Tasks
+board.) "Sign out everywhere" sits in the account menu (admins and members)
 and on a login's Devices card in Settings > Users. jackdaw CI runs the
 member e2e on a mock brain (`pnpm e2e:member`) and a real-brain
 `member-smoke.spec.ts` (invite, redeem, upload into Mine, load the image by
@@ -1185,8 +1043,8 @@ member e2e on a mock brain (`pnpm e2e:member`) and a real-brain
 
 Jason, 2026-09-28. An admin (any login that passes the admin gate, the
 anchor included) has a private space of their own: they create items there
-("Keep private"), edit and save them, and accept them into the brain
-themselves, with no review. There is no share, submit, recall or comment
+("Keep private"), edit and save them. (Their own Accept into the brain
+was removed with review in W5c; W6b moves personal items.) There is no share, submit, recall or comment
 for an admin's items, and nobody else ever reads them: not another admin,
 not a member.
 
@@ -1208,8 +1066,8 @@ path:
 | `GET/PATCH/DELETE /api/admin/space/:id` | `getOwnerOr401`, then the own space    |
 | `PUT /api/admin/space/:id/draft`        | `getOwnerOr401`, then the own space    |
 | `POST /api/admin/space/:id/save`        | `getOwnerOr401`, then the own space    |
-| `POST /api/admin/space/:id/accept`      | `getOwnerOr401`, then the own space    |
-| `POST /api/admin/space/:id/give-back`   | `getOwnerOr401`, then the own space    |
+| `POST /api/admin/space/:id/accept`      | `getOwnerOr401`, then 410 `gone` (W5c) |
+| `POST /api/admin/space/:id/give-back`   | `getOwnerOr401`, then 410 `gone` (W5c) |
 | `GET /api/admin/space/:id/bytes`        | `getOwnerForAsset` (`?at=`), own space |
 | `POST /api/admin/space-files`           | `getOwnerOr401`, then the own space    |
 
@@ -1230,32 +1088,12 @@ disabled and a real brain row, and reads the brain on the admin pool
 id, an entity mention, an external image or frame) is refused for an admin
 too.
 
-**Accept into brain** (`POST /api/admin/space/:id/accept`, body
-`{ audience?, parentPageId?, folderPath?, lowerConfirmed?, confirmedIds? }`, answer
-`{ id, audience, moved, linksStayingBehind, alsoLowered, levelWarning? }`: the same as
-the team-admin accept). `acceptOwnItem` shares the move with the reviewed
-Accept of section 6 (bundle, same ids, re-own, bytes, slug and path
-dedupe, drafts discarded, one transaction, the extractor told once per
-moved item, on commit). Its own guard: the item is in the caller's own
-personal space, the caller is a usable admin, it is not accepted, and it
-has no unsaved edits (409 `unsaved-draft`: save a version first).
-Anything else is a 404. The same route accepts an item the admin TOOK OVER
-from the Review queue (section 11); that item keeps its author record. Unsaved edits on any item the bundle holds refuse
-too (409 `unsaved-draft` with the `ids`: Accept would move the saved
-version and drop the draft); the bundle's rows are locked first, so the
-admin's own autosave cannot slip in. The `space_items` rows of the admin's
-OWN items are DROPPED: an admin's own item keeps no author record, so it
-never shows the member-authored badge and never lists as a member's
-accepted item. A taken member item's row is kept and goes to `accepted`
-with this admin as the reviewer, and its author gets the accepted
-snapshot.
+**Accept into brain** was removed in W5c (the route answers 410). An item
+an admin took over before then stays in their private space; the list
+still names its author (`takenFrom`, with `canGiveBack` always false).
 
 **Never seen by anyone else.**
 
-- The review side (section 6) reads only a MEMBER's items (the author's
-  login is a member, or deleted): the queue, the badge count, a Return, a
-  review comment and a discard never touch an admin's item, not even one
-  submitted before the login was promoted.
 - Team drafts come from member spaces only (migration 0179:
   `mantle_member_space`, in the team-drafts rules on `nodes` and
   `space_items`). A promotion (`PATCH /api/users/:id` with `role: 'admin'`)
@@ -1264,8 +1102,7 @@ snapshot.
   for the admins of the day), so a later demotion or delete never brings
   them back, and a submitted item nobody can recall is editable again. A
   deleted login's space is no member's either (0180): a deleted member's
-  shared items leave Team drafts; admins still find them in the Review queue
-  as left behind.
+  shared items leave Team drafts.
 - The SECURITY DEFINER space functions are not open to PUBLIC (0169 for
   `mantle_personal_space`, 0180 for the rest): `mantle_is_brain_space` runs
   for the team and space roles (their comment rules, and the nodes triggers
@@ -1277,313 +1114,47 @@ snapshot.
 
 **Deactivation.** A deactivated (or deleted) admin's private items are
 purged after 30 days by the nightly `space-purge`, like a member's (section
-6); an admin's item never goes to the Review queue as "left behind". Items
-the admin TOOK OVER are a member's work: never purged, and offered in the
-Review queue again for another admin (section 11).
+6). Items the admin TOOK OVER before W5c are a member's work: never
+purged.
 
 **Tests.** `packages/content/src/admin-space.viewer.db.test.ts` (Postgres:
-the embed rule both ways, another admin by id and through the brain, the
-review side and team drafts with a forced 'team' row, self-accept and its
-refusals, no author row, the extractor told once per moved item),
+the embed rule both ways, another admin by id and through the brain, team
+drafts with a forced 'team' row, nothing announced),
 `server/web/server/admin-space-sweep.test.ts` (the exact route list,
 anonymous 401, member 403, the own space, the `?at=` token),
-`server/web/app/api/admin/space/admin-space-routes.test.ts` (the writer and
-the accept wiring), `server/web/server/middleware/gate.test.ts` (the asset
+`server/web/app/api/admin/space/admin-space-routes.test.ts` (the writer), `server/web/server/middleware/gate.test.ts` (the asset
 path) and the auth and member sweeps.
 
 ## 11. Take over and the accepted snapshot (audit F07)
 
-Jason, 2026-09-28. Two changes to what happens between Submit and Accept,
-and after it. Migration 0183.
+Take over and Give back were removed with review in W5c
+(`POST /api/team-admin/submissions/:id/take-over` and
+`POST /api/admin/space/:id/give-back` answer 410 `gone`). An item an admin
+took before then stays in that admin's private space with
+`review_state = 'taken'`; `takenFromOf`
+(`packages/content/src/admin-space-taken.ts`) still names its author on the
+admin's list.
 
-**Take over.** An admin can take a SUBMITTED member item out of the Review
-queue into their OWN private space (section 10: the acting login's, never
-the anchor's for another admin), work on it there, and then accept it into
-the brain or give it back to the member.
-
-- One transaction, with Accept's locks (the state row, then the bundle's
-  rows). The item and the bundle recorded at Submit move with the same node
-  ids (`moveBetweenSpaces`, `packages/content/src/member-takeover.ts`):
-  `owner_id` re-owned, a table's workbook copied into
-  `TABLE_DB_DIR/<admin space>/`, a file's bytes copied into
-  `MANTLE_SPACES_ROOT/<admin space>/files/`, the old copies removed after
-  the commit and the new ones on a rollback, page paths rebuilt (a page
-  whose parent does not move goes to the top), file names made unique,
-  leftover drafts dropped. An item of the bundle that is itself submitted
-  or accepted stays where it is. The owner-copy registry check (section 6)
-  holds for the member's space.
-- Every moved item's `space_items` row stays and still names the member
-  (`author_login_id`): `review_state` `taken`, `taken_by` (the admin),
-  `taken_at`, `taken_root` (NULL on the item itself, the item's id on the
-  rest of its bundle), sharing private. The recorded bundle is cleared.
-- The title each moved item had is recorded (`taken_title`, migration
-  0196, client logins C5 audit L6): the author's `with-admin` row shows it
-  and a search matches it, whatever the admin renames the item to while it
-  is theirs. A released item taken again by another admin keeps the title
-  recorded the first time; Give back and Accept clear it.
-- Nothing is indexed, embedded or extracted: it stays a personal item. Take
-  over, the admin's edits and Give back start no LLM work; only Accept tells
-  the extractor, once per moved item, after the commit and the bytes.
-- Nobody else reads it: the queue no longer lists it, another admin gets a
-  404 (by id and in the queue), teammates never see it (team drafts come
-  from member spaces only), and the member sees only a `with-admin` row.
-- A taken item is not frozen: the admin edits it through the ordinary
-  admin space routes (section 10), under the admin embed rule.
-
-**Give back** moves a taken item and everything taken with it back to the
-member's space: the item (and the group's root) `returned` with the note,
-the rest `draft`, sharing private, the taken columns cleared. The member
-sees the Return banner, edits and submits again. It is refused while:
-
-- the member cannot take it (deactivated, deleted, or no longer a member):
-  409 `author-inactive`; accept it, or delete it (DELETE on the admin space
-  item is allowed then, and refused with 409 `taken` while the member can
-  still take it back);
-- any item of the group has unsaved edits: 409 `unsaved-draft` with `ids`;
-- its saved versions use something the AUTHOR may not (section 5's embed
-  rule, read at the author's level: only the group itself, the author's own
-  items and the brain items that level reads, so client items only for a
-  client author): 409 `embed` with `ids`. An admin may have added an admin-level brain item
-  or one of their own private items while it was theirs; giving that back
-  would show the member an id, a mention chip's title or a link. Remove
-  them, save, give it back.
-
-**Accept after Take over** is `POST /api/admin/space/:id/accept` (section
-10), with the same body and answer. The taken item's row goes to
-`accepted` with the admin as `reviewed_by`, keeping the author, so the
-member lists it under Accepted and the member-authored badge names them.
-An item a client wrote is accepted by the client rule of section 6 (audit
-A6): team by default, and client or public only with `lowerConfirmed` and
-every brain item that goes down in `confirmedIds`, else 409
-`confirm-level` with `goingDown`. The admin's own item has no author
-record: admin by default, no confirmation. Items taken with it that the admin removed from it stay in the admin's
-space as taken, each its own root (give them back or accept them).
-
-**What the member sees.** While taken, `GET /api/member/space` lists the
-item on page 1 as a `with-admin` row (id, kind, the title it was taken
-with; no icon, content, note or bytes), before the own rows; `total` counts them; `?review=` names
-`with-admin` to select them and leaves them out otherwise. Every
-`/api/member/space/:id…` route (the item, draft, save, share, submit,
-recall, bytes, comments) answers 409 `{ error, reason: 'with-admin' }`, so
-Recall is refused. `my_items_list` (the team agent's tool) does not list
-them. Realtime: Take over, Give back and Accept each raise
-`space_item_changed` (kind `state`) with the MEMBER's space, so the
-member's `/api/member/realtime` stream gets `{ type: 'space_item', id,
-kind: 'state', own: true }` for every moved item, and teammates who were
-showing a shared one get theirs.
-
-**Deactivation.** If the admin who took an item is deactivated, deleted or
-no longer an admin, the taken item goes back to the Review queue in place
-(the queue's `reviewable` rule reads `taken_by`; only the group's root is
-listed), with `reviewState: 'taken'` and reason `submitted` (or
-`left-behind` when its author is gone too), and it counts in the badge.
-Another admin can then Accept it (what was taken with it moves), Return it
-(a give-back from the gone admin's space; that admin's unsaved edits are
-dropped, the other refusals hold), Take it over (into their own space) or,
-when the author is gone too, Discard it (with what was taken with it).
-Review comments are not open on it (409 `not-submitted`). The nightly purge
-never deletes a taken item (`member-space-purge.ts` skips the state): a
-gone admin's own private items go after 30 days, the members' work stays.
-Nothing moves on its own when a login is deactivated: no trigger, no cron.
-
-**The accepted snapshot (F07 option A).** At EVERY Accept of a member's
-item (a reviewed Accept, a left-behind Accept, an Accept after Take over,
-an Accept of a released item) the version accepted is recorded for its
-author in `accepted_snapshots`, in the Accept's own transaction
-(`packages/content/src/member-snapshots.ts`):
-
-| Kind    | Snapshot                                                                            |
-| ------- | ----------------------------------------------------------------------------------- |
-| page    | the committed document                                                              |
-| note    | its text                                                                            |
-| drawing | the committed scene, its saved SVG and its image refs                               |
-| table   | a VACUUM INTO copy of the workbook at `TABLE_DB_DIR/accepted-snapshots/<id>.sqlite` |
-| file    | sha256, name, type and size only (the bytes stay the brain's)                       |
-
-Plus the title, icon and version number. `GET /api/member/accepted` and
-`GET /api/member/accepted/:id` serve the SNAPSHOT (title, icon, content;
-the level shown is the item's current one), never the brain's current
-version, at any level. A file's bytes are served (by
-`/api/member/files/:id`, which also lets an accepted image render in the
-author's other drafts) only while the brain file's recorded sha256 AND its
-bytes on disk (hashed, cached by path, size and mtime) equal the
-snapshot's, under the name and type the file was accepted with (never an
-admin's rename, nor the name Accept made unique in its folder); otherwise
-the file route is a 404 and the item answers its accepted metadata with
-`changedByAdmin: true`. A drawing's picture
-(`/api/member/draws/:id/svg`, the author fallback) is the snapshot's SVG,
-filtered by the snapshot's own image refs (an image the member wrote stays:
-its bytes inside that SVG are the accepted ones); a drawing accepted with
-no saved SVG shows the brain's SVG only while it is still at the accepted
-version, else `changedByAdmin: true`.
-
-**Redacted at the author's level** (client logins C5 audit L1; tables and
-drawings in C6). An item an admin took over is accepted with the admin's
-edits, and an admin may mention, link or embed any brain item at any level
-while it is theirs. So what the author reads of the snapshot is redacted at
-the author's level (team for a member, client for a client), with the
-client redactors (`packages/content/src/client-redact.ts`): in a page's doc
-and a note's text a mention or a link of an item the author may not read
-is "Private item" and an embed of it is left out; a table cell that names
-one (a `/n/<id>` link, a `page:` ref, an absolute URL into the brain) reads
-"Private item"; a drawing's element link to one loses its href (the element
-stays). The author may read the brain's items at their level, their own
-items, and the items they wrote that an admin accepted (shown by their
-accepted title). Nothing of the live item an admin could change after
-Take over or Accept reaches the author either: an accepted table carries
-no summary (the extractor's, of the brain's version), description, tags or
-app link, and its title, icon and time are the snapshot's.
-`packages/content/src/member-accepted.ts`. The table backup
-(`snapshotAllTableDatabases`, the scheduled backup and `db-dump.sh`) copies
-the snapshot workbooks under the same `accepted-snapshots/` folder, so an
-untar into `TABLE_DB_DIR` restores them. Deleting the brain table removes
-its copy; deleting the brain item removes the snapshot row with it.
-
-**Items accepted before 0183.** The migration takes their snapshot from
-the brain's CURRENT saved version (page, note, drawing, a table with no
-workbook, a file's recorded sha256): an admin's edit made before the roll
-is in it, since no older copy exists. A file-backed table, and a file with
-no recorded sha256, cannot be copied in SQL: their rows are `pending` and
-are completed on the author's first read, from the brain's version at that
-moment (so an admin edit made between the roll and that first read is in
-it too). An accepted item with no snapshot at all (accepted by older code)
-is completed the same way. One completion at a time per item (an advisory
-lock).
-
-**API** (the DTOs are in `@mantle/client-types`, `dto/member.ts`).
-
-| Route                                            | Body       | Answer                                                                  |
-| ------------------------------------------------ | ---------- | ----------------------------------------------------------------------- |
-| `POST /api/team-admin/submissions/:id/take-over` | none       | `TakeOverResult` `{ id, moved: MovedSpaceItem[] }`                      |
-| `POST /api/admin/space/:id/give-back`            | `{ note }` | `GiveBackResult` `{ id, returned: MovedSpaceItem[] }`                   |
-| `POST /api/admin/space/:id/accept`               | as today   | as today (`{ id, audience, moved, linksStayingBehind, alsoLowered }`)   |
-| `GET /api/admin/space[?review=taken]`            |            | `AdminSpaceList`: rows are `AdminSpaceItemRow`                          |
-| `GET/PATCH /api/admin/space/:id`                 |            | `AdminSpaceItem`: `{ row: AdminSpaceItemRow, body }`                    |
-| `GET /api/member/space[?review=with-admin]`      |            | `MemberSpaceList`, with `with-admin` rows on page 1                     |
-| `GET /api/member/accepted/:id`                   |            | `{ item: MemberAcceptedItem }`, `changedByAdmin?` on files and drawings |
-
-- `MovedSpaceItem` = `{ id, type, title }`.
-- `AdminSpaceItemRow` = `MemberSpaceItemRow & { takenFrom: AdminTakenFrom |
-null }`; `AdminTakenFrom` = `{ loginId: string | null, name, canGiveBack:
-boolean, takenAt: string | null }` (`name`: display name, else the email's
-  local part, "Removed member" once deleted; `canGiveBack` false when give
-  back would answer `author-inactive`).
-- States: `MemberReviewState` gains `taken` (admin rows and the Review
-  queue); `MemberSpaceItemState` = `MemberReviewState | 'with-admin'` is the
-  type of `MemberSpaceItemRow.reviewState` (`with-admin` on the member's
-  own list only).
-- Errors: take-over 404 (not waiting: recalled, handled, taken), 409
-  `not-submitted` (a left-behind item never submitted), 409 `too-large`;
-  give-back 404 (not a taken item in the caller's space), 400 `invalid` (no
-  note), 409 `author-inactive`, 409 `unsaved-draft` + `ids`, 409 `embed` +
-  `ids`; admin space DELETE 409 `taken`; every member item route 409
-  `with-admin`; Return on a released item can answer the give-back's 409s.
-
-**Rollback.** Code before 0183 does not know `taken`: give back or accept
-every taken item before rolling back
-(`select node_id from space_items where review_state = 'taken'`). The
-snapshot table is only read by the new code.
-
-**Tests.** `packages/content/src/member-takeover.viewer.db.test.ts`
-(Postgres: the move and the owner-copy registry, nothing announced or
-chunked, another admin, teammates and the member, the `with-admin` rows
-and Recall, `takenFrom`, give-back's refusals and the move back, Accept
-keeping the author and announcing once, the table's workbook, an admin's
-own item unsnapshotted, delete and `author-inactive`, the purge skipping a
-taken item, a deactivated taker releasing it to the queue and another
-admin taking it over, Return of a released item, a missing snapshot
-completed on first read), `member-accepted.viewer.db.test.ts` (an admin's
-later saved edits stay the brain's for page, table, drawing and note; a
-changed file answers `changedByAdmin`),
-`member-draw-images.viewer.db.test.ts` (a changed accepted image leaves a
-member's drawing, and stays in their own accepted snapshot),
-`client-accepted-c5a.viewer.db.test.ts` (a taken, edited, accepted page,
-note, table and drawing redacted at the author's level; the taken title;
-an accepted file's name), the route tests in
-`server/web/app/api/member/accepted/member-accepted-routes.test.ts`,
-`server/web/server/admin-space-sweep.test.ts` and `auth-sweep.test.ts`
-(the routes and their gates).
-
-**In the client** (jackdaw, the release after v0.6.163). Team admin > Review
-has Take over beside Accept and Return, confirmed in a dialog that lists
-what moves (the bundle preview); the admin then lands in the Private view of
-the item's kind with it open. A released item says "released" in the queue
-and in its header, can be taken over again, and has no comment box. In the
-Private view a taken item says "From <member>"; Give back (a required note)
-shows while `canGiveBack`, Delete only once it is false; a refused Give back
-stays in its dialog and names the items to save or remove. A member's Mine
-shows a `with-admin` row as "With admin" and opens nothing of it: the row,
-the item's own 409 `with-admin` and a `/n/<id>` link all show the same
-notice, and Recall is not offered. The member home lists them apart ("With
-an admin", its own `?review=with-admin` read; a brain before 0183 answers
-400 and the group stays empty). An accepted file or drawing with
-`changedByAdmin` says so instead of the picture. A page frozen inside a
-submitted item (409 `frozen` with `ids`) names and links that item, and
-Submit's 409 `unsaved-draft` lists the items to save first, each a link.
+The accepted snapshot (migration 0183, `accepted_snapshots`) stays: an
+author's reads of an item accepted before W5c come from it
+(`packages/content/src/member-snapshots.ts`, `member-accepted.ts`).
 
 ## 12. "Needs you": admins are told what waits (2026-09-28)
 
-An admin must never be blind to work waiting for them: items members
-submitted for review (and what deactivated logins left behind) and open
-team requests.
-
-**The event.** Migration 0186 raises `needs_you_changed`, with the brain's
-owner id as the payload (the `pending_changed` convention), from triggers,
-so no write path can forget it:
-
-- `space_items`: a row enters or leaves `submitted` or `taken`, a taken
-  item changes hands, an item is accepted (a left-behind item is a draft
-  until then), or a submitted, taken or team-shared row is deleted
-  (Discard). Saves, comments and sharing changes do not fire.
-- `auth.users`: a role change or a (re)activation (it moves items between
-  "submitted" and "left behind", and releases a gone admin's taken items).
-- `nodes`: a `team-request` task starts or stops being open (filed, done,
-  reopened, deleted). Edits and board moves do not fire.
-
-NOTIFY is transactional, so a bundle moved in one transaction wakes each
-listener once and a rolled-back write sends nothing. The trigger functions
-only notify (`SECURITY DEFINER` for the brain id lookup: a member's write
-runs as the space role). Exactly two listeners, pinned by
+The review queue and team requests no longer wait for an admin (W5c):
+`GET /api/team-admin/needs-you` answers 410 `gone`, and the `NeedsYou`
+type is gone from `@mantle/client-types`. The `needs_you_changed` event
+(migration 0186) stays, raised by triggers; since 0230 provider outages
+raise it too. Exactly two listeners, pinned by
 `server/web/lib/needs-you-listeners.test.ts`: the owner live stream
-(`lib/realtime.ts`, sent as `needs_you` on `/api/realtime`, which refuses
-members) and the push worker. Neither starts LLM work.
+(`lib/realtime.ts`, sent as `needs_you`; the client refetches the provider
+alerts from `/api/embedding`) and the push worker, which pushes a new
+provider outage or a parked extraction to active admin devices only
+(`server/web/lib/push/needs-you.ts`). Neither starts LLM work.
 
-**The count.** `GET /api/team-admin/needs-you` (admins only) answers
-`NeedsYou` (`@mantle/client-types`): `review.submitted`,
-`review.leftBehind`, `requests.open`, `total`, and the newest item of each
-queue as `{ id, title, from, at }`, never content. The numbers come from
-count queries over the same conditions as the lists (`countReviewQueue`,
-`countOpenTeamRequests`), never from a capped list, so every window and
-device agrees. The Requests badge (`teamAdminBadges`) uses the same count;
-it used to stop at 100.
-
-**The phone.** The push worker pushes an ARRIVAL only (the newest item of a
-queue, started waiting in the last two minutes, not pushed before), to
-devices of active admin logins only (`listAdminSubscriptions`: a member's,
-a client's, a deactivated admin's or an unattributed device is never
-listed). Since mobile_roles_push every owner push follows that rule (assistant messages
-and approvals too), and a member or a client gets pushes of its own: a
-reply in its chat, a review result, a comment
-(mobile-companion-backend.md, "Three roles on the phone"). The
-lock screen shows the title and the member's name. It follows the
-approvals toggle in the push preferences. The mobile companion has no Team
-admin screen yet, so a tap opens the app.
-
-**The client** (jackdaw): a live "N waiting" notice at the top of the rail,
-a toast when something arrives, the browser tab title and favicon, an
-opt-in browser notification, and in the desktop app the dock badge, a dock
-bounce (macOS) or taskbar flash (Linux) until focused, and a native
-notification.
-
-**Tests.** `packages/content/src/needs-you.viewer.db.test.ts` (on its own
-scratch database: the event fires once on submit, recall, return, take
-over, give back, accept, discard, deactivation and reactivation, request
-open, done, reopen and delete, and never on a save, a share, an edit or an
-untagged task; the count agrees with the queue on one snapshot and has no
-cap; the functions only notify), `server/web/lib/push/needs-you.test.ts`,
-`server/web/lib/push/admin-subscriptions.db.test.ts`,
-`server/web/lib/realtime.needs-you.test.ts` (members' stream never gets it;
-another owner's change is dropped).
+**Tests.** `packages/content/src/needs-you-triggers.db.test.ts` (the
+trigger functions only notify), `server/web/lib/push/needs-you.test.ts`,
+`server/web/lib/push/admin-subscriptions.db.test.ts`.
 
 ## 13. One list per kind (item-list alignment, 2026-09-29)
 
@@ -1702,18 +1273,8 @@ its own chat, and in client apps (client-logins.md section 10).
   each space, uploads, open submissions and the quota refusals of the last
   7 days), the items with recent client comments, and removing every
   comment one client wrote (client-logins.md sections 2, 3 and 9).
-- **Review.** A client's submission waits in the same queue, with a Client
-  badge, and counts in the Review badge and in Needs you (section 12) like
-  a member's. Accept of a client's item defaults to team; client or public
-  needs the explicit confirmation of everything that goes down with it
-  (409 `confirm-level` with `goingDown` otherwise, section 6). The badge and
-  the rule come from the role stamped on the item, so they hold after the
-  client login is deleted.
-- **Take over and give back** (section 11) work on a client's item as on a
-  member's. Give back checks the item's references at the client level, so
-  a team item named in it is refused (409 `embed`). The client lists the
-  held item under the title it had when taken; once accepted, the client
-  reads the version accepted, redacted at the client level.
+- **Review, Take over and Give back** were removed in W5c (sections 6 and
+  11), for a client's item as for a member's.
 - **Comments on client-level items.** An admin's comment on an item at
   client level joins the client thread: every client login reads it, under
   the admin's display name (else the email's local part, never the whole
@@ -1729,5 +1290,4 @@ its own chat, and in client apps (client-logins.md section 10).
   into an item clients already read, wait in Pending for the owner
   (client-logins.md section 8). The owner's MCP surface is not gated.
 - **Cost.** No client write starts the extractor, a trigger or a worker;
-  a client request reaches no model until an admin acts on it, and Accept
-  announces each moved item once.
+  a client request reaches no model until an admin acts on it.

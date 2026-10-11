@@ -133,30 +133,24 @@ export {
 } from './member-turn-ledger';
 
 export {
-  listTeamRequests,
   countOpenTeamRequests,
-  notifyTeamRequester,
   countTeamRequestsFiled,
   countClientRequestFilings,
   recordClientRequestFiling,
-  markTeamRequestReviewed,
   TEAM_REQUEST_TAG,
   TEAM_REQUESTS_PER_TURN,
   TEAM_REQUESTS_PER_DAY,
   CLIENT_REQUEST_TAG,
   CLIENT_REQUESTS_PER_TURN,
   CLIENT_REQUESTS_PER_DAY,
-  type TeamRequest,
-  type NotifyTeamRequesterResult,
 } from './team-requests';
 
+// Provider outages (0230) and the live event that still carries them.
 export {
   NEEDS_YOU_CHANGED_CHANNEL,
   NEEDS_YOU_REALTIME_TYPE,
-  loadNeedsYou,
   loadProviderAlerts,
-  type NeedsYou,
-} from './needs-you';
+} from './provider-alerts';
 
 export { dedupeFilename } from './dedupe-filename';
 
@@ -268,44 +262,6 @@ export {
   type SpaceFile,
 } from './member-space-files';
 export {
-  BUNDLE_MAX_ITEMS,
-  ReviewError,
-  acceptAudience,
-  acceptOwnItem,
-  acceptReviewItem,
-  countReviewQueue,
-  countSubmitted,
-  discardLeftBehind,
-  getReviewItem,
-  listReviewQueue,
-  newestSubmitted,
-  openReviewFile,
-  previewAccept,
-  returnReviewItem,
-  reviewDrawSvg,
-  takeOverReviewItem,
-  type TakeOverResult,
-  type AcceptClosureItem,
-  type AcceptOptions,
-  type AcceptResult,
-  type Bundle,
-  type BundleItem,
-  type ReviewAuthor,
-  type ReviewAuthorRole,
-  type ReviewItemRow,
-  type ReviewReason,
-} from './member-review';
-export {
-  SHARED_ITEMS_MAX,
-  adminUnshareMemberItem,
-  getMemberItemShared,
-  listMemberItemsShared,
-  memberDrawSvgShared,
-  openMemberFileShared,
-  type SharedItemAuthor,
-  type SharedMemberItem,
-} from './member-items-shared';
-export {
   acceptedAuthors,
   acceptedByLogin,
   acceptedDrawSnapshot,
@@ -365,7 +321,7 @@ export {
   type ClientQuotaRefusal,
 } from './client-quota-log';
 export { memberDrawSvg, memberVisibleDrawFileIds } from './member-draw-images';
-export { giveBackTakenItem, takenFromOf, type GiveBackResult } from './member-takeover';
+export { takenFromOf } from './admin-space-taken';
 export {
   SNAPSHOT_TABLE_OWNER,
   acceptedFileUnchanged,

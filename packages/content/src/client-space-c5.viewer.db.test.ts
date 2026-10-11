@@ -7,14 +7,15 @@
  *    500th passes), and one total for ALL client spaces of the brain (other
  *    clients' rows count);
  *  - the submit caps: 10 submissions in 24 hours (Recall and Submit again
- *    still counts), 50 waiting for review (an item a reviewer took over
- *    counts); a member is never capped;
- *  - a client's submit and a reviewer's Return reach the client's own row
- *    (no review talk: comments are gone, 2026-10-09); the kept
- *    node_comments table still refuses a client's write as anyone else;
+ *    still counts), 50 waiting; a member is never capped;
+ *  - a client's submit and a returned row reach the client's own row (no
+ *    review talk: comments are gone, 2026-10-09); the kept node_comments
+ *    table still refuses a client's write as anyone else;
  *  - cost-safety: nothing a client does in their space is announced to the
- *    extractor; Accept announces each moved item exactly once, at team by
- *    default.
+ *    extractor.
+ *
+ * The admin's review (Take over, Give back, Return, Accept) was removed in
+ * workspaces W5c; a returned row is written in SQL here.
  *
  * Big sizes are FAKE: a small spooled upload with a large `size`, and
  * `size_bytes` / ledger rows written by the admin pool, never real bytes.
@@ -45,9 +46,6 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
   let m: Db;
   let sp: typeof import('./member-space');
   let sf: typeof import('./member-space-files');
-  let rv: typeof import('./member-review');
-  let ma: typeof import('./member-accepted');
-  let tk: typeof import('./member-takeover');
   let lim: typeof import('./space-limits');
   let fp: typeof import('@mantle/files');
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -140,9 +138,6 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     m = await import('@mantle/db');
     sp = await import('./member-space');
     sf = await import('./member-space-files');
-    rv = await import('./member-review');
-    ma = await import('./member-accepted');
-    tk = await import('./member-takeover');
     lim = await import('./space-limits');
     fp = await import('@mantle/files');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -309,14 +304,10 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     expect((await submit(c.submits, last)).reviewState).toBe('submitted');
   });
 
-  it('refuses the 51st open submission, counting an item a reviewer took over', async () => {
-    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
-    const taken = await page(c.open, `${tag} taken`);
-    await submit(c.open, taken);
-    await rv.takeOverReviewItem(taken, actor);
-    // 48 more waiting (written by the admin pool: the day cap is not this
-    // test's rule), the taken one, then the 50th and the 51st.
-    await fakeItems(c.open, 48);
+  it('refuses the 51st open submission', async () => {
+    // 49 waiting (written by the admin pool: the day cap is not this test's
+    // rule), then the 50th and the 51st.
+    await fakeItems(c.open, 49);
     await m.systemDb.execute(sqlTag`
       insert into space_items (node_id, author_login_id, review_state, submitted_at)
       select n.id, ${c.open}, 'submitted', now() from nodes n
@@ -328,9 +319,6 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
       reason: 'quota',
       message: expect.stringMatching(/50 items waiting/),
     });
-    // The item goes back to the author: one place is free again.
-    await tk.giveBackTakenItem(anchor, actor, taken);
-    expect((await submit(c.open, fiftyFirst)).reviewState).toBe('submitted');
   });
 
   it('never caps a member: 11 submissions a day and 50 waiting pass', async () => {
@@ -382,8 +370,10 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     expect(await insert('client', 'review')).toBe('ok');
   });
 
-  it('a reviewer’s Return reaches the client’s own row, with no note', async () => {
-    await rv.returnReviewItem(talkPage, { loginId: adminA });
+  it('a returned row reaches the client’s own row, with no note', async () => {
+    await m.systemDb.execute(sqlTag`
+      update space_items set review_state = 'returned', reviewed_by = ${adminA},
+        reviewed_at = now() where node_id = ${talkPage}`);
     const row = await as(c.talk, () => sp.getMineRow(spaceOf[c.talk]!, talkPage));
     expect(row).toMatchObject({ reviewState: 'returned', returnedNote: null });
     const listed = await as(c.talk, () =>
@@ -394,7 +384,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
 
   // ── Cost-safety (plan section 9, test 16) ───────────────────────────────
 
-  it('nothing a client does in their space is announced; Accept announces each item once, at team', async () => {
+  it('nothing a client does in their space is announced', async () => {
     const C = spaceOf[c.cost]!;
     const pageId = await page(c.cost, `${tag} cost page`);
     const noteId = (
@@ -418,31 +408,5 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     await settle();
     const ours = [pageId, noteId, fileId];
     expect(announced.filter((id) => ours.includes(id))).toEqual([]);
-
-    const res = await rv.acceptReviewItem(anchor, pageId, { loginId: adminA });
-    expect(res.audience).toBe('team');
-    const [node] = await exec<{ audience: string; owner_id: string }>(
-      sqlTag`select audience, owner_id from nodes where id = ${pageId}`,
-    );
-    // No level is written since W5b2 (contract change 22): the brain's Team
-    // workspace, when it has one, gets a read grant instead.
-    expect(node).toEqual({ audience: 'admin', owner_id: anchor });
-    const moved = res.moved.map((b) => b.id).sort();
-    expect(moved).toEqual([pageId, fileId].sort());
-    await settle();
-    for (const id of moved) expect(announced.filter((a) => a === id).length, id).toBe(1);
-    // The note never moved, and was never announced.
-    expect(announced).not.toContain(noteId);
-
-    // The author reads it as accepted, with no level; their accepted file's
-    // bytes stay readable (the client files route's fallback).
-    const item = await ma.getClientAcceptedItem(anchor, c.cost, pageId);
-    expect(item).toMatchObject({ id: pageId, type: 'page' });
-    expect(item).not.toHaveProperty('audience');
-    expect(await ma.getClientAcceptedItem(anchor, c.talk, pageId)).toBeNull();
-    expect(await ma.acceptedFileReadable(anchor, c.cost, fileId)).toBe(true);
-    expect(await ma.acceptedFileReadable(anchor, c.talk, fileId)).toBe(false);
-    const list = await ma.listAccepted(anchor, c.cost, { kinds: ['page', 'note', 'file'] });
-    expect(list.items.map((r) => r.id).sort()).toEqual([pageId, fileId].sort());
   });
 });

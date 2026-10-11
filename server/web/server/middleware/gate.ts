@@ -101,9 +101,6 @@ const MEMBER_FRAME_RE = /^\/api\/member\/apps\/[^/]+\/frame$/;
  *  the route accepts only a CLIENT ticket (`mem` and `cep` claims) at the
  *  login's current session epoch. */
 const CLIENT_FRAME_RE = /^\/api\/client\/apps\/[^/]+\/frame$/;
-/** An admin's TEST run of a member's app (workspace review pattern): same
- *  ticket carve; the route accepts only a review test ticket. */
-const REVIEW_TEST_FRAME_RE = /^\/api\/apps\/members\/[^/]+\/test\/frame$/;
 
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
@@ -266,12 +263,9 @@ export function gate(): MiddlewareHandler {
 
     // The sandbox frame document navigates with a `?t=` frame ticket — same
     // can't-carry-a-credential shape as the asset paths above, same narrow
-    // acceptance: these four paths only, GET only, kind 'f' only.
+    // acceptance: these three paths only, GET only, kind 'f' only.
     if (
-      (OWNER_FRAME_RE.test(path) ||
-        MEMBER_FRAME_RE.test(path) ||
-        CLIENT_FRAME_RE.test(path) ||
-        REVIEW_TEST_FRAME_RE.test(path)) &&
+      (OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path) || CLIENT_FRAME_RE.test(path)) &&
       req.method === 'GET'
     ) {
       const t = url.searchParams.get('t');
