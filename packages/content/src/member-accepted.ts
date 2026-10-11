@@ -137,13 +137,7 @@ type Joined = {
 /** The row as accepted: the snapshot's title, icon and time when there is
  *  one (an admin's later rename is the brain's). Where it stands for its
  *  author is not sent since W6b (no level). */
-function rowOf({
-  node,
-  acceptedAt,
-  snapTitle,
-  snapIcon,
-  snapAt,
-}: Joined): AcceptedRow {
+function rowOf({ node, acceptedAt, snapTitle, snapIcon, snapAt }: Joined): AcceptedRow {
   const d = (node.data ?? {}) as Record<string, unknown>;
   const icon = snapTitle != null ? snapIcon : d.icon;
   return {
