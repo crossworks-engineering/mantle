@@ -77,6 +77,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   const mem = randomUUID(); // a member (Team), with a private workspace
   const mem2 = randomUUID(); // a member (Team), alone in "Side"
   const tag = `w6a${randomUUID().slice(0, 6)}`;
+  const PASSWORD = 'a long enough password';
   const teamNote = randomUUID();
   const adminNote = randomUUID();
   const sideNote = randomUUID();
@@ -98,7 +99,8 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   ): Promise<{ status: number; text: string; outcome: RequestOutcome | null }> => {
     seen.last = null;
     const headers: Record<string, string> = { 'content-type': 'application/json' };
-    if (as) headers.cookie = cookieOf(as);
+    if (as?.startsWith('mtlk_')) headers.authorization = `Bearer ${as}`;
+    else if (as) headers.cookie = cookieOf(as);
     const res = await Promise.race([
       app.request(path, {
         method,
@@ -153,10 +155,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     delete process.env.MANTLE_DETACHED_DEV;
     delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
+    const hash = (await import('bcryptjs')).default.hashSync(PASSWORD, 4);
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${noArea}, ${email('noarea')}, 'x', false, 'admin', 'Nora Noarea'),
-      (${mem}, ${email('mem')}, 'x', false, 'member', 'Mia Member'),
+      (${mem}, ${email('mem')}, ${hash}, false, 'member', 'Mia Member'),
       (${mem2}, ${email('mem2')}, 'x', false, 'member', 'Max Member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
@@ -307,6 +310,36 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(failures).toEqual([]);
     expect(opened).toBeGreaterThan(20);
   }, 900_000);
+
+  it('a member API key (U5): /api/v1 answers whoami in its scope and refuses the rest', async () => {
+    const made = await call('/api/access-keys', mem, 'POST', {
+      name: 'U5',
+      access: 'read_write',
+      areas: null,
+      password: PASSWORD,
+    });
+    expect(made.status, made.text).toBe(201);
+    const secret = (JSON.parse(made.text) as { secret: string }).secret;
+    const failures: string[] = [];
+    let checked = 0;
+    for (const e of manifest) {
+      if (!e.pattern.startsWith('/api/v1/')) continue;
+      for (const method of e.methods) {
+        if (method === 'OPTIONS') continue;
+        const r = await call(concrete(e.pattern, method === 'GET'), secret, method);
+        checked += 1;
+        const key = `${method} ${e.pattern}`;
+        if (r.outcome?.kind === 'system') failures.push(`${key} ran on the system pool`);
+        if (key === 'GET /api/v1/whoami') {
+          if (r.status !== 200 || r.outcome?.kind !== 'user') failures.push(`${key} ${r.status}`);
+        } else if (r.status !== 403 && r.status !== 401 && r.status !== 404) {
+          failures.push(`${key} not refused: ${r.status}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(checked).toBeGreaterThan(10);
+  }, 300_000);
 
   it('no admin screen shows another user’s private item (nor an item of a workspace it is not in)', async () => {
     const hidden = [privNote, sideNote, `${tag} private note`, `${tag} side note`];
