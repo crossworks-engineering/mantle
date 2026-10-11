@@ -359,15 +359,15 @@ export async function previewMyTelegramChat(args: {
 /**
  * Pair the chat holding `code` to the signed-in login (POST
  * /api/telegram/pair with `confirm: true`, workspaces W7d): only for a bot
- * whose assistant's workspace that login is a user of, and, with the
- * preview's token, only the chat that preview showed. The answer, or a
- * refusal.
+ * whose assistant's workspace that login is a user of, and only with the
+ * preview's token (required, W7d+e): the chat that preview showed, for this
+ * code, within ten minutes. The answer, or a refusal.
  */
 export async function pairMyTelegramChat(args: {
   ownerId: string;
   loginId: string;
   code: string;
-  previewToken?: string | null;
+  previewToken: string;
 }): Promise<TelegramPairResult | PairingRefusal> {
   const r = await pairChatWithCode(args);
   if (!r.ok) return r;

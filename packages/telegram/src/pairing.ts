@@ -13,7 +13,7 @@
  * Used by the telegram_pair tool (@mantle/tools) and the web routes
  * (server/web lib/agent-telegram.ts), so the two never differ.
  */
-import { createHash } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import {
   agents,
@@ -42,11 +42,14 @@ export type PairingRefusalCode =
   | 'not_found'
   | 'not_allowed';
 
-/** The chat a pairing or a block acted on. */
+/** The chat a pairing or a block acted on. `label` may be the chat's free
+ *  title (for a screen, as plain text); `noticeLabel` is the one text an
+ *  assistant may read (noticeLabelOf). */
 export type PairedChatSummary = {
   id: string;
   telegramChatId: string;
   label: string;
+  noticeLabel: string;
   agentName: string | null;
 };
 
@@ -93,28 +96,81 @@ async function botAgentName(accountId: string): Promise<string | null> {
 }
 
 /** What a pairing code is for, shown BEFORE it pairs (W7d fix round 1, M3):
- *  the Telegram chat (its @username, else its title, and its id), the bot
- *  and its assistant, so a user handed someone else's code sees whose chat
- *  it is before it becomes theirs. */
+ *  the Telegram chat, the bot and its assistant, so a user handed someone
+ *  else's code sees whose chat it is before it becomes theirs.
+ *
+ *  `chat.label` is the only chat text an assistant reads (noticeLabelOf: a
+ *  checked @username, else the chat id; W7d+e). `chat.title` is the chat's
+ *  free title, capped at PREVIEW_TITLE_MAX characters, for a screen to show
+ *  as plain text and never for a model: its owner chose it, so it may carry
+ *  instructions. */
 export type PairingPreview = {
-  chat: { label: string; telegramChatId: string };
+  chat: { label: string; title: string | null; telegramChatId: string };
   bot: { name: string };
   agentName: string | null;
 };
 
-/** The chat as the preview names it: its @username, else its title. */
-function previewLabelOf(chat: Pick<TelegramChat, 'title' | 'username' | 'telegramChatId'>) {
-  return chat.username ? `@${chat.username}` : (chat.title ?? chat.telegramChatId);
+/** The longest chat title a preview carries (W7d+e). */
+export const PREVIEW_TITLE_MAX = 64;
+
+function previewTitleOf(chat: Pick<TelegramChat, 'title'>): string | null {
+  // Control characters become spaces: the title is one plain line.
+  const chars = Array.from(chat.title ?? '').map((c) => {
+    const cp = c.codePointAt(0) ?? 0;
+    return cp < 0x20 || cp === 0x7f ? ' ' : c;
+  });
+  const title = chars.join('').trim();
+  return title ? Array.from(title).slice(0, PREVIEW_TITLE_MAX).join('').trim() : null;
 }
 
-/** Binds a confirm to the preview it follows: the chat the code named then,
- *  for this login. Not a secret (the code is the secret); a confirm whose
- *  code now names another chat is refused. */
-function previewTokenOf(chat: Pick<TelegramChat, 'id' | 'telegramChatId'>, loginId: string) {
-  return createHash('sha256')
-    .update(`telegram-pair:${chat.id}:${chat.telegramChatId}:${loginId.toLowerCase()}`)
+/** How long a preview's token may confirm (W7d+e). */
+export const PREVIEW_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+/** The MAC of a preview token: keyed by the chat's row id, which nothing
+ *  shows before the chat is paired, over the Telegram chat, the login, the
+ *  code and the token's expiry (seconds). */
+function previewMacOf(
+  chat: Pick<TelegramChat, 'id' | 'telegramChatId'>,
+  loginId: string,
+  code: string,
+  expSec: number,
+): string {
+  return createHmac('sha256', `telegram-pair:${chat.id}`)
+    .update(`${chat.telegramChatId}:${loginId.toLowerCase()}:${code}:${expSec}`)
     .digest('hex')
-    .slice(0, 32);
+    .slice(0, 24);
+}
+
+/** Binds a confirm to the preview it follows (W7d fix round 1, M3; W7d+e):
+ *  the chat the code named then, for this login and this code, for
+ *  PREVIEW_TOKEN_TTL_MS. 32 hex: the expiry (8) and the MAC (24). Not the
+ *  secret (the code is); a confirm without it, after it expires, or whose
+ *  code now names another chat is refused (preview_mismatch). */
+function previewTokenOf(
+  chat: Pick<TelegramChat, 'id' | 'telegramChatId'>,
+  loginId: string,
+  code: string,
+  now: number,
+): string {
+  const expSec = Math.floor((now + PREVIEW_TOKEN_TTL_MS) / 1000);
+  return expSec.toString(16).padStart(8, '0') + previewMacOf(chat, loginId, code, expSec);
+}
+
+/** Whether `token` is a live preview token for this chat, login and code. */
+function previewTokenValid(
+  token: string | null | undefined,
+  chat: Pick<TelegramChat, 'id' | 'telegramChatId'>,
+  loginId: string,
+  code: string,
+  now: number,
+): boolean {
+  if (!token || !/^[a-f0-9]{32}$/.test(token)) return false;
+  const expSec = Number.parseInt(token.slice(0, 8), 16);
+  const nowSec = Math.floor(now / 1000);
+  if (expSec < nowSec || expSec > nowSec + PREVIEW_TOKEN_TTL_MS / 1000 + 60) return false;
+  const want = Buffer.from(previewMacOf(chat, loginId, code, expSec), 'utf8');
+  const got = Buffer.from(token.slice(8), 'utf8');
+  return got.length === want.length && timingSafeEqual(got, want);
 }
 
 /** A Telegram username is safe to repeat in a thread an assistant reads; a
@@ -198,6 +254,7 @@ async function pairingTarget(args: {
     id: chat.id,
     telegramChatId: chat.telegramChatId,
     label: labelOf(chat),
+    noticeLabel: noticeLabelOf(chat),
     agentName: await botAgentName(chat.accountId),
   };
   if (chat.allowlistStatus === 'allowed') {
@@ -259,11 +316,15 @@ export async function previewChatPairing(args: {
       ok: true as const,
       already: t.already,
       preview: {
-        chat: { label: previewLabelOf(t.chat), telegramChatId: t.chat.telegramChatId },
+        chat: {
+          label: noticeLabelOf(t.chat),
+          title: previewTitleOf(t.chat),
+          telegramChatId: t.chat.telegramChatId,
+        },
         bot: { name: account ? `@${account.botUsername}` : 'the bot' },
         agentName: t.summary.agentName,
       },
-      previewToken: previewTokenOf(t.chat, loginId),
+      previewToken: previewTokenOf(t.chat, loginId, code, now),
     };
   }, 'login-telegram');
 }
@@ -272,9 +333,11 @@ export async function previewChatPairing(args: {
  * Pair the chat holding `code` to `loginId` (the caller, never anyone
  * else; step two of two, after previewChatPairing). The chat must be pending
  * with a live code, on this brain, on a bot whose assistant's workspace the
- * login is a user of. With `previewToken`, the code must still name the chat
- * that preview showed. A chat already paired to this login answers `already`
- * (no change); one paired to another login is refused. Then the login is
+ * login is a user of. `previewToken` is required (W7d+e): the token of a
+ * preview of this code by this login, under PREVIEW_TOKEN_TTL_MS old, whose
+ * chat the code still names; else preview_mismatch. A chat already paired
+ * to this login answers `already` (no change); one paired to another login
+ * is refused. Then the login is
  * told in the app (a notice in its own thread with the bot's assistant,
  * naming the chat and the bot), and a best-effort confirmation DM follows.
  */
@@ -292,10 +355,12 @@ export async function pairChatWithCode(args: {
     const t = await pairingTarget({ ownerId, loginId, code, now });
     if (!t.ok) return t;
     const { chat, summary } = t;
-    if (args.previewToken && args.previewToken !== previewTokenOf(chat, loginId)) {
+    if (!previewTokenValid(args.previewToken, chat, loginId, code, now)) {
       return {
         ok: false as const,
-        error: 'this code no longer names the chat you were shown: look it up again, then confirm.',
+        error: args.previewToken
+          ? 'that preview no longer holds (it is over ten minutes old, or the code now names another chat): look the code up again, then confirm with the new preview token.'
+          : 'a pairing confirm needs the preview token: look the code up first (without confirm), show the user whose chat it is, then confirm with that token.',
         code: 'preview_mismatch' as const,
       };
     }
@@ -427,6 +492,7 @@ export async function setChatPairing(args: {
         id: chat.id,
         telegramChatId: chat.telegramChatId,
         label: labelOf(chat),
+        noticeLabel: noticeLabelOf(chat),
         agentName: await botAgentName(chat.accountId),
       },
     };

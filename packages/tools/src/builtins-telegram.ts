@@ -321,7 +321,7 @@ export const telegram_pair: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Pair your Telegram chat',
   description:
-    "Pair the Telegram chat that was sent this code to YOU (the signed-in user), never to anyone else, in two calls. Without `confirm` it pairs nothing and returns which chat (its @username or title), bot and assistant the code is for: show that to the user. Only once they say it is their own chat, call again with `confirm: true` and the preview_token it returned. Works only for a bot whose assistant is in a workspace you are a user of; the bot's assistant then answers the chat as you.",
+    "Pair the Telegram chat that was sent this code to YOU (the signed-in user), never to anyone else, in two calls. Without `confirm` it pairs nothing and returns which chat (its @username or id), bot and assistant the code is for: show that to the user. Only once they say it is their own chat, call again with `confirm: true` and the `preview_token` it returned (required; it holds for ten minutes). Works only for a bot whose assistant is in a workspace you are a user of; the bot's assistant then answers the chat as you.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -339,7 +339,7 @@ export const telegram_pair: BuiltinToolDef = {
         type: 'string',
         pattern: '^[a-f0-9]{32}$',
         description:
-          'the token the preview call returned, so the confirm pairs that chat and no other',
+          'the token the preview call returned, required with confirm: the confirm then pairs that chat and no other',
       },
     },
     required: ['code'],
@@ -356,7 +356,9 @@ export const telegram_pair: BuiltinToolDef = {
     if (bool(input.confirm) !== true) {
       const p = await previewChatPairing({ ownerId: ctx.ownerId, loginId, code });
       if (!p.ok) return { ok: false, error: p.error };
-      const what = `Telegram chat ${p.preview.chat.label} (id ${p.preview.chat.telegramChatId}) on bot ${p.preview.bot.name}${p.preview.agentName ? `, answered by ${p.preview.agentName}` : ''}`;
+      // The checked label only (noticeLabelOf), never the chat's free title
+      // (W7d+e): the title is the chat owner's text, and a model reads this.
+      const what = `Telegram ${p.preview.chat.label} (id ${p.preview.chat.telegramChatId}) on bot ${p.preview.bot.name}${p.preview.agentName ? `, answered by ${p.preview.agentName}` : ''}`;
       return {
         ok: true,
         output: p.already
@@ -364,13 +366,24 @@ export const telegram_pair: BuiltinToolDef = {
           : `Nothing is paired yet. This code is for ${what}. Ask the user whether this is their own chat; only if it is, call telegram_pair again with confirm: true and preview_token: "${p.previewToken}".`,
       };
     }
+    // A confirm needs the preview's token (W7d+e): the user saw whose chat
+    // it is first.
     const token = strOpt(input.preview_token) ?? null;
+    if (!token) {
+      return {
+        ok: false,
+        error:
+          'confirm needs preview_token: call telegram_pair with this code and no confirm first, show the user whose chat it is, then confirm with the preview_token it returns.',
+      };
+    }
     const r = await pairChatWithCode({ ownerId: ctx.ownerId, loginId, code, previewToken: token });
     if (!r.ok) return { ok: false, error: r.error };
     if (r.already) return { ok: true, output: 'already paired to you' };
+    // Never the chat's free title (W7d+e): its owner chose it, and this
+    // output is read by a model.
     return {
       ok: true,
-      output: `paired chat ${r.chat.telegramChatId} (${r.chat.label}) to you`,
+      output: `paired ${r.chat.noticeLabel} to you`,
     };
   },
 };

@@ -5,9 +5,12 @@
  * you).
  *
  *  - `{ code }`: a preview, nothing paired: TelegramPairPreview, naming the
- *    chat (its @username or title, its id), the bot and its assistant.
- *  - `{ code, confirm: true, previewToken? }`: pairs: TelegramPairResult.
- *    With the preview's token, only the chat that preview showed (else 409
+ *    chat (its checked @username or its id as `label`, its free title as
+ *    `title`, at most 64 characters, for plain text only), the bot and its
+ *    assistant.
+ *  - `{ code, confirm: true, previewToken }`: pairs: TelegramPairResult.
+ *    The preview's token is required (W7d+e; 400 without it): only the chat
+ *    that preview showed, for this code, within ten minutes of it (else 409
  *    preview_mismatch). The user is then told in the app.
  *
  * Only the user pairs their own chat: the code is the one the bot sent them
@@ -15,7 +18,8 @@
  * only for a bot whose assistant's workspace this login is a user of. Any
  * login but a client (TELEGRAM_LOGIN_ROUTES).
  *
- * 200 TelegramPairPreview | TelegramPairResult; 400 bad body; 403 not a user
+ * 200 TelegramPairPreview | TelegramPairResult; 400 bad body (a confirm
+ * without previewToken too); 403 not a user
  * of the workspace / a client; 404 no such pending code; 409 expired, paired
  * to another user, no assistant, preview mismatch; 429 too many tries.
  */
@@ -29,14 +33,20 @@ import {
 } from '@/lib/agent-telegram';
 import { rateLimit } from '@/lib/rate-limit';
 
-const Body = z.object({
-  code: z.string().regex(/^[a-fA-F0-9]{6}$/),
-  confirm: z.boolean().optional(),
-  previewToken: z
-    .string()
-    .regex(/^[a-f0-9]{32}$/)
-    .optional(),
-});
+const Body = z
+  .object({
+    code: z.string().regex(/^[a-fA-F0-9]{6}$/),
+    confirm: z.boolean().optional(),
+    previewToken: z
+      .string()
+      .regex(/^[a-f0-9]{32}$/)
+      .optional(),
+  })
+  // A confirm carries the preview's token (W7d+e): the user saw whose chat
+  // it is first.
+  .refine((b) => b.confirm !== true || b.previewToken !== undefined, {
+    path: ['previewToken'],
+  });
 
 export async function POST(req: Request) {
   const login = await getChatLoginOr401();
@@ -57,14 +67,17 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: 'code must be six hex digits (and previewToken the one the preview gave).' },
+      {
+        error:
+          'code must be six hex digits, and a confirm needs the previewToken the preview gave.',
+      },
       { status: 400 },
     );
   }
   const who = { ownerId: login.ownerId, loginId: login.loginId, code: parsed.data.code };
   const r =
     parsed.data.confirm === true
-      ? await pairMyTelegramChat({ ...who, previewToken: parsed.data.previewToken ?? null })
+      ? await pairMyTelegramChat({ ...who, previewToken: parsed.data.previewToken ?? '' })
       : await previewMyTelegramChat(who);
   if (!r.ok) {
     return NextResponse.json({ error: r.error, code: r.code }, { status: pairingRefusalStatus(r) });

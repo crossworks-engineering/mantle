@@ -19,6 +19,8 @@ export {
   setChatPairing,
   resetPairingAttempts,
   NOT_A_WORKSPACE_USER_ERROR,
+  PREVIEW_TITLE_MAX,
+  PREVIEW_TOKEN_TTL_MS,
   type PairingRefusal,
   type PairingRefusalCode,
   type PairedChatSummary,

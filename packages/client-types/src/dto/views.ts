@@ -792,19 +792,23 @@ export type ModeratedTelegramChat = AgentTelegramChat & {
 /** What POST /api/telegram/pair answers WITHOUT `confirm` (W7d fix round 1,
  *  M3): what the code would pair, so the user sees whose chat it is before it
  *  becomes theirs. Nothing is paired. Confirm with the same code,
- *  `confirm: true` and this `previewToken`. */
+ *  `confirm: true` and this `previewToken` (a confirm without it is 400). */
 export type TelegramPairPreview = {
   ok: true;
   /** Always false here: a preview pairs nothing. */
   paired: false;
   /** True when the chat is already paired to this user. */
   already: boolean;
-  /** The Telegram chat: its @username, else its title; and its id. */
-  chat: { label: string; telegramChatId: string };
+  /** The Telegram chat: `label` is its checked @username, else "chat <id>"
+   *  (W7d+e: never the free title); `title` is its free title, at most 64
+   *  characters, or null: show it as plain text only, never as markup or a
+   *  link; and its id. */
+  chat: { label: string; title: string | null; telegramChatId: string };
   /** The bot the chat is on (its @username). */
   bot: { name: string };
   agentName: string | null;
-  /** Send back with the confirm: it then pairs this chat and no other. */
+  /** Send back with the confirm (required since W7d+e): it then pairs this
+   *  chat and no other, for this code, within ten minutes of the preview. */
   previewToken: string;
 };
 

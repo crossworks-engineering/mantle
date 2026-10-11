@@ -31,8 +31,13 @@ the next Claude Code session can pick up without re-deriving context.
 >   (web, phone, or their own MCP client), they enter it: `POST
 /api/telegram/pair` or the `telegram_pair` tool. Two steps (W7d fix round
 >   1): the code alone pairs nothing and answers a preview (the chat's
->   @username or title and id, the bot, its assistant, and a `previewToken`);
->   `confirm: true` (with that token) pairs, and the user is told in the app
+>   `label`, its checked @username or else `chat <id>`, never its free title;
+>   its `title`, at most 64 characters, for a screen to show as plain text
+>   only; its id, the bot, its assistant, and a `previewToken`);
+>   `confirm: true` with that token pairs (the token is required, W7d+e: a
+>   confirm without it is 400 at the route and refused by the tool; it is
+>   bound to the chat, the login and the code, and holds ten minutes, else
+>   409 `preview_mismatch`), and the user is told in the app
 >   (a notice in their own thread with the bot's assistant), so someone
 >   else's code cannot quietly pair their chat to you. The chat is paired to the
 >   CALLER's login, never anyone else's, and only when that login is a user of
