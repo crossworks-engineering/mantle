@@ -72,7 +72,9 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
       await sql.end();
     }
     for (const b of brains) await b.drop();
-  });
+    // Dropping databases checkpoints: slow under a full suite (10 s was
+    // not enough under load).
+  }, 60_000);
 
   it('two brains with two keys both log in after both migrated', async () => {
     for (const b of brains) await migrate(b.url, b.key, true);

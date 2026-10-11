@@ -142,7 +142,8 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
   afterAll(async () => {
     await m?.closeDb();
     await scratch?.drop();
-  });
+    // DROP DATABASE checkpoints: slow under a full suite.
+  }, 60_000);
 
   it("an admin's run of a Team-held app never reads an Admin-only note", async () => {
     // The admin's own login reads it (Admin and Team).
