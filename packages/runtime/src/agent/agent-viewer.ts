@@ -40,6 +40,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { asSystem, db, withTurnScope, withViewer, workspaces, workspaceUsers } from '@mantle/db';
 import {
   adminReadsOnSystemPool,
+  currentRequestMode,
   currentWorkspaceScope,
   isViewerLevel,
   withTurnStamp,
@@ -157,9 +158,14 @@ export async function withAgentScope<T>(
   }
   if (open) {
     if (open.ws.length === 1 && open.ws[0] === wsId) return fn();
-    throw new AgentWorkspaceError(
-      'An assistant of another workspace cannot run inside this turn: its scope would change.',
-    );
+    // Inside a user's own scope (an Admin login's MCP call, W7a; a request
+    // scope): an assistant of one of its workspaces narrows it, never widens
+    // it (runInTurnScope checks the narrowing again).
+    if (!(currentRequestMode() && open.kind === 'user' && open.ws.includes(wsId))) {
+      throw new AgentWorkspaceError(
+        'An assistant of another workspace cannot run inside this turn: its scope would change.',
+      );
+    }
   }
   const ws = await agentWorkspace(wsId);
   if (ws.isAdmin) {

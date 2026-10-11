@@ -67,7 +67,7 @@ type Schema = {
 
 /** A permission or scope failure (what the sweep forbids). */
 const BAD =
-  /permission denied|row-level security|42501|turn scope|outside its turn scope|has no viewer level|only outside a viewer scope|already inside|needs an allowlisted reason|scope-lost/i;
+  /permission denied|row-level security|42501|turn scope|outside its turn scope|has no viewer level|only outside a viewer scope|already inside|needs an allowlisted reason|scope-lost|its scope would change|not a user of the (Admin|assistant)/i;
 /** The database's item-workspace refusals (allowed: the turn's scope says no). */
 const ITEM_WS =
   /not allowed to (add items to that folder|delete this item|move this item)|placing this app adds a workspace you do not moderate|a node's login can only be your own/i;
@@ -329,13 +329,23 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
         if (tool.slug === 'run_terminal') continue;
         logged.length = 0;
         let thrown: unknown = null;
-        await timed(
+        const reply = await timed(
           c
             .callTool({ name: tool.slug, arguments: argsFor(tool.schema, tool.slug) })
             .catch((err: unknown) => {
               thrown = err;
+              return null;
             }),
         );
+        const text =
+          reply && reply !== 'timeout'
+            ? ((reply as { content?: { text?: string }[] }).content ?? [])
+                .map((p) => p.text ?? '')
+                .join(' ')
+            : '';
+        if (BAD.test(text) && !ITEM_WS.test(text)) {
+          bad.push(`${tool.slug}: reply ${text.slice(0, 200)}`);
+        }
         if (thrown && !/validation|invalid|required|expected/i.test(String(thrown))) {
           bad.push(`${tool.slug}: protocol ${String(thrown).slice(0, 200)}`);
         }

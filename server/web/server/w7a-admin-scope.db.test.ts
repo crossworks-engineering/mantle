@@ -225,6 +225,26 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     expect(inScope.identity).toContain('keeps bees');
   });
 
+  it('an MCP call that runs the Admin assistant (ask_responder) narrows to its scope', async () => {
+    const mcp = await import('@mantle/mcp-core');
+    const seen = await m.runInRequestSlot(() =>
+      mcp.runInOwnerMcpScope(owner, 'ask_responder', async () => {
+        const outer = m.currentScope();
+        const inner = await rt.withAgentScope(
+          { id: agent.id, audience: 'admin', workspaceId: adminWs },
+          async () => m.currentScope(),
+          { ownerLoginId: owner },
+        );
+        return { outer, inner };
+      }),
+    );
+    expect(seen).toMatchObject({
+      outer: { kind: 'user', loginId: owner },
+      inner: { kind: 'assistant', loginId: owner, ws: [adminWs] },
+    });
+    expect((seen as { outer: { ws: string[] } }).outer.ws.length).toBeGreaterThan(1);
+  });
+
   it('a turn that answers no login acts for the owner; its stamp names none', async () => {
     const seen = await rt.withAgentScope(
       { id: agent.id, audience: 'admin', workspaceId: adminWs },
