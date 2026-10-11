@@ -80,7 +80,7 @@ describe.skipIf(!URL)('MCP as a login: every tool runs in the login scope (U5)',
     }
     await exec(sqlTag`
       insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled)
-      values (${anchor}, 'g-u5', 'g', ${slugs}::text[], 'team', true)`);
+      values (${anchor}, 'g-u5', 'g', ${`{${slugs.join(',')}}`}::text[], 'team', true)`);
     await exec(sqlTag`
       insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, audience)
       values (${anchor}, ${TEAM_RESPONDER_SLUG}, 't', 'm', 'p', ARRAY['g-u5'], 'team')
