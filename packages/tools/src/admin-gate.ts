@@ -185,8 +185,9 @@ export function toolAdminArea(slug: string, ref?: string): ScopeArea | null {
  *  - heartbeat_list: heartbeat rows.
  *  - api_tool_create, api_tool_delete, api_tool_get, api_tool_list,
  *    api_skill_set, recipe_tool_create, api_key_refs: tools, tool groups,
- *    skills, API key names (recipe steps are checked against tool rows,
- *    never run).
+ *    skills, the makers of the heartbeats that run a saved skill
+ *    (heartbeat-maker.ts), API key names (recipe steps are checked against
+ *    tool rows, never run).
  *  - peer_list, peer_tools, peer_call, peer_query, peer_node_get,
  *    peer_search_chunks: peer rows and the linked brain over its link (the
  *    ids they take name the PEER's items, never this brain's).
