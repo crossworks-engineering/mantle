@@ -105,6 +105,8 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/team-admin', 'users'],
   ['/api/access', 'users'],
   ['/api/mcp-logins', 'users'],
+  // Who opened an app: login names and addresses, user management.
+  ['/api/apps/:id/access-log', 'users'],
   // Management: assistants.
   ['/api/agents', 'assistants'],
   ['/api/skills', 'assistants'],

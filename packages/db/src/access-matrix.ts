@@ -280,7 +280,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     space: 'write',
   },
   // Read only through mantle_is_brain_space() (security definer).
-  none('public.spaces'),
+  userOnly('public.spaces'),
   // The accepted snapshot a member author reads (0183): the admin pool
   // serves it with the author rule in the query (member-accepted.ts).
   none('public.accepted_snapshots'),
@@ -423,7 +423,41 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.secrets'),
   none('public.pdf_passwords'),
   userOnly('public.emails', 'admin'),
-  none('public.email_accounts'),
+  {
+    table: 'public.email_accounts',
+    read: 'none',
+    rule: 'none',
+    writer: 'admin',
+    // W6a: an Admin user's mail screens name the account. Never the sealed
+    // IMAP credentials (imap_config_enc); rows only for a scope that holds
+    // the Admin workspace (0265).
+    user: [
+      'id',
+      'user_id',
+      'provider',
+      'address',
+      'display_name',
+      'sync_state',
+      'last_sync_at',
+      'last_sync_error',
+      'enabled',
+      'created_at',
+      'updated_at',
+      'imap_host',
+      'imap_port',
+      'imap_secure',
+      'imap_folders',
+      'ingest_policy',
+      'imap_excluded_folders',
+      'branch_path',
+      'imap_included_folders',
+      'first_scan_days',
+      'smtp_host',
+      'smtp_port',
+      'smtp_secure',
+      'ms_account_id',
+    ],
+  },
   userOnly('public.email_attachments', 'admin'),
   none('public.telegram_accounts'),
   none('public.telegram_chats'),
