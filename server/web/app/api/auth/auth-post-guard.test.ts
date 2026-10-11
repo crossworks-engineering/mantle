@@ -9,13 +9,13 @@
  * a non-browser client that sends no Origin at all (the mobile app).
  *
  * No database: the guard runs first, so a refused request never reaches one.
+ * (client-link is gone since workspaces W5c: it answers 410 to everyone.)
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const BRAIN = 'https://brain.example.invalid';
 
 const ROUTES = [
-  ['client-link', () => import('./client-link/route')],
   ['client-code', () => import('./client-code/route')],
   ['client-code/verify', () => import('./client-code/verify/route')],
   ['login', () => import('./login/route')],
