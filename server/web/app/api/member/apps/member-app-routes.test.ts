@@ -397,28 +397,18 @@ describe('member tool broker', () => {
 });
 
 describe('a member-built app (team apps Phase 3)', () => {
-  it("runs its SQLite under the author's space, writes it, and feeds no export", async () => {
+  // Since W6b such an app is a brain item in its author's private workspace,
+  // found by the one lookup in the login's scope; the space-app lookup on the
+  // system pool went with W7e.
+  it('is not looked up on the system pool any more: what the scope misses is a 404', async () => {
     h.runnable = false;
     h.spaceApp = { frozen: false };
     const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
-    expect(res.status).toBe(200);
-    expect(h.dbCalls).toEqual([`exec:${SPACE}:${APP}:admin`]);
-    expect(h.synced).toBe(0);
-  });
-
-  it('reads only while under review', async () => {
-    h.runnable = false;
-    h.spaceApp = { frozen: true };
-    const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(h.dbCalls).toEqual([]);
-  });
-
-  it('runs its tools at team rules, on the brain', async () => {
-    h.runnable = false;
-    h.spaceApp = { frozen: false };
-    await toolBroker(post({ slug: 'note_list' }), params());
-    expect(h.levels).toEqual(['team']);
+    const tool = await toolBroker(post({ slug: 'note_list' }), params());
+    expect(tool.status).toBe(404);
+    expect(h.levels).toEqual([]);
   });
 });
 
@@ -582,7 +572,7 @@ describe('member frame', () => {
     expect(h.rendered).toEqual([]);
   });
 
-  it('the owner frame, which serves drafts, refuses a member ticket and a client ticket', async () => {
+  it('the owner frame refuses a client ticket and serves a member ticket the PUBLISHED build (W7e)', async () => {
     const client = tokens.buildAppFrameTicket({
       ownerId: ANCHOR,
       appId: APP,
@@ -594,13 +584,14 @@ describe('member frame', () => {
       params(),
     );
     expect(refused.status).toBe(401);
+    expect(h.rendered).toEqual([]);
     const t = tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: APP, loginId: LOGIN });
     const res = await ownerFrame(
       new Request(`http://x/api/apps/${APP}/frame?t=${encodeURIComponent(t)}`),
       params(),
     );
-    expect(res.status).toBe(401);
-    expect(h.rendered).toEqual([]);
+    expect(res.status).toBe(200);
+    expect(h.rendered).toEqual([PUBLISHED.storageKey]);
   });
 });
 

@@ -11,18 +11,26 @@
  *
  * App identity: the admin login fills the reserved `:host_me_*` parameters
  * (kind 'admin'); a value the browser sends for one is refused.
+ *
+ * Every login since W7e: a member's run goes through lib/app-runner.ts (an
+ * app its workspaces hold, its data written only with the grant's Write and
+ * not informational, rows only).
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401WithLogin } from '@/lib/auth';
+import { memberDbBroker } from '@/lib/app-runner';
 import { getAppRuntime } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const got = await getOwnerOr401WithLogin();
+  if (got instanceof Response) return got;
   const { id } = await ctx.params;
+  // A member's run (W7e): the app's holders decide, its data rules apply.
+  if (got.member) return memberDbBroker(req, got.member, id);
+  const user = got.user;
   const parsed = AppDbBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });

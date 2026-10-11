@@ -7,6 +7,7 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 import { brainIdField } from '@/lib/brain-identity';
+import { updateTheAppResponse } from '@/lib/mobile-build';
 
 /**
  * Shared credentials→bearer flow behind BOTH token-login routes:
@@ -48,8 +49,10 @@ export async function handleTokenLogin(
     channel: string;
     ttlSeconds?: number;
     defaultLabel: string;
-    /** Refuse a member login (the mobile companion: every route it calls is
-     *  an admin route, so a member bearer would only collect 403s). */
+    /** Refuse a non-Admin login (the old mobile companion: every route it
+     *  calls is an admin route, so a member bearer would only collect 403s).
+     *  Since workspaces W7e it answers 426 "Update the app": the phone build
+     *  that serves every login signs in through /api/auth/device-login. */
     adminsOnly?: boolean;
     /** Name the login in the answer (`role`, `loginId`): the phone app must
      *  know which shell to call before it calls one. */
@@ -97,18 +100,9 @@ export async function handleTokenLogin(
           .limit(1)
       : [];
   // After the password check, so this cannot tell anyone whether an email
-  // exists. No token is minted.
-  if (opts.adminsOnly && login?.role !== 'admin') {
-    return NextResponse.json(
-      login?.role === 'member'
-        ? {
-            error: 'Member logins use the web app. Sign in from a browser instead.',
-            reason: 'member-login',
-          }
-        : { error: 'This login cannot use this app.', reason: 'client-login' },
-      { status: 403 },
-    );
-  }
+  // exists. No token is minted. A non-Admin login on the old companion's
+  // route: the app is older than the workspaces contract (W7e, plan 7.3).
+  if (opts.adminsOnly && login?.role !== 'admin') return updateTheAppResponse();
 
   const label = deviceLabel(parsed.data.deviceName, opts.defaultLabel);
   const jti = randomUUID();

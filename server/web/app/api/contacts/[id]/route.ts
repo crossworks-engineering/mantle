@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteContact, getContact, updateContact } from '@/lib/contacts';
@@ -52,6 +53,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     await enqueueBackfills(user.id, result.addedEmails);
     return NextResponse.json({ contact: result.contact });
   } catch (err) {
+    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
+    if (isScopeWriteRefusal(err)) throw err;
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'update failed' },
       { status: 400 },

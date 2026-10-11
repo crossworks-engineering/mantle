@@ -6,6 +6,7 @@ import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { claimPairCode } from '@/lib/pair-code';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 import { brainIdField } from '@/lib/brain-identity';
+import { isWorkspaceMobileBuild, updateTheAppResponse } from '@/lib/mobile-build';
 
 /**
  * POST /api/auth/pair/claim — the phone's half of QR sign-in. Public (the
@@ -14,6 +15,11 @@ import { brainIdField } from '@/lib/brain-identity';
  * `mobile-login` does and answers the same shape (plus `email`, so the phone
  * can show who it is). Every failure — unknown, expired, already used,
  * malformed — is one 401 with one line, so nothing can be enumerated.
+ *
+ * Any login since workspaces W7e: a member's code is claimed by a phone
+ * build that sends `X-Jackdaw-Mobile` at or above the minimum build
+ * (lib/mobile-build.ts); an older app gets 426 "Update the app" and the code
+ * stays unused.
  */
 const Body = z.object({
   code: z.string().trim().min(16).max(128),
@@ -39,7 +45,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: CLAIM_FAILED_MESSAGE }, { status: 401 });
   }
 
-  const claimed = await claimPairCode(parsed.data.code, parsed.data.deviceName);
+  const claimed = await claimPairCode(parsed.data.code, parsed.data.deviceName, new Date(), {
+    nonAdmin: isWorkspaceMobileBuild(req),
+  });
+  if (claimed === 'update-app') return updateTheAppResponse();
   if (!claimed) {
     auditFireAndForget({
       actorEmail: '',

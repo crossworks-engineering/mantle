@@ -116,6 +116,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json({ folder });
   } catch (err) {
+    // A scope refusal is the app's 403 (W6a fix round 2), never a 400 (W7e).
+    if (isScopeWriteRefusal(err)) throw err;
     if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'rename failed' },

@@ -146,6 +146,9 @@ describe('issuePairCode', () => {
 });
 
 const ADMIN_ROW = { email: 'owner@example.com', role: 'admin', disabledAt: null };
+/** The read before the claim (W7e): the code's login role, while unclaimed. */
+const PEEK_ADMIN = [{ role: 'admin' }];
+const MEMBER_ROW = { email: 'member@example.com', role: 'member', disabledAt: null };
 
 describe('claimPairCode', () => {
   it('a losing conditional UPDATE (unknown, expired or used) is null and mints nothing', async () => {
@@ -159,29 +162,30 @@ describe('claimPairCode', () => {
 
   it('a winning claim mints a kind-m bearer for the issuing login and links the device', async () => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];
-    dbState.selectResults = [[ADMIN_ROW]];
+    dbState.selectResults = [PEEK_ADMIN, [ADMIN_ROW]];
     const claimed = await mod.claimPairCode(
       'the-code-the-code-1234',
       'Jackdaw (Android) · paired by QR',
     );
 
     expect(claimed).not.toBeNull();
-    expect(claimed!.email).toBe('owner@example.com');
-    expect(claimed!.userId).toBe('user-1');
-    expect(claimed!.label).toBe('Jackdaw (Android) · paired by QR');
+    if (claimed === null || claimed === 'update-app') throw new Error('not claimed');
+    expect(claimed.email).toBe('owner@example.com');
+    expect(claimed.userId).toBe('user-1');
+    expect(claimed.label).toBe('Jackdaw (Android) · paired by QR');
     // The bearer verifies as a mobile token for that login with that jti.
-    const claims = verifyMobileToken(claimed!.token);
+    const claims = verifyMobileToken(claimed.token);
     expect(claims?.uid).toBe('user-1');
-    expect(claims?.jti).toBe(claimed!.deviceId);
+    expect(claims?.jti).toBe(claimed.deviceId);
     // One mobile_tokens row, same shape mobile-login writes.
     expect(dbState.inserts).toHaveLength(1);
     expect(dbState.inserts[0]).toMatchObject({
-      id: claimed!.deviceId,
+      id: claimed.deviceId,
       userId: 'user-1',
       label: 'Jackdaw (Android) · paired by QR',
     });
     // The pairing row now points at the device.
-    expect(dbState.updates[1]!.set).toEqual({ claimedDeviceId: claimed!.deviceId });
+    expect(dbState.updates[1]!.set).toEqual({ claimedDeviceId: claimed.deviceId });
   });
 
   // Lockout drops unclaimed codes, but the claim does not rely on it: a code
@@ -192,7 +196,7 @@ describe('claimPairCode', () => {
     ['demoted to member', [{ ...ADMIN_ROW, role: 'member' }]],
   ])('a code whose login was %s is null and mints nothing', async (_what, row) => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];
-    dbState.selectResults = [row];
+    dbState.selectResults = [PEEK_ADMIN, row];
     expect(await mod.claimPairCode('the-code-the-code-1234', 'Phone')).toBeNull();
     expect(dbState.inserts).toHaveLength(0);
     // Only the claim UPDATE ran: no device link.
@@ -201,9 +205,40 @@ describe('claimPairCode', () => {
 
   it('a missing device name gets the QR default label', async () => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];
-    dbState.selectResults = [[ADMIN_ROW]];
+    dbState.selectResults = [PEEK_ADMIN, [ADMIN_ROW]];
     const claimed = await mod.claimPairCode('the-code-the-code-1234', '   ');
-    expect(claimed!.label).toBe('Mobile device (paired by QR)');
+    if (claimed === null || claimed === 'update-app') throw new Error('not claimed');
+    expect(claimed.label).toBe('Mobile device (paired by QR)');
+  });
+
+  // W7e: any login pairs its own phone, from a build that serves every login.
+  it('a member code scanned by an older phone app is update-app and stays unused', async () => {
+    dbState.selectResults = [[{ role: 'member' }]];
+    expect(await mod.claimPairCode('the-code-the-code-1234', 'Phone')).toBe('update-app');
+    expect(dbState.updates).toHaveLength(0);
+    expect(dbState.inserts).toHaveLength(0);
+  });
+
+  it('a member code from a workspace phone build mints a 30-day bearer', async () => {
+    dbState.updateResults = [[{ id: 'row-1', userId: 'user-2' }], []];
+    // No read before the claim for such a build: the re-read is the only one.
+    dbState.selectResults = [[MEMBER_ROW]];
+    const claimed = await mod.claimPairCode('the-code-the-code-1234', 'Phone', new Date(), {
+      nonAdmin: true,
+    });
+    if (claimed === null || claimed === 'update-app') throw new Error('not claimed');
+    expect(claimed.userId).toBe('user-2');
+    expect(claimed.expiresIn).toBe(60 * 60 * 24 * 30);
+    expect(verifyMobileToken(claimed.token)?.uid).toBe('user-2');
+  });
+
+  it('a client code is null even from a workspace phone build', async () => {
+    dbState.updateResults = [[{ id: 'row-1', userId: 'user-3' }], []];
+    dbState.selectResults = [[{ ...MEMBER_ROW, role: 'client' }]];
+    expect(
+      await mod.claimPairCode('the-code-the-code-1234', 'Phone', new Date(), { nonAdmin: true }),
+    ).toBeNull();
+    expect(dbState.inserts).toHaveLength(0);
   });
 });
 

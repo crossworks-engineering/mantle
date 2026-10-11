@@ -17,7 +17,15 @@
  * is only a set of ids to KEEP, never an item's content.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { currentSpaceScope, db, draws, nodes, isSystemScope, withViewer } from '@mantle/db';
+import {
+  currentSpaceScope,
+  currentWorkspaceScope,
+  db,
+  draws,
+  nodes,
+  isSystemScope,
+  withViewer,
+} from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { acceptedFileReadable, isAuthorOfAcceptedFile } from './member-accepted';
 import { keepSvgImages, svgHasImages } from './scene-svg';
@@ -94,4 +102,48 @@ export async function memberDrawSvg(
     svg,
     await memberVisibleDrawFileIds(anchorId, loginId, drawId, snapshotRefs),
   );
+}
+
+/**
+ * The drawing's saved SVG as a non-Admin login receives it on the byte
+ * routes (workspaces W7e): only the images whose file the CURRENT scope
+ * reads (the login's request scope, where row security on the grants
+ * decides). Call it inside that scope: every read here is the scope's (the
+ * drawing's image refs, then which of their files exist for the reader). No
+ * accepted-file exception: what a member wrote is a brain item in its
+ * private workspace since W6b, read like any other.
+ */
+export async function scopedDrawSvg(anchorId: string, drawId: string, svg: string): Promise<string> {
+  if (!svgHasImages(svg)) return svg;
+  if (!currentWorkspaceScope()) {
+    throw new Error('scopedDrawSvg reads in the caller workspace scope: call it inside one');
+  }
+  const [row] = await db
+    .select({ fileRefs: draws.fileRefs })
+    .from(draws)
+    .where(eq(draws.nodeId, drawId))
+    .limit(1);
+  const byNode = new Map<string, string[]>();
+  for (const [fileId, nodeId] of Object.entries((row?.fileRefs ?? {}) as Record<string, unknown>)) {
+    if (typeof nodeId !== 'string' || !UUID_RE.test(nodeId)) continue;
+    const key = nodeId.toLowerCase();
+    byNode.set(key, [...(byNode.get(key) ?? []), fileId]);
+  }
+  const visible = new Set<string>();
+  if (byNode.size > 0) {
+    const readable = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, anchorId),
+          eq(nodes.type, 'file'),
+          inArray(nodes.id, [...byNode.keys()]),
+        ),
+      );
+    for (const r of readable) {
+      for (const fileId of byNode.get(r.id.toLowerCase()) ?? []) visible.add(fileId);
+    }
+  }
+  return keepSvgImages(svg, visible);
 }

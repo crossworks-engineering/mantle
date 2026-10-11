@@ -9,7 +9,7 @@ import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
 import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
-import { shellWorkspaces, type WsCaller } from '@/lib/workspaces';
+import { loginWorkspaces, wsCallerOf } from '@/lib/login-workspaces';
 import { ruleInQuery } from '@/lib/auth/rule-in-query';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
@@ -37,12 +37,7 @@ type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 async function handleGET() {
   const login = await getLoginOr401();
   if (login instanceof Response) return login;
-  const caller: WsCaller =
-    login.kind === 'admin'
-      ? { kind: 'admin', loginId: login.loginId, anchorId: login.user.id, user: login.user }
-      : login.kind === 'member'
-        ? { kind: 'member', loginId: login.loginId, anchorId: login.member.anchorId, user: null }
-        : { kind: 'client', loginId: login.loginId, anchorId: login.client.anchorId, user: null };
+  const caller = wsCallerOf(login);
   const admin = login.kind === 'admin' ? login.user : null;
   const anchorId = caller.anchorId;
   const loginId = caller.loginId;
@@ -55,8 +50,9 @@ async function handleGET() {
       ? shellPart('shell', 'onboarding', () => isOnboarded(admin.id, read), true)
       : true,
     admin ? shellPart('shell', 'pending count', () => countPending(admin.id), 0) : 0,
-    // The login's workspaces (the switcher) and its Admin areas (W5a).
-    shellPart('shell', 'workspaces', () => shellWorkspaces(caller), { workspaces: [], areas: [] }),
+    // The login's workspaces (the switcher) and its Admin areas (W5a), the
+    // same builder GET /api/auth/whoami answers with (W7e).
+    loginWorkspaces('shell', login),
   ]);
   // The FACE is per-login: seed, builder pins, the uploaded photo and the
   // starred screens come from the LOGIN's own row (loadPreferencesFor
@@ -110,7 +106,7 @@ async function handleGET() {
     loginId,
     // The brain's anchor login (its id is the brain's): the app delete
     // confirm says 30 days for it, "until the owner deletes it" for others.
-    isOwner: login.kind === 'admin' && loginId === anchorId,
+    isOwner: ws.isOwner,
     onboarded,
     // What this BRAIN can do, for a client on its own release cadence: the
     // client branches on capability rather than on a version number.
@@ -122,8 +118,8 @@ async function handleGET() {
     avatarPhotoVersion: logoVersion(personal.avatarPhotoKey),
     pendingApprovals,
     workspaces: ws.workspaces,
-    // Admin areas are an admin's only.
-    areas: admin ? ws.areas : [],
+    // Admin areas are an admin's only (loginWorkspaces).
+    areas: ws.areas,
     ...(assetToken === undefined ? {} : { assetToken }),
     // The streamed upload cap, so the uploader can refuse an oversized file
     // before sending a byte and say the real number in the message.

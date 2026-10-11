@@ -181,6 +181,7 @@ export type {
 } from './tree';
 // Types only; WORKSPACE_AREAS (runtime) is the `@mantle/client-types/dto/workspaces` subpath.
 export type {
+  AuthWhoami,
   ShellWorkspace,
   ShellWorkspaces,
   Workspace,
