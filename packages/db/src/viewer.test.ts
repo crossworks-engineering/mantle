@@ -555,8 +555,10 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // W7c fix round 2: the anchor's own Telegram history in its replay
     // ('owner-telegram'), owner-only until W7d and granted to no role.
     // 21 since the W7 integration fix: 'member-request' went with the
-    // member request tools (W7b), and no call site names it.
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(21);
+    // member request tools (W7b), and no call site names it. 22 since W7
+    // integration fix 2: a turn's own open heartbeats ('heartbeat-context').
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(22);
+    expect(AS_SYSTEM_TURN_REASONS).toContain('heartbeat-context');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
   });
 

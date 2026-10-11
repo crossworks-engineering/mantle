@@ -894,6 +894,10 @@ export function runInSystemTx<T>(
  *  - `owner-telegram`: the anchor's own Telegram history in its replay
  *    (builtins-replay.ts), owner-only until W7d and granted to no role
  *    (W7c fix round 2).
+ *  - `heartbeat-context`: the open heartbeats a turn's login set up
+ *    (heartbeats.created_by, null the anchor's), for the turn's awareness
+ *    block and its continuity tools (@mantle/runtime heartbeats/tick.ts, W7
+ *    integration fix 2): the heartbeats table is granted to no role.
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -920,6 +924,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'keyword-candidates',
   'app-trash',
   'owner-telegram',
+  'heartbeat-context',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 
