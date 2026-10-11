@@ -110,6 +110,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
   let roNote = '';
   let roFile = '';
   let docsFile = ''; // the member's, named as the group's docs file
+  let memSecretFile = ''; // the member's, Admin does not read it
   let olderRule = ''; // a learned rule of the agent (the Journal is Admin's)
   let inboxFolder = ''; // an Admin folder on disk
   let agent: import('@mantle/db').Agent;
@@ -255,8 +256,20 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
         }),
       )
     ).id;
-    // A file in a folder takes its folder's home: put it in the member's.
+    // Homed in the member's workspace; the API docs folder is shared with
+    // Admin, so Admin reads it, Read only.
     await homeIn(docsFile, memWs);
+    // A member file Admin does not read at all.
+    memSecretFile = (
+      await makeIn(memWs, () =>
+        files.upsertFile({
+          ownerId: owner,
+          parentPath: 'files',
+          filename: `${tag}-member-secret.md`,
+          bytes: Buffer.from('the member secret docs'),
+        }),
+      )
+    ).id;
     await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience)
       values (${owner}, ${groupSlug}, 'W7a API', ${'{}'}::text[], 'admin')`);
     // An Admin folder that is on disk, to mount.
@@ -459,16 +472,16 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
     expect(await nodeState(docsFile)).toBe(before);
     const bytes = await sys(() => files.readFileById({ ownerId: owner, fileId: docsFile }));
     expect(bytes?.bytes.toString('utf8')).toBe('the member private docs');
-    // The group pointed at the member's file: the scope never reads it.
+    // The group pointed at a file the scope does not read: never returned.
     await x(sql`update tool_groups
-                   set integration = ${JSON.stringify({ service: 'w7a', docsNodeId: docsFile })}::jsonb
+                   set integration = ${JSON.stringify({ service: 'w7a', docsNodeId: memSecretFile })}::jsonb
                  where owner_id = ${owner} and slug = ${groupSlug}`);
     for (const login of [owner, second]) {
       const got = await inAdminTurn(login, () =>
         dispatchAs(login, 'api_docs_get', { group_slug: groupSlug }),
       );
       expect(got.ok, errorOf(got)).toBe(true);
-      expect(JSON.stringify(got)).not.toContain('the member private docs');
+      expect(JSON.stringify(got)).not.toContain('the member secret docs');
       expect((got as { output: { has_docs: boolean } }).output.has_docs).toBe(false);
     }
   });
