@@ -285,10 +285,16 @@ const heartbeat_update_state: BuiltinToolDef = {
       if (v === null) delete next[k];
       else next[k] = v;
     }
+    // The state is part of the fire's prompt: another heartbeat's state set
+    // by a login other than the brain owner makes that heartbeat this
+    // login's (W7a fix round 3, heartbeats.created_by), so the tick fires it
+    // as this login, never as the anchor.
+    const login = target.via === 'slug' ? (currentWorkspaceScope()?.loginId ?? null) : null;
+    const maker = login && login !== ctx.ownerId ? { createdBy: login } : {};
     await heartbeatRow(() =>
       db
         .update(heartbeats)
-        .set({ state: next, updatedAt: new Date() })
+        .set({ state: next, updatedAt: new Date(), ...maker })
         .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId))),
     );
     ctx.step?.setMeta({

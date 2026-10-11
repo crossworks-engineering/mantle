@@ -257,7 +257,7 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     agent = row!;
     await x(sql`insert into skills (owner_id, slug, name, description)
       values (${owner}, ${`${tag}-check`}, 'Check in', 'Ask how things are going.')`);
-    for (const slug of [`${tag}-hb`, `${tag}-hb-edit`, `${tag}-hb-own`]) {
+    for (const slug of [`${tag}-hb`, `${tag}-hb-edit`, `${tag}-hb-own`, `${tag}-hb-state`]) {
       await x(sql`insert into heartbeats (owner_id, slug, name, agent_slug, skill_slug,
                                          schedule_kind, schedule, surface)
         values (${owner}, ${slug}, 'Check', ${agent.slug}, ${`${tag}-check`},
@@ -351,6 +351,21 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
       params(await heartbeat(`${tag}-hb-new`)),
     );
     expect((await hbRow(`${tag}-hb-new`)).createdBy).toBe(second);
+  });
+
+  it('1: L setting another heartbeat’s state (its prompt) makes it L’s', async () => {
+    const res = await dispatchAs(second, 'heartbeat_update_state', {
+      slug: `${tag}-hb-state`,
+      patch: { topic: 'set by L' },
+    });
+    expect(res.ok, errorOf(res)).toBe(true);
+    expect((await hbRow(`${tag}-hb-state`)).createdBy).toBe(second);
+    const own = await dispatchAs(owner, 'heartbeat_update_state', {
+      slug: `${tag}-hb-own`,
+      patch: { topic: 'set by the anchor' },
+    });
+    expect(own.ok, errorOf(own)).toBe(true);
+    expect((await hbRow(`${tag}-hb-own`)).createdBy).toBeNull();
   });
 
   // ── 2. sandbox_publish ─────────────────────────────────────────────────
