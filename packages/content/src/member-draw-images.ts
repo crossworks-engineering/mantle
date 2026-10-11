@@ -113,7 +113,11 @@ export async function memberDrawSvg(
  * accepted-file exception: what a member wrote is a brain item in its
  * private workspace since W6b, read like any other.
  */
-export async function scopedDrawSvg(anchorId: string, drawId: string, svg: string): Promise<string> {
+export async function scopedDrawSvg(
+  anchorId: string,
+  drawId: string,
+  svg: string,
+): Promise<string> {
   if (!svgHasImages(svg)) return svg;
   if (!currentWorkspaceScope()) {
     throw new Error('scopedDrawSvg reads in the caller workspace scope: call it inside one');

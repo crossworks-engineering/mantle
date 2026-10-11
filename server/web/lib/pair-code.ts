@@ -72,7 +72,7 @@ export type ClaimedPairCode = {
 };
 
 /** Trade a scanned code for a mobile bearer. `null` for an unknown, expired
- *  or already-claimed code — the caller must not say which. `nonAdmin`: the
+ *  or already-claimed code: the caller must not say which. `nonAdmin`: the
  *  phone build serves every login (W7e), so a member's code is claimed (a
  *  30-day token, rotated like device-login's); without it a member's code
  *  answers `'update-app'` and is not used up. */

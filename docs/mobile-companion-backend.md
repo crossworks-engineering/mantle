@@ -350,8 +350,55 @@ shell. The client portal is gone too: every `/api/client/*` route (chat,
 unread, push, bytes) answers a client 410. A client still signs in with an
 emailed code (device mode below) and refreshes its token as before.
 
+**Workspaces W7e (2026-10-11): the brain side of the workspace phone.**
+
+- **The build header.** The phone build that serves every login sends
+  `X-Jackdaw-Mobile: <build>` on its sign-in calls: the build number (`27`)
+  or the store version (`1.15.0+27`, the number after `+`). The minimum is
+  build **27** (`MOBILE_MIN_WORKSPACE_BUILD`, server/web/lib/mobile-build.ts);
+  builds up to 26 are Admin only.
+- **"Update the app" (HTTP 426).** `{ error, reason: "update-app",
+  minBuild: 27 }`, never a vague error, in two places:
+  `POST /api/auth/mobile-login` with a non-Admin login's right password (it
+  was 403 `member-login`; still no token, still the one 401 for a wrong
+  password), and `POST /api/auth/pair/claim` of a non-Admin login's code
+  without the header at or above the minimum build. A refused claim does NOT
+  use the code up: the person scans it again with the new app (within its 90
+  seconds). `POST /api/auth/device-login` is unchanged (any admin or member).
+- **QR pairing for a member.** `POST /api/auth/pair` and
+  `GET /api/auth/pair/:id` take any signed-in admin or member (a client is
+  403 `client-login`): only the person pairs their own phone. A member's
+  claim (with the header) mints the device-login bearer (30 days, rotated by
+  `/api/auth/token/refresh`); an admin's claim is the `mobile-login` bearer
+  as before, from any build. The answer's shape is unchanged.
+- **whoami** (`AuthWhoami` in `@mantle/client-types`) also answers
+  `workspaces` (the `/api/shell` list: `{ id, name, isAdmin, moderator,
+  private? }`), `areas` (the login's Admin areas, `[]` outside the Admin
+  workspace) and `isOwner` (the brain's anchor login). The same builder as
+  `/api/shell` (server/web/lib/login-workspaces.ts), so the drawer's switcher
+  needs no second call.
+- **Bytes for every login.** `GET /api/files/files/:id?raw=1` (and
+  `?thumb=1`) and `GET /api/draws/:id/svg` (JSON `{ svg }`, or `?raw=1` as
+  an image) serve any login in its own workspaces: a bearer, a session, or
+  the shell's `assetToken` as `?at=`. An item the login does not read is a
+  404 that names nothing (never a 403 with a name). A drawing keeps only the
+  images whose file the login reads. `/api/member/files/:id` and
+  `/api/member/draws/:id/svg` still answer this release (deprecated; they
+  answer 410 after the next UI pair).
+- **Apps for every login.** `POST /api/apps/:id/frame-ticket`,
+  `GET /api/apps/:id/frame?t=`, `POST /api/apps/:id/db-broker` and
+  `POST /api/apps/:id/tool-broker` run a member on an app its workspaces
+  hold: the PUBLISHED build, the team rules for tools, the data written only
+  when a workspace of its holds the app with Write on and the app is not
+  informational. An app it does not read is a 404. `/api/member/apps/*`
+  still answers (deprecated).
+- **Gone.** `/api/member/library`, `/api/member/library/:id`,
+  `/api/member/accepted` and `/api/member/accepted/:id` answer 410
+  `{ error, code: "gone" }` (unused since W6b).
+
 Everything above this section still holds for admins and for shipped builds.
-`POST /api/auth/mobile-login` stays frozen: admins only, 1 year, same shape.
+`POST /api/auth/mobile-login` stays frozen for admins: 1 year, same shape; a
+non-Admin login gets 426 (W7e, above).
 
 ### 1. Sign-in
 

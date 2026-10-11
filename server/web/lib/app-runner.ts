@@ -273,9 +273,13 @@ export async function memberToolBroker(
   }
   // The run reads through the app (its holders met with the member's
   // workspaces), never the member's other workspaces (plan R2, H1).
-  const scope = appToolScope(level, { loginId: member.loginId, name: memberName(member) }, {
-    id: app.id,
-  });
+  const scope = appToolScope(
+    level,
+    { loginId: member.loginId, name: memberName(member) },
+    {
+      id: app.id,
+    },
+  );
   const result = await asSystem(
     () =>
       withViewer(scope.viewer, scope.actsFor, () =>

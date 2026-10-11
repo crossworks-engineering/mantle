@@ -1,11 +1,11 @@
 /**
- * GET /api/apps/[id]/frame — the sandbox frame document. Auth is the `?t=`
+ * GET /api/apps/[id]/frame: the sandbox frame document. Auth is the `?t=`
  * frame ticket minted by POST /api/apps/[id]/frame-ticket (the sandboxed
  * iframe's navigation carries no other credential); the middleware gate
  * admits this path on a valid kind-'f' token and the route re-verifies.
  *
  * An owner ticket (an Admin user's) serves the DRAFT build when present
- * (preview of unpublished work), else the published build — same choice as
+ * (preview of unpublished work), else the published build: the same choice as
  * /bundle. A member ticket (W7e: every login runs apps here) serves the
  * PUBLISHED build of an app the member's workspaces hold, after re-checking
  * the login (lib/app-runner.ts).

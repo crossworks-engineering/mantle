@@ -224,10 +224,10 @@
 | Route                           | What                                                                 |
 | ------------------------------- | -------------------------------------------------------------------- |
 | `GET /api/shell`                | The one shell (W5c): who is signed in, the brand, an asset token     |
-| `GET /api/member/library`       | Team-level pages, notes, drawings, tables, files (see below)         |
-| `GET /api/member/library/:id`   | One item with its published body                                     |
-| `GET /api/member/files/:id`     | File bytes, streamed, rate limited per login; `?thumb=1`, `?at=` too |
-| `GET /api/member/draws/:id/svg` | A drawing's committed SVG, with only the images the member may read  |
+| `GET /api/member/library`       | Gone (410) since W7e: the normal lists, in the login's scope         |
+| `GET /api/member/library/:id`   | Gone (410) since W7e: the normal item routes                         |
+| `GET /api/member/files/:id`     | Deprecated (W7e): `GET /api/files/files/:id?raw=1` for every login   |
+| `GET /api/member/draws/:id/svg` | Deprecated (W7e): `GET /api/draws/:id/svg?raw=1` for every login     |
 | `GET /api/member/chat`          | Gone (410) since W7c: the thread is `GET /api/assistant/thread`      |
 | `POST /api/member/chat`         | Gone (410) since W7c: a turn is `POST /api/assistant/turn`           |
 
@@ -591,6 +591,13 @@ so it is listed like any team app there.
 | `POST /api/member/apps/:id/tool-broker`  | `host.tools.call()` (rules below)                   |
 | `POST /api/member/apps/:id/db-broker`    | `host.db.query` / `host.db.exec` on the app SQLite  |
 | `GET /api/member/home`                   | The home app and what its `host.hub.get()` answers  |
+
+Since workspaces W7e the four runner routes are deprecated: every login
+runs an app through `/api/apps/:id/{frame-ticket,frame,db-broker,tool-broker}`
+with the same rules (server/web/lib/app-runner.ts). Every member route that
+reads brain items runs in the login's request scope; only its own things
+(home, MCP, push, the live stream) hold their own rule
+(server/web/lib/auth/route-scope.ts, 'self').
 
 - **Folders.** `GET /api/member/apps` also answers `folders`: where those
   apps sit in the admin's Apps folders, read only (`AppLauncherFolder`: id,
