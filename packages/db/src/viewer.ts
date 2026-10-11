@@ -865,6 +865,12 @@ export function runInSystemTx<T>(
  *  - `contact-sharing`: the sharing status (dates and a lock, never the
  *    code) of contacts the caller already read in its scope
  *    (contactSharingByContact): the rule is the id list (W7a).
+ *  - `login-names`: the display names of the logins on rows the caller
+ *    already read (an app's access log, app-access-log.ts): a name for
+ *    exactly those ids, no credential (W7a).
+ *  - `owner-preferences`: the brain owner's profile preferences (time zone,
+ *    purpose, house style) in a scope that holds Admin, for the Admin
+ *    assistant answering another Admin user (profile-preferences.ts, W7a).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -886,6 +892,8 @@ export const AS_SYSTEM_TURN_REASONS = [
   'admin-area',
   'provider-key',
   'contact-sharing',
+  'login-names',
+  'owner-preferences',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 

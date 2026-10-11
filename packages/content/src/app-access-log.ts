@@ -28,8 +28,8 @@
  * APP_ERROR_LOG_PER_DAY a day; and the reaper keeps errors
  * APP_ERROR_LOG_RETENTION_DAYS, at most APP_ERROR_LOG_KEEP_PER_APP per app.
  */
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
-import { db, isUnscoped, systemDb, appAccessLog, authUsers, nodes } from '@mantle/db';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { asSystem, db, systemDb, appAccessLog, authUsers, nodes } from '@mantle/db';
 
 export type AppAccessKind = 'auth' | 'tool' | 'db' | 'error';
 
@@ -214,27 +214,18 @@ export async function listAppAccess(
   limit = 100,
   opts: { kind?: AppAccessKind; since?: Date } = {},
 ): Promise<AppAccessRow[]> {
-  // A login's email is never granted to the workspace role: in a scope (an
-  // Admin user, the Admin assistant, W7a) the name is its display name only.
-  const actorName = isUnscoped()
-    ? sql<
-        string | null
-      >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`
-    : sql<string | null>`nullif(trim(${authUsers.displayName}), '')`;
   const rows = await db
     .select({
       id: appAccessLog.id,
       contactId: appAccessLog.contactId,
       contactName: nodes.title,
       actorId: appAccessLog.actorId,
-      actorName,
       kind: appAccessLog.kind,
       detail: appAccessLog.detail,
       createdAt: appAccessLog.createdAt,
     })
     .from(appAccessLog)
     .leftJoin(nodes, eq(nodes.id, appAccessLog.contactId))
-    .leftJoin(authUsers, eq(authUsers.id, appAccessLog.actorId))
     .where(
       and(
         eq(appAccessLog.ownerId, ownerId),
@@ -245,18 +236,44 @@ export async function listAppAccess(
     )
     .orderBy(desc(appAccessLog.createdAt))
     .limit(limit);
+  const names = await actorNames(rows.map((r) => r.actorId));
   return rows.map((r) => ({
     id: r.id,
     contactId: r.contactId,
     // A member or client row whose login was deleted keeps no name (SET
     // NULL): say so, rather than let it read as an anonymous public visitor
     // (client logins, audit I5).
-    contactName: r.contactName ?? r.actorName ?? removedLoginName(r.detail),
+    contactName:
+      r.contactName ?? (r.actorId ? names.get(r.actorId) : null) ?? removedLoginName(r.detail),
     actorId: r.actorId,
     kind: r.kind as AppAccessKind,
     detail: r.detail,
     createdAt: r.createdAt.toISOString(),
   }));
+}
+
+/** The names of the logins on access rows the caller already read: the
+ *  display name, else the email's local part. Login rows are never granted
+ *  to the workspace role, so in a scope (an Admin user, the Admin assistant,
+ *  W7a) they are read on the system pool by the named reason, for exactly
+ *  these ids. */
+async function actorNames(ids: readonly (string | null)[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids.filter((id): id is string => id !== null))];
+  if (wanted.length === 0) return new Map();
+  const rows = await asSystem(
+    () =>
+      db
+        .select({
+          id: authUsers.id,
+          name: sql<
+            string | null
+          >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`,
+        })
+        .from(authUsers)
+        .where(inArray(authUsers.id, wanted)),
+    'login-names',
+  );
+  return new Map(rows.filter((r) => r.name).map((r) => [r.id, r.name!]));
 }
 
 /**

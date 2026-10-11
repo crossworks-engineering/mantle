@@ -140,8 +140,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     if (type === 'string') {
       if (key === 'id' || /(_id|Id)$/.test(key)) return idFor(key, slug);
       if (/url/i.test(key)) return 'https://example.invalid/w7a';
-      if (key === 'parent' || (/path/i.test(key) && /folder/.test(slug))) return 'files';
-      if (/path/i.test(key)) return `files/${tag}-${slug}.txt`;
+      // A folder path is dotted under the files root.
+      if (key === 'parent' || /path/i.test(key)) return 'files';
       if (/email|^to$|address/i.test(key)) return 'nobody@example.invalid';
       if (s?.format === 'date-time' || /(_at|At|date|since|until|start|end)$/i.test(key)) {
         return new Date().toISOString();

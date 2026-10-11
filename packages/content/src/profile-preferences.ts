@@ -56,17 +56,36 @@ import {
 
 import { and, eq, sql } from 'drizzle-orm';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
-import { db, profiles, resolveSingleOwnerId, type ConversationChannel } from '@mantle/db';
+import {
+  asSystem,
+  currentWorkspaceScope,
+  db,
+  profiles,
+  resolveSingleOwnerId,
+  scopeHoldsAdmin,
+  type ConversationChannel,
+} from '@mantle/db';
 
 /** Read prefs jsonb and project to typed shape. Missing keys fall
  *  back to DEFAULT_PREFERENCES. Auto-creates the profile row on
  *  first access. */
 export async function loadProfilePreferences(userId: string): Promise<ProfilePreferences> {
-  const [row] = await db
-    .select({ preferences: profiles.preferences })
-    .from(profiles)
-    .where(eq(profiles.userId, userId))
-    .limit(1);
+  const read = () =>
+    db
+      .select({ preferences: profiles.preferences })
+      .from(profiles)
+      .where(eq(profiles.userId, userId))
+      .limit(1);
+  // A profile row is its own login's (the workspace role's own-login rule).
+  // The Admin assistant answering another Admin user (W7a) still works with
+  // the brain owner's preferences (time zone, purpose, house style), as it
+  // did on the system pool: read by the named reason in a scope that holds
+  // Admin, for a login other than the scope's own.
+  const scope = currentWorkspaceScope();
+  const [row] =
+    scope && scope.loginId !== userId && (await scopeHoldsAdmin())
+      ? await asSystem(read, 'owner-preferences')
+      : await read();
   if (!row) {
     // First time we've touched this user — insert with defaults so
     // future updates have a row to UPDATE. Best-effort; if another
