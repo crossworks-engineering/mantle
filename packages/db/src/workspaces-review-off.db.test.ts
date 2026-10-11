@@ -634,7 +634,9 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
     for (const [name, table] of tables) {
       const config = getTableConfig(table);
       const pk = new Set(config.primaryKeys.flatMap((p) => p.columns.map((c) => c.name)));
+      // The suite stops before 0267, which adds snapshot_node_id (W6b).
       const expected = config.columns
+        .filter((c) => !(name === 'space_item_homes' && c.name === 'snapshot_node_id'))
         .map((c) => ({
           column: c.name,
           udt: UDT[c.getSQLType()] ?? c.getSQLType(),
