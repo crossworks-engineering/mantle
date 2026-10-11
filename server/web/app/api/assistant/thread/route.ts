@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { getChatLoginOr401, type ChatLogin } from '@/lib/auth';
 import { recentAssistantMessages } from '@/lib/assistant';
 import { listChatAgents, messagesForReader, resolveChatAgent } from '@/lib/assistant-chat';
 import { asSystem, openChatThread } from '@mantle/db';
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
         name: agent.name,
         role: agent.role,
         model: agent.model,
-        ...(isAdmin ? stripTurnEngine(agent) : {}),
+        ...(isAdmin ? notesForLogin(login, stripTurnEngine(agent)) : {}),
         experience,
       }
     : null;
@@ -73,6 +73,12 @@ export async function GET(req: Request) {
 }
 
 /** An Admin user's bundle keeps the full agent row it always had. */
+/** Persona notes are learned from the anchor's own thread: the anchor
+ *  login's only, any other login gets none (W7 integration fix). */
+function notesForLogin<T extends { personaNotes?: unknown }>(login: ChatLogin, a: T): T {
+  return login.loginId === login.ownerId ? a : { ...a, personaNotes: [] };
+}
+
 function stripTurnEngine<T extends { turnEngine: unknown }>(a: T): Omit<T, 'turnEngine'> {
   const { turnEngine: _engine, ...rest } = a;
   return rest;

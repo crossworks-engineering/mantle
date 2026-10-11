@@ -64,6 +64,7 @@ import {
 import {
   adminReadsOnSystemPool,
   currentRequestMode,
+  currentTurnStamp,
   currentWorkspaceScope,
   isViewerLevel,
   scopeLeftForSystem,
@@ -234,7 +235,27 @@ export async function withAgentScope<T>(
     // every other login's chats, digests and archived summaries out of its
     // memory tools. No login (system work): at its level, no stamp, and a
     // per-login tool (replay_window, find_window) refuses.
-    const asked = opts.loginId ?? opts.ownerLoginId ?? null;
+    //
+    // Started on the system pool from inside a scope (a tool's work under
+    // asSystem), it answers the login of the scope it left, as a workspace
+    // assistant does (W7a fix round 2, N1; W7 integration fix): never at
+    // its level, which would read every login's chats. A named login other
+    // than that one is refused, and so is a left scope with no login.
+    const left = scopeLeftForSystem();
+    const named = opts.loginId ?? opts.ownerLoginId ?? null;
+    if (left) {
+      if (!left.loginId) {
+        throw new AgentWorkspaceError(
+          'A helper started from this call needs the login that called it, and this call has none.',
+        );
+      }
+      if (named !== null && named !== left.loginId) {
+        throw new AgentWorkspaceError(
+          'A helper started from this call answers the login that called it, not another login.',
+        );
+      }
+    }
+    const asked = left ? left.loginId : named;
     const run = () => withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn);
     if (!asked) return run();
     const stamped = (wsId: string | null) =>
@@ -330,6 +351,26 @@ export async function withAgentScope<T>(
   }
   const modWs = user?.moderator ? [wsId] : [];
   return withTurnScope({ kind: 'assistant', loginId, ws: [wsId], modWs }, fn);
+}
+
+/**
+ * Whether the current turn is the anchor's own thread (W7 integration fix):
+ * the login it answers is the brain owner. What an agent learned there (the
+ * Journal's learned lanes, persona notes) rides only such a turn; another
+ * user's turn never gets it (each user reads only their own chats).
+ *
+ * The login: `named` (the turn's login, else its owner surface login), else
+ * the open workspace scope's (or the scope a system-pool turn left), else
+ * the turn's stamp. A turn in no scope that answers no login (an owner
+ * Telegram bot, system work on a brain not on workspaces) acts for the
+ * owner: it is the anchor's thread. A workspace scope that answers no login
+ * (another workspace's assistant on a heartbeat) is not.
+ */
+export function turnInAnchorThread(ownerId: string, named?: string | null): boolean {
+  const scope = currentWorkspaceScope() ?? scopeLeftForSystem();
+  const login = named ?? (scope ? scope.loginId : (currentTurnStamp()?.loginId ?? null));
+  if (!login) return !scope;
+  return login.toLowerCase() === ownerId.toLowerCase();
 }
 
 /** Run `fn` at the agent's level or in its workspace (withAgentScope). */

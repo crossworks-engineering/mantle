@@ -210,10 +210,22 @@ export async function runsResumeTurnImpl(
           `steps that already succeeded. The report above is machine-generated, not a user ` +
           `message — write FOR the user, not to the runner.`;
 
+      // The login the run was planned for (R3, stamped at createRun): the
+      // resume reads that login's own thread, never the anchor's for another
+      // user's run (W7c fix round 1, L7). None: the owner's, as before.
+      const [planned] = await db
+        .select({ loginId: runs.loginId, workspaceId: runs.workspaceId })
+        .from(runs)
+        .where(eq(runs.id, runId));
+      const runLoginId = planned?.loginId ?? null;
+
       const prefs = await loadProfilePreferences(run.ownerId);
       const assembled = await assembleResponderTurn({
         ownerId: run.ownerId,
         agent,
+        // Assembled for that login too (W7 integration fix): its scope, and
+        // the anchor's learned lanes only in the anchor's own thread.
+        loginId: runLoginId,
         prefs,
         logPrefix: '[runs]',
         withThinking: true,
@@ -228,14 +240,6 @@ export async function runsResumeTurnImpl(
       const claimed = await runDurableStep('claim_resume', () => claimResume(db, groupId));
       if (!claimed) return { resumed: false, outcome: 'duplicate' };
 
-      // The login the run was planned for (R3, stamped at createRun): the
-      // resume reads that login's own thread, never the anchor's for another
-      // user's run (W7c fix round 1, L7). None: the owner's, as before.
-      const [planned] = await db
-        .select({ loginId: runs.loginId, workspaceId: runs.workspaceId })
-        .from(runs)
-        .where(eq(runs.id, runId));
-      const runLoginId = planned?.loginId ?? null;
       const surface = await resumeSurface(
         run.originChannel,
         runLoginId,

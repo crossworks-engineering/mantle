@@ -36,6 +36,11 @@ import { restampHeartbeatMakers } from './heartbeat-maker';
 import { toolMaker } from './secret-ref-gate';
 import { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 import type { BuiltinToolDef } from './types';
+import { replayAsker } from './builtins-replay';
+
+/** update_persona outside the anchor's own thread. */
+export const UPDATE_PERSONA_ANCHOR_ONLY =
+  "update_persona writes what you learned in the brain owner's own chat, and this turn is not it: keep the preference in mind for this conversation only, and don't record it.";
 
 function asStringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
@@ -95,6 +100,13 @@ const update_persona: BuiltinToolDef = {
         ok: false,
         error: 'update_persona can only run inside an agent turn (no agent context).',
       };
+    }
+    // Persona notes (and the learned Journal lane they moved to) are learned
+    // from the anchor's own thread and ride only there (W7c fix round 2,
+    // M-a): another user's turn, or a turn that answers nobody, does not
+    // write them (W7 integration fix). Same asker rule as replay.
+    if (replayAsker(ctx.ownerId, ctx.surface) !== ctx.ownerId) {
+      return { ok: false, error: UPDATE_PERSONA_ANCHOR_ONLY };
     }
 
     const addRaw = input.add;

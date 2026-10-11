@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db, authUsers, eq } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
+  agentForReader,
   cloneAgentForUser,
   getAssignedAgentSummary,
   releaseAssignedAgent,
@@ -91,7 +92,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       detail: { targetId, targetEmail: target.email, agentId: renamed.id, name },
       ...requestMetaFrom(req),
     });
-    return NextResponse.json({ ok: true, agent: renamed });
+    return NextResponse.json({ ok: true, agent: agentForReader(user, renamed) });
   }
 
   // Whatever they had is released (never deleted) inside cloneAgentForUser —
@@ -136,7 +137,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     ...requestMetaFrom(req),
   });
 
-  return NextResponse.json({ ok: true, agent });
+  return NextResponse.json({ ok: true, agent: agentForReader(user, agent) });
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {

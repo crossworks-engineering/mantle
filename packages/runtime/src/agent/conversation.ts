@@ -199,7 +199,7 @@ import {
   withRecalledExchanges,
   type HistoryRow,
 } from './conversation/select';
-import { withAgentViewer } from './agent-viewer';
+import { turnInAnchorThread, withAgentViewer } from './agent-viewer';
 import { withoutClientSourced } from '@mantle/tools/client-sourced';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 
@@ -680,7 +680,9 @@ async function loadConversationContextAtLevel(args: {
   // turn never gets them. Notes already stored may hold text learned before
   // W7c from other logins' turns; they are kept as they are (clearing or
   // rewriting them is the owner's decision), only not injected elsewhere.
-  const ownThread = threadLogin.toLowerCase() === ownerId.toLowerCase();
+  const ownThread =
+    threadLogin.toLowerCase() === ownerId.toLowerCase() &&
+    turnInAnchorThread(ownerId, args.loginId ?? args.ownerLoginId ?? null);
   const personaNotes: PersonaNote[] =
     notesTargetOf(memoryConfig) === 'journal' || !ownThread
       ? []
@@ -728,8 +730,12 @@ async function loadConversationContextAtLevel(args: {
   // reason as history recall (~0.9 s, spike 13). Runs beside it, not after
   // it. Tier 1's plan comes first: its shown entries stay out of tiers 2/3,
   // its overflow joins the rules Jev scores.
+  // The learned lanes ride only the anchor's own thread, like the persona
+  // notes above (W7 integration fix): another user's turn gets no tier.
   const journalMode =
-    args.includeJournal === false || belowAdmin ? 'off' : journalTiersOf(memoryConfig);
+    args.includeJournal === false || belowAdmin || !ownThread
+      ? 'off'
+      : journalTiersOf(memoryConfig);
   const userLane = memoryConfig.inject_journal !== false;
   const agentLane = memoryConfig.inject_working_notes !== false;
   const journalWanted =

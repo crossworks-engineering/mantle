@@ -6,7 +6,7 @@ import { toolMakerFor } from '@/lib/tools';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
-import { createAgent, listAgents } from '@/lib/agents';
+import { agentForReader, createAgent, listAgents } from '@/lib/agents';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
@@ -16,7 +16,7 @@ export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const rows = await listAgents(user.id, { withExperience: true });
-  return NextResponse.json({ agents: rows });
+  return NextResponse.json({ agents: rows.map((a) => agentForReader(user, a)) });
 }
 
 const RoleEnum = z.enum([
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
     // A heartbeat already bound to this slug now runs this prompt (W7a fix
     // round 4, @mantle/tools heartbeat-maker.ts).
     await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });
-    return NextResponse.json({ agent: row });
+    return NextResponse.json({ agent: agentForReader(user, row) });
   } catch (err) {
     const msg = errorMessage(err);
     if (isUniqueViolation(err)) {

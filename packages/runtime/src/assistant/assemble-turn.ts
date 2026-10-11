@@ -76,7 +76,7 @@ import {
   openHeartbeatsForSurface,
 } from '../heartbeats';
 import { maxImageBytesFor, modelSupportsVision, refreshModelCatalog } from '@mantle/tracing';
-import { withAgentViewer } from '../agent/agent-viewer';
+import { turnInAnchorThread, withAgentViewer } from '../agent/agent-viewer';
 
 /** Where a turn's open-heartbeat awareness is scoped. Mirrors the surface
  *  union `openHeartbeatsForSurface` takes (Team Chat has no heartbeats, so
@@ -258,9 +258,17 @@ async function assembleResponderTurnAtLevel(
   // longer re-bills the whole prefix) and tiers 2/3 come per turn from
   // loadConversationContext. Every block is scoped to this agent: an entry
   // another agent learned is not ours. docs/journal.md "Tiers".
+  //
+  // The learned lanes (tier 1, the identity block, working notes) are
+  // learned from the anchor's own thread and ride only a turn in it (W7
+  // integration fix): another user's turn gets none of them. The Journal
+  // entries themselves are left as they are.
   const journalLive = journalTiersOf(memoryConfig) === 'live';
+  const learnedLanes =
+    (opts.includeIdentity ?? true) &&
+    turnInAnchorThread(ownerId, opts.loginId ?? opts.ownerLoginId ?? null);
   let journalBlock = '';
-  if (journalLive && (opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
+  if (journalLive && learnedLanes && memoryConfig.inject_journal !== false) {
     try {
       journalBlock = await buildJournalTier1(ownerId, agent.slug);
     } catch (err) {
@@ -271,7 +279,7 @@ async function assembleResponderTurnAtLevel(
     }
   }
   let identityBlock = '';
-  if (!journalLive && (opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
+  if (!journalLive && learnedLanes && memoryConfig.inject_journal !== false) {
     try {
       const block = await buildIdentityContext(ownerId, agent.slug);
       if (block) identityBlock = `${block}\n\n`;
@@ -289,11 +297,7 @@ async function assembleResponderTurnAtLevel(
   // out per-agent with memory_config.inject_working_notes=false. Deterministic
   // and cached, same posture as the identity block.
   let workingNotesBlock = '';
-  if (
-    !journalLive &&
-    (opts.includeIdentity ?? true) &&
-    memoryConfig.inject_working_notes !== false
-  ) {
+  if (!journalLive && learnedLanes && memoryConfig.inject_working_notes !== false) {
     try {
       const block = await buildWorkingNotesContext(ownerId, agent.slug);
       if (block) workingNotesBlock = `${block}\n\n`;

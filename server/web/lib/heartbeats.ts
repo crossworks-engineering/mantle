@@ -324,10 +324,17 @@ function toFireSummary(f: HeartbeatFire): HeartbeatFireSummary {
 
 /** Most-recent-first fires for a heartbeat. The detail page renders
  *  these as a table; default cap is 50 since heartbeats can fire
- *  often and the audit log only matters for recent activity. */
+ *  often and the audit log only matters for recent activity.
+ *
+ *  `reader` is the login asking (null: the anchor). A fire's reply is the
+ *  turn of the login that set the heartbeat up (heartbeats.created_by,
+ *  null the anchor), read with that login's chats and digests: it goes
+ *  only to that login and the anchor; anyone else gets the fire with no
+ *  reply text (W7 integration fix). */
 export async function listHeartbeatFires(
   ownerId: string,
   heartbeatId: string,
+  reader: string | null,
   limit = 50,
 ): Promise<HeartbeatFireSummary[]> {
   // Ownership join via heartbeats — the fires table doesn't carry
@@ -340,5 +347,10 @@ export async function listHeartbeatFires(
     .where(eq(heartbeatFires.heartbeatId, heartbeatId))
     .orderBy(desc(heartbeatFires.firedAt))
     .limit(limit);
-  return rows.map(toFireSummary);
+  const asker = reader ?? ownerId;
+  const repliesVisible = asker === ownerId || asker === (owns.createdBy ?? ownerId);
+  return rows.map((f) => {
+    const fire = toFireSummary(f);
+    return repliesVisible ? fire : { ...fire, replyText: null };
+  });
 }

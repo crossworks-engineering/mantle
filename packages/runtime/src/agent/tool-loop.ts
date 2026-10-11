@@ -608,8 +608,16 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         'the loop runs at the agent level.',
     );
   }
+  // The agent's id and brain too (W7 integration fix): a helper answering a
+  // login looks up that login's Admin user row in THIS brain, and a brain
+  // not on workspaces must read as one ('no-workspaces'), not refuse.
   return withAgentScope(
-    { audience: args.agentLevel ?? 'admin', workspaceId: args.agentWorkspaceId ?? null },
+    {
+      id: args.agentId ?? null,
+      ownerId: args.ownerId,
+      audience: args.agentLevel ?? 'admin',
+      workspaceId: args.agentWorkspaceId ?? null,
+    },
     () => runToolLoopAtLevel(args),
     { loginId: surfaceLoginId(args.surface), ownerLoginId: ownerSurfaceLogin(args.surface) },
   );

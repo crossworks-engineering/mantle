@@ -3,7 +3,8 @@
  * (Layer-1 "what it has learned"). The reflector + update_persona tool write
  * these automatically; this endpoint lets the operator add/edit/retire/restore
  * from /settings/agents. All ops go through the soft-retire helpers in
- * lib/agents, so nothing is ever hard-deleted.
+ * lib/agents, so nothing is ever hard-deleted. The anchor login's only: the
+ * notes are learned from its own thread (W7 integration fix).
  */
 
 import { NextResponse } from '@/server/http-compat';
@@ -12,6 +13,8 @@ import { getOwnerOr401 } from '@/lib/auth';
 import {
   addPersonaNote,
   editPersonaNote,
+  isAnchorLogin,
+  PERSONA_NOTES_ANCHOR_ONLY,
   restorePersonaNote,
   retirePersonaNote,
 } from '@/lib/agents';
@@ -35,6 +38,9 @@ const Body = z.discriminatedUnion('action', [
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  if (!isAnchorLogin(user)) {
+    return NextResponse.json({ error: PERSONA_NOTES_ANCHOR_ONLY }, { status: 403 });
+  }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });

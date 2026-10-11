@@ -62,13 +62,15 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 
 import { db } from '@mantle/db';
-import { PERSONA_TOOLS } from './builtins-persona';
+import { PERSONA_TOOLS, UPDATE_PERSONA_ANCHOR_ONLY } from './builtins-persona';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const noAgent: ToolHandlerContext = { ownerId: 'o1' };
+// The anchor's own web chat: the one thread persona notes are learned in.
 const ctx: ToolHandlerContext = {
   ownerId: 'o1',
   agent: { slug: 'responder', depth: 1, delegateTo: [] },
+  surface: { kind: 'web', loginId: 'o1' },
 };
 
 const tool = PERSONA_TOOLS.find((t) => t.slug === 'update_persona')!;
@@ -118,6 +120,16 @@ describe('update_persona', () => {
     expect(err).toMatch(/agent turn/);
     expect(db.select).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses another login, or a turn that answers none, before any query (W7 integration fix)', async () => {
+    const add = { add: { kind: 'style', content: 'Prefers short answers.' } };
+    const other: ToolHandlerContext = { ...ctx, surface: { kind: 'web', loginId: 'l2' } };
+    expect(errorOf(await tool.handler(add, other))).toBe(UPDATE_PERSONA_ANCHOR_ONLY);
+    const nobody: ToolHandlerContext = { ...ctx, surface: { kind: 'web' } };
+    expect(errorOf(await tool.handler(add, nobody))).toBe(UPDATE_PERSONA_ANCHOR_ONLY);
+    expect(db.select).not.toHaveBeenCalled();
+    expect(writeLearned).not.toHaveBeenCalled();
   });
 
   it('refuses an empty update (bad kind, blank content, no refs) before any query', async () => {

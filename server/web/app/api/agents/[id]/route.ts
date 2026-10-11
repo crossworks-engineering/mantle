@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
-import { deleteAgent, updateAgent } from '@/lib/agents';
+import { agentForReader, deleteAgent, updateAgent } from '@/lib/agents';
 import { AGENT_THINKING_EFFORTS } from '@mantle/content';
 import { agents, db } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
@@ -124,7 +124,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   ) {
     await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });
   }
-  return NextResponse.json({ agent: row });
+  return NextResponse.json({ agent: agentForReader(user, row) });
 }
 
 // `?conversation=keep|delete`. Absent = keep, the pre-existing behaviour, so a

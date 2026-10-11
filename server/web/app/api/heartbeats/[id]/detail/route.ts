@@ -1,12 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
+import { toolMakerFor } from '@/lib/tools';
 import { getHeartbeat, listHeartbeatFires } from '@/lib/heartbeats';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 
 /**
  * The single-heartbeat "biography" bundle for /heartbeats/[id]: the summary,
  * the last 50 fires, and the dates pre-formatted in the owner's profile (so the
- * client doesn't need the server-only formatter). 404 if not owned.
+ * client doesn't need the server-only formatter). 404 if not owned. A
+ * fire's reply text is the maker's and the anchor's only (null to others).
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -14,7 +16,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const [heartbeat, fires, prefs] = await Promise.all([
     getHeartbeat(user.id, id),
-    listHeartbeatFires(user.id, id, 50),
+    // A fire's reply goes to the heartbeat's maker and the anchor only.
+    listHeartbeatFires(user.id, id, toolMakerFor(user), 50),
     loadProfilePreferences(user.id),
   ]);
   if (!heartbeat) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });

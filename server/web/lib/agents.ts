@@ -49,6 +49,28 @@ const DEF_SYNCED_SLUGS = new Set(
   MANIFEST_AGENTS.filter((a) => !a.isPersona && a.systemPrompt).map((a) => a.slug),
 );
 
+/**
+ * Persona notes are what an agent learned in the anchor's own thread (W7c
+ * fix round 2, M-a): they are the anchor's, so only the anchor login reads
+ * them (W7 integration fix). Any other login gets the agent with none; the
+ * stored notes are kept as they are.
+ */
+export const PERSONA_NOTES_ANCHOR_ONLY =
+  "Persona notes are learned from the brain owner's own chat: only the owner's login reads or curates them.";
+
+/** Whether `user` is the anchor login (the brain owner signed in). */
+export function isAnchorLogin(user: { id: string; actor: { id: string } }): boolean {
+  return user.actor.id === user.id;
+}
+
+/** `agent` as `user` may read it: no persona notes but the anchor's. */
+export function agentForReader<T extends { personaNotes: PersonaNote[] }>(
+  user: { id: string; actor: { id: string } },
+  agent: T,
+): T {
+  return isAnchorLogin(user) ? agent : { ...agent, personaNotes: [] };
+}
+
 function toSummary(a: Agent): AgentSummary {
   return {
     id: a.id,

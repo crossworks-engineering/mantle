@@ -21,15 +21,11 @@
 
 import { and, eq } from 'drizzle-orm';
 import {
-  adminReadsOnSystemPool,
-  brainOnWorkspacesNow,
   db,
   agents,
-  loginScopeFor,
   skills,
   heartbeats,
   heartbeatFires,
-  withTurnScope,
   type Heartbeat,
   type AgentParams,
 } from '@mantle/db';
@@ -66,6 +62,7 @@ import {
   agentTurnScoped,
   agentWorkspaceKind,
   withAgentScope,
+  type ScopedAgent,
 } from '../agent/agent-viewer';
 
 const HEARTBEAT_CONTROL_TOOLS = [
@@ -124,41 +121,42 @@ export type FireOpts = {
  *  The tick loop already filters in-flight rows out before calling
  *  this, but we wrap defensively in case a future caller skips the
  *  filter — exclusion still holds. A heartbeat another Admin login set up
- *  (heartbeats.created_by, W7a fix round 3) fires in that login's scope
+ *  (heartbeats.created_by, W7a fix round 3) fires as that login
  *  (makerCaller), never as the brain owner. */
 export async function tickFire(hb: Heartbeat): Promise<FireResult> {
-  return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false, answerMaker: true }));
+  return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false }));
 }
 
 /** Why a heartbeat's maker cannot fire it (the heartbeat pauses). */
 const MAKER_GONE =
-  'the login that set it up is a user of no workspace now (removed or disabled); ask an Admin user to edit and resume it';
+  'the login that set it up is not a user of the Admin workspace now (removed or disabled); ask an Admin user to edit and resume it';
 
 /**
- * The scope a tick fires heartbeat `hb` in (W7a fix round 3): the scope of
- * the login that set it up (heartbeats.created_by), as the heartbeat_fire
- * tool and the Fire now route fire in their caller's, so its Admin
- * assistant turn answers that login with that login's rights. Nothing to
- * change (`{}`): the brain owner's heartbeat (no maker), an assistant of a
- * workspace other than Admin (its fire answers no login, read only), the
- * rollback switch or a brain not on workspaces. A maker with no workspace
- * left pauses the heartbeat.
+ * The scope a fire with no caller (the tick, or a forced fire from outside
+ * any scope) runs heartbeat `hb` in: the login that set it up
+ * (heartbeats.created_by, W7a fix round 3; null is the anchor) answers it.
+ * The Admin assistant runs in that login's turn scope of Admin; a helper
+ * with no workspace (the replay agent, a specialist) takes the branch a
+ * chat with it takes (W7c fix round 2, H1; W7 integration fix): that
+ * login's turn scope of Admin, so its memory tools read that login's chats
+ * and digests, never another user's, the anchor's included. An assistant of
+ * a workspace other than Admin answers no login (read only): nothing to
+ * change. The rollback switch and a brain not on workspaces are
+ * withAgentScope's (the system pool, or the level, as before).
  */
-async function makerCaller(
+function makerCaller(
   hb: Heartbeat,
-  otherWorkspace: boolean,
-): Promise<{ inCaller?: FireOpts['inCaller'] } | { pause: string }> {
-  const maker = hb.createdBy ?? null;
-  if (!maker || maker === hb.ownerId || otherWorkspace) return {};
-  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return {};
-  const scope = await loginScopeFor(maker);
-  if (scope.ws.length === 0) return { pause: MAKER_GONE };
-  return { inCaller: (fn) => withTurnScope(scope, fn, { writes: true }) };
+  agent: ScopedAgent,
+  kind: 'admin' | 'workspace' | 'none',
+): FireOpts['inCaller'] | null {
+  if (kind === 'workspace') return null;
+  const maker = hb.createdBy ?? hb.ownerId;
+  return (fn) => withAgentScope(agent, fn, { ownerLoginId: maker });
 }
 
 async function fireInner(
   hb: Heartbeat,
-  opts: FireOpts & { skipGates: boolean; answerMaker?: boolean },
+  opts: FireOpts & { skipGates: boolean },
 ): Promise<FireResult> {
   const now = new Date();
   let inCaller = opts.inCaller ?? (<T>(fn: () => Promise<T>) => fn());
@@ -246,17 +244,17 @@ async function fireInner(
   // heartbeat.
   let scoped: boolean;
   let adminAssistant: boolean;
+  let kind: 'admin' | 'workspace' | 'none';
   try {
     scoped = await agentTurnScoped(agent);
-    adminAssistant = (await agentWorkspaceKind(agent)) === 'admin';
+    kind = await agentWorkspaceKind(agent);
+    adminAssistant = kind === 'admin';
   } catch (err) {
     return autoPause(hb, `agent '${agent.slug}': ${errorMessage(err)}`);
   }
-  if (!opts.inCaller && opts.answerMaker) {
-    const maker = await makerCaller(hb, scoped && !adminAssistant);
-    if ('pause' in maker) return autoPause(hb, maker.pause);
-    if (maker.inCaller) inCaller = maker.inCaller;
-  }
+  // No caller: the heartbeat's maker answers the fire (makerCaller).
+  const answersMaker = !opts.inCaller;
+  if (answersMaker) inCaller = makerCaller(hb, agent, kind) ?? inCaller;
 
   if (!agent.apiKeyId) return autoPause(hb, `agent '${agent.slug}' has no api_key configured`);
   const apiKey = await getApiKeyById(agent.apiKeyId);
@@ -310,6 +308,9 @@ async function fireInner(
     );
   } catch (err) {
     if (!(err instanceof AgentWorkspaceError)) throw err;
+    if (answersMaker && hb.createdBy && hb.createdBy !== hb.ownerId) {
+      return autoPause(hb, MAKER_GONE);
+    }
     return autoPause(hb, `agent '${agent.slug}': ${errorMessage(err)}`);
   }
   // Egress gate (opt-in): on an unattended fire, route email/web tools

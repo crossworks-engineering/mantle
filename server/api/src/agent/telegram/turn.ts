@@ -108,6 +108,11 @@ export async function runTelegramTurn(args: {
   const assembled = await assembleResponderTurn({
     ownerId,
     agent,
+    // The owner's Telegram bot is the anchor's chat until W7d makes it per
+    // user: a helper (no workspace) answers the anchor login here, in its
+    // turn scope of Admin, never on the system pool at its level (W7
+    // integration fix).
+    ownerLoginId: ownerId,
     prefs,
     logPrefix: '[agent]',
     systemPromptSuffix: audioTagInstructions,
@@ -161,6 +166,7 @@ export async function runTelegramTurn(args: {
     (ctxPromise ??= loadConversationContext({
       ownerId,
       agent,
+      ownerLoginId: ownerId, // the anchor's chat, as above
       inboundText: row.text,
       // Exclude the inbound we just recorded; only look before it.
       excludeMessageId: convInbound.id,
