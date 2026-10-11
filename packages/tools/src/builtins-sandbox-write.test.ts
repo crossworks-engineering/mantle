@@ -98,7 +98,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
     filesRoot: vi.fn(),
   };
 });
-vi.mock('@mantle/api-keys', () => ({ setApiKey: vi.fn() }));
+vi.mock('@mantle/api-keys', () => ({ setApiKey: vi.fn(), listApiKeys: vi.fn(async () => []) }));
 vi.mock('node:fs/promises', () => ({ stat: vi.fn() }));
 
 import * as dbmod from '@mantle/db';
@@ -564,7 +564,7 @@ describe('sandbox_publish', () => {
     // Drop `eq(toolGroups.ownerId, ...)` and re-publishing a sandbox would
     // repoint ANOTHER owner's group at this brain's proxy URL and token.
     daemonReplies({});
-    selectRows = [{ id: 'tg1' }];
+    selectRows = [{ id: 'tg1', integration: { service: 'sandbox-scratch' } }];
     await publish.handler({ sandbox: 'scratch', port: 9000, group_slug: 'calc' }, ctx);
     expect(paramsOf(selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'calc']));
     expect(paramsOf(updateWheres[0])).toContain('tg1');
@@ -572,7 +572,7 @@ describe('sandbox_publish', () => {
 
   it('updates an existing group in place, keeping its authored tools', async () => {
     daemonReplies({});
-    selectRows = [{ id: 'tg1' }];
+    selectRows = [{ id: 'tg1', integration: { service: 'sandbox-scratch' } }];
     await publish.handler(
       { sandbox: 'scratch', port: 9000, group_slug: 'calc', description: 'calc API' },
       ctx,
@@ -586,6 +586,23 @@ describe('sandbox_publish', () => {
     // the endpoints already authored into the group.
     expect(update.set.mock.calls[0]![0]).not.toHaveProperty('toolSlugs');
     expect(dbmod.db.insert).not.toHaveBeenCalled();
+  });
+
+  it("refuses a group that is not this sandbox's before the daemon or the vault", async () => {
+    // W7a fix round 3: publishing onto a connector's group would repoint its
+    // base URL and credential at the sandbox.
+    selectRows = [{ id: 'tg1', integration: { service: 'github' } }];
+    const res = await publish.handler({ sandbox: 'scratch', port: 8000, group_slug: 'gh' }, ctx);
+    expect(errorOf(res)).toMatch(/already exists and is not this sandbox's/);
+    selectRows = [{ id: 'tg2', integration: null }];
+    const plain = await publish.handler(
+      { sandbox: 'scratch', port: 8000, group_slug: 'plain' },
+      ctx,
+    );
+    expect(errorOf(plain)).toMatch(/already exists and is not this sandbox's/);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(setApiKey).not.toHaveBeenCalled();
+    expect(dbmod.db.update).not.toHaveBeenCalled();
   });
 
   it('vaults nothing and writes no group when the daemon refused', async () => {

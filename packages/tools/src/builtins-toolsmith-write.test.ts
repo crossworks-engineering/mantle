@@ -238,6 +238,8 @@ describe('api_tool_create', () => {
       },
       requiresConfirm: false,
       enabled: true,
+      // Outside a workspace scope: the brain owner's (W7a fix round 3).
+      createdBy: null,
     });
     expect(outputOf(res)).toMatchObject({ slug: 'geocode', created: true, warnings: [] });
     expect(outputOf(res).next).toMatch(/api_tool_test/);
@@ -402,6 +404,7 @@ describe('api_tool_update', () => {
         headers: { a: 'b' },
         timeoutMs: 9000,
       },
+      createdBy: null,
     });
   });
 
