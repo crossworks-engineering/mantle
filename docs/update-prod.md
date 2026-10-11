@@ -819,7 +819,10 @@ Admin assistant read before and after must only lose items no Admin grant
 holds (a member's private items). If a screen or a tool breaks, set
 `MANTLE_ADMIN_READS=system` in `.env` and restart the web container: Admin
 reads, the Admin assistant and the owner MCP surface go back to the system
-pool, as before.
+pool, as before. It is an emergency switch: on the system pool row security
+no longer keeps each Admin user's chat digests and archived chat summaries
+to that user, so the memory tools of the Admin assistant and its helpers can
+read another Admin user's until it is unset again.
 
 ## Rollback
 

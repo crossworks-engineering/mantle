@@ -31,6 +31,8 @@ const h = vi.hoisted(() => ({
   q: '',
   calls: 0,
   seenToolResults: [] as string[],
+  /** Every prompt the fake model was sent, as text (W7c isolation). */
+  prompts: [] as string[],
 }));
 
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
@@ -48,6 +50,7 @@ vi.mock('@mantle/voice', async (importOriginal) => {
   // admin-only node), then it answers.
   const chat = async (opts: { messages: Array<{ role: string; content?: unknown }> }) => {
     h.calls += 1;
+    h.prompts.push(JSON.stringify(opts.messages));
     for (const m of opts.messages) {
       if (m.role === 'tool') h.seenToolResults.push(JSON.stringify(m.content));
     }
@@ -237,15 +240,17 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
         agentSlug,
       });
       expect(result.reply).toBe('ok, done');
-      const rows = await admin<{ direction: string; contact_id: string | null }[]>`
-        select direction, contact_id from team_messages where login_id = ${loginId}
-        order by created_at`;
-      expect(rows.map((r) => [r.direction, r.contact_id])).toEqual([
-        ['inbound', null],
-        ['outbound', null],
+      // Its own thread with the assistant (0269): assistant_messages, the
+      // Team workspace, its login.
+      const rows = await admin<{ direction: string; agent: string; ws: string }[]>`
+        select direction, agent_id::text as agent, workspace_id::text as ws
+          from assistant_messages where login_id = ${loginId} order by created_at`;
+      expect(rows.map((r) => [r.direction, r.agent, r.ws])).toEqual([
+        ['inbound', agentId, team],
+        ['outbound', agentId, team],
       ]);
     } finally {
-      await admin`delete from team_messages where login_id = ${loginId}`;
+      await admin`delete from assistant_messages where login_id = ${loginId}`;
     }
   });
 
@@ -267,7 +272,7 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
           loginId: memberLoginId,
           agentSlug: otherSlug,
         }),
-      ).rejects.toThrow(/not the Team workspace's assistant/);
+      ).rejects.toThrow(/not the assistant of a workspace this login is a user of/);
       expect(h.calls).toBe(0);
       expect(h.seenToolResults).toEqual([]);
     } finally {
@@ -295,6 +300,96 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
       expect(h.seenToolResults.join(' ')).not.toContain(h.hiddenTitle);
     } finally {
       await setLevel('team');
+    }
+  });
+  // W7c (0269): each member has their own thread with the Team assistant.
+  // A member's turn reads its own history and its own digests, never another
+  // member's, and row security says the same to the turn scope.
+  it("a member's turn sees only its own history and digests, never another member's", async () => {
+    const other = crypto.randomUUID();
+    await admin`insert into auth.users (id, email, password_hash, role)
+      values (${other}, ${`other-${other.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${team}, ${other}, false)`;
+    // Digests on for this test (the shipped Team assistant has them off).
+    await admin`update agents set memory_config = memory_config || '{"digest_limit": 3}'::jsonb
+      where id = ${agentId}`;
+    const thread = async (login: string, q: string, a: string) => {
+      await admin`insert into assistant_messages (owner_id, agent_id, login_id, direction, text, created_at)
+        values (${ownerId}, ${agentId}, ${login}, 'inbound', ${q}, now() - interval '5 minutes'),
+               (${ownerId}, ${agentId}, ${login}, 'outbound', ${a}, now() - interval '4 minutes')`;
+    };
+    // A digest made as the summarizer makes it: in the agent's workspace, as
+    // the login's own note.
+    const digestOf = async (login: string, summary: string) => {
+      const { withChatNoteHome } = await import('../agent/chat-archive');
+      await withChatNoteHome(team, () =>
+        m.withNodeInsertHeads(ownerId, [{ type: 'note', path: 'notes' }], (tx) =>
+          tx.insert(m.nodes).values({
+            ownerId,
+            loginId: login,
+            type: 'note',
+            title: summary,
+            path: 'notes',
+            tags: ['conversation-digest'],
+            data: {
+              kind: 'conversation_digest',
+              agent_id: agentId,
+              login_id: login,
+              summary,
+              content: summary,
+              topic: summary,
+              period_start: new Date(Date.now() - 3_600_000).toISOString(),
+              period_end: new Date(Date.now() - 3_000_000).toISOString(),
+            },
+          }),
+        ),
+      );
+    };
+    await thread(memberLoginId, 'OWN-QUESTION-MINE', 'OWN-ANSWER-MINE');
+    await thread(other, 'OTHER-SECRET-QUESTION', 'OTHER-SECRET-ANSWER');
+    await digestOf(memberLoginId, 'OWN-DIGEST-SUMMARY');
+    await digestOf(other, 'OTHER-DIGEST-SUMMARY');
+    try {
+      const { runTeamTurn } = await import('./run-team-turn');
+      h.calls = 0;
+      h.prompts = [];
+      await runTeamTurn(ownerId, 'and what about the plan?', { loginId: memberLoginId, agentSlug });
+      const seen = h.prompts.join(' ');
+      expect(seen).toContain('OWN-QUESTION-MINE');
+      expect(seen).toContain('OWN-ANSWER-MINE');
+      expect(seen).toContain('OWN-DIGEST-SUMMARY');
+      expect(seen).not.toContain('OTHER-SECRET');
+      expect(seen).not.toContain('OTHER-DIGEST');
+
+      // The other member's turn: the mirror image.
+      h.calls = 0;
+      h.prompts = [];
+      await runTeamTurn(ownerId, 'and what about the plan?', { loginId: other, agentSlug });
+      const theirs = h.prompts.join(' ');
+      expect(theirs).toContain('OTHER-SECRET-QUESTION');
+      expect(theirs).toContain('OTHER-DIGEST-SUMMARY');
+      expect(theirs).not.toContain('MINE');
+      expect(theirs).not.toContain('OWN-DIGEST');
+
+      // Row security on the turn scope says the same: each login reads its
+      // own rows of the Team thread only.
+      const readAs = async (login: string) =>
+        m.withScope(await m.loginScopeFor(login), async () =>
+          (
+            (await m.db.execute(
+              sql`select distinct login_id::text as l from assistant_messages where agent_id = ${agentId}`,
+            )) as unknown as { l: string }[]
+          ).map((r) => r.l),
+        );
+      expect(await readAs(memberLoginId)).toEqual([memberLoginId]);
+      expect(await readAs(other)).toEqual([other]);
+    } finally {
+      await admin`update agents set memory_config = memory_config - 'digest_limit' || '{"digest_limit": 0}'::jsonb
+        where id = ${agentId}`;
+      await admin`delete from assistant_messages where agent_id = ${agentId}
+        and login_id in (${memberLoginId}, ${other})`;
+      await admin`delete from nodes where owner_id = ${ownerId} and 'conversation-digest' = any(tags)`;
     }
   });
 });

@@ -11,6 +11,14 @@
  * Driven from a debounced LISTEN on `summarize_due` (payload = agent id, since
  * migration 0072) in main.ts. This module is intentionally pure-logic — no
  * listeners, no LISTEN handling.
+ *
+ * Per (agent, login) since 0269 (W7c): each user has their own thread with an
+ * agent, so a run digests each login's undigested turns on their own, and a
+ * digest carries `data.login_id` and `nodes.login_id` (read only for that
+ * login). Rows folded in from team_messages are already digested
+ * (`data.digest_skip`): never billed, never in the backlog. An assistant of a
+ * workspace other than Admin whose digests are off (`digest_limit: 0`, the
+ * shipped Team assistant) is not summarised at all: nothing would read them.
  */
 
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -19,7 +27,9 @@ import {
   agents,
   assistantMessages,
   closedRangeEndAfter,
+  notDigestSkipped,
   notSuperseded,
+  workspaces,
   bumpWorkerUsage,
   getDefaultWorker,
   nodes,
@@ -38,6 +48,7 @@ import {
   recordChatUsage,
   resolveChatKey,
   resolveChatRoutes,
+  withChatNoteHome,
 } from '@mantle/runtime/agent';
 
 /** Default seeded into the UI when role flips to `summarizer`. The user can
@@ -119,11 +130,26 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
   // Resolve the conversational agent's slug (digest provenance + tags) and its
   // memory config (the coupling below). Needed before the threshold check now.
   const [agentRow] = await db
-    .select({ slug: agents.slug, memoryConfig: agents.memoryConfig })
+    .select({
+      slug: agents.slug,
+      memoryConfig: agents.memoryConfig,
+      workspaceId: agents.workspaceId,
+      workspaceIsAdmin: workspaces.isAdmin,
+    })
     .from(agents)
+    .leftJoin(workspaces, eq(workspaces.id, agents.workspaceId))
     .where(eq(agents.id, agentId))
     .limit(1);
   const agentSlug = agentRow?.slug ?? agentId;
+  // An assistant of another workspace with its digests off: nothing reads
+  // a digest of it, so none is made (no model call; cost safety, W7c).
+  if (
+    agentRow?.workspaceId &&
+    agentRow.workspaceIsAdmin === false &&
+    agentRow.memoryConfig?.digest_limit === 0
+  ) {
+    return;
+  }
 
   // Couple the trigger to the agent's live-history window (context-transfer
   // audit, dev-brain task 64170cb0): with the old flat default of 30 vs a
@@ -135,6 +161,52 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
   const historyLimit = agentRow?.memoryConfig?.history_limit ?? 20;
   const threshold = Math.min(params.summarize_threshold ?? 30, Math.max(historyLimit, batchSize));
 
+  // The logins with undigested turns in this agent's chat: each is its own
+  // thread (0269), digested on its own, oldest backlog first.
+  const logins = await db
+    .select({ loginId: assistantMessages.loginId })
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.agentId, agentId),
+        isNull(assistantMessages.digestNodeId),
+        notSuperseded(),
+        notDigestSkipped(),
+      ),
+    )
+    .groupBy(assistantMessages.loginId)
+    .orderBy(sql`min(${assistantMessages.createdAt})`);
+  for (const { loginId } of logins) {
+    if (!loginId) continue;
+    await summarizeThread({
+      ownerId,
+      agentId,
+      loginId,
+      agentSlug,
+      workspaceId: agentRow?.workspaceId ?? null,
+      worker,
+      params,
+      batchSize,
+      threshold,
+    });
+  }
+}
+
+/** One login's thread with the agent: the run summarizeAgentConversation
+ *  makes for each login with undigested turns. */
+async function summarizeThread(o: {
+  ownerId: string;
+  agentId: string;
+  loginId: string;
+  agentSlug: string;
+  workspaceId: string | null;
+  worker: AiWorker;
+  params: SummarizerParams;
+  batchSize: number;
+  threshold: number;
+}): Promise<void> {
+  const { ownerId, agentId, loginId, agentSlug, worker, params, batchSize, threshold } = o;
   // Count undigested turns for THIS agent's stream only. Superseded pairs
   // (data.superseded_by — a cancelled-and-corrected turn) are excluded here AND
   // in load_batch below: excluded from one but not the other, they'd either
@@ -147,8 +219,10 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
       and(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agentId),
+        eq(assistantMessages.loginId, loginId),
         isNull(assistantMessages.digestNodeId),
         notSuperseded(),
+        notDigestSkipped(),
       ),
     );
   const undigested = countRows[0]?.n ?? 0;
@@ -168,13 +242,17 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
       and(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agentId),
+        eq(assistantMessages.loginId, loginId),
         isNull(assistantMessages.digestNodeId),
         notSuperseded(),
+        notDigestSkipped(),
       ),
     )
     .orderBy(asc(assistantMessages.createdAt))
     .limit(1);
-  const rangeEnd = oldest ? await closedRangeEndAfter(ownerId, agentId, oldest.createdAt) : null;
+  const rangeEnd = oldest
+    ? await closedRangeEndAfter(ownerId, agentId, loginId, oldest.createdAt)
+    : null;
   if (!rangeEnd && undigested < threshold) return;
 
   await startTrace(
@@ -187,6 +265,7 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
         worker_slug: worker.slug,
         agent_id: agentId,
         agent_slug: agentSlug,
+        login_id: loginId,
         threshold,
         batchSize,
         undigestedAtStart: undigested,
@@ -209,9 +288,11 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
               and(
                 eq(assistantMessages.ownerId, ownerId),
                 eq(assistantMessages.agentId, agentId),
+                eq(assistantMessages.loginId, loginId),
                 isNull(assistantMessages.digestNodeId),
                 // Keep in step with the threshold count above (see its comment).
                 notSuperseded(),
+                notDigestSkipped(),
                 // Stop at the end of a closed range (see the cut check above).
                 ...(rangeEnd ? [lt(assistantMessages.createdAt, rangeEnd)] : []),
               ),
@@ -333,114 +414,120 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
           // The digest folder's head first (plan U1). The model has already
           // answered and the topics are embedded, so a retry repeats only
           // this transaction.
-          return await withDeadlockRetry(() =>
-            withNodeInsertHeads(
-              ownerId,
-              [{ type: 'note', path: CONVERSATION_DIGEST_PATH }],
-              async (tx) => {
-                const batchIds = batch.map((b) => b.id);
-                const still = await tx
-                  .select({ id: assistantMessages.id })
-                  .from(assistantMessages)
-                  .where(
-                    and(
-                      eq(assistantMessages.ownerId, ownerId),
-                      inArray(assistantMessages.id, batchIds),
-                      isNull(assistantMessages.digestNodeId),
-                    ),
-                  )
-                  .for('update');
-                if (still.length !== batchIds.length) {
-                  h.setMeta({
-                    disposition: 'lost_claim_race',
-                    still_undigested: still.length,
-                    expected: batchIds.length,
-                  });
-                  return null;
-                }
+          // In the agent's workspace, as the login's own note (0269).
+          return await withChatNoteHome(o.workspaceId, () =>
+            withDeadlockRetry(() =>
+              withNodeInsertHeads(
+                ownerId,
+                [{ type: 'note', path: CONVERSATION_DIGEST_PATH }],
+                async (tx) => {
+                  const batchIds = batch.map((b) => b.id);
+                  const still = await tx
+                    .select({ id: assistantMessages.id })
+                    .from(assistantMessages)
+                    .where(
+                      and(
+                        eq(assistantMessages.ownerId, ownerId),
+                        inArray(assistantMessages.id, batchIds),
+                        isNull(assistantMessages.digestNodeId),
+                      ),
+                    )
+                    .for('update');
+                  if (still.length !== batchIds.length) {
+                    h.setMeta({
+                      disposition: 'lost_claim_race',
+                      still_undigested: still.length,
+                      expected: batchIds.length,
+                    });
+                    return null;
+                  }
 
-                const turnToDigest = new Map<string, string>();
-                const out: { topic: string; turnCount: number }[] = [];
-                for (let ti = 0; ti < topics.length; ti++) {
-                  const topic = topics[ti]!;
-                  const turns = topic.turnIndexes
-                    .map((i) => batch[i - 1])
-                    .filter((t): t is (typeof batch)[number] => t != null);
-                  if (turns.length === 0) continue;
-                  const periodStart = turns[0]!.createdAt.toISOString();
-                  const periodEnd = turns[turns.length - 1]!.createdAt.toISOString();
-                  const title = `${topic.label} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)} (${turns.length} turns)`;
+                  const turnToDigest = new Map<string, string>();
+                  const out: { topic: string; turnCount: number }[] = [];
+                  for (let ti = 0; ti < topics.length; ti++) {
+                    const topic = topics[ti]!;
+                    const turns = topic.turnIndexes
+                      .map((i) => batch[i - 1])
+                      .filter((t): t is (typeof batch)[number] => t != null);
+                    if (turns.length === 0) continue;
+                    const periodStart = turns[0]!.createdAt.toISOString();
+                    const periodEnd = turns[turns.length - 1]!.createdAt.toISOString();
+                    const title = `${topic.label} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)} (${turns.length} turns)`;
 
-                  const vec = topicVecs[ti] ?? null;
-                  const [n] = await tx
-                    .insert(nodes)
-                    .values({
-                      ownerId,
-                      type: 'note',
-                      title,
-                      path: CONVERSATION_DIGEST_PATH,
-                      ...(vec ? { embedding: vec } : {}),
-                      data: {
-                        kind: 'conversation_digest',
-                        // The conversational agent this digest belongs to — the key
-                        // loadConversationContext filters digests by (per agent,
-                        // cross-channel). NOT the summarizer worker.
-                        agent_id: agentId,
-                        agent_slug: agentSlug,
-                        period_start: periodStart,
-                        period_end: periodEnd,
-                        source_turn_count: turns.length,
-                        model: worker.model,
-                        summarizer_worker: worker.slug,
-                        content: topic.summary,
-                        summary: topic.summary,
-                        topic: topic.label,
-                        topic_slug: slugifyTopic(topic.label),
-                      },
-                      tags: [
-                        'conversation-digest',
-                        `agent:${slugifyTopic(agentSlug)}`,
-                        `topic:${slugifyTopic(topic.label)}`,
-                      ],
-                    })
-                    .returning({ id: nodes.id });
-                  if (!n) throw new Error('summarizer: failed to insert digest node');
-                  for (const t of turns) turnToDigest.set(t.id, n.id);
-                  out.push({ topic: topic.label, turnCount: turns.length });
-                }
+                    const vec = topicVecs[ti] ?? null;
+                    const [n] = await tx
+                      .insert(nodes)
+                      .values({
+                        ownerId,
+                        // The thread's login (0269): no other user reads it.
+                        loginId,
+                        type: 'note',
+                        title,
+                        path: CONVERSATION_DIGEST_PATH,
+                        ...(vec ? { embedding: vec } : {}),
+                        data: {
+                          kind: 'conversation_digest',
+                          // The conversational agent this digest belongs to: the key
+                          // loadConversationContext filters digests by (per agent,
+                          // cross-channel). NOT the summarizer worker.
+                          agent_id: agentId,
+                          agent_slug: agentSlug,
+                          login_id: loginId,
+                          period_start: periodStart,
+                          period_end: periodEnd,
+                          source_turn_count: turns.length,
+                          model: worker.model,
+                          summarizer_worker: worker.slug,
+                          content: topic.summary,
+                          summary: topic.summary,
+                          topic: topic.label,
+                          topic_slug: slugifyTopic(topic.label),
+                        },
+                        tags: [
+                          'conversation-digest',
+                          `agent:${slugifyTopic(agentSlug)}`,
+                          `topic:${slugifyTopic(topic.label)}`,
+                        ],
+                      })
+                      .returning({ id: nodes.id });
+                    if (!n) throw new Error('summarizer: failed to insert digest node');
+                    for (const t of turns) turnToDigest.set(t.id, n.id);
+                    out.push({ topic: topic.label, turnCount: turns.length });
+                  }
 
-                // Topics parsed but none resolved to actual turns (model emitted
-                // empty/garbled turn_indexes everywhere): throwing rolls back and
-                // surfaces an errored trace. Silently returning here would leave
-                // the batch undigested and re-bill the same LLM call on every
-                // subsequent insert — an unbounded spend leak.
-                if (out.length === 0) {
-                  throw new Error(
-                    'summarizer: topics parsed but none resolved to turns — not persisting',
-                  );
-                }
+                  // Topics parsed but none resolved to actual turns (model emitted
+                  // empty/garbled turn_indexes everywhere): throwing rolls back and
+                  // surfaces an errored trace. Silently returning here would leave
+                  // the batch undigested and re-bill the same LLM call on every
+                  // subsequent insert: an unbounded spend leak.
+                  if (out.length === 0) {
+                    throw new Error(
+                      'summarizer: topics parsed but none resolved to turns, not persisting',
+                    );
+                  }
 
-                const fallbackId = turnToDigest.values().next().value;
-                if (fallbackId) {
-                  for (const t of batch)
-                    if (!turnToDigest.has(t.id)) turnToDigest.set(t.id, fallbackId);
-                }
+                  const fallbackId = turnToDigest.values().next().value;
+                  if (fallbackId) {
+                    for (const t of batch)
+                      if (!turnToDigest.has(t.id)) turnToDigest.set(t.id, fallbackId);
+                  }
 
-                const byDigest = new Map<string, string[]>();
-                for (const [turnId, digestId] of turnToDigest) {
-                  const list = byDigest.get(digestId) ?? [];
-                  list.push(turnId);
-                  byDigest.set(digestId, list);
-                }
-                for (const [digestId, ids] of byDigest) {
-                  await tx
-                    .update(assistantMessages)
-                    .set({ digestNodeId: digestId })
-                    .where(inArray(assistantMessages.id, ids));
-                }
-                h.setMeta({ digests: out.length, embedded: topicVecs.filter(Boolean).length });
-                return out;
-              },
+                  const byDigest = new Map<string, string[]>();
+                  for (const [turnId, digestId] of turnToDigest) {
+                    const list = byDigest.get(digestId) ?? [];
+                    list.push(turnId);
+                    byDigest.set(digestId, list);
+                  }
+                  for (const [digestId, ids] of byDigest) {
+                    await tx
+                      .update(assistantMessages)
+                      .set({ digestNodeId: digestId })
+                      .where(inArray(assistantMessages.id, ids));
+                  }
+                  h.setMeta({ digests: out.length, embedded: topicVecs.filter(Boolean).length });
+                  return out;
+                },
+              ),
             ),
           );
         },

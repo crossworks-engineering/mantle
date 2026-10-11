@@ -112,6 +112,10 @@ describe('telegram_pending', () => {
  *  owner), so they are driven as the owner's MCP client. */
 const OWNER_SURFACE = { surface: { kind: 'owner', via: 'mcp' } } as Partial<ToolHandlerContext>;
 
+const ASKER_SURFACE = {
+  surface: { kind: 'owner', via: 'mcp', loginId: '00000000-0000-4000-8000-000000000001' },
+} as Partial<ToolHandlerContext>;
+
 const SCOPED_READS: Array<[string, Record<string, unknown>, Partial<ToolHandlerContext>?]> = [
   ['agent_list', {}],
   ['tool_group_list', {}],
@@ -122,8 +126,9 @@ const SCOPED_READS: Array<[string, Record<string, unknown>, Partial<ToolHandlerC
   ['recall_index', {}, OWNER_SURFACE],
   ['recall_open', { map: 'm' }, OWNER_SURFACE],
   ['recall_go', { map: 'm', target: 't' }, OWNER_SURFACE],
-  ['find_window', { topic: 'x' }],
-  ['replay_window', { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' }],
+  // Replay reads one login's own history (W7c fix round 1, H1): a login asks.
+  ['find_window', { topic: 'x' }, ASKER_SURFACE],
+  ['replay_window', { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' }, ASKER_SURFACE],
   ['run_state', { run_id: 'r1' }],
 ];
 

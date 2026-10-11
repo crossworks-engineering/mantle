@@ -30,6 +30,7 @@ import {
   dedupeNewNotes,
   getDefaultWorker,
   MAX_PERSONA_NOTES,
+  workspaces,
   type Agent,
   type AiWorker,
   type ConversationChannel,
@@ -102,18 +103,28 @@ async function resolveReflector(ownerId: string): Promise<AiWorker | null> {
  * future channel — docs/conversation.md). Most-active-first. This is the
  * cost-safety gate: an agent only earns an LLM reflection if the user actually
  * conversed with it since the last run. A recorded MCP turn is not activity.
+ *
+ * An assistant of a workspace other than Admin is never reflected on (W7c):
+ * its turns are its users' own threads (0269, the member chat folded in),
+ * and no reflection of them ever ran before. No new LLM work, and no user's
+ * chat becomes another user's note.
  */
 export async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> {
-  const candidates = await db
-    .select()
-    .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, ownerId),
-        eq(agents.enabled, true),
-        inArray(agents.role, [...CONVERSATIONAL_ROLES]),
-      ),
-    );
+  const candidates = (
+    await db
+      .select({ agent: agents, wsIsAdmin: workspaces.isAdmin })
+      .from(agents)
+      .leftJoin(workspaces, eq(workspaces.id, agents.workspaceId))
+      .where(
+        and(
+          eq(agents.ownerId, ownerId),
+          eq(agents.enabled, true),
+          inArray(agents.role, [...CONVERSATIONAL_ROLES]),
+        ),
+      )
+  )
+    .filter((r) => !r.agent.workspaceId || r.wsIsAdmin !== false)
+    .map((r) => r.agent);
   if (candidates.length === 0) return [];
 
   const counts = await db
@@ -124,6 +135,8 @@ export async function qualifyingAgents(ownerId: string, since: Date): Promise<Ag
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.direction, 'outbound'),
         ne(assistantMessages.channel, REFLECTOR_SKIPPED_CHANNEL),
+        // The owner's own thread only (W7c fix round 1, M2).
+        eq(assistantMessages.loginId, ownerId),
         gt(assistantMessages.createdAt, since),
         inArray(
           assistantMessages.agentId,
@@ -266,7 +279,10 @@ export async function reflect(ownerId: string): Promise<void> {
 }
 
 /** The agent's recent turns, newest first, as the reflector reads them: every
- *  channel but 'mcp' (REFLECTOR_SKIPPED_CHANNEL), both directions. */
+ *  channel but 'mcp' (REFLECTOR_SKIPPED_CHANNEL), both directions, of the
+ *  owner's own thread only (W7c fix round 1, M2): persona notes describe the
+ *  owner, as "About the user" does, and another user's chat with the same
+ *  assistant is private to that user, never folded into them. */
 export async function loadReflectionTurns(
   ownerId: string,
   agentId: string,
@@ -282,6 +298,7 @@ export async function loadReflectionTurns(
       and(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agentId),
+        eq(assistantMessages.loginId, ownerId),
         ne(assistantMessages.channel, REFLECTOR_SKIPPED_CHANNEL),
       ),
     )

@@ -21,6 +21,23 @@ import { addTool } from './tool-input';
 export function registerResponderTools(ctx: McpRegisterContext): void {
   const { server, ownerId, jsonReply } = ctx;
 
+  /**
+   * Whose thread these tools read and write (W7c fix round 1, M1): the
+   * connection's own login. The anchor only on its own stdio (which names no
+   * login); any other connection that names none (a peer the owner did not
+   * register) gets null and the call is refused, never the anchor's thread.
+   */
+  const threadLogin: string | null = ctx.loginId ?? (ctx.transport === 'stdio' ? ownerId : null);
+  const NO_LOGIN = {
+    content: [
+      {
+        type: 'text' as const,
+        text: 'Error: this connection names no login, so it has no chat thread of its own.',
+      },
+    ],
+    isError: true,
+  };
+
   // ─── Responder simulation ─────────────────────────────────────────────────────
   // Talk to a responder agent over MCP with the REAL pipeline (persona +
   // retrieval + real tool execution) but NOTHING persisted to its conversation
@@ -93,8 +110,10 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
   }) {
     const capError = checkSimInputCaps(a);
     if (capError) return capError;
+    if (!threadLogin) return NO_LOGIN;
     try {
       const res = await runSimulatedResponderTurn(ownerId, {
+        loginId: threadLogin,
         message: a.message,
         ...(a.agent_slug ? { agentSlug: a.agent_slug } : {}),
         ...(a.history ? { history: a.history } : {}),
@@ -238,8 +257,10 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
     async (a) => {
       const capError = checkSimInputCaps({ ...a, toolName: 'responder_turn_input' });
       if (capError) return capError;
+      if (!threadLogin) return NO_LOGIN;
       try {
         const res = await describeResponderTurnInput(ownerId, {
+          loginId: threadLogin,
           message: a.message,
           ...(a.agent_slug ? { agentSlug: a.agent_slug } : {}),
           ...(a.history ? { history: a.history } : {}),
@@ -306,10 +327,11 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
       tools_used: z.array(z.string()).optional(),
     },
     async (a) => {
+      if (!threadLogin) return NO_LOGIN;
       try {
         const res = await recordMcpResponderTurn(ownerId, {
-          // The owner's MCP surface: the brain owner's own login (R3).
-          loginId: ownerId,
+          // The connection's own thread (R3, W7c fix round 1, M1).
+          loginId: threadLogin,
           message: a.message,
           reply: a.reply,
           model: a.model,

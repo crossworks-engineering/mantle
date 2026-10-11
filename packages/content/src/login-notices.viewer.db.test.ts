@@ -12,8 +12,10 @@
  *    words that login could read by opening the app: never an admin, never a
  *    disabled login, never a stale row, never a thread the reader may not
  *    read (an item raised above client level tells no client);
- *  - a login's unread count: nothing unread at first, finished replies only,
- *    a reply still being written is not marked read by mistake;
+ *  - since 0269 (W7c) a reply is a row of the login's own thread in
+ *    assistant_messages; the anchor's own replies never fire it (they reach
+ *    the owner's devices by conversation_changed). The unread count moved to
+ *    the per-thread inbox (GET /api/assistant/conversations);
  *  - the trigger functions only notify (cost-safety: no write, no job).
  *
  * It runs on a scratch database of its own: "nothing fired" must be provable
@@ -78,10 +80,10 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     return raw.map((p) => ln.parseLoginNotice(p)).filter((n): n is LoginNotice => n !== null);
   };
 
-  const reply = (loginId: string, text: string, extra: Record<string, unknown> = {}) =>
-    tm.appendTeamMessage({
+  const reply = (loginId: string, text: string, extra: { status?: 'pending' | 'complete' } = {}) =>
+    tm.appendThreadMessage({
       ownerId: anchor,
-      contactId: null,
+      agentId: agent,
       loginId,
       direction: 'outbound',
       text,
@@ -144,18 +146,21 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     expect(await sent(async () => (id = (await reply(member, 'Hello Mia')).id))).toEqual([
       { kind: 'chat', loginId: member, id },
     ]);
-    // The member's own message, a "thinking" bubble, a portal (contact) row.
+    // The member's own message, a "thinking" bubble, the anchor's own reply.
     expect(
       await sent(() =>
-        tm.appendTeamMessage({
+        tm.appendThreadMessage({
           ownerId: anchor,
-          contactId: null,
+          agentId: agent,
           loginId: member,
           direction: 'inbound',
           text: 'a question',
         }),
       ),
     ).toEqual([]);
+    expect(await sent(() => reply(anchor, 'the owner reads this on their own devices'))).toEqual(
+      [],
+    );
     let pending = '';
     expect(
       await sent(async () => (pending = (await reply(member, '', { status: 'pending' })).id)),
@@ -163,8 +168,9 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     // The bubble finalized: once.
     expect(
       await sent(() =>
-        tm.updateTeamMessageOutcome({
+        tm.updateThreadMessageOutcome({
           ownerId: anchor,
+          loginId: member,
           id: pending,
           status: 'complete',
           text: 'The answer',
@@ -174,22 +180,31 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     // Written again while already finished (attachments, a repair): silent.
     expect(
       await sent(() =>
-        tm.updateTeamMessageOutcome({ ownerId: anchor, id: pending, status: 'complete' }),
+        tm.updateThreadMessageOutcome({
+          ownerId: anchor,
+          loginId: member,
+          id: pending,
+          status: 'complete',
+        }),
       ),
     ).toEqual([]);
     // A failed reply never notifies.
     const failing = (await reply(member, '', { status: 'pending' })).id;
     expect(
       await sent(() =>
-        tm.updateTeamMessageOutcome({ ownerId: anchor, id: failing, status: 'failed', error: 'x' }),
+        tm.updateThreadMessageOutcome({
+          ownerId: anchor,
+          loginId: member,
+          id: failing,
+          status: 'failed',
+          error: 'x',
+        }),
       ),
     ).toEqual([]);
   });
 
   it('the chat message is for that login, in words from its own thread', async () => {
-    const row = await reply(member, '  The pump spec is **ready**.\n\n![chart](media:abc)  ', {
-      agentId: agent,
-    });
+    const row = await reply(member, '  The pump spec is **ready**.\n\n![chart](media:abc)  ');
     const n = await ln.chatReplyNotice({ loginId: member, id: row.id });
     expect(n).toEqual({
       loginId: member,
@@ -202,10 +217,10 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       deepLink: '/portal/chat',
       collapseKey: 'chat',
     });
-    // An admin's note (no agent): never the admin's name.
+    // The assistant's name, never an admin's.
     const note = await reply(member, 'We fixed the date.');
     const c = await ln.chatReplyNotice({ loginId: member, id: note.id });
-    expect(c).toMatchObject({ loginId: member, role: 'member', title: 'New message' });
+    expect(c).toMatchObject({ loginId: member, role: 'member', title: 'Tess' });
     expect(JSON.stringify(c)).not.toContain('Ada');
     // A client has no chat since W5c: a row in its old thread tells nobody.
     const old = await reply(client, 'for the client');
@@ -225,7 +240,7 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     const old = await reply(member, 'from long ago');
     expect(await ln.chatReplyNotice({ loginId: member, id: old.id })).not.toBeNull();
     await m.systemDb.execute(sqlTag`
-      update team_messages set created_at = now() - interval '31 minutes' where id = ${old.id}`);
+      update assistant_messages set created_at = now() - interval '31 minutes' where id = ${old.id}`);
     expect(await ln.chatReplyNotice({ loginId: member, id: old.id })).toBeNull();
     // Disabled.
     const m2 = await reply(member2, 'for Noah');
@@ -239,100 +254,18 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     expect(await ln.chatReplyNotice({ loginId: member2, id: m2.id })).not.toBeNull();
   });
 
-  // ── Unread ──────────────────────────────────────────────────────────────
-
-  it('a login starts with nothing unread, then counts finished replies only', async () => {
-    // member has a history by now.
-    const first = await tm.loginChatUnread(anchor, member);
-    expect(first.unread).toBe(0);
-    await reply(member, 'one');
-    await reply(member, 'two');
-    await tm.appendTeamMessage({
-      ownerId: anchor,
-      contactId: null,
-      loginId: member,
-      direction: 'inbound',
-      text: 'mine',
-    });
-    await reply(member, '', { status: 'pending' });
-    await reply(member2, 'for someone else');
-    expect((await tm.loginChatUnread(anchor, member)).unread).toBe(2);
-    // The first read did not move the cursor again.
-    expect((await tm.loginChatUnread(anchor, member)).lastReadAt).toBe(first.lastReadAt);
-  });
-
-  it('mark read clears it, never moves backwards, and the future is now', async () => {
-    // No reply is being written for this login.
-    await m.systemDb.execute(sqlTag`
-      update team_messages set status = 'failed' where login_id = ${member} and status = 'pending'`);
-    const read = await tm.markLoginChatRead(anchor, member);
-    expect(read.unread).toBe(0);
-    const back = await tm.markLoginChatRead(anchor, member, new Date(Date.now() - 3_600_000));
-    expect(back.lastReadAt).toBe(read.lastReadAt);
-    const future = await tm.markLoginChatRead(anchor, member, new Date(Date.now() + 3_600_000));
-    expect(new Date(future.lastReadAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
-    await reply(member, 'three');
-    expect((await tm.loginChatUnread(anchor, member)).unread).toBe(1);
-  });
-
-  it('`at` = the createdAt the chat route sent (milliseconds) clears that message', async () => {
-    await tm.markLoginChatRead(anchor, member);
-    // Several replies: with microseconds in the row, a cursor set to the
-    // millisecond the app was given must still cover the row it names.
-    const shown: string[] = [];
-    for (let i = 0; i < 12; i += 1) {
-      // Each reply in its own millisecond. The cursor covers the whole
-      // millisecond it is given, so two replies in one are read together
-      // (the next test); on a fast runner back-to-back inserts share one.
-      await new Promise((r) => setTimeout(r, 3));
-      const row = await reply(member, `reply ${i}`);
-      // What GET /api/member/chat sends: an ISO time, milliseconds.
-      shown.push(row.createdAt.toISOString());
+  it('an Admin user’s finished reply makes no member-path push: one push per reply (W7c fix round 1, L5)', async () => {
+    // The event may fire (the trigger cannot read roles); the handler's
+    // notice for an Admin login is null, so only pushOutbound (the Admin
+    // user's own devices) sends.
+    const got = await sent(() => reply(adminA, 'second admin reply'));
+    for (const n of got) {
+      if (n.kind === 'chat') expect(await ln.chatReplyNotice(n)).toBeNull();
     }
-    expect(new Set(shown).size).toBe(12);
-    expect((await tm.loginChatUnread(anchor, member)).unread).toBe(12);
-    // The app showed the first eleven.
-    expect((await tm.markLoginChatRead(anchor, member, new Date(shown[10]!))).unread).toBe(1);
-    // Then the last one.
-    expect((await tm.markLoginChatRead(anchor, member, new Date(shown[11]!))).unread).toBe(0);
-    // The row itself holds more than milliseconds (else this proves nothing).
-    const [micro] = await exec<{ n: number }>(sqlTag`
-      select count(*)::int as n from team_messages
-       where login_id = ${member} and created_at <> date_trunc('milliseconds', created_at)`);
-    expect(micro!.n).toBeGreaterThan(0);
-  });
-
-  it('two replies in one millisecond are read together: the app cannot tell them apart', async () => {
-    await tm.markLoginChatRead(anchor, member);
-    await new Promise((r) => setTimeout(r, 5));
-    const a = await reply(member, 'same ms a');
-    const b = await reply(member, 'same ms b');
-    // Both in the millisecond of the first, 300 and 700 microseconds into it.
-    const ms = a.createdAt.toISOString();
-    await m.systemDb.execute(sqlTag`
-      update team_messages set created_at = ${ms}::timestamptz + interval '300 microseconds'
-       where id = ${a.id}`);
-    await m.systemDb.execute(sqlTag`
-      update team_messages set created_at = ${ms}::timestamptz + interval '700 microseconds'
-       where id = ${b.id}`);
-    expect((await tm.loginChatUnread(anchor, member)).unread).toBe(2);
-    // The app names the first by its millisecond: the second goes with it.
-    expect((await tm.markLoginChatRead(anchor, member, new Date(ms))).unread).toBe(0);
-  });
-
-  it('a reply still being written is not marked read: it counts when it lands', async () => {
-    const bubble = (await reply(client, '', { status: 'pending' })).id;
-    await tm.loginChatUnread(anchor, client);
-    // The client reads the thread while the reply is being written.
-    expect((await tm.markLoginChatRead(anchor, client)).unread).toBe(0);
-    await tm.updateTeamMessageOutcome({
-      ownerId: anchor,
-      id: bubble,
-      status: 'complete',
-      text: 'Here it is',
-    });
-    expect((await tm.loginChatUnread(anchor, client)).unread).toBe(1);
-    expect((await tm.markLoginChatRead(anchor, client)).unread).toBe(0);
+    // A member's reply still tells the member.
+    const mine = await sent(() => reply(member, 'member reply'));
+    const forMember = mine.find((n) => n.kind === 'chat' && n.loginId === member);
+    expect(forMember && (await ln.chatReplyNotice(forMember))).not.toBeNull();
   });
 
   // ── Cost safety ─────────────────────────────────────────────────────────

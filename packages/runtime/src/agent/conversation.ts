@@ -1,24 +1,26 @@
 /**
- * Unified per-agent conversation stream — the shared read/write API every
+ * Unified per-agent conversation stream: the shared read/write API every
  * channel (web /assistant, Telegram, future WhatsApp) calls. See
  * docs/conversation.md for the full design.
  *
- * The conversation lives in `assistant_messages`, keyed per (owner, agent),
- * NOT per channel — so an agent has ONE forever-thread across every transport.
- * `channel` is provenance + the hint for which transport sends a reply.
+ * The conversation lives in `assistant_messages`, keyed per (owner, agent,
+ * login) since 0269 (W7c), NOT per channel: each user has ONE thread with
+ * each agent across every transport, and no turn ever reads another user's.
+ * `channel` is provenance and the hint for which transport sends a reply.
  *
- *   recordTurn()              — append one inbound/outbound turn.
- *   loadConversationContext() — assemble the responder's prompt context:
- *                               persona + facts + content hits + digests +
- *                               the last N raw turns (all channels).
+ *   recordTurn()              append one inbound/outbound turn.
+ *   loadConversationContext() assemble the responder's prompt context:
+ *                             persona, facts, content hits, digests and
+ *                             the last N raw turns (all channels).
  *
  * This module is the single home for logic that used to be copy-pasted as two
  * `loadContext` functions (server/web/lib/assistant.ts + server/api/src/main.ts).
  * It carries the *richer* of the two behaviours forward:
  *   - facts: a 0.85 cosine mismatch guard (drops embedding-space-mismatch rows)
  *   - content hits: a 0.6 cosine relevance cutoff
- *   - digests: filtered by the digest note's `data.agent_id` (per-agent, not
- *     per-chat) — see §4 of the design doc
+ *   - digests: filtered by the digest note's `data.agent_id` and
+ *     `data.login_id` (per thread, not per chat); see section 4 of the
+ *     design doc
  * The web surface gains the guard/cutoff/digests when it adopts this module
  * (Phase 2); that's an intended improvement, not a regression.
  */
@@ -269,9 +271,10 @@ export async function recordTurn(args: {
    *  currently the device `{ location }` ping the companion app attaches to
    *  inbound turns. Omitted ⇒ left at the column default. */
   data?: Record<string, unknown> | null;
-  /** The login this turn was for (workspaces R3). Unset: the database stamps
-   *  the scope's login, if any; a row of a non-Admin workspace with no login
-   *  is read in the Admin workspace only. */
+  /** The login whose thread this turn is in (workspaces R3, 0269). Unset:
+   *  the database stamps the scope's login, else the anchor's (the owner's
+   *  thread): no chat row is left without a login, and each login reads
+   *  only its own rows. */
   loginId?: string | null;
   tx?: Executor;
 }): Promise<AssistantMessage> {
@@ -389,6 +392,8 @@ export async function markTurnSuperseded(args: {
   inboundId: string;
   outboundId: string;
   newTurnId: string;
+  /** The login whose thread it is (0269): another login's rows are no-ops. */
+  loginId?: string;
 }): Promise<number> {
   const rows = await db
     .update(assistantMessages)
@@ -399,6 +404,7 @@ export async function markTurnSuperseded(args: {
       and(
         inArray(assistantMessages.id, [args.inboundId, args.outboundId]),
         eq(assistantMessages.ownerId, args.ownerId),
+        ...(args.loginId ? [eq(assistantMessages.loginId, args.loginId)] : []),
       ),
     )
     .returning({ id: assistantMessages.id });
@@ -420,6 +426,7 @@ export async function markTurnSuperseded(args: {
 async function loadOpenThread(
   ownerId: string,
   agentId: string,
+  loginId: string,
 ): Promise<{ startedAt: Date; seedThreadId: string | null } | null> {
   const [row] = await db
     .select({ startedAt: chatThreads.startedAt, seedThreadId: chatThreads.seedThreadId })
@@ -428,6 +435,7 @@ async function loadOpenThread(
       and(
         eq(chatThreads.ownerId, ownerId),
         eq(chatThreads.agentId, agentId),
+        eq(chatThreads.loginId, loginId),
         eq(chatThreads.status, 'open'),
       ),
     )
@@ -444,6 +452,7 @@ async function loadOpenThread(
 async function loadThreadSeed(
   ownerId: string,
   seedThreadId: string,
+  loginId: string,
 ): Promise<{ title: string; digest: Digest } | null> {
   const [row] = await db
     .select({
@@ -454,7 +463,13 @@ async function loadThreadSeed(
     })
     .from(chatThreads)
     .leftJoin(nodes, eq(nodes.id, chatThreads.summaryNodeId))
-    .where(and(eq(chatThreads.ownerId, ownerId), eq(chatThreads.id, seedThreadId)))
+    .where(
+      and(
+        eq(chatThreads.ownerId, ownerId),
+        eq(chatThreads.id, seedThreadId),
+        eq(chatThreads.loginId, loginId),
+      ),
+    )
     .limit(1);
   if (!row?.summary?.trim()) return null;
   const title = row.title?.trim() || 'an archived chat';
@@ -482,6 +497,8 @@ type RecallExchange = HistoryExchange & { turns: HistoryTurn[]; back: number };
 async function loadHistoryRows(o: {
   ownerId: string;
   agentId: string;
+  /** The login whose thread this is (0269): never another login's rows. */
+  loginId: string;
   historyLimit: number;
   windowHours: number | null;
   excludeMessageId?: string;
@@ -503,6 +520,7 @@ async function loadHistoryRows(o: {
   const histConds = [
     eq(assistantMessages.ownerId, o.ownerId),
     eq(assistantMessages.agentId, o.agentId),
+    eq(assistantMessages.loginId, o.loginId),
     eq(assistantMessages.status, 'complete'),
     notSuperseded(),
   ];
@@ -611,6 +629,10 @@ async function loadConversationContextAtLevel(args: {
   /** The owner surface's signed-in login (W7a): whom the Admin assistant
    *  answers when `loginId` is not set. */
   ownerLoginId?: string | null;
+  /** false: the caller reads the thread itself (the workspace turn engine,
+   *  which needs its rows' ids and marks), so the raw history rows are not
+   *  loaded here. The open thread still bounds the digests. */
+  loadHistory?: boolean;
 }): Promise<ConversationContext> {
   const { ownerId, agent, inboundText } = args;
   // Decision trace v1 (snapshot.trace): what each stage considered, kept and
@@ -626,6 +648,13 @@ async function loadConversationContextAtLevel(args: {
   // skipped, not left to fail on a permission error. The Admin assistant
   // (W7a: a turn scope of Admin) reads them: the scope holds Admin.
   const belowAdmin = !(await scopeHoldsAdmin());
+  // Whose thread this turn reads (0269, W7c): the login it answers, else the
+  // owner surface's login, else the anchor (a turn that answers no login acts
+  // for the owner, W7a). Every history, thread and digest read names it.
+  const threadLogin = args.loginId ?? args.ownerLoginId ?? ownerId;
+  // Below Admin a turn reads its own login's thread only (row security says
+  // the same); a turn that answers no login there reads none.
+  const readsThread = !belowAdmin || !!args.loginId;
   const entityNameCol = belowAdmin ? sql<string | null>`null` : entities.name;
   const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
   const historyLimit = memoryConfig.history_limit ?? 20;
@@ -645,8 +674,17 @@ async function loadConversationContextAtLevel(args: {
   // memory_config.notes_target = 'journal': the notes moved to the Journal
   // (persona-notes-to-journal) and arrive through its tiers instead, which
   // that setting switches to live (journalTiersOf).
+  //
+  // Persona notes are learned from the owner's (the anchor's) thread, so they
+  // ride only a turn in that thread (W7c fix round 2, M-a): another user's
+  // turn never gets them. Notes already stored may hold text learned before
+  // W7c from other logins' turns; they are kept as they are (clearing or
+  // rewriting them is the owner's decision), only not injected elsewhere.
+  const ownThread = threadLogin.toLowerCase() === ownerId.toLowerCase();
   const personaNotes: PersonaNote[] =
-    notesTargetOf(memoryConfig) === 'journal' ? [] : ((agent.personaNotes ?? []) as PersonaNote[]);
+    notesTargetOf(memoryConfig) === 'journal' || !ownThread
+      ? []
+      : ((agent.personaNotes ?? []) as PersonaNote[]);
 
   // History rows, started now: with the decider's `history_recall` use on, the
   // older rows are scored while the embedding and retrieval below run, so the
@@ -655,25 +693,28 @@ async function loadConversationContextAtLevel(args: {
   // the lower bound of the history window, history recall, the follow-up
   // enrich and the digests, so a fresh chat starts clean. Null = never
   // archived = no bound. Below admin the owner's chat is not read at all.
+  const loadHistory = args.loadHistory !== false;
   const [recallUse, openThread] = await Promise.all([
-    historyLimit > 0 && !belowAdmin && !isSmallTalk(inboundText)
+    historyLimit > 0 && loadHistory && !belowAdmin && !isSmallTalk(inboundText)
       ? decisionUseEnabled(ownerId, 'history_recall')
       : Promise.resolve(null),
-    belowAdmin ? Promise.resolve(null) : loadOpenThread(ownerId, agent.id),
+    readsThread ? loadOpenThread(ownerId, agent.id, threadLogin) : Promise.resolve(null),
   ]);
   const threadSince = openThread?.startedAt ?? null;
-  const rowsLoad = belowAdmin
-    ? Promise.resolve({ recentRows: [] as HistoryRow[], olderRows: [] as HistoryRow[] })
-    : loadHistoryRows({
-        ownerId,
-        agentId: agent.id,
-        historyLimit,
-        windowHours,
-        excludeMessageId: args.excludeMessageId,
-        before: args.before,
-        since: threadSince,
-        recall: recallUse != null,
-      });
+  const rowsLoad =
+    !readsThread || !loadHistory
+      ? Promise.resolve({ recentRows: [] as HistoryRow[], olderRows: [] as HistoryRow[] })
+      : loadHistoryRows({
+          ownerId,
+          agentId: agent.id,
+          loginId: threadLogin,
+          historyLimit,
+          windowHours,
+          excludeMessageId: args.excludeMessageId,
+          before: args.before,
+          since: threadSince,
+          recall: recallUse != null,
+        });
   const historyLoad = rowsLoad.then(async ({ recentRows, olderRows }) => ({
     recentRows,
     recall: recallUse
@@ -746,10 +787,11 @@ async function loadConversationContextAtLevel(args: {
       let recentTexts: readonly string[] = [];
       if (args.recentTurnTexts) {
         recentTexts = args.recentTurnTexts.slice(-2);
-      } else if (!belowAdmin) {
+      } else if (readsThread) {
         const conds = [
           eq(assistantMessages.ownerId, ownerId),
           eq(assistantMessages.agentId, agent.id),
+          eq(assistantMessages.loginId, threadLogin),
         ];
         if (args.excludeMessageId) conds.push(ne(assistantMessages.id, args.excludeMessageId));
         if (args.before) conds.push(lt(assistantMessages.createdAt, args.before));
@@ -1639,13 +1681,12 @@ async function loadConversationContextAtLevel(args: {
     trace.stage('relations', anchorEntityIds.length, relations.length, undefined, 'in = anchors');
   }
 
-  // ─── Conversation digests for THIS agent (per-agent, cross-channel) ─────
-  // Filtered by the digest note's data.agent_id. Until the unified summarizer
-  // (Phase 4) and the digest re-key (Phase 6) land, no digest note carries
-  // agent_id, so this returns []. That matches today's web behaviour (which
-  // passed digests: []), so adopting this module is a no-op until then.
+  // ─── Conversation digests for THIS thread (per agent and login) ─────────
+  // Filtered by the digest note's data.agent_id and data.login_id (0269,
+  // W7c): a digest summarises one login's turns and is read only for that
+  // login (nodes.login_id says the same to row security).
   const digestRows =
-    digestLimit > 0
+    digestLimit > 0 && readsThread
       ? await db
           .select({ data: nodes.data, createdAt: nodes.createdAt })
           .from(nodes)
@@ -1655,6 +1696,7 @@ async function loadConversationContextAtLevel(args: {
               eq(nodes.type, 'note'),
               sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
               sql`${nodes.data}->>'agent_id' = ${agent.id}`,
+              sql`${nodes.data}->>'login_id' = ${threadLogin}`,
               // A digest of an archived thread stays out of a fresh chat. The
               // summarizer never lets one digest span a "New chat" cut.
               ...(threadSince
@@ -1672,7 +1714,7 @@ async function loadConversationContextAtLevel(args: {
   // "Continue from this": the archived thread's summary leads the digests,
   // so the fresh chat knows where it picks up without its raw turns.
   const seed = openThread?.seedThreadId
-    ? await loadThreadSeed(ownerId, openThread.seedThreadId)
+    ? await loadThreadSeed(ownerId, openThread.seedThreadId, threadLogin)
     : null;
   if (seed) digests.unshift(seed.digest);
   if (digestLimit > 0) trace.stage('digests', digestRows.length, digests.length);

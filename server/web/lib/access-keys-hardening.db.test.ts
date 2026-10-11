@@ -84,6 +84,8 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
   const whoami = (bearer: string, at?: string) => call('/api/v1/whoami', { bearer, ip: at });
   const days = (iso: string) => (Date.parse(iso) - Date.now()) / 86_400_000;
 
+  let madeAgent: string | null = null;
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -103,6 +105,24 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
       (${guesser}, ${emailOf('guesser')}, ${hash}, 'member', 'Gus Guesser'),
       (${noted}, ${emailOf('noted')}, ${hash}, 'member', 'Nia Noted'),
       (${maker}, ${emailOf('maker')}, ${hash}, 'member', 'Max Maker')`;
+    // The key-made notice lands in the login's own thread with the Team
+    // workspace's assistant (0269, W7c): make sure the brain has one.
+    const [team] = await sql<Row[]>`
+      insert into workspaces (owner_id, name, bridge_key) values (${anchor}, 'Team', 'team')
+      on conflict (owner_id, bridge_key) where bridge_key is not null do update set name = workspaces.name
+      returning id::text as id`;
+    const teamWs = String(team!.id);
+    const held = await sql<Row[]>`select ref_id from workspace_resources
+      where workspace_id = ${teamWs} and type = 'assistant'`;
+    if (held.length === 0) {
+      const [agent] = await sql<Row[]>`
+        insert into agents (owner_id, slug, name, model, system_prompt, workspace_id)
+        values (${anchor}, ${`${tag}-team`}, 'Team assistant', 'test/model', 'x', ${teamWs})
+        returning id::text as id`;
+      madeAgent = String(agent!.id);
+      await sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+        values (${teamWs}, 'assistant', ${madeAgent}, true)`;
+    }
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
@@ -116,7 +136,11 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     if (ids.length) await sql`delete from audit_log where detail->>'keyId' in ${sql(ids)}`;
     await sql`delete from access_keys where login_id in ${sql(all)}`;
     await sql`delete from mobile_tokens where user_id in ${sql(all)}`;
-    await sql`delete from team_messages where login_id in ${sql(all)}`;
+    await sql`delete from assistant_messages where login_id in ${sql(all)}`;
+    if (madeAgent) {
+      await sql`delete from workspace_resources where ref_id = ${madeAgent}`;
+      await sql`delete from agents where id = ${madeAgent}`;
+    }
     await sql`delete from audit_log where detail->>'loginId' in ${sql(all)}`;
     await sql`delete from oauth_access_tokens where actor_id in ${sql(all)}`;
     if (oauthClientsMade.length) {
@@ -230,7 +254,7 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     const key = await makeKey(noted, { name: `${tag} notice key`, access: 'read_write' });
     let rows: Row[] = [];
     for (let i = 0; i < 100 && rows.length === 0; i += 1) {
-      rows = await sql<Row[]>`select text from team_messages
+      rows = await sql<Row[]>`select text from assistant_messages
         where login_id = ${noted} and text like ${'A new API key was made on your login%'}`;
       if (rows.length === 0) await new Promise((r) => setTimeout(r, 20));
     }

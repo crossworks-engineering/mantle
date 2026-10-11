@@ -3,10 +3,11 @@
  * session that makes a key must not go unseen. Never the secret, never the
  * prefix: only the key's name, its access and its expiry.
  *
- *  - A member or a client: one message in their own chat thread (their
- *    in-app notices), which the push worker also sends to their phone as a
- *    chat push (the login_notice trigger, migration 0213), sealed to each
- *    device.
+ *  - A member or a client: one message in their own thread with the Team
+ *    workspace's assistant (their in-app notices; per login since 0269),
+ *    which the push worker also sends to their phone as a chat push (the
+ *    login_notice trigger, 0269), sealed to each device. A brain whose Team
+ *    workspace has no assistant has no such thread: nothing is written.
  *  - An admin has no thread of their own (the assistant thread is shared and
  *    model-facing), so an admin gets a push sealed to their own devices, and
  *    the key's row in Settings > API access.
@@ -15,7 +16,7 @@
  * phone vendors see ciphertext only. Best effort: a failure is logged and
  * the key stays made; the key.created audit row is written either way.
  */
-import { appendTeamMessage } from '@mantle/content';
+import { appendThreadMessage, teamAssistant } from '@mantle/content';
 import type { AccessKeyAccess, AccessKeyRole } from './access-keys';
 
 export type KeyMadeNotice = {
@@ -57,10 +58,12 @@ export async function notifyKeyMade(n: KeyMadeNotice): Promise<void> {
       return;
     }
     const text = keyMadeText(n, { withName: false });
-    await appendTeamMessage({
+    const team = await teamAssistant(n.ownerId);
+    if (!team) return;
+    await appendThreadMessage({
       ownerId: n.ownerId,
+      agentId: team.id,
       loginId: n.loginId,
-      contactId: null,
       direction: 'outbound',
       text,
       channel: 'web',

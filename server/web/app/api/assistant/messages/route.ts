@@ -1,15 +1,17 @@
 import { NextResponse, type NextRequest } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getChatLoginOr401 } from '@/lib/auth';
 import { getChatThread, openChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
-import { assistantMessagesBefore, resolveAgentForActor } from '@/lib/assistant';
+import { assistantMessagesBefore } from '@/lib/assistant';
+import { messagesForReader, resolveChatAgent, resolveChatAgentById } from '@/lib/assistant-chat';
 import { threadRange } from '@/lib/chat-threads';
 
 /**
  * Older page of assistant messages for scroll-up lazy loading. Returns up
  * to `limit` (default 100) messages before the `before` ISO cursor, scoped
- * to the selected agent's thread. Owner-scoped via getOwnerOr401 (a JSON API —
- * 401s an unauthenticated/expired client rather than redirecting to /login).
+ * to the login's OWN thread with the selected agent (any login since W7c;
+ * each user reads only their own threads). getChatLoginOr401 401s an
+ * unauthenticated/expired client rather than redirecting to /login.
  *
  * Chat archive (docs/conversation.md §6c): without `?thread=` the page stays
  * inside the agent's OPEN thread, so an archived chat never pages back into
@@ -20,8 +22,8 @@ import { threadRange } from '@/lib/chat-threads';
 const PAGE = 100;
 
 export async function GET(req: NextRequest) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof Response) return login;
   const { searchParams } = new URL(req.url);
 
   // `before` is the load-older pagination cursor. Absent means "the latest page"
@@ -41,32 +43,44 @@ export async function GET(req: NextRequest) {
   }
 
   if (threadId) {
-    const thread = await getChatThread(user.id, threadId);
+    // The login's own thread only: another login's thread is not found.
+    const thread = await getChatThread(login.ownerId, threadId, login.loginId);
     if (!thread) return NextResponse.json({ error: 'thread not found' }, { status: 404 });
+    // And only with an agent the login may still chat with.
+    const agent = await resolveChatAgentById(login, thread.agentId);
+    if (!agent) return NextResponse.json({ error: 'thread not found' }, { status: 404 });
     const messages = await assistantMessagesBefore(
-      user.id,
+      login.ownerId,
       thread.agentId,
+      login.loginId,
       before,
       limit,
       threadRange(thread),
     );
-    return NextResponse.json({ messages }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(
+      { messages: await messagesForReader(login, messages) },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 
   // No `?agent=` → this login's assigned assistant, else the brain default.
-  const agent = await resolveAgentForActor(user, slug);
+  const agent = await resolveChatAgent(login, slug);
   if (!agent) return NextResponse.json({ messages: [] });
 
   // Per-agent thread — no cross-agent or legacy fold-in. See migration
   // 0049 + the assistant_messages schema header.
   // Bounded to the open thread (chat archive).
-  const open = await openChatThread(user.id, agent.id);
+  const open = await openChatThread(login.ownerId, agent.id, login.loginId);
   const messages = await assistantMessagesBefore(
-    user.id,
+    login.ownerId,
     agent.id,
+    login.loginId,
     before,
     limit,
     threadRange(open),
   );
-  return NextResponse.json({ messages }, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(
+    { messages: await messagesForReader(login, messages) },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }

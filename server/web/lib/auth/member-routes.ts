@@ -28,10 +28,11 @@ export const MEMBER_ROUTES: readonly string[] = [
   'POST /api/member/tree/:kind/move',
   'GET /api/member/files/:id',
   'GET /api/member/draws/:id/svg',
-  // Chat with the Team workspace's assistant, the login's own thread.
+  // The member chat: 410 since W7c (the login's own thread is read and
+  // written through /api/assistant/*, CHAT_LOGIN_ROUTES). Kept so an old
+  // app reaches the 410.
   'GET /api/member/chat',
   'POST /api/member/chat',
-  // Its own unread count and read cursor (the phone app's badge, mobile_roles_push).
   'GET /api/member/chat/unread',
   'POST /api/member/chat/read',
   // Its own phone's push enrolment, device list and toggles (mobile_roles_push).

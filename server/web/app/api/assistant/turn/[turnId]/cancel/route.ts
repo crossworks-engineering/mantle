@@ -73,6 +73,8 @@ export async function POST(
     // Synchronous, BEFORE the publish — see the route doc above.
     superseded = await markTurnSuperseded({
       ownerId: owner.id,
+      // The login's own thread only (0269).
+      loginId: owner.actor.id,
       inboundId,
       outboundId,
       newTurnId,

@@ -526,16 +526,21 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
     const content = await import('@mantle/content');
     const ts = await import('@mantle/db/test-support');
     const seen: string[] = [];
+    let madeAgent = '';
     const handler = createLoginNoticeHandler({ gatherMs: 20, log: () => {} });
     const sub = await sql.listen(content.LOGIN_NOTICE_CHANNEL, (payload: string) => {
       seen.push(payload);
       handler.handle(payload);
     });
     try {
-      // The trigger fires on the finished reply in the member's own thread.
-      const row = await content.appendTeamMessage({
+      // The trigger fires on the finished reply in the member's own thread
+      // (0269: a row of the member's thread with an assistant).
+      const [agentRow] = await sql`insert into agents (owner_id, slug, name, model, system_prompt)
+        values (${brain}, ${`${tag}-team`}, 'Team', 'test/model', 'x') returning id::text as id`;
+      madeAgent = String(agentRow!.id);
+      const row = await content.appendThreadMessage({
         ownerId: brain,
-        contactId: null,
+        agentId: madeAgent,
         loginId: member,
         direction: 'outbound',
         text: '## Done\n\nThe **order** is placed.',
@@ -560,7 +565,8 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
       });
     } finally {
       await sub.unlisten();
-      await sql`delete from team_messages where owner_id = ${brain}`;
+      await sql`delete from assistant_messages where owner_id = ${brain} and login_id = ${member}`;
+      if (madeAgent) await sql`delete from agents where id = ${madeAgent}`;
     }
   });
 

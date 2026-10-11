@@ -38,7 +38,14 @@ export async function GET(
   const [row] = await db
     .select({ data: assistantMessages.data })
     .from(assistantMessages)
-    .where(and(eq(assistantMessages.id, turnId), eq(assistantMessages.ownerId, owner.id)))
+    // The login's own thread only (0269, W7c).
+    .where(
+      and(
+        eq(assistantMessages.id, turnId),
+        eq(assistantMessages.ownerId, owner.id),
+        eq(assistantMessages.loginId, owner.actor.id),
+      ),
+    )
     .limit(1);
 
   const payload = suggestionPayload(row?.data ?? null);

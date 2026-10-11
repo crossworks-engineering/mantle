@@ -103,6 +103,9 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
     await sql`insert into apps (node_id) values (${id.appNode})`;
     await sql`insert into sandboxes (id, owner_id, name, image)
               values (${id.sandbox}, ${owner}, ${tag}, 'alpine')`;
+    // team_messages is frozen since 0269 (W7c): this scratch database's seed
+    // row is written with the freeze off, on its own database only.
+    await sql`alter table team_messages disable trigger team_messages_frozen_trg`;
     await sql`insert into team_messages (id, owner_id, contact_id, direction, text)
               values (${id.teamMessage}, ${owner}, ${id.contact}, 'inbound', 'old portal chat')`;
     await sql`insert into team_access_log (id, owner_id, contact_id, kind, detail)

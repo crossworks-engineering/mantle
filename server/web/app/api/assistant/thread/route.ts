@@ -1,41 +1,26 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
-import {
-  listAssistantAgents,
-  recentAssistantMessages,
-  resolveAgentForActor,
-} from '@/lib/assistant';
-import { openChatThread } from '@mantle/db';
+import { getChatLoginOr401 } from '@/lib/auth';
+import { recentAssistantMessages } from '@/lib/assistant';
+import { listChatAgents, messagesForReader, resolveChatAgent } from '@/lib/assistant-chat';
+import { asSystem, openChatThread } from '@mantle/db';
 import { getAssignedAgentSummary } from '@/lib/agents';
 import { chatThreadRow, threadRange } from '@/lib/chat-threads';
 import { getAgentExperience } from '@/lib/agent-experience';
 
 /**
- * GET /api/assistant/thread?agent=<slug> — the initial /assistant bundle: the
- * chattable agent list (header picker), the resolved active agent (?agent slug
- * hint → this login's assigned assistant → priority default), and that agent's
- * most-recent thread (100 msgs). Owner-scoped. Scroll-up paging stays on
- * /api/assistant/messages.
+ * GET /api/assistant/thread[?agent=<slug>][&withMessages=0]: the /assistant
+ * bundle: the agents this login may chat with, the selected one, the login's
+ * OWN open thread with it (messages and thread row), and (an Admin user) its
+ * assigned assistant and the agent's level badge.
  *
- * `assigned` is the handshake that makes an assignment actually take effect in a
- * browser that already holds a `mantle_assistant_agent` cookie for the old
- * shared agent — i.e. exactly the co-admins this feature is for. The client
- * compares `assignedAt` against a local watermark and overrides the cookie once.
- *
- * `?withMessages=0` returns the same bundle with `messages: []`. The mobile
- * companion needs the picker list and the resolved agent at launch — it has no
- * agent cookie, so `agent` IS its resolution — but it pages its own thread
- * through the Drift cache on /api/assistant/messages, so the 100 rows would be
- * fetched and thrown away on every cold start.
- *
- * Chat archive (docs/conversation.md §6c): `messages` are the OPEN thread's
- * only, and `thread` is that open thread (null for a chat never archived),
- * so the window can show "Continued from ..." and the thread list.
+ * Any login (W7c, the owner's answer of 2026-10-11): each user has their own
+ * thread with each assistant and reads only that. A member or a client
+ * reaches the assistants of its workspaces other than Admin; an agent it may
+ * not chat with answers as none (`agent: null`).
  */
-
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof NextResponse) return login;
   const params = new URL(req.url).searchParams;
   const slug = params.get('agent') ?? undefined;
   // Opt-OUT, so an absent/garbled param keeps the full bundle every existing
@@ -43,28 +28,52 @@ export async function GET(req: Request) {
   const withMessages = !['0', 'false', 'no'].includes(
     (params.get('withMessages') ?? '').trim().toLowerCase(),
   );
+  const isAdmin = login.kind === 'admin';
 
   const [agents, agent, assigned] = await Promise.all([
-    listAssistantAgents(user.id),
-    resolveAgentForActor(user, slug),
-    getAssignedAgentSummary(user.id, user.actor.id),
+    listChatAgents(login),
+    resolveChatAgent(login, slug),
+    isAdmin
+      ? asSystem(() => getAssignedAgentSummary(login.ownerId, login.loginId), 'rule-in-query')
+      : null,
   ]);
-  const open = agent ? await openChatThread(user.id, agent.id) : null;
+  const open = agent ? await openChatThread(login.ownerId, agent.id, login.loginId) : null;
   const [messages, experience, thread] = await Promise.all([
-    agent && withMessages ? recentAssistantMessages(user.id, agent.id, 100, threadRange(open)) : [],
-    // The header shows the active agent's level badge; one scoped rollup.
-    agent ? getAgentExperience(user.id, agent.id) : null,
-    open ? chatThreadRow(user.id, open) : null,
+    agent && withMessages
+      ? recentAssistantMessages(login.ownerId, agent.id, login.loginId, 100, threadRange(open))
+      : [],
+    // The header shows the active agent's level badge (an Admin user's view).
+    agent && isAdmin
+      ? asSystem(() => getAgentExperience(login.ownerId, agent.id), 'rule-in-query')
+      : null,
+    open ? chatThreadRow(login.ownerId, open) : null,
   ]);
+  const agentOut = agent
+    ? {
+        id: agent.id,
+        slug: agent.slug,
+        name: agent.name,
+        role: agent.role,
+        model: agent.model,
+        ...(isAdmin ? stripTurnEngine(agent) : {}),
+        experience,
+      }
+    : null;
 
   return NextResponse.json(
     {
       agents,
-      agent: agent ? { ...agent, experience } : null,
-      messages,
+      agent: agentOut,
+      messages: await messagesForReader(login, messages),
       thread,
       assigned: assigned ? { slug: assigned.slug, assignedAt: assigned.assignedAt } : null,
     },
     { headers: { 'Cache-Control': 'no-store' } },
   );
+}
+
+/** An Admin user's bundle keeps the full agent row it always had. */
+function stripTurnEngine<T extends { turnEngine: unknown }>(a: T): Omit<T, 'turnEngine'> {
+  const { turnEngine: _engine, ...rest } = a;
+  return rest;
 }

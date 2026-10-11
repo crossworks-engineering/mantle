@@ -105,15 +105,17 @@ function rangeConds(range: ThreadRange | undefined): SQL[] {
 }
 
 /**
- * Recent transcript for one (owner, agent) thread, chronological
- * (oldest → newest). `agentId` is required — there is no
- * cross-agent / "all messages" view: each agent owns its own
- * forever-thread. The shared brain (nodes/facts/entities) is what
- * agents have in common; the conversation is not.
+ * Recent transcript for one (owner, agent, login) thread, chronological
+ * (oldest → newest). `agentId` and `loginId` are required: there is no
+ * cross-agent or cross-login view: each user has their own thread with each
+ * agent (0269, W7c), and reads only that. The shared brain
+ * (nodes/facts/entities) is what agents have in common; the conversation is
+ * not.
  */
 export async function recentAssistantMessages(
   ownerId: string,
   agentId: string,
+  loginId: string,
   limit = 100,
   range?: ThreadRange,
 ): Promise<AssistantTimelineRow[]> {
@@ -135,6 +137,7 @@ export async function recentAssistantMessages(
       and(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agentId),
+        eq(assistantMessages.loginId, loginId),
         ...rangeConds(range),
       ),
     )
@@ -165,6 +168,7 @@ export async function recentAssistantMessages(
 export async function assistantMessagesBefore(
   ownerId: string,
   agentId: string,
+  loginId: string,
   before: string,
   limit = 100,
   range?: ThreadRange,
@@ -187,6 +191,7 @@ export async function assistantMessagesBefore(
       and(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agentId),
+        eq(assistantMessages.loginId, loginId),
         lt(assistantMessages.createdAt, new Date(before)),
         ...rangeConds(range),
       ),

@@ -218,8 +218,9 @@ async function tick(): Promise<void> {
           await recordTurn({
             ownerId,
             agentId: agent.id,
-            // A reminder answers no one's turn (R3): no login.
-            loginId: null,
+            // A reminder answers no one's turn: it lands in the owner's own
+            // thread, named explicitly (the anchor login, W7c fix round 1, L7).
+            loginId: ownerId,
             direction: 'outbound',
             text: formatReminder(evt),
             channel: 'mobile',

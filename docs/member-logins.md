@@ -1025,8 +1025,9 @@ is a member login. Nobody hands a password around. The table is
     `member-invites.test.ts` (the alphabet and the hash).
 - **Tests.** `packages/content/src/member-invites.db.test.ts` and
   `member-history-links.db.test.ts` (Postgres: 0175's backfill and the
-  redeem's), `builtins-team-portal.db.test.ts` (removed in W7b),
-  `server/web/app/api/team-admin/member-chats/member-chats-portal.db.test.ts`,
+  redeem's), `builtins-team-portal.db.test.ts` (removed in W7b), the portal
+  thread reads (removed in W7c with the member-chats route; the portal rows
+  are history in `archive_team_messages`),
   `server/web/app/api/auth/invite/invite-routes.test.ts` and
   `server/web/app/api/team-admin/invites/invites-admin-routes.test.ts`; the
   member and auth sweeps cover the new routes. The retirement:

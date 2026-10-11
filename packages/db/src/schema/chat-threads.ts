@@ -35,7 +35,8 @@ export type ChatThreadStatus = 'open' | 'archived';
  * `seed_thread_id` is "Continue from this": the open thread starts with that
  * archived thread's summary in its context, not its raw turns.
  *
- * Member and client threads (team_messages, per login) are a later phase.
+ * Per login since 0269 (W7c): a thread belongs to one (agent, login), and
+ * each login reads only its own (row security on login_id).
  */
 export const chatThreads = pgTable(
   'chat_threads',
@@ -72,9 +73,9 @@ export const chatThreads = pgTable(
   },
   (t) => [
     index('chat_threads_owner_agent_started_idx').on(t.ownerId, t.agentId, t.startedAt),
-    // At most one open thread per agent chat.
+    // At most one open thread per (agent, login) chat (0269).
     uniqueIndex('chat_threads_one_open_uq')
-      .on(t.ownerId, t.agentId)
+      .on(t.ownerId, t.agentId, t.loginId)
       .where(sql`status = 'open'`),
   ],
 );

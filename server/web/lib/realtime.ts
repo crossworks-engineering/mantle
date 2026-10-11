@@ -42,6 +42,9 @@ export type ConversationChange = {
   /** Row status (migration 0156): a streamed turn notifies once 'pending' and
    *  once 'complete' | 'failed'. Absent from the pre-0156 payload. */
   status?: 'pending' | 'complete' | 'failed';
+  /** The login whose thread changed (0269, W7c): a stream tells each login
+   *  about its own thread only. Absent from the pre-0269 payload. */
+  loginId?: string | null;
 };
 type ConvSubscriber = (c: ConversationChange) => void;
 

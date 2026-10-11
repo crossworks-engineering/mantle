@@ -397,6 +397,11 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     'POST /api/member/space/:id/share',
     'POST /api/member/my-apps/:id/submit',
     'POST /api/member/my-apps/:id/recall',
+    // W7c: the member chat moved to /api/assistant/* (a per-login thread).
+    'GET /api/member/chat',
+    'POST /api/member/chat',
+    'GET /api/member/chat/unread',
+    'POST /api/member/chat/read',
   ];
 
   it('answers 410 code gone to a member on every route removed in W5c; an admin is still refused', async () => {

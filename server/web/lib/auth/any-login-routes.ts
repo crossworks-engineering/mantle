@@ -49,6 +49,35 @@ export const ANY_LOGIN_ROUTES: readonly string[] = [
   'POST /api/grants/move/preview',
 ];
 
+/**
+ * The chat routes (workspaces W7c): every login chats with the assistants of
+ * its workspaces, each in its own thread, and reads only its own threads.
+ * They hold their own gate (getChatLoginOr401, lib/assistant-chat.ts): an
+ * Admin user's request runs as on the owner routes, a member's in its own
+ * scope, every read naming the login; a client has no chat (no agent, 404).
+ * Proved per role in server/web/server/w7c-chat.db.test.ts.
+ */
+export const CHAT_LOGIN_ROUTES: readonly string[] = [
+  'GET /api/assistant/thread',
+  'GET /api/assistant/messages',
+  'POST /api/assistant/turn',
+  'GET /api/assistant/stream',
+  'GET /api/assistant/threads',
+  'POST /api/assistant/threads',
+  'GET /api/assistant/threads/:id',
+  'POST /api/assistant/threads/:id/continue',
+  'POST /api/assistant/threads/:id/summarize',
+  'POST /api/assistant/read',
+  'GET /api/assistant/conversations',
+  'POST /api/assistant/transcribe',
+];
+
+export function isChatLoginRoute(method: string, pattern: string): boolean {
+  return CHAT_LOGIN_ROUTES.includes(`${method.toUpperCase()} ${pattern}`);
+}
+
+/** A route every login reaches: ANY_LOGIN_ROUTES and the chat routes. */
 export function isAnyLoginRoute(method: string, pattern: string): boolean {
-  return ANY_LOGIN_ROUTES.includes(`${method.toUpperCase()} ${pattern}`);
+  const key = `${method.toUpperCase()} ${pattern}`;
+  return ANY_LOGIN_ROUTES.includes(key) || CHAT_LOGIN_ROUTES.includes(key);
 }

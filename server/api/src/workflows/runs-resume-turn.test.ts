@@ -49,6 +49,7 @@ const h = vi.hoisted(() => ({
   claimResume: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   runResponderLoop: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   logs: [] as Array<{ level: string; message: string }>,
+  contextArgs: [] as unknown[],
 }));
 
 vi.mock('@dbos-inc/dbos-sdk', () => ({
@@ -80,6 +81,7 @@ vi.mock('@mantle/db', () => ({
   agents: { __table: 'agents' },
   telegramAccounts: { __table: 'telegram_accounts' },
   telegramChats: { __table: 'telegram_chats' },
+  workspaces: { __table: 'workspaces' },
   bumpAgentUsage: vi.fn(async () => {}),
 }));
 
@@ -100,7 +102,10 @@ vi.mock('@mantle/telegram', () => ({ sendMessage: (...a: unknown[]) => h.sendMes
 
 vi.mock('@mantle/runtime/agent', () => ({
   buildChatMessages: () => [],
-  loadConversationContext: async () => ({ history: [] }),
+  loadConversationContext: async (a: unknown) => {
+    h.contextArgs.push(a);
+    return { history: [] };
+  },
   recordTurn: (...a: unknown[]) => h.recordTurn(...a),
 }));
 
@@ -194,6 +199,7 @@ beforeEach(() => {
   h.sendOk = true;
   h.seq = [];
   h.logs = [];
+  h.contextArgs = [];
   h.recordTurn = vi.fn(async () => ({ id: 'msg-1' }));
   h.sendMessage = vi.fn(async () => {
     if (!h.sendOk) throw new Error('telegram 403');
@@ -397,5 +403,61 @@ describe('runs resume turn — crash replay (final-audit F1 regression)', () => 
     expect(res).toEqual({ resumed: true, outcome: 'reported' });
     expect(journal.replayed).toContain('record_outbound');
     expect(h.recordTurn).toHaveBeenCalledTimes(1); // still exactly one post
+  });
+});
+
+describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
+  it('reads and writes the thread of the login the run was planned for', async () => {
+    seedHappyPath({ run: { loginId: 'login-b' } });
+    h.runResponderLoop = vi.fn(async (...a: unknown[]) => {
+      const opts = a[0] as { loadContext: () => Promise<unknown>; surface: unknown };
+      await opts.loadContext();
+      h.seq.push(`surface:${JSON.stringify(opts.surface)}`);
+      return { reply: h.loopReply, toolCalls: [] };
+    });
+    const res = await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
+    expect(res).toMatchObject({ resumed: true });
+    expect(h.contextArgs).toEqual([expect.objectContaining({ loginId: 'login-b' })]);
+    expect(h.seq).toContain('surface:{"kind":"web","loginId":"login-b"}');
+    expect(h.recordTurn).toHaveBeenCalledWith(expect.objectContaining({ loginId: 'login-b' }));
+  });
+
+  // W7c fix round 2: a member's run (a workspace other than Admin) resumes
+  // on a team surface, which owner-only tools refuse; an Admin run (its
+  // workspace Admin, or NULL = Admin) on the web as its login.
+  const surfaceFor = async (run: Record<string, unknown>, wsRows?: Record<string, unknown>[]) => {
+    seedHappyPath({ run });
+    if (wsRows) fake.queue('workspaces', wsRows);
+    let seen = '';
+    h.runResponderLoop = vi.fn(async (...a: unknown[]) => {
+      seen = JSON.stringify((a[0] as { surface: unknown }).surface);
+      return { reply: h.loopReply, toolCalls: [] };
+    });
+    await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
+    return seen;
+  };
+
+  it("resumes a member's run (another workspace) on a team surface", async () => {
+    expect(
+      await surfaceFor({ loginId: 'login-m', workspaceId: 'ws-team' }, [{ isAdmin: false }]),
+    ).toBe('{"kind":"team","loginId":"login-m"}');
+  });
+
+  it('resumes an Admin run as its login on the web', async () => {
+    expect(
+      await surfaceFor({ loginId: 'login-b', workspaceId: 'ws-admin' }, [{ isAdmin: true }]),
+    ).toBe('{"kind":"web","loginId":"login-b"}');
+  });
+
+  it('resumes a run with no workspace (NULL = Admin) as its login on the web', async () => {
+    expect(await surfaceFor({ loginId: 'login-b', workspaceId: null })).toBe(
+      '{"kind":"web","loginId":"login-b"}',
+    );
+  });
+
+  it('a gone workspace is not Admin: team surface, never the owner one', async () => {
+    expect(await surfaceFor({ loginId: 'login-m', workspaceId: 'ws-gone' }, [])).toBe(
+      '{"kind":"team","loginId":"login-m"}',
+    );
   });
 });

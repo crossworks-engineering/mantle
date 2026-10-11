@@ -17,12 +17,21 @@
  * metadata (data.text + summary + embedding + facts) is owned by the extractor,
  * which fires on the saved node. Extraction failures don't kill the turn; they
  * fall back to a "[… couldn't be read: <reason>]" marker.
+ *
+ * Any login (workspaces W7c): every user chats with the assistant of each
+ * workspace it is a user of, in its own thread (lib/assistant-chat.ts). The
+ * Admin assistant and the owner's helpers run on the owner turn engine (an
+ * Admin user only, as before); an assistant of another workspace runs on the
+ * workspace turn engine (lib/workspace-turn.ts: no Journal, no "About the
+ * user", the member limits for a login that is not an Admin user), text
+ * only, answering 202 `{ turnId }`.
  */
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401WithSource } from '@/lib/auth';
-import { getAssignedAgent } from '@/lib/agents';
+import { getChatLoginOr401, type ChatLogin } from '@/lib/auth';
+import { resolveChatAgent, type ChatAgent } from '@/lib/assistant-chat';
+import { queueWorkspaceTurn } from '@/lib/workspace-turn';
 import { getDbosClient } from '@/lib/dbos-client';
 import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
 import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
@@ -209,13 +218,16 @@ async function processUpload(
   };
 }
 
-type TurnResult = { status: number; body: unknown };
+type TurnResult = { status: number; body: unknown; headers?: HeadersInit };
 
 // In-memory idempotency. A duplicate request with the same Idempotency-Key
 // (a network retry, or the same submit sent twice) replays the first turn's
-// result instead of saving the file + running the LLM again. Single-process
-// scope (one web instance, single user); lost on restart, which is fine —
-// duplicates only matter within seconds.
+// result instead of saving the file and running the LLM again. Single-process
+// scope (one web instance); lost on restart, which is fine: duplicates only
+// matter within seconds. Keyed by the signed-in login AND the key, and read
+// only after the request is authenticated (W7c fix round 1, L1): one login's
+// key never replays another login's turn, nor answers an unauthenticated
+// request.
 const TURN_DEDUP_TTL_MS = 2 * 60_000;
 const recentTurns = new Map<string, { at: number; result: TurnResult }>();
 const inflightTurns = new Map<string, Promise<TurnResult>>();
@@ -228,41 +240,59 @@ function pruneRecentTurns() {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  const toResponse = (r: TurnResult) => NextResponse.json(r.body, { status: r.status });
+  const toResponse = (r: TurnResult) =>
+    NextResponse.json(r.body, { status: r.status, ...(r.headers ? { headers: r.headers } : {}) });
+  // Auth first, before the dedup cache is read, so a failure surfaces as a
+  // clean 401 (not a swallowed 500, and not an HTML login redirect: a
+  // programmatic client needs a status). The route is also gated by
+  // middleware. `source` tags the turn 'web' (browser) vs 'mobile' (companion).
+  const login = await getChatLoginOr401();
+  if (login instanceof NextResponse) return login;
   const key = req.headers.get('idempotency-key');
-  if (!key) return toResponse(await runTurn(req, null));
+  if (!key) return toResponse(await runTurn(req, login, null));
 
-  const cached = recentTurns.get(key);
+  const cacheKey = `${login.loginId}:${key}`;
+  const cached = recentTurns.get(cacheKey);
   if (cached && Date.now() - cached.at < TURN_DEDUP_TTL_MS) return toResponse(cached.result);
 
-  let pending = inflightTurns.get(key);
+  let pending = inflightTurns.get(cacheKey);
   if (!pending) {
-    pending = runTurn(req, key);
-    inflightTurns.set(key, pending);
+    pending = runTurn(req, login, key);
+    inflightTurns.set(cacheKey, pending);
     pending
       .then((result) => {
-        recentTurns.set(key, { at: Date.now(), result });
+        recentTurns.set(cacheKey, { at: Date.now(), result });
         pruneRecentTurns();
       })
-      .finally(() => inflightTurns.delete(key));
+      .finally(() => inflightTurns.delete(cacheKey));
   }
   return toResponse(await pending);
 }
 
-async function runTurn(req: Request, idempotencyKey: string | null): Promise<TurnResult> {
-  // Auth before the try so a failure surfaces as a clean 401 (not a swallowed
-  // 500, and not an HTML login redirect — a programmatic client needs a status).
-  // The route is also gated by middleware. `source` tags the turn 'web'
-  // (browser) vs 'mobile' (companion).
-  const auth = await getOwnerOr401WithSource();
-  if (auth instanceof NextResponse) return { status: 401, body: { error: 'unauthorized' } };
-  const { user, source } = auth;
+/** The owner engine's workflow id for a turn with an Idempotency-Key: the
+ *  login is part of it (W7c fix round 1, L1), so another login reusing the
+ *  key starts its own turn and never lands on this one. */
+function ownerTurnWorkflowId(loginId: string, key: string): string {
+  return `turn-${loginId}.${key}`;
+}
+
+async function runTurn(
+  req: Request,
+  login: ChatLogin,
+  idempotencyKey: string | null,
+): Promise<TurnResult> {
+  const { user, source } = login;
   const contentType = req.headers.get('content-type') ?? '';
 
   let userText: string;
   let agentSlug: string | undefined;
   let attachment: Attachment | null = null;
   let location: LocationPing | undefined;
+  let chatAgent: ChatAgent | null;
+  const noAgent: TurnResult = {
+    status: 404,
+    body: { error: 'no assistant to chat with here', reason: 'no-chat-agent' },
+  };
 
   try {
     if (contentType.includes('multipart/form-data')) {
@@ -276,8 +306,17 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       }
       agentSlug = ((form.get('agentSlug') as string | null) ?? '').trim() || undefined;
       location = locationFromForm(form.get('location'));
+      chatAgent = await resolveChatAgent(login, agentSlug);
+      if (!chatAgent) return noAgent;
       // Images arrive under 'image', documents under 'file'; accept either.
       const file = form.get('image') ?? form.get('file');
+      if (file instanceof Blob && file.size > 0 && chatAgent.turnEngine === 'workspace') {
+        // An upload is saved as a brain item; a workspace chat takes text.
+        return {
+          status: 415,
+          body: { error: 'attachments are not supported in this chat yet: send text' },
+        };
+      }
       if (file instanceof Blob && file.size > 0) {
         if (file.size > MAX_UPLOAD_BYTES) {
           return {
@@ -333,7 +372,28 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       userText = parsed.data.text;
       agentSlug = parsed.data.agentSlug?.trim() || undefined;
       location = sanitizeLocationPing(parsed.data.location) ?? undefined;
+      chatAgent = await resolveChatAgent(login, agentSlug);
+      if (!chatAgent) return noAgent;
     }
+
+    // An assistant of a workspace other than Admin: the workspace engine.
+    if (chatAgent.turnEngine === 'workspace') {
+      const streamable =
+        login.kind === 'admin' &&
+        !!idempotencyKey &&
+        isTurnStreamingEnabled() &&
+        isStreamThoughtsEnabled(await loadProfilePreferences(login.ownerId));
+      return queueWorkspaceTurn({
+        login,
+        agent: chatAgent,
+        text: userText.trim(),
+        idempotencyKey,
+        ...(streamable && idempotencyKey ? { streamId: idempotencyKey } : {}),
+      });
+    }
+    // The owner engine: an Admin user only (resolveChatAgent never hands a
+    // member or a client an owner agent; this is the route's own check).
+    if (login.kind !== 'admin') return noAgent;
 
     // Hand the turn the attachment's extracted text (+ the raw image for a
     // vision-capable responder). The runtime is transcript-default: it folds
@@ -346,16 +406,10 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     const streamingOn =
       isTurnStreamingEnabled() && isStreamThoughtsEnabled(await loadProfilePreferences(user.id));
 
-    // A client that named no agent gets THIS LOGIN's assigned assistant, so two
-    // co-admins typing at once land in their own threads rather than one
-    // interleaved one (migration 0143). Resolved here rather than in
-    // runAssistantTurn because the runtime only ever sees the anchor owner id —
-    // it runs outside the request, from the durable runner too. Falls through to
-    // the runtime's brain-wide default when the login has no assistant.
-    if (!agentSlug) {
-      const assigned = await getAssignedAgent(user.id, user.actor.id);
-      if (assigned) agentSlug = assigned.slug;
-    }
+    // The agent resolveChatAgent picked: an explicit slug, else THIS LOGIN's
+    // assigned assistant (migration 0143), else the brain-wide default. Each
+    // login has its own thread with it either way (0269).
+    agentSlug = chatAgent.slug;
 
     const options: RunAssistantTurnOptions = {
       agentSlug,
@@ -394,14 +448,17 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     // request, journaled by DBOS), so it survives a web-process restart and a
     // client disconnect — if this await is abandoned (the user navigates away),
     // the workflow still completes and persists, and the client reconciles via
-    // syncLatest on return. The idempotency-key (when present) is the workflow
-    // id, so a retried submit replays the same run instead of starting a new one.
+    // syncLatest on return. The idempotency-key (when present), with the login,
+    // is the workflow id, so a retried submit replays the same run instead of
+    // starting a new one.
     const client = await getDbosClient();
     const handle = await client.enqueue<(i: AssistantTurnInput) => Promise<AssistantTurnRunResult>>(
       {
         workflowName: ASSISTANT_TURN_WORKFLOW,
         queueName: RUNNER_QUEUE,
-        ...(idempotencyKey ? { workflowID: idempotencyKey } : {}),
+        ...(idempotencyKey
+          ? { workflowID: ownerTurnWorkflowId(user.actor.id, idempotencyKey) }
+          : {}),
       },
       input,
     );

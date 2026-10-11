@@ -13,18 +13,40 @@
  * If no STT worker is configured we return a 412 (Precondition
  * Failed) with a hint so the client surfaces the right call to
  * action.
+ *
+ * Any login (W7c): a member transcribes for its own chat, at most 6 clips a
+ * minute (the turn route's rate), each clip a slot of its daily cap (W7c fix
+ * round 1, L2).
  */
 
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
-import { getDefaultWorker } from '@mantle/db';
+import { getChatLoginOr401 } from '@/lib/auth';
+import { rateLimit } from '@/lib/rate-limit';
+import { claimMemberChatWork } from '@/lib/workspace-turn';
+import { asSystem, getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof Response) return login;
+  // A client has no chat (W7c fix round 1, M4).
+  if (login.kind === 'client') {
+    return NextResponse.json(
+      { error: 'no assistant to chat with here', reason: 'no-chat-agent' },
+      { status: 404 },
+    );
+  }
+  if (login.kind !== 'admin') {
+    const gate = rateLimit(`chat-transcribe:${login.loginId}`, { max: 6, windowMs: 60_000 });
+    if (!gate.ok) {
+      return NextResponse.json(
+        { error: 'too many voice clips, give me a moment' },
+        { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
+      );
+    }
+  }
 
   // Multipart only — base64 in JSON would be wasteful for >100KB
   // audio blobs, and the FormData API handles streaming uploads.
@@ -46,7 +68,9 @@ export async function POST(req: Request) {
   const mimeType = file.type && file.type.length > 0 ? file.type : 'audio/webm';
   const language = (formData.get('language') as string | null) ?? undefined;
 
-  const worker = await getDefaultWorker(user.id, 'stt');
+  // The brain's STT worker and its key: system configuration the workspace
+  // role does not read.
+  const worker = await asSystem(() => getDefaultWorker(login.ownerId, 'stt'), 'rule-in-query');
   if (!worker?.apiKeyId) {
     return NextResponse.json(
       {
@@ -56,7 +80,8 @@ export async function POST(req: Request) {
       { status: 412 },
     );
   }
-  const apiKey = await getApiKeyById(worker.apiKeyId);
+  const keyId = worker.apiKeyId;
+  const apiKey = await asSystem(() => getApiKeyById(keyId), 'rule-in-query');
   if (!apiKey) {
     return NextResponse.json(
       { error: `STT worker '${worker.slug}' api_key could not be decrypted.` },
@@ -72,6 +97,10 @@ export async function POST(req: Request) {
       { status: 412 },
     );
   }
+  // Each clip is a model call: a slot of the daily cap for a login that is
+  // not an Admin user (W7c fix round 1, L2).
+  const limited = await claimMemberChatWork(login, 'transcribe');
+  if (limited) return limited;
 
   try {
     const bytes = Buffer.from(await file.arrayBuffer());

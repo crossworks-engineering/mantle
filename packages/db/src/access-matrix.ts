@@ -571,6 +571,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // (0267, W6b).
   none('public.archive_spaces', 'system'),
   none('public.space_fold_items', 'system'),
+  // A team-portal contact's chat rows (no login) as they were when
+  // team_messages folded into assistant_messages (0269, W7c).
+  none('public.archive_team_messages', 'system'),
 ];
 
 /** Columns no LEVEL role may ever read, whatever the matrix says (the

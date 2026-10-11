@@ -1,9 +1,9 @@
 /**
- * Member chat turn execution: one conversational turn for a MEMBER LOGIN
- * against the assistant of the brain's Team workspace (member logins; the
- * team-code portal contact path this once also served was retired in Phase 6;
- * the client chat this engine also ran went in workspaces W5c). The member
- * chat route (POST /api/member/chat) enqueues it.
+ * Workspace chat turn execution: one conversational turn for a LOGIN against
+ * the assistant of a workspace other than Admin (the Team workspace's by
+ * default; any workspace the login is a user of since W7c). POST
+ * /api/assistant/turn enqueues it for such an assistant (the member chat
+ * route it served before answers 410 since W7c).
  *
  * Deliberately a SIBLING of runAssistantTurn, not a flag on it: the owner path
  * carries a pile of owner-personal machinery (identity/journal injection,
@@ -13,12 +13,13 @@
  *
  *   1. Resolve the Team workspace's assistant (teamAssistant: a workspace
  *      resource, never an agent level and never the persona).
- *   2. loadConversationContext for RETRIEVAL ONLY — the agent has no
- *      assistant_messages rows so its history is structurally empty; digests
- *      are off via the agent's memoryConfig (digest_limit 0); journal/identity
- *      injection is skipped entirely. History comes from the member's OWN
- *      team_messages thread (by login) and nothing else.
- *   3. Persist inbound + pending outbound to team_messages (durable steps).
+ *   2. loadConversationContext for retrieval and the login's own digests
+ *      (per agent and login, 0269; the shipped Team assistant has them off,
+ *      digest_limit 0); journal/identity injection is skipped entirely.
+ *      History comes from the login's OWN thread with this assistant
+ *      (assistant_messages by agent and login, inside the open chat thread)
+ *      and nothing else.
+ *   3. Persist inbound + pending outbound to that thread (durable steps).
  *   4. Tool loop under a 'responder_turn' trace with subject_kind 'team_turn'
  *      and surface {kind:'team', loginId}, which is how team_request_create
  *      gets forgery-proof provenance and owner-side tools refuse.
@@ -26,8 +27,9 @@
  *      deep link from a reply to what the brain actually did).
  *
  * Isolation invariants (tested in run-team-turn.test.ts):
- *   - No persona notes, no digests, no owner conversation history in the
- *     prompt. The ONLY cross-member state is brain content retrieval.
+ *   - No persona notes, no owner conversation history, no other login's
+ *     turns or digests in the prompt. The ONLY cross-member state is brain
+ *     content retrieval.
  *   - The member's identity line rides the volatile block, so the cached
  *     system prefix stays shared across members.
  */
@@ -36,10 +38,11 @@ import { and, eq } from 'drizzle-orm';
 import {
   db,
   agents,
+  authUsers,
+  openChatThread,
   type Agent,
   type ConversationAttachment,
   type TeamChannel,
-  type TeamMessage,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import {
@@ -50,14 +53,16 @@ import {
 } from '../agent';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
-  appendTeamMessage,
-  updateTeamMessageOutcome,
-  recentTeamMessages,
+  appendThreadMessage,
+  updateThreadMessageOutcome,
+  recentThreadMessages,
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   teamHiddenNodeTypes,
   TEAM_PRIVATE_READ_SLUGS,
   teamAssistant,
+  workspaceAssistantFor,
+  type ThreadMessage,
 } from '@mantle/content';
 import { assembleResponderTurn } from './assemble-turn';
 import { durableAttachmentsFor } from './inline-images';
@@ -121,8 +126,8 @@ export type RunClientTurnOptions = Omit<RunTeamTurnOptions, 'attachments'> & {
 };
 
 export type TeamTurnResult = {
-  inbound: TeamMessage;
-  outbound: TeamMessage;
+  inbound: ThreadMessage;
+  outbound: ThreadMessage;
   reply: string;
 };
 
@@ -136,21 +141,31 @@ async function resolveAgentById(ownerId: string, id: string): Promise<Agent | nu
 }
 
 /**
- * The agent a member turn runs: the Team workspace's assistant, never one
- * picked by level (workspaces W5c). The route resolves it too; this is the
- * engine's own check, so no caller can hand a member another agent: a slug
- * that is not the Team workspace's assistant now is refused.
+ * The agent a workspace turn runs: the assistant a workspace holds, never one
+ * picked by level (workspaces W5c). With a slug, it must be the assistant of
+ * a workspace other than Admin that the login is a user of (W7c); without
+ * one, the Team workspace's. The route resolves it too; this is the engine's
+ * own check, so no caller can hand a login another agent. The Admin
+ * assistant never runs here (the owner turn engine runs it).
  */
-async function resolveMemberAgent(ownerId: string, slug: string | undefined): Promise<Agent> {
-  const team = await teamAssistant(ownerId);
+async function resolveMemberAgent(
+  ownerId: string,
+  slug: string | undefined,
+  loginId: string,
+): Promise<Agent> {
+  const team = slug
+    ? await workspaceAssistantFor(ownerId, loginId, slug)
+    : await teamAssistant(ownerId);
   if (!team) {
     throw new Error(
-      "Team chat isn't provisioned on this brain: the Team workspace has no enabled assistant.",
+      slug
+        ? `Agent '${slug}' is not the assistant of a workspace this login is a user of.`
+        : "Team chat isn't provisioned on this brain: the Team workspace has no enabled assistant.",
     );
   }
-  if (slug && slug !== team.slug) {
+  if ('isAdmin' in team && team.isAdmin) {
     throw new Error(
-      `Agent '${slug}' is not the Team workspace's assistant: a member chats only with '${team.slug}'.`,
+      `Agent '${team.slug}' is the Admin assistant: it does not run as a workspace turn.`,
     );
   }
   const agent = await resolveAgentById(ownerId, team.id);
@@ -160,11 +175,12 @@ async function resolveMemberAgent(ownerId: string, slug: string | undefined): Pr
     );
   }
   // The turn scope comes from the agent's own workspace (withAgentViewer):
-  // it must be the Team workspace, or the turn would run in another scope
-  // (none at all would fall back to the agent's stored level). Fail closed.
+  // it must be the workspace that holds it, or the turn would run in another
+  // scope (none at all would fall back to the agent's stored level). Fail
+  // closed.
   if (agent.workspaceId !== team.workspaceId) {
     throw new Error(
-      `Agent '${agent.slug}' does not answer in the Team workspace: a member turn is refused.`,
+      `Agent '${agent.slug}' does not answer in its workspace: a workspace turn is refused.`,
     );
   }
   return agent;
@@ -185,12 +201,19 @@ export function replyUsedPrivate(
   );
 }
 
-/** Map a team thread window into prompt history. Pending/failed rows and the
- *  empty pending bubble never reach the prompt. Exported for the isolation
- *  tests. */
-export function teamThreadToHistory(rows: TeamMessage[]): HistoryTurn[] {
+/** Map a thread window into prompt history. Pending/failed rows, the empty
+ *  pending bubble and a superseded pair never reach the prompt. Exported for
+ *  the isolation tests. */
+export function teamThreadToHistory(
+  rows: Pick<ThreadMessage, 'status' | 'text' | 'direction' | 'data'>[],
+): HistoryTurn[] {
   return rows
-    .filter((r) => r.status === 'complete' && r.text.trim().length > 0)
+    .filter(
+      (r) =>
+        r.status === 'complete' &&
+        r.text.trim().length > 0 &&
+        !(r.data && typeof r.data === 'object' && 'superseded_by' in r.data),
+    )
     .map((r) => ({
       role: r.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
       text: r.text,
@@ -216,6 +239,15 @@ export async function runClientTurn(
   throw new Error('client turn dropped: client chat was removed');
 }
 
+/** Whether `loginId` is a client login (auth.users.role). */
+async function isClientLogin(loginId: string): Promise<boolean> {
+  const rows = (await db
+    .select({ role: authUsers.role })
+    .from(authUsers)
+    .where(eq(authUsers.id, loginId))) as unknown;
+  return Array.isArray(rows) && (rows[0] as { role?: unknown } | undefined)?.role === 'client';
+}
+
 export async function runTeamTurn(
   ownerId: string,
   text: string,
@@ -228,9 +260,17 @@ export async function runTeamTurn(
   if (!options.loginId) {
     throw new Error('runTeamTurn: loginId required (the team-code portal chat is retired)');
   }
+  // A client has no chat (W7c fix round 1, M4): the route refuses it, and
+  // so does the engine, before anything is written or a model is called.
+  if (await isClientLogin(options.loginId)) {
+    throw new Error('runTeamTurn: a client login has no chat');
+  }
   const displayText = options.displayText?.trim() || trimmed;
   const channel: TeamChannel = options.channel ?? 'web';
-  const progress = { inboundWritten: false };
+  const progress: { inboundWritten: boolean; agentId: string | null } = {
+    inboundWritten: false,
+    agentId: null,
+  };
   try {
     return await runTeamTurnSteps(ownerId, trimmed, displayText, channel, options, progress);
   } catch (err) {
@@ -239,25 +279,26 @@ export async function runTeamTurn(
     // answered 202, so the message simply vanished (audit MED 12). Record it
     // with a failed reply, so the thread shows the message and "did not go
     // through". Failures after that point mark their own pending row.
-    if (!progress.inboundWritten) {
+    // A turn whose agent was never resolved has no thread to land in
+    // (0269: a row belongs to one agent's thread): only the error is logged.
+    const agentId = progress.agentId;
+    if (!progress.inboundWritten && agentId) {
       await runDurableStep('record_team_failed_early', async () => {
-        await appendTeamMessage({
+        await appendThreadMessage({
           ownerId,
-          contactId: null,
+          agentId,
+          loginId: options.loginId,
           direction: 'inbound',
           text: displayText,
-          channel,
           attachments: options.attachments ?? [],
-          loginId: options.loginId,
         });
-        await appendTeamMessage({
+        await appendThreadMessage({
           ownerId,
-          contactId: null,
+          agentId,
+          loginId: options.loginId,
           direction: 'outbound',
           text: '',
-          channel,
           error: errorMessage(err),
-          loginId: options.loginId,
         });
       }).catch((e) => console.error('[team-turn] could not record the failed turn:', e));
       if (options.streamId) {
@@ -274,10 +315,11 @@ async function runTeamTurnSteps(
   displayText: string,
   channel: TeamChannel,
   options: RunTeamTurnOptions,
-  progress: { inboundWritten: boolean },
+  progress: { inboundWritten: boolean; agentId: string | null },
 ): Promise<TeamTurnResult> {
   const { loginId } = options;
-  const agent = await resolveMemberAgent(ownerId, options.agentSlug);
+  const agent = await resolveMemberAgent(ownerId, options.agentSlug, loginId);
+  progress.agentId = agent.id;
   if (!agent.apiKeyId) {
     throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
   }
@@ -292,10 +334,9 @@ async function runTeamTurnSteps(
   return withAgentViewer(
     agent,
     async () => {
-      // Retrieval context. The team-responder has no assistant_messages rows, so
-      // ctx.history is structurally empty; digests are off via the agent's
-      // memoryConfig. We use facts/contentHits/chunkHits/relations only, and load
-      // the REAL history from the member's own team thread below.
+      // Retrieval context and the login's own digests. The history rows are
+      // read here, from the login's own thread with this agent (inside its
+      // open chat thread), because the engine needs their ids and marks.
       // Steps before the trace opens (the decider's pruning + hint calls, the
       // query embed) are held here and written into the trace below.
       const prelude = createTracePrelude();
@@ -304,11 +345,13 @@ async function runTeamTurnSteps(
       const prefs = await loadProfilePreferences(ownerId);
       const privateReads = isTeamPrivateReadsEnabled(prefs);
       const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
-      const loadedHistoryRows = await recentTeamMessages(
+      const open = await openChatThread(ownerId, agent.id, loginId);
+      const loadedHistoryRows = await recentThreadMessages(
         ownerId,
-        '', // a login's thread is read by login
-        memoryConfig.history_limit ?? 20,
+        agent.id,
         loginId,
+        memoryConfig.history_limit ?? 20,
+        open?.startedAt ?? null,
       );
       const ctx: ConversationContext = await withTracePrelude(prelude, () =>
         loadConversationContext({
@@ -317,21 +360,23 @@ async function runTeamTurnSteps(
           inboundText: trimmed,
           includeJournal: false,
           excludeNodeTypes: teamHiddenNodeTypes(privateReads),
+          // The login's own thread (0269): its digests, and nobody else's.
+          loginId,
+          loadHistory: false,
           // A short follow-up ("what about in pages?") is enriched from the
-          // member's own thread: the owner's chat is not readable at team.
+          // login's own thread, already read above.
           recentTurnTexts: teamThreadToHistory(loadedHistoryRows).map((t) => t.text),
         }),
       );
 
       const inbound = await runDurableStep('record_team_inbound', () =>
-        appendTeamMessage({
+        appendThreadMessage({
           ownerId,
-          contactId: null,
+          agentId: agent.id,
+          loginId,
           direction: 'inbound',
           text: displayText,
-          channel,
           attachments: options.attachments ?? [],
-          loginId,
         }),
       );
       progress.inboundWritten = true;
@@ -347,16 +392,14 @@ async function runTeamTurnSteps(
       // loading filters status='complete', so this empty row never reaches a
       // later turn's prompt.
       const outboundPending = await runDurableStep('record_team_outbound_pending', () =>
-        appendTeamMessage({
+        appendThreadMessage({
           ownerId,
-          contactId: null,
+          agentId: agent.id,
+          loginId,
           direction: 'outbound',
           text: '',
-          channel,
-          agentId: agent.id,
           model: agent.model,
           status: 'pending',
-          loginId,
         }),
       );
 
@@ -413,11 +456,11 @@ async function runTeamTurnSteps(
         provider: agent.provider,
         systemPrompt: assembled.effectiveSystemPrompt,
         volatileContext,
-        // HARD isolation: no persona notes, no digests — owner-personal context
-        // never reaches a team turn (see header invariants).
+        // HARD isolation: no persona notes; owner-personal context never
+        // reaches a workspace turn. The digests are this login's own (0269).
         personaNotes: [],
         facts: ctx.facts,
-        digests: [],
+        digests: ctx.digests,
         contentHits: ctx.contentHits,
         chunkHits: ctx.chunkHits,
         relations: ctx.relations,
@@ -500,8 +543,9 @@ async function runTeamTurnSteps(
         } else {
           const msg = errorMessage(err);
           await runDurableStep('fail_team_outbound', () =>
-            updateTeamMessageOutcome({
+            updateThreadMessageOutcome({
               ownerId,
+              loginId,
               id: outboundPending.id,
               status: 'failed',
               error: msg,
@@ -539,8 +583,9 @@ async function runTeamTurnSteps(
       // the model saw, is marked; the admin readers show a placeholder.
       const usedPrivate = replyUsedPrivate(outcome.loop.toolCalls, teamHistoryRows);
       const finalized = await runDurableStep('finalize_team_outbound', () =>
-        updateTeamMessageOutcome({
+        updateThreadMessageOutcome({
           ownerId,
+          loginId,
           id: outboundPending.id,
           status: 'complete',
           text: reply,
@@ -550,7 +595,7 @@ async function runTeamTurnSteps(
           ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
         }),
       );
-      const outbound: TeamMessage = finalized ?? {
+      const outbound: ThreadMessage = finalized ?? {
         ...outboundPending,
         text: reply,
         status: 'complete',

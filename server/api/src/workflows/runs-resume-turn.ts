@@ -54,6 +54,7 @@ import {
   runs,
   telegramAccounts,
   telegramChats,
+  workspaces,
   type Agent,
 } from '@mantle/db';
 import {
@@ -69,6 +70,7 @@ import {
   type RunsResumeTurnResult,
 } from '@mantle/runs';
 import { sendMessage } from '@mantle/telegram';
+import type { ToolHandlerContext } from '@mantle/tools';
 import { buildChatMessages, loadConversationContext, recordTurn } from '@mantle/runtime/agent';
 import {
   assembleResponderTurn,
@@ -226,6 +228,20 @@ export async function runsResumeTurnImpl(
       const claimed = await runDurableStep('claim_resume', () => claimResume(db, groupId));
       if (!claimed) return { resumed: false, outcome: 'duplicate' };
 
+      // The login the run was planned for (R3, stamped at createRun): the
+      // resume reads that login's own thread, never the anchor's for another
+      // user's run (W7c fix round 1, L7). None: the owner's, as before.
+      const [planned] = await db
+        .select({ loginId: runs.loginId, workspaceId: runs.workspaceId })
+        .from(runs)
+        .where(eq(runs.id, runId));
+      const runLoginId = planned?.loginId ?? null;
+      const surface = await resumeSurface(
+        run.originChannel,
+        runLoginId,
+        planned?.workspaceId ?? null,
+      );
+
       const outcome = await startTrace(
         {
           kind: 'responder_turn',
@@ -245,7 +261,12 @@ export async function runsResumeTurnImpl(
             logPrefix: '[runs]',
             assembled,
             loadContext: () =>
-              loadConversationContext({ ownerId: run.ownerId, agent, inboundText: promptText }),
+              loadConversationContext({
+                ownerId: run.ownerId,
+                agent,
+                inboundText: promptText,
+                loginId: runLoginId,
+              }),
             contextStepInput: { run_id: runId },
             buildMessages: (c) =>
               buildChatMessages({
@@ -269,10 +290,7 @@ export async function runsResumeTurnImpl(
             // telegram surface so channel-aware tools behave as they would
             // in the originating chat; web/background origins keep the
             // no-outbound-channel posture (send-tools refuse cleanly).
-            surface:
-              run.originChannel?.kind === 'telegram'
-                ? { kind: 'telegram', telegramChatId: run.originChannel.chat_id }
-                : { kind: 'web' },
+            surface,
           }),
       );
 
@@ -346,6 +364,35 @@ export async function runsResumeTurnImpl(
       return { resumed: true, outcome: auditMode ? 'audited' : 'reported' };
     },
   );
+}
+
+/**
+ * The surface a resumed run's turn runs under. Channel-routed resumes (0134):
+ * a telegram-origin run gets the telegram surface so channel-aware tools
+ * behave as they would in the originating chat. Otherwise the run's login:
+ * on the web (an owner surface) only for a run of the Admin workspace (NULL
+ * = Admin); a run of any other workspace is a member's, so its login gets a
+ * team surface, which owner-only tools refuse (W7c fix round 2). No login:
+ * the web with none (send tools refuse cleanly).
+ */
+export async function resumeSurface(
+  originChannel: { kind: 'telegram'; chat_id: string } | null | undefined,
+  loginId: string | null,
+  workspaceId: string | null,
+): Promise<NonNullable<ToolHandlerContext['surface']>> {
+  if (originChannel?.kind === 'telegram') {
+    return { kind: 'telegram', telegramChatId: originChannel.chat_id };
+  }
+  if (!loginId) return { kind: 'web' };
+  if (workspaceId) {
+    const [ws] = await db
+      .select({ isAdmin: workspaces.isAdmin })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    if (!ws?.isAdmin) return { kind: 'team', loginId };
+  }
+  return { kind: 'web', loginId };
 }
 
 export const runsResumeTurnWorkflow = DBOS.registerWorkflow(runsResumeTurnImpl, {

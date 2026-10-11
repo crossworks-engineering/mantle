@@ -62,6 +62,9 @@ export type DescribeResponderTurnInputOptions = {
   excludeToolSlugs?: string[];
   /** The tool list a read-only probe would get. */
   readOnly?: boolean;
+  /** The login the input is built for (the MCP connection's, W7c fix
+   *  round 1, M1): its own thread's digests and its scope. */
+  loginId?: string | null;
 };
 
 /** One prompt message as sent. `cached` marks the stable prefix blocks (an
@@ -164,6 +167,7 @@ export async function describeResponderTurnInput(
     excludeToolSlugs: opts.excludeToolSlugs,
     readOnly: opts.readOnly,
     logPrefix: '[mcp-turn-input]',
+    loginId: opts.loginId ?? null,
   });
   const { assembled, ctx } = prepared;
 
@@ -191,11 +195,14 @@ export async function describeResponderTurnInput(
       const messages = buildSimulatedMessages(prepared);
       // The tool loop's own steps, at the agent's level as the loop runs them
       // (a dynamic-schema hook reads the brain).
-      const tools = await withAgentViewer(agent, async () =>
-        buildToolsForModel(await withReadResultTool(ownerId, assembled.allowedTools), {
-          ownerId,
-          delegateTo: assembled.delegateTo,
-        }),
+      const tools = await withAgentViewer(
+        agent,
+        async () =>
+          buildToolsForModel(await withReadResultTool(ownerId, assembled.allowedTools), {
+            ownerId,
+            delegateTo: assembled.delegateTo,
+          }),
+        { ownerLoginId: opts.loginId ?? null },
       );
       return { messages, tools };
     },

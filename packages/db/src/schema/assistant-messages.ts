@@ -46,8 +46,11 @@ export type ConversationExternalRef = {
 
 /**
  * Web assistant chat surface. One row per turn (inbound or outbound).
- * One continuous conversation **per (owner, agent)** — each agent has its
- * own forever-thread, no sessions / no thread switcher. The "same mind"
+ * One continuous conversation **per (owner, agent, login)** since 0269 (W7c):
+ * each user has their own thread with each assistant, and reads only that
+ * (row security on login_id; every row names its login, the anchor's when
+ * no other login asked). A member's thread with the Team assistant lives
+ * here too (team_messages folded in). The "same mind"
  * is shared (nodes / facts / entities aren't agent-partitioned), but the
  * conversation transcripts are strictly per-agent.
  *
@@ -115,12 +118,21 @@ export const assistantMessages = pgTable(
      *  insert from its agent (NULL = the Admin workspace), and the login it
      *  was for. The foreign key lives in the migration. */
     workspaceId: uuid('workspace_id'),
+    /** NOT NULL in practice since 0269: the stamp trigger names the anchor
+     *  login when nothing else does. */
     loginId: uuid('login_id'),
   },
   (t) => [
     index('assistant_messages_owner_created_idx').on(t.ownerId, t.createdAt),
     // Drives the per-agent transcript query in recentAssistantMessages.
     index('assistant_messages_owner_agent_created_idx').on(t.ownerId, t.agentId, t.createdAt),
+    // One login's thread with one agent (0269, W7c): history, digests, pages.
+    index('assistant_messages_owner_agent_login_created_idx').on(
+      t.ownerId,
+      t.agentId,
+      t.loginId,
+      t.createdAt,
+    ),
     // Per-agent, per-channel slice (e.g. "this agent's Telegram turns") for the
     // unified-stream reads + channel-filtered queries. See docs/conversation.md.
     index('assistant_messages_owner_agent_channel_created_idx').on(
@@ -150,4 +162,14 @@ export type NewAssistantMessage = typeof assistantMessages.$inferInsert;
  */
 export function notSuperseded(): SQL {
   return sql`not (${assistantMessages.data} ? 'superseded_by')`;
+}
+
+/**
+ * SQL condition: this row is one the summarizer digests. A row folded in from
+ * team_messages (0269, `data.digest_skip`) counts as already digested: the
+ * fold never bills a model, and the summarizer's threshold count skips it
+ * too, so it never sits in the backlog.
+ */
+export function notDigestSkipped(): SQL {
+  return sql`not (${assistantMessages.data} ? 'digest_skip')`;
 }

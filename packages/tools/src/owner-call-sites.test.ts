@@ -84,7 +84,9 @@ const SITES: Record<string, Site> = {
   },
   'packages/runtime/src/assistant/run-sim-turn.ts': {
     calls: 1,
-    surface: /surface: \{ kind: 'web' \}/,
+    // The MCP connection's login rides along (W7c fix round 1, M1).
+    surface:
+      /surface: opts\.loginId \? \{ kind: 'web', loginId: opts\.loginId \} : \{ kind: 'web' \}/,
     scope: 'call',
     why: "ask_responder: the owner's simulated web turn",
   },
@@ -103,10 +105,13 @@ const SITES: Record<string, Site> = {
   },
   'server/api/src/workflows/runs-resume-turn.ts': {
     calls: 1,
+    // resumeSurface: the origin Telegram chat, else the run's login on the
+    // web for an Admin run and on a team surface for any other workspace's
+    // (W7c fix round 2), else the web with none. Built before the call.
     surface:
-      /\? \{ kind: 'telegram', telegramChatId: run\.originChannel\.chat_id \}\s*: \{ kind: 'web' \}/,
-    scope: 'call',
-    why: "the owner's run resuming on its origin channel",
+      /return \{ kind: 'telegram', telegramChatId: originChannel\.chat_id \};[\s\S]*if \(!loginId\) return \{ kind: 'web' \};[\s\S]*if \(!ws\?\.isAdmin\) return \{ kind: 'team', loginId \};[\s\S]*return \{ kind: 'web', loginId \};/,
+    scope: 'file',
+    why: "a run resuming on its origin channel, as its login (a member's run on a team surface)",
   },
   'server/web/lib/api-v1-builtin.ts': {
     calls: 1,

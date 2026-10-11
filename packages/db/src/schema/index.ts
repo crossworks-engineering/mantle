@@ -83,5 +83,6 @@ export * from './spaces';
 export * from './workspaces';
 export * from './archive/node-levels';
 export * from './archive/space-review';
+export * from './archive/team-messages';
 export * from './space-item-homes';
 export * from './item-marks';

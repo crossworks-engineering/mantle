@@ -93,6 +93,9 @@ export type RunSimulatedResponderTurnOptions = {
   maxIterations?: number;
   /** Hard wall-clock ceiling for the whole turn. Defaults to 5 minutes. */
   timeoutMs?: number;
+  /** The login the turn is for (the MCP connection's, W7c fix round 1, M1):
+   *  its own thread's digests and its scope, never another user's. */
+  loginId?: string | null;
 };
 
 export type RunSimulatedResponderTurnResult = {
@@ -152,6 +155,7 @@ export async function runSimulatedResponderTurn(
     excludeToolSlugs: opts.excludeToolSlugs,
     readOnly: opts.readOnly,
     logPrefix: '[mcp-sim]',
+    loginId: opts.loginId ?? null,
   });
   const { prefs, prelude, ctx, assembled } = prepared;
 
@@ -205,7 +209,7 @@ export async function runSimulatedResponderTurn(
         // step just records the snapshot for /debug/context.
         loadContext: async () => ctx,
         buildMessages: (c) => buildSimulatedMessages(prepared, c),
-        surface: { kind: 'web' },
+        surface: opts.loginId ? { kind: 'web', loginId: opts.loginId } : { kind: 'web' },
         abortSignal: AbortSignal.timeout(timeoutMs),
         // Caller-held history, not the owner's conversation: it neither
         // starts from nor keeps that conversation's client-sourced mark.
@@ -267,6 +271,8 @@ export async function prepareSimulatedTurn(
     excludeToolSlugs?: string[];
     readOnly?: boolean;
     logPrefix: string;
+    /** The login the turn is for: its thread's digests and its scope. */
+    loginId?: string | null;
   },
 ): Promise<PreparedSimTurn> {
   const message = opts.message;
@@ -298,6 +304,7 @@ export async function prepareSimulatedTurn(
       agent,
       inboundText: message,
       recentTurnTexts: history.map((h) => h.text),
+      ownerLoginId: opts.loginId ?? null,
     }),
   );
 
@@ -311,6 +318,7 @@ export async function prepareSimulatedTurn(
       agent,
       prefs,
       logPrefix: opts.logPrefix,
+      ownerLoginId: opts.loginId ?? null,
       // Decider delegation hint, same as the web turn, so an ask_responder
       // canary exercises it: the message plus the caller-held previous user turn.
       inboundText: message,

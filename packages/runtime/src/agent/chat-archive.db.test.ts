@@ -157,6 +157,8 @@ describe.skipIf(!URL)('chat archive on Postgres', () => {
         ${JSON.stringify({
           kind: 'conversation_digest',
           agent_id: agentId,
+          // Per login since 0269 (W7c): the owner's own thread.
+          login_id: owner,
           topic: 'Garden Beds',
           summary: 'Tomatoes go in the north bed.',
           period_start: ago(120),
@@ -226,7 +228,7 @@ describe.skipIf(!URL)('chat archive on Postgres', () => {
     const [t] = await rows<{ id: string }>(
       sqlTag`select id from chat_threads where owner_id = ${owner} and status = 'archived' limit 1`,
     );
-    const again = await archive.summarizeChatThread(owner, t!.id);
+    const again = await archive.summarizeChatThread(owner, t!.id, owner);
     expect(again!.title).toBe('Vegetable Garden Plan');
     expect(h.inputs).toHaveLength(0);
   });

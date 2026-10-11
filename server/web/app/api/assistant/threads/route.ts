@@ -1,29 +1,26 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
-import { resolveAgentForActor } from '@/lib/assistant';
+import { getChatLoginOr401 } from '@/lib/auth';
+import { resolveChatAgent } from '@/lib/assistant-chat';
 import { chatThreadRows } from '@/lib/chat-threads';
 import { archiveResponse } from '@/lib/chat-archive-http';
+import { claimMemberChatWork } from '@/lib/workspace-turn';
 
 /**
- * Chat threads of one agent (chat archive, docs/conversation.md §6c).
+ * GET  /api/assistant/threads[?agent=<slug>]: the login's OWN threads with
+ *      the agent, newest first (the open one on top).
+ * POST /api/assistant/threads { agent? }: "New chat", archive the login's
+ *      own open thread with the agent and open a new one.
  *
- * GET  /api/assistant/threads?agent=<slug>  the thread list, newest first, the
- *      open thread on top ("Previous chats" in the UI are the archived ones).
- * POST /api/assistant/threads {agent?}      "New chat": archive the open chat
- *      and start a fresh one. Writes the one summary note of the archived
- *      thread inside this request (a single model call). An empty chat is a
- *      no-op (`archived: null`). 409 while a reply is still running.
- *
- * Owner-scoped like every /api/assistant route; the agent resolves as in
- * /api/assistant/thread (explicit slug, this login's agent, the default).
+ * Any login (W7c): each user has their own threads with each assistant and
+ * reads and archives only those.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof Response) return login;
   const slug = new URL(req.url).searchParams.get('agent') ?? undefined;
-  const agent = await resolveAgentForActor(user, slug);
+  const agent = await resolveChatAgent(login, slug);
   if (!agent) return NextResponse.json({ threads: [] });
-  const threads = await chatThreadRows(user.id, agent.id);
+  const threads = await chatThreadRows(login.ownerId, agent.id, login.loginId);
   return NextResponse.json(
     { agent: { id: agent.id, slug: agent.slug }, threads },
     { headers: { 'Cache-Control': 'no-store' } },
@@ -31,11 +28,20 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof Response) return login;
   const body = (await req.json().catch(() => null)) as { agent?: unknown } | null;
   const slug = typeof body?.agent === 'string' && body.agent ? body.agent : undefined;
-  const agent = await resolveAgentForActor(user, slug);
+  const agent = await resolveChatAgent(login, slug);
   if (!agent) return NextResponse.json({ error: 'no chat agent' }, { status: 404 });
-  return archiveResponse({ ownerId: user.id, agentId: agent.id, archivedBy: user.actor.id });
+  // Archiving summarises the chat (one model call): metered for a login
+  // that is not an Admin user (W7c fix round 1, L2).
+  const limited = await claimMemberChatWork(login, 'summary');
+  if (limited) return limited;
+  return archiveResponse({
+    ownerId: login.ownerId,
+    agentId: agent.id,
+    loginId: login.loginId,
+    archivedBy: login.loginId,
+  });
 }

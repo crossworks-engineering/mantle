@@ -106,7 +106,11 @@ describe.skipIf(!URL)('Telegram is for admin-level agents only (T21)', () => {
   const pair = async (c: string) => {
     const { BUILTIN_TOOLS } = await import('@mantle/tools');
     const tool = BUILTIN_TOOLS.find((t) => t.slug === 'telegram_pair')!;
-    return tool.handler({ code: c }, { ownerId: who.anchor });
+    // The anchor's own stdio MCP: only the anchor pairs (W7c fix round 2).
+    return tool.handler(
+      { code: c },
+      { ownerId: who.anchor, surface: { kind: 'owner', via: 'mcp' } },
+    );
   };
 
   it("telegram_pair refuses a team agent's bot, naming its level, and pairs nothing", async () => {

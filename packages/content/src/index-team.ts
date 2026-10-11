@@ -105,22 +105,18 @@ export {
 } from './share-access-log';
 
 export {
-  appendTeamMessage,
-  updateTeamMessageOutcome,
-  listLoginPortalThread,
+  appendThreadMessage,
+  updateThreadMessageOutcome,
+  recentThreadMessages,
+  threadMessageById,
   listTeamThread,
   PRIVATE_REPLY_PLACEHOLDER,
   redactPrivateReply,
-  recentTeamMessages,
   listTeamMemberActivity,
-  listMemberChatActivity,
-  loginChatUnread,
-  markLoginChatRead,
-  type LoginChatUnread,
-  type AppendTeamMessageInput,
-  type UpdateTeamMessageOutcomeInput,
+  type ThreadMessage,
+  type AppendThreadMessageInput,
+  type UpdateThreadMessageOutcomeInput,
   type TeamMemberActivity,
-  type MemberChatActivity,
 } from './team-messages';
 
 export {
@@ -184,7 +180,13 @@ export {
 // The plain unshare (agent and tool-group levels went in workspaces W7b).
 export { AccessError, isWorkspaceKind, unshareItem, type UnshareItemResult } from './access';
 export { teamReadsItem } from './team-grant';
-export { teamAssistant, type TeamAssistant } from './team-assistant';
+export {
+  teamAssistant,
+  workspaceAssistantFor,
+  workspaceAssistants,
+  type TeamAssistant,
+  type WorkspaceAssistant,
+} from './team-assistant';
 // What an item embeds (W5b2: an embed never changes who reads anything).
 // LoweredItem is a deprecated type: callers go in the writers/links helpers.
 export { EMBEDDING_KINDS, drawPlacedFileIds, type LoweredItem } from './embed-closure';

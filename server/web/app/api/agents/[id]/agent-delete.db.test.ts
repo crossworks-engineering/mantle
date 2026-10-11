@@ -52,7 +52,8 @@ describe.skipIf(!URL)('DELETE /api/agents/:id conversation handling on Postgres'
   const replayTexts = async () => {
     const res = await replayWindow.handler(
       { from: day, to: day, surface: 'web' },
-      { ownerId: owner },
+      // The owner asks for its own history (replay reads one login's).
+      { ownerId: owner, surface: { kind: 'owner', via: 'mcp', loginId: owner } },
     );
     if (!res.ok) throw new Error(res.error);
     return (res.output as { turns: { text: string }[] }).turns.map((t) => t.text).sort();
@@ -74,7 +75,7 @@ describe.skipIf(!URL)('DELETE /api/agents/:id conversation handling on Postgres'
          ARRAY['conversation-digest', ${`agent:${slug}`}]::text[],
          ${JSON.stringify({ kind: 'conversation_digest', agent_id: id, agent_slug: slug })}::jsonb)`);
     await m.db.execute(sqlTag`
-      insert into assistant_read_cursors (owner_id, agent_id) values (${owner}, ${id})`);
+      insert into assistant_read_cursors (owner_id, agent_id, login_id) values (${owner}, ${id}, ${owner})`);
     return id;
   };
 

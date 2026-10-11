@@ -551,8 +551,10 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // ('login-names') and the owner's preferences ('owner-preferences'). 19: the search vocabulary's table-wide
     // statistics ('lexeme-stats'), hidden from a role under row security. 20: the ranked text match of a big
     // scope's search as ids only ('keyword-candidates'). 21 (W7b fix round 1): a deleted app's
-    // snapshots for a caller who moderates its home ('app-trash').
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(21);
+    // snapshots for a caller who moderates its home ('app-trash'). 22 since
+    // W7c fix round 2: the anchor's own Telegram history in its replay
+    // ('owner-telegram'), owner-only until W7d and granted to no role.
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(22);
   });
 
   it('each W7a exit names its own reason', () => {
@@ -564,6 +566,8 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
       'owner-preferences',
       'lexeme-stats',
       'keyword-candidates',
+      'app-trash',
+      'owner-telegram',
     ]) {
       expect(AS_SYSTEM_TURN_REASONS).toContain(r);
     }

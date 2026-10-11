@@ -1,7 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getChatLoginOr401 } from '@/lib/auth';
+import { messagesForReader, resolveChatAgentById } from '@/lib/assistant-chat';
 import { recentAssistantMessages } from '@/lib/assistant';
 import { chatThreadRow, threadRange } from '@/lib/chat-threads';
 
@@ -12,15 +13,21 @@ import { chatThreadRow, threadRange } from '@/lib/chat-threads';
  * read-only; there is no write route for it.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof Response) return login;
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const thread = await getChatThread(user.id, id);
+  // The login's own thread (W7c): another login's thread is not found, nor
+  // one with an agent the login may no longer chat with.
+  const found = await getChatThread(login.ownerId, id, login.loginId);
+  const thread = found && (await resolveChatAgentById(login, found.agentId)) ? found : null;
   if (!thread) return NextResponse.json({ error: 'thread not found' }, { status: 404 });
   const [row, messages] = await Promise.all([
-    chatThreadRow(user.id, thread),
-    recentAssistantMessages(user.id, thread.agentId, 100, threadRange(thread)),
+    chatThreadRow(login.ownerId, thread),
+    recentAssistantMessages(login.ownerId, thread.agentId, login.loginId, 100, threadRange(thread)),
   ]);
-  return NextResponse.json({ thread: row, messages }, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(
+    { thread: row, messages: await messagesForReader(login, messages) },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }

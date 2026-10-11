@@ -217,7 +217,12 @@ export async function spillToolResult(args: {
     content: args.content,
     bytes,
     viewerLevel: level === 'admin' ? null : level,
-    ...(stamp ? { workspaceId: stamp.workspaceId, loginId: stamp.loginId } : {}),
+    ...(stamp
+      ? {
+          ...(stamp.workspaceId ? { workspaceId: stamp.workspaceId } : {}),
+          loginId: stamp.loginId,
+        }
+      : {}),
   });
   return { handle, bytes };
 }

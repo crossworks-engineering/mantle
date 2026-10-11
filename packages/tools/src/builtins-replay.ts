@@ -24,8 +24,10 @@
 
 import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import {
+  asSystem,
   assistantMessages,
   currentTurnStamp,
+  currentWorkspaceScope,
   db,
   nodes,
   telegramChats,
@@ -35,7 +37,8 @@ import {
 } from '@mantle/db';
 import type { AnyColumn, SQL } from 'drizzle-orm';
 import { embed } from '@mantle/embeddings';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolHandlerContext } from './types';
+import { ownerSurfaceLoginId } from './surface';
 import { str, strOpt, numOr as num } from './coerce';
 import { errorMessage } from '@mantle/std';
 
@@ -115,14 +118,43 @@ function stepSummary(
 }
 
 /**
+ * Whose history a replay reads (W7c fix round 1, H1): each user reads only
+ * their own threads, the owner included. The asker is the turn's stamp
+ * (the login the turn answers), else the login an owner surface names (the
+ * web chat's, an MCP connection's, an API key's), else the login
+ * whose own MCP call this is (its user scope). The anchor is used only
+ * where the surface IS the anchor: its own stdio MCP (the owner surface
+ * with no login) and its Telegram chat (owner-only until W7d). Anything
+ * else (a heartbeat, a run, a peer that names no login) gets null and the
+ * tool refuses: it never falls back to the anchor's history.
+ */
+export function replayAsker(
+  ownerId: string,
+  surface: ToolHandlerContext['surface'],
+): string | null {
+  const stamped = currentTurnStamp()?.loginId;
+  if (stamped) return stamped;
+  const named = ownerSurfaceLoginId(surface);
+  if (named) return named;
+  const s = surface as { kind?: string; via?: string; loginId?: unknown } | undefined;
+  const scope = currentWorkspaceScope();
+  if (scope?.kind === 'user' && scope.loginId) return scope.loginId;
+  if (s?.kind === 'owner' && s.via === 'mcp' && !s.loginId) return ownerId;
+  if (s?.kind === 'telegram') return ownerId;
+  return null;
+}
+
+/** The refusal when no asking login is known. */
+export const REPLAY_NO_LOGIN_ERROR =
+  'replay needs the user it reads for: this call names no login, and a chat is read only by its own user.';
+
+/**
  * Replay reads the Admin workspace only (workspaces S4, W4b): a trace or a
  * message of another workspace's assistant (the Team assistant's turns) is
  * never replayed, and of the Admin rows only the asking login's and the
- * system's (no login). The asking login is the turn's stamp, else the brain
- * owner (an owner surface with no turn: MCP, a run).
+ * system's (no login).
  */
-function adminWorkspaceRows(ownerId: string, ws: AnyColumn, login: AnyColumn): SQL {
-  const asker = currentTurnStamp()?.loginId ?? ownerId;
+function adminWorkspaceRows(ownerId: string, asker: string, ws: AnyColumn, login: AnyColumn): SQL {
   return sql`(${ws} is null or ${ws} in (select w.id from workspaces w
                 where w.owner_id = ${ownerId} and w.is_admin))
              and (${login} is null or ${login} = ${asker}::uuid)`;
@@ -130,7 +162,12 @@ function adminWorkspaceRows(ownerId: string, ws: AnyColumn, login: AnyColumn): S
 
 /** The trace rows (+ compact step gists) whose work happened inside a window —
  *  the "what the system actually did then" companion to the dialogue. */
-async function fetchWindowTraces(ownerId: string, from: Date, to: Date): Promise<RecalledTrace[]> {
+async function fetchWindowTraces(
+  ownerId: string,
+  asker: string,
+  from: Date,
+  to: Date,
+): Promise<RecalledTrace[]> {
   const traceRows = await db
     .select({
       id: traces.id,
@@ -145,7 +182,7 @@ async function fetchWindowTraces(ownerId: string, from: Date, to: Date): Promise
         eq(traces.ownerId, ownerId),
         gte(traces.startedAt, from),
         lte(traces.startedAt, to),
-        adminWorkspaceRows(ownerId, traces.workspaceId, traces.loginId),
+        adminWorkspaceRows(ownerId, asker, traces.workspaceId, traces.loginId),
       ),
     )
     .orderBy(asc(traces.startedAt))
@@ -219,6 +256,8 @@ const find_window: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const topic = str(input.topic).trim();
     if (!topic) return { ok: false, error: 'topic is required' };
+    const asker = replayAsker(ctx.ownerId, ctx.surface);
+    if (!asker) return { ok: false, error: REPLAY_NO_LOGIN_ERROR };
     const limit = Math.min(num(input.limit, 8), MAX_WINDOWS);
 
     const fromRaw = strOpt(input.from);
@@ -245,6 +284,8 @@ const find_window: BuiltinToolDef = {
       // Digests, and the one summary note per archived chat thread (0231).
       sql`(${nodes.tags} @> ARRAY['conversation-digest']::text[] or ${nodes.data}->>'kind' = 'chat_archive')`,
       sql`${nodes.embedding} is not null`,
+      // The asker's own digests and threads only (W7c fix round 1, H1).
+      sql`${nodes.data}->>'login_id' = ${asker}`,
     ];
     // Keep digests whose [period_start, period_end] overlaps the rough range.
     if (to) {
@@ -346,31 +387,41 @@ const replay_window: BuiltinToolDef = {
     if (!from) return { ok: false, error: 'from must be YYYY-MM-DD or ISO datetime' };
     if (!to) return { ok: false, error: 'to must be YYYY-MM-DD or ISO datetime' };
     if (from > to) return { ok: false, error: 'from is after to' };
+    const asker = replayAsker(ctx.ownerId, ctx.surface);
+    if (!asker) return { ok: false, error: REPLAY_NO_LOGIN_ERROR };
 
     const surface = (strOpt(input.surface) ?? 'all') as 'telegram' | 'web' | 'all';
     const limit = Math.min(num(input.limit, 200), MAX_TURNS);
 
     const turns: RecallTurn[] = [];
 
-    if (surface === 'all' || surface === 'telegram') {
-      const tg = await db
-        .select({
-          text: telegramMessages.text,
-          sentAt: telegramMessages.sentAt,
-          direction: telegramMessages.direction,
-          fromName: telegramMessages.fromName,
-        })
-        .from(telegramMessages)
-        .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-        .where(
-          and(
-            eq(telegramChats.userId, ctx.ownerId),
-            gte(telegramMessages.sentAt, from),
-            lte(telegramMessages.sentAt, to),
-          ),
-        )
-        .orderBy(asc(telegramMessages.sentAt))
-        .limit(limit + 1);
+    // Telegram is the anchor's own chat (owner-only until W7d): only the
+    // anchor replays it. No role is granted it, so inside the anchor's turn
+    // scope (its chat with the replay agent, W7c fix round 2) the read
+    // leaves for the system pool, named; the anchor check above is the gate.
+    if ((surface === 'all' || surface === 'telegram') && asker === ctx.ownerId) {
+      const tg = await asSystem(
+        () =>
+          db
+            .select({
+              text: telegramMessages.text,
+              sentAt: telegramMessages.sentAt,
+              direction: telegramMessages.direction,
+              fromName: telegramMessages.fromName,
+            })
+            .from(telegramMessages)
+            .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+            .where(
+              and(
+                eq(telegramChats.userId, ctx.ownerId),
+                gte(telegramMessages.sentAt, from),
+                lte(telegramMessages.sentAt, to),
+              ),
+            )
+            .orderBy(asc(telegramMessages.sentAt))
+            .limit(limit + 1),
+        'owner-telegram',
+      );
       for (const r of tg) {
         turns.push({
           surface: 'telegram',
@@ -404,6 +455,7 @@ const replay_window: BuiltinToolDef = {
             inArray(assistantMessages.channel, ['web', 'mobile', 'mcp']),
             adminWorkspaceRows(
               ctx.ownerId,
+              asker,
               assistantMessages.workspaceId,
               assistantMessages.loginId,
             ),
@@ -430,7 +482,9 @@ const replay_window: BuiltinToolDef = {
     const out = truncated ? sorted.slice(0, limit) : sorted;
 
     const traceList =
-      input.include_traces === true ? await fetchWindowTraces(ctx.ownerId, from, to) : undefined;
+      input.include_traces === true
+        ? await fetchWindowTraces(ctx.ownerId, asker, from, to)
+        : undefined;
 
     ctx.step?.setOutput({
       count: out.length,

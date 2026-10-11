@@ -68,6 +68,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...actual,
     db: { select: () => chain },
+    // No "New chat" yet: the thread has no lower bound.
+    openChatThread: vi.fn(async () => null),
     // The R6 shim without a database: 'admin' is system work; a login reads
     // its workspaces (here one named for it); an agent on no workspace reads
     // none.
@@ -103,11 +105,11 @@ vi.mock('@mantle/content', async (importOriginal) => {
       r('prefs');
       return { timezone: 'UTC', locale: 'en-GB' };
     }),
-    recentTeamMessages: vi.fn(async () => {
+    recentThreadMessages: vi.fn(async () => {
       r('thread');
       return [];
     }),
-    appendTeamMessage: vi.fn(async (row: Record<string, unknown>) => {
+    appendThreadMessage: vi.fn(async (row: Record<string, unknown>) => {
       h.appended++;
       return { ...row, id: `m${++n}`, createdAt: new Date() };
     }),
@@ -115,7 +117,13 @@ vi.mock('@mantle/content', async (importOriginal) => {
       r('team-assistant');
       return h.team;
     }),
-    updateTeamMessageOutcome: vi.fn(async () => null),
+    // A named slug (W7c): the assistants of the login's workspaces. None
+    // here is named 'admin-assistant'.
+    workspaceAssistantFor: vi.fn(async () => {
+      r('workspace-assistants');
+      return null;
+    }),
+    updateThreadMessageOutcome: vi.fn(async () => null),
   };
 });
 
@@ -222,15 +230,15 @@ describe('runTeamTurn runs in the agent scope', () => {
       /Team workspace has no enabled assistant/,
     );
     expect(h.levels).toEqual(['team-assistant:admin']);
-    // The failed turn is recorded (the message and a failed reply).
-    expect(h.appended).toBe(2);
+    // No assistant, no thread (0269): nothing is recorded.
+    expect(h.appended).toBe(0);
   });
 
   it('control: an agent that is not the Team workspace’s assistant is refused (W5c: no level is read)', async () => {
     await expect(
       runTeamTurn('owner-1', 'hello', { loginId: 'login-1', agentSlug: 'admin-assistant' }),
-    ).rejects.toThrow(/not the Team workspace's assistant/);
-    expect(h.levels).toEqual(['team-assistant:admin']);
+    ).rejects.toThrow(/not the assistant of a workspace this login is a user of/);
+    expect(h.levels).toEqual(['workspace-assistants:admin']);
   });
 
   it('control: an assistant that does not answer in the Team workspace is refused (fail closed)', async () => {
@@ -238,7 +246,7 @@ describe('runTeamTurn runs in the agent scope', () => {
     // the turn would not run in the Team scope, so it never runs.
     h.team = { id: 'agent-1', slug: 'team-responder', name: 'Team', workspaceId: 'ws-team' };
     await expect(runTeamTurn('owner-1', 'hello', { loginId: 'login-1' })).rejects.toThrow(
-      /does not answer in the Team workspace/,
+      /does not answer in its workspace/,
     );
     expect(h.levels).toEqual(['team-assistant:admin', 'agent:admin']);
   });

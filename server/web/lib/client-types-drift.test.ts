@@ -8,7 +8,6 @@ import type {
   ContextSource as CtContextSource,
   MemberAppCard,
   MemberChatArchiveMessage,
-  MemberChatRow,
   MemberHomeApp,
   NodeCommentAuthorKind,
   TaskPriority,
@@ -20,7 +19,6 @@ import {
   TASK_PRIORITIES,
   TASK_STATUSES,
   type listMemberApps,
-  type listMemberChatActivity,
   type resolveMemberHomeApp,
 } from '@mantle/content';
 
@@ -138,9 +136,6 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<
       Awaited<ReturnType<typeof resolveMemberHomeApp>>
     >().toEqualTypeOf<MemberHomeApp | null>();
-    expectTypeOf<Awaited<ReturnType<typeof listMemberChatActivity>>>().toEqualTypeOf<
-      MemberChatRow[]
-    >();
     expectTypeOf<
       SameUnion<Db.TeamMessage['status'], MemberChatArchiveMessage['status']>
     >().toEqualTypeOf<true>();

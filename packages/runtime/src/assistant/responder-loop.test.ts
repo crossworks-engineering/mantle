@@ -44,6 +44,15 @@ vi.mock('../agent', () => ({
   resolveBackupAdapter: vi.fn(async () => undefined),
 }));
 
+// The agent's scope has its own tests (responder-loop.level.test.ts, the
+// W7c chat db test): a login's turn with a helper on no workspace looks up
+// the login's Admin workspace, which needs a database. This file is about
+// the conversation mark, so the loop runs as is.
+vi.mock('../agent/agent-viewer', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  withAgentViewer: (_agent: unknown, fn: () => Promise<unknown>) => fn(),
+}));
+
 vi.mock('@mantle/content', () => ({
   isStreamThoughtsEnabled: () => h.thoughtsOn,
   isPersistThoughtsEnabled: () => h.thoughtsOn,

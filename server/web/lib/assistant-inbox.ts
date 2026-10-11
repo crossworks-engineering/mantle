@@ -1,5 +1,12 @@
 import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import { db, agents, assistantMessages, assistantReadCursors, type AgentAvatar } from '@mantle/db';
+import {
+  asSystem,
+  db,
+  agents,
+  assistantMessages,
+  assistantReadCursors,
+  type AgentAvatar,
+} from '@mantle/db';
 
 /** Roles that hold a back-and-forth chat (mirrors listAssistantAgents). */
 const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
@@ -19,37 +26,65 @@ export type ConversationSummary = {
   unreadCount: number;
 };
 
-/** Read cursors for this owner, keyed by agentId. */
-export async function getReadCursors(ownerId: string): Promise<Map<string, Date>> {
-  const rows = await db
-    .select({ agentId: assistantReadCursors.agentId, lastReadAt: assistantReadCursors.lastReadAt })
-    .from(assistantReadCursors)
-    .where(eq(assistantReadCursors.ownerId, ownerId));
+/** This login's read cursors, keyed by agentId (per login since 0269). */
+export async function getReadCursors(ownerId: string, loginId: string): Promise<Map<string, Date>> {
+  // The cursors are the login's own rows, which this query names; the
+  // workspace role has no grant on them.
+  const rows = await asSystem(
+    () =>
+      db
+        .select({
+          agentId: assistantReadCursors.agentId,
+          lastReadAt: assistantReadCursors.lastReadAt,
+        })
+        .from(assistantReadCursors)
+        .where(
+          and(eq(assistantReadCursors.ownerId, ownerId), eq(assistantReadCursors.loginId, loginId)),
+        ),
+    'rule-in-query',
+  );
   return new Map(rows.map((r) => [r.agentId, r.lastReadAt]));
 }
 
-/** Mark an agent's thread read up to [at] (default now). Upsert. */
+/** Mark a login's thread with an agent read up to [at] (default now). Upsert. */
 export async function markAssistantRead(
   ownerId: string,
   agentId: string,
+  loginId: string,
   at: Date = new Date(),
 ): Promise<Date> {
-  await db
-    .insert(assistantReadCursors)
-    .values({ ownerId, agentId, lastReadAt: at })
-    .onConflictDoUpdate({
-      target: [assistantReadCursors.ownerId, assistantReadCursors.agentId],
-      set: { lastReadAt: at },
-    });
+  // The login's own cursor row, named here; the system pool writes it.
+  await asSystem(
+    () =>
+      db
+        .insert(assistantReadCursors)
+        .values({ ownerId, agentId, loginId, lastReadAt: at })
+        .onConflictDoUpdate({
+          target: [
+            assistantReadCursors.ownerId,
+            assistantReadCursors.agentId,
+            assistantReadCursors.loginId,
+          ],
+          set: { lastReadAt: at },
+        }),
+    'rule-in-query',
+  );
   return at;
 }
 
 /**
- * The conversations inbox: one row per chat-capable agent with its latest
- * message preview and unread count (outbound messages newer than the read
- * cursor). Sorted by most-recent activity.
+ * The conversations inbox of ONE login: one row per agent it may chat with
+ * (`agentIds`; every chat-capable agent when omitted, the Admin user's
+ * inbox) with its own thread's latest message preview and unread count
+ * (outbound messages newer than its read cursor). Sorted by most-recent
+ * activity. Never another login's thread (0269, W7c).
  */
-export async function assistantConversations(ownerId: string): Promise<ConversationSummary[]> {
+export async function assistantConversations(
+  ownerId: string,
+  loginId: string,
+  agentIds?: readonly string[],
+): Promise<ConversationSummary[]> {
+  if (agentIds && agentIds.length === 0) return [];
   const agentRows = await db
     .select({
       id: agents.id,
@@ -62,12 +97,12 @@ export async function assistantConversations(ownerId: string): Promise<Conversat
       and(
         eq(agents.ownerId, ownerId),
         eq(agents.enabled, true),
-        inArray(agents.role, [...CHATTABLE_ROLES]),
+        agentIds ? inArray(agents.id, [...agentIds]) : inArray(agents.role, [...CHATTABLE_ROLES]),
       ),
     )
     .orderBy(desc(agents.priority));
 
-  const cursors = await getReadCursors(ownerId);
+  const cursors = await getReadCursors(ownerId, loginId);
 
   const summaries = await Promise.all(
     agentRows.map(async (a): Promise<ConversationSummary> => {
@@ -78,7 +113,13 @@ export async function assistantConversations(ownerId: string): Promise<Conversat
           createdAt: assistantMessages.createdAt,
         })
         .from(assistantMessages)
-        .where(and(eq(assistantMessages.ownerId, ownerId), eq(assistantMessages.agentId, a.id)))
+        .where(
+          and(
+            eq(assistantMessages.ownerId, ownerId),
+            eq(assistantMessages.agentId, a.id),
+            eq(assistantMessages.loginId, loginId),
+          ),
+        )
         .orderBy(desc(assistantMessages.createdAt))
         .limit(1);
 
@@ -90,6 +131,7 @@ export async function assistantConversations(ownerId: string): Promise<Conversat
           and(
             eq(assistantMessages.ownerId, ownerId),
             eq(assistantMessages.agentId, a.id),
+            eq(assistantMessages.loginId, loginId),
             eq(assistantMessages.direction, 'outbound'),
             gt(assistantMessages.createdAt, cursor),
           ),

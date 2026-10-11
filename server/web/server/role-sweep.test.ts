@@ -249,10 +249,16 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
           body: method === 'GET' || method === 'HEAD' ? undefined : '{}',
         });
         if (isApi) {
-          const body = (await res.json().catch(() => null)) as {
-            error?: string;
-            reason?: string;
-          } | null;
+          // A live stream a login may open (the chat stream, W7c) never
+          // ends: its open answer is all there is to read.
+          const live = (res.headers.get('content-type') ?? '').includes('text/event-stream');
+          if (live) await res.body?.cancel().catch(() => undefined);
+          const body = live
+            ? null
+            : ((await res.json().catch(() => null)) as {
+                error?: string;
+                reason?: string;
+              } | null);
           if (!refused({ key, status: res.status, body })) {
             failures.push(`${key} → ${res.status} ${body?.reason ?? body?.error ?? ''}`);
           }

@@ -9,7 +9,7 @@
  * Read on the system pool, before any turn scope is entered.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { agents, db, workspaceResources, workspaces } from '@mantle/db';
+import { agents, db, workspaceResources, workspaceUsers, workspaces } from '@mantle/db';
 
 /** The assistant, and the Team workspace it answers in. */
 export type TeamAssistant = { id: string; slug: string; name: string; workspaceId: string };
@@ -38,4 +38,64 @@ export async function teamAssistant(ownerId: string): Promise<TeamAssistant | nu
     )
     .limit(1);
   return row ?? null;
+}
+
+/** An assistant a workspace holds, and whether that workspace is Admin. */
+export type WorkspaceAssistant = TeamAssistant & { isAdmin: boolean };
+
+/**
+ * The enabled assistants of the brain's live workspaces (workspaces W7c):
+ * each workspace's assistant resource. With `loginId`, only those of the
+ * workspaces that login is a user of: the assistants it may chat with, each
+ * in its own thread. Read on the system pool (the caller names the login).
+ */
+export async function workspaceAssistants(
+  ownerId: string,
+  loginId?: string,
+): Promise<WorkspaceAssistant[]> {
+  const rows = await db
+    .select({
+      id: agents.id,
+      slug: agents.slug,
+      name: agents.name,
+      workspaceId: workspaces.id,
+      isAdmin: workspaces.isAdmin,
+    })
+    .from(workspaces)
+    .innerJoin(
+      workspaceResources,
+      and(
+        eq(workspaceResources.workspaceId, workspaces.id),
+        eq(workspaceResources.type, 'assistant'),
+      ),
+    )
+    .innerJoin(agents, sql`${agents.id}::text = ${workspaceResources.refId}`)
+    .where(
+      and(
+        eq(workspaces.ownerId, ownerId),
+        isNull(workspaces.archivedAt),
+        eq(agents.ownerId, ownerId),
+        eq(agents.enabled, true),
+        // The assistant answers in the workspace that holds it.
+        sql`${agents.workspaceId} = ${workspaces.id}`,
+        ...(loginId
+          ? [
+              sql`exists (select 1 from ${workspaceUsers} wu
+                           where wu.workspace_id = ${workspaces.id} and wu.login_id = ${loginId})`,
+            ]
+          : []),
+      ),
+    )
+    .orderBy(sql`${workspaces.isAdmin} desc`, workspaces.name);
+  return rows;
+}
+
+/** The assistant a login names by slug, if a workspace it is a user of holds
+ *  it (null otherwise: the login may not chat with it). */
+export async function workspaceAssistantFor(
+  ownerId: string,
+  loginId: string,
+  slug: string,
+): Promise<WorkspaceAssistant | null> {
+  return (await workspaceAssistants(ownerId, loginId)).find((a) => a.slug === slug) ?? null;
 }

@@ -5,17 +5,22 @@
  * write side (archive, continue) lives in @mantle/runtime, next to the model
  * call that names and summarises the archived thread.
  *
- * Admin pool only: the viewer roles have no grant on `chat_threads`, so a
- * caller inside a limited viewer scope must not call these (the history arm
- * is already skipped below admin).
+ * Per login since 0269 (W7c): every helper names the login whose thread it
+ * reads, and never reads another login's. Row security says the same to the
+ * workspace role (own login only); the explicit filter keeps a system-pool
+ * caller (an Admin user's own-things route, the summarizer) to one login.
  */
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
 import { db } from './client';
 import { chatThreads, type ChatThread } from './schema/chat-threads';
 
-/** The open thread of an agent's chat, or null when the chat was never
- *  archived (a forever-thread with no lower bound). */
-export async function openChatThread(ownerId: string, agentId: string): Promise<ChatThread | null> {
+/** The open thread of a login's chat with an agent, or null when that chat
+ *  was never archived (a forever-thread with no lower bound). */
+export async function openChatThread(
+  ownerId: string,
+  agentId: string,
+  loginId: string,
+): Promise<ChatThread | null> {
   const [row] = await db
     .select()
     .from(chatThreads)
@@ -23,6 +28,7 @@ export async function openChatThread(ownerId: string, agentId: string): Promise<
       and(
         eq(chatThreads.ownerId, ownerId),
         eq(chatThreads.agentId, agentId),
+        eq(chatThreads.loginId, loginId),
         eq(chatThreads.status, 'open'),
       ),
     )
@@ -30,21 +36,43 @@ export async function openChatThread(ownerId: string, agentId: string): Promise<
   return row ?? null;
 }
 
-/** All threads of an agent's chat, newest first (the open one on top). */
-export async function listChatThreads(ownerId: string, agentId: string): Promise<ChatThread[]> {
+/** All threads of a login's chat with an agent, newest first (the open one
+ *  on top). */
+export async function listChatThreads(
+  ownerId: string,
+  agentId: string,
+  loginId: string,
+): Promise<ChatThread[]> {
   return db
     .select()
     .from(chatThreads)
-    .where(and(eq(chatThreads.ownerId, ownerId), eq(chatThreads.agentId, agentId)))
+    .where(
+      and(
+        eq(chatThreads.ownerId, ownerId),
+        eq(chatThreads.agentId, agentId),
+        eq(chatThreads.loginId, loginId),
+      ),
+    )
     .orderBy(desc(chatThreads.startedAt), sql`${chatThreads.status} = 'open' desc`);
 }
 
-/** One thread by id, scoped to the owner. */
-export async function getChatThread(ownerId: string, id: string): Promise<ChatThread | null> {
+/** One thread by id, scoped to the owner and to the login it belongs to: a
+ *  thread of another login is not found. */
+export async function getChatThread(
+  ownerId: string,
+  id: string,
+  loginId: string,
+): Promise<ChatThread | null> {
   const [row] = await db
     .select()
     .from(chatThreads)
-    .where(and(eq(chatThreads.ownerId, ownerId), eq(chatThreads.id, id)))
+    .where(
+      and(
+        eq(chatThreads.ownerId, ownerId),
+        eq(chatThreads.id, id),
+        eq(chatThreads.loginId, loginId),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
@@ -57,6 +85,7 @@ export async function getChatThread(ownerId: string, id: string): Promise<ChatTh
 export async function closedRangeEndAfter(
   ownerId: string,
   agentId: string,
+  loginId: string,
   at: Date,
 ): Promise<Date | null> {
   const [row] = await db
@@ -66,6 +95,7 @@ export async function closedRangeEndAfter(
       and(
         eq(chatThreads.ownerId, ownerId),
         eq(chatThreads.agentId, agentId),
+        eq(chatThreads.loginId, loginId),
         eq(chatThreads.status, 'archived'),
         gt(chatThreads.archivedAt, at),
       ),

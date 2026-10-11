@@ -18,6 +18,20 @@ const h = vi.hoisted(() => ({ owner: '' }));
 
 vi.mock('@/lib/auth', () => ({
   getOwnerOr401: vi.fn(async () => ({ id: h.owner, email: 'x', actor: { id: h.owner } })),
+  // The chat routes (W7c): the owner, an Admin user, for its own threads.
+  getChatLoginOr401: vi.fn(async () => ({
+    kind: 'admin',
+    ownerId: h.owner,
+    loginId: h.owner,
+    source: 'web',
+    user: {
+      id: h.owner,
+      email: 'x',
+      actor: { id: h.owner, email: 'x', displayName: null, isOwner: true },
+    },
+    displayName: null,
+    email: 'x',
+  })),
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

@@ -57,12 +57,29 @@ describe.skipIf(!URL)('0182 used_private backfill', () => {
     const outId = randomUUID();
     ids[key] = outId;
     const at = (n: number) => new Date(Date.UTC(2026, 8, 20, 10, 0, n)).toISOString();
-    await admin`insert into team_messages (id, owner_id, contact_id, login_id, direction, text, created_at)
-      values (${inId}, ${anchor}, ${who.contactId ?? null}, ${who.loginId ?? null}, 'inbound', 'ask', ${at(t++)})`;
-    await admin`insert into team_messages
-      (id, owner_id, contact_id, login_id, direction, text, trace_id, agent_id, created_at)
-      values (${outId}, ${anchor}, ${who.contactId ?? null}, ${who.loginId ?? null}, 'outbound', 'reply',
-              ${opts.traceId ?? null}, ${opts.agentId ?? null}, ${at(t++)})`;
+    await pastFreeze(async (tx) => {
+      await tx`insert into team_messages (id, owner_id, contact_id, login_id, direction, text, created_at)
+        values (${inId}, ${anchor}, ${who.contactId ?? null}, ${who.loginId ?? null}, 'inbound', 'ask', ${at(t++)})`;
+      await tx`insert into team_messages
+        (id, owner_id, contact_id, login_id, direction, text, trace_id, agent_id, created_at)
+        values (${outId}, ${anchor}, ${who.contactId ?? null}, ${who.loginId ?? null}, 'outbound', 'reply',
+                ${opts.traceId ?? null}, ${opts.agentId ?? null}, ${at(t++)})`;
+    });
+  }
+
+  /** team_messages is frozen since 0269 (W7c): this historical backfill's
+   *  rows are written past the freeze, in a transaction of their own that
+   *  runs no user trigger (the freeze is one). */
+  type Tx = ((strings: TemplateStringsArray, ...v: unknown[]) => Promise<Row[]>) & {
+    unsafe: (q: string) => Promise<Row[]>;
+  };
+  async function pastFreeze(fn: (tx: Tx) => Promise<unknown>): Promise<void> {
+    await (
+      admin as unknown as { begin: (f: (tx: Tx) => Promise<unknown>) => Promise<unknown> }
+    ).begin(async (tx) => {
+      await tx`set local session_replication_role = replica`;
+      await fn(tx);
+    });
   }
 
   beforeAll(async () => {
@@ -95,7 +112,7 @@ describe.skipIf(!URL)('0182 used_private backfill', () => {
     await turn('lee2', { loginId: lee }, { agentId: agentNoHistory });
     await turn('portal1', { contactId: contact }, { traceId: traceId.portal });
     await turn('portal2', { contactId: contact });
-    await admin.unsafe(backfillSql());
+    await pastFreeze((tx) => tx.unsafe(backfillSql()));
   }, 60_000);
 
   afterAll(async () => {
@@ -131,7 +148,7 @@ describe.skipIf(!URL)('0182 used_private backfill', () => {
   });
 
   it('is idempotent', async () => {
-    await admin.unsafe(backfillSql());
+    await pastFreeze((tx) => tx.unsafe(backfillSql()));
     expect(await marked('pat4')).toBe(true);
     expect(await marked('sam1')).toBe(false);
   });

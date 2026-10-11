@@ -1,110 +1,189 @@
 /**
- * Team chat conversation store. One forever-thread per member LOGIN
- * (`login_id`), the external mirror of the per-agent `assistant_messages`
- * model. Writers are the team turn pipeline (inbound member text, outbound
- * responder reply); readers are the member's own thread view, the admin
- * views, and the owner-side `team_chat_*` tools.
+ * A user's chat thread with a workspace assistant (workspaces W7c, 0269):
+ * the store the workspace turn engine (run-team-turn.ts) writes and reads.
+ * Since 0269 a member's thread with the Team assistant is an ordinary
+ * per-(agent, login) thread in `assistant_messages`, like the owner's: the
+ * turn writes its rows there with the login, row security lets only that
+ * login read them, and these helpers always name the login.
  *
- * Rows keyed by a contact (`contact_id`, no login) are the retired team-code
- * portal chat: history only, read by the admin archive and `team_chat_read`.
+ * `team_messages` is frozen (0269) and stays until W8. Its team-portal
+ * contact rows (no login) are history only, read by the owner's
+ * `team_chat_*` tools through `listTeamThread` and `listTeamMemberActivity`.
+ * Admin users no longer read other users' chats (the owner's answer of
+ * 2026-10-11): nothing here reads a login's thread for anyone but that login.
  */
-import { and, desc, eq, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lt, sql as dsql } from 'drizzle-orm';
 import {
-  authUsers,
+  assistantMessages,
   db,
   systemDb,
   teamMessages,
+  type AssistantMessage,
   type ConversationAttachment,
-  type TeamChannel,
+  type ConversationChannel,
   type TeamMessage,
 } from '@mantle/db';
-import type { MemberChatRow, TeamMemberActivity } from '@mantle/client-types';
+import type { TeamMemberActivity } from '@mantle/client-types';
 
-// The member's thread (team_messages) is infrastructure in the access matrix:
-// a team turn runs under the team viewer role (member logins Phase 0b) and
-// still reads and writes its own thread, so those helpers use systemDb.
+// The turn engine runs in the workspace's turn scope, whose role reads its
+// own login's rows but never writes: the writes use systemDb, each naming
+// the login and the agent explicitly.
 export type { TeamMemberActivity };
 
-export type AppendTeamMessageInput = {
-  ownerId: string;
-  /** The team portal contact. Null for a member LOGIN's turn (0167): the
-   *  login is the team member, and `loginId` names the thread. */
-  contactId: string | null;
-  direction: 'inbound' | 'outbound';
-  text: string;
-  agentId?: string | null;
-  model?: string | null;
-  channel?: TeamChannel;
-  attachments?: ConversationAttachment[];
-  traceId?: string | null;
-  error?: string | null;
-  /** 'pending' inserts the durable "thinking…" bubble the turn pipeline
-   *  finalizes later. Ignored when `error` is set (that's always 'failed'). */
-  status?: 'pending' | 'complete';
-  /** A member login's turn: the row joins that login's own thread. */
-  loginId?: string | null;
+/** A row of a login's thread as the turn engine reads it: the message, plus
+ *  the two marks only a workspace turn sets (in `data`). */
+export type ThreadMessage = AssistantMessage & {
+  /** The turn's trace (data.trace_id), for the deep link from a reply. */
+  traceId: string | null;
+  /** A reply that may quote the login's PRIVATE items (audit S3). */
+  usedPrivate: boolean;
 };
 
-/** Persist one turn row. Not fire-and-forget — the transcript IS the product
- *  here, so failures must surface to the turn pipeline. */
-export async function appendTeamMessage(input: AppendTeamMessageInput): Promise<TeamMessage> {
+function threadMessage(row: AssistantMessage): ThreadMessage {
+  const data = (row.data ?? {}) as { trace_id?: unknown; used_private?: unknown };
+  return {
+    ...row,
+    traceId: typeof data.trace_id === 'string' ? data.trace_id : null,
+    usedPrivate: data.used_private === true,
+  };
+}
+
+export type AppendThreadMessageInput = {
+  ownerId: string;
+  /** The workspace assistant whose thread this is. */
+  agentId: string;
+  /** The login whose thread this is. */
+  loginId: string;
+  direction: 'inbound' | 'outbound';
+  text: string;
+  model?: string | null;
+  channel?: ConversationChannel;
+  attachments?: ConversationAttachment[];
+  error?: string | null;
+  /** 'pending' inserts the durable "thinking…" bubble the turn finalizes
+   *  later. Ignored when `error` is set (that's always 'failed'). */
+  status?: 'pending' | 'complete';
+};
+
+/** Persist one turn row of a login's thread. Not fire-and-forget: the
+ *  transcript IS the product here, so failures must surface. */
+export async function appendThreadMessage(input: AppendThreadMessageInput): Promise<ThreadMessage> {
   const [row] = await systemDb
-    .insert(teamMessages)
+    .insert(assistantMessages)
     .values({
       ownerId: input.ownerId,
-      contactId: input.contactId,
+      agentId: input.agentId,
+      loginId: input.loginId,
       direction: input.direction,
       text: input.text,
-      agentId: input.agentId ?? null,
       model: input.model ?? null,
       channel: input.channel ?? 'web',
       attachments: input.attachments ?? [],
-      traceId: input.traceId ?? null,
       error: input.error ?? null,
       status: input.error ? 'failed' : (input.status ?? 'complete'),
-      loginId: input.loginId ?? null,
     })
     .returning();
-  if (!row) throw new Error('appendTeamMessage: insert returned no row');
-  return row;
+  if (!row) throw new Error('appendThreadMessage: insert returned no row');
+  return threadMessage(row);
 }
 
-export type UpdateTeamMessageOutcomeInput = {
+export type UpdateThreadMessageOutcomeInput = {
   ownerId: string;
+  /** The login whose row this is: a row of another login is never touched. */
+  loginId: string;
   id: string;
   status: 'complete' | 'failed';
   text?: string;
   model?: string | null;
   traceId?: string | null;
   error?: string | null;
-  /** Media the turn's tools produced — node references only, never bytes. See
-   *  the note in run-team-turn.ts for why this is written HERE and not left to
-   *  the live channel. */
+  /** Media the turn's tools produced: node references only, never bytes. */
   attachments?: ConversationAttachment[];
-  /** The reply may quote the member's private items (audit S3). */
+  /** The reply may quote the login's private items (audit S3). */
   usedPrivate?: boolean;
 };
 
 /** Finalize a pending outbound row (the durable "thinking…" bubble): fill the
- *  reply + flip status, or mark it failed. Mirrors updateAssistantMessageOutcome.
- *  Returns the updated row, or null if it vanished. */
-export async function updateTeamMessageOutcome(
-  args: UpdateTeamMessageOutcomeInput,
-): Promise<TeamMessage | null> {
+ *  reply and flip the status, or mark it failed. Returns the updated row, or
+ *  null if it vanished. */
+export async function updateThreadMessageOutcome(
+  args: UpdateThreadMessageOutcomeInput,
+): Promise<ThreadMessage | null> {
+  const patch: Record<string, unknown> = {};
+  if (args.traceId) patch.trace_id = args.traceId;
+  if (args.usedPrivate) patch.used_private = true;
   const [row] = await systemDb
-    .update(teamMessages)
+    .update(assistantMessages)
     .set({
       status: args.status,
       ...(args.text !== undefined ? { text: args.text } : {}),
       ...(args.model !== undefined ? { model: args.model } : {}),
-      ...(args.traceId !== undefined ? { traceId: args.traceId } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
       ...(args.attachments !== undefined ? { attachments: args.attachments } : {}),
-      ...(args.usedPrivate ? { usedPrivate: true } : {}),
+      ...(Object.keys(patch).length > 0
+        ? { data: dsql`${assistantMessages.data} || ${JSON.stringify(patch)}::jsonb` }
+        : {}),
     })
-    .where(and(eq(teamMessages.ownerId, args.ownerId), eq(teamMessages.id, args.id)))
+    .where(
+      and(
+        eq(assistantMessages.ownerId, args.ownerId),
+        eq(assistantMessages.loginId, args.loginId),
+        eq(assistantMessages.id, args.id),
+      ),
+    )
     .returning();
-  return row ?? null;
+  return row ? threadMessage(row) : null;
+}
+
+/**
+ * The most recent `limit` rows of one login's thread with one agent, in
+ * ASCENDING order (the context-loader shape). `since` bounds it to the open
+ * chat thread ("New chat"). Read on the caller's pool: inside the workspace
+ * turn scope, row security also holds it to the login's own rows.
+ */
+export async function recentThreadMessages(
+  ownerId: string,
+  agentId: string,
+  loginId: string,
+  limit = 30,
+  since?: Date | null,
+): Promise<ThreadMessage[]> {
+  const rows = await db
+    .select()
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.agentId, agentId),
+        eq(assistantMessages.loginId, loginId),
+        ...(since ? [gte(assistantMessages.createdAt, since)] : []),
+      ),
+    )
+    .orderBy(desc(assistantMessages.createdAt))
+    .limit(Math.min(Math.max(limit, 1), 200));
+  rows.reverse();
+  return rows.map(threadMessage);
+}
+
+/** One row of a login's own thread by id, or null (another login's row is
+ *  never found). For the turn's own tools (team_request_create). */
+export async function threadMessageById(
+  ownerId: string,
+  loginId: string,
+  id: string,
+): Promise<ThreadMessage | null> {
+  const [row] = await db
+    .select()
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.loginId, loginId),
+        eq(assistantMessages.id, id),
+      ),
+    )
+    .limit(1);
+  return row ? threadMessage(row) : null;
 }
 
 /** What an admin reads instead of a reply that may quote the member's
@@ -119,29 +198,23 @@ export function redactPrivateReply(row: TeamMessage): TeamMessage {
 }
 
 /**
- * A window of one contact's thread, newest-first from `before` (exclusive),
- * returned in ASCENDING order for rendering. `before` is an ISO timestamp
- * cursor (the createdAt of the oldest message the caller already has).
- *
- * Replies marked `usedPrivate` are REDACTED unless `withPrivate` is set: only
- * the member's own reads (their chat view, the turn's history) pass it, so an
- * admin path cannot forget to hide them.
+ * A window of one team-portal contact's OLD thread (history only: the
+ * team-code portal was retired, and its rows have no login), newest-first
+ * from `before` (exclusive), returned in ASCENDING order. Replies marked
+ * `usedPrivate` are redacted. Never a login's thread: those are read only by
+ * their own login (0269).
  */
 export async function listTeamThread(
   ownerId: string,
   contactId: string,
-  opts: { before?: string; limit?: number; loginId?: string; withPrivate?: boolean } = {},
+  opts: { before?: string; limit?: number } = {},
 ): Promise<TeamMessage[]> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
-  // A member login's thread is its own: keyed by the login, never by the
-  // contact (the contact's team-portal rows are a different thread).
-  const conds = opts.loginId
-    ? [eq(teamMessages.ownerId, ownerId), eq(teamMessages.loginId, opts.loginId)]
-    : [
-        eq(teamMessages.ownerId, ownerId),
-        eq(teamMessages.contactId, contactId),
-        isNull(teamMessages.loginId),
-      ];
+  const conds = [
+    eq(teamMessages.ownerId, ownerId),
+    eq(teamMessages.contactId, contactId),
+    isNull(teamMessages.loginId),
+  ];
   if (opts.before) {
     const cursor = new Date(opts.before);
     if (!Number.isNaN(cursor.getTime())) conds.push(lt(teamMessages.createdAt, cursor));
@@ -153,50 +226,7 @@ export async function listTeamThread(
     .orderBy(desc(teamMessages.createdAt))
     .limit(limit);
   rows.reverse();
-  return opts.withPrivate ? rows : rows.map(redactPrivateReply);
-}
-
-/**
- * A member login's OLD team portal chat, for the admin: a window of the
- * thread its contact (`auth.users.contact_id`, the contact it was invited
- * from) had on the team code. Rows with a login are never here, so this is
- * never the member's live thread, and it is always redacted like any admin
- * read. Null when the login has no contact. The member's own reads and the
- * turn's context never call this (Jason, 2026-09-28: old portal transcripts
- * are not merged into the live thread, which the model reads).
- */
-export async function listLoginPortalThread(
-  ownerId: string,
-  loginId: string,
-  opts: { before?: string; limit?: number } = {},
-): Promise<{ contactId: string; messages: TeamMessage[] } | null> {
-  const [login] = await systemDb
-    .select({ contactId: authUsers.contactId })
-    .from(authUsers)
-    .where(eq(authUsers.id, loginId))
-    .limit(1);
-  if (!login?.contactId) return null;
-  const messages = await listTeamThread(ownerId, login.contactId, {
-    limit: opts.limit ?? 50,
-    ...(opts.before ? { before: opts.before } : {}),
-  });
-  return { contactId: login.contactId, messages };
-}
-
-/** Most recent N turns of a thread in ASCENDING order — the context-loader
- *  shape (mirror of recentAssistantMessages). The member's own turn: private
- *  replies included. */
-export async function recentTeamMessages(
-  ownerId: string,
-  contactId: string,
-  limit = 30,
-  loginId?: string,
-): Promise<TeamMessage[]> {
-  return listTeamThread(ownerId, contactId, {
-    limit,
-    withPrivate: true,
-    ...(loginId ? { loginId } : {}),
-  });
+  return rows.map(redactPrivateReply);
 }
 
 /**
@@ -208,17 +238,7 @@ export async function recentTeamMessages(
  * never used to chat dropped off, and one that chats stays. Newest activity
  * first. `memberSince` is the first portal message.
  */
-export async function listTeamMemberActivity(
-  ownerId: string,
-  opts: {
-    /** false (W7a fix round 2): the threads alone, contact names null and no
-     *  read of the contacts: the caller names them in its own scope and
-     *  drops a contact it does not read (as the join drops a deleted one),
-     *  so a read of the threads on the system pool reads no item. */
-    names?: boolean;
-  } = {},
-): Promise<TeamMemberActivity[]> {
-  if (opts.names === false) return listPortalThreadsOnly(ownerId);
+export async function listTeamMemberActivity(ownerId: string): Promise<TeamMemberActivity[]> {
   const result = await db.execute(dsql`
     select n.id as contact_id,
            n.title as contact_name,
@@ -278,225 +298,4 @@ export async function listTeamMemberActivity(
     messageCount: Number(r.message_count),
     unread: Number(r.unread),
   }));
-}
-
-/** listTeamMemberActivity without the contacts (names: false): the portal
- *  threads of this owner, their contact ids and counts, contactName empty. */
-async function listPortalThreadsOnly(ownerId: string): Promise<TeamMemberActivity[]> {
-  const result = await db.execute(dsql`
-    select portal.contact_id,
-           portal.first_at,
-           portal.n as message_count,
-           last_msg.created_at as last_at,
-           last_msg.text as last_text,
-           last_msg.direction as last_direction,
-           (select count(*)
-              from team_messages tmu
-             where tmu.owner_id = ${ownerId}
-               and tmu.contact_id = portal.contact_id
-               and tmu.login_id is null
-               and tmu.direction = 'inbound'
-               and tmu.created_at > coalesce(
-                 (select c.last_read_at from team_read_cursors c
-                   where c.owner_id = ${ownerId} and c.contact_id = portal.contact_id),
-                 'epoch'::timestamptz))::int as unread
-      from (select tm.contact_id, min(tm.created_at) as first_at, count(*)::int as n
-              from team_messages tm
-             where tm.owner_id = ${ownerId}
-               and tm.contact_id is not null
-               and tm.login_id is null
-             group by tm.contact_id) portal
-      cross join lateral (
-        select tl.created_at, tl.text, tl.direction
-          from team_messages tl
-         where tl.owner_id = ${ownerId}
-           and tl.contact_id = portal.contact_id
-           and tl.login_id is null
-         order by tl.created_at desc
-         limit 1
-      ) last_msg
-     order by last_msg.created_at desc
-  `);
-  const rows = result as unknown as Array<{
-    contact_id: string;
-    first_at: string | Date;
-    message_count: number;
-    last_at: string | Date;
-    last_text: string;
-    last_direction: string;
-    unread: number;
-  }>;
-  const iso = (v: string | Date) => new Date(v).toISOString();
-  return rows.map((r) => ({
-    contactId: r.contact_id,
-    contactName: '',
-    memberSince: iso(r.first_at),
-    lastMessageAt: iso(r.last_at),
-    lastMessageText: r.last_text,
-    lastMessageDirection: r.last_direction as 'inbound' | 'outbound',
-    messageCount: Number(r.message_count),
-    unread: Number(r.unread),
-  }));
-}
-
-/** One member login and its chat thread, for the owner's views: the
- *  published contract row (GET /api/team-admin/member-chats). The name is
- *  the display name, else the part of the email before the @ (the name the
- *  agent uses for the member). */
-export type MemberChatActivity = MemberChatRow;
-
-/**
- * The owner's index of member chats (users are the team): every member login,
- * plus, by NAMED role, a client or admin login that still has a thread,
- * annotated with its thread's last message and size. Each row names its role
- * (`role`): a client is listed as a client, never as a team member, and is
- * never `active` here (client logins audit B26). Newest activity first,
- * NULLS LAST so a new member with no thread still shows. The retired
- * team-code portal threads are not here; `listTeamMemberActivity` indexes
- * those as history.
- */
-export async function listMemberChatActivity(ownerId: string): Promise<MemberChatActivity[]> {
-  const rows = await systemDb
-    .select({
-      loginId: authUsers.id,
-      displayName: authUsers.displayName,
-      email: authUsers.email,
-      role: authUsers.role,
-      disabledAt: authUsers.disabledAt,
-      lastMessageAt: dsql<string | null>`last_msg.created_at`,
-      lastMessageText: dsql<string | null>`last_msg.text`,
-      lastMessageDirection: dsql<string | null>`last_msg.direction`,
-      lastMessagePrivate: dsql<boolean | null>`last_msg.used_private`,
-      messageCount: dsql<number>`coalesce(msg_counts.n, 0)::int`,
-    })
-    .from(authUsers)
-    .leftJoin(
-      dsql`lateral (
-        select tm.created_at, tm.text, tm.direction, tm.used_private
-        from team_messages tm
-        where tm.owner_id = ${ownerId} and tm.login_id = ${authUsers.id}
-        order by tm.created_at desc
-        limit 1
-      ) last_msg`,
-      dsql`true`,
-    )
-    .leftJoin(
-      dsql`lateral (
-        select count(*) as n
-        from team_messages tm
-        where tm.owner_id = ${ownerId} and tm.login_id = ${authUsers.id}
-      ) msg_counts`,
-      dsql`true`,
-    )
-    .where(
-      or(
-        eq(authUsers.role, 'member'),
-        and(inArray(authUsers.role, ['client', 'admin']), dsql`coalesce(msg_counts.n, 0) > 0`),
-      ),
-    )
-    .orderBy(dsql`last_msg.created_at desc nulls last`, authUsers.email);
-
-  return rows.map((r) => ({
-    loginId: r.loginId,
-    name:
-      r.displayName?.trim() ||
-      r.email.split('@')[0] ||
-      (r.role === 'client' ? 'client' : 'team member'),
-    email: r.email,
-    active: r.role === 'member' && !r.disabledAt,
-    ...(r.role === 'member' || r.role === 'client' ? { role: r.role } : {}),
-    lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
-    // An admin view (the Member chats list, team_chat_list): a private reply
-    // shows the placeholder (audit S3).
-    lastMessageText: r.lastMessagePrivate ? PRIVATE_REPLY_PLACEHOLDER : r.lastMessageText,
-    lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
-    messageCount: r.messageCount,
-  }));
-}
-
-// ── A login's own unread count (the phone app's badge, migration mobile_roles_push) ──────
-
-/** What a member or a client has not read in its own thread. */
-export type LoginChatUnread = { unread: number; lastReadAt: string };
-
-/**
- * Where a read cursor may go: `at` (never the future), else now, on the
- * DATABASE's clock (the rows it is compared with are stamped there). A reply
- * still being written was made BEFORE this moment and finishes after it, so
- * the cursor stops just short of the oldest such row: that reply counts as
- * unread when it lands. A bubble older than an hour is a turn that crashed;
- * it holds nothing back.
- */
-function cursorTarget(ownerId: string, loginId: string, at?: Date) {
-  // `at` is a message's createdAt as the chat route sent it: milliseconds.
-  // The row holds microseconds, so the cursor goes to the END of that
-  // millisecond; else it would land just under the very message it names
-  // and that message would stay unread.
-  const asked = at
-    ? dsql`least(${at.toISOString()}::timestamptz + interval '999 microseconds', now())`
-    : dsql`now()`;
-  return dsql`least(${asked}, coalesce(
-    (select min(tm.created_at) - interval '1 microsecond'
-       from team_messages tm
-      where tm.owner_id = ${ownerId}
-        and tm.login_id = ${loginId}
-        and tm.direction = 'outbound'
-        and tm.status = 'pending'
-        and tm.created_at > now() - interval '1 hour'),
-    'infinity'::timestamptz))`;
-}
-
-/** The count against the stored cursor, compared in the database (a cursor
- *  read into JS loses its microseconds, and a reply made in the same
- *  millisecond would count as unread again). */
-async function readLoginChatUnread(ownerId: string, loginId: string): Promise<LoginChatUnread> {
-  const rows = (await systemDb.execute(dsql`
-    select c.last_read_at as "lastReadAt",
-           (select count(*)::int
-              from team_messages tm
-             where tm.owner_id = ${ownerId}
-               and tm.login_id = ${loginId}
-               and tm.direction = 'outbound'
-               and tm.status = 'complete'
-               and tm.created_at > c.last_read_at) as unread
-      from login_chat_read_cursors c
-     where c.login_id = ${loginId}`)) as unknown as Array<{
-    lastReadAt: string | Date;
-    unread: number;
-  }>;
-  const row = rows[0];
-  return {
-    unread: Number(row?.unread ?? 0),
-    lastReadAt: new Date(row?.lastReadAt ?? Date.now()).toISOString(),
-  };
-}
-
-/**
- * The login's unread count: finished replies in its own thread newer than
- * its read cursor. A login starts with nothing unread: the first call makes
- * the cursor (so a long history never shows as a badge of 50).
- */
-export async function loginChatUnread(ownerId: string, loginId: string): Promise<LoginChatUnread> {
-  await systemDb.execute(dsql`
-    insert into login_chat_read_cursors (login_id, last_read_at)
-    values (${loginId}, ${cursorTarget(ownerId, loginId)})
-    on conflict (login_id) do nothing`);
-  return readLoginChatUnread(ownerId, loginId);
-}
-
-/**
- * Move the login's read cursor to `at` (never the future), or to now. It
- * never moves backwards.
- */
-export async function markLoginChatRead(
-  ownerId: string,
-  loginId: string,
-  at?: Date,
-): Promise<LoginChatUnread> {
-  await systemDb.execute(dsql`
-    insert into login_chat_read_cursors (login_id, last_read_at)
-    values (${loginId}, ${cursorTarget(ownerId, loginId, at)})
-    on conflict (login_id) do update
-      set last_read_at = greatest(login_chat_read_cursors.last_read_at, excluded.last_read_at)`);
-  return readLoginChatUnread(ownerId, loginId);
 }

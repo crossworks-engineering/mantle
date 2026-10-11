@@ -216,6 +216,10 @@ export function makeRegisterContext(
   return {
     server,
     ownerId,
+    /** The connection's login (absent on stdio, and for a peer that names
+     *  none): whose thread a responder tool reads and writes (W7c fix
+     *  round 1, M1). */
+    loginId,
     transport,
     exposeTerminal,
     stripVectors,
