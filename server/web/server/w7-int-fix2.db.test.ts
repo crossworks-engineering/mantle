@@ -532,7 +532,8 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     await setAreas(maker, { settings: false });
     as(maker);
     // An unchanged brain key is no change: a profile save goes through.
-    expect((await put({ houseStyle: '' })).status).toBe(200);
+    const same = await put({ houseStyle: '' });
+    expect(same.status, await same.clone().text()).toBe(200);
     const refused = await put({ houseStyle: `${tag} style` });
     expect(refused.status).toBe(403);
     expect(await refused.text()).toMatch(/houseStyle/);
