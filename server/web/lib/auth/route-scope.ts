@@ -199,7 +199,7 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/files/files',
   // W6b fix round 1: a file's detail (its text too), so a member opens it
   // and a /n link finds its folder. Its bytes and thumbnail stay on
-  // /api/member/files/:id (?raw and ?thumb answer 403 member-login here).
+  // /api/member/files/:id (?raw and ?thumb answer a plain 401 here).
   'GET /api/files/files/:id',
   'GET /api/files/folders',
   'GET /api/files/folders/:id',

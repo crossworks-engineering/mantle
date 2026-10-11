@@ -42,26 +42,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // authenticates via the `?at=` asset token. Session (cookie/bearer) still wins.
   let user = await getOwnerForAsset(_req);
   // A member or a client (W6b fix round 1): the file's detail in its own
-  // scope (MEMBER_OPEN_READS), never the bytes here (they stay on
-  // /api/member/files/:id, an asset route of its own).
-  let viaLogin = false;
+  // scope (MEMBER_OPEN_READS), never the bytes here: ?raw and ?thumb stay a
+  // plain 401 for them (the bytes are on /api/member/files/:id).
   if (user instanceof Response) {
-    if (user.status !== 401) return user;
+    const asked = new URL(_req.url).searchParams;
+    if (user.status !== 401 || asked.has('raw') || asked.has('thumb')) return user;
     const login = await getOwnerOr401();
     if (login instanceof Response) return login;
     user = login;
-    viaLogin = true;
-  }
-  const url0 = new URL(_req.url);
-  if (viaLogin && (url0.searchParams.has('raw') || url0.searchParams.has('thumb'))) {
-    return NextResponse.json(
-      {
-        error: 'forbidden',
-        reason: 'member-login',
-        message: 'Open the bytes through /api/member/files/:id.',
-      },
-      { status: 403 },
-    );
   }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {

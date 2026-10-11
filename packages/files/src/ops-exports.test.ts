@@ -21,6 +21,8 @@ const PUBLIC = [
   // ops/shared.ts
   'ensureFilesRootBranch',
   // ops/files.ts
+  'fileNameTaken',
+  'FileNameTakenError',
   'upsertFile',
   'readFileById',
   'BYTE_DERIVED_DATA_KEYS',

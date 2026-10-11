@@ -14,6 +14,12 @@ const OWNER = '11111111-1111-4111-8111-111111111111';
 const PLAIN = '22222222-2222-4222-8222-222222222222';
 const FROM_MAIL = '33333333-3333-4333-8333-333333333333';
 
+// The caps (W6b fix round 1) read the database: passed through here.
+vi.mock('@/lib/list-workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/list-workspaces')>()),
+  capped: vi.fn(async (rows: unknown[]) => rows),
+  cappedOne: vi.fn(async (row: unknown) => row),
+}));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => ({ id: OWNER })),

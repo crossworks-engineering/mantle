@@ -500,12 +500,18 @@ BEGIN
   RETURN QUERY SELECT 'review off: ' || x."section", x."subject", x."metric", x."n"
                  FROM "public"."mantle_ws_review_off"() x;
 
-  -- No writer in a space while it moves (the routes are gone; an old server
+  -- Writers in a space while it moves (the routes are gone; an old server
   -- may still be up during a roll). Row locks on the personal spaces and
-  -- their space_items rows, in id order, not a table lock: a write into a
-  -- personal space checks its space row (FOR KEY SHARE) and waits, while a
-  -- brain write (its brain space row) never does. A table lock in EXCLUSIVE
-  -- mode waited on every open brain insert and timed out under load.
+  -- every space_items row, in id order, not a table lock. What they stop
+  -- (W6b fix round 1, the wording corrected): a NEW row in a personal space
+  -- (its foreign key check takes FOR KEY SHARE on its space row, which FOR
+  -- UPDATE blocks) and any change to a space_items row. They do not stop an
+  -- edit or a delete of an existing item row: that is serialised by the
+  -- item row's own lock against the fold's UPDATE below (the later one
+  -- waits; a row deleted before the fold reads it is simply not moved).
+  -- A brain write locks its brain space row only, so it never waits. A
+  -- table lock in EXCLUSIVE mode waited on every open brain insert (its
+  -- foreign key check needs ROW SHARE on spaces) and timed out under load.
   PERFORM 1 FROM "public"."spaces" s WHERE s."kind" = 'personal' ORDER BY s."id" FOR UPDATE;
   PERFORM 1 FROM "public"."space_items" si ORDER BY si."node_id" FOR UPDATE;
   PERFORM "public"."mantle_heads_bypass"('0267_workspaces_spaces_fold');
