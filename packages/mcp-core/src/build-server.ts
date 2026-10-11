@@ -94,6 +94,7 @@ import { registerFileTools } from './register/files';
 import { registerPageTools } from './register/pages';
 import { registerTableTools } from './register/tables';
 import { registerResponderTools } from './register/responder';
+import { ownerScopedServer } from './owner-scope';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
@@ -204,10 +205,16 @@ export function registerMantleTools(
     /** The login of this connection, handed to the builtins on their owner
      *  surface (W6b fix round 2, M-2). Absent on stdio. */
     loginId?: string;
+    /** The login whose scope every call runs in (W7a, owner-scope.ts): the
+     *  connection's login (a peer's bound login too, even when it names
+     *  none to the builtins). Default: `loginId`, else the anchor (stdio
+     *  runs as the anchor login). */
+    scopeLoginId?: string;
   } = {},
 ): void {
   const transport = opts.transport ?? 'http';
-  const target = opts.allow ? filteredServer(server, opts.allow, opts.guard) : server;
+  const scoped = ownerScopedServer(server, opts.scopeLoginId ?? opts.loginId ?? ownerId);
+  const target = opts.allow ? filteredServer(scoped, opts.allow, opts.guard) : scoped;
   const ctx = makeRegisterContext(target, ownerId, transport, opts.via, opts.loginId);
   const { exposeTerminal, registerBuiltinTools } = ctx;
 

@@ -13,9 +13,17 @@
  *    pool's own paths. modWs is the workspace when the login it answers is a
  *    Moderator there, else empty; no login (a heartbeat) reads only; a login
  *    with no user row in that workspace is refused;
- *  - the Admin assistant stays on the system pool until W6a (the Admin
- *    workspace holds every migrated item) and only carries its stamp (the
- *    workspace and login its runs and traces are written with);
+ *  - the Admin assistant (W7a) runs its turn in a turn scope of the Admin
+ *    workspace too, like every other assistant: it reads what Admin holds,
+ *    never another user's private workspace. It writes as an Admin user's
+ *    mutating request does (the system pool, with the turn's scope set on
+ *    its transactions for the database's checks). modWs is Admin when the
+ *    login it answers moderates Admin. A turn that answers no login (a
+ *    heartbeat, a run, an owner Telegram bot) acts for the owner: the
+ *    anchor login's write path, and nothing more. Its rows keep their
+ *    stamp (the workspace, and the login only when one asked).
+ *    MANTLE_ADMIN_READS=system puts it back on the system pool with its
+ *    stamp, as before W7a;
  *  - an agent with no workspace (a specialist, a worker) runs at its level,
  *    as before, and INSIDE a turn scope it runs in the caller's scope: a
  *    helper never widens it (plan 5.1).
@@ -28,9 +36,10 @@
  * Imported from `@mantle/db/viewer` where it can be, not `@mantle/db`: a test
  * that fakes the whole `@mantle/db` module keeps the real scope.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { asSystem, db, withTurnScope, withViewer, workspaces, workspaceUsers } from '@mantle/db';
 import {
+  adminReadsOnSystemPool,
   currentWorkspaceScope,
   isViewerLevel,
   withTurnStamp,
@@ -62,12 +71,17 @@ export class AgentWorkspaceError extends Error {
   }
 }
 
-/** The workspace row an assistant answers in, read on the system pool. */
-async function agentWorkspace(id: string): Promise<{ isAdmin: boolean }> {
+/** The workspace row an assistant answers in, read on the system pool:
+ *  whether it is Admin, and the brain (the anchor login) that owns it. */
+async function agentWorkspace(id: string): Promise<{ isAdmin: boolean; ownerId: string }> {
   const [row] = await asSystem(
     () =>
       db
-        .select({ isAdmin: workspaces.isAdmin, archivedAt: workspaces.archivedAt })
+        .select({
+          isAdmin: workspaces.isAdmin,
+          ownerId: workspaces.ownerId,
+          archivedAt: workspaces.archivedAt,
+        })
         .from(workspaces)
         .where(eq(workspaces.id, id))
         .limit(1),
@@ -75,7 +89,7 @@ async function agentWorkspace(id: string): Promise<{ isAdmin: boolean }> {
   );
   if (!row) throw new AgentWorkspaceError('This assistant’s workspace no longer exists.');
   if (row.archivedAt) throw new AgentWorkspaceError('This assistant’s workspace is archived.');
-  return { isAdmin: row.isAdmin };
+  return { isAdmin: row.isAdmin, ownerId: row.ownerId };
 }
 
 /** `loginId`'s user row in workspace `wsId` (system pool), or null when the
@@ -94,15 +108,29 @@ async function membership(wsId: string, loginId: string): Promise<{ moderator: b
 }
 
 /**
- * Whether the agent's turns run in a turn scope (W4b fix round 1, M2): it
- * answers in a workspace other than Admin. False for the Admin assistant
- * (the system pool until W6a) and for an agent with no workspace (a helper,
- * at its level). A workspace that is gone or archived throws
+ * Where the agent's turns run (W4b fix round 1, M2; W7a): 'admin' for the
+ * Admin assistant (a turn scope of Admin, or the system pool under
+ * MANTLE_ADMIN_READS=system), 'workspace' for an assistant of any other
+ * workspace (a turn scope of it), 'none' for an agent with no workspace (a
+ * helper, at its level). A workspace that is gone or archived throws
  * AgentWorkspaceError (never read as no workspace).
  */
+export async function agentWorkspaceKind(
+  agent: ScopedAgent,
+): Promise<'admin' | 'workspace' | 'none'> {
+  if (!agent.workspaceId) return 'none';
+  return (await agentWorkspace(agent.workspaceId)).isAdmin ? 'admin' : 'workspace';
+}
+
+/**
+ * Whether the agent's turns run in a turn scope: an assistant of any
+ * workspace, the Admin one included since W7a (not under
+ * MANTLE_ADMIN_READS=system). False for an agent with no workspace.
+ */
 export async function agentTurnScoped(agent: ScopedAgent): Promise<boolean> {
-  if (!agent.workspaceId) return false;
-  return !(await agentWorkspace(agent.workspaceId)).isAdmin;
+  const kind = await agentWorkspaceKind(agent);
+  if (kind === 'admin') return !adminReadsOnSystemPool();
+  return kind === 'workspace';
 }
 
 /**
@@ -112,7 +140,13 @@ export async function agentTurnScoped(agent: ScopedAgent): Promise<boolean> {
 export async function withAgentScope<T>(
   agent: ScopedAgent,
   fn: () => Promise<T>,
-  opts: { loginId?: string | null } = {},
+  opts: {
+    loginId?: string | null;
+    /** The login an owner surface names (the web chat's signed-in login,
+     *  an MCP connection's): whom the Admin assistant answers when no
+     *  member or client login is given. Ignored for other assistants. */
+    ownerLoginId?: string | null;
+  } = {},
 ): Promise<T> {
   const open = currentWorkspaceScope();
   const wsId = agent.workspaceId ?? null;
@@ -127,14 +161,32 @@ export async function withAgentScope<T>(
       'An assistant of another workspace cannot run inside this turn: its scope would change.',
     );
   }
-  const loginId = opts.loginId ?? null;
   const ws = await agentWorkspace(wsId);
   if (ws.isAdmin) {
-    // The Admin assistant: the system pool until W6a, with its stamp.
-    return withTurnStamp({ workspaceId: wsId, loginId }, () =>
-      withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn),
+    const asked = opts.loginId ?? opts.ownerLoginId ?? null;
+    const stamp = { workspaceId: wsId, loginId: asked };
+    // The rollback switch: the system pool, with its stamp, as before W7a.
+    if (adminReadsOnSystemPool()) {
+      return withTurnStamp(stamp, () =>
+        withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn),
+      );
+    }
+    // A turn that answers no login acts for the owner (the anchor login).
+    const actsFor = asked ?? ws.ownerId;
+    const user = await membership(wsId, actsFor);
+    if (!user) {
+      throw new AgentWorkspaceError(
+        'The login this turn answers is not a user of the Admin workspace.',
+      );
+    }
+    const modWs = user.moderator ? [wsId] : [];
+    return withTurnStamp(stamp, () =>
+      withTurnScope({ kind: 'assistant', loginId: actsFor, ws: [wsId], modWs }, fn, {
+        writes: true,
+      }),
     );
   }
+  const loginId = opts.loginId ?? null;
   // The login the turn answers must be a user of the workspace (L3): a
   // login with no row there is refused, never read as a reader without one.
   const user = loginId ? await membership(wsId, loginId) : null;
@@ -151,9 +203,20 @@ export async function withAgentScope<T>(
 export function withAgentViewer<T>(
   agent: ScopedAgent,
   fn: () => Promise<T>,
-  opts: { loginId?: string | null } = {},
+  opts: { loginId?: string | null; ownerLoginId?: string | null } = {},
 ): Promise<T> {
   return withAgentScope(agent, fn, opts);
+}
+
+/** The login an owner surface names (the web chat's signed-in login, an MCP
+ *  connection's or an API key's), if any: whom the Admin assistant answers
+ *  (W7a). Never read from model arguments. */
+export function ownerSurfaceLogin(surface: unknown): string | null {
+  const s = surface as { kind?: string; loginId?: unknown } | null | undefined;
+  if ((s?.kind === 'web' || s?.kind === 'owner') && typeof s.loginId === 'string') {
+    return s.loginId !== '' ? s.loginId : null;
+  }
+  return null;
 }
 
 /** The login a tool surface names (a member's or a client's turn), if any. */
@@ -169,16 +232,45 @@ export function surfaceLoginId(surface: unknown): string | null {
  * Re-enter the scope a run was made in (plan 5.4, U5): a run carries the
  * workspace and login of the turn that planned it (runs.workspace_id and
  * login_id, stamped at write; NULL = Admin). A worker calls this before its
- * first query for the run: the Admin workspace (or none) runs as before on
- * the system pool with its stamp; any other workspace in a turn scope of
- * it, read only unless the run's login moderates there.
+ * first query for the run: the Admin workspace in a turn scope of Admin
+ * (W7a; the run's login, else the owner), any other workspace in a turn
+ * scope of it, read only unless the run's login moderates there. A run with
+ * no workspace is the Admin assistant's (NULL = Admin): the brain's Admin
+ * workspace. MANTLE_ADMIN_READS=system, or a brain not on workspaces: the
+ * system pool, as before.
  */
 export async function withRunScope<T>(
-  run: { workspaceId?: string | null; loginId?: string | null },
+  run: { workspaceId?: string | null; loginId?: string | null; ownerId?: string | null },
   fn: () => Promise<T>,
 ): Promise<T> {
-  if (!run.workspaceId) return fn();
-  return withAgentScope({ audience: 'admin', workspaceId: run.workspaceId }, fn, {
+  let wsId = run.workspaceId ?? null;
+  if (!wsId) {
+    if (adminReadsOnSystemPool() || !run.ownerId) return fn();
+    wsId = await adminWorkspaceOf(run.ownerId);
+    if (!wsId) return fn();
+  }
+  return withAgentScope({ audience: 'admin', workspaceId: wsId }, fn, {
     loginId: run.loginId ?? null,
   });
+}
+
+/** The brain's live Admin workspace (system pool), or null on a brain not
+ *  on workspaces. */
+async function adminWorkspaceOf(ownerId: string): Promise<string | null> {
+  const [row] = await asSystem(
+    () =>
+      db
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(
+          and(
+            eq(workspaces.ownerId, ownerId),
+            eq(workspaces.isAdmin, true),
+            isNull(workspaces.archivedAt),
+          ),
+        )
+        .limit(1),
+    'agent-workspace',
+  );
+  return row?.id ?? null;
 }

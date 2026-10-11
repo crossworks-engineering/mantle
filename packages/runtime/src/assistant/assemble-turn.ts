@@ -96,6 +96,9 @@ export type AssembleResponderTurnOptions = {
   agent: Agent;
   /** The login the turn answers (workspaces W4b): its scope's login. */
   loginId?: string | null;
+  /** The owner surface's signed-in login (W7a): whom the Admin assistant
+   *  answers when `loginId` is not set. */
+  ownerLoginId?: string | null;
   /** Pre-loaded profile preferences. Loaded by the caller because the web
    *  path may have just auto-switched the timezone (applyAutoTimezone) and
    *  the time line below must reflect the updated prefs. */
@@ -188,6 +191,7 @@ export function assembleResponderTurn(
 ): Promise<AssembledResponderTurn> {
   return withAgentViewer(opts.agent, () => assembleResponderTurnAtLevel(opts), {
     loginId: opts.loginId ?? null,
+    ownerLoginId: opts.ownerLoginId ?? null,
   });
 }
 

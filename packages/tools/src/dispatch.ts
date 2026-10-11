@@ -14,7 +14,6 @@ import {
   asSystem,
   db,
   lowerLevel,
-  scopeHoldsAdmin,
   toolGroups,
   type Tool,
   type ToolHandler,
@@ -55,6 +54,7 @@ import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 import { registerToolDispatcher } from './dispatch-bridge';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
+import { adminToolGate, runGated } from './admin-gate';
 
 // Same-package callers that must not import this module (it imports the
 // registry, which imports every builtin) reach dispatchTool through the bridge.
@@ -64,31 +64,9 @@ import { errorMessage } from '@mantle/std';
 
 const HTTP_TIMEOUT_MS_DEFAULT = 15_000;
 
-/**
- * Tools that read the owner's own history or the run machinery (workspaces
- * R3, W4b): adminOnly whatever group grants them. In a workspace turn scope
- * that does not hold the Admin workspace they are refused, as every
- * ownerOnly tool is. Matched on the row's slug AND its builtin handler ref,
- * so a row that renames a builtin is still caught. The heartbeat list and
- * fire tools reach every heartbeat of the brain: a heartbeat of another
- * workspace changes only its own row (heartbeats/tools.ts).
- */
-export const ADMIN_ONLY_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  'replay_window',
-  'find_window',
-  'export_node',
-  'run_plan',
-  'run_append',
-  'run_state',
-  'run_cancel',
-  'run_audit',
-  'heartbeat_list',
-  'heartbeat_fire',
-]);
-
-/** The refusal of an adminOnly tool outside the Admin workspace. */
-export const ADMIN_ONLY_ERROR =
-  'This tool belongs to the Admin workspace; it does not run in this workspace.';
+// The adminOnly list and the Admin gate live in admin-gate.ts (W7a: the
+// Admin MCP surface gates its calls with them too).
+export { ADMIN_ONLY_ERROR, ADMIN_ONLY_TOOL_SLUGS } from './admin-gate';
 
 export async function dispatchTool(
   tool: Tool,
@@ -113,16 +91,11 @@ export async function dispatchTool(
       return { ok: false, error: OWNER_ONLY_ERROR };
     }
     // adminOnly (W4b, plan 5.4): an ownerOnly or adminOnly tool runs in a
-    // workspace turn scope only when that scope holds the Admin workspace.
-    if (
-      (def?.ownerOnly ||
-        ADMIN_ONLY_TOOL_SLUGS.has(tool.slug) ||
-        ADMIN_ONLY_TOOL_SLUGS.has(h.ref)) &&
-      currentWorkspaceScope() &&
-      !(await scopeHoldsAdmin())
-    ) {
-      return { ok: false, error: ADMIN_ONLY_ERROR };
-    }
+    // workspace scope only when that scope holds the Admin workspace; an
+    // Admin-area tool only when the scope may do that area, and then on the
+    // system pool (W7a, admin-gate.ts).
+    const gate = await adminToolGate(tool.slug, { ref: h.ref, ownerOnly: def?.ownerOnly });
+    if ('refused' in gate) return { ok: false, error: gate.refused };
     try {
       // Declared referential preconditions run first — a call aimed at a
       // missing or wrong-type node gets a uniform teaching error before any
@@ -132,7 +105,7 @@ export async function dispatchTool(
         const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
         if (failure) return failure;
       }
-      return await fn(input, ctx);
+      return await runGated(gate, () => fn(input, ctx));
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

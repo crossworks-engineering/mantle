@@ -33,6 +33,7 @@ import {
   entities,
   facts,
   nodes,
+  scopeHoldsAdmin,
   type Agent,
   type AgentMemoryConfig,
   type AssistantMessage,
@@ -198,7 +199,7 @@ import {
 } from './conversation/select';
 import { withAgentViewer } from './agent-viewer';
 import { withoutClientSourced } from '@mantle/tools/client-sourced';
-import { currentWorkspaceScope, isUnscoped } from '@mantle/db/viewer';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
 
 /** How many section-level passages to auto-pull into context (the fine-grained
  *  complement to the node-level content hits). The budget that matters is
@@ -581,6 +582,7 @@ export function loadConversationContext(
 ): Promise<ConversationContext> {
   return withAgentViewer(args.agent, () => loadConversationContextAtLevel(args), {
     loginId: args.loginId ?? null,
+    ownerLoginId: args.ownerLoginId ?? null,
   });
 }
 
@@ -606,6 +608,9 @@ async function loadConversationContextAtLevel(args: {
   recentTurnTexts?: readonly string[];
   /** The login the turn answers (workspaces W4b): its scope's login. */
   loginId?: string | null;
+  /** The owner surface's signed-in login (W7a): whom the Admin assistant
+   *  answers when `loginId` is not set. */
+  ownerLoginId?: string | null;
 }): Promise<ConversationContext> {
   const { ownerId, agent, inboundText } = args;
   // Decision trace v1 (snapshot.trace): what each stage considered, kept and
@@ -618,8 +623,9 @@ async function loadConversationContextAtLevel(args: {
   // row rules decide what is read, and some arms are not readable at all:
   // entity names and the relation graph (learned from every source, email
   // included), the owner's own chat history and Journal. Those arms are
-  // skipped, not left to fail on a permission error.
-  const belowAdmin = !isUnscoped();
+  // skipped, not left to fail on a permission error. The Admin assistant
+  // (W7a: a turn scope of Admin) reads them: the scope holds Admin.
+  const belowAdmin = !(await scopeHoldsAdmin());
   const entityNameCol = belowAdmin ? sql<string | null>`null` : entities.name;
   const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
   const historyLimit = memoryConfig.history_limit ?? 20;

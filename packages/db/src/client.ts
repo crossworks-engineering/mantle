@@ -415,7 +415,11 @@ export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>):
  * inside any other scope it is refused. `modWs` must be a subset of `ws`.
  * Writes are not made here: they go through the system pool's own paths.
  */
-export async function withTurnScope<T>(scope: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
+export async function withTurnScope<T>(
+  scope: WorkspaceScope,
+  fn: () => Promise<T>,
+  opts: { writes?: boolean } = {},
+): Promise<T> {
   if (scope.loginId !== null && !UUID_RE.test(scope.loginId)) {
     throw new Error('withTurnScope: loginId must be a uuid');
   }
@@ -432,15 +436,37 @@ export async function withTurnScope<T>(scope: WorkspaceScope, fn: () => Promise<
     ws: Object.freeze([...new Set(scope.ws)].sort()),
     modWs: Object.freeze([...new Set(scope.modWs)].sort()),
   });
-  return runInTurnScope(frozen, fn);
+  // An Admin turn (W7a, `writes`): the Admin assistant and the Admin MCP
+  // surface write as an Admin user's mutating request does, on the system
+  // pool with the turn's scope set on its transactions (the database's
+  // move, create and delete checks), and read drafts as the editor does.
+  return runInTurnScope(
+    frozen,
+    fn,
+    opts.writes ? Object.freeze({ writes: true, drafts: true }) : undefined,
+  );
+}
+
+/** The transaction handle `db.transaction` gives its callback. */
+type ReadTx = Parameters<Parameters<PostgresJsDatabase<typeof schema>['transaction']>[0]>[0];
+
+/**
+ * A transaction that only READS (W7a): in a turn or request scope it runs
+ * on the workspace role with the scope set, even where `db.transaction` is
+ * a write (a mutating request, an Admin turn) and goes to the system pool.
+ * A vector search's settings transaction (withHnswPool) uses it, so a scoped
+ * search never reads past the scope. Anywhere else it is `db.transaction`.
+ */
+export function readTransaction<T>(fn: (tx: ReadTx) => Promise<T>): Promise<T> {
+  return getDb().transaction(fn);
 }
 
 const holdsAdmin = new WeakMap<WorkspaceScope, Promise<boolean>>();
 
 /**
  * Whether the current code may do Admin-workspace work (plan 5.4, adminOnly):
- * unscoped system work (the owner's paths, the Admin assistant until W6a)
- * yes; a level or personal-space scope no; a workspace scope when it holds
+ * unscoped system work (the owner's paths, and the Admin assistant and the
+ * Admin MCP surface under MANTLE_ADMIN_READS=system) yes; a level or personal-space scope no; a workspace scope when it holds
  * the Admin workspace (asked of the database once per scope). Fails closed:
  * an error reads as no.
  */
@@ -468,9 +494,11 @@ export async function scopeHoldsAdmin(): Promise<boolean> {
  * Whether the current code may do an "Admin only" thing in `area` (plan S2,
  * 2.4): system work may; a user scope may when it holds the Admin workspace,
  * its login is a user there and its limits leave the area on
- * (mantle_scope_has_area, the rule of areasFor); a level scope, a link and an
- * assistant turn never may (the Admin assistant runs as system work until
- * W6a). An unknown kind or area is refused (fails closed).
+ * (mantle_scope_has_area, the rule of areasFor); so may an assistant turn
+ * that answers such a login (W7a: the Admin assistant, which answers the
+ * owner when no login asks). A level scope, a link and an assistant turn
+ * with no login never may. An unknown kind or area is refused (fails
+ * closed).
  */
 export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
   if (!SCOPE_AREAS.includes(area)) return false;
@@ -478,7 +506,8 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
   switch (scope.kind) {
     case 'system':
       return true;
-    case 'user': {
+    case 'user':
+    case 'assistant': {
       if (!scope.loginId) return false;
       try {
         const rows = (await getDb().execute(

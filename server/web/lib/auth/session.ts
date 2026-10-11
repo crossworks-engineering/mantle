@@ -34,6 +34,7 @@ import {
   noteRequestWriteScope,
   noteRequestCreateHome,
   noteRequestOwnRule,
+  adminReadsOnSystemPool as dbAdminReadsOnSystemPool,
   type CreateHome,
   type RequestScopeMode,
 } from '@mantle/db';
@@ -748,12 +749,13 @@ function routeOfRequest(): { method: string; pattern: string | null } {
 
 /**
  * The W6a rollback switch: MANTLE_ADMIN_READS=system puts an Admin user's
- * reads back on the system pool (as before W6a). Default: scoped. Plan 14
- * and R9: it stays on every box until B2 has run clean there two weeks.
- * Members and clients are scoped whatever it says (plan T4).
+ * reads back on the system pool (as before W6a), and since W7a the Admin
+ * assistant's turns and the Admin MCP surface too (@mantle/db). Default:
+ * scoped. Plan 14 and R9: it stays on every box until B2 has run clean
+ * there two weeks. Members and clients are scoped whatever it says (plan T4).
  */
 export function adminReadsOnSystemPool(): boolean {
-  return (env('MANTLE_ADMIN_READS') ?? '').trim().toLowerCase() === 'system';
+  return dbAdminReadsOnSystemPool();
 }
 
 /** The mode of a request scope for the current request. */

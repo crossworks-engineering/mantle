@@ -42,7 +42,12 @@ import {
 } from '@mantle/tools/client-sourced';
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
-import { agentLevel, surfaceLoginId, withAgentViewer } from '../agent/agent-viewer';
+import {
+  agentLevel,
+  ownerSurfaceLogin,
+  surfaceLoginId,
+  withAgentViewer,
+} from '../agent/agent-viewer';
 
 /** Rebuild the persistable thought trail from a turn's tool calls — the same
  *  grounded action labels the live trail shows (search/write/delegate), via the
@@ -214,6 +219,7 @@ export function loadContextStep(
 export function runResponderLoop(opts: RunResponderLoopOptions): Promise<ResponderLoopResult> {
   return withAgentViewer(opts.agent, () => runResponderLoopAtLevel(opts), {
     loginId: surfaceLoginId(opts.surface),
+    ownerLoginId: ownerSurfaceLogin(opts.surface),
   });
 }
 

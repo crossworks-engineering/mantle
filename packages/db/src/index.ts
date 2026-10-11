@@ -40,6 +40,7 @@ export {
   isWriteSql,
   executeWrite,
   NotAWriteError,
+  readTransaction,
   type Db,
 } from './client';
 export {
@@ -103,6 +104,7 @@ export {
   ownRuleSystemReads,
   currentRequestOutcome,
   currentRequestMode,
+  adminReadsOnSystemPool,
   narrowsWorkspaceScope,
   type RequestScopeMode,
   type RequestOutcome,

@@ -83,7 +83,7 @@ import { env } from '@mantle/config';
 import { publicToolError, UUID_RE } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
 import { isUnscoped, type ViewerLevel } from '@mantle/db/viewer';
-import { surfaceLoginId, withAgentScope } from './agent-viewer';
+import { ownerSurfaceLogin, surfaceLoginId, withAgentScope } from './agent-viewer';
 
 export const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -611,7 +611,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   return withAgentScope(
     { audience: args.agentLevel ?? 'admin', workspaceId: args.agentWorkspaceId ?? null },
     () => runToolLoopAtLevel(args),
-    { loginId: surfaceLoginId(args.surface) },
+    { loginId: surfaceLoginId(args.surface), ownerLoginId: ownerSurfaceLogin(args.surface) },
   );
 }
 

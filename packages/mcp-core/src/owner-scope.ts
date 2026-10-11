@@ -1,0 +1,84 @@
+/**
+ * The owner MCP surface runs in a scope (workspaces W7a): an Admin login's
+ * MCP (OAuth, an API key, a peer bound to it, and stdio, which runs as the
+ * anchor login) reads what that login's workspaces hold, like every other
+ * user, never the whole system pool.
+ *
+ * Every tool registered on the owner surface is wrapped here, the
+ * hand-written ones too: each CALL enters the login's scope
+ * (loginScopeFor: the union of its live workspaces, Moderator where it is
+ * one) as a turn scope that writes as an Admin user's mutating request does
+ * (the system pool, with the scope set on its transactions for the
+ * database's move, create and delete checks). Inside it the Admin gate
+ * (@mantle/tools admin-gate.ts) runs first: an ownerOnly or adminOnly tool
+ * needs a scope that holds Admin, an Admin-area tool the login's area
+ * (then on the system pool, after that check).
+ *
+ * MANTLE_ADMIN_READS=system, or a brain not on workspaces: the system pool,
+ * as before W7a.
+ */
+import type { McpServer } from '@modelcontextprotocol/server';
+import {
+  adminReadsOnSystemPool,
+  brainOnWorkspacesNow,
+  loginScopeFor,
+  withTurnScope,
+} from '@mantle/db';
+import { adminToolGate, getBuiltin, runGated } from '@mantle/tools';
+
+/** A tool reply that refuses the call. */
+function refusal(text: string) {
+  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
+}
+
+/** The reply when the login holds no workspace at all. */
+export const NO_WORKSPACE_ERROR =
+  'This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one.';
+
+/**
+ * Run one call of tool `slug` in `loginId`'s scope, gated (see the module
+ * comment). `call` is the tool's own handler.
+ */
+export async function runInOwnerMcpScope<T>(
+  loginId: string,
+  slug: string,
+  call: () => Promise<T>,
+): Promise<T | ReturnType<typeof refusal>> {
+  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return call();
+  const scope = await loginScopeFor(loginId);
+  if (scope.ws.length === 0) return refusal(NO_WORKSPACE_ERROR);
+  return withTurnScope(
+    scope,
+    async () => {
+      const gate = await adminToolGate(slug, { ownerOnly: getBuiltin(slug)?.ownerOnly });
+      if ('refused' in gate) return refusal(gate.refused);
+      return runGated(gate, call);
+    },
+    { writes: true },
+  );
+}
+
+/**
+ * `server`, with every tool registered on it from here on called in
+ * `loginId`'s scope (runInOwnerMcpScope).
+ */
+export function ownerScopedServer(server: McpServer, loginId: string): McpServer {
+  return new Proxy(server, {
+    get(target, prop) {
+      if (prop === 'registerTool') {
+        const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
+        return (name: unknown, config: unknown, cb: unknown) => {
+          if (typeof name !== 'string' || typeof cb !== 'function') {
+            return fn.call(target, name, config, cb);
+          }
+          const handler = cb as (args: unknown, extra: unknown) => Promise<unknown>;
+          return fn.call(target, name, config, (args: unknown, extra: unknown) =>
+            runInOwnerMcpScope(loginId, name, () => handler(args, extra)),
+          );
+        };
+      }
+      const v = Reflect.get(target, prop, target) as unknown;
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
+}

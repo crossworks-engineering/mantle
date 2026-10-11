@@ -29,7 +29,7 @@
  * uses `current_setting(..., missing_ok => true)`, which yields NULL rather
  * than erroring on older pgvector.
  */
-import { db } from '@mantle/db';
+import { db, readTransaction } from '@mantle/db';
 import { sql } from 'drizzle-orm';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -62,7 +62,9 @@ export async function withHnswPool<T>(
     )) as unknown as Array<{ v: string | null }>;
     hasIterativeScan = probe[0]?.v != null;
   }
-  return db.transaction(async (tx) => {
+  // A read (W7a): in an Admin turn `db.transaction` is a write and goes to
+  // the system pool; this one stays in the scope.
+  return readTransaction(async (tx) => {
     // GUC values can't be bind parameters; `ef` is a clamped integer.
     await tx.execute(sql.raw(`set local hnsw.ef_search = ${ef}`));
     if (hasIterativeScan) {

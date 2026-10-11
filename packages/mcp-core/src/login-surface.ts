@@ -596,6 +596,7 @@ export function registerPreparedTools(
       registerMantleTools(server, caller.anchorId, {
         transport: opts.transport ?? 'http',
         loginId: caller.loginId,
+        scopeLoginId: caller.loginId,
       });
       return;
     }
@@ -607,6 +608,8 @@ export function registerPreparedTools(
       // A peer the owner did not register names no login to the builtins:
       // its app_delete is held for the owner (W6b fix round 3, M-1).
       ...(caller.via === 'peer' && !caller.peerByOwner ? {} : { loginId: caller.loginId }),
+      // Every call runs in the bound login's scope (W7a), named or not.
+      scopeLoginId: caller.loginId,
       via: caller.via === 'key' ? 'api' : 'federation',
       allow: (slug) => ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller),
       // A key without Search does not reach email through Files (M4).

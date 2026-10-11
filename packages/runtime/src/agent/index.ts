@@ -71,6 +71,8 @@ export {
   AgentWorkspaceError,
   agentLevel,
   agentTurnScoped,
+  agentWorkspaceKind,
+  ownerSurfaceLogin,
   surfaceLoginId,
   withAgentScope,
   withAgentViewer,

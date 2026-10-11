@@ -407,7 +407,8 @@ export function noteRequestWriteScope(ws: WorkspaceScope): void {
  *  (their transactions are not this request's writes). */
 export function requestWriteScope(): WorkspaceScope | null {
   const s = store.getStore();
-  if (s) return null;
+  // An Admin turn (W7a): its writes are checked in its own scope.
+  if (s) return s !== SYSTEM_EXIT && s.perQuery && s.ws && s.request?.writes ? s.ws : null;
   const slot = requestSlots.getStore();
   if (!slot) return null;
   if (slot.writeScope) return slot.writeScope;
@@ -494,9 +495,21 @@ export function currentRequestOutcome(): RequestOutcome | null {
 }
 
 /** The request scope's mode when the current code runs in it directly (not
- *  in a narrower scope entered inside it), else null. */
+ *  in a narrower scope entered inside it), else null. An Admin turn (W7a:
+ *  the Admin assistant, the Admin MCP surface) carries one too: its writes
+ *  go to the system pool as a mutating request's do. */
 export function currentRequestMode(): RequestScopeMode | null {
   return active()?.request ?? null;
+}
+
+/**
+ * The W6a and W7a rollback switch: MANTLE_ADMIN_READS=system puts an Admin
+ * user's reads (its requests, the Admin assistant's turns and the Admin MCP
+ * surface) back on the system pool, as before W6a. Default: scoped. Members
+ * and clients are scoped whatever it says (plan T4).
+ */
+export function adminReadsOnSystemPool(): boolean {
+  return (env('MANTLE_ADMIN_READS') ?? '').trim().toLowerCase() === 'system';
 }
 
 /**
@@ -695,18 +708,26 @@ export function runInWorkspaceTx<T>(
  * transaction) is refused, so a scope is never widened or swapped. Only
  * client.ts calls this (`withTurnScope`), with a validated, frozen scope.
  */
-export function runInTurnScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
+export function runInTurnScope<T>(
+  ws: WorkspaceScope,
+  fn: () => Promise<T>,
+  writes?: RequestScopeMode,
+): Promise<T> {
+  const scope: Scope = writes
+    ? { level: 'public', ws, perQuery: true, request: Object.freeze({ ...writes }) }
+    : { level: 'public', ws, perQuery: true };
   const open = active();
   if (open) {
     if (open.perQuery && open.ws && sameWorkspaceScope(open.ws, ws)) return fn();
-    // An assistant turn inside a request scope: only one that reads within
-    // the login's own scope (its workspace is one of the login's).
+    // An assistant turn inside a request scope (or an Admin turn, W7a):
+    // only one that reads within the login's own scope (its workspace is
+    // one of the login's).
     if (open.request && open.ws && narrowsWorkspaceScope(open.ws, ws)) {
-      return store.run({ level: 'public', ws, perQuery: true }, fn);
+      return store.run(scope, fn);
     }
     return Promise.reject(new Error('withTurnScope: already inside another scope'));
   }
-  return store.run({ level: 'public', ws, perQuery: true }, fn);
+  return store.run(scope, fn);
 }
 
 /** Whether `inner` reads and edits no more than `outer`: its workspaces
@@ -745,13 +766,19 @@ export function withTurnStamp<T>(stamp: TurnStamp, fn: () => Promise<T>): Promis
   return stampStore.run({ ...stamp }, fn);
 }
 
-/** The current turn's stamp: the turn scope's, else the carried one. */
+/** The current turn's stamp: the turn scope's, else the carried one. The
+ *  Admin assistant's turn (W7a) carries its stamp inside its scope: a turn
+ *  that answers no login acts for the owner, but its rows stay unstamped
+ *  by login, as they were on the system pool. */
 export function currentTurnStamp(): TurnStamp | null {
   const ws = active()?.ws;
+  const carried = stampStore.getStore() ?? null;
   if (ws) {
-    return ws.ws.length === 1 ? { workspaceId: ws.ws[0]!, loginId: ws.loginId } : null;
+    if (ws.ws.length !== 1) return null;
+    if (carried && carried.workspaceId === ws.ws[0]) return carried;
+    return { workspaceId: ws.ws[0]!, loginId: ws.loginId };
   }
-  return stampStore.getStore() ?? null;
+  return carried;
 }
 
 /**
@@ -826,6 +853,12 @@ export function runInSystemTx<T>(
  *  - `export-link`: whether a table is bound to an app's export, yes or
  *    no, so a login's own table write or delete is checked (W6b fix round
  *    2: assertTableNotAppBound).
+ *  - `admin-area`: a tool of an Admin area (@mantle/tools admin-gate.ts:
+ *    the brain's settings, assistants, connectors, keys) in the Admin
+ *    assistant's or the Admin MCP surface's scope (W7a), only AFTER the
+ *    area check (scopeHasArea): its system tables (model pools, agents,
+ *    tool groups, connectors, secrets, peers) are never granted to the
+ *    workspace role. It reads no brain items there.
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -844,6 +877,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'kind-root',
   'name-taken',
   'export-link',
+  'admin-area',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 

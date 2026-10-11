@@ -263,7 +263,12 @@ export async function runAssistantTurn(
   // query embed) are held here and written into the trace below.
   const prelude = createTracePrelude();
   const ctx = await withTracePrelude(prelude, () =>
-    loadConversationContext({ ownerId, agent, inboundText: trimmed }),
+    loadConversationContext({
+      ownerId,
+      agent,
+      inboundText: trimmed,
+      ownerLoginId: options?.loginId ?? null,
+    }),
   );
   const filteredHistory = ctx.history;
 
@@ -394,6 +399,7 @@ export async function runAssistantTurn(
     assembleResponderTurn({
       ownerId,
       agent,
+      ownerLoginId: options?.loginId ?? null,
       prefs,
       logPrefix: '[assistant]',
       volatileExtras: [locationContextLine, timezoneSwitchNote],

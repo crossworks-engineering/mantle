@@ -55,7 +55,12 @@ import { withHeartbeatContext } from './context';
 import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
 import { errorMessage } from '@mantle/std';
-import { agentLevel, agentTurnScoped, withAgentScope } from '../agent/agent-viewer';
+import {
+  agentLevel,
+  agentTurnScoped,
+  agentWorkspaceKind,
+  withAgentScope,
+} from '../agent/agent-viewer';
 
 const HEARTBEAT_CONTROL_TOOLS = [
   'heartbeat_complete',
@@ -188,11 +193,16 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
   // inside its workspace (W4b fix round 1, M2): its tools are resolved and
   // its loop runs in a turn scope of that workspace, read only (a heartbeat
   // answers no login), on a team surface so tool errors are filtered and
-  // owner-only and adminOnly tools are refused. The Admin assistant keeps
-  // today's path. A workspace that is gone or archived pauses the heartbeat.
+  // owner-only and adminOnly tools are refused. The Admin assistant (W7a)
+  // fires in a turn scope of Admin too, acting for the owner (the anchor
+  // login), on the owner's surface; MANTLE_ADMIN_READS=system keeps it on
+  // the system pool. A workspace that is gone or archived pauses the
+  // heartbeat.
   let scoped: boolean;
+  let adminAssistant: boolean;
   try {
     scoped = await agentTurnScoped(agent);
+    adminAssistant = (await agentWorkspaceKind(agent)) === 'admin';
   } catch (err) {
     return autoPause(hb, `agent '${agent.slug}': ${errorMessage(err)}`);
   }
@@ -224,9 +234,10 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
   // In a workspace scope the heartbeat's own control tools are the ones
   // that change the firing heartbeat; list and fire reach every heartbeat
   // and are adminOnly (dispatch refuses them there anyway).
-  const controlTools = scoped
-    ? HEARTBEAT_CONTROL_TOOLS.filter((s) => s !== 'heartbeat_list' && s !== 'heartbeat_fire')
-    : HEARTBEAT_CONTROL_TOOLS;
+  const controlTools =
+    scoped && !adminAssistant
+      ? HEARTBEAT_CONTROL_TOOLS.filter((s) => s !== 'heartbeat_list' && s !== 'heartbeat_fire')
+      : HEARTBEAT_CONTROL_TOOLS;
   const resolveTools = async () => {
     const agentGroupTools = await resolveAgentToolGroups(
       hb.ownerId,
@@ -329,11 +340,12 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
               tools,
               // A workspace assistant's fire is not the owner's channel: a
               // team surface with no login (read only, private reads off).
-              surface: scoped
-                ? { kind: 'team', privateReads: false }
-                : hb.surface.kind === 'telegram'
-                  ? { kind: 'telegram', telegramChatId: hb.surface.chat_id }
-                  : { kind: 'web' },
+              surface:
+                scoped && !adminAssistant
+                  ? { kind: 'team', privateReads: false }
+                  : hb.surface.kind === 'telegram'
+                    ? { kind: 'telegram', telegramChatId: hb.surface.chat_id }
+                    : { kind: 'web' },
             }),
         );
         const replyText = result.reply;

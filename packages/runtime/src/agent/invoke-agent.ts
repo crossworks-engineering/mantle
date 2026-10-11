@@ -48,7 +48,13 @@ import {
   effectiveToolSlugs,
 } from './skills';
 import type { ChatMessage } from './messages';
-import { agentLevel, agentTurnScoped, surfaceLoginId, withAgentScope } from './agent-viewer';
+import {
+  agentLevel,
+  agentTurnScoped,
+  ownerSurfaceLogin,
+  surfaceLoginId,
+  withAgentScope,
+} from './agent-viewer';
 import { currentWorkspaceScope, levelsMeet, currentScope } from '@mantle/db/viewer';
 
 /** A delegated child's thinking loop args. Inherit = the forwarded budget
@@ -145,7 +151,12 @@ export const invokeAgent: AgentInvoker = async ({
   const childWorkspaceId = scoped || openScope ? (target.workspaceId ?? null) : null;
   const childLoginId = surfaceLoginId(surface);
   const inChildScope = <T>(fn: () => Promise<T>): Promise<T> =>
-    childWorkspaceId ? withAgentScope(target, fn, { loginId: childLoginId }) : fn();
+    childWorkspaceId
+      ? withAgentScope(target, fn, {
+          loginId: childLoginId,
+          ownerLoginId: ownerSurfaceLogin(surface),
+        })
+      : fn();
 
   // Depths past the base cap are legal ONLY along a declared edge to a
   // TERMINAL specialist (no delegates of its own) — mirrors the dispatch

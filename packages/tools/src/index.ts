@@ -172,6 +172,15 @@ export {
   ADMIN_ONLY_TOOL_SLUGS,
 } from './dispatch';
 export {
+  TOOL_ADMIN_AREAS,
+  adminAreaError,
+  adminToolGate,
+  isAdminGateRefusal,
+  runGated,
+  toolAdminArea,
+  type AdminGate,
+} from './admin-gate';
+export {
   memberAppToolVerdict,
   MEMBER_APP_REFUSED_SLUGS,
   type MemberAppToolVerdict,

@@ -4,6 +4,7 @@ export {
   filteredServer,
   registerMantleTools,
 } from './build-server';
+export { NO_WORKSPACE_ERROR, ownerScopedServer, runInOwnerMcpScope } from './owner-scope';
 export {
   LOGIN_REPLACED_APP_DB_SLUGS,
   MCP_HANDWRITTEN_READ_ONLY,
