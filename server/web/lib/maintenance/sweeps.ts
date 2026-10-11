@@ -21,7 +21,6 @@ import { db } from '@mantle/db';
 import {
   findDuplicateCandidates,
   mergeEntities,
-  purgeDeactivatedSpaces,
   reapAppAccessLog,
   reapShareAccessLog,
   reapClientSigninCodes,
@@ -169,14 +168,6 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     return r.apps === 0 && t.tables === 0 && left === 0
       ? 'nothing to purge'
       : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s), ${left} leftover work file(s)`;
-  },
-  // Member logins plan 6.4: a deactivated login's private items, after 30 days.
-  'space-purge': async () => {
-    const r = await purgeDeactivatedSpaces();
-    if (r.skipped) return `skipped: ${r.skipped}`;
-    return r.items === 0
-      ? 'nothing to purge'
-      : `purged ${r.items} private item(s) in ${r.spaces} space(s); ${r.emptied} space(s) emptied`;
   },
 };
 

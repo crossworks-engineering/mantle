@@ -17,6 +17,12 @@ export type GoneGuard = 'owner' | 'member' | 'client' | 'any';
 
 export const GONE_MESSAGE = 'This feature was removed. Update the app.';
 
+/** The personal-space routes (Mine, my apps, an admin's private items),
+ *  removed in workspaces W6b: every personal item is a brain item in its
+ *  login's private workspace, read and written through the normal routes. */
+export const SPACE_FOLDED_MESSAGE =
+  'Your own items are in your private workspace now. Open them from the normal lists.';
+
 /** The 410 body every removed route answers. */
 export function goneResponse(error: string = GONE_MESSAGE): NextResponse {
   return NextResponse.json({ error, code: 'gone' }, { status: 410 });

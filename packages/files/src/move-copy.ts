@@ -34,6 +34,7 @@ import {
   withNodeMoveHeads,
 } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
+import { foldedFilePath } from './space-disk';
 import {
   FILES_MAX_FOLDER_DEPTH,
   FILES_ROOT_LABEL,
@@ -133,7 +134,10 @@ export async function moveFileById(args: {
   }
 
   const oldPath = node.path;
-  await moveFileOnDisk(oldPath, filename, args.destPath);
+  // A folded member file (W6b) keeps its bytes in its old space's directory,
+  // named by its id: the move changes only its row.
+  const onDisk = !foldedFilePath(node);
+  if (onDisk) await moveFileOnDisk(oldPath, filename, args.destPath);
   try {
     // Heads first (workspaces plan U1): the file and both folders. Then the
     // share lock (shared) before the row: see takeShareReadLock.
@@ -154,7 +158,7 @@ export async function moveFileById(args: {
       ),
     );
   } catch (err) {
-    await moveFileOnDisk(args.destPath, filename, oldPath).catch(() => {});
+    if (onDisk) await moveFileOnDisk(args.destPath, filename, oldPath).catch(() => {});
     throw err;
   }
 

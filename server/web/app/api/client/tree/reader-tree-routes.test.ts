@@ -144,30 +144,11 @@ async function call(login: string, url: string, handler: Handler, kind: string) 
 }
 
 describe('the member tree routes, and the retired client tree', () => {
-  it('reads as a member: in its own space and at team', async () => {
-    const member = (await import('../../member/tree/[kind]/route')).GET;
-    expect(
-      (await call(MEMBER, `/api/member/tree/notes?folder=${FOLDER}`, member, 'notes')).status,
-    ).toBe(200);
-    expect(h.calls.map((c) => c.args.slice(0, 3))).toEqual([
-      [{ anchorId: ANCHOR, spaceId: SPACE, loginId: MEMBER }, 'notes', expect.anything()],
-    ]);
-    expect(h.calls.map((c) => c.fn)).toEqual(['member-load']);
-  });
-
-  it('gives a member levels', async () => {
-    const member = (await import('../../member/tree/[kind]/route')).GET;
-    const m = await (await call(MEMBER, '/api/member/tree/notes', member, 'notes')).json();
-    expect(m.items[0]).toMatchObject({ level: 'client' });
-  });
-
-  it('refuses a kind the Library does not hold before any read', async () => {
-    const member = (await import('../../member/tree/[kind]/search/route')).GET;
-    for (const kind of ['secrets', 'tasks', 'contacts', 'nope']) {
-      expect((await call(MEMBER, `/api/member/tree/${kind}/search`, member, kind)).status).toBe(
-        404,
-      );
-    }
+  it('answers a member 410 since W6b: its items are read through the normal tree', async () => {
+    const tree = (await import('../../member/tree/[kind]/route')).GET;
+    const search = (await import('../../member/tree/[kind]/search/route')).GET;
+    expect((await call(MEMBER, '/api/member/tree/notes', tree, 'notes')).status).toBe(410);
+    expect((await call(MEMBER, '/api/member/tree/notes/search', search, 'notes')).status).toBe(410);
     expect(h.calls).toEqual([]);
   });
 

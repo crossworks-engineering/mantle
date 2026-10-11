@@ -283,12 +283,10 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       `/api/attachments/${ID}`,
       `/api/export/${ID}`,
       '/api/profile/photo',
-      `/api/admin/space/${ID}/bytes`,
     ];
     const MEMBER_BYTES = [
       `/api/member/files/${ID}`,
       `/api/member/draws/${ID}/svg`,
-      `/api/member/space/${ID}/bytes`,
       `/api/member/team-drafts/${ID}/bytes`,
       `/api/member/client-requests/${ID}/bytes`,
     ];
@@ -350,7 +348,7 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     });
 
     it('keeps the year-long cookie for admins and members (only clients are capped)', async () => {
-      const member = await app.request('/api/member/space/not-a-uuid', {
+      const member = await app.request('/api/member/library/not-a-uuid', {
         headers: { cookie: `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(MEMBER_ID).value}` },
       });
       expect(member.status).toBe(400);

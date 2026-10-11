@@ -376,9 +376,8 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   // database read; the admin on the same path is stopped at the gate.
   const PAST_THE_GATE = [
     '/api/member/library/not-a-uuid',
-    '/api/member/space/not-a-uuid',
     '/api/member/files/not-a-uuid',
-    '/api/member/space/not-a-uuid/bytes',
+    '/api/member/accepted/not-a-uuid',
   ];
 
   // Removed in workspaces W5c (team drafts, client requests, member submit,
@@ -465,14 +464,14 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   it('gives a disabled member login no session at all', async () => {
     const { buildSessionCookie } = await import('../lib/auth/tokens');
     const left = `${SESSION_COOKIE_NAME}=${buildSessionCookie(DISABLED_MEMBER_ID).value}`;
-    const res = await app.request('/api/member/space/not-a-uuid', { headers: { cookie: left } });
+    const res = await app.request('/api/member/library/not-a-uuid', { headers: { cookie: left } });
     expect(res.status).toBe(401);
   });
 
   // F06: a session ends when the login's epoch moves on. The cookie and the
   // `?at=` token carry the epoch they were minted at; the row is re-read.
   describe('session epoch', () => {
-    const PAST = '/api/member/space/not-a-uuid';
+    const PAST = '/api/member/library/not-a-uuid';
 
     it('refuses a cookie minted before the last bump', async () => {
       const { buildSessionCookie } = await import('../lib/auth/tokens');

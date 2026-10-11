@@ -93,6 +93,7 @@ export {
   spacesRootAvailable,
   spaceDir,
   spaceFilePath,
+  foldedFilePath,
   spaceSpoolDir,
   adoptSpooledIntoSpace,
   openSpaceFile,

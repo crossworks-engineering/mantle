@@ -451,7 +451,11 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
       if (draft && r.snapshot) continue;
       if (draft && !existsSync(file)) continue;
       try {
-        const dest = path.join(destDir, r.ownerId, path.basename(file));
+        // The live layout (<owner>/<node>.sqlite as storage_path records it),
+        // so a restore drops the file where storage_path points: a table
+        // folded in from a member's space (W6b) keeps its file under the
+        // space's directory while its row's owner is the brain.
+        const dest = path.join(destDir, layoutDirOf(storagePath, r.ownerId), path.basename(file));
         // In a SQL child, off the event loop (apps audit 2026-10-02, item 14).
         await copySqliteFile(file, dest);
         report.snapshotted.push({
@@ -469,4 +473,12 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
     }
   }
   return report;
+}
+
+/** The directory a stored path names (its first segment, `<owner>` of
+ *  `<owner>/<node>.sqlite`), else `fallback`: a backup mirrors the live
+ *  layout, never re-derives it from the row's owner. */
+export function layoutDirOf(storagePath: string, fallback: string): string {
+  const dir = path.dirname(storagePath);
+  return /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(dir) && dir !== '..' ? dir : fallback;
 }

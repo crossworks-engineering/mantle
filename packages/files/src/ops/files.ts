@@ -20,6 +20,7 @@ import {
   writeFile as writeFileOnDisk,
   deleteFile as deleteFileOnDisk,
   adoptSpooled,
+  foldedFilePath,
   type SpooledUpload,
 } from '../index';
 import { derivedCountsOf, type DerivedCounts } from '../derived-counts';
@@ -364,7 +365,8 @@ export async function readFileById(args: {
   if (!node || node.type !== 'file') return null;
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
-  const filePath = diskPathForFile(node.path, filename);
+  // A folded member file (W6b) keeps its bytes in its old space's directory.
+  const filePath = foldedFilePath(node) ?? diskPathForFile(node.path, filename);
 
   // Prefer cached content for text files to avoid disk reads in the hot path.
   if (typeof data.content === 'string') {
@@ -412,7 +414,7 @@ export async function openFileById(args: {
 
   if (typeof data.content === 'string') return whole(Buffer.from(data.content, 'utf8'));
 
-  const filePath = diskPathForFile(node.path, String(data.filename ?? ''));
+  const filePath = foldedFilePath(node) ?? diskPathForFile(node.path, String(data.filename ?? ''));
   if (filePath) {
     try {
       const st = await fsp.stat(filePath);
@@ -820,7 +822,8 @@ export async function renameFileById(args: {
   if (!sanitisedStem) return null;
   const newFilename = sanitisedStem;
   if (newFilename === oldFilename) return fileRowFromNode(node);
-  await renameFileOnDisk(node.path, oldFilename, newFilename);
+  // A folded member file (W6b): its bytes are named by its id, not its name.
+  if (!foldedFilePath(node)) await renameFileOnDisk(node.path, oldFilename, newFilename);
   const [updated] = await db
     .update(nodes)
     .set({

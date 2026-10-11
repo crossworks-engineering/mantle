@@ -160,6 +160,18 @@ function cutoffOf(opts: { graceDays?: number; now?: Date }): Date {
 export async function purgeDeactivatedSpaces(
   opts: { graceDays?: number; now?: Date } = {},
 ): Promise<SpacePurgeResult> {
+  // Retired (workspaces W6b, migration 0267): every personal item is a brain
+  // item now, homed in its login's private workspace, and a space's
+  // directory still holds the bytes of its folded files. Removing either
+  // would delete brain items' data. Nothing is purged.
+  if (opts) {
+    return {
+      spaces: 0,
+      items: 0,
+      emptied: 0,
+      skipped: 'retired: personal spaces are folded into the brain (W6b)',
+    };
+  }
   if (!spacesRootAvailable()) {
     return { spaces: 0, items: 0, emptied: 0, skipped: 'MANTLE_SPACES_ROOT is not set here' };
   }

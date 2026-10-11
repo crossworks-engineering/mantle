@@ -48,8 +48,9 @@
 --
 -- Then the spaces are archived: archive_spaces (every personal space row),
 -- archive_space_items (0264, rows made since added), and the space_items
--- rows go (archived first; the final sharing and trash are in
--- space_fold_items too). The spaces rows stay (a kind root still names its
+-- rows of the moved items go (archived first; the final sharing and trash
+-- are in space_fold_items too). An accepted row stays: it is its author's
+-- read path (member-accepted.ts) until the snapshot copy replaces it. The spaces rows stay (a kind root still names its
 -- space, and nodes.owner_id cascades from spaces): nothing is dropped. The
 -- space role is retired by the app (viewer-roles.ts: NOLOGIN at boot); its
 -- functions and policies stay until W8.
@@ -144,7 +145,11 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_spaces_fold_check"()
      AND EXISTS (SELECT 1 FROM "public"."nodes" c
                   WHERE c."owner_id" = n."owner_id" AND c."id" <> n."id" AND c."path" <@ n."path")
   UNION ALL
-  SELECT 'space_items rows', count(*) FROM "public"."space_items"
+  SELECT 'space_items rows other than accepted', count(*) FROM "public"."space_items" si
+   WHERE si."review_state" <> 'accepted'
+  UNION ALL
+  SELECT 'accepted rows kept (the author read path until its snapshot copy)', count(*)
+    FROM "public"."space_items" si WHERE si."review_state" = 'accepted'
   UNION ALL
   SELECT 'items moved', count(*) FROM "public"."space_fold_items"
   UNION ALL
@@ -475,15 +480,18 @@ BEGIN
          si."taken_title", si."deleted_at", now()
     FROM "public"."space_items" si
   ON CONFLICT ("node_id") DO NOTHING;
+  -- An accepted row stays: it is its author's read path (member-accepted.ts)
+  -- until the author's snapshot copy (S3) replaces it.
   DELETE FROM "public"."space_items" si
-   WHERE EXISTS (SELECT 1 FROM "public"."archive_space_items" a WHERE a."node_id" = si."node_id");
+   WHERE si."review_state" <> 'accepted'
+     AND EXISTS (SELECT 1 FROM "public"."archive_space_items" a WHERE a."node_id" = si."node_id");
   GET DIAGNOSTICS c = ROW_COUNT;
   RETURN QUERY SELECT 'cleared'::text, 'space_items'::text, 'rows deleted (archived)'::text, c;
 
   -- 7. The proof.
   SELECT count(*) INTO bad FROM "public"."mantle_ws_spaces_fold_check"() ck
    WHERE (ck."metric" IN ('items left in a personal space', 'kind roots left with children',
-                          'space_items rows', 'moved items without their home',
+                          'space_items rows other than accepted', 'moved items without their home',
                           'personal spaces not archived')
           AND ck."n" > 0);
   IF bad > 0 THEN

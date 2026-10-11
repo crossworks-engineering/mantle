@@ -145,6 +145,18 @@ export async function renameFolder(fromLtree: string, toLtree: string): Promise<
     throw new Error('renameFolder: refusing to rename the files root');
   }
   if (from === to) return { path: from };
+  // A folder with no directory (a member's folder folded into the brain,
+  // W6b: its files' bytes stay in their space's directory) has nothing to
+  // move on disk: the destination is made, empty, as a new folder's is.
+  if (
+    !(await fs.stat(from).then(
+      () => true,
+      () => false,
+    ))
+  ) {
+    await fs.mkdir(to, { recursive: true });
+    return { path: to };
+  }
   try {
     await fs.access(to);
     throw new Error(`renameFolder: '${toLtree}' already exists`);

@@ -1,18 +1,10 @@
-import { NextResponse } from '@/server/http-compat';
-import { listSpaceApps } from '@mantle/content';
-import { getMemberOr401 } from '@/lib/auth';
+import { SPACE_FOLDED_MESSAGE, gone } from '@/lib/gone';
 
 /**
- * GET /api/member/my-apps: the apps members BUILT (team apps Phase 3): the
- * member's own, in any state before Accept (private, shared, submitted,
- * returned), and the published apps teammates shared with the team. A
- * teammate's private app is never listed. Members build over their own MCP
- * connection (the my_app_* tools); this list is where they share, submit
- * and run them.
+ * GET /api/member/my-apps
+ * Removed in workspaces W6b (migration 0267): personal spaces folded into
+ * the brain. Every personal item is a brain item in its login's private
+ * workspace, read and written through the normal routes. The old guard
+ * runs first, then 410 `{ error, code: 'gone' }`.
  */
-export async function GET() {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
-  const apps = await listSpaceApps({ loginId: member.loginId, spaceId: member.spaceId });
-  return NextResponse.json({ apps });
-}
+export const GET = gone('member', SPACE_FOLDED_MESSAGE);

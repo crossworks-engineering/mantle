@@ -16,7 +16,6 @@
 import type { AdminPrivateListRow } from '@mantle/client-types';
 import { adminListStateOf, type AdminListState } from '@mantle/client-types/member-kinds';
 import {
-  listMine,
   listSortCompare,
   mergeSorted,
   type PagedSource,
@@ -24,8 +23,6 @@ import {
   type SpaceListSort,
 } from '@mantle/content';
 import type { SessionUser } from '@/lib/auth';
-import { loadPersonalSpaceId } from '@/lib/auth/login-row';
-import { inAdminSpace, withTakenFrom, type AdminSpaceCaller } from '@/lib/admin-space';
 
 /** `?state=` of an admin brain list; anything unknown reads as `brain`. */
 export function listStateOf(sp: URLSearchParams): AdminListState {
@@ -37,34 +34,18 @@ export function isPrivateRow(row: object): row is AdminPrivateListRow {
   return 'private' in row;
 }
 
-/** The caller's own private items of `kind` as rows of a brain list, in
- *  `sort` order; null when the login has no personal space. */
+/** The caller's own private items of `kind` as rows of a brain list:
+ *  none since workspaces W6b (migration 0267). Every personal item is a
+ *  brain item now, homed in its login's private workspace, so the brain
+ *  list itself serves it to that login (the request scope holds the
+ *  private workspace). `?state=private` lists nothing; `all` is the brain
+ *  list. No personal space is read. */
 export async function privateRowsSource(
-  user: SessionUser,
-  kind: SpaceItemKind,
-  opts: { q?: string; sort?: SpaceListSort } = {},
+  _user: SessionUser,
+  _kind: SpaceItemKind,
+  _opts: { q?: string; sort?: SpaceListSort } = {},
 ): Promise<PagedSource<AdminPrivateListRow> | null> {
-  const spaceId = await loadPersonalSpaceId(user.actor.id);
-  if (!spaceId) return null;
-  const caller: AdminSpaceCaller = { brainId: user.id, loginId: user.actor.id, spaceId, user };
-  return async (limit, offset) => {
-    const res = await inAdminSpace(caller, () =>
-      listMine(spaceId, { kind, q: opts.q, sort: opts.sort, limit, offset }),
-    );
-    const rows = await withTakenFrom(caller, res.items);
-    return {
-      items: rows.map((r) => ({
-        id: r.id,
-        type: r.type,
-        title: r.title,
-        icon: r.icon,
-        createdAt: r.createdAt ?? r.updatedAt,
-        updatedAt: r.updatedAt,
-        private: r,
-      })),
-      total: res.total,
-    };
-  };
+  return null;
 }
 
 type Sortable = { updatedAt: string; createdAt?: string | null; title?: string };

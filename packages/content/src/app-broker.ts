@@ -929,7 +929,16 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
       });
       continue;
     }
-    const destFile = snapshotDestPath(destDir, r.ownerId, r.appNodeId);
+    // The live layout under APP_DB_DIR (<owner>/<app>.sqlite as
+    // storage_path records it): an app folded in from a member's space (W6b)
+    // keeps its file under the space's directory while its row's owner is
+    // the brain, and the restore script puts it back where storage_path says.
+    const live = path.relative(appDbRoot(), r.storagePath);
+    const layoutOwner =
+      !live.startsWith('..') && path.dirname(live) !== '.' && !path.dirname(live).includes(path.sep)
+        ? path.dirname(live)
+        : r.ownerId;
+    const destFile = snapshotDestPath(destDir, layoutOwner, r.appNodeId);
     try {
       await mkdir(path.dirname(destFile), { recursive: true });
       await rm(destFile, { force: true }); // VACUUM INTO refuses an existing target

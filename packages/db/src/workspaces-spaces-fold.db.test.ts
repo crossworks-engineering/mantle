@@ -64,7 +64,13 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
     ids[key] = id;
     return id;
   };
-  const item = async (key: string, author: string, state: string, sharing = 'private', deleted = false) =>
+  const item = async (
+    key: string,
+    author: string,
+    state: string,
+    sharing = 'private',
+    deleted = false,
+  ) =>
     sql`insert into space_items (node_id, author_login_id, sharing, review_state, submitted_at,
           reviewed_by, reviewed_at, accepted_at, deleted_at)
         values (${ids[key]!}, ${author}, ${sharing}, ${state},
@@ -236,13 +242,15 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
     };
     for (const [k, read] of Object.entries(want)) {
       const r = await row(k);
-      expect({ k, owner: r.owner, read: [...r.read].sort(), write: r.write, home: r.home }).toEqual({
-        k,
-        owner,
-        read: [...read].sort(),
-        write: [],
-        home: read[0],
-      });
+      expect({ k, owner: r.owner, read: [...r.read].sort(), write: r.write, home: r.home }).toEqual(
+        {
+          k,
+          owner,
+          read: [...read].sort(),
+          write: [],
+          home: read[0],
+        },
+      );
     }
     // Only the home row is the home; Admin and Team are plain grants.
     const homes = await sql<{ n: number }[]>`
@@ -294,7 +302,7 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
     expect(trashed!.sharing).toBe('team');
   });
 
-  it('leaves no item in a space, archives the spaces and empties space_items', async () => {
+  it('leaves no item in a space, archives the spaces, keeps only the accepted rows', async () => {
     const check = Object.fromEntries(
       (
         await sql<
@@ -306,7 +314,8 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
       'items left in a personal space': 0,
       'kind roots left in a personal space': 2,
       'kind roots left with children': 0,
-      'space_items rows': 0,
+      'space_items rows other than accepted': 0,
+      'accepted rows kept (the author read path until its snapshot copy)': 1,
       'items moved': 16,
       'moved items without their home': 0,
       'snapshot copies wanted': 1,
@@ -323,7 +332,9 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
   });
 
   it('no login reads more than before; every author reaches its items', async () => {
-    const all = Object.keys(ids).filter((k) => !['brainFolder', 'brainPage', 'accepted'].includes(k));
+    const all = Object.keys(ids).filter(
+      (k) => !['brainFolder', 'brainPage', 'accepted'].includes(k),
+    );
     // The teammate: the team-shared drafts only.
     expect(await reads(mate, all)).toEqual(['teamApp', 'teamDraft']);
     // An Admin user: submitted, left behind, and the team-shared ones (it

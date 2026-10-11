@@ -6,7 +6,13 @@
  */
 
 import { nodes } from '@mantle/db';
-import { diskPathForFile, extOf, mimeForExt, extractPdfTextWithPassword } from '@mantle/files';
+import {
+  diskPathForFile,
+  extOf,
+  foldedFilePath,
+  mimeForExt,
+  extractPdfTextWithPassword,
+} from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { step } from '@mantle/tracing';
 import { getPdfPasswordCandidates, markPdfPasswordUsed } from '@mantle/content';
@@ -69,7 +75,8 @@ async function loadFileBytesUncached(
   const mime = typeof data.mimeType === 'string' ? data.mimeType : mimeForExt(ext);
   // 1) Local disk — uploads, the disk-sync watcher, MCP file_upload.
   if (typeof data.filename === 'string') {
-    const diskPath = diskPathForFile(node.path, data.filename);
+    // A folded member file (W6b) keeps its bytes in its old space directory.
+    const diskPath = foldedFilePath(node) ?? diskPathForFile(node.path, data.filename);
     if (diskPath) {
       try {
         const { promises: fs } = await import('node:fs');
@@ -115,7 +122,8 @@ export async function loadFileHead(
 ): Promise<Buffer | null> {
   const data = (node.data ?? {}) as Record<string, unknown>;
   if (typeof data.filename === 'string') {
-    const diskPath = diskPathForFile(node.path, data.filename);
+    // A folded member file (W6b) keeps its bytes in its old space directory.
+    const diskPath = foldedFilePath(node) ?? diskPathForFile(node.path, data.filename);
     if (diskPath) {
       let handle: import('node:fs/promises').FileHandle | undefined;
       try {

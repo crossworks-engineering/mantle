@@ -1,15 +1,10 @@
-import { NextResponse } from '@/server/http-compat';
-import { listDeletedSpaceApps } from '@mantle/content';
-import { getMemberOr401 } from '@/lib/auth';
+import { SPACE_FOLDED_MESSAGE, gone } from '@/lib/gone';
 
 /**
- * GET /api/member/my-apps/deleted: the member's own trash, newest delete
- * first (access matrix N6; the my_app_deleted_list tool's twin). It holds
- * at most MY_APPS_TRASH_MAX apps, and nothing in it expires.
+ * GET /api/member/my-apps/deleted
+ * Removed in workspaces W6b (migration 0267): personal spaces folded into
+ * the brain. Every personal item is a brain item in its login's private
+ * workspace, read and written through the normal routes. The old guard
+ * runs first, then 410 `{ error, code: 'gone' }`.
  */
-export async function GET() {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
-  const apps = await listDeletedSpaceApps({ loginId: member.loginId, spaceId: member.spaceId });
-  return NextResponse.json({ apps });
-}
+export const GET = gone('member', SPACE_FOLDED_MESSAGE);

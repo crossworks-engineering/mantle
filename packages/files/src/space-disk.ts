@@ -74,6 +74,21 @@ export function spaceFilePath(spaceId: string, nodeId: string): string {
   return path.join(spaceDir(spaceId), 'files', safeId(nodeId, 'node id'));
 }
 
+/**
+ * Where the bytes of a FOLDED file live (workspaces W6b, migration 0267): a
+ * member's file became a brain file, its bytes stayed in its old space's
+ * directory, and `data.space_file` names that space. Null for every other
+ * file (its bytes are where its tree path says). Rows change, bytes do not:
+ * the brain's readers read here, and a rename or a move of such a file
+ * changes only its row.
+ */
+export function foldedFilePath(node: { id: string; data: unknown }): string | null {
+  const data = (node.data ?? null) as Record<string, unknown> | null;
+  const space = data?.space_file;
+  if (typeof space !== 'string' || !/^[0-9a-f-]{36}$/i.test(space)) return null;
+  return spaceFilePath(space, node.id);
+}
+
 /** In-flight member uploads spool here, inside the spaces root, so adoption
  *  is a rename on one filesystem. */
 export function spaceSpoolDir(): string {
