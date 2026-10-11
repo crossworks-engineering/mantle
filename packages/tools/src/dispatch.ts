@@ -56,7 +56,7 @@ import { registerToolDispatcher } from './dispatch-bridge';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { adminToolGate, runGated } from './admin-gate';
 import { toolItemWriteRefusal } from './item-write-gate';
-import { secretRefsRunRefusal } from './secret-ref-gate';
+import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-ref-gate';
 
 // Same-package callers that must not import this module (it imports the
 // registry, which imports every builtin) reach dispatchTool through the bridge.
@@ -317,7 +317,10 @@ async function dispatchMcp(
   // 2026-10-08), so an unmarked tool is refused there.
   const refused =
     (await connectorCallRefused(ctx, group.slug, tool, input)) ??
-    (await connectorScopeRefused(ctx, group.slug, tool, input));
+    (await connectorScopeRefused(ctx, group.slug, tool, input)) ??
+    // The connector's key goes to its URL only while the login that paired
+    // them holds the keys area (W7a fix round 4, secret-ref-gate.ts).
+    (await vaultPairRunRefusal(group.configuredBy, ctx.ownerId, !!mcpPairing(mcp).key));
   if (refused) return { ok: false, error: refused };
   try {
     // asSystem: the remote call reads and, for an OAuth connector, refreshes

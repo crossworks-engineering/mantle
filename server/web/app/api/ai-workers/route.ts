@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { getOwnerOr401 } from '@/lib/auth';
+import { AGENT_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
 import {
   createAiWorker,
   listAiWorkers,
@@ -72,6 +73,10 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
+  // A key with a base URL of the writer's choosing is the keys area's (W7a
+  // fix round 4, lib/model-route-pair.ts).
+  const keysRefused = await modelRoutesRefusal(user, null, parsed.data, AGENT_ROUTES);
+  if (keysRefused) return NextResponse.json({ error: keysRefused }, { status: 403 });
   // Save-time catalog check: a bad OpenRouter id fails SILENTLY at call time
   // (the 2026-08-31 vision incident), so the save is where it must be caught.
   // Fail-open when the catalog is unreachable.

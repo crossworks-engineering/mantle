@@ -8,6 +8,9 @@ import { AGENT_THINKING_EFFORTS, agentGrantProblems } from '@mantle/content';
 import { agents, db, isViewerLevel } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
 import { firstIssue } from '@/lib/zod-issue';
+import { AGENT_ROUTES, modelRoutesRepaired } from '@/lib/model-route-pair';
+import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
+import { restampHeartbeatMakers } from '@mantle/tools';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -83,6 +86,25 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
+  // A key with a base URL of the writer's choosing (setting a key while a
+  // base URL is set, or a base URL while a key is set) is the keys area's
+  // (W7a fix round 4, lib/model-route-pair.ts).
+  if (AGENT_ROUTES.some(([k, u]) => k in parsed.data || u in parsed.data)) {
+    const [stored] = await db
+      .select({
+        apiKeyId: agents.apiKeyId,
+        baseUrl: agents.baseUrl,
+        backupApiKeyId: agents.backupApiKeyId,
+        backupBaseUrl: agents.backupBaseUrl,
+      })
+      .from(agents)
+      .where(and(eq(agents.id, idParsed.data.id), eq(agents.ownerId, user.id)))
+      .limit(1);
+    if (stored && modelRoutesRepaired(stored, parsed.data, AGENT_ROUTES)) {
+      const refused = await vaultPairRefusalFor(user);
+      if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+    }
+  }
   // Level rule (member logins Phase 0b): an agent may hold only tool groups
   // at or below its own level.
   if (parsed.data.toolGroupSlugs) {
@@ -104,6 +126,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   const row = await updateAgent(user.id, idParsed.data.id, parsed.data);
   if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  // The agent's prompt (system prompt and its skills) is what its heartbeats
+  // run: a login other than the anchor editing it makes them its own (W7a
+  // fix round 4, @mantle/tools heartbeat-maker.ts). The same prompt also
+  // answers the anchor's own chat with this agent.
+  if (parsed.data.systemPrompt !== undefined || parsed.data.skillSlugs !== undefined) {
+    await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });
+  }
   return NextResponse.json({ agent: row });
 }
 

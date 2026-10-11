@@ -11,6 +11,7 @@ import {
   updateAiWorker,
 } from '@/lib/ai-workers';
 import { firstIssue } from '@/lib/zod-issue';
+import { AGENT_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -56,6 +57,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { params, ...rest } = parsed.data;
+  // A key with a base URL of the writer's choosing (setting a key while a
+  // base URL is set, or a base URL while a key is set) is the keys area's
+  // (W7a fix round 4, lib/model-route-pair.ts).
+  if (AGENT_ROUTES.some(([k, u]) => k in rest || u in rest)) {
+    const stored = await getAiWorker(user.id, idParsed.data.id);
+    if (!stored) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    const refused = await modelRoutesRefusal(user, stored, rest, AGENT_ROUTES);
+    if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+  }
   // Save-time catalog check against the EFFECTIVE post-patch config — a
   // patch may change only the model, only the provider, or both. Fail-open
   // when the catalog is unreachable (see openRouterModelIssue).

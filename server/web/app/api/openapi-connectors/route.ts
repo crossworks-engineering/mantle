@@ -1,8 +1,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { createOpenapiConnector } from '@mantle/tools';
+import { createOpenapiConnector, integrationPairing, vaultPairLoginRefusal } from '@mantle/tools';
 import { listOpenapiConnectors } from '@/lib/openapi-connectors';
+import { toolMakerFor } from '@/lib/tools';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -54,8 +55,20 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
+  // A connector whose auth carries a vault key sends it to its base URL (or
+  // the spec's server): pairing the two is the keys area's (W7a fix round 4,
+  // @mantle/tools secret-ref-gate.ts). The connector records who paired them.
+  const configuredBy = toolMakerFor(user);
+  const pairing = integrationPairing({
+    ...parsed.data,
+    openapi: { specUrl: parsed.data.specUrl },
+  });
+  if (pairing.key) {
+    const refused = await vaultPairLoginRefusal(configuredBy);
+    if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+  }
   try {
-    const result = await createOpenapiConnector(user.id, parsed.data);
+    const result = await createOpenapiConnector(user.id, { ...parsed.data, configuredBy });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err) }, { status: 400 });

@@ -235,6 +235,13 @@ export const toolGroups = pgTable(
     /** Workspaces W4b (0254): the group runs only in a turn whose scope holds
      *  the Admin workspace (plan 5.4). Written from the manifest. */
     adminOnly: boolean('admin_only').notNull().default(false),
+    /** Workspaces W7a fix round 4 (0271): the login that last paired the
+     *  integration's vault key with its host (base URL, connector URL, token
+     *  URL), when that is not the brain owner. The tools a connector sync
+     *  writes, and the tools authored into the group, take it as their maker,
+     *  and an MCP connector's key resolves only while it holds the keys area.
+     *  Null: the brain owner's (and every group the system made). */
+    configuredBy: uuid('configured_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteSkill, getSkill, updateSkill } from '@/lib/skills';
+import { toolMakerFor } from '@/lib/tools';
 import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -36,7 +37,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const row = await updateSkill(user.id, idParsed.data.id, parsed.data);
+  const row = await updateSkill(user.id, idParsed.data.id, parsed.data, toolMakerFor(user));
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ skill: row });
 }

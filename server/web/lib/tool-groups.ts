@@ -107,7 +107,11 @@ export async function createToolGroup(
   return toSummary(row);
 }
 
-export type UpdateToolGroupInput = Partial<Omit<CreateToolGroupInput, 'slug'>>;
+export type UpdateToolGroupInput = Partial<Omit<CreateToolGroupInput, 'slug'>> & {
+  /** The login that paired the integration's vault key with its host, when
+   *  not the brain owner (tool_groups.configured_by, W7a fix round 4). */
+  configuredBy?: string | null;
+};
 
 export async function updateToolGroup(
   ownerId: string,
@@ -122,6 +126,7 @@ export async function updateToolGroup(
   // omitting the key leaves whatever Toolsmith or a previous edit stored.
   if (patch.integration !== undefined) next.integration = patch.integration;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
+  if (patch.configuredBy !== undefined) next.configuredBy = patch.configuredBy;
   const [row] = await db
     .update(toolGroups)
     .set(next)

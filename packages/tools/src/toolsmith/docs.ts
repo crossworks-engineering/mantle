@@ -15,6 +15,8 @@ import {
   API_DOCS_MAX_CHARS,
 } from '../integration';
 import { areaSystem } from '../admin-gate';
+import { restampHeartbeatMakers } from '../heartbeat-maker';
+import { toolMaker } from '../secret-ref-gate';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
@@ -352,6 +354,12 @@ export const api_skill_set: BuiltinToolDef = {
       });
     }
     await setGroupIntegration(ctx.ownerId, groupSlug, { skillSlug });
+    // A heartbeat that runs this skill (or an agent granted the group) now
+    // runs the caller's words: it becomes the caller's (W7a fix round 4).
+    await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), {
+      skillSlug,
+      toolGroupSlug: groupSlug,
+    });
     ctx.step?.setOutput({ groupSlug, skillSlug, words });
     return {
       ok: true,

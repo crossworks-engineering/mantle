@@ -12,7 +12,10 @@ import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, type ToolGroup, type ToolGroupIntegration } from '@mantle/db';
 import {
   KNOWN_OPENAPI_APIS,
+  integrationPairing,
   openapiGroupSlug,
+  vaultPairingChanged,
+  vaultPairLoginRefusal,
   parseIntegrationMeta,
   parseOpenapiBinding,
   type KnownOpenapiApi,
@@ -87,11 +90,17 @@ export type UpdateOpenapiConnectorInput = {
 
 /** Patch a connector's binding/name/enabled. Binding changes take effect on
  *  the next sync (nothing is cached per connector on this kind). Returns a
- *  teaching error string instead of throwing on invalid input. */
+ *  teaching error string instead of throwing on invalid input.
+ *
+ *  `login`: the signed-in login when it is not the brain owner (null: the
+ *  anchor). Setting or changing the vault key or the host it goes to while
+ *  the other is present needs its keys area, and records it as the
+ *  connector's configuring login (W7a fix round 4, secret-ref-gate.ts). */
 export async function updateOpenapiConnector(
   ownerId: string,
   groupSlug: string,
   patch: UpdateOpenapiConnectorInput,
+  login: string | null = null,
 ): Promise<
   { connector: OpenapiConnectorSummary; warnings: string[] } | { error: string; status: number }
 > {
@@ -149,16 +158,28 @@ export async function updateOpenapiConnector(
     }
   }
 
+  const before = integrationPairing(row.integration);
+  const after = integrationPairing(nextIntegration);
+  if (vaultPairingChanged(before, after)) {
+    const refused = await vaultPairLoginRefusal(login);
+    if (refused) return { error: refused, status: 403 };
+  }
+  const repaired = before.key !== after.key || before.dest !== after.dest;
+
   const [updated] = await db
     .update(toolGroups)
     .set({
       ...(patch.name !== undefined ? { name: patch.name } : {}),
       ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
       ...(bindingTouched ? { integration: nextIntegration } : {}),
+      ...(repaired ? { configuredBy: login } : {}),
       updatedAt: new Date(),
     })
     .where(eq(toolGroups.id, row.id))
     .returning();
+  if (repaired) {
+    warnings.push('auth or host changed — re-run the sync so the mirrored tools carry it');
+  }
   const backrefs = await listToolGroupBackrefs(ownerId);
   return { connector: toDTO(updated!, backrefs.get(groupSlug) ?? []), warnings };
 }

@@ -191,7 +191,19 @@ export {
   secretRefsRunRefusal,
   secretRefsWriteRefusal,
   toolMaker,
+  inheritedToolMaker,
+  VAULT_PAIR_MAKER_NO_KEYS,
+  VAULT_PAIR_NEEDS_KEYS,
+  integrationPairing,
+  mcpPairing,
+  templateVaultRefs,
+  vaultPairCallerRefusal,
+  vaultPairingChanged,
+  vaultPairLoginRefusal,
+  vaultPairRunRefusal,
+  type VaultPairing,
 } from './secret-ref-gate';
+export { restampHeartbeatMakers, type HeartbeatPromptSource } from './heartbeat-maker';
 export {
   memberAppToolVerdict,
   MEMBER_APP_REFUSED_SLUGS,

@@ -7,7 +7,7 @@
 
 import { isUniqueViolation, type ToolHandler } from '@mantle/db';
 import { areaSystem } from '../admin-gate';
-import { secretRefsWriteRefusal, toolMaker } from '../secret-ref-gate';
+import { inheritedToolMaker, secretRefsWriteRefusal, toolMaker } from '../secret-ref-gate';
 import { queueAgentCallForApproval } from '../pending-queue';
 import { keyOrPeerVia, OPENS_ADMIN_ONLY } from '../surface';
 import { listApiKeys } from '@mantle/api-keys';
@@ -215,7 +215,7 @@ export const api_tool_create: BuiltinToolDef = {
         handler,
         requiresConfirm: requireApproval ? true : input.requires_confirm === true,
         enabled: true,
-        createdBy: toolMaker(ctx.ownerId),
+        createdBy: inheritedToolMaker(toolMaker(ctx.ownerId), group, handler),
       });
       const warnings = await handlerWarnings(ctx.ownerId, handler, inputSchema);
       if (group) {
@@ -497,7 +497,7 @@ export const api_tool_update: BuiltinToolDef = {
       const keysRefused = await secretRefsWriteRefusal(built.handler);
       if (keysRefused) return { ok: false, error: keysRefused };
       patch.handler = built.handler;
-      patch.createdBy = toolMaker(ctx.ownerId);
+      patch.createdBy = inheritedToolMaker(toolMaker(ctx.ownerId), group, built.handler);
       inherited = built.inherited;
     }
 

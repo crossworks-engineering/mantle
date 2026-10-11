@@ -1,8 +1,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { updateAgent } from '@/lib/agents';
-import { updateAiWorker } from '@/lib/ai-workers';
+import { getAgent, updateAgent } from '@/lib/agents';
+import { getAiWorker, updateAiWorker } from '@/lib/ai-workers';
+import { AGENT_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
 import { buildComboDiff, COMBO_DEFS } from '@/lib/model-combos';
 import { loadComboContext } from '@/lib/model-combos-context';
 import { errorMessage } from '@mantle/std';
@@ -47,6 +48,22 @@ export async function POST(req: Request) {
     }
     const rowId = t.id.split(':')[1]!;
     try {
+      // A new key on a route with a base URL of someone's choosing is the
+      // keys area's (W7a fix round 4, lib/model-route-pair.ts).
+      const stored =
+        t.targetKind === 'agent'
+          ? await getAgent(user.id, rowId)
+          : await getAiWorker(user.id, rowId);
+      const refused = await modelRoutesRefusal(
+        user,
+        stored as Record<string, unknown> | null,
+        { apiKeyId: t.next.apiKeyId },
+        AGENT_ROUTES,
+      );
+      if (refused) {
+        failed.push({ id: t.id, error: refused });
+        continue;
+      }
       if (t.targetKind === 'agent') {
         await updateAgent(user.id, rowId, {
           provider: t.next.provider,

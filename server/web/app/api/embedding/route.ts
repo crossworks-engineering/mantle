@@ -5,6 +5,7 @@ import { suggestBackupRoute } from '@/lib/embedding-backup';
 import { EXTRACTION_CONCURRENCY_MAX } from '@mantle/embeddings';
 import { loadProviderAlerts } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
+import { EMBEDDING_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
 import { errorMessage } from '@mantle/std';
 
 /** The single embedder config + the vector-column dim + the owner's API keys
@@ -76,17 +77,29 @@ export async function POST(req: Request) {
   const backupEnabled = body.backup_enabled === 'on' || body.backup_enabled === true;
   const backupProvider = orNull(body.backup_provider);
 
+  const routes = {
+    primaryBaseUrl: orNull(body.primary_base_url),
+    primaryApiKeyId: orNull(body.primary_api_key_id),
+    backupBaseUrl: backupEnabled ? orNull(body.backup_base_url) : null,
+    backupApiKeyId: backupEnabled ? orNull(body.backup_api_key_id) : null,
+  };
+  // A key with a base URL of the writer's choosing is the keys area's (W7a
+  // fix round 4, lib/model-route-pair.ts).
+  const stored = await getEmbeddingConfig(user.id);
+  const keysRefused = await modelRoutesRefusal(user, stored, routes, EMBEDDING_ROUTES);
+  if (keysRefused) return NextResponse.json({ ok: false, error: keysRefused }, { status: 403 });
+
   try {
     await upsertEmbeddingConfig(user.id, {
       model,
       primaryProvider,
-      primaryBaseUrl: orNull(body.primary_base_url),
-      primaryApiKeyId: orNull(body.primary_api_key_id),
+      primaryBaseUrl: routes.primaryBaseUrl,
+      primaryApiKeyId: routes.primaryApiKeyId,
       primaryLabel: orNull(body.primary_label),
       backupEnabled: backupEnabled && !!backupProvider,
       backupProvider: backupEnabled ? backupProvider : null,
-      backupBaseUrl: backupEnabled ? orNull(body.backup_base_url) : null,
-      backupApiKeyId: backupEnabled ? orNull(body.backup_api_key_id) : null,
+      backupBaseUrl: routes.backupBaseUrl,
+      backupApiKeyId: routes.backupApiKeyId,
       backupLabel: backupEnabled ? orNull(body.backup_label) : null,
       extractionConcurrency: nullableInt(
         body.extraction_concurrency,

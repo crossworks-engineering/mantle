@@ -80,6 +80,7 @@ function toSummary(h: Heartbeat): HeartbeatSummary {
     state: (h.state ?? {}) as Record<string, unknown>,
     status: h.status,
     completionReason: h.completionReason,
+    createdBy: h.createdBy ?? null,
     createdAt: h.createdAt.toISOString(),
     updatedAt: h.updatedAt.toISOString(),
   };
@@ -231,8 +232,9 @@ export type UpdateHeartbeatInput = Partial<Omit<CreateHeartbeatInput, 'slug'>> &
 };
 
 /** The fields that set what a heartbeat does (its prompt, its agent, when
- *  and where it fires): a change of any records its maker. */
-const MAKER_FIELDS = ['agentSlug', 'skillSlug', 'schedule', 'surface', 'state'] as const;
+ *  and where it fires; its name is in the prompt the turn reads): a change
+ *  of any records its maker. */
+const MAKER_FIELDS = ['name', 'agentSlug', 'skillSlug', 'schedule', 'surface', 'state'] as const;
 
 export async function updateHeartbeat(
   ownerId: string,

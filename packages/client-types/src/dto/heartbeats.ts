@@ -55,6 +55,10 @@ export interface HeartbeatDTO {
   state: Record<string, unknown>;
   status: 'active' | 'paused' | 'completed' | 'cancelled';
   completionReason: string | null;
+  /** The login that set up what this heartbeat does, when it is not the
+   *  brain owner (workspaces W7a): the tick fires it in that login's scope.
+   *  Null: the brain owner's. */
+  createdBy: string | null;
   createdAt: string;
   updatedAt: string;
 }

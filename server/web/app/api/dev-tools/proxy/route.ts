@@ -29,6 +29,7 @@ import {
 } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
+import { vaultPairRefusalFor } from '@/lib/tools';
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
@@ -103,8 +104,16 @@ export async function POST(req: Request) {
     headers,
     body,
   };
+  // A request that resolves a vault ref sends that key to a URL the caller
+  // picks: that is the keys area's, not the settings area's (W7a fix round
+  // 4, @mantle/tools secret-ref-gate.ts). The anchor always may.
+  const refs = collectSecretRefs(handler);
+  if (refs.length > 0) {
+    const refused = await vaultPairRefusalFor(user);
+    if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+  }
   const secrets = new Map<string, string>();
-  for (const ref of collectSecretRefs(handler)) {
+  for (const ref of refs) {
     const plaintext = await getApiKey(user.id, ref.service, ref.label);
     if (plaintext === null) {
       return NextResponse.json(

@@ -24,7 +24,10 @@ import {
   dbMcpOAuthStore,
   KNOWN_MCP_SERVERS,
   mcpGroupSlug,
+  mcpPairing,
   parseMcpBinding,
+  vaultPairingChanged,
+  vaultPairLoginRefusal,
   setMcpOAuthClient,
   voidConnectorMarksForKey,
   type KnownMcpServer,
@@ -178,6 +181,11 @@ export async function updateMcpConnector(
   ownerId: string,
   groupSlug: string,
   patch: UpdateMcpConnectorInput,
+  /** The signed-in login when it is not the brain owner (null: the anchor).
+   *  Setting or changing the key, or the URL it (or an OAuth connector's
+   *  token) goes to, needs its keys area and records it as the connector's
+   *  configuring login (W7a fix round 4, @mantle/tools secret-ref-gate.ts). */
+  login: string | null = null,
 ): Promise<{ connector: McpConnectorSummary } | { error: string; status: number }> {
   const [row] = await db
     .select()
@@ -210,6 +218,14 @@ export async function updateMcpConnector(
     nextMcp = parsed.value;
   }
 
+  const before = mcpPairing(mcp, true);
+  const after = mcpPairing(nextMcp, true);
+  if (vaultPairingChanged(before, after)) {
+    const refused = await vaultPairLoginRefusal(login);
+    if (refused) return { error: refused, status: 403 };
+  }
+  const repaired = before.key !== after.key || before.dest !== after.dest;
+
   const oauthTouched = patch.oauthClient !== undefined || patch.scope !== undefined;
   if (oauthTouched && !mcp.oauth?.enabled) {
     return {
@@ -224,6 +240,7 @@ export async function updateMcpConnector(
       ...(patch.name !== undefined ? { name: patch.name } : {}),
       ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
       ...(bindingTouched ? { integration: { ...row.integration!, mcp: nextMcp } } : {}),
+      ...(repaired ? { configuredBy: login } : {}),
       updatedAt: new Date(),
     })
     .where(eq(toolGroups.id, row.id))

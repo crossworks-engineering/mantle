@@ -13,6 +13,7 @@
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db, agents, skills, aiWorkers, promptVersions, type PromptVersion } from '@mantle/db';
+import { restampHeartbeatMakers } from '@mantle/tools';
 import { PROSE_REGISTRY, type ProseEntityType } from './registry';
 
 export type { PromptVersion };
@@ -68,27 +69,35 @@ export async function readLiveProse(
   return null;
 }
 
-/** Write the new body to the live entity, owner-scoped. */
+/** Write the new body to the live entity, owner-scoped. `login`: the
+ *  signed-in login when it is not the brain owner; an agent's or a skill's
+ *  heartbeats then run its words, so they become its (W7a fix round 4,
+ *  @mantle/tools heartbeat-maker.ts). */
 async function writeLiveProse(
   ownerId: string,
   entityType: string,
   entityId: string,
   field: string,
   body: string,
+  login: string | null,
 ): Promise<void> {
   const now = new Date();
   if (entityType === 'agent' && field === 'system_prompt') {
-    await db
+    const [row] = await db
       .update(agents)
       .set({ systemPrompt: body, updatedAt: now })
-      .where(and(eq(agents.id, entityId), eq(agents.ownerId, ownerId)));
+      .where(and(eq(agents.id, entityId), eq(agents.ownerId, ownerId)))
+      .returning({ slug: agents.slug });
+    if (row) await restampHeartbeatMakers(ownerId, login, { agentSlug: row.slug });
     return;
   }
   if (entityType === 'skill' && field === 'instructions') {
-    await db
+    const [row] = await db
       .update(skills)
       .set({ instructions: body, updatedAt: now })
-      .where(and(eq(skills.id, entityId), eq(skills.ownerId, ownerId)));
+      .where(and(eq(skills.id, entityId), eq(skills.ownerId, ownerId)))
+      .returning({ slug: skills.slug });
+    if (row) await restampHeartbeatMakers(ownerId, login, { skillSlug: row.slug });
     return;
   }
   if (entityType === 'worker' && field === 'system_prompt') {
@@ -189,6 +198,8 @@ export async function saveProse(args: {
   body: string;
   note?: string | null;
   author?: string | null;
+  /** The signed-in login when it is not the brain owner (writeLiveProse). */
+  login?: string | null;
 }): Promise<PromptVersion[]> {
   const { ownerId, entityType, entityId, field } = args;
   assertField(entityType, field);
@@ -223,14 +234,14 @@ export async function saveProse(args: {
       note: args.note ?? null,
       author: args.author ?? null,
     });
-    await writeLiveProse(ownerId, entityType, entityId, field, newBody);
+    await writeLiveProse(ownerId, entityType, entityId, field, newBody, args.login ?? null);
     return listProseVersions(ownerId, entityType, entityId, field);
   }
 
   const latest = existing[existing.length - 1]!;
   if (latest.body.trim() === newBody.trim()) {
     // No real change — keep live in sync (in case it drifted) but add no version.
-    await writeLiveProse(ownerId, entityType, entityId, field, newBody);
+    await writeLiveProse(ownerId, entityType, entityId, field, newBody, args.login ?? null);
     return listProseVersions(ownerId, entityType, entityId, field);
   }
   await insertVersion({
@@ -243,7 +254,7 @@ export async function saveProse(args: {
     note: args.note ?? null,
     author: args.author ?? null,
   });
-  await writeLiveProse(ownerId, entityType, entityId, field, newBody);
+  await writeLiveProse(ownerId, entityType, entityId, field, newBody, args.login ?? null);
   return listProseVersions(ownerId, entityType, entityId, field);
 }
 
@@ -258,6 +269,8 @@ export async function revertProse(args: {
   field: string;
   toVersion: number;
   author?: string | null;
+  /** The signed-in login when it is not the brain owner (writeLiveProse). */
+  login?: string | null;
 }): Promise<PromptVersion[]> {
   const { ownerId, entityType, entityId, field, toVersion } = args;
   assertField(entityType, field);
@@ -272,5 +285,6 @@ export async function revertProse(args: {
     body: target.body,
     note: `revert to v${toVersion}`,
     author: args.author ?? null,
+    login: args.login ?? null,
   });
 }

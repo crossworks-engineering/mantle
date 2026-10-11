@@ -25,6 +25,7 @@ import {
 import { parseMcpBinding } from './integration-meta';
 import { VOIDED_MARK_SIG, canonical, connectorOpensBeyondAdmin } from './external-access';
 import { closeMcpClient, mcpListRemoteTools, type McpRemoteTool } from './mcp-client';
+import { mcpPairing, vaultPairRunRefusal } from './secret-ref-gate';
 import {
   clearMcpOAuthSecrets,
   dbMcpOAuthStore,
@@ -210,6 +211,10 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
     );
   }
 
+  // The connector's key goes to its URL only while the login that paired
+  // them holds the keys area (W7a fix round 4, secret-ref-gate.ts).
+  const keyRefused = await vaultPairRunRefusal(group.configuredBy, ownerId, !!mcpPairing(mcp).key);
+  if (keyRefused) throw new Error(keyRefused);
   const { tools: remote, serverInfo } = await mcpListRemoteTools(ownerId, groupSlug, mcp);
 
   const ownerRows = await db.select().from(tools).where(eq(tools.ownerId, ownerId));
@@ -321,6 +326,10 @@ export type CreateMcpConnectorInput = {
   oauthClient?: McpOAuthClientInput;
   /** OAuth scope override (implies `oauth`). */
   oauthScope?: string;
+  /** The login that paired the connector's key with its URL, when it is not
+   *  the brain owner (tool_groups.configured_by, W7a fix round 4). The
+   *  caller checks the keys area first (secret-ref-gate.ts). */
+  configuredBy?: string | null;
 };
 
 export type CreateMcpConnectorResult = {
@@ -388,6 +397,7 @@ export async function createMcpConnector(
     toolSlugs: [],
     integration: { service: connectorSlug, mcp: parsed.value },
     enabled: true,
+    configuredBy: input.configuredBy ?? null,
   });
 
   if (input.oauthClient || input.oauthScope) {

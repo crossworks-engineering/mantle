@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 
 import { getOwnerOr401 } from '@/lib/auth';
 import { listProseVersions, saveProse, revertProse } from '@/lib/studio/prompt-versions';
+import { toolMakerFor } from '@/lib/tools';
 
 // GET /api/studio/prose?entityType=&entityId=&field= → { versions }
 export async function GET(req: Request) {
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
             field,
             toVersion: payload.revertTo,
             author: user.id,
+            login: toolMakerFor(user),
           })
         : await saveProse({
             ownerId: user.id,
@@ -61,6 +63,7 @@ export async function POST(req: Request) {
             body: String(payload.body ?? ''),
             note: payload.note ?? null,
             author: user.id,
+            login: toolMakerFor(user),
           });
     return NextResponse.json({ versions });
   } catch (err) {

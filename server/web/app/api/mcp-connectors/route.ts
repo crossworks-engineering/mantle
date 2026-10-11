@@ -1,7 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { createMcpConnector, dbMcpOAuthStore, startMcpOAuth } from '@mantle/tools';
+import {
+  createMcpConnector,
+  dbMcpOAuthStore,
+  mcpPairing,
+  startMcpOAuth,
+  vaultPairLoginRefusal,
+} from '@mantle/tools';
 import {
   connectorOAuthCallbackUrl,
   listMcpConnectors,
@@ -10,6 +16,7 @@ import {
 } from '@/lib/mcp-connectors';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { toolMakerFor } from '@/lib/tools';
 
 /** MCP connectors: external MCP servers consumed as per-connector tool
  *  groups. GET lists connected servers plus the known-servers catalog
@@ -57,10 +64,19 @@ export async function POST(req: Request) {
   }
   const { oauthClient, scope, ...rest } = parsed.data;
   const oauth = !!(rest.oauth || oauthClient || scope);
+  // A connector with a vault key sends it to its URL: pairing the two is the
+  // keys area's (W7a fix round 4, @mantle/tools secret-ref-gate.ts). An OAuth
+  // connector's token is minted for its URL by the authorization itself.
+  const configuredBy = toolMakerFor(user);
+  if (mcpPairing({ url: rest.url, secretRef: rest.secretRef }).key) {
+    const refused = await vaultPairLoginRefusal(configuredBy);
+    if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+  }
   let result: Awaited<ReturnType<typeof createMcpConnector>>;
   try {
     result = await createMcpConnector(user.id, {
       ...rest,
+      configuredBy,
       oauth,
       ...(oauthClient ? { oauthClient } : {}),
       ...(scope ? { oauthScope: scope } : {}),

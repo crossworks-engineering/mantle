@@ -1,6 +1,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { AGENT_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
+import { toolMakerFor } from '@/lib/tools';
+import { restampHeartbeatMakers } from '@mantle/tools';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
 import { createAgent, listAgents } from '@/lib/agents';
@@ -94,8 +97,15 @@ export async function POST(req: Request) {
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
+  // A key with a base URL of the writer's choosing is the keys area's (W7a
+  // fix round 4, lib/model-route-pair.ts).
+  const keysRefused = await modelRoutesRefusal(user, null, parsed.data, AGENT_ROUTES);
+  if (keysRefused) return NextResponse.json({ error: keysRefused }, { status: 403 });
   try {
     const row = await createAgent(user.id, parsed.data);
+    // A heartbeat already bound to this slug now runs this prompt (W7a fix
+    // round 4, @mantle/tools heartbeat-maker.ts).
+    await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });
     return NextResponse.json({ agent: row });
   } catch (err) {
     const msg = errorMessage(err);

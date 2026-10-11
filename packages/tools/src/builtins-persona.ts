@@ -32,6 +32,8 @@ import {
 } from '@mantle/db';
 import { notesTargetOf, writeLearnedEntries } from '@mantle/content';
 import { areaSystem } from './admin-gate';
+import { restampHeartbeatMakers } from './heartbeat-maker';
+import { toolMaker } from './secret-ref-gate';
 import { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 import type { BuiltinToolDef } from './types';
 
@@ -207,12 +209,16 @@ const update_persona: BuiltinToolDef = {
       };
     }
 
-    await areaSystem('assistants', () =>
-      db
+    await areaSystem('assistants', async () => {
+      await db
         .update(agents)
         .set({ personaNotes: result.notes, updatedAt: new Date() })
-        .where(eq(agents.id, row.id)),
-    );
+        .where(eq(agents.id, row.id));
+      // The persona notes are in this agent's prompt, which its heartbeats
+      // run: a login other than the anchor writing them makes those
+      // heartbeats its own (W7a fix round 4, heartbeat-maker.ts).
+      await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), { agentSlug: slug });
+    });
 
     ctx.step?.setMeta({
       agent: slug,

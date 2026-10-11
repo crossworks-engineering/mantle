@@ -47,6 +47,9 @@ export type IntegrationGroup = {
   name: string;
   toolSlugs: string[];
   integration: ToolGroupIntegration | null;
+  /** The login that paired the group's vault key with its host (W7a fix
+   *  round 4); null: the brain owner's. */
+  configuredBy: string | null;
 };
 
 /** The group row + its integration, or null when the group doesn't exist. */
@@ -61,6 +64,7 @@ export async function getGroupIntegration(
       name: toolGroups.name,
       toolSlugs: toolGroups.toolSlugs,
       integration: toolGroups.integration,
+      configuredBy: toolGroups.configuredBy,
     })
     .from(toolGroups)
     .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug)))
@@ -72,6 +76,7 @@ export async function getGroupIntegration(
     name: row.name,
     toolSlugs: row.toolSlugs ?? [],
     integration: row.integration ?? null,
+    configuredBy: row.configuredBy ?? null,
   };
 }
 

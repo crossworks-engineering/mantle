@@ -23,12 +23,21 @@
 -- {{oauth:...}} refs resolve only while that login holds the keys area.
 -- Null: the brain owner's (and every tool a sync or the system made).
 --
+-- A tool group (fix round 4) records the login that last paired its
+-- integration's vault key with its host (a base URL, an MCP connector's URL,
+-- an OAuth2 token URL), when that is not the brain owner: the tools an
+-- OpenAPI connector's sync writes and the tools authored into the group take
+-- it as their maker, and an MCP connector's key resolves only while that
+-- login holds the keys area. Null: the brain owner's.
+--
 -- No foreign keys: a login that is gone leaves its rows to the rules above
--- (a sandbox to the brain owner; a heartbeat pauses; a tool's secrets stop
--- resolving).
+-- (a sandbox to the brain owner; a heartbeat pauses; a tool's or a
+-- connector's secrets stop resolving).
 
 ALTER TABLE sandboxes ADD COLUMN IF NOT EXISTS created_by uuid;
 --> statement-breakpoint
 ALTER TABLE heartbeats ADD COLUMN IF NOT EXISTS created_by uuid;
 --> statement-breakpoint
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS created_by uuid;
+--> statement-breakpoint
+ALTER TABLE tool_groups ADD COLUMN IF NOT EXISTS configured_by uuid;

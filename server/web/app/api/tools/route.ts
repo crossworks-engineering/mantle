@@ -6,6 +6,7 @@ import {
   describeInheritance,
   getGroupIntegration,
   handlerCarriesSecretRefs,
+  inheritedToolMaker,
 } from '@mantle/tools';
 import { isUniqueViolation, db, toolGroups, and, eq } from '@mantle/db';
 import { createTool, keysAreaRefusal, listToolsForOwner, toolMakerFor } from '@/lib/tools';
@@ -53,8 +54,10 @@ export async function POST(req: Request) {
   }
   const { groupSlug, ...toolInput } = parsed.data;
   let inherited: string | null = null;
+  let groupMaker: { configuredBy: string | null } | null = null;
   if (groupSlug) {
     const group = await getGroupIntegration(user.id, groupSlug);
+    groupMaker = group;
     if (!group) {
       return NextResponse.json({ error: `Tool group "${groupSlug}" not found.` }, { status: 400 });
     }
@@ -82,7 +85,10 @@ export async function POST(req: Request) {
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
   }
   try {
-    const row = await createTool(user.id, { ...toolInput, createdBy: toolMakerFor(user) });
+    const row = await createTool(user.id, {
+      ...toolInput,
+      createdBy: inheritedToolMaker(toolMakerFor(user), groupMaker, toolInput.handler),
+    });
     if (groupSlug) {
       const [group] = await db
         .select({ id: toolGroups.id, toolSlugs: toolGroups.toolSlugs })

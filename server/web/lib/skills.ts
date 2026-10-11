@@ -10,6 +10,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db, heartbeats, skills, type Skill } from '@mantle/db';
 import type { SkillDTO } from '@mantle/client-types';
+import { restampHeartbeatMakers } from '@mantle/tools';
 
 /** The API/wire shape (see @mantle/client-types). Aliased here so the server's
  *  `toSummary` output is checked against the client contract — drift is a type
@@ -94,7 +95,17 @@ export type CreateSkillInput = {
   enabled?: boolean;
 };
 
-export async function createSkill(ownerId: string, input: CreateSkillInput): Promise<SkillSummary> {
+/**
+ * `login` on createSkill and updateSkill: the signed-in login when it is not
+ * the brain owner (null: the anchor). The heartbeats that run the skill then
+ * run its words, so they become its (W7a fix round 4, @mantle/tools
+ * heartbeat-maker.ts).
+ */
+export async function createSkill(
+  ownerId: string,
+  input: CreateSkillInput,
+  login: string | null = null,
+): Promise<SkillSummary> {
   const [row] = await db
     .insert(skills)
     .values({
@@ -108,6 +119,7 @@ export async function createSkill(ownerId: string, input: CreateSkillInput): Pro
     })
     .returning();
   if (!row) throw new Error('failed to insert skill');
+  await restampHeartbeatMakers(ownerId, login, { skillSlug: row.slug });
   return toSummary(row);
 }
 
@@ -117,6 +129,7 @@ export async function updateSkill(
   ownerId: string,
   id: string,
   patch: UpdateSkillInput,
+  login: string | null = null,
 ): Promise<SkillSummary | null> {
   const next: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.name !== undefined) next.name = patch.name;
@@ -129,6 +142,7 @@ export async function updateSkill(
     .set(next)
     .where(and(eq(skills.id, id), eq(skills.ownerId, ownerId)))
     .returning();
+  if (row) await restampHeartbeatMakers(ownerId, login, { skillSlug: row.slug });
   return row ? toSummary(row) : null;
 }
 

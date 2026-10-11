@@ -6,7 +6,7 @@
  */
 
 import { loginHasArea } from '@mantle/db';
-import { SECRET_REFS_NEED_KEYS } from '@mantle/tools';
+import { SECRET_REFS_NEED_KEYS, vaultPairLoginRefusal } from '@mantle/tools';
 
 /**
  * The maker a Tools route records on a tool it writes (tools.created_by, W7a
@@ -30,6 +30,19 @@ export async function keysAreaRefusal(user: {
   const maker = toolMakerFor(user);
   if (!maker) return null;
   return (await loginHasArea(maker, 'keys')) ? null : SECRET_REFS_NEED_KEYS;
+}
+
+/**
+ * Why the signed-in login may not pair a vault key with a host (a key id
+ * with a model route's base URL, a {{secret:...}} ref with a URL), or null:
+ * that is the keys area's, and the anchor login always may (W7a fix round
+ * 4, @mantle/tools secret-ref-gate.ts).
+ */
+export async function vaultPairRefusalFor(user: {
+  id: string;
+  actor: { id: string };
+}): Promise<string | null> {
+  return vaultPairLoginRefusal(toolMakerFor(user));
 }
 
 export {

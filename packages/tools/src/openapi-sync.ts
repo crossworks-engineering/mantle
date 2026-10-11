@@ -389,6 +389,11 @@ export async function syncOpenapiConnector(
   });
 
   const now = new Date();
+  // The tools carry the connector's auth template, so they are the login's
+  // that paired its key with its host (tool_groups.configured_by, W7a fix
+  // round 4): their refs resolve while that login holds the keys area
+  // (secretRefsRunRefusal), whoever runs the sync. Null: the brain owner's.
+  const createdBy = group.configuredBy ?? null;
   for (const ins of plan.inserts) {
     await db.insert(tools).values({
       ownerId,
@@ -399,19 +404,20 @@ export async function syncOpenapiConnector(
       handler: ins.handler,
       requiresConfirm: false,
       enabled: true,
+      createdBy,
     });
   }
   for (const upd of plan.updates) {
     const { slug, ...fields } = upd;
     await db
       .update(tools)
-      .set({ ...fields, updatedAt: now })
+      .set({ ...fields, createdBy, updatedAt: now })
       .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
   }
   for (const d of plan.disables) {
     await db
       .update(tools)
-      .set({ enabled: false, handler: d.handler, updatedAt: now })
+      .set({ enabled: false, handler: d.handler, createdBy, updatedAt: now })
       .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, d.slug)));
   }
 
@@ -459,6 +465,10 @@ export type CreateOpenapiConnectorInput = {
   secretRef?: string;
   authTemplate?: { headers?: Record<string, string>; query?: Record<string, string> };
   selection?: { tags?: string[]; operations?: string[] };
+  /** The login that paired the connector's key with its host, when it is
+   *  not the brain owner (tool_groups.configured_by, W7a fix round 4). The
+   *  caller checks the keys area first (secret-ref-gate.ts). */
+  configuredBy?: string | null;
 };
 
 export type CreateOpenapiConnectorResult = {
@@ -524,6 +534,7 @@ export async function createOpenapiConnector(
     toolSlugs: [],
     integration: meta.value,
     enabled: true,
+    configuredBy: input.configuredBy ?? null,
   });
 
   try {

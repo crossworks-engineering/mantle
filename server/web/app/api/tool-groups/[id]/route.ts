@@ -1,10 +1,15 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { parseIntegrationMeta } from '@mantle/tools';
+import {
+  integrationPairing,
+  parseIntegrationMeta,
+  vaultPairingChanged,
+  vaultPairLoginRefusal,
+} from '@mantle/tools';
 import { deleteToolGroup, getToolGroup, updateToolGroup } from '@/lib/tool-groups';
 import { firstIssue } from '@/lib/zod-issue';
-import { keysAreaRefusal } from '@/lib/tools';
+import { toolMakerFor } from '@/lib/tools';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -103,24 +108,29 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       if (!meta.ok) return NextResponse.json({ error: meta.error }, { status: 400 });
       integrationPatch = meta.value;
       warnings.push(...meta.warnings);
-      // An OAuth2 group sends two vault credentials to its token URL and the
-      // token to its base URL's origin: changing either is the keys area's
-      // (W7a fix round 3, @mantle/tools secret-ref-gate.ts).
-      const stored = current.integration as { oauth2?: unknown; baseUrl?: unknown } | null;
-      const next = integrationPatch as { oauth2?: unknown; baseUrl?: unknown } | null;
-      const movesOauth =
-        next?.oauth2 !== undefined &&
-        (JSON.stringify(next.oauth2) !== JSON.stringify(stored?.oauth2) ||
-          next.baseUrl !== stored?.baseUrl);
-      if (movesOauth) {
-        const refused = await keysAreaRefusal(user);
-        if (refused) return NextResponse.json({ error: refused }, { status: 403 });
-      }
+    }
+  }
+  // The group's vault key (a secret ref, its auth template's refs, OAuth2
+  // credentials) goes to its base URL and token URL, for every tool authored
+  // into it: setting or changing either side while the other is present is
+  // the keys area's, and the group records who did (W7a fix rounds 3 and 4,
+  // @mantle/tools secret-ref-gate.ts).
+  let configuredBy: string | null | undefined;
+  if (integration !== undefined) {
+    const before = integrationPairing(current.integration);
+    const after = integrationPairing(integrationPatch);
+    if (vaultPairingChanged(before, after)) {
+      const refused = await vaultPairLoginRefusal(toolMakerFor(user));
+      if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+    }
+    if (before.key !== after.key || before.dest !== after.dest) {
+      configuredBy = toolMakerFor(user);
     }
   }
   const row = await updateToolGroup(user.id, idParsed.data.id, {
     ...rest,
     ...(integration !== undefined ? { integration: integrationPatch } : {}),
+    ...(configuredBy !== undefined ? { configuredBy } : {}),
   });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ group: row, ...(warnings.length > 0 ? { warnings } : {}) });

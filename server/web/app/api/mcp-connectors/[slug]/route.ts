@@ -9,6 +9,7 @@ import {
   updateMcpConnector,
 } from '@/lib/mcp-connectors';
 import { firstIssue } from '@/lib/zod-issue';
+import { toolMakerFor } from '@/lib/tools';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const user = await getOwnerOr401();
@@ -45,7 +46,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const result = await updateMcpConnector(user.id, slug, parsed.data);
+  const result = await updateMcpConnector(user.id, slug, parsed.data, toolMakerFor(user));
   if ('error' in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
