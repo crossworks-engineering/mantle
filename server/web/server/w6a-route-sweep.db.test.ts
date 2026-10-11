@@ -53,6 +53,53 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
 });
 
+/**
+ * The reads a member route ('own-rule', W6a) sends to the system pool, by
+ * route and calling file: each is filtered to the member's own rows by its
+ * own rule (its personal space and its apps there, the items it authored
+ * with their accepted snapshots, its preferences, push devices and MCP
+ * clients, its Team assistant's workspace row; the tree search sorts a list
+ * it was handed, no table). Every brain item it reads beyond those goes
+ * through withViewer. The list only shrinks: these routes move into the
+ * request scope in W7/W8.
+ */
+const OWN_RULE_SYSTEM_READS: ReadonlySet<string> = new Set([
+  'GET /api/member/accepted packages/content/src/member-accepted.ts',
+  'GET /api/member/accepted/:id packages/content/src/member-accepted.ts',
+  'GET /api/member/draws/:id/svg packages/content/src/member-accepted.ts',
+  'GET /api/member/files/:id packages/content/src/member-accepted.ts',
+  'GET /api/member/items packages/content/src/member-accepted.ts',
+  'GET /api/member/library packages/content/src/member-accepted.ts',
+  'GET /api/member/library/:id packages/content/src/member-accepted.ts',
+  'GET /api/member/items packages/content/src/member-space.ts',
+  'GET /api/member/space packages/content/src/member-space.ts',
+  'GET /api/member/space/:id packages/content/src/member-space.ts',
+  'GET /api/member/space/:id/bytes packages/content/src/member-space.ts',
+  'PATCH /api/member/space/:id packages/content/src/member-space.ts',
+  'DELETE /api/member/space/:id packages/content/src/member-space.ts',
+  'POST /api/member/space/:id/save packages/content/src/member-space.ts',
+  'PUT /api/member/space/:id/draft packages/content/src/member-space.ts',
+  'GET /api/member/my-apps packages/content/src/member-space-apps.ts',
+  'GET /api/member/my-apps/deleted packages/content/src/member-space-apps.ts',
+  'GET /api/member/my-apps/:id/history packages/content/src/member-space-apps.ts',
+  'DELETE /api/member/my-apps/:id/history/:snapshotId packages/content/src/member-space-apps.ts',
+  'POST /api/member/my-apps/:id/delete packages/content/src/member-space-apps.ts',
+  'POST /api/member/my-apps/:id/undelete packages/content/src/member-space-apps.ts',
+  'POST /api/member/apps/:id/frame-ticket packages/content/src/member-space-apps.ts',
+  'GET /api/member/chat packages/content/src/team-assistant.ts',
+  'POST /api/member/chat packages/content/src/team-assistant.ts',
+  'GET /api/member/apps packages/content/src/profile-preferences.ts',
+  'GET /api/member/home packages/content/src/profile-preferences.ts',
+  'GET /api/member/mcp packages/content/src/profile-preferences.ts',
+  'GET /api/member/mcp packages/tools/src/external-access.ts',
+  'GET /api/member/mcp server/web/app/api/member/mcp/route.ts',
+  'GET /api/member/mcp server/web/lib/mcp-clients.ts',
+  'GET /api/member/push/preferences server/web/lib/push/store.ts',
+  'PUT /api/member/push/preferences server/web/lib/push/store.ts',
+  'GET /api/member/push/subscriptions server/web/lib/push/store.ts',
+  'GET /api/member/tree/:kind/search packages/content/src/tree/member-tree.ts',
+]);
+
 type Json = Record<string, unknown>;
 
 /** Streams that never end, and routes that reach outside this box. Their
@@ -309,7 +356,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         }
         if (r.outcome?.kind === 'own-rule') {
           ownRule += 1;
-          for (const read of r.reads) systemReads.add(`${key}: ${read}`);
+          for (const read of r.reads) {
+            const file = read.replace(/^\S+ /, '').replace(/^.*?((packages|server)\/)/, '$1');
+            systemReads.add(`${key} ${file}`);
+          }
         }
         if (isOwnerRoute(method, e.pattern)) {
           if (memberMayRead(method, e.pattern)) {
@@ -325,7 +375,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         }
       }
     }
-    console.log(`W6A_OWN_RULE ${ownRule} ${JSON.stringify([...systemReads].sort())}`);
+    // A member route reads the system pool only by its own rule, and only
+    // where it did when W6a shipped.
+    expect([...systemReads].filter((r) => !OWN_RULE_SYSTEM_READS.has(r))).toEqual([]);
+    expect(ownRule).toBeGreaterThan(40);
     expect(failures).toEqual([]);
     expect(opened).toBeGreaterThan(20);
   }, 900_000);
