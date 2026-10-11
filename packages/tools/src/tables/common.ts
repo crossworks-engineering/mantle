@@ -113,12 +113,15 @@ export const DRAFT_REVIEW_HINT = (tableId: string) =>
   `publishes (and re-indexes), Discard reverts.`;
 
 /** Draft-first workbook file for windowed reads/writes; null = legacy JSONB
- *  table (still served by the doc path). Below admin (a team-level agent) it
- *  is the published file only: an admin's unsaved draft is never read there. */
+ *  table (still served by the doc path). Below admin (a team-level agent),
+ *  and for a scope that may not edit the table, it is the published file
+ *  only: an unsaved draft is never read there. */
 export async function windowFile(ownerId: string, tableId: string): Promise<string | null> {
   const surface = await tableSqlSurface(ownerId, tableId).catch(() => null);
   if (!surface) return null;
-  if (!readsDrafts()) return surface.abs;
+  // The row's rule (draftAllowed): below admin, and for an Admin user's
+  // scope on a table it may not edit, the published file only (W6a).
+  if (!readsDrafts() || !surface.draftOk) return surface.abs;
   const draftAbs = draftPathFor(surface.abs);
   return existsSync(draftAbs) ? draftAbs : surface.abs;
 }
