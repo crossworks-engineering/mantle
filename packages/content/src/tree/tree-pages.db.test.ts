@@ -157,5 +157,4 @@ describe.skipIf(!URL)('pages in the item tree', () => {
     made.push(lifted.childId);
     expect(await own(lifted.childId)).toMatchObject({ path: plans!.path, parent_id: null });
   });
-
 });
