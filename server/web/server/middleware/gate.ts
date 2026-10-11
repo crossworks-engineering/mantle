@@ -249,10 +249,7 @@ export function gate(): MiddlewareHandler {
     // The sandbox frame document navigates with a `?t=` frame ticket — same
     // can't-carry-a-credential shape as the asset paths above, same narrow
     // acceptance: these two paths only, GET only, kind 'f' only.
-    if (
-      (OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path)) &&
-      req.method === 'GET'
-    ) {
+    if ((OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path)) && req.method === 'GET') {
       const t = url.searchParams.get('t');
       if (t && (await verifySignedToken(t, secret)) && tokenKind(t) === 'f') {
         return proceed();
