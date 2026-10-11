@@ -59,6 +59,29 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 
 /**
+ * The writes a request scope sends to the system pool through `db` (W6a
+ * fix round 1, L2), by login kind, route and calling file: the typed writes
+ * (insert, update, delete) and executeWrite of a READ request in the
+ * login's scope. A member's reads write nothing (the list has no member
+ * entry). An Admin user's reads make the system's own bookkeeping only:
+ *  - GET /api/activity: journey.ts closes abandoned running traces (the
+ *    self-heal before the read);
+ *  - GET /api/app-nav: tree/apps-nav.ts moves the pre-tree sidebar layout
+ *    and the login's own pins and opens into the tree, once;
+ *  - GET /api/docs/reader: files/docs.ts registers the documentation
+ *    collection on first read;
+ *  - GET /api/pages/:id: pages/read.ts stores missing block ids, only for a
+ *    reader who may edit the page (mayEdit).
+ * The list only shrinks; a new entry needs review.
+ */
+const REQUEST_SCOPE_SYSTEM_WRITES: ReadonlySet<string> = new Set<string>([
+  'admin GET /api/activity update server/web/lib/journey.ts',
+  'admin GET /api/app-nav executeWrite packages/content/src/tree/apps-nav.ts',
+  'admin GET /api/docs/reader insert packages/files/src/docs.ts',
+  'admin GET /api/pages/:id update packages/content/src/pages/read.ts',
+]);
+
+/**
  * The reads a member route ('own-rule', W6a) sends to the system pool, by
  * route and calling file: each is filtered to the member's own rows by its
  * own rule (its personal space and its apps there, the items it authored
@@ -68,17 +91,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
  * through withViewer. The list only shrinks: these routes move into the
  * request scope in W7/W8.
  */
-/**
- * The writes a request scope sends to the system pool through `db` (W6a
- * fix round 1, L2), by route and calling file: the typed writes (insert,
- * update, delete) and executeWrite a READ request makes in the login's
- * scope, or a member's. Each is the system's own bookkeeping, keyed to what
- * the scope already reads (lazy repairs of an item it reads, its own marks,
- * the kind roots of the tree). The list only shrinks; a new entry needs
- * review.
- */
-const REQUEST_SCOPE_SYSTEM_WRITES: ReadonlySet<string> = new Set<string>([]);
-
 const OWN_RULE_SYSTEM_READS: ReadonlySet<string> = new Set([
   'GET /api/member/accepted packages/content/src/member-accepted.ts',
   'GET /api/member/accepted/:id packages/content/src/member-accepted.ts',
@@ -292,10 +304,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   const skipped = (pattern: string) => SKIP.some((re) => re.test(pattern));
   /** The request-scope writes the sweeps saw (L2), checked at the end. */
   const scopeWrites = new Set<string>();
-  const noteWrites = (key: string, writes: readonly string[]) => {
+  const noteWrites = (who: 'admin' | 'member', key: string, writes: readonly string[]) => {
     for (const w of writes) {
       const file = w.replace(/^\S+ /, '').replace(/^.*?((packages|server)\/)/, '$1');
-      scopeWrites.add(`${key} ${w.split(' ')[0]} ${file}`);
+      scopeWrites.add(`${who} ${key} ${w.split(' ')[0]} ${file}`);
     }
   };
   const isPublic = (pattern: string) =>
@@ -319,7 +331,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       if (isMemberRoute('GET', e.pattern) || isClientRoute('GET', e.pattern)) continue;
       const r = await call(concrete(e.pattern, true), owner);
       const key = `GET ${e.pattern}`;
-      noteWrites(key, r.writes);
+      noteWrites('admin', key, r.writes);
       if (r.status >= 500 || r.status === 0)
         failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
       else if (r.status !== 401 && r.status !== 403 && r.outcome?.kind !== 'user') {
@@ -368,7 +380,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         const read = method === 'GET';
         const r = await call(concrete(e.pattern, read), mem, method);
         const key = `${method} ${e.pattern}`;
-        noteWrites(key, r.writes);
+        noteWrites('member', key, r.writes);
         if (r.status >= 500 || r.status === 0) {
           failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
           continue;
@@ -511,7 +523,9 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         if (!isOwnerRoute(method, e.pattern)) continue;
         if (routeClass(e.pattern)?.kind !== 'content') continue;
         const probe = concrete(e.pattern, false);
-        if (!itemWriteTarget(method, e.pattern, probe)) continue;
+        // Routes whose id names another row (a share, a revision, a
+        // deleted app) are checked in w6a-fix-sweep.db.test.ts.
+        if (itemWriteTarget(method, e.pattern, probe)?.ref !== 'node') continue;
         for (const id of [privNote, sideNote]) {
           const parts = probe.split('/');
           parts[e.pattern.split('/').indexOf(':id')] = id;
@@ -550,6 +564,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   it('L2: the system-pool writes of request scopes are the pinned list', () => {
     // Runs after the Admin and member sweeps above (same file, in order).
     expect([...scopeWrites].filter((w) => !REQUEST_SCOPE_SYSTEM_WRITES.has(w)).sort()).toEqual([]);
+    expect([...scopeWrites].filter((w) => w.startsWith('member ')).sort()).toEqual([]);
   });
 
   it('drafts: an Admin user reads the draft of an item it may edit, a member none', async () => {
