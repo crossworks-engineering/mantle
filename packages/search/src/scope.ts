@@ -43,6 +43,28 @@ export function scopeExactMaxItems(): number {
 
 const counted = new WeakMap<WorkspaceScope, Map<ScopeTable, Promise<number>>>();
 
+/** The same counts by the scope's workspaces and login, kept briefly across
+ *  scopes (W7a): a request or an MCP call builds a new scope object each
+ *  time, and the counts only choose a plan (exact or HNSW), so a count up
+ *  to COUNT_TTL_MS old is as good as a fresh one. */
+const COUNT_TTL_MS = 30_000;
+const recentCounts = new Map<string, { at: number; byTable: Map<ScopeTable, Promise<number>> }>();
+
+function countsFor(scope: WorkspaceScope): Map<ScopeTable, Promise<number>> {
+  const own = counted.get(scope);
+  if (own) return own;
+  const key = `${[...scope.ws].sort().join(',')}|${scope.loginId ?? ''}`;
+  const now = Date.now();
+  let hit = recentCounts.get(key);
+  if (!hit || now - hit.at > COUNT_TTL_MS) {
+    if (recentCounts.size > 500) recentCounts.clear();
+    hit = { at: now, byTable: new Map() };
+    recentCounts.set(key, hit);
+  }
+  counted.set(scope, hit.byTable);
+  return hit.byTable;
+}
+
 /** The scope's items, as one array (at most `cap`, on the GIN index). */
 function scopeItems(cap: number): SQL {
   return sql`array(select id from nodes where read_ws && mantle_scope_ws() limit ${cap})`;
@@ -84,12 +106,7 @@ export async function smallScope(table: ScopeTable = 'nodes'): Promise<boolean> 
   const scope = currentWorkspaceScope();
   const max = scopeExactMaxRows();
   if (!scope || max === 0) return false;
-  let byTable = counted.get(scope);
-  if (!byTable) {
-    byTable = new Map();
-    counted.set(scope, byTable);
-  }
-  const cache = byTable;
+  const cache = countsFor(scope);
   const count = (t: ScopeTable): Promise<number> => {
     let p = cache.get(t);
     if (!p) {
@@ -97,6 +114,8 @@ export async function smallScope(table: ScopeTable = 'nodes'): Promise<boolean> 
         const rows = (await db.execute(countRows(t, max + 1))) as unknown as Array<{ n: number }>;
         return Number(rows[0]?.n ?? 0);
       })();
+      // A failed count is not kept: the next search asks again.
+      p.catch(() => cache.delete(t));
       cache.set(t, p);
     }
     return p;
