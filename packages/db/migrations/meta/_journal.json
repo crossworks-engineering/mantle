@@ -1891,6 +1891,13 @@
       "when": 1790195460000,
       "tag": "0270_sandboxes_created_by",
       "breakpoints": true
+    },
+    {
+      "idx": 271,
+      "version": "7",
+      "when": 1790195520000,
+      "tag": "0271_telegram_chat_login",
+      "breakpoints": true
     }
   ]
 }

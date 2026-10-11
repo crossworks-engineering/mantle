@@ -15,6 +15,7 @@ import {
 import { nodes } from './nodes';
 import { agents } from './agents';
 import { channels } from './channels';
+import { authUsers } from './auth-users';
 
 export const telegramChatType = pgEnum('telegram_chat_type', ['private', 'group', 'supergroup']);
 
@@ -96,12 +97,18 @@ export const telegramChats = pgTable(
     responderAgentId: uuid('responder_agent_id').references(() => agents.id, {
       onDelete: 'set null',
     }),
+    /** The user this chat is paired to (workspaces W7d, 0271): set when that
+     *  login pairs it with its code while signed in. A turn on the chat runs
+     *  as this login, in its assistant's workspace. NULL = not paired (a
+     *  pending or blocked chat, or one whose login is gone): no turn runs. */
+    loginId: uuid('login_id').references(() => authUsers.id, { onDelete: 'set null' }),
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     index('telegram_chats_account_idx').on(t.accountId),
+    index('telegram_chats_login_idx').on(t.loginId),
     uniqueIndex('telegram_chats_account_telegram_id_uq').on(t.accountId, t.telegramChatId),
     index('telegram_chats_pairing_code_idx').on(t.pairingCode),
   ],
