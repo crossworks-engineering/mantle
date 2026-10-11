@@ -12,8 +12,8 @@
  *      source, without supersede_source, are refused; the source unchanged.
  *  N3: api_docs_set onto a same-named file the scope cannot edit is refused
  *      and the file unchanged; api_docs_get never returns a docs file the
- *      scope cannot read; update_persona in Journal mode never retires (nor
- *      returns) a learned rule the scope cannot read.
+ *      scope cannot read; update_persona in Journal mode retires (and
+ *      returns) only a learned rule the scope may edit: not for L.
  *  L:  only the anchor mounts a folder into a sandbox; L works only in the
  *      sandboxes it made, the anchor in every one.
  *  Nit: an item id written as a non-canonical uuid is refused.
@@ -110,7 +110,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
   let roNote = '';
   let roFile = '';
   let docsFile = ''; // the member's, named as the group's docs file
-  let olderRule = ''; // a learned rule of the agent, in the member's workspace
+  let olderRule = ''; // a learned rule of the agent (the Journal is Admin's)
   let inboxFolder = ''; // an Admin folder on disk
   let agent: import('@mantle/db').Agent;
   const ownerBox = `${tag}-obox`;
@@ -324,9 +324,9 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
       values (${owner}, ${`${tag}-hb`}, 'Check', ${agent.slug}, ${`${tag}-check`},
               'manual', ${JSON.stringify({ kind: 'manual' })}::jsonb,
               ${JSON.stringify({ kind: 'web' })}::jsonb)`);
-    // A rule the Admin assistant learned, homed in the member's workspace.
+    // A rule the Admin assistant learned (the Journal lives in Admin).
     olderRule = (
-      await makeIn(memWs, () =>
+      await makeIn(adminWs, () =>
         c.createJournal(owner, {
           body: `${tag} prefers a formal tone in every reply`,
           kind: 'preference',
@@ -336,7 +336,6 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
         }),
       )
     ).id;
-    await homeIn(olderRule, memWs);
   }, 240_000);
 
   afterAll(async () => {
@@ -474,21 +473,31 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
     }
   });
 
-  it('N3: update_persona in Journal mode never retires a rule the scope cannot read', async () => {
+  it('N3: update_persona in Journal mode retires only a rule the scope may edit', async () => {
     const before = await nodeState(olderRule);
-    for (const login of [second, owner]) {
-      const res = await inAdminTurn(login, () =>
-        dispatchAs(login, 'update_persona', {
-          add: { kind: 'style', content: `${tag} prefers a formal tone in every reply` },
-        }),
-      );
-      // The older rule is neither retired nor returned.
-      expect(JSON.stringify(res)).not.toMatch(/"retired":\[/);
-      if (res.ok) {
-        expect((res.output as { retired?: unknown }).retired).toBeUndefined();
-      }
-    }
+    // L reads the Journal (Admin's) but edits no Admin item: the older rule
+    // it repeats is neither retired nor returned as retired.
+    const byL = await inAdminTurn(second, () =>
+      dispatchAs(second, 'update_persona', {
+        add: { kind: 'style', content: `${tag} prefers a formal tone in every reply` },
+      }),
+    );
+    expect(JSON.stringify(byL)).not.toMatch(/"retired":\[/);
     expect(await nodeState(olderRule)).toBe(before);
+    // The anchor moderates Admin: the same request retires it.
+    const byAnchor = await inAdminTurn(owner, () =>
+      dispatchAs(owner, 'update_persona', {
+        add: { kind: 'style', content: `${tag} prefers a formal tone in every reply` },
+      }),
+    );
+    expect(byAnchor.ok, errorOf(byAnchor)).toBe(true);
+    expect((byAnchor as { output: { retired?: string[] } }).output.retired).toContain(
+      `${tag} prefers a formal tone in every reply`,
+    );
+    const [after] = await x<{ by: string | null }>(
+      sql`select superseded_by::text as by from nodes where id = ${olderRule}`,
+    );
+    expect(after!.by).not.toBeNull();
   });
 
   it('L: only the anchor mounts a folder into a sandbox', async () => {

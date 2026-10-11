@@ -162,7 +162,8 @@ const update_persona: BuiltinToolDef = {
       // (a correction must land). With rule_reconcile live, an older rule it
       // repeats or changes is retired here; anything else the model retires
       // with the Journal tools, and it is told so rather than told "done".
-      const retired = reconcile?.mode === 'live' ? reconcile.retires.length - reconcile.errors : 0;
+      // Live: `retires` lists the rules that were retired, no more.
+      const retired = reconcile?.mode === 'live' ? reconcile.retires.length : 0;
       const ignoredRefs = [...(update.supersedeRefs ?? []), ...(update.removeRefs ?? [])];
       const staleRefs = ignoredRefs.length > 0;
       ctx.step?.setMeta({

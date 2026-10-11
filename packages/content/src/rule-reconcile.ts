@@ -21,7 +21,7 @@
  * passes a {@link RuleReconciler} (built in @mantle/tools).
  */
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { db, itemWriteRefusal, nodes } from '@mantle/db';
 import { journalKindSql } from './journal';
 import { journalLearnedSql, journalLiveSql } from './identity-context';
 import { supersedeNode } from './supersede';
@@ -230,21 +230,29 @@ export function planRetires(
 }
 
 /** Supersede each retire's older rule. `version` for a same-rule copy,
- *  `corrected` when the newer rule changes it. Returns how many failed. */
+ *  `corrected` when the newer rule changes it. Returns how many failed;
+ *  `onApplied` hears each one that was superseded. In a workspace scope
+ *  (W7a fix round 2, N3: update_persona in an Admin user's turn) a rule
+ *  the scope may not edit is not retired (it counts as failed): the write
+ *  runs on the system pool, so the edit check is asked here first. */
 export async function applyRetires(
   ownerId: string,
   retires: readonly RuleRetire[],
   threshold: number,
+  onApplied?: (r: RuleRetire) => void,
 ): Promise<number> {
   let errors = 0;
   for (const r of retires) {
     try {
+      const refused = await itemWriteRefusal([r.olderId], 'edit');
+      if (refused) throw new Error(refused);
       await supersedeNode({
         ownerId,
         id: r.olderId,
         supersededBy: r.newerId,
         reason: r.replaces >= threshold ? 'corrected' : 'version',
       });
+      onApplied?.(r);
     } catch (err) {
       errors++;
       console.warn(

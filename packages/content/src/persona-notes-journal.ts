@@ -573,7 +573,12 @@ export async function writeLearnedEntries(
     same: Math.round(score.same * 100) / 100,
     replaces: Math.round(score.replaces * 100) / 100,
   }));
-  const errors = live ? await applyRetires(ownerId, retires, judgement.threshold) : 0;
+  // Live: the report names the retires that were applied (a rule the
+  // caller's scope may not edit is not, W7a fix round 2).
+  const applied: RuleRetire[] = [];
+  const errors = live
+    ? await applyRetires(ownerId, retires, judgement.threshold, (r) => applied.push(r))
+    : 0;
   return {
     written,
     reconcile: {
@@ -583,7 +588,7 @@ export async function writeLearnedEntries(
       calls: judgement.calls,
       failed: judgement.failed,
       ms: judgement.ms,
-      retires,
+      retires: live ? applied : retires,
       errors,
     },
   };
