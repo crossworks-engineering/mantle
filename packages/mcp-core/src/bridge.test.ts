@@ -11,7 +11,15 @@
  * server; nothing here touches the database or a model.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The owner surface enters the login's scope per call (W7a, owner-scope.ts):
+// no database here, so the brain reads as not on workspaces and the call
+// runs as is.
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  brainOnWorkspacesNow: async () => false,
+}));
 import type { StandardSchemaV1 } from '@modelcontextprotocol/server';
 
 import { BUILTIN_TOOLS } from '@mantle/tools';

@@ -174,7 +174,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       }
     });
 
-    it('withRunScope: Team re-enters [Team], Admin and none stay on the system pool', async () => {
+    it('withRunScope: Team re-enters [Team], Admin re-enters [Admin] (W7a)', async () => {
       expect(
         await rt.withRunScope({ workspaceId: team, loginId: member }, async () => m.currentScope()),
       ).toMatchObject({ kind: 'assistant', loginId: member, ws: [team], modWs: [team] });
@@ -183,10 +183,26 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       ).toMatchObject({ kind: 'assistant', loginId: null, ws: [team], modWs: [] });
       expect(
         await rt.withRunScope({ workspaceId: admin, loginId: owner }, async () => m.currentScope()),
-      ).toEqual({ kind: 'system' });
+      ).toMatchObject({ kind: 'assistant', loginId: owner, ws: [admin] });
+      // No workspace (NULL = Admin): the brain's Admin workspace, for the owner.
+      expect(
+        await rt.withRunScope({ workspaceId: null, ownerId: owner }, async () => m.currentScope()),
+      ).toMatchObject({ kind: 'assistant', loginId: owner, ws: [admin] });
+      // No brain to find (no owner on the run): the system pool, as before.
       expect(await rt.withRunScope({ workspaceId: null }, async () => m.currentScope())).toEqual({
         kind: 'system',
       });
+      // The rollback switch: Admin on the system pool, as before W7a.
+      process.env.MANTLE_ADMIN_READS = 'system';
+      try {
+        expect(
+          await rt.withRunScope({ workspaceId: admin, loginId: owner }, async () =>
+            m.currentScope(),
+          ),
+        ).toEqual({ kind: 'system' });
+      } finally {
+        delete process.env.MANTLE_ADMIN_READS;
+      }
     });
 
     it('withAgentScope refuses a login with no user row in the workspace (L3)', async () => {

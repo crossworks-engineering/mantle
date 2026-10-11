@@ -23,6 +23,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   withViewer: vi.fn(async (_level: unknown, _for: unknown, fn: () => Promise<unknown>) => fn()),
+  // The owner surface's per-call scope (W7a): not on workspaces here.
+  brainOnWorkspacesNow: async () => false,
 }));
 
 const h = vi.hoisted(() => ({

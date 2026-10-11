@@ -30,6 +30,10 @@ vi.mock('@mantle/db', () => {
     db,
     profiles: { preferences: 'preferences', userId: 'user_id' },
     resolveSingleOwnerId: async () => null,
+    // No scope here (W7a: an Admin scope reads the owner's row by a reason).
+    currentWorkspaceScope: () => null,
+    scopeHoldsAdmin: async () => true,
+    asSystem: <T>(fn: () => Promise<T>) => fn(),
   };
 });
 

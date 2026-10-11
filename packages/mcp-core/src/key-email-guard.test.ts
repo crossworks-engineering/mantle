@@ -10,6 +10,14 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The owner surface enters the login's scope per call (W7a, owner-scope.ts):
+// no database here, so the brain reads as not on workspaces and the call
+// runs as is.
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  brainOnWorkspacesNow: async () => false,
+}));
+
 const MAIL = '33333333-3333-4333-8333-333333333333';
 const PLAIN = '22222222-2222-4222-8222-222222222222';
 /** A Table or an image file the extractor made from an attachment (T4). */

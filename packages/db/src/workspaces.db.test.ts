@@ -570,12 +570,23 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       await admin`update workspace_users set limits = ${JSON.stringify(was?.limits ?? {})}::jsonb
                    where workspace_id = ${ws.admin} and login_id = ${owner}`;
     }
-    // Not a user of Admin, an assistant, a link: no area.
+    // Not a user of Admin, an assistant answering no login, a link: no area.
     await m.withScope({ kind: 'user', loginId: userA, ws: [ws.admin], modWs: [] }, async () => {
       expect(await m.scopeHasArea('settings')).toBe(false);
     });
+    await m.withScope({ kind: 'assistant', loginId: null, ws: [ws.admin], modWs: [] }, async () => {
+      expect(await m.scopeHasArea('settings')).toBe(false);
+    });
+    // The Admin assistant answering an Admin user (W7a): that user's areas;
+    // answering a login that is no user of Admin: none.
     await m.withScope(
       { kind: 'assistant', loginId: owner, ws: [ws.admin], modWs: [] },
+      async () => {
+        expect(await m.scopeHasArea('settings')).toBe(true);
+      },
+    );
+    await m.withScope(
+      { kind: 'assistant', loginId: userA, ws: [ws.admin], modWs: [] },
       async () => {
         expect(await m.scopeHasArea('settings')).toBe(false);
       },

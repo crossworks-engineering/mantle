@@ -9,7 +9,15 @@
  * reads), and the `app_authoring_guide` read tool that serves the full guide.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The owner surface enters the login's scope per call (W7a, owner-scope.ts):
+// no database here, so the brain reads as not on workspaces and the call
+// runs as is.
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  brainOnWorkspacesNow: async () => false,
+}));
 
 import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from './build-server';
 

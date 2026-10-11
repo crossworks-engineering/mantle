@@ -13,6 +13,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The owner surface enters the login's scope per call (W7a, owner-scope.ts):
+// no database here, so the brain reads as not on workspaces and the call
+// runs as is.
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  brainOnWorkspacesNow: async () => false,
+}));
+
 const h = vi.hoisted(() => ({
   simResult: null as any,
   simCalls: [] as any[],

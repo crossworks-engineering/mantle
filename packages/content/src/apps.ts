@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   db,
+  executeWrite,
   nodes,
   apps,
   appDatabases,
@@ -1191,7 +1192,9 @@ export async function deleteApp(
   };
   const snap = await createAppSnapshot(ownerId, id, { ...keep, codeOnlyWhenLost: true });
   if (snap && opts.deletedBy && !opts.deletedBy.owner) {
-    await db.execute(sql`
+    // A raw write, said so: in a scope (the Admin MCP surface, W7a) it goes
+    // to the system pool as the typed writes do.
+    await executeWrite(sql`
       update node_snapshots
          set code = jsonb_set(coalesce(code, '{}'::jsonb), '{meta}',
                      coalesce(code->'meta', '{}'::jsonb)
