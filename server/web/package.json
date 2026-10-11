@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.239.89",
+  "version": "0.239.90",
   "private": true,
   "type": "module",
   "scripts": {
