@@ -254,10 +254,12 @@ BEGIN
   --    an item had come from its archive row (a later run, at the switch
   --    of a brain set up by hand, still sees them); the trash is today's.
   IF admin_ws IS NOT NULL THEN
-    CREATE TEMP TABLE IF NOT EXISTS "ws_review_items" (
-      "node_id" uuid PRIMARY KEY, "state" text, "sharing" text, "author_role" text,
-      "trashed" boolean, "personal" boolean, "space_login" uuid, "home_login" uuid,
-      "former_key" uuid) ON COMMIT DROP;
+    IF to_regclass('pg_temp.ws_review_items') IS NULL THEN
+      CREATE TEMP TABLE "ws_review_items" (
+        "node_id" uuid PRIMARY KEY, "state" text, "sharing" text, "author_role" text,
+        "trashed" boolean, "personal" boolean, "space_login" uuid, "home_login" uuid,
+        "former_key" uuid) ON COMMIT DROP;
+    END IF;
     TRUNCATE "ws_review_items";
     INSERT INTO "ws_review_items"
     SELECT si."node_id",
@@ -357,8 +359,9 @@ BEGIN
 
   -- 3. The states resolve: submitted, returned and taken become draft; the
   --    review columns clear. Accepted rows, sharing and the trash stay.
-  CREATE TEMP TABLE IF NOT EXISTS "ws_review_resolve" ("node_id" uuid PRIMARY KEY, "was" text)
-    ON COMMIT DROP;
+  IF to_regclass('pg_temp.ws_review_resolve') IS NULL THEN
+    CREATE TEMP TABLE "ws_review_resolve" ("node_id" uuid PRIMARY KEY, "was" text) ON COMMIT DROP;
+  END IF;
   TRUNCATE "ws_review_resolve";
   INSERT INTO "ws_review_resolve"
   SELECT si."node_id", si."review_state" FROM "public"."space_items" si

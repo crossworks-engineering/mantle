@@ -1,0 +1,689 @@
+/**
+ * Workspaces W5c (migrations 0263 and 0264).
+ *
+ * 0264, review states resolved without loss (plan 9.3): a scratch brain is
+ * migrated up to 0263, switched onto workspaces (mantle_ws_migrate_locked),
+ * and given one item in every review state; then 0264 and every later
+ * migration run. Checked: each item's recorded home and grant flags, the
+ * states resolved to draft with their review columns cleared (accepted,
+ * sharing and the trash untouched), every row archived first, submissions
+ * and bundles emptied, nothing written to nodes, apps or item_grants, the
+ * switch guard clean, no extractor notify and the extract queue unchanged,
+ * workspaces:check clean, and a second run changes nothing. A brain not on
+ * workspaces is archived and resolved by 0264 and gets its homes when it
+ * switches later; a read given by hand since the switch does not stop 0264.
+ *
+ * 0263, the switch budget: mantle_ws_switch_budget() clamps and lengthens,
+ * the deadline starts at mantle_ws_switch_off, and the deadline error names
+ * the time budget.
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/workspaces-review-off.db.test.ts
+ */
+import { randomUUID } from 'node:crypto';
+import postgres from 'postgres';
+import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  archiveSpaceItemBundles,
+  archiveSpaceItems,
+  archiveSpaceSubmissions,
+} from './schema/archive/space-review';
+import { formerUserWorkspaces, privateWorkspaces, spaceItemHomes } from './schema/space-item-homes';
+import { createMigratedScratchDatabase, createScratchDatabaseBefore } from './test-support';
+import {
+  WORKSPACES_CHECK_SQL,
+  parseWorkspacesCheck,
+  workspacesCheckFindings,
+} from './workspaces-check';
+
+const URL = process.env.MANTLE_TEST_DATABASE_URL;
+const BEFORE = '0264_workspaces_review_off';
+
+type Sql = ReturnType<typeof postgres>;
+type Home = {
+  home: string;
+  admin: boolean;
+  team: boolean;
+  write: boolean;
+  state: string;
+  sharing: string;
+  role: string | null;
+};
+
+/** The space id of a login's personal space. */
+const spaceOf = async (sql: Sql, login: string) =>
+  (
+    await sql<
+      { id: string }[]
+    >`select id from spaces where kind = 'personal' and login_id = ${login}`
+  )[0]!.id;
+
+/** The counts of mantle_ws_review_homes_check() by metric. */
+const reviewCheck = async (sql: Sql) =>
+  Object.fromEntries(
+    (
+      await sql<{ metric: string; n: number }[]>`
+      select metric, n::int as n from mantle_ws_review_homes_check()`
+    ).map((r) => [r.metric, r.n]),
+  );
+
+/** Fingerprints of what 0264 must not write. */
+const untouched = async (sql: Sql) =>
+  (
+    await sql<{ nodes: string; apps: string; grants: string; users: string }[]>`
+      select (select count(*) || ':' || coalesce(sum(hashtext(concat_ws('|', id, owner_id, type, title,
+                path, audience, updated_at, read_ws, write_ws, home_ws, data::text))), 0) from nodes) as nodes,
+             (select count(*) || ':' || coalesce(sum(hashtext(row_to_json(a)::text)), 0) from apps a) as apps,
+             (select count(*) || ':' || coalesce(sum(hashtext(row_to_json(g)::text)), 0) from item_grants g) as grants,
+             (select count(*) || ':' || coalesce(sum(hashtext(row_to_json(u)::text)), 0) from auth.users u) as users`
+  )[0]!;
+
+describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: Sql;
+  let listener: Sql;
+  let m: typeof import('./index');
+  const notified: string[] = [];
+  const owner = randomUUID();
+  const admin2 = randomUUID();
+  const member = randomUUID();
+  const gone = randomUUID();
+  const disabled = randomUUID();
+  const client = randomUUID();
+  const ids: Record<string, string> = {};
+  const spaces: Record<string, string> = {};
+  let goneSpace = '';
+  let before: Awaited<ReturnType<typeof untouched>>;
+  let queueBefore = 0;
+  const archiveBefore = { items: 0, submissions: 0, bundles: 0 };
+  let workspacesBefore = 0;
+  const since = new Date(Date.now() - 86_400_000);
+
+  const node = async (key: string, type: string, path: string, space: string) => {
+    const id = randomUUID();
+    await sql`insert into nodes (id, owner_id, type, title, path, audience)
+      values (${id}, ${space}, ${type}::node_type, ${key}, ${path}::ltree, 'admin')`;
+    ids[key] = id;
+    return id;
+  };
+  /** A space item; the review columns as the review flows left them. */
+  const item = async (
+    key: string,
+    author: string,
+    state: string,
+    sharing = 'private',
+    extra: Partial<Record<'returned' | 'taken_by' | 'deleted' | 'accepted', string | boolean>> = {},
+  ) => {
+    await sql`insert into space_items (node_id, author_login_id, sharing, review_state,
+        submitted_at, submitted_version, returned_note, reviewed_by, reviewed_at, accepted_at,
+        taken_by, taken_at, taken_title, deleted_at)
+      values (${ids[key]!}, ${author}, ${sharing}, ${state},
+        ${state === 'submitted' || state === 'returned' || state === 'taken' ? new Date() : null},
+        ${state === 'submitted' ? 3 : null},
+        ${typeof extra.returned === 'string' ? extra.returned : null},
+        ${state === 'returned' || state === 'accepted' ? owner : null},
+        ${state === 'returned' || state === 'accepted' ? new Date() : null},
+        ${state === 'accepted' ? new Date() : null},
+        ${typeof extra.taken_by === 'string' ? extra.taken_by : null},
+        ${state === 'taken' ? new Date() : null},
+        ${state === 'taken' ? `${key} as the author named it` : null},
+        ${extra.deleted ? new Date() : null})`;
+  };
+  const homes = async (): Promise<Record<string, Home>> => {
+    const rows = await sql<(Home & { node: string })[]>`
+      select h.node_id::text as node, h.home_workspace_id::text as home, h.grant_admin as admin,
+             h.grant_team as team, h.write, h.state_before as state, h.sharing_before as sharing,
+             h.author_role as role
+        from space_item_homes h`;
+    const byId = Object.fromEntries(Object.entries(ids).map(([k, v]) => [v, k]));
+    return Object.fromEntries(rows.map(({ node, ...h }) => [byId[node] ?? node, h]));
+  };
+  const privateOf = async (login: string) =>
+    (
+      await sql<{ id: string }[]>`select workspace_id::text as id from private_workspaces
+        where login_id = ${login}`
+    )[0]?.id;
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, BEFORE);
+    sql = postgres(scratch.url, { max: 3, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner, display_name) values
+      (${owner}, 'ro-o@example.invalid', 'x', 'admin', true, null),
+      (${admin2}, 'ro-a@example.invalid', 'x', 'admin', false, 'Second admin'),
+      (${member}, 'ro-m@example.invalid', 'x', 'member', false, 'Member One'),
+      (${gone}, 'ro-g@example.invalid', 'x', 'member', false, null),
+      (${disabled}, 'ro-d@example.invalid', 'x', 'member', false, null)`;
+    // A fresh brain switched at boot (0261 and 0263), as a live box is
+    // before 0264.
+    const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
+    expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
+    // A client set up by hand after the switch (21.9).
+    await sql`insert into auth.users (id, email, password_hash, role)
+      values (${client}, 'ro-c@example.invalid', 'x', 'client')`;
+    for (const [k, v] of Object.entries({ member, admin2, gone, disabled, client })) {
+      spaces[k] = await spaceOf(sql, v);
+    }
+    goneSpace = spaces.gone!;
+
+    // The member: every review state.
+    await node('privDraft', 'page', 'pages', spaces.member!);
+    await item('privDraft', member, 'draft');
+    await node('teamDraft', 'note', 'notes', spaces.member!);
+    await item('teamDraft', member, 'draft', 'team');
+    await node('returned', 'page', 'pages', spaces.member!);
+    await item('returned', member, 'returned', 'private', { returned: 'needs a source' });
+    await node('teamReturned', 'page', 'pages', spaces.member!);
+    await item('teamReturned', member, 'returned', 'team', { returned: 'almost' });
+    await node('submitted', 'page', 'pages', spaces.member!);
+    await item('submitted', member, 'submitted');
+    // A submitted bundle: the root and a child page that renders in it.
+    await node('bundleRoot', 'page', 'pages', spaces.member!);
+    await item('bundleRoot', member, 'submitted');
+    await node('bundleChild', 'page', 'pages', spaces.member!);
+    await item('bundleChild', member, 'draft');
+    await sql`insert into space_item_bundles (root_id, node_id, position) values
+      (${ids.bundleRoot!}, ${ids.bundleRoot!}, 0), (${ids.bundleRoot!}, ${ids.bundleChild!}, 1)`;
+    // A submitted team-shared app, with its app row.
+    await node('teamApp', 'app', 'apps', spaces.member!);
+    await sql`insert into apps (node_id, source) values (${ids.teamApp!}, '{"main":"x"}'::jsonb)`;
+    await item('teamApp', member, 'submitted', 'team');
+    // A trashed app shared with the team: it runs for no one.
+    await node('trashedApp', 'app', 'apps', spaces.member!);
+    await sql`insert into apps (node_id, source) values (${ids.trashedApp!}, '{}'::jsonb)`;
+    await item('trashedApp', member, 'draft', 'team', { deleted: true });
+    // Accepted: a brain item now, re-owned with its author kept.
+    await node('accepted', 'page', 'pages', owner);
+    await item('accepted', member, 'accepted');
+    // Taken over into the second admin's own space.
+    await node('taken', 'page', 'pages', spaces.admin2!);
+    await item('taken', member, 'taken', 'private', { taken_by: admin2 });
+    await sql`insert into space_submissions (space_id, node_id) values
+      (${spaces.member!}, ${ids.submitted!}), (${spaces.member!}, ${ids.bundleRoot!}),
+      (${spaces.member!}, ${ids.teamApp!}), (${spaces.member!}, ${ids.taken!})`;
+    // A login deleted with items left behind.
+    await node('goneTeamDraft', 'page', 'pages', goneSpace);
+    await item('goneTeamDraft', gone, 'draft', 'team');
+    await node('goneSubmitted', 'page', 'pages', goneSpace);
+    await item('goneSubmitted', gone, 'submitted');
+    await node('gonePrivate', 'page', 'pages', goneSpace);
+    await item('gonePrivate', gone, 'draft');
+    // A disabled member's team-shared draft: left behind too.
+    await node('disabledTeamDraft', 'page', 'pages', spaces.disabled!);
+    await item('disabledTeamDraft', disabled, 'draft', 'team');
+    // A client request, submitted.
+    await node('clientRequest', 'page', 'pages', spaces.client!);
+    await item('clientRequest', client, 'submitted');
+    await sql`update auth.users set disabled_at = now() where id = ${disabled}`;
+    await sql`delete from auth.users where id = ${gone}`;
+    expect(
+      (await sql`select login_id from spaces where id = ${goneSpace}`)[0]!.login_id,
+    ).toBeNull();
+
+    // The extract queue the boot drain would take, and an extractor listener.
+    process.env.DATABASE_URL = scratch.url;
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    m = await import('./index');
+    const queued = async () =>
+      (
+        await m.db
+          .select({ id: m.nodes.id })
+          .from(m.nodes)
+          .where(m.unextractedNodeConds(owner, since))
+      ).length;
+    queueBefore = await queued();
+    listener = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+    await listener.listen('node_ingested', (p) => notified.push(p));
+
+    before = await untouched(sql);
+    const [c] = await sql<{ i: number; s: number; b: number; w: number }[]>`
+      select (select count(*)::int from space_items) as i,
+             (select count(*)::int from space_submissions) as s,
+             (select count(*)::int from space_item_bundles) as b,
+             (select count(*)::int from workspaces) as w`;
+    archiveBefore.items = c!.i;
+    archiveBefore.submissions = c!.s;
+    archiveBefore.bundles = c!.b;
+    workspacesBefore = c!.w;
+
+    await scratch.migrateRest();
+    expect(await queued()).toBe(queueBefore);
+  }, 240_000);
+
+  afterAll(async () => {
+    await listener?.end();
+    await m?.closeDb();
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  it('records every home and the grants W6b writes (9.3)', async () => {
+    const memberWs = await privateOf(member);
+    const adminWs = await privateOf(admin2);
+    const disabledWs = await privateOf(disabled);
+    const clientWs = await privateOf(client);
+    const [former] = await sql<{ id: string }[]>`
+      select workspace_id::text as id from former_user_workspaces where space_id = ${goneSpace}`;
+    expect([memberWs, adminWs, disabledWs, clientWs, former?.id].every(Boolean)).toBe(true);
+    const h = await homes();
+    const want = (
+      home: string,
+      admin: boolean,
+      team: boolean,
+      state: string,
+      sharing: string,
+      role: string,
+    ): Home => ({ home, admin, team, write: false, state, sharing, role });
+    expect(h).toEqual({
+      privDraft: want(memberWs!, false, false, 'draft', 'private', 'member'),
+      teamDraft: want(memberWs!, false, true, 'draft', 'team', 'member'),
+      returned: want(memberWs!, false, false, 'returned', 'private', 'member'),
+      teamReturned: want(memberWs!, false, true, 'returned', 'team', 'member'),
+      submitted: want(memberWs!, true, false, 'submitted', 'private', 'member'),
+      bundleRoot: want(memberWs!, true, false, 'submitted', 'private', 'member'),
+      // In a submitted bundle: counts as submitted.
+      bundleChild: want(memberWs!, true, false, 'draft', 'private', 'member'),
+      teamApp: want(memberWs!, true, true, 'submitted', 'team', 'member'),
+      trashedApp: want(memberWs!, false, false, 'draft', 'team', 'member'),
+      // Where the author's snapshot copy goes (S3).
+      accepted: want(memberWs!, false, false, 'accepted', 'private', 'member'),
+      // In the admin's own space.
+      taken: want(adminWs!, false, false, 'taken', 'private', 'member'),
+      goneTeamDraft: want(former!.id, true, false, 'draft', 'team', 'member'),
+      goneSubmitted: want(former!.id, true, false, 'submitted', 'private', 'member'),
+      gonePrivate: want(former!.id, false, false, 'draft', 'private', 'member'),
+      disabledTeamDraft: want(disabledWs!, true, false, 'draft', 'team', 'member'),
+      clientRequest: want(clientWs!, true, true, 'submitted', 'private', 'client'),
+    });
+  });
+
+  it('makes private workspaces (the login alone, a Moderator) and a Former user one (no users)', async () => {
+    const rows = await sql<
+      {
+        login: string;
+        name: string;
+        key: string | null;
+        admin: boolean;
+        by: string | null;
+        users: { login: string; moderator: boolean }[];
+      }[]
+    >`
+      select p.login_id::text as login, w.name, w.bridge_key as key, w.is_admin as admin,
+             w.created_by::text as by,
+             (select coalesce(json_agg(json_build_object('login', u.login_id, 'moderator', u.moderator)), '[]')
+                from workspace_users u where u.workspace_id = w.id) as users
+        from private_workspaces p join workspaces w on w.id = p.workspace_id
+       order by w.name`;
+    expect(rows.map((r) => r.login).sort()).toEqual([admin2, client, disabled, member].sort());
+    for (const r of rows) {
+      expect(r.name.endsWith(' (only you)')).toBe(true);
+      expect(r).toMatchObject({ key: null, admin: false, by: r.login });
+      expect(r.users).toEqual([{ login: r.login, moderator: true }]);
+    }
+    expect(rows.find((r) => r.login === member)!.name).toBe('Member One (only you)');
+    // No display name: the email's local part.
+    expect(rows.find((r) => r.login === disabled)!.name).toBe('ro-d (only you)');
+    const former = await sql<{ name: string; users: number; key: string | null }[]>`
+      select w.name, w.bridge_key as key,
+             (select count(*)::int from workspace_users u where u.workspace_id = w.id) as users
+        from former_user_workspaces f join workspaces w on w.id = f.workspace_id`;
+    expect(former).toEqual([{ name: 'Former user', key: null, users: 0 }]);
+    const [n] = await sql<{ n: number }[]>`select count(*)::int as n from workspaces`;
+    expect(n!.n).toBe(workspacesBefore + 5);
+  });
+
+  it('resolves the states, keeps accepted, sharing and the trash, and clears the review rows', async () => {
+    const rows = await sql<
+      {
+        id: string;
+        state: string;
+        sharing: string;
+        cleared: boolean;
+        deleted: boolean;
+        accepted: boolean;
+      }[]
+    >`
+      select node_id::text as id, review_state as state, sharing,
+             (submitted_at is null and submitted_version is null and returned_note is null
+              and taken_by is null and taken_at is null and taken_root is null
+              and taken_title is null) as cleared,
+             deleted_at is not null as deleted,
+             (accepted_at is not null and reviewed_by is not null) as accepted
+        from space_items`;
+    const byKey = Object.fromEntries(
+      rows.map((r) => [Object.entries(ids).find(([, v]) => v === r.id)![0], r]),
+    );
+    for (const [k, r] of Object.entries(byKey)) {
+      if (k === 'accepted') {
+        expect(r).toMatchObject({ state: 'accepted', accepted: true });
+      } else {
+        expect(r, k).toMatchObject({ state: 'draft', cleared: true });
+      }
+    }
+    expect(byKey.teamDraft!.sharing).toBe('team');
+    expect(byKey.teamApp!.sharing).toBe('team');
+    expect(byKey.trashedApp!.deleted).toBe(true);
+    expect(Number((await sql`select count(*) as n from space_submissions`)[0]!.n)).toBe(0);
+    expect(Number((await sql`select count(*) as n from space_item_bundles`)[0]!.n)).toBe(0);
+  });
+
+  it('archived every row first, review columns included', async () => {
+    const [c] = await sql<{ i: number; s: number; b: number }[]>`
+      select (select count(*)::int from archive_space_items) as i,
+             (select count(*)::int from archive_space_submissions) as s,
+             (select count(*)::int from archive_space_item_bundles) as b`;
+    expect(c).toEqual({
+      i: archiveBefore.items,
+      s: archiveBefore.submissions,
+      b: archiveBefore.bundles,
+    });
+    const [ret] = await sql<{ state: string; note: string }[]>`
+      select review_state as state, returned_note as note from archive_space_items
+       where node_id = ${ids.returned!}`;
+    expect(ret).toEqual({ state: 'returned', note: 'needs a source' });
+    const [tk] = await sql<{ state: string; by: string; title: string }[]>`
+      select review_state as state, taken_by::text as by, taken_title as title
+        from archive_space_items where node_id = ${ids.taken!}`;
+    expect(tk).toEqual({ state: 'taken', by: admin2, title: 'taken as the author named it' });
+  });
+
+  it('writes no node, app, grant or login, and starts no LLM work', async () => {
+    const after = await untouched(sql);
+    expect(after.nodes).toBe(before.nodes);
+    expect(after.apps).toBe(before.apps);
+    expect(after.grants).toBe(before.grants);
+    expect(after.users).toBe(before.users);
+    const personalGrants = await sql`
+      select 1 from item_grants g join nodes n on n.id = g.node_id
+        join spaces s on s.id = n.owner_id and s.kind = 'personal'`;
+    expect(personalGrants).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(notified).toEqual([]);
+  });
+
+  it('passes its check, the switch guard and workspaces:check', async () => {
+    expect(await reviewCheck(sql)).toMatchObject({
+      'space_items rows': archiveBefore.items,
+      homes: archiveBefore.items,
+      'items without a home': 0,
+      'rows not archived': 0,
+      'items still submitted, returned or taken': 0,
+      'open submissions': 0,
+      bundles: 0,
+      'private workspaces': 4,
+      'former user workspaces': 1,
+    });
+    const guard = await sql.begin(
+      (tx) => tx<{ section: string }[]>`select * from mantle_ws_switch_guard()`,
+    );
+    expect(guard.filter((r) => r.section === 'reach-fail')).toEqual([]);
+    const [row] = await sql.unsafe(WORKSPACES_CHECK_SQL);
+    const check = parseWorkspacesCheck(
+      row as unknown as Parameters<typeof parseWorkspacesCheck>[0],
+    );
+    // The Former user workspace (no users) and the disabled login's
+    // private workspace are not findings.
+    expect(check.workspacesWithoutModerator).toBe(0);
+    expect(workspacesCheckFindings(check)).toBe(0);
+  });
+
+  it('a second run changes nothing; a draft made later gets its home', async () => {
+    const homesBefore = await homes();
+    const fp = await untouched(sql);
+    const rows = await sql<{ section: string; subject: string; n: number }[]>`
+      select section, subject, n::int as n from mantle_ws_review_off()`;
+    expect(rows.filter((r) => r.section !== 'proof' && r.n !== 0)).toEqual([]);
+    expect(await homes()).toEqual(homesBefore);
+    expect(await untouched(sql)).toEqual(fp);
+    // A draft made after 0264 (until W6b members still make them): the next
+    // run records it, in the private workspace already made.
+    await node('later', 'note', 'notes', spaces.member!);
+    await item('later', member, 'draft');
+    const again = await sql<{ section: string; subject: string; n: number }[]>`
+      select section, subject, n::int as n from mantle_ws_review_off()`;
+    expect(again.find((r) => r.subject === 'private workspaces')!.n).toBe(0);
+    expect((await homes()).later).toMatchObject({
+      home: await privateOf(member),
+      admin: false,
+      team: false,
+    });
+  });
+
+  it('the drizzle schema of the new tables is the tables 0264 makes', async () => {
+    const tables: [string, PgTable][] = [
+      ['archive_space_items', archiveSpaceItems],
+      ['archive_space_submissions', archiveSpaceSubmissions],
+      ['archive_space_item_bundles', archiveSpaceItemBundles],
+      ['private_workspaces', privateWorkspaces],
+      ['former_user_workspaces', formerUserWorkspaces],
+      ['space_item_homes', spaceItemHomes],
+    ];
+    const UDT: Record<string, string> = {
+      uuid: 'uuid',
+      text: 'text',
+      integer: 'int4',
+      boolean: 'bool',
+      'timestamp with time zone': 'timestamptz',
+    };
+    for (const [name, table] of tables) {
+      const config = getTableConfig(table);
+      const pk = new Set(config.primaryKeys.flatMap((p) => p.columns.map((c) => c.name)));
+      const expected = config.columns
+        .map((c) => ({
+          column: c.name,
+          udt: UDT[c.getSQLType()] ?? c.getSQLType(),
+          nullable: c.notNull || c.primary || pk.has(c.name) ? 'NO' : 'YES',
+        }))
+        .sort((a, b) => a.column.localeCompare(b.column));
+      const actual = await sql<{ column: string; udt: string; nullable: string }[]>`
+        select column_name as column, udt_name as udt, is_nullable as nullable
+          from information_schema.columns
+         where table_schema = 'public' and table_name = ${name}
+         order by column_name`;
+      expect([...actual], name).toEqual(expected);
+    }
+    // The archive of space_items has every column space_items has.
+    const missing = await sql`
+      select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'space_items'
+      except
+      select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'archive_space_items'`;
+    expect(missing).toHaveLength(0);
+  });
+});
+
+// A brain NOT on workspaces when 0264 runs (clients present, 21.9): its
+// review states are archived and resolved now; its homes are recorded when
+// it is set up and switched (mantle_ws_migrate), from the archive.
+describe.skipIf(!URL)('a brain not on workspaces gets its homes when it switches (0264)', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: Sql;
+  const owner = randomUUID();
+  const member = randomUUID();
+  const client = randomUUID();
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, BEFORE);
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
+      (${owner}, 'rn-o@example.invalid', 'x', 'admin', true),
+      (${member}, 'rn-m@example.invalid', 'x', 'member', false),
+      (${client}, 'rn-c@example.invalid', 'x', 'client', false)`;
+    const space = await spaceOf(sql, member);
+    for (const k of ['submitted', 'teamDraft']) {
+      ids[k] = randomUUID();
+      await sql`insert into nodes (id, owner_id, type, title, path, audience)
+        values (${ids[k]!}, ${space}, 'page', ${k}, 'pages', 'admin')`;
+    }
+    await sql`insert into space_items (node_id, author_login_id, sharing, review_state, submitted_at)
+      values (${ids.submitted!}, ${member}, 'private', 'submitted', now()),
+             (${ids.teamDraft!}, ${member}, 'team', 'draft', null)`;
+    await sql`insert into space_item_bundles (root_id, node_id, position)
+      values (${ids.submitted!}, ${ids.submitted!}, 0)`;
+    await sql`insert into space_submissions (space_id, node_id) values (${space}, ${ids.submitted!})`;
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toMatch(/^clients present/);
+    await scratch.migrateRest();
+  }, 240_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  it('archives and resolves now, records no home and makes no workspace', async () => {
+    expect(await reviewCheck(sql)).toMatchObject({
+      'space_items rows': 2,
+      homes: 0,
+      'items without a home': 2,
+      'archive rows: space_items': 2,
+      'archive rows: space_submissions': 1,
+      'archive rows: space_item_bundles': 1,
+      'items still submitted, returned or taken': 0,
+      'open submissions': 0,
+      bundles: 0,
+      'private workspaces': 0,
+    });
+    expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(0);
+  });
+
+  it('records the homes from the archive when the brain switches', async () => {
+    await sql`delete from auth.users where id = ${client}`;
+    const rows = await sql<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
+    expect(rows.filter((r) => r.section === 'reach-fail')).toEqual([]);
+    expect(rows.some((r) => r.section.startsWith('review off'))).toBe(true);
+    const h = await sql<{ id: string; admin: boolean; team: boolean; state: string }[]>`
+      select node_id::text as id, grant_admin as admin, grant_team as team, state_before as state
+        from space_item_homes order by state_before`;
+    expect(h).toEqual([
+      { id: ids.teamDraft, admin: false, team: true, state: 'draft' },
+      // Resolved to draft by 0264; the archive still says submitted.
+      { id: ids.submitted, admin: true, team: false, state: 'submitted' },
+    ]);
+    expect((await reviewCheck(sql))['items without a home']).toBe(0);
+  });
+});
+
+// 0264 proves its own work (no grant and no item's reach changed). The
+// switch guard compares the grants with the levels frozen at the switch, so
+// a read an Admin user gave by hand since then counts as gained there: that
+// must not stop 0264.
+describe.skipIf(!URL)('a read given since the switch does not stop 0264', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: Sql;
+  const owner = randomUUID();
+  const member = randomUUID();
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, BEFORE);
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
+      (${owner}, 'rg-o@example.invalid', 'x', 'admin', true),
+      (${member}, 'rg-m@example.invalid', 'x', 'member', false)`;
+    await sql`insert into nodes (id, owner_id, type, title, path, audience)
+      values (${randomUUID()}, ${owner}, 'page', 'admin page', 'pages', 'admin')`;
+    await sql`select * from mantle_ws_migrate_locked()`;
+    // An Admin user adds the member to the Admin workspace.
+    await sql`insert into workspace_users (workspace_id, login_id, moderator)
+      select id, ${member}, false from workspaces where is_admin`;
+    const err = await sql
+      .begin((tx) => tx`select * from mantle_ws_switch_guard()`)
+      .then(
+        () => null,
+        (e: { code?: string }) => e,
+      );
+    expect(err).toMatchObject({ code: '23514' });
+  }, 240_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  it('migrates, and its own check is clean', async () => {
+    await scratch.migrateRest();
+    expect(await reviewCheck(sql)).toMatchObject({
+      'items without a home': 0,
+      'rows not archived': 0,
+      'items still submitted, returned or taken': 0,
+    });
+  });
+});
+
+// 0263: the switch budget.
+describe.skipIf(!URL)('the switch budget starts at the switch (0263)', () => {
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
+  let sql: Sql;
+  const owner = randomUUID();
+
+  beforeAll(async () => {
+    scratch = await createMigratedScratchDatabase(URL!);
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner)
+      values (${owner}, 'sb-o@example.invalid', 'x', 'admin', true)`;
+    await sql`select * from mantle_ws_migrate_locked()`;
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
+  }, 240_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  const budget = async (asked: string | null) =>
+    (
+      await sql.begin(async (tx) => {
+        if (asked !== null) await tx`select set_config('mantle.ws_switch_budget', ${asked}, true)`;
+        return tx<{ s: number }[]>`select extract(epoch from mantle_ws_switch_budget())::int as s`;
+      })
+    )[0]!.s;
+
+  it('mantle_ws_switch_budget(): 30 s, lengthened or shortened, 1 s to 1 h', async () => {
+    expect(await budget(null)).toBe(30);
+    expect(await budget('')).toBe(30);
+    expect(await budget('10 minutes')).toBe(600);
+    expect(await budget('3 seconds')).toBe(3);
+    expect(await budget('5 hours')).toBe(3600);
+    expect(await budget('garbage')).toBe(30);
+    expect(await budget('0')).toBe(1);
+    expect(await budget('-5 seconds')).toBe(1);
+  });
+
+  it('the deadline is set at mantle_ws_switch_off, not before', async () => {
+    const left = await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.ws_switch_armed', '5 seconds', true)`;
+      await tx`select pg_sleep(2)`;
+      await tx`select mantle_ws_switch_off()`;
+      return tx<{ s: number }[]>`
+        select extract(epoch from current_setting('mantle.ws_switch_deadline')::timestamptz
+                                  - clock_timestamp())::float8 as s`;
+    });
+    expect(left[0]!.s).toBeGreaterThan(4);
+    expect(left[0]!.s).toBeLessThanOrEqual(5);
+    // Not armed (a migration): no deadline, the 12-attempt path.
+    const plain = await sql.begin(async (tx) => {
+      await tx`select mantle_ws_switch_off()`;
+      return tx<{ d: string | null }[]>`
+        select nullif(current_setting('mantle.ws_switch_deadline', true), '') as d`;
+    });
+    expect(plain[0]!.d).toBeNull();
+  });
+
+  it('a switch past its deadline names the time budget (55P03)', async () => {
+    const err = await sql
+      .begin(async (tx) => {
+        await tx`select set_config('mantle.ws_switch_armed', '7 seconds', true)`;
+        await tx`select set_config('mantle.ws_switch_deadline',
+                   (clock_timestamp() - interval '1 second')::text, true)`;
+        return tx`select mantle_ws_ddl_retry(array['select 1'], 'the workspaces switch')`;
+      })
+      .then(
+        () => null,
+        (e: { code?: string; message?: string }) => e,
+      );
+    expect(err).toMatchObject({ code: '55P03' });
+    expect(err!.message).toMatch(
+      /the switch ran past its time budget \(7 s from the start of the switch\).*SET mantle\.ws_switch_budget/,
+    );
+  });
+});

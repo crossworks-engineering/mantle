@@ -14,7 +14,9 @@
  *    brain gives every new item one, 0261);
  *  - workspaces without a Moderator who can sign in (a user ticked
  *    Moderator, or an Admin user where Admin users moderate), and the Admin
- *    workspace on its own;
+ *    workspace on its own. Not the workspaces 0264 made: a "Former user"
+ *    workspace has no users by design (an Admin user may join it), and a
+ *    private workspace has its login alone, disabled or not;
  *  - assistants not in exactly one workspace: an assistant resource whose
  *    agent names another workspace or none, or an agent attached twice;
  *  - open links whose settings carry no `served` key (the served list): a
@@ -58,6 +60,8 @@ moderated AS (
                           WHERE au."login_id" = u."login_id" AND aw."owner_id" = w."owner_id")))) AS ok
     FROM "public"."workspaces" w, b
    WHERE w."owner_id" = b.brain AND w."archived_at" IS NULL
+     AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."workspace_id" = w."id")
+     AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p WHERE p."workspace_id" = w."id")
 ),
 links AS (
   SELECT count(*) FILTER (WHERE NOT (s."settings" ? 'served')) AS without_served,

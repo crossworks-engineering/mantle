@@ -82,4 +82,6 @@ export * from './sandboxes';
 export * from './spaces';
 export * from './workspaces';
 export * from './archive/node-levels';
+export * from './archive/space-review';
+export * from './space-item-homes';
 export * from './item-marks';

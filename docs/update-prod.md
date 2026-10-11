@@ -621,19 +621,44 @@ days before:
    `0261 proof:` rows and no 23514). A box with clients is not switched by
    0261: do its hand setup on the copy and run
    `select * from mantle_ws_migrate_locked()` there; it must pass too.
-3. Only then roll the box. A 23514 in step 2 names what would be gained
+3. Time the switch on the copy: `\timing` in psql around
+   `select * from mantle_ws_migrate_locked()`, or the time of the 0261 step
+   in the migrate log. A switch at a later start (below) has 30 s for its
+   DDL, counted from the switch itself (0263). If the copy's switch takes
+   near or over 30 s, plan a manual run on the box instead of the boot
+   switch: `SET mantle.ws_switch_budget = '10 minutes';` then
+   `select * from mantle_ws_migrate_locked();` in one session (the setting
+   takes 1 second to 1 hour; a bad value means 30 s).
+4. Only then roll the box. A 23514 in step 2 names what would be gained
    (`select * from mantle_ws_reach_diff() where section = 'reach-fail'` on
    the copy before 0261 lists it): take that grant back (or give the item
    the level that explains it) on the box first, and repeat from step 1.
 
 **The switch at a later start.** A brain switched after the roll (a fresh
 install whose owner signed up later, or a client box set up by hand, then
-`select * from mantle_ws_migrate_locked()`) runs the same switch at boot
-under a 30 s budget: the head wait and every DDL try fit inside it. When a
-table stays busy past it (55P03) or the guard refuses (23514), the whole
-transaction rolls back: the brain stays on the old model, the integrity row
-"workspaces: not migrated" stays, the server log says why, and the next
-start tries again.
+`select * from mantle_ws_migrate_locked()`) runs the same switch at boot.
+The head wait takes at most 10 s; the switch's DDL has a time budget of 30
+s that starts at the switch, not before it (0263: the grant work of a
+fresh brain does not spend it). When the switch runs past its budget
+(55P03) or the guard refuses (23514), the whole transaction rolls back:
+the brain stays on the old model, the integrity row "workspaces: not
+migrated" stays, the server log says why, and the next start tries again.
+A manual run may give it more time:
+`SET mantle.ws_switch_budget = '10 minutes';` first (1 second to 1 hour).
+
+**Review states (W5c, migration 0264).** The review routes are gone, so
+0264 settles what they left, without loss (plan 9.3): every row of
+space_items, space_submissions and space_item_bundles is copied to an
+`archive_*` table first; submitted, returned and taken items become drafts
+(sharing, accepted items and the trash stay); the submission and bundle
+rows go. Personal items stay in their spaces until W6b, so no grant is
+written: `space_item_homes` records each item's home (its login's private
+workspace, "Name (only you)", or a "Former user" workspace with no users
+when the login is gone) and the Admin and Team grants W6b writes. A box
+not on workspaces is archived and resolved now; its homes are recorded
+when it switches. On the copy, `select * from
+mantle_ws_review_homes_check()` must show no item without a home, nothing
+left in review and no row not archived.
 
 **Informational apps.** The informational switch (`dataReadOnly`) writes
 no grant (contract change 36): while it is on nobody beyond Admin writes

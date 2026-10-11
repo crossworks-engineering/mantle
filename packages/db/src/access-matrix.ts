@@ -518,6 +518,14 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.mantle_bridge_pending', 'system'),
   // The tier levels as they were when grants became the truth (0261, W8).
   none('public.archive_node_levels', 'system'),
+  // The review tables as they were when the review flows went (0264, W5c),
+  // and where each space item goes in W6b (recorded, not granted).
+  none('public.archive_space_items', 'system'),
+  none('public.archive_space_submissions', 'system'),
+  none('public.archive_space_item_bundles', 'system'),
+  none('public.private_workspaces', 'system'),
+  none('public.former_user_workspaces', 'system'),
+  none('public.space_item_homes', 'system'),
 ];
 
 /** Columns no viewer role may ever read, whatever the matrix says. */
