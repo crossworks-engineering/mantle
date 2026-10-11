@@ -31,7 +31,9 @@ import {
   currentWorkspaceScope,
   scopeHasArea,
   scopeHoldsAdmin,
+  scopeLeftForSystem,
   type ScopeArea,
+  type WorkspaceScope,
 } from '@mantle/db';
 
 /**
@@ -196,20 +198,16 @@ export const AREA_SYSTEM_TOOLS: ReadonlySet<string> = new Set([
   'agent_list',
   'agent_grant_tool_group',
   'agent_set_thinking_effort',
-  'update_persona',
   'tool_group_ensure',
   'tool_group_list',
   'worker_group_ensure',
   'worker_group_list',
   'heartbeat_list',
-  'heartbeat_fire',
   'api_tool_create',
   'api_tool_delete',
   'api_tool_get',
   'api_tool_list',
   'api_tool_test',
-  'api_docs_get',
-  'api_docs_set',
   'api_skill_set',
   'recipe_tool_create',
   'peer_list',
@@ -273,4 +271,14 @@ export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Prom
   if (!currentWorkspaceScope()) return fn();
   if (!(await scopeHasArea(area))) throw new Error(adminAreaError(area));
   return asSystem(fn, 'admin-area');
+}
+
+/**
+ * The workspace scope of the call the current code serves (W7a fix round
+ * 2): the open one, or, on the system pool (an AREA_SYSTEM_TOOLS tool run
+ * whole, an areaSystem block), the one its asSystem left. Null outside any
+ * workspace scope: system work, where the surface rules decide.
+ */
+export function callerScope(): WorkspaceScope | null {
+  return currentWorkspaceScope() ?? scopeLeftForSystem();
 }

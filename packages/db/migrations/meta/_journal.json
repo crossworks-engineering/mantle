@@ -1870,6 +1870,13 @@
       "when": 1790195100000,
       "tag": "0267_workspaces_spaces_fold",
       "breakpoints": true
+    },
+    {
+      "idx": 268,
+      "version": "7",
+      "when": 1790195160000,
+      "tag": "0268_sandboxes_created_by",
+      "breakpoints": true
     }
   ]
 }

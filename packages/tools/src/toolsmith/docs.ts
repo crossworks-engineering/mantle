@@ -14,6 +14,7 @@ import {
   upsertApiDocsFile,
   API_DOCS_MAX_CHARS,
 } from '../integration';
+import { areaSystem } from '../admin-gate';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
@@ -35,7 +36,9 @@ async function groupForIntegrationWrite(
   if (!SLUG_RE.test(slug)) {
     return { ok: false, error: 'group_slug must be lowercase letters/digits/dash/underscore' };
   }
-  const group = await getGroupIntegration(ownerId, slug);
+  // The group row is a system table (W7a fix round 2, N3): read after the
+  // connectors area check; the docs FILE is read and written in the scope.
+  const group = await areaSystem('connectors', () => getGroupIntegration(ownerId, slug));
   if (!group) {
     return {
       ok: false,
@@ -114,12 +117,14 @@ export const api_docs_set: BuiltinToolDef = {
         service,
         ...(sourceUrl ? { sourceUrl } : {}),
       });
-      await setGroupIntegration(ctx.ownerId, groupSlug, {
-        service,
-        docsNodeId: stored.nodeId,
-        docsUpdatedAt: stored.capturedAt,
-        ...(sourceUrl ? { docsSourceUrl: sourceUrl } : {}),
-      });
+      await areaSystem('connectors', () =>
+        setGroupIntegration(ctx.ownerId, groupSlug, {
+          service,
+          docsNodeId: stored.nodeId,
+          docsUpdatedAt: stored.capturedAt,
+          ...(sourceUrl ? { docsSourceUrl: sourceUrl } : {}),
+        }),
+      );
       ctx.step?.setOutput({ groupSlug, file: stored.filename, chars: stored.chars });
       return {
         ok: true,

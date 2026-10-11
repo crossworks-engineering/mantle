@@ -40,18 +40,32 @@ export const READ_ONLY_COPY_ERROR =
   'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** What Postgres reads as a uuid besides the canonical form: braces, and a
+ *  hyphen after any group of four digits, or none. */
+const LOOSE_UUID_RE = /^\{?[0-9a-f]{4}(?:-?[0-9a-f]{4}){7}\}?$/i;
+
+/** The refusal of an item id Postgres reads as a uuid that is not written in
+ *  the canonical form (the check would not match it to its row). */
+export function itemIdNotCanonicalError(id: string): string {
+  return `Item id ${id} is not written as a uuid is: pass it as 8-4-4-4-12 hex digits with hyphens and no braces, as search_nodes returns it.`;
+}
 
 /**
  * Why the current scope may not do `need` to the items `ids`, or null when it
- * may (or when no workspace scope is active). An id that is not a UUID is
- * left to the tool's own error.
+ * may (or when no workspace scope is active). An id that Postgres reads as a
+ * uuid but is not canonical (no hyphens, braces) is refused, never dropped
+ * (W7a fix round 2): the handler would cast it to the row the check never
+ * saw. Any other id that is not a uuid is left to the tool's own error.
  */
 export async function itemWriteRefusal(
   ids: readonly string[],
   need: ItemNeed,
 ): Promise<string | null> {
   if (!currentWorkspaceScope()) return null;
-  const list = [...new Set(ids.map((i) => i.trim().toLowerCase()).filter((i) => UUID_RE.test(i)))];
+  const trimmed = ids.map((i) => i.trim().toLowerCase());
+  const loose = trimmed.find((i) => !UUID_RE.test(i) && LOOSE_UUID_RE.test(i));
+  if (loose !== undefined) return itemIdNotCanonicalError(loose);
+  const list = [...new Set(trimmed.filter((i) => UUID_RE.test(i)))];
   if (list.length === 0) return null;
   const arr = `{${list.join(',')}}`;
   const rows = (await db.execute(sql`

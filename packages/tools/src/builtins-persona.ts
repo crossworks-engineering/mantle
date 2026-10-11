@@ -31,6 +31,7 @@ import {
   type PersonaUpdate,
 } from '@mantle/db';
 import { notesTargetOf, writeLearnedEntries } from '@mantle/content';
+import { areaSystem } from './admin-gate';
 import { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 import type { BuiltinToolDef } from './types';
 
@@ -121,15 +122,20 @@ const update_persona: BuiltinToolDef = {
       };
     }
 
-    const [row] = await db
-      .select({
-        id: agents.id,
-        personaNotes: agents.personaNotes,
-        memoryConfig: agents.memoryConfig,
-      })
-      .from(agents)
-      .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, slug)))
-      .limit(1);
+    // The agent row is a system table (W7a fix round 2, N3): read and
+    // written after the assistants area check. The Journal entries this
+    // writes, and the older rules it retires, are items: in the scope.
+    const [row] = await areaSystem('assistants', () =>
+      db
+        .select({
+          id: agents.id,
+          personaNotes: agents.personaNotes,
+          memoryConfig: agents.memoryConfig,
+        })
+        .from(agents)
+        .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, slug)))
+        .limit(1),
+    );
     if (!row) {
       return { ok: false, error: `agent '${slug}' not found for this owner` };
     }
@@ -200,10 +206,12 @@ const update_persona: BuiltinToolDef = {
       };
     }
 
-    await db
-      .update(agents)
-      .set({ personaNotes: result.notes, updatedAt: new Date() })
-      .where(eq(agents.id, row.id));
+    await areaSystem('assistants', () =>
+      db
+        .update(agents)
+        .set({ personaNotes: result.notes, updatedAt: new Date() })
+        .where(eq(agents.id, row.id)),
+    );
 
     ctx.step?.setMeta({
       agent: slug,

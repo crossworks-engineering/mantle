@@ -38,6 +38,10 @@ export const sandboxes = pgTable(
     network: sandboxNetwork('network').notNull().default('full'),
     /** Docker container id, set once created. Reconciled against sandboxd. */
     containerId: text('container_id'),
+    /** The login that made it (0268, W7a fix round 2): in a workspace scope
+     *  only that login and the brain owner work in it. Null = made before
+     *  0268, or outside any scope: the brain owner's. */
+    createdBy: uuid('created_by'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

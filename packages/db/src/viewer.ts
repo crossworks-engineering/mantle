@@ -966,7 +966,28 @@ export function asSystem<T>(fn: () => Promise<T>, reason?: AsSystemReason): Prom
       console.info(`[db] a turn scope leaves for the system pool: ${reason}`);
     }
   }
+  // The scope this exit leaves (W7a fix round 2, N1): a nested assistant
+  // turn started on the system pool answers the caller it left, never the
+  // anchor (scopeLeftForSystem, agent-viewer.ts withAgentScope).
+  const left = active()?.ws;
+  if (left) return leftStore.run(left, () => store.run(SYSTEM_EXIT, fn));
   return store.run(SYSTEM_EXIT, fn);
+}
+
+/** The workspace scope the nearest asSystem left (see scopeLeftForSystem). */
+const leftStore = new AsyncLocalStorage<WorkspaceScope>();
+
+/**
+ * The workspace scope that asSystem left to reach the system pool the
+ * current code runs on (W7a fix round 2, N1), or null: no workspace scope is
+ * open now and an asSystem call left one (a tool call's area work, a named
+ * exit). Inside a scope entered since, null. An assistant turn started here
+ * answers that scope's login (withAgentScope), so a tool that runs on the
+ * system pool never turns its caller into the anchor.
+ */
+export function scopeLeftForSystem(): WorkspaceScope | null {
+  if (active()?.ws) return null;
+  return leftStore.getStore() ?? null;
 }
 
 /**

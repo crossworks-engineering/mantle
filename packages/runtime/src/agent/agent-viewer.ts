@@ -29,7 +29,10 @@
  *    helper never widens it (plan 5.1).
  *
  * Nested: the same workspace reuses the open scope; another workspace, or an
- * Admin assistant inside a non-Admin turn, is refused (fail closed). A
+ * Admin assistant inside a non-Admin turn, is refused (fail closed). A turn
+ * started on the system pool from inside a scope (a tool's work under
+ * asSystem, W7a fix round 2) answers the login of the scope it left, never
+ * the anchor; one that names another login is refused. A
  * workspace that cannot be read (gone, archived) is refused, never read as
  * no workspace.
  *
@@ -43,6 +46,7 @@ import {
   currentRequestMode,
   currentWorkspaceScope,
   isViewerLevel,
+  scopeLeftForSystem,
   withTurnStamp,
   type ViewerLevel,
 } from '@mantle/db/viewer';
@@ -170,10 +174,29 @@ export async function withAgentScope<T>(
   // Inside a user's own scope the nested turn answers THAT login unless a
   // login is named (W7a fix round 1, M1): ask_responder over an Admin
   // login's MCP names none, and the turn then acted for the anchor, with
-  // the anchor's areas and rows. A named login other than the scope's is
-  // refused below (narrowsWorkspaceScope compares the logins).
-  const scopeLogin = open?.kind === 'user' ? open.loginId : null;
+  // the anchor's areas and rows. Started on the system pool from inside a
+  // scope (a tool call's work under asSystem, W7a fix round 2, N1), the
+  // turn answers the login of the scope it left the same way: no open scope
+  // there, and it acted for the anchor. A named login other than the
+  // caller's is refused; a caller with no login (a public link, a turn that
+  // answers nobody) starts no nested turn from the system pool.
+  const left = open ? null : scopeLeftForSystem();
+  const caller = open?.kind === 'user' ? open : left;
+  const scopeLogin = caller?.loginId ?? null;
   const ws = await agentWorkspace(wsId);
+  if (caller) {
+    const named = opts.loginId ?? (ws.isAdmin ? opts.ownerLoginId : null) ?? null;
+    if (named !== null && named !== caller.loginId) {
+      throw new AgentWorkspaceError(
+        'A nested assistant turn answers the login that called it, not another login.',
+      );
+    }
+    if (left && !left.loginId) {
+      throw new AgentWorkspaceError(
+        'A nested assistant turn needs the login that called it, and this call has none.',
+      );
+    }
+  }
   if (ws.isAdmin) {
     const asked = opts.loginId ?? opts.ownerLoginId ?? scopeLogin;
     const stamp = { workspaceId: wsId, loginId: asked };
@@ -183,7 +206,8 @@ export async function withAgentScope<T>(
         withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn),
       );
     }
-    // A turn that answers no login acts for the owner (the anchor login).
+    // A turn that answers no login and has no caller (a heartbeat's tick, a
+    // run, an owner Telegram bot) acts for the owner (the anchor login).
     const actsFor = asked ?? ws.ownerId;
     const user = await membership(wsId, actsFor);
     if (!user) {

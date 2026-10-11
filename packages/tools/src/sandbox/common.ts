@@ -7,6 +7,37 @@
 
 import { autoFiledSourcePath, ensureAutoFiledFolder } from '@mantle/files';
 import { env, serviceEnabled } from '@mantle/config';
+import { callerScope } from '../admin-gate';
+
+/* ── whose sandbox (W7a fix round 2) ─────────────────────────────────── */
+
+/** The refusal of a sandbox another login made. */
+export const NOT_YOUR_SANDBOX_ERROR =
+  'This sandbox was made by another login: only the login that made it, or the brain owner, works in it. Make your own with sandbox_create.';
+
+/** The refusal of a folder mount by a login other than the brain owner. */
+export const MOUNT_OWNER_ONLY_ERROR =
+  "Mounting a Files folder into a sandbox is for the brain owner's login only: the sandbox would see every file in it. Create the sandbox without inbox_folder_id and copy the files in with sandbox_import.";
+
+/** The login the current call serves in a workspace scope, or undefined
+ *  outside one (system work: the surface rules decide). Null: a scope that
+ *  names no login. */
+export function sandboxCaller(): string | null | undefined {
+  const scope = callerScope();
+  return scope ? scope.loginId : undefined;
+}
+
+/**
+ * Why the current caller may not work in sandbox `row`, or null (W7a fix
+ * round 2): in a workspace scope the login that made it and the brain owner
+ * (the anchor login, `ownerId`) only; a row with no maker is the brain
+ * owner's. Outside a workspace scope: null.
+ */
+export function sandboxRefusal(row: { createdBy?: string | null }, ownerId: string): string | null {
+  const login = sandboxCaller();
+  if (login === undefined || login === ownerId) return null;
+  return login !== null && row.createdBy === login ? null : NOT_YOUR_SANDBOX_ERROR;
+}
 
 export const DEFAULT_TIMEOUT_S = 120;
 

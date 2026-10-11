@@ -7,6 +7,9 @@
  * file they read or write is an item. Their sandbox row is a system table,
  * read through areaSystem. ls and publish read no item and run whole on
  * the system pool (AREA_SYSTEM_TOOLS).
+ *
+ * In a workspace scope each works only on a sandbox its caller made, or, for
+ * the brain owner, on any (W7a fix round 2, sandboxRefusal).
  */
 
 import { getSandboxByRef, touchSandbox } from '@mantle/content';
@@ -24,6 +27,7 @@ import {
   sandboxd,
   sandboxdBinary,
   sandboxdUpload,
+  sandboxRefusal,
 } from './common';
 
 export const sandbox_export: BuiltinToolDef = {
@@ -65,6 +69,8 @@ export const sandbox_export: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await areaSystem('settings', () => getSandboxByRef(ctx.ownerId, ref));
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
+    const notYours = sandboxRefusal(row, ctx.ownerId);
+    if (notYours) return { ok: false, error: notYours };
     const relPath = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : '.';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath });
 
@@ -156,6 +162,8 @@ export const sandbox_import: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await areaSystem('settings', () => getSandboxByRef(ctx.ownerId, ref));
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
+    const notYours = sandboxRefusal(row, ctx.ownerId);
+    if (notYours) return { ok: false, error: notYours };
 
     const fileId = typeof input.file_id === 'string' ? input.file_id : '';
     // Read in the caller's scope (W7a fix round 1, H1): a file the scope does
@@ -215,6 +223,8 @@ export const sandbox_ls: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await getSandboxByRef(ctx.ownerId, ref);
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
+    const notYours = sandboxRefusal(row, ctx.ownerId);
+    if (notYours) return { ok: false, error: notYours };
     const relPath = typeof input.path === 'string' ? input.path.trim() : '';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath || '/files' });
 
@@ -266,6 +276,8 @@ export const sandbox_publish: BuiltinToolDef = {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
     const row = await getSandboxByRef(ctx.ownerId, ref);
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
+    const notYours = sandboxRefusal(row, ctx.ownerId);
+    if (notYours) return { ok: false, error: notYours };
     const port = Number(input.port);
     const rawSlug =
       typeof input.group_slug === 'string' && input.group_slug.trim()

@@ -40,11 +40,13 @@ import {
   heartbeats,
   scopeHasArea,
   scopeHoldsAdmin,
+  withTurnScope,
   type Heartbeat,
 } from '@mantle/db';
-import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { currentRequestMode, currentWorkspaceScope } from '@mantle/db/viewer';
 import {
   adminAreaError,
+  areaSystem,
   registerBuiltin,
   type BuiltinToolDef,
   type ToolHandlerResult,
@@ -436,16 +438,29 @@ const heartbeat_fire: BuiltinToolDef = {
       };
     }
 
-    const [hb] = await db
-      .select()
-      .from(heartbeats)
-      .where(and(eq(heartbeats.ownerId, ctx.ownerId), eq(heartbeats.slug, slug)))
-      .limit(1);
+    // In a workspace scope (W7a fix round 2, N1) the tool runs in its
+    // caller's scope (it is not an AREA_SYSTEM_TOOLS tool): the heartbeat row
+    // is read on the system pool after the assistants area check, and so is
+    // the fire's own bookkeeping (its agent, skill, key, trace and fire log),
+    // while the fire's tool resolution and turn run back in the caller's
+    // scope: a second Admin login's fire answers that login, with its
+    // rights, never the anchor's.
+    const caller = currentWorkspaceScope();
+    const hb = caller
+      ? await areaSystem('assistants', () => loadOwnedHeartbeatBySlug(ctx.ownerId, slug))
+      : await loadOwnedHeartbeatBySlug(ctx.ownerId, slug);
     if (!hb) return { ok: false, error: `heartbeat '${slug}' not found` };
     if (hb.status !== 'active') {
       return { ok: false, error: `heartbeat '${slug}' is '${hb.status}', not 'active'` };
     }
-    const result = await forceFire(hb);
+    const writes = currentRequestMode()?.writes === true;
+    const result = caller
+      ? await areaSystem('assistants', () =>
+          forceFire(hb, {
+            inCaller: (fn) => withTurnScope(caller, fn, { writes }),
+          }),
+        )
+      : await forceFire(hb);
     ctx.step?.setMeta({
       branch: 'fired',
       heartbeat_id: hb.id,

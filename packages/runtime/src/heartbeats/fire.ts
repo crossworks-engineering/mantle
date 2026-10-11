@@ -102,9 +102,17 @@ export type FireResult = {
  *  Goes through the in-flight lock: if tick or another forceFire is
  *  already firing this heartbeat, we wait for it to finish before
  *  running ours. Two concurrent UI clicks queue rather than collide. */
-export async function forceFire(hb: Heartbeat): Promise<FireResult> {
-  return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: true }));
+export async function forceFire(hb: Heartbeat, opts: FireOpts = {}): Promise<FireResult> {
+  return runWithInflightLock(hb.id, () => fireInner(hb, { ...opts, skipGates: true }));
 }
+
+/** How a fire is run. `inCaller` (W7a fix round 2, N1): heartbeat_fire in a
+ *  workspace scope runs the fire's bookkeeping on the system pool and passes
+ *  this to put the tool resolution and the turn back in its caller's scope,
+ *  so the turn answers that caller's login, never the anchor. */
+export type FireOpts = {
+  inCaller?: <T>(fn: () => Promise<T>) => Promise<T>;
+};
 
 /** Tick-driven fire: runs gate checks, fires if all pass.
  *  The tick loop already filters in-flight rows out before calling
@@ -114,8 +122,12 @@ export async function tickFire(hb: Heartbeat): Promise<FireResult> {
   return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false }));
 }
 
-async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<FireResult> {
+async function fireInner(
+  hb: Heartbeat,
+  opts: FireOpts & { skipGates: boolean },
+): Promise<FireResult> {
   const now = new Date();
+  const inCaller = opts.inCaller ?? (<T>(fn: () => Promise<T>) => fn());
 
   // Capture the heartbeat's `next_fire_at` as it was when the fire
   // started. We need this at the end of the success path to detect
@@ -247,7 +259,9 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
     const allSlugs = new Set<string>([...effectiveToolSlugs(agentGroupTools), ...controlTools]);
     return resolveAgentTools(hb.ownerId, [...allSlugs]);
   };
-  const resolvedTools = scoped ? await withAgentScope(agent, resolveTools) : await resolveTools();
+  const resolvedTools = await inCaller(() =>
+    scoped ? withAgentScope(agent, resolveTools) : resolveTools(),
+  );
   // Egress gate (opt-in): on an unattended fire, route email/web tools
   // through the approval queue rather than letting them run inline. The
   // queued call fires a Telegram approval card (see @mantle/tools
@@ -315,38 +329,40 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
         const result = await withHeartbeatContext(
           { heartbeatId: hb.id, slug: hb.slug, ownerId: hb.ownerId },
           () =>
-            runToolLoop({
-              adapter: hbAdapter,
-              apiKey,
-              model: agent.model,
-              baseUrl: agent.baseUrl,
-              viaTailnet: agent.viaTailnet,
-              backup: hbBackup,
-              params: (agent.params ?? {}) as AgentParams,
-              ownerId: hb.ownerId,
-              agentId: agent.id,
-              agentSlug: agent.slug,
-              agentLevel: agentLevel(agent),
-              // The loop re-enters the agent's workspace (withAgentScope).
-              ...(scoped ? { agentWorkspaceId: agent.workspaceId } : {}),
-              agentDepth: 1,
-              delegateTo: [],
-              // The agent's own thinking effort when set; on inherit, the
-              // profile budget alone (same gate; prefs already loaded above),
-              // with no effort, exactly as before per-agent effort existed.
-              // Clamped vs max_tokens inside runToolLoop.
-              ...heartbeatThinking(agent, resolveThinkingBudget(prefs)),
-              initialMessages,
-              tools,
-              // A workspace assistant's fire is not the owner's channel: a
-              // team surface with no login (read only, private reads off).
-              surface:
-                scoped && !adminAssistant
-                  ? { kind: 'team', privateReads: false }
-                  : hb.surface.kind === 'telegram'
-                    ? { kind: 'telegram', telegramChatId: hb.surface.chat_id }
-                    : { kind: 'web' },
-            }),
+            inCaller(() =>
+              runToolLoop({
+                adapter: hbAdapter,
+                apiKey,
+                model: agent.model,
+                baseUrl: agent.baseUrl,
+                viaTailnet: agent.viaTailnet,
+                backup: hbBackup,
+                params: (agent.params ?? {}) as AgentParams,
+                ownerId: hb.ownerId,
+                agentId: agent.id,
+                agentSlug: agent.slug,
+                agentLevel: agentLevel(agent),
+                // The loop re-enters the agent's workspace (withAgentScope).
+                ...(scoped ? { agentWorkspaceId: agent.workspaceId } : {}),
+                agentDepth: 1,
+                delegateTo: [],
+                // The agent's own thinking effort when set; on inherit, the
+                // profile budget alone (same gate; prefs already loaded above),
+                // with no effort, exactly as before per-agent effort existed.
+                // Clamped vs max_tokens inside runToolLoop.
+                ...heartbeatThinking(agent, resolveThinkingBudget(prefs)),
+                initialMessages,
+                tools,
+                // A workspace assistant's fire is not the owner's channel: a
+                // team surface with no login (read only, private reads off).
+                surface:
+                  scoped && !adminAssistant
+                    ? { kind: 'team', privateReads: false }
+                    : hb.surface.kind === 'telegram'
+                      ? { kind: 'telegram', telegramChatId: hb.surface.chat_id }
+                      : { kind: 'web' },
+              }),
+            ),
         );
         const replyText = result.reply;
 

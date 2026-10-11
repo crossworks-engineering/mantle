@@ -92,25 +92,27 @@ export const ITEM_WRITE_TARGETS: ReadonlyMap<string, readonly Target[] | Resolve
   ['page_unshare', [manage('id')]],
   ['node_share', [manage('id')]],
   ['node_unshare', [manage('id')]],
-  // A conversion that retires its source edits the source.
+  // A conversion that retires its source edits the source. The handlers
+  // retire it unless supersede_source is false (pages/from.ts): an omitted
+  // flag retires too (W7a fix round 2, N2).
   [
     'page_from_note',
     async (input) =>
-      input.supersede_source === true && typeof input.note_id === 'string'
+      input.supersede_source !== false && typeof input.note_id === 'string'
         ? [{ ids: [input.note_id], need: 'edit' }]
         : [],
   ],
   [
     'page_from_file',
     async (input) =>
-      input.supersede_source === true && typeof input.file_id === 'string'
+      input.supersede_source !== false && typeof input.file_id === 'string'
         ? [{ ids: [input.file_id], need: 'edit' }]
         : [],
   ],
   [
     'page_from_notes',
     async (input) =>
-      input.supersede_source === true && Array.isArray(input.note_ids)
+      input.supersede_source !== false && Array.isArray(input.note_ids)
         ? [{ ids: input.note_ids.filter((i): i is string => typeof i === 'string'), need: 'edit' }]
         : [],
   ],
