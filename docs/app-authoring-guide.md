@@ -630,9 +630,8 @@ PUBLISHED build only and never edit it.
   public-level items, never admin ones. Recipe and shell tools are refused,
   so are http tools unless an admin switched "External access" on for them,
   and MCP connector tools unless the connector's level is team or lower,
-  so are built-ins that write, and so are `my_items_list`,
-  `my_item_open`, `summarize_text`, `search_chunks`, `team_request_create`
-  and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
+  so are built-ins that write, and so are `summarize_text`,
+  `search_chunks`, `team_request_create` and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
   warning for each declared tool members would be refused.
 - **Data:** `host.db.query` and `host.db.exec` both work on a team- or
   client-level app (unless an admin marked it informational); on a
@@ -657,62 +656,63 @@ A team member builds their own apps over their own MCP connection, with
 the `my_app_*` tools (Jason, 2026-10-08: apps work like Pages). The tools
 mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
 
-- **Where it lives:** in the member's personal space, private. Only the
-  author runs it. No admin list shows a member's draft.
+- **Where it lives:** a member's app is a brain app in the member's
+  **private workspace** ("<name> (only you)", made on the first thing the
+  member makes; the member is its only user and its Moderator). Only the
+  member reads and runs it. No admin list shows it unless an Admin user
+  joins that workspace. Personal spaces are gone (workspaces W6b): a
+  member's older apps were moved into its private workspace with their
+  data and history.
 - **The loop:** `my_app_create`, `my_app_file_write`, `my_app_build`,
   `my_app_publish`. `my_app_schema_set` and `my_app_tools_set` declare the
-  database and the tools. `my_app_snapshot_*` and `my_app_errors` work as
-  for an admin, on the member's own app only. A member keeps at most 50
-  apps, not counting their trash; an app an admin approves or deletes
-  leaves that count and takes its snapshots out of the member's snapshot
-  budget.
-- **Delete (the member's own trash, access matrix N6):** `my_app_delete`
-  moves one of your own apps (private, shared or submitted, never one an
-  admin accepted) to your trash. It stops running for everyone at once,
-  teammates and you, leaves the review queue if it was submitted, and
-  becomes private. Nothing is removed: its code, builds, database file,
-  history and activity stay where they are, and nothing in the trash
-  expires (unlike the brain's own trash, which keeps a deleted app 30 days).
-  `my_app_deleted_list` shows the trash and `my_app_undelete` brings an app
-  back, private and a draft, with everything it had: share it again in the
-  app, or submit it again. The trash holds at most 50 apps. While an app is
-  in the trash every other change to it is refused.
+  database and the tools. `my_app_snapshot_*` work as for an admin.
+  `my_app_list` shows every app the member may run, with `mine` for the
+  ones it may change. The tools change an app only where the member may
+  edit it (a Moderator of its workspace, or a grant with Write on);
+  `my_app_errors` too, since an app's errors carry its SQL and its callers.
+  A member keeps at most 50 apps of its own.
+- **Delete (the brain's trash):** `my_app_delete` deletes an app whose
+  workspace the member moderates (its private workspace's apps among
+  them). It stops running for everyone at once. Its last snapshot keeps
+  its code, builds, data and history in the brain's trash
+  (`my_app_deleted_list`), and `my_app_undelete` brings it back into the
+  workspace it lived in. **A delete by anyone other than the brain's owner
+  is never removed by itself** (CEO decision, W6b): the nightly purge that
+  ends the brain's own deletes after 30 days skips it, and only the
+  brain's owner deletes it for good. `my_app_deleted_list` shows such an
+  app with no last day (`purgeAfter` null).
 - **Delete a snapshot:** `my_app_snapshot_delete` deletes one snapshot YOU
   took (`my_app_snapshot_create`), with its copy of the data, to free your
   snapshot budget (it counts the manual snapshots of your login only). The
   app's own data is never touched. A version (what a publish made live), an
   automatic snapshot (before a schema change, a restore or an MCP write;
   never in your budget) and a snapshot another login took stay.
-- **Share with the team:** in the app, Apps > Your apps > Share with team
-  (the member's own click; never over MCP, so no key, peer or model opens
-  an app to the team; `my_app_unshare` makes it private again). Every member then
-  runs its published version from Mine > Apps and writes its data. No
-  approval, and the level does not change: the app stays in the space.
-- **Changes reach teammates at once:** sharing is for the app, not for one
-  version. While it is shared, every `my_app_publish` (over MCP too) is
-  what teammates run from their next open, with no new click and no
-  review. Test a change on a private copy first, or make the app private
-  (`my_app_unshare`) while you work. An admin sees what it did in Apps
-  (Shared by members > the app > Activity), and can unshare or delete it.
-  Unshare makes it private, but its author can share it again at once;
-  to stop it for good, an admin deletes it (to the brain's trash) or
-  disables the author's login.
-- **Submit and recall are gone** (workspaces W5c): `my_app_submit` and
-  `my_app_recall` were removed with review. Share the app with the team in
-  the app; an app submitted before stays as it was left.
-- **Approve (an admin):** Apps > Waiting for approval. The app moves into the
-  brain's Apps at admin or team level, with the same id, its data and its
-  history. Client and public are set later, by an admin, as for any app.
+- **Share with the team:** sharing is a grant, as for every brain item: in
+  the app, add a grant for a workspace the member moderates (Team, for
+  most members) from its Grant Access panel. Never over MCP, so no key,
+  peer or model opens an app to anyone. Every user of that workspace
+  then runs its published version. To make it private again, remove the
+  grant there.
+- **Changes reach the workspace at once:** a grant is for the app, not for
+  one version. While it is shared, every `my_app_publish` (over MCP too) is
+  what the workspace's users run from their next open, with no new click
+  and no review. Test a change on a private copy first, or remove the
+  grant while you work. An Admin user in that workspace sees what it did
+  in the app's Activity, and can remove the grant or delete it.
+- **Submit, recall and approve are gone** (workspaces W5c): review was
+  removed. Share the app with a grant; an Admin user who wants it in the
+  Admin workspace adds a grant there.
 - **The author ceiling:** a member-built app runs its tools at TEAM rules
   at most, for every runner, an admin included (`apps.author_level`
-  'team'; every tool broker applies it through `appToolLevel`). So declare
+  'team'; every tool broker applies it through `appToolLevel`). That holds
+  for an app a member makes in the app as well as over MCP. So declare
   read-only built-ins from an enabled team-level group, or connector tools
   at team level or lower. `my_app_tools_set` warns for each tool those
-  rules refuse. An admin who reviewed the declared tools may accept with
-  "trust its tools", which lifts the ceiling. The accept is pinned to the
-  version the admin read: if you change and resubmit meanwhile, the admin
-  must open it again. A copy, an import or a restore of your code keeps the
-  ceiling; only an admin's own "trust its tools" lifts it.
+  rules refuse. An Admin user who read the declared tools may switch on
+  "trust its tools" in the app's settings, which lifts the ceiling; that
+  switch, MCP access and the informational flag are an Admin user's only.
+  A copy, an import or a restore of your code keeps the ceiling; only an
+  Admin user's own "trust its tools" lifts it.
 - **Writes need the Write switch** on the member's MCP. Reads
   (`my_app_list`, `my_app_get`, `my_app_errors`, `my_app_snapshot_list`,
   `my_app_deleted_list`, `my_app_guide`) do not. A client never gets these

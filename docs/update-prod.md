@@ -720,6 +720,17 @@ Former user workspace), with exactly the grants that home names, Write off.
 - **Names.** A folder path or slug the brain already has gets a short
   suffix, never an overwrite; `space_fold_items` records every move (old
   and new path and slug, the grants, the sharing and trash at the move).
+  A file's name (`data.filename`, which the brain's readers, the files
+  watcher and a delete build the tree path from) is made unique in its
+  folder ignoring case: a member's `report.pdf` beside a brain
+  `Report.pdf` becomes `report-<6 hex>.pdf`, its slug with it. A folded
+  file's delete never unlinks a tree file, and the files watcher ignores
+  folded rows; an overwrite of one puts its new bytes in the tree.
+- **Archived homes.** An item whose recorded home is its live author's
+  private workspace that was archived since 0264 goes to the author's
+  live private workspace when it has one, else that workspace is
+  un-archived (a `spaces_fold.unarchived` workspace event; the migrate log
+  counts them).
 - **Trashed apps (owner decision).** An app in its author's trash moves
   into that author's private workspace only (no Admin or Team grant), live,
   marked `data.trashedBeforeFold` (and `trashedAt`) so the author finds it
@@ -746,13 +757,36 @@ Former user workspace), with exactly the grants that home names, Write off.
   (idempotent) and by hand: `pnpm maintain snapshot-copies` (dry run), then
   `--go`. When every wanted copy exists, the accepted `space_items` rows
   (archived by 0267) go. A file the brain changed since its accept has no
-  accepted bytes left and gets no copy (counted).
+  accepted bytes left and gets no copy (counted). A copy is **read only
+  for everyone, its author included** (CEO decision): the database refuses
+  any change to it, a move out of its private workspace and any new grant
+  (0267's triggers); its author may delete it. The item responses carry
+  `readOnly: true`. One run at a time (an advisory lock), and each copy is
+  stamped in its own insert.
+- **Member app deletes wait for the owner** (CEO decision). A delete by any
+  login other than the brain's owner is recorded in its `pre_delete`
+  snapshot (`meta.keepForOwner`): the nightly `app-trash-purge` skips it,
+  and only the owner deletes it for good (403 for anyone else).
+- **Admin-only app switches.** `PATCH /api/apps/:id` refuses `trustTools`,
+  `mcpAccess` and `dataReadOnly` for a member or a client (403
+  `admin-only`); an app a member makes there starts at team rules with its
+  author named.
+
+**A brain that skips the switch** (clients present, or no anchor yet;
+21.9): 0267 moves nothing there, yet the personal-space routes answer 410
+all the same. Its members **cannot reach their own personal items** (the
+space routes are gone and nothing is folded) until the brain is switched
+onto workspaces by hand (`select * from mantle_ws_migrate()`, which runs the
+fold at its end). Do not roll W6b to such a box without planning that
+switch; say so to its owner first. W9 (the final switch for the remaining
+boxes) must carry this note too.
 
 On the copy before each box's roll: run the migrations, then
 `select * from mantle_ws_spaces_fold_check()` must show 0 for "items left
 in a personal space", "kind roots left with children", "space_items rows
-other than accepted", "moved items without their home" and "personal
-spaces not archived"; the migrate log's `0267:` rows list the moves, the
+other than accepted", "moved items without their home", "personal
+spaces not archived" and "folded files sharing a name in their folder";
+the migrate log's `0267:` rows list the moves, the
 grants and the assistants' gains (Admin: the submitted and left-behind
 items, Team: the team-shared drafts, signed off in 9.3). Then run
 `pnpm maintain snapshot-copies` on the copy: "wanted" equals "made" plus
