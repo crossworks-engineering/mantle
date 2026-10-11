@@ -147,11 +147,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'client chat agent level',
   },
-  'server/web/app/api/member/apps/[id]/db-broker/route.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'member comment',
-  },
   'server/web/app/api/member/chat/route.ts': {
     lines: 2,
     phase: 'W5c',

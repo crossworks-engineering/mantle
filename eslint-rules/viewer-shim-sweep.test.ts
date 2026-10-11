@@ -110,9 +110,17 @@ function viewerForKeys(): string[] {
   const text = code(load(VIEWER)!);
   const at = text.indexOf('export type ViewerFor');
   expect(at, 'ViewerFor is declared in viewer.ts').toBeGreaterThan(0);
-  const body = text.slice(text.indexOf('=', at) + 1, text.indexOf(';', at));
   const keys: string[] = [];
   let depth = 0;
+  // The type ends at the first `;` outside braces (a variant may hold `;`).
+  const start = text.indexOf('=', at) + 1;
+  let end = start;
+  for (let d = 0; end < text.length; end++) {
+    if (text[end] === '{') d++;
+    else if (text[end] === '}') d--;
+    else if (text[end] === ';' && d === 0) break;
+  }
+  const body = text.slice(start, end);
   for (let i = 0; i < body.length; i++) {
     const c = body[i];
     if (c === '{') {
@@ -204,7 +212,11 @@ function problems(f: string, raw: string, keys: readonly string[]): string[] {
     bad.push(`${f}: runInLevelRoleForTest`);
   }
   if (HOME.has(f)) return bad;
-  const actsFor = new RegExp(`^withViewer\\(\\s*[^,]+,\\s*\\{\\s*(${keys.join('|')})\\s*:`);
+  // An object literal naming a ViewerFor key, or the `actsFor` an app
+  // tool scope built for its runner (appToolScope, H1).
+  const actsFor = new RegExp(
+    `^withViewer\\(\\s*[^,]+,\\s*(?:\\{\\s*(${keys.join('|')})\\s*:|[\\w$]+\\.actsFor\\s*,)`,
+  );
   for (const name of GUARDED) {
     for (const local of localNames(src, name)) {
       for (const use of valueUses(text, local)) {

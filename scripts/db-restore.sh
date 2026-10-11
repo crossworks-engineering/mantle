@@ -232,8 +232,14 @@ if [ "$LEDGER" -ge "$WHEN_0204" ] && [ "$LEDGER" -lt "$WHEN_0212" ] && ! has_tri
   fi
 fi
 # From 0204 on the trigger must be there, listed by the dump or not, until
-# 0261 dropped it (grants are the truth; levels are frozen).
-if [ "$LEDGER" -ge "$WHEN_0204" ] && [ "$LEDGER" -lt "$WHEN_0261" ] && ! has_trigger "$SHARE_REFRESH"; then
+# 0261 dropped it (grants are the truth; levels are frozen). From 0261 on a
+# brain that is not on workspaces keeps it (0261 leaves such a brain on its
+# levels): there, a dump that lists it must restore it.
+SHARE_REFRESH_LISTED=0
+case $'\n'"$DUMP_TRIGGERS"$'\n' in
+  *$'\n'"$SHARE_REFRESH"$'\n'*) SHARE_REFRESH_LISTED=1 ;;
+esac
+if [ "$LEDGER" -ge "$WHEN_0204" ] && { [ "$LEDGER" -lt "$WHEN_0261" ] || [ "$SHARE_REFRESH_LISTED" = 1 ]; } && ! has_trigger "$SHARE_REFRESH"; then
   fail "the trigger nodes_share_refresh_after on public.nodes is missing (folder shares no longer reach the rows below a folder)"
 fi
 # Read line by line: a name is never split or matched against file names.

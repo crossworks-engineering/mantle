@@ -153,7 +153,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       loginId: user.actor.id,
       name: user.actor.displayName?.trim() || user.actor.email.split('@')[0] || 'admin',
     },
-    { id: app.id },
+    { id },
   );
   const result = await withViewer(scope.viewer, scope.actsFor, () =>
     dispatchTool(verdict.tool, parsed.data.input, { ownerId: user.id, surface: scope.surface }),

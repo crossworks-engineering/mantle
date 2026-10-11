@@ -211,7 +211,9 @@ describe('the review test tool broker', () => {
     const res = await POST(post({ slug: 'search', input: {} }), params(APP));
     expect(res.status).toBe(200);
     expect(h.dispatched[0]).toEqual({ verdictLevel: 'team' });
-    expect(h.viewers).toEqual([{ level: 'team', actsFor: { login: ADMIN_LOGIN } }]);
+    expect(h.viewers).toEqual([
+      { level: 'team', actsFor: { login: ADMIN_LOGIN, app: { team: true } } },
+    ]);
     expect(h.dispatched[1]).toMatchObject({
       ownerId: OWNER,
       surface: { kind: 'team', loginId: ADMIN_LOGIN, privateReads: false },
