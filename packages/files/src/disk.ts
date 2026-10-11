@@ -64,6 +64,88 @@ export async function writeFile(
   return { path: filePath, sha256, size: bytes.byteLength };
 }
 
+// ─── Staged creates: write beside, place after the row ──────────────────────
+//
+// A create writes its bytes under a temporary name in the file's own folder
+// (same directory, so the placing rename is atomic) and renames them to the
+// final name only once its node insert has won (W8b). The temporary name is
+// dot-prefixed and ends in `.tmp`, so the disk-sync watcher and the untracked
+// scan ignore it (`isDiskChaff`), and a create that loses the race to another
+// one unlinks it: the loser's bytes never land under the winner's row.
+
+/** Bytes staged for a create: where they are now and where they go. */
+export type StagedFile = { tempPath: string; finalPath: string; sha256: string; size: number };
+
+/** A unique temporary path beside `filename` in its folder (mkdir -p). */
+async function stagingPathFor(
+  parentLtreePath: string,
+  filename: string,
+): Promise<{ tempPath: string; finalPath: string }> {
+  const finalPath = diskPathForFile(parentLtreePath, filename);
+  if (!finalPath) {
+    throw new Error(`stageFile: cannot resolve disk path for ${parentLtreePath}/${filename}`);
+  }
+  const dir = path.dirname(finalPath);
+  await fs.mkdir(dir, { recursive: true });
+  return { tempPath: path.join(dir, `.${randomUUID()}.staged.tmp`), finalPath };
+}
+
+/** Write `bytes` to a staging file beside `filename`. Never touches the
+ *  final name: `placeStaged` does that, `discardStaged` drops it. */
+export async function stageFile(
+  parentLtreePath: string,
+  filename: string,
+  bytes: Buffer,
+): Promise<StagedFile> {
+  const { tempPath, finalPath } = await stagingPathFor(parentLtreePath, filename);
+  try {
+    await fs.writeFile(tempPath, bytes, { flag: 'wx' });
+  } catch (err) {
+    await fs.unlink(tempPath).catch(() => {});
+    throw err;
+  }
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  return { tempPath, finalPath, sha256, size: bytes.byteLength };
+}
+
+/** Move a spooled upload to a staging file beside `filename` (a rename, or a
+ *  copy across mounts). On any failure the spool file is removed. */
+export async function stageSpooled(
+  parentLtreePath: string,
+  filename: string,
+  spooled: SpooledUpload,
+): Promise<StagedFile> {
+  let tempPath: string | null = null;
+  try {
+    const at = await stagingPathFor(parentLtreePath, filename);
+    tempPath = at.tempPath;
+    try {
+      await fs.rename(spooled.tempPath, at.tempPath);
+    } catch (err) {
+      // Spool and folder on different mounts (EXDEV): copy, then drop the spool.
+      if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err;
+      await fs.copyFile(spooled.tempPath, at.tempPath);
+      await fs.unlink(spooled.tempPath);
+    }
+    return { ...at, sha256: spooled.sha256, size: spooled.size };
+  } catch (err) {
+    await discardSpooled(spooled);
+    if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    throw err;
+  }
+}
+
+/** Put staged bytes under their final name (an atomic rename that replaces
+ *  an orphan disk file of that name, the self-heal). */
+export async function placeStaged(staged: StagedFile): Promise<void> {
+  await fs.rename(staged.tempPath, staged.finalPath);
+}
+
+/** Drop a staging file. Safe after placement (ENOENT is fine). */
+export async function discardStaged(staged: StagedFile): Promise<void> {
+  await fs.unlink(staged.tempPath).catch(() => {});
+}
+
 export async function readFile(parentLtreePath: string, filename: string): Promise<Buffer> {
   const filePath = diskPathForFile(parentLtreePath, filename);
   if (!filePath) {

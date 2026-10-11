@@ -23,6 +23,7 @@ import {
   foldedFilePath,
   type SpooledUpload,
 } from '../index';
+import { discardStaged, placeStaged, stageFile, stageSpooled, type StagedFile } from '../disk';
 import { derivedCountsOf, type DerivedCounts } from '../derived-counts';
 import { deleteThumbnailsFor } from '../thumbnail';
 import {
@@ -217,28 +218,45 @@ export async function upsertFile(args: {
     }
   }
 
-  // Disk write. The "already exists" collision is only meaningful when a real
-  // DB node owns the name. A disk file with NO node is orphan residue from an
-  // interrupted upload (the disk write landed but the node insert never ran) —
-  // adopt it by overwriting, so a re-upload self-heals instead of being stuck
-  // forever on "already exists" with nothing in the UI to delete.
-  const effectiveOverwrite = args.overwrite || !existing;
-  const written = args.spooled
-    ? await adoptSpooled(args.parentPath, filename, args.spooled, {
-        overwrite: effectiveOverwrite,
-      })
-    : await writeFileOnDisk(args.parentPath, filename, args.bytes!, {
-        overwrite: effectiveOverwrite,
-      });
+  // Disk write. Over a file a row owns: in place, as before (refused when
+  // its bytes are on disk and the caller did not ask to overwrite). For a
+  // create (no row owns the name) the bytes are staged beside their final
+  // name, under a name the watcher ignores, and placed only once this
+  // create's node insert wins (W8b): two creates racing for one name used
+  // to both write the final path first, so the loser's bytes could end up
+  // under the winner's row. A disk file with NO node is orphan residue from
+  // an interrupted upload (the disk write landed but the node insert never
+  // ran): the placing rename replaces it, so a re-upload self-heals instead
+  // of being stuck forever on "already exists" with nothing in the UI to
+  // delete.
+  let staged: StagedFile | null = null;
+  let written: { path: string; sha256: string; size: number };
+  if (existing) {
+    const overwrite = !!args.overwrite;
+    written = args.spooled
+      ? await adoptSpooled(args.parentPath, filename, args.spooled, { overwrite })
+      : await writeFileOnDisk(args.parentPath, filename, args.bytes!, { overwrite });
+  } else {
+    staged = args.spooled
+      ? await stageSpooled(args.parentPath, filename, args.spooled)
+      : await stageFile(args.parentPath, filename, args.bytes!);
+    written = { path: staged.tempPath, sha256: staged.sha256, size: staged.size };
+  }
 
   // Small text files are cached in the node for the editor / responder. A
   // spooled upload is read back from disk for that: never more than 1 MB.
-  const content =
-    isText && written.size <= TEXT_BYTE_CAP
-      ? args.bytes
-        ? args.bytes.toString('utf8')
-        : (await fsp.readFile(written.path)).toString('utf8')
-      : null;
+  let content: string | null;
+  try {
+    content =
+      isText && written.size <= TEXT_BYTE_CAP
+        ? args.bytes
+          ? args.bytes.toString('utf8')
+          : (await fsp.readFile(written.path)).toString('utf8')
+        : null;
+  } catch (err) {
+    if (staged) await discardStaged(staged);
+    throw err;
+  }
 
   const newData: Record<string, unknown> = {
     ...(args.data ?? {}),
@@ -252,39 +270,59 @@ export async function upsertFile(args: {
 
   // Insert first when no row owns the name. A file is unique per (owner,
   // folder, filename) (migration 0184), so the only clash left is a race:
-  // the files watcher saw the bytes written above and inserted the node
-  // between our lookup and this insert. That node IS this file; fall through
-  // and update it like any existing row, so the caller's title/data/tags land.
+  // another create, or the files watcher (an orphan's bytes, or a create's
+  // already placed), inserted the node between our lookup and this insert.
+  // A row holding the bytes this create staged IS this file: fall through
+  // and update it like any existing row, so the caller's title/data/tags
+  // land. A row holding other bytes is another create's file: refused as a
+  // taken name, its bytes and its row left be.
   let target: Node | undefined = existing;
   // The watcher's row this create lands on (the race below): made outside
   // this create's transaction, so without the create's stamp and home.
   let raced = false;
   if (!target) {
-    // Heads first (workspaces plan U1): the folder it lands in, shared.
-    const [inserted] = await withDeadlockRetry(() =>
-      withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], (tx) =>
-        tx
-          .insert(nodes)
-          .values({
-            ownerId: args.ownerId,
-            type: 'file',
-            title: args.title?.trim() || filename,
-            slug: filename,
-            path: args.parentPath,
-            data: newData,
-            tags: [...new Set(['file', ...(args.tags ?? [])])],
-            ...(args.loginId ? { loginId: args.loginId } : {}),
-          })
-          .onConflictDoNothing({
-            target: [nodes.ownerId, nodes.path, nodes.slug],
-            where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
-          })
-          .returning(),
-      ),
-    );
+    const toPlace = staged!;
+    let placed = false;
+    let inserted: Node | undefined;
+    try {
+      // Heads first (workspaces plan U1): the folder it lands in, shared.
+      [inserted] = await withDeadlockRetry(() =>
+        withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], async (tx) => {
+          const rows = await tx
+            .insert(nodes)
+            .values({
+              ownerId: args.ownerId,
+              type: 'file',
+              title: args.title?.trim() || filename,
+              slug: filename,
+              path: args.parentPath,
+              data: newData,
+              tags: [...new Set(['file', ...(args.tags ?? [])])],
+              ...(args.loginId ? { loginId: args.loginId } : {}),
+            })
+            .onConflictDoNothing({
+              target: [nodes.ownerId, nodes.path, nodes.slug],
+              where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
+            })
+            .returning();
+          // The insert won: the bytes go into place before it commits, so a
+          // create racing for the name (waiting on this row) finds them there.
+          if (rows[0] && !placed) {
+            await placeStaged(toPlace);
+            placed = true;
+          }
+          return rows;
+        }),
+      );
+    } catch (err) {
+      await discardStaged(toPlace);
+      throw err;
+    }
     // pg_notify('node_ingested') is fired by migration 0018's trigger;
     // no explicit notify needed for fresh inserts.
     if (inserted) return fileRowFromNode(inserted);
+    // Lost the race: this create's bytes never reach the final name.
+    await discardStaged(toPlace);
     [target] = await db
       .select()
       .from(nodes)
@@ -298,6 +336,9 @@ export async function upsertFile(args: {
       )
       .limit(1);
     if (!target) throw new Error('upsertFile: insert returned no row');
+    if ((target.data as Record<string, unknown> | null)?.sha256 !== written.sha256) {
+      throw new FileNameTakenError(filename);
+    }
     raced = true;
   }
   // A create that names a stamp and a home (a snapshot copy, W6b) and lost
