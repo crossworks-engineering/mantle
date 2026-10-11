@@ -586,11 +586,12 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     // The member that holds the private workspace (its Moderator) writes its
     // own item through the owner route since W6b.
     expect((await call(`/api/notes/${privNote}`, mem, 'PATCH', { title: 'x' })).status).toBe(200);
-    // The rollback switch turns the check off with the scoped reads.
+    // The rollback switch restores only the reads (W7 integration fix 2,
+    // M6): the item write check stays on under it.
     process.env.MANTLE_ADMIN_READS = 'system';
     try {
       const r = await call(`/api/notes/${privNote}`, owner, 'PATCH', {});
-      expect(r.text).not.toContain('item-workspace');
+      expect(r.text).toContain('item-workspace');
     } finally {
       delete process.env.MANTLE_ADMIN_READS;
     }

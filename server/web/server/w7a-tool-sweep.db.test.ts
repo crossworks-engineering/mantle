@@ -109,10 +109,11 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
     'offline',
     /offline in the W7a|cannot resolve host|returned 503|failed: 503|not enabled on this box|no \w+ API key configured|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
   ],
-  // (W7c fix round 2: telegram_pair is the anchor's own, until W7d.)
+  // (W7c fix round 2: telegram_pair is the anchor's own, until W7d; W7
+  // integration fix 2: so is the rest of the Telegram inbox.)
   [
     'context',
-    /No one to act for|only runs on the team surface|can only run inside an agent turn|no heartbeat context|missing parent agent context|No enabled assistant agent|made by Mantle and found by its path|only the brain's owner pairs a Telegram chat/i,
+    /No one to act for|only runs on the team surface|can only run inside an agent turn|no heartbeat context|missing parent agent context|No enabled assistant agent|made by Mantle and found by its path|only the brain's owner pairs a Telegram chat|only the brain's owner works the Telegram inbox/i,
   ],
   // A switch W7b retired (agent and tool group levels) says so.
   ['retired', /Agents and tool groups have no level any more/],

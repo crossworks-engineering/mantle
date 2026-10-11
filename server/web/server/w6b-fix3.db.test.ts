@@ -331,10 +331,14 @@ describe.skipIf(!URL)('W6b fix round 3', () => {
       values (${owner}, 'app_delete', 'Delete a mini app', 'Delete a mini app by id.',
               '{"kind":"builtin","ref":"app_delete"}'::jsonb, true)
       on conflict do nothing`);
-    const queue = async (appId: string) =>
+    // Queued for the login that approves it: a login other than the anchor
+    // decides only its own pending calls (W7 integration fix 2).
+    const queue = async (appId: string, login: string) =>
       (
-        await x<{ id: string }>(sql`insert into pending_tool_calls (owner_id, tool_slug, args)
-          values (${owner}, 'app_delete', ${JSON.stringify({ id: appId })}::jsonb)
+        await x<{
+          id: string;
+        }>(sql`insert into pending_tool_calls (owner_id, tool_slug, args, login_id)
+          values (${owner}, 'app_delete', ${JSON.stringify({ id: appId })}::jsonb, ${login})
           returning id::text as id`)
       )[0]!.id;
     const approve = async (as: string, pendingId: string) => {
@@ -344,10 +348,10 @@ describe.skipIf(!URL)('W6b fix round 3', () => {
       expect(p.error ?? null, JSON.stringify(p).slice(0, 300)).toBeNull();
     };
     const a1 = await newApp('pending owner');
-    await approve(owner, await queue(a1));
+    await approve(owner, await queue(a1, owner));
     expect((await meta(a1))!.held).toBeNull();
     const a2 = await newApp('pending admin2');
-    await approve(admin2, await queue(a2));
+    await approve(admin2, await queue(a2, admin2));
     expect(await meta(a2)).toEqual({ held: true, by: admin2 });
 
     await purgeLater();
