@@ -11,10 +11,7 @@
  *   pnpm files-staged:reap --apply   # remove them
  */
 
-import {
-  runFilesStagedReap,
-  summariseFilesStagedReap,
-} from '../lib/maintenance/files-staged-reap';
+import { runFilesStagedReap, summariseFilesStagedReap } from '../lib/maintenance/files-staged-reap';
 
 const apply = process.argv.slice(2).includes('--apply');
 

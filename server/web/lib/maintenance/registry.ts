@@ -219,7 +219,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'files-staged-reap',
     title: 'Remove staging files a crash left in Files',
     description:
-      'Removes the staging files a crash left beside a file create: a create writes its bytes under a dot-prefixed .<uuid>.staged.tmp in the file\'s folder and places or drops them within the request, so one an hour old or more is residue the files watcher never sees. Only that exact name, only regular files; never follows a symlink, never enters a dot folder (the upload spool, thumbnails) or the app, table, spaces or sandbox stores, even one mounted inside the files root.',
+      "Removes the staging files a crash left beside a file create: a create writes its bytes under a dot-prefixed .<uuid>.staged.tmp in the file's folder and places or drops them within the request, so one an hour old or more is residue the files watcher never sees. Only that exact name, only regular files; never follows a symlink, never enters a dot folder (the upload spool, thumbnails) or the app, table, spaces or sandbox stores, even one mounted inside the files root.",
     kind: 'recurring',
     status: 'live',
     cost: 'io',

@@ -55,7 +55,12 @@ describe('files-staged-reap', () => {
   it('names every store it must not walk', async () => {
     const { stagedReapExclusions } = await import('./files-staged-reap');
     const ex = stagedReapExclusions().map((p) => path.resolve(p));
-    for (const k of ['APP_DB_DIR', 'TABLE_DB_DIR', 'MANTLE_SPACES_ROOT', 'SANDBOXES_DIR'] as const) {
+    for (const k of [
+      'APP_DB_DIR',
+      'TABLE_DB_DIR',
+      'MANTLE_SPACES_ROOT',
+      'SANDBOXES_DIR',
+    ] as const) {
       expect(ex, k).toContain(path.resolve(process.env[k]!));
     }
   });
@@ -81,8 +86,6 @@ describe('files-staged-reap', () => {
     expect(summariseFilesStagedReap(r)).toBe('removed 1 leftover staging file(s)');
     expect(await exists(gone)).toBe(false);
     for (const p of kept) expect(await exists(p), p).toBe(true);
-    expect(summariseFilesStagedReap(await runFilesStagedReap())).toBe(
-      'no leftover staging files',
-    );
+    expect(summariseFilesStagedReap(await runFilesStagedReap())).toBe('no leftover staging files');
   });
 });

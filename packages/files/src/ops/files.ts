@@ -292,7 +292,6 @@ export async function upsertFile(args: {
     const toPlace = staged!;
     let placed = false;
     let inserted: Node | undefined;
-    let filenameTaken = false;
     try {
       // Heads first (workspaces plan U1): the folder it lands in, shared.
       [inserted] = await withDeadlockRetry(() =>
@@ -336,7 +335,6 @@ export async function upsertFile(args: {
       // index (0022) rather than the slug one the insert names: the same
       // lost race, refused below like the conflict.
       if (pgConstraint(err) !== 'file_filename_in_parent_uq') throw err;
-      filenameTaken = true;
     }
     // pg_notify('node_ingested') is fired by migration 0018's trigger;
     // no explicit notify needed for fresh inserts.
