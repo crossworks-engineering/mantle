@@ -30,6 +30,7 @@ import {
   dedupeNewNotes,
   getDefaultWorker,
   MAX_PERSONA_NOTES,
+  workspaces,
   type Agent,
   type AiWorker,
   type ConversationChannel,
@@ -102,18 +103,28 @@ async function resolveReflector(ownerId: string): Promise<AiWorker | null> {
  * future channel — docs/conversation.md). Most-active-first. This is the
  * cost-safety gate: an agent only earns an LLM reflection if the user actually
  * conversed with it since the last run. A recorded MCP turn is not activity.
+ *
+ * An assistant of a workspace other than Admin is never reflected on (W7c):
+ * its turns are its users' own threads (0269, the member chat folded in),
+ * and no reflection of them ever ran before. No new LLM work, and no user's
+ * chat becomes another user's note.
  */
 export async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> {
-  const candidates = await db
-    .select()
-    .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, ownerId),
-        eq(agents.enabled, true),
-        inArray(agents.role, [...CONVERSATIONAL_ROLES]),
-      ),
-    );
+  const candidates = (
+    await db
+      .select({ agent: agents, wsIsAdmin: workspaces.isAdmin })
+      .from(agents)
+      .leftJoin(workspaces, eq(workspaces.id, agents.workspaceId))
+      .where(
+        and(
+          eq(agents.ownerId, ownerId),
+          eq(agents.enabled, true),
+          inArray(agents.role, [...CONVERSATIONAL_ROLES]),
+        ),
+      )
+  )
+    .filter((r) => !r.agent.workspaceId || r.wsIsAdmin !== false)
+    .map((r) => r.agent);
   if (candidates.length === 0) return [];
 
   const counts = await db

@@ -13,18 +13,31 @@
  * If no STT worker is configured we return a 412 (Precondition
  * Failed) with a hint so the client surfaces the right call to
  * action.
+ *
+ * Any login (W7c): a member or a client transcribes for its own chat, at
+ * most 6 clips a minute (the turn route's rate).
  */
 
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getChatLoginOr401 } from '@/lib/auth';
+import { rateLimit } from '@/lib/rate-limit';
 import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof Response) return login;
+  if (login.kind !== 'admin') {
+    const gate = rateLimit(`chat-transcribe:${login.loginId}`, { max: 6, windowMs: 60_000 });
+    if (!gate.ok) {
+      return NextResponse.json(
+        { error: 'too many voice clips, give me a moment' },
+        { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
+      );
+    }
+  }
 
   // Multipart only — base64 in JSON would be wasteful for >100KB
   // audio blobs, and the FormData API handles streaming uploads.
@@ -46,7 +59,7 @@ export async function POST(req: Request) {
   const mimeType = file.type && file.type.length > 0 ? file.type : 'audio/webm';
   const language = (formData.get('language') as string | null) ?? undefined;
 
-  const worker = await getDefaultWorker(user.id, 'stt');
+  const worker = await getDefaultWorker(login.ownerId, 'stt');
   if (!worker?.apiKeyId) {
     return NextResponse.json(
       {

@@ -11,22 +11,20 @@
  *
  * `team_chat_list` / `team_chat_read` / `team_access_list` — OWNER-side admin
  * tools (granted via the `team-admin` group to the persona, never to the team
- * responder). They make team activity queryable by the brain: "what has Sam
- * asked about this week?". Users are the team: the chats they read are member
- * LOGIN threads; the retired team-code portal threads stay readable as
- * history by contact id, and a login invited from a contact gets its
- * contact's portal thread with its own, labelled apart (never merged).
+ * responder). Since W7c (the owner's answer of 2026-10-11) Admin users no
+ * longer read other users' chats: each user reads only their own threads. So
+ * the chat tools read only the retired team-code portal threads (contacts,
+ * no login), as history by contact id; a login's thread is never read here.
  */
 
 import {
   countTeamRequestsFiled,
   createTask,
   listTeamAccess,
-  listLoginPortalThread,
-  listMemberChatActivity,
   listTeamMemberActivity,
   listTeamThread,
   nodeUrl,
+  threadMessageById,
   TEAM_REQUESTS_PER_DAY,
   TEAM_REQUESTS_PER_TURN,
   type TaskPriority,
@@ -130,12 +128,9 @@ const team_request_create: BuiltinToolDef = {
     }
 
     let attachments: { nodeId: string }[] = [];
-    if (inboundMessageId) {
-      // A member login's thread is read by login; a portal thread by contact.
-      const [msg] = await listTeamThread(ctx.ownerId, contactId ?? '', {
-        limit: 200,
-        ...(loginId ? { loginId } : {}),
-      }).then((rows) => [rows.find((r) => r.id === inboundMessageId)]);
+    if (inboundMessageId && loginId) {
+      // The login's own inbound row (0269: its thread in assistant_messages).
+      const msg = await threadMessageById(ctx.ownerId, loginId, inboundMessageId);
       attachments = (msg?.attachments ?? [])
         .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0)
         .map((a) => ({ nodeId: a.nodeId! }));
@@ -193,14 +188,11 @@ const team_chat_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List team chat members',
   description:
-    "List the brain's member logins (the team) and their chat activity: last message, thread size, whether the login is still active. Use for questions like 'who has been chatting with the team agent' or as the index before `team_chat_read`. The portal_archive field lists old team-code portal threads (history only; read them by `contactId`).",
+    "List the old team-code portal chat threads (history only: contacts from before member logins), each with its contact, size and last message; read one with `team_chat_read` by `contactId`. A user's own chat with an assistant is private to that user: no admin tool reads it. For what members asked for, use `task_list` (their team requests).",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
-    const [members, portal] = await Promise.all([
-      listMemberChatActivity(ctx.ownerId),
-      listTeamMemberActivity(ctx.ownerId),
-    ]);
+    const portal = await listTeamMemberActivity(ctx.ownerId);
     const portal_archive = portal
       .filter((p) => p.messageCount > 0)
       .map((p) => ({
@@ -209,13 +201,13 @@ const team_chat_list: BuiltinToolDef = {
         messageCount: p.messageCount,
         lastMessageAt: p.lastMessageAt,
       }));
-    ctx.step?.setMeta({ count: members.length, archive: portal_archive.length });
+    ctx.step?.setMeta({ archive: portal_archive.length });
     return {
       ok: true,
       output: {
-        members,
-        count: members.length,
-        ...(portal_archive.length ? { portal_archive } : {}),
+        portal_archive,
+        count: portal_archive.length,
+        note: "Each user's chat with an assistant is private to that user; only old portal threads are listed.",
       },
     };
   },
@@ -247,14 +239,11 @@ const team_chat_read: BuiltinToolDef = {
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'Read a team chat thread',
   description:
-    "Read a window of one team member's chat thread (ascending; newest window by default, `before` pages older). Pass `loginId` (from `team_chat_list`) for a member login's thread, or `contactId` for an old team-code portal thread (history). With `loginId` and no `before`, a login invited from a team contact also returns `portal_history`: that contact's OLD portal chat, a separate thread from `messages` (page it with its `contactId` and `before`). Use to answer 'what has <member> asked about'.",
+    "Read a window of one old team-code portal chat thread by `contactId` (from `team_chat_list`; ascending, newest window by default, `before` pages older). History only. A user's own chat with an assistant is private to that user and is never read here.",
   inputSchema: {
     type: 'object',
+    required: ['contactId'],
     properties: {
-      loginId: {
-        type: 'string',
-        description: "The member login's id, from `team_chat_list`.",
-      },
       contactId: {
         type: 'string',
         description:
@@ -275,45 +264,27 @@ const team_chat_read: BuiltinToolDef = {
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
-    const loginId = strOpt(input.loginId);
-    const contactId = strOpt(input.contactId);
-    if (!loginId && !contactId) {
-      return { ok: false, error: 'loginId (or contactId for a portal thread) required' };
+    if (strOpt(input.loginId)) {
+      return {
+        ok: false,
+        error:
+          "A user's chat is private to that user: Admin users no longer read other users' chats. " +
+          'Pass a `contactId` from `team_chat_list` for an old portal thread, or use `task_list` for their team requests.',
+      };
     }
-    if (loginId && !UUID_RE.test(loginId)) {
-      return { ok: false, error: 'loginId must be a login id from `team_chat_list`' };
+    const contactId = strOpt(input.contactId);
+    if (!contactId || !UUID_RE.test(contactId)) {
+      return { ok: false, error: 'contactId required: a contact id from `team_chat_list`' };
     }
     const before = strOpt(input.before);
     const limit = numOpt(input.limit) ?? 50;
-    const messages = await listTeamThread(ctx.ownerId, contactId ?? '', {
-      before,
-      limit,
-      ...(loginId ? { loginId } : {}),
-    });
-    // The login's old portal chat (its contact's, from before the invite):
-    // on the first window only, and apart from `messages`, never merged.
-    const portal =
-      loginId && !before ? await listLoginPortalThread(ctx.ownerId, loginId, { limit }) : null;
-    const portal_history =
-      portal && portal.messages.length > 0
-        ? {
-            note: "The member's OLD team-code portal chat, from before they had a login. History only: a separate thread, not part of their current chat.",
-            contactId: portal.contactId,
-            messages: portal.messages.map(chatLine),
-            count: portal.messages.length,
-          }
-        : null;
-    ctx.step?.setMeta({
-      ...(loginId ? { loginId } : { contactId }),
-      count: messages.length,
-      ...(portal_history ? { portal: portal_history.count } : {}),
-    });
+    const messages = await listTeamThread(ctx.ownerId, contactId, { before, limit });
+    ctx.step?.setMeta({ contactId, count: messages.length });
     return {
       ok: true,
       output: {
         messages: messages.map(chatLine),
         count: messages.length,
-        ...(portal_history ? { portal_history } : {}),
       },
     };
   },

@@ -64,6 +64,7 @@ export {
   ChatThreadNotFoundError,
   archiveAgentChat,
   summarizeChatThread,
+  withChatNoteHome,
   type ChatArchiveResult,
 } from './chat-archive';
 export { invokeAgent } from './invoke-agent';

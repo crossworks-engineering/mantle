@@ -113,6 +113,7 @@ export function reminderItemLink(data: unknown): string | null {
 async function latestOutbound(
   ownerId: string,
   agentSlug: string,
+  loginId: string,
 ): Promise<{
   agentName: string;
   text: string;
@@ -138,6 +139,8 @@ async function latestOutbound(
       and(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agent.id),
+        // The thread's own login (0269): never another login's reply.
+        eq(assistantMessages.loginId, loginId),
         eq(assistantMessages.direction, 'outbound'),
         // The durable runner inserts the reply row 'pending' with empty text
         // and fills it on finalize (migration 0105). Never teaser a placeholder.
@@ -245,16 +248,22 @@ export function wantsOutboundPush(c: { direction?: string; status?: string | nul
 }
 
 /**
- * Push the latest outbound turn for {ownerId, agentSlug} to the ADMIN
- * devices, unless the assistant-messages trigger is off. Never to a
- * member's or a client's device: the owner's conversation is the admins'.
+ * Push the latest outbound turn of ONE login's thread with {ownerId,
+ * agentSlug} to that login's own ADMIN devices, unless the
+ * assistant-messages trigger is off. Each user has their own thread since
+ * 0269 (W7c) and reads only that, so no other admin's phone hears it. A
+ * member's or a client's thread is never pushed here: its reply reaches its
+ * own phone by the login_notice path (login-notify.ts).
  *
- * An agent assigned to one login (agents.assigned_user_id: that admin's own
- * assistant) pushes to that login's devices only; the other admins can open
- * the thread, but it is not their conversation and their phones stay quiet.
- * An agent assigned to nobody pushes to every active admin.
+ * `loginId` is the thread's login (the conversation_changed payload names
+ * it); null (an older payload) is the anchor's thread, which pushes as
+ * before: to the agent's assigned admin, else to every active admin.
  */
-export async function pushOutbound(ownerId: string, agentSlug: string): Promise<PushResult> {
+export async function pushOutbound(
+  ownerId: string,
+  agentSlug: string,
+  loginId: string | null = null,
+): Promise<PushResult> {
   const instance = await getPushInstance();
   if (!instance) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'not_connected' };
 
@@ -262,14 +271,16 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
   if (!prefs.assistantMessages)
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
 
-  const msg = await latestOutbound(ownerId, agentSlug);
+  const msg = await latestOutbound(ownerId, agentSlug, loginId ?? ownerId);
   if (!msg) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
   // A turn an MCP client answered as the agent and wrote back
   // (responder_turn_record): the owner is at that client, so the phone stays
   // quiet.
   if (msg.channel === 'mcp') return { attempted: 0, delivered: 0, dropped: 0, skipped: 'mcp_turn' };
 
-  const devices = await listAdminSubscriptions(ownerId, { loginId: msg.assignedUserId });
+  const devices = await listAdminSubscriptions(ownerId, {
+    loginId: loginId ?? msg.assignedUserId,
+  });
   if (devices.length === 0)
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
 

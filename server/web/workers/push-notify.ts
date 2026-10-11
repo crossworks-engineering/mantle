@@ -39,6 +39,8 @@ interface ConversationChange {
   direction: 'inbound' | 'outbound';
   /** Row status (migration 0156); absent from the pre-0156 trigger payload. */
   status?: 'pending' | 'complete' | 'failed';
+  /** The login whose thread changed (0269); absent from the older payload. */
+  loginId?: string | null;
 }
 
 async function handleConversation(payload: string): Promise<void> {
@@ -51,7 +53,7 @@ async function handleConversation(payload: string): Promise<void> {
   if (!c?.ownerId || !c?.agentSlug || !wantsOutboundPush(c)) return;
 
   try {
-    const r = await pushOutbound(c.ownerId, c.agentSlug);
+    const r = await pushOutbound(c.ownerId, c.agentSlug, c.loginId ?? null);
     if (!r.skipped) {
       console.log(
         `[push-notify] ${c.agentSlug}: delivered ${r.delivered}/${r.attempted}` +

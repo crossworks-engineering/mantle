@@ -2,7 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { summarizeChatThread } from '@mantle/runtime/agent';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getChatLoginOr401 } from '@/lib/auth';
+import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { chatThreadRow } from '@/lib/chat-threads';
 
 /**
@@ -12,17 +13,20 @@ import { chatThreadRow } from '@/lib/chat-threads';
  * unchanged, so it never re-bills (chat archive, docs/conversation.md §6c).
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof Response) return login;
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const thread = await getChatThread(user.id, id);
+  // The login's own thread (W7c): another login's thread is not found, nor
+  // one with an agent the login may no longer chat with.
+  const found = await getChatThread(login.ownerId, id, login.loginId);
+  const thread = found && (await resolveChatAgentById(login, found.agentId)) ? found : null;
   if (!thread || thread.status !== 'archived') {
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
   }
   try {
-    const updated = await summarizeChatThread(user.id, id);
-    return NextResponse.json({ thread: await chatThreadRow(user.id, updated ?? thread) });
+    const updated = await summarizeChatThread(login.ownerId, id, login.loginId);
+    return NextResponse.json({ thread: await chatThreadRow(login.ownerId, updated ?? thread) });
   } catch (err) {
     console.warn('[api/assistant/threads] summarize failed:', err);
     return NextResponse.json(

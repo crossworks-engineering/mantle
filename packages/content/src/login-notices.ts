@@ -11,6 +11,8 @@
  *  - chat: the reply as the reader's own chat route returns it (pictures of
  *    items the reader may not read are already out, chat-images.ts). A
  *    member's only: the client chat went with the client portal (W5c).
+ *    The reply is a row of the member's own thread in assistant_messages
+ *    (0269, W7c), with the assistant's name as the title.
  *  - review: the author's own item. Its title while an admin holds it is
  *    the title it had when it was taken, never the admin's working title.
  *  - comment: on a personal item, its author (the item is in the author's
@@ -29,12 +31,12 @@ import {
   acceptedSnapshots,
   agents,
   asSystem,
+  assistantMessages,
   authUsers,
   db,
   nodes,
   spaceItems,
   spaces,
-  teamMessages,
 } from '@mantle/db';
 import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { chatTextsForReader } from './chat-images';
@@ -151,16 +153,16 @@ export function chatReplyNotice(n: {
   return asSystem(async () => {
     const [msg] = await db
       .select({
-        ownerId: teamMessages.ownerId,
-        loginId: teamMessages.loginId,
-        direction: teamMessages.direction,
-        status: teamMessages.status,
-        text: teamMessages.text,
-        agentId: teamMessages.agentId,
-        fresh: freshSql(teamMessages.createdAt),
+        ownerId: assistantMessages.ownerId,
+        loginId: assistantMessages.loginId,
+        direction: assistantMessages.direction,
+        status: assistantMessages.status,
+        text: assistantMessages.text,
+        agentId: assistantMessages.agentId,
+        fresh: freshSql(assistantMessages.createdAt),
       })
-      .from(teamMessages)
-      .where(eq(teamMessages.id, n.id))
+      .from(assistantMessages)
+      .where(eq(assistantMessages.id, n.id))
       .limit(1);
     if (!msg || msg.loginId !== n.loginId) return null;
     if (msg.direction !== 'outbound' || msg.status !== 'complete') return null;

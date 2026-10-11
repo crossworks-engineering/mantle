@@ -13,6 +13,11 @@
  * title and no summary; `summarizeChatThread` retries it when a person asks.
  * The note is retrievable by relevance and never extracted (no facts from the
  * brain's own answers): see extract/gates.ts.
+ *
+ * Per login since 0269 (W7c): a thread is one login's chat with one agent.
+ * Every read here names the login, and the summary note is that login's
+ * (nodes.login_id), made in the agent's workspace (chatNoteHome), so no
+ * other user reads it.
  */
 import { and, asc, count, desc, eq, gte, isNull, lt, min, sql } from 'drizzle-orm';
 import {
@@ -24,6 +29,7 @@ import {
   nodes,
   notSuperseded,
   agents,
+  withCreateHome,
   withDeadlockRetry,
   withNodeInsertHeads,
   type ChatThread,
@@ -86,15 +92,19 @@ Output STRICT JSON, no markdown fences, nothing else: {"title": "...", "summary"
 export async function archiveAgentChat(o: {
   ownerId: string;
   agentId: string;
+  /** The login whose chat this is (0269): only its thread is archived.
+   *  Unset: the anchor's (an owner Telegram bot's "New chat"). */
+  loginId?: string;
   archivedBy?: string | null;
   continueFrom?: string | null;
 }): Promise<ChatArchiveResult> {
   const { ownerId, agentId } = o;
+  const loginId = o.loginId ?? ownerId;
   const continueFrom = o.continueFrom ?? null;
   const result = await db.transaction(async (tx) => {
-    // One archive at a time per agent chat (a double click, web + Telegram).
+    // One archive at a time per chat (a double click, web + Telegram).
     await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${`chat_threads:${ownerId}:${agentId}`}, 0))`,
+      sql`select pg_advisory_xact_lock(hashtextextended(${`chat_threads:${ownerId}:${agentId}:${loginId}`}, 0))`,
     );
     const [open] = await tx
       .select()
@@ -103,6 +113,7 @@ export async function archiveAgentChat(o: {
         and(
           eq(chatThreads.ownerId, ownerId),
           eq(chatThreads.agentId, agentId),
+          eq(chatThreads.loginId, loginId),
           eq(chatThreads.status, 'open'),
         ),
       )
@@ -115,6 +126,7 @@ export async function archiveAgentChat(o: {
           and(
             eq(chatThreads.ownerId, ownerId),
             eq(chatThreads.agentId, agentId),
+            eq(chatThreads.loginId, loginId),
             eq(chatThreads.id, continueFrom),
             eq(chatThreads.status, 'archived'),
           ),
@@ -126,6 +138,7 @@ export async function archiveAgentChat(o: {
     const rangeConds = [
       eq(assistantMessages.ownerId, ownerId),
       eq(assistantMessages.agentId, agentId),
+      eq(assistantMessages.loginId, loginId),
       ...(open ? [gte(assistantMessages.createdAt, open.startedAt)] : []),
     ];
     const [pending] = await tx
@@ -153,7 +166,7 @@ export async function archiveAgentChat(o: {
       }
       const [fresh] = await tx
         .insert(chatThreads)
-        .values({ ownerId, agentId, status: 'open', seedThreadId: continueFrom })
+        .values({ ownerId, agentId, loginId, status: 'open', seedThreadId: continueFrom })
         .returning();
       return { archived: null, open: fresh ?? null };
     }
@@ -178,6 +191,7 @@ export async function archiveAgentChat(o: {
         .values({
           ownerId,
           agentId,
+          loginId,
           status: 'archived',
           startedAt: stats?.first ?? sql`now()`,
           archivedAt: sql`now()`,
@@ -193,6 +207,7 @@ export async function archiveAgentChat(o: {
       .values({
         ownerId,
         agentId,
+        loginId,
         status: 'open',
         startedAt: sql`now()`,
         seedThreadId: continueFrom,
@@ -202,7 +217,7 @@ export async function archiveAgentChat(o: {
   });
 
   if (!result.archived) return result;
-  const archived = await summarizeChatThread(ownerId, result.archived.id).catch((err) => {
+  const archived = await summarizeChatThread(ownerId, result.archived.id, loginId).catch((err) => {
     console.warn(
       `[chat-archive] summary failed, thread kept with a plain title: ${err instanceof Error ? err.message : err}`,
     );
@@ -220,11 +235,18 @@ export async function archiveAgentChat(o: {
 export async function summarizeChatThread(
   ownerId: string,
   threadId: string,
+  loginId: string,
 ): Promise<ChatThread | null> {
   const [thread] = await db
     .select()
     .from(chatThreads)
-    .where(and(eq(chatThreads.ownerId, ownerId), eq(chatThreads.id, threadId)))
+    .where(
+      and(
+        eq(chatThreads.ownerId, ownerId),
+        eq(chatThreads.id, threadId),
+        eq(chatThreads.loginId, loginId),
+      ),
+    )
     .limit(1);
   if (!thread || thread.status !== 'archived' || !thread.archivedAt) return thread ?? null;
   if (thread.summaryNodeId) return thread;
@@ -233,6 +255,7 @@ export async function summarizeChatThread(
   const inRange = [
     eq(assistantMessages.ownerId, ownerId),
     eq(assistantMessages.agentId, thread.agentId),
+    eq(assistantMessages.loginId, loginId),
     gte(assistantMessages.createdAt, thread.startedAt),
     lt(assistantMessages.createdAt, end),
     eq(assistantMessages.status, 'complete'),
@@ -260,6 +283,7 @@ export async function summarizeChatThread(
           eq(nodes.type, 'note'),
           sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
           sql`${nodes.data}->>'agent_id' = ${thread.agentId}`,
+          sql`${nodes.data}->>'login_id' = ${loginId}`,
           sql`(${nodes.data}->>'period_start')::timestamptz >= ${thread.startedAt.toISOString()}::timestamptz`,
           sql`(${nodes.data}->>'period_start')::timestamptz < ${end.toISOString()}::timestamptz`,
         ),
@@ -277,7 +301,7 @@ export async function summarizeChatThread(
       .orderBy(desc(assistantMessages.createdAt))
       .limit(SUMMARY_TAIL_TURNS_MAX),
     db
-      .select({ slug: agents.slug })
+      .select({ slug: agents.slug, workspaceId: agents.workspaceId })
       .from(agents)
       .where(eq(agents.id, thread.agentId))
       .limit(1)
@@ -363,44 +387,49 @@ export async function summarizeChatThread(
         // The notes folder's head first (plan U1). The model has answered
         // and the note is embedded, so a retry repeats only this write.
         async () =>
-          withDeadlockRetry(() =>
-            withNodeInsertHeads(
-              ownerId,
-              [{ type: 'note', path: NOTES_ASSISTANT_PATH }],
-              async (tx) => {
-                const [node] = await tx
-                  .insert(nodes)
-                  .values({
-                    ownerId,
-                    type: 'note',
-                    title: `Chat: ${title} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)}`,
-                    path: NOTES_ASSISTANT_PATH,
-                    ...(vec ? { embedding: vec } : {}),
-                    data: {
-                      kind: 'chat_archive',
-                      thread_id: thread.id,
-                      agent_id: thread.agentId,
-                      agent_slug: agentSlug,
-                      period_start: periodStart,
-                      period_end: periodEnd,
-                      source_turn_count: thread.turnCount,
-                      model: worker.model,
-                      summarizer_worker: worker.slug,
-                      topic: title,
-                      summary,
-                      content: summary,
-                    },
-                    tags: ['chat-archive', `agent:${tagSlug(agentSlug)}`],
-                  })
-                  .returning({ id: nodes.id });
-                if (!node) throw new Error('chat-archive: failed to insert the summary note');
-                const [row] = await tx
-                  .update(chatThreads)
-                  .set({ title, summaryNodeId: node.id, updatedAt: sql`now()` })
-                  .where(eq(chatThreads.id, thread.id))
-                  .returning();
-                return row ?? thread;
-              },
+          withChatNoteHome(agentRow?.workspaceId ?? null, () =>
+            withDeadlockRetry(() =>
+              withNodeInsertHeads(
+                ownerId,
+                [{ type: 'note', path: NOTES_ASSISTANT_PATH }],
+                async (tx) => {
+                  const [node] = await tx
+                    .insert(nodes)
+                    .values({
+                      ownerId,
+                      // The login's own note (0269): no other user reads it.
+                      loginId,
+                      type: 'note',
+                      title: `Chat: ${title} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)}`,
+                      path: NOTES_ASSISTANT_PATH,
+                      ...(vec ? { embedding: vec } : {}),
+                      data: {
+                        kind: 'chat_archive',
+                        thread_id: thread.id,
+                        agent_id: thread.agentId,
+                        login_id: loginId,
+                        agent_slug: agentSlug,
+                        period_start: periodStart,
+                        period_end: periodEnd,
+                        source_turn_count: thread.turnCount,
+                        model: worker.model,
+                        summarizer_worker: worker.slug,
+                        topic: title,
+                        summary,
+                        content: summary,
+                      },
+                      tags: ['chat-archive', `agent:${tagSlug(agentSlug)}`],
+                    })
+                    .returning({ id: nodes.id });
+                  if (!node) throw new Error('chat-archive: failed to insert the summary note');
+                  const [row] = await tx
+                    .update(chatThreads)
+                    .set({ title, summaryNodeId: node.id, updatedAt: sql`now()` })
+                    .where(eq(chatThreads.id, thread.id))
+                    .returning();
+                  return row ?? thread;
+                },
+              ),
             ),
           ),
       );
@@ -487,4 +516,15 @@ function tagSlug(s: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64);
+}
+
+/**
+ * Run `fn` with the notes it makes landing in the agent's workspace (0269,
+ * W7c): a digest or an archived chat summary of the Team assistant's chat is
+ * read in the Team workspace's turns, so it is made there, as the login's own
+ * row (nodes.login_id). An agent with no workspace keeps the default home.
+ */
+export function withChatNoteHome<T>(workspaceId: string | null, fn: () => Promise<T>): Promise<T> {
+  if (!workspaceId) return fn();
+  return withCreateHome({ createWs: workspaceId, privateWs: null }, fn);
 }

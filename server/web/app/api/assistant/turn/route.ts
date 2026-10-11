@@ -17,12 +17,21 @@
  * metadata (data.text + summary + embedding + facts) is owned by the extractor,
  * which fires on the saved node. Extraction failures don't kill the turn; they
  * fall back to a "[… couldn't be read: <reason>]" marker.
+ *
+ * Any login (workspaces W7c): every user chats with the assistant of each
+ * workspace it is a user of, in its own thread (lib/assistant-chat.ts). The
+ * Admin assistant and the owner's helpers run on the owner turn engine (an
+ * Admin user only, as before); an assistant of another workspace runs on the
+ * workspace turn engine (lib/workspace-turn.ts: no Journal, no "About the
+ * user", the member limits for a login that is not an Admin user), text
+ * only, answering 202 `{ turnId }`.
  */
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401WithSource } from '@/lib/auth';
-import { getAssignedAgent } from '@/lib/agents';
+import { getChatLoginOr401 } from '@/lib/auth';
+import { resolveChatAgent, type ChatAgent } from '@/lib/assistant-chat';
+import { queueWorkspaceTurn } from '@/lib/workspace-turn';
 import { getDbosClient } from '@/lib/dbos-client';
 import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
 import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
@@ -209,7 +218,7 @@ async function processUpload(
   };
 }
 
-type TurnResult = { status: number; body: unknown };
+type TurnResult = { status: number; body: unknown; headers?: HeadersInit };
 
 // In-memory idempotency. A duplicate request with the same Idempotency-Key
 // (a network retry, or the same submit sent twice) replays the first turn's
@@ -228,7 +237,8 @@ function pruneRecentTurns() {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  const toResponse = (r: TurnResult) => NextResponse.json(r.body, { status: r.status });
+  const toResponse = (r: TurnResult) =>
+    NextResponse.json(r.body, { status: r.status, ...(r.headers ? { headers: r.headers } : {}) });
   const key = req.headers.get('idempotency-key');
   if (!key) return toResponse(await runTurn(req, null));
 
@@ -254,15 +264,22 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
   // 500, and not an HTML login redirect — a programmatic client needs a status).
   // The route is also gated by middleware. `source` tags the turn 'web'
   // (browser) vs 'mobile' (companion).
-  const auth = await getOwnerOr401WithSource();
-  if (auth instanceof NextResponse) return { status: 401, body: { error: 'unauthorized' } };
-  const { user, source } = auth;
+  const login = await getChatLoginOr401();
+  if (login instanceof NextResponse) {
+    return { status: login.status, body: await login.json().catch(() => ({ error: 'unauthorized' })) };
+  }
+  const { user, source } = login;
   const contentType = req.headers.get('content-type') ?? '';
 
   let userText: string;
   let agentSlug: string | undefined;
   let attachment: Attachment | null = null;
   let location: LocationPing | undefined;
+  let chatAgent: ChatAgent | null = null;
+  const noAgent: TurnResult = {
+    status: 404,
+    body: { error: 'no assistant to chat with here', reason: 'no-chat-agent' },
+  };
 
   try {
     if (contentType.includes('multipart/form-data')) {
@@ -276,8 +293,17 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       }
       agentSlug = ((form.get('agentSlug') as string | null) ?? '').trim() || undefined;
       location = locationFromForm(form.get('location'));
+      chatAgent = await resolveChatAgent(login, agentSlug);
+      if (!chatAgent) return noAgent;
       // Images arrive under 'image', documents under 'file'; accept either.
       const file = form.get('image') ?? form.get('file');
+      if (file instanceof Blob && file.size > 0 && chatAgent.turnEngine === 'workspace') {
+        // An upload is saved as a brain item; a workspace chat takes text.
+        return {
+          status: 415,
+          body: { error: 'attachments are not supported in this chat yet: send text' },
+        };
+      }
       if (file instanceof Blob && file.size > 0) {
         if (file.size > MAX_UPLOAD_BYTES) {
           return {
@@ -333,7 +359,28 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       userText = parsed.data.text;
       agentSlug = parsed.data.agentSlug?.trim() || undefined;
       location = sanitizeLocationPing(parsed.data.location) ?? undefined;
+      chatAgent = await resolveChatAgent(login, agentSlug);
+      if (!chatAgent) return noAgent;
     }
+
+    // An assistant of a workspace other than Admin: the workspace engine.
+    if (chatAgent.turnEngine === 'workspace') {
+      const streamable =
+        login.kind === 'admin' &&
+        !!idempotencyKey &&
+        isTurnStreamingEnabled() &&
+        isStreamThoughtsEnabled(await loadProfilePreferences(login.ownerId));
+      return queueWorkspaceTurn({
+        login,
+        agent: chatAgent,
+        text: userText.trim(),
+        idempotencyKey,
+        ...(streamable && idempotencyKey ? { streamId: idempotencyKey } : {}),
+      });
+    }
+    // The owner engine: an Admin user only (resolveChatAgent never hands a
+    // member or a client an owner agent; this is the route's own check).
+    if (login.kind !== 'admin') return noAgent;
 
     // Hand the turn the attachment's extracted text (+ the raw image for a
     // vision-capable responder). The runtime is transcript-default: it folds
@@ -346,16 +393,10 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     const streamingOn =
       isTurnStreamingEnabled() && isStreamThoughtsEnabled(await loadProfilePreferences(user.id));
 
-    // A client that named no agent gets THIS LOGIN's assigned assistant, so two
-    // co-admins typing at once land in their own threads rather than one
-    // interleaved one (migration 0143). Resolved here rather than in
-    // runAssistantTurn because the runtime only ever sees the anchor owner id —
-    // it runs outside the request, from the durable runner too. Falls through to
-    // the runtime's brain-wide default when the login has no assistant.
-    if (!agentSlug) {
-      const assigned = await getAssignedAgent(user.id, user.actor.id);
-      if (assigned) agentSlug = assigned.slug;
-    }
+    // The agent resolveChatAgent picked: an explicit slug, else THIS LOGIN's
+    // assigned assistant (migration 0143), else the brain-wide default. Each
+    // login has its own thread with it either way (0269).
+    agentSlug = chatAgent.slug;
 
     const options: RunAssistantTurnOptions = {
       agentSlug,

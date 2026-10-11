@@ -70,7 +70,7 @@ import {
   memberMayWrite,
   routeClass,
 } from './route-scope';
-import { isAnyLoginRoute } from './any-login-routes';
+import { isAnyLoginRoute, isChatLoginRoute } from './any-login-routes';
 import {
   SESSION_COOKIE_NAME,
   buildAssetToken,
@@ -1267,6 +1267,75 @@ export async function getLoginOr401(): Promise<
 }
 
 /**
+ * Who calls a chat route (/api/assistant/*, workspaces W7c): any login, for
+ * its own threads only. `user` keeps the owner-route shape (`id` is the
+ * brain's anchor, `actor` the login), so the chat helpers take one shape.
+ */
+export type ChatLogin = {
+  kind: 'admin' | 'member' | 'client';
+  /** The brain (the anchor login's id). */
+  ownerId: string;
+  /** The login whose threads this request reads and writes. */
+  loginId: string;
+  source: AuthSource;
+  user: SessionUser;
+  displayName: string | null;
+  email: string;
+};
+
+/**
+ * The chat gate (W7c, the owner's answer of 2026-10-11): every login chats
+ * with the assistants of its workspaces, each in its own thread, and reads
+ * only its own threads. An Admin user's request runs as on the owner routes
+ * (route class `self`: the system pool, audited); a member's or a client's
+ * runs on the system pool for the login's own things ('login-self'), audited
+ * as its own gate audits (a client always, a member's API-key writes). Every
+ * chat helper names the login (lib/assistant.ts, lib/assistant-chat.ts);
+ * which assistant a login may reach is decided there, per route.
+ */
+export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
+  const res = await resolveLogin();
+  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (res.kind === 'admin') {
+    const refused = await adminRouteGate(res.user.actor.id);
+    if (refused) return refused;
+    await auditMutation(res.user);
+    return {
+      kind: 'admin',
+      ownerId: res.user.id,
+      loginId: res.user.actor.id,
+      source: res.source,
+      user: res.user,
+      displayName: res.user.actor.displayName ?? null,
+      email: res.user.actor.email,
+    };
+  }
+  if (hasRequestSlot()) noteRequestSystem('login-self');
+  const login = res.kind === 'member' ? res.member : res.client;
+  const user: SessionUser = {
+    id: login.anchorId,
+    email: login.email,
+    actor: {
+      id: login.loginId,
+      email: login.email,
+      displayName: login.displayName,
+      isOwner: false,
+    },
+  };
+  if (res.kind === 'client') await auditClientMutation(res.client);
+  else if (res.source === 'api') await auditMutation(user);
+  return {
+    kind: res.kind,
+    ownerId: login.anchorId,
+    loginId: login.loginId,
+    source: res.source,
+    user,
+    displayName: login.displayName,
+    email: login.email,
+  };
+}
+
+/**
  * The request scope of getLoginOr401 (W6a). On an any-login route
  * (ANY_LOGIN_ROUTES: shell, workspaces, grants, access keys, whoami) every
  * login enters its scope, an Admin user's write excepted (system pool, as
@@ -1278,7 +1347,7 @@ export async function getLoginOr401(): Promise<
 async function anyLoginScope(res: Resolved): Promise<void> {
   const { method, pattern } = routeOfRequest();
   if (!hasRequestSlot() || pattern === null) return;
-  if (!isAnyLoginRoute(method, pattern)) {
+  if (!isAnyLoginRoute(method, pattern) || isChatLoginRoute(method, pattern)) {
     noteRequestSystem('login-self');
     return;
   }

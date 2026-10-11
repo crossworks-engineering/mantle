@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getChatLoginOr401 } from '@/lib/auth';
 import { subscribeConversations, type ConversationChange } from '@/lib/realtime';
 
 /**
@@ -19,8 +19,8 @@ import { subscribeConversations, type ConversationChange } from '@/lib/realtime'
  */
 
 export async function GET(req: Request): Promise<Response> {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const login = await getChatLoginOr401();
+  if (login instanceof NextResponse) return login;
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
@@ -45,7 +45,10 @@ export async function GET(req: Request): Promise<Response> {
       // Open immediately so the client's stream fires `open`.
       enc(': connected\n\n');
       unsubscribe = await subscribeConversations((c: ConversationChange) => {
-        if (c.ownerId !== owner.id) return;
+        if (c.ownerId !== login.ownerId) return;
+        // Each login hears its own threads only (0269, W7c). A payload with
+        // no login (from before 0269) is the anchor's thread.
+        if ((c.loginId ?? c.ownerId) !== login.loginId) return;
         enc(`data: ${JSON.stringify({ agentSlug: c.agentSlug, direction: c.direction })}\n\n`);
       });
       // Keep-alive comment so idle connections aren't reaped by proxies.

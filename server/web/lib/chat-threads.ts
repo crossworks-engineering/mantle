@@ -32,7 +32,17 @@ export async function toChatThreadRows(
       ? db
           .select({ id: chatThreads.id, title: chatThreads.title })
           .from(chatThreads)
-          .where(and(eq(chatThreads.ownerId, ownerId), inArray(chatThreads.id, seedIds)))
+          // A seed is always a thread of the same login (archiveAgentChat).
+          .where(
+            and(
+              eq(chatThreads.ownerId, ownerId),
+              inArray(chatThreads.id, seedIds),
+              inArray(
+                chatThreads.loginId,
+                threads.map((t) => t.loginId).filter((x): x is string => !!x),
+              ),
+            ),
+          )
       : [],
   ]);
   const summaryById = new Map(
@@ -64,8 +74,12 @@ export async function chatThreadRow(ownerId: string, thread: ChatThread): Promis
 }
 
 /** Every thread of an agent's chat, newest first, the open one on top. */
-export async function chatThreadRows(ownerId: string, agentId: string): Promise<ChatThreadRow[]> {
-  return toChatThreadRows(ownerId, await listChatThreads(ownerId, agentId));
+export async function chatThreadRows(
+  ownerId: string,
+  agentId: string,
+  loginId: string,
+): Promise<ChatThreadRow[]> {
+  return toChatThreadRows(ownerId, await listChatThreads(ownerId, agentId, loginId));
 }
 
 /** The transcript range of a thread: open = from its start, archived = its

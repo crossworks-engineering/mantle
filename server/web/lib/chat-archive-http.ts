@@ -15,6 +15,8 @@ import { chatThreadRow } from './chat-threads';
 export async function archiveResponse(o: {
   ownerId: string;
   agentId: string;
+  /** The login whose chat is archived (0269): its own thread only. */
+  loginId: string;
   archivedBy: string;
   continueFrom?: string | null;
 }): Promise<Response> {

@@ -2,7 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { summarizeChatThread } from '@mantle/runtime/agent';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getChatLoginOr401 } from '@/lib/auth';
+import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { archiveResponse } from '@/lib/chat-archive-http';
 
 /**
@@ -15,23 +16,27 @@ import { archiveResponse } from '@/lib/chat-archive-http';
  * click only), or the new chat would start with nothing to continue from.
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const login = await getChatLoginOr401();
+  if (login instanceof Response) return login;
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const thread = await getChatThread(user.id, id);
+  // The login's own thread (W7c): another login's thread is not found, nor
+  // one with an agent the login may no longer chat with.
+  const found = await getChatThread(login.ownerId, id, login.loginId);
+  const thread = found && (await resolveChatAgentById(login, found.agentId)) ? found : null;
   if (!thread || thread.status !== 'archived') {
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
   }
   if (!thread.summaryNodeId) {
-    await summarizeChatThread(user.id, thread.id).catch((err) => {
+    await summarizeChatThread(login.ownerId, thread.id, login.loginId).catch((err) => {
       console.warn('[api/assistant/threads] summary before continue failed:', err);
     });
   }
   return archiveResponse({
-    ownerId: user.id,
+    ownerId: login.ownerId,
     agentId: thread.agentId,
-    archivedBy: user.actor.id,
+    loginId: login.loginId,
+    archivedBy: login.loginId,
     continueFrom: thread.id,
   });
 }
