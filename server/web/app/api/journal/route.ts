@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { countJournals, createJournal, listJournalTags, listJournals } from '@/lib/journal';
@@ -59,6 +60,8 @@ export async function POST(req: Request) {
     // Web session = the user's own hand; provenance is stamped server-side.
     row = await createJournal(user.id, { ...parsed.data, author: 'user' });
   } catch (err) {
+    // A scope refusal is the app's 403 (W6a fix round 2), never a 400.
+    if (isScopeWriteRefusal(err)) throw err;
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'invalid input' },
       { status: 400 },

@@ -120,7 +120,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { CLIENT_ROUTES, isClientRoute } from '../lib/auth/client-routes';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
-import { memberMayRead } from '../lib/auth/route-scope';
+import { memberMayRead, memberMayWrite } from '../lib/auth/route-scope';
 import {
   PUBLIC_SESSION_ROUTES,
   RENDER_PAGES,
@@ -404,6 +404,9 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         // (MEMBER_OPEN_READS): proved against a database in
         // w6a-route-sweep.db.test.ts.
         if (memberMayRead(method, pattern)) return true;
+        // The owner writes open to every login in its scope since W6b
+        // (MEMBER_OPEN_WRITES): proved in w6b-member-writes.db.test.ts.
+        if (memberMayWrite(method, pattern)) return true;
         return (
           (status === 403 && body?.reason === 'client-login') ||
           (status === 401 && body?.error === 'unauthorized') ||

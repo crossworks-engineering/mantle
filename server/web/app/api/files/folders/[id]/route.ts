@@ -14,7 +14,7 @@ import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { firstIssue } from '@/lib/zod-issue';
 import { TreeVisibilityError, guardFolderCopyTo, guardFolderTo } from '@mantle/content/tree';
 import { treeErrorResponse } from '@/lib/tree-route';
-import { isBusy } from '@mantle/db';
+import { isBusy, isScopeWriteRefusal } from '@mantle/db';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -154,6 +154,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
+    // A scope refusal is the app's 403 (W6a fix round 2), never a 400.
+    if (isScopeWriteRefusal(err)) throw err;
     if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'copy failed' },

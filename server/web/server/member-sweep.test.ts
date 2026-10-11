@@ -130,7 +130,7 @@ vi.mock('../lib/mcp-oauth', async (importOriginal) => {
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
-import { memberMayRead } from '../lib/auth/route-scope';
+import { memberMayRead, memberMayWrite } from '../lib/auth/route-scope';
 import { PUBLIC_SESSION_ROUTES, RENDER_PAGES, drivePublic } from './public-session-routes';
 
 // W6a: the session guard reads the login's workspaces (loginScopeFor) and,
@@ -247,9 +247,11 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
             method === 'OPTIONS' ||
             isMemberRoute(method, entry.pattern) ||
             isAnyLoginRoute(method, entry.pattern) ||
-            // Open to every login in its scope since W6a: proved against a
-            // database in w6a-route-sweep.db.test.ts.
-            memberMayRead(method, entry.pattern)
+            // Open to every login in its scope since W6a (reads) and W6b
+            // (writes): proved against a database in w6a-route-sweep.db.test.ts
+            // and w6b-member-writes.db.test.ts.
+            memberMayRead(method, entry.pattern) ||
+            memberMayWrite(method, entry.pattern)
           ) {
             continue;
           }

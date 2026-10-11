@@ -254,15 +254,11 @@ describe('the withViewer shim sweep (R6)', () => {
     expect(all).toEqual([]);
   });
 
-  it('in client.ts a level pool is opened only by getDb and withSpace', () => {
+  it('in client.ts a level pool is opened only by getDb (withSpace is retired, W6b)', () => {
     const text = blanked(code(load(CLIENT)!));
-    const levelPools = calls(text, 'getViewerDb').filter(
-      (c) => !/getViewerDb\('(user|space)'\)/.test(c),
-    );
-    // getDb (a level scope already entered by withSpace below).
+    const levelPools = calls(text, 'getViewerDb').filter((c) => !/getViewerDb\('user'\)/.test(c));
     expect(levelPools.map((c) => c.replace(/\s+/g, ' '))).toEqual(['getViewerDb(level)']);
-    const entries = calls(text, 'runInTxScope').map((c) => c.replace(/\s+/g, ' '));
-    expect(entries).toEqual(['runInTxScope({ level, space: { ...scope }, tx, hooks }, fn)']);
+    expect(calls(text, 'runInTxScope')).toEqual([]);
   });
 
   it('in viewer.ts only the test runner enters a bare level scope', () => {

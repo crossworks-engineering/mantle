@@ -17,7 +17,7 @@ import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { TreeVisibilityError, guardFileCopyTo, guardFileTo } from '@mantle/content/tree';
 import { treeErrorResponse } from '@/lib/tree-route';
-import { isBusy } from '@mantle/db';
+import { isBusy, isScopeWriteRefusal } from '@mantle/db';
 import { callerMayReadEmail } from '@/lib/api-v1';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -240,6 +240,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
     return NextResponse.json({ file }, { status: 201 });
   } catch (err) {
+    // A scope refusal is the app's 403 (W6a fix round 2), never a 400.
+    if (isScopeWriteRefusal(err)) throw err;
     if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'copy failed' },

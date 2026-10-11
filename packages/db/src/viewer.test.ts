@@ -266,7 +266,6 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     'mantle_view_team',
     'mantle_view_client',
     'mantle_view_public',
-    'mantle_view_space',
     'mantle_view_user',
   ];
   const cluster = (
@@ -317,7 +316,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
 
   it('an owner database that is gone (a restore, a rename) hands the roles over', () => {
     const plan = viewerRolePlan(cluster('brain_b', 'old_brain'), 'key-b', false);
-    expect(plan).toContain(`COMMENT ON ROLE "mantle_view_space" IS '${ownerNote('brain_b')}'`);
+    expect(plan).toContain(`COMMENT ON ROLE "mantle_view_user" IS '${ownerNote('brain_b')}'`);
   });
 
   it('per-database never alters a shared role, and logs in as its own role that may only SET it', () => {
@@ -340,7 +339,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     const plan = viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', true);
     const revoke = plan.indexOf('REVOKE CONNECT ON DATABASE "brain_b" FROM PUBLIC');
     const grant = plan.indexOf(
-      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_team_brain_b", "mantle_view_client_brain_b", "mantle_view_public_brain_b", "mantle_view_space_brain_b", "mantle_view_user_brain_b", CURRENT_USER',
+      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_team_brain_b", "mantle_view_client_brain_b", "mantle_view_public_brain_b", "mantle_view_user_brain_b", CURRENT_USER',
     );
     expect(revoke).toBeGreaterThan(-1);
     expect(grant).toBeGreaterThan(revoke);
@@ -416,13 +415,38 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
 
   it('per-database alters its own existing login role', () => {
     const plan = viewerRolePlan(
+      cluster('brain_b', 'brain_a', undefined, { mantle_view_user_brain_b: null }),
+      'key-b',
+      true,
+    );
+    expect(plan.some((s) => s.startsWith('ALTER ROLE "mantle_view_user_brain_b" WITH LOGIN'))).toBe(
+      true,
+    );
+  });
+
+  it('the personal-space role is retired (W6b): no login, no password, never created', () => {
+    const NOLOGIN =
+      'WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL';
+    // Shared mode: the shared role, where it exists.
+    const box = viewerRolePlan(
+      cluster('brain_a', 'brain_a', undefined, { mantle_view_space: null }),
+      'key-a',
+      false,
+    );
+    expect(box).toContain(`ALTER ROLE "mantle_view_space" ${NOLOGIN}`);
+    expect(box.some((s) => /"mantle_view_space" WITH LOGIN/.test(s))).toBe(false);
+    // Per-database: its own login, where it exists; nothing is made.
+    const own = viewerRolePlan(
       cluster('brain_b', 'brain_a', undefined, { mantle_view_space_brain_b: null }),
       'key-b',
       true,
     );
+    expect(own).toContain(`ALTER ROLE "mantle_view_space_brain_b" ${NOLOGIN}`);
     expect(
-      plan.some((s) => s.startsWith('ALTER ROLE "mantle_view_space_brain_b" WITH LOGIN')),
-    ).toBe(true);
+      own.some((s) => s.includes('mantle_view_space') && /WITH LOGIN|CREATE ROLE/.test(s)),
+    ).toBe(false);
+    const fresh = viewerRolePlan(cluster('brain_a', null), 'key-a', false);
+    expect(fresh.some((s) => s.includes('mantle_view_space'))).toBe(false);
   });
 
   it('the pool logs in as the per-database role only when asked', () => {

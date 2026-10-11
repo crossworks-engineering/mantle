@@ -1,4 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
+import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { countEvents, createEvent, listEvents } from '@/lib/events';
@@ -56,6 +57,8 @@ export async function POST(req: Request) {
     const row = await createEvent(user.id, parsed.data);
     return NextResponse.json({ event: row }, { status: 201 });
   } catch (err) {
+    // A scope refusal is the app's 403 (W6a fix round 2), never a 400.
+    if (isScopeWriteRefusal(err)) throw err;
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
 }
