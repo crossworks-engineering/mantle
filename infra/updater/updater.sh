@@ -892,6 +892,70 @@ client_floor_refusal() {
   return 0
 }
 
+# ── the workspaces switch: a box with clients is set up by hand first ──────
+# From the workspaces switch (W5b2, migration 0261) the grants alone decide
+# who reads what. A brain that is NOT on workspaces because it has clients
+# (an anchor, no Admin workspace, and client logins or client-level items;
+# plan 21.9) is left on its levels by 0261, but the code of that release
+# reads no level: its members, clients and assistants would read nothing.
+# So a request for v$WS_SWITCH_FLOOR or later (`latest` and tags that are
+# not a release version count as later) is refused, with nothing changed,
+# on such a box until its workspaces are set up by hand. Fails closed: a
+# box whose database cannot be read is refused too. No .env knob: setting
+# the box up is the way through. The same SQL as scripts/roll.sh (step 2a),
+# pinned equal by packages/db/src/ws-switch-preflight.db.test.ts; plain SQL
+# on the box's CURRENT schema, from v0.239.35 on. The updater that decides
+# is the RUNNING one: a box whose updater predates this check (every box on
+# v0.239.89 or older) is not stopped by it on its first roll past the
+# switch; roll such a box with scripts/roll.sh, which checks first.
+WS_SWITCH_FLOOR=0.239.90
+WSR_ERR=""
+
+ws_switch_sql() {
+  cat <<'WS_SWITCH_SQL'
+with brain as (
+  select u.id from auth.users u where u.is_owner order by u.created_at limit 1
+), s as (
+  select
+    (select count(*) from brain) as anchored,
+    case when to_regclass('public.workspaces') is null then 0
+         else (xpath('/row/n/text()', query_to_xml(format(
+           'select count(*) as n from public.workspaces w where w.owner_id = %L and to_jsonb(w)->>%L = %L',
+           (select b.id from brain b), 'bridge_key', 'admin'), false, true, '')))[1]::text::bigint
+    end as admin_ws,
+    (select count(*) from auth.users u where to_jsonb(u)->>'role' = 'client') as clients,
+    (select count(*) from public.nodes n
+      where n.owner_id = (select b.id from brain b)
+        and (n.audience::text = 'client' or n.inherited_level::text = 'client'
+             or n.embedded_level::text = 'client')) as client_items
+)
+select case when anchored = 1 and admin_ws = 0 and (clients > 0 or client_items > 0)
+            then 1 else 0 end,
+       clients, client_items
+  from s;
+WS_SWITCH_SQL
+}
+
+# ws_switch_refusal <tag>: 0 with WSR_ERR set when the roll must be refused;
+# 1 when it may go ahead.
+ws_switch_refusal() {
+  WSR_ERR=""
+  tag_below "$1" "$WS_SWITCH_FLOOR" && return 1
+  wsr_out=$(ws_switch_sql | docker exec -i mantle_pg psql -U postgres -d postgres \
+    -v ON_ERROR_STOP=1 -At -F ' ' 2>/dev/null | tr -d '\r' | tr -s ' ')
+  case "$wsr_out" in
+    *[!0-9\ ]* | '')
+      WSR_ERR="$1 is the workspaces switch (v$WS_SWITCH_FLOOR) or later, and this box's database could not be read to check it is ready (is mantle_pg up?). See docs/update-prod.md, Rolling to the workspaces switch"
+      return 0
+      ;;
+  esac
+  # shellcheck disable=SC2086  # three numbers into $1 $2 $3
+  set -- $wsr_out
+  [ "$1" = 1 ] || return 1
+  WSR_ERR="this box has clients and is not on workspaces yet ($2 client login(s), $3 client-level item(s)). From v$WS_SWITCH_FLOOR the grants alone decide reads, so its members, clients and assistants would read nothing. Set up workspaces by hand first (plan 21.9), then roll"
+  return 0
+}
+
 # ── image prune: this product's images only ──────────────────────────────────
 # Nothing pruned images before this: each roll left a server + client pair
 # (about 3.4 GB) behind, and boxes filled at eight releases a day (dev hit 100%
@@ -1512,6 +1576,14 @@ while true; do
     if client_floor_refusal "$TARGET"; then
       write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $CFR_ERR"
       echo "[updater] ROLL REFUSED before any change: $CFR_ERR" | tee -a "$SIG/update.log"
+      write_stack_info
+      continue
+    fi
+
+    # The workspaces switch: a box with clients is set up by hand first.
+    if ws_switch_refusal "$TARGET"; then
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $WSR_ERR"
+      echo "[updater] ROLL REFUSED before any change: $WSR_ERR" | tee -a "$SIG/update.log"
       write_stack_info
       continue
     fi

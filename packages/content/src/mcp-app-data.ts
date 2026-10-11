@@ -6,7 +6,7 @@
  *
  *  - Member: an app a workspace of theirs holds (member-apps.ts), with a
  *    green PUBLISHED build (never a draft) and `apps.mcp_access` on. Write:
- *    the grant's Write switch (Informational is Write off).
+ *    the grant's Write switch, and never while the app is informational.
  *  - Client: an app the client portal gives them (client-apps.ts; clients
  *    are not migrated), with `apps.mcp_access` on. Write: unless the app is
  *    informational.

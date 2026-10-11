@@ -149,7 +149,7 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
       await tx`update item_grants set write = false
                 where node_id = ${ids.inSub!} and workspace_id = ${team}`;
       // An informational app granted by hand, Write on, to another
-      // workspace (data_read_only kept its users from writing until now).
+      // workspace (data_read_only keeps its users from writing).
       await tx`insert into workspaces (id, owner_id, name) values (${sales}, ${owner}, 'Sales')`;
       await tx`insert into item_grants (node_id, workspace_id, write)
                 values (${ids.infoApp!}, ${sales}, true)`;
@@ -217,11 +217,12 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
       Team: { home: true, excluded: false, write: false, via: null },
     });
     expect((await grants(ids.teamApp!)).Team).toMatchObject({ home: true, write: true });
-    // An informational app: Write off on every grant beyond Admin, so the
-    // grant's Write switch alone decides member writes from now on.
+    // An informational app keeps its rows: the bridge gave Team no Write
+    // (data_read_only), and a hand row with Write on stays as it is. The
+    // member write rule reads the flag as an AND (contract change 36).
     const info = await grants(ids.infoApp!);
     expect(info.Team).toMatchObject({ write: false });
-    expect(info.Sales).toMatchObject({ write: false, excluded: false });
+    expect(info.Sales).toMatchObject({ write: true, excluded: false });
     expect(Object.keys(await grants(ids.email!))).toEqual(['Admin']);
     expect(await grants(ids.draft!)).toEqual({});
     const [h] = await sql<{ n: number }[]>`
@@ -258,15 +259,15 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
 
   it('(g) the reach diff gains nothing after the switch', async () => {
     expect(await reachFails()).toEqual([]);
-    // The whole proof (reads, chunks, facts, writes, links) passes too.
+    // The whole proof (reads, chunks, facts, writes) passes too.
     const rows = await sql<{ section: string }[]>`select * from mantle_ws_switch_guard()`;
     expect(rows.filter((r) => r.section === 'reach-fail')).toEqual([]);
   });
 
-  // M1 and M2: the guard raises 23514 on any gained read, write, fact or
-  // serve, so the migration (or mantle_ws_migrate) rolls back. Each case in
+  // M1 and M2: the guard raises 23514 on any gained read, write or fact,
+  // so the migration (or mantle_ws_migrate) rolls back. Each case in
   // a transaction rolled back after.
-  it('(i) the switch guard refuses a gained read, write, fact or serve', async () => {
+  it("(i) the switch guard refuses a gained read, write or fact (links are 0262's)", async () => {
     const refused = async (what: RegExp, fn: (tx: postgres.TransactionSql) => Promise<unknown>) => {
       const err = await sql
         .begin(async (tx) => {
@@ -302,13 +303,24 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
       await tx`update item_grants set write = true
                 where node_id = ${ids.teamPage!} and workspace_id = ${team}`;
     });
-    // A serve: an open link on the public note that serves the Admin page.
-    await refused(
-      /links/,
-      (tx) => tx`insert into shares (owner_id, node_id, node_type, token, settings)
-        values (${owner}, ${ids.publicNote!}, 'note', ${`t-${randomUUID()}`},
-                ${sql.json({ served: [ids.adminPage!] })})`,
-    );
+    // A serve is not the guard's (L3): 0262 checks the links once, right
+    // after it fills them. An open link on the public note that serves the
+    // Admin page passes the guard; the links diff (0262's check) sees it.
+    await sql
+      .begin(async (tx) => {
+        await tx`insert into shares (owner_id, node_id, node_type, token, settings)
+          values (${owner}, ${ids.publicNote!}, 'note', ${`t-${randomUUID()}`},
+                  ${sql.json({ served: [ids.adminPage!] })})`;
+        const proof = await tx<{ section: string; subject: string }[]>`
+          select * from mantle_ws_switch_guard()`;
+        expect(proof.some((r) => r.subject === 'links')).toBe(false);
+        const links = await tx<{ section: string }[]>`select * from mantle_ws_links_diff()`;
+        expect(links.filter((r) => r.section === 'reach-fail')).toHaveLength(1);
+        throw new Error('rollback');
+      })
+      .catch((e: Error) => {
+        if (e.message !== 'rollback') throw e;
+      });
   });
 
   it('(h) archive_node_levels holds the levels as they were at the switch', async () => {
@@ -567,4 +579,114 @@ describe.skipIf(!URL)('0261 leaves a brain that is not on workspaces alone (H2)'
     expect(lv!.i).toBe('team');
     expect(await teamReads()).toEqual(['adminPage', 'inShared', 'laterInShared', 'teamPage']);
   });
+
+  // L3: the links were checked once, by 0262. A tick the owner makes on a
+  // link afterwards (here: an Admin page served) must not block the hand
+  // setup of this box: the later switch checks reads, facts and writes.
+  it('the hand setup later switches it, whatever a link serves since 0262 (L3)', async () => {
+    const secret = await node('secret', 'page', 'pages');
+    await sql`insert into shares (owner_id, node_id, node_type, token, settings)
+      values (${owner}, ${ids.teamPage!}, 'page', ${`t-${randomUUID()}`},
+              ${sql.json({ served: [secret] })})`;
+    const links = await sql<{ section: string }[]>`select * from mantle_ws_links_diff()`;
+    expect(links.filter((r) => r.section === 'reach-fail')).toHaveLength(1);
+    // Set up by hand (21.9): here, the one client login is removed.
+    await sql`delete from auth.users where id = ${client}`;
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBe('no workspaces yet');
+    const rows = await sql<{ section: string; subject: string }[]>`
+      select * from mantle_ws_migrate_locked()`;
+    expect(rows.filter((r) => r.section === 'reach-fail')).toEqual([]);
+    expect(rows.some((r) => r.section === 'bridge off')).toBe(true);
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
+    const trg = await sql`select 1 from pg_trigger where tgname = 'nodes_levels_frozen'`;
+    expect(trg).toHaveLength(1);
+  });
+});
+
+// L4: the switch at boot (mantle_ws_migrate_locked) runs under a time
+// budget. A brain that has an owner but no workspaces when 0261 runs is
+// switched later, at boot; while a writer holds a table whose trigger the
+// switch drops, the DDL tries end at the budget with 55P03 and the whole
+// transaction rolls back: no workspaces, no frozen levels, the bridge
+// triggers in place, the skip reason (the integrity row) unchanged. Once
+// the table is free, the next try switches it.
+describe.skipIf(!URL)('the boot switch gives up at its time budget (L4)', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: ReturnType<typeof postgres>;
+  let holder: ReturnType<typeof postgres>;
+  const owner = randomUUID();
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, '0261_workspaces_bridge_off');
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    holder = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner)
+      values (${owner}, 'l4o@example.invalid', 'x', 'admin', true)`;
+    await sql`insert into nodes (id, owner_id, type, title, path, audience)
+      values (${randomUUID()}, ${owner}, 'page', 'l4 page', 'pages', 'team')`;
+    await scratch.migrateRest();
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBe('no workspaces yet');
+  }, 240_000);
+
+  afterAll(async () => {
+    await holder?.end();
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  const state = async () => {
+    const [r] = await sql<
+      { ws: number; frozen: number; bridge: number; arch: number; why: string | null }[]
+    >`
+      select (select count(*)::int from workspaces) as ws,
+             (select count(*)::int from pg_trigger where tgname = 'nodes_levels_frozen') as frozen,
+             (select count(*)::int from pg_trigger where tgname = 'tool_groups_zz_bridge') as bridge,
+             (select count(*)::int from archive_node_levels) as arch,
+             mantle_ws_skip_reason() as why`;
+    return r!;
+  };
+
+  it('times out with 55P03 and changes nothing, then switches once the table is free', async () => {
+    expect(await state()).toEqual({
+      ws: 0,
+      frozen: 0,
+      bridge: 1,
+      arch: 0,
+      why: 'no workspaces yet',
+    });
+    const reserved = await holder.reserve();
+    await reserved`begin`;
+    await reserved`lock table tool_groups in row exclusive mode`;
+    const t0 = Date.now();
+    const err = await sql
+      .begin(async (tx) => {
+        await tx`select set_config('mantle.ws_switch_budget', '3 seconds', true)`;
+        return tx`select * from mantle_ws_migrate_locked()`;
+      })
+      .then(
+        () => null,
+        (e: { code?: string; message?: string }) => e,
+      );
+    const took = Date.now() - t0;
+    await reserved`rollback`;
+    reserved.release();
+    expect(err).toMatchObject({ code: '55P03' });
+    expect(err!.message).toMatch(/time budget/);
+    // The budget held (a 12-try loop would have taken minutes).
+    expect(took).toBeLessThan(15_000);
+    expect(await state()).toEqual({
+      ws: 0,
+      frozen: 0,
+      bridge: 1,
+      arch: 0,
+      why: 'no workspaces yet',
+    });
+
+    const rows = await sql<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
+    expect(rows.filter((r) => r.section === 'reach-fail')).toEqual([]);
+    const after = await state();
+    expect(after).toMatchObject({ frozen: 1, bridge: 0, why: null });
+    expect(after.ws).toBeGreaterThan(0);
+    expect(after.arch).toBeGreaterThan(0);
+  }, 60_000);
 });

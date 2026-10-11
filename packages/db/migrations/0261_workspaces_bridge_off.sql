@@ -25,10 +25,10 @@
 --    c. a bridge "Removed here" row whose folder does not grant that
 --       workspace means nothing and would block a later folder grant: it goes;
 --    d. a public app's Team row has Write off (members never wrote the data
---       of a public app; W5b1 flag);
---    e. an informational app (apps.data_read_only) has Write off on every
---       grant beyond Admin: the grant's Write switch alone decides member
---       writes from now on (owner call, 2026-10-11).
+--       of a public app; W5b1 flag).
+--    An informational app (apps.data_read_only) keeps its rows as they are:
+--    the member write rule reads the flag as an AND (grant Write and not
+--    informational), so no grant has to change for it (contract change 36).
 -- 4. A new item gets a HOME (before, only the bridge wrote homes): the home
 --    of the folder it is made in, else Admin; kinds that live in Admin only,
 --    Admin (21.8 row 7, R7). It also takes its folder's rows (S6). An item
@@ -104,15 +104,30 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_levels_frozen_trg"() FROM PUBLIC;
 -- under the migration's 5 s lock_timeout; when a lock is busy the attempt
 -- rolls back to its savepoint (releasing what it took), waits and tries
 -- again, up to 12 times, then fails the migration (safe to run again).
+-- Under a time budget (mantle.ws_switch_deadline, set by
+-- mantle_ws_migrate_locked for the switch at boot; fix round 2, L4) each
+-- try waits at most 5 s and never past the deadline, and the deadline
+-- ends the retries: 55P03, the whole transaction rolls back (no half
+-- switch) and the next start tries again.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_ddl_retry"(stmts text[], what text)
   RETURNS void LANGUAGE plpgsql VOLATILE
   SET search_path = "public", pg_temp AS $$
 DECLARE
   attempt int := 0;
   st text;
+  deadline timestamptz := nullif(current_setting('mantle.ws_switch_deadline', true), '')::timestamptz;
+  left_s double precision;
 BEGIN
   LOOP
     attempt := attempt + 1;
+    IF deadline IS NOT NULL THEN
+      left_s := extract(epoch FROM deadline - clock_timestamp());
+      IF left_s < 0.1 THEN
+        RAISE EXCEPTION '%: the tables stayed busy past the time budget; nothing changed, the next start tries again', what
+          USING ERRCODE = 'lock_not_available';
+      END IF;
+      PERFORM set_config('lock_timeout', greatest(1, least(5000, floor(left_s * 1000)))::bigint::text, true);
+    END IF;
     BEGIN
       FOREACH st IN ARRAY stmts LOOP
         EXECUTE st;
@@ -124,7 +139,11 @@ BEGIN
           USING ERRCODE = 'lock_not_available';
       END IF;
       RAISE NOTICE '%: tables busy (attempt %), retrying', what, attempt;
-      PERFORM pg_sleep(least(attempt, 5));
+      IF deadline IS NULL THEN
+        PERFORM pg_sleep(least(attempt, 5));
+      ELSE
+        PERFORM pg_sleep(greatest(0, least(attempt, 5, extract(epoch FROM deadline - clock_timestamp()) - 0.1)));
+      END IF;
     END;
   END LOOP;
 END
@@ -280,17 +299,6 @@ BEGIN
     GET DIAGNOSTICS c = ROW_COUNT;
     RETURN QUERY SELECT 'public app team rows, write off', c;
   END IF;
-
-  -- e. An informational app (apps.data_read_only): from now on the grant's
-  --    Write switch alone decides whether a workspace's users write its
-  --    data (owner call, 2026-10-11), so every grant of such an app beyond
-  --    Admin has Write off. Nobody gains a write.
-  UPDATE "public"."item_grants" g SET "write" = false
-    FROM "public"."apps" a, "public"."workspaces" w
-   WHERE g."node_id" = a."node_id" AND a."data_read_only" AND g."write"
-     AND w."id" = g."workspace_id" AND NOT w."is_admin" AND w."owner_id" = brain;
-  GET DIAGNOSTICS c = ROW_COUNT;
-  RETURN QUERY SELECT 'informational app rows beyond Admin, write off', c;
 
   -- c. "Removed here" where the folder does not grant that workspace.
   DELETE FROM "public"."item_grants" g
@@ -460,14 +468,19 @@ $$;
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_links_diff"() FROM PUBLIC;
 --> statement-breakpoint
 
--- The switch guard (plan 9.4, M1 and M2): the whole proof, on every box,
--- inside the transaction that switches it. Reads (items, their chunks,
--- facts) and connectors from mantle_ws_reach_diff; writes against what
--- every workspace beyond Admin could write before mantle_ws_bridge_off ran
--- in this transaction (when it ran: it records that first); links from
--- mantle_ws_links_diff. Any 'reach-fail' row raises 23514 and the whole
--- transaction (the migration, or mantle_ws_migrate) rolls back: nothing is
--- written. Otherwise it returns the rows.
+-- The switch guard (plan 9.4, M1 and M2): the proof, on every box, inside
+-- the transaction that switches it. Reads (items, their chunks, facts) and
+-- connectors from mantle_ws_reach_diff; writes against what every
+-- workspace beyond Admin could write before mantle_ws_bridge_off ran in
+-- this transaction (when it ran: it records that first). Any 'reach-fail'
+-- row raises 23514 and the whole transaction (the migration, or
+-- mantle_ws_migrate) rolls back: nothing is written. Otherwise it returns
+-- the rows. Links are NOT checked here (fix round 2, L3): 0262 checks them
+-- once, right after it fills each link's served list from the levels. A
+-- served list is the owner's to change after that, so checking it again
+-- at a later switch (a client box set up by hand, 21.9) would compare an
+-- owner's later tick with levels that no longer decide, and block the
+-- setup for good.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_switch_guard"()
   RETURNS TABLE ("section" text, "subject" text, "metric" text, "n" bigint)
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
@@ -482,7 +495,6 @@ BEGIN
     ("section" text, "subject" text, "metric" text, "n" bigint) ON COMMIT DROP;
   TRUNCATE "ws_switch_proof";
   INSERT INTO "ws_switch_proof" SELECT * FROM "public"."mantle_ws_reach_diff"();
-  INSERT INTO "ws_switch_proof" SELECT * FROM "public"."mantle_ws_links_diff"();
   IF to_regclass('pg_temp.ws_switch_writes_before') IS NOT NULL THEN
     EXECUTE $q$
       SELECT count(*) FROM "public"."nodes" n
@@ -571,14 +583,24 @@ $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_migrate"() FROM PUBLIC;
 --> statement-breakpoint
+-- The switch at boot (lib/workspaces-migrate.ts) under a time budget (fix
+-- round 2, L4): it holds the head of every brain item, so it must not wait
+-- long. 30 s from its start, at most (mantle.ws_switch_budget may only
+-- shorten it, for a test): the head wait and every DDL try fit inside it.
+-- On a timeout (55P03) or a refused proof (23514) the whole transaction
+-- rolls back: the brain stays on the old model, its integrity row
+-- ("workspaces: not migrated") stays, and the next start tries again.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate_locked"()
   RETURNS TABLE ("section" text, "subject" text, "metric" text, "n" bigint)
   LANGUAGE plpgsql VOLATILE
   SET search_path = "public", pg_temp
-  SET lock_timeout = '10s' AS $$
+  SET lock_timeout = '10s'
+  SET "mantle.ws_switch_deadline" = '' AS $$
 #variable_conflict use_column
 DECLARE
   why text := "public"."mantle_ws_skip_reason"();
+  budget interval := interval '30 seconds';
+  asked text := nullif(current_setting('mantle.ws_switch_budget', true), '');
 BEGIN
   IF why IS NULL THEN
     RETURN QUERY SELECT 'skip'::text, 'workspaces'::text, 'already migrated'::text, 1::bigint;
@@ -588,6 +610,12 @@ BEGIN
     RETURN QUERY SELECT 'skip'::text, why, 'count'::text, 1::bigint;
     RETURN;
   END IF;
+  IF asked IS NOT NULL THEN
+    budget := least(budget, greatest(interval '1 second', asked::interval));
+  END IF;
+  PERFORM set_config('mantle.ws_switch_deadline', (clock_timestamp() + budget)::text, true);
+  PERFORM set_config('lock_timeout',
+    (least(10000, floor(extract(epoch FROM budget) * 1000)))::bigint::text, true);
   PERFORM "public"."mantle_lock_heads"(ARRAY(
     SELECT x."id" FROM "public"."nodes" x WHERE x."owner_id" = "public"."mantle_brain_id"()), 'update');
   PERFORM pg_advisory_xact_lock(hashtext('mantle_ws_migrate'));

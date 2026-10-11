@@ -34,10 +34,11 @@
  *
  * The app work runs as the system, as the brokers do: the space role has
  * no grant on the app tables. From the login's scope each such call leaves
- * it by 'own-space' (`ownSpace`), one call at a time, never the whole tool. Every change runs inside
- * `withAuthorWrite`, which holds the app's state row locked and editable for
- * the whole change, so a Submit or an Accept never races it (M3 audit). The owner the app's rows are
- * keyed to is the author's space, so nothing here reaches a brain app.
+ * it by 'own-space' (`ownSpace`), one call at a time, never the whole tool.
+ * Every change runs inside `withAuthorWrite`, which holds the app's state
+ * row locked and editable for the whole change, so a Submit or an Accept
+ * never races it (M3 audit). The owner the app's rows are keyed to is the
+ * author's space, so nothing here reaches a brain app.
  */
 import { asSystem } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';

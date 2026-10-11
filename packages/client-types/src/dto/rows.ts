@@ -196,8 +196,9 @@ export type AppRow = {
    *  "Public" pill. Absent from a brain before W5b2. */
   hasLink?: boolean;
   /** Informational (client logins C6): members and clients only read the
-   *  app's data. Off, an app at team or client level is a shared workspace
-   *  everyone who runs it writes. Set with PATCH /api/apps/:id
+   *  app's data, whatever the grants' Write says. It changes no grant
+   *  (contract change 36): off, a member writes where a workspace of
+   *  theirs holds the app with Write on. Set with PATCH /api/apps/:id
    *  `{ dataReadOnly }`. Absent from an older brain: read as false. */
   dataReadOnly?: boolean;
   /** MCP access (team apps Phase 1, migration 0234): a member's or client's

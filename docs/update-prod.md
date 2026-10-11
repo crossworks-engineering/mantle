@@ -150,6 +150,16 @@ when it failed before step 4), 2 usage, 3 counts dropped.
   `update.log`. The check is the RUNNING updater's: the roll that first
   brings it still runs the old updater (below), so it guards the rolls
   after that one. A manual roll (pinning the tag by hand) bypasses it.
+- **No roll to the workspaces switch on a box with clients that is not on
+  workspaces yet.** A request for v0.239.90 or later (`latest` and tags that
+  are not a release version count as later) is **refused with nothing
+  changed** (no backup, no pull, no `.env` write) while the brain has an
+  owner, no Admin workspace, and client logins or client-level items (plan
+  21.9), and also when the database cannot be read. No `.env` knob: set the
+  box up by hand first (below). `scripts/roll.sh` runs the same check (step
+  2a) before it backs up. The check is the RUNNING updater's: a box whose
+  updater predates it is not stopped by it, so roll such a box with
+  `scripts/roll.sh`.
 - **The first roll to a release with these steps still runs the OLD
   updater** (it refreshes itself at the end of an OK roll), so that one roll
   takes no updater backup and prunes nothing: `roll.sh` takes the backup
@@ -575,6 +585,62 @@ A v1 map compiled after a rollback survives a roll forward (0209 does not
 run twice), so check (1) again after any rollback. The follow-up migration
 that drops `last_compile_*` repeats the `node_id` NULL delete and sets
 `node_id` NOT NULL.
+
+## Rolling to the workspaces switch (W5b2, migration 0261)
+
+From this release the grants alone decide who reads and writes what: 0261
+archives and freezes the item levels, turns the level bridge off and makes
+its rows plain grants, all inside one transaction that ends in the switch
+guard (`mantle_ws_switch_guard()`, 23514 on any read, fact or write gained;
+nothing is written then). Open links are checked once, by 0262, right after
+it fills each link's served list from the levels.
+
+**A box with clients.** A brain that is not on workspaces because it has
+client logins or client-level items (plan 21.9) is not switched by 0261 and
+keeps its levels, but the code of this release reads no level: its members,
+clients and assistants would read nothing. `scripts/roll.sh` (step 2a) and
+the updater refuse a roll to v0.239.90 or later on such a box (above). Set
+its workspaces up by hand first (plan 21.9), then roll; once it has its
+Admin workspace the check passes. The SQL is plain and reads the
+schema the box has today (from v0.239.35 on); to see what it sees:
+`scripts/roll.sh --dry-run <box-label> <tag>`.
+
+**Re-run the reach proof on a fresh copy right before each box's roll.**
+The proof compares the grants with the levels: a grant made by hand since
+W5b1 that a level does not explain (for example a direct grant to a
+workspace other than Team) is a gained read, and the switch guard stops the
+migration on the box (23514, the migration rolls back and the web container
+does not come up healthy). So, for each box, right before its roll and not
+days before:
+
+1. Take a fresh dump of the box
+   (`MANTLE_DUMP_STRICT=1 bash scripts/db-dump.sh`) and restore it into a
+   throwaway Postgres on the workstation (never the Mac, never the box).
+2. Run the release's migrations on the copy. 0261 ends in the switch
+   guard and 0262 in the link check: both must pass (the migrate log shows
+   `0261 proof:` rows and no 23514). A box with clients is not switched by
+   0261: do its hand setup on the copy and run
+   `select * from mantle_ws_migrate_locked()` there; it must pass too.
+3. Only then roll the box. A 23514 in step 2 names what would be gained
+   (`select * from mantle_ws_reach_diff() where section = 'reach-fail'` on
+   the copy before 0261 lists it): take that grant back (or give the item
+   the level that explains it) on the box first, and repeat from step 1.
+
+**The switch at a later start.** A brain switched after the roll (a fresh
+install whose owner signed up later, or a client box set up by hand, then
+`select * from mantle_ws_migrate_locked()`) runs the same switch at boot
+under a 30 s budget: the head wait and every DDL try fit inside it. When a
+table stays busy past it (55P03) or the guard refuses (23514), the whole
+transaction rolls back: the brain stays on the old model, the integrity row
+"workspaces: not migrated" stays, the server log says why, and the next
+start tries again.
+
+**Informational apps.** The informational switch (`dataReadOnly`) writes
+no grant (contract change 36): while it is on nobody beyond Admin writes
+the app's data, whatever the grants' Write says; off, the grants' Write
+decides. An app that was informational at the switch keeps the Team row
+the bridge gave it (Write off): turning it off later does not give the
+team Write until an admin turns Write on in the app's Grant Access panel.
 
 ## Rollback
 

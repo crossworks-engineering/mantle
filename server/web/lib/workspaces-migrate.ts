@@ -8,9 +8,12 @@
  * mantle_ws_migrate_locked (0257, 0259) does the work in one transaction and
  * skips, without a lock, a brain already migrated, one with no owner, and one
  * with client logins or client-level items (owner rule 21.9: clients are set
- * up by hand; the integrity row workspaces_not_migrated says why). It waits
- * at most 10 s for a lock, and ends with the bridge's rows as plain grants
- * (0261). Then mantle_ws_attach_assistants puts the default assistants on
+ * up by hand; the integrity row workspaces_not_migrated says why). It runs
+ * under a 30 s budget (0261, fix round 2 L4: the head wait and every DDL
+ * try fit inside it), and ends with the bridge's rows as plain grants and
+ * the switch guard's proof (0261). A timeout (55P03) or a refused proof
+ * (23514) rolls the whole transaction back: the brain stays on the old
+ * model, the integrity row stays, and the next start tries again. Then mantle_ws_attach_assistants puts the default assistants on
  * Admin and Team once onboarding has made them. Nothing repairs grants at
  * boot: an item left without a home (one made in another transaction while
  * the migration ran) is counted by `pnpm workspaces:check`. No LLM work, no
@@ -43,7 +46,16 @@ function failure(when: string, err: unknown): void {
     (err as { code?: string; cause?: { code?: string } })?.cause?.code ??
     (err as { code?: string })?.code;
   if (code === '55P03') {
-    console.warn(`[workspaces] ${when}: a lock was busy; tries again at the next boot`);
+    console.warn(
+      `[workspaces] ${when}: a lock stayed busy past the time budget; nothing changed, tries again at the next boot`,
+    );
+    return;
+  }
+  if (code === '23514') {
+    console.error(
+      `[workspaces] ${when}: the switch guard refused the switch, nothing changed (the brain stays on levels):`,
+      err instanceof Error ? err.message : err,
+    );
     return;
   }
   console.error(`[workspaces] ${when}: failed:`, err instanceof Error ? err.message : err);

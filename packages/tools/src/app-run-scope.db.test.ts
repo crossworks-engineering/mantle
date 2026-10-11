@@ -13,7 +13,11 @@
  *  - an app two workspaces beyond Admin hold reads nothing (no scope
  *    expresses "held by every holder" yet); a runner outside the holder
  *    reads nothing; a run at team rules with no brain holder ({ team:
- *    true }) reads Team only.
+ *    true }) reads Team only;
+ *  - fix round 2, L1: an app with no row beyond Admin reads Team (and runs
+ *    admin rules); an app whose only row beyond Admin is an archived
+ *    workspace's reads nothing (and runs team rules); an id that is not an
+ *    app reads nothing.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/app-run-scope.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -26,6 +30,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
   let m: Db;
   let level: typeof import('./app-tool-level');
   let builtins: typeof import('./builtins');
+  let content: typeof import('@mantle/content');
   let sqlTag: typeof import('drizzle-orm').sql;
   let scratch: { url: string; drop: () => Promise<void> } | undefined;
   const owner = randomUUID();
@@ -34,6 +39,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
   const ids: Record<string, string> = {};
   let team = '';
   const other = randomUUID();
+  const gone = randomUUID();
 
   const sys = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
   /** The workspaces the current scope reads (none for system work). */
@@ -77,6 +83,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     m = await import('@mantle/db');
     level = await import('./app-tool-level');
     builtins = await import('./builtins');
+    content = await import('@mantle/content');
     sqlTag = (await import('drizzle-orm')).sql;
     const email = (id: string) => `h1-${id.slice(0, 8)}@example.invalid`;
     await sys(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner) values
@@ -94,6 +101,11 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     await node('otherNote', 'note', 'notes', 'admin');
     await node('teamApp', 'app', 'apps', 'team');
     await node('twoApp', 'app', 'apps', 'team');
+    await node('adminApp', 'app', 'apps', 'admin');
+    await node('archivedApp', 'app', 'apps', 'admin');
+    for (const key of ['teamApp', 'twoApp', 'adminApp', 'archivedApp']) {
+      await sys(sqlTag`insert into apps (node_id, manifest) values (${ids[key]!}, '{}'::jsonb)`);
+    }
     await sys(sqlTag`select * from mantle_ws_migrate()`);
     const ws = (await sys(
       sqlTag`select bridge_key as key, id::text as id from workspaces where owner_id = ${owner}`,
@@ -114,6 +126,17 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
         );
       });
     }
+    // An app held beyond Admin only by a workspace archived since (its row
+    // stands for one an archive left behind).
+    await sys(sqlTag`insert into workspaces (id, owner_id, name, is_admin)
+      values (${gone}, ${owner}, 'Gone', false)`);
+    await sys(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${gone}, ${member}, false)`);
+    await m.withHeads([ids.archivedApp!], 'update', async (tx) => {
+      await tx.execute(sqlTag`insert into item_grants (node_id, workspace_id)
+        values (${ids.archivedApp!}, ${gone})`);
+    });
+    await sys(sqlTag`update workspaces set archived_at = now() where id = ${gone}`);
   }, 180_000);
 
   afterAll(async () => {
@@ -154,5 +177,25 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     const out = await run(member, { team: true });
     expect(out.ws).toMatchObject({ ws: [team] });
     expect(out).toMatchObject({ team: true, other: false, admin: false });
+  });
+
+  it('L1: Admin alone reads Team; an archived holder or an id that is not an app reads nothing', async () => {
+    const rules = async (key: string) => (await content.getAppRuntime(owner, ids[key]!))?.toolRules;
+    // No row beyond Admin at all: team rules read Team, admin rules for an admin.
+    const alone = await run(member, { id: ids.adminApp! });
+    expect(alone.ws).toMatchObject({ ws: [team] });
+    expect(alone).toMatchObject({ team: true, other: false, admin: false });
+    expect(await rules('adminApp')).toBe('admin');
+    // Held beyond Admin only by an archived workspace: no fallback to Team.
+    const archived = await run(member, { id: ids.archivedApp! });
+    expect(archived).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
+    expect(archived.titles).toEqual([]);
+    expect(await rules('archivedApp')).toBe('team');
+    expect(await rules('teamApp')).toBe('team');
+    // A note's id (not an app), and an id that names nothing.
+    for (const id of [ids.teamNote!, randomUUID()]) {
+      const out = await run(member, { id });
+      expect(out, id).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
+    }
   });
 });

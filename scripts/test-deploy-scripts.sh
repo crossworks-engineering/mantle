@@ -986,6 +986,35 @@ FAKE_TS=20260105-000000 FAKE_EXEC_OUT=3 roll_loop "$T"
 check "clients exist, target at the floor: the roll goes ahead" grep -q '"phase":"done","target":"v0.232.318".*"ok":true' "$T/sig/status.json"
 
 # ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: the workspaces switch refuses a box with clients not on workspaces"
+T="$WORK/ws-lib"; fake_stack "$T"; mkdir -p "$T/state"
+wsr_probe='for t in v0.239.89 v0.239.90 v0.240.0 latest; do
+  if ws_switch_refusal "$t"; then printf "%s:refused " "$t"; else printf "%s:ok " "$t"; fi; done'
+out=$(FAKE_EXEC_OUT="1 2 0" roll_lib "$T" "$wsr_probe")
+check "ws_switch_refusal: clients and no workspaces, refused from v0.239.90 on (latest too)" \
+  test "$out" = "v0.239.89:ok v0.239.90:refused v0.240.0:refused latest:refused "
+out=$(FAKE_EXEC_OUT="0 2 0" roll_lib "$T" "$wsr_probe")
+check "ws_switch_refusal: a box on workspaces goes ahead" \
+  test "$out" = "v0.239.89:ok v0.239.90:ok v0.240.0:ok latest:ok "
+out=$(FAKE_EXEC_FAIL=1 roll_lib "$T" "$wsr_probe")
+check "ws_switch_refusal: an unreadable database is refused past the switch (fails closed)" \
+  test "$out" = "v0.239.89:ok v0.239.90:refused v0.240.0:refused latest:refused "
+sed -n "/<<'WS_SWITCH_SQL'/,/^WS_SWITCH_SQL\$/p" "$ROOT/scripts/roll.sh" > "$T/a.sql"
+sed -n "/<<'WS_SWITCH_SQL'/,/^WS_SWITCH_SQL\$/p" "$ROOT/infra/updater/updater.sh" > "$T/b.sql"
+check "ws_switch_refusal: the SQL is there" grep -q bridge_key "$T/a.sql"
+check "ws_switch_refusal: roll.sh and the updater send the same SQL" cmp -s "$T/a.sql" "$T/b.sql"
+
+floor_case wsclients v0.239.90
+FAKE_TS=20260105-000000 FAKE_EXEC_OUT="1 3 5" roll_loop "$T"
+check "clients, no workspaces, switch release: status error, ok false" \
+  grep -q '"phase":"error","target":"v0.239.90".*"ok":false' "$T/sig/status.json"
+check "clients, no workspaces: says why, with the counts" \
+  grep -q 'roll refused, nothing changed: this box has clients and is not on workspaces yet (3 client login(s), 5 client-level item(s))' "$T/sig/status.json"
+check "clients, no workspaces: .env and compose unchanged" \
+  sh -c "cmp -s '$T/stack/.env' '$T/env.before' && cmp -s '$T/stack/docker-compose.yml' '$T/compose.before'"
+check "clients, no workspaces: no backup, no pull, no up" sh -c "! grep -qE 'db-dump.sh|pull| up ' '$T/calls'"
+
+# ═════════════════════════════════════════════════════════════════════════════
 echo "roll.sh: backup first, request only the target, stop on any count drop"
 # `ssh <opts> <host> <cmd>` runs <cmd> locally (stdin passes through), and a
 # docker stub plays the box: counts come from files in $RS, the updater
@@ -1057,6 +1086,13 @@ case "$1" in
         done
         exec "$@" ;;
       *api/version*) echo '{"version":"fake"}' ;;
+      *psql*)
+        # The workspaces switch check (2a) sends its SQL on stdin, no -c:
+        # it answers "<refuse> <client logins> <client-level items>".
+        case "$*" in
+          *" -c "*) : ;;
+          *) if grep -q bridge_key; then echo "${FAKE_WS:-0 0 0}"; fi ;;
+        esac ;;
       *) : ;;
     esac
     exit 0 ;;
@@ -1170,6 +1206,34 @@ roll_box fleetnostack
 printf '{"boxes":[{"label":"box-b","url":"https://brain.example.com","ssh":"fakebox"}]}\n' > "$RS/fleet.json"
 MANTLE_FLEET_FILE="$RS/fleet.json" roll_sh box-b v8
 check "a fleet box with a url and no stack: the stack comes from the updater, not the url" sh -c "test '$rc' = 0 && ! grep -q 'not an absolute path' '$RS/out'"
+
+roll_box wsclients
+FAKE_WS="1 2 0" roll_sh --ssh fakebox v0.239.90
+check "workspaces switch, a box with clients not on workspaces: refused before anything" \
+  sh -c "test '$rc' = 1 && grep -q 'Set up workspaces by hand first (plan 21.9)' '$RS/out' && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen'"
+check "workspaces switch refusal names the counts" grep -q '(2 client login(s), 0 client-level item(s))' "$RS/out"
+check "workspaces switch check: the SQL went on stdin, not as -c" \
+  grep -qE "^docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At -F +$" "$RS/calls"
+
+roll_box wslatest
+FAKE_WS="1 0 4" roll_sh --ssh fakebox latest
+check "workspaces switch: latest counts as past the switch (refused)" \
+  sh -c "test '$rc' = 1 && grep -q '0 client login(s), 4 client-level item(s)' '$RS/out'"
+
+roll_box wsready
+FAKE_WS="0 2 0" roll_sh --ssh fakebox v0.239.90
+check "workspaces switch, a box on workspaces: the roll goes ahead" \
+  sh -c "test '$rc' = 0 && grep -q 'workspaces: nothing stops the switch here (client logins: 2' '$RS/out'"
+
+roll_box wsbefore
+FAKE_WS="1 2 0" roll_sh --ssh fakebox v0.239.89
+check "workspaces switch: a roll to a release before it is not checked" \
+  sh -c "test '$rc' = 0 && grep -q 'v0.239.89 is before the switch' '$RS/out'"
+
+roll_box wsgarbage
+FAKE_WS="oops" roll_sh --ssh fakebox v0.239.90
+check "workspaces switch: an answer that is not three numbers stops the roll" \
+  sh -c "test '$rc' = 1 && grep -q 'unexpected workspaces check' '$RS/out' && test ! -e '$RS/request.seen'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"

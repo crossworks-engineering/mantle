@@ -14,8 +14,12 @@
 > owner rule 21.9) is not switched by 0261: it keeps its levels and the
 > bridge until it is set up by hand and `mantle_ws_migrate_locked()` runs.
 > The switch, wherever it runs, ends in `mantle_ws_switch_guard()`: any read
-> (items, their chunks, facts), write or link serve gained against the
-> levels rolls it back (23514). An app run reads through the app (its
+> (items, their chunks, facts) or write gained against the levels rolls it
+> back (23514); open links are checked once, by 0262. A roll to this
+> release is refused on a box with clients that is not on workspaces yet
+> (docs/update-prod.md, "Rolling to the workspaces switch"). The
+> informational switch on an app writes no grant: while it is on nobody
+> beyond Admin writes the app's data. An app run reads through the app (its
 > holders beyond Admin met with the runner's workspaces), never the
 > runner's whole login. API keys and linked brains act as their login and
 > still narrow it: a key's access and areas, a peer's Write switch and

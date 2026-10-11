@@ -5,8 +5,8 @@
  *
  *  - an admin: always read and change (the owner broker never refuses an
  *    admin's write; Informational binds members and clients);
- *  - a member: `memberMayWriteAppData` (team and client apps unless
- *    informational; a public app only reads);
+ *  - a member: `memberMayWriteAppData` (a workspace of theirs holds the
+ *    app with Write on, and it is not informational);
  *  - a client: a client app unless informational;
  *  - a member-built app: its runners change its data unless it is under
  *    review.

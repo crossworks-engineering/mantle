@@ -5,7 +5,9 @@
 #
 #   1. preflight: the updater is idle, no request is pending
 #   2. count apps, sandboxes (Postgres) and app-db files (mantle_web) BEFORE;
-#      refuse a box that still has a page-built (v1) Recall map (2b), and one
+#      refuse a roll to the workspaces switch (v0.239.90 on) on a box with
+#      clients that is not on workspaces yet (2a, plan 21.9), a box that
+#      still has a page-built (v1) Recall map (2b), and one
 #      where the roll would open connector write tools to members, clients or
 #      apps (2c, team apps Phase 2) unless --ack-connector-writes, or
 #      breaks a live app's run-time schema SQL for members, clients or
@@ -161,6 +163,74 @@ rsh "df -h '$STACK' | tail -1" || true
 C0=$(counts) || die "could not count apps / sandboxes / app-db files (is the stack up?)"
 read -r APPS0 SBX0 FILES0 <<< "$C0"
 echo "before: apps=$APPS0 sandboxes=$SBX0 app-db files=$FILES0"
+
+# ── 2a. workspaces: a box with clients is set up by hand first ─────────────
+# From the workspaces switch (W5b2, migration 0261) the grants alone decide
+# who reads what. A brain that is NOT on workspaces because it has clients
+# (an anchor, no Admin workspace, and client logins or client-level items;
+# plan 21.9) is left on its levels by 0261, but the code of that release
+# reads no level: its members, clients and assistants would read nothing.
+# So a roll to v$WS_SWITCH_FLOOR or later (`latest` and any tag that is not
+# a release version count as later) is refused on such a box until its
+# workspaces are set up by hand. "No Admin workspace" is the release's own
+# test (mantle_ws_skip_reason: no workspace with bridge_key 'admin'). Plain
+# SQL on the box's CURRENT schema, from v0.239.35 on (no workspaces table
+# there, no mantle_ws_skip_reason): SELECT only, digits only. The updater
+# runs the same SQL (infra/updater/updater.sh, ws_switch_refusal); a test
+# pins the two copies equal (packages/db/src/ws-switch-preflight.db.test.ts).
+# WS_SWITCH_FLOOR is a lower bound for the release that carries the switch
+# (the next one after v0.239.89): a release between it and the real one is
+# refused too on such a box, which only stops a roll that was safe.
+WS_SWITCH_FLOOR=0.239.90
+# 0 when <tag> is at or past the switch release, or not a release version.
+crosses_ws_switch() {
+  local v=${1#v} f=$WS_SWITCH_FLOOR x y i
+  case "$v" in *.*.*.* | *[!0-9.]* | .* | *. | *..*) return 0 ;; *.*.*) ;; *) return 0 ;; esac
+  for i in 1 2 3; do
+    x=${v%%.*}; y=${f%%.*}
+    [ "$x" -lt "$y" ] && return 1
+    [ "$x" -gt "$y" ] && return 0
+    v=${v#*.}; f=${f#*.}
+  done
+  return 0
+}
+ws_switch_sql() {
+  cat <<'WS_SWITCH_SQL'
+with brain as (
+  select u.id from auth.users u where u.is_owner order by u.created_at limit 1
+), s as (
+  select
+    (select count(*) from brain) as anchored,
+    case when to_regclass('public.workspaces') is null then 0
+         else (xpath('/row/n/text()', query_to_xml(format(
+           'select count(*) as n from public.workspaces w where w.owner_id = %L and to_jsonb(w)->>%L = %L',
+           (select b.id from brain b), 'bridge_key', 'admin'), false, true, '')))[1]::text::bigint
+    end as admin_ws,
+    (select count(*) from auth.users u where to_jsonb(u)->>'role' = 'client') as clients,
+    (select count(*) from public.nodes n
+      where n.owner_id = (select b.id from brain b)
+        and (n.audience::text = 'client' or n.inherited_level::text = 'client'
+             or n.embedded_level::text = 'client')) as client_items
+)
+select case when anchored = 1 and admin_ws = 0 and (clients > 0 or client_items > 0)
+            then 1 else 0 end,
+       clients, client_items
+  from s;
+WS_SWITCH_SQL
+}
+if crosses_ws_switch "$TAG"; then
+  WS=$(ws_switch_sql | rsh "docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At -F ' '") ||
+    die "could not check whether this box is on workspaces"
+  WS=$(printf '%s' "$WS" | tr -d '\r' | tr -s ' ')
+  case "$WS" in *[!0-9\ ]* | '') die "unexpected workspaces check: $WS" ;; esac
+  read -r WS_REFUSE WS_CLIENTS WS_CLIENT_ITEMS <<< "$WS"
+  if [ "$WS_REFUSE" = 1 ]; then
+    die "this box has clients and is not on workspaces yet ($WS_CLIENTS client login(s), $WS_CLIENT_ITEMS client-level item(s)). From v$WS_SWITCH_FLOOR the grants alone decide reads, so its members, clients and assistants would read nothing after this roll. Set up workspaces by hand first (plan 21.9), then roll."
+  fi
+  echo "workspaces: nothing stops the switch here (client logins: $WS_CLIENTS, client-level items: $WS_CLIENT_ITEMS)"
+else
+  echo "workspaces: $TAG is before the switch (v$WS_SWITCH_FLOOR); not checked"
+fi
 
 # ── 2b. Recall: no page-built (v1) map may be left ──────────────────────────
 # From Recall R5 (migration 0209) a page-built map is not served, and 0209

@@ -376,9 +376,14 @@ export async function getApp(ownerId: string, id: string): Promise<AppDetail | n
  *  workspace holds it. The tool brokers decide by it (app-tool-level.ts). */
 export type AppToolRules = 'admin' | 'team';
 
-/** A workspace other than Admin holds the app (its grants; admin pool). */
+/** A workspace other than Admin holds the app: any row of its grants
+ *  beyond Admin that is not "Removed here", an archived workspace's
+ *  included (admin pool). The same test as an app run's scope (client.ts
+ *  appRunHolders): an app this calls held runs team rules and reads only
+ *  its live holders; one it does not (Admin alone) reads Team. */
 const heldBeyondAdmin = sql<boolean>`exists (
-  select 1 from workspaces w where w.id = any(${nodes.readWs}) and not w.is_admin)`;
+  select 1 from item_grants g join workspaces w on w.id = g.workspace_id and not w.is_admin
+   where g.node_id = ${nodes.id} and not g.excluded)`;
 
 /** What RUNNING an app needs: who holds it, its manifest and builds. */
 export type AppRuntime = {
@@ -549,71 +554,20 @@ export type UpdateAppInput = Partial<{
   /** The description (kept on the manifest); '' clears it. */
   description: string;
   /** Informational (client logins C6): members and clients only read the
-   *  app's data. The owner's app update route is its one writer. It also
-   *  sets Write on the app's grants beyond Admin (see updateAppMeta). */
+   *  app's data. The owner's app update route is its one writer. It changes
+   *  no grant: the member write rule reads it as an AND (memberWritesSql),
+   *  so while it is on nobody beyond Admin writes the data, whatever the
+   *  grants' Write says; off, the grants' Write decides. */
   dataReadOnly: boolean;
   /** MCP access (0234): a member's or client's MCP connection reaches the
    *  app's data. The owner's app update route is its one writer. */
   mcpAccess: boolean;
 }>;
 
-/**
- * The informational switch on the app's grants (workspaces W5b2 part B): a
- * member writes the data only where the grant's Write is on (0261 step e),
- * so turning the switch on sets Write off on every grant of the app to a
- * workspace other than Admin, and turning it off sets Write on again on its
- * grants set on the app. A row via a folder follows the folder's Write (a
- * hand change of it is re-derived at once), so "on" makes such a row a grant
- * set on the app with Write off, as "Change here" then Write off would; "off"
- * leaves rows via a folder as the folder has them. Archived workspaces and
- * "Removed here" rows are left alone. Run under the app's head
- * (withWriterHeads), in the transaction of the flag; each changed row writes
- * a workspace_events row. Until the Grant Access panel carries this switch.
- *
- * @heads-held by updateAppMeta (withWriterHeads on the app).
- */
-async function setInformationalGrants(
-  tx: Pick<typeof db, 'execute'>,
-  ownerId: string,
-  id: string,
-  readOnly: boolean,
-  actorId: string | null,
-): Promise<void> {
-  const changed = (await tx.execute(sql`
-    with old as (
-      select g.workspace_id as ws, g.via_folder_id::text as via
-        from item_grants g join workspaces w on w.id = g.workspace_id
-       where g.node_id = ${id} and w.owner_id = ${ownerId}
-         and not w.is_admin and w.archived_at is null and not g.excluded
-         and g.write = ${readOnly}
-         and (${readOnly} or g.via_folder_id is null)
-    )
-    update item_grants g set write = ${!readOnly}, via_folder_id = null
-      from old
-     where g.node_id = ${id} and g.workspace_id = old.ws
-    returning g.workspace_id::text as ws, old.via`)) as unknown as Array<{
-    ws: string;
-    via: string | null;
-  }>;
-  for (const r of changed) {
-    const subject = {
-      node: id,
-      write: !readOnly,
-      informational: readOnly,
-      ...(r.via ? { folder: r.via } : {}),
-    };
-    await tx.execute(sql`
-      insert into workspace_events (workspace_id, actor_id, action, subject)
-      values (${r.ws}, (select id from auth.users where id = ${actorId}), 'grant.write',
-              ${JSON.stringify(subject)}::jsonb)`);
-  }
-}
-
 export async function updateAppMeta(
   ownerId: string,
   id: string,
   input: UpdateAppInput,
-  opts: { actorId?: string } = {},
 ): Promise<AppDetail | null> {
   const [node] = await db
     .select()
@@ -644,8 +598,11 @@ export async function updateAppMeta(
     })
     .where(eq(nodes.id, id));
   if (input.dataReadOnly !== undefined || input.mcpAccess !== undefined) {
-    // The read-only switch sets Write on the app's grants beyond Admin, in
-    // the same transaction: the app's head first.
+    // The flags alone: the informational switch writes no grant (contract
+    // change 36; the member write rule ANDs it in). Under the app's head
+    // all the same: on a brain not on workspaces yet (21.9) the level
+    // bridge's apps trigger still turns the flag into the app's Team Write,
+    // and it needs that head.
     const write = (q: Pick<typeof db, 'update'>) =>
       q
         .update(apps)
@@ -655,13 +612,8 @@ export async function updateAppMeta(
           updatedAt: new Date(),
         })
         .where(eq(apps.nodeId, id));
-    const readOnly = input.dataReadOnly;
-    if (readOnly !== undefined) {
-      await withWriterHeads([id], async (tx) => {
-        await write(tx);
-        await setInformationalGrants(tx, ownerId, id, readOnly, opts.actorId ?? null);
-      });
-    } else await write(db);
+    if (input.dataReadOnly !== undefined) await withWriterHeads([id], (tx) => write(tx));
+    else await write(db);
   }
   if (input.description !== undefined) {
     // On the manifest, under the row lock like every manifest write.

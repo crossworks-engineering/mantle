@@ -147,9 +147,12 @@ export type ViewerFor =
  * holder reads and another does not. The scope is the app's holder
  * workspaces other than Admin, met with the runner's own workspaces, never
  * the runner's whole union:
- * - `{ id }`: a brain app; its holders come from its grants. An app no
- *   workspace beyond Admin holds runs here only at team rules (the author
- *   ceiling), so it reads the Team workspace. Two or more holders beyond
+ * - `{ id }`: a brain app; its holders come from its grants. An app with
+ *   no grant row beyond Admin at all (an archived workspace's row counts;
+ *   a "Removed here" row holds nothing) runs here only at team rules (the
+ *   author ceiling), so it reads the Team workspace. An app whose rows
+ *   beyond Admin are all on archived workspaces reads nothing, and so does
+ *   an id that is not an app (fix round 2, L1). Two or more holders beyond
  *   Admin read nothing: the row rule reads any workspace of the scope, not
  *   "every one of them", so no scope expresses their common items yet.
  * - `{ team: true }`: a run at team rules with no brain holders (a member's

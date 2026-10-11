@@ -107,6 +107,27 @@ describe('ops docs match the code', () => {
     expect(refusal).toBeLessThan(loop.indexOf('if ! pre_roll_backup; then'));
   });
 
+  it('update-prod.md states the workspaces switch refusal, and both scripts hold one floor', () => {
+    const updater = read('infra/updater/updater.sh');
+    const roll = read('scripts/roll.sh');
+    const floor = updater.match(/^WS_SWITCH_FLOOR=(\d+\.\d+\.\d+)$/m)?.[1];
+    expect(floor, 'WS_SWITCH_FLOOR not found in updater.sh').toBeTruthy();
+    expect(roll.match(/^WS_SWITCH_FLOOR=(\d+\.\d+\.\d+)$/m)?.[1]).toBe(floor);
+    const doc = oneLine(read('docs/update-prod.md'));
+    expect(doc).toContain(`A request for v${floor} or later`);
+    expect(doc).toContain('Rolling to the workspaces switch');
+    // The refusal sits before the pre-roll backup: nothing changes first.
+    const loop = updater.slice(updater.indexOf('# ── poll loop'));
+    const refusal = loop.indexOf('if ws_switch_refusal "$TARGET"; then');
+    expect(refusal).toBeGreaterThan(0);
+    expect(refusal).toBeLessThan(loop.indexOf('if ! pre_roll_backup; then'));
+    // roll.sh checks it before its own backup and request.
+    expect(roll.indexOf('if crosses_ws_switch "$TAG"; then')).toBeGreaterThan(0);
+    expect(roll.indexOf('if crosses_ws_switch "$TAG"; then')).toBeLessThan(
+      roll.indexOf('# ── 3. backup'),
+    );
+  });
+
   it('both rollback docs state the 0178 floor', () => {
     for (const p of ['docs/update-prod.md', 'docs/member-logins.md']) {
       const doc = oneLine(read(p));

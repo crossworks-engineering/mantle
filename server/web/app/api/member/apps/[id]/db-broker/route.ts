@@ -14,12 +14,11 @@ import { rateLimit } from '@/lib/rate-limit';
  * host.db.query / host.db.exec on the app's own SQLite (member logins Phase
  * 4b). Row security does not reach SQLite, so the reach check is explicit
  * (memberAppOr404: a workspace of the member holds the app's grant, and its
- * published build is green). Writes follow the grant's Write switch only
- * (workspaces W5b2 part B): a member writes the data when a workspace of
- * theirs holds the app with Write on, else a write answers 403
- * `reason: 'read-only'` (memberMayWriteAppData). The informational switch
- * (`dataReadOnly`, PATCH /api/apps/:id) acts through those grants: on, it
- * sets Write off on every grant beyond Admin. The levels decide nothing. App
+ * published build is green). A member writes the data when a workspace of
+ * theirs holds the app with Write on AND the app is not informational
+ * (`dataReadOnly`, PATCH /api/apps/:id; it writes no grant, contract change
+ * 36), else a write answers 403 `reason: 'read-only'`
+ * (memberMayWriteAppData over memberWritesSql). The levels decide nothing. App
  * data is shared per app, not per member (v1): every member who may write it
  * writes the same database.
  *

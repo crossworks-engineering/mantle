@@ -13,9 +13,11 @@
  * admin pool (the registry rows it writes are admin), and row security does
  * not reach SQLite.
  *
- * Writing the app's data is the grant's Write switch (Informational is Write
- * off, set in the Grant Access panel): a member writes when a workspace of
- * theirs holds the app with Write on.
+ * Writing the app's data: a member writes when a workspace of theirs holds
+ * the app with Write on (the grant's Write switch) AND the app is not
+ * informational (`apps.data_read_only`). Informational writes no grant
+ * (contract change 36): while it is on nobody beyond Admin writes the data,
+ * whatever the grants say; off, the grants' Write decides.
  *
  * Only granted columns are read (never `apps.draft_*`), so these work on the
  * viewer roles.
@@ -54,8 +56,8 @@ export type MemberRunnableApp = {
   title: string;
   icon: string | null;
   color: AppTint | null;
-  /** A workspace of the member holds it with Write on: the member writes
-   *  its data (else reads only). */
+  /** A workspace of the member holds it with Write on and it is not
+   *  informational: the member writes its data (else reads only). */
   writable: boolean;
   manifest: AppManifest;
   publishedBuild: BuildRef;
@@ -74,17 +76,23 @@ export function memberReachSql(): SQL<boolean> {
   return teamReadsSql();
 }
 
-/** A workspace of the member holds the app with Write on. */
+/** A workspace of the member holds the app with Write on, and the app is
+ *  not informational. Over `nodes` joined to `apps` (every caller joins
+ *  them): `apps.data_read_only` is an AND here, never a grant change. */
 export function memberWritesSql(): SQL<boolean> {
   const scope = currentWorkspaceScope();
-  if (scope) return sql<boolean>`(${nodes.writeWs} && ${wsArray(scope.ws)})`;
-  return teamWritesSql();
+  const notInformational = sql`not coalesce(${apps.dataReadOnly}, false)`;
+  if (scope) {
+    return sql<boolean>`(${notInformational} and (${nodes.writeWs} && ${wsArray(scope.ws)}))`;
+  }
+  return sql<boolean>`(${notInformational} and ${teamWritesSql()})`;
 }
 
 /**
  * May a member WRITE this app's database? The grant's Write switch of a
- * workspace of theirs (`writable`); a member-built app under review is read
- * only (server/web/lib/member-apps.ts sets it).
+ * workspace of theirs, and not informational (`writable`, memberWritesSql);
+ * a member-built app under review is read only (server/web/lib/member-apps.ts
+ * sets it).
  */
 export function memberMayWriteAppData(app: { writable: boolean }): boolean {
   return app.writable === true;
