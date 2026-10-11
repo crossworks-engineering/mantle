@@ -39,6 +39,7 @@ import {
   type Node,
   nodes,
   notifyNodeIngested,
+  pgConstraint,
   withDeadlockRetry,
   withHeads,
   withNodeDeleteHeads,
@@ -284,6 +285,7 @@ export async function upsertFile(args: {
     const toPlace = staged!;
     let placed = false;
     let inserted: Node | undefined;
+    let filenameTaken = false;
     try {
       // Heads first (workspaces plan U1): the folder it lands in, shared.
       [inserted] = await withDeadlockRetry(() =>
@@ -316,7 +318,11 @@ export async function upsertFile(args: {
       );
     } catch (err) {
       await discardStaged(toPlace);
-      throw err;
+      // A create racing for the name can also trip the folder's filename
+      // index (0022) rather than the slug one the insert names: the same
+      // lost race, refused below like the conflict.
+      if (pgConstraint(err) !== 'file_filename_in_parent_uq') throw err;
+      filenameTaken = true;
     }
     // pg_notify('node_ingested') is fired by migration 0018's trigger;
     // no explicit notify needed for fresh inserts.
@@ -335,6 +341,7 @@ export async function upsertFile(args: {
         ),
       )
       .limit(1);
+    if (!target && filenameTaken) throw new FileNameTakenError(filename);
     if (!target) throw new Error('upsertFile: insert returned no row');
     if ((target.data as Record<string, unknown> | null)?.sha256 !== written.sha256) {
       throw new FileNameTakenError(filename);
