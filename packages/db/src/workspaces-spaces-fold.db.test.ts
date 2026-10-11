@@ -349,7 +349,8 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
 
   it('is clean for workspaces:check, and a second run moves nothing', async () => {
     const [r] = await sql.unsafe(WORKSPACES_CHECK_SQL);
-    expect(workspacesCheckFindings(parseWorkspacesCheck(r))).toEqual([]);
+    const check = parseWorkspacesCheck(r as unknown as Parameters<typeof parseWorkspacesCheck>[0]);
+    expect(workspacesCheckFindings(check)).toBe(0);
     const again = await sql<{ section: string; subject: string; metric: string; n: number }[]>`
       select section, subject, metric, n::int as n from mantle_ws_spaces_fold()`;
     expect(again.find((x) => x.subject === 'personal rows')!.n).toBe(0);
