@@ -151,9 +151,10 @@ describe.skipIf(!URL)('apps for members', () => {
   it('lists the apps Team holds with a green published build, by title', async () => {
     const apps = await ma.listMemberApps(anchor);
     expect(apps.map((a) => a.id)).toEqual([ids.teamRo, ids.teamRw]);
+    // No level on the card since W5c.
+    expect(apps.find((a) => a.id === ids.teamRw)).not.toHaveProperty('audience');
     expect(apps.find((a) => a.id === ids.teamRw)).toMatchObject({
       description: 'Polls',
-      audience: 'team',
       // The R and R/W pill: the grant's Write switch.
       dataReadOnly: false,
       dataAccess: 'read_write',

@@ -2,12 +2,12 @@
  * The images a member receives inside a drawing's saved SVG, on a real,
  * migrated Postgres (member logins; audit LOW: a team drawing may inline an
  * admin image). An image stays only when its file passes the member files
- * route's rule: a file at team level or lower in this brain, or one this
+ * route's rule: a file of this brain a workspace of the member holds (asked
+ * in the member's own workspace scope, W5c: no level is read), or one this
  * member wrote and an admin accepted, while the brain file still holds the
- * bytes accepted (audit F07). Never an admin file, another brain's file,
- * another member's accepted file, an accepted file an admin changed, or a
- * ref that is not a file id. The rule is in the query, so the admin pool
- * proves it.
+ * bytes accepted (audit F07). Never a file no workspace of theirs holds,
+ * another brain's file, another member's accepted file, an accepted file an
+ * admin changed, or a ref that is not a file id.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-draw-images.viewer.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
@@ -42,6 +42,9 @@ describe.skipIf(!URL)('member drawing images', () => {
   const member = randomUUID();
   const otherMember = randomUUID();
   const draw = randomUUID();
+  /** The members' workspace in this test's brain: it holds the team and the
+   *  public file (by grant), nothing else. */
+  const ws = randomUUID();
   const f = {
     team: randomUUID(),
     pub: randomUUID(),
@@ -107,9 +110,25 @@ describe.skipIf(!URL)('member drawing images', () => {
         (${f.theirsAccepted}, ${otherMember}, 'accepted', now())`);
     await m.systemDb.execute(sqlTag`
       insert into draws (node_id, file_refs) values (${draw}, ${JSON.stringify(fileRefs)}::jsonb)`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${ws}, ${anchor}, ${`${tag} members`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values
+        (${ws}, ${member}), (${ws}, ${otherMember})`);
+    for (const id of [f.team, f.pub]) {
+      await m.withSubtreeHeads(id, [], (tx) =>
+        tx.execute(sqlTag`insert into item_grants (node_id, workspace_id) values (${id}, ${ws})`),
+      );
+    }
   }, 60_000);
 
   afterAll(async () => {
+    for (const id of [f.team, f.pub]) {
+      await m.withSubtreeHeads(id, [], (tx) =>
+        tx.execute(sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${ws}`),
+      );
+    }
+    await m.systemDb.execute(sqlTag`delete from workspaces where id = ${ws}`);
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id in (${anchor}, ${other})`);
     await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${anchor}, ${other})`);
     await m.systemDb.execute(
@@ -122,7 +141,7 @@ describe.skipIf(!URL)('member drawing images', () => {
     rmSync(root, { recursive: true, force: true });
   }, 60_000);
 
-  it('keeps team-level and lower files and the member’s own accepted file, nothing else', async () => {
+  it('keeps the files a workspace of the member holds and its own accepted file, nothing else', async () => {
     const ids = await di.memberVisibleDrawFileIds(anchor, member, draw);
     expect([...ids].sort()).toEqual(['sceneMine', 'scenePub', 'sceneTeam', 'sceneTeamAgain']);
   });
