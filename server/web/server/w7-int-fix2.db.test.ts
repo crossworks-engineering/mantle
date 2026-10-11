@@ -524,7 +524,9 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     expect(row!.by).toBe(maker);
   });
 
-  it("M2: the brain's house style changes only by the anchor or a settings-area login, and restamps every heartbeat", async () => {
+  // W7 integration fix 3 (F1): the house style is the anchor's only, a
+  // settings-area login included, and no save restamps a heartbeat.
+  it("M2: the brain's house style changes only by the anchor, and restamps nothing", async () => {
     const hb = await newHeartbeat(`${tag}-hb-style`, agent.slug, null);
     const profile = await import('@/app/api/profile/route');
     const put = (body: Record<string, unknown>) =>
@@ -545,11 +547,12 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     );
     expect(before!.by).toBeNull();
     await setAreas(maker, {});
+    expect((await put({ houseStyle: `${tag} style` })).status).toBe(403);
+    as(owner);
     expect((await put({ houseStyle: `${tag} style` })).status).toBe(200);
-    const rows = await x<{ by: string | null }>(
-      sql`select created_by::text as by from heartbeats where owner_id = ${owner}`,
+    const [after] = await x<{ by: string | null }>(
+      sql`select created_by::text as by from heartbeats where id = ${hb.id}`,
     );
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows.every((r) => r.by === maker)).toBe(true);
+    expect(after!.by).toBeNull();
   });
 });
