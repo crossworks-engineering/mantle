@@ -9,8 +9,11 @@
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_TOOLS, OWNER_ONLY_IN_SCOPE } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
+import { ADMIN_KIND_CREATE_TOOL_SLUGS, MCP_CREATE_TOOL_SLUGS } from './create-home';
 import {
   MCP_HANDWRITTEN_READ_ONLY,
+  OWNER_KEY_SPENDING_TOOLS,
+  spendsOwnerKeys,
   isMcpToolReadOnly,
   isPeerRiskyTool,
   mcpInstructionsFor,
@@ -203,6 +206,68 @@ describe('one surface for every login (W7b): what a scope lists', () => {
       expect(text).toContain('landedIn');
       expect(text).not.toMatch(/my_app_|my_note_create|team_request_create/);
     }
+  });
+
+  // W7b fix round 1.
+  const SPENDING = [
+    'web_search_pro',
+    'web_search',
+    'generate_image',
+    'summarize_text',
+    'process_extraction',
+    'invoke_agent',
+    'ask_responder',
+    'ask_as_responder',
+  ];
+
+  it('M4: outside Admin nothing that spends on the owner’s keys is listed', () => {
+    const p = prep(member, { holdsAdmin: false, areas: [] });
+    for (const s of SPENDING) {
+      expect(spendsOwnerKeys(s), s).toBe(true);
+      expect(preparedAllows(p, s), s).toBe(false);
+    }
+    for (const d of BUILTIN_TOOLS.filter((x) => x.spends && x.slug !== 'search_chunks')) {
+      expect(preparedAllows(p, d.slug), d.slug).toBe(false);
+    }
+    // The query embedding of a passage search is not a paid turn.
+    expect(preparedAllows(p, 'search_chunks')).toBe(true);
+    // A scope holding Admin keeps them (subject to its areas).
+    const admin = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
+    for (const s of ['web_search_pro', 'generate_image', 'summarize_text', 'invoke_agent']) {
+      expect(preparedAllows(admin, s), s).toBe(true);
+    }
+    for (const s of OWNER_KEY_SPENDING_TOOLS) expect(spendsOwnerKeys(s), s).toBe(true);
+  });
+
+  it('H2: outside Admin no Admin-only kind is created; task, event and map creates land by the rule', () => {
+    const p = prep(member, { holdsAdmin: false, areas: [] });
+    for (const s of ADMIN_KIND_CREATE_TOOL_SLUGS) expect(preparedAllows(p, s), s).toBe(false);
+    for (const s of ['contact_create', 'journal_create', 'location_save']) {
+      expect(ADMIN_KIND_CREATE_TOOL_SLUGS.has(s), s).toBe(true);
+    }
+    for (const s of ['task_create', 'event_create', 'recall_map_create']) {
+      expect(MCP_CREATE_TOOL_SLUGS.has(s), s).toBe(true);
+      expect(preparedAllows(p, s), s).toBe(true);
+    }
+    const admin = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
+    for (const s of ADMIN_KIND_CREATE_TOOL_SLUGS) expect(preparedAllows(admin, s), s).toBe(true);
+  });
+
+  it('H1: run_terminal is listed for no scope without Admin and the settings area', () => {
+    expect(
+      preparedAllows(prep(member, { holdsAdmin: false, areas: ALL_AREAS }), 'run_terminal'),
+    ).toBe(false);
+    expect(preparedAllows(prep(member, { holdsAdmin: true, areas: [] }), 'run_terminal')).toBe(
+      false,
+    );
+  });
+
+  it('M3: a read-only OAuth grant lists only the tools that read', () => {
+    const p = prep({ ...member, write: false }, { holdsAdmin: false, areas: [] });
+    const listed = registered((s) => preparedAllows(p, s));
+    expect(listed.length).toBeGreaterThan(20);
+    for (const s of listed) expect(isMcpToolReadOnly(s), s).toBe(true);
+    expect(listed).not.toContain('note_create');
   });
 
   it('the member tool sets are gone from the registry (W7b)', () => {
