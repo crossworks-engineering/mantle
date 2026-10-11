@@ -170,9 +170,15 @@ ALTER TABLE "public"."access_keys"
 -- No credential is made or changed while this section narrows them (W7b
 -- fix round 3): a key, a grant, a code or a peer made half way through
 -- would miss the updates that read the same rows. Writes wait (at most
--- lock_timeout, above); reads go on.
-LOCK TABLE "public"."access_keys", "public"."mantle_peers", "public"."oauth_access_tokens",
-  "public"."oauth_auth_codes", "public"."mcp_login_tokens" IN SHARE ROW EXCLUSIVE MODE;
+-- lock_timeout, above); reads of the other four tables go on. access_keys
+-- is not read either until the commit: the ALTER above already holds its
+-- ACCESS EXCLUSIVE lock, which a transaction keeps to its end.
+-- The order is the one the code takes them in (access_keys, then the
+-- OAuth code, then the OAuth tokens: server/web/lib/mcp-oauth.ts
+-- exchangeClaimed), then the peers and the login tokens, which nothing
+-- locks together with these: no deadlock with a token exchange.
+LOCK TABLE "public"."access_keys", "public"."oauth_auth_codes", "public"."oauth_access_tokens",
+  "public"."mantle_peers", "public"."mcp_login_tokens" IN SHARE ROW EXCLUSIVE MODE;
 --> statement-breakpoint
 UPDATE "public"."mcp_login_tokens" SET "revoked_at" = now() WHERE "revoked_at" IS NULL;
 --> statement-breakpoint
