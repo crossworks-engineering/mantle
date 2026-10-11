@@ -5,7 +5,16 @@
  * request, never from a token.
  */
 import { and, eq } from 'drizzle-orm';
-import { authUsers, db, isWriteRefused, mobileTokens, spaces, type LoginRole } from '@mantle/db';
+import {
+  authUsers,
+  db,
+  isWriteRefused,
+  loginScopeColumns,
+  mobileTokens,
+  seedLoginScope,
+  spaces,
+  type LoginRole,
+} from '@mantle/db';
 
 export type LoginRow = {
   id: string;
@@ -31,11 +40,17 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
+      // The login's workspaces with the same read (W6a fix round 1): the
+      // request's scope, so the guard looks nothing up twice.
+      ...loginScopeColumns(authUsers.id, authUsers.disabledAt),
     })
     .from(authUsers)
     .where(eq(authUsers.id, id))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  const { scopeWs, scopeModWs, ...login } = row;
+  seedLoginScope(login.id, scopeWs ?? [], scopeModWs ?? []);
+  return login;
 }
 
 /** The anchor (is_owner) login's id: the brain every login belongs to. */

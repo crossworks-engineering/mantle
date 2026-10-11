@@ -34,6 +34,8 @@ export {
   lockMoreHeads,
   withDeadlockRetry,
   loginScopeFor,
+  loginScopeColumns,
+  seedLoginScope,
   brainOnWorkspacesNow,
   isWriteSql,
   executeWrite,

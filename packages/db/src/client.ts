@@ -1,5 +1,6 @@
 import { sql as sqlTag } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import postgres from 'postgres';
 import * as schema from './schema/index';
 import { env, envFlag } from '@mantle/config';
@@ -805,6 +806,53 @@ function memoScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope> {
     memo.set(key, p);
   }
   return p;
+}
+
+/**
+ * The login's workspaces and Moderator ones, as SQL columns of a query on
+ * auth.users (W6a fix round 1, the bench): the session's one login read
+ * carries them, and seedLoginScope keeps them as this request's scope, so
+ * the guard needs no second lookup. The same rule as viewerScopeFor: live
+ * workspaces only, none for a disabled login.
+ */
+export function loginScopeColumns(login: AnyPgColumn, disabledAt: AnyPgColumn) {
+  return {
+    scopeWs: sqlTag<string[]>`case when ${disabledAt} is null then coalesce((
+        select array_agg(u.workspace_id::text order by u.workspace_id)
+          from workspace_users u
+          join workspaces w on w.id = u.workspace_id and w.archived_at is null
+         where u.login_id = ${login}), '{}') else '{}' end`,
+    scopeModWs: sqlTag<string[]>`case when ${disabledAt} is null then coalesce((
+        select array_agg(u.workspace_id::text order by u.workspace_id)
+          from workspace_users u
+          join workspaces w on w.id = u.workspace_id and w.archived_at is null
+         where u.login_id = ${login} and u.moderator), '{}') else '{}' end`,
+  };
+}
+
+/** Keep a login's scope, read with its row (loginScopeColumns), as this
+ *  request's: loginScopeFor and withViewer for that login reuse it. No-op
+ *  outside a request, or when the request already looked it up. */
+export function seedLoginScope(
+  loginId: string,
+  ws: readonly string[],
+  modWs: readonly string[],
+): void {
+  const memo = requestScopeMemo();
+  if (!memo || !UUID_RE.test(loginId)) return;
+  const key = `login:${loginId.toLowerCase()}:`;
+  if (memo.has(key)) return;
+  memo.set(
+    key,
+    Promise.resolve(
+      Object.freeze({
+        kind: 'user' as const,
+        loginId: loginId.toLowerCase(),
+        ws: Object.freeze([...ws]),
+        modWs: Object.freeze([...modWs]),
+      }),
+    ),
+  );
 }
 
 /**
