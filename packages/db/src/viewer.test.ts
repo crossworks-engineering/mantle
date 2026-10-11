@@ -424,7 +424,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     );
   });
 
-  it('the personal-space role is retired (W6b): no login, no password, never created', () => {
+  it('the personal-space role is retired (W6b): no login, no password; made NOLOGIN where missing', () => {
     const NOLOGIN =
       'WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL';
     // Shared mode: the shared role, where it exists.
@@ -435,9 +435,13 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     );
     expect(box).toContain(`ALTER ROLE "mantle_view_space" ${NOLOGIN}`);
     expect(box.some((s) => /"mantle_view_space" WITH LOGIN/.test(s))).toBe(false);
-    // Per-database: its own login, where it exists; nothing is made.
+    // Per-database: its own login, where it exists, retired; a login is
+    // never made; the shared role exists already here.
     const own = viewerRolePlan(
-      cluster('brain_b', 'brain_a', undefined, { mantle_view_space_brain_b: null }),
+      cluster('brain_b', 'brain_a', undefined, {
+        mantle_view_space: null,
+        mantle_view_space_brain_b: null,
+      }),
       'key-b',
       true,
     );
@@ -445,8 +449,16 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     expect(
       own.some((s) => s.includes('mantle_view_space') && /WITH LOGIN|CREATE ROLE/.test(s)),
     ).toBe(false);
+    // A fresh cluster (fix round 1): the shared role made NOLOGIN, so the
+    // migrations that grant to it run; never a LOGIN.
     const fresh = viewerRolePlan(cluster('brain_a', null), 'key-a', false);
-    expect(fresh.some((s) => s.includes('mantle_view_space'))).toBe(false);
+    expect(fresh.filter((s) => s.includes('mantle_view_space'))).toEqual([
+      `CREATE ROLE "mantle_view_space" ${NOLOGIN}`,
+    ]);
+    const freshOwn = viewerRolePlan(cluster('brain_b', null), 'key-b', true);
+    expect(freshOwn.filter((s) => s.includes('mantle_view_space'))).toEqual([
+      `CREATE ROLE "mantle_view_space" ${NOLOGIN}`,
+    ]);
   });
 
   it('the pool logs in as the per-database role only when asked', () => {

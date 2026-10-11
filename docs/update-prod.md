@@ -741,7 +741,8 @@ Former user workspace), with exactly the grants that home names, Write off.
   the copy that the extract queue count is unchanged.
 - **The space role is retired.** Every migrate sets `mantle_view_space`
   (and a per-database `mantle_view_space_<db>` login, where one exists)
-  NOLOGIN with no password; its grants and policies stay until W8. The
+  NOLOGIN with no password, and makes the shared role NOLOGIN on a fresh
+  cluster (the old migrations grant to it); its grants and policies stay until W8. The
   personal-space routes answer 410.
 - **Members write through the owner routes** (contract "W6b CONTRACT" in
   the build reports): a create lands in `?ws=` when the login moderates it,

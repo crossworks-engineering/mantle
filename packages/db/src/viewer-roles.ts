@@ -34,14 +34,16 @@ export const POOL_ROLES: readonly PoolRole[] = [...LIMITED_LEVELS, 'user'];
 
 /** Roles that no longer log in (workspaces W6b): the personal-space role,
  *  retired when the spaces were folded into the brain (0267). Each brain run
- *  makes it NOLOGIN with no password, where it exists; it is never created.
- *  The role itself, its grants and its policies stay until W8 (the
- *  migrations still name it). */
+ *  makes the shared role NOLOGIN with no password, and creates it so on a
+ *  fresh cluster (W6b fix round 1: migrations 0165 on grant to it, so a
+ *  fresh install failed to migrate without it); a per-database login is
+ *  never created, only retired where it exists. The role, its grants and
+ *  its policies stay until W8 (the migrations still name it). */
 export const RETIRED_POOL_ROLES: readonly PoolRole[] = ['space'];
 
 /** The statement that retires `role`: no login, no password. */
-function retireStatement(role: string): string {
-  return `ALTER ROLE "${role}" WITH NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
+function retireStatement(role: string, exists = true): string {
+  return `${exists ? 'ALTER' : 'CREATE'} ROLE "${role}" WITH NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
 }
 
 /** Hard cap on connections per role, across every process of a box. */
@@ -154,6 +156,10 @@ export function viewerRolePlan(
       out.push(`ALTER ROLE "${login}" IN DATABASE "${database}" SET role = '${shared}'`);
     }
     for (const level of RETIRED_POOL_ROLES) {
+      // The shared role, NOLOGIN, for the old migrations' grants (as the
+      // pool roles' shared ones above); the login only retired.
+      const shared = viewerRoleName(level);
+      if (!cluster.roles.has(shared)) out.push(retireStatement(shared, false));
       const login = viewerLoginRoleName(level, database);
       if (cluster.roles.has(login)) out.push(retireStatement(login));
     }
@@ -191,7 +197,7 @@ export function viewerRolePlan(
   }
   for (const level of RETIRED_POOL_ROLES) {
     const role = viewerRoleName(level);
-    if (cluster.roles.has(role)) out.push(retireStatement(role));
+    out.push(retireStatement(role, cluster.roles.has(role)));
   }
   out.push(...orphanLoginDrops(cluster));
   return out;
