@@ -1013,6 +1013,30 @@ export function withoutLeftScope<T>(fn: () => Promise<T>): Promise<T> {
   return leftStore.exit(fn);
 }
 
+/** The gate scope of the rollback switch (see withGateScope). */
+const gateStore = new AsyncLocalStorage<WorkspaceScope>();
+
+/**
+ * Run `fn` on the system pool with `scope` as its GATE scope (W7 integration
+ * fix 2, M6). The rollback switch (MANTLE_ADMIN_READS=system) restores only
+ * the old read path: an Admin login's MCP call, the Admin assistant and an
+ * admin-level helper read on the system pool again, but the gates still ask
+ * the login it acts for: the Admin tool gate and the area checks, the item
+ * write check, the sandbox maker rule and the vault pairing rule
+ * (@mantle/tools admin-gate.ts callerScope, currentGateScope). No row is
+ * read in this scope; it only answers those checks.
+ */
+export function withGateScope<T>(scope: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
+  return gateStore.run(scope, fn);
+}
+
+/** The gate scope the current system-pool work runs under (withGateScope),
+ *  or null: inside any workspace scope entered since, null. */
+export function currentGateScope(): WorkspaceScope | null {
+  if (active()?.ws) return null;
+  return gateStore.getStore() ?? null;
+}
+
 /**
  * The modules that may use `systemDb` (workspaces W4b fix round 2): the same
  * list as eslint-rules/system-db-allowlist.mjs, which refuses the import

@@ -48,6 +48,8 @@ import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const OWNER = 'owner-1';
 const ctx: ToolHandlerContext = { ownerId: OWNER };
+/** The anchor's own stdio MCP: the Telegram inbox is the anchor's only. */
+const anchorMcp: ToolHandlerContext = { ownerId: OWNER, surface: { kind: 'owner', via: 'mcp' } };
 const tool = (defs: readonly BuiltinToolDef[], slug: string): BuiltinToolDef => {
   const def = defs.find((t) => t.slug === slug);
   if (!def) throw new Error(`${slug} is not in this group any more`);
@@ -88,13 +90,16 @@ describe('email_get', () => {
 describe('telegram_pending', () => {
   it('scopes the pending queue to the caller chats', async () => {
     selectQueue.push([]);
-    await tool(TELEGRAM_OPERATOR_TOOLS, 'telegram_pending').handler({}, ctx);
+    await tool(TELEGRAM_OPERATOR_TOOLS, 'telegram_pending').handler({}, anchorMcp);
     expect(scopedByOwner()).toBe(true);
   });
 
   it('scopes the chat lookup too when a chat id is given', async () => {
     selectQueue.push([{ id: 'chat-pk' }], []);
-    await tool(TELEGRAM_OPERATOR_TOOLS, 'telegram_pending').handler({ chat_id: '123' }, ctx);
+    await tool(TELEGRAM_OPERATOR_TOOLS, 'telegram_pending').handler(
+      { chat_id: '123' },
+      anchorMcp,
+    );
     expect(paramsOf(whereArgs[0]), 'chat lookup unscoped').toContain(OWNER);
   });
 });

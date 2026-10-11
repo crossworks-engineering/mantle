@@ -824,6 +824,13 @@ no longer keeps each Admin user's chat digests and archived chat summaries
 to that user, so the memory tools of the Admin assistant and its helpers can
 read another Admin user's until it is unset again.
 
+The switch restores only the old read path. Every gate stays on under it:
+the Admin tool gate and each login's areas, the item write check (an edit,
+a delete or a move needs that login's rights on the item), the sandbox maker
+rule (a login works only in the sandboxes it made) and the vault pairing
+rule still ask the login acting. A login that is not a user of the Admin
+workspace is refused on the Admin assistant and its helpers.
+
 ## Rollback
 
 ```bash

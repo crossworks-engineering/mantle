@@ -874,12 +874,14 @@ async function itemWriteGate(
   loginId: string,
   method: string,
   pattern: string,
-  opts: { admin: boolean },
+  _opts: { admin: boolean },
 ): Promise<NextResponse | null> {
   const path = getRequestContext()?.path;
   const target = path ? itemWriteTarget(method, pattern, path) : null;
   if (!target || !ITEM_ID_RE.test(target.id)) return null;
-  if ((opts.admin && adminReadsOnSystemPool()) || !(await brainOnWorkspacesNow())) return null;
+  // The rollback switch restores only the read path (W7 integration fix 2,
+  // M6): an Admin user's item writes are still checked against its login.
+  if (!(await brainOnWorkspacesNow())) return null;
   let row: { edit: boolean | null; manage: boolean | null } | undefined;
   let readOnlyCopy = false;
   if (target.ref === 'deleted-app') {

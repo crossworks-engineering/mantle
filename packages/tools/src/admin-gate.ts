@@ -28,6 +28,8 @@
  */
 import {
   asSystem,
+  currentGateScope,
+  loginHasArea,
   currentWorkspaceScope,
   scopeHasArea,
   scopeHoldsAdmin,
@@ -344,7 +346,21 @@ export async function adminToolGate(
   slug: string,
   opts: { ref?: string; ownerOnly?: boolean } = {},
 ): Promise<AdminGate> {
-  if (!currentWorkspaceScope()) return { system: false };
+  if (!currentWorkspaceScope()) {
+    // The rollback switch's gate scope (W7 integration fix 2, M6): the
+    // call reads on the system pool, the gate still asks the login.
+    const g = currentGateScope();
+    if (!g) return { system: false };
+    const gAdminOnly = isAdminOnlyTool(slug, opts);
+    const gArea = toolAdminArea(slug, opts.ref);
+    if ((gAdminOnly || gArea) && !(await withTurnScope(g, () => scopeHoldsAdmin()))) {
+      return { refused: ADMIN_ONLY_ERROR };
+    }
+    if (gArea && !(g.loginId && (await loginHasArea(g.loginId, gArea)))) {
+      return { refused: adminAreaError(gArea) };
+    }
+    return { system: false };
+  }
   const adminOnly = isAdminOnlyTool(slug, opts);
   const area = toolAdminArea(slug, opts.ref);
   if ((adminOnly || area) && !(await scopeHoldsAdmin())) return { refused: ADMIN_ONLY_ERROR };
@@ -371,7 +387,14 @@ export function runGated<T>(gate: { system: boolean }, fn: () => Promise<T>): Pr
  * as is. Never for an item: items are read and written in the scope.
  */
 export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Promise<T> {
-  if (!currentWorkspaceScope()) return fn();
+  if (!currentWorkspaceScope()) {
+    // Under the rollback switch the gate scope's login is asked (M6).
+    const g = currentGateScope();
+    if (g && !(g.loginId && (await loginHasArea(g.loginId, area)))) {
+      throw new Error(adminAreaError(area));
+    }
+    return fn();
+  }
   if (!(await scopeHasArea(area))) throw new Error(adminAreaError(area));
   return asSystem(fn, 'admin-area');
 }
@@ -383,7 +406,7 @@ export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Prom
  * workspace scope: system work, where the surface rules decide.
  */
 export function callerScope(): WorkspaceScope | null {
-  return currentWorkspaceScope() ?? scopeLeftForSystem();
+  return currentWorkspaceScope() ?? scopeLeftForSystem() ?? currentGateScope();
 }
 
 /**
@@ -397,6 +420,11 @@ export function callerScope(): WorkspaceScope | null {
 export async function callerHasArea(area: ScopeArea): Promise<boolean> {
   if (currentWorkspaceScope()) return scopeHasArea(area);
   const left = scopeLeftForSystem();
-  if (!left) return true;
+  if (!left) {
+    // The rollback switch's gate scope (M6): the login's own areas.
+    const g = currentGateScope();
+    if (!g) return true;
+    return g.loginId ? loginHasArea(g.loginId, area) : false;
+  }
   return withTurnScope(left, () => scopeHasArea(area));
 }

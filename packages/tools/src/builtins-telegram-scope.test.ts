@@ -69,7 +69,9 @@ import { TELEGRAM_TOOLS, TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const OWNER = 'owner-1';
-const ctx: ToolHandlerContext = { ownerId: OWNER };
+// The anchor's own stdio MCP: the inbox tools answer the anchor only (W7
+// integration fix 2, M1).
+const ctx: ToolHandlerContext = { ownerId: OWNER, surface: { kind: 'owner', via: 'mcp' } };
 const all = [...TELEGRAM_TOOLS, ...TELEGRAM_OPERATOR_TOOLS];
 const tool = (slug: string): BuiltinToolDef => {
   const d = all.find((t) => t.slug === slug);

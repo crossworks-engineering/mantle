@@ -18,8 +18,10 @@
 import { and, eq } from 'drizzle-orm';
 import {
   apps,
+  currentGateScope,
   db,
   itemWriteRefusal,
+  withTurnScope,
   recallMaps,
   recallRevisions,
   type ItemNeed,
@@ -251,7 +253,13 @@ export async function toolItemWriteRefusal(
   ownerId: string,
   ref?: string,
 ): Promise<string | null> {
-  if (!currentWorkspaceScope()) return null;
+  if (!currentWorkspaceScope()) {
+    // Under the rollback switch the login's own scope answers the check
+    // (W7 integration fix 2, M6): the switch restores only the read path.
+    const g = currentGateScope();
+    if (!g) return null;
+    return withTurnScope(g, () => toolItemWriteRefusal(slug, input, ownerId, ref));
+  }
   const targets = itemWriteTargetsOf(slug, ref);
   if (!targets) return null;
   const sets =

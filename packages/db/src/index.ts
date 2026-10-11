@@ -56,6 +56,8 @@ export {
   currentWorkspaceScope,
   scopeLeftForSystem,
   withoutLeftScope,
+  withGateScope,
+  currentGateScope,
   currentTurnStamp,
   withTurnStamp,
   isUnscoped,

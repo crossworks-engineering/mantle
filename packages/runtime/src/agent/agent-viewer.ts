@@ -56,6 +56,7 @@ import {
   agents,
   asSystem,
   db,
+  withGateScope,
   withTurnScope,
   withViewer,
   workspaces,
@@ -260,10 +261,8 @@ export async function withAgentScope<T>(
     if (!asked) return run();
     const stamped = (wsId: string | null) =>
       withTurnStamp({ workspaceId: wsId, loginId: asked }, run);
-    // A helper below admin already reads only its own (empty) scope; the
-    // rollback switch puts the helper back on the system pool (an emergency
-    // switch: see the module comment).
-    if (agentLevel(agent) !== 'admin' || adminReadsOnSystemPool()) return stamped(null);
+    // A helper below admin already reads only its own (empty) scope.
+    if (agentLevel(agent) !== 'admin') return stamped(null);
     const admin = await adminUserOf(asked, await agentBrain(agent));
     if (admin === 'no-workspaces') return stamped(null);
     if (!admin) {
@@ -272,6 +271,15 @@ export async function withAgentScope<T>(
       );
     }
     const modWs = admin.moderator ? [admin.wsId] : [];
+    // The rollback switch puts the helper back on the system pool (an
+    // emergency switch: see the module comment), for an Admin user only,
+    // and its gates still ask that login (W7 integration fix 2, M6).
+    if (adminReadsOnSystemPool()) {
+      return withGateScope(
+        { kind: 'assistant', loginId: asked, ws: [admin.wsId], modWs },
+        () => stamped(null),
+      );
+    }
     return withTurnStamp({ workspaceId: admin.wsId, loginId: asked }, () =>
       withTurnScope({ kind: 'assistant', loginId: asked, ws: [admin.wsId], modWs }, fn, {
         writes: true,
@@ -318,12 +326,6 @@ export async function withAgentScope<T>(
   if (ws.isAdmin) {
     const asked = opts.loginId ?? opts.ownerLoginId ?? scopeLogin;
     const stamp = { workspaceId: wsId, loginId: asked };
-    // The rollback switch: the system pool, with its stamp, as before W7a.
-    if (adminReadsOnSystemPool()) {
-      return withTurnStamp(stamp, () =>
-        withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn),
-      );
-    }
     // A turn that answers no login and has no caller (a heartbeat's tick, a
     // run, an owner Telegram bot) acts for the owner (the anchor login).
     const actsFor = asked ?? ws.ownerId;
@@ -334,6 +336,16 @@ export async function withAgentScope<T>(
       );
     }
     const modWs = user.moderator ? [wsId] : [];
+    // The rollback switch: the system pool, with its stamp, as before W7a,
+    // for an Admin user only; the gates still ask the login the turn
+    // answers (W7 integration fix 2, M6).
+    if (adminReadsOnSystemPool()) {
+      return withTurnStamp(stamp, () =>
+        withGateScope({ kind: 'assistant', loginId: actsFor, ws: [wsId], modWs }, () =>
+          withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn),
+        ),
+      );
+    }
     return withTurnStamp(stamp, () =>
       withTurnScope({ kind: 'assistant', loginId: actsFor, ws: [wsId], modWs }, fn, {
         writes: true,

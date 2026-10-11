@@ -28,7 +28,6 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { sql } from 'drizzle-orm';
 import {
   SCOPE_AREAS,
-  adminReadsOnSystemPool,
   asSystem,
   auditLog,
   brainOnWorkspacesNow,
@@ -293,7 +292,9 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
   if (!onWorkspaces && !admin) {
     return { kind: 'refused', caller, message: NOT_ON_WORKSPACES_REFUSED };
   }
-  const unscoped = admin && (!onWorkspaces || adminReadsOnSystemPool());
+  // The rollback switch restores the read path only (W7 integration fix 2,
+  // M6): the listing still follows the login's areas.
+  const unscoped = admin && !onWorkspaces;
   let view: AdminGateView | null = null;
   let privateWs: string | null = null;
   if (!unscoped) {
