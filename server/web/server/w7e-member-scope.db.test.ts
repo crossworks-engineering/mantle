@@ -236,9 +236,10 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     expect(old.text).toBe('TEAM BYTES');
     expect(old.outcome).toMatchObject({ kind: 'user', loginId: mem });
     expect((await call(`/api/member/files/${sideFile}`, mem)).status).toBe(404);
-    // The other member reads the Side file, never the Team's.
+    // The other member reads the Side file (its workspace); an Admin user
+    // who is not in Side does not.
     expect((await call(`/api/files/files/${sideFile}?raw=1`, mem2)).text).toBe('SIDE BYTES');
-    expect((await call(`/api/files/files/${teamFile}?raw=1`, mem2)).status).toBe(404);
+    expect((await call(`/api/files/files/${sideFile}?raw=1`, owner)).status).toBe(404);
   });
 
   it('a member reads a drawing in its scope with only the images it may read', async () => {

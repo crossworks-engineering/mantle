@@ -3,9 +3,11 @@
  * MCP listing (workspaces W4b fix round 2), on a scratch brain the
  * workspaces migration made live:
  *
- *  - a member's own app (the member tool broker, the real route): a member
- *    removed from the workspace that holds the connector is refused a read
- *    tool, a member who is not a Moderator there is refused a write tool;
+ *  - an app the Team holds, run by a member (the member tool broker, the real
+ *    route; since W7e every app a member runs is a brain item, checked
+ *    against its holders): a member removed from the workspace that holds
+ *    the connector is refused a read tool, a member who is not a Moderator
+ *    there is refused a write tool;
  *  - the MCP listing (resolveLoginToolRows' connector half,
  *    listLoginConnectorTools with the login) equals the tools its MCP call
  *    (callLoginTool) and its app runs (appToolVerdict) let through, for a
@@ -30,12 +32,20 @@ const h = vi.hoisted(() => ({
   dispatched: [] as string[],
 }));
 
+const ownerSession = () => ({
+  id: h.owner,
+  email: 'o@example.invalid',
+  actor: { id: h.owner, email: 'o@example.invalid', displayName: 'O', isOwner: true },
+});
+
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => ({
-    id: h.owner,
-    email: 'o@example.invalid',
-    actor: { id: h.owner, email: 'o@example.invalid', displayName: 'O', isOwner: true },
+  getOwnerOr401: vi.fn(async () => ownerSession()),
+  // The owner runner routes take every login since W7e: here the owner.
+  getOwnerOr401WithLogin: vi.fn(async () => ({
+    user: ownerSession(),
+    source: 'web',
+    member: null,
   })),
   getMemberOr401: vi.fn(async () => ({
     role: 'member',
@@ -47,7 +57,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     contactId: null,
   })),
 }));
-// The member's own app (team apps Phase 3): team rules, the author ceiling.
+// An app the Team holds (APP below, a real node): team rules for a member.
 vi.mock('@/lib/member-apps', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   memberAppOr404: vi.fn(async () => ({
@@ -55,8 +65,7 @@ vi.mock('@/lib/member-apps', async (importOriginal) => ({
     title: 'Mine',
     writable: true,
     manifest: { toolSlugs: h.toolSlugs },
-    ownerId: h.login,
-    spaceApp: true,
+    ownerId: h.owner,
   })),
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
@@ -170,6 +179,16 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
     const [teamRow] = await x<{ id: string }>(sql`
       select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'team'`);
     team = teamRow!.id;
+    // The app the brokers run: a brain item homed in Team (its one holder).
+    const APP = '77777777-7777-4777-8777-777777777777';
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+                values (${APP}, ${owner}, 'app', 'Mine', 'apps')`);
+    await x(sql`insert into apps (node_id, manifest) values (${APP}, '{}'::jsonb)`);
+    await m.withHeads([APP], 'update', async (tx) => {
+      await tx.execute(sql`delete from item_grants where node_id = ${APP}`);
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
+                           values (${APP}, ${team}, true)`);
+    });
     // B on no workspace; A on Team with Write on.
     await x(sql`delete from workspace_resources where type = 'connector' and ref_id = ${B}`);
     await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
