@@ -56,7 +56,7 @@ describe.skipIf(!URL)('the authors’ snapshot copies of accepted items (W6b, S3
   const accepted = async (id: string, type: 'page' | 'note', author: string) => {
     await sql`insert into nodes (id, owner_id, type, title, path, data)
       values (${id}, ${owner}, ${type}::node_type, ${`accepted ${type}`}, ${`${type}s`}::ltree,
-              ${sql.json(type === 'note' ? { content: `see /n/${secret}` } : {})})`;
+              ${sql.json(type === 'note' ? { content: `see [minutes](/n/${secret})` } : {})})`;
     if (type === 'page') {
       await sql`insert into pages (node_id, doc) values (${id}, ${sql.json(mention(secret) as never)})`;
     }

@@ -701,6 +701,63 @@ snapshot taken before W6a stores none and so does not say where the app
 lived: only the brain's owner may purge or restore that app. Any other
 Admin user gets 403 (reason `item-workspace`).
 
+## Rolling to the spaces fold (W6b, migration 0267)
+
+0267 folds every personal space into the brain, in one transaction that
+ends in its own proof (23514 rolls it all back; nothing is written then).
+It runs `mantle_ws_review_off()` first, so the homes and the Admin and Team
+grants it writes come from live sharing, the live trash and the live
+logins. Then every row a personal space owns (except its kind roots, which
+stay in the space, empty) becomes a brain item: `owner_id` = the brain,
+homed in the workspace 0264 recorded (the login's private workspace, or a
+Former user workspace), with exactly the grants that home names, Write off.
+
+- **Rows change, bytes do not.** A member's file keeps its bytes in its
+  space's directory (`data.space_file` names it; the brain's file readers,
+  rename and move honour it) and moves from `space_files` to `files`. An app
+  keeps its app row, its data, its app-db file and its history (every table
+  that names the space as owner moves with it; storage paths are kept).
+- **Names.** A folder path or slug the brain already has gets a short
+  suffix, never an overwrite; `space_fold_items` records every move (old
+  and new path and slug, the grants, the sharing and trash at the move).
+- **Trashed apps (owner decision).** An app in its author's trash moves
+  into that author's private workspace only (no Admin or Team grant), live,
+  marked `data.trashedBeforeFold` (and `trashedAt`) so the author finds it
+  and may delete it. Nothing of it is removed.
+- **No LLM work.** The move is an UPDATE (no extractor notify); each moved
+  item without an embedding is stamped `data.extract_skipped` (reason
+  `spaces_fold`), so the boot drain and the sweep do not queue it. Check on
+  the copy that the extract queue count is unchanged.
+- **The space role is retired.** Every migrate sets `mantle_view_space`
+  (and a per-database `mantle_view_space_<db>` login, where one exists)
+  NOLOGIN with no password; its grants and policies stay until W8. The
+  personal-space routes answer 410.
+- **Members write through the owner routes** (contract "W6b CONTRACT" in
+  the build reports): a create lands in `?ws=` when the login moderates it,
+  else in the folder it is made in when the login may edit that, else in
+  the login's private workspace (made on its first create). Kind roots stay
+  homed as before.
+- **Snapshot copies (plan S3).** For each `space_item_homes` row with
+  `snapshot` (an accepted item homed in a private or Former user
+  workspace), the app makes the author's read-only copy in that workspace
+  from the accepted version, redacted at the author's level, marked
+  `data.snapshot_of` and `data.extract_skipped` (`snapshot_copy`), with no
+  extractor notify. It runs at every boot after the workspaces migration
+  (idempotent) and by hand: `pnpm maintain snapshot-copies` (dry run), then
+  `--go`. When every wanted copy exists, the accepted `space_items` rows
+  (archived by 0267) go. A file the brain changed since its accept has no
+  accepted bytes left and gets no copy (counted).
+
+On the copy before each box's roll: run the migrations, then
+`select * from mantle_ws_spaces_fold_check()` must show 0 for "items left
+in a personal space", "kind roots left with children", "space_items rows
+other than accepted", "moved items without their home" and "personal
+spaces not archived"; the migrate log's `0267:` rows list the moves, the
+grants and the assistants' gains (Admin: the submitted and left-behind
+items, Team: the team-shared drafts, signed off in 9.3). Then run
+`pnpm maintain snapshot-copies` on the copy: "wanted" equals "made" plus
+the counted skips.
+
 ## Rollback
 
 ```bash

@@ -90,29 +90,29 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
   });
 
   it("the shared roles keep the owner's password", async () => {
-    const url = viewerDatabaseUrl(URL!, 'space', viewerRolePassword(testKey, 'space'));
-    expect(await whoami(url)).toEqual({ s: 'mantle_view_space', c: 'mantle_view_space' });
+    const url = viewerDatabaseUrl(URL!, 'user', viewerRolePassword(testKey, 'user'));
+    expect(await whoami(url)).toEqual({ s: 'mantle_view_user', c: 'mantle_view_user' });
   });
 
   it('a shared-name migrate from another database is refused, and changes nothing', async () => {
     const [a] = brains;
     await expect(migrate(a!.url, a!.key, false)).rejects.toThrow(/belong to the brain in database/);
     await expect(migrate(a!.url, null, false)).rejects.toThrow(/belong to the brain in database/);
-    const url = viewerDatabaseUrl(URL!, 'space', viewerRolePassword(testKey, 'space'));
-    expect((await whoami(url)).s).toBe('mantle_view_space');
+    const url = viewerDatabaseUrl(URL!, 'user', viewerRolePassword(testKey, 'user'));
+    expect((await whoami(url)).s).toBe('mantle_view_user');
     // And brain A's key is no password for the shared role.
-    const wrong = viewerDatabaseUrl(URL!, 'space', viewerRolePassword(a!.key, 'space'));
+    const wrong = viewerDatabaseUrl(URL!, 'user', viewerRolePassword(a!.key, 'user'));
     await expect(whoami(wrong)).rejects.toMatchObject({ code: INVALID_PASSWORD });
   });
 
-  /** Log in on `url`, SET ROLE to the shared space role and read the
-   *  space-scoped table: what a login that got into another brain's
+  /** Log in on `url`, SET ROLE to the shared workspace role and read the
+   *  workspace-scoped table: what a login that got into another brain's
    *  database would do. */
   const crossRead = async (url: string) => {
     const sql = postgres(url, { max: 1, onnotice: () => {} });
     try {
       return await sql.begin(async (tx) => {
-        await tx.unsafe('set local role mantle_view_space');
+        await tx.unsafe('set local role mantle_view_user');
         return tx.unsafe('select count(*) from nodes');
       });
     } finally {
@@ -122,7 +122,7 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
 
   it("a brain's login cannot get into another brain's database to SET ROLE there", async () => {
     const [a, b] = brains;
-    for (const level of ['space', 'team'] as const) {
+    for (const level of ['user', 'team'] as const) {
       // Brain A's login, with A's right password, pointed at brain B's database.
       const url = new globalThis.URL(
         viewerDatabaseUrl(a!.url, level, viewerRolePassword(a!.key, level), true),
@@ -135,7 +135,7 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
   it("the shared roles (the owner brain's logins) cannot get into a per-database brain", async () => {
     const [a] = brains;
     const url = new globalThis.URL(
-      viewerDatabaseUrl(URL!, 'space', viewerRolePassword(testKey, 'space')),
+      viewerDatabaseUrl(URL!, 'user', viewerRolePassword(testKey, 'user')),
     );
     url.pathname = `/${a!.name}`;
     await expect(crossRead(url.toString())).rejects.toMatchObject({ code: NO_CONNECT });
@@ -148,7 +148,7 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
     try {
       const [row] = await sql<{ pub: boolean; own: boolean }[]>`
         select has_database_privilege('public', current_database(), 'CONNECT') as pub,
-               has_database_privilege(${viewerLoginRoleName('space', a!.name)},
+               has_database_privilege(${viewerLoginRoleName('user', a!.name)},
                                       current_database(), 'CONNECT') as own`;
       expect(row).toEqual({ pub: false, own: true });
     } finally {
