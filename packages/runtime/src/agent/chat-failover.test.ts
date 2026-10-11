@@ -258,19 +258,31 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
 
   it('honours a pinned key even for local (e.g. a token-guarded proxy)', async () => {
     h.apiKeyByIdReturn = 'pinned';
-    const r = await resolveChatKey('o', { provider: 'local', apiKeyId: 'key-id', configuredBy: null });
+    const r = await resolveChatKey('o', {
+      provider: 'local',
+      apiKeyId: 'key-id',
+      configuredBy: null,
+    });
     expect(r).toEqual({ ok: true, apiKey: 'pinned' });
   });
 
   it('returns the resolved key for a cloud provider that has one', async () => {
-    const r = await resolveChatKey('o', { provider: 'anthropic', apiKeyId: 'key-id', configuredBy: null });
+    const r = await resolveChatKey('o', {
+      provider: 'anthropic',
+      apiKeyId: 'key-id',
+      configuredBy: null,
+    });
     expect(r).toEqual({ ok: true, apiKey: 'k' });
   });
 
   it('misses with no_api_key_id when a cloud provider has NO key configured', async () => {
     h.apiKeyByIdReturn = null;
     h.apiKeyByServiceReturn = null;
-    const r = await resolveChatKey('o', { provider: 'openrouter', apiKeyId: null, configuredBy: null });
+    const r = await resolveChatKey('o', {
+      provider: 'openrouter',
+      apiKeyId: null,
+      configuredBy: null,
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.disposition).toBe('no_api_key_id');
   });
@@ -279,7 +291,11 @@ describe('resolveChatKey — the single source of truth for chat credentials', (
     // apiKeyId is set, but neither the pinned lookup nor the service key resolves.
     h.apiKeyByIdReturn = null;
     h.apiKeyByServiceReturn = null;
-    const r = await resolveChatKey('o', { provider: 'anthropic', apiKeyId: 'deleted-id', configuredBy: null });
+    const r = await resolveChatKey('o', {
+      provider: 'anthropic',
+      apiKeyId: 'deleted-id',
+      configuredBy: null,
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.disposition).toBe('api_key_not_decryptable');
   });
