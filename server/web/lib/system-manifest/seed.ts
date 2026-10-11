@@ -160,10 +160,13 @@ export async function seedManifestWorkers(
  *  the vault key it sets goes to the provider's own host, and configured_by
  *  null (nothing is paired, the anchor's). The backup's base URL is cleared
  *  too: configured_by covers both routes, and a null stamp must not vouch
- *  for a backup host some other login paired. */
+ *  for a backup host some other login paired. With its host gone the backup
+ *  is switched off (W7 integration fix 2): a backup left on would send its
+ *  key to the provider's own host, a route nobody chose. */
 const MANIFEST_ROUTE_HOST = {
   baseUrl: null,
   viaTailnet: false,
+  backupEnabled: false,
   backupBaseUrl: null,
   backupViaTailnet: false,
   configuredBy: null,
