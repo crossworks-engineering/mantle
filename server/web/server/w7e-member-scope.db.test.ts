@@ -165,11 +165,13 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
       (${owner}, ${email('owner')}, ${hash}, true, 'admin', 'Olive Owner'),
       (${admin2}, ${email('admin2')}, ${hash}, false, 'admin', 'Ada Admin'),
       (${mem}, ${email('mem')}, ${hash}, false, 'member', 'Mia Member'),
-      (${mem2}, ${email('mem2')}, ${hash}, false, 'member', 'Max Member'),
-      (${cli}, ${email('cli')}, ${hash}, false, 'client', 'Cleo Client')`);
+      (${mem2}, ${email('mem2')}, ${hash}, false, 'member', 'Max Member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
+    // A client login, made once the brain is on workspaces.
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      values (${cli}, ${email('cli')}, ${hash}, false, 'client', 'Cleo Client')`);
     const ws = await x<{ id: string; key: string | null }>(sql`
       select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
