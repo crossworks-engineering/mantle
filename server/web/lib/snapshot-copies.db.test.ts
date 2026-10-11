@@ -124,7 +124,17 @@ describe.skipIf(!URL)('the authors’ snapshot copies of accepted items (W6b, S3
   });
 
   it('makes each copy in the author’s home, redacted, read-only, quiet, then clears the accepted rows', async () => {
-    const r = await sc.makeSnapshotCopies();
+    // Two runs at once (the boot step and the maintenance task, fix round
+    // 1, M4): one makes the copies, the other waits and finds them made.
+    const [r1, r2] = await Promise.all([sc.makeSnapshotCopies(), sc.makeSnapshotCopies()]);
+    const r = r1.made > 0 ? r1 : r2;
+    const other = r === r1 ? r2 : r1;
+    expect(other).toMatchObject({ made: 0, already: 3 });
+    for (const id of [page, note, orphan]) {
+      const [n] = await sql<{ n: number }[]>`
+        select count(*)::int as n from nodes where data->>'snapshot_of' = ${id}`;
+      expect(n!.n).toBe(1);
+    }
     expect(r).toMatchObject({
       wanted: 3,
       made: 3,
@@ -200,8 +210,35 @@ describe.skipIf(!URL)('the authors’ snapshot copies of accepted items (W6b, S3
     expect(check['snapshot copies made']).toBe(3);
   });
 
-  it('a second run makes nothing', async () => {
+  it('a second run makes nothing; a lost record is found again by its stamp', async () => {
+    const before = (await copyOf(page)).copy;
+    await sql`update space_item_homes set snapshot_node_id = null where node_id = ${page}`;
     const r = await sc.makeSnapshotCopies();
     expect(r).toMatchObject({ wanted: 3, made: 0, already: 3, acceptedRowsCleared: 0 });
+    expect((await copyOf(page)).copy).toBe(before);
+  });
+
+  it('a copy is read only in the database, for everyone (CEO decision 2)', async () => {
+    const pageCopy = (await copyOf(page)).copy!;
+    const noteCopy = (await copyOf(note)).copy!;
+    const team = (
+      await sql<{ id: string }[]>`select id::text as id from workspaces where bridge_key = 'team'`
+    )[0]!.id;
+    const refused = async (q: PromiseLike<unknown>) => {
+      await expect(Promise.resolve(q)).rejects.toMatchObject({ code: '42501' });
+    };
+    await refused(sql`update nodes set title = 'changed' where id = ${noteCopy}`);
+    await refused(sql`update nodes set data = data - 'snapshot_of' where id = ${noteCopy}`);
+    await refused(
+      sql`update pages set doc = '{"type":"doc","content":[]}'::jsonb where node_id = ${pageCopy}`,
+    );
+    await refused(sql`update pages set draft_doc = doc where node_id = ${pageCopy}`);
+    await refused(
+      sql`insert into item_grants (node_id, workspace_id) values (${pageCopy}, ${team})`,
+    );
+    await refused(sql`update item_grants set write = true where node_id = ${pageCopy}`);
+    // The extractor's bookkeeping may change; a delete is its author's.
+    await sql`update nodes set data = data || '{"summary":"s"}'::jsonb where id = ${noteCopy}`;
+    await sql`delete from nodes where id = ${noteCopy}`;
   });
 });

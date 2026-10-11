@@ -151,18 +151,24 @@ export async function upsertFile(args: {
   const mime = mimeForExt(ext);
   const isText = TEXT_EXTS.has(ext);
 
-  // Make sure parent branch exists in the DB.
-  const [parent] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, args.ownerId),
-        eq(nodes.type, 'branch'),
-        sql`${nodes.path}::text = ${args.parentPath}`,
-      ),
-    )
-    .limit(1);
+  // Make sure parent branch exists in the DB. The files root is structure
+  // (homed in Admin): looked up whatever the caller's scope holds, as
+  // ensureFilesRootBranch does (W6b); a folder below it in the caller's scope.
+  const parentQuery = () =>
+    db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, args.ownerId),
+          eq(nodes.type, 'branch'),
+          sql`${nodes.path}::text = ${args.parentPath}`,
+        ),
+      )
+      .limit(1);
+  const [parent] = args.parentPath.includes('.')
+    ? await parentQuery()
+    : await asSystem(parentQuery, 'kind-root');
   if (!parent) {
     throw new Error(`upsertFile: parent folder '${args.parentPath}' not found`);
   }

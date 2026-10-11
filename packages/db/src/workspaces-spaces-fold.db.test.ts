@@ -45,6 +45,8 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
   const member = randomUUID();
   const mate = randomUUID();
   const gone = randomUUID();
+  const arch = randomUUID(); // a member whose private workspace was archived
+  let archWs = '';
   const ids: Record<string, string> = {};
   const spaces: Record<string, string> = {};
   let queueBefore = 0;
@@ -123,10 +125,11 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
       (${admin2}, 'sf-a@example.invalid', 'x', 'admin', false, 'Second admin'),
       (${member}, 'sf-m@example.invalid', 'x', 'member', false, 'Member One'),
       (${mate}, 'sf-t@example.invalid', 'x', 'member', false, 'Teammate'),
-      (${gone}, 'sf-g@example.invalid', 'x', 'member', false, null)`;
+      (${gone}, 'sf-g@example.invalid', 'x', 'member', false, null),
+      (${arch}, 'sf-r@example.invalid', 'x', 'member', false, 'Archived One')`;
     const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
-    for (const [k, v] of Object.entries({ member, gone, admin2 })) {
+    for (const [k, v] of Object.entries({ member, gone, admin2, arch })) {
       spaces[k] = (
         await sql<
           { id: string }[]
@@ -137,6 +140,23 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
     // The brain's own rows a member's names clash with.
     await node('brainFolder', 'branch', 'pages.projects', owner);
     await node('brainPage', 'page', 'pages', owner, { slug: 'meeting-notes' });
+    // A brain file whose name the member's file has (ignoring case): the
+    // member's takes a suffix, its data.filename with it (fix round 1, H1).
+    await node('brainFile', 'file', 'files', owner, {
+      slug: 'Report.PDF',
+      data: { filename: 'Report.PDF' },
+    });
+    // A member whose private workspace was archived before the fold (fix
+    // round 1): the fold un-archives it rather than fail its proof.
+    archWs = (
+      await sql<{ id: string }[]>`insert into workspaces (owner_id, name, description, created_by)
+        values (${owner}, 'Archived One (only you)', 'x', ${arch}) returning id::text as id`
+    )[0]!.id;
+    await sql`insert into workspace_users (workspace_id, login_id, moderator) values (${archWs}, ${arch}, true)`;
+    await sql`insert into private_workspaces (login_id, workspace_id) values (${arch}, ${archWs})`;
+    await sql`update workspaces set archived_at = now() where id = ${archWs}`;
+    await node('archDraft', 'page', 'pages', spaces.arch!);
+    await item('archDraft', arch, 'draft');
 
     // The member's space: kind roots, drafts, a folder that clashes, files.
     await node('rootPages', 'branch', 'pages', spaces.member!);
@@ -240,6 +260,7 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
       trashedApp: [mine],
       goneTeamDraft: [former!.id, admin],
       goneFolder: [former!.id],
+      archDraft: [archWs],
     };
     for (const [k, read] of Object.entries(want)) {
       const r = await row(k);
@@ -274,7 +295,15 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
     const file = await row('file');
     expect(file.path).toBe('files');
     expect(file.data.space_file).toBe(spaces.member);
-    expect(file.data.filename).toBe('report.pdf');
+    // Its name was the brain file's, ignoring case: a suffix, the slug and
+    // data.filename the same (fix round 1, H1); the brain file untouched.
+    expect(file.slug).toMatch(/^report-[0-9a-f]{6}\.pdf$/);
+    expect(file.data.filename).toBe(file.slug);
+    expect((await row('brainFile')).data.filename).toBe('Report.PDF');
+    const [frec] = await sql<{ old: string; neu: string }[]>`
+      select old_slug as old, new_slug as neu from space_fold_items where node_id = ${ids.file!}`;
+    expect(frec).toEqual({ old: 'report.pdf', neu: file.slug });
+    expect((await row('fileInFolder')).data.filename).toBe('a.txt');
     expect((await row('fileFolder')).path).toBe('files.docs');
     expect((await row('fileInFolder')).path).toBe('files.docs');
     const rec = await sql<{ n: number }[]>`
@@ -312,6 +341,17 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
     expect((await row('teamApp')).data.trashedBeforeFold).toBeUndefined();
   });
 
+  it('un-archives the archived private workspace of a live author (fix round 1)', async () => {
+    const [w] = await sql<{ archived: Date | null }[]>`
+      select archived_at as archived from workspaces where id = ${archWs}`;
+    expect(w!.archived).toBeNull();
+    const ev = await sql<{ n: number }[]>`
+      select count(*)::int as n from workspace_events
+       where workspace_id = ${archWs} and action = 'spaces_fold.unarchived'`;
+    expect(ev[0]!.n).toBe(1);
+    expect(await reads(arch, ['archDraft'])).toEqual(['archDraft']);
+  });
+
   it('leaves no item in a space, archives the spaces, keeps only the accepted rows', async () => {
     const check = Object.fromEntries(
       (
@@ -326,7 +366,8 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
       'kind roots left with children': 0,
       'space_items rows other than accepted': 0,
       'accepted rows kept (the author read path until its snapshot copy)': 1,
-      'items moved': 16,
+      'items moved': 17,
+      'folded files sharing a name in their folder': 0,
       'moved items without their home': 0,
       'snapshot copies wanted': 1,
       'snapshot copies made': 0,
@@ -343,7 +384,7 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
 
   it('no login reads more than before; every author reaches its items', async () => {
     const all = Object.keys(ids).filter(
-      (k) => !['brainFolder', 'brainPage', 'accepted'].includes(k),
+      (k) => !['brainFolder', 'brainPage', 'brainFile', 'accepted', 'archDraft'].includes(k),
     );
     // The teammate: the team-shared drafts only.
     expect(await reads(mate, all)).toEqual(['teamApp', 'teamDraft']);
