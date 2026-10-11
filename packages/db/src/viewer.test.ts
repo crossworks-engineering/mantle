@@ -615,3 +615,85 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
     expect([...SYSTEM_DB_MODULES].sort()).toEqual([...listed].sort());
   });
 });
+
+describe('the request scope (workspaces W6a)', () => {
+  const A = '11111111-1111-4111-8111-111111111111';
+  const W1 = '22222222-2222-4222-8222-222222222222';
+  const W2 = '33333333-3333-4333-8333-333333333333';
+  const scopeOf = (ws: string[], modWs: string[] = []) =>
+    Object.freeze({ kind: 'user' as const, loginId: A, ws, modWs });
+
+  it('holds for the rest of the request once the guard enters it', async () => {
+    const v = await import('./viewer');
+    await v.runInRequestSlot(async () => {
+      expect(v.currentScope()).toEqual({ kind: 'system' });
+      expect(v.enterRequestScope(scopeOf([W1, W2], [W1]), { writes: false, drafts: true })).toBe(
+        true,
+      );
+      await Promise.resolve();
+      expect(v.currentScope()).toMatchObject({ kind: 'user', loginId: A, ws: [W1, W2] });
+      expect(v.inTurnScope()).toBe(true);
+      expect(v.readsDrafts()).toBe(true);
+      expect(v.currentRequestOutcome()).toEqual({ kind: 'user', loginId: A, writes: false });
+      // The same scope again is a no-op; another one is refused.
+      expect(v.enterRequestScope(scopeOf([W1, W2], [W1]), { writes: false, drafts: true })).toBe(
+        true,
+      );
+      expect(() => v.enterRequestScope(scopeOf([W1]), { writes: false, drafts: true })).toThrow();
+    });
+  });
+
+  it('is not entered outside a request slot, and a member never reads drafts', async () => {
+    const v = await import('./viewer');
+    expect(v.enterRequestScope(scopeOf([W1]), { writes: false, drafts: false })).toBe(false);
+    await v.runInRequestSlot(async () => {
+      v.enterRequestScope(scopeOf([W1]), { writes: true, drafts: false });
+      expect(v.readsDrafts()).toBe(false);
+      expect(v.currentRequestMode()).toEqual({ writes: true, drafts: false });
+    });
+  });
+
+  it('asSystem masks it by name, and a narrower scope may be entered inside', async () => {
+    const v = await import('./viewer');
+    await v.runInRequestSlot(async () => {
+      v.enterRequestScope(scopeOf([W1, W2], [W1]), { writes: false, drafts: false });
+      await expect(v.asSystem(async () => v.currentScope(), 'rule-in-query')).resolves.toEqual({
+        kind: 'system',
+      });
+      await expect(v.asSystem(async () => 1)).rejects.toThrow(/allowlisted reason/);
+      const inner = await v.runInViewerScope(scopeOf([W2]), async () => v.currentScope());
+      expect(inner).toMatchObject({ ws: [W2] });
+      await expect(
+        v.runInViewerScope(scopeOf(['44444444-4444-4444-8444-444444444444']), async () => 1),
+      ).rejects.toThrow(/another workspace scope/);
+      // Back in the request scope after both.
+      expect(v.currentScope()).toMatchObject({ ws: [W1, W2] });
+    });
+  });
+
+  it('records what the guard did when it let a request through on the system pool', async () => {
+    const v = await import('./viewer');
+    await v.runInRequestSlot(async () => {
+      v.noteRequestSystem('area');
+      expect(v.currentRequestOutcome()).toEqual({ kind: 'system', why: 'area' });
+    });
+    await v.runInRequestSlot(async () => {
+      v.noteRequestOwnRule(A);
+      expect(v.currentRequestOutcome()).toEqual({ kind: 'own-rule', loginId: A });
+      expect(v.currentScope()).toEqual({ kind: 'system' });
+    });
+  });
+
+  it('narrowsWorkspaceScope: subsets of the same login only', async () => {
+    const v = await import('./viewer');
+    const outer = scopeOf([W1, W2], [W1]);
+    expect(v.narrowsWorkspaceScope(outer, scopeOf([W1], [W1]))).toBe(true);
+    expect(v.narrowsWorkspaceScope(outer, scopeOf([W2], [W2]))).toBe(false);
+    expect(v.narrowsWorkspaceScope(outer, { kind: 'user', loginId: W1, ws: [W1], modWs: [] })).toBe(
+      false,
+    );
+    expect(
+      v.narrowsWorkspaceScope(outer, { kind: 'assistant', loginId: null, ws: [W2], modWs: [] }),
+    ).toBe(true);
+  });
+});

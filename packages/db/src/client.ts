@@ -31,6 +31,7 @@ import {
   viewerRolePassword,
   type PoolRole,
   currentRequestMode,
+  requestScopeMemo,
 } from './viewer';
 
 declare global {
@@ -752,7 +753,28 @@ export async function withViewer<T>(
   ) {
     return fn();
   }
-  return runInViewerScope(await viewerScopeFor(actsFor), fn);
+  return runInViewerScope(await memoScopeFor(actsFor), fn);
+}
+
+/** viewerScopeFor, once per request for the same login (and app) or agent:
+ *  workspace and membership changes take effect on the next request. */
+function memoScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope> {
+  const memo = requestScopeMemo();
+  const key =
+    'login' in actsFor
+      ? `login:${actsFor.login.toLowerCase()}:${actsFor.app ? JSON.stringify(actsFor.app) : ''}`
+      : 'agent' in actsFor
+        ? `agent:${actsFor.agent ?? ''}`
+        : null;
+  if (!memo || key === null) return viewerScopeFor(actsFor);
+  let p = memo.get(key);
+  if (!p) {
+    p = viewerScopeFor(actsFor);
+    // A failed lookup is not kept: the next call asks again.
+    p.catch(() => memo.delete(key!));
+    memo.set(key, p);
+  }
+  return p;
 }
 
 /**
@@ -761,7 +783,7 @@ export async function withViewer<T>(
  * login: none). The same scope `withViewer(…, { login }, …)` builds.
  */
 export async function loginScopeFor(loginId: string): Promise<WorkspaceScope> {
-  return viewerScopeFor({ login: loginId });
+  return memoScopeFor({ login: loginId });
 }
 
 let brainOnWorkspaces = false;

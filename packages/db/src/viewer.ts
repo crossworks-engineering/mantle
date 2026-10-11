@@ -225,7 +225,14 @@ export type RequestOutcome =
       why: 'area' | 'admin-write' | 'admin-reads-flag' | 'login-self' | 'not-on-workspaces';
     };
 
-type RequestSlot = { scope: Scope | null; outcome: RequestOutcome | null };
+type RequestSlot = {
+  scope: Scope | null;
+  outcome: RequestOutcome | null;
+  /** The scopes withViewer built in this request, by who they act for: the
+   *  lookup runs once per request, not once per call (W6a; the W5b2 member
+   *  search cost). */
+  memo: Map<string, Promise<WorkspaceScope>>;
+};
 
 /** Work a scope's transaction owes the world outside the database, run once
  *  it ends: `commit` after a commit, `rollback` after a rollback. */
@@ -296,7 +303,13 @@ function active(): Scope | undefined {
  * loader calls this; the session guard fills the slot (enterRequestScope).
  */
 export function runInRequestSlot<T>(fn: () => T): T {
-  return requestSlots.run({ scope: null, outcome: null }, fn);
+  return requestSlots.run({ scope: null, outcome: null, memo: new Map() }, fn);
+}
+
+/** The current request's memo of built scopes (withViewer), or null
+ *  outside a request. */
+export function requestScopeMemo(): Map<string, Promise<WorkspaceScope>> | null {
+  return requestSlots.getStore()?.memo ?? null;
 }
 
 /** Whether the current code runs inside a request slot (an HTTP handler). */
