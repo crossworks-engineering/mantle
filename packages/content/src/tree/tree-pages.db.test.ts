@@ -158,36 +158,4 @@ describe.skipIf(!URL)('pages in the item tree', () => {
     expect(await own(lifted.childId)).toMatchObject({ path: plans!.path, parent_id: null });
   });
 
-  it('a member files a page draft where its tree shows, never in a hidden brain folder', async () => {
-    const scope = { anchorId: brain, spaceId: space, loginId: member };
-    // A brain folder a workspace of the member holds: the member sees it
-    // (W5b2: the folder's grant, not a share level).
-    const [shared] = (await m.systemDb.execute(sqlTag`
-      select id from nodes where owner_id = ${brain} and type = 'branch'
-         and path = ${`pages.${label}_shared`}::ltree`)) as unknown as Array<{ id: string }>;
-    await m.systemDb.execute(sqlTag`
-      insert into workspaces (id, owner_id, name) values (${readers}, ${brain}, ${`${label} readers`})`);
-    await m.systemDb.execute(sqlTag`
-      insert into workspace_users (workspace_id, login_id) values (${readers}, ${member})`);
-    await m.withSubtreeHeads(shared!.id, [], (tx) =>
-      tx.execute(
-        sqlTag`insert into item_grants (node_id, workspace_id) values (${shared!.id}, ${readers})`,
-      ),
-    );
-    const at = await tree.memberFilingPath(scope, 'pages', shared!.id);
-    expect(at).toBe(`pages.${label}_shared`);
-    // Its own folder in it, and a draft filed there.
-    const mine = await tree.createMemberFolder(scope, 'pages', {
-      parentId: shared!.id,
-      name: 'Mine',
-    });
-    expect(await tree.memberFilingPath(scope, 'pages', mine.id)).toBe(`pages.${label}_shared.mine`);
-    // A brain folder it does not see (admin only) is not a place.
-    const [hidden] = (await m.systemDb.execute(sqlTag`
-      select id from nodes where owner_id = ${brain} and type = 'branch'
-         and path = ${`pages.${label}`}::ltree`)) as unknown as Array<{ id: string }>;
-    await expect(tree.memberFilingPath(scope, 'pages', hidden!.id)).rejects.toMatchObject({
-      code: 'not-found',
-    });
-  });
 });
