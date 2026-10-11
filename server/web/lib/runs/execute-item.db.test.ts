@@ -40,6 +40,11 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
           ${JSON.stringify({ kind: 'builtin', ref: slug })}::jsonb,
           '{"type":"object","properties":{}}'::jsonb)`);
     }
+    await q(sqlTag`
+      insert into tools (owner_id, slug, name, description, handler, input_schema)
+      values (${anchor}, 'xi_http', 'xi_http', 'an http tool',
+        ${JSON.stringify({ kind: 'http', method: 'GET', url: 'https://example.invalid/x' })}::jsonb,
+        '{"type":"object","properties":{}}'::jsonb)`);
     const binding = JSON.stringify({
       service: 'mcp-src',
       mcp: { url: 'https://mcp.example.invalid/mcp' },
@@ -99,7 +104,8 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
       await rows<{ tools: string[] }>(sqlTag`
       select tool_slugs as tools from tool_groups where owner_id = ${anchor} and slug = 'g-held'`)
     )[0]!.tools;
-  const ENSURE = { slug: 'g-held', tool_slugs: ['note_list'] };
+  // An http tool: the only kind an agent may bundle into a group.
+  const ENSURE = { slug: 'g-held', tool_slugs: ['xi_http'] };
   const pendingCount = async () =>
     (
       await rows<{ n: number }>(sqlTag`
