@@ -22,9 +22,9 @@ The per-login MCP switch (`mcp_login_access`, 0227) is gone: 0268 archives
 its rows in `archive_mcp_login_access` and freezes the table (an insert or a
 change of its switches is refused). `/api/mcp-logins/*` answers 410. With
 the switch gone, no credential it had stopped comes back (W7b fix round 1):
-0268 revokes every static token; a login whose MCP was off has its OAuth
-grants revoked and the peers bound to it disabled; a login whose MCP was on
-with Write off keeps its grants read-only (their scope carries
+0268 revokes every static token; a member or client login whose MCP was off
+has its OAuth grants revoked and the peers bound to it disabled; one whose
+MCP was on with Write off keeps its grants read-only (their scope carries
 `mantle:read-only`, which a refresh keeps; `MCP_READ_ONLY_SCOPE` in
 `server/web/lib/mcp-oauth.ts`) and its peers' write switch off. Its API
 keys (`mtlk_`) go the same way (W7b fix round 2): revoked where MCP was
@@ -95,13 +95,22 @@ login's rights on that item first, as the item routes do
 refused.
 
 `MANTLE_ADMIN_READS=system` puts an admin login's calls back on the system
-pool, as before W7a. A member's never: on a brain not on workspaces a
-member's MCP is refused.
+pool, as before W7a. It restores only the read path (W7 integration fix 2):
+the call runs under the login's gate scope (`withGateScope`), so the Admin
+tool gate and the login's areas, the item write check, the sandbox maker
+rule and the vault pairing rule still ask that login. A member's never: on
+a brain not on workspaces a member's MCP is refused.
+
+The Telegram inbox tools (`telegram_pending`, `telegram_react`,
+`telegram_edit`, `telegram_mark_processed`) answer the anchor only, and
+`telegram_send` refuses any other login on a direct owner path (W7
+integration fix 2); the anchor's own turns keep sending.
 
 Nothing that spends on the brain owner's provider keys is listed for a
 scope that does not hold Admin (W7b fix round 1, a CEO default the owner
 may change): the `spends` builtins (a web search, an image, a summary),
-`web_crawl`, `process_extraction`, `invoke_agent`, `ask_responder` and
+`web_crawl`, `route_map` (the owner's Mapbox key, W7 integration fix 2),
+`process_extraction`, `invoke_agent`, `ask_responder` and
 `ask_as_responder` (`spendsOwnerKeys` in
 `packages/mcp-core/src/login-surface.ts`). A tool not listed is not
 registered, so a direct call is refused too. `search_chunks` stays (its
@@ -139,7 +148,9 @@ database would refuse the row.
 A deleted app's snapshots are hidden from a scope once its row is gone, so
 `app_deleted_list` and `app_undelete` read the trash on the system pool by
 the named reason `app-trash`, only for the deleted apps whose home
-workspace the caller moderates (an app restored goes back to that home).
+workspace the caller moderates (an app restored goes back to that home). In
+the anchor's own chat (its turn scope holds only Admin) the homes are those
+of the anchor's full login scope (W7 integration fix 2).
 
 ## App data (team apps Phase 1, migration 0234)
 

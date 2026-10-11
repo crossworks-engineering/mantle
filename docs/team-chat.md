@@ -1,5 +1,17 @@
 # Team Chat: tokenized Contacts chat with the brain
 
+> **Update, workspaces W7c (migration 0269): each user's chats are their
+> own.** A member's chat is an ordinary per-(agent, login) thread with the
+> Team workspace's assistant in `assistant_messages`, read and written
+> through `/api/assistant/*`; `/api/member/chat` and
+> `/api/team-admin/member-chats` answer 410, and no admin reads another
+> user's chat, the brain owner included. `team_messages` is folded into
+> `assistant_messages` (a member's rows) and frozen; the old portal rows (a
+> contact's, no login) are history in `archive_team_messages`, read in the
+> app by no one. The owner-side tools `team_chat_list`, `team_chat_read` and
+> `team_access_list` are gone (W7b). The banner below and everything after it
+> is the record of how it worked before.
+
 > **Status: RETIRED (member logins Phase 6, 2026-09-28).** The team-code
 > portal is gone, all of it: the 1:1 chat (removed 2026-09-26), then `/team`,
 > `/hub`, the Team Forum ([team-forum.md](./team-forum.md)), and every

@@ -734,17 +734,24 @@ are sent as they are (the "needs you" notice holds only those). The helper is
 (`@mantle/content-core/markdown-to-text`), so a client can use the same one;
 the app keeps its own strip as a fallback for older brains.
 
-**Version 1 is push plus refetch.** On a `chat` push the app refetches
-`GET /api/member/chat`. There is no token stream for members yet. (The client
-chat, `GET /api/client/chat`, answers 410 since W5c, and a client gets no
-chat push.)
+**Version 1 is push plus refetch.** On a `chat` push the app refetches the
+member's thread, `GET /api/assistant/thread` (since W7c a member's chat is an
+ordinary per-user thread with the Team workspace's assistant; the member chat
+routes `GET` and `POST /api/member/chat` answer 410 `{ error, code: 'gone' }`).
+(The client chat, `GET /api/client/chat`, answers 410 since W5c, and a client
+gets no chat push.)
 
 ### 3. Unread for the member and client chat
 
-    GET  /api/member/chat/unread     200 { unread, lastReadAt }
-    POST /api/member/chat/read       { at? }   200 { unread, lastReadAt }
+    GET  /api/assistant/conversations          unread per thread (since W7c)
+    POST /api/assistant/read   { agentSlug?, at? }   mark a thread read
+    GET  /api/member/chat/unread     410 since W7c
+    POST /api/member/chat/read       410 since W7c
     GET  /api/client/chat/unread     410 since W5c
     POST /api/client/chat/read       410 since W5c
+
+The text below describes the member cursor as it was before W7c; the
+assistant routes keep the same rules per thread.
 
 `unread` counts finished replies in the login's own thread newer than
 `lastReadAt`. A login starts with nothing unread: the first call sets
@@ -790,8 +797,10 @@ device token that enrolled the device), a unique index on
 in; copied through every rotation) and `mobile_tokens.rotated_to` (the token
 a rotated row was replaced by; reuse detection), and the `login_notice`
 NOTIFY channel with three notify-only triggers: a finished outbound row in a
-login's thread (`team_messages`), a review state becoming accepted, returned
-or taken (`space_items`), a new comment (`node_comments`). The payload
+login's thread (since 0269, W7c, a finished reply in a non-anchor login's
+thread in `assistant_messages`; before, `team_messages`), a review state
+becoming accepted, returned or taken (`space_items`), a new comment
+(`node_comments`). The payload
 carries ids only. Cost safety: the triggers write nothing and the only
 listener is the push worker, which sends pushes and starts no LLM work.
 

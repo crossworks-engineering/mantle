@@ -1,5 +1,21 @@
 # Member logins
 
+> **Update, workspaces W7 (W7b, W7c): one MCP surface, per-user threads.**
+> A member's chat is an ordinary thread of its own with the Team workspace's
+> assistant, one per (agent, login) in `assistant_messages` (migration 0269,
+> which folded `team_messages` in; the old portal rows are history in
+> `archive_team_messages`). It is read and written through
+> `/api/assistant/*` like every user's (`GET /api/assistant/thread`,
+> `POST /api/assistant/turn`). `GET` and `POST /api/member/chat` answer 410
+> `{ error, code: 'gone' }`, and so does `GET /api/team-admin/member-chats`:
+> each user reads only their own chats, and no admin reads another's, the
+> brain owner included. The team chat tools (`team_chat_list`,
+> `team_chat_read`, `team_access_list`) and the member MCP tool sets are
+> gone; every login gets the one MCP surface in its own workspaces
+> (mcp-as-a-login.md), and the per-login MCP switch is archived. The agent
+> and tool-group levels are frozen since 0268. The chat sections below keep
+> the record of how the member chat worked before.
+
 > **Update, workspaces W5c: team drafts, client requests and the member's
 > submit, recall and share are removed.** These member routes stay as stubs
 > that answer 410 `{ error, code: 'gone' }` to a member (a member's old app
@@ -212,8 +228,8 @@
 | `GET /api/member/library/:id`   | One item with its published body                                     |
 | `GET /api/member/files/:id`     | File bytes, streamed, rate limited per login; `?thumb=1`, `?at=` too |
 | `GET /api/member/draws/:id/svg` | A drawing's committed SVG, with only the images the member may read  |
-| `GET /api/member/chat`          | The member's own thread with the Team workspace's assistant          |
-| `POST /api/member/chat`         | Send a message; the reply lands in the thread                        |
+| `GET /api/member/chat`          | Gone (410) since W7c: the thread is `GET /api/assistant/thread`      |
+| `POST /api/member/chat`         | Gone (410) since W7c: a turn is `POST /api/assistant/turn`           |
 
 The Library LISTS team and client items only, each row with its level
 (client logins decision 6, C2: members see what clients see; the app marks a

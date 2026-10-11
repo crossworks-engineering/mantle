@@ -36,7 +36,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | Manifest change                                                                              | Reaches existing brains automatically?                                                                                   | How                                   |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
 | Tool-group membership                                                                        | ✅ overwrite                                                                                                             | `seedToolCapabilities`                |
-| Tool-group **level** (`level` on the group: `team-read`, `formulas-eval`, `client-read`)     | ✅ overwrite: product-owned, set back even when an admin moved it. A group with no `level` keeps the level its admin set | `seedToolCapabilities`                |
+| Tool-group **level** (`level` on the group: `team-read`, `formulas-eval`, `client-read`)     | ❌ frozen since 0268 (workspaces W7b): an update of `tool_groups.audience` keeps the old value, so the seeder's write is a no-op. The frozen value is still read (`groupsWithinLevel`) | `seedToolCapabilities`                |
 | Skill **body** (`SKILL_INSTRUCTIONS`)                                                        | ✅ overwrite                                                                                                             | `applyManifest` `skillMode`           |
 | **Persona** skill links (by ROLE, reaches operator personas too)                             | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept                 | `reconcilePersonaCapabilitiesByRole`  |
 | Persona default tool groups (by ROLE)                                                        | ✅ union (add-only)                                                                                                      | `reconcilePersonaCapabilitiesByRole`  |
@@ -70,8 +70,11 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   group/agent **row** entirely (the row lives on, disable to opt out, delete by
   operator action), and a default group an operator deliberately dropped (it
   reappears).
-- An **agent's level** with no manifest `level` (`team-responder`): the admin's
-  switch. It seeds at admin and no reconcile moves it. The reconcile also adds
+- An **agent's level** (`agents.audience`): frozen since 0268 (workspaces
+  W7b, `archive_tool_levels` keeps each as it was). An update keeps the old
+  value; a new row still takes what it is given. An assistant reads its
+  workspace, not a level; the frozen value is still read by `agentLevel`,
+  `groupsWithinLevel` and `packages/telegram/src/level.ts`. The reconcile also adds
   a manifest group to an agent only when the agent's level reads it
   (`groupsWithinLevel`), so a team-level responder never gets `team-read-admin`
   back.
@@ -98,8 +101,9 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   prompt/route (Studio reset-to-default is the manual pull).
 - **Tool group:** edit `MANIFEST_TOOL_GROUPS` (membership overwrite-syncs). Grant
   it by adding the slug to an agent's `toolGroupSlugs`.
-  A `level` on a group lets every agent at that level hold its tools: add one
-  only on purpose, and update the pin in `manifest.test.ts` ("only the
+  Levels are frozen since 0268 (W7b): a new `level` on an existing group
+  does not reach a brain that ran it. On a fresh brain a `level` still lets
+  every agent at that level hold its tools: add one only on purpose, and update the pin in `manifest.test.ts` ("only the
   member-facing and client-facing groups sit below admin").
 - **Worker:** edit `MANIFEST_WORKERS` (provider / model / params / optional xAI
   alt route). Worker models live **only** here.

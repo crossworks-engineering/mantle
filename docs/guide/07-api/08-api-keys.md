@@ -59,7 +59,9 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 ## Keys on MCP
 
 - An admin's key gets the owner tools, held to its access and areas. Tools that send, spend or publish stay blocked until you name them under **Risky MCP tools allowed** when you make the key.
-- A member's or client's key gets that login's own tools. It also needs **MCP** turned on for the login in **Settings > MCP** (turning it off revokes the login's keys, and after that the login makes no new key until **MCP** is on again), and it writes only while both the key and the login's **Write** switch allow it.
+- A member's key gets the same tools as everyone, in that member's workspaces, held to its access and areas. There is no per-login **MCP** or **Write** switch any more: a key writes when its access is **Read and write**, and then only what the member may change there.
+- A client's key works on `/api/v1` only: a client login has no MCP.
+- **API only**: a member's or client's key made before every login had MCP was made for `/api/v1`, so it is marked API only. It keeps working there, and `/api/mcp` refuses it. Make a new key for MCP. A key made since is never API only.
 
 ## What ends a key
 

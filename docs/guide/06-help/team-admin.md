@@ -5,18 +5,19 @@ toolGroups: []
 
 ## Team
 
-This screen handles what members send you, and the team settings. Members
-chat with the team agent and see items set to Team level.
+This screen holds the team settings. Members see what the workspaces they
+are users of hold, and chat with the Team workspace's assistant.
 
 The tabs:
 
 - **Shared links**: the public links you have given out, to preview or revoke.
-- **Settings**: **Member chat** (members can chat only after you click **Let
-  members chat**: it moves the team agent to Team level), and **Expose email &
-  journal**, off by default.
+- **Settings**: **Member chat** names the Team workspace's assistant, the one
+  members chat with (none set: no member chat; set one on the Team
+  workspace's page), and **Expose email & journal**, off by default.
 
-Invites, each member's chat and client logins are in [Logins](users.md). Old links to those tabs open there. The old
-**Chat archive** tab is gone; the old portal chats stay in the brain.
+Invites and client logins are in [Logins](users.md). Old links to those tabs
+open there. The old **Chat archive** tab is gone; the old portal chats stay
+in the brain as history.
 
 Review is gone: members no longer submit items for approval, and the
 **Requests** tab is gone. A change request the team agent files is a task on
@@ -27,22 +28,22 @@ once. How-to: [Member and client logins](../05-admin/07-logins.md).
 
 ## Assistant
 
-- "What has the team been asking about this week?"
-- "Has anyone raised anything about the pump job?"
+- "Which assistant do members chat with?"
+- "Is Expose email & journal on?"
 
-Your assistant can read member chats, the old portal chats and the access log.
-The team agent that answers members is a different agent with a much smaller
-grant, and cannot read this view.
+Each user's chats are their own: no admin, the brain owner included, reads a
+member's chat, and your assistant cannot either. The Team assistant that
+answers members is a different agent, and cannot read this view.
 
 ## Technical
 
-The team agent is read-only except for one write: filing a change request as
-a task on your Tasks board, stamped with who asked. It has no sending, delegation,
-shell or bulk export. What it can read is capped by its access level, so a
-member never reaches items above Team level. Email and journal reads stay off
-until you switch on **Expose email & journal**.
+The Team assistant runs in the Team workspace: it reads what that workspace
+holds and answers the member who asked, in that member's own thread. Email
+and journal reads stay off until you switch on **Expose email & journal**.
+The old member chat routes (`/api/member/chat`, `/api/team-admin/member-chats`)
+answer 410: a member's thread is read and written through the assistant
+routes, like everyone's.
 
 Every request re-checks the login, so a disabled or deleted login loses access
-mid-session. Your assistant reads the team chats with `team_chat_list`,
-`team_chat_read` and `team_access_list`. Every route behind this screen and
-behind the moved parts in Logins answers admin logins only.
+mid-session. Every route behind this screen and behind the moved parts in
+Logins answers admin logins only.

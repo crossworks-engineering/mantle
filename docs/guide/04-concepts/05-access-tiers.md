@@ -7,7 +7,7 @@ A brain has four tiers of access: Admin, Member, Client and Public. Each tier se
 | Tier | Who it is for | What they see | How they get in |
 |---|---|---|---|
 | **Admin** | You, and any co-owner | The whole brain and every setting | Email and password, on every [way in](01-ways-to-control.md) |
-| **Member** | Your team | Items at Team, Client or Public level, their own personal space, and a chat with the team agent. No admin screens. | An invite link, then their own password. Web, desktop, phone app or MCP. |
+| **Member** | Your team | What the workspaces they are users of hold, their own private workspace, and their own chat with the Team workspace's assistant. No admin screens. | An invite link, then their own password. Web, desktop, phone app or MCP. |
 | **Client** | People at your client company | What a workspace they belong to holds. No client portal, chat or drafts any more. | An emailed code, no password. Web or phone app. |
 | **Public** | Anyone with a link | The one item behind the link | A link you share. No login. |
 
@@ -22,7 +22,7 @@ Each item has a level: **Admin**, **Team**, **Client** or **Public**.
 - Lowering a page also lowers what it shows: its images, embedded files and embedded drawings. A plain link to another item keeps its own level.
 - A client sees Client items only, not Public ones. A public item is reachable only by its own link.
 
-Agents and tool groups have levels too. A member chats with the team agent only after you set that agent to **Team** level.
+Agents and tool groups have no levels of their own any more (their old levels are kept, frozen, for the few checks that still read them). An assistant belongs to a workspace and reads what that workspace holds: a member chats with the Team workspace's assistant, in a thread only they read.
 
 The rules sit in the database, not in each screen. A member or client gets the same answer in Jackdaw, the phone app and MCP.
 
@@ -31,7 +31,7 @@ The rules sit in the database, not in each screen. A member or client gets the s
 | To give | Do this |
 |---|---|
 | Admin | **Settings > Logins > Add login**, role Admin. See [Member and client logins](../05-admin/07-logins.md). |
-| Member | **Settings > Logins > Invite**, then set the team agent to Team level once. See [Team and members](../03-using-jackdaw/12-team.md). |
+| Member | **Settings > Logins > Invite**, then add them to the workspaces they should reach. See [Team and members](../03-using-jackdaw/12-team.md). |
 | Client | New client logins can no longer be added. An existing one signs in with an emailed code. See [Member and client logins](../05-admin/07-logins.md). |
 | Public | Share the item to make a link. See [Sharing and federation](06-sharing-and-federation.md). |
 

@@ -14,22 +14,21 @@ Your team now signs in with its own logins:
 2. Make an invite link for an email address.
 3. Send the link. The person sets a password and signs in as a member.
 
-Members chat with the team agent from their own space. Old portal chats are
-kept as data: the assistant can still read them, and a member invited from a
-contact shows its old chat in its **Chat** view in **Settings > Logins**. See
-[Logins](users.md) and [Member and client logins](../05-admin/07-logins.md).
+Members chat with the Team workspace's assistant, each in their own thread.
+Old portal chats are kept as history in the database; nobody reads them in
+the app any more. See [Logins](users.md) and
+[Member and client logins](../05-admin/07-logins.md).
 
 ## Assistant
 
-- "What has the team been asking about this week?"
-- "What did members ask in the old portal chats?"
+- "How do I invite someone to the team?"
 
-The assistant reads member chats, the old portal threads and the access log
-through the team admin tools.
+Each user's chats are their own: the assistant reads no member's chat and no
+old portal thread.
 
 ## Technical
 
 Member logins replaced the portal. A member is an ordinary login with the
 member role, so disabling or deleting it ends its access at once. The old
-portal threads stay readable as history; nothing new is written to them. The
-assistant uses `team_chat_list`, `team_chat_read` and `team_access_list`.
+portal threads are kept in `archive_team_messages` as history; nothing new is
+written to them, and the team chat tools that read them are gone.
