@@ -184,11 +184,19 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       (${adminB}, ${`${tag}-b@example.invalid`}, 'x', false, 'admin', 'Second admin'),
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member'),
       (${member2}, ${`${tag}-n@example.invalid`}, 'x', false, 'member', 'Member two'),
-      (${member3}, ${`${tag}-p@example.invalid`}, 'x', false, 'member', 'Member three'),
-      (${client}, ${`${tag}-c@example.invalid`}, 'x', false, 'client', 'Client')`);
+      (${member3}, ${`${tag}-p@example.invalid`}, 'x', false, 'member', 'Member three')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    await x(sql`select * from mantle_ws_migrate()`);
+    const migrated = await x<{ section: string }>(sql`select * from mantle_ws_migrate()`);
+    expect(migrated.filter((r) => r.section === 'reach-fail')).toEqual([]);
+    const wsRows = await x<{ id: string; is_admin: boolean; bridge_key: string | null }>(
+      sql`select id::text, is_admin, bridge_key from workspaces where owner_id = ${owner}`,
+    );
+    expect(wsRows.length, JSON.stringify({ migrated, wsRows })).toBeGreaterThan(0);
+    // A client login: made after the switch (the switch skips a brain that
+    // has client logins).
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      values (${client}, ${`${tag}-c@example.invalid`}, 'x', false, 'client', 'Client')`);
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)
