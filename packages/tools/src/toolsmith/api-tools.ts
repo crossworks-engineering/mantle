@@ -7,6 +7,7 @@
 
 import { isUniqueViolation, type ToolHandler } from '@mantle/db';
 import { areaSystem } from '../admin-gate';
+import { secretRefsWriteRefusal, toolMaker } from '../secret-ref-gate';
 import { queueAgentCallForApproval } from '../pending-queue';
 import { keyOrPeerVia, OPENS_ADMIN_ONLY } from '../surface';
 import { listApiKeys } from '@mantle/api-keys';
@@ -196,6 +197,9 @@ export const api_tool_create: BuiltinToolDef = {
     const built = buildHandlerFromInput(input, { integration: group?.integration ?? null });
     if ('error' in built) return { ok: false, error: built.error };
     const { handler, inherited } = built;
+    // A template that sends a vault key needs the keys area (W7a fix round 3).
+    const keysRefused = await secretRefsWriteRefusal(handler);
+    if (keysRefused) return { ok: false, error: keysRefused };
     // When the owner has turned on "require approval for agent-built tools",
     // authored tools start confirm-gated so an injected agent can't stand up a
     // no-confirmation exfiltration endpoint; the operator clears the gate per
@@ -211,6 +215,7 @@ export const api_tool_create: BuiltinToolDef = {
         handler,
         requiresConfirm: requireApproval ? true : input.requires_confirm === true,
         enabled: true,
+        createdBy: toolMaker(ctx.ownerId),
       });
       const warnings = await handlerWarnings(ctx.ownerId, handler, inputSchema);
       if (group) {
@@ -486,7 +491,13 @@ export const api_tool_update: BuiltinToolDef = {
         integration: group?.integration ?? null,
       });
       if ('error' in built) return { ok: false, error: built.error };
+      // A template that sends a vault key needs the keys area (W7a fix round
+      // 3), and the tool is then the writer's: its refs resolve while the
+      // writer holds that area.
+      const keysRefused = await secretRefsWriteRefusal(built.handler);
+      if (keysRefused) return { ok: false, error: keysRefused };
       patch.handler = built.handler;
+      patch.createdBy = toolMaker(ctx.ownerId);
       inherited = built.inherited;
     }
 
@@ -595,6 +606,10 @@ export const api_tool_test: BuiltinToolDef = {
         error: `api_tool_test only runs http tools — '${slug}' is ${handler.kind}`,
       };
     }
+    // Running a tool that sends a vault key is the keys area's (W7a fix
+    // round 3), as writing one is.
+    const keysRefused = await secretRefsWriteRefusal(handler);
+    if (keysRefused) return { ok: false, error: keysRefused };
     const args = rec(input.input) ?? {};
     const t0 = performance.now();
     // The test call runs for whoever asked for the test: it inherits the surface.

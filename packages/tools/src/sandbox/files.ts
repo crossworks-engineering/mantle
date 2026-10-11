@@ -10,15 +10,20 @@
  *
  * In a workspace scope each works only on a sandbox its caller made, or, for
  * the brain owner, on any (W7a fix round 2, sandboxRefusal).
+ *
+ * Publish (W7a fix round 3) binds only a sandbox's own tool group: an
+ * existing group whose integration is not this sandbox's (a connector's
+ * base URL and credential) is refused, never repointed. It vaults the proxy
+ * key only for a caller that holds the keys area.
  */
 
 import { getSandboxByRef, touchSandbox } from '@mantle/content';
 import { readFileById, upsertFile } from '@mantle/files';
-import { setApiKey } from '@mantle/api-keys';
+import { listApiKeys, setApiKey } from '@mantle/api-keys';
 import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import { notFound } from '../errors';
-import { areaSystem } from '../admin-gate';
+import { areaSystem, callerHasArea } from '../admin-gate';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
 import { env } from '@mantle/config';
 import {
@@ -290,19 +295,46 @@ export const sandbox_publish: BuiltinToolDef = {
       };
     }
 
+    // Only this sandbox's own group (W7a fix round 3): publishing onto any
+    // other group would repoint its base URL and credential (a connector's,
+    // say) at the sandbox, for whoever may publish.
+    const service = `sandbox-${row.name}`;
+    const [existing] = await db
+      .select({ id: toolGroups.id, integration: toolGroups.integration })
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, rawSlug)))
+      .limit(1);
+    if (existing && existing.integration?.service !== service) {
+      return {
+        ok: false,
+        error: `tool group '${rawSlug}' already exists and is not this sandbox's (its integration is not '${service}'), so publishing would repoint it. Leave group_slug out (default sbx-${row.name}) or name a new group.`,
+      };
+    }
+
     const published = await sandboxd('POST', `/sandboxes/${row.id}/publish`, { port });
     if (!published.ok) return published;
     await touchSandbox(row.id);
 
     // Vault the proxy token under a stable ref so the authored tools' auth
     // template resolves through the normal secret machinery (the token is
-    // stripped by the proxy before reaching the sandbox service).
-    const token = env('SANDBOXD_TOKEN')!;
-    await setApiKey(ctx.ownerId, 'sandboxd', 'proxy', token);
+    // stripped by the proxy before reaching the sandbox service). Writing
+    // the vault is the keys area's (W7a fix round 3): a caller without it
+    // leaves the vault as it is, and is told when the key is not there yet.
+    let keyNote: string | null = null;
+    if (await callerHasArea('keys')) {
+      const token = env('SANDBOXD_TOKEN')!;
+      await setApiKey(ctx.ownerId, 'sandboxd', 'proxy', token);
+    } else {
+      const keys = await listApiKeys(ctx.ownerId);
+      if (!keys.some((k) => k.service === 'sandboxd' && k.label === 'proxy')) {
+        keyNote =
+          'the sandbox proxy key (sandboxd/proxy) is not in the API-key vault yet and this login may not add it: ask a user with the keys area to publish this sandbox once, or tools in this group will not authenticate';
+      }
+    }
 
     const baseUrl = `${env('SANDBOXD_URL')}/svc/${row.id}/${port}`;
     const integration: ToolGroupIntegration = {
-      service: `sandbox-${row.name}`,
+      service,
       baseUrl,
       secretRef: 'sandboxd/proxy',
       authTemplate: { headers: { Authorization: 'Bearer {{secret:sandboxd/proxy}}' } },
@@ -312,11 +344,6 @@ export const sandbox_publish: BuiltinToolDef = {
         ? input.description.trim()
         : `Service published from sandbox '${row.name}' (port ${port}), reached via the sandboxd proxy.`;
 
-    const [existing] = await db
-      .select({ id: toolGroups.id })
-      .from(toolGroups)
-      .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, rawSlug)))
-      .limit(1);
     if (existing) {
       await db
         .update(toolGroups)
@@ -341,6 +368,7 @@ export const sandbox_publish: BuiltinToolDef = {
         group: rawSlug,
         baseUrl,
         next: 'author endpoint tools into this group with api_tool_create (relative paths join baseUrl; auth is inherited from the group integration), then grant it to an agent with agent_grant_tool_group',
+        ...(keyNote ? { warning: keyNote } : {}),
       },
     };
   },

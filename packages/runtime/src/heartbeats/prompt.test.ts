@@ -33,6 +33,7 @@ function mkHeartbeat(over: Partial<Heartbeat> = {}): Heartbeat {
     state: {},
     status: 'active',
     completionReason: null,
+    createdBy: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...over,

@@ -21,6 +21,7 @@ export {
   ScopeLostError,
   scopeHoldsAdmin,
   scopeHasArea,
+  loginHasArea,
   withHeads,
   withSubtreeHeads,
   withNodeInsertHeads,

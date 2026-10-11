@@ -18,8 +18,12 @@
 import type { HeartbeatDTO } from '@mantle/client-types';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import {
+  adminReadsOnSystemPool,
+  brainOnWorkspacesNow,
   db,
   heartbeats,
+  loginScopeFor,
+  withTurnScope,
   heartbeatFires,
   skills,
   type Heartbeat,
@@ -32,6 +36,7 @@ import {
   computeNextFireAt,
   notifyHeartbeatDue,
   validateSchedule,
+  type FireOpts,
 } from '@mantle/runtime/heartbeats';
 
 // Re-export the heartbeat shape types so callers (form actions, API routes) get
@@ -127,9 +132,41 @@ export type CreateHeartbeatInput = {
   state?: Record<string, unknown>;
 };
 
+/**
+ * Who a heartbeat's maker is, for heartbeats.created_by (W7a fix round 3):
+ * the signed-in login when it is not the brain owner (the anchor login,
+ * whose id is the owner id), else null (the brain owner's). The tick fires
+ * a heartbeat with a maker in that login's scope.
+ */
+export function heartbeatMaker(ownerId: string, loginId: string | null | undefined): string | null {
+  return loginId && loginId !== ownerId ? loginId : null;
+}
+
+/** A Fire now refusal the route answers (403). */
+export class FireRefused extends Error {}
+
+/**
+ * How the Fire now route fires for the signed-in login (W7a fix round 3):
+ * a login other than the brain owner fires in its own scope, as the
+ * heartbeat_fire tool does (the fire's tool resolution and turn answer that
+ * login, with its rights), never as the anchor. The brain owner, the
+ * rollback switch and a brain not on workspaces: as before.
+ */
+export async function fireOptsFor(ownerId: string, loginId: string): Promise<FireOpts> {
+  if (!heartbeatMaker(ownerId, loginId)) return {};
+  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return {};
+  const scope = await loginScopeFor(loginId);
+  if (scope.ws.length === 0) {
+    throw new FireRefused('This login is a user of no workspace, so it fires nothing.');
+  }
+  return { inCaller: (fn) => withTurnScope(scope, fn, { writes: true }) };
+}
+
 export async function createHeartbeat(
   ownerId: string,
   input: CreateHeartbeatInput,
+  /** The signed-in login (heartbeatMaker): its heartbeat fires as it. */
+  loginId?: string | null,
 ): Promise<HeartbeatSummary> {
   validateSchedule(input.schedule);
   // Compute the first next_fire_at off the schedule. earliestAt acts
@@ -178,6 +215,7 @@ export async function createHeartbeat(
       cooldownMinutes: input.cooldownMinutes ?? null,
       maxFires: input.maxFires ?? null,
       state: initialState,
+      createdBy: heartbeatMaker(ownerId, loginId),
     })
     .returning();
   if (!row) throw new Error('failed to insert heartbeat');
@@ -192,12 +230,22 @@ export type UpdateHeartbeatInput = Partial<Omit<CreateHeartbeatInput, 'slug'>> &
   status?: 'active' | 'paused' | 'completed' | 'cancelled';
 };
 
+/** The fields that set what a heartbeat does (its prompt, its agent, when
+ *  and where it fires): a change of any records its maker. */
+const MAKER_FIELDS = ['agentSlug', 'skillSlug', 'schedule', 'surface', 'state'] as const;
+
 export async function updateHeartbeat(
   ownerId: string,
   id: string,
   patch: UpdateHeartbeatInput,
+  /** The signed-in login (heartbeatMaker): a change of what the heartbeat
+   *  does makes it that login's, so the tick fires it as that login. */
+  loginId?: string | null,
 ): Promise<HeartbeatSummary | null> {
   const next: Record<string, unknown> = { updatedAt: new Date() };
+  if (loginId !== undefined && MAKER_FIELDS.some((k) => patch[k] !== undefined)) {
+    next.createdBy = heartbeatMaker(ownerId, loginId);
+  }
   if (patch.name !== undefined) next.name = patch.name;
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.agentSlug !== undefined) next.agentSlug = patch.agentSlug;

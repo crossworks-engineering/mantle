@@ -536,6 +536,32 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
 }
 
 /**
+ * Whether login `loginId` holds Admin `area` now, asked on the system pool
+ * for a login other than the current caller (W7a fix round 3: the maker of
+ * an API tool, when the tool's secret refs resolve at run time). The rule
+ * of mantle_scope_has_area and areasFor: a live login that is a user of the
+ * brain's live Admin workspace whose limits leave the area on. A brain not
+ * on workspaces keeps today's rule (any admin: yes). Fails closed.
+ */
+export async function loginHasArea(loginId: string, area: ScopeArea): Promise<boolean> {
+  if (!SCOPE_AREAS.includes(area) || !UUID_RE.test(loginId)) return false;
+  try {
+    if (!(await brainOnWorkspacesNow())) return true;
+    const rows = (await getAdminDb().execute(
+      sqlTag`select exists (
+               select 1 from workspaces w
+                 join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
+                 join auth.users l on l.id = u.login_id and l.disabled_at is null
+                where w.owner_id = mantle_brain_id() and w.is_admin and w.archived_at is null
+                  and coalesce(u.limits -> 'areas' ->> ${area}, '') <> 'false') as a`,
+    )) as unknown as { a: boolean }[];
+    return rows[0]?.a === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Run `fn` in ONE admin-pool transaction whose FIRST lock is the heads of
  * `ids` (workspaces plan U1 and V2): every writer of nodes, chunks, windows,
  * facts and grants goes through here, so no two writers can deadlock and none

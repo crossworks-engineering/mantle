@@ -4,6 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { parseIntegrationMeta } from '@mantle/tools';
 import { deleteToolGroup, getToolGroup, updateToolGroup } from '@/lib/tool-groups';
 import { firstIssue } from '@/lib/zod-issue';
+import { keysAreaRefusal } from '@/lib/tools';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -102,6 +103,19 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       if (!meta.ok) return NextResponse.json({ error: meta.error }, { status: 400 });
       integrationPatch = meta.value;
       warnings.push(...meta.warnings);
+      // An OAuth2 group sends two vault credentials to its token URL and the
+      // token to its base URL's origin: changing either is the keys area's
+      // (W7a fix round 3, @mantle/tools secret-ref-gate.ts).
+      const stored = current.integration as { oauth2?: unknown; baseUrl?: unknown } | null;
+      const next = integrationPatch as { oauth2?: unknown; baseUrl?: unknown } | null;
+      const movesOauth =
+        next?.oauth2 !== undefined &&
+        (JSON.stringify(next.oauth2) !== JSON.stringify(stored?.oauth2) ||
+          next.baseUrl !== stored?.baseUrl);
+      if (movesOauth) {
+        const refused = await keysAreaRefusal(user);
+        if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+      }
     }
   }
   const row = await updateToolGroup(user.id, idParsed.data.id, {

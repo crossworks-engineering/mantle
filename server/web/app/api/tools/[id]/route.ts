@@ -1,7 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { deleteTool, getToolById, updateTool } from '@/lib/tools';
+import { handlerCarriesSecretRefs } from '@mantle/tools';
+import {
+  deleteTool,
+  getToolById,
+  keysAreaRefusal,
+  toolMakerFor,
+  updateTool,
+} from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -39,8 +46,19 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
+  // New templates are the writer's (W7a fix round 3): one that sends a vault
+  // key needs the keys area, and the tool's refs then resolve while the
+  // writer holds it.
+  const handler = parsed.data.handler;
+  if (handler && handlerCarriesSecretRefs(handler)) {
+    const refused = await keysAreaRefusal(user);
+    if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+  }
   try {
-    const row = await updateTool(user.id, idParsed.data.id, parsed.data);
+    const row = await updateTool(user.id, idParsed.data.id, {
+      ...parsed.data,
+      ...(handler ? { createdBy: toolMakerFor(user) } : {}),
+    });
     if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json({ tool: row });
   } catch (err) {

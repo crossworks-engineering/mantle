@@ -99,6 +99,7 @@ function tool(
     handler: { kind: 'builtin', slug } as never,
     requiresConfirm: false,
     externalAccess: null,
+    createdBy: null,
     enabled: true,
     createdAt: new Date(),
     updatedAt: new Date(),

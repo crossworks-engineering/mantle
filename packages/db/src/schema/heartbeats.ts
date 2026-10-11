@@ -86,6 +86,10 @@ export const heartbeats = pgTable(
       .notNull(),
     status: heartbeatStatus('status').default('active').notNull(),
     completionReason: text('completion_reason'),
+    /** The login that set up what it does (0271, W7a fix round 3), when not
+     *  the brain owner: the tick fires it in that login's scope. Null = the
+     *  brain owner's (the anchor login). */
+    createdBy: uuid('created_by'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

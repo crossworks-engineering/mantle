@@ -128,6 +128,10 @@ export const tools = pgTable(
     enabled: boolean('enabled').default(true).notNull(),
     /** "External access" (migrations 0215, 0225); NULL = off. */
     externalAccess: jsonb('external_access').$type<ToolExternalAccess>(),
+    /** The login that wrote its templates (0271, W7a fix round 3), when not
+     *  the brain owner: its secret and OAuth refs resolve only while that
+     *  login holds the keys area. Null = the brain owner's. */
+    createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

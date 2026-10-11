@@ -65,6 +65,9 @@ export type CreateToolInput = {
   handler: ToolHandler;
   requiresConfirm?: boolean;
   enabled?: boolean;
+  /** The login that wrote its templates when not the brain owner (W7a fix
+   *  round 3, tools.created_by); null or absent: the brain owner's. */
+  createdBy?: string | null;
 };
 
 export async function createTool(ownerId: string, input: CreateToolInput): Promise<ToolSummary> {
@@ -92,6 +95,7 @@ export async function createTool(ownerId: string, input: CreateToolInput): Promi
       handler: input.handler,
       requiresConfirm: input.requiresConfirm ?? input.handler.kind === 'shell',
       enabled: input.enabled ?? true,
+      createdBy: input.createdBy ?? null,
     })
     .returning();
   if (!row) throw new Error('failed to insert tool');
@@ -105,6 +109,8 @@ export type UpdateToolInput = Partial<{
   handler: ToolHandler;
   requiresConfirm: boolean;
   enabled: boolean;
+  /** Who wrote the new templates (tools.created_by; null: the brain owner). */
+  createdBy: string | null;
 }>;
 
 export async function updateTool(
@@ -183,6 +189,7 @@ export async function updateTool(
   if (patch.name !== undefined) next.name = patch.name;
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.inputSchema !== undefined) next.inputSchema = patch.inputSchema;
+  if (patch.createdBy !== undefined) next.createdBy = patch.createdBy;
   if (patch.handler !== undefined) {
     next.handler = patch.handler;
     // "External access" was confirmed for the handler the admin looked at:

@@ -177,12 +177,21 @@ export {
   adminAreaError,
   adminToolGate,
   areaSystem,
+  callerHasArea,
   isAdminGateRefusal,
   runGated,
   toolAdminArea,
   type AdminGate,
 } from './admin-gate';
 export { ITEM_WRITE_TARGETS, itemWriteTargetsOf, toolItemWriteRefusal } from './item-write-gate';
+export {
+  SECRET_REFS_MAKER_NO_KEYS,
+  SECRET_REFS_NEED_KEYS,
+  handlerCarriesSecretRefs,
+  secretRefsRunRefusal,
+  secretRefsWriteRefusal,
+  toolMaker,
+} from './secret-ref-gate';
 export {
   memberAppToolVerdict,
   MEMBER_APP_REFUSED_SLUGS,

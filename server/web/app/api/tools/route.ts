@@ -5,9 +5,10 @@ import {
   applyIntegrationInheritance,
   describeInheritance,
   getGroupIntegration,
+  handlerCarriesSecretRefs,
 } from '@mantle/tools';
 import { isUniqueViolation, db, toolGroups, and, eq } from '@mantle/db';
-import { createTool, listToolsForOwner } from '@/lib/tools';
+import { createTool, keysAreaRefusal, listToolsForOwner, toolMakerFor } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -75,8 +76,13 @@ export async function POST(req: Request) {
       inherited = describeInheritance(resolved.inherited);
     }
   }
+  // A template that sends a vault key needs the keys area (W7a fix round 3).
+  if (handlerCarriesSecretRefs(toolInput.handler)) {
+    const refused = await keysAreaRefusal(user);
+    if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+  }
   try {
-    const row = await createTool(user.id, toolInput);
+    const row = await createTool(user.id, { ...toolInput, createdBy: toolMakerFor(user) });
     if (groupSlug) {
       const [group] = await db
         .select({ id: toolGroups.id, toolSlugs: toolGroups.toolSlugs })

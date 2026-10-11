@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const heartbeat = await createHeartbeat(user.id, toCreateInput(parsed.data));
+    const heartbeat = await createHeartbeat(user.id, toCreateInput(parsed.data), user.actor.id);
     return NextResponse.json({ heartbeat });
   } catch (err) {
     const msg = errorMessage(err);

@@ -2,7 +2,7 @@ export { computeNextFireAt, validateSchedule, type ComputeNextFireInput } from '
 export { checkGates, type GateResult } from './gates';
 export { buildHeartbeatPrompt, buildOpenHeartbeatContext } from './prompt';
 export { currentHeartbeat, withHeartbeatContext, MAX_HEARTBEAT_DEPTH } from './context';
-export { forceFire, tickFire, type FireResult } from './fire';
+export { forceFire, tickFire, type FireOpts, type FireResult } from './fire';
 export { isFireInflight, runWithInflightLock } from './inflight';
 export {
   tickHeartbeats,

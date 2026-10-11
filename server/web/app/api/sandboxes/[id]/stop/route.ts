@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
-import { getSandboxByRef, setSandboxStatus } from '@mantle/content';
+import { setSandboxStatus } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { sandboxdStop } from '@/lib/sandboxd';
+import { sandboxForLogin, sandboxdStop } from '@/lib/sandboxd';
 
 /**
  * POST /api/sandboxes/:id/stop — the UI's `sandbox_stop`: stop the container
@@ -14,7 +14,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await params;
-  const row = await getSandboxByRef(user.id, id);
+  const row = await sandboxForLogin(user, id);
   if (!row) return NextResponse.json({ error: 'sandbox not found' }, { status: 404 });
 
   const ok = await sandboxdStop(row.id);

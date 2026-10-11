@@ -29,7 +29,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
   try {
-    const heartbeat = await updateHeartbeat(user.id, id, toUpdateInput(parsed.data));
+    const heartbeat = await updateHeartbeat(user.id, id, toUpdateInput(parsed.data), user.actor.id);
     if (!heartbeat) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });
     return NextResponse.json({ heartbeat });
   } catch (err) {

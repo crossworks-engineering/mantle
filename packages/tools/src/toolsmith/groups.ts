@@ -14,6 +14,8 @@ import { AGENT_GRANTABLE_KINDS } from '../recipe';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { SLUG_RE, integrationWarnings } from './common';
+import { callerHasArea } from '../admin-gate';
+import { SECRET_REFS_NEED_KEYS } from '../secret-ref-gate';
 import {
   AGENT_THINKING_EFFORTS,
   agentGrantProblems,
@@ -314,6 +316,16 @@ export const tool_group_ensure: BuiltinToolDef = {
         if (!merged.authTemplate) {
           merged.authTemplate = { headers: { Authorization: `Bearer {{oauth:${slug}}}` } };
         }
+      }
+      // OAuth2 sends its two vault credentials to the token URL, and the
+      // token to the base URL's origin, for every tool with {{oauth:<slug>}}:
+      // setting either on an OAuth2 group is the keys area's (W7a fix round
+      // 3, secret-ref-gate.ts), whoever wrote those tools.
+      const movesOauth =
+        (input.oauth2 !== undefined && input.oauth2 !== null) ||
+        (merged.oauth2 !== undefined && input.base_url !== undefined);
+      if (movesOauth && !(await callerHasArea('keys'))) {
+        return { ok: false, error: SECRET_REFS_NEED_KEYS };
       }
       const parsed = parseIntegrationMeta(merged);
       if (!parsed.ok) return { ok: false, error: parsed.error };

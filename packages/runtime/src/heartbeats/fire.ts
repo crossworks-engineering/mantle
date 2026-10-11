@@ -21,11 +21,15 @@
 
 import { and, eq } from 'drizzle-orm';
 import {
+  adminReadsOnSystemPool,
+  brainOnWorkspacesNow,
   db,
   agents,
+  loginScopeFor,
   skills,
   heartbeats,
   heartbeatFires,
+  withTurnScope,
   type Heartbeat,
   type AgentParams,
 } from '@mantle/db';
@@ -56,6 +60,7 @@ import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
 import { errorMessage } from '@mantle/std';
 import {
+  AgentWorkspaceError,
   agentLevel,
   agentTurnScoped,
   agentWorkspaceKind,
@@ -117,17 +122,45 @@ export type FireOpts = {
 /** Tick-driven fire: runs gate checks, fires if all pass.
  *  The tick loop already filters in-flight rows out before calling
  *  this, but we wrap defensively in case a future caller skips the
- *  filter — exclusion still holds. */
+ *  filter — exclusion still holds. A heartbeat another Admin login set up
+ *  (heartbeats.created_by, W7a fix round 3) fires in that login's scope
+ *  (makerCaller), never as the brain owner. */
 export async function tickFire(hb: Heartbeat): Promise<FireResult> {
-  return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false }));
+  return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false, answerMaker: true }));
+}
+
+/** Why a heartbeat's maker cannot fire it (the heartbeat pauses). */
+const MAKER_GONE =
+  'the login that set it up is a user of no workspace now (removed or disabled); ask an Admin user to edit and resume it';
+
+/**
+ * The scope a tick fires heartbeat `hb` in (W7a fix round 3): the scope of
+ * the login that set it up (heartbeats.created_by), as the heartbeat_fire
+ * tool and the Fire now route fire in their caller's, so its Admin
+ * assistant turn answers that login with that login's rights. Nothing to
+ * change (`{}`): the brain owner's heartbeat (no maker), an assistant of a
+ * workspace other than Admin (its fire answers no login, read only), the
+ * rollback switch or a brain not on workspaces. A maker with no workspace
+ * left pauses the heartbeat.
+ */
+async function makerCaller(
+  hb: Heartbeat,
+  otherWorkspace: boolean,
+): Promise<{ inCaller?: FireOpts['inCaller'] } | { pause: string }> {
+  const maker = hb.createdBy ?? null;
+  if (!maker || maker === hb.ownerId || otherWorkspace) return {};
+  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return {};
+  const scope = await loginScopeFor(maker);
+  if (scope.ws.length === 0) return { pause: MAKER_GONE };
+  return { inCaller: (fn) => withTurnScope(scope, fn, { writes: true }) };
 }
 
 async function fireInner(
   hb: Heartbeat,
-  opts: FireOpts & { skipGates: boolean },
+  opts: FireOpts & { skipGates: boolean; answerMaker?: boolean },
 ): Promise<FireResult> {
   const now = new Date();
-  const inCaller = opts.inCaller ?? (<T>(fn: () => Promise<T>) => fn());
+  let inCaller = opts.inCaller ?? (<T>(fn: () => Promise<T>) => fn());
 
   // Capture the heartbeat's `next_fire_at` as it was when the fire
   // started. We need this at the end of the success path to detect
@@ -218,6 +251,11 @@ async function fireInner(
   } catch (err) {
     return autoPause(hb, `agent '${agent.slug}': ${errorMessage(err)}`);
   }
+  if (!opts.inCaller && opts.answerMaker) {
+    const maker = await makerCaller(hb, scoped && !adminAssistant);
+    if ('pause' in maker) return autoPause(hb, maker.pause);
+    if (maker.inCaller) inCaller = maker.inCaller;
+  }
 
   if (!agent.apiKeyId) return autoPause(hb, `agent '${agent.slug}' has no api_key configured`);
   const apiKey = await getApiKeyById(agent.apiKeyId);
@@ -259,9 +297,17 @@ async function fireInner(
     const allSlugs = new Set<string>([...effectiveToolSlugs(agentGroupTools), ...controlTools]);
     return resolveAgentTools(hb.ownerId, [...allSlugs]);
   };
-  const resolvedTools = await inCaller(() =>
-    scoped ? withAgentScope(agent, resolveTools) : resolveTools(),
-  );
+  // A caller whose scope cannot run this assistant (a maker no longer a
+  // user of its workspace) pauses the heartbeat, as a missing agent does.
+  let resolvedTools: Awaited<ReturnType<typeof resolveTools>>;
+  try {
+    resolvedTools = await inCaller(() =>
+      scoped ? withAgentScope(agent, resolveTools) : resolveTools(),
+    );
+  } catch (err) {
+    if (!(err instanceof AgentWorkspaceError)) throw err;
+    return autoPause(hb, `agent '${agent.slug}': ${errorMessage(err)}`);
+  }
   // Egress gate (opt-in): on an unattended fire, route email/web tools
   // through the approval queue rather than letting them run inline. The
   // queued call fires a Telegram approval card (see @mantle/tools

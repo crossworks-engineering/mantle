@@ -56,6 +56,7 @@ import { registerToolDispatcher } from './dispatch-bridge';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { adminToolGate, runGated } from './admin-gate';
 import { toolItemWriteRefusal } from './item-write-gate';
+import { secretRefsRunRefusal } from './secret-ref-gate';
 
 // Same-package callers that must not import this module (it imports the
 // registry, which imports every builtin) reach dispatchTool through the bridge.
@@ -117,7 +118,7 @@ export async function dispatchTool(
     }
   }
   if (h.kind === 'http') {
-    return dispatchHttp(h, applyInputDefaults(tool.inputSchema, input), ctx);
+    return dispatchHttp(h, applyInputDefaults(tool.inputSchema, input), ctx, tool);
   }
   if (h.kind === 'shell') {
     return dispatchShell(h, input, ctx);
@@ -621,7 +622,12 @@ async function dispatchHttp(
   h: Extract<ToolHandler, { kind: 'http' }>,
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
+  tool?: { createdBy?: string | null },
 ): Promise<ToolHandlerResult> {
+  // A tool another Admin login wrote resolves its vault refs only while
+  // that login holds the keys area (W7a fix round 3, secret-ref-gate.ts).
+  const makerRefused = await secretRefsRunRefusal(tool, h, ctx.ownerId);
+  if (makerRefused) return { ok: false, error: makerRefused };
   const resolved = await resolveHandlerSecrets(ctx.ownerId, h);
   if ('error' in resolved) return { ok: false, error: resolved.error };
   const { secrets } = resolved;

@@ -153,6 +153,7 @@ function fakeTool(): Tool {
     requiresConfirm: false,
     enabled: true,
     externalAccess: null,
+    createdBy: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   } as Tool;

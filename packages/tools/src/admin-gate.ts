@@ -32,6 +32,7 @@ import {
   scopeHasArea,
   scopeHoldsAdmin,
   scopeLeftForSystem,
+  withTurnScope,
   type ScopeArea,
   type WorkspaceScope,
 } from '@mantle/db';
@@ -303,4 +304,19 @@ export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Prom
  */
 export function callerScope(): WorkspaceScope | null {
   return currentWorkspaceScope() ?? scopeLeftForSystem();
+}
+
+/**
+ * Whether the caller of the current code may do Admin `area` (W7a fix round
+ * 3): asked in the open workspace scope, or, on the system pool (an
+ * AREA_SYSTEM_TOOLS tool run whole, an areaSystem block), in the scope its
+ * asSystem left, so a connectors-area tool can ask whether its caller also
+ * holds the keys area. Outside any workspace scope (system work): yes, the
+ * surface rules decide, as before.
+ */
+export async function callerHasArea(area: ScopeArea): Promise<boolean> {
+  if (currentWorkspaceScope()) return scopeHasArea(area);
+  const left = scopeLeftForSystem();
+  if (!left) return true;
+  return withTurnScope(left, () => scopeHasArea(area));
 }
