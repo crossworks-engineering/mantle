@@ -628,7 +628,9 @@ days before:
    near or over 30 s, plan a manual run on the box instead of the boot
    switch: `SET mantle.ws_switch_budget = '10 minutes';` then
    `select * from mantle_ws_migrate_locked();` in one session (the setting
-   takes 1 second to 1 hour; a bad value means 30 s).
+   takes 1 second to 1 hour; a bad value means 30 s; never ALTER DATABASE
+   or ALTER ROLE for it, below). The 10 s head wait comes before the budget
+   and is not counted in it.
 4. Only then roll the box. A 23514 in step 2 names what would be gained
    (`select * from mantle_ws_reach_diff() where section = 'reach-fail'` on
    the copy before 0261 lists it): take that grant back (or give the item
@@ -637,14 +639,27 @@ days before:
 **The switch at a later start.** A brain switched after the roll (a fresh
 install whose owner signed up later, or a client box set up by hand, then
 `select * from mantle_ws_migrate_locked()`) runs the same switch at boot.
-The head wait takes at most 10 s; the switch's DDL has a time budget of 30
-s that starts at the switch, not before it (0263: the grant work of a
-fresh brain does not spend it). When the switch runs past its budget
-(55P03) or the guard refuses (23514), the whole transaction rolls back:
-the brain stays on the old model, the integrity row "workspaces: not
-migrated" stays, the server log says why, and the next start tries again.
-A manual run may give it more time:
-`SET mantle.ws_switch_budget = '10 minutes';` first (1 second to 1 hour).
+The head wait (the lock on the head of every brain item, taken first)
+takes at most 10 s, or the budget when that is shorter, and is not counted
+in the budget. The switch's DDL has a time budget of 30 s that starts at
+the switch, not before it (0263: the grant work of a fresh brain does not
+spend it). So a switch at boot holds the brain for at most about 10 s, plus
+the grant work, plus the budget. Under a budget only the deadline ends the
+retries (a budget of 10 minutes gets its 10 minutes); a plain migration
+still stops after 12 tries. When the switch runs past its budget (55P03)
+or the guard refuses (23514), the whole transaction rolls back: the brain
+stays on the old model, the integrity row "workspaces: not migrated"
+stays, the server log says why, and the next start tries again. A manual
+run may give it more time: `SET mantle.ws_switch_budget = '10 minutes';`
+first (1 second to 1 hour), in the same session.
+
+The budget setting is a convention, not a permission: any role may SET it
+in its own session. What limits who runs the switch is only that EXECUTE
+on `mantle_ws_migrate_locked()` is revoked from PUBLIC. Set it with `SET`
+in the session of the manual run and nowhere else. Do not use `ALTER
+DATABASE ... SET mantle.ws_switch_budget` or `ALTER ROLE ... SET`: either
+would also apply at every boot, so the boot switch would hold the brain for
+that long.
 
 **Review states (W5c, migration 0264).** The review routes are gone, so
 0264 settles what they left, without loss (plan 9.3): every row of
@@ -653,10 +668,13 @@ space_items, space_submissions and space_item_bundles is copied to an
 (sharing, accepted items and the trash stay); the submission and bundle
 rows go. Personal items stay in their spaces until W6b, so no grant is
 written: `space_item_homes` records each item's home (its login's private
-workspace, "Name (only you)", or a "Former user" workspace with no users
-when the login is gone) and the Admin and Team grants W6b writes. A box
-not on workspaces is archived and resolved now; its homes are recorded
-when it switches. On the copy, `select * from
+workspace, "Name (only you)", or a "Former user" workspace with no users,
+one per former user, when the login is gone) and the Admin and Team grants
+W6b writes. Those grants follow what is live (sharing, the trash, the
+logins): a member can still share or trash an app until W6b, so each run of
+`select * from mantle_ws_review_off()` refreshes them, and W6b runs it
+first. A box not on workspaces is archived and resolved now; its homes are
+recorded when it switches. On the copy, `select * from
 mantle_ws_review_homes_check()` must show no item without a home, nothing
 left in review and no row not archived.
 

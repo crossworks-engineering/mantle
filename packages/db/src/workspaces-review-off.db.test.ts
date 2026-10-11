@@ -9,13 +9,17 @@
  * sharing and the trash untouched), every row archived first, submissions
  * and bundles emptied, nothing written to nodes, apps or item_grants, the
  * switch guard clean, no extractor notify and the extract queue unchanged,
- * workspaces:check clean, and a second run changes nothing. A brain not on
- * workspaces is archived and resolved by 0264 and gets its homes when it
- * switches later; a read given by hand since the switch does not stop 0264.
+ * workspaces:check clean, and a second run changes nothing. A taken item
+ * whose admin can no longer act on it gets Admin (not stranded); a disabled
+ * admin's own team draft does not. A later run refreshes the grants from
+ * live sharing and the trash. A brain not on workspaces is archived and
+ * resolved by 0264 and gets its homes when it switches later, one Former
+ * user workspace per former user; a read given by hand since the switch
+ * does not stop 0264.
  *
  * 0263, the switch budget: mantle_ws_switch_budget() clamps and lengthens,
- * the deadline starts at mantle_ws_switch_off, and the deadline error names
- * the time budget.
+ * the deadline starts at mantle_ws_switch_off, the deadline error names the
+ * time budget, and under a budget only the deadline ends the retries.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/workspaces-review-off.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -89,6 +93,10 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
   const gone = randomUUID();
   const disabled = randomUUID();
   const client = randomUUID();
+  // Admins who took items and can no longer act on them (M1).
+  const disAdmin = randomUUID();
+  const goneAdmin = randomUUID();
+  const demoted = randomUUID();
   const ids: Record<string, string> = {};
   const spaces: Record<string, string> = {};
   let goneSpace = '';
@@ -151,16 +159,29 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
       (${admin2}, 'ro-a@example.invalid', 'x', 'admin', false, 'Second admin'),
       (${member}, 'ro-m@example.invalid', 'x', 'member', false, 'Member One'),
       (${gone}, 'ro-g@example.invalid', 'x', 'member', false, null),
-      (${disabled}, 'ro-d@example.invalid', 'x', 'member', false, null)`;
+      (${disabled}, 'ro-d@example.invalid', 'x', 'member', false, null),
+      (${disAdmin}, 'ro-da@example.invalid', 'x', 'admin', false, 'Disabled admin'),
+      (${goneAdmin}, 'ro-ga@example.invalid', 'x', 'admin', false, null)`;
     // A fresh brain switched at boot (0261 and 0263), as a live box is
     // before 0264.
     const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
-    // A client set up by hand after the switch (21.9).
-    await sql`insert into auth.users (id, email, password_hash, role)
-      values (${client}, 'ro-c@example.invalid', 'x', 'client')`;
-    for (const [k, v] of Object.entries({ member, admin2, gone, disabled, client })) {
+    // A client set up by hand after the switch (21.9), and a login that is
+    // no longer an admin (it took an item while it was one).
+    await sql`insert into auth.users (id, email, password_hash, role) values
+      (${client}, 'ro-c@example.invalid', 'x', 'client'),
+      (${demoted}, 'ro-dm@example.invalid', 'x', 'member')`;
+    for (const [k, v] of Object.entries({
+      member,
+      admin2,
+      gone,
+      disabled,
+      client,
+      disAdmin,
+      goneAdmin,
+      demoted,
+    })) {
       spaces[k] = await spaceOf(sql, v);
     }
     goneSpace = spaces.gone!;
@@ -213,8 +234,19 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
     // A client request, submitted.
     await node('clientRequest', 'page', 'pages', spaces.client!);
     await item('clientRequest', client, 'submitted');
-    await sql`update auth.users set disabled_at = now() where id = ${disabled}`;
-    await sql`delete from auth.users where id = ${gone}`;
+    // Taken by admins who can no longer act on them: disabled, deleted, no
+    // longer an admin (the old queue's "released" rule).
+    await node('takenByDisabled', 'page', 'pages', spaces.disAdmin!);
+    await item('takenByDisabled', member, 'taken', 'private', { taken_by: disAdmin });
+    await node('takenByGone', 'page', 'pages', spaces.goneAdmin!);
+    await item('takenByGone', member, 'taken', 'private', { taken_by: goneAdmin });
+    await node('takenByDemoted', 'page', 'pages', spaces.demoted!);
+    await item('takenByDemoted', member, 'taken', 'private', { taken_by: demoted });
+    // A disabled admin's own team-shared draft: not left behind (L1).
+    await node('disAdminTeamDraft', 'page', 'pages', spaces.disAdmin!);
+    await item('disAdminTeamDraft', disAdmin, 'draft', 'team');
+    await sql`update auth.users set disabled_at = now() where id in (${disabled}, ${disAdmin})`;
+    await sql`delete from auth.users where id in (${gone}, ${goneAdmin})`;
     expect(
       (await sql`select login_id from spaces where id = ${goneSpace}`)[0]!.login_id,
     ).toBeNull();
@@ -261,9 +293,26 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
     const adminWs = await privateOf(admin2);
     const disabledWs = await privateOf(disabled);
     const clientWs = await privateOf(client);
+    const disAdminWs = await privateOf(disAdmin);
+    const demotedWs = await privateOf(demoted);
+    // Deleted before 0264 archived anything: keyed by the personal space.
     const [former] = await sql<{ id: string }[]>`
-      select workspace_id::text as id from former_user_workspaces where space_id = ${goneSpace}`;
-    expect([memberWs, adminWs, disabledWs, clientWs, former?.id].every(Boolean)).toBe(true);
+      select workspace_id::text as id from former_user_workspaces where former_key = ${goneSpace}`;
+    const [formerAdmin] = await sql<{ id: string }[]>`
+      select workspace_id::text as id from former_user_workspaces
+       where former_key = ${spaces.goneAdmin!}`;
+    expect(
+      [
+        memberWs,
+        adminWs,
+        disabledWs,
+        clientWs,
+        disAdminWs,
+        demotedWs,
+        former?.id,
+        formerAdmin?.id,
+      ].every(Boolean),
+    ).toBe(true);
     const h = await homes();
     const want = (
       home: string,
@@ -293,6 +342,12 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
       gonePrivate: want(former!.id, false, false, 'draft', 'private', 'member'),
       disabledTeamDraft: want(disabledWs!, true, false, 'draft', 'team', 'member'),
       clientRequest: want(clientWs!, true, true, 'submitted', 'private', 'client'),
+      // Released (M1): its admin cannot act on it, so Admin gets it.
+      takenByDisabled: want(disAdminWs!, true, false, 'taken', 'private', 'member'),
+      takenByGone: want(formerAdmin!.id, true, false, 'taken', 'private', 'member'),
+      takenByDemoted: want(demotedWs!, true, false, 'taken', 'private', 'member'),
+      // A disabled admin's own team draft is not left behind (L1).
+      disAdminTeamDraft: want(disAdminWs!, false, false, 'draft', 'team', 'admin'),
     });
   });
 
@@ -313,7 +368,9 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
                 from workspace_users u where u.workspace_id = w.id) as users
         from private_workspaces p join workspaces w on w.id = p.workspace_id
        order by w.name`;
-    expect(rows.map((r) => r.login).sort()).toEqual([admin2, client, disabled, member].sort());
+    expect(rows.map((r) => r.login).sort()).toEqual(
+      [admin2, client, disabled, member, disAdmin, demoted].sort(),
+    );
     for (const r of rows) {
       expect(r.name.endsWith(' (only you)')).toBe(true);
       expect(r).toMatchObject({ key: null, admin: false, by: r.login });
@@ -326,9 +383,13 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
       select w.name, w.bridge_key as key,
              (select count(*)::int from workspace_users u where u.workspace_id = w.id) as users
         from former_user_workspaces f join workspaces w on w.id = f.workspace_id`;
-    expect(former).toEqual([{ name: 'Former user', key: null, users: 0 }]);
+    // One per former user (L2): the deleted member's and the deleted admin's.
+    expect(former).toEqual([
+      { name: 'Former user', key: null, users: 0 },
+      { name: 'Former user', key: null, users: 0 },
+    ]);
     const [n] = await sql<{ n: number }[]>`select count(*)::int as n from workspaces`;
-    expect(n!.n).toBe(workspacesBefore + 5);
+    expect(n!.n).toBe(workspacesBefore + 8);
   });
 
   it('resolves the states, keeps accepted, sharing and the trash, and clears the review rows', async () => {
@@ -409,8 +470,8 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
       'items still submitted, returned or taken': 0,
       'open submissions': 0,
       bundles: 0,
-      'private workspaces': 4,
-      'former user workspaces': 1,
+      'private workspaces': 6,
+      'former user workspaces': 2,
     });
     const guard = await sql.begin(
       (tx) => tx<{ section: string }[]>`select * from mantle_ws_switch_guard()`,
@@ -446,6 +507,52 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
       admin: false,
       team: false,
     });
+  });
+
+  it('a later run refreshes the grants from live sharing and the trash (M2)', async () => {
+    const run = async () =>
+      (
+        await sql<{ subject: string; n: number }[]>`
+          select subject, n::int as n from mantle_ws_review_off()`
+      ).find((r) => r.subject === 'grants refreshed')!.n;
+    const pick = async (k: string) => {
+      const h = (await homes())[k]!;
+      return { admin: h.admin, team: h.team, state: h.state, sharing: h.sharing };
+    };
+    // The member makes the submitted team app private (my_app_unshare).
+    await sql`update space_items set sharing = 'private' where node_id = ${ids.teamApp!}`;
+    expect(await run()).toBe(1);
+    // Admin stays (it was submitted); Team goes. The record of before stays.
+    expect(await pick('teamApp')).toEqual({
+      admin: true,
+      team: false,
+      state: 'submitted',
+      sharing: 'team',
+    });
+    // Then trashes it: no grants.
+    await sql`update space_items set deleted_at = now() where node_id = ${ids.teamApp!}`;
+    expect(await run()).toBe(1);
+    expect(await pick('teamApp')).toMatchObject({ admin: false, team: false });
+    // And brings it back, private (my-apps undelete).
+    await sql`update space_items set deleted_at = null, sharing = 'private'
+      where node_id = ${ids.teamApp!}`;
+    expect(await run()).toBe(1);
+    expect(await pick('teamApp')).toMatchObject({ admin: true, team: false });
+    // An app made after 0264, shared with the team in the app.
+    await node('laterApp', 'app', 'apps', spaces.member!);
+    await sql`insert into apps (node_id, source) values (${ids.laterApp!}, '{}'::jsonb)`;
+    await item('laterApp', member, 'draft');
+    expect(await run()).toBe(0);
+    expect(await pick('laterApp')).toMatchObject({ admin: false, team: false });
+    await sql`update space_items set sharing = 'team' where node_id = ${ids.laterApp!}`;
+    expect(await run()).toBe(1);
+    expect(await pick('laterApp')).toMatchObject({ admin: false, team: true });
+    // The trashed team app (trashed before 0264) brought back and shared.
+    await sql`update space_items set deleted_at = null where node_id = ${ids.trashedApp!}`;
+    expect(await run()).toBe(1);
+    expect(await pick('trashedApp')).toMatchObject({ admin: false, team: true });
+    // Nothing changed since: nothing refreshed.
+    expect(await run()).toBe(0);
   });
 
   it('the drizzle schema of the new tables is the tables 0264 makes', async () => {
@@ -563,6 +670,75 @@ describe.skipIf(!URL)('a brain not on workspaces gets its homes when it switches
       { id: ids.submitted, admin: true, team: false, state: 'submitted' },
     ]);
     expect((await reviewCheck(sql))['items without a home']).toBe(0);
+  });
+});
+
+// One "Former user" workspace per former user (L2): logins deleted after
+// 0264 archived their items (a brain not on workspaces then) are keyed by
+// their login id, so a member's accepted item and personal items share one
+// workspace, and two former members get two.
+describe.skipIf(!URL)('one Former user workspace per former user (0264)', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: Sql;
+  const owner = randomUUID();
+  const memberA = randomUUID();
+  const memberB = randomUUID();
+  const client = randomUUID();
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, BEFORE);
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
+      (${owner}, 'rf-o@example.invalid', 'x', 'admin', true),
+      (${memberA}, 'rf-a@example.invalid', 'x', 'member', false),
+      (${memberB}, 'rf-b@example.invalid', 'x', 'member', false),
+      (${client}, 'rf-c@example.invalid', 'x', 'client', false)`;
+    for (const [login, tag] of [
+      [memberA, 'A'],
+      [memberB, 'B'],
+    ] as const) {
+      const space = await spaceOf(sql, login);
+      for (const [k, where, state, sharing] of [
+        [`draft${tag}`, space, 'draft', 'team'],
+        [`accepted${tag}`, owner, 'accepted', 'private'],
+      ] as const) {
+        ids[k] = randomUUID();
+        await sql`insert into nodes (id, owner_id, type, title, path, audience)
+          values (${ids[k]!}, ${where}, 'page', ${k}, 'pages', 'admin')`;
+        await sql`insert into space_items (node_id, author_login_id, sharing, review_state, accepted_at)
+          values (${ids[k]!}, ${login}, ${sharing}, ${state},
+                  ${state === 'accepted' ? new Date() : null})`;
+      }
+    }
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toMatch(/^clients present/);
+    // 0264 archives the items while both logins still exist.
+    await scratch.migrateRest();
+    await sql`delete from auth.users where id in (${memberA}, ${memberB}, ${client})`;
+    await sql`select * from mantle_ws_migrate_locked()`;
+  }, 240_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  it('keys each by the former login, accepted and personal items together', async () => {
+    const formers = await sql<{ key: string; ws: string }[]>`
+      select former_key::text as key, workspace_id::text as ws from former_user_workspaces`;
+    expect(formers.map((f) => f.key).sort()).toEqual([memberA, memberB].sort());
+    const wsOf = Object.fromEntries(formers.map((f) => [f.key, f.ws]));
+    const h = await sql<{ id: string; home: string; admin: boolean }[]>`
+      select node_id::text as id, home_workspace_id::text as home, grant_admin as admin
+        from space_item_homes`;
+    const homeOf = Object.fromEntries(h.map((r) => [r.id, r]));
+    expect(homeOf[ids.draftA!]!.home).toBe(wsOf[memberA]);
+    expect(homeOf[ids.acceptedA!]!.home).toBe(wsOf[memberA]);
+    expect(homeOf[ids.draftB!]!.home).toBe(wsOf[memberB]);
+    expect(homeOf[ids.acceptedB!]!.home).toBe(wsOf[memberB]);
+    // A member's team draft whose login is gone: left behind, Admin.
+    expect(homeOf[ids.draftA!]!.admin).toBe(true);
+    expect(homeOf[ids.acceptedA!]!.admin).toBe(false);
   });
 });
 
@@ -687,5 +863,45 @@ describe.skipIf(!URL)('the switch budget starts at the switch (0263)', () => {
     expect(err!.message).toMatch(
       /the switch ran past its time budget \(7 s from the start of the switch\).*SET mantle\.ws_switch_budget/,
     );
+  });
+
+  // A statement busy for its first `busy` tries (lock_not_available), each
+  // try counted on a sequence (not rolled back with the try).
+  const busyFor = (seq: string, busy: number) =>
+    `DO $d$ BEGIN IF nextval('public.${seq}') <= ${busy} THEN ` +
+    `RAISE EXCEPTION 'busy' USING ERRCODE = 'lock_not_available'; END IF; END $d$`;
+
+  it('under a budget longer than 12 tries (about 105 s) only the deadline ends the retries', async () => {
+    await sql`create sequence if not exists public.ddl_tries_budget`;
+    await sql.begin(async (tx) => {
+      // Short pauses so the test takes well under a second per try.
+      await tx`select set_config('mantle.ws_ddl_retry_pause', '0.01', true)`;
+      await tx`select set_config('mantle.ws_switch_armed', '200 seconds', true)`;
+      await tx`select set_config('mantle.ws_switch_deadline',
+                 (clock_timestamp() + interval '200 seconds')::text, true)`;
+      await tx`select mantle_ws_ddl_retry(array[${busyFor('ddl_tries_budget', 20)}::text], 'the workspaces switch')`;
+    });
+    const [t] = await sql<
+      { n: number }[]
+    >`select last_value::int as n from public.ddl_tries_budget`;
+    // 20 busy tries, then the one that ran: past the 12 of a migration.
+    expect(t!.n).toBe(21);
+  });
+
+  it('with no budget (a migration) it still stops after 12 tries', async () => {
+    await sql`create sequence if not exists public.ddl_tries_plain`;
+    const err = await sql
+      .begin(async (tx) => {
+        await tx`select set_config('mantle.ws_ddl_retry_pause', '0.01', true)`;
+        return tx`select mantle_ws_ddl_retry(array[${busyFor('ddl_tries_plain', 1000)}::text], 'a migration')`;
+      })
+      .then(
+        () => null,
+        (e: { code?: string; message?: string }) => e,
+      );
+    expect(err).toMatchObject({ code: '55P03' });
+    expect(err!.message).toMatch(/stayed busy for 12 attempts/);
+    const [t] = await sql<{ n: number }[]>`select last_value::int as n from public.ddl_tries_plain`;
+    expect(t!.n).toBe(12);
   });
 });

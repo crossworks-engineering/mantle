@@ -177,10 +177,9 @@ unless the same request sets them. Each peer has its own rate budget.
 
 The calling brain uses `peer_tools`, `peer_call` and `peer_file_copy`
 (`packages/tools/src/builtins-peer-mcp.ts`) against the peer's `/api/mcp`.
-`peer_file_copy` uses the peer's `file_upload` (bound to the owner) or,
-on a peer bound to a member or client that still offers it (an older
-brain), its `my_file_upload`. This brain no longer offers `my_file_upload`
-(W5c).
+`peer_file_copy` uses the peer's `file_upload` (bound to the owner); a
+peer bound to a member or client takes no files (`my_file_upload` went in
+W5c).
 
 Turning a login's MCP off revokes its grants and static tokens. A client's
 sign-out ends all its sessions by design, so it also ends that client's MCP

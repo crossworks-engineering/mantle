@@ -16,8 +16,22 @@
 -- 3. mantle_ws_switch_off starts the clock: when the budget is armed and no
 --    deadline is set, the deadline is now plus the budget. The rest of its
 --    body is 0261's.
--- 4. mantle_ws_ddl_retry words the deadline error as a time budget. The
---    12-attempt path (no budget armed: a migration) is unchanged.
+-- 4. mantle_ws_ddl_retry words the deadline error as a time budget, and
+--    under a budget only the deadline ends the retries (a budget longer
+--    than 12 attempts, about 105 s, keeps retrying). The 12-attempt path
+--    (no budget armed: a migration) is unchanged. The pause between tries
+--    is at most 5 s; mantle.ws_ddl_retry_pause shortens it (tests).
+--
+-- The head wait is not in the budget: mantle_ws_migrate_locked locks the
+-- head of every brain item first and waits at most 10 s for it (less when
+-- the budget is shorter). So a boot switch holds at most about 10 s, plus
+-- the 0251 grant pass, plus the budget.
+--
+-- mantle.ws_switch_budget is a convention, not a permission: any role may
+-- SET it in its own session. Only the EXECUTE revoke on
+-- mantle_ws_migrate_locked limits who runs the switch. Set it with SET in
+-- the session of a manual run, never with ALTER DATABASE or ALTER ROLE
+-- ... SET: those apply at every boot too.
 --
 -- Functions only: no row written, no LLM work, no extractor notify.
 
@@ -53,9 +67,12 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_switch_budget"() FROM PUBLIC;
 -- again, up to 12 times, then fails the migration (safe to run again).
 -- Under a time budget (mantle.ws_switch_deadline, set by
 -- mantle_ws_switch_off when mantle_ws_migrate_locked armed the budget)
--- each try waits at most 5 s and never past the deadline, and the deadline
--- ends the retries: 55P03, the whole transaction rolls back (no half
--- switch) and the next start tries again.
+-- each try waits at most 5 s and never past the deadline, and only the
+-- deadline ends the retries (no attempt cap: a 10 minute budget gets its 10
+-- minutes): 55P03, the whole transaction rolls back (no half switch) and
+-- the next start tries again. The pause between tries grows to 5 s;
+-- mantle.ws_ddl_retry_pause (seconds) caps it lower, never higher: a test
+-- runs many tries in little time.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_ddl_retry"(stmts text[], what text)
   RETURNS void LANGUAGE plpgsql VOLATILE
   SET search_path = "public", pg_temp AS $$
@@ -66,7 +83,14 @@ DECLARE
   armed text := nullif(current_setting('mantle.ws_switch_armed', true), '');
   budget_s bigint;
   left_s double precision;
+  pause double precision := 5;
 BEGIN
+  BEGIN
+    pause := least(5, greatest(0.01,
+      coalesce(nullif(btrim(current_setting('mantle.ws_ddl_retry_pause', true)), '')::double precision, 5)));
+  EXCEPTION WHEN others THEN
+    pause := 5;
+  END;
   LOOP
     attempt := attempt + 1;
     IF deadline IS NOT NULL THEN
@@ -84,15 +108,15 @@ BEGIN
       END LOOP;
       RETURN;
     EXCEPTION WHEN lock_not_available THEN
-      IF attempt >= 12 THEN
+      IF deadline IS NULL AND attempt >= 12 THEN
         RAISE EXCEPTION '%: the tables stayed busy for 12 attempts; run the migration again at a quieter time', what
           USING ERRCODE = 'lock_not_available';
       END IF;
       RAISE NOTICE '%: tables busy (attempt %), retrying', what, attempt;
       IF deadline IS NULL THEN
-        PERFORM pg_sleep(least(attempt, 5));
+        PERFORM pg_sleep(least(attempt, pause));
       ELSE
-        PERFORM pg_sleep(greatest(0, least(attempt, 5, extract(epoch FROM deadline - clock_timestamp()) - 0.1)));
+        PERFORM pg_sleep(greatest(0, least(attempt, pause, extract(epoch FROM deadline - clock_timestamp()) - 0.1)));
       END IF;
     END;
   END LOOP;
@@ -160,9 +184,12 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_switch_off"() FROM PUBLIC;
 
 -- The switch at boot (lib/workspaces-migrate.ts). It holds the head of
 -- every brain item, so it must not wait long: the head wait takes at most
--- 10 s and never more than the budget, and the budget (30 s unless
--- mantle.ws_switch_budget asks for more or less) starts at the switch
--- itself (mantle_ws_switch_off), after the 0251 pass. On a timeout (55P03)
+-- 10 s and never more than the budget (it is not counted in the budget),
+-- and the budget (30 s unless mantle.ws_switch_budget asks for more or
+-- less) starts at the switch itself (mantle_ws_switch_off), after the 0251
+-- pass. The setting is a session SET for a manual run (any role may SET
+-- it; the EXECUTE revoke below is what limits who runs this), never ALTER
+-- DATABASE or ALTER ROLE ... SET, which would apply at boot too. On a timeout (55P03)
 -- or a refused proof (23514) the whole transaction rolls back: the brain
 -- stays on the old model, its integrity row ("workspaces: not migrated")
 -- stays, and the next start tries again. A manual run on a big brain:

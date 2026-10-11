@@ -640,17 +640,19 @@ export function registerLoginRows(
  *  plain statement of who the connection acts as. */
 export function mcpInstructionsFor(caller: McpCaller): string {
   if (caller.role === 'admin') return MANTLE_MCP_INSTRUCTIONS;
-  const who = caller.role === 'member' ? 'a team member' : 'a client';
+  // A client login gets no tools since W5c (no app_data_*, no mcp_*): say
+  // so, and name none.
+  if (caller.role !== 'member') {
+    return 'This connection acts as a client of this brain. A client login has no tools here yet.';
+  }
+  const who = 'a team member';
   const write = caller.write
     ? ' On mini apps an admin opened to MCP you may also change rows (app_data_write), never the schema.'
     : ' This connection is read-only.';
   const apps =
     ' Mini app data: app_data_list shows the apps an admin opened to MCP, then app_data_schema and app_data_query. Tools named mcp_* reach outside data sources (connectors) an admin opened at your level.';
-  const build =
-    caller.role !== 'member'
-      ? ''
-      : caller.write
-        ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until the member shares it with the team in the app (never over MCP; my_app_unshare makes it private again). my_app_delete moves one of their apps to their trash, where nothing is removed (my_app_undelete brings it back). Their apps run tools at team rules at most.'
-        : " my_app_list and my_app_get read the member's own mini apps; building them needs the Write switch.";
+  const build = caller.write
+    ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until the member shares it with the team in the app (never over MCP; my_app_unshare makes it private again). my_app_delete moves one of their apps to their trash, where nothing is removed (my_app_undelete brings it back). Their apps run tools at team rules at most.'
+    : " my_app_list and my_app_get read the member's own mini apps; building them needs the Write switch.";
   return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}${build}`;
 }

@@ -5,7 +5,8 @@
  * set, so a retired field coming back fails here:
  *
  * - badges: `{ openRequestCount }` (no `openRequests`, no `pendingUploadCount`)
- * - GET settings: no `dashboardTags`; `teamAgent` is the team-responder's level
+ * - GET settings: no `dashboardTags`, no `teamAgent` (no agent level is read,
+ *   W5c); `teamAssistant` is the Team workspace's assistant, or null
  *
  * GET requests was removed in W5c (review-gone-routes.test.ts pins its 410).
  *
@@ -17,7 +18,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const APP = '88888888-8888-4888-8888-888888888888';
 
-const h = vi.hoisted(() => ({ openRequests: 2 }));
+const h = vi.hoisted(() => ({
+  openRequests: 2,
+  assistant: null as null | { id: string; slug: string; name: string; workspaceId: string },
+  agentAccess: vi.fn(),
+}));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -30,15 +35,14 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   loadProfilePreferences: vi.fn(async () => ({ teamHubAppId: APP, teamHubTags: ['faq'] })),
   isTeamPrivateReadsEnabled: vi.fn(() => false),
   listApps: vi.fn(async () => [{ id: APP, title: 'Home', hasBuild: true }]),
-  getAgentAccess: vi.fn(async (_owner: string, slug: string) =>
-    slug === 'team-responder'
-      ? { slug, name: 'Team Responder', audience: 'admin', enabled: true }
-      : null,
-  ),
+  teamAssistant: vi.fn(async () => h.assistant),
+  getAgentAccess: h.agentAccess,
 }));
 
 beforeEach(() => {
   h.openRequests = 2;
+  h.assistant = null;
+  h.agentAccess.mockReset();
 });
 
 const keys = (o: object) => Object.keys(o).sort();
@@ -51,7 +55,7 @@ describe('teamAdminBadges', () => {
 });
 
 describe('GET /api/team-admin/settings', () => {
-  it('answers no dashboardTags', async () => {
+  it('answers no dashboardTags and no agent level; the Team assistant or null', async () => {
     const { GET } = await import('./settings/route');
     const res = await GET();
     expect(res.status).toBe(200);
@@ -61,14 +65,18 @@ describe('GET /api/team-admin/settings', () => {
       'hubAppId',
       'hubCandidates',
       'privateReads',
-      'teamAgent',
+      'teamAssistant',
     ]);
     expect(body.hubAppId).toBe(APP);
-    expect(body.teamAgent).toEqual({
-      slug: 'team-responder',
-      name: 'Team Responder',
-      audience: 'admin',
-      enabled: true,
+    expect(body.teamAssistant).toBeNull();
+    h.assistant = { id: 'agent-id', slug: 'helper', name: 'Helper', workspaceId: 'team-ws' };
+    const withOne = (await (await GET()).json()) as Record<string, unknown>;
+    expect(withOne.teamAssistant).toEqual({
+      slug: 'helper',
+      name: 'Helper',
+      workspaceId: 'team-ws',
     });
+    // The team-responder's level is never read.
+    expect(h.agentAccess).not.toHaveBeenCalled();
   });
 });

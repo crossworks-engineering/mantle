@@ -11,15 +11,23 @@
  *    you)", the login its only user and a Moderator. Not a built-in
  *    workspace (bridge_key stays NULL).
  *  - former_user_workspaces: the "Former user" workspace (no users) of a
- *    personal space whose login is gone; space_id is the brain id for the
- *    accepted items whose author is gone. No foreign key on space_id: the
- *    record outlives a purged space.
+ *    login that is gone, one per former user. former_key is the former
+ *    login's id while an archive row still names it, else its personal
+ *    space's id (one space per login); the brain id only for accepted items
+ *    with no trace of their author. No foreign key: the record outlives the
+ *    login and a purged space.
  *  - space_item_homes: one row per space item. home_workspace_id is the
  *    private (or Former user) workspace; for an accepted item, its author's,
  *    where the author's snapshot copy goes (S3). grant_admin, grant_team
  *    and write are the grants W6b writes besides the home (write is always
  *    false: Write off). state_before, sharing_before and author_role are the
  *    item's review state, sharing and author role before 0264.
+ *
+ * The grant flags are not frozen: they come from state_before and from what
+ * is live (sharing, the trash, the logins), and every run of
+ * mantle_ws_review_off() refreshes them (app sharing and the app trash
+ * still change until W6b). W6b runs it first, or applies the same rule,
+ * when it moves the items (W5c contract).
  */
 import { boolean, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { authUsers } from './auth-users';
@@ -38,7 +46,7 @@ export const privateWorkspaces = pgTable('private_workspaces', {
 });
 
 export const formerUserWorkspaces = pgTable('former_user_workspaces', {
-  spaceId: uuid('space_id').primaryKey(),
+  formerKey: uuid('former_key').primaryKey(),
   workspaceId: uuid('workspace_id')
     .notNull()
     .unique()

@@ -1,9 +1,11 @@
 /**
  * Owner-only backing API for the Team admin surface's settings. GET returns
- * the Settings tab's data (read posture, the member home app designation +
- * candidates, and the team agent's level: members chat only once it is
- * `team`; the tab changes it with PATCH /api/access/agents/:slug); PATCH flips the `teamPrivateReads` switch (whether the team
- * responder may read the owner's email + journal on a member's behalf).
+ * the Settings tab's data: the read posture, the member home app designation
+ * and its candidates, and `teamAssistant`, the Team workspace's assistant
+ * that members chat with (workspaces W5c; null: no member chat, set one on
+ * the Team workspace's page). No agent level is read. PATCH flips the
+ * `teamPrivateReads` switch (whether the Team assistant may read the
+ * owner's email and journal on a member's behalf).
  * Session/bearer-gated: `/api/team-admin` is not in PUBLIC_PATHS.
  */
 import { NextResponse } from '@/server/http-compat';
@@ -13,20 +15,20 @@ import {
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   listApps,
-  getAgentAccess,
+  teamAssistant,
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const [badges, prefs, apps, teamAgent] = await Promise.all([
+  const [badges, prefs, apps, assistant] = await Promise.all([
     teamAdminBadges(user.id),
     loadProfilePreferences(user.id),
     listApps(user.id, { limit: 200 }),
-    // The agent a member login chats with (TEAM_RESPONDER_SLUG in
-    // @mantle/runtime; not imported, to keep this route off the turn engine).
-    getAgentAccess(user.id, 'team-responder'),
+    // Who a member chats with: the Team workspace's assistant (the same
+    // lookup /api/member/chat makes).
+    teamAssistant(user.id),
   ]);
   // Designation candidates: published apps only (the PATCH API enforces it
   // too). Include the current designee even if its build went red, LABELLED —
@@ -44,7 +46,9 @@ export async function GET() {
     privateReads: isTeamPrivateReadsEnabled(prefs),
     hubAppId,
     hubCandidates,
-    teamAgent,
+    teamAssistant: assistant
+      ? { slug: assistant.slug, name: assistant.name, workspaceId: assistant.workspaceId }
+      : null,
   });
 }
 

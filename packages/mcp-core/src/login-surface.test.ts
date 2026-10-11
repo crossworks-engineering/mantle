@@ -169,10 +169,20 @@ describe('member and client tool filter', () => {
     expect(mcpInstructionsFor({ ...base, role: 'member', write: false })).toContain('read-only');
     for (const role of ['member', 'client'] as const) {
       const text = mcpInstructionsFor({ ...base, role, write: true });
-      expect(text).toContain('app_data_write');
+      if (role === 'member') expect(text).toContain('app_data_write');
       expect(text).not.toMatch(/my_note_create|my_page_create|my_file_upload/);
       expect(text).not.toMatch(/my_item_submit|my_app_submit|my_app_recall/);
       expect(text).not.toMatch(/submit/i);
+    }
+  });
+
+  it('names no tool to a client login, which gets none (W5c)', () => {
+    const base = { anchorId: 'a', loginId: 'l', via: 'oauth' as const, role: 'client' as const };
+    for (const write of [true, false]) {
+      const text = mcpInstructionsFor({ ...base, write });
+      expect(text).toContain('a client of this brain');
+      expect(text).toContain('no tools');
+      expect(text).not.toMatch(/app_data_|mcp_|my_app_/);
     }
   });
 });

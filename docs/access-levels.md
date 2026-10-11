@@ -290,9 +290,10 @@ removing any one wrap fails a test.
 1. (Retired in W5b2: the shadow report.) Check that the Team workspace
    reads what the team should keep reading.
 2. Share what is missing with Team in each item's Grant Access panel.
-3. Open the responder: in Jackdaw, **Team > Settings > Member chat > Let
-   members chat** (it reads the level from `teamAgent` on
-   `GET /api/team-admin/settings` and makes the call below). Or one call:
+3. Members chat with the Team workspace's assistant (W5c), never by an
+   agent's level: attach the assistant to the Team workspace on its page.
+   `GET /api/team-admin/settings` names it as `teamAssistant` (null: no
+   member chat). To keep the responder's own reads at team level, one call:
    `access_set(agent_slug: 'team-responder', level: 'team', drop_groups_above: true)`,
    or `PATCH /api/access/agents/team-responder` with
    `{ "audience": "team", "dropGroupsAbove": true }`. The responder ships

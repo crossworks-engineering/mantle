@@ -22,8 +22,8 @@ import { FILE_ID_PRE } from './builtins-common';
 
 const CALL_TIMEOUT_MS = 120_000;
 const RESULT_TEXT_CAP = 80_000;
-/** The largest file peer_file_copy sends (the peer's own caps still apply:
- *  64 MB for an owner's file_upload, the space limits for a member). */
+/** The largest file peer_file_copy sends (the peer's own cap still applies:
+ *  64 MB for an owner's file_upload). */
 const COPY_MAX_BYTES = 48 * 1024 * 1024;
 
 type PeerSession = { client: Client; peerName: string; close: () => Promise<void> };
@@ -205,7 +205,7 @@ const peer_file_copy: BuiltinToolDef = {
   name: 'Copy one of our files to a peer',
   preconditions: FILE_ID_PRE,
   description:
-    "Copy a file from this brain to a federated peer. If the peer binds us to its owner (with write on) it lands in `folder_path` there (default 'files'), `overwrite` replacing a same-named file; if it binds us to a member or client it lands as a draft in that login's own space. The peer refuses when write is off. Use `peer_tools` to see what the peer allows.",
+    "Copy a file from this brain to a federated peer. If the peer binds us to its owner (with write on) it lands in `folder_path` there (default 'files'), `overwrite` replacing a same-named file; a peer that binds us to a member or client takes no files. The peer refuses when write is off. Use `peer_tools` to see what the peer allows.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -252,15 +252,10 @@ const peer_file_copy: BuiltinToolDef = {
           },
           { timeout: CALL_TIMEOUT_MS },
         );
-      } else if (names.has('my_file_upload')) {
-        res = await client.callTool(
-          { name: 'my_file_upload', arguments: { filename, content_base64: b64 } },
-          { timeout: CALL_TIMEOUT_MS },
-        );
       } else {
         return {
           ok: false,
-          error: `${peerName} does not let us write files (its write switch is off, or it binds us to no login).`,
+          error: `${peerName} does not let us write files (its write switch is off, or it binds us to a login other than its owner).`,
         };
       }
       ctx.step?.setMeta({ peer: peerName, bytes: file.bytes.byteLength });
