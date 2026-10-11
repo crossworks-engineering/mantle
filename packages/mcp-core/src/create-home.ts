@@ -74,6 +74,12 @@ export const ADMIN_KIND_CREATE_TOOL_SLUGS: ReadonlySet<string> = new Set([
 export const ADMIN_KIND_CREATE_ERROR =
   'This kind of item (a contact, a journal entry, a saved place) lives in the Admin workspace only, and you are not a user of it. Make a note or a page instead.';
 
+/** The refusal of a create by a user outside Admin who is in no workspace
+ *  (W7b fix round 2): it has no private workspace, so an item it made would
+ *  have no home. Said here rather than left to the database's refusal. */
+export const NO_WORKSPACE_CREATE_ERROR =
+  'You are not in any workspace yet, so there is nowhere to put a new item. Ask an admin of this brain to add you to a workspace, then try again.';
+
 /** The argument every create tool takes. */
 export const WORKSPACE_ARG = 'workspace';
 
@@ -278,6 +284,9 @@ export type CreateHomeOpts = {
    *  route rule's fallback), else null: an Admin user's create without a
    *  `workspace` lands as before (the folder's, else Admin). */
   privateWs: string | null;
+  /** The login is outside Admin and in no workspace (so `privateWs` is
+   *  null): every create tool is refused with NO_WORKSPACE_CREATE_ERROR. */
+  noHome?: boolean;
 };
 
 /**
@@ -290,10 +299,13 @@ export type CreateHomeOpts = {
  * private workspace (W7b fix round 1, H2), not only the listed creates: an
  * item any tool makes lands by the route rule, never in Admin, and the
  * database refuses an Admin-only kind outright. Its Admin-only creates are
- * refused here first, with a reply that says why.
+ * refused here first, with a reply that says why. A user outside Admin in
+ * no workspace (`noHome`) has no private workspace: each of its creates is
+ * refused here, with a reply that says what to do.
  */
 export function createHomeServer(server: McpServer, opts: CreateHomeOpts): McpServer {
   const privateWs = opts.privateWs;
+  const noHome = opts.noHome === true && !privateWs;
   return new Proxy(server, {
     get(target, prop) {
       if (prop === 'registerTool') {
@@ -301,6 +313,18 @@ export function createHomeServer(server: McpServer, opts: CreateHomeOpts): McpSe
         return (name: unknown, config: unknown, cb: unknown) => {
           if (typeof name !== 'string' || typeof cb !== 'function') {
             return fn.call(target, name, config, cb);
+          }
+          if (
+            noHome &&
+            (MCP_CREATE_TOOL_SLUGS.has(name) || ADMIN_KIND_CREATE_TOOL_SLUGS.has(name))
+          ) {
+            return fn.call(target, name, config, async () =>
+              refusal(
+                ADMIN_KIND_CREATE_TOOL_SLUGS.has(name)
+                  ? ADMIN_KIND_CREATE_ERROR
+                  : NO_WORKSPACE_CREATE_ERROR,
+              ),
+            );
           }
           if (!MCP_CREATE_TOOL_SLUGS.has(name)) {
             if (!privateWs) return fn.call(target, name, config, cb);

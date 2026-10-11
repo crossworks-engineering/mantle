@@ -173,6 +173,11 @@ export type LoginMcpChannel = {
   keyId?: string;
   peerId?: string;
   oauthClientId?: string;
+  /** The connection's login is outside an Admin scope (W7b fix round 2,
+   *  M-a): nothing on it spends on the brain owner's provider keys, so a
+   *  listed tool with a paid step (search_chunks' passage scoring) runs
+   *  its plain path. Stamped by the login surface, never from arguments. */
+  ownerKeysOff?: boolean;
 };
 
 /** The owner paths that carry an explicit owner surface (client logins C4). */

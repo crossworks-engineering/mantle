@@ -187,6 +187,27 @@ export type ToolCallGuard = {
  *  header); everything else is identical on both. */
 export type MantleMcpTransport = 'stdio' | 'http';
 
+/**
+ * The server every MCP tool of a login registers on: each call in the
+ * login's scope, gated (owner-scope.ts), then under its create home
+ * (create-home.ts: creates take `workspace` and say where they landed; a
+ * user outside Admin runs every call under its private workspace). The
+ * builtins and the connector tools (login-surface.ts) share it (W7b fix
+ * round 2, L-a).
+ */
+export function loginToolServer(
+  server: McpServer,
+  scopeLogin: string,
+  opts: { adminLogin: boolean; privateWs: string | null; noCreateHome?: boolean },
+): McpServer {
+  const scoped = ownerScopedServer(server, scopeLogin, { adminLogin: opts.adminLogin });
+  return createHomeServer(scoped, {
+    loginId: scopeLogin,
+    privateWs: opts.privateWs,
+    ...(opts.noCreateHome ? { noHome: true } : {}),
+  });
+}
+
 /** Register every Mantle MCP tool onto `server`, scoped to `ownerId`. Both the
  *  stdio entry and the HTTP route call this; `ownerId` is already authenticated
  *  by the caller. `transport` defaults to the SAFER of the two: a caller that
@@ -220,6 +241,9 @@ export function registerMantleTools(
      *  where a create without `workspace` lands outside a folder it may
      *  edit (create-home.ts). */
     privateWs?: string | null;
+    /** The scope login is outside Admin and in no workspace, so it has no
+     *  private workspace: its creates are refused (create-home.ts). */
+    noCreateHome?: boolean;
     /** The login's own MCP connection, stamped on the builtins' surface
      *  (the app_data_* tools read it). */
     mcp?: LoginMcpChannel;
@@ -227,14 +251,10 @@ export function registerMantleTools(
 ): void {
   const transport = opts.transport ?? 'http';
   const scopeLogin = opts.scopeLoginId ?? opts.loginId ?? ownerId;
-  const scoped = ownerScopedServer(server, scopeLogin, {
+  const homed = loginToolServer(server, scopeLogin, {
     adminLogin: opts.adminLogin !== false,
-  });
-  // Creates take `workspace` and say where they landed (W7b), inside the
-  // call's scope.
-  const homed = createHomeServer(scoped, {
-    loginId: scopeLogin,
     privateWs: opts.privateWs ?? null,
+    noCreateHome: opts.noCreateHome === true,
   });
   const target = opts.allow ? filteredServer(homed, opts.allow, opts.guard) : homed;
   const ctx = makeRegisterContext(target, ownerId, transport, opts.via, opts.loginId, opts.mcp);

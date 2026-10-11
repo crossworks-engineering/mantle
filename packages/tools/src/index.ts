@@ -230,7 +230,7 @@ export {
   type AppToolVerdict,
 } from './app-tool-level';
 export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
-export { isOwnerSurface, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
+export { isOwnerSurface, ownerKeysOff, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
 export type { LoginMcpChannel, OwnerSurfaceVia } from './types';
 export { safeFetch } from './safe-fetch';
 export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';

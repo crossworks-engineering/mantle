@@ -57,6 +57,7 @@ import { watchDatabaseErrors } from '@mantle/std/db-watch';
 import {
   MANTLE_MCP_INSTRUCTIONS,
   TOOLSMITH_WRITE_SLUGS,
+  loginToolServer,
   registerMantleTools,
 } from './build-server';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
@@ -64,7 +65,6 @@ import { addTool } from './register/tool-input';
 import { withModelImages } from './register/model-images';
 import { keyAreasAllowTool, keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
-import { ownerScopedServer } from './owner-scope';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 
 export type McpLoginRole = 'admin' | 'member' | 'client';
@@ -212,11 +212,13 @@ export function ownerPeerAllows(
 // ── One surface for every login (workspaces W7b) ─────────────────────────────
 
 /** The connection as the builtins see it: how it connected and its Write
- *  switch (app_data_*), and what the audit names it by. */
-function mcpChannel(caller: McpCaller): LoginMcpChannel {
+ *  switch (app_data_*), what the audit names it by, and whether it is
+ *  outside an Admin scope (no spending on the owner's keys, M-a). */
+function mcpChannel(caller: McpCaller, keysOff: boolean): LoginMcpChannel {
   return {
     via: caller.via,
     write: caller.write,
+    ...(keysOff ? { ownerKeysOff: true } : {}),
     ...(caller.keyId ? { keyId: caller.keyId } : {}),
     ...(caller.peerId ? { peerId: caller.peerId } : {}),
     ...(caller.oauthClientId ? { oauthClientId: caller.oauthClientId } : {}),
@@ -328,8 +330,11 @@ export const OWNER_KEY_SPENDING_TOOLS: ReadonlySet<string> = new Set([
   'ask_as_responder',
 ]);
 
-/** Spending builtins that stay with every login: a search's query embedding
- *  is the one search_nodes makes too, not a paid turn. */
+/** Spending builtins that stay listed for every login: search_chunks' query
+ *  embedding is the one search_nodes makes too, and its one paid step (the
+ *  passage_scoring decider, up to 8 requests per search) is skipped on a
+ *  connection outside an Admin scope (`ownerKeysOff`, W7b fix round 2,
+ *  M-a): such a login gets the plain ranking. */
 const SPENDING_KEPT: ReadonlySet<string> = new Set(['search_chunks']);
 
 /**
@@ -342,6 +347,13 @@ const SPENDING_KEPT: ReadonlySet<string> = new Set(['search_chunks']);
 export function spendsOwnerKeys(slug: string): boolean {
   if (SPENDING_KEPT.has(slug)) return false;
   return isBuiltinSpending(slug) || OWNER_KEY_SPENDING_TOOLS.has(slug);
+}
+
+/** Whether the prepared surface is outside an Admin scope: nothing on it
+ *  spends on the brain owner's keys (M4 lists no such tool; M-a: a listed
+ *  tool skips its paid step). An unscoped Admin login (view null) is not. */
+export function preparedKeysOff(prepared: PreparedCallerTools): boolean {
+  return prepared.kind === 'owner' && prepared.view !== null && !prepared.view.holdsAdmin;
 }
 
 /** Whether the prepared surface LISTS `slug` for this caller: the scope's
@@ -424,7 +436,12 @@ const CONNECTOR_LOG_INPUT_MAX = 2048;
 /** Run one connector tool for the caller (already in its scope, through
  *  the scope wrapper): a write needs the connection's write, dispatchTool
  *  checks the connector against the scope, and the call is logged. */
-async function callConnectorTool(caller: McpCaller, row: Tool, args: Record<string, unknown>) {
+async function callConnectorTool(
+  caller: McpCaller,
+  row: Tool,
+  args: Record<string, unknown>,
+  keysOff: boolean,
+) {
   // A stale (voided) mark counts as a write here: dispatch refuses it below
   // the owner anyway (connectorMarkState).
   const write = connectorMarkState(row) !== 'read';
@@ -461,7 +478,7 @@ async function callConnectorTool(caller: McpCaller, row: Tool, args: Record<stri
           kind: 'owner',
           via: caller.via === 'key' ? 'api' : caller.via === 'peer' ? 'federation' : 'mcp',
           loginId: caller.loginId,
-          mcp: mcpChannel(caller),
+          mcp: mcpChannel(caller, keysOff),
         },
       }),
     );
@@ -522,6 +539,11 @@ export function registerPreparedTools(
   const { caller } = prepared;
   const adminLogin = caller.role === 'admin';
   const allow = (slug: string) => preparedAllows(prepared, slug);
+  // Outside an Admin scope: nothing spends on the owner's keys (M-a), and
+  // a login in no workspace has no private one, so its creates are refused
+  // with a reply that says why (create-home.ts).
+  const keysOff = preparedKeysOff(prepared);
+  const noCreateHome = keysOff && !prepared.privateWs;
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
     // A peer an admin did not register for the anchor names no login to the
@@ -533,7 +555,8 @@ export function registerPreparedTools(
     scopeLoginId: caller.loginId,
     adminLogin,
     privateWs: prepared.privateWs,
-    mcp: mcpChannel(caller),
+    noCreateHome,
+    mcp: mcpChannel(caller, keysOff),
     ...(caller.via === 'key' ? { via: 'api' as const } : {}),
     ...(caller.via === 'peer' ? { via: 'federation' as const } : {}),
     allow,
@@ -542,8 +565,14 @@ export function registerPreparedTools(
       ? { guard: keyEmailGuard(caller.anchorId) }
       : {}),
   });
-  // The connectors, in the same scope and gate as every other tool.
-  const scoped = ownerScopedServer(server, caller.loginId, { adminLogin });
+  // The connectors, on the same server as every other tool: in the
+  // login's scope and gate, and under its create home (W7b fix round 2,
+  // L-a).
+  const scoped = loginToolServer(server, caller.loginId, {
+    adminLogin,
+    privateWs: prepared.privateWs,
+    noCreateHome,
+  });
   for (const row of prepared.connectors) {
     if (!allow(row.slug)) continue;
     addTool(
@@ -551,7 +580,7 @@ export function registerPreparedTools(
       row.slug,
       row.description,
       zodShapeFromJsonSchema((row.inputSchema as Record<string, unknown>) ?? {}),
-      (args) => callConnectorTool(caller, row, args as Record<string, unknown>),
+      (args) => callConnectorTool(caller, row, args as Record<string, unknown>, keysOff),
     );
   }
 }

@@ -29,6 +29,7 @@ import { str, strOpt, numOpt as num } from './coerce';
 import { publicErrorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
 import { surfaceHiddenNodeTypes } from './team-visibility';
+import { ownerKeysOff } from './surface';
 
 export const search_nodes: BuiltinToolDef = {
   slug: 'search_nodes',
@@ -204,8 +205,13 @@ export const search_chunks: BuiltinToolDef = {
       // Decider, use `passage_scoring` (experimental, owner-switched): when it
       // is on, fetch a wider pool so the scorer has something to choose from
       // (the use's `pool` setting, see passageScoringPool). Off = the exact
-      // pool it always fetched.
-      const scoringUse = await decisionUseEnabled(ctx.ownerId, 'passage_scoring');
+      // pool it always fetched. A direct MCP, key or peer call of a login
+      // outside an Admin scope never scores (W7b fix round 2, M-a): each
+      // scoring is paid decider requests on the owner's keys, so it gets
+      // the plain ranking.
+      const scoringUse = ownerKeysOff(ctx)
+        ? null
+        : await decisionUseEnabled(ctx.ownerId, 'passage_scoring');
       // Passage windows (embedding_config.chunk_windows, default off): a
       // window arm joins the hybrid search, and the judged pool doubles so
       // the judge sees the head of both arms.
