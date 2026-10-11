@@ -200,6 +200,7 @@ async function currentCode(
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
       authorLevel: apps.authorLevel,
+      homeWs: nodes.homeWs,
     })
     .from(apps)
     .innerJoin(nodes, eq(nodes.id, apps.nodeId))
@@ -214,6 +215,9 @@ async function currentCode(
       ...(typeof d.color === 'string' ? { color: d.color } : {}),
       tags: row.tags ?? [],
       ...(row.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
+      // Where it lives: a deleted app's purge and restore are checked
+      // against it (W6a fix round 1, M1).
+      ...(row.homeWs ? { homeWs: row.homeWs } : {}),
     },
     source: row.source,
     draft: row.draft ?? null,

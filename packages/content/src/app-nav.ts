@@ -17,7 +17,7 @@
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { apps, db, draftColumn, nodes, teamReadsSql } from '@mantle/db';
+import { teamReadsSql, apps, db, draftColumn, nodes, executeWrite } from '@mantle/db';
 import type {
   AppNavEntry,
   AppNavFolder,
@@ -40,7 +40,7 @@ export const APP_NAV_CHANGED_CHANNEL = 'app_nav_changed';
  *  notify only delays the refresh until the next load. */
 export async function notifyAppNavChanged(ownerId: string): Promise<void> {
   try {
-    await db.execute(sql`SELECT pg_notify(${APP_NAV_CHANGED_CHANNEL}, ${ownerId}::text)`);
+    await executeWrite(sql`SELECT pg_notify(${APP_NAV_CHANGED_CHANNEL}, ${ownerId}::text)`);
   } catch (err) {
     console.error('[app-nav] notify failed:', err instanceof Error ? err.message : err);
   }
@@ -198,7 +198,7 @@ export async function saveAppPins(
   const wanted = [...new Set(pins.map((id) => id.trim().toLowerCase()))]
     .filter((id) => live.has(id))
     .slice(0, APP_PINS_MAX);
-  await db.execute(sql`
+  await executeWrite(sql`
     update item_marks m set pinned_at = null
       from nodes n
      where n.id = m.node_id and m.actor_id = ${actorId}
@@ -206,7 +206,7 @@ export async function saveAppPins(
   const base = Date.now() - wanted.length * 1000;
   for (const [i, id] of wanted.entries()) {
     const at = new Date(base + i * 1000).toISOString();
-    await db.execute(sql`
+    await executeWrite(sql`
       insert into item_marks (actor_id, node_id, pinned_at)
       values (${actorId}, ${id}, ${at}::timestamptz)
       on conflict (actor_id, node_id) do update set pinned_at = excluded.pinned_at`);

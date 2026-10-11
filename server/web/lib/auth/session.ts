@@ -30,6 +30,7 @@ import {
   brainOnWorkspacesNow,
   withViewer,
   noteRequestSystem,
+  noteRequestWriteScope,
   noteRequestOwnRule,
   type RequestScopeMode,
 } from '@mantle/db';
@@ -797,6 +798,13 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     const refused = await adminItemWriteGate(loginId, method, pattern);
     if (refused) return refused;
     noteRequestSystem('admin-write');
+    // The login's scope on the request's system transactions (fix round 1,
+    // M1): the database checks moves, creates in a folder and deletes
+    // against it (withSystemTx). Off with the reads (rollback switch, a
+    // brain not on workspaces).
+    if (!adminReadsOnSystemPool() && (await brainOnWorkspacesNow())) {
+      noteRequestWriteScope(await loginScopeFor(loginId));
+    }
     return null;
   }
   if (adminReadsOnSystemPool()) {
@@ -833,22 +841,60 @@ async function adminItemWriteGate(
   const target = path ? itemWriteTarget(method, pattern, path) : null;
   if (!target || !ITEM_ID_RE.test(target.id)) return null;
   if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return null;
-  const rows = (await withViewer('team', { login: loginId }, () =>
-    db.execute(sql`
-      select "public"."mantle_may_edit"(home_ws, write_ws) as edit,
-             "public"."mantle_may_manage"(home_ws) as manage
-        from nodes where id = ${target.id}`),
-  )) as unknown as { edit: boolean | null; manage: boolean | null }[];
-  const row = rows[0];
-  if (row) {
-    if (target.need === 'read') return null;
-    if (target.need === 'edit' ? row.edit === true : row.manage === true) return null;
+  let row: { edit: boolean | null; manage: boolean | null } | undefined;
+  if (target.ref === 'deleted-app') {
+    // The app is gone: its last snapshot names the workspace it was homed
+    // in (meta.homeWs since W6a fix round 1; the Admin workspace before).
+    // No snapshot: the handler's 404.
+    const snap = (await db.execute(sql`
+      select coalesce(nullif(s.code->'meta'->>'homeWs', ''),
+                      (select w.id::text from workspaces w
+                        where w.owner_id = mantle_brain_id() and w.is_admin limit 1)) as home
+        from node_snapshots s
+       where s.node_id = ${target.id} and s.node_kind = 'app' and s.trigger = 'pre_delete'
+         and not exists (select 1 from nodes n where n.id = s.node_id)
+       order by s.seq desc limit 1`)) as unknown as { home: string | null }[];
+    if (snap.length === 0) return null;
+    const home = snap[0]!.home;
+    const manage = (await withViewer('team', { login: loginId }, () =>
+      db.execute(sql`select "public"."mantle_may_manage"(${home}::uuid) as manage`),
+    )) as unknown as { manage: boolean | null }[];
+    if (manage[0]?.manage === true) return null;
+    row = { edit: false, manage: false };
   } else {
-    // Not in the scope: refused when it exists, the handler's 404 when not.
-    const seen = (await db.execute(
-      sql`select 1 from nodes where id = ${target.id}`,
-    )) as unknown as unknown[];
-    if (seen.length === 0) return null;
+    // The item the route names: the id itself, or through a share or a
+    // recall revision (read on the system pool: an id, no content).
+    let nodeId: string | null = target.id;
+    if (target.ref === 'share') {
+      const r = (await db.execute(
+        sql`select node_id::text as id from shares where id = ${target.id}`,
+      )) as unknown as { id: string | null }[];
+      nodeId = r[0]?.id ?? null;
+    } else if (target.ref === 'recall-revision') {
+      const r = (await db.execute(
+        sql`select m.node_id::text as id from recall_revisions v
+              join recall_maps m on m.id = v.map_id where v.id = ${target.id}`,
+      )) as unknown as { id: string | null }[];
+      nodeId = r[0]?.id ?? null;
+    }
+    if (!nodeId) return null;
+    const rows = (await withViewer('team', { login: loginId }, () =>
+      db.execute(sql`
+        select "public"."mantle_may_edit"(home_ws, write_ws) as edit,
+               "public"."mantle_may_manage"(home_ws) as manage
+          from nodes where id = ${nodeId}`),
+    )) as unknown as { edit: boolean | null; manage: boolean | null }[];
+    row = rows[0];
+    if (row) {
+      if (target.need === 'read') return null;
+      if (target.need === 'edit' ? row.edit === true : row.manage === true) return null;
+    } else {
+      // Not in the scope: refused when it exists, the handler's 404 when not.
+      const seen = (await db.execute(
+        sql`select 1 from nodes where id = ${nodeId}`,
+      )) as unknown as unknown[];
+      if (seen.length === 0) return null;
+    }
   }
   return NextResponse.json(
     {

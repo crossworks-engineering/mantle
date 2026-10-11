@@ -235,6 +235,14 @@ type RequestSlot = {
   /** Tests and development only: the reads a member route ('own-rule')
    *  sent to the system pool, by calling file (the W6a route sweep). */
   systemReads?: string[];
+  /** Tests and development only: the writes a request scope sent to the
+   *  system pool through `db` (insert, update, delete, a mutating request's
+   *  transaction), by calling file (W6a fix round 1, L2). */
+  systemWrites?: string[];
+  /** An Admin user's mutating request on the system pool (W6a fix round 1,
+   *  M1): the login's scope, which withSystemTx sets on its transactions so
+   *  the database's move, create and delete checks run. */
+  writeScope?: WorkspaceScope;
 };
 
 /** Work a scope's transaction owes the world outside the database, run once
@@ -354,6 +362,46 @@ export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): b
 export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' }>['why']): void {
   const slot = requestSlots.getStore();
   if (slot && !slot.scope) slot.outcome = { kind: 'system', why };
+}
+
+/**
+ * An Admin user's write request (W6a fix round 1, M1): the guard lets it
+ * through on the system pool and records the login's scope here; every
+ * withSystemTx in the request then sets mantle.ws and mantle.mod_ws on its
+ * transaction, so the database checks a move (0241/0245), a create in a
+ * folder and a delete (0266) against the user's workspaces. No-op outside a
+ * slot or when the request already runs in a scope.
+ */
+export function noteRequestWriteScope(ws: WorkspaceScope): void {
+  const slot = requestSlots.getStore();
+  if (!slot || slot.scope) return;
+  slot.writeScope = ws;
+  slot.outcome = { kind: 'system', why: 'admin-write' };
+}
+
+/** The scope an Admin user's write request is checked in (see
+ *  noteRequestWriteScope), or null. Masked by asSystem and by any other
+ *  scope (their transactions are not this request's writes). */
+export function requestWriteScope(): WorkspaceScope | null {
+  const s = store.getStore();
+  if (s) return null;
+  return requestSlots.getStore()?.writeScope ?? null;
+}
+
+/**
+ * Tests and development only (W6a fix round 1, L2): note a write a request
+ * scope sends to the system pool through `db` (client.ts), with the file
+ * that sent it. The route sweep pins the list.
+ */
+export function noteRequestSystemWrite(what: string): void {
+  const slot = requestSlots.getStore();
+  if (!slot?.scope || store.getStore() || !strictTurnExits()) return;
+  (slot.systemWrites ??= []).push(`${what} ${systemDbCallerOf(new Error().stack ?? '') ?? '?'}`);
+}
+
+/** The writes noteRequestSystemWrite noted in the current request. */
+export function requestSystemWrites(): readonly string[] {
+  return requestSlots.getStore()?.systemWrites ?? [];
 }
 
 /** Record that the guard let a member route's handler hold its own rule

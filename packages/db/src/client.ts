@@ -32,6 +32,8 @@ import {
   type PoolRole,
   currentRequestMode,
   noteOwnRuleSystemRead,
+  noteRequestSystemWrite,
+  requestWriteScope,
   requestScopeMemo,
 } from './viewer';
 
@@ -318,10 +320,30 @@ export async function withSystemTx<T>(
   if ((!isSystemScope() && !inRequest) || currentScopeTx()) {
     throw new Error('withSystemTx: only outside a viewer scope and any other transaction');
   }
+  // An Admin user's write request (W6a fix round 1, M1): the login's scope
+  // on the transaction, so the database checks moves (0241/0245), creates in
+  // a folder and deletes (0266) against its workspaces. mantle.login_id is
+  // left unset: the 0250 stamp would otherwise mark trace, run and chat rows
+  // made in the same transaction as this login's, which nothing asks for.
+  const writeScope = requestWriteScope();
+  const settings = writeScope
+    ? [
+        uuidArrayLiteral(writeScope.ws, 'write scope ws'),
+        uuidArrayLiteral(writeScope.modWs, 'write scope modWs'),
+      ]
+    : null;
   const hooks = newTxHooks();
   let result: T;
   try {
-    result = await getAdminDb().transaction((tx) => runInSystemTx({ tx, hooks }, () => fn(tx)));
+    result = await getAdminDb().transaction(async (tx) => {
+      if (settings) {
+        await tx.execute(
+          sqlTag`select set_config('mantle.ws', ${settings[0]}, true),
+                        set_config('mantle.mod_ws', ${settings[1]}, true)`,
+        );
+      }
+      return runInSystemTx({ tx, hooks }, () => fn(tx));
+    });
   } catch (err) {
     await runTxHooks(hooks.rollback, 'rollback');
     throw err;
@@ -918,7 +940,9 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     // A request scope (W6a, plan 2.3): writes stay on the system pool with
     // their rule in the statement; reads run in the scope. A transaction is
     // a write in a mutating request, and stays in the scope in a read
-    // request (a search step that needs one transaction).
+    // request (a search step that needs one transaction). A raw execute
+    // always runs in the scope (fix round 1, M3): a raw write says so with
+    // executeWrite.
     const mode = currentRequestMode();
     if (mode && !currentScopeTx()) {
       if (
@@ -927,9 +951,9 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
         prop === 'delete' ||
         (prop === 'transaction' && mode.writes)
       ) {
+        noteRequestSystemWrite(String(prop));
         return Reflect.get(getAdminDb() as object, prop);
       }
-      if (prop === 'execute') return requestExecute;
     }
     if (prop === 'select' || prop === 'selectDistinct' || prop === 'execute' || prop === 'query') {
       noteOwnRuleSystemRead(String(prop));
@@ -940,9 +964,10 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
 
 /**
  * Whether a raw statement writes (W6a): a leading write verb, or a write
- * clause anywhere (a data-modifying CTE, a row lock). For routing a request
- * scope's raw statements: a write to the system pool, a read to the
- * workspace role.
+ * clause anywhere (a data-modifying CTE, a row lock). No longer routes a
+ * request scope's raw statements (fix round 1, M3: a read it took for a
+ * write ran unscoped); executeWrite uses it to refuse a statement that does
+ * not write.
  */
 export function isWriteSql(text: string): boolean {
   const body = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
@@ -958,20 +983,45 @@ export function isWriteSql(text: string): boolean {
   );
 }
 
-const requestExecute = ((query: Parameters<PostgresJsDatabase<typeof schema>['execute']>[0]) => {
-  const admin = getAdminDb();
-  const text =
-    typeof query === 'string'
-      ? query
-      : (
-          admin as unknown as { dialect: { sqlToQuery: (q: unknown) => { sql: string } } }
-        ).dialect.sqlToQuery(
-          typeof (query as { getSQL?: unknown }).getSQL === 'function'
-            ? (query as unknown as { getSQL: () => unknown }).getSQL()
-            : query,
-        ).sql;
-  return (isWriteSql(text) ? admin : getDb()).execute(query);
-}) as PostgresJsDatabase<typeof schema>['execute'];
+/** The SQL text of a drizzle query or a string. */
+function sqlTextOf(query: unknown): string {
+  if (typeof query === 'string') return query;
+  const admin = getAdminDb() as unknown as {
+    dialect: { sqlToQuery: (q: unknown) => { sql: string } };
+  };
+  return admin.dialect.sqlToQuery(
+    typeof (query as { getSQL?: unknown }).getSQL === 'function'
+      ? (query as { getSQL: () => unknown }).getSQL()
+      : query,
+  ).sql;
+}
+
+/** A statement that only reads, sent to executeWrite. */
+export class NotAWriteError extends Error {
+  constructor() {
+    super('executeWrite: the statement does not write; read through db in the caller’s scope.');
+    this.name = 'NotAWriteError';
+  }
+}
+
+/**
+ * A raw WRITE, said so (W6a fix round 1, M3). Inside a request scope
+ * `db.execute` always runs in the scope, on the workspace role, where a
+ * write fails loudly; a raw statement that writes comes here and runs on
+ * the system pool, as the typed writes (db.insert, update, delete) do there.
+ * Anywhere else it is exactly `db.execute`. Refuses a statement that does
+ * not write (isWriteSql), so it is never a door for a read.
+ */
+export function executeWrite(
+  query: Parameters<PostgresJsDatabase<typeof schema>['execute']>[0],
+): ReturnType<PostgresJsDatabase<typeof schema>['execute']> {
+  if (!isWriteSql(sqlTextOf(query))) throw new NotAWriteError();
+  if (currentRequestMode() && !currentScopeTx()) {
+    noteRequestSystemWrite('executeWrite');
+    return getAdminDb().execute(query);
+  }
+  return getDb().execute(query);
+}
 
 /**
  * Infrastructure handle: always the admin pool, whatever the viewer. For the

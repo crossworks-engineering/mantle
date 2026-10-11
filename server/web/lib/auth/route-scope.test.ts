@@ -80,36 +80,86 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
     expect(itemWriteTarget('PATCH', '/api/pages/:id', `/api/pages/${id}`)).toEqual({
       id,
       need: 'edit',
+      ref: 'node',
     });
     expect(itemWriteTarget('DELETE', '/api/notes/:id', `/api/notes/${id}`)).toEqual({
       id,
       need: 'manage',
+      ref: 'node',
     });
     expect(itemWriteTarget('POST', '/api/pages/:id/move', `/api/pages/${id}/move`)).toEqual({
       id,
       need: 'manage',
+      ref: 'node',
     });
     expect(itemWriteTarget('DELETE', '/api/apps/:id/draft', `/api/apps/${id}/draft`)).toEqual({
       id,
       need: 'edit',
+      ref: 'node',
     });
     expect(itemWriteTarget('POST', '/api/apps/:id/opened', `/api/apps/${id}/opened`)).toEqual({
       id,
       need: 'read',
+      ref: 'node',
     });
     expect(
       itemWriteTarget('PATCH', '/api/tree/:kind/folders/:id', `/api/tree/pages/folders/${id}`),
-    ).toEqual({ id, need: 'edit' });
+    ).toEqual({ id, need: 'edit', ref: 'node' });
     expect(
       itemWriteTarget('PATCH', '/api/v1/tables/:id/rows/:rowId', `/api/v1/tables/${id}/rows/r1`),
-    ).toEqual({ id, need: 'edit' });
+    ).toEqual({ id, need: 'edit', ref: 'node' });
   });
   it('names no item for a create, a list or another prefix', () => {
     expect(itemWriteTarget('POST', '/api/pages', '/api/pages')).toBeNull();
     expect(itemWriteTarget('POST', '/api/tree/:kind/move', '/api/tree/pages/move')).toBeNull();
-    expect(
-      itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`),
-    ).toBeNull();
     expect(itemWriteTarget('PATCH', '/api/contacts/:id', `/api/contacts/${id}`)).toBeNull();
+    expect(itemWriteTarget('POST', '/api/shares/contacts', '/api/shares/contacts')).toBeNull();
+  });
+  it('fix round 1 (M1): the other workspace kinds, and items named through another row', () => {
+    expect(itemWriteTarget('DELETE', '/api/tasks/:id', `/api/tasks/${id}`)).toEqual({
+      id,
+      need: 'manage',
+      ref: 'node',
+    });
+    expect(itemWriteTarget('PATCH', '/api/v1/tasks/:id', `/api/v1/tasks/${id}`)).toEqual({
+      id,
+      need: 'edit',
+      ref: 'node',
+    });
+    expect(itemWriteTarget('PATCH', '/api/events/:id', `/api/events/${id}`)?.need).toBe('edit');
+    expect(itemWriteTarget('DELETE', '/api/formulas/:id', `/api/formulas/${id}`)?.need).toBe(
+      'manage',
+    );
+    expect(
+      itemWriteTarget(
+        'POST',
+        '/api/recall/maps/:id/cards/reorder',
+        `/api/recall/maps/${id}/cards/reorder`,
+      ),
+    ).toEqual({ id, need: 'edit', ref: 'node' });
+    expect(
+      itemWriteTarget(
+        'POST',
+        '/api/recall/revisions/:id/restore',
+        `/api/recall/revisions/${id}/restore`,
+      ),
+    ).toEqual({ id, need: 'edit', ref: 'recall-revision' });
+    expect(itemWriteTarget('DELETE', '/api/shares/:id', `/api/shares/${id}`)).toEqual({
+      id,
+      need: 'manage',
+      ref: 'share',
+    });
+    expect(itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`)).toEqual({
+      id,
+      need: 'manage',
+      ref: 'deleted-app',
+    });
+    expect(
+      itemWriteTarget('POST', '/api/apps/deleted/:id/restore', `/api/apps/deleted/${id}/restore`),
+    ).toEqual({ id, need: 'manage', ref: 'deleted-app' });
+  });
+  it('fix round 1 (M2): the Apps sidebar reads in the login scope', () => {
+    expect(routeClass('/api/app-nav')).toEqual({ kind: 'content' });
+    expect(routeClass('/api/app-nav/pins')).toEqual({ kind: 'content' });
   });
 });

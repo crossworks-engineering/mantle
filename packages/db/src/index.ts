@@ -36,6 +36,8 @@ export {
   loginScopeFor,
   brainOnWorkspacesNow,
   isWriteSql,
+  executeWrite,
+  NotAWriteError,
   type Db,
 } from './client';
 export {
@@ -85,6 +87,10 @@ export {
   hasRequestSlot,
   enterRequestScope,
   noteRequestSystem,
+  noteRequestWriteScope,
+  requestWriteScope,
+  noteRequestSystemWrite,
+  requestSystemWrites,
   noteRequestOwnRule,
   noteOwnRuleSystemRead,
   ownRuleSystemReads,
@@ -184,6 +190,7 @@ export {
   isHeadsCheckError,
   isCheckViolation,
   isUniqueViolation,
+  isScopeWriteRefusal,
   pgConstraint,
   pgErrorCode,
 } from './pg-error';

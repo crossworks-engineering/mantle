@@ -56,6 +56,21 @@ export function isHeadsCheckError(err: unknown): boolean {
   return /heads not held|mantle_lock_heads/.test(message);
 }
 
+/**
+ * A write the workspace checks refused (42501 with one of their own
+ * messages, migrations 0241, 0245 and 0266): an Admin user's move, create in
+ * a folder or delete of an item its workspaces may not change (W6a fix round
+ * 1). Matched by message too, so a missing grant (also 42501) stays a 500.
+ */
+export function isScopeWriteRefusal(err: unknown): boolean {
+  const pg = findPgError(err) as (PgLike & { message?: unknown }) | null;
+  if (!pg || pg.code !== '42501') return false;
+  const message = typeof pg.message === 'string' ? pg.message : '';
+  return /^(not allowed to (move this item|add items to that folder|delete this item)|placing this app adds a workspace you do not moderate)/.test(
+    message,
+  );
+}
+
 /** 23505 unique_violation: the write hit a unique index or constraint. */
 export function isUniqueViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23505';

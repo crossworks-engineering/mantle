@@ -14,7 +14,7 @@
  * cascade + reaper path the rest of the app uses. There are no fixtures and
  * nothing to clean up, so leaving the screen mid-anything is harmless.
  */
-import { db, sql, withDeadlockRetry, withNodeDeleteHeads } from '@mantle/db';
+import { db, sql, withDeadlockRetry, withNodeDeleteHeads, executeWrite } from '@mantle/db';
 import { deleteFileById } from '@mantle/files';
 
 import { evaluateLanded } from './evaluate-landed';
@@ -217,7 +217,7 @@ export async function deleteLandedNode(
   nodeId: string,
 ): Promise<DeleteLandedResult> {
   const row = rowsOf<{ type: string }>(
-    await db.execute(
+    await executeWrite(
       sql`SELECT type::text AS type FROM nodes WHERE id = ${nodeId} AND owner_id = ${ownerId} LIMIT 1`,
     ),
   )[0];

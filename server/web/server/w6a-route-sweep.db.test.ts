@@ -33,7 +33,11 @@ import { PUBLIC_PATHS } from '../lib/auth-constants';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-const seen = vi.hoisted(() => ({ last: null as unknown, reads: [] as readonly string[] }));
+const seen = vi.hoisted(() => ({
+  last: null as unknown,
+  reads: [] as readonly string[],
+  writes: [] as readonly string[],
+}));
 
 // Read what the guard did, inside the request's own slot, once the handler
 // is done.
@@ -48,6 +52,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
         } finally {
           seen.last = orig.currentRequestOutcome();
           seen.reads = orig.ownRuleSystemReads();
+          seen.writes = orig.requestSystemWrites();
         }
       }),
   };
@@ -63,6 +68,17 @@ vi.mock('@mantle/db', async (importOriginal) => {
  * through withViewer. The list only shrinks: these routes move into the
  * request scope in W7/W8.
  */
+/**
+ * The writes a request scope sends to the system pool through `db` (W6a
+ * fix round 1, L2), by route and calling file: the typed writes (insert,
+ * update, delete) and executeWrite a READ request makes in the login's
+ * scope, or a member's. Each is the system's own bookkeeping, keyed to what
+ * the scope already reads (lazy repairs of an item it reads, its own marks,
+ * the kind roots of the tree). The list only shrinks; a new entry needs
+ * review.
+ */
+const REQUEST_SCOPE_SYSTEM_WRITES: ReadonlySet<string> = new Set<string>([]);
+
 const OWN_RULE_SYSTEM_READS: ReadonlySet<string> = new Set([
   'GET /api/member/accepted packages/content/src/member-accepted.ts',
   'GET /api/member/accepted/:id packages/content/src/member-accepted.ts',
@@ -149,9 +165,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     text: string;
     outcome: RequestOutcome | null;
     reads: readonly string[];
+    writes: readonly string[];
   }> => {
     seen.last = null;
     seen.reads = [];
+    seen.writes = [];
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (as?.startsWith('mtlk_')) headers.authorization = `Bearer ${as}`;
     else if (as) headers.cookie = cookieOf(as);
@@ -163,13 +181,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       }),
       new Promise<null>((r) => setTimeout(() => r(null), 20_000)),
     ]);
-    if (!res) return { status: 0, text: 'timeout', outcome: null, reads: [] };
+    if (!res) return { status: 0, text: 'timeout', outcome: null, reads: [], writes: [] };
     const text = method === 'HEAD' ? '' : await res.text().catch(() => '');
     return {
       status: res.status,
       text,
       outcome: seen.last as RequestOutcome | null,
       reads: seen.reads,
+      writes: seen.writes,
     };
   };
 
@@ -271,6 +290,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   });
 
   const skipped = (pattern: string) => SKIP.some((re) => re.test(pattern));
+  /** The request-scope writes the sweeps saw (L2), checked at the end. */
+  const scopeWrites = new Set<string>();
+  const noteWrites = (key: string, writes: readonly string[]) => {
+    for (const w of writes) {
+      const file = w.replace(/^\S+ /, '').replace(/^.*?((packages|server)\/)/, '$1');
+      scopeWrites.add(`${key} ${w.split(' ')[0]} ${file}`);
+    }
+  };
   const isPublic = (pattern: string) =>
     PUBLIC_PATHS.some((p) => pattern === p || pattern.startsWith(`${p}/`));
   const isOwnerRoute = (method: string, pattern: string) =>
@@ -292,6 +319,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       if (isMemberRoute('GET', e.pattern) || isClientRoute('GET', e.pattern)) continue;
       const r = await call(concrete(e.pattern, true), owner);
       const key = `GET ${e.pattern}`;
+      noteWrites(key, r.writes);
       if (r.status >= 500 || r.status === 0)
         failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
       else if (r.status !== 401 && r.status !== 403 && r.outcome?.kind !== 'user') {
@@ -340,6 +368,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         const read = method === 'GET';
         const r = await call(concrete(e.pattern, read), mem, method);
         const key = `${method} ${e.pattern}`;
+        noteWrites(key, r.writes);
         if (r.status >= 500 || r.status === 0) {
           failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
           continue;
@@ -517,6 +546,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       delete process.env.MANTLE_ADMIN_READS;
     }
   }, 600_000);
+
+  it('L2: the system-pool writes of request scopes are the pinned list', () => {
+    // Runs after the Admin and member sweeps above (same file, in order).
+    expect([...scopeWrites].filter((w) => !REQUEST_SCOPE_SYSTEM_WRITES.has(w)).sort()).toEqual([]);
+  });
 
   it('drafts: an Admin user reads the draft of an item it may edit, a member none', async () => {
     const a = JSON.parse((await call(`/api/pages/${teamPage}`, owner)).text) as Json;

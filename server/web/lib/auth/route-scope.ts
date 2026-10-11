@@ -55,11 +55,13 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/docs', 'content'],
   ['/api/activity', 'content'],
   ['/api/v1', 'content'],
+  // The Apps sidebar of older clients: the apps the login's scope reads
+  // (W6a fix round 1, M2), with its own pins.
+  ['/api/app-nav', 'content'],
   // The login's own things.
   ['/api/profile', 'self'],
   ['/api/push', 'self'],
   ['/api/assistant', 'self'],
-  ['/api/app-nav', 'self'],
   ['/api/auth', 'self'],
   ['/api/changelog', 'self'],
   ['/api/help', 'self'],
@@ -223,6 +225,27 @@ export const ITEM_WRITE_PREFIXES: readonly string[] = [
   '/api/tree/items',
   '/api/v1/pages',
   '/api/v1/tables',
+  // W6a fix round 1 (M1): the other workspace kinds with an item route.
+  '/api/formulas',
+  '/api/tasks',
+  '/api/events',
+  '/api/v1/tasks',
+  '/api/recall/maps',
+];
+
+/**
+ * Item routes whose `:id` is not the item's own id (W6a fix round 1, M1):
+ * the guard finds the item through it. A share names its item
+ * (shares.node_id); a recall revision its map (recall_maps.node_id); a
+ * deleted app is gone, and its last snapshot names the workspace it was
+ * homed in (meta.homeWs, the Admin workspace for a snapshot from before).
+ */
+export type ItemRef = 'node' | 'share' | 'recall-revision' | 'deleted-app';
+
+const ITEM_REF_PREFIXES: ReadonlyArray<readonly [string, ItemRef]> = [
+  ['/api/shares', 'share'],
+  ['/api/recall/revisions', 'recall-revision'],
+  ['/api/apps/deleted', 'deleted-app'],
 ];
 
 /** Item writes that only need the item to be readable: the login's own
@@ -251,8 +274,18 @@ export function itemWriteTarget(
   method: string,
   pattern: string,
   path: string,
-): { id: string; need: ItemWriteNeed } | null {
+): { id: string; need: ItemWriteNeed; ref: ItemRef } | null {
   const m = method.toUpperCase();
+  for (const [prefix, ref] of ITEM_REF_PREFIXES) {
+    const head = `${prefix}/:id`;
+    if (pattern !== head && !pattern.startsWith(`${head}/`)) continue;
+    const id = path.split('/')[prefix.split('/').length];
+    if (!id) return null;
+    // A share is a link (manage, 0241); a revision restore edits the map;
+    // a deleted app's purge and restore manage it.
+    const need: ItemWriteNeed = ref === 'share' || ref === 'deleted-app' ? 'manage' : 'edit';
+    return { id, need, ref };
+  }
   for (const prefix of ITEM_WRITE_PREFIXES) {
     const head = `${prefix}/:id`;
     if (pattern !== head && !pattern.startsWith(`${head}/`)) continue;
@@ -264,7 +297,7 @@ export function itemWriteTarget(
       : ITEM_MANAGE_WRITES.has(key) || (m === 'DELETE' && pattern === head)
         ? 'manage'
         : 'edit';
-    return { id, need };
+    return { id, need, ref: 'node' };
   }
   return null;
 }

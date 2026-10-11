@@ -24,7 +24,7 @@
  */
 
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, telegramChats } from '@mantle/db';
+import { db, telegramChats, executeWrite } from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
 import { loadProfilePreferences } from '@mantle/content';
 import { registerPendingCreatedNotifier } from '@mantle/runs';
@@ -39,7 +39,7 @@ export const PENDING_CHANGED_CHANNEL = 'pending_changed';
  */
 export async function notifyPendingChanged(ownerId: string): Promise<void> {
   try {
-    await db.execute(sql`SELECT pg_notify(${PENDING_CHANGED_CHANNEL}, ${ownerId})`);
+    await executeWrite(sql`SELECT pg_notify(${PENDING_CHANGED_CHANNEL}, ${ownerId})`);
   } catch (err) {
     console.error(
       '[pending:notify] pg_notify failed (badge will catch up on next load):',

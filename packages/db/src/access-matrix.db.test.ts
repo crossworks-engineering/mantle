@@ -12,6 +12,7 @@ import {
   applyViewerGrants,
   readFor,
   ruleFor,
+  userReadFor,
 } from './access-matrix';
 import type { LimitedLevel } from './viewer';
 
@@ -266,6 +267,33 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
       const covered = new Set(policies.flatMap((p) => p.roles));
       for (const role of ROLES)
         expect(covered.has(role), `${t.table} policy for ${role}`).toBe(true);
+    }
+  });
+
+  it('every table the workspace role reads has row level security and a rule for it (W6a fix H2)', async () => {
+    // A table read by every role, every row, by design (rule 'all-rows':
+    // settings and catalogs) needs no rule; every other table the workspace
+    // role (mantle_view_user) may SELECT is filtered by a policy of its own.
+    const missing: string[] = [];
+    for (const t of ACCESS_MATRIX) {
+      if (userReadFor(t) === 'none' || t.rule === 'all-rows') continue;
+      const [schema, name] = t.table.split('.');
+      const [rls] = await sql<{ on: boolean }[]>`
+        select relrowsecurity as on from pg_class
+        where relname = ${name!} and relnamespace = ${schema!}::regnamespace`;
+      if (rls?.on !== true) missing.push(`${t.table}: row level security off`);
+      const policies = await sql<{ roles: string[] }[]>`
+        select roles from pg_policies where schemaname = ${schema!} and tablename = ${name!}
+          and cmd in ('SELECT', 'ALL')`;
+      if (!policies.some((p) => p.roles.includes('mantle_view_user'))) {
+        missing.push(`${t.table}: no rule for mantle_view_user`);
+      }
+    }
+    expect(missing).toEqual([]);
+    // The two the audit found (mail rows) are among them.
+    for (const t of ['public.emails', 'public.email_attachments']) {
+      const entry = ACCESS_MATRIX.find((e) => e.table === t)!;
+      expect(userReadFor(entry), t).not.toBe('none');
     }
   });
 
