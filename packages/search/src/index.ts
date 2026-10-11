@@ -1,4 +1,4 @@
-import { db, nodes, type Node } from '@mantle/db';
+import { asSystem, currentWorkspaceScope, db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
 import { distanceOrder, hnswFirst, smallScope } from './scope';
@@ -217,12 +217,34 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   const kq = opts.q?.trim() ? await resolveKeywordQuery(opts.q.trim(), 'nodes') : null;
   if (kq) {
     const kw = keywordSql(nodes.searchTsv, kq);
-    ftsRows = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(and(...filters, kw.match))
-      .orderBy(...kw.order)
-      .limit(pool);
+    const ranked = (n: number) =>
+      db
+        .select({ id: nodes.id })
+        .from(nodes)
+        .where(and(...filters, kw.match))
+        .orderBy(...kw.order)
+        .limit(n);
+    if (currentWorkspaceScope() && !exact) {
+      // A big workspace scope (W7a): the text match is not leakproof, so
+      // under the row rule Postgres may not use the text index; it walked
+      // every item of the scope and matched each (30 to 40 ms on a large
+      // brain copy for one search). The ranked match runs on the system
+      // pool for ids only (a wider pool), and only the ids the scope reads
+      // are kept, re-read in the scope by id, in the match's order. Nothing
+      // outside the scope is returned or used.
+      const candidates = await asSystem(() => ranked(pool * 4), 'keyword-candidates');
+      const ids = candidates.map((r) => r.id);
+      const seen = ids.length
+        ? new Set(
+            (await db.select({ id: nodes.id }).from(nodes).where(inArray(nodes.id, ids))).map(
+              (r) => r.id,
+            ),
+          )
+        : new Set<string>();
+      ftsRows = candidates.filter((r) => seen.has(r.id)).slice(0, pool);
+    } else {
+      ftsRows = await ranked(pool);
+    }
   }
 
   const score = new Map<string, number>();

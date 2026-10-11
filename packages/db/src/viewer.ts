@@ -875,6 +875,11 @@ export function runInSystemTx<T>(
  *    query terms (pg_stats, which Postgres hides from a role under row
  *    security, and capped counts): numbers that pick which terms the keyword
  *    arm ORs, never a row (@mantle/search keyword-query.ts, W7a).
+ *  - `keyword-candidates`: in a big workspace scope, the ids of the items
+ *    whose text matches the caller's own terms, ranked (the text match is
+ *    not leakproof, so under the row rule its index is never used); only the
+ *    ids the scope reads are kept, re-read in the scope by id (searchNodes,
+ *    W7a). No row leaves the system pool.
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -899,6 +904,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'login-names',
   'owner-preferences',
   'lexeme-stats',
+  'keyword-candidates',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 
