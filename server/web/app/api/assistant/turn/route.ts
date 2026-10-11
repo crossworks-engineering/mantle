@@ -29,7 +29,7 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { getChatLoginOr401, type ChatLogin } from '@/lib/auth';
 import { resolveChatAgent, type ChatAgent } from '@/lib/assistant-chat';
 import { queueWorkspaceTurn } from '@/lib/workspace-turn';
 import { getDbosClient } from '@/lib/dbos-client';
@@ -222,9 +222,12 @@ type TurnResult = { status: number; body: unknown; headers?: HeadersInit };
 
 // In-memory idempotency. A duplicate request with the same Idempotency-Key
 // (a network retry, or the same submit sent twice) replays the first turn's
-// result instead of saving the file + running the LLM again. Single-process
-// scope (one web instance, single user); lost on restart, which is fine —
-// duplicates only matter within seconds.
+// result instead of saving the file and running the LLM again. Single-process
+// scope (one web instance); lost on restart, which is fine: duplicates only
+// matter within seconds. Keyed by the signed-in login AND the key, and read
+// only after the request is authenticated (W7c fix round 1, L1): one login's
+// key never replays another login's turn, nor answers an unauthenticated
+// request.
 const TURN_DEDUP_TTL_MS = 2 * 60_000;
 const recentTurns = new Map<string, { at: number; result: TurnResult }>();
 const inflightTurns = new Map<string, Promise<TurnResult>>();
@@ -239,38 +242,45 @@ function pruneRecentTurns() {
 export async function POST(req: Request): Promise<NextResponse> {
   const toResponse = (r: TurnResult) =>
     NextResponse.json(r.body, { status: r.status, ...(r.headers ? { headers: r.headers } : {}) });
+  // Auth first, before the dedup cache is read, so a failure surfaces as a
+  // clean 401 (not a swallowed 500, and not an HTML login redirect: a
+  // programmatic client needs a status). The route is also gated by
+  // middleware. `source` tags the turn 'web' (browser) vs 'mobile' (companion).
+  const login = await getChatLoginOr401();
+  if (login instanceof NextResponse) return login;
   const key = req.headers.get('idempotency-key');
-  if (!key) return toResponse(await runTurn(req, null));
+  if (!key) return toResponse(await runTurn(req, login, null));
 
-  const cached = recentTurns.get(key);
+  const cacheKey = `${login.loginId}:${key}`;
+  const cached = recentTurns.get(cacheKey);
   if (cached && Date.now() - cached.at < TURN_DEDUP_TTL_MS) return toResponse(cached.result);
 
-  let pending = inflightTurns.get(key);
+  let pending = inflightTurns.get(cacheKey);
   if (!pending) {
-    pending = runTurn(req, key);
-    inflightTurns.set(key, pending);
+    pending = runTurn(req, login, key);
+    inflightTurns.set(cacheKey, pending);
     pending
       .then((result) => {
-        recentTurns.set(key, { at: Date.now(), result });
+        recentTurns.set(cacheKey, { at: Date.now(), result });
         pruneRecentTurns();
       })
-      .finally(() => inflightTurns.delete(key));
+      .finally(() => inflightTurns.delete(cacheKey));
   }
   return toResponse(await pending);
 }
 
-async function runTurn(req: Request, idempotencyKey: string | null): Promise<TurnResult> {
-  // Auth before the try so a failure surfaces as a clean 401 (not a swallowed
-  // 500, and not an HTML login redirect — a programmatic client needs a status).
-  // The route is also gated by middleware. `source` tags the turn 'web'
-  // (browser) vs 'mobile' (companion).
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) {
-    return {
-      status: login.status,
-      body: await login.json().catch(() => ({ error: 'unauthorized' })),
-    };
-  }
+/** The owner engine's workflow id for a turn with an Idempotency-Key: the
+ *  login is part of it (W7c fix round 1, L1), so another login reusing the
+ *  key starts its own turn and never lands on this one. */
+function ownerTurnWorkflowId(loginId: string, key: string): string {
+  return `turn-${loginId}.${key}`;
+}
+
+async function runTurn(
+  req: Request,
+  login: ChatLogin,
+  idempotencyKey: string | null,
+): Promise<TurnResult> {
   const { user, source } = login;
   const contentType = req.headers.get('content-type') ?? '';
 
@@ -438,14 +448,15 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     // request, journaled by DBOS), so it survives a web-process restart and a
     // client disconnect — if this await is abandoned (the user navigates away),
     // the workflow still completes and persists, and the client reconciles via
-    // syncLatest on return. The idempotency-key (when present) is the workflow
-    // id, so a retried submit replays the same run instead of starting a new one.
+    // syncLatest on return. The idempotency-key (when present), with the login,
+    // is the workflow id, so a retried submit replays the same run instead of
+    // starting a new one.
     const client = await getDbosClient();
     const handle = await client.enqueue<(i: AssistantTurnInput) => Promise<AssistantTurnRunResult>>(
       {
         workflowName: ASSISTANT_TURN_WORKFLOW,
         queueName: RUNNER_QUEUE,
-        ...(idempotencyKey ? { workflowID: idempotencyKey } : {}),
+        ...(idempotencyKey ? { workflowID: ownerTurnWorkflowId(user.actor.id, idempotencyKey) } : {}),
       },
       input,
     );

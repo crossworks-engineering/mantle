@@ -135,6 +135,8 @@ export async function qualifyingAgents(ownerId: string, since: Date): Promise<Ag
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.direction, 'outbound'),
         ne(assistantMessages.channel, REFLECTOR_SKIPPED_CHANNEL),
+        // The owner's own thread only (W7c fix round 1, M2).
+        eq(assistantMessages.loginId, ownerId),
         gt(assistantMessages.createdAt, since),
         inArray(
           assistantMessages.agentId,
@@ -277,7 +279,10 @@ export async function reflect(ownerId: string): Promise<void> {
 }
 
 /** The agent's recent turns, newest first, as the reflector reads them: every
- *  channel but 'mcp' (REFLECTOR_SKIPPED_CHANNEL), both directions. */
+ *  channel but 'mcp' (REFLECTOR_SKIPPED_CHANNEL), both directions, of the
+ *  owner's own thread only (W7c fix round 1, M2): persona notes describe the
+ *  owner, as "About the user" does, and another user's chat with the same
+ *  assistant is private to that user, never folded into them. */
 export async function loadReflectionTurns(
   ownerId: string,
   agentId: string,
@@ -293,6 +298,7 @@ export async function loadReflectionTurns(
       and(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agentId),
+        eq(assistantMessages.loginId, ownerId),
         ne(assistantMessages.channel, REFLECTOR_SKIPPED_CHANNEL),
       ),
     )

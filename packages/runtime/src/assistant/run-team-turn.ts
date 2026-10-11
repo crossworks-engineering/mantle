@@ -38,6 +38,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   db,
   agents,
+  authUsers,
   openChatThread,
   type Agent,
   type ConversationAttachment,
@@ -238,6 +239,15 @@ export async function runClientTurn(
   throw new Error('client turn dropped: client chat was removed');
 }
 
+/** Whether `loginId` is a client login (auth.users.role). */
+async function isClientLogin(loginId: string): Promise<boolean> {
+  const rows = (await db
+    .select({ role: authUsers.role })
+    .from(authUsers)
+    .where(eq(authUsers.id, loginId))) as unknown;
+  return Array.isArray(rows) && (rows[0] as { role?: unknown } | undefined)?.role === 'client';
+}
+
 export async function runTeamTurn(
   ownerId: string,
   text: string,
@@ -249,6 +259,11 @@ export async function runTeamTurn(
   // (a workflow recovered on upgrade): refuse it, as the portal is gone.
   if (!options.loginId) {
     throw new Error('runTeamTurn: loginId required (the team-code portal chat is retired)');
+  }
+  // A client has no chat (W7c fix round 1, M4): the route refuses it, and
+  // so does the engine, before anything is written or a model is called.
+  if (await isClientLogin(options.loginId)) {
+    throw new Error('runTeamTurn: a client login has no chat');
   }
   const displayText = options.displayText?.trim() || trimmed;
   const channel: TeamChannel = options.channel ?? 'web';

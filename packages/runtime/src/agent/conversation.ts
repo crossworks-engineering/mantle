@@ -1,17 +1,17 @@
 /**
- * Unified per-agent conversation stream — the shared read/write API every
+ * Unified per-agent conversation stream: the shared read/write API every
  * channel (web /assistant, Telegram, future WhatsApp) calls. See
  * docs/conversation.md for the full design.
  *
  * The conversation lives in `assistant_messages`, keyed per (owner, agent,
- * login) since 0269 (W7c), NOT per channel — so each user has ONE thread with
+ * login) since 0269 (W7c), NOT per channel: each user has ONE thread with
  * each agent across every transport, and no turn ever reads another user's.
- * `channel` is provenance + the hint for which transport sends a reply.
+ * `channel` is provenance and the hint for which transport sends a reply.
  *
- *   recordTurn()              — append one inbound/outbound turn.
- *   loadConversationContext() — assemble the responder's prompt context:
- *                               persona + facts + content hits + digests +
- *                               the last N raw turns (all channels).
+ *   recordTurn()              append one inbound/outbound turn.
+ *   loadConversationContext() assemble the responder's prompt context:
+ *                             persona, facts, content hits, digests and
+ *                             the last N raw turns (all channels).
  *
  * This module is the single home for logic that used to be copy-pasted as two
  * `loadContext` functions (server/web/lib/assistant.ts + server/api/src/main.ts).
@@ -19,7 +19,8 @@
  *   - facts: a 0.85 cosine mismatch guard (drops embedding-space-mismatch rows)
  *   - content hits: a 0.6 cosine relevance cutoff
  *   - digests: filtered by the digest note's `data.agent_id` and
- *     `data.login_id` (per thread, not per chat) — see §4 of the design doc
+ *     `data.login_id` (per thread, not per chat); see section 4 of the
+ *     design doc
  * The web surface gains the guard/cutoff/digests when it adopts this module
  * (Phase 2); that's an intended improvement, not a regression.
  */
@@ -270,9 +271,10 @@ export async function recordTurn(args: {
    *  currently the device `{ location }` ping the companion app attaches to
    *  inbound turns. Omitted ⇒ left at the column default. */
   data?: Record<string, unknown> | null;
-  /** The login this turn was for (workspaces R3). Unset: the database stamps
-   *  the scope's login, if any; a row of a non-Admin workspace with no login
-   *  is read in the Admin workspace only. */
+  /** The login whose thread this turn is in (workspaces R3, 0269). Unset:
+   *  the database stamps the scope's login, else the anchor's (the owner's
+   *  thread): no chat row is left without a login, and each login reads
+   *  only its own rows. */
   loginId?: string | null;
   tx?: Executor;
 }): Promise<AssistantMessage> {

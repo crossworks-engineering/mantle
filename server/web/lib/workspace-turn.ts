@@ -143,10 +143,50 @@ export async function queueWorkspaceTurn(o: {
     return {
       status: 500,
       body: {
-        error: 'something went wrong handling that message — the brain admin can see the details',
+        error: 'something went wrong handling that message. The brain admin can see the details.',
       },
     };
   }
+}
+
+/**
+ * Count one model call a chat makes besides a turn (a chat summary on New
+ * chat, Continue or a summary retry; a voice transcription) for a login that
+ * is not an Admin user (W7c fix round 1, L2): it takes a slot of the same
+ * daily cap and token budget as a turn, in the member turn ledger, so these
+ * never become an unmetered way to bill the brain. An Admin user is not
+ * limited. Null when admitted, else the 429 answer.
+ */
+export async function claimMemberChatWork(
+  login: ChatLogin,
+  what: 'summary' | 'transcribe',
+): Promise<NextResponse | null> {
+  if (login.kind === 'admin') return null;
+  const claim = await claimMemberTurn({
+    ownerId: login.ownerId,
+    loginId: login.loginId,
+    turnId: `${what}-${login.loginId}.${randomUUID()}`,
+    since: startOfTodayUtc(),
+    limits: { dailyTurns: MEMBER_DAILY_CAP, dailyTokens: MEMBER_DAILY_TOKENS },
+  });
+  if (claim.ok) return null;
+  recordTeamAccess({
+    ownerId: login.ownerId,
+    contactId: null,
+    loginId: login.loginId,
+    kind: 'denied',
+    detail: { reason: claim.reason, used: claim.used, login_id: login.loginId, what },
+  });
+  return NextResponse.json(
+    {
+      error:
+        claim.reason === 'daily_cap'
+          ? `daily message limit reached (${MEMBER_DAILY_CAP}/day). Try again tomorrow.`
+          : 'daily usage limit reached for the chat. Try again tomorrow, or ask an admin to raise it.',
+      reason: claim.reason,
+    },
+    { status: 429 },
+  );
 }
 
 /** The 202/4xx answer as a response. */

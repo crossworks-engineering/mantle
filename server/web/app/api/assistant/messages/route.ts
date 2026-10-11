@@ -3,7 +3,7 @@ import { getChatLoginOr401 } from '@/lib/auth';
 import { getChatThread, openChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { assistantMessagesBefore } from '@/lib/assistant';
-import { resolveChatAgent, resolveChatAgentById } from '@/lib/assistant-chat';
+import { messagesForReader, resolveChatAgent, resolveChatAgentById } from '@/lib/assistant-chat';
 import { threadRange } from '@/lib/chat-threads';
 
 /**
@@ -57,7 +57,10 @@ export async function GET(req: NextRequest) {
       limit,
       threadRange(thread),
     );
-    return NextResponse.json({ messages }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(
+      { messages: await messagesForReader(login, messages) },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 
   // No `?agent=` → this login's assigned assistant, else the brain default.
@@ -76,5 +79,8 @@ export async function GET(req: NextRequest) {
     limit,
     threadRange(open),
   );
-  return NextResponse.json({ messages }, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(
+    { messages: await messagesForReader(login, messages) },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }

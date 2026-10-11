@@ -5,6 +5,7 @@ import { summarizeChatThread } from '@mantle/runtime/agent';
 import { getChatLoginOr401 } from '@/lib/auth';
 import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { chatThreadRow } from '@/lib/chat-threads';
+import { claimMemberChatWork } from '@/lib/workspace-turn';
 
 /**
  * POST /api/assistant/threads/<id>/summarize: retry the summary of an archived
@@ -23,6 +24,12 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const thread = found && (await resolveChatAgentById(login, found.agentId)) ? found : null;
   if (!thread || thread.status !== 'archived') {
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
+  }
+  // A summary is a model call: metered for a login that is not an Admin
+  // user (W7c fix round 1, L2). One that exists already costs nothing.
+  if (!thread.summaryNodeId) {
+    const limited = await claimMemberChatWork(login, 'summary');
+    if (limited) return limited;
   }
   try {
     const updated = await asSystem(

@@ -9,9 +9,12 @@
  *    its assigned assistant, else the brain's default chattable agent), with
  *    one rule more: an assistant of a workspace other than Admin answers only
  *    a user of that workspace;
- *  - a member or a client reaches only the assistants of its own workspaces
- *    other than Admin (the Team assistant first): never the Admin assistant,
- *    never a helper.
+ *  - a member reaches only the assistants of its own workspaces other than
+ *    Admin (the Team assistant first): never the Admin assistant, never a
+ *    helper;
+ *  - a client has no chat at all (W7c fix round 1, M4): clients do not exist
+ *    as chat users yet, so every chat route answers as if there were no
+ *    assistant.
  *
  * `turnEngine` says which engine runs a turn: 'owner' (runAssistantTurn: the
  * Admin assistant and the owner's helpers, with the Journal and "About the
@@ -19,8 +22,13 @@
  * Journal, no "About the user", the member turn ledger's limits).
  */
 import { eq } from 'drizzle-orm';
-import { agents, db, workspaces, type Agent } from '@mantle/db';
-import { teamAssistant, workspaceAssistants, type WorkspaceAssistant } from '@mantle/content';
+import { agents, asSystem, db, workspaces, type Agent } from '@mantle/db';
+import {
+  chatTextsForReader,
+  teamAssistant,
+  workspaceAssistants,
+  type WorkspaceAssistant,
+} from '@mantle/content';
 import type { AssistantAgentOption } from '@mantle/client-types';
 import type { ChatLogin } from './auth';
 import { listAssistantAgents, resolveAgentForActor } from './assistant';
@@ -64,6 +72,7 @@ export async function resolveChatAgent(
   login: ChatLogin,
   slug?: string | null,
 ): Promise<ChatAgent | null> {
+  if (login.kind === 'client') return null;
   if (login.kind === 'admin') {
     const agent = await resolveAgentForActor(login.user, slug ?? undefined);
     if (!agent) return null;
@@ -86,6 +95,7 @@ export async function resolveChatAgentById(
   login: ChatLogin,
   agentId: string,
 ): Promise<ChatAgent | null> {
+  if (login.kind === 'client') return null;
   const agent = await agentById(login.ownerId, agentId);
   if (!agent) return null;
   if (login.kind === 'admin') {
@@ -99,6 +109,7 @@ export async function resolveChatAgentById(
 
 /** The agents this login may chat with, for the /assistant selector. */
 export async function listChatAgents(login: ChatLogin): Promise<AssistantAgentOption[]> {
+  if (login.kind === 'client') return [];
   if (login.kind === 'admin') {
     const [all, mine, others] = await Promise.all([
       listAssistantAgents(login.ownerId),
@@ -123,4 +134,30 @@ export async function listChatAgents(login: ChatLogin): Promise<AssistantAgentOp
 export async function chatAgentIds(login: ChatLogin): Promise<string[] | undefined> {
   // An Admin user's inbox lists every chattable agent it may reach.
   return (await listChatAgents(login)).map((a) => a.id);
+}
+
+/**
+ * Chat messages as this login receives them (W7c fix round 1, M3; client
+ * logins C6): for a login that is not an Admin user every picture in a text
+ * points at its own routes, and only at an item it may read; never at an
+ * admin route or an outside address. An Admin user's messages are as stored.
+ * The image lookup runs in the reader's own scope (chatImagesFor), entered
+ * from the system pool as that helper expects.
+ */
+export async function messagesForReader<T extends { text: string }>(
+  login: ChatLogin,
+  messages: T[],
+): Promise<T[]> {
+  if (login.kind === 'admin' || messages.length === 0) return messages;
+  const texts = await asSystem(
+    () =>
+      chatTextsForReader(
+        login.ownerId,
+        'team',
+        login.loginId,
+        messages.map((m) => m.text),
+      ),
+    'rule-in-query',
+  );
+  return messages.map((m, i) => ({ ...m, text: texts[i] ?? '' }));
 }

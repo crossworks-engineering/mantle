@@ -14,13 +14,15 @@
  * Failed) with a hint so the client surfaces the right call to
  * action.
  *
- * Any login (W7c): a member or a client transcribes for its own chat, at
- * most 6 clips a minute (the turn route's rate).
+ * Any login (W7c): a member transcribes for its own chat, at most 6 clips a
+ * minute (the turn route's rate), each clip a slot of its daily cap (W7c fix
+ * round 1, L2).
  */
 
 import { NextResponse } from '@/server/http-compat';
 import { getChatLoginOr401 } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
+import { claimMemberChatWork } from '@/lib/workspace-turn';
 import { asSystem, getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
@@ -29,6 +31,13 @@ import { errorMessage } from '@mantle/std';
 export async function POST(req: Request) {
   const login = await getChatLoginOr401();
   if (login instanceof Response) return login;
+  // A client has no chat (W7c fix round 1, M4).
+  if (login.kind === 'client') {
+    return NextResponse.json(
+      { error: 'no assistant to chat with here', reason: 'no-chat-agent' },
+      { status: 404 },
+    );
+  }
   if (login.kind !== 'admin') {
     const gate = rateLimit(`chat-transcribe:${login.loginId}`, { max: 6, windowMs: 60_000 });
     if (!gate.ok) {
@@ -88,6 +97,10 @@ export async function POST(req: Request) {
       { status: 412 },
     );
   }
+  // Each clip is a model call: a slot of the daily cap for a login that is
+  // not an Admin user (W7c fix round 1, L2).
+  const limited = await claimMemberChatWork(login, 'transcribe');
+  if (limited) return limited;
 
   try {
     const bytes = Buffer.from(await file.arrayBuffer());

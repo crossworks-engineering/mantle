@@ -755,9 +755,12 @@ export function sameWorkspaceScope(a: WorkspaceScope, b: WorkspaceScope): boolea
  * login a run, a trace or a tool result is stamped with. Inside a turn scope
  * it is the scope's (one workspace); the Admin assistant, which stays on the
  * system pool until W6a, carries it here. Null = system work (Admin by the
- * stamp trigger's NULL rule).
+ * stamp trigger's NULL rule). An agent with no workspace (a helper such as
+ * the replay agent) run straight from a chat carries a stamp with no
+ * workspace (W7c fix round 1, H1): only the login it answers, so a read of
+ * per-login history knows whose it is.
  */
-export type TurnStamp = { workspaceId: string; loginId: string | null };
+export type TurnStamp = { workspaceId: string | null; loginId: string | null };
 
 const stampStore = new AsyncLocalStorage<TurnStamp>();
 

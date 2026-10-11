@@ -232,6 +232,13 @@ function chatLine(m: {
   };
 }
 
+/**
+ * Reads the old team-code portal threads only, by contact: the frozen
+ * team_messages rows from before member logins (no login), BY DESIGN (W7c
+ * fix round 1, L6). A login's own chat with
+ * an assistant is private to that login; no admin tool reads it, so a
+ * `loginId` argument is refused.
+ */
 const team_chat_read: BuiltinToolDef = {
   slug: 'team_chat_read',
   ownerOnly: true,

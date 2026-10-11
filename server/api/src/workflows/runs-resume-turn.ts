@@ -226,6 +226,15 @@ export async function runsResumeTurnImpl(
       const claimed = await runDurableStep('claim_resume', () => claimResume(db, groupId));
       if (!claimed) return { resumed: false, outcome: 'duplicate' };
 
+      // The login the run was planned for (R3, stamped at createRun): the
+      // resume reads that login's own thread, never the anchor's for another
+      // user's run (W7c fix round 1, L7). None: the owner's, as before.
+      const [planned] = await db
+        .select({ loginId: runs.loginId })
+        .from(runs)
+        .where(eq(runs.id, runId));
+      const runLoginId = planned?.loginId ?? null;
+
       const outcome = await startTrace(
         {
           kind: 'responder_turn',
@@ -245,7 +254,12 @@ export async function runsResumeTurnImpl(
             logPrefix: '[runs]',
             assembled,
             loadContext: () =>
-              loadConversationContext({ ownerId: run.ownerId, agent, inboundText: promptText }),
+              loadConversationContext({
+                ownerId: run.ownerId,
+                agent,
+                inboundText: promptText,
+                loginId: runLoginId,
+              }),
             contextStepInput: { run_id: runId },
             buildMessages: (c) =>
               buildChatMessages({
@@ -272,7 +286,9 @@ export async function runsResumeTurnImpl(
             surface:
               run.originChannel?.kind === 'telegram'
                 ? { kind: 'telegram', telegramChatId: run.originChannel.chat_id }
-                : { kind: 'web' },
+                : runLoginId
+                  ? { kind: 'web', loginId: runLoginId }
+                  : { kind: 'web' },
           }),
       );
 

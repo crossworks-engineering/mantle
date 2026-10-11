@@ -3,6 +3,7 @@ import { getChatLoginOr401 } from '@/lib/auth';
 import { resolveChatAgent } from '@/lib/assistant-chat';
 import { chatThreadRows } from '@/lib/chat-threads';
 import { archiveResponse } from '@/lib/chat-archive-http';
+import { claimMemberChatWork } from '@/lib/workspace-turn';
 
 /**
  * GET  /api/assistant/threads[?agent=<slug>] — the login's OWN threads with
@@ -33,6 +34,10 @@ export async function POST(req: Request) {
   const slug = typeof body?.agent === 'string' && body.agent ? body.agent : undefined;
   const agent = await resolveChatAgent(login, slug);
   if (!agent) return NextResponse.json({ error: 'no chat agent' }, { status: 404 });
+  // Archiving summarises the chat (one model call): metered for a login
+  // that is not an Admin user (W7c fix round 1, L2).
+  const limited = await claimMemberChatWork(login, 'summary');
+  if (limited) return limited;
   return archiveResponse({
     ownerId: login.ownerId,
     agentId: agent.id,

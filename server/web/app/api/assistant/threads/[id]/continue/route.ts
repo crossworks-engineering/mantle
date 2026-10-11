@@ -5,6 +5,7 @@ import { summarizeChatThread } from '@mantle/runtime/agent';
 import { getChatLoginOr401 } from '@/lib/auth';
 import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { archiveResponse } from '@/lib/chat-archive-http';
+import { claimMemberChatWork } from '@/lib/workspace-turn';
 
 /**
  * POST /api/assistant/threads/<id>/continue: "Continue from this" (chat
@@ -27,6 +28,10 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (!thread || thread.status !== 'archived') {
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
   }
+  // Continuing archives the current chat (a summary) and may summarise this
+  // one: metered for a login that is not an Admin user (W7c fix round 1, L2).
+  const limited = await claimMemberChatWork(login, 'summary');
+  if (limited) return limited;
   if (!thread.summaryNodeId) {
     await asSystem(
       () => summarizeChatThread(login.ownerId, thread.id, login.loginId),

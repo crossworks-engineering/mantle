@@ -49,6 +49,7 @@ const h = vi.hoisted(() => ({
   claimResume: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   runResponderLoop: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   logs: [] as Array<{ level: string; message: string }>,
+  contextArgs: [] as unknown[],
 }));
 
 vi.mock('@dbos-inc/dbos-sdk', () => ({
@@ -100,7 +101,10 @@ vi.mock('@mantle/telegram', () => ({ sendMessage: (...a: unknown[]) => h.sendMes
 
 vi.mock('@mantle/runtime/agent', () => ({
   buildChatMessages: () => [],
-  loadConversationContext: async () => ({ history: [] }),
+  loadConversationContext: async (a: unknown) => {
+    h.contextArgs.push(a);
+    return { history: [] };
+  },
   recordTurn: (...a: unknown[]) => h.recordTurn(...a),
 }));
 
@@ -194,6 +198,7 @@ beforeEach(() => {
   h.sendOk = true;
   h.seq = [];
   h.logs = [];
+  h.contextArgs = [];
   h.recordTurn = vi.fn(async () => ({ id: 'msg-1' }));
   h.sendMessage = vi.fn(async () => {
     if (!h.sendOk) throw new Error('telegram 403');
@@ -397,5 +402,22 @@ describe('runs resume turn — crash replay (final-audit F1 regression)', () => 
     expect(res).toEqual({ resumed: true, outcome: 'reported' });
     expect(journal.replayed).toContain('record_outbound');
     expect(h.recordTurn).toHaveBeenCalledTimes(1); // still exactly one post
+  });
+});
+
+describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
+  it("reads and writes the thread of the login the run was planned for", async () => {
+    seedHappyPath({ run: { loginId: 'login-b' } });
+    h.runResponderLoop = vi.fn(async (...a: unknown[]) => {
+      const opts = a[0] as { loadContext: () => Promise<unknown>; surface: unknown };
+      await opts.loadContext();
+      h.seq.push(`surface:${JSON.stringify(opts.surface)}`);
+      return { reply: h.loopReply, toolCalls: [] };
+    });
+    const res = await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
+    expect(res).toMatchObject({ resumed: true });
+    expect(h.contextArgs).toEqual([expect.objectContaining({ loginId: 'login-b' })]);
+    expect(h.seq).toContain('surface:{"kind":"web","loginId":"login-b"}');
+    expect(h.recordTurn).toHaveBeenCalledWith(expect.objectContaining({ loginId: 'login-b' }));
   });
 });

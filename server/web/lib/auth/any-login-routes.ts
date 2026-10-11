@@ -53,9 +53,9 @@ export const ANY_LOGIN_ROUTES: readonly string[] = [
  * The chat routes (workspaces W7c): every login chats with the assistants of
  * its workspaces, each in its own thread, and reads only its own threads.
  * They hold their own gate (getChatLoginOr401, lib/assistant-chat.ts): an
- * Admin user's request runs as on the owner routes, a member's or a client's
- * on the system pool for the login's own things, every read naming the
- * login. Proved per role in server/w7c-chat.db.test.ts.
+ * Admin user's request runs as on the owner routes, a member's in its own
+ * scope, every read naming the login; a client has no chat (no agent, 404).
+ * Proved per role in server/web/server/w7c-chat.db.test.ts.
  */
 export const CHAT_LOGIN_ROUTES: readonly string[] = [
   'GET /api/assistant/thread',

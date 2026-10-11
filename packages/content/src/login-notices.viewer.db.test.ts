@@ -254,6 +254,14 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     expect(await ln.chatReplyNotice({ loginId: member2, id: m2.id })).not.toBeNull();
   });
 
+  it('an Admin user’s finished reply raises no login_notice: one push, by its own path (W7c fix round 1, L5)', async () => {
+    const got = await sent(() => reply(adminA, 'second admin reply'));
+    expect(got.filter((n) => n.kind === 'chat' && n.loginId === adminA)).toEqual([]);
+    // A member's reply still does.
+    const mine = await sent(() => reply(member, 'member reply'));
+    expect(mine.some((n) => n.kind === 'chat' && n.loginId === member)).toBe(true);
+  });
+
   // ── Cost safety ─────────────────────────────────────────────────────────
 
   it('the trigger functions only notify: no write, no job, nothing an LLM could follow', async () => {

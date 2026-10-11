@@ -154,7 +154,14 @@ export async function withAgentScope<T>(
   if (!wsId) {
     // A helper: inside a turn it runs in the caller's scope, never wider.
     if (open) return fn();
-    return withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn);
+    // Run straight from a chat (an Admin user talking to the replay agent),
+    // it carries the login it answers as the turn's stamp (W7c fix round 1,
+    // H1): a tool that reads per-login history (replay_window, find_window)
+    // reads that login's, never the anchor's. No login: no stamp, and such
+    // a tool refuses.
+    const asked = opts.loginId ?? opts.ownerLoginId ?? null;
+    const run = () => withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn);
+    return asked ? withTurnStamp({ workspaceId: null, loginId: asked }, run) : run();
   }
   if (open) {
     if (open.ws.length === 1 && open.ws[0] === wsId) return fn();

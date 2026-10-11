@@ -24,6 +24,9 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/workspaces-user-threads.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sql as dsql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -293,5 +296,55 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
     >`select login_id::text as l from assistant_messages where id = ${id}`;
     expect(r!.l).toBe(owner);
     await sql`delete from assistant_messages where id = ${id}`;
+  });
+
+  it('honours mantle.conversation_notify only for the role that owns the tables (W7c fix round 1, L4)', async () => {
+    const quiet = await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.conversation_notify', 'off', true)`;
+      const [own] = await tx<Row[]>`select "public"."mantle_conversation_quiet"() as q`;
+      await tx`set local role mantle_view_user`;
+      const [viewer] = await tx<Row[]>`select "public"."mantle_conversation_quiet"() as q`;
+      return { own: own!.q, viewer: viewer!.q };
+    });
+    expect(quiet).toEqual({ own: true, viewer: false });
+  });
+
+  it('runs a second time without error and changes nothing (W7c fix round 1, L3)', async () => {
+    const snapshot = async () => ({
+      msgs: await sql<Row[]>`select id::text as id, login_id::text as l, agent_id::text as a,
+          workspace_id::text as w from assistant_messages order by id`,
+      threads: await sql<Row[]>`select id::text as id, login_id::text as l, status
+          from chat_threads order by id`,
+      cursors: await sql<Row[]>`select owner_id::text as o, agent_id::text as a, login_id::text as l
+          from assistant_read_cursors order by 1, 2, 3`,
+      archived: await sql<Row[]>`select id::text as id from archive_team_messages order by id`,
+      pk: await sql<Row[]>`select conname from pg_constraint
+          where conrelid = 'public.assistant_read_cursors'::regclass and contype = 'p'`,
+    });
+    const before = await snapshot();
+    heard.length = 0;
+    const file = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        '..',
+        'migrations',
+        '0269_workspaces_user_threads.sql',
+      ),
+      'utf8',
+    );
+    const statements = file
+      .split('--> statement-breakpoint')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    await sql.begin(async (tx) => {
+      for (const stmt of statements) await tx.unsafe(stmt);
+    });
+    expect(await snapshot()).toEqual(before);
+    expect(before.pk.map((r) => r.conname)).toEqual(['assistant_read_cursors_owner_agent_login_pk']);
+    await sql`select pg_notify('summarize_due', 'barrier2')`;
+    for (let i = 0; i < 100 && !heard.includes('summarize_due:barrier2'); i += 1) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(heard.filter((h) => h !== 'summarize_due:barrier2')).toEqual([]);
   });
 });

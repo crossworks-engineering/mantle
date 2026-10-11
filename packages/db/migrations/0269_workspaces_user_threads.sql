@@ -30,8 +30,13 @@
 -- that sets mantle.conversation_notify = off (this one does; nothing else
 -- does), and every copied row is marked data.digest_skip, which the
 -- summarizer never digests (its threshold count skips them too). The
--- backfills are UPDATEs, which neither notify fires on. node_ingested fires
--- on INSERT of nodes only; this migration inserts no node.
+-- setting is honoured only for a role that owns the chat tables (the
+-- migration's): a scoped viewer role cannot silence its own writes with it.
+-- The backfills are UPDATEs, which neither notify fires on. node_ingested
+-- fires on INSERT of nodes only; this migration inserts no node.
+--
+-- Re-runnable: every step either replaces what it made or skips what is
+-- already there, so a second run changes nothing.
 
 SET LOCAL lock_timeout = '3s';
 --> statement-breakpoint
@@ -62,13 +67,26 @@ $$;
 --> statement-breakpoint
 
 -- ── The notify guards ─────────────────────────────────────────────────────────
--- Quiet only where a transaction asks (this migration). The payload of
+-- Quiet only where a transaction asks (this migration), and only for a role
+-- that owns assistant_messages (the migration's role): a scoped viewer role
+-- that sets the same setting is not quiet. The payload of
 -- conversation_changed now names the login, so a stream tells each login
 -- about its own thread only.
+CREATE OR REPLACE FUNCTION "public"."mantle_conversation_quiet"()
+  RETURNS boolean LANGUAGE sql STABLE
+  SET search_path = "public", pg_temp AS $$
+  SELECT coalesce(current_setting('mantle.conversation_notify', true), '') = 'off'
+     AND pg_has_role(
+           current_user,
+           (SELECT c.relowner FROM pg_catalog.pg_class c
+             WHERE c.oid = '"public"."assistant_messages"'::regclass),
+           'MEMBER')
+$$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."notify_summarize_due"() RETURNS trigger AS $$
 BEGIN
   IF new.agent_id IS NOT NULL
-     AND coalesce(current_setting('mantle.conversation_notify', true), '') <> 'off' THEN
+     AND NOT "public"."mantle_conversation_quiet"() THEN
     PERFORM pg_notify('summarize_due', new.agent_id::text);
   END IF;
   RETURN new;
@@ -80,7 +98,7 @@ BEGIN
   IF (tg_op = 'UPDATE' AND new.status IS NOT DISTINCT FROM old.status) THEN
     RETURN new;
   END IF;
-  IF coalesce(current_setting('mantle.conversation_notify', true), '') = 'off' THEN
+  IF "public"."mantle_conversation_quiet"() THEN
     RETURN new;
   END IF;
   PERFORM pg_notify(
@@ -97,10 +115,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 --> statement-breakpoint
+-- A member's (or a client's) phone only: an Admin user's own replies reach
+-- its devices by conversation_changed (pushOutbound), so one reply is one
+-- push, never two (W7c fix round 1, L5). Whether a login is an Admin user
+-- is read with definer rights (the scoped role a member's write runs as
+-- reads no auth.users); the notify function itself keeps invoker rights, so
+-- the quiet check above sees the writing role.
+CREATE OR REPLACE FUNCTION "public"."mantle_login_is_admin"(login uuid)
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM "auth"."users" u WHERE u."id" = login AND u."role" = 'admin')
+$$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_notify_login_chat"()
   RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF coalesce(current_setting('mantle.conversation_notify', true), '') = 'off' THEN
+  IF "public"."mantle_conversation_quiet"() THEN
+    RETURN NULL;
+  END IF;
+  IF "public"."mantle_login_is_admin"(new.login_id) THEN
     RETURN NULL;
   END IF;
   PERFORM pg_notify(
@@ -304,6 +337,9 @@ ALTER TABLE "public"."assistant_read_cursors" ALTER COLUMN "login_id" SET NOT NU
 ALTER TABLE "public"."assistant_read_cursors" DROP CONSTRAINT IF EXISTS "assistant_read_cursors_owner_id_agent_id_pk";
 --> statement-breakpoint
 ALTER TABLE "public"."assistant_read_cursors" DROP CONSTRAINT IF EXISTS "assistant_read_cursors_pkey";
+--> statement-breakpoint
+-- A second run: the key this migration added is replaced, not added twice.
+ALTER TABLE "public"."assistant_read_cursors" DROP CONSTRAINT IF EXISTS "assistant_read_cursors_owner_agent_login_pk";
 --> statement-breakpoint
 ALTER TABLE "public"."assistant_read_cursors"
   ADD CONSTRAINT "assistant_read_cursors_owner_agent_login_pk" PRIMARY KEY ("owner_id", "agent_id", "login_id");

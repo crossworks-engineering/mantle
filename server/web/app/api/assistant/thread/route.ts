@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getChatLoginOr401 } from '@/lib/auth';
 import { recentAssistantMessages } from '@/lib/assistant';
-import { listChatAgents, resolveChatAgent } from '@/lib/assistant-chat';
+import { listChatAgents, messagesForReader, resolveChatAgent } from '@/lib/assistant-chat';
 import { asSystem, openChatThread } from '@mantle/db';
 import { getAssignedAgentSummary } from '@/lib/agents';
 import { chatThreadRow, threadRange } from '@/lib/chat-threads';
@@ -64,7 +64,7 @@ export async function GET(req: Request) {
     {
       agents,
       agent: agentOut,
-      messages,
+      messages: await messagesForReader(login, messages),
       thread,
       assigned: assigned ? { slug: assigned.slug, assignedAt: assigned.assignedAt } : null,
     },
