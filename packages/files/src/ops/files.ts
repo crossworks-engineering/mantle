@@ -29,7 +29,7 @@ import {
   asSystem,
   assertNotSnapshotCopy,
   requestWriteScope,
-  withScope,
+  withViewer,
   contentChunks,
   db,
   draws,
@@ -968,8 +968,8 @@ export async function fileNameTaken(
  */
 async function inCallerScope<T>(fn: () => Promise<T>): Promise<T | undefined> {
   if (!isSystemScope()) return fn();
-  const scope = requestWriteScope();
-  return scope ? withScope(scope, fn) : undefined;
+  const loginId = requestWriteScope()?.loginId;
+  return loginId ? withViewer('team', { login: loginId }, fn) : undefined;
 }
 
 /** Whether the caller reads item `id` (in its scope; null for the system). */
