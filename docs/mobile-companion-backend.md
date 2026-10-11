@@ -359,10 +359,12 @@ emailed code (device mode below) and refreshes its token as before.
   builds up to 26 are Admin only.
 - **"Update the app" (HTTP 426).** `{ error, reason: "update-app",
   minBuild: 27 }`, never a vague error, in two places:
-  `POST /api/auth/mobile-login` with a non-Admin login's right password (it
-  was 403 `member-login`; still no token, still the one 401 for a wrong
-  password), and `POST /api/auth/pair/claim` of a non-Admin login's code
-  without the header at or above the minimum build. A refused claim does NOT
+  `POST /api/auth/mobile-login` with a member's right password (it was 403
+  `member-login`; still no token, still the one 401 for a wrong password),
+  and `POST /api/auth/pair/claim` of a member's code without the header at or
+  above the minimum build. A client never gets 426 (no phone build serves it
+  yet): `mobile-login` answers it 403 `client-login` as before, and a claim
+  of a client's code is the one 401. A refused claim does NOT
   use the code up: the person scans it again with the new app (within its 90
   seconds). `POST /api/auth/device-login` is unchanged (any admin or member).
 - **QR pairing for a member.** `POST /api/auth/pair` and
@@ -380,8 +382,11 @@ emailed code (device mode below) and refreshes its token as before.
 - **Bytes for every login.** `GET /api/files/files/:id?raw=1` (and
   `?thumb=1`) and `GET /api/draws/:id/svg` (JSON `{ svg }`, or `?raw=1` as
   an image) serve any login in its own workspaces: a bearer, a session, or
-  the shell's `assetToken` as `?at=`. An item the login does not read is a
-  404 that names nothing (never a 403 with a name). A drawing keeps only the
+  the shell's `assetToken` as `?at=` (10 minutes for every non-Admin login,
+  2 hours for an Admin user; the shell re-mints it before it expires). An
+  item the login does not read is a 404 that names nothing (never a 403
+  with a name). Raw bytes answer `cache-control: private, no-store`, a
+  thumbnail `private, no-cache` (revalidated by its etag on every use). A drawing keeps only the
   images whose file the login reads. `/api/member/files/:id` and
   `/api/member/draws/:id/svg` still answer this release (deprecated; they
   answer 410 after the next UI pair).
@@ -391,7 +396,10 @@ emailed code (device mode below) and refreshes its token as before.
   hold: the PUBLISHED build, the team rules for tools, the data written only
   when a workspace of its holds the app with Write on and the app is not
   informational. An app it does not read is a 404. `/api/member/apps/*`
-  still answers (deprecated).
+  still answers (deprecated). A client login is refused on all four (403
+  `client-login` on the POSTs; the frame opens only on a member's ticket or
+  an owner ticket whose login is still an active Admin user), and on the
+  byte routes (401), as before W7e.
 - **Gone.** `/api/member/library`, `/api/member/library/:id`,
   `/api/member/accepted` and `/api/member/accepted/:id` answer 410
   `{ error, code: "gone" }` (unused since W6b).

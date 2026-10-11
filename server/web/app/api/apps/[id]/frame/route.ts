@@ -48,6 +48,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   // host.me(): the admin login the ticket names (app identity).
   return renderAppFrame(req, build, {
-    viewer: { ownerId: ticket.ownerId, appId: id, subject: { kind: 'admin', loginId: ticket.actorId } },
+    viewer: {
+      ownerId: ticket.ownerId,
+      appId: id,
+      subject: { kind: 'admin', loginId: ticket.actorId },
+    },
   });
 }

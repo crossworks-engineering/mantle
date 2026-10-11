@@ -595,9 +595,12 @@ so it is listed like any team app there.
 Since workspaces W7e the four runner routes are deprecated: every login
 runs an app through `/api/apps/:id/{frame-ticket,frame,db-broker,tool-broker}`
 with the same rules (server/web/lib/app-runner.ts). Every member route that
-reads brain items runs in the login's request scope; only its own things
-(home, MCP, push, the live stream) hold their own rule
-(server/web/lib/auth/route-scope.ts, 'self').
+reads brain items runs in the login's request scope, the member home too
+(fix round 1: it reads team pages and apps); only its own things (MCP,
+push, the live stream) hold their own rule
+(server/web/lib/auth/route-scope.ts, 'self'). A client login is refused on
+the runner routes (403 `client-login`) and its bytes routes (401), as before
+W7e: clients do not run brain apps yet (`CLIENT_CLOSED_ROUTES`).
 
 - **Folders.** `GET /api/member/apps` also answers `folders`: where those
   apps sit in the admin's Apps folders, read only (`AppLauncherFolder`: id,

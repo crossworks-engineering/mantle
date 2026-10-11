@@ -36,10 +36,7 @@ const SECTION_LIMIT = 30;
 export async function GET() {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
-  const prefs = await asSystem(
-    () => loadProfilePreferences(member.anchorId),
-    'owner-preferences',
-  );
+  const prefs = await asSystem(() => loadProfilePreferences(member.anchorId), 'owner-preferences');
   const homeApp = await withViewer('team', { login: member.loginId }, () =>
     resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId),
   );
