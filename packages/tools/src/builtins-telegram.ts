@@ -61,6 +61,41 @@ async function allowlistedChat(
   return { ok: true };
 }
 
+/** The refusal telegram_pair gives a caller that is not the anchor. */
+export const TELEGRAM_PAIR_ANCHOR_ONLY =
+  "only the brain's owner pairs a Telegram chat for now: ask them to approve the code from their own MCP client or Settings.";
+
+/**
+ * Whether the caller is the anchor login (the brain's owner): the login its
+ * surface names, else the login whose own scope this call runs in, else the
+ * anchor's own stdio MCP (an owner surface that names no login). Anything
+ * else is not the anchor.
+ */
+function callerIsAnchor(ctx: ToolHandlerContext): boolean {
+  const anchor = ctx.ownerId.toLowerCase();
+  const named = ownerSurfaceLoginId(ctx.surface);
+  if (named) return named.toLowerCase() === anchor;
+  const scope = currentWorkspaceScope();
+  if (scope?.loginId) return scope.loginId.toLowerCase() === anchor;
+  const s = ctx.surface as { kind?: string; via?: string } | undefined;
+  return s?.kind === 'owner' && s.via === 'mcp';
+}
+
+/** The refusal the other operator tools give a caller that is not the
+ *  anchor (W7 integration fix 2, M1). They read and write the anchor's
+ *  Telegram inbox on the system pool, so a second Admin login with the
+ *  connectors area must not reach them. */
+export const TELEGRAM_OPERATOR_ANCHOR_ONLY =
+  "only the brain's owner works the Telegram inbox for now: ask them to do it from their own MCP client.";
+
+/** Whether this call comes straight off an owner path (an MCP connection, an
+ *  API key, a linked brain), not a chat turn: telegram_send refuses there
+ *  for anyone but the anchor, while the anchor's own turns keep sending. */
+function directOwnerCall(ctx: ToolHandlerContext): boolean {
+  const s = ctx.surface;
+  return s?.kind === 'owner' && (s.via === 'mcp' || s.via === 'api' || s.via === 'federation');
+}
+
 export const telegram_send: BuiltinToolDef = {
   slug: 'telegram_send',
   name: 'Send a Telegram message',
@@ -86,6 +121,9 @@ export const telegram_send: BuiltinToolDef = {
     required: ['chat_id', 'text'],
   },
   handler: async (input, ctx) => {
+    if (directOwnerCall(ctx) && !callerIsAnchor(ctx)) {
+      return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
+    }
     const chatId = str(input.chat_id);
     const text = str(input.text);
     if (!chatId || !text) return { ok: false, error: 'chat_id + text required' };
@@ -121,6 +159,7 @@ export const telegram_pending: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx) => {
+    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
     const chatId = strOpt(input.chat_id);
     // Owner scope rides on the chat: telegram_messages has no owner column, so
     // the join to telegram_chats.user_id is what keeps one owner's pending
@@ -176,6 +215,7 @@ export const telegram_react: BuiltinToolDef = {
     const chatId = str(input.chat_id);
     const messageId = str(input.message_id);
     const emoji = str(input.emoji);
+    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
     if (!chatId || !messageId || !emoji) {
       return { ok: false, error: 'chat_id + message_id + emoji required' };
     }
@@ -216,6 +256,7 @@ export const telegram_edit: BuiltinToolDef = {
     const chatId = str(input.chat_id);
     const messageId = str(input.message_id);
     const text = str(input.text);
+    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
     if (!chatId || !messageId || !text) {
       return { ok: false, error: 'chat_id + message_id + text required' };
     }
@@ -246,6 +287,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
     // Owner scope rides on the chat, telegram_messages has no owner column.
@@ -268,26 +310,6 @@ export const telegram_mark_processed: BuiltinToolDef = {
     return { ok: true, output: 'marked processed' };
   },
 };
-
-/** The refusal telegram_pair gives a caller that is not the anchor. */
-export const TELEGRAM_PAIR_ANCHOR_ONLY =
-  "only the brain's owner pairs a Telegram chat for now: ask them to approve the code from their own MCP client or Settings.";
-
-/**
- * Whether the caller is the anchor login (the brain's owner): the login its
- * surface names, else the login whose own scope this call runs in, else the
- * anchor's own stdio MCP (an owner surface that names no login). Anything
- * else is not the anchor.
- */
-function callerIsAnchor(ctx: ToolHandlerContext): boolean {
-  const anchor = ctx.ownerId.toLowerCase();
-  const named = ownerSurfaceLoginId(ctx.surface);
-  if (named) return named.toLowerCase() === anchor;
-  const scope = currentWorkspaceScope();
-  if (scope?.loginId) return scope.loginId.toLowerCase() === anchor;
-  const s = ctx.surface as { kind?: string; via?: string } | undefined;
-  return s?.kind === 'owner' && s.via === 'mcp';
-}
 
 export const telegram_pair: BuiltinToolDef = {
   slug: 'telegram_pair',

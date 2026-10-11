@@ -31,6 +31,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const select = {
     from: vi.fn().mockReturnThis(),
     innerJoin: vi.fn().mockReturnThis(),
+    orderBy: vi.fn().mockReturnThis(),
     where: vi.fn(function (this: unknown, arg: unknown) {
       whereArgs.push(arg);
       return this;
@@ -71,7 +72,12 @@ import {
   reactToMessage,
   sendMessage,
 } from '@mantle/telegram';
-import { TELEGRAM_OPERATOR_TOOLS, TELEGRAM_PAIR_ANCHOR_ONLY } from './builtins-telegram';
+import {
+  TELEGRAM_OPERATOR_ANCHOR_ONLY,
+  TELEGRAM_OPERATOR_TOOLS,
+  TELEGRAM_PAIR_ANCHOR_ONLY,
+  telegram_send,
+} from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const update = (dbmod as unknown as { __update: { set: ReturnType<typeof vi.fn> } }).__update;
@@ -80,6 +86,7 @@ const pair = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_pair')!;
 const edit = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_edit')!;
 const react = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_react')!;
 const markProcessed = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_mark_processed')!;
+const pending = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_pending')!;
 
 // The anchor's own stdio MCP: an owner surface that names no login.
 const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
@@ -369,5 +376,69 @@ describe('telegram_mark_processed', () => {
     const res = await markProcessed.handler({ id: 'm1' }, ctx);
     expect(update.set).toHaveBeenCalledWith({ processed: true, processedAt: expect.any(Date) });
     expect(outputOf(res)).toBe('marked processed');
+  });
+});
+
+describe('the inbox tools: the anchor only (W7 integration fix 2, M1)', () => {
+  const OTHER: ToolHandlerContext[] = [
+    { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'b2' } },
+    { ownerId: 'o1', surface: { kind: 'owner', via: 'api', loginId: 'b2' } },
+    { ownerId: 'o1', surface: { kind: 'owner', via: 'federation' } },
+    { ownerId: 'o1', surface: { kind: 'web', loginId: 'b2' } },
+  ];
+  const calls: Array<[BuiltinToolDef, Record<string, unknown>]> = [
+    [pending, {}],
+    [react, { chat_id: CHAT, message_id: '7', emoji: '👍' }],
+    [edit, { chat_id: CHAT, message_id: '7', text: 'x' }],
+    [markProcessed, { id: 'm1' }],
+  ];
+
+  it("refuses another Admin user's connection, key, peer and chat, touching nothing", async () => {
+    for (const c of OTHER) {
+      for (const [tool, input] of calls) {
+        selectQueue.push([{ status: 'allowed' }], [{ id: 'm1' }]);
+        updateReturn = [{ id: 'm1' }];
+        expect(errorOf(await tool.handler(input, c)), tool.slug).toBe(
+          TELEGRAM_OPERATOR_ANCHOR_ONLY,
+        );
+      }
+    }
+    expect(dbmod.db.select).not.toHaveBeenCalled();
+    expect(dbmod.db.update).not.toHaveBeenCalled();
+    expect(editMessage).not.toHaveBeenCalled();
+    expect(reactToMessage).not.toHaveBeenCalled();
+  });
+
+  it("still serves the anchor's own login and its stdio MCP", async () => {
+    selectQueue.push([{ id: 'r1' }]);
+    expect(outputOf(await pending.handler({}, ctx))).toEqual([{ id: 'r1' }]);
+    selectQueue.push([{ id: 'r2' }]);
+    const own: ToolHandlerContext = {
+      ownerId: 'o1',
+      surface: { kind: 'owner', via: 'mcp', loginId: 'o1' },
+    };
+    expect(outputOf(await pending.handler({}, own))).toEqual([{ id: 'r2' }]);
+  });
+
+  it('telegram_send refuses another login on a direct owner path only', async () => {
+    for (const c of OTHER.slice(0, 3)) {
+      const res = await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, c);
+      expect(errorOf(res)).toBe(TELEGRAM_OPERATOR_ANCHOR_ONLY);
+    }
+    expect(dbmod.db.select).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    // A chat turn keeps its own rules (the tool is confirm gated there).
+    selectQueue.push([{ status: 'allowed' }]);
+    const turn = await telegram_send.handler(
+      { chat_id: CHAT, text: 'hi' },
+      { ownerId: 'o1', surface: { kind: 'web', loginId: 'o1' } },
+    );
+    expect(turn.ok).toBe(true);
+    selectQueue.push([{ status: 'allowed' }]);
+    const anchorMcp = await telegram_send.handler(
+      { chat_id: CHAT, text: 'hi' },
+      { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'o1' } },
+    );
+    expect(anchorMcp.ok).toBe(true);
   });
 });
