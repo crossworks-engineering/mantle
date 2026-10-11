@@ -289,4 +289,16 @@ describe('one surface for every login (W7b): what a scope lists', () => {
       ).toBe(false);
     }
   });
+
+  it('a read-only connection keeps the read-only connector tools it was given (W7 integration fix 2)', () => {
+    // prepareCallerTools keeps a connector row only when the admin marked it
+    // read-only or the connection writes; the registry knows no connector
+    // slug, so its own read-only check must not drop it again.
+    const p = prep({ ...member, write: false }, { holdsAdmin: false, areas: [] });
+    expect(preparedAllows(p, 'mcp_crm_contacts_list', { connector: true })).toBe(true);
+    expect(preparedAllows(p, 'mcp_crm_contacts_list')).toBe(false);
+    // Builtins still read only.
+    expect(preparedAllows(p, 'note_create')).toBe(false);
+    expect(preparedAllows(p, 'note_list')).toBe(true);
+  });
 });

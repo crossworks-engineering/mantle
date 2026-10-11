@@ -365,7 +365,14 @@ export function preparedKeysOff(prepared: PreparedCallerTools): boolean {
  *  spends on the owner's keys), then a key's, a peer's or a static
  *  token's narrowing. A tool not listed is not registered: a call of it
  *  is refused as an unknown tool. */
-export function preparedAllows(prepared: PreparedCallerTools, slug: string): boolean {
+export function preparedAllows(
+  prepared: PreparedCallerTools,
+  slug: string,
+  /** A connector row (W7 integration fix 2): prepareCallerTools kept it
+   *  only when it reads or the connection writes, by the admin's read-only
+   *  mark on the row, which the builtin registry does not know. */
+  opts: { connector?: boolean } = {},
+): boolean {
   if (prepared.kind === 'refused') return false;
   const { caller, view } = prepared;
   if (view && !adminGateLists(slug, view, { ownerOnly: getBuiltin(slug)?.ownerOnly })) {
@@ -380,7 +387,7 @@ export function preparedAllows(prepared: PreparedCallerTools, slug: string): boo
   }
   // A read-only connection (a key or a peer with Write off, an OAuth grant
   // narrowed by 0268) lists only the tools that read.
-  if (!caller.write && !isMcpToolReadOnly(slug)) return false;
+  if (!caller.write && !opts.connector && !isMcpToolReadOnly(slug)) return false;
   if (!narrowed(caller)) return true;
   return ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller);
 }
@@ -577,7 +584,7 @@ export function registerPreparedTools(
     noCreateHome,
   });
   for (const row of prepared.connectors) {
-    if (!allow(row.slug)) continue;
+    if (!preparedAllows(prepared, row.slug, { connector: true })) continue;
     addTool(
       scoped,
       row.slug,
