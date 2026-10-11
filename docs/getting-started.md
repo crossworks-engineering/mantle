@@ -82,7 +82,7 @@ pnpm start
 > the `local` provider), embeddings fail: uploaded content won't index and
 > semantic search returns nothing. If you want the local path on a dev machine,
 > run Ollama natively (faster, uses the Mac GPU); on Linux `curl -fsSL
-> https://ollama.com/install.sh | sh`.
+https://ollama.com/install.sh | sh`.
 
 > **Dev vs production.** The steps above are the **local dev stack** (`pnpm start`:
 > infra in Docker + the brain hot-reloading on the host). **Production runs on
@@ -126,22 +126,22 @@ No SQL, no `ALLOWED_USER_ID` to fill in.
 
 The scripts in the root `package.json`:
 
-| Command               | What it does |
-|-----------------------|--------------|
-| `pnpm start`          | Full stack (infra + migrations + pg-boss + dev servers). The "from cold" command. |
-| `pnpm dev`            | Dev servers only (assumes infra already up). Preflight refuses politely if it's not. |
-| `pnpm stop`           | Stop infra (keeps the data) |
-| `pnpm reset`          | Wipe the dev brain + rebuild from scratch (asks for confirmation, backs up first) |
-| `pnpm infra:up`       | Bring infra up without dev servers |
-| `pnpm infra:logs`     | Tail the infra logs (postgres, object store, tika) |
-| `pnpm infra:psql`     | Open psql in the postgres container |
-| `pnpm db:migrate`     | Apply Drizzle migrations |
-| `pnpm db:studio`      | Drizzle Studio (browse the DB) |
-| `pnpm dev:web`        | Just the HTTP API (`server/web`) |
-| `pnpm dev:api`        | Just the turn runners + ingest listeners (`server/api`) |
-| `pnpm dev:mcp`        | Just the stdio MCP server |
-| `pnpm dev:worker`, `dev:telegram`, `dev:files`, `dev:docs`, `dev:events` | One worker at a time |
-| `pnpm verify`         | typecheck + lint + format check + docs check + tests (what the pre-push hook runs) |
+| Command                                                                  | What it does                                                                         |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `pnpm start`                                                             | Full stack (infra + migrations + pg-boss + dev servers). The "from cold" command.    |
+| `pnpm dev`                                                               | Dev servers only (assumes infra already up). Preflight refuses politely if it's not. |
+| `pnpm stop`                                                              | Stop infra (keeps the data)                                                          |
+| `pnpm reset`                                                             | Wipe the dev brain + rebuild from scratch (asks for confirmation, backs up first)    |
+| `pnpm infra:up`                                                          | Bring infra up without dev servers                                                   |
+| `pnpm infra:logs`                                                        | Tail the infra logs (postgres, object store, tika)                                   |
+| `pnpm infra:psql`                                                        | Open psql in the postgres container                                                  |
+| `pnpm db:migrate`                                                        | Apply Drizzle migrations                                                             |
+| `pnpm db:studio`                                                         | Drizzle Studio (browse the DB)                                                       |
+| `pnpm dev:web`                                                           | Just the HTTP API (`server/web`)                                                     |
+| `pnpm dev:api`                                                           | Just the turn runners + ingest listeners (`server/api`)                              |
+| `pnpm dev:mcp`                                                           | Just the stdio MCP server                                                            |
+| `pnpm dev:worker`, `dev:telegram`, `dev:files`, `dev:docs`, `dev:events` | One worker at a time                                                                 |
+| `pnpm verify`                                                            | typecheck + lint + format check + docs check + tests (what the pre-push hook runs)   |
 
 API: http://localhost:3000 (a bare visit redirects to `/login`, which the UI serves)
 RustFS console: http://localhost:9001 (user `minio` / pass `minio12345`, kept from the MinIO days so existing `.env.local` files work)
@@ -209,8 +209,9 @@ can read and reply.
    up within ~60s.
 3. **Pair.** DM your bot from your phone. Within ~25s the worker
    gates the message, generates a 6-char pairing code, and DMs it back.
-   Approve it with one click in the agent's Telegram section (or via the
-   `telegram_pair` MCP tool).
+   Signed in as yourself, enter the code where Jackdaw asks for a Telegram
+   pairing code (or use the `telegram_pair` MCP tool): it first shows which
+   chat and bot the code is for, then you confirm.
 4. **You're paired.** Subsequent DMs land in `telegram_messages` and
    trigger `pg_notify('telegram_message_inserted')`, which the agent
    listens for.
