@@ -569,4 +569,38 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
       }
     }
   });
+
+  it('the tools that left the system list still work in the scope', async () => {
+    // brain_capacity counts the whole brain (the member's items too), for L.
+    const [all] = await x<{ n: number }>(
+      sql`select count(*)::int as n from nodes where owner_id = ${owner} and type <> 'branch'`,
+    );
+    const cap = await inAdminTurn(second, () => dispatchAs(second, 'brain_capacity', {}));
+    expect(cap.ok, errorOf(cap)).toBe(true);
+    expect((cap as { output: { docs: { count: number } } }).output.docs.count).toBe(all!.n);
+    // secret_create: the anchor's secret is made in its scope.
+    const secret = await inAdminTurn(owner, () =>
+      dispatchAs(owner, 'secret_create', {
+        title: `${tag} safe PIN`,
+        value: '0000',
+        kind: 'password',
+      }),
+    );
+    expect(secret.ok, errorOf(secret)).toBe(true);
+    // api_tool_test reads the tool row and runs it in the scope.
+    await x(sql`insert into tools (owner_id, slug, name, description, input_schema, handler)
+      values (${owner}, ${`${tag}_ping`}, 'Ping', 'Ping the test API.',
+              ${JSON.stringify({ type: 'object', properties: {} })}::jsonb,
+              ${JSON.stringify({ kind: 'http', method: 'GET', url: 'https://api.example.invalid/ping' })}::jsonb)`);
+    const ping = await inAdminTurn(owner, () =>
+      dispatchAs(owner, 'api_tool_test', { slug: `${tag}_ping` }),
+    );
+    expect(ping.ok, errorOf(ping)).toBe(true);
+    expect(JSON.stringify(ping)).not.toMatch(/permission denied|allowlisted reason/);
+    // The team tools name contacts in the scope: a call works for the anchor.
+    for (const slug of ['team_chat_list', 'team_access_list']) {
+      const res = await inAdminTurn(owner, () => dispatchAs(owner, slug, {}));
+      expect(res.ok, `${slug} ${errorOf(res)}`).toBe(true);
+    }
+  });
 });
