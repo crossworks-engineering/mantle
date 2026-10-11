@@ -276,7 +276,13 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
   });
 
   it('the Team workspace’s assistant answers whatever level it still stores, and reads only Team', async () => {
-    await admin`update agents set audience = 'admin' where id = ${agentId}`;
+    // Levels are frozen since 0268 (W7b): set past the freeze.
+    const setLevel = (level: string) =>
+      admin.begin(async (tx) => {
+        await tx`select mantle_heads_bypass('test fixture')`;
+        await tx`update agents set audience = ${level} where id = ${agentId}`;
+      });
+    await setLevel('admin');
     h.calls = 0;
     h.seenToolResults = [];
     try {
@@ -288,7 +294,7 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
       expect(returnedIds().filter((id) => adminOnly().includes(id))).toEqual([]);
       expect(h.seenToolResults.join(' ')).not.toContain(h.hiddenTitle);
     } finally {
-      await admin`update agents set audience = 'team' where id = ${agentId}`;
+      await setLevel('team');
     }
   });
 });
