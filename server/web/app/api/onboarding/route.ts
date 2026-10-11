@@ -15,6 +15,7 @@ import {
   saveStep,
   testKey,
 } from '@/lib/onboarding-steps';
+import { vaultPairRefusalFor } from '@/lib/tools';
 
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's
@@ -37,6 +38,21 @@ export async function POST(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+  // Writing a vault key, or pointing the model routes at an Azure endpoint
+  // with the vault's 'custom' key, is the keys area's, not the settings
+  // area's (W7a fix round 4, @mantle/tools secret-ref-gate.ts). The anchor
+  // login always may.
+  const touchesVault =
+    body.action === 'saveKey' ||
+    (body.action === 'embedding' && String(body.plaintext ?? '').trim() !== '') ||
+    (body.action === 'models' && body.route === 'azure');
+  if (touchesVault) {
+    const refused = await vaultPairRefusalFor(user);
+    if (refused) {
+      return NextResponse.json({ ok: false, message: refused, error: refused }, { status: 403 });
+    }
+  }
 
   switch (body.action) {
     case 'step':

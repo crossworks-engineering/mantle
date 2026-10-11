@@ -12,8 +12,8 @@
  *  2. MCP connectors: create and PATCH; the key goes out only while the
  *     configuring login holds the keys area.
  *  3. The API Console proxy resolves a vault ref only for the keys area.
- *  4. Model routes (agents, AI workers, the embedding probe): a key with a
- *     base URL of the writer's choosing.
+ *  4. Model routes (agents, AI workers, the embedding probe, onboarding): a
+ *     key with a base URL of the writer's choosing; onboarding's key writes.
  *  5. A skill or agent prompt L saves makes the heartbeats that run it L's.
  *  6. A heartbeat's name is a maker field.  7. The DTO carries createdBy.
  *  8. Plain integration groups: tool_group_ensure and the PATCH route; a
@@ -427,6 +427,16 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
       json({ provider: 'openai', model: 'm', baseUrl: 'https://1.0.0.1/v1', apiKeyId }),
     );
     expect(probed.status).toBe(403);
+    // Onboarding: a vault key, or the Azure endpoint for the 'custom' key.
+    const onboarding = await import('@/app/api/onboarding/route');
+    const azure = await onboarding.POST(
+      json({ action: 'models', route: 'azure', azureBaseUrl: 'https://1.0.0.1/openai/v1' }),
+    );
+    expect(azure.status).toBe(403);
+    const saved = await onboarding.POST(
+      json({ action: 'saveKey', service: 'openai', plaintext: 'sk-l' }),
+    );
+    expect(saved.status).toBe(403);
     expect(outbound).toEqual([]);
     // With the keys area L may.
     await setKeys(true);
