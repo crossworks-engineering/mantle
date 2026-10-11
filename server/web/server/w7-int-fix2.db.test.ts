@@ -3,9 +3,10 @@
  * more Admin logins (L the maker, C the firer; neither a Moderator of
  * Admin), and a member of the Team workspace.
  *
- *  H1. A fire answers its firer (Fire now, heartbeat_fire; the anchor
- *      included) and the tick its maker: its reply, state and trace are
- *      that login's only, and a heartbeat's state is its maker's only.
+ *  H1. A fire answers the heartbeat's maker (Fire now, heartbeat_fire and
+ *      the tick; W7 integration fix 4: only the maker fires it now): its
+ *      reply, state and trace are that login's only, and a heartbeat's
+ *      state is its maker's only.
  *  H2. A trace reads only for the login its turn answered; the anchor reads
  *      its own and the system's.
  *  M2. The brain's own preferences change only by the anchor or a
@@ -155,11 +156,11 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     const route = await import('@/app/api/traces/[id]/route');
     return (await route.GET(new Request('http://x/'), params('id', traceId))).status;
   };
-  const fireNow = async (login: string, hbId: string) => {
+  const fireNow = async (login: string, hbId: string, status = 200) => {
     as(login);
     const route = await import('@/app/api/heartbeats/[id]/fire/route');
     const res = await route.POST(new Request('http://x/'), params('id', hbId));
-    expect(res.status, await res.clone().text()).toBe(200);
+    expect(res.status, await res.clone().text()).toBe(status);
   };
 
   beforeAll(async () => {
@@ -230,25 +231,33 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
 
   // ── H1 ─────────────────────────────────────────────────────────────────
 
-  it("H1: C fires L's heartbeat: C reads the reply, state and trace; L and the anchor do not", async () => {
+  it("H1: L fires its own heartbeat: L reads the reply, state and trace; C and the anchor do not", async () => {
     const hb = await newHeartbeat(`${tag}-hb-l`, agent.slug, maker);
-    await fireNow(firer, hb.id);
-    expect(h.scope).toMatchObject({ loginId: firer });
+    // C is not its maker: refused (W7 integration fix 4), nothing fires.
+    await fireNow(firer, hb.id, 403);
+    expect(await x(sql`select 1 from heartbeat_fires where heartbeat_id = ${hb.id}`)).toEqual([]);
+    await fireNow(maker, hb.id);
+    expect(h.scope).toMatchObject({ loginId: maker });
     const fire = await lastFire(hb.id);
-    expect(fire.by).toBe(firer);
+    expect(fire.by).toBe(maker);
     expect(fire.reply).toBe('fired, done');
-    const mine = (await detailAs(firer, hb.id)).fires[0]!;
+    const mine = (await detailAs(maker, hb.id)).fires[0]!;
     expect(mine.replyText).toBe('fired, done');
     expect(mine.stateBefore).not.toBeNull();
     expect(mine.traceId).toBe(fire.trace);
-    for (const other of [maker, owner]) {
+    for (const other of [firer, owner]) {
       const theirs = (await detailAs(other, hb.id)).fires[0]!;
       expect(theirs, other).toMatchObject({ replyText: null, stateBefore: null, traceId: null });
     }
   });
 
-  it("H1: the anchor's Fire now on L's heartbeat answers the anchor", async () => {
-    const hb = await newHeartbeat(`${tag}-hb-l2`, agent.slug, maker);
+  it("H1: the anchor's Fire now on L's heartbeat is refused; on its own it answers the anchor", async () => {
+    const theirs = await newHeartbeat(`${tag}-hb-l2`, agent.slug, maker);
+    await fireNow(owner, theirs.id, 403);
+    expect(
+      await x(sql`select 1 from heartbeat_fires where heartbeat_id = ${theirs.id}`),
+    ).toEqual([]);
+    const hb = await newHeartbeat(`${tag}-hb-o2`, agent.slug, null);
     await fireNow(owner, hb.id);
     expect(h.scope).toMatchObject({ kind: 'assistant', loginId: owner, ws: [adminWs] });
     expect((await lastFire(hb.id)).by).toBeNull();
@@ -303,11 +312,11 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
 
   it('H2: a trace reads only for the login its turn answered; the anchor its own and the system', async () => {
     const hb = await newHeartbeat(`${tag}-hb-trace`, agent.slug, maker);
-    await fireNow(firer, hb.id);
+    await fireNow(maker, hb.id);
     const theirs = (await lastFire(hb.id)).trace!;
     expect(theirs).toBeTruthy();
-    expect(await traceStatus(firer, theirs)).toBe(200);
-    expect(await traceStatus(maker, theirs)).toBe(404);
+    expect(await traceStatus(maker, theirs)).toBe(200);
+    expect(await traceStatus(firer, theirs)).toBe(404);
     expect(await traceStatus(owner, theirs)).toBe(404);
 
     const own = await newHeartbeat(`${tag}-hb-trace-o`, agent.slug, null);

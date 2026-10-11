@@ -338,11 +338,12 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
     agent = row!;
     await x(sql`insert into skills (owner_id, slug, name, description)
       values (${owner}, ${`${tag}-check`}, 'Check in', 'Ask how things are going.')`);
+    // L's heartbeat: only its maker fires it (W7 integration fix 4).
     await x(sql`insert into heartbeats (owner_id, slug, name, agent_slug, skill_slug,
-                                       schedule_kind, schedule, surface)
+                                       schedule_kind, schedule, surface, created_by)
       values (${owner}, ${`${tag}-hb`}, 'Check', ${agent.slug}, ${`${tag}-check`},
               'manual', ${JSON.stringify({ kind: 'manual' })}::jsonb,
-              ${JSON.stringify({ kind: 'web' })}::jsonb)`);
+              ${JSON.stringify({ kind: 'web' })}::jsonb, ${second})`);
     // A rule the Admin assistant learned (the Journal lives in Admin).
     olderRule = (
       await makeIn(adminWs, () =>

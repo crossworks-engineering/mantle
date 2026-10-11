@@ -40,6 +40,11 @@ async function provisionsAzureRoute(ownerId: string): Promise<boolean> {
   return models?.route === 'azure' && !!models.azureBaseUrl;
 }
 
+/** Why a login other than the brain owner may not save the purpose or the
+ *  persona step. */
+const PROMPT_TEXT_ANCHOR_ONLY =
+  "The brain's own prompt text (the purpose and the assistant's persona) is set by the brain owner only.";
+
 /** Step dispatcher. Body is `{ action, ...payload }`. */
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
@@ -63,6 +68,16 @@ export async function POST(req: Request) {
     if (refused) {
       return NextResponse.json({ ok: false, message: refused, error: refused }, { status: 403 });
     }
+  }
+  // The purpose (and its archetype) and the persona assistant's prompt and
+  // name are the brain's own prompt text: they ride every agent's prompt, so
+  // every heartbeat's turn. Only the brain owner (the anchor login) sets
+  // them, as under /api/profile (W7 integration fix 4).
+  if ((body.action === 'purpose' || body.action === 'persona') && toolMakerFor(user)) {
+    return NextResponse.json(
+      { ok: false, message: PROMPT_TEXT_ANCHOR_ONLY, error: PROMPT_TEXT_ANCHOR_ONLY },
+      { status: 403 },
+    );
   }
 
   switch (body.action) {

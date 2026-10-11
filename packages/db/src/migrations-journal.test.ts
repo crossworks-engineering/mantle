@@ -115,6 +115,21 @@ describe('migrations journal', () => {
     expect(e?.when).toBeGreaterThan(1790195340000);
   });
 
+  it('0270 runs again on a database that applied it before the folded-row repair moved in (W7 integration fix 4)', () => {
+    // Fix 3 shipped 0270 with when 1790195400000; a box that applied it
+    // records that stamp. The repair of a team row folded with no workspace
+    // moved from 0269 into 0270, so 0270 must sit above that stamp, and it
+    // must hold the repair (0269 no longer does).
+    const e = (journal.entries as unknown as Array<{ tag: string; when: number }>).find(
+      (x) => x.tag === '0270_sandboxes_created_by',
+    );
+    expect(e?.when).toBeGreaterThan(1790195400000);
+    const body = (f: string) => readFileSync(join(dir, `${f}.sql`), 'utf8');
+    const repair = /UPDATE "public"\."assistant_messages" m\s+SET "agent_id"/;
+    expect(body('0270_sandboxes_created_by')).toMatch(repair);
+    expect(body('0269_workspaces_user_threads')).not.toMatch(repair);
+  });
+
   it('a migration from 0270 on that alters several tables locks them all in one statement first', () => {
     const late = files.filter((f) => Number(f.slice(0, 4)) >= 270);
     expect(late).toContain('0270_sandboxes_created_by');

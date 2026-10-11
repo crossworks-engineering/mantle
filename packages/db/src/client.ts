@@ -536,14 +536,6 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
 }
 
 /**
- * Whether login `loginId` holds Admin `area` now, asked on the system pool
- * for a login other than the current caller (W7a fix round 3: the maker of
- * an API tool, when the tool's secret refs resolve at run time). The rule
- * of mantle_scope_has_area and areasFor: a live login that is a user of the
- * brain's live Admin workspace whose limits leave the area on. A brain not
- * on workspaces keeps today's rule (any admin: yes). Fails closed.
- */
-/**
  * Whether `loginId` is a user of this brain's live Admin workspace now, its
  * login enabled (W7 integration fix 3, L1): what the rollback switch
  * (MANTLE_ADMIN_READS=system) asks before it puts a login's reads on the
@@ -568,6 +560,14 @@ export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Whether login `loginId` holds Admin `area` now, asked on the system pool
+ * for a login other than the current caller (W7a fix round 3: the maker of
+ * an API tool, when the tool's secret refs resolve at run time). The rule
+ * of mantle_scope_has_area and areasFor: a live login that is a user of the
+ * brain's live Admin workspace whose limits leave the area on. A brain not
+ * on workspaces keeps today's rule (any admin: yes). Fails closed.
+ */
 export async function loginHasArea(loginId: string, area: ScopeArea): Promise<boolean> {
   if (!SCOPE_AREAS.includes(area) || !UUID_RE.test(loginId)) return false;
   try {

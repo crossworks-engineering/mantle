@@ -400,6 +400,10 @@ async function fireInner(
         subjectKind: 'heartbeat',
         subjectId: hb.id,
         agentId: agent.id,
+        // The login the fire answers (W7 integration fix 4, L2): its trace
+        // is listed to that login only (traceListedFor), the anchor's
+        // (null) to the anchor.
+        loginId: answeredBy,
         data: {
           heartbeat_slug: hb.slug,
           skill_slug: hb.skillSlug,

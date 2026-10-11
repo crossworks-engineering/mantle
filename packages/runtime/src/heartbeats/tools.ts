@@ -318,10 +318,13 @@ const heartbeat_update_state: BuiltinToolDef = {
     // login's (W7a fix round 3, heartbeats.created_by), so the tick fires it
     // as this login, never as the anchor. The state is its maker's only (W7
     // integration fix 3, F1/F2): a heartbeat that moves to this login starts
-    // again from {} plus this patch, never from the old maker's keys.
-    const login = target.via === 'slug' ? (currentWorkspaceScope()?.loginId ?? null) : null;
-    const moves = !!login && login !== ctx.ownerId && login !== target.hb.createdBy;
-    const maker = login && login !== ctx.ownerId ? { createdBy: login } : {};
+    // again from {} plus this patch, never from the old maker's keys. The
+    // login is the caller's (callerLogin, W7 integration fix 4): under the
+    // rollback switch a call has no workspace scope, and its gate scope or
+    // turn stamp still names it, so the heartbeat moves and its state clears.
+    const login = target.via === 'slug' ? callerLogin(ctx) : null;
+    const moves = !!login && !sameLogin(ctx.ownerId, login, target.hb.createdBy);
+    const maker = login ? { createdBy: login } : {};
     // Apply patch: drop null-valued keys, overwrite the rest.
     const existing = moves ? {} : ((target.hb.state ?? {}) as Record<string, unknown>);
     const patch = input.patch as Record<string, unknown>;
@@ -462,11 +465,15 @@ const heartbeat_list: BuiltinToolDef = {
   },
 };
 
+/** Why heartbeat_fire refuses a caller that is not the heartbeat's maker. */
+export const HEARTBEAT_FIRE_MAKER_ONLY =
+  'Only the login that set up this heartbeat fires it. Ask that login to fire it, or edit the heartbeat to make it yours.';
+
 const heartbeat_fire: BuiltinToolDef = {
   slug: 'heartbeat_fire',
   name: 'Force-fire a heartbeat now',
   description:
-    "Fire the heartbeat with the given slug RIGHT NOW, bypassing all gates (idle / quiet hours / cooldown). Used by the operator's 'Fire now' button and by skills that want to chain into another heartbeat. The fire still records to traces + heartbeat_fires with disposition='fired'. Does NOT need to be inside an existing heartbeat fire. Cannot fire the heartbeat that is currently calling this tool (direct self-recursion is refused), and chained fires are capped at MAX_HEARTBEAT_DEPTH to prevent runaway loops.",
+    "Fire the heartbeat with the given slug RIGHT NOW, bypassing all gates (idle / quiet hours / cooldown). Used by the operator's 'Fire now' button and by skills that want to chain into another heartbeat. The fire still records to traces + heartbeat_fires with disposition='fired'. Does NOT need to be inside an existing heartbeat fire. Cannot fire the heartbeat that is currently calling this tool (direct self-recursion is refused), and chained fires are capped at MAX_HEARTBEAT_DEPTH to prevent runaway loops. Only the user who set up the heartbeat may fire it.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -525,10 +532,16 @@ const heartbeat_fire: BuiltinToolDef = {
     if (hb.status !== 'active') {
       return { ok: false, error: `heartbeat '${slug}' is '${hb.status}', not 'active'` };
     }
-    // The fire answers its firer (W7 integration fix 2, H1), the anchor
-    // included: its reply, state and trace are the firer's to read.
-    const writes = currentRequestMode()?.writes === true;
+    // Only the heartbeat's maker fires it (W7 integration fix 4): its
+    // created_by, null the brain owner (the anchor login). Anyone else is
+    // refused; the fire answers the maker, as the tick does, and its reply,
+    // state and trace are the maker's to read.
     const answeredBy = callerLogin(ctx);
+    if (!sameLogin(ctx.ownerId, answeredBy, hb.createdBy)) {
+      ctx.step?.setMeta({ branch: 'not_maker', heartbeat_id: hb.id });
+      return { ok: false, error: HEARTBEAT_FIRE_MAKER_ONLY };
+    }
+    const writes = currentRequestMode()?.writes === true;
     const result = caller
       ? await areaSystem('assistants', () =>
           forceFire(hb, {

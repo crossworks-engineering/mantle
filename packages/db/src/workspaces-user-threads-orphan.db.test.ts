@@ -2,9 +2,10 @@
  * 0269's fold of a team row whose agent was deleted, on a brain whose Team
  * workspace has no assistant (W7 integration fix 2): the row lands in the
  * Team bridge workspace, never in none (a row with no workspace reads as
- * Admin's, and its member would lose it). A second run of 0269 also moves a
- * row an earlier run folded with no workspace, its agent gone or still there
- * (W7 integration fix 3, L6).
+ * Admin's, and its member would lose it). On a database that already ran
+ * 0269, 0270 moves a row an earlier build of 0269 folded with no workspace,
+ * its agent gone or still there (W7 integration fix 3, L6; the repair moved
+ * from 0269 into 0270 in fix 4, so a database past 0269 still gets it).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/workspaces-user-threads-orphan.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -18,6 +19,7 @@ import { createScratchDatabaseBefore, ensureTestViewerRoles } from './test-suppo
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const TAG = '0269_workspaces_user_threads';
+const NEXT = '0270_sandboxes_created_by';
 
 describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
@@ -64,7 +66,8 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     await ensureTestViewerRoles(URL!, process.env.MANTLE_MASTER_KEY);
     m = await import('./index');
-    await scratch.migrateRest();
+    // 0269 only: the database a box that ran 0269 holds before 0270.
+    await scratch.migrateRest(NEXT);
   }, 240_000);
 
   afterAll(async () => {
@@ -93,25 +96,33 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
     expect(await memberReads()).toEqual([row]);
   });
 
-  it('a second run moves a row an earlier run folded with no workspace', async () => {
+  it('0270 moves a row an earlier 0269 folded with no workspace, on a database past 0269', async () => {
     await sql`alter table assistant_messages disable trigger user`;
     await sql`update assistant_messages set workspace_id = null where id in (${row}, ${row2})`;
     await sql`alter table assistant_messages enable trigger user`;
     expect((await folded())!.ws).toBeNull();
     expect((await folded(row2))!.ws).toBeNull();
-    const file = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations', `${TAG}.sql`),
-      'utf8',
-    );
-    const statements = file
-      .split('--> statement-breakpoint')
-      .map((x) => x.trim())
-      .filter(Boolean);
-    await sql.begin(async (tx) => {
-      for (const stmt of statements) await tx.unsafe(stmt);
-    });
+    const run = async (tag: string) => {
+      const file = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations', `${tag}.sql`),
+        'utf8',
+      );
+      const statements = file
+        .split('--> statement-breakpoint')
+        .map((x) => x.trim())
+        .filter(Boolean);
+      await sql.begin(async (tx) => {
+        for (const stmt of statements) await tx.unsafe(stmt);
+      });
+    };
+    await run(NEXT);
     expect(await folded()).toEqual({ ws: teamWs, agent: null, login: member });
     // L6: a row whose agent is still there is repaired the same way.
     expect(await folded(row2)).toEqual({ ws: teamWs, agent: kept, login: member });
+    // Re-runnable: a second run of 0270 changes nothing.
+    await run(NEXT);
+    expect(await folded()).toEqual({ ws: teamWs, agent: null, login: member });
+    expect(await folded(row2)).toEqual({ ws: teamWs, agent: kept, login: member });
+    expect(await memberReads()).toEqual([row]);
   });
 });

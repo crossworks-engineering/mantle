@@ -169,19 +169,31 @@ export function heartbeatMaker(ownerId: string, loginId: string | null | undefin
 /** A Fire now refusal the route answers (403). */
 export class FireRefused extends Error {}
 
+/** Why a login other than a heartbeat's maker may not fire it. */
+export const FIRE_MAKER_ONLY =
+  'Only the login that set up this heartbeat fires it now. Ask that login, or edit the heartbeat to make it yours.';
+
 /**
- * How the Fire now route fires for the signed-in login (W7a fix round 3; W7
- * integration fix 2, H1): the fire answers its firer, the brain owner
- * included, never the heartbeat's maker. A login other than the brain owner
- * fires in its own scope, as the heartbeat_fire tool does (the fire's tool
- * resolution and turn answer that login, with its rights); the brain owner
- * fires in its own scope too (the engine's loginCaller), so its Fire now on
- * another login's heartbeat answers the brain owner. Under the rollback
- * switch and on a brain not on workspaces the engine's scope rules apply,
- * the fire still answering its firer.
+ * How the Fire now route fires heartbeat `hb` for the signed-in login (W7a
+ * fix round 3; W7 integration fix 4): only the heartbeat's maker
+ * (heartbeats.created_by, null the brain owner, the anchor login) fires it;
+ * any other login is refused (FireRefused, a 403). The fire answers the
+ * maker, as the tick does. A maker other than the brain owner fires in its
+ * own scope, as the heartbeat_fire tool does (the fire's tool resolution and
+ * turn answer that login, with its rights); the brain owner fires in its
+ * own scope too (the engine's loginCaller). Under the rollback switch and on
+ * a brain not on workspaces the engine's scope rules apply, the fire still
+ * answering its maker.
  */
-export async function fireOptsFor(ownerId: string, loginId: string): Promise<FireOpts> {
+export async function fireOptsFor(
+  ownerId: string,
+  loginId: string,
+  hb: Pick<Heartbeat, 'createdBy'>,
+): Promise<FireOpts> {
   const firer = heartbeatMaker(ownerId, loginId);
+  if (firer?.toLowerCase() !== heartbeatMaker(ownerId, hb.createdBy)?.toLowerCase()) {
+    throw new FireRefused(FIRE_MAKER_ONLY);
+  }
   if (!firer) return { answeredBy: null };
   if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return { answeredBy: firer };
   const scope = await loginScopeFor(loginId);

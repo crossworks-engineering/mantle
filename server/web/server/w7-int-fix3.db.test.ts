@@ -15,7 +15,8 @@
  *      to the system pool; an admin role outside Admin stays in its scope.
  *  L2. The traces list and the activity list show the caller's own traces
  *      (the anchor: its own and the system's).
- *  L3. Under the rollback switch heartbeat_fire answers the real caller.
+ *  L3. Under the rollback switch heartbeat_fire answers the real caller
+ *      (its maker only, W7 integration fix 4).
  *  L4. The brand writers under /api/profile need the settings area.
  *
  * Only the model, its key, Telegram and the outside hosts are faked.
@@ -430,19 +431,25 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
 
   // ── L3 ─────────────────────────────────────────────────────────────────
 
-  it('L3: under the rollback switch heartbeat_fire answers the real caller', async () => {
+  it('L3: under the rollback switch heartbeat_fire answers the real caller, its maker only', async () => {
     const tool = hbs.HEARTBEAT_TOOLS.find((d) => d.slug === 'heartbeat_fire')!;
     process.env.MANTLE_ADMIN_READS = 'system';
     try {
-      // An Admin login's MCP call: its gate scope names it.
-      const viaGate = await newHeartbeat(`${tag}-hb-l3-gate`, agent.slug, maker);
+      // An Admin login's MCP call: its gate scope names it. C fires its own
+      // heartbeat; L's is not C's to fire (W7 integration fix 4).
+      const viaGate = await newHeartbeat(`${tag}-hb-l3-gate`, agent.slug, firer);
       const res = await m.withGateScope(await m.loginScopeFor(firer), () =>
         tool.handler({ slug: viaGate.slug }, { ownerId: owner, surface: { kind: 'web' } }),
       );
       expect(res.ok, res.ok ? '' : res.error).toBe(true);
       expect((await lastFire(viaGate.id)).by).toBe(firer);
+      const makers = await newHeartbeat(`${tag}-hb-l3-l`, agent.slug, maker);
+      const refused = await m.withGateScope(await m.loginScopeFor(firer), () =>
+        tool.handler({ slug: makers.slug }, { ownerId: owner, surface: { kind: 'web' } }),
+      );
+      expect(refused.ok).toBe(false);
       // A turn on the system pool: its stamp names it.
-      const viaStamp = await newHeartbeat(`${tag}-hb-l3-stamp`, agent.slug, maker);
+      const viaStamp = await newHeartbeat(`${tag}-hb-l3-stamp`, agent.slug, firer);
       const res2 = await m.withTurnStamp({ workspaceId: null, loginId: firer }, () =>
         tool.handler({ slug: viaStamp.slug }, { ownerId: owner, surface: { kind: 'web' } }),
       );

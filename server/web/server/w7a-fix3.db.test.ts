@@ -264,6 +264,12 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
                 'manual', ${JSON.stringify({ kind: 'manual' })}::jsonb,
                 ${JSON.stringify({ kind: 'web' })}::jsonb)`);
     }
+    // L's own heartbeat: only its maker fires it now (W7 integration fix 4).
+    await x(sql`insert into heartbeats (owner_id, slug, name, agent_slug, skill_slug,
+                                       schedule_kind, schedule, surface, created_by)
+      values (${owner}, ${`${tag}-hb-l`}, 'Check', ${agent.slug}, ${`${tag}-check`},
+              'manual', ${JSON.stringify({ kind: 'manual' })}::jsonb,
+              ${JSON.stringify({ kind: 'web' })}::jsonb, ${second})`);
   }, 240_000);
 
   afterAll(async () => {
@@ -284,10 +290,16 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
 
   // ── 1. heartbeats ──────────────────────────────────────────────────────
 
-  it('1: Fire now by L runs the turn as L', async () => {
+  it('1: Fire now by L runs the turn as L; the anchor\'s heartbeat is not L\'s to fire', async () => {
     as(second);
     const route = await import('@/app/api/heartbeats/[id]/fire/route');
-    const res = await route.POST(new Request('http://x/'), params(await heartbeat(`${tag}-hb`)));
+    const refused = await route.POST(
+      new Request('http://x/'),
+      params(await heartbeat(`${tag}-hb`)),
+    );
+    expect(refused.status).toBe(403);
+    expect(h.scope).toBeNull();
+    const res = await route.POST(new Request('http://x/'), params(await heartbeat(`${tag}-hb-l`)));
     expect(res.status, await res.clone().text()).toBe(200);
     expect(h.scope).toMatchObject({ kind: 'assistant', loginId: second, ws: [adminWs], modWs: [] });
   });

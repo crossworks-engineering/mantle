@@ -7,11 +7,14 @@
 --
 -- Numbered 0270 (W7 integration fix 2; built as 0271): migrate.ts skips a
 -- migration whose journal `when` is at or below the highest one applied, so
--- this one takes the slot right after 0269. Its `when` (1790195400000, W7
--- integration fix 3) sits above 1790195340000, the `when` the round-1 0271
--- carried: a database that applied that 0271 still applies this one (every
--- step here is re-runnable). W7d's next migration takes 0271 or later with a
--- `when` higher than 1790195400000.
+-- this one takes the slot right after 0269. Its `when` sits above
+-- 1790195340000, the `when` the round-1 0271 carried: a database that
+-- applied that 0271 still applies this one (every step here is
+-- re-runnable). W7 integration fix 4 raised it again, from 1790195400000 to
+-- 1790195460000, when 0269's repair of a folded team row moved here (the
+-- last statement): a database that already applied this migration at
+-- 1790195400000 applies it once more and gets the repair. W7d's next
+-- migration takes 0271 or later with a `when` higher than 1790195460000.
 --
 -- Any Admin user whose settings area is on may use the sandbox tools, and a
 -- sandbox may mount a Files folder read-only (sandbox_create's inbox). So a
@@ -46,7 +49,7 @@
 -- only while that login holds the keys area. Null: the brain owner's.
 --
 -- A heartbeat fire (W7 integration fix 2) records the login it answered;
--- see the last statement.
+-- see its ALTER below.
 --
 -- No foreign keys: a login that is gone leaves its rows to the rules above
 -- (a sandbox to the brain owner; a heartbeat pauses; a tool's or a
@@ -100,3 +103,40 @@ ALTER TABLE embedding_config ADD COLUMN IF NOT EXISTS configured_by uuid;
 -- and its trace. Null: the brain owner (and every fire made before this
 -- column).
 ALTER TABLE heartbeat_fires ADD COLUMN IF NOT EXISTS answered_by uuid;
+--> statement-breakpoint
+-- 0269's repair of a folded team row (W7 integration fix 4; it was 0269's
+-- in fix 3, L6, where a database that already ran 0269 never met it): a row
+-- an earlier build of 0269 folded with no workspace, whether its agent is
+-- gone or still there, takes what 0269's insert gives a row now: the Team
+-- workspace's assistant (else its own agent) and the Team workspace (else
+-- its agent's, else the Team bridge workspace). A row still left with none
+-- stays as it is. Re-runnable: a repaired row has a workspace, so a second
+-- run touches nothing. An UPDATE that leaves the status as it is: neither
+-- conversation notify fires.
+UPDATE "public"."assistant_messages" m
+   SET "agent_id" = coalesce(fix."agent_id", m."agent_id"),
+       "workspace_id" = fix."ws_id"
+  FROM (
+    SELECT m2."id",
+           team."agent_id",
+           coalesce(team."ws_id",
+                    (SELECT a."workspace_id" FROM "public"."agents" a WHERE a."id" = m2."agent_id"),
+                    (SELECT w."id" FROM "public"."workspaces" w
+                      WHERE w."owner_id" = m2."owner_id" AND w."bridge_key" = 'team'
+                      ORDER BY w."archived_at" NULLS FIRST LIMIT 1)) AS ws_id
+      FROM "public"."assistant_messages" m2
+      LEFT JOIN LATERAL (
+        SELECT w."id" AS ws_id, a."id" AS agent_id
+          FROM "public"."workspaces" w
+          JOIN "public"."workspace_resources" r
+            ON r."workspace_id" = w."id" AND r."type" = 'assistant'
+          JOIN "public"."agents" a ON a."id"::text = r."ref_id" AND a."owner_id" = m2."owner_id"
+         WHERE w."owner_id" = m2."owner_id" AND w."bridge_key" = 'team'
+         ORDER BY w."archived_at" NULLS FIRST, a."enabled" DESC
+         LIMIT 1
+      ) team ON true
+     WHERE m2."data" ->> 'folded_from' = 'team_messages'
+       AND m2."workspace_id" IS NULL
+  ) fix
+ WHERE m."id" = fix."id"
+   AND fix."ws_id" IS NOT NULL;

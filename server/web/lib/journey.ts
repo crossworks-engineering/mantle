@@ -269,15 +269,22 @@ async function reapOnce(userId: string, cutoff: Date): Promise<number> {
 
 /** The always-on live snapshot: in-flight runs, recent successes (what entered
  *  the brain), and recent failures. Reconciles orphaned runs first so the
- *  "active" list reflects reality. */
-export async function getLiveActivity(userId: string): Promise<LiveActivity> {
+ *  "active" list reflects reality. `reader`: the signed-in login, null for
+ *  the brain owner: only the traces it may read are listed (traceListedFor,
+ *  as listActivity; W7 integration fix 4, L2). */
+export async function getLiveActivity(
+  userId: string,
+  reader: string | null,
+): Promise<LiveActivity> {
   await reapAbandonedTraces(userId);
+  const listed = traceListedFor(userId, reader) as never;
   const [active, recent, failures] = await Promise.all([
-    queryActivity(userId, [eq(traces.status, 'running') as never], 12),
-    queryActivity(userId, [eq(traces.status, 'success') as never], 30),
+    queryActivity(userId, [listed, eq(traces.status, 'running') as never], 12),
+    queryActivity(userId, [listed, eq(traces.status, 'success') as never], 30),
     queryActivity(
       userId,
       [
+        listed,
         eq(traces.status, 'error') as never,
         gte(traces.startedAt, new Date(Date.now() - 24 * 3600_000)) as never,
       ],
