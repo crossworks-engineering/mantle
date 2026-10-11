@@ -108,5 +108,4 @@ describe.skipIf(!URL)('the client level after the audit fixes', () => {
       ]),
     ).resolves.toBeDefined();
   });
-
 });
