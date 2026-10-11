@@ -165,12 +165,6 @@ describe('every in-app tool reaches the MCP surface', () => {
     // tools could only ever answer "nobody to act for".
     my_items_list: 'acts for the member of a team turn; MCP has none',
     my_item_open: 'acts for the member of a team turn; MCP has none',
-    // The client-responder's tools (client logins C4): they serve the client
-    // login of a client turn only. MCP is the owner, never a client.
-    client_shared_list: 'serves the client of a client turn; MCP has none',
-    client_shared_search: 'serves the client of a client turn; MCP has none',
-    client_shared_open: 'serves the client of a client turn; MCP has none',
-    client_request_create: 'files for the client of a client turn; MCP has none',
     // Draft writes into a member's or client's own space (MCP as a login):
     // the LOGIN surface offers them (login-surface.ts), never the owner's.
     my_note_create: "writes a login's own space; the owner surface has no login",

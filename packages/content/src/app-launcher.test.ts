@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   logins: [] as unknown[],
   folderReads: 0,
   folderError: null as Error | null,
+  topLevel: false,
   rows: [] as Array<{ id: string; path: string; title: string; data: null }>,
 }));
 
@@ -32,16 +33,10 @@ vi.mock('@mantle/db', () => ({
   },
 }));
 vi.mock('./member-apps', () => ({
-  listMemberAppsPlaced: async () => ({
-    apps: [{ id: 'a1', title: 'Polls' }],
-    places: [{ id: 'a1', path: 'apps.tools' }],
-  }),
-}));
-vi.mock('./client-apps', () => ({
-  listClientAppsPlaced: async () => ({
-    apps: [{ id: 'c1', title: 'Orders' }],
-    places: [{ id: 'c1', path: 'apps' }],
-  }),
+  listMemberAppsPlaced: async () =>
+    h.topLevel
+      ? { apps: [{ id: 'c1', title: 'Orders' }], places: [{ id: 'c1', path: 'apps' }] }
+      : { apps: [{ id: 'a1', title: 'Polls' }], places: [{ id: 'a1', path: 'apps.tools' }] },
 }));
 
 const { appLauncher } = await import('./app-folders');
@@ -55,6 +50,7 @@ beforeEach(() => {
   h.logins.length = 0;
   h.folderReads = 0;
   h.folderError = null;
+  h.topLevel = false;
   h.rows = [{ id: 'f1', path: 'apps.tools', title: 'Tools', data: null }];
 });
 
@@ -70,11 +66,12 @@ describe('appLauncher', () => {
   });
 
   it('reads no folder row when every app is at the top level', async () => {
-    const client = await appLauncher('anchor', 'client', LOGIN);
-    expect(h.viewers).toEqual(['client']);
+    h.topLevel = true;
+    const top = await appLauncher('anchor', 'team', LOGIN);
+    expect(h.viewers).toEqual(['team']);
     expect(h.logins).toEqual([{ login: LOGIN }]);
-    expect(client.apps.map((a) => a.id)).toEqual(['c1']);
-    expect(client.folders).toEqual([]);
+    expect(top.apps.map((a) => a.id)).toEqual(['c1']);
+    expect(top.folders).toEqual([]);
     expect(h.folderReads).toBe(0);
   });
 
@@ -96,7 +93,7 @@ describe('appLauncher', () => {
     await expect(appLauncher('anchor', 'team', LOGIN)).rejects.toThrow(/admin pool/);
     h.level = 'admin';
     h.space = { spaceId: 's' };
-    await expect(appLauncher('anchor', 'client', LOGIN)).rejects.toThrow(/admin pool/);
+    await expect(appLauncher('anchor', 'team', LOGIN)).rejects.toThrow(/admin pool/);
     expect(h.viewers).toEqual([]);
     expect(h.folderReads).toBe(0);
   });

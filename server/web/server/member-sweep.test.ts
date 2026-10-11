@@ -284,7 +284,8 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     expect(await who.json()).toMatchObject({
       role: 'member',
       loginId: MEMBER_ID,
-      shell: '/api/member/shell',
+      // One shell for every login since W5c.
+      shell: '/api/shell',
       pushBase: '/api/member/push',
       // The pair a device files this session under, and every push names.
       brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
@@ -299,14 +300,28 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
 
   it('a member device token is refused by the admin and the client gates', async () => {
     const headers = bearerFor(MEMBER_ID);
-    for (const path of ['/api/shell', '/api/client/shell', '/api/push/subscriptions']) {
+    // The one shell (W5c) answers a member as a member.
+    const shell = await app.request('/api/shell', { headers });
+    expect(shell.status).toBe(200);
+    expect(await shell.json()).toMatchObject({
+      role: 'member',
+      loginId: MEMBER_ID,
+      areas: [],
+      pendingApprovals: 0,
+    });
+    for (const path of [
+      '/api/client/shell',
+      '/api/push/subscriptions',
+      // The client byte routes are 410 stubs behind the client gate (W5c).
+      '/api/client/files/not-a-uuid',
+    ]) {
       const res = await app.request(path, { headers });
       const body = (await res.json().catch(() => null)) as { reason?: string } | null;
       expect(res.status, path).toBe(403);
       expect(body?.reason, path).toBe('member-login');
     }
-    // Admin and client bytes: a plain 401 (no session of that role).
-    for (const path of ['/api/files/files/not-a-uuid?raw=1', '/api/client/files/not-a-uuid']) {
+    // Admin bytes: a plain 401 (no session of that role).
+    for (const path of ['/api/files/files/not-a-uuid?raw=1']) {
       expect((await app.request(path, { headers })).status, path).toBe(401);
     }
   });

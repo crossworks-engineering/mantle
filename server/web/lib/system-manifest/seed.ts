@@ -327,8 +327,8 @@ async function upsertAgent(
       params: def.params as AgentParams,
       memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
       priority: def.priority,
-      // A manifest level ships the agent at it (client-responder at client);
-      // without one the column default (admin) applies.
+      // A manifest level ships the agent at it; without one the column
+      // default (admin) applies.
       ...(def.level ? { audience: def.level } : {}),
       enabled: true,
     });

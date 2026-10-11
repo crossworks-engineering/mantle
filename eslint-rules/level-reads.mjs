@@ -62,36 +62,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'display: share the accepted item would inherit',
   },
-  'packages/content/src/app-table-exports.ts': {
-    lines: 3,
-    phase: 'W5c',
-    why: 'client: client app state',
-  },
-  'packages/content/src/chat-images.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client: client chat image reach',
-  },
-  'packages/content/src/client-admin-usage.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'client: client app usage',
-  },
-  'packages/content/src/client-apps.ts': {
-    lines: 9,
-    phase: 'W5c',
-    why: 'client: client app list and gate',
-  },
-  'packages/content/src/client-old-links.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client: retired client links',
-  },
-  'packages/content/src/client-report.ts': {
-    lines: 9,
-    phase: 'W5c',
-    why: 'client: client report',
-  },
   'packages/content/src/member-draw-images.ts': {
     lines: 2,
     phase: 'W5c',
@@ -122,30 +92,10 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'agent level per login role',
   },
-  'packages/tools/src/client-app-tools.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'client app tools',
-  },
-  'scripts/client-level-counts.sql': {
-    lines: 7,
-    phase: 'W5c',
-    why: 'one-off client counts',
-  },
   'server/web/app/api/admin/space/[id]/accept/route.ts': {
     lines: 2,
     phase: 'W5c',
     why: 'review accept level',
-  },
-  'server/web/app/api/client/apps/[id]/db-broker/route.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'client comment',
-  },
-  'server/web/app/api/client/chat/route.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client chat agent level',
   },
   'server/web/app/api/member/chat/route.ts': {
     lines: 2,

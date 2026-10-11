@@ -99,8 +99,6 @@ export type {
 } from './dto/member';
 export type {
   AppLauncherFolder,
-  ClientAppCard,
-  ClientAppList,
   MemberAppCard,
   MemberAppLevel,
   MemberAppList,
@@ -142,13 +140,6 @@ export type {
   ApiV1Whoami,
 } from './dto/access-keys';
 export type {
-  ClientAdminRefusedReason,
-  ClientChatMessage,
-  ClientChatQueued,
-  ClientChatRefusedReason,
-  ClientChatThread,
-  ClientChatUsage,
-  ClientLinkSignIn,
   ClientCodeAvailability,
   ClientCodeRequested,
   ClientCodeSignIn,
@@ -156,24 +147,10 @@ export type {
   ClientSigninSender,
   ClientSigninSenderPreview,
   ClientSenderRefusedReason,
-  ClientLoginCreated,
-  ClientLoginList,
-  ClientLoginRow,
-  ClientSharedItem,
-  ClientSharedPage,
-  ClientSharedRow,
-  ClientSharedTable,
-  ClientSharedTableColumn,
-  ClientSharedTableRow,
-  ClientSigninLinkCreated,
-  ClientSigninLinkRow,
   ClientItemSource,
   ClientItemRow,
-  ClientItemsPage,
-  ClientSpaceRefusedReason,
   ClientAcceptedItem,
   ClientAcceptedBase,
-  ClientStorageUsage,
 } from './dto/client';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the

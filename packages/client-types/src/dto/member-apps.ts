@@ -62,33 +62,6 @@ export type MemberAppList = {
   folders?: AppLauncherFolder[];
 };
 
-/** One launcher card of a CLIENT login (client logins C6, GET
- *  /api/client/apps): an app at client level with a green published build.
- *  No level and no author. `dataReadOnly`: the app is informational, and a
- *  write answers 403 `{ ok: false, error, reason: 'read-only' }`. */
-export type ClientAppCard = {
-  id: string;
-  title: string;
-  icon: string | null;
-  color: AppTint | null;
-  description: string | null;
-  updatedAt: string;
-  dataReadOnly: boolean;
-  /** What the client may do with the app's data, as the R and R/W pill
-   *  shows it (team apps Phase 3). Absent from an older brain. */
-  dataAccess?: AppDataAccess;
-};
-
-/** GET /api/client/apps: the apps a client may run, by title. The run routes
- *  are the member routes' twins under `/api/client/apps/:id` (frame-ticket,
- *  frame, tool-broker, db-broker), so the sandbox takes that as its API
- *  base. */
-export type ClientAppList = {
-  apps: ClientAppCard[];
-  /** Where those apps sit (0.232.368 on; absent from an older brain). */
-  folders?: AppLauncherFolder[];
-};
-
 /** The brain's pinned home app, when a member may run it. */
 export type MemberHomeApp = {
   appId: string;

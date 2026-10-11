@@ -226,10 +226,13 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       collapseKey: 'chat',
     });
     // An admin's note (no agent): never the admin's name.
-    const note = await reply(client, 'We fixed the date.');
-    const c = await ln.chatReplyNotice({ loginId: client, id: note.id });
-    expect(c).toMatchObject({ loginId: client, role: 'client', title: 'New message' });
+    const note = await reply(member, 'We fixed the date.');
+    const c = await ln.chatReplyNotice({ loginId: member, id: note.id });
+    expect(c).toMatchObject({ loginId: member, role: 'member', title: 'New message' });
     expect(JSON.stringify(c)).not.toContain('Ada');
+    // A client has no chat since W5c: a row in its old thread tells nobody.
+    const old = await reply(client, 'for the client');
+    expect(await ln.chatReplyNotice({ loginId: client, id: old.id })).toBeNull();
   });
 
   it('tells nobody for another login, an admin, a disabled login or an old row', async () => {

@@ -1,19 +1,22 @@
 /**
- * Pictures in a member's or a client's own chat thread (client logins C6).
- * A reply is markdown, and the chat draws every markdown image. The agent
- * writes a picture the way the owner's assistant does, `![alt](media:<id>)`
- * or a path to the owner's file route (`/api/files/files/<id>?raw=1`), and
- * both point a member or a client at a route that is not theirs. So the
- * thread is sent with every image reference rewritten for its reader:
+ * Pictures in a member's own chat thread (client logins C6). A reply is
+ * markdown, and the chat draws every markdown image. The agent writes a
+ * picture the way the owner's assistant does, `![alt](media:<id>)` or a path
+ * to the owner's file route (`/api/files/files/<id>?raw=1`), and both point a
+ * member at a route that is not theirs. So the thread is sent with every
+ * image reference rewritten for its reader:
  *
  *  - an image of an item the reader may read (a file or a drawing of this
- *    brain at their level: team for a member, client for a client) points
- *    at the reader's own route (`/api/member/files/<id>`,
- *    `/api/client/draws/<id>/svg`, and so on);
- *  - every other image is left out: an item above their level, an id that
- *    is not an item, an external or `data:` image, anything this does not
- *    recognise. A client is never pointed at an admin route, and never made
- *    to load a picture from another site.
+ *    brain a workspace of theirs holds: row security decides) points at the
+ *    reader's own route (`/api/member/files/<id>`,
+ *    `/api/member/draws/<id>/svg`);
+ *  - every other image is left out: an item the reader may not read, an id
+ *    that is not an item, an external or `data:` image, anything this does
+ *    not recognise. A member is never pointed at an admin route, and never
+ *    made to load a picture from another site.
+ *
+ * The client chat (and its picture routes) went with the client portal in
+ * workspaces W5c.
  *
  * What an image names is embed-refs.ts's reading (the one the redactors
  * use): the app's schemes (`media:`, `draw:`), any relative path with ONE
@@ -24,25 +27,23 @@
  * text) is escaped so it cannot draw a picture, and so is a raw `<img`.
  *
  * Pure except `chatImagesFor`, which asks the database, once per thread page,
- * at the reader's level.
+ * in the reader's own scope.
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, nodes, withViewer } from '@mantle/db';
-import { readAtSql } from './item-level';
 import { clientOwnUrl } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
 import { pageRefs, type OwnUrl } from './embed-refs';
 
-/** Whose thread: a member's (team level) or a client's (client level). */
-export type ChatImageReader = 'team' | 'client';
+/** Whose thread: a member's (its own team scope). */
+export type ChatImageReader = 'team';
 
 /** The kinds of item a chat picture may show, by the reader's route. */
 export type ChatImageKind = 'file' | 'draw';
 
 /** The reader's own route for a picture of an item they may read. */
-export function chatImageSrc(reader: ChatImageReader, kind: ChatImageKind, id: string): string {
-  const base = reader === 'client' ? '/api/client' : '/api/member';
-  return kind === 'file' ? `${base}/files/${id}` : `${base}/draws/${id}/svg`;
+export function chatImageSrc(_reader: ChatImageReader, kind: ChatImageKind, id: string): string {
+  return kind === 'file' ? `/api/member/files/${id}` : `/api/member/draws/${id}/svg`;
 }
 
 /** `![alt](target "title")`: the inline form. The alt holds no unescaped
@@ -128,8 +129,8 @@ export function rewriteChatImages(
 
 /**
  * The files and drawings among `ids` the reader may read, with their kind:
- * this brain's items at the reader's level, read at that level (row security
- * decides; for a client the level is in the query as well). Keys lower-case.
+ * this brain's items, read in the reader's own scope (row security decides:
+ * the items a workspace of the reader holds). Keys lower-case.
  * Called on the admin pool (the chat routes), never inside a viewer scope.
  */
 export async function chatImagesFor(
@@ -152,7 +153,6 @@ export async function chatImagesFor(
             eq(nodes.ownerId, anchorId),
             inArray(nodes.id, [...ids]),
             inArray(nodes.type, ['file', 'draw']),
-            reader === 'client' ? readAtSql(['client']) : undefined,
           ),
         ),
   );

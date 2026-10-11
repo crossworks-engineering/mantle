@@ -13,7 +13,6 @@ import {
   hashInviteCode,
   inviteLinkPath,
 } from './member-invites';
-import { clientSigninLinkPath } from './client-logins';
 
 describe('generateInviteCode', () => {
   it('produces codes of the fixed length', () => {
@@ -76,10 +75,7 @@ describe('hashInviteCode', () => {
 describe('link paths (client logins audit B12)', () => {
   it('carry the code in the fragment, never the query, so no server log or Referer sees it', () => {
     const code = generateInviteCode();
-    for (const [path, page] of [
-      [inviteLinkPath(code), '/invite'],
-      [clientSigninLinkPath(code), '/client-signin'],
-    ] as const) {
+    for (const [path, page] of [[inviteLinkPath(code), '/invite']] as const) {
       expect(path).toBe(`${page}#code=${code}`);
       const url = new URL(path, 'https://brain.example.invalid');
       expect(url.search).toBe('');
@@ -90,6 +86,5 @@ describe('link paths (client logins audit B12)', () => {
 
   it('escapes a code that is not from the alphabet', () => {
     expect(inviteLinkPath('a+b/c')).toBe('/invite#code=a%2Bb%2Fc');
-    expect(clientSigninLinkPath('a&b')).toBe('/client-signin#code=a%26b');
   });
 });

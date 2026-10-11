@@ -262,35 +262,16 @@ describe('runClientTurn runs in the client login scope (client logins C4)', () =
   });
 });
 
-describe('a client turn gets the client tools only, whatever its groups say (audit L3)', () => {
+describe('a client turn gets no tools, whatever its groups say (W5c)', () => {
   const opts = { loginId: 'login-c', sessionEpoch: 3 };
-  // client-read as the manifest ships it, plus what an admin or an agent
-  // added to the group: a brain-wide read and a recipe wrapping one.
-  const widened = [
-    'client_shared_list',
-    'client_shared_search',
-    'client_shared_open',
-    'my_items_list',
-    'my_item_open',
-    'client_request_create',
-    'page_get',
-    'recipe_read_page',
-    'read_result',
-  ];
+  // What the old client-read group held, plus a brain-wide read and a recipe.
+  const widened = ['my_items_list', 'my_item_open', 'page_get', 'recipe_read_page', 'read_result'];
 
-  it('page_get and a recipe added to client-read never reach the client turn', async () => {
+  it('the client tools went with the client portal: nothing reaches a client turn', async () => {
     h.audience = 'client';
     h.groupTools = widened;
     await runClientTurn('owner-1', 'what is shared with me?', opts);
-    expect(h.loopTools).toEqual([
-      'client_shared_list',
-      'client_shared_search',
-      'client_shared_open',
-      'my_items_list',
-      'my_item_open',
-      'client_request_create',
-      'read_result',
-    ]);
+    expect(h.loopTools).toEqual([]);
   });
 
   it('control: a member turn keeps what its groups grant', async () => {

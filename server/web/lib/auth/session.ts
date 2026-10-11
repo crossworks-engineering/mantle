@@ -35,7 +35,6 @@ import {
 import {
   isDetachedDev,
   isAuditSelfLogged,
-  isClientAppBrokerPath,
   isRenderAssetPath,
   MANTLE_PATH_HEADER,
   MANTLE_METHOD_HEADER,
@@ -688,52 +687,16 @@ export async function getClientOr401(): Promise<ClientCaller | NextResponse> {
 }
 
 async function auditClientMutation(client: ClientCaller): Promise<void> {
-  // The app brokers log to the app's access log instead (audit I4).
-  await auditMutation(
-    {
-      id: client.anchorId,
+  await auditMutation({
+    id: client.anchorId,
+    email: client.email,
+    actor: {
+      id: client.loginId,
       email: client.email,
-      actor: {
-        id: client.loginId,
-        email: client.email,
-        displayName: client.displayName,
-        isOwner: false,
-      },
+      displayName: client.displayName,
+      isOwner: false,
     },
-    isClientAppBrokerPath,
-  );
-}
-
-/**
- * The client twin of getMemberForAsset, for the client byte routes: a client
- * session, or a `?at=` token minted for a client login (the client shell
- * mints it with `act` = the login). The login is re-read, so a disabled
- * login, a changed role or an ended session stops the token at once.
- */
-export async function getClientForAsset(req: Request): Promise<ClientCaller | NextResponse> {
-  const res = await resolveLogin();
-  if (res?.kind === 'client') return res.client;
-  const at = new URL(req.url).searchParams.get('at');
-  const claims = at ? verifyAssetToken(at) : null;
-  if (claims?.act) {
-    const row = await loadLoginRow(claims.act);
-    if (row && row.role === 'client' && loginUsable(row) && row.sessionEpoch === claims.ep) {
-      const resolved = await resolvedFor(row, 'web');
-      if (resolved?.kind === 'client' && resolved.client.anchorId === claims.uid) {
-        return resolved.client;
-      }
-    }
-  }
-  return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-}
-
-/** Is this client login still allowed in? For work that outlives the request
- *  (a queued client turn, Phase C4): the row is re-read, and the session
- *  epoch the work was started under is REQUIRED (audit B24): an admin's End
- *  sessions, or the client's sign-out, must stop the work too. */
-export async function clientLoginActive(loginId: string, epoch: number): Promise<boolean> {
-  const row = await loadLoginRow(loginId);
-  return !!row && row.role === 'client' && loginUsable(row) && row.sessionEpoch === epoch;
+  });
 }
 
 /** The 403 a gate answers a login of the wrong role with. The reason names

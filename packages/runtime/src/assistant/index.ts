@@ -78,15 +78,13 @@ export {
 export {
   ASSISTANT_TURN_WORKFLOW,
   TEAM_TURN_WORKFLOW,
-  CLIENT_TURN_WORKFLOW,
+  RETIRED_CLIENT_TURN_WORKFLOW,
   RETIRED_FORUM_TURN_WORKFLOW,
   RUNNER_QUEUE,
   MEMBER_TURN_QUEUE,
-  CLIENT_TURN_QUEUE,
   resolveSystemDatabaseUrl,
   type AssistantTurnInput,
   type AssistantTurnRunResult,
   type TeamTurnInput,
   type TeamTurnRunResult,
-  type ClientTurnInput,
 } from './contract';

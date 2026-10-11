@@ -78,7 +78,6 @@ describe('the body ceiling: which route gets which', () => {
   it('uploads have none; auth is small; owner documents are larger; the rest 8 MB', () => {
     for (const p of [
       '/api/files/files',
-      '/api/client/space-files',
       '/api/member/space-files',
       '/api/admin/space-files',
       '/api/assistant/turn',
@@ -185,16 +184,13 @@ describe.skipIf(!hasManifest)('the body ceiling: through the app', () => {
     // Under the ceiling the request goes on (to auth: no session, 401).
     expect((await declared('/api/client/space', 7 * MB)).status).toBe(401);
     // An upload is not held to it; an owner document surface has more room.
-    expect((await declared('/api/client/space-files', 15 * MB)).status).toBe(401);
+    expect((await declared('/api/member/space-files', 15 * MB)).status).toBe(401);
     expect((await declared('/api/pages/p1/draft', 20 * MB)).status).toBe(401);
     expect((await declared('/api/pages/p1/draft', 200 * MB)).status).toBe(413);
   });
 
-  it('a chunked body over the ceiling is a 413 once read (client and member routes)', async () => {
-    for (const [path, id] of [
-      ['/api/client/space', CLIENT_ID],
-      ['/api/member/space', MEMBER_ID],
-    ] as const) {
+  it('a chunked body over the ceiling is a 413 once read (member routes)', async () => {
+    for (const [path, id] of [['/api/member/space', MEMBER_ID]] as const) {
       const res = await app.request(
         streamReq(`http://localhost${path}`, JSON_BODY_CEILING_BYTES + 128 * 1024, {
           cookie: cookie(id),

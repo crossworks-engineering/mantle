@@ -1,174 +1,16 @@
 /**
- * The client API's wire shapes (client logins, Phase C2): what a CLIENT
- * login's app reads from /api/client/*, and what an admin reads and writes
- * about client logins in Team admin > Clients. A client reads items at
- * client level only (the brain enforces it with row security). Client DTOs
- * never carry a staff name or an author: clients see the brand name.
+ * The client wire shapes left after workspaces W5c. The client portal
+ * (/api/client/*), admin-issued sign-in links and Team admin > Clients were
+ * removed: a client login uses the one (app) shell (`Shell`, GET /api/shell).
+ * What stays: the email sign-in codes (any client login signs in with one),
+ * the admin's choice of the code sender, the label a redacted reference
+ * carries, and the row shapes the member files still name.
  */
-import type { ClientItemKind, MemberItemKind } from '../member-kinds';
+import type { ClientItemKind } from '../member-kinds';
 import type { MemberItemPill, MemberSpaceItemRow } from './member';
-import type { TreeKind } from '../tree';
-
-/** GET /api/client/shell: who is signed in and the brain's brand. */
-export type ClientShell = {
-  role: 'client';
-  loginId: string;
-  displayName: string | null;
-  email: string;
-  /** Append as `?at=` to /api/client/files/* and /api/client/draws/* srcs. */
-  assetToken: string;
-  siteName: string | null;
-  colorTheme: string | null;
-  fontLogo: string | null;
-  fontTitle: string | null;
-  fontUi: string | null;
-  fontProse: string | null;
-  fontSize: string | null;
-  fontLogoSize: string | null;
-  fontTitleSize: string | null;
-  fontProseSize: string | null;
-  logoVersion: string | null;
-  logoDarkVersion: string | null;
-  /** The kinds this login browses as a read-only folder tree (GET
-   *  /api/{member,client}/tree/:kind). Absent from brains before folder
-   *  sharing: the client keeps its flat lists there. */
-  treeKinds?: TreeKind[];
-};
-
-/** One item in "Shared with you": an item at client level. */
-export type ClientSharedRow = {
-  id: string;
-  type: MemberItemKind;
-  title: string;
-  icon: string | null;
-  /** Never sent since 0.232.333 (it was built from the unredacted text); do
-   *  not show it. Optional only so older clients still compile. */
-  summary?: string | null;
-  updatedAt: string;
-};
-
-/** GET /api/client/shared?kind=&q=&page= : newest first. */
-export type ClientSharedPage = {
-  items: ClientSharedRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
-
-/** GET /api/client/shared/:id -> { item }. A page's doc and a note's text
- *  come with every reference to something a client may not read replaced:
- *  a mention chip or a link names "Private item" and points nowhere, an
- *  embed of such an item is left out. */
-export type ClientSharedItem =
-  | (ClientSharedRow & { type: 'page'; doc: unknown; folderId?: string | null })
-  | (ClientSharedRow & { type: 'note'; content: string })
-  | (ClientSharedRow & { type: 'table'; table: ClientSharedTable })
-  | (ClientSharedRow & { type: 'draw' })
-  | (ClientSharedRow & {
-      type: 'file';
-      filename: string;
-      mimeType: string | null;
-      sizeBytes: number | null;
-    });
-
-/** One column of a client table: what the grid draws a header and a cell
- *  with. No formula, no reference source, no options. */
-export type ClientSharedTableColumn = { id: string; name: string; type: string };
-
-/** One committed row of a client table. A cell that names an item the
- *  client may not read (`/n/<id>`, `page:`, `media:`, `draw:`, `mention:`)
- *  arrives as "Private item". */
-export type ClientSharedTableRow = {
-  id: string;
-  cells: Record<string, string | number | boolean | string[] | null>;
-};
-
-/** A client table (GET /api/client/shared/:id, type table): the committed
- *  grid of one tab and nothing else about the table (no description, tags,
- *  summary, visibility, level, app link or draft). The shape the member
- *  reader draws (`data`, `docClipped`, `tabs`, `tabId`), so one viewer reads
- *  both. `data` is a leading window when `docClipped`; `rowCount` is the
- *  tab's true total. */
-export type ClientSharedTable = {
-  data: {
-    columns: ClientSharedTableColumn[];
-    rows: ClientSharedTableRow[];
-    /** Footer totals the owner set, by column id. */
-    aggregates?: Record<string, string>;
-  };
-  docClipped?: boolean;
-  /** The workbook's tabs in order (absent for a one-grid table). */
-  tabs?: { id: string; name: string; rows: number; columns: number }[];
-  /** Which tab `data` holds. */
-  tabId?: string | null;
-  rowCount?: number;
-};
 
 /** The label a client sees instead of a reference it may not read. */
 export const CLIENT_PRIVATE_LABEL = 'Private item';
-
-// ── Admin side: Team admin > Clients ────────────────────────────────────────
-
-/** A sign-in link an admin issued (the code itself is shown once, at issue). */
-export type ClientSigninLinkRow = {
-  id: string;
-  createdAt: string;
-  expiresAt: string;
-};
-
-/** One client login, as Team admin > Clients lists it. */
-export type ClientLoginRow = {
-  id: string;
-  email: string;
-  displayName: string | null;
-  contactId: string | null;
-  disabled: boolean;
-  createdAt: string;
-  lastLoginAt: string | null;
-  /** The open (unused, unexpired, unrevoked) sign-in link, if any. */
-  openLink: ClientSigninLinkRow | null;
-  /** When a sign-in link of this login was last used. */
-  lastLinkUsedAt: string | null;
-};
-
-/** GET /api/team-admin/clients. `reportAcknowledged`: an admin has checked
- *  "What clients see" and nothing went to client since; until then Add
- *  client and Issue sign-in link are refused (409 `report-not-acknowledged`). */
-export type ClientLoginList = {
-  clients: ClientLoginRow[];
-  reportAcknowledged: boolean;
-};
-
-/** POST /api/team-admin/clients { email, displayName?, contactId? }
- *  -> { client }. The login has no password: it signs in with a link. */
-export type ClientLoginCreated = { client: ClientLoginRow };
-
-/** POST /api/team-admin/clients/:id/signin-link -> the link, ONCE. `path` is
- *  the client-app path to hand the client (the code is its only secret);
- *  72 hours, one use. Any older open link of the login is revoked. Since
- *  0.232.333 the code rides in the fragment (`/client-signin#code=...`), so
- *  it never reaches a server log; links issued before carry `?code=`. */
-export type ClientSigninLinkCreated = {
-  link: ClientSigninLinkRow;
-  code: string;
-  path: string;
-};
-
-/** Why an admin's client action was refused (the 4xx `reason`). */
-export type ClientAdminRefusedReason =
-  | 'report-not-acknowledged'
-  | 'email-has-login'
-  | 'contact-not-found'
-  | 'contact-has-login'
-  | 'no-email'
-  | 'not-a-client'
-  /** A contact-linked client's email must be one of the contact's addresses
-   *  (the mail gates know the client by its contact; audit B26). */
-  | 'email-not-on-contact';
-
-/** POST /api/auth/client-link { code, email } -> 200 { ok: true } and the
- *  session cookie (30 days), or one uniform 401 for every failure. */
-export type ClientLinkSignIn = { ok: true };
 
 // ── Email sign-in codes (C2b) ───────────────────────────────────────────────
 
@@ -231,47 +73,6 @@ export type ClientSigninSenderPreview = {
 export type ClientSenderRefusedReason =
   'account-not-found' | 'account-cannot-send' | 'no-sent-folder' | 'folders-unreadable';
 
-// ── Client chat (client logins C4) ───────────────────────────────────────
-
-/** One message of a client's own chat thread. */
-export type ClientChatMessage = {
-  id: string;
-  direction: 'inbound' | 'outbound';
-  text: string;
-  status: 'pending' | 'complete' | 'failed';
-  failed: boolean;
-  createdAt: string;
-};
-
-/** GET /api/client/chat[?before=ISO]: the client's own thread with the
- *  client-responder, newest page first (50 a page). `agent` null = the chat
- *  is not open (no enabled client-level client-responder): the dock says so
- *  and offers no input. Poll it (every few seconds while a reply is pending):
- *  there is no live stream for clients. */
-export type ClientChatThread = {
-  agent: { name: string } | null;
-  messages: ClientChatMessage[];
-};
-
-/** POST /api/client/chat { text } -> 202: the turn is queued; the reply
- *  lands in the thread. A retry with the same Idempotency-Key is the same
- *  turn. */
-export type ClientChatQueued = { turnId: string };
-
-/** Why a client chat send was refused (the 4xx `reason`): 409 `chat-closed`
- *  (no client-level agent), 409 `idempotency-key-reused`, 429 `rate-limited`
- *  (6 a minute), 429 `daily_cap` or `token_budget` (the member caps, per
- *  client login per UTC day). */
-export type ClientChatRefusedReason =
-  'chat-closed' | 'idempotency-key-reused' | 'rate-limited' | 'daily_cap' | 'token_budget';
-
-/** GET /api/team-admin/clients/usage: each client login's chat use today
- *  (UTC) against the caps every client login has (the member caps). */
-export type ClientChatUsage = {
-  limits: { dailyTurns: number; dailyTokens: number };
-  rows: { loginId: string; turnsToday: number; tokensToday: number }[];
-};
-
 // ── The client's own items, My requests (client logins C5) ─────────────────
 
 /**
@@ -282,7 +83,8 @@ export type ClientChatUsage = {
  */
 export type ClientItemSource = 'own' | 'accepted';
 
-/** One row of GET /api/client/items. No level, no staff name. */
+/** One row of the client's My requests (GET /api/client/items, 410 since
+ *  W5c; the member files still build it). No level, no staff name. */
 export type ClientItemRow = {
   id: string;
   type: ClientItemKind;
@@ -298,45 +100,8 @@ export type ClientItemRow = {
   acceptedAt: string | null;
 };
 
-/** GET /api/client/items?kind=&q=&state=&page=: the client's own items and
- *  their accepted items in ONE list, newest first. `state` is a
- *  ClientItemFilter (default `all`). */
-export type ClientItemsPage = {
-  items: ClientItemRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
-
-/**
- * The client's own space (/api/client/space*, /api/client/space-files): the
- * member space routes' shapes (MemberSpaceItem, MemberSpaceItemRow,
- * MemberSpaceList) for kinds page, note and file only. No share route: a
- * client's item is private until submitted, and a submitted item goes to the
- * reviewers (and members read it as a client request). Refusals (the 409
- * `reason`): the member ones, plus `quota` for the client caps: 20 MB a file,
- * 200 MB a client, 50 MB uploaded a day, 500 items, 10 submissions a day, 50
- * waiting for review, and one total for all client spaces of the brain. The
- * 200 MB and the total count page and note text too (C5 audit). A page
- * document over 500 KB serialized (draft or Save version), or a note over
- * 50,000 characters, is a 400 `too-large`. Any JSON body over the route's ceiling (8 MB)
- * is a 413 `body-too-large`.
- */
-export type ClientSpaceRefusedReason =
-  | 'not-found'
-  | 'frozen'
-  | 'not-draft'
-  | 'not-submitted'
-  | 'unsaved-draft'
-  | 'quota'
-  | 'embed'
-  | 'not-shared'
-  | 'too-large'
-  | 'invalid'
-  | 'with-admin';
-
-/** GET /api/client/accepted/:id -> { item }: the version the client wrote
- *  and an admin accepted (the snapshot taken at Accept, never the brain's
+/** GET /api/client/accepted/:id (410 since W5c) -> { item }: the version
+ *  the client wrote and an admin accepted (the snapshot taken at Accept, never the brain's
  *  current version). A file's bytes: /api/client/files/:id while the brain
  *  file still holds the bytes accepted (`changedByAdmin` otherwise). */
 export type ClientAcceptedItem =
@@ -356,45 +121,4 @@ export type ClientAcceptedBase = {
   icon: string | null;
   acceptedAt: string | null;
   updatedAt: string;
-};
-
-// ── Team admin > Clients: storage (C5 audit) ──────────────────────────
-
-/**
- * GET /api/team-admin/clients/storage (admin only): what the client spaces
- * hold against the client limits. A client space counts files, page
- * documents (saved, draft and plain text) and note text, as stored.
- * `limits.totalBytes` is the brain-wide total for ALL client spaces (5 GB
- * unless the box sets MANTLE_CLIENT_SPACES_TOTAL_BYTES). A `former` row is a
- * deleted client's space: it still counts until its 30-day purge, and its
- * `loginId` is the space's id (the login row is gone).
- */
-export type ClientStorageUsage = {
-  limits: {
-    fileMaxBytes: number;
-    perClientBytes: number;
-    dailyUploadBytes: number;
-    itemLimit: number;
-    totalBytes: number;
-    submitsPerDay: number;
-    openSubmissions: number;
-  };
-  totalUsedBytes: number;
-  rows: {
-    loginId: string;
-    name: string;
-    usedBytes: number;
-    uploadedTodayBytes: number;
-    items: number;
-    openSubmissions: number;
-    former: boolean;
-  }[];
-  /** Quota refusals in the last 7 days, newest first, at most 50. */
-  refusals: { at: string; loginId: string | null; reason: string }[];
-  /** What the databases of the brain's CLIENT-level apps hold, in bytes,
-   *  as recorded at each app's last write. Clients write them, but they do
-   *  not count toward the client limits above: each app file has its own
-   *  cap (256 MB unless the box sets APP_SQL_MAX_DB_MB). Optional: an older
-   *  brain does not send it. */
-  clientAppDbBytes?: number;
 };

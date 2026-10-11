@@ -1,8 +1,8 @@
 /**
- * GET /api/team-admin/shares (client logins C3) without a database: the live
- * links (no level since W5b2), and the retired old client links, shaped for
- * jackdaw, never with a token for a retired one. An admin route: members and
- * clients are refused by getOwnerOr401 (the sweeps drive every route).
+ * GET /api/team-admin/shares without a database: the live links (no level
+ * since W5b2), shaped for jackdaw. `retired` (the old client links) is always
+ * [] since W5c. An admin route: members and clients are refused by
+ * getOwnerOr401 (the sweeps drive every route).
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -32,42 +32,14 @@ vi.mock('@mantle/content', async (importOriginal) => ({
       lastViewedAt: null,
     },
   ]),
-  listRetiredClientLinks: vi.fn(async () => [
-    {
-      id: 's2',
-      nodeId: 'n2',
-      nodeType: 'note',
-      title: 'Old client note',
-      nodeIcon: '📄',
-      level: 'client',
-      createdAt: '2026-05-01T00:00:00.000Z',
-      retiredAt: '2026-09-29T00:00:00.000Z',
-      viewCount: 12,
-      lastViewedAt: '2026-09-20T00:00:00.000Z',
-    },
-  ]),
 }));
 
 describe('GET /api/team-admin/shares', () => {
-  it('lists live links and the retired old client links, without a token for those', async () => {
+  it('lists live links; retired is always [] (W5c)', async () => {
     const { GET } = await import('./route');
     const body = await (await GET()).json();
     expect(body.shares).toEqual([expect.objectContaining({ id: 's1', path: '/s/live-token' })]);
     expect(body.shares[0]).not.toHaveProperty('level');
-    expect(body.retired).toEqual([
-      {
-        id: 's2',
-        nodeId: 'n2',
-        nodeType: 'note',
-        title: 'Old client note',
-        icon: '📄',
-        level: 'client',
-        createdAt: '2026-05-01T00:00:00.000Z',
-        retiredAt: '2026-09-29T00:00:00.000Z',
-        viewCount: 12,
-        lastViewedAt: '2026-09-20T00:00:00.000Z',
-      },
-    ]);
-    expect(JSON.stringify(body.retired)).not.toMatch(/\/s\//);
+    expect(body.retired).toEqual([]);
   });
 });

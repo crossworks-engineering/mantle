@@ -245,7 +245,6 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   task_update: onNodes('id'),
   task_delete: onNodes('id'),
   team_request_create: creates(),
-  client_request_create: creates(),
   event_create: creates(),
   event_update: onNodes('id'),
   event_delete: onNodes('id'),

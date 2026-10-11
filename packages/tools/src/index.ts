@@ -157,8 +157,6 @@ export {
   MY_APPS_MAX,
   MY_APPS_TRASH_MAX,
 } from './builtins-my-apps';
-export { CLIENT_TOOLS } from './builtins-client';
-export { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
 export { CURATION_TOOLS } from './builtins-curation';
 export { CRAWL_TOOLS } from './builtins-crawl';
@@ -213,11 +211,6 @@ export {
   type ExternalAccessActor,
   type ExternalAccessOffActor,
 } from './external-access';
-export {
-  clientAppToolVerdict,
-  CLIENT_APP_TOOL_SLUGS,
-  type ClientAppToolVerdict,
-} from './client-app-tools';
 export {
   appToolLevel,
   appToolScope,

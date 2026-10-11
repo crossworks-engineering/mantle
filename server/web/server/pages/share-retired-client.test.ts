@@ -1,8 +1,9 @@
 /**
  * /s/<token> after the old client links were retired (client logins C3),
- * without a database. An old client link answers "Sign in as a client"
- * (410) pointing at /client-signin, with no item title and never the
- * content; a retired team link keeps its own page; any other dead token
+ * without a database. An old client link answers a plain 410 "This link has
+ * ended. Ask the person who sent it for a new one." with no sign-in link
+ * (the client sign-in pages went in workspaces W5c), no item title and never
+ * the content; a retired team link keeps its own page; any other dead token
  * keeps the uniform 404; a live link renders.
  */
 import { Hono } from 'hono';
@@ -58,12 +59,15 @@ const app = async () => {
 };
 
 describe('/s/<token> with client links retired', () => {
-  it('tells an old client link to sign in as a client (410, /client-signin, no title)', async () => {
+  it('tells an old client link it has ended (410, no sign-in link, no title)', async () => {
     const res = await (await app()).request('/s/old-client-tok');
     expect(res.status).toBe(410);
     const html = await res.text();
-    expect(html).toContain('Sign in as a client');
-    expect(html).toContain('href="/client-signin"');
+    expect(html).toContain('This link has ended.');
+    expect(html).toContain('Ask the person who sent it for a new one.');
+    expect(html).not.toContain('client-signin');
+    expect(html).not.toMatch(/<a\b/);
+    expect(html).not.toContain('Sign in');
     expect(html).toContain('noindex');
     expect(html).not.toContain('Minutes');
     expect(html).not.toContain('Sign in as a member');
@@ -74,7 +78,7 @@ describe('/s/<token> with client links retired', () => {
     expect(res.status).toBe(410);
     const html = await res.text();
     expect(html).toContain('Sign in as a member');
-    expect(html).not.toContain('Sign in as a client');
+    expect(html).not.toContain('This link has ended');
   });
 
   it('keeps the plain 404 for any other dead token', async () => {

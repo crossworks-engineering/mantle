@@ -351,12 +351,8 @@ export {
   spaceLimits,
   type SpaceLimits,
 } from './space-limits';
-export {
-  clientStorageRows,
-  clientAppDbBytes,
-  deleteClientComments,
-  type ClientStorageRow,
-} from './client-admin-usage';
+// A deleted client login's old comments go with it (the login delete).
+export { deleteClientComments } from './client-comments';
 export {
   CLIENT_QUOTA_REFUSAL_DAYS,
   listClientQuotaRefusals,
@@ -387,34 +383,10 @@ export {
   type SpaceItemChange,
   type SpaceItemChangeKind,
 } from './member-space-events';
-export {
-  CLIENT_REPORT_MAX,
-  ClientReportChangedError,
-  acknowledgeClientReport,
-  clientReport,
-  clientReportAcknowledged,
-  clientReportFingerprint,
-} from './client-report';
-export { oldLinksAbove, oldLinksAboveItem } from './client-old-links';
 export { readThroughEmbeds, sharedViaFolder } from './shared-via';
-// Client logins (C2): Team admin > Clients and the sign-in link.
-export {
-  CLIENT_SIGNIN_LINK_TTL_MS,
-  ClientLoginError,
-  clientSigninLinkPath,
-  clientTurnMayRun,
-  createClientLogin,
-  issueClientSigninLink,
-  listClientLogins,
-  redeemClientSigninLink,
-  revokeClientSigninLink,
-  revokeOpenClientSignins,
-  type CreateClientLoginInput,
-  type RedeemedClientSigninLink,
-} from './client-logins';
-// Client logins (C2): what a client reads ("Shared with you", redacted bodies,
-// drawing images at client level).
-export { clientReadableIds, getClientSharedItem, listClientShared } from './client-shared';
+// Client logins: what the kept email code sign-in and the login lifecycle
+// need (the client portal and sign-in links went in workspaces W5c).
+export { clientTurnMayRun, revokeOpenClientSignins } from './client-logins';
 export { docRefIds, noteRefIds, redactClientDoc, redactClientNote } from './client-redact';
 export { clientDrawSvg, clientVisibleDrawFileIds } from './client-draw-images';
 // Client logins (C6): pictures in a member's or a client's own chat thread

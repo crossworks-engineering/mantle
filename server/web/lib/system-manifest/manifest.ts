@@ -150,8 +150,7 @@ export type ManifestAgent = {
    *  default, and the level is then operator-owned (team-responder ships at
    *  admin, closed to members, and an admin lowers it in one step:
    *  docs/access-levels.md section 5). Set = product-owned: seeded at it, so the
-   *  agent works on every brain with no manual step (client-responder at
-   *  client, client logins C4). */
+   *  agent works on every brain with no manual step. */
   level?: ViewerLevel;
 };
 
@@ -535,14 +534,23 @@ export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.m
  *   my_app_share: sharing a member's app with the team is the member's own
  *   click in the app, never a tool a key, peer or model calls (access
  *   matrix N1, T24).
+ *   client-read / client_shared_list / client_shared_search /
+ *   client_shared_open / client_request_create: the client chat's tools,
+ *   gone with the client portal (workspaces W5c). The client-responder
+ *   agent row lives on (agents are add-only); with its group disabled it
+ *   holds no tool, and nothing runs a client turn.
  */
-export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = ['team-notify'];
+export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = ['team-notify', 'client-read'];
 export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'team_member_list',
   'team_notify',
   'task_comments_list',
   'task_comment_add',
   'my_app_share',
+  'client_shared_list',
+  'client_shared_search',
+  'client_shared_open',
+  'client_request_create',
 ];
 
 /**
@@ -1282,21 +1290,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     ],
   },
   {
-    slug: 'client-read',
-    name: 'Client reads (client-facing)',
-    description:
-      "The client responder's entire tool surface (client logins C4): the items shared with clients, listed, searched and opened exactly as the client portal shows them (a reference to anything a client may not read is Private item, embeds of it left out, no summaries or staff names), the client's OWN drafts, and ONE write action, filing a client request for the team. CLIENT level. Deliberately not the brain-wide search and read tools: their chunks, facts and summaries were built from page text that can name team and admin items. No web, no email, no delegation, no apps.",
-    level: 'client',
-    toolSlugs: [
-      'client_shared_list',
-      'client_shared_search',
-      'client_shared_open',
-      'my_items_list',
-      'my_item_open',
-      'client_request_create',
-    ],
-  },
-  {
     slug: 'access',
     name: 'Access levels',
     description:
@@ -1771,41 +1764,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       inject_working_notes: false,
       delegate_to: [],
       max_iterations: 15,
-    },
-    priority: 100,
-  },
-  {
-    // Client logins C4 (plan section 8): the client chat's agent. Ships AT
-    // CLIENT LEVEL on every brain (fresh installs through onboarding, existing
-    // brains through the boot reconcile), so no admin has to lower it before a
-    // client can chat (Jason, 2026-09-29). Its turn runs at client level twice
-    // over: the agent's own level and the client turn's wrap.
-    slug: 'client-responder',
-    name: 'Client Responder',
-    description:
-      "Permission-limited responder for the client chat (client logins chat with it in the client portal): reads what is shared with clients, the client's own drafts, and files client requests for the team. Client level. Never appears in the owner's Conversations inbox and is never a delegate.",
-    role: 'custom',
-    level: 'client',
-    model: DEFAULT_AGENT_MODEL,
-    envModelVar: 'CLIENT_RESPONDER_MODEL',
-    systemPrompt: AGENT_PROMPTS['client-responder']!,
-    toolGroupSlugs: ['client-read'],
-    skillSlugs: ['tool_grounding', 'chat_writing', 'writing_style'],
-    params: { temperature: 0.4, max_tokens: 8000 },
-    // No retrieval context at all (facts, summaries, chunks and graph were
-    // built from text that can name team items; the client turn skips the
-    // loader whatever this says, and these zeros keep the config honest).
-    // History is the client's own thread.
-    memoryConfig: {
-      history_limit: 20,
-      digest_limit: 0,
-      fact_limit: 0,
-      content_hit_limit: 0,
-      chunk_limit: 0,
-      inject_journal: false,
-      inject_working_notes: false,
-      delegate_to: [],
-      max_iterations: 12,
     },
     priority: 100,
   },

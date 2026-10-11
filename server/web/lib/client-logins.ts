@@ -1,27 +1,15 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
-import { ClientLoginError } from '@mantle/content';
-import { hashLoginPassword } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
 
 /**
- * Shared bits of the client login routes (client logins, Phase C2): the
- * admin routes under /api/team-admin/clients and the public sign-in link
- * route POST /api/auth/client-link, and the email code routes under
- * /api/auth/client-code (C2b). The logic itself is
- * packages/content/src/client-logins.ts and client-codes.ts.
+ * Shared bits of the email code sign-in routes under /api/auth/client-code
+ * (client logins C2b). The logic itself is
+ * packages/content/src/client-codes.ts. Admin-issued sign-in links and the
+ * Team admin client routes were removed in workspaces W5c; email codes stay.
  */
 
-/**
- * The cap on the public sign-in link route: every request counts per
- * address (an IPv6 caller by its /64, `clientIpKey`). There is NO brain-wide
- * failure cap (client logins audit B11): one counted before the lookup let a
- * stranger with a dozen addresses hold every client's link sign-in at 429. A
- * link code carries about 92 bits, so the cap is a flood guard, not the
- * defence.
- */
-export const CLIENT_LINK_LIMITS = { perIp: 10 } as const;
 const WINDOW_MS = 60_000;
 
 function tooMany(retryAfterSec: number): Response {
@@ -29,40 +17,6 @@ function tooMany(retryAfterSec: number): Response {
     { error: 'Too many attempts. Try again in a minute.' },
     { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
   );
-}
-
-/** A 429 when the caller's address is over its cap; else null. Call before
- *  any work. */
-export function clientLinkRateLimited(req: Request): Response | null {
-  const ip = rateLimit(`auth:client-link:${clientIpKey(req)}`, {
-    max: CLIENT_LINK_LIMITS.perIp,
-    windowMs: WINDOW_MS,
-  });
-  return ip.ok ? null : tooMany(ip.retryAfterSec);
-}
-
-/** A bcrypt hash of 32 random bytes nobody keeps: a client login's
- *  password_hash (NOT NULL), so no password ever opens it. */
-export async function unusablePasswordHash(): Promise<string> {
-  return hashLoginPassword(randomBytes(32).toString('base64url'));
-}
-
-/** The admin routes' refusals, as statuses: 409 for a state the admin must
- *  change first (the report, an existing login), 404 for a login that is
- *  not a client, 400 for bad input. */
-export function clientLoginErrorResponse(err: unknown): Response {
-  if (err instanceof ClientLoginError) {
-    const status =
-      err.reason === 'report-not-acknowledged' ||
-      err.reason === 'email-has-login' ||
-      err.reason === 'contact-has-login'
-        ? 409
-        : err.reason === 'not-a-client'
-          ? 404
-          : 400;
-    return NextResponse.json({ error: err.message, reason: err.reason }, { status });
-  }
-  throw err;
 }
 
 // ── Email sign-in codes (C2b) ───────────────────────────────────────────────

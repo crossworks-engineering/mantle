@@ -1,12 +1,15 @@
 /**
  * Client sweep (client logins C2; plan section 5, deny by default). The twin
- * of the member sweep, for the routes in CLIENT_ROUTES:
+ * of the member sweep, for the routes in CLIENT_ROUTES. Workspaces W5c
+ * removed the client portal: every route there is a stub that answers a
+ * client 410 code gone, and a client uses the one (app) shell instead.
  *
  *  - admins and members are refused on every client route (client routes
  *    are client-specific, never shared);
- *  - a client session gets PAST the gate on its routes;
- *  - a client `?at=` token opens the client byte routes only for a live
- *    client of this brain's anchor, at the login's current session epoch;
+ *  - a client session gets PAST the gate on its routes, to the 410;
+ *  - no `?at=` token and no frame ticket opens a client route any more (the
+ *    gate's client carve-outs went with the portal), and a client's token
+ *    opens no admin or member bytes;
  *  - a client cookie ends with the login's epoch, and one that claims to
  *    last longer than 30 days is refused;
  *  - a client DEVICE TOKEN (the phone app's bearer) gets past the gate on
@@ -36,7 +39,6 @@ const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';
 const ADMIN_ID = '55555555-5555-4555-8555-555555555555';
 const SPACE_ID = '66666666-6666-4666-8666-666666666666';
-const OTHER_ANCHOR_ID = '88888888-8888-4888-8888-888888888888';
 
 const row = (
   id: string,
@@ -164,9 +166,9 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     }
   });
 
-  // The positive half: a client session gets PAST the gate on its routes. A
-  // malformed id is used so each handler answers its own 400 before any
-  // database read; an admin and a member on the same path are stopped.
+  // The positive half: a client session gets PAST the gate on its routes,
+  // to the 410 every client route answers since W5c; an admin and a member
+  // on the same path are stopped.
   const PAST_THE_GATE = [
     '/api/client/shared/not-a-uuid',
     '/api/client/files/not-a-uuid',
@@ -182,9 +184,9 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
   it('lets a client session through to client routes', async () => {
     for (const path of PAST_THE_GATE) {
       const res = await app.request(path, { headers: { cookie: cookieFor(CLIENT_ID) } });
-      const body = (await res.json().catch(() => null)) as { reason?: string } | null;
-      expect(res.status, path).toBe(400);
-      expect(body?.reason, path).not.toBe('client-login');
+      const body = (await res.json().catch(() => null)) as { code?: string } | null;
+      expect(res.status, path).toBe(410);
+      expect(body?.code, path).toBe('gone');
       for (const other of [ADMIN_ID, MEMBER_ID]) {
         const cookie = `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(other).value}`;
         const res2 = await app.request(path, { headers: { cookie } });
@@ -193,10 +195,9 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     }
   });
 
-  // The client app routes (C6): a client session gets past the gate on the
-  // POST routes (a malformed id is the same 404 as a team app; an empty body
-  // is the brokers' own 400, before any read).
-  it('lets a client session through to the client app routes', async () => {
+  // The client app routes (C6, removed in W5c): a client session gets past
+  // the gate on the POST routes, to the 410.
+  it('lets a client session through to the client app routes, to the 410', async () => {
     const cookie = cookieFor(CLIENT_ID);
     const postTo = (path: string, body: unknown) =>
       app.request(path, {
@@ -204,60 +205,37 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
         headers: { cookie, 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
-    expect((await postTo('/api/client/apps/not-a-uuid/frame-ticket', {})).status).toBe(404);
-    expect((await postTo('/api/client/apps/not-a-uuid/tool-broker', {})).status).toBe(400);
-    expect((await postTo('/api/client/apps/not-a-uuid/db-broker', {})).status).toBe(400);
+    expect((await postTo('/api/client/apps/not-a-uuid/frame-ticket', {})).status).toBe(410);
+    expect((await postTo('/api/client/apps/not-a-uuid/tool-broker', {})).status).toBe(410);
+    expect((await postTo('/api/client/apps/not-a-uuid/db-broker', {})).status).toBe(410);
   });
 
-  describe('the client app frame: a ticket with the client session epoch', () => {
-    // A malformed app id: past the ticket and liveness checks, the route's
-    // lookup answers its 404 before any read. A refusal is a 401.
+  describe('the client app frame (removed in W5c): no ticket opens it', () => {
     const frameWith = (ticket: string | null) =>
       app.request(
         `/api/client/apps/not-a-uuid/frame${ticket ? `?t=${encodeURIComponent(ticket)}` : ''}`,
       );
-    const clientTicket = (loginId: string, clientEpoch?: number) =>
-      tokens.buildAppFrameTicket({
+
+    it("a client's ticket at its current epoch is no credential any more", async () => {
+      const t = tokens.buildAppFrameTicket({
         ownerId: ANCHOR_ID,
         appId: 'not-a-uuid',
-        loginId,
-        ...(clientEpoch === undefined ? {} : { clientEpoch }),
+        loginId: CLIENT_ID,
+        clientEpoch: 0,
       });
-
-    it("opens for a live client at the login's current epoch", async () => {
-      expect((await frameWith(clientTicket(CLIENT_ID, 0))).status).toBe(404);
-      expect((await frameWith(clientTicket(BUMPED_CLIENT_ID, 2))).status).toBe(404);
-    });
-
-    it('is refused after End sessions or sign out (an older epoch)', async () => {
-      for (const epoch of [0, 1, 3]) {
-        const res = await frameWith(clientTicket(BUMPED_CLIENT_ID, epoch));
-        expect(res.status, `epoch ${epoch}`).toBe(401);
-      }
-    });
-
-    it('is refused for a disabled client, a member or an admin login', async () => {
-      expect((await frameWith(clientTicket(DISABLED_CLIENT_ID, 0))).status).toBe(401);
-      expect((await frameWith(clientTicket(MEMBER_ID, 0))).status).toBe(401);
-      expect((await frameWith(clientTicket(ADMIN_ID, 0))).status).toBe(401);
-    });
-
-    it('is refused without a ticket, and with a member ticket (no epoch)', async () => {
+      expect((await frameWith(t)).status).toBe(401);
       expect((await frameWith(null)).status).toBe(401);
-      expect((await frameWith(clientTicket(CLIENT_ID))).status).toBe(401);
-      const owner = tokens.buildAppFrameTicket({ ownerId: ANCHOR_ID, appId: 'not-a-uuid' });
-      expect((await frameWith(owner)).status).toBe(401);
     });
 
-    it('a client session cookie alone is no ticket', async () => {
+    it('a client session reaches the 410', async () => {
       const res = await app.request('/api/client/apps/not-a-uuid/frame', {
         headers: { cookie: cookieFor(CLIENT_ID) },
       });
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(410);
     });
   });
 
-  describe('getClientForAsset: a client ?at= token (no session)', () => {
+  describe('a client ?at= token (no session)', () => {
     const fileWith = (anchor: string, login: string, epoch?: number) =>
       app.request(
         `/api/client/files/not-a-uuid?at=${encodeURIComponent(tokens.buildAssetToken(anchor, login, epoch))}`,
@@ -266,39 +244,17 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       app.request(
         `/api/client/draws/not-a-uuid/svg?at=${encodeURIComponent(tokens.buildAssetToken(anchor, login))}`,
       );
-    // The client's own file bytes (C5): listed in the gate's asset paths.
+    // The client's own file bytes (C5).
     const ownWith = (anchor: string, login: string) =>
       app.request(
         `/api/client/space/not-a-uuid/bytes?at=${encodeURIComponent(tokens.buildAssetToken(anchor, login))}`,
       );
 
-    it("is accepted for a live client of this brain's anchor", async () => {
-      expect((await fileWith(ANCHOR_ID, CLIENT_ID)).status).toBe(400);
-      expect((await svgWith(ANCHOR_ID, CLIENT_ID)).status).toBe(400);
-      expect((await ownWith(ANCHOR_ID, CLIENT_ID)).status).toBe(400);
-    });
-
-    it('is refused when minted under another anchor', async () => {
-      expect((await fileWith(OTHER_ANCHOR_ID, CLIENT_ID)).status).toBe(401);
-      expect((await svgWith(OTHER_ANCHOR_ID, CLIENT_ID)).status).toBe(401);
-      expect((await ownWith(OTHER_ANCHOR_ID, CLIENT_ID)).status).toBe(401);
-    });
-
-    it('is refused for a disabled client login', async () => {
-      expect((await fileWith(ANCHOR_ID, DISABLED_CLIENT_ID)).status).toBe(401);
-    });
-
-    it('is refused for an admin or a member login', async () => {
-      expect((await fileWith(ANCHOR_ID, ADMIN_ID)).status).toBe(401);
-      expect((await fileWith(ANCHOR_ID, MEMBER_ID)).status).toBe(401);
-      expect((await ownWith(ANCHOR_ID, ADMIN_ID)).status).toBe(401);
-      expect((await ownWith(ANCHOR_ID, MEMBER_ID)).status).toBe(401);
-    });
-
-    it('is refused when minted before the last epoch bump', async () => {
-      expect((await fileWith(ANCHOR_ID, BUMPED_CLIENT_ID, 0)).status).toBe(401);
-      expect((await fileWith(ANCHOR_ID, BUMPED_CLIENT_ID, 1)).status).toBe(401);
-      expect((await fileWith(ANCHOR_ID, BUMPED_CLIENT_ID, 2)).status).toBe(400);
+    it('opens no client byte route any more (the gate carve went in W5c)', async () => {
+      expect((await fileWith(ANCHOR_ID, CLIENT_ID)).status).toBe(401);
+      expect((await svgWith(ANCHOR_ID, CLIENT_ID)).status).toBe(401);
+      expect((await ownWith(ANCHOR_ID, CLIENT_ID)).status).toBe(401);
+      expect((await fileWith(ANCHOR_ID, BUMPED_CLIENT_ID, 2)).status).toBe(401);
     });
 
     // Audit B8: these are the REAL byte routes, driven with a well-formed id,
@@ -362,7 +318,7 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       const now = await app.request(PAST, {
         headers: { cookie: cookieFor(BUMPED_CLIENT_ID, { epoch: 2 }) },
       });
-      expect(now.status).toBe(400);
+      expect(now.status).toBe(410);
     });
 
     it('refuses a client cookie that claims to last longer than 30 days', async () => {
@@ -376,7 +332,7 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       });
       expect(year.status).toBe(401);
       const ok = await app.request(PAST, { headers: { cookie: cookieFor(CLIENT_ID) } });
-      expect(ok.status).toBe(400);
+      expect(ok.status).toBe(410);
     });
 
     it('keeps the year-long cookie for admins and members (only clients are capped)', async () => {
@@ -421,9 +377,9 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     const statusWith = async (headers: Record<string, string>, path = PAST) =>
       (await app.request(path, { headers })).status;
 
-    it('gets past the gate on client routes, bytes included (no ?at= needed)', async () => {
+    it('gets past the gate on client routes, to the 410', async () => {
       const headers = bearerFor(CLIENT_ID);
-      for (const path of PAST_THE_GATE) expect(await statusWith(headers, path), path).toBe(400);
+      for (const path of PAST_THE_GATE) expect(await statusWith(headers, path), path).toBe(410);
     });
 
     it('is refused without the session epoch, or at any epoch but the current one', async () => {
@@ -434,7 +390,7 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
           401,
         );
       }
-      expect(await statusWith(bearerFor(BUMPED_CLIENT_ID, { epoch: 2 }))).toBe(400);
+      expect(await statusWith(bearerFor(BUMPED_CLIENT_ID, { epoch: 2 }))).toBe(410);
     });
 
     it('is refused when it claims to last longer than 30 days', async () => {
@@ -455,9 +411,14 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       expect(await statusWith(bearerFor(DISABLED_CLIENT_ID))).toBe(401);
     });
 
-    it('reaches no admin route and no member route', async () => {
+    it('reaches the one shell, and no admin route and no member route', async () => {
       const headers = bearerFor(CLIENT_ID);
-      for (const path of ['/api/shell', '/api/member/shell', '/api/push/subscriptions']) {
+      // GET /api/shell serves every login since W5c (its reads fall back when
+      // the database is not there; the role and login come from the bearer).
+      const shell = await app.request('/api/shell', { headers });
+      expect(shell.status).toBe(200);
+      expect(await shell.json()).toMatchObject({ role: 'client', loginId: CLIENT_ID, areas: [] });
+      for (const path of ['/api/member/shell', '/api/push/subscriptions']) {
         const res = await app.request(path, { headers });
         const body = (await res.json().catch(() => null)) as { reason?: string } | null;
         expect(res.status, path).toBe(403);
@@ -486,28 +447,16 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       }
     });
 
-    it('the push enrol step needs the bearer; a cookie session is told so', async () => {
+    it('the client push enrol step is gone (410), cookie or bearer', async () => {
       const body = JSON.stringify({ routingToken: 'r', publicKey: 'k', platform: 'ios' });
-      const res = await app.request('/api/client/push/subscriptions', {
-        method: 'POST',
-        headers: { cookie: cookieFor(CLIENT_ID), 'content-type': 'application/json' },
-        body,
-      });
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ error: 'bearer_required' });
-      // A cookie of one login with another login's bearer in the header: the
-      // bearer is not this login's, so it enrols nothing.
-      const mixed = await app.request('/api/client/push/subscriptions', {
-        method: 'POST',
-        headers: {
-          cookie: cookieFor(CLIENT_ID),
-          ...bearerFor(BUMPED_CLIENT_ID, { epoch: 2 }),
-          'content-type': 'application/json',
-        },
-        body,
-      });
-      expect(mixed.status).toBe(400);
-      expect(await mixed.json()).toEqual({ error: 'bearer_required' });
+      for (const headers of [{ cookie: cookieFor(CLIENT_ID) }, bearerFor(CLIENT_ID)]) {
+        const res = await app.request('/api/client/push/subscriptions', {
+          method: 'POST',
+          headers: { ...headers, 'content-type': 'application/json' },
+          body,
+        });
+        expect(res.status).toBe(410);
+      }
     });
   });
 });

@@ -9,7 +9,8 @@
  * every teaser: never text its reader could not open.
  *
  *  - chat: the reply as the reader's own chat route returns it (pictures of
- *    items above the reader's level are already out, chat-images.ts).
+ *    items the reader may not read are already out, chat-images.ts). A
+ *    member's only: the client chat went with the client portal (W5c).
  *  - review: the author's own item. Its title while an admin holds it is
  *    the title it had when it was taken, never the admin's working title.
  *  - comment: on a personal item, its author (the item is in the author's
@@ -167,9 +168,11 @@ export function chatReplyNotice(n: {
     const login = await noticeLogin(n.loginId);
     if (!login) return null;
 
+    // A client has no chat since workspaces W5c (the client portal went):
+    // no reply to tell it about.
+    if (login.role === 'client') return null;
     // The text exactly as the reader's chat route returns it.
-    const reader = login.role === 'client' ? 'client' : 'team';
-    const [text] = await chatTextsForReader(msg.ownerId, reader, n.loginId, [msg.text]);
+    const [text] = await chatTextsForReader(msg.ownerId, 'team', n.loginId, [msg.text]);
     let title: string | null = null;
     if (msg.agentId) {
       const [agent] = await db

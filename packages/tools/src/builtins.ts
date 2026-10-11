@@ -20,7 +20,6 @@ import { MY_SPACE_TOOLS } from './builtins-my-space';
 import { MY_SPACE_WRITE_TOOLS } from './builtins-my-space-write';
 import { LOGIN_APP_DATA_TOOLS } from './builtins-app-data';
 import { MY_APP_TOOLS } from './builtins-my-apps';
-import { CLIENT_TOOLS } from './builtins-client';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
@@ -152,7 +151,6 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // (team apps Phase 3). In no agent's group: only the login MCP surface
   // offers them, to members only.
   ...MY_APP_TOOLS,
-  ...CLIENT_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
   // Scoped resolution + soft-retire; pure logic in @mantle/db.

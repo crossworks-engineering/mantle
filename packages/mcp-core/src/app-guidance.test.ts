@@ -58,10 +58,6 @@ describe('app authoring guidance on the MCP surface', () => {
     expect(d).toContain('app_authoring_guide');
   });
 
-  it('app_tools_set states the client-level rule', () => {
-    expect(tools.get('app_tools_set')?.description).toContain('client_shared_list');
-  });
-
   it('app_db_schema_set says how to record who wrote a row', () => {
     expect(tools.get('app_db_schema_set')?.description).toContain(':host_me_id');
   });

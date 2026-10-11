@@ -1,11 +1,10 @@
 /**
  * The one app tool rule (client tier audit 2026-09-30, L1; workspaces W5b2,
  * plan R2): an app a workspace other than Admin holds runs the team rules
- * for every runner; an app Admin alone holds keeps the runner's rules; the
- * client rules run only for the client portal's own apps. The author
- * warnings follow the same rule. No database: the lookups are
- * stood in (the team and client rules themselves are proven on Postgres in
- * {member,client}-app-tools.viewer.db.test.ts).
+ * for every runner; an app Admin alone holds keeps the runner's rules.
+ * Clients run no apps since workspaces W5c. The author warnings follow the
+ * same rule. No database: the lookups are stood in (the team rules
+ * themselves are proven on Postgres in member-app-tools.viewer.db.test.ts).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,13 +63,8 @@ describe('appToolLevel: the holders set the rules (R2)', () => {
   it.each([
     ['admin', 'admin', 'admin'],
     ['admin', 'team', 'team'],
-    ['admin', 'client', 'none'],
     ['team', 'admin', 'team'],
     ['team', 'team', 'team'],
-    ['team', 'client', 'none'],
-    ['client', 'client', 'client'],
-    ['client', 'team', 'none'],
-    ['client', 'admin', 'none'],
   ] as const)('runner %s, held %s: %s', (runner, held, want) => {
     expect(appToolLevel(runner, held)).toBe(want);
   });
@@ -87,29 +81,10 @@ describe('appToolLevel: the holders set the rules (R2)', () => {
       expect(appToolLevel('team', held, 'team'), held).toBe('team');
     }
     expect(appToolLevel('admin', 'admin', 'admin')).toBe('admin');
-    // Lower rules stay as they are.
-    expect(appToolLevel('client', 'client', 'team')).toBe('client');
-    expect(appToolLevel('client', 'team', 'team')).toBe('none');
   });
 });
 
 describe('appToolVerdict', () => {
-  it('at client level refuses the brain-wide and team reads (built-ins off the client list)', async () => {
-    for (const slug of ['page_get', 'contact_list', 'table_rows_list', 'search_chunks']) {
-      const v = await appToolVerdict('client', 'brain', [slug], slug);
-      expect(v, slug).toMatchObject({ ok: false, status: 403 });
-      if (!v.ok) expect(v.reason).toMatch(/client apps/);
-    }
-    // A built-in's slug is refused before any lookup.
-    expect(resolveTool).not.toHaveBeenCalled();
-  });
-
-  it('at client level refuses an outside tool without External access', async () => {
-    const v = await appToolVerdict('client', 'brain', ['weather'], 'weather');
-    expect(v).toMatchObject({ ok: false, status: 403 });
-    if (!v.ok) expect(v.reason).toMatch(/External access/);
-  });
-
   it('at none refuses every tool, declared or not', async () => {
     const v = await appToolVerdict('none', 'brain', ['calculate'], 'calculate');
     expect(v).toEqual({ ok: false, status: 403, reason: APP_NO_TOOLS });
@@ -140,7 +115,7 @@ describe('appToolScope', () => {
   const who = { loginId: 'l1', name: 'Pat' };
   const app = { id: 'a1' };
   const actsFor = { login: 'l1', app };
-  it('runs admin on the owner web surface, team and client on their roles', () => {
+  it('runs admin on the owner web surface, team on its role', () => {
     expect(appToolScope('admin', who, app)).toEqual({
       viewer: 'admin',
       actsFor,
@@ -150,11 +125,6 @@ describe('appToolScope', () => {
       viewer: 'team',
       actsFor,
       surface: { kind: 'team', loginId: 'l1', contactName: 'Pat', privateReads: false },
-    });
-    expect(appToolScope('client', who, app)).toEqual({
-      viewer: 'client',
-      actsFor,
-      surface: { kind: 'client', loginId: 'l1', contactName: 'Pat' },
     });
   });
 

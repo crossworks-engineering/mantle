@@ -15,14 +15,13 @@
  * per app (`scheduleAppTableExportSync`, called by the db-broker routes and the
  * seed tool after a successful write).
  *
- * Apps clients write (client tier audit 2026-09-30, I2): a Table exported
- * from an app at client level, or from one a client login has written, is
- * indexed at RETRIEVAL depth only (`nodes.data.brain_depth`: summary,
- * embedding and chunks, never entities, relations or facts), so client text
- * never becomes graph facts the owner's assistant trusts. And an app at
- * client level commits its exports at most once per CLIENT_SYNC_MIN_GAP_MS:
- * a client writing a row every few seconds would otherwise re-index the
- * Table all day.
+ * Apps clients wrote (client tier audit 2026-09-30, I2): a Table exported
+ * from an app a client login has written (`client_written_at`) is indexed at
+ * RETRIEVAL depth only (`nodes.data.brain_depth`: summary, embedding and
+ * chunks, never entities, relations or facts), so client text never becomes
+ * graph facts the owner's assistant trusts. Clients run no apps since
+ * workspaces W5c (the client portal went), so no new client write lands;
+ * the rows they wrote before keep the mark.
  *
  * Durable (apps first-class plan D8): the debounce timer lives in one
  * process's memory, so every write also stamps the app's exports
@@ -150,27 +149,20 @@ async function stampAppLinkMark(tableNodeId: string, mark: TableAppLink | null):
   await db.update(nodes).set({ data: d, updatedAt: new Date() }).where(eq(nodes.id, tableNodeId));
 }
 
-/** Whether clients write this app: it is read at client level now (its own
- *  level, or a client-shared folder it sits in: the union rule without the
- *  embedded level, which opens reading only), or a client
- *  login has written its database (`client_written_at`, audit I3). */
+/** Whether a client login has written this app's database
+ *  (`client_written_at`, audit I3). Clients run no apps since workspaces W5c;
+ *  an app a client wrote before keeps its rows, and so the mark. */
 async function clientAppState(
   ownerId: string,
   appNodeId: string,
-): Promise<{ clientLevel: boolean; clientWritten: boolean }> {
+): Promise<{ clientWritten: boolean }> {
   const [row] = await db
-    .select({
-      audience: nodes.audience,
-      inherited: nodes.inheritedLevel,
-      clientWrittenAt: appDatabases.clientWrittenAt,
-    })
+    .select({ clientWrittenAt: appDatabases.clientWrittenAt })
     .from(nodes)
     .leftJoin(appDatabases, eq(appDatabases.appNodeId, nodes.id))
     .where(and(eq(nodes.id, appNodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
-  // An embed opens reading only, never app use (0208, review F5).
-  const clientLevel = row?.audience === 'client' || row?.inherited === 'client';
-  return { clientLevel, clientWritten: clientLevel || !!row?.clientWrittenAt };
+  return { clientWritten: !!row?.clientWrittenAt };
 }
 
 /** Mark a Table that holds rows clients wrote as client-sourced for good
@@ -334,7 +326,7 @@ async function dirtyApps(before: Date): Promise<{ ownerId: string; appNodeId: st
 }
 
 /** At boot (web): schedule the sync of every app a restart left dirty, through
- *  the usual debounce (and an app at client level's gap). */
+ *  the usual debounce. */
 export async function resumeDirtyAppTableExports(): Promise<number> {
   const apps = await dirtyApps(new Date());
   for (const a of apps) scheduleAppTableExportSync(a.ownerId, a.appNodeId);
@@ -348,7 +340,7 @@ export async function syncDirtyAppTableExports(
   opts: { olderThanMs?: number; dryRun?: boolean; now?: Date } = {},
 ): Promise<{ apps: number; synced: number; unchanged: number; errors: number }> {
   const before = new Date(
-    (opts.now ?? new Date()).getTime() - (opts.olderThanMs ?? CLIENT_SYNC_MIN_GAP_MS * 2),
+    (opts.now ?? new Date()).getTime() - (opts.olderThanMs ?? DIRTY_CATCH_UP_AGE_MS),
   );
   const apps = await dirtyApps(before);
   const out = { apps: apps.length, synced: 0, unchanged: 0, errors: 0 };
@@ -499,13 +491,10 @@ const SYNC_DEBOUNCE_MS = 15_000;
  *  postpone the sync forever: it runs at most this long after the first
  *  write of a burst. */
 const SYNC_MAX_WAIT_MS = 120_000;
-/** An app at CLIENT level syncs at most this often (audit I2): a real gap
- *  from one sync to the next, not only the longest wait inside a burst. The
- *  writes in between land in the next sync. Per process, like the timers. */
-export const CLIENT_SYNC_MIN_GAP_MS = 10 * 60_000;
-const pending = new Map<string, { timer: NodeJS.Timeout; firstAt: number; held?: true }>();
-/** When each client-level app last synced, for the gap. */
-const lastClientSync = new Map<string, number>();
+/** The catch-up task syncs an app whose exports have been dirty this long:
+ *  well past any debounce, so it never races a sync still on its timer. */
+const DIRTY_CATCH_UP_AGE_MS = 20 * 60_000;
+const pending = new Map<string, { timer: NodeJS.Timeout; firstAt: number }>();
 
 /** How long to wait before the sync, for a write at `now` in a burst whose
  *  first write was at `firstAt`: the debounce, cut short by the max wait. */
@@ -517,8 +506,6 @@ export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): 
   const key = `${ownerId}:${appNodeId}`;
   const existing = pending.get(key);
   markExportsDirty(ownerId, appNodeId);
-  // A client-level app waiting out its gap: that sync takes this write too.
-  if (existing?.held) return;
   if (existing) clearTimeout(existing.timer);
   const firstAt = existing?.firstAt ?? Date.now();
   const wait = exportSyncDelay(firstAt, Date.now());
@@ -528,22 +515,9 @@ export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): 
   pending.set(key, { timer, firstAt });
 }
 
-/** The debounced sync, once due: an app at client level waits out the rest
- *  of its gap first (held: later writes join this sync), others run now. */
+/** The debounced sync, once due. */
 async function runScheduledSync(ownerId: string, appNodeId: string, key: string): Promise<void> {
   try {
-    const { clientLevel } = await clientAppState(ownerId, appNodeId);
-    if (clientLevel) {
-      const left = (lastClientSync.get(key) ?? -Infinity) + CLIENT_SYNC_MIN_GAP_MS - Date.now();
-      if (left > 0) {
-        const entry = pending.get(key);
-        const timer = setTimeout(() => void runScheduledSync(ownerId, appNodeId, key), left);
-        timer.unref?.();
-        pending.set(key, { timer, firstAt: entry?.firstAt ?? Date.now(), held: true });
-        return;
-      }
-      lastClientSync.set(key, Date.now());
-    }
     pending.delete(key);
     await syncAppTableExports(ownerId, appNodeId);
   } catch (err) {

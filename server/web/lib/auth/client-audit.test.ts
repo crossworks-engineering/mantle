@@ -1,10 +1,9 @@
 /**
- * The client gate's audit row (client tier audit 2026-09-30, I4): a client's
- * app broker calls (host.db and host.tools) write no `api.write` row, since a
- * running app makes them by the hundred and the app's access log records
- * them; every other client write still does, the app's frame ticket
- * included. No database: the login row is stood in, and the audit insert is
- * a spy.
+ * The client gate's audit row (client tier audit 2026-09-30, I4): every
+ * client write writes an `api.write` row. (The app broker carve-out went
+ * with the client portal's apps in workspaces W5c: the client routes are
+ * 410 stubs, still audited like any client write.) No database: the login
+ * row is stood in, and the audit insert is a spy.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -62,22 +61,12 @@ const callAs = (method: string, path: string) =>
   );
 
 describe('client audit rows', () => {
-  it('writes none for the app db and tool brokers', async () => {
-    for (const path of [
-      `/api/client/apps/${APP}/db-broker`,
-      `/api/client/apps/${APP}/tool-broker`,
-    ]) {
-      const res = await callAs('POST', path);
-      expect(res, path).toMatchObject({ role: 'client', loginId: CLIENT_ID });
-    }
-    expect(h.audited).toEqual([]);
-  });
-
-  it('still writes one for the frame ticket and other client writes', async () => {
-    await callAs('POST', `/api/client/apps/${APP}/frame-ticket`);
+  it('writes one for every client write, the old app brokers included', async () => {
+    const res = await callAs('POST', `/api/client/apps/${APP}/db-broker`);
+    expect(res).toMatchObject({ role: 'client', loginId: CLIENT_ID });
     await callAs('POST', '/api/client/space');
     expect(h.audited.map((r) => [r.action, r.path, r.actorId])).toEqual([
-      ['api.write', `/api/client/apps/${APP}/frame-ticket`, CLIENT_ID],
+      ['api.write', `/api/client/apps/${APP}/db-broker`, CLIENT_ID],
       ['api.write', '/api/client/space', CLIENT_ID],
     ]);
   });

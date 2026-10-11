@@ -74,7 +74,7 @@ import {
   withTracePrelude,
 } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
-import { CLIENT_TURN_TOOL_SLUGS, PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
+import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 
 /** The one agent that serves the team surface. Provisioned by the manifest;
@@ -163,11 +163,10 @@ export function assertAgentForRole(
   }
 }
 
-/** The client turn's tools: the assembled ones that are client tools
- *  (CLIENT_TURN_TOOL_SLUGS), the rest dropped. */
+/** The client turn's tools: none. The client tools went with the client
+ *  portal in workspaces W5c, and nothing queues a client turn any more. */
 function clientToolsOnly<T extends { allowedTools: Array<{ slug: string }> }>(assembled: T): T {
-  const allowed = new Set(CLIENT_TURN_TOOL_SLUGS);
-  return { ...assembled, allowedTools: assembled.allowedTools.filter((t) => allowed.has(t.slug)) };
+  return { ...assembled, allowedTools: [] };
 }
 
 /** A client turn's retrieval context: none at all. Facts, summaries, chunks

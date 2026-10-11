@@ -13,9 +13,13 @@ import {
   reviewTestSql,
 } from '@mantle/content/app-review-test';
 import { getOwnerOr401 } from '@/lib/auth';
-import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
+import {
+  AppDbBody,
+  appDbBodyError,
+  appDbErrorResponse,
+  readOnlyAppResponse,
+} from '@/lib/app-db-broker-body';
 import { readJsonCapped } from '@/lib/body-limit';
-import { readOnlyAppResponse } from '@/lib/client-apps';
 import { rateLimit } from '@/lib/rate-limit';
 import { reviewAppOr404, reviewTester } from '@/lib/review-apps';
 

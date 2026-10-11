@@ -1,17 +1,16 @@
 /**
- * The export sync of an app clients write (client tier audit 2026-09-30,
- * I2), with fake timers: an app at client level commits its exported Table
- * at most once per CLIENT_SYNC_MIN_GAP_MS however often clients write, the
- * writes in between land in the next sync, and the Table is stamped for
- * retrieval depth before the commit that notifies the extractor. A team app
- * keeps its timing (a sync 15 s after each quiet write). The database, the
- * app's SQLite and the Tables surface are stood in: a commit here is the
- * commit that clears the extraction marker and notifies the extractor.
+ * The export sync of an app (client tier audit 2026-09-30, I2), with fake
+ * timers: a sync 15 s after each quiet write, and an app a client login once
+ * wrote stays at retrieval depth, stamped before the commit that notifies
+ * the extractor. Clients run no apps since workspaces W5c, so no app waits
+ * out a client gap any more, and an app's level decides nothing here. The
+ * database, the app's SQLite and the Tables surface are stood in: a commit
+ * here is the commit that clears the extraction marker and notifies the
+ * extractor.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  audience: 'client' as string,
   clientWrittenAt: null as Date | null,
   version: 0,
   tableData: {} as Record<string, unknown>,
@@ -37,9 +36,7 @@ vi.mock('@mantle/db', () => {
   type Fields = Record<string, unknown> | undefined;
   const rowsFor = (table: { t: string }, fields: Fields) => {
     if (table.t === 'exports') return h.link ? [h.link] : [];
-    if (fields && 'audience' in fields) {
-      return [{ audience: h.audience, clientWrittenAt: h.clientWrittenAt }];
-    }
+    if (fields && 'clientWrittenAt' in fields) return [{ clientWrittenAt: h.clientWrittenAt }];
     return [{ data: h.tableData }];
   };
   const select = (fields?: Fields) => {
@@ -89,8 +86,7 @@ vi.mock('./tables', () => ({
   }),
 }));
 
-const { CLIENT_SYNC_MIN_GAP_MS, createAppTableExport, scheduleAppTableExportSync } =
-  await import('./app-table-exports');
+const { createAppTableExport, scheduleAppTableExportSync } = await import('./app-table-exports');
 
 const OWNER = 'brain';
 let appSeq = 0;
@@ -98,7 +94,6 @@ let appSeq = 0;
 beforeEach(() => {
   vi.useFakeTimers();
   appSeq += 1;
-  h.audience = 'client';
   h.clientWrittenAt = null;
   h.version = 0;
   h.tableData = {};
@@ -127,26 +122,8 @@ async function fiveWrites(app: string): Promise<void> {
   await vi.advanceTimersByTimeAsync(60_000);
 }
 
-describe('export sync of a client-level app', () => {
-  it('commits at most once for five client writes 16 s apart, at retrieval depth', async () => {
-    const app = `app-${appSeq}`;
-    await fiveWrites(app);
-    expect(h.commits).toHaveLength(1);
-    expect(h.commits[0]!.depth).toBe('retrieval');
-    expect(h.tableData.brain_depth).toBe('retrieval');
-
-    // The writes in between are not lost: the held sync takes them once the
-    // gap is over, and nothing else runs before it.
-    await vi.advanceTimersByTimeAsync(CLIENT_SYNC_MIN_GAP_MS - 3 * 60_000);
-    expect(h.commits).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(3 * 60_000);
-    expect(h.commits).toHaveLength(2);
-    expect(h.commits[1]!.version).toBe(5);
-    expect(h.commits[1]!.at - h.commits[0]!.at).toBeGreaterThanOrEqual(CLIENT_SYNC_MIN_GAP_MS);
-  });
-
+describe('export sync', () => {
   it('stamps the export dirty at the first write, and the sync clears it (D8)', async () => {
-    h.audience = 'team';
     scheduleAppTableExportSync(OWNER, `app-${appSeq}`);
     await vi.advanceTimersByTimeAsync(0);
     expect(h.link!.dirtySince).toBe('now()');
@@ -155,15 +132,13 @@ describe('export sync of a client-level app', () => {
     expect(h.link!.dirtySince).toBeNull();
   });
 
-  it('a team app keeps its timing and full depth', async () => {
-    h.audience = 'team';
+  it('an app keeps its timing and full depth', async () => {
     await fiveWrites(`app-${appSeq}`);
     expect(h.commits).toHaveLength(5);
     expect(h.commits.every((c) => c.depth === undefined)).toBe(true);
   });
 
-  it('a team app a client once wrote keeps its timing but stays at retrieval depth', async () => {
-    h.audience = 'team';
+  it('an app a client once wrote keeps its timing but stays at retrieval depth', async () => {
     h.clientWrittenAt = new Date('2026-09-01T00:00:00Z');
     await fiveWrites(`app-${appSeq}`);
     expect(h.commits).toHaveLength(5);
@@ -172,10 +147,11 @@ describe('export sync of a client-level app', () => {
 });
 
 describe('creating an export', () => {
-  it('creates the Table of a client-level app at retrieval depth, of a team app at full', async () => {
+  it('creates the Table of an app a client wrote at retrieval depth, of any other at full', async () => {
     h.link = null;
+    h.clientWrittenAt = new Date('2026-09-01T00:00:00Z');
     await createAppTableExport(OWNER, `app-${appSeq}`, 'notes');
-    h.audience = 'team';
+    h.clientWrittenAt = null;
     await createAppTableExport(OWNER, `app-${appSeq}`, 'notes');
     expect(h.created.map((c) => c.brainDepth)).toEqual(['retrieval', undefined]);
   });

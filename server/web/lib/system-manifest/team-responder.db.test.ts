@@ -15,7 +15,7 @@
  *    that call takes `team-read-admin` off it (`dropGroupsAbove`);
  *  - at team level it reaches the tools of `team-read` and `formulas-eval`
  *    and nothing else, and no other group moved below admin.
- * The client twin (client-responder, client-read) ships open at client level.
+ * The client twin (client-responder, client-read) no longer ships (W5c).
  *
  * Only the two auth checks are stubbed. Seeds its own brains; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/system-manifest/team-responder.db.test.ts
@@ -60,7 +60,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   let runtime: typeof import('@mantle/runtime/agent');
   let levelRoute: typeof import('../../app/api/access/agents/[slug]/route');
   let memberChat: typeof import('../../app/api/member/chat/route');
-  let clientChat: typeof import('../../app/api/client/chat/route');
   // fresh: installed with this manifest. wrong: installed after 0159 and
   // before this fix (both groups at admin; an admin who RAISED them looks the
   // same). opened: an older brain whose admin already opened the responder.
@@ -107,7 +106,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     runtime = await import('@mantle/runtime/agent');
     levelRoute = await import('../../app/api/access/agents/[slug]/route');
     memberChat = await import('../../app/api/member/chat/route');
-    clientChat = await import('../../app/api/client/chat/route');
     for (const owner of Object.values(brains)) {
       await admin`insert into auth.users (id, email, password_hash, role)
                   values (${owner}, ${`tr-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
@@ -149,11 +147,10 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
 
   it('a fresh install: the two member groups at team, nothing else lowered, the responder closed', async () => {
     const levels = await groupLevels(brains.fresh);
-    // No widening: these three are the only groups below admin.
+    // No widening: these two are the only groups below admin.
     expect(belowAdmin(levels)).toEqual({
       'team-read': 'team',
       'formulas-eval': 'team',
-      'client-read': 'client',
     });
     expect(levels['team-read-admin']).toBe('admin');
     // The responder is NOT lowered by default: closed until an admin opens it.
@@ -209,7 +206,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     expect(belowAdmin(await groupLevels(brains.fresh))).toEqual({
       'team-read': 'team',
       'formulas-eval': 'team',
-      'client-read': 'client',
     });
   }, 120_000);
 
@@ -310,22 +306,12 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     expect(await memberChatAgent(brains.opened)).toMatchObject({ slug: 'team-responder' });
   }, 240_000);
 
-  it('the client twin ships open: client-responder at client, one PATCH is a clean no-op', async () => {
-    expect(await agent(brains.fresh, 'client-responder')).toMatchObject({
-      audience: 'client',
-      enabled: true,
-      tool_group_slugs: ['client-read'],
-    });
-    const res = await setLevel(brains.fresh, 'client-responder', { audience: 'client' });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { agent: Row }).agent).toMatchObject({
-      audience: 'client',
-      removedGroups: [],
-    });
-    h.owner = brains.fresh;
-    const chat = await clientChat.GET(new Request('http://brain.test/api/client/chat'));
-    expect(((await chat.json()) as { agent: unknown }).agent).not.toBeNull();
-    const tools = await runtime.resolveAgentToolGroups(brains.fresh, ['client-read'], 'client');
-    expect([...tools].sort()).toEqual([...toolsOf('client-read')].sort());
+  it('the client twin no longer ships (W5c): no client-responder, no client-read', async () => {
+    expect(
+      await admin<
+        Row[]
+      >`select id from agents where owner_id = ${brains.fresh} and slug = 'client-responder'`,
+    ).toEqual([]);
+    expect((await groupLevels(brains.fresh))['client-read']).toBeUndefined();
   }, 120_000);
 });
