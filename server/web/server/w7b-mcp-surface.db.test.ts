@@ -70,11 +70,11 @@ const ITEM_RIGHTS =
 const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   [
     'input',
-    /is required|must be|must match|must name|must decode|pass (one of|either|content_|a branch id)|Provide either|nothing to (change|update)|needs at least|invalid|non-empty|specify a destination|unknown (pool|worker)|not a recognised|Undefined symbol|already exists in|is not a spreadsheet|is a binary file|not an image|no top-level heading|no h1 headings|not a \.mantleapp|is not allowlisted|validation|expected|code must be|is not deleted|from must be|\brequired\b|pass `|pass folder_id|already exists|not empty|no tab '|is not under files|has no mantleapp\.json|is not in Recently deleted/i,
+    /is required|must be|must match|must name|must decode|pass (one of|either|content_|a branch id)|Provide either|nothing to (change|update)|needs at least|invalid|non-empty|specify a destination|unknown (pool|worker)|not a recognised|Undefined symbol|already exists in|is not a spreadsheet|is a binary file|not an image|no top-level heading|no h1 headings|not a \.mantleapp|is not allowlisted|validation|expected|code must be|is not deleted|from must be|\brequired\b|pass `|pass folder_id|already exists|not empty|no tab '|is not under files|has no mantleapp\.json|is not in Recently deleted|runs one INSERT, UPDATE, DELETE or REPLACE/i,
   ],
   [
     'not found',
-    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured)|no such message|no entry|not found or already decided|no indexed passages/i,
+    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured)|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection/i,
   ],
   ['wrong type', /is an? \w+, not an? \w+ . pass/],
   [
@@ -406,13 +406,21 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       let ran = 0;
       for (const tool of ordered(c.tools)) {
         if (tool.slug === 'run_terminal') continue;
-        const reply = await c.call(tool.slug, argsFor(tool.schema, tool.slug));
+        const args = argsFor(tool.schema, tool.slug);
+        const reply = await c.call(tool.slug, args);
         if (reply === 'timeout') {
           bad.push(`${tool.slug}: timed out after ${CALL_TIMEOUT_MS} ms`);
           continue;
         }
         const out = text(reply);
-        for (const leak of [MARK.admin, MARK.other, ...forbidden]) {
+        // An id the call was given may come back in its refusal; any other
+        // guarded id, and every guarded item's text, never does.
+        const given = JSON.stringify(args);
+        for (const leak of [
+          MARK.admin,
+          MARK.other,
+          ...forbidden.filter((f) => !given.includes(f)),
+        ]) {
           if (out.includes(leak)) bad.push(`${tool.slug}: names ${leak}`);
         }
         if (reply.isError) {
@@ -675,7 +683,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     const count = async () =>
       (
         await x<{ n: number }>(sql`select count(*)::int as n from nodes
-          where owner_id = ${owner} and type in ('contact', 'lifelog', 'location')`)
+          where owner_id = ${owner} and type in ('contact', 'journal', 'location')`)
       )[0]!.n;
     const before = await count();
     backfills.calls.length = 0;

@@ -69,7 +69,7 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 
 The key works only while their **MCP** switch is on, and writes only while both the key and **Write** allow it.
 
-Admins no longer make tokens for other logins. Tokens made before (`mtlmcpk_...`) keep working. They are listed under the login in **Settings > MCP**; press the bin icon to revoke one.
+Admins no longer make tokens for other logins. Tokens made before (`mtlmcpk_...`) were all revoked when the brain moved to one MCP for every login; make an API key instead.
 
 ## Let a peer act as a login
 

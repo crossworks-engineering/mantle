@@ -10,8 +10,8 @@
  *  2. A static login token (`mtlmcpk_`): minted by an admin for one member
  *     login, for an MCP client without OAuth. Same epoch rule. Minting is
  *     RETIRED (2026-10-07: nobody makes a credential for another login;
- *     each login makes its own API key); tokens made before keep working
- *     until revoked.
+ *     each login makes its own API key), and migration 0268 revoked every
+ *     token made before (W7b fix round 1): this path only refuses now.
  *  3. A peer token (`mtlpeer_`) whose peer is bound to a login: the peer
  *     acts as that login with the peer's own write switch. The login must
  *     still be usable and still hold the role it had when it was bound: a

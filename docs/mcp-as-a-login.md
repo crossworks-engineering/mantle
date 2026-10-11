@@ -10,20 +10,24 @@ carries no permission of its own.
 
 ## Who can connect
 
-| Bearer                                               | Who                    | Tools                                                                             |
-| ---------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------- |
-| OAuth token of an admin or a member                  | that login             | the one surface, each call in the login's workspaces                              |
-| API key `mtlk_...` (migration 0232)                  | the login that made it | the one surface, narrowed by the key (docs/guide/07-api/08-api-keys.md)           |
-| Static token `mtlmcpk_...` (RETIRED, still honoured) | one member login       | the one surface, narrowed like a key with write on (no risky tools)               |
-| Peer token `mtlpeer_...` with "Acts as"              | the bound login        | the one surface as that login, narrowed by the peer's write switch and risky list |
-| Any bearer of a CLIENT login                         | refused                | none: 403 `no_tools` (no client exists yet, plan 21.9)                            |
+| Bearer                                                | Who                    | Tools                                                                             |
+| ----------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| OAuth token of an admin or a member                   | that login             | the one surface, each call in the login's workspaces                              |
+| API key `mtlk_...` (migration 0232)                   | the login that made it | the one surface, narrowed by the key (docs/guide/07-api/08-api-keys.md)           |
+| Static token `mtlmcpk_...` (RETIRED, revoked by 0268) | one member login       | none: every one is revoked, a call answers 401                                    |
+| Peer token `mtlpeer_...` with "Acts as"               | the bound login        | the one surface as that login, narrowed by the peer's write switch and risky list |
+| Any bearer of a CLIENT login                          | refused                | none: 403 `no_tools` (no client exists yet, plan 21.9)                            |
 
 The per-login MCP switch (`mcp_login_access`, 0227) is gone: 0268 archives
 its rows in `archive_mcp_login_access` and freezes the table (an insert or a
-change of its switches is refused). `/api/mcp-logins/*` answers 410. Static
-tokens minted before keep working until they end with the login's session
-epoch (sign out everywhere, a password change, a disable or a role change);
-nothing mints or revokes them by route any more. The box-level remote MCP
+change of its switches is refused). `/api/mcp-logins/*` answers 410. With
+the switch gone, no credential it had stopped comes back (W7b fix round 1):
+0268 revokes every static token; a login whose MCP was off has its OAuth
+grants revoked and the peers bound to it disabled; a login whose MCP was on
+with Write off keeps its grants read-only (their scope carries
+`mantle:read-only`, which a refresh keeps; `MCP_READ_ONLY_SCOPE` in
+`server/web/lib/mcp-oauth.ts`) and its peers' write switch off. A read-only
+connection lists only the tools that read. The box-level remote MCP
 switch still gates everything, as a pause: while it is off `/api/mcp`, the
 consent page, client registration and the token endpoint all answer 404, so
 no grant is used or renewed; it revokes nothing (access matrix T10).
@@ -67,11 +71,22 @@ refused.
 pool, as before W7a. A member's never: on a brain not on workspaces a
 member's MCP is refused.
 
+Nothing that spends on the brain owner's provider keys is listed for a
+scope that does not hold Admin (W7b fix round 1, a CEO default the owner
+may change): the `spends` builtins (a web search, an image, a summary),
+`web_crawl`, `process_extraction`, `invoke_agent`, `ask_responder` and
+`ask_as_responder` (`spendsOwnerKeys` in
+`packages/mcp-core/src/login-surface.ts`). A tool not listed is not
+registered, so a direct call is refused too. `search_chunks` stays (its
+query embedding is the one `search_nodes` makes). A workspace assistant's
+turn keeps its own rules (the member turn ledger).
+
 ## Where a create lands (W7b)
 
 A create tool (`MCP_CREATE_TOOL_SLUGS` in
 `packages/mcp-core/src/create-home.ts`: notes, pages, files, folders,
-tables, apps, formulas and their from-file and copy variants) takes an
+tables, apps, formulas, tasks, events, Recall maps and their from-file and
+copy variants) takes an
 optional `workspace`: the id or name of a workspace the caller moderates
 (`workspaces_list` shows them with `moderator`). A workspace it does not
 moderate, or is not in, is refused. Without one the item lands by the route
@@ -79,6 +94,19 @@ rule (W6b, `mantle_default_home`): the folder's workspace when it is made in
 a folder the caller may edit, else the caller's private workspace, and for a
 user of the Admin workspace the folder's workspace else Admin. Every create
 reply names where the item landed (`landedIn: { id, name }`).
+
+For a user outside Admin every call runs under its private workspace, not
+only the listed creates (W7b fix round 1): whatever a tool makes lands by
+the rule, never in Admin, and the database refuses a kind that lives only
+in Admin. Those creates (`ADMIN_KIND_CREATE_TOOL_SLUGS`: a contact, a
+journal entry, a saved place) are not listed for such a user and are
+refused before they run. An app such a user makes, copies or imports is
+made at team rules with that user named its author.
+
+A deleted app's snapshots are hidden from a scope once its row is gone, so
+`app_deleted_list` and `app_undelete` read the trash on the system pool by
+the named reason `app-trash`, only for the deleted apps whose home
+workspace the caller moderates (an app restored goes back to that home).
 
 ## App data (team apps Phase 1, migration 0234)
 
