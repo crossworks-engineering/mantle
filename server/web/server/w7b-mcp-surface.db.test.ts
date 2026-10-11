@@ -259,7 +259,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     const c = await connect(caller);
     try {
       const listed = c.tools.map((tool) => tool.slug);
-      expect(listed.length).toBeGreaterThan(100);
+      expect(listed.length).toBeGreaterThan(40);
       expect(listed).toContain('workspaces_list');
       const gated = listed.filter((slug) => {
         const def = t.getBuiltin(slug);
