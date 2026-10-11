@@ -548,9 +548,21 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
                    set limits = ${JSON.stringify({ areas: { keys: false, settings: false } })}::jsonb
                  where workspace_id = ${adminWs} and login_id = ${second}`);
     try {
-      const res = await mcpCall(second, 'run_terminal', { command: 'echo w7a' });
+      // Since W7b a tool the scope may not call is not listed either: the
+      // call is refused as an unknown tool, and the gate refuses it anyway.
+      const res = await mcpCall(second, 'run_terminal', { command: 'echo w7a' }).catch(
+        (err: unknown) => ({ isError: true, text: String(err) }),
+      );
       expect(res.isError, res.text).toBe(true);
-      expect(res.text).toMatch(/manages the brain's settings/);
+      expect(res.text).toMatch(/manages the brain's settings|Tool run_terminal not found/);
+      const ls = await import('@mantle/mcp-core');
+      const gated = (await ls.runInOwnerMcpScope(
+        second,
+        'run_terminal',
+        async () => ({ content: [{ type: 'text' as const, text: 'ran' }] }),
+        { adminLogin: true },
+      )) as { content?: { text?: string }[] };
+      expect(gated.content?.map((p) => p.text).join('')).toMatch(/manages the brain's settings/);
       expect(t.toolAdminArea('run_terminal')).toBe('settings');
       expect(t.ADMIN_ONLY_TOOL_SLUGS.has('run_terminal')).toBe(true);
     } finally {
