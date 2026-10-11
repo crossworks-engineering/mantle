@@ -5,7 +5,9 @@
  *
  *  - L-1: the owner binding to itself a peer another Admin user made re-keys
  *    it in the same request (the maker saw the old token) and records the
- *    owner as its maker; a peer the owner made keeps its token;
+ *    owner as its maker; since fix round 5 (M-1) a peer the owner made is
+ *    re-keyed too as it moves into the owner's binding, and keeps its token
+ *    once it is bound to the owner;
  *  - L-2: a copy's create that races to a row holding other bytes refuses
  *    (a taken name, 409) and leaves that row as it was;
  *  - L-4: another Admin user's change the owner alone makes on a peer bound
@@ -150,7 +152,7 @@ describe.skipIf(!URL)('W6b fix round 4', () => {
     if (dir) await rm(dir, { recursive: true, force: true });
   }, 60_000);
 
-  it('L-1: the owner binding a peer another Admin user made re-keys it; its own keeps its token', async () => {
+  it('L-1: the owner binding a peer another Admin user made re-keys it; its own bound one keeps its token', async () => {
     // Another Admin user makes a member peer: it saw that peer's token.
     let r = await call('/api/peers', admin2, 'POST', peerBody('a', { actsAs: mem }));
     expect(r.status, r.text.slice(0, 200)).toBe(201);
@@ -185,16 +187,33 @@ describe.skipIf(!URL)('W6b fix round 4', () => {
     expect(await authenticates(r.json.inboundToken as string)).toBe(true);
     expect((await peerRow(legacy)).by).toBe(owner);
 
-    // A peer the owner made keeps its token when the owner binds it.
+    // A peer the owner made, moving into the owner's binding, is re-keyed
+    // too (fix round 5, M-1): another Admin user may have rotated it while
+    // it was bound to the member.
     r = await call('/api/peers', owner, 'POST', peerBody('own', { actsAs: mem }));
     const own = (r.json.peer as Json).id as string;
     const ownToken = r.json.inboundToken as string;
     const before = (await peerRow(own)).hash;
     r = await call(`/api/peers/${own}`, owner, 'PATCH', { actsAs: 'owner', writeEnabled: true });
     expect(r.status, r.text.slice(0, 200)).toBe(200);
+    const ownFresh = r.json.inboundToken as string;
+    expect(typeof ownFresh).toBe('string');
+    expect(await authenticates(ownToken)).toBe(false);
+    expect(await authenticates(ownFresh)).toBe(true);
+    const bound = await peerRow(own);
+    expect(bound).toMatchObject({ by: owner, acts: owner, write: true });
+    expect(bound.hash).not.toBe(before);
+    // Already bound to the owner and made by it: a later PATCH keeps it.
+    r = await call(`/api/peers/${own}`, owner, 'PATCH', { actsAs: 'owner', writeEnabled: true });
+    expect(r.status, r.text.slice(0, 200)).toBe(200);
     expect(r.json.inboundToken).toBeUndefined();
-    expect(await peerRow(own)).toMatchObject({ by: owner, acts: owner, write: true, hash: before });
-    expect(await authenticates(ownToken)).toBe(true);
+    expect(await peerRow(own)).toMatchObject({
+      by: owner,
+      acts: owner,
+      write: true,
+      hash: bound.hash,
+    });
+    expect(await authenticates(ownFresh)).toBe(true);
   });
 
   it('L-2: a copy’s create that races to a row holding other bytes refuses and leaves it be', async () => {

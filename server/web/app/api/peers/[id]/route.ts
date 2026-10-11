@@ -39,16 +39,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const guard = !user.actor.isOwner && peerChangeNeedsOwner(change, true);
   let touched = false;
   let inboundToken: string | null = null;
-  if (parsed.data.enabled !== undefined) {
-    const ok = await setPeerEnabled(user.id, id, parsed.data.enabled);
-    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    touched = true;
-  }
-  if (parsed.data.outboundToken !== undefined) {
-    const ok = await setOutboundToken(user.id, id, parsed.data.outboundToken);
-    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    touched = true;
-  }
+  // The guarded write goes first (fix round 5, L-1): a refusal, or a bad
+  // login to bind, then answers before anything else in the body is written.
   if (actsAs !== undefined || writeEnabled !== undefined || allowedRiskyTools !== undefined) {
     const bound = actsAs === undefined ? undefined : await resolvePeerActsAs(user.id, actsAs);
     if (bound && 'error' in bound) {
@@ -58,8 +50,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       ...(bound !== undefined ? { actsAs: bound } : {}),
       ...(writeEnabled !== undefined ? { writeEnabled } : {}),
       ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
-      // The owner binding a peer to itself becomes its maker; one someone
-      // else made is re-keyed in the same write (fix round 4, L-1).
+      // The owner binding a peer to itself becomes its maker; one moving
+      // into that binding, or one someone else made, is re-keyed in the same
+      // write (fix round 4, L-1; fix round 5, M-1).
       ...(actsAs === 'owner' && user.actor.isOwner ? { adoptBy: user.actor.id } : {}),
       ...(guard ? { unlessBoundTo: user.id } : {}),
     });
@@ -70,6 +63,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
     inboundToken = res.inboundToken;
+    touched = true;
+  }
+  if (parsed.data.enabled !== undefined) {
+    const ok = await setPeerEnabled(user.id, id, parsed.data.enabled);
+    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    touched = true;
+  }
+  if (parsed.data.outboundToken !== undefined) {
+    const ok = await setOutboundToken(user.id, id, parsed.data.outboundToken);
+    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
     touched = true;
   }
   if (!touched) return NextResponse.json({ error: 'nothing to update' }, { status: 400 });

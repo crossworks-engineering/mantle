@@ -303,15 +303,21 @@ export async function setPeerAccess(
     writeEnabled?: boolean;
     allowedRiskyTools?: string[];
     /** The owner binding the peer to itself: recorded as its maker (W6b fix
-     *  round 3, M-1). A peer another login made, or one made before 0267
-     *  (no maker recorded), gets a new inbound token in the same statement,
-     *  returned once: whoever made it saw the old one, which would otherwise
-     *  stay an owner credential in their hands (fix round 4, L-1). */
+     *  round 3, M-1). The peer gets a new inbound token in the same
+     *  statement, returned once, whenever it moves into the owner's binding
+     *  (it was bound to anyone else, or to nobody), and whenever another
+     *  login made it or no maker is recorded (before 0267): whoever made or
+     *  last rotated it saw the old token, which would otherwise stay an
+     *  owner credential in their hands (fix round 4, L-1; fix round 5, M-1).
+     *  A peer already bound to the owner and made by it keeps its token. */
     adoptBy?: string;
     /** A caller that is not the owner (fix round 4, L-4): the change lands
      *  only while the peer is not bound to this login (the anchor), checked
-     *  in the same statement, so the owner binding it in the meantime is
-     *  never undone or armed by it. Nothing is written otherwise (null). */
+     *  in the same statement, so a change the owner alone may make (the
+     *  Write switch, risky tools) never lands on a peer the owner bound in
+     *  the meantime. Nothing is written otherwise (null). It is not a lock
+     *  on the binding itself: an Admin user may still set actsAs to a member
+     *  without it, by design (fix round 5). */
     unlessBoundTo?: string;
   },
 ): Promise<PeerAccessResult | null> {
@@ -349,9 +355,13 @@ export async function setPeerAccess(
   if (access.adoptBy) {
     const token = mintInboundToken();
     minted = { token, hash: hashToken(token) };
-    // SET reads the row as it was: re-key only when someone else made it.
+    // SET reads the row as it was: re-key when it moves into the owner's
+    // binding (another Admin user may have rotated it while it was bound
+    // elsewhere and seen the token, fix round 5, M-1), or when someone else
+    // made it.
     set.inboundTokenHash =
-      sql`(case when ${mantlePeers.createdBy} is distinct from ${access.adoptBy}::uuid
+      sql`(case when ${mantlePeers.actsAsLoginId} is distinct from ${access.adoptBy}::uuid
+                  or ${mantlePeers.createdBy} is distinct from ${access.adoptBy}::uuid
                 then ${minted.hash} else ${mantlePeers.inboundTokenHash} end)` as unknown as string;
     set.createdBy = access.adoptBy;
   }
