@@ -96,6 +96,11 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
   const sql = postgres(viewerDatabaseUrl(url, level, password, perDatabase), {
     max: VIEWER_POOL_MAX,
     prepare: false,
+    // No JIT on a scoped connection (W7a): a row rule raises the planner's
+    // cost estimate past jit_above_cost, so a vector search that reads 50
+    // rows paid about 13 ms of compiling on a large brain copy (5 ms without,
+    // 3 ms on the system pool). Scoped reads are small; JIT never pays here.
+    connection: { jit: 'off' },
   });
   const client = drizzle(sql, { schema });
   pools.set(level, { sql, db: client });
