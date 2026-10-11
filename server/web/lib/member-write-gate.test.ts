@@ -42,7 +42,7 @@ describe('every member write route is rate limited', () => {
 
   it('finds the write routes (the scan is not vacuous)', () => {
     expect(files.some((f) => f.endsWith(join('space', '[id]', 'draft', 'route.ts')))).toBe(true);
-    expect(files.length).toBeGreaterThanOrEqual(10);
+    expect(files.length).toBeGreaterThanOrEqual(9);
   });
 
   it('calls memberWriteGate first in every POST, PUT, PATCH and DELETE', () => {

@@ -417,7 +417,9 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
 
   it('shows a member an app inside a folder Team holds, with the folder’s look', async () => {
     const got = await launcher('team');
-    expect(byId(got.apps, a.adminInShared)).toMatchObject({ audience: 'team' });
+    // Listed, with no level on the card (W5c).
+    expect(byId(got.apps, a.adminInShared)).toBeDefined();
+    expect(byId(got.apps, a.adminInShared)).not.toHaveProperty('audience');
     expect(byId(got.folders, f.shared)).toEqual({
       id: f.shared,
       name: folderName(f.shared),

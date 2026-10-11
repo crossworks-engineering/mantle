@@ -210,9 +210,13 @@ describe.skipIf(!URL)('member app trash routes', () => {
     });
 
     // A submitted app is frozen: its snapshots say not deletable, and stay.
+    // Submit is gone since W5c (410); an app submitted before stays frozen.
     const kept = (await take(author))!;
     const submit = await call(`/api/member/my-apps/${id}/submit`, author, 'POST');
-    expect(submit.status).toBe(200);
+    expect(submit.status).toBe(410);
+    expect(await json(submit)).toMatchObject({ code: 'gone' });
+    await sql`update space_items set review_state = 'submitted', submitted_at = now()
+              where node_id = ${id}`;
     const frozen = await json(await call(base, author));
     const keptRow = (frozen.entries as Array<{ id: string; deletable: boolean }>).find(
       (e) => e.id === kept.id,

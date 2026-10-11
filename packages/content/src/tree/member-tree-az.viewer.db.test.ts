@@ -138,13 +138,8 @@ describe.skipIf(!URL)('a member’s tree by name: drafts and brain items in one 
     await brainNote('kk delta brain');
     await draft(a, 'kk Beta');
 
-    const expected = [
-      'kk alpha',
-      'kk Beta',
-      'kk bravo brain',
-      'kk charlie from ben',
-      'kk delta brain',
-    ];
+    // A teammate's team-shared draft never shows (team drafts went in W5c).
+    const expected = ['kk alpha', 'kk Beta', 'kk bravo brain', 'kk delta brain'];
     // The search by name, and the A to Z view (an empty search): the same
     // order. A to Z holds every note of the anchor, so only ours are read.
     expect(ours(await readAll(`${L} kk`, 50))).toEqual(expected);
@@ -153,7 +148,7 @@ describe.skipIf(!URL)('a member’s tree by name: drafts and brain items in one 
     const [page] = await readAll(`${L} kk`, 50);
     const by = (t: string) => page!.items.find((i) => i.title === `${L} ${t}`);
     expect(by('kk alpha')).toMatchObject({ source: 'own', state: 'private' });
-    expect(by('kk charlie from ben')).toMatchObject({ source: 'team', author: 'Ben' });
+    expect(by('kk charlie from ben')).toBeUndefined();
     expect(by('kk bravo brain')?.source).toBeUndefined();
     expect(by('kk bravo brain')?.crumbs.map((c) => c.id)).toEqual([folderId]);
   });

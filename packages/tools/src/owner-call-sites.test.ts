@@ -130,10 +130,10 @@ const SITES: Record<string, Site> = {
   // ── someone else: their surface, explicitly ──
   'packages/runtime/src/assistant/run-team-turn.ts': {
     calls: 1,
-    // role === 'client' ? { kind: 'client', ... } : { kind: 'team', ... }
-    surface: /kind: 'client',[\s\S]*kind: 'team',/,
+    // { kind: 'team', loginId, ... } (client chat went in W5c)
+    surface: /surface: \{\s*kind: 'team',/,
     scope: 'call',
-    why: "a login's chat turn: client or team by the workflow, never the owner",
+    why: "a member's chat turn: always the team surface, never the owner",
   },
   'server/web/app/api/member/apps/[id]/tool-broker/route.ts': {
     calls: 1,
