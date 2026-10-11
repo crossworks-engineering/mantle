@@ -372,8 +372,11 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     expect(home.status, home.text.slice(0, 200)).toBe(200);
     expect(home.outcome).toMatchObject({ kind: 'user', loginId: mem });
     expect(home.json.homeApp).toMatchObject({ appId: teamApp });
-    // Mem2 (not in Team) does not run the Team app: the built-in home.
-    expect((await call('/api/member/home', mem2)).json).toMatchObject({ homeApp: null });
+    // A pin on an app the member does not read: the built-in home.
+    await x(sql`update profiles
+                set preferences = preferences || ${JSON.stringify({ teamHubAppId: sideApp })}::jsonb
+                where user_id = ${owner}`);
+    expect((await call('/api/member/home', mem)).json).toMatchObject({ homeApp: null, hub: null });
     expect((await call('/api/member/push/subscriptions', mem)).outcome).toMatchObject({
       kind: 'own-rule',
     });
@@ -498,8 +501,8 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
         sql: 'drop table w',
       });
       expect(ddl.json.ok).not.toBe(true);
-      // Mem2 is not in Team: still the plain 404.
-      const other = await call(`/api/apps/${teamApp}/db-broker`, mem2, 'POST', {
+      // An app its workspaces do not hold: still the plain 404.
+      const other = await call(`/api/apps/${sideApp}/db-broker`, mem, 'POST', {
         op: 'exec',
         sql: 'insert into w (a) values (8)',
       });
