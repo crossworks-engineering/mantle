@@ -87,7 +87,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   const clientProbe = (auth: { cookie?: string; bearer?: string }) =>
     call('/api/shell', auth).then((r) => r.status);
   const memberProbe = (auth: { cookie?: string; bearer?: string }) =>
-    call('/api/member/library/not-a-uuid', auth).then((r) => r.status);
+    call('/api/member/files/not-a-uuid', auth).then((r) => r.status);
   const deviceLogin = (email: string, password = PASSWORD, deviceName?: string) =>
     call('/api/auth/device-login', { method: 'POST', body: { email, password, deviceName } });
 
@@ -416,7 +416,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(none).toHaveLength(0);
   });
 
-  it('the frozen mobile-login is unchanged: admins only, no role in the answer', async () => {
+  it('the frozen mobile-login: admins only, no role in the answer; a member gets 426 (W7e)', async () => {
     const adminRes = await call('/api/auth/mobile-login', {
       method: 'POST',
       body: { email: emailOf('admin'), password: PASSWORD },
@@ -429,8 +429,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       method: 'POST',
       body: { email: emailOf('member'), password: PASSWORD },
     });
-    expect(memberRes.status).toBe(403);
-    expect((await json(memberRes)).reason).toBe('member-login');
+    expect(memberRes.status).toBe(426);
+    expect((await json(memberRes)).reason).toBe('update-app');
   });
 
   // ── Client: the emailed code in device mode ─────────────────────────────
@@ -458,6 +458,10 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       shell: '/api/shell',
       pushBase: '/api/client/push',
       brainId: await brainId(),
+      // W7e: the shell's workspaces, areas and owner flag.
+      workspaces: [],
+      areas: [],
+      isOwner: false,
     });
     for (const path of ['/api/push/subscriptions', '/api/member/shell', '/api/member/chat']) {
       const refused = await call(path, { bearer });

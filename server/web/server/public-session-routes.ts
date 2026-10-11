@@ -102,12 +102,14 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     expect: { member: { status: 200 }, client: { status: 200 }, unknown: { status: 200 } },
   },
   {
-    // "Sign in on your phone" is for admins (the phone app is an admin app).
+    // "Sign in on your phone": an admin or, since workspaces W7e, a member
+    // pairs its own phone (the member sweep stands the code store in). A
+    // client signs in on its phone with its emailed code.
     key: 'POST /api/auth/pair',
     path: '/api/auth/pair',
     init: { method: 'POST' },
     expect: {
-      member: refused('member-login'),
+      member: { status: 200 },
       client: refused('client-login'),
       unknown: stranger,
     },
@@ -116,7 +118,7 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     key: 'GET /api/auth/pair/:id',
     path: `/api/auth/pair/${UUID}`,
     expect: {
-      member: refused('member-login'),
+      member: { status: 200 },
       client: refused('client-login'),
       unknown: stranger,
     },

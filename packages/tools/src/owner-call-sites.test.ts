@@ -140,11 +140,11 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "a member's chat turn: always the team surface, never the owner",
   },
-  'server/web/app/api/member/apps/[id]/tool-broker/route.ts': {
+  'server/web/lib/app-runner.ts': {
     calls: 1,
     surface: /surface: scope\.surface/,
     scope: 'call',
-    why: "a member's app call: appToolScope, team or client by the app's level, never the owner",
+    why: "a member's app call (the owner and the deprecated member tool broker, W7e): appToolScope at the team rules, never the owner",
   },
   'server/web/app/s/[token]/tool-broker/route.ts': {
     calls: 1,

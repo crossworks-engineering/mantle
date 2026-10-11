@@ -29,6 +29,21 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
       isOwner: false,
     },
   })),
+  // The owner runner routes take every login since W7e: here an Admin user.
+  getOwnerOr401WithLogin: vi.fn(async () => ({
+    user: {
+      id: OWNER,
+      email: 'admin@example.invalid',
+      actor: {
+        id: ADMIN_LOGIN,
+        email: 'admin@example.invalid',
+        displayName: 'Robin',
+        isOwner: false,
+      },
+    },
+    source: 'web',
+    member: null,
+  })),
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
