@@ -3,10 +3,8 @@
  * the owner check is stood in. Seeds its own brain and removes it.
  *
  *  - GET /api/tool-groups and GET /api/tool-groups/:id carry `audience`;
- *  - PATCH /api/access/tool-groups/:slug { audience } changes it, and the
- *    list shows the new level;
- *  - raising a group above an agent that holds it is refused with
- *    group_above_agent, naming the agent, and the level stays.
+ *  - PATCH /api/access/tool-groups/:slug answers 410 since workspaces W7b
+ *    (tool-group levels went; 0268 froze the column), and changes nothing.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run tool-group-level-routes.db.test
  */
@@ -92,26 +90,13 @@ describe.skipIf(!URL)('a tool group level on the owner API on Postgres', () => {
     expect(((await res.json()) as { group: Group }).group.audience).toBe('team');
   });
 
-  it('PATCH sets the level, and the list shows it', async () => {
-    const res = await r.level!(call('PATCH', { audience: 'team' }), p({ slug: plain }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ tool_group: { slug: plain, audience: 'team' } });
-    expect(await levelIn(plain)).toBe('team');
-  });
-
-  it('raising a group above an agent that holds it is refused, naming the agent', async () => {
-    const res = await r.level!(call('PATCH', { audience: 'admin' }), p({ slug: held }));
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; code: string };
-    expect(body.code).toBe('group_above_agent');
-    expect(body.error).toContain(`${tag}-agent`);
+  it('W7b: the level route answers 410 and the level stays as it was', async () => {
+    for (const body of [{ audience: 'team' }, { audience: 'admin' }, { audience: 'owner' }]) {
+      const res = await (r.level as unknown as () => Promise<Response>)();
+      expect(res.status, JSON.stringify(body)).toBe(410);
+      expect(await res.json()).toMatchObject({ code: 'gone' });
+    }
+    expect(await levelIn(plain)).toBe('admin');
     expect(await levelIn(held)).toBe('team');
-  });
-
-  it('refuses a level that is not one, and a group that is not there', async () => {
-    const bad = await r.level!(call('PATCH', { audience: 'owner' }), p({ slug: plain }));
-    expect(bad.status).toBe(400);
-    const gone = await r.level!(call('PATCH', { audience: 'team' }), p({ slug: `${tag}-none` }));
-    expect(gone.status).toBe(404);
   });
 });

@@ -1,6 +1,6 @@
 ---
 title: Team
-toolGroups: [team-admin]
+toolGroups: []
 ---
 
 ## Team

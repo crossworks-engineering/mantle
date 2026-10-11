@@ -571,10 +571,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // (0267, W6b).
   none('public.archive_spaces', 'system'),
   none('public.space_fold_items', 'system'),
-  // The per-login MCP switch and the agent and tool-group levels as they
-  // were when they went (0268, W7b).
-  none('public.archive_mcp_login_access', 'system'),
-  none('public.archive_tool_levels', 'system'),
 ];
 
 /** Columns no LEVEL role may ever read, whatever the matrix says (the

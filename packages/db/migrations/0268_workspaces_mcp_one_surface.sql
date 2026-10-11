@@ -18,6 +18,11 @@
 -- Both freezes yield to a named migration bypass (mantle_heads_bypass_on),
 -- like the item levels' (0261). Nothing here changes who reads what.
 
+-- The triggers below take a lock on agents and tool_groups: wait at most
+-- 30 s for it (0165), never queue behind a long transaction.
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+
 -- ── 1. The records ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS "public"."archive_mcp_login_access" (
