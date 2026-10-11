@@ -5,7 +5,7 @@
 -- 1. Archive, never drop: every row of space_items, space_submissions and
 --    space_item_bundles is copied to archive_space_items,
 --    archive_space_submissions and archive_space_item_bundles before any
---    change (with archived_at).
+--    change (the same columns, no foreign key, plus archived_at).
 -- 2. The home of every space item is RECORDED, not granted. Personal items
 --    stay in their spaces until W6b, and item_grants refuses a node a
 --    personal space owns (0244 rule 2), so no grant is written here.
@@ -51,36 +51,48 @@ SET LOCAL lock_timeout = '5s';
 
 -- ── 1. The archives ──────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS "public"."archive_space_items" (LIKE "public"."space_items");
+-- The columns of each source table (types and NOT NULLs), no foreign key
+-- and no check, plus archived_at; a key only, so a second run copies
+-- nothing twice. Spelled out, not LIKE: on Postgres 18 LIKE copies the
+-- source's NOT NULL constraint names, and a dump then restores the archive
+-- first and the source table with renamed constraints.
+CREATE TABLE IF NOT EXISTS "public"."archive_space_items" (
+  "node_id"           uuid PRIMARY KEY,
+  "author_login_id"   uuid,
+  "sharing"           text NOT NULL,
+  "review_state"      text NOT NULL,
+  "submitted_at"      timestamptz,
+  "submitted_version" integer,
+  "returned_note"     text,
+  "reviewed_by"       uuid,
+  "reviewed_at"       timestamptz,
+  "accepted_at"       timestamptz,
+  "created_at"        timestamptz NOT NULL,
+  "updated_at"        timestamptz NOT NULL,
+  "taken_by"          uuid,
+  "taken_at"          timestamptz,
+  "taken_root"        uuid,
+  "author_role"       text,
+  "taken_title"       text,
+  "deleted_at"        timestamptz,
+  "archived_at"       timestamptz NOT NULL DEFAULT now()
+);
 --> statement-breakpoint
-ALTER TABLE "public"."archive_space_items"
-  ADD COLUMN IF NOT EXISTS "archived_at" timestamptz NOT NULL DEFAULT now();
+CREATE TABLE IF NOT EXISTS "public"."archive_space_submissions" (
+  "id"          uuid PRIMARY KEY,
+  "space_id"    uuid NOT NULL,
+  "node_id"     uuid NOT NULL,
+  "created_at"  timestamptz NOT NULL,
+  "archived_at" timestamptz NOT NULL DEFAULT now()
+);
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "public"."archive_space_submissions" (LIKE "public"."space_submissions");
---> statement-breakpoint
-ALTER TABLE "public"."archive_space_submissions"
-  ADD COLUMN IF NOT EXISTS "archived_at" timestamptz NOT NULL DEFAULT now();
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "public"."archive_space_item_bundles" (LIKE "public"."space_item_bundles");
---> statement-breakpoint
-ALTER TABLE "public"."archive_space_item_bundles"
-  ADD COLUMN IF NOT EXISTS "archived_at" timestamptz NOT NULL DEFAULT now();
---> statement-breakpoint
--- A key only, so a second run copies nothing twice. No foreign key: an
--- archive row outlives its node, its login and its space.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'archive_space_items_pkey') THEN
-    ALTER TABLE "public"."archive_space_items" ADD PRIMARY KEY ("node_id");
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'archive_space_submissions_pkey') THEN
-    ALTER TABLE "public"."archive_space_submissions" ADD PRIMARY KEY ("id");
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'archive_space_item_bundles_pkey') THEN
-    ALTER TABLE "public"."archive_space_item_bundles" ADD PRIMARY KEY ("root_id", "node_id");
-  END IF;
-END
-$$;
+CREATE TABLE IF NOT EXISTS "public"."archive_space_item_bundles" (
+  "root_id"     uuid NOT NULL,
+  "node_id"     uuid NOT NULL,
+  "position"    integer NOT NULL,
+  "archived_at" timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("root_id", "node_id")
+);
 --> statement-breakpoint
 
 -- ── 2. The recorded homes ────────────────────────────────────────────────────

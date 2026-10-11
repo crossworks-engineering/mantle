@@ -481,14 +481,16 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
          order by column_name`;
       expect([...actual], name).toEqual(expected);
     }
-    // The archive of space_items has every column space_items has.
-    const missing = await sql`
-      select column_name from information_schema.columns
-       where table_schema = 'public' and table_name = 'space_items'
-      except
-      select column_name from information_schema.columns
-       where table_schema = 'public' and table_name = 'archive_space_items'`;
-    expect(missing).toHaveLength(0);
+    // Each archive has its source's columns (name, type, NOT NULL), plus
+    // archived_at.
+    for (const source of ['space_items', 'space_submissions', 'space_item_bundles']) {
+      const cols = (t: string) => sql<{ column: string; udt: string; nullable: string }[]>`
+        select column_name as column, udt_name as udt, is_nullable as nullable
+          from information_schema.columns
+         where table_schema = 'public' and table_name = ${t} and column_name <> 'archived_at'
+         order by column_name`;
+      expect([...(await cols(`archive_${source}`))], source).toEqual([...(await cols(source))]);
+    }
   });
 });
 
