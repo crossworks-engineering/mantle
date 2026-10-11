@@ -17,7 +17,7 @@
  *   pnpm -C server/web backfill:block-ids --dry      (count only, no writes)
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes, pages } from '@mantle/db';
 import { ensureBlockIds } from '@mantle/content-core/block-ids';
 
@@ -30,6 +30,7 @@ async function main() {
       title: nodes.title,
       doc: pages.doc,
       draftDoc: pages.draftDoc,
+      draftRev: pages.draftRev,
     })
     .from(nodes)
     .innerJoin(pages, eq(pages.nodeId, nodes.id))
@@ -39,6 +40,7 @@ async function main() {
   let docsEnriched = 0;
   let draftsEnriched = 0;
   let wrote = 0;
+  let raced = 0;
 
   for (const row of rows) {
     scanned++;
@@ -69,8 +71,24 @@ async function main() {
       // Note: deliberately NO updatedAt bump and NO notifyNodeIngested.
       // This is maintenance — same content, just addressable. The extractor
       // doesn't need to re-run; the brain index is unaffected.
-      await db.update(pages).set(patch).where(eq(pages.nodeId, row.nodeId));
-      wrote++;
+      // A compare-and-set (W8b): only over exactly the doc, draft and
+      // draft_rev this run read, so an edit that landed since is never
+      // overwritten. A lost race writes nothing; the next run (or the page's
+      // next read) repairs it.
+      const done = await db
+        .update(pages)
+        .set(patch)
+        .where(
+          and(
+            eq(pages.nodeId, row.nodeId),
+            eq(pages.draftRev, row.draftRev),
+            sql`${pages.doc} = ${JSON.stringify(rawDoc)}::jsonb`,
+            sql`${pages.draftDoc} is not distinct from ${rawDraft === null ? null : JSON.stringify(rawDraft)}::jsonb`,
+          ),
+        )
+        .returning({ id: pages.nodeId });
+      if (done.length > 0) wrote++;
+      else raced++;
     }
   }
 
@@ -79,6 +97,7 @@ async function main() {
   console.log(`[backfill]   docs needing ids: ${docsEnriched}`);
   console.log(`[backfill]   drafts needing ids: ${draftsEnriched}`);
   console.log(`[backfill]   wrote: ${wrote}${DRY ? ' (dry run — no writes)' : ''}`);
+  if (raced > 0) console.log(`[backfill]   skipped, edited meanwhile: ${raced}`);
   process.exit(0);
 }
 

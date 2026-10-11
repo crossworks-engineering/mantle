@@ -4,8 +4,9 @@
  * Where a page sits (its folder) is the item tree's read (tree/read.ts);
  * pages do not nest (folder phase 7).
  *
- * The one write it performs is `persistBlockIdBackfill` — maintenance, not an
- * edit: no version bump, no re-index, fire-and-forget.
+ * The one write it performs is `persistBlockIdBackfill`: maintenance, not an
+ * edit (no version bump, no re-index, fire-and-forget), and a compare-and-set
+ * over what the read saw, so an edit that lands first is never lost.
  */
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
@@ -161,8 +162,19 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
   // write goes to the system pool (`db`, client.ts).
   // Nor for a reader who may not edit the page (an Admin user with Read
   // only): a read never writes an item its reader cannot change.
-  if ((docChanged || draftChanged) && !published && row.mayEdit === true && !inScopeTransaction()) {
-    void persistBlockIdBackfill(id, docChanged ? doc : null, draftChanged ? draft : null);
+  if (
+    (docChanged || draftChanged) &&
+    !published &&
+    row.mayEdit === true &&
+    row.doc !== null &&
+    !inScopeTransaction()
+  ) {
+    void persistBlockIdBackfill(
+      id,
+      { doc: row.doc as Record<string, unknown>, draft: rawDraft, draftRev: row.draftRev ?? 0 },
+      docChanged ? doc : null,
+      draftChanged ? draft : null,
+    );
   }
 
   return {
@@ -213,30 +225,52 @@ export async function pageFolderIdOf(
   return row ? pageFolderId(ownerId, String(row.path), reader) : null;
 }
 
+/** What a read saw of the pages row: the repair writes only over exactly that. */
+export type BlockIdRepairSeen = {
+  doc: Record<string, unknown>;
+  draft: Record<string, unknown> | null;
+  draftRev: number;
+};
+
 /**
  * Write enriched `doc` and/or `draft_doc` back to the pages row when the
- * lazy backfill in getPage added ids. Fire-and-forget — never blocks the
- * read path, never re-extracts (deliberately no notifyNodeIngested + no
- * version bump + no updatedAt touch — this is maintenance, not an edit).
+ * lazy backfill in getPage added ids. Fire-and-forget: never blocks the
+ * read path, never re-extracts (deliberately no notifyNodeIngested, no
+ * version bump, no updatedAt touch: this is maintenance, not an edit).
  *
- * Race window with the editor's autosave: tiny. If the user is actively
- * editing and their autosave lands between our read and our write, their
- * write wins (the draft contains the latest content; ids will be re-
- * injected on the NEXT read). No harm done.
+ * A compare-and-set (W8b): the row is written only while its doc, draft and
+ * draft_rev are still what the read saw. An autosave or commit that lands
+ * between the read and this write wins, and the repair writes nothing; the
+ * next read injects the ids again. Answers whether it wrote.
  */
-async function persistBlockIdBackfill(
+export async function persistBlockIdBackfill(
   id: string,
+  seen: BlockIdRepairSeen,
   doc: Record<string, unknown> | null,
   draft: Record<string, unknown> | null,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const patch: Record<string, unknown> = {};
     if (doc) patch.doc = doc;
     if (draft) patch.draftDoc = draft;
-    if (Object.keys(patch).length === 0) return;
-    await db.update(pages).set(patch).where(eq(pages.nodeId, id));
+    if (Object.keys(patch).length === 0) return false;
+    const seenDraft = seen.draft === null ? null : JSON.stringify(seen.draft);
+    const wrote = await db
+      .update(pages)
+      .set(patch)
+      .where(
+        and(
+          eq(pages.nodeId, id),
+          eq(pages.draftRev, seen.draftRev),
+          sql`${pages.doc} = ${JSON.stringify(seen.doc)}::jsonb`,
+          sql`${pages.draftDoc} is not distinct from ${seenDraft}::jsonb`,
+        ),
+      )
+      .returning({ id: pages.nodeId });
+    return wrote.length > 0;
   } catch (err) {
     console.error('[pages] block-id backfill persist failed (non-fatal):', err);
+    return false;
   }
 }
 
