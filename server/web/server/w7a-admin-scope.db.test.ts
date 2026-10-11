@@ -242,7 +242,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       outer: { kind: 'user', loginId: owner },
       inner: { kind: 'assistant', loginId: owner, ws: [adminWs] },
     });
-    expect((seen as { outer: { ws: string[] } }).outer.ws.length).toBeGreaterThan(1);
+    expect((seen as unknown as { outer: { ws: string[] } }).outer.ws.length).toBeGreaterThan(1);
   });
 
   it('a turn that answers no login acts for the owner; its stamp names none', async () => {
