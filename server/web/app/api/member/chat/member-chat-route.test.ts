@@ -21,7 +21,12 @@ const h = vi.hoisted(() => ({
   overBudget: false,
   enqueueFails: false,
   released: [] as string[],
-  audience: 'team',
+  /** The Team workspace's assistant (teamAssistant), or none. */
+  team: { id: 'agent-1', slug: 'team-responder', name: 'Team' } as {
+    id: string;
+    slug: string;
+    name: string;
+  } | null,
   thread: [] as unknown[],
   readerCalls: [] as unknown[][],
 }));
@@ -39,19 +44,10 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   })),
 }));
 
-vi.mock('@mantle/db', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>();
-  // memberAgent: team-responder, set below admin.
-  const chain = {
-    from: () => chain,
-    where: () => chain,
-    limit: async () => [{ slug: 'team-responder', name: 'Team', audience: h.audience }],
-  };
-  return { ...actual, db: { select: () => chain } };
-});
-
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
+  // memberAgent: the assistant the Team workspace holds (W5c), no level read.
+  teamAssistant: vi.fn(async () => h.team),
   claimMemberTurn: vi.fn(async ({ turnId }: { turnId: string }) => {
     if (h.ledger.has(turnId)) return { ok: true, fresh: false };
     if (h.ledger.size >= h.cap) return { ok: false, reason: 'daily_cap', used: h.ledger.size };
@@ -118,17 +114,27 @@ beforeEach(() => {
   h.overBudget = false;
   h.enqueueFails = false;
   h.released = [];
-  h.audience = 'team';
+  h.team = { id: 'agent-1', slug: 'team-responder', name: 'Team' };
 });
 
-describe('POST /api/member/chat: the agent must be at team level (client logins C4)', () => {
-  for (const audience of ['admin', 'client', 'public']) {
-    it(`team-responder at ${audience}: 409, nothing queued`, async () => {
-      h.audience = audience;
-      expect((await send('hello')).status).toBe(409);
-      expect(h.enqueued).toEqual([]);
-    });
-  }
+describe('POST /api/member/chat: the agent is the Team workspace’s assistant (W5c)', () => {
+  it('no assistant on the Team workspace: 409, nothing queued', async () => {
+    h.team = null;
+    expect((await send('hello')).status).toBe(409);
+    expect(h.enqueued).toEqual([]);
+  });
+
+  it('the Team workspace’s assistant answers, whichever agent an admin chose', async () => {
+    h.team = { id: 'agent-2', slug: 'team-helper', name: 'Helper' };
+    expect((await send('hello')).status).toBe(202);
+    const [input] = h.workflows.get(h.enqueued[0]!) as [{ options: { agentSlug: string } }];
+    expect(input.options.agentSlug).toBe('team-helper');
+    const { GET } = await import('./route');
+    const body = (await (await GET(new Request('http://x/api/member/chat'))).json()) as {
+      agent: unknown;
+    };
+    expect(body.agent).toEqual({ slug: 'team-helper', name: 'Helper' });
+  });
 });
 
 describe('POST /api/member/chat idempotency', () => {
