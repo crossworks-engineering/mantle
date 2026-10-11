@@ -7,8 +7,11 @@
 --
 -- Numbered 0270 (W7 integration fix 2; built as 0271): migrate.ts skips a
 -- migration whose journal `when` is at or below the highest one applied, so
--- this one takes the slot right after 0269 and W7d takes 0271 or later with
--- a higher `when`.
+-- this one takes the slot right after 0269. Its `when` (1790195400000, W7
+-- integration fix 3) sits above 1790195340000, the `when` the round-1 0271
+-- carried: a database that applied that 0271 still applies this one (every
+-- step here is re-runnable). W7d's next migration takes 0271 or later with a
+-- `when` higher than 1790195400000.
 --
 -- Any Admin user whose settings area is on may use the sandbox tools, and a
 -- sandbox may mount a Files folder read-only (sandbox_create's inbox). So a

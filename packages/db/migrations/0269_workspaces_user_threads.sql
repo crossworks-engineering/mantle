@@ -254,17 +254,38 @@ SELECT tm."id", tm."owner_id", tm."direction", tm."text",
  WHERE tm."login_id" IS NOT NULL
 ON CONFLICT ("id") DO NOTHING;
 --> statement-breakpoint
--- The same for a row an earlier run folded with no workspace (re-runnable):
--- it moves to the Team bridge workspace when the brain has one.
+-- The same for a row an earlier run folded with no workspace (re-runnable),
+-- whether its agent is gone or still there (W7 integration fix 3, L6): it
+-- takes what the insert above gives a row now, the Team workspace's
+-- assistant (else its own agent) and the Team workspace (else its agent's,
+-- else the Team bridge workspace). A row still left with none stays as it is.
 UPDATE "public"."assistant_messages" m
-   SET "workspace_id" = (SELECT w."id" FROM "public"."workspaces" w
-                          WHERE w."owner_id" = m."owner_id" AND w."bridge_key" = 'team'
-                          ORDER BY w."archived_at" NULLS FIRST LIMIT 1)
- WHERE m."data" ->> 'folded_from' = 'team_messages'
-   AND m."workspace_id" IS NULL
-   AND m."agent_id" IS NULL
-   AND EXISTS (SELECT 1 FROM "public"."workspaces" w
-                WHERE w."owner_id" = m."owner_id" AND w."bridge_key" = 'team');
+   SET "agent_id" = coalesce(fix."agent_id", m."agent_id"),
+       "workspace_id" = fix."ws_id"
+  FROM (
+    SELECT m2."id",
+           team."agent_id",
+           coalesce(team."ws_id",
+                    (SELECT a."workspace_id" FROM "public"."agents" a WHERE a."id" = m2."agent_id"),
+                    (SELECT w."id" FROM "public"."workspaces" w
+                      WHERE w."owner_id" = m2."owner_id" AND w."bridge_key" = 'team'
+                      ORDER BY w."archived_at" NULLS FIRST LIMIT 1)) AS ws_id
+      FROM "public"."assistant_messages" m2
+      LEFT JOIN LATERAL (
+        SELECT w."id" AS ws_id, a."id" AS agent_id
+          FROM "public"."workspaces" w
+          JOIN "public"."workspace_resources" r
+            ON r."workspace_id" = w."id" AND r."type" = 'assistant'
+          JOIN "public"."agents" a ON a."id"::text = r."ref_id" AND a."owner_id" = m2."owner_id"
+         WHERE w."owner_id" = m2."owner_id" AND w."bridge_key" = 'team'
+         ORDER BY w."archived_at" NULLS FIRST, a."enabled" DESC
+         LIMIT 1
+      ) team ON true
+     WHERE m2."data" ->> 'folded_from' = 'team_messages'
+       AND m2."workspace_id" IS NULL
+  ) fix
+ WHERE m."id" = fix."id"
+   AND fix."ws_id" IS NOT NULL;
 --> statement-breakpoint
 
 -- A team-portal contact's rows (no login): history only, never a thread.

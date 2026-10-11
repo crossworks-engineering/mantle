@@ -105,6 +105,16 @@ describe('migrations journal', () => {
     expect(gaps).toEqual([]);
   });
 
+  it('0270 runs on a database that applied the round-1 0271 (W7 integration fix 3, L5)', () => {
+    // The round-1 build shipped 0271_sandboxes_created_by with when
+    // 1790195340000; a box that applied it records that stamp, and migrate.ts
+    // skips any entry at or below it.
+    const e = (journal.entries as unknown as Array<{ tag: string; when: number }>).find(
+      (x) => x.tag === '0270_sandboxes_created_by',
+    );
+    expect(e?.when).toBeGreaterThan(1790195340000);
+  });
+
   it('a migration from 0270 on that alters several tables locks them all in one statement first', () => {
     const late = files.filter((f) => Number(f.slice(0, 4)) >= 270);
     expect(late).toContain('0270_sandboxes_created_by');

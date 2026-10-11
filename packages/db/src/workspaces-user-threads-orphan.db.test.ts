@@ -3,7 +3,8 @@
  * workspace has no assistant (W7 integration fix 2): the row lands in the
  * Team bridge workspace, never in none (a row with no workspace reads as
  * Admin's, and its member would lose it). A second run of 0269 also moves a
- * row an earlier run folded with no workspace.
+ * row an earlier run folded with no workspace, its agent gone or still there
+ * (W7 integration fix 3, L6).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/workspaces-user-threads-orphan.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -26,6 +27,10 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
   const member = randomUUID();
   const gone = randomUUID();
   const row = randomUUID();
+  // L6 (W7 integration fix 3): a row whose agent is still there, with no
+  // workspace of its own.
+  const kept = randomUUID();
+  const row2 = randomUUID();
   let teamWs = '';
 
   beforeAll(async () => {
@@ -50,6 +55,11 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
     await sql`insert into team_messages (id, owner_id, login_id, direction, text, agent_id)
       values (${row}, ${owner}, ${member}, 'outbound', 'an old answer', ${gone})`;
     await sql`delete from agents where id = ${gone}`;
+    await sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role)
+      values (${kept}, ${owner}, 'uo-kept', 'Kept', 'test/model', 'x', 'responder')`;
+    await sql`update agents set workspace_id = null where id = ${kept}`;
+    await sql`insert into team_messages (id, owner_id, login_id, direction, text, agent_id)
+      values (${row2}, ${owner}, ${member}, 'outbound', 'another old answer', ${kept})`;
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     await ensureTestViewerRoles(URL!, process.env.MANTLE_MASTER_KEY);
@@ -63,10 +73,10 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
     await scratch?.drop();
   });
 
-  const folded = async () =>
+  const folded = async (id = row) =>
     (
       await sql`select workspace_id::text as ws, agent_id::text as agent, login_id::text as login
-                  from assistant_messages where id = ${row}`
+                  from assistant_messages where id = ${id}`
     )[0];
 
   const memberReads = async () =>
@@ -85,9 +95,10 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
 
   it('a second run moves a row an earlier run folded with no workspace', async () => {
     await sql`alter table assistant_messages disable trigger user`;
-    await sql`update assistant_messages set workspace_id = null where id = ${row}`;
+    await sql`update assistant_messages set workspace_id = null where id in (${row}, ${row2})`;
     await sql`alter table assistant_messages enable trigger user`;
     expect((await folded())!.ws).toBeNull();
+    expect((await folded(row2))!.ws).toBeNull();
     const file = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations', `${TAG}.sql`),
       'utf8',
@@ -100,5 +111,7 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
       for (const stmt of statements) await tx.unsafe(stmt);
     });
     expect(await folded()).toEqual({ ws: teamWs, agent: null, login: member });
+    // L6: a row whose agent is still there is repaired the same way.
+    expect(await folded(row2)).toEqual({ ws: teamWs, agent: kept, login: member });
   });
 });
