@@ -795,6 +795,32 @@ items, Team: the team-shared drafts, signed off in 9.3). Then run
 `pnpm maintain snapshot-copies` on the copy: "wanted" equals "made" plus
 the counted skips.
 
+## Rolling to the Admin assistant and owner MCP in a scope (W7a)
+
+No migration. The Admin assistant (web chat, owner Telegram bots, runs,
+heartbeats and the agents it calls) and the owner MCP surface (OAuth, API
+keys, peers bound to an Admin login, stdio as the owner) stop reading the
+whole brain on the system pool:
+
+- **The Admin assistant** runs its turns in a scope of the Admin workspace.
+  It reads what Admin holds (the Journal, About the user, entity names and
+  its own history too), never another user's private workspace. It writes
+  as an Admin user does, checked against Admin. A turn that answers no
+  login (a heartbeat, a run, an owner Telegram bot) acts for the brain
+  owner.
+- **The owner MCP surface** runs every call in the calling login's
+  workspaces, as that user's own screens do.
+- **Admin tools** (model pools, assistants and tool groups, connectors,
+  Telegram, mail, peers, sandboxes, secrets, the team access log) run only
+  for a user of Admin whose matching area is on, then on the system pool.
+
+Before rolling, compare reach on a dev copy: what each Admin login and the
+Admin assistant read before and after must only lose items no Admin grant
+holds (a member's private items). If a screen or a tool breaks, set
+`MANTLE_ADMIN_READS=system` in `.env` and restart the web container: Admin
+reads, the Admin assistant and the owner MCP surface go back to the system
+pool, as before.
+
 ## Rollback
 
 ```bash

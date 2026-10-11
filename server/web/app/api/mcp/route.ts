@@ -11,7 +11,8 @@
  * gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata=…` (RFC 9728)
  * so a fresh claude.ai connector discovers the AS and runs sign-in + consent. A
  * valid bearer resolves to a LOGIN (lib/mcp-auth.ts, MCP as a login): an
- * admin gets the owner's tools as before; a member or client gets their own
+ * admin gets the owner's tools, each call in that login's workspaces (W7a,
+ * @mantle/mcp-core owner-scope.ts); a member or client gets their own
  * role's tools at their own level; a peer token acts as the login it is
  * bound to. A second rate limit holds each login to its own budget.
  *

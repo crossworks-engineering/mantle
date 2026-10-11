@@ -9,7 +9,7 @@ bearer (`server/web/lib/mcp-auth.ts`), and gets that caller's tools only.
 
 | Bearer                                               | Who                        | Tools                                                                                                                  |
 | ---------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| OAuth token of an admin                              | the owner                  | the full owner surface, as before                                                                                      |
+| OAuth token of an admin                              | that login                 | the owner surface, each call in the login's workspaces (W7a, below)                                                    |
 | OAuth token of a member or client                    | that login                 | its role's responder tools                                                                                             |
 | API key `mtlk_...` (migration 0232)                  | the login that made it     | that login's tools, narrowed by the key (docs/guide/07-api/08-api-keys.md)                                             |
 | Static token `mtlmcpk_...` (RETIRED, still honoured) | one member or client login | its role's responder tools                                                                                             |
@@ -29,6 +29,21 @@ still gates everything, as a pause: while it is off `/api/mcp`, the consent
 page, client registration and the token endpoint all answer 404, so no grant
 is used or renewed; it revokes nothing, and turning it on again brings back
 every grant still inside its refresh life (access matrix T10, a decision).
+
+## An admin's calls run in its workspaces (W7a)
+
+The owner surface (an admin's OAuth grant, its API keys, a peer bound to it,
+and stdio, which runs as the brain owner) no longer reads the whole brain.
+Every call runs in the calling login's workspaces, as its own screens do
+(`packages/mcp-core/src/owner-scope.ts`): an item that lives only in another
+user's private workspace is not found. Before a tool runs, its gate
+(`packages/tools/src/admin-gate.ts`) asks the same scope: an owner-only or
+Admin-only tool needs a login that is a user of the Admin workspace, and a
+tool that manages the brain (model pools, assistants and tool groups,
+connectors, Telegram, mail, peers, sandboxes, secrets, the team access log)
+needs that login's matching area switched on; such a tool then runs on the
+system pool. `MANTLE_ADMIN_READS=system` puts the whole surface back on the
+system pool, as before.
 
 ## A member's or client's tools
 
