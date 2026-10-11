@@ -10,6 +10,7 @@
  */
 import {
   createApp,
+  setAppAuthorLevel,
   getApp,
   listApps,
   writeDraftFile,
@@ -81,8 +82,8 @@ import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR, ownerSurfaceLoginId } from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
-import { and as andWhere, eq as eqWhere } from 'drizzle-orm';
-import { db as scopedDb, nodes as nodesTable } from '@mantle/db';
+import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
+import { db as scopedDb, nodes as nodesTable, scopeHoldsAdmin } from '@mantle/db';
 
 /**
  * The app write tools (everything that writes an app's code, manifest,
@@ -168,7 +169,12 @@ const app_create: BuiltinToolDef = {
     const name = str(input.name).trim();
     if (!name) return { ok: false, error: 'name is required' };
     try {
+      // A user outside the Admin workspace (W7b): at team rules, its author
+      // named, as the web create route makes it.
+      const author = ownerSurfaceLoginId(ctx.surface);
+      const member = author && (await outsideAdmin());
       const app = await createApp(ctx.ownerId, {
+        ...(member ? { authorLevel: 'team' as const, authorLoginId: author } : {}),
         title: name.slice(0, 200),
         ...(str(input.icon).trim() ? { icon: str(input.icon).trim() } : {}),
         ...(str(input.description).trim() ? { description: str(input.description).trim() } : {}),
@@ -1629,6 +1635,72 @@ const app_errors: BuiltinToolDef = {
   },
 };
 
+// ─── The author ceiling for a user outside the Admin workspace (W7b) ─────────
+
+/** Whether the call runs in a user's scope that does not hold the Admin
+ *  workspace (a member's MCP, workspaces W7b). */
+async function outsideAdmin(): Promise<boolean> {
+  return currentWorkspaceScope() !== null && !(await scopeHoldsAdmin());
+}
+
+/** The app tools whose change reaches what the app's code or tools do. */
+const CODE_TOOLS: ReadonlySet<string> = new Set([
+  'app_file_write',
+  'app_file_delete',
+  'app_source_set',
+  'app_tools_set',
+  'app_publish',
+  'app_snapshot_restore',
+]);
+
+/** The app tools that make a NEW app (its id in the output). */
+const MAKE_TOOLS: ReadonlySet<string> = new Set(['app_create', 'app_duplicate', 'app_import']);
+
+/** Put app `id` at team rules (the author ceiling, apps.author_level) when
+ *  the caller may edit it: never lifted here, only lowered. */
+async function lowerToTeamRules(ownerId: string, id: string, check: boolean): Promise<void> {
+  if (check) {
+    const rows = (await scopedDb.execute(
+      sqlTag`select coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit
+            from nodes n where n.id = ${id} and n.owner_id = ${ownerId} and n.type = 'app'`,
+    )) as unknown as { edit: boolean }[];
+    if (rows[0]?.edit !== true) return;
+  }
+  await setAppAuthorLevel(ownerId, id, 'team');
+}
+
+/**
+ * The app tools run in any user's scope since workspaces W7b (one MCP
+ * surface; the my_app_* tools are retired). For a user outside the Admin
+ * workspace an app keeps the author ceiling the member app tools kept: an
+ * app it makes runs its tools at team rules at most (appToolLevel), and so
+ * does an app whose code or tools it changes (lowered first, never lifted:
+ * only the owner's app update route lifts it).
+ */
+function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
+  if (!CODE_TOOLS.has(def.slug) && !MAKE_TOOLS.has(def.slug)) return def;
+  return {
+    ...def,
+    handler: async (input, ctx) => {
+      const member = await outsideAdmin();
+      const target = str(input.id).trim().toLowerCase();
+      if (member && CODE_TOOLS.has(def.slug) && UUID_RE.test(target)) {
+        await lowerToTeamRules(ctx.ownerId, target, true);
+      }
+      const res = await def.handler(input, ctx);
+      if (member && MAKE_TOOLS.has(def.slug) && res.ok) {
+        const made = (res.output as { id?: unknown } | undefined)?.id;
+        if (typeof made === 'string' && UUID_RE.test(made)) {
+          await lowerToTeamRules(ctx.ownerId, made, false);
+        }
+      }
+      return res;
+    },
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,
   app_get,
@@ -1655,6 +1727,6 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_export,
   app_import,
   app_errors,
-];
+].map(withAuthorCeiling);
 
 export const APP_TOOL_SLUGS: string[] = APP_TOOLS.map((t) => t.slug);

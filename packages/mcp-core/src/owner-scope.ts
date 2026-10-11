@@ -15,7 +15,10 @@
  * (then on the system pool, after that check).
  *
  * MANTLE_ADMIN_READS=system, or a brain not on workspaces: the system pool,
- * as before W7a.
+ * as before W7a, for an Admin login only. Since W7b every login has this
+ * surface: a login that is not an Admin user is never off its scope (the
+ * rollback switch is about Admin reads), and on a brain not on workspaces
+ * it is refused.
  */
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
@@ -31,6 +34,11 @@ function refusal(text: string) {
   return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
 }
 
+/** The reply for a login that is not an Admin user on a brain not on
+ *  workspaces (W7b): it has no scope to run in. */
+export const NOT_ON_WORKSPACES_ERROR =
+  'This brain is not on workspaces yet, so only an admin login has MCP tools here.';
+
 /** The reply when the login holds no workspace at all. */
 export const NO_WORKSPACE_ERROR =
   'This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one.';
@@ -43,8 +51,11 @@ export async function runInOwnerMcpScope<T>(
   loginId: string,
   slug: string,
   call: () => Promise<T>,
+  opts: { adminLogin?: boolean } = {},
 ): Promise<T | ReturnType<typeof refusal>> {
-  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return call();
+  const admin = opts.adminLogin !== false;
+  if (!(await brainOnWorkspacesNow())) return admin ? call() : refusal(NOT_ON_WORKSPACES_ERROR);
+  if (admin && adminReadsOnSystemPool()) return call();
   const scope = await loginScopeFor(loginId);
   if (scope.ws.length === 0) return refusal(NO_WORKSPACE_ERROR);
   return withTurnScope(
@@ -62,7 +73,11 @@ export async function runInOwnerMcpScope<T>(
  * `server`, with every tool registered on it from here on called in
  * `loginId`'s scope (runInOwnerMcpScope).
  */
-export function ownerScopedServer(server: McpServer, loginId: string): McpServer {
+export function ownerScopedServer(
+  server: McpServer,
+  loginId: string,
+  opts: { adminLogin?: boolean } = {},
+): McpServer {
   return new Proxy(server, {
     get(target, prop) {
       if (prop === 'registerTool') {
@@ -73,7 +88,7 @@ export function ownerScopedServer(server: McpServer, loginId: string): McpServer
           }
           const handler = cb as (args: unknown, extra: unknown) => Promise<unknown>;
           return fn.call(target, name, config, (args: unknown, extra: unknown) =>
-            runInOwnerMcpScope(loginId, name, () => handler(args, extra)),
+            runInOwnerMcpScope(loginId, name, () => handler(args, extra), opts),
           );
         };
       }

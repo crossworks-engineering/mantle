@@ -18,7 +18,6 @@ import { bearerFrom } from './auth/request';
 import {
   authUsers,
   db,
-  mcpLoginAccess,
   oauthAccessTokens,
   oauthAuthCodes,
   oauthClients,
@@ -230,9 +229,9 @@ type GrantResult =
  *
  *  - An ADMIN grant (no epoch on it): the login is still an admin.
  *  - A MEMBER's or CLIENT's grant (0227, MCP as a login): the login still has
- *    that kind of role, its session epoch is the one the grant was made
+ *    that kind of role and its session epoch is the one the grant was made
  *    under (sign out everywhere, a password change, a disable or a role
- *    change ends it), and an admin still has its MCP switch on.
+ *    change ends it). The per-login MCP switch went in workspaces W7b.
  */
 export async function actorMayConnect(
   actorId: string,
@@ -257,19 +256,15 @@ async function connectingLogin(
       disabledAt: authUsers.disabledAt,
       email: authUsers.email,
       sessionEpoch: authUsers.sessionEpoch,
-      mcpEnabled: mcpLoginAccess.enabled,
     })
     .from(authUsers)
-    .leftJoin(mcpLoginAccess, eq(mcpLoginAccess.loginId, authUsers.id))
     .where(eq(authUsers.id, actorId))
     .limit(1);
   if (!row || row.disabledAt || !row.email) return null;
   const may =
     sessionEpoch === null
       ? row.role === 'admin'
-      : (row.role === 'member' || row.role === 'client') &&
-        row.sessionEpoch === sessionEpoch &&
-        row.mcpEnabled === true;
+      : (row.role === 'member' || row.role === 'client') && row.sessionEpoch === sessionEpoch;
   return may ? { id: actorId, email: row.email } : null;
 }
 

@@ -149,6 +149,10 @@ export type ToolHandlerContext = {
          *  the credential, never from model arguments. Absent when the path
          *  names none (stdio, a run, a pending approval). */
         loginId?: string;
+        /** The login's own MCP connection (workspaces W7b: every login has
+         *  this surface): how it connected and its Write switch, for the
+         *  app_data_* tools. Set by the server, never from model arguments. */
+        mcp?: LoginMcpChannel;
       };
 };
 

@@ -10,11 +10,12 @@
  * 404s and is effectively invisible; (3) OAuth — an absent/invalid access token
  * gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata=…` (RFC 9728)
  * so a fresh claude.ai connector discovers the AS and runs sign-in + consent. A
- * valid bearer resolves to a LOGIN (lib/mcp-auth.ts, MCP as a login): an
- * admin gets the owner's tools, each call in that login's workspaces (W7a,
- * @mantle/mcp-core owner-scope.ts); a member or client gets their own
- * role's tools at their own level; a peer token acts as the login it is
- * bound to. A second rate limit holds each login to its own budget.
+ * valid bearer resolves to a LOGIN (lib/mcp-auth.ts, MCP as a login): every
+ * login gets the one owner surface, each call in that login's workspaces
+ * (W7a, W7b; @mantle/mcp-core owner-scope.ts and login-surface.ts); a key
+ * or a peer token acts as the login it is bound to and only narrows it; a
+ * client login is refused. A second rate limit holds each login to its own
+ * budget.
  *
  * `runtime = 'nodejs'`: the tool handlers use node-only deps (pg, drizzle,
  * file/storage). The handler serves 2025-era clients statelessly (a fresh
@@ -95,9 +96,10 @@ async function handler(req: Request): Promise<Response> {
       },
     });
   }
-  // A member or client never sends a whole owner document: their bodies are
-  // held to the plain JSON ceiling (the owner's 128 MB is for file_upload).
-  if (caller.role !== 'admin') {
+  // A client login never sends a whole owner document: its body is held to
+  // the plain JSON ceiling (every other login has the one surface, with
+  // file_upload's 128 MB, W7b).
+  if (caller.role === 'client') {
     const declared = Number(req.headers.get('content-length')) || 0;
     if (declared > JSON_BODY_CEILING_BYTES) {
       return new Response(
@@ -118,22 +120,20 @@ async function handler(req: Request): Promise<Response> {
       });
     }
   }
-  // A member's or client's tools are resolved from their responder's groups
-  // here, so the server factory below registers synchronously.
+  // What the login's scope may list, its private workspace and its
+  // connector tools, resolved here, so the server factory below registers
+  // synchronously.
   const prepared = await prepareCallerTools(caller);
   // A write tool an API key calls leaves an audit row (lib/mcp-auth.ts),
   // once the call is one this caller was given.
   if (caller.keyId) await auditMcpKeyCall(req, caller, (slug) => preparedAllows(prepared, slug));
-  // No tools at all (the role's responder is closed, or missing): say so,
-  // rather than serve an MCP server with nothing on it.
-  if (prepared.kind === 'login' && prepared.rows.length === 0) {
-    return new Response(
-      JSON.stringify({
-        error: 'no_tools',
-        message: 'This login has no MCP tools on this brain. Ask an admin of this brain.',
-      }),
-      { status: 403, headers: { 'content-type': 'application/json' } },
-    );
+  // A refused login (a client, plan 21.9; a member on a brain not on
+  // workspaces): say so, rather than serve an MCP server with nothing on it.
+  if (prepared.kind === 'refused') {
+    return new Response(JSON.stringify({ error: 'no_tools', message: prepared.message }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
+    });
   }
 
   // Recall's tier-1 hook rides the owner's server instructions, the one

@@ -15,9 +15,8 @@ import { IMAGE_TOOLS } from './builtins-images';
 import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
-import { TEAM_TOOLS } from './builtins-team';
 import { LOGIN_APP_DATA_TOOLS } from './builtins-app-data';
-import { MY_APP_TOOLS } from './builtins-my-apps';
+import { WORKSPACE_TOOLS } from './builtins-workspaces';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
@@ -137,16 +136,11 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Task CRUD — mirrors the MCP task tools so Saskia can capture and
   // manage tasks from chat. None require_confirm (trivially reversible).
   ...TASK_TOOLS,
-  ...TEAM_TOOLS,
-  // The member's own personal items, read on behalf of the member a team
-  // turn serves (member logins Phase 2). Fail closed on any other surface.
-  // App data on a member's or client's own MCP connection (team apps
-  // Phase 1). In no agent's group: only the login MCP surface offers them.
+  // App data on a login's own MCP connection (team apps Phase 1; every
+  // login since workspaces W7b). In no agent's group: only MCP offers them.
   ...LOGIN_APP_DATA_TOOLS,
-  // A team member's own mini apps, built over their own MCP connection
-  // (team apps Phase 3). In no agent's group: only the login MCP surface
-  // offers them, to members only.
-  ...MY_APP_TOOLS,
+  // The caller's workspaces (W7b): where a create may land. mcpOnly.
+  ...WORKSPACE_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
   // Scoped resolution + soft-retire; pure logic in @mantle/db.

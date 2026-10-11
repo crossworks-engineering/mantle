@@ -239,11 +239,7 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
       ? HEARTBEAT_CONTROL_TOOLS.filter((s) => s !== 'heartbeat_list' && s !== 'heartbeat_fire')
       : HEARTBEAT_CONTROL_TOOLS;
   const resolveTools = async () => {
-    const agentGroupTools = await resolveAgentToolGroups(
-      hb.ownerId,
-      agent.toolGroupSlugs ?? [],
-      agentLevel(agent),
-    );
+    const agentGroupTools = await resolveAgentToolGroups(hb.ownerId, agent.toolGroupSlugs ?? []);
     const allSlugs = new Set<string>([...effectiveToolSlugs(agentGroupTools), ...controlTools]);
     return resolveAgentTools(hb.ownerId, [...allSlugs]);
   };

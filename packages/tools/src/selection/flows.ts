@@ -72,17 +72,8 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
   {
     slug: 'people',
     title: 'People, email and messages',
-    when: 'contacts, send or read email, Telegram messages, team member chats',
-    groups: [
-      'contacts',
-      'contacts-admin',
-      'email',
-      'messaging',
-      'team-admin',
-      'team-read',
-      'team-read-admin',
-      'my-space-write',
-    ],
+    when: 'contacts, send or read email, Telegram messages',
+    groups: ['contacts', 'contacts-admin', 'email', 'messaging', 'team-read', 'team-read-admin'],
   },
   {
     slug: 'web',

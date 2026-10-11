@@ -88,7 +88,7 @@ const USAGE_TIERS: readonly (readonly [number, string])[] = [
   ],
   [
     4,
-    'team_request_create table_row_update journal_create page_block_append page_update_draft table_aggregate folder_get_by_path note_list peer_query task_create calculate table_rows_add file_create page_delete recall_window recipe_tool_test table_row_get',
+    'table_row_update journal_create page_block_append page_update_draft table_aggregate folder_get_by_path note_list peer_query task_create calculate table_rows_add file_create page_delete recall_window recipe_tool_test table_row_get',
   ],
   [
     3,
@@ -96,7 +96,7 @@ const USAGE_TIERS: readonly (readonly [number, string])[] = [
   ],
   [
     2,
-    'entity_facts openrouter_rankings recall_index task_get tree_folder_create tree_item_move web_search_pro table_from_text table_row_delete team_chat_list tool_group_list agent_list api_tool_list api_tool_test export_node openrouter_benchmarks openrouter_task_classes peer_node_get table_column_update table_create table_tab_add team_access_list tool_group_ensure video_ingest',
+    'entity_facts openrouter_rankings recall_index task_get tree_folder_create tree_item_move web_search_pro table_from_text table_row_delete tool_group_list agent_list api_tool_list api_tool_test export_node openrouter_benchmarks openrouter_task_classes peer_node_get table_column_update table_create table_tab_add tool_group_ensure video_ingest',
   ],
 ];
 const USAGE_PRIOR: Readonly<Record<string, number>> = Object.fromEntries(

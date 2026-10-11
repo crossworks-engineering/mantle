@@ -230,11 +230,7 @@ export const invokeAgent: AgentInvoker = async ({
   // Resolved in the child's scope: a workspace assistant's adminOnly groups
   // drop out there, and its tool rows are read on the workspace role.
   const allowedTools = await inChildScope(async () => {
-    const groupTools = await resolveAgentToolGroups(
-      ownerId,
-      (target as Agent).toolGroupSlugs ?? [],
-      agentLevel(target),
-    );
+    const groupTools = await resolveAgentToolGroups(ownerId, (target as Agent).toolGroupSlugs ?? []);
     return resolveAgentTools(ownerId, effectiveToolSlugs(groupTools));
   });
 

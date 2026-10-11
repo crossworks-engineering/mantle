@@ -4,26 +4,23 @@
  *
  *  - `remoteEnabled`: the box-level remote MCP switch (an admin's);
  *  - `connectorUrl`: the URL to paste into an MCP client;
- *  - `access`: the member's own MCP and Write switches, read only (an admin
- *    sets them in Settings > MCP > Team and client access);
+ *  - `access`: always on since workspaces W7b (the per-login MCP and Write
+ *    switches went: a login reaches MCP in its own workspaces, and writes
+ *    where its workspaces let it);
  *  - `clients`: the MCP clients THIS member connected (their live OAuth
  *    grants), never another login's;
  *  - `connectors`: the connectors the member's own MCP really offers (team
- *    apps Phase 2; access matrix N10): the same tools as the surface lists
- *    (resolveLoginToolRows), so none while the team surface is closed, and
- *    write tools only with the member's Write switch on. Each with its read
- *    and write tool counts.
+ *    apps Phase 2; access matrix N10): the connector tools of the member's
+ *    workspaces, as the one MCP surface lists them for an OAuth client of
+ *    this member (W7b). Each with its read and write tool counts.
  *
  * A member only: an admin uses Settings > MCP itself, a client has no MCP
  * screen yet. Nothing here is writable but the member's own disconnect
  * (./clients/[id]/route.ts).
  */
 import { NextResponse } from '@/server/http-compat';
-import { eq } from 'drizzle-orm';
-import { db, mcpLoginAccess } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { listLoginConnectorTools } from '@mantle/tools';
-import { resolveLoginToolRows } from '@mantle/mcp-core';
 import type { MemberMcpConnector, MemberMcpView } from '@mantle/client-types';
 import { getMemberOr401 } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
@@ -32,38 +29,16 @@ import { listLoginClients } from '@/lib/mcp-clients';
 export async function GET() {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
-  const [prefs, [access], clients, tools] = await Promise.all([
+  const [prefs, clients, tools] = await Promise.all([
     loadProfilePreferences(member.anchorId),
-    db
-      .select({ enabled: mcpLoginAccess.enabled, writeEnabled: mcpLoginAccess.writeEnabled })
-      .from(mcpLoginAccess)
-      .where(eq(mcpLoginAccess.loginId, member.loginId))
-      .limit(1),
     listLoginClients(member.anchorId, member.loginId),
     listLoginConnectorTools(member.anchorId, member.loginId),
   ]);
   // The connectors the member's MCP offers (M2 audit, low 7; access matrix
-  // N10): none while MCP is closed to the member (the box or their own
-  // switch); else exactly the connector tools the surface lists for an
-  // OAuth client of this member, which leaves them out while the team
-  // surface is closed (its responder not at team level, or no tool of its
-  // own) and lists a write tool only with Write on.
-  const open = prefs.remoteMcpEnabled === true && access?.enabled === true;
-  const offered = open
-    ? new Set(
-        (
-          await resolveLoginToolRows({
-            role: 'member',
-            anchorId: member.anchorId,
-            loginId: member.loginId,
-            via: 'oauth',
-            write: access?.writeEnabled === true,
-          })
-        ).rows
-          .filter((r) => r.handler.kind === 'mcp')
-          .map((r) => r.id),
-      )
-    : new Set<string>();
+  // N10): none while the box's remote MCP is off; else the connector tools
+  // of the member's workspaces, as the one surface lists them (W7b).
+  const open = prefs.remoteMcpEnabled === true;
+  const offered = new Set(open ? tools.map((t) => t.tool.id) : []);
   const byGroup = new Map<string, MemberMcpConnector>();
   for (const t of tools) {
     if (!offered.has(t.tool.id)) continue;
@@ -80,7 +55,7 @@ export async function GET() {
   const body: MemberMcpView = {
     remoteEnabled: prefs.remoteMcpEnabled === true,
     connectorUrl: connectorUrl(),
-    access: { enabled: access?.enabled === true, writeEnabled: access?.writeEnabled === true },
+    access: { enabled: true, writeEnabled: true },
     clients,
     connectors: [...byGroup.values()].sort((a, b) => a.name.localeCompare(b.name)),
   };

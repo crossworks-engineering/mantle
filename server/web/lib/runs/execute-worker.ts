@@ -34,9 +34,9 @@ export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOu
   const { item, capped } = await claimWorkerItem(db, itemId);
   if (!item) return { claimed: false, actions: [], ...(capped ? { capped: true } : {}) };
 
-  // The run's planning agent must be admin level, as for a tool_call item
-  // (execute-item.ts): a lower agent's run would hand its work to a worker
-  // that reads past the planner's level (audit A3, B3).
+  // The run's planning agent must answer in Admin (or in no workspace), as
+  // for a tool_call item (execute-item.ts): another workspace's agent would
+  // hand its work to a worker that reads past its scope (audit A3, B3).
   const [run] = await db
     .select({ ownerId: runsTable.ownerId, agentId: runsTable.agentId })
     .from(runsTable)
@@ -56,13 +56,13 @@ export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOu
     });
     return { claimed: true, actions };
   }
-  if (planner && planner.level !== 'admin') {
+  if (planner && !planner.admin) {
     const { actions } = await completeItem(db, {
       itemId: item.id,
       state: 'failed',
       failure: {
         type: 'below_admin',
-        message: `agent '${planner.slug}' is below admin level, so its run cannot run items`,
+        message: `agent '${planner.slug}' answers in a workspace other than Admin, so its run cannot run items`,
         itemId: item.id,
       },
     });

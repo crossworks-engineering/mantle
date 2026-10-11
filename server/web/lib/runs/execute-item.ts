@@ -160,10 +160,10 @@ async function runResolved(
   // A run item runs on the admin pool, so only an admin-level agent's run
   // may run at all: a lower agent's run would read with admin visibility
   // (run_plan refuses a limited turn as well; audit A3).
-  if (grant && grant.level !== 'admin') {
+  if (grant && !grant.admin) {
     return fail({
       type: 'below_admin',
-      message: `agent '${grant.slug}' is below admin level, so its run cannot run items`,
+      message: `agent '${grant.slug}' answers in a workspace other than Admin, so its run cannot run items`,
     });
   }
   if (grant && !grant.toolSlugs.has(slug)) {

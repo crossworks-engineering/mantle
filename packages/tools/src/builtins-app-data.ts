@@ -9,11 +9,10 @@
  * or write follows the Informational flag, as in the browser; the login's
  * Write switch decides whether `app_data_write` is offered at all.
  *
- * These tools are in no agent's tool group: only the login MCP surface
- * offers them (packages/mcp-core/src/login-surface.ts), which stamps the
- * login and its connection on the surface (`surface.mcp`). Any other caller,
- * the owner included (who has the `app_db_*` and `app_*` tools), finds no one
- * to act for and is refused.
+ * These tools are in no agent's tool group: only MCP offers them, to every
+ * login since workspaces W7b (one surface, packages/mcp-core), stamping the
+ * login and its connection on the surface (`surface.mcp`). Any other caller
+ * (an agent turn) finds no one to act for and is refused.
  *
  * The app lookup runs on the login's viewer role (the surface calls these
  * inside withViewer), so row security holds as a second lock. The SQLite
@@ -94,6 +93,11 @@ export function appDataCaller(ctx: ToolHandlerContext): Who | null {
   }
   if (s?.kind === 'client' && s.loginId && s.mcp) {
     return { role: 'client', loginId: s.loginId, name: s.contactName ?? null, mcp: s.mcp };
+  }
+  // The one MCP surface (W7b): any login's own connection, as a user of its
+  // workspaces (a client login never connects).
+  if (s?.kind === 'owner' && s.loginId && s.mcp) {
+    return { role: 'member', loginId: s.loginId, name: null, mcp: s.mcp };
   }
   return null;
 }
