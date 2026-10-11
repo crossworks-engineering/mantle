@@ -57,6 +57,16 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     rt.withAgentScope({ id: agent.id, audience: 'admin', workspaceId: adminWs }, fn, {
       ownerLoginId: loginId ?? null,
     });
+  const nodeRead = (id: string) =>
+    t.dispatchTool(
+      {
+        slug: 'node_read',
+        handler: { kind: 'builtin', ref: 'node_read' },
+        inputSchema: {},
+      } as unknown as import('@mantle/db').Tool,
+      { node_id: id },
+      { ownerId: owner, surface: { kind: 'web', loginId: owner } },
+    );
   const seesNode = async (id: string) =>
     (await m.db.select({ id: m.nodes.id }).from(m.nodes).where(eq(m.nodes.id, id))).length === 1;
   const mcpCall = async (loginId: string, name: string, args: Record<string, unknown>) => {
@@ -175,15 +185,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
         memberPrivate: await seesNode(privatePage),
         ownerPrivate: await seesNode(ownerPrivatePage),
         list: (await c.listPages(owner)).map((p) => p.id),
-        read: await t.dispatchTool(
-          {
-            slug: 'node_read',
-            handler: { kind: 'builtin', ref: 'node_read' },
-            inputSchema: {},
-          } as unknown as import('@mantle/db').Tool,
-          { id: privatePage },
-          { ownerId: owner, surface: { kind: 'web', loginId: owner } },
-        ),
+        read: await nodeRead(privatePage),
+        readAdmin: await nodeRead(adminPage),
       };
     }, owner);
     expect(seen.kind).toBe('assistant');
@@ -195,6 +198,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     expect(seen.list).toContain(adminPage);
     expect(seen.list).not.toContain(privatePage);
     expect(seen.read.ok).toBe(false);
+    expect(seen.readAdmin.ok).toBe(true);
   });
 
   it('the Admin assistant keeps the Journal, About the user, entity names and its history', async () => {
@@ -239,11 +243,11 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
   });
 
   it('the Admin MCP surface reads the login’s own workspaces only', async () => {
-    const own = await mcpCall(owner, 'node_read', { id: ownerPrivatePage });
+    const own = await mcpCall(owner, 'node_read', { node_id: ownerPrivatePage });
     expect(own.isError, own.text.slice(0, 200)).toBe(false);
-    const other = await mcpCall(owner, 'node_read', { id: privatePage });
+    const other = await mcpCall(owner, 'node_read', { node_id: privatePage });
     expect(other.isError).toBe(true);
-    const admin = await mcpCall(owner, 'node_read', { id: adminPage });
+    const admin = await mcpCall(owner, 'node_read', { node_id: adminPage });
     expect(admin.isError, admin.text.slice(0, 200)).toBe(false);
   });
 
@@ -259,7 +263,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       expect(seen.memberPrivate).toBe(true);
       expect(seen.stamp).toEqual({ workspaceId: adminWs, loginId: null });
       expect(await rt.agentTurnScoped({ audience: 'admin', workspaceId: adminWs })).toBe(false);
-      const other = await mcpCall(owner, 'node_read', { id: privatePage });
+      const other = await mcpCall(owner, 'node_read', { node_id: privatePage });
       expect(other.isError, other.text.slice(0, 200)).toBe(false);
     } finally {
       delete process.env.MANTLE_ADMIN_READS;
