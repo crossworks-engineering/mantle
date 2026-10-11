@@ -68,6 +68,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...actual,
     db: { select: () => chain },
+    // No "New chat" yet: the thread has no lower bound.
+    openChatThread: vi.fn(async () => null),
     // The R6 shim without a database: 'admin' is system work; a login reads
     // its workspaces (here one named for it); an agent on no workspace reads
     // none.
@@ -103,11 +105,11 @@ vi.mock('@mantle/content', async (importOriginal) => {
       r('prefs');
       return { timezone: 'UTC', locale: 'en-GB' };
     }),
-    recentTeamMessages: vi.fn(async () => {
+    recentThreadMessages: vi.fn(async () => {
       r('thread');
       return [];
     }),
-    appendTeamMessage: vi.fn(async (row: Record<string, unknown>) => {
+    appendThreadMessage: vi.fn(async (row: Record<string, unknown>) => {
       h.appended++;
       return { ...row, id: `m${++n}`, createdAt: new Date() };
     }),
@@ -115,7 +117,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
       r('team-assistant');
       return h.team;
     }),
-    updateTeamMessageOutcome: vi.fn(async () => null),
+    updateThreadMessageOutcome: vi.fn(async () => null),
   };
 });
 

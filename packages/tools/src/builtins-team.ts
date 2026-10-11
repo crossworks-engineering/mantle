@@ -273,7 +273,7 @@ const team_chat_read: BuiltinToolDef = {
       };
     }
     const contactId = strOpt(input.contactId);
-    if (!contactId || !UUID_RE.test(contactId)) {
+    if (!contactId) {
       return { ok: false, error: 'contactId required: a contact id from `team_chat_list`' };
     }
     const before = strOpt(input.before);

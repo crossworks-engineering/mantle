@@ -61,7 +61,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   let content: typeof import('@mantle/content');
   let runtime: typeof import('@mantle/runtime/agent');
   let levelRoute: typeof import('../../app/api/access/agents/[slug]/route');
-  let memberChat: typeof import('../../app/api/member/chat/route');
   // fresh: installed with this manifest. wrong: installed after 0159 and
   // before this fix (both groups at admin; an admin who RAISED them looks the
   // same). opened: an older brain whose admin already opened the responder.
@@ -91,10 +90,11 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
       { params: Promise.resolve({ slug }) },
     );
   };
+  // The member chat's agent (W7c: the chat routes resolve the Team
+  // workspace's assistant through teamAssistant, lib/assistant-chat.ts).
   const memberChatAgent = async (owner: string) => {
-    h.owner = owner;
-    const res = await memberChat.GET(new Request('http://brain.test/api/member/chat'));
-    return ((await res.json()) as { agent: { slug: string } | null }).agent;
+    const a = await content.teamAssistant(owner);
+    return a ? { slug: a.slug } : null;
   };
 
   beforeAll(async () => {
@@ -107,7 +107,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     content = await import('@mantle/content');
     runtime = await import('@mantle/runtime/agent');
     levelRoute = await import('../../app/api/access/agents/[slug]/route');
-    memberChat = await import('../../app/api/member/chat/route');
     for (const owner of Object.values(brains)) {
       await admin`insert into auth.users (id, email, password_hash, role)
                   values (${owner}, ${`tr-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
@@ -162,14 +161,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
       tool_group_slugs: ['team-read', 'team-read-admin', 'formulas-eval'],
     });
     expect(await memberChatAgent(brains.fresh)).toBeNull();
-    h.owner = brains.fresh;
-    const post = await memberChat.POST(
-      new Request('http://brain.test/api/member/chat', {
-        method: 'POST',
-        body: JSON.stringify({ text: 'hello' }),
-      }),
-    );
-    expect(post.status).toBe(409);
   }, 120_000);
 
   it('the refusal names the one group in the way and the fix', async () => {

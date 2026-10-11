@@ -29,7 +29,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const chain: Record<string, unknown> = {};
   for (const m of ['from', 'innerJoin', 'where', 'limit']) chain[m] = () => chain;
   chain['then'] = (resolve: (v: unknown[]) => void) => resolve([agent]);
-  return { ...actual, db: { select: () => chain } };
+  // No "New chat" yet: the thread has no lower bound.
+  return { ...actual, db: { select: () => chain }, openChatThread: async () => null };
 });
 vi.mock('@mantle/api-keys', () => ({ getApiKeyById: vi.fn(async () => ({ id: 'key-1' })) }));
 vi.mock('../agent/agent-viewer', () => ({
@@ -73,13 +74,13 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   isTeamPrivateReadsEnabled: () => false,
   teamHiddenNodeTypes: () => [],
   // The recovered turn: its own inbound (in-2) was written before the crash.
-  recentTeamMessages: vi.fn(async () => [
+  recentThreadMessages: vi.fn(async () => [
     row('in-1', 'inbound', 'first question'),
     row('out-1', 'outbound', 'first answer'),
     row('in-2', 'inbound', 'second question'),
   ]),
   // The journal replays the inbound step: the same row comes back.
-  appendTeamMessage: vi.fn(async (r: { direction: string }) =>
+  appendThreadMessage: vi.fn(async (r: { direction: string }) =>
     r.direction === 'inbound'
       ? row('in-2', 'inbound', 'second question')
       : { id: 'out-2', direction: 'outbound', text: '', status: 'pending' },

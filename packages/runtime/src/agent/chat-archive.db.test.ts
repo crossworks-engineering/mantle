@@ -226,7 +226,7 @@ describe.skipIf(!URL)('chat archive on Postgres', () => {
     const [t] = await rows<{ id: string }>(
       sqlTag`select id from chat_threads where owner_id = ${owner} and status = 'archived' limit 1`,
     );
-    const again = await archive.summarizeChatThread(owner, t!.id);
+    const again = await archive.summarizeChatThread(owner, t!.id, owner);
     expect(again!.title).toBe('Vegetable Garden Plan');
     expect(h.inputs).toHaveLength(0);
   });

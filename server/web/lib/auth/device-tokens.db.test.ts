@@ -209,7 +209,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     await sql`delete from push_subscriptions where login_id in ${sql(all)}`;
     await sql`delete from audit_log where actor_email like ${`${tag}%`}`;
     await sql`delete from client_signin_codes where login_id in ${sql(all)}`;
-    await sql`delete from team_messages where login_id in ${sql(all)}`;
+    await sql`delete from assistant_messages where login_id in ${sql(all)}`;
     await sql`delete from mobile_tokens where user_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
@@ -1267,31 +1267,20 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
 
   // ── Unread ──────────────────────────────────────────────────────────────
 
-  it('the unread count and the read cursor of the own chat thread', async () => {
+  it('the member chat routes answer 410 since W7c (the inbox is per thread)', async () => {
     const m1 = await json(await deviceLogin(emailOf('member')));
     const bearer = m1.token as string;
-    const reply = (text: string) =>
-      content.appendTeamMessage({
-        ownerId: anchor,
-        contactId: null,
-        loginId: member,
-        direction: 'outbound',
-        text,
-      });
-    const read = await call('/api/member/chat/read', { method: 'POST', bearer, body: {} });
-    expect(read.status).toBe(200);
-    expect((await json(read)).unread).toBe(0);
-    await reply('one');
-    await reply('two');
-    expect((await json(await call('/api/member/chat/unread', { bearer }))).unread).toBe(2);
-    const bad = await call('/api/member/chat/read', {
-      method: 'POST',
-      bearer,
-      body: { at: 'yesterday' },
-    });
-    expect(bad.status).toBe(400);
-    const again = await call('/api/member/chat/read', { method: 'POST', bearer, body: {} });
-    expect((await json(again)).unread).toBe(0);
+    // The unread count and the read cursor moved to the per-thread inbox
+    // (GET /api/assistant/conversations, POST /api/assistant/read).
+    for (const [path, method] of [
+      ['/api/member/chat/read', 'POST'],
+      ['/api/member/chat/unread', 'GET'],
+      ['/api/member/chat', 'GET'],
+    ] as const) {
+      const res = await call(path, { method, bearer, ...(method === 'POST' ? { body: {} } : {}) });
+      expect(res.status, path).toBe(410);
+      expect((await json(res)).code, path).toBe('gone');
+    }
     // The client chat went in W5c: its routes answer a client 410, and a
     // member is refused at the client gate.
     await addClient('ivy');

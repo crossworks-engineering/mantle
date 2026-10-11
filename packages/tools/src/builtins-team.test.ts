@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   TEAM_REQUEST_TAG as CONTENT_TEAM_REQUEST_TAG,
   createTask,
-  listLoginPortalThread,
-  listMemberChatActivity,
   listTeamAccess,
   listTeamMemberActivity,
   listTeamThread,
@@ -25,9 +23,8 @@ vi.mock('@mantle/content', async (importOriginal) => {
     nodeUrl: (id: string) => `/n/${id}`,
     listTeamThread: vi.fn(async () => []),
     countTeamRequestsFiled: vi.fn(async () => 0),
-    listLoginPortalThread: vi.fn(async () => null),
+    threadMessageById: vi.fn(async () => null),
     listTeamAccess: vi.fn(async () => []),
-    listMemberChatActivity: vi.fn(async () => []),
     listTeamMemberActivity: vi.fn(async () => []),
   };
 });
@@ -123,62 +120,22 @@ describe('team-request tag', () => {
   });
 });
 
-describe('owner-side chat tools read member LOGIN threads (users are the team)', () => {
+describe("owner-side chat tools never read a user's chat (W7c)", () => {
   const LOGIN = '11111111-2222-4333-8444-555555555555';
 
-  it("team_chat_read with loginId reads that login's thread", async () => {
+  it("team_chat_read refuses a login's thread: Admin users no longer read users' chats", async () => {
     vi.mocked(listTeamThread).mockClear();
     const r = await bySlug.team_chat_read!.handler({ loginId: LOGIN, limit: 10 }, ownerCtx);
-    expect(r.ok).toBe(true);
-    expect(listTeamThread).toHaveBeenCalledWith('owner-1', '', { limit: 10, loginId: LOGIN });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/private to that user/);
+    expect(listTeamThread).not.toHaveBeenCalled();
   });
 
   it('team_chat_read with contactId reads the old portal thread (history)', async () => {
     vi.mocked(listTeamThread).mockClear();
-    vi.mocked(listLoginPortalThread).mockClear();
     const r = await bySlug.team_chat_read!.handler({ contactId: 'contact-9' }, ownerCtx);
     expect(r.ok).toBe(true);
     expect(listTeamThread).toHaveBeenCalledWith('owner-1', 'contact-9', { limit: 50 });
-    expect(listLoginPortalThread).not.toHaveBeenCalled();
-  });
-
-  it("team_chat_read with loginId adds the login's portal chat apart, on the first window only", async () => {
-    const at = new Date('2026-01-01T00:00:00Z');
-    const line = (text: string) =>
-      ({
-        id: text,
-        direction: 'inbound',
-        text,
-        channel: 'web',
-        traceId: null,
-        createdAt: at,
-      }) as never;
-    vi.mocked(listTeamThread).mockResolvedValueOnce([line('live')]);
-    vi.mocked(listLoginPortalThread).mockClear();
-    vi.mocked(listLoginPortalThread).mockResolvedValueOnce({
-      contactId: 'c-old',
-      messages: [line('portal')],
-    });
-    const r = await bySlug.team_chat_read!.handler({ loginId: LOGIN }, ownerCtx);
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    const out = r.output as {
-      messages: { text: string }[];
-      portal_history: { contactId: string; note: string; messages: { text: string }[] };
-    };
-    expect(out.messages.map((m) => m.text)).toEqual(['live']);
-    expect(out.portal_history.contactId).toBe('c-old');
-    expect(out.portal_history.messages.map((m) => m.text)).toEqual(['portal']);
-    expect(out.portal_history.note).toMatch(/not part of their current chat/);
-    expect(listLoginPortalThread).toHaveBeenCalledWith('owner-1', LOGIN, { limit: 50 });
-
-    vi.mocked(listLoginPortalThread).mockClear();
-    const older = await bySlug.team_chat_read!.handler(
-      { loginId: LOGIN, before: at.toISOString() },
-      ownerCtx,
-    );
-    expect(older.ok && (older.output as Record<string, unknown>).portal_history).toBeFalsy();
-    expect(listLoginPortalThread).not.toHaveBeenCalled();
   });
 
   it('team_access_list narrows by loginId and refuses one that is not a login id', async () => {
@@ -195,26 +152,12 @@ describe('owner-side chat tools read member LOGIN threads (users are the team)',
     expect(listTeamAccess).toHaveBeenCalledTimes(1);
   });
 
-  it('team_chat_read needs one of the two, and a login id must be a uuid', async () => {
+  it('team_chat_read needs a contact id', async () => {
     const none = await bySlug.team_chat_read!.handler({}, ownerCtx);
     expect(none.ok).toBe(false);
-    const bad = await bySlug.team_chat_read!.handler({ loginId: 'sam' }, ownerCtx);
-    expect(bad.ok).toBe(false);
   });
 
-  it('team_chat_list lists member logins, and portal threads only when they have messages', async () => {
-    vi.mocked(listMemberChatActivity).mockResolvedValueOnce([
-      {
-        loginId: LOGIN,
-        name: 'sam',
-        email: 'sam@example.com',
-        active: true,
-        lastMessageAt: null,
-        lastMessageText: null,
-        lastMessageDirection: null,
-        messageCount: 0,
-      },
-    ]);
+  it('team_chat_list lists only the old portal threads that have messages', async () => {
     vi.mocked(listTeamMemberActivity).mockResolvedValueOnce([
       { contactId: 'c-old', contactName: 'Old', messageCount: 3, lastMessageAt: 'x' },
       { contactId: 'c-none', contactName: 'None', messageCount: 0, lastMessageAt: null },
@@ -225,5 +168,6 @@ describe('owner-side chat tools read member LOGIN threads (users are the team)',
     const out = r.output as { count: number; portal_archive: { contactId: string }[] };
     expect(out.count).toBe(1);
     expect(out.portal_archive.map((p) => p.contactId)).toEqual(['c-old']);
+    expect(JSON.stringify(out)).not.toContain('members');
   });
 });

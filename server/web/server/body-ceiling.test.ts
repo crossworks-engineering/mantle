@@ -204,7 +204,9 @@ describe.skipIf(!hasManifest)('the body ceiling: through the app', () => {
   });
 
   it('a chunked body over the ceiling is a 413 once read (member routes)', async () => {
-    for (const [path, id] of [['/api/member/chat/read', MEMBER_ID]] as const) {
+    // A route a member reaches that reads its body (the chat read cursor,
+    // W7c; the member chat routes answer 410 without reading it).
+    for (const [path, id] of [['/api/assistant/read', MEMBER_ID]] as const) {
       const res = await app.request(
         streamReq(`http://localhost${path}`, JSON_BODY_CEILING_BYTES + 128 * 1024, {
           cookie: cookie(id),

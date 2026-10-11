@@ -1,35 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import { replyUsedPrivate, teamThreadToHistory } from './run-team-turn';
 import { isTeamPrivateReadsEnabled, TEAM_PRIVATE_READ_SLUGS } from '@mantle/content';
-import type { TeamMessage } from '@mantle/db';
+import type { ThreadMessage } from '@mantle/content';
 
 /**
- * Prompt-history mapping for team turns. The invariants:
- *   - only COMPLETE rows with text reach the prompt (the empty pending bubble
- *     and failed turns never leak into a later turn's context);
+ * Prompt-history mapping for workspace turns. The invariants:
+ *   - only COMPLETE rows with text reach the prompt (the empty pending bubble,
+ *     failed turns and a superseded pair never leak into a later turn's
+ *     context);
  *   - direction maps inbound→user / outbound→assistant.
- * The bigger isolation invariant (no persona notes / digests / owner history)
- * is structural — runTeamTurn passes literal empty arrays to
- * buildChatMessages and loads history ONLY through this mapper.
+ * The bigger isolation invariant (no persona notes, no owner history, no
+ * other login's turns) is structural: runTeamTurn loads history ONLY from
+ * the login's own thread (0269) through this mapper.
  */
 
-function row(partial: Partial<TeamMessage>): TeamMessage {
+function row(partial: Partial<ThreadMessage>): ThreadMessage {
   return {
     id: 'id',
     ownerId: 'o',
-    contactId: 'c',
     direction: 'inbound',
     text: 'hello',
-    agentId: null,
+    agentId: 'a',
     model: null,
     channel: 'web',
     attachments: [],
-    traceId: null,
+    data: {},
     status: 'complete',
     error: null,
     createdAt: new Date(),
+    loginId: 'l',
+    workspaceId: null,
+    traceId: null,
+    usedPrivate: false,
     ...partial,
-  } as TeamMessage;
+  } as ThreadMessage;
 }
 
 describe('teamThreadToHistory', () => {
@@ -49,6 +53,7 @@ describe('teamThreadToHistory', () => {
       row({ status: 'pending', text: '' }),
       row({ status: 'failed', text: 'partial', direction: 'outbound' }),
       row({ text: '   ' }),
+      row({ text: 'superseded', data: { superseded_by: 'x' } }),
       row({ text: 'kept' }),
     ]);
     expect(h).toEqual([{ role: 'user', text: 'kept' }]);
