@@ -58,6 +58,12 @@ vi.mock('@/lib/dbos-client', () => ({
     }),
   }),
 }));
+// The replay agent's key: a stand-in secret (the scratch database has no
+// sealed key to open).
+vi.mock('@mantle/api-keys', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getApiKeyById: vi.fn(async () => 'sk-test'),
+}));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   embed: vi.fn(async () => VEC),
@@ -248,11 +254,13 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     adminAgent = await agent(adminSlug, 'assistant', adminWs);
     teamAgent = await agent(teamSlug, 'responder', teamWs);
     remy = await agent(`${tag}-remy`, 'custom', null);
-    // An api key for the replay agent: a chat turn reaches recordTurn, then
-    // the model call fails (fetch is offline).
-    const ak = await import('@mantle/api-keys');
-    const key = await m.asSystem(() => ak.setApiKey(owner, 'openrouter', `${tag}-key`, 'sk-test'));
-    await x(sql`update agents set api_key_id = ${key.id} where id = ${remy}`);
+    // A key row for the replay agent (its secret is stood in, see the mock
+    // above): a chat turn reaches recordTurn, then the model call fails
+    // (fetch is offline).
+    const [key] = await x<{ id: string }>(sql`insert into api_keys
+      (user_id, service, label, key_enc) values (${owner}, 'openrouter', ${`${tag}-key`},
+      decode('00', 'hex')) returning id::text`);
+    await x(sql`update agents set api_key_id = ${key!.id} where id = ${remy}`);
 
     // The owner's and the second Admin user's own turns with the Admin
     // assistant, and a digest of each.
@@ -478,7 +486,10 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
 
   it('M-a: persona notes ride the owner’s thread only', async () => {
     const note = { kind: 'style', content: `${tag} owner likes short answers`, at: window.from };
-    await x(sql`update agents set persona_notes = ${JSON.stringify([note])}::jsonb
+    // Notes kept on the agent (memory_config.notes_target = persona; the
+    // default sends them to the Journal instead).
+    await x(sql`update agents set persona_notes = ${JSON.stringify([note])}::jsonb,
+      memory_config = memory_config || '{"notes_target":"persona"}'::jsonb
       where id = ${adminAgent}`);
     const [row] = await m.systemDb
       .select()
@@ -516,11 +527,23 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     // run-turn (the web chat): the signed-in login, here the second Admin
     // user with the replay agent. The model call fails (fetch is offline),
     // after the inbound row is written.
+    // The model answers 400 at once (no retry); the inbound row is written.
     const ra = await import('@mantle/runtime/assistant');
     const webText = `${tag} writer web`;
-    await ra
-      .runAssistantTurn(owner, webText, { agentSlug: `${tag}-remy`, loginId: adminB })
-      .catch(() => undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"error":"refused in the W7c test"}', { status: 400 })),
+    );
+    try {
+      await ra
+        .runAssistantTurn(owner, webText, { agentSlug: `${tag}-remy`, loginId: adminB })
+        .catch(() => undefined);
+    } finally {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response('offline in the W7c test', { status: 503 })),
+      );
+    }
     expect(await loginOf(webText)).toEqual([adminB]);
 
     // run-team-turn: the member's own login (an early failure: the Team
@@ -569,7 +592,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       );
       expect(await loginOf(text)).toEqual([expected]);
     }
-  });
+  }, 120_000);
 
   // ── M1 ────────────────────────────────────────────────────────────────
 

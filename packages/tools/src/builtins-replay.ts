@@ -24,6 +24,7 @@
 
 import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import {
+  asSystem,
   assistantMessages,
   currentTurnStamp,
   currentWorkspaceScope,
@@ -395,26 +396,32 @@ const replay_window: BuiltinToolDef = {
     const turns: RecallTurn[] = [];
 
     // Telegram is the anchor's own chat (owner-only until W7d): only the
-    // anchor replays it.
+    // anchor replays it. No role is granted it, so inside the anchor's turn
+    // scope (its chat with the replay agent, W7c fix round 2) the read
+    // leaves for the system pool, named; the anchor check above is the gate.
     if ((surface === 'all' || surface === 'telegram') && asker === ctx.ownerId) {
-      const tg = await db
-        .select({
-          text: telegramMessages.text,
-          sentAt: telegramMessages.sentAt,
-          direction: telegramMessages.direction,
-          fromName: telegramMessages.fromName,
-        })
-        .from(telegramMessages)
-        .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-        .where(
-          and(
-            eq(telegramChats.userId, ctx.ownerId),
-            gte(telegramMessages.sentAt, from),
-            lte(telegramMessages.sentAt, to),
-          ),
-        )
-        .orderBy(asc(telegramMessages.sentAt))
-        .limit(limit + 1);
+      const tg = await asSystem(
+        () =>
+          db
+            .select({
+              text: telegramMessages.text,
+              sentAt: telegramMessages.sentAt,
+              direction: telegramMessages.direction,
+              fromName: telegramMessages.fromName,
+            })
+            .from(telegramMessages)
+            .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+            .where(
+              and(
+                eq(telegramChats.userId, ctx.ownerId),
+                gte(telegramMessages.sentAt, from),
+                lte(telegramMessages.sentAt, to),
+              ),
+            )
+            .orderBy(asc(telegramMessages.sentAt))
+            .limit(limit + 1),
+        'owner-telegram',
+      );
       for (const r of tg) {
         turns.push({
           surface: 'telegram',

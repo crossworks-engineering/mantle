@@ -908,6 +908,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'owner-preferences',
   'lexeme-stats',
   'keyword-candidates',
+  'owner-telegram',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 

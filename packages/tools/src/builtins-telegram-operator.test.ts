@@ -160,7 +160,7 @@ describe('telegram_pair: the anchor only until W7d (W7c fix round 2, M-b)', () =
   });
 
   it("refuses another Admin user's API key and web chat", async () => {
-    await refusedFor({ ownerId: 'o1', surface: { kind: 'owner', via: 'key', loginId: 'b2' } });
+    await refusedFor({ ownerId: 'o1', surface: { kind: 'owner', via: 'api', loginId: 'b2' } });
     await refusedFor({ ownerId: 'o1', surface: { kind: 'web', loginId: 'b2' } });
   });
 
