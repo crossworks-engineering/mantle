@@ -255,7 +255,13 @@ type RequestSlot = {
  * set for a non-Admin login: then the folder's home when the item lands in
  * a folder it may edit, else this private workspace, never Admin.
  */
-export type CreateHome = { createWs: string | null; privateWs: string | null };
+export type CreateHome = {
+  createWs: string | null;
+  privateWs: string | null;
+  /** No extractor notify for what is made (mantle.ingest_notify off): a
+   *  read-only copy the migration makes (S3), never a user's create. */
+  quiet?: boolean;
+};
 
 /** Work a scope's transaction owes the world outside the database, run once
  *  it ends: `commit` after a commit, `rollback` after a rollback. */

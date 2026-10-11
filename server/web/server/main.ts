@@ -63,8 +63,19 @@ void import('../lib/system-manifest/reconcile')
 // A brain with no workspaces yet (a fresh install whose owner signed up
 // before this release, W5b1 audit M1): migrate it once. Skips a migrated
 // brain and one with clients (21.9) without a lock; no LLM work.
+// Then the authors' copies of their accepted items (W6b, plan S3): only the
+// missing ones, no LLM work, no extractor notify.
 void import('../lib/workspaces-migrate')
   .then(({ migrateWorkspacesQuietly }) => migrateWorkspacesQuietly('boot'))
+  .then(() => import('../lib/snapshot-copies'))
+  .then(({ makeSnapshotCopies }) => makeSnapshotCopies())
+  .then((r) => {
+    if (r.made > 0 || r.acceptedRowsCleared > 0) {
+      console.log(
+        `[boot] snapshot copies: made ${r.made}, accepted rows cleared ${r.acceptedRowsCleared}`,
+      );
+    }
+  })
   .catch((err) => console.error('[boot] workspaces migration failed:', err));
 
 // App table exports a restart left unsynced (apps plan D8): their debounce

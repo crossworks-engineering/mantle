@@ -307,6 +307,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one. --parallel=N (1 to 32, default 4) sets the embed calls in flight (about 100 windows each; memory stays under 2 x parallel x 100 vectors); a 429 backs off and retries. On a box, run it in its own container: scripts/box-maintain.sh <box> chunk-windows --apply --yes (docs/maintenance-runner.md).',
   },
   {
+    slug: 'snapshot-copies',
+    title: "Make the authors' copies of their accepted items",
+    description:
+      "Workspaces W6b (plan S3): for each accepted item the spaces fold recorded with a snapshot flag (homed in a private or Former user workspace), makes its author's read-only copy in that workspace from the accepted version, redacted at the author's level, then archives the accepted space_items rows away. Dry run prints the counts.",
+    kind: 'ops',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/snapshot-copies.ts',
+    cwd: 'server/web',
+    applyFlag: '--go',
+    notes:
+      'Also runs at every boot after the workspaces migration; idempotent (a copy that exists is skipped). No summary, no facts, no extractor notify, no queue job: each copy is stamped data.extract_skipped (snapshot_copy). A file the brain changed since its accept gets no copy (counted).',
+  },
+  {
     slug: 'refold-embeds',
     title: 'Re-fold and re-chunk items that embed other items',
     description:

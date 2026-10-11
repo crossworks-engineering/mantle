@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { executeWrite } from './client';
-import { currentSpaceScope } from './viewer';
+import { currentCreateHome, currentSpaceScope } from './viewer';
 
 /**
  * Announce that a content node was created, or had its content change, so the
@@ -21,6 +21,8 @@ export async function notifyNodeIngested(nodeId: string): Promise<void> {
   // (member logins Phase 2; cost-safety: no save may start LLM work). The
   // extractor gate's owner check stays the lock behind this.
   if (currentSpaceScope()) return;
+  // A quiet create (a read-only snapshot copy, W6b S3): never announced.
+  if (currentCreateHome()?.quiet) return;
   try {
     await executeWrite(sql`SELECT pg_notify('node_ingested', ${nodeId}::text)`);
   } catch (err) {

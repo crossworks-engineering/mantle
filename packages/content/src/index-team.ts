@@ -265,6 +265,7 @@ export {
   acceptedFileReadable,
   acceptedRow,
   getAcceptedItem,
+  acceptedItemForCopy,
   getClientAcceptedItem,
   isAuthorOfAcceptedFile,
   listAccepted,

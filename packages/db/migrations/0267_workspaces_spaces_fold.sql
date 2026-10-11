@@ -306,6 +306,23 @@ $$;
 REVOKE EXECUTE ON FUNCTION "public"."mantle_default_home"(uuid, "public"."node_type", ltree) FROM PUBLIC;
 --> statement-breakpoint
 
+-- The extractor notify (0165) stays quiet in a transaction that says so
+-- (mantle.ingest_notify = off): the author's read-only snapshot copies (S3,
+-- snapshot-copies.ts) are made with no LLM work and no queue row (plan 5.3,
+-- 9.5). Nothing else sets it.
+CREATE OR REPLACE FUNCTION "public"."notify_node_ingested"()
+  RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF new.type IS DISTINCT FROM 'branch'::node_type
+     AND "public"."mantle_is_brain_space"(new.owner_id)
+     AND coalesce(current_setting('mantle.ingest_notify', true), '') <> 'off' THEN
+    PERFORM pg_notify('node_ingested', new.id::text);
+  END IF;
+  RETURN new;
+END
+$$;
+--> statement-breakpoint
+
 -- The reach diff (0261) knows the moved items: the switch guard compares
 -- with today's reach, and a moved item is no longer in a space. Its body is
 -- 0261's plus the fold's rows in the OLD set (as the fold's own proof).

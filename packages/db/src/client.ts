@@ -323,7 +323,8 @@ export async function withSystemTx<T>(
       if (homeSettings) {
         await tx.execute(
           sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
-                        set_config('mantle.private_ws', ${homeSettings[1]}, true)`,
+                        set_config('mantle.private_ws', ${homeSettings[1]}, true),
+                        set_config('mantle.ingest_notify', ${home?.quiet ? 'off' : ''}, true)`,
         );
       }
       return runInSystemTx({ tx, hooks }, () => fn(tx));

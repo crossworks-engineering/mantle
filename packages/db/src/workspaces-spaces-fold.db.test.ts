@@ -6,7 +6,8 @@
  * yet): drafts, a team-shared draft, a submitted page, a folder with a page
  * in it whose path a brain folder already has, a page whose slug the brain
  * already has, a team-shared app with its database row, its history and its
- * access log, a trashed app, files under space_files, a deleted login's
+ * access log, a trashed app (private only, marked trashedBeforeFold),
+ * files under space_files, a deleted login's
  * team-shared draft (left behind), the kind roots, and an accepted item.
  * Then 0267 and every later migration run. Checked: every item in the brain
  * with exactly the grants its home row names, names made unique and the
@@ -300,6 +301,15 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
       select deleted_at as deleted, sharing from space_fold_items where node_id = ${ids.trashedApp!}`;
     expect(trashed!.deleted).not.toBeNull();
     expect(trashed!.sharing).toBe('team');
+    // The owner's decision (W6b): a trashed app goes to its author's private
+    // workspace only, live, marked so the author finds it and may delete it;
+    // nothing of it is removed.
+    const t = await row('trashedApp');
+    expect(t.read).toEqual([await privateOf(member)]);
+    expect(t.home).toBe(await privateOf(member));
+    expect(t.data.trashedBeforeFold).toBe(true);
+    expect(typeof t.data.trashedAt).toBe('string');
+    expect((await row('teamApp')).data.trashedBeforeFold).toBeUndefined();
   });
 
   it('leaves no item in a space, archives the spaces, keeps only the accepted rows', async () => {

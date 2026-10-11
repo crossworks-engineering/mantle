@@ -454,6 +454,74 @@ export async function getAcceptedItem(
 ): Promise<AcceptedItem | null> {
   const found = await authoredSnapshot(anchorId, loginId, id);
   if (!found) return null;
+  return acceptedItemOf(anchorId, loginId, id, found, opts);
+}
+
+/** The login no row names: an author with no login left reads nothing
+ *  beyond the item itself (every reference in it is redacted). */
+const NOBODY = '00000000-0000-4000-8000-000000000000';
+
+/**
+ * An accepted item as its author reads it, for the author's read-only
+ * snapshot copy (workspaces W6b, plan S3): the accepted snapshot, redacted
+ * at the author's level, as getAcceptedItem reads it, without the author
+ * rule (the caller holds space_item_homes' record instead). `authorLoginId`
+ * null (a login that is gone): redacted for nobody. Also the snapshot, for
+ * what the item shape does not carry (a drawing's scene). Null when the
+ * item or its snapshot is gone. Admin pool.
+ */
+export async function acceptedItemForCopy(
+  anchorId: string,
+  authorLoginId: string | null,
+  id: string,
+): Promise<{ item: AcceptedItem; snap: AcceptedSnapshot } | null> {
+  assertAdminPool();
+  const [node] = await db
+    .select({ id: nodes.id, type: nodes.type })
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId)))
+    .limit(1);
+  if (!node || !(MEMBER_ITEM_KINDS as readonly string[]).includes(node.type)) return null;
+  const snap = await snapshotOf(anchorId, id);
+  if (!snap) return null;
+  let reader: AcceptedReader = 'team';
+  if (authorLoginId) {
+    const [u] = (await db.execute(
+      sql`select role from auth.users where id = ${authorLoginId}::uuid`,
+    )) as unknown as { role: string }[];
+    if (u?.role === 'client') reader = 'client';
+  }
+  const at = snap.acceptedAt.toISOString();
+  const row: AcceptedRow = {
+    id: node.id,
+    type: node.type as MemberItemKind,
+    title: snap.title,
+    icon: snap.icon ?? null,
+    audience: 'admin',
+    inherited: null,
+    acceptedAt: at,
+    updatedAt: at,
+  };
+  const item = await acceptedItemOf(
+    anchorId,
+    authorLoginId ?? NOBODY,
+    id,
+    { row, snap },
+    {
+      reader,
+    },
+  );
+  return item ? { item, snap } : null;
+}
+
+/** One accepted item from its row and snapshot: see getAcceptedItem. */
+async function acceptedItemOf(
+  anchorId: string,
+  loginId: string,
+  id: string,
+  found: { row: AcceptedRow; snap: AcceptedSnapshot },
+  opts: { tabId?: string; reader?: AcceptedReader } = {},
+): Promise<AcceptedItem | null> {
   const { row: base, snap } = found;
   const reader = opts.reader ?? 'team';
   switch (base.type) {
