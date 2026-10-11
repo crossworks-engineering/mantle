@@ -110,7 +110,7 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   it('changing a group another workspace uses, through a run, waits in Pending, as it would inline', async () => {
     const before = await pendingCount();
     const item = await runOne('tool_group_ensure', ENSURE, agentId);
-    expect(item.state).toBe('done');
+    expect(item.state, JSON.stringify(item.failure)).toBe('done');
     expect(await heldTools()).toEqual([]);
     expect(await pendingCount()).toBe(before + 1);
   });
