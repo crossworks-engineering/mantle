@@ -162,6 +162,7 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     process.env.TABLE_DB_DIR = path.join(dir, 'tables');
     process.env.APP_DB_DIR = path.join(dir, 'apps');
     process.env.FILES_DIR = path.join(dir, 'files');
+    process.env.MANTLE_FILES_ROOT = path.join(dir, 'files');
     process.env.MANTLE_SPACES_ROOT = path.join(dir, 'spaces');
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w6b-fix1-secret-at-least-32-characters!!';
@@ -330,7 +331,7 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     // case (the state before this round's fold fix; an exact clash the
     // database's own unique index refuses).
     const brain = await brainText('report.txt', 'BRAIN');
-    const treePath = path.join(dir, 'files', 'report.txt');
+    const treePath = f.diskPathForFile('files', 'report.txt')!;
     const one = await folded('REPORT.txt', 'FOLDED', priv);
     expect(await bytesOf(one.id)).toBe('FOLDED');
     expect(await bytesOf(brain)).toBe('BRAIN');
@@ -410,7 +411,7 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     );
     expect(after!.data.space_file).toBeUndefined();
     expect(await bytesOf(solo.id)).toBe('NEW');
-    expect(await readFile(path.join(dir, 'files', 'solo.txt'), 'utf8')).toBe('NEW');
+    expect(await readFile(f.diskPathForFile('files', 'solo.txt')!, 'utf8')).toBe('NEW');
     // Nothing removed from the space's directory.
     expect(await readFile(solo.at, 'utf8')).toBe('SOLO');
   });
