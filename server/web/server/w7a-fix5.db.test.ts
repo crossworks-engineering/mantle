@@ -401,8 +401,9 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
 
   it('3: a mail host or port move with a blank password needs the password or the keys area', async () => {
     const [acct] = await x<{ id: string }>(sql`insert into email_accounts
-        (user_id, provider, address, imap_config_enc, imap_host, imap_port, smtp_host, smtp_port)
-      values (${owner}, 'imap', ${`${tag}@example.invalid`}, '\\x00'::bytea,
+        (user_id, provider, address, branch_path, imap_config_enc, imap_host, imap_port,
+         smtp_host, smtp_port)
+      values (${owner}, 'imap', ${`${tag}@example.invalid`}, ${`inbox.${tag}`}, '\\x00'::bytea,
               '127.0.0.1', 1, '127.0.0.1', 2)
       returning id::text`);
     const route = await import('@/app/api/email/accounts/[id]/route');
@@ -493,14 +494,15 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
       expect(key.ok).toBe(false);
       if (!key.ok) expect(key.disposition).toBe('api_key_maker_no_keys');
     }
-    await expect(
-      sys(async () =>
-        rt.resolveRouteAdapter(
-          owner,
-          rt.resolveChatRoutes(await rowOf('agents', routedId)).primary,
-        ),
-      ),
-    ).rejects.toThrow(/does not hold the keys area/);
+    // The dispatch path refuses the same way (a provider with a chat adapter).
+    const anthropic = {
+      ...rt.resolveChatRoutes(await rowOf('agents', routedId)).primary,
+      provider: 'anthropic',
+    };
+    expect(anthropic.configuredBy).toBe(second);
+    await expect(sys(() => rt.resolveRouteAdapter(owner, anthropic))).rejects.toThrow(
+      /does not hold the keys area/,
+    );
     // The anchor re-pairs it: the route is the anchor's again.
     as(owner);
     const one = await import('@/app/api/agents/[id]/route');
