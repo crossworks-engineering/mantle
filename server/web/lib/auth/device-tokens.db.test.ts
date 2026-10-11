@@ -229,7 +229,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     // The one shell (W5c) answers a member as a member.
     const shell = await call('/api/shell', { bearer });
     expect(shell.status).toBe(200);
-    expect(await json(shell)).toMatchObject({ role: 'member', loginId: member, areas: [] });
+    const shellBody = await json(shell);
+    expect(shellBody).toMatchObject({ role: 'member', loginId: member, areas: [] });
     for (const path of ['/api/client/shell', '/api/push/subscriptions']) {
       const refused = await call(path, { bearer });
       expect(refused.status, path).toBe(403);
@@ -244,6 +245,10 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       pushBase: '/api/member/push',
       // v1.1: this brain's one row, the id every push names.
       brainId: await brainId(),
+      // W7e: the shell's workspaces (the same list), no areas, not the owner.
+      workspaces: shellBody.workspaces,
+      areas: [],
+      isOwner: false,
     });
     // Listed under the login's devices, and revocable there.
     const devices = await json(await call(`/api/users/${member}/devices`, { cookie: asAdmin() }));
