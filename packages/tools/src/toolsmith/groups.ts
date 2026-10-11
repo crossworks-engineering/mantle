@@ -371,7 +371,7 @@ export const tool_group_ensure: BuiltinToolDef = {
         toolSlugs,
         ...(integration ? { integration } : {}),
         enabled: true,
-        configuredBy: toolMaker(ctx.ownerId),
+        ...(toolMaker(ctx.ownerId) ? { configuredBy: toolMaker(ctx.ownerId) } : {}),
       });
     }
     ctx.step?.setOutput({ slug, toolSlugs, warnings });

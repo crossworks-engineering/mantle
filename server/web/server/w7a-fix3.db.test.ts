@@ -326,7 +326,7 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     expect(h.scope).toMatchObject({ kind: 'assistant', loginId: owner });
   });
 
-  it('1: a heartbeat L creates records L; a pause or rename does not change its maker', async () => {
+  it('1: a heartbeat L creates records L; a pause does not change its maker, a rename does', async () => {
     as(second);
     const route = await import('@/app/api/heartbeats/route');
     const res = await route.POST(
@@ -347,10 +347,17 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     as(owner);
     const one = await import('@/app/api/heartbeats/[id]/route');
     await one.PATCH(
-      new Request('http://x/', { method: 'PATCH', body: JSON.stringify({ name: 'Renamed' }) }),
+      new Request('http://x/', { method: 'PATCH', body: JSON.stringify({ status: 'paused' }) }),
       params(await heartbeat(`${tag}-hb-new`)),
     );
     expect((await hbRow(`${tag}-hb-new`)).createdBy).toBe(second);
+    // The name is in the prompt the turn reads (W7a fix round 4): the anchor
+    // renaming it makes it the anchor's.
+    await one.PATCH(
+      new Request('http://x/', { method: 'PATCH', body: JSON.stringify({ name: 'Renamed' }) }),
+      params(await heartbeat(`${tag}-hb-new`)),
+    );
+    expect((await hbRow(`${tag}-hb-new`)).createdBy).toBeNull();
   });
 
   it('1: L setting another heartbeat’s state (its prompt) makes it L’s', async () => {

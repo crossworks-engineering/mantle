@@ -33,7 +33,8 @@
 -- No foreign keys: a login that is gone leaves its rows to the rules above
 -- (a sandbox to the brain owner; a heartbeat pauses; a tool's or a
 -- connector's secrets stop resolving).
-
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
 ALTER TABLE sandboxes ADD COLUMN IF NOT EXISTS created_by uuid;
 --> statement-breakpoint
 ALTER TABLE heartbeats ADD COLUMN IF NOT EXISTS created_by uuid;
