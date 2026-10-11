@@ -4,7 +4,7 @@
  * `?ws=<id>` keeps the apps that workspace holds (lib/list-workspaces.ts).
  */
 import { NextResponse } from '@/server/http-compat';
-import { adminLoginActive, getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, loginIsAdmin } from '@/lib/auth';
 import { AppMetaFields } from '@/lib/app-meta';
 import { createApp, listApps, countApps, notifyAppNavChanged, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   }
   // A member's or a client's app (W6b fix round 1, M2): at team rules (the
   // author ceiling) and its author named, as the member app tools make it.
-  const admin = await adminLoginActive(user.actor.id);
+  const admin = await loginIsAdmin(user.actor.id);
   const app = await createApp(user.id, {
     title: parsed.data.name,
     ...parsed.data,

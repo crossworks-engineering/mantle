@@ -34,6 +34,7 @@ export {
   bulkDeleteFiles,
   fileNameTaken,
   FileNameTakenError,
+  callerSeesNode,
 } from './ops/files';
 export { listRecentFiles, listFiles, folderById, folderByPath, fileById } from './ops/queries';
 export {

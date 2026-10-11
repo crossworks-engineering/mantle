@@ -45,6 +45,7 @@ import {
 import { reconcileFilesIndexing } from './indexing';
 import {
   createFolder,
+  callerSeesNode,
   fileById,
   fileNameTaken,
   folderById,
@@ -103,12 +104,7 @@ async function hiddenNameTaken(
   const taken = await fileNameTaken(ownerId, parentPath, filename);
   if (!taken) return false;
   if (taken.folded || movingFolded) return true;
-  const [seen] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(eq(nodes.id, taken.id))
-    .limit(1);
-  return !seen;
+  return (await callerSeesNode(taken.id)) === false;
 }
 
 /** A check run inside a move's transaction, after its heads (the item and

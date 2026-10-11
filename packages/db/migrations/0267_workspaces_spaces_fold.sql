@@ -1105,6 +1105,13 @@ DECLARE
 BEGIN
   IF s <> '' AND NEW."type" IS DISTINCT FROM 'branch'::node_type THEN
     NEW."data" := coalesce(NEW."data", '{}'::jsonb) || s::jsonb;
+    -- A terminal skip holds while its time is at or after the row's last
+    -- write (extractSkippedSql): stamped with the row's own time, never the
+    -- app's clock from before the insert.
+    IF NEW."data" ? 'extract_skipped' THEN
+      NEW."data" := jsonb_set(NEW."data", '{extract_skipped,at}',
+        to_jsonb(greatest(clock_timestamp(), coalesce(NEW."updated_at", now()))));
+    END IF;
   END IF;
   RETURN NEW;
 END

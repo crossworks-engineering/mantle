@@ -324,11 +324,14 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     expect(await bytesOf(roFile)).toBe('RO BYTES');
   });
 
-  it('H1: a folded file with a brain file’s name: its delete, the watcher and a re-upload touch only its own', async () => {
+  it('H1: a folded file with a brain file’s name (ignoring case): its delete, the watcher and a re-upload touch only its own', async () => {
     const priv = await privateFor(mem);
+    // The brain's file and a folded member file whose name differs only in
+    // case (the state before this round's fold fix; an exact clash the
+    // database's own unique index refuses).
     const brain = await brainText('report.txt', 'BRAIN');
     const treePath = path.join(dir, 'files', 'report.txt');
-    const one = await folded('report.txt', 'FOLDED', priv);
+    const one = await folded('REPORT.txt', 'FOLDED', priv);
     expect(await bytesOf(one.id)).toBe('FOLDED');
     expect(await bytesOf(brain)).toBe('BRAIN');
     // The watcher saw the tree file change: the brain row, never the folded.
@@ -351,7 +354,7 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     expect(await readFile(treePath, 'utf8')).toBe('BRAIN2');
     expect(await bytesOf(brain)).toBe('BRAIN2');
     // The watcher's unlink of the tree file deletes the brain row only.
-    const two = await folded('report.txt', 'FOLDED2', priv);
+    const two = await folded('REPORT.txt', 'FOLDED2', priv);
     expect(
       (
         await sys(() =>
@@ -361,14 +364,33 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     ).toBe(true);
     expect(await homeOf(brain)).toBeUndefined();
     expect(await bytesOf(two.id)).toBe('FOLDED2');
-    // A create without overwrite onto its name is refused (the disk cannot
-    // tell); a re-upload with overwrite puts the bytes in the tree.
+    // A tree file never takes a folded file's name, any case: an upload is
+    // refused (the disk cannot tell), and a rename.
     await expect(
       sys(() =>
         f.upsertFile({
           ownerId: owner,
           parentPath: 'files',
           filename: 'report.txt',
+          bytes: Buffer.from('NEW'),
+          overwrite: true,
+        }),
+      ),
+    ).rejects.toThrow(/already exists/);
+    const b = await brainText('b.txt', 'B');
+    await expect(
+      sys(() => f.renameFileById({ ownerId: owner, fileId: b, newStem: 'report' })),
+    ).rejects.toThrow(/already exists/);
+    expect(await bytesOf(two.id)).toBe('FOLDED2');
+    // A re-upload of a folded file's own name: refused without overwrite;
+    // with it the bytes go to the tree and it no longer reads the space's.
+    const solo = await folded('solo.txt', 'SOLO', priv);
+    await expect(
+      sys(() =>
+        f.upsertFile({
+          ownerId: owner,
+          parentPath: 'files',
+          filename: 'solo.txt',
           bytes: Buffer.from('NEW'),
         }),
       ),
@@ -377,27 +399,20 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
       f.upsertFile({
         ownerId: owner,
         parentPath: 'files',
-        filename: 'report.txt',
+        filename: 'solo.txt',
         bytes: Buffer.from('NEW'),
         overwrite: true,
       }),
     );
-    expect(up.id).toBe(two.id);
+    expect(up.id).toBe(solo.id);
     const [after] = await x<{ data: Record<string, unknown> }>(
-      sql`select data from nodes where id = ${two.id}`,
+      sql`select data from nodes where id = ${solo.id}`,
     );
     expect(after!.data.space_file).toBeUndefined();
-    expect(await bytesOf(two.id)).toBe('NEW');
-    expect(await readFile(treePath, 'utf8')).toBe('NEW');
+    expect(await bytesOf(solo.id)).toBe('NEW');
+    expect(await readFile(path.join(dir, 'files', 'solo.txt'), 'utf8')).toBe('NEW');
     // Nothing removed from the space's directory.
-    expect(await readFile(two.at, 'utf8')).toBe('FOLDED2');
-    // A tree file never takes a folded file's name, any case.
-    const three = await folded('other.txt', 'OTHER', priv);
-    const b = await brainText('b.txt', 'B');
-    await expect(
-      sys(() => f.renameFileById({ ownerId: owner, fileId: b, newStem: 'OTHER' })),
-    ).rejects.toThrow(/already exists/);
-    expect(await bytesOf(three.id)).toBe('OTHER');
+    expect(await readFile(solo.at, 'utf8')).toBe('SOLO');
   });
 
   it('decision 2: a snapshot copy is read only for everyone; its author deletes it; its responses say so', async () => {

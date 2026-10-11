@@ -28,6 +28,8 @@ import { deleteThumbnailsFor } from '../thumbnail';
 import {
   asSystem,
   assertNotSnapshotCopy,
+  requestWriteScope,
+  withScope,
   contentChunks,
   db,
   draws,
@@ -186,7 +188,7 @@ export async function upsertFile(args: {
   const taken = await fileNameTaken(args.ownerId, args.parentPath, filename);
   let existing: Node | undefined;
   if (taken) {
-    // Read in the caller's scope: none when it may not read that file.
+    if ((await callerSeesNode(taken.id)) === false) throw new FileNameTakenError(filename);
     const [seen] = await db.select().from(nodes).where(eq(nodes.id, taken.id)).limit(1);
     if (!seen) throw new FileNameTakenError(filename);
     // A folded member file's bytes are not in the tree (W6b), so the disk
@@ -200,7 +202,8 @@ export async function upsertFile(args: {
         // A read-only snapshot copy is never overwritten (W6b fix round 1),
         // nor a file the caller may read but not change.
         assertNotSnapshotCopy(existing);
-        if (!isSystemScope() && !(await mayEditNode(existing.id))) {
+        const id = existing.id;
+        if ((await inCallerScope(() => mayEditNode(id))) === false) {
           throw new FileNameTakenError(filename);
         }
       }
@@ -955,6 +958,27 @@ export async function fileNameTaken(
     'kind-root',
   )) as unknown as { id: string; folded: boolean; exact: boolean }[];
   return rows[0] ?? null;
+}
+
+/**
+ * Run `fn` in the caller's workspace scope: the one it is in (a member's
+ * request, a turn), else an Admin user's write request's (its writes run on
+ * the system pool, checked against its scope: requestWriteScope). Undefined
+ * for the system itself (no login to check).
+ */
+async function inCallerScope<T>(fn: () => Promise<T>): Promise<T | undefined> {
+  if (!isSystemScope()) return fn();
+  const scope = requestWriteScope();
+  return scope ? withScope(scope, fn) : undefined;
+}
+
+/** Whether the caller reads item `id` (in its scope; null for the system). */
+export async function callerSeesNode(id: string): Promise<boolean | null> {
+  const seen = await inCallerScope(async () => {
+    const rows = await db.select({ id: nodes.id }).from(nodes).where(eq(nodes.id, id)).limit(1);
+    return rows.length > 0;
+  });
+  return seen ?? null;
 }
 
 /** Whether the caller's scope may change item `id` (mantle_may_edit, not a

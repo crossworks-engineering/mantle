@@ -12,6 +12,7 @@ import { RedirectError } from '../../server/http-compat/redirect-error';
 import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import {
+  asSystem,
   db,
   accessKeys,
   authUsers,
@@ -1149,6 +1150,13 @@ export async function memberLoginActive(loginId: string): Promise<boolean> {
 export async function adminLoginActive(loginId: string): Promise<boolean> {
   const row = await loadLoginRow(loginId);
   return !!row && row.role === 'admin' && loginUsable(row);
+}
+
+/** Whether `loginId` (the request's own login) is an Admin user, read on
+ *  the system pool: a member's request scope does not read auth.users (W6b
+ *  fix round 1, the admin-only app switches). Its own row only. */
+export async function loginIsAdmin(loginId: string): Promise<boolean> {
+  return asSystem(() => adminLoginActive(loginId), 'rule-in-query');
 }
 
 /** When the calling request's session cookie expires (ms since epoch), or

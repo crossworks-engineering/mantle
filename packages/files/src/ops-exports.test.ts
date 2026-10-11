@@ -22,6 +22,7 @@ const PUBLIC = [
   'ensureFilesRootBranch',
   // ops/files.ts
   'fileNameTaken',
+  'callerSeesNode',
   'FileNameTakenError',
   'upsertFile',
   'readFileById',

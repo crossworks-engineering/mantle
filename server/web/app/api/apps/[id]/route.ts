@@ -10,7 +10,7 @@ import { NextResponse } from '@/server/http-compat';
 import { cappedOne } from '@/lib/list-workspaces';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
-import { adminLoginActive, getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, loginIsAdmin } from '@/lib/auth';
 import { APP_DESCRIPTION_MAX } from '@/lib/app-meta';
 import {
   getApp,
@@ -70,7 +70,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // author ceiling, its MCP access or the informational flag.
   if (
     (trustTools !== undefined || rest.mcpAccess !== undefined || rest.dataReadOnly !== undefined) &&
-    !(await adminLoginActive(user.actor.id))
+    !(await loginIsAdmin(user.actor.id))
   ) {
     return NextResponse.json(
       {
