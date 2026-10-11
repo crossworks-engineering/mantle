@@ -1135,9 +1135,7 @@ still names its author (`takenFrom`, with `canGiveBack` always false).
 0267): the private items are brain items in the login's private workspace,
 and `space-purge` is retired.
 
-**Tests.** `packages/content/src/admin-space.viewer.db.test.ts` (Postgres:
-the embed rule both ways, another admin by id and through the brain, team
-drafts with a forced 'team' row, nothing announced),
+**Tests.** The space-role suites went with the role in W6b;
 `server/web/server/middleware/gate.test.ts` (the asset path) and the auth
 and member sweeps. The admin space routes answer 410 since W6b; their route
 tests went with them.
