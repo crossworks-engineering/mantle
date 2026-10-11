@@ -581,6 +581,11 @@ async function resolveOauthBinding(
       error: `integration group '${slug}' is disabled. Ask the owner to enable it under Settings → Tool groups`,
     };
   }
+  // The group's OAuth2 credentials go to its token URL and base URL only
+  // while the login that paired them holds the keys area (W7 integration
+  // fix 2): the same run-time check as an MCP connector's key.
+  const pairRefused = await vaultPairRunRefusal(group.configuredBy, ownerId, true);
+  if (pairRefused) return { error: pairRefused };
   let origin: string;
   try {
     origin = new URL(group.integration?.baseUrl ?? '').origin;

@@ -8,7 +8,12 @@
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type GroupRow = { slug: string; enabled: boolean; integration: Record<string, unknown> | null };
+type GroupRow = {
+  slug: string;
+  enabled: boolean;
+  integration: Record<string, unknown> | null;
+  configuredBy?: string | null;
+};
 const groups = new Map<string, GroupRow>();
 
 // The real @mantle/db module is spread so transitive schema imports resolve.
@@ -240,6 +245,17 @@ describe('dispatchHttp with an OAuth2 group', () => {
     } finally {
       vault.set('svc/client-secret', 'csecret-456');
     }
+  });
+
+  it('refuses a group whose pairing login no longer holds the keys area (W7 integration fix 2)', async () => {
+    // Paired by another login: the run-time check asks whether it holds the
+    // keys area; with no workspace data here it fails closed.
+    groups.get('acme')!.configuredBy = 'l2';
+    const res = await dispatchTool(httpTool(`${apiBase}/v1/items`), {}, CTX);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/keys area/);
+    expect(tokenCalls).toBe(0);
+    expect(apiAuth).toEqual([]);
   });
 
   it('refuses a disabled group', async () => {
