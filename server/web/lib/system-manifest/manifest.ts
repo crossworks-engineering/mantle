@@ -535,14 +535,23 @@ export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.m
  *   my_app_share: sharing a member's app with the team is the member's own
  *   click in the app, never a tool a key, peer or model calls (access
  *   matrix N1, T24).
+ *   my-space-write / my_note_create / my_page_create / my_file_upload /
+ *   my_item_submit, and my_app_submit / my_app_recall: a login's MCP drafts
+ *   and submits for review (plan R7), gone with review in workspaces W5c.
  */
-export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = ['team-notify'];
+export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = ['team-notify', 'my-space-write'];
 export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'team_member_list',
   'team_notify',
   'task_comments_list',
   'task_comment_add',
   'my_app_share',
+  'my_note_create',
+  'my_page_create',
+  'my_file_upload',
+  'my_item_submit',
+  'my_app_submit',
+  'my_app_recall',
 ];
 
 /**
@@ -1213,13 +1222,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     ],
   },
   {
-    slug: 'my-space-write',
-    name: 'Own-space drafts (write)',
-    description:
-      'Create notes, pages and files as DRAFTS in the personal space of the member or client a turn serves, and submit one for review. Nothing reaches the brain until an admin accepts it. Offered by the login MCP surface when an admin turned write on for that login (or its peer). Attached to no agent (admin level: the login surface adds these tools itself, never through a group).',
-    toolSlugs: ['my_note_create', 'my_page_create', 'my_file_upload', 'my_item_submit'],
-  },
-  {
     slug: 'app-data-mcp',
     name: 'App data over MCP',
     description:
@@ -1230,7 +1232,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'my-apps-mcp',
     name: 'Member-built apps over MCP',
     description:
-      "Build a team member's OWN mini apps on their own MCP connection: create, write files, build, publish, set the schema and tools, snapshots (and delete the ones they took), make private, submit for review, delete to their own trash and bring back (sharing with the team is the member's own click in the app, never MCP). The trash removes nothing. The apps live in the member's personal space and run tools at team rules at most (the author ceiling). Reads always; changes with the login's Write switch. Attached to no agent (admin level: the login MCP surface adds these tools itself, for members only, never through a group).",
+      "Build a team member's OWN mini apps on their own MCP connection: create, write files, build, publish, set the schema and tools, snapshots (and delete the ones they took), make private, delete to their own trash and bring back (sharing with the team is the member's own click in the app, never MCP). The trash removes nothing. The apps live in the member's personal space and run tools at team rules at most (the author ceiling). Reads always; changes with the login's Write switch. Attached to no agent (admin level: the login MCP surface adds these tools itself, for members only, never through a group).",
     toolSlugs: [
       'my_app_guide',
       'my_app_list',
@@ -1249,8 +1251,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'my_app_snapshot_restore',
       'my_app_snapshot_delete',
       'my_app_unshare',
-      'my_app_submit',
-      'my_app_recall',
       'my_app_delete',
       'my_app_undelete',
     ],

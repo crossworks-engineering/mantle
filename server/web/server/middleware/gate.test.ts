@@ -130,9 +130,10 @@ describe('gate: session & bearer', () => {
     expect((await app.request(`/api/export/e1?at=${at}&format=md`)).status).toBe(200);
     expect((await app.request(`/api/admin/space/i1/bytes?at=${at}`)).status).toBe(200);
     expect((await app.request(`/api/member/space/i1/bytes?at=${at}`)).status).toBe(200);
-    expect((await app.request(`/api/member/team-drafts/i1/bytes?at=${at}`)).status).toBe(200);
     expect((await app.request(`/api/client/space/i1/bytes?at=${at}`)).status).toBe(200);
-    expect((await app.request(`/api/member/client-requests/i1/bytes?at=${at}`)).status).toBe(200);
+    // The team-drafts and client-requests bytes are gone (W5c): no carve-out.
+    expect((await app.request(`/api/member/team-drafts/i1/bytes?at=${at}`)).status).toBe(401);
+    expect((await app.request(`/api/member/client-requests/i1/bytes?at=${at}`)).status).toBe(401);
     // Wrong path
     expect((await app.request(`/api/notes?at=${at}`)).status).toBe(401);
     expect((await app.request(`/api/admin/space/i1?at=${at}`)).status).toBe(401);

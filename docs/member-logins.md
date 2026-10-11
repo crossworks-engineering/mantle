@@ -1,5 +1,24 @@
 # Member logins
 
+> **Update, workspaces W5c: team drafts, client requests and the member's
+> submit, recall and share are removed.** These member routes stay as stubs
+> that answer 410 `{ error, code: 'gone' }` to a member (a member's old app
+> can tell them to update): `GET /api/member/team-drafts`, `/:id`,
+> `/:id/bytes`; `GET /api/member/client-requests`, `/:id`, `/:id/bytes`;
+> `POST /api/member/space/:id/submit`, `/recall`, `/share`; and
+> `POST /api/member/my-apps/:id/submit`, `/recall`. A personal item is no
+> longer shared with the team (W6b grants it); the one list
+> (`GET /api/member/items`) has no team or client-request rows and no
+> `client-requests` filter; the member tree shows no teammate's draft.
+> `withTeamDrafts` and `withHumanViewer`, the last level-role path, are
+> gone. No member read names a level: the Library rows, the one list's rows
+> and the launcher cards carry no level field, and a member chats with the
+> assistant the Team workspace holds (a workspace resource), not an agent
+> picked by its level. The member MCP draft and submit tools
+> (`my_note_create`, `my_page_create`, `my_file_upload`, `my_item_submit`,
+> `my_app_submit`, `my_app_recall`) are removed (mcp-as-a-login.md). The
+> sections below keep the record of how these worked.
+
 > **Update 2026-10-09: comments are removed.** Every comment thread this doc
 > describes (the review talk on a submitted item, the team's talk on a shared
 > item, the Library's client thread) is gone, routes and UI alike, and so are
@@ -186,7 +205,7 @@
 | `GET /api/member/library/:id`   | One item with its published body                                     |
 | `GET /api/member/files/:id`     | File bytes, streamed, rate limited per login; `?thumb=1`, `?at=` too |
 | `GET /api/member/draws/:id/svg` | A drawing's committed SVG, with only the images the member may read  |
-| `GET /api/member/chat`          | The member's own thread with the team-level agent                    |
+| `GET /api/member/chat`          | The member's own thread with the Team workspace's assistant          |
 | `POST /api/member/chat`         | Send a message; the reply lands in the thread                        |
 
 The Library LISTS team and client items only, each row with its level
@@ -203,11 +222,12 @@ it to Team (or Client, when clients should read it too).
 
 - **Chat** happens in the owner app's assistant dock (jackdaw v0.6.146+),
   with its three shapes (side column, movable window, full display): for a
-  member the dock renders the member's own thread over these two routes. It
-  uses `team-responder`, and only while an admin has set it to team
-  (access-levels.md §5): members chat only with a team-level agent, and the
-  turn engine refuses any other level for a member (`assertAgentForRole`;
-  client and public agents serve other logins, client-logins.md §8).
+  member the dock renders the member's own thread over these two routes.
+  Since W5c it uses the assistant the Team workspace holds (its
+  `workspace_resources` row of type `assistant`; `team-responder` unless an
+  admin chose another), whatever that agent's level; with none, chat is
+  not open (409). The turn engine checks it again (`teamAssistant`) and
+  refuses any other agent for a member.
   One thread per login (`team_messages.login_id`, migration 0163), never in
   the owner's assistant stream. A member's rows carry the login and no
   contact (migration 0167). Limits per login: 6 messages a minute, the
@@ -267,13 +287,12 @@ extracted. The ingest trigger skips it,
 `notifyNodeIngested` and `isBrainOwnerId` refuse inside a space scope, and the
 extractor gate checks the owner.
 
-**Three sources** a member reads:
+**Two sources** a member reads (a third, Team drafts, went in W5c):
 
-| Source      | What                                                  | Scope                                  |
-| ----------- | ----------------------------------------------------- | -------------------------------------- |
-| Mine        | the member's own items, drafts included               | `withSpace` (personal-space role)      |
-| Team drafts | other members' items shared with the team, saved only | `withTeamDrafts` (team role, human on) |
-| Library     | brain items set to team                               | `withViewer('team')`                   |
+| Source  | What                                     | Scope                                               |
+| ------- | ---------------------------------------- | --------------------------------------------------- |
+| Mine    | the member's own items, drafts included  | `withSpace` (personal-space role)                   |
+| Library | brain items the member's workspaces hold | `withViewer('team', { login })` (a workspace scope) |
 
 **The personal-space role.** `mantle_view_space` is a fourth limited LOGIN
 role. `withSpace({ spaceId, loginId }, fn)` runs `fn` in one short
@@ -288,9 +307,9 @@ Before it opens the transaction, `withSpace` reads the login row
 that is not the login's own (`spaces.login_id`), a disabled login and a role
 the code does not know.
 
-**Team drafts** are visible only to the team role with `mantle.human` on
-(`withTeamDrafts`): a member's own request. No agent path sets the flag, so a
-team-level agent never reads anyone's drafts. Published columns only.
+**Team drafts** (removed in W5c) were visible only to the team role with
+`mantle.human` on (`withTeamDrafts`, gone): a member's own request. No agent
+path set the flag. The row rule stays in SQL until W6b; no code reaches it.
 
 **Sharing and review** live in `space_items` (one row per personal item):
 `sharing` private or team, `review_state` draft, submitted, returned,
@@ -321,8 +340,8 @@ when an Accept moved the item), never a stale 200. An item submitted before
 0180 has no record: only the item itself is frozen, and Accept works its
 bundle out at accept time, as before.
 
-**Routes** (all in `MEMBER_ROUTES`, all through `inMySpace` or
-`withTeamDrafts`):
+**Routes** (all in `MEMBER_ROUTES`, all through `inMySpace`; the ones marked
+gone answer 410 since W5c):
 
 | Route                                           | What                                                |
 | ----------------------------------------------- | --------------------------------------------------- |
@@ -330,13 +349,13 @@ bundle out at accept time, as before.
 | `GET/PATCH/DELETE /api/member/space/:id`        | One item with its body; rename; delete              |
 | `PUT /api/member/space/:id/draft`               | Autosave `{ doc \| scene \| table \| ops, if_rev }` |
 | `POST /api/member/space/:id/save`               | Save version `{ doc \| scene, if_rev, svg? }`       |
-| `POST /api/member/space/:id/share`              | `{ sharing: 'private' \| 'team' }`                  |
-| `POST /api/member/space/:id/submit`             | Submit the saved version for review                 |
-| `POST /api/member/space/:id/recall`             | Take a submitted item back                          |
+| `POST /api/member/space/:id/share`              | Gone (410): was `{ sharing: 'private' \| 'team' }`  |
+| `POST /api/member/space/:id/submit`             | Gone (410): was Submit for review                   |
+| `POST /api/member/space/:id/recall`             | Gone (410): was take a submitted item back          |
 | `POST /api/member/space-files`                  | Upload a file (multipart, one `file` part)          |
 | `GET /api/member/space/:id/bytes`               | An own file's bytes (`?thumb=1`: thumbnail; `?at=`) |
-| `GET /api/member/team-drafts[/:id]`             | Teammates' shared items, saved version only         |
-| `GET /api/member/team-drafts/:id/bytes`         | A teammate's team-shared file (`?at=` too)          |
+| `GET /api/member/team-drafts[/:id]`             | Gone (410): was teammates' shared items             |
+| `GET /api/member/team-drafts/:id/bytes`         | Gone (410); no `?at=` carve-out any more            |
 | `GET/POST /api/member/space/:id/comments`       | The thread on an own item (shared or submitted)     |
 | `DELETE …/space/:id/comments/:commentId`        | Remove an own comment                               |
 | `GET/POST /api/member/team-drafts/:id/comments` | The thread on a teammate's shared item              |
@@ -835,7 +854,7 @@ so it is listed like any team app there.
 >   reconcile seeds the builtin rows (the `my_app_*` tools and their
 >   group) when the version changes. A dev build that reuses the version
 >   does not: run `ALLOWED_USER_ID=<owner> pnpm -C server/web
->   seed:tool-groups` there.
+seed:tool-groups` there.
 
 A site adds its own connectors: an MCP server or an http API, for example a
 read-only SQL bridge to a site database. None ship with Mantle, and the
@@ -1604,7 +1623,7 @@ marked `byMe`). Each row names its `source`, which picks the item view:
 brain item, `accepted` the version accepted.
 
 **No new access.** Each source is read exactly as its own route reads it:
-Mine in `withSpace`, team drafts in `withTeamDrafts`, the Library at the
+Mine in `withSpace`, team drafts in `withTeamDrafts` (both gone since W5c), the Library at the
 team level, accepted items on the admin pool with the author rule written
 in, and the Library rows' authors for exactly the ids the team level
 returned. The route only merges them (`member-items.ts`,
@@ -1670,7 +1689,7 @@ its own chat, and in client apps (client-logins.md section 10).
   it (section 3).
 - **Client requests.** A client's SUBMITTED item, and what renders inside
   it, is a "Client requests" source in the member's one list
-  (`GET /api/member/client-requests`, `/:id`, `/:id/bytes`), read only,
+  (`GET /api/member/client-requests`, `/:id`, `/:id/bytes`; 410 gone since W5c), read only,
   while it waits for review. A client's draft, returned or accepted item is
   not; row security holds this (the team role with the human flag on, never
   an agent; migration 0194). A client's space never shows in Team drafts.

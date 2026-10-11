@@ -46,15 +46,11 @@ const AREA_PREFIXES: ReadonlyArray<readonly [string, KeyArea]> = [
   ['entity_', 'search'],
 ];
 
-/** Single tools: reads across the brain, and the personal-space drafts a
- *  member or client makes (each in the area of what it makes). */
+/** Single tools: reads across the brain, and app data. */
 const AREA_TOOLS: ReadonlyMap<string, KeyArea> = new Map<string, KeyArea>([
   ['search', 'search'],
   ['search_chunks', 'search'],
   ['graph_path', 'search'],
-  ['my_page_create', 'pages'],
-  ['my_note_create', 'notes'],
-  ['my_file_upload', 'files'],
   // Before the `app_` prefix rule: app data is its own area.
   ['app_data_list', 'app_data'],
   ['app_data_schema', 'app_data'],

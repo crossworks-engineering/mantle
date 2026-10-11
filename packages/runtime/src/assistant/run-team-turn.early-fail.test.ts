@@ -2,8 +2,8 @@
  * Audit MED 12: a member (or team) message whose turn fails BEFORE the inbound
  * row is written used to vanish: the route had already answered 202 and
  * nothing reached the thread. Now the turn records the message with a failed
- * reply, then rethrows. Here the failure is the classic early one: the team
- * responder is missing.
+ * reply, then rethrows. Here the failure is the classic early one: the Team
+ * workspace has no assistant.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +12,7 @@ const h = vi.hoisted(() => ({ appended: [] as Record<string, unknown>[] }));
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'where', 'limit']) chain[m] = () => chain;
+  for (const m of ['from', 'innerJoin', 'where', 'limit']) chain[m] = () => chain;
   chain['then'] = (resolve: (v: unknown[]) => void) => resolve([]); // no agent row
   return { ...actual, db: { select: () => chain } };
 });

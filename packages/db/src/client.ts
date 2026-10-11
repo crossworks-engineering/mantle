@@ -24,8 +24,6 @@ import {
   type WorkspaceScope,
   runTxHooks,
   runInViewerScope,
-  exitScope,
-  lowerLevel,
   type ViewerFor,
   type AppRunFor,
   type ViewerLevel,
@@ -193,7 +191,7 @@ function getTurnScopedDb(): PostgresJsDatabase<typeof schema> {
 }
 
 /** The handle for the current scope (viewer.ts): a scope's own transaction
- *  (a personal space, team drafts), a turn scope's per-query handle, else
+ *  (a personal space), a turn scope's per-query handle, else
  *  the level's pool, else admin. */
 function getDb(): PostgresJsDatabase<typeof schema> {
   const tx = currentScopeTx();
@@ -713,45 +711,6 @@ export async function withDeadlockRetry<T>(run: () => Promise<T>, attempts = 3):
       await new Promise((r) => setTimeout(r, 15 * attempt + Math.random() * 40 * attempt));
     }
   }
-}
-
-/**
- * Run `fn` at the team level with the human flag on: the only scope in which
- * other members' TEAM-SHARED personal items (team drafts) are visible, next
- * to the Library (plan 2b: agents never read other people's drafts, and no
- * agent path sets the flag). One short transaction on the team pool.
- */
-export async function withTeamDrafts<T>(fn: () => Promise<T>): Promise<T> {
-  return withHumanViewer('team', fn);
-}
-
-/**
- * Run `fn` at `level` (team or client) with the human flag on: a login's own
- * request, never an agent (no agent path calls this). For team: Team drafts
- * and a client's submitted items (client requests, 0194); for both: the
- * client thread on a client-level brain item (0194, decision 8). One short
- * transaction on that level's pool.
- *
- * The ONE level-role path left after W5b2 (the R6 sweep names it): the
- * review flows it serves go in W5c. It leaves the scope around it (a member
- * request's workspace scope) for that transaction; inside a level scope the
- * level only goes down.
- */
-export async function withHumanViewer<T>(
-  level: 'team' | 'client',
-  fn: () => Promise<T>,
-): Promise<T> {
-  const scope = currentScope();
-  const effective = scope.kind === 'level' ? lowerLevel(scope.level, level) : level;
-  if (effective !== 'team' && effective !== 'client') {
-    throw new Error(`withHumanViewer: no human scope at ${effective}`);
-  }
-  return exitScope(() =>
-    getViewerDb(effective).transaction(async (tx) => {
-      await tx.execute(sqlTag`select set_config('mantle.human', 'on', true)`);
-      return runInTxScope({ level: effective, tx }, fn);
-    }),
-  );
 }
 
 /**

@@ -1,11 +1,12 @@
 /**
  * A member's team turn runs in the agent's scope (member logins Phase 0b,
- * plan section 2b, workspaces W5b2): with team-responder at `team`,
- * everything runTeamTurn reads for the turn (the owner's preferences, the
- * member's thread, the retrieval, the assembly, the loop) runs in the scope
- * the R6 shim (withViewer) enters for the agent, with no outer wrap from the
- * caller; a client turn runs all of it in the client login's own scope. The
- * audit removed this wrap and every test stayed green; this pins it. No
+ * plan section 2b, workspaces W5b2): with the Team workspace's assistant
+ * (W5c: a workspace resource, no agent level read), everything runTeamTurn
+ * reads for the turn (the owner's preferences, the member's thread, the
+ * retrieval, the assembly, the loop) runs in the scope the R6 shim
+ * (withViewer) enters for the agent, with no outer wrap from the caller.
+ * Client chat went in W5c: a queued client turn refuses. The audit removed
+ * this wrap and every test stayed green; this pins it. No
  * database: the agent row, the content functions and the inner stages are
  * faked, each recording the scope it runs in, and withViewer enters a fake
  * scope that names whom it acts for. The inner stages wrap themselves too;
@@ -16,8 +17,12 @@ import { currentScope } from '@mantle/db/viewer';
 
 const h = vi.hoisted(() => ({
   levels: [] as string[],
-  audience: 'team',
-  mayRun: true,
+  /** The Team workspace's assistant teamAssistant answers, or none. */
+  team: { id: 'agent-1', slug: 'team-responder', name: 'Team Responder' } as {
+    id: string;
+    slug: string;
+    name: string;
+  } | null,
   appended: 0,
   /** What the agent's groups resolve to (the assembly's allowedTools). */
   groupTools: [] as string[],
@@ -40,14 +45,16 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const chain: Record<string, unknown> = {};
   for (const m of ['from', 'where']) chain[m] = () => chain;
   chain['limit'] = async () => {
-    // Where the agent row is read: a client turn reads it inside its own
-    // client wrap (client logins C4, N7).
+    // Where the agent row is read (by the id the Team workspace names).
     h.levels.push(`agent:${where()}`);
     return [
       {
         id: 'agent-1',
         slug: 'team-responder',
-        audience: h.audience,
+        // No workspace row in this fake: the agent scope falls back to the
+        // stored level (agent-viewer.ts), as an assistant on no workspace.
+        // The turn itself reads no level to pick the agent (W5c).
+        audience: 'team',
         enabled: true,
         apiKeyId: 'key-1',
         provider: 'openrouter',
@@ -103,9 +110,9 @@ vi.mock('@mantle/content', async (importOriginal) => {
       h.appended++;
       return { ...row, id: `m${++n}`, createdAt: new Date() };
     }),
-    clientTurnMayRun: vi.fn(async () => {
-      r('may-run');
-      return h.mayRun;
+    teamAssistant: vi.fn(async () => {
+      r('team-assistant');
+      return h.team;
     }),
     updateTeamMessageOutcome: vi.fn(async () => null),
   };
@@ -183,21 +190,21 @@ import { runClientTurn, runTeamTurn } from './run-team-turn';
 
 beforeEach(() => {
   h.levels = [];
-  h.audience = 'team';
-  h.mayRun = true;
+  h.team = { id: 'agent-1', slug: 'team-responder', name: 'Team Responder' };
   h.appended = 0;
   h.groupTools = [];
   h.loopTools = [];
 });
 
 describe('runTeamTurn runs in the agent scope', () => {
-  it('team-responder at team: every read of the turn runs in its scope, with no outer wrap', async () => {
+  it('the Team workspace’s assistant: every read of the turn runs in its scope, with no outer wrap', async () => {
     expect(where()).toBe('admin'); // the caller is system work
     const res = await runTeamTurn('owner-1', 'what does the handbook say?', {
       loginId: 'login-1',
     });
     expect(res.reply).toBe('ok, done');
     expect(h.levels).toEqual([
+      'team-assistant:admin',
       'agent:admin',
       'prefs:assistant()',
       // The thread first: a short follow-up is enriched from it.
@@ -208,94 +215,36 @@ describe('runTeamTurn runs in the agent scope', () => {
     ]);
   });
 
-  it('control: an admin-level agent is refused for a member before anything is read', async () => {
-    h.audience = 'admin';
+  it('control: no assistant on the Team workspace, the turn is refused before anything is read', async () => {
+    h.team = null;
     await expect(runTeamTurn('owner-1', 'hello', { loginId: 'login-1' })).rejects.toThrow(
-      /admin level/,
+      /Team workspace has no enabled assistant/,
     );
-    expect(h.levels).toEqual(['agent:admin']);
-  });
-});
-
-describe('runClientTurn runs in the client login scope (client logins C4)', () => {
-  const opts = { loginId: 'login-c', sessionEpoch: 3 };
-  const CLIENT = 'user(ws-of-login-c)';
-
-  it('the whole turn, the agent lookup included, runs in the login scope; no retrieval context', async () => {
-    h.audience = 'client';
-    const res = await runClientTurn('owner-1', 'what is shared with me?', opts);
-    expect(res.reply).toBe('ok, done');
-    expect(h.levels).toEqual([
-      'may-run:admin',
-      // The client's own wrap: the agent row is read in the login scope too,
-      // and the agent's own wrap stays inside it, never wider.
-      `agent:${CLIENT}`,
-      `prefs:${CLIENT}`,
-      `thread:${CLIENT}`,
-      `assemble:${CLIENT}`,
-      `loop:${CLIENT}`,
-    ]);
+    expect(h.levels).toEqual(['team-assistant:admin']);
+    // The failed turn is recorded (the message and a failed reply).
+    expect(h.appended).toBe(2);
   });
 
-  it('a signed-out, disabled or ended login: the turn never runs and writes nothing', async () => {
-    h.audience = 'client';
-    h.mayRun = false;
-    await expect(runClientTurn('owner-1', 'hello', opts)).rejects.toThrow(/no longer signed in/);
-    expect(h.levels).toEqual(['may-run:admin']);
-    expect(h.appended).toBe(0);
-  });
-
-  it('a queued input with no epoch never runs', async () => {
-    h.audience = 'client';
+  it('control: an agent that is not the Team workspace’s assistant is refused (W5c: no level is read)', async () => {
     await expect(
-      runClientTurn('owner-1', 'hello', { loginId: 'login-c' } as never),
-    ).rejects.toThrow(/no longer signed in/);
-    expect(h.levels).toEqual([]);
+      runTeamTurn('owner-1', 'hello', { loginId: 'login-1', agentSlug: 'admin-assistant' }),
+    ).rejects.toThrow(/not the Team workspace's assistant/);
+    expect(h.levels).toEqual(['team-assistant:admin']);
   });
 
-  it('a team-level agent is refused for a client before anything is read', async () => {
-    h.audience = 'team';
-    await expect(runClientTurn('owner-1', 'hello', opts)).rejects.toThrow(
-      /only chat with a client-level agent/,
-    );
-    expect(h.levels).toEqual(['may-run:admin', `agent:${CLIENT}`]);
-  });
-});
-
-describe('a client turn gets the client tools only, whatever its groups say (audit L3)', () => {
-  const opts = { loginId: 'login-c', sessionEpoch: 3 };
-  // client-read as the manifest ships it, plus what an admin or an agent
-  // added to the group: a brain-wide read and a recipe wrapping one.
-  const widened = [
-    'client_shared_list',
-    'client_shared_search',
-    'client_shared_open',
-    'my_items_list',
-    'my_item_open',
-    'client_request_create',
-    'page_get',
-    'recipe_read_page',
-    'read_result',
-  ];
-
-  it('page_get and a recipe added to client-read never reach the client turn', async () => {
-    h.audience = 'client';
-    h.groupTools = widened;
-    await runClientTurn('owner-1', 'what is shared with me?', opts);
-    expect(h.loopTools).toEqual([
-      'client_shared_list',
-      'client_shared_search',
-      'client_shared_open',
-      'my_items_list',
-      'my_item_open',
-      'client_request_create',
-      'read_result',
-    ]);
-  });
-
-  it('control: a member turn keeps what its groups grant', async () => {
+  it('a member turn keeps what its groups grant', async () => {
     h.groupTools = ['page_get', 'recipe_read_page'];
     await runTeamTurn('owner-1', 'hello', { loginId: 'login-1' });
     expect(h.loopTools).toEqual(['page_get', 'recipe_read_page']);
+  });
+});
+
+describe('runClientTurn: client chat went in W5c', () => {
+  it('a queued client turn refuses before anything is read or written', async () => {
+    await expect(
+      runClientTurn('owner-1', 'hello', { loginId: 'login-c', sessionEpoch: 3 }),
+    ).rejects.toThrow(/client chat was removed/);
+    expect(h.levels).toEqual([]);
+    expect(h.appended).toBe(0);
   });
 });

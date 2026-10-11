@@ -1,24 +1,24 @@
 /**
  * The images inside a drawing's saved SVG, as a MEMBER may see them (member
- * logins). A drawing at team level may hold an image whose file is above team
- * (an admin screenshot): exportToSvg inlines the image BYTES into the SVG, so
- * serving the snapshot as-is would hand a member a file the member files
- * route refuses. The member SVG keeps an image only when its file passes that
- * route's rule: a file at team level or lower in this brain, or a file this
- * member wrote and an admin accepted, while the brain file still holds the
- * bytes accepted (audit F07). Every other image is taken out. The SVG of the
- * member's OWN accepted drawing as accepted (its snapshot) keeps the images
- * the member wrote whatever happened to them since: the bytes inside it are
- * the ones accepted, and the snapshot's own image refs name them.
+ * logins). A drawing the member reads may hold an image whose file the
+ * member does not read (an admin screenshot): exportToSvg inlines the image
+ * BYTES into the SVG, so serving the snapshot as-is would hand a member a
+ * file the member files route refuses. The member SVG keeps an image only
+ * when its file passes that route's rule: a file of this brain a workspace
+ * of the member reads (asked in the member's own workspace scope, so row
+ * security on the grants decides), or a file this member wrote and an admin
+ * accepted, while the brain file still holds the bytes accepted (audit
+ * F07). Every other image is taken out. The SVG of the member's OWN accepted
+ * drawing as accepted (its snapshot) keeps the images the member wrote
+ * whatever happened to them since: the bytes inside it are the ones
+ * accepted, and the snapshot's own image refs name them.
  *
- * The rule is written in the query (the admin pool proves it): the author
- * half needs the admin pool anyway (member-accepted.ts), and the answer is
- * only a set of ids to KEEP, never an item's content.
+ * The author half reads on the admin pool (member-accepted.ts); the answer
+ * is only a set of ids to KEEP, never an item's content.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { currentSpaceScope, db, draws, LIMITED_LEVELS, nodes, isSystemScope } from '@mantle/db';
+import { currentSpaceScope, db, draws, nodes, isSystemScope, withViewer } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
-import { readAtSql } from './item-level';
 import { acceptedFileReadable, isAuthorOfAcceptedFile } from './member-accepted';
 import { keepSvgImages, svgHasImages } from './scene-svg';
 
@@ -55,19 +55,21 @@ export async function memberVisibleDrawFileIds(
   }
   const visible = new Set<string>();
   if (byNode.size === 0) return visible;
-  const teamLevel = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, anchorId),
-        eq(nodes.type, 'file'),
-        inArray(nodes.id, [...byNode.keys()]),
-        // Its own level or the share of a folder holding it.
-        readAtSql(LIMITED_LEVELS),
+  // The files the member reads: their own workspace scope, row security on
+  // the grants decides (the member files route reads the same way).
+  const readable = await withViewer('team', { login: loginId }, () =>
+    db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, anchorId),
+          eq(nodes.type, 'file'),
+          inArray(nodes.id, [...byNode.keys()]),
+        ),
       ),
-    );
-  const ok = new Set(teamLevel.map((r) => r.id.toLowerCase()));
+  );
+  const ok = new Set(readable.map((r) => r.id.toLowerCase()));
   for (const nodeId of byNode.keys()) {
     if (!ok.has(nodeId) && (await authored(anchorId, loginId, nodeId))) {
       ok.add(nodeId);

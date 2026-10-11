@@ -16,6 +16,8 @@ const at = (n: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, n)).toISOString();
 
 const h = vi.hoisted(() => ({
   calls: [] as Array<{ fn: string; scope: string; args: unknown[] }>,
+  /** What the member's Library holds of the accepted rows (libraryHolds). */
+  holds: new Set<string>(),
 }));
 
 const member = {
@@ -51,9 +53,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...real,
     withSpace: vi.fn(scoped('space')),
-    withTeamDrafts: vi.fn(scoped('team-drafts')),
     withViewer: vi.fn(scoped('team')),
-    withHumanViewer: vi.fn(scoped('human')),
   };
 });
 
@@ -85,10 +85,6 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listWithAdmin: rec('listWithAdmin', () => [
       spaceRow('held1', 5, { reviewState: 'with-admin' }),
     ]),
-    listTeamDrafts: rec('listTeamDrafts', () => ({
-      items: [spaceRow('team1', 40, { sharing: 'team', reviewState: 'submitted' })],
-      total: 1,
-    })),
     listLibrary: rec('listLibrary', () => ({
       items: [
         {
@@ -97,7 +93,6 @@ vi.mock('@mantle/content', async (importOriginal) => {
           title: 'L1',
           icon: null,
           summary: 's',
-          audience: 'team',
           updatedAt: at(30),
         },
         {
@@ -106,7 +101,6 @@ vi.mock('@mantle/content', async (importOriginal) => {
           title: 'L2',
           icon: null,
           summary: null,
-          audience: 'client',
           updatedAt: at(20),
         },
       ],
@@ -131,15 +125,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
       () => new Map([['lib1', { name: 'Pat', acceptedAt: at(1) }]]),
     ),
     acceptedByLogin: rec('acceptedByLogin', () => new Set(['lib1'])),
-    listClientRequests: rec('listClientRequests', () => ({
-      items: [
-        {
-          row: spaceRow('req1', 45, { reviewState: 'submitted', authorLoginId: 'c1' }),
-          author: { name: 'Cleo', acceptedAt: null, role: 'client' },
-        },
-      ],
-      total: 1,
-    })),
+    libraryHolds: rec('libraryHolds', () => h.holds),
   };
 });
 
@@ -150,6 +136,7 @@ const get = async (qs = '') => {
 
 beforeEach(() => {
   h.calls = [];
+  h.holds = new Set();
 });
 
 describe('GET /api/member/items', () => {
@@ -159,18 +146,14 @@ describe('GET /api/member/items', () => {
     const body = await res.json();
     expect(body.items.map((r: { id: string }) => r.id)).toEqual([
       'own1',
-      'req1',
-      'team1',
       'lib1',
       'lib2',
       'acc1',
       'held1',
     ]);
-    expect(body.total).toBe(7);
+    expect(body.total).toBe(5);
     expect(body.items.map((r: { pill: string | null }) => r.pill)).toEqual([
       'private',
-      'submitted',
-      'submitted',
       null,
       null,
       null,
@@ -179,39 +162,26 @@ describe('GET /api/member/items', () => {
     const scopes = Object.fromEntries(
       h.calls.filter((c) => c.fn.startsWith('list')).map((c) => [c.fn, c.scope]),
     );
+    // Team drafts and client requests went with review in W5c.
     expect(scopes).toEqual({
       listMine: 'space',
       listWithAdmin: 'space',
-      listTeamDrafts: 'team-drafts',
       listLibrary: 'team',
       listAccepted: 'admin',
-      // Client requests (C5): the team role with the human flag.
-      listClientRequests: 'human',
     });
-    const { withHumanViewer } = await import('@mantle/db');
-    expect(vi.mocked(withHumanViewer).mock.calls[0]?.[0]).toBe('team');
-    expect(h.calls.find((c) => c.fn === 'listClientRequests')!.args[0]).toMatchObject({
-      kind: 'page',
-      limit: 50,
-      offset: 0,
-    });
-    expect(body.items[1]).toMatchObject({
-      source: 'client-request',
-      pill: 'submitted',
-      audience: null,
-      byMe: false,
-      author: { name: 'Cleo', acceptedAt: null, role: 'client' },
-      space: { id: 'req1', reviewState: 'submitted' },
-    });
+    // No row carries a level since W5c.
+    for (const r of body.items) expect(r).not.toHaveProperty('audience');
     const mine = h.calls.find((c) => c.fn === 'listMine')!;
     expect(mine.args[0]).toBe(SPACE);
     expect(mine.args[1]).toMatchObject({ kind: 'page', limit: 50, offset: 0 });
-    expect(h.calls.find((c) => c.fn === 'listTeamDrafts')!.args[0]).toBe(LOGIN);
     expect(h.calls.find((c) => c.fn === 'listLibrary')!.args[0]).toBe(ANCHOR);
     const acc = h.calls.find((c) => c.fn === 'listAccepted')!;
     expect(acc.args.slice(0, 2)).toEqual([ANCHOR, LOGIN]);
-    // Only what the Library does not list already, merged on updatedAt.
+    // Only what the Library does not list already, merged on updatedAt; so
+    // nothing to ask the member's scope about.
     expect(acc.args[2]).toMatchObject({ order: 'updated', outsideLibrary: true });
+    expect(h.calls.find((c) => c.fn === 'libraryHolds')).toBeUndefined();
+    expect(body.items[3]).toMatchObject({ id: 'acc1', source: 'accepted', byMe: true });
   });
 
   it('gives the Library rows of the page their author and byMe', async () => {
@@ -219,12 +189,7 @@ describe('GET /api/member/items', () => {
     const lib1 = body.items.find((r: { id: string }) => r.id === 'lib1');
     const lib2 = body.items.find((r: { id: string }) => r.id === 'lib2');
     expect(lib1).toMatchObject({ source: 'library', byMe: true, author: { name: 'Pat' } });
-    expect(lib2).toMatchObject({
-      source: 'library',
-      byMe: false,
-      author: null,
-      audience: 'client',
-    });
+    expect(lib2).toMatchObject({ source: 'library', byMe: false, author: null });
     expect(h.calls.find((c) => c.fn === 'acceptedByLogin')!.args).toEqual([
       ANCHOR,
       LOGIN,
@@ -240,7 +205,7 @@ describe('GET /api/member/items', () => {
     h.calls = [];
     await get('?state=submitted');
     const fns = h.calls.filter((c) => c.fn.startsWith('list'));
-    expect(fns.map((c) => c.fn)).toEqual(['listMine', 'listTeamDrafts']);
+    expect(fns.map((c) => c.fn)).toEqual(['listMine']);
     for (const c of fns) expect(c.args[1]).toMatchObject({ reviewStates: ['submitted'] });
 
     h.calls = [];
@@ -254,16 +219,20 @@ describe('GET /api/member/items', () => {
     ]);
   });
 
-  it('the client-requests filter reads client requests only', async () => {
-    const body = await (await get('?state=client-requests')).json();
-    expect(h.calls.filter((c) => c.fn.startsWith('list')).map((c) => c.fn)).toEqual([
-      'listClientRequests',
+  it('by-me: an accepted item the member’s Library holds opens as the Library item (asked in their scope)', async () => {
+    h.holds = new Set(['acc1']);
+    const body = await (await get('?state=by-me')).json();
+    const holds = h.calls.find((c) => c.fn === 'libraryHolds')!;
+    expect(holds.scope).toBe('team');
+    expect(holds.args).toEqual([ANCHOR, ['acc1']]);
+    expect(body.items).toEqual([
+      expect.objectContaining({ id: 'acc1', byMe: true, source: 'library' }),
     ]);
-    expect(body.items.map((r: { id: string }) => r.id)).toEqual(['req1']);
   });
 
-  it('refuses an unknown state and a page past the cap', async () => {
+  it('refuses an unknown state, the removed client-requests filter, and a page past the cap', async () => {
     expect((await get('?state=secret')).status).toBe(400);
+    expect((await get('?state=client-requests')).status).toBe(400);
     expect((await get('?page=101')).status).toBe(400);
     expect(h.calls).toEqual([]);
   });

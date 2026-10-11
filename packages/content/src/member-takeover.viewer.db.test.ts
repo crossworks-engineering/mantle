@@ -239,7 +239,6 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
     const B = spaceOf[adminB]!;
     const M = spaceOf[member]!;
     expect(await as(adminB, () => sp.getMineItem(B, pageId))).toBeNull();
-    expect(await m.withTeamDrafts(() => sp.getTeamDraftItem(pageId))).toBeNull();
     expect(await as(member2, () => sp.getMineRow(spaceOf[member2]!, pageId))).toBeNull();
     // The member: not in their space, but listed as with-admin, title and
     // kind only, and every item route answers `with-admin`.

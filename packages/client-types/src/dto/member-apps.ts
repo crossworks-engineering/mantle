@@ -1,16 +1,12 @@
 /**
  * Apps for members (member logins Phase 4b): what a MEMBER login's client
  * reads from /api/member/apps and /api/member/home, plus the admin's view of
- * member chats (/api/team-admin/member-chats). A member RUNS apps at team
- * level or lower with a green published build; it never creates, edits or
- * shares one. A CLIENT login runs apps at client level only (client logins
+ * member chats (/api/team-admin/member-chats). A member RUNS the brain apps
+ * a workspace of theirs holds, with a green published build (its own apps
+ * are the my-apps routes). A CLIENT login runs apps at client level only (client logins
  * C6, /api/client/apps).
  */
 import type { AppDataAccess, AppTint } from '../app-nav';
-import type { AccessLevel } from './access';
-
-/** The app levels a member may run: team and below (never admin). */
-export type MemberAppLevel = Exclude<AccessLevel, 'admin'>;
 
 /** One launcher card (GET /api/member/apps). */
 export type MemberAppCard = {
@@ -19,13 +15,11 @@ export type MemberAppCard = {
   icon: string | null;
   color: AppTint | null;
   description: string | null;
-  audience: MemberAppLevel;
   updatedAt: string;
-  /** The member only reads this app's data (client logins C6): true for a
-   *  public app, and for an app an admin marked informational. Off, the
-   *  member runs AND writes it (team and client apps). A write to a read-only
-   *  app answers 403 `{ ok: false, error, reason: 'read-only' }`. Absent from
-   *  an older brain: read as `audience !== 'team'`. */
+  /** The member only reads this app's data: no workspace of theirs holds it
+   *  with Write on, or an admin marked it informational. Off, the member
+   *  runs AND writes it. A write to a read-only app answers 403
+   *  `{ ok: false, error, reason: 'read-only' }`. */
   dataReadOnly?: boolean;
   /** The same, as the R and R/W pill shows it (team apps Phase 3). Absent
    *  from an older brain: show no pill. */

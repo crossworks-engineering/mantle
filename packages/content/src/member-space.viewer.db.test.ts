@@ -1,7 +1,7 @@
 /**
  * A member's personal space end to end on a real, migrated Postgres (member
- * logins Phase 2): create, autosave, Save version, share, team drafts,
- * submit (frozen), recall, delete, all through the ordinary content
+ * logins Phase 2): create, autosave, Save version, share, submit (frozen),
+ * recall, delete (team drafts went in W5c), all through the ordinary content
  * functions inside withSpace. Also proves nothing is announced to the
  * extractor (cost-safety: no save may start LLM work).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-space.viewer.db.test.ts
@@ -127,23 +127,17 @@ describe.skipIf(!URL)('member personal space', () => {
     await expect(asB(() => sp.submitItem(spaceB, pageId))).rejects.toMatchObject({
       reason: 'not-found',
     });
-    const drafts = await m.withTeamDrafts(() => sp.listTeamDrafts(loginB, { q: tag }));
-    expect(drafts.items).toEqual([]);
   });
 
-  it('shared with the team: teammates read the saved version, never the draft', async () => {
+  it('a team-shared item stays the author’s: another member never opens it (team drafts went in W5c)', async () => {
     await asA(() => sp.setSharing(spaceA, pageId, 'team'));
     await asA(() => draft.saveDraft(spaceA, pageId, doc('unsaved secret')));
-    const drafts = await m.withTeamDrafts(() => sp.listTeamDrafts(loginB, { q: tag }));
-    expect(drafts.items.map((i) => i.id)).toEqual([pageId]);
-    const item = await m.withTeamDrafts(() => sp.getTeamDraftItem(pageId));
-    expect(item?.body.type).toBe('page');
-    const text = JSON.stringify(item?.body.type === 'page' ? item.body.page : null);
+    expect(await asB(() => sp.getMineItem(spaceB, pageId))).toBeNull();
+    // Its author still has the saved version and the unsaved draft.
+    const own = await asA(() => sp.getMineItem(spaceA, pageId));
+    const text = JSON.stringify(own?.body.type === 'page' ? own.body.page : null);
     expect(text).toContain('version one');
-    expect(text).not.toContain('unsaved secret');
-    // Its author sees it in Mine, not in Team drafts.
-    const own = await m.withTeamDrafts(() => sp.listTeamDrafts(loginA, { q: tag }));
-    expect(own.items).toEqual([]);
+    expect(text).toContain('unsaved secret');
   });
 
   it('submit refuses unsaved edits, then freezes the item', async () => {
@@ -248,17 +242,6 @@ describe.skipIf(!URL)('member personal space', () => {
       sp.listMine(spaceA, { q, reviewStates: ['draft'], sharing: 'team' }),
     );
     expect(ids(teamDrafts)).toEqual([shared.id]);
-
-    // B reads A's shared items as team drafts, narrowed by review state.
-    const bDrafts = await m.withTeamDrafts(() =>
-      sp.listTeamDrafts(loginB, { q, reviewStates: ['draft'] }),
-    );
-    expect(ids(bDrafts)).toEqual([shared.id]);
-    const bSubmitted = await m.withTeamDrafts(() =>
-      sp.listTeamDrafts(loginB, { q, reviewStates: ['submitted'] }),
-    );
-    expect(ids(bSubmitted)).toEqual([sent.id]);
-    expect(bSubmitted.total).toBe(1);
 
     // The brain lists' sorts (an admin's private rows merge into them).
     const order = async (sort: 'edited' | 'newest' | 'oldest' | 'title') =>

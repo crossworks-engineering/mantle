@@ -102,7 +102,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
   const listed = async (reader: 'team' | 'client') =>
     as(reader, async () => {
       const res = await library.listLibrary(brain, { q: label, limit: 200 });
-      return new Map(res.items.map((r) => [r.id, r.audience]));
+      return new Map(res.items.map((r) => [r.id, r]));
     });
   const opens = (reader: 'team' | 'client', id: string) =>
     as(reader, async () => (await library.getLibraryItem(brain, id)) !== null);
@@ -205,12 +205,12 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     expect(by.get(ids.fileInClient)).toEqual([true, true]);
   });
 
-  it('lists folder-held items in a member’s Library, badged Client by their frozen share', async () => {
+  it('lists folder-held items in a member’s Library, with no level badge (W5c)', async () => {
     const got = await listed('team');
-    expect(got.get(ids.adminInTeam)).toBe('team');
-    expect(got.get(ids.publicInTeam)).toBe('team');
-    expect(got.get(ids.adminInClient)).toBe('client');
-    expect(got.get(ids.teamInClient)).toBe('client');
+    for (const id of [ids.adminInTeam, ids.publicInTeam, ids.adminInClient, ids.teamInClient]) {
+      expect(got.has(id), id).toBe(true);
+      expect('audience' in got.get(id)!, id).toBe(false);
+    }
     expect(got.has(ids.adminPlain)).toBe(false);
   });
 
@@ -273,7 +273,9 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     const inTeam = teamApps.find((a) => a.id === ids.appInTeam);
     // Team holds it through its folder, Write on: a member runs it and
     // writes its data.
-    expect(inTeam).toMatchObject({ audience: 'team', dataReadOnly: false });
+    expect(inTeam).toMatchObject({ dataReadOnly: false });
+    // The launcher card carries no level since W5c.
+    expect(inTeam && 'audience' in inTeam).toBe(false);
     expect(teamApps.find((a) => a.id === ids.appInClient)).toBeDefined();
     const run = await as('team', () => memberApps.getMemberRunnableApp(brain, ids.appInTeam));
     expect(run?.writable).toBe(true);

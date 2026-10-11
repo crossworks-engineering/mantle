@@ -1,15 +1,16 @@
 /**
- * A member's ONE list (item-list alignment): their own items, teammates'
- * shared drafts, the Library and what they wrote that an admin accepted
- * above it, newest first, each row wearing a small state pill instead of
- * living behind a source switch.
+ * A member's ONE list (item-list alignment): their own items, the Library
+ * and what they wrote that an admin accepted above it, newest first, each
+ * row wearing a small state pill instead of living behind a source switch.
+ * Teammates' shared drafts and clients' submitted items were sources too;
+ * they went with review in workspaces W5c.
  *
  * The sources cannot be one SQL query: each runs under its own row rules
- * (own space, team drafts, the team level, the admin pool with the author
- * rule written in). So the route asks each source for its newest rows, in
- * its own scope, and `mergeNewestFirst` interleaves them. The State filter
- * never filters a loaded page: `itemsPlan` pushes it down into each source's
- * own query, so paging and `total` stay exact.
+ * (own space, the member's workspaces, the admin pool with the author rule
+ * written in). So the route asks each source for its newest rows, in its own
+ * scope, and `mergeNewestFirst` interleaves them. The State filter never
+ * filters a loaded page: `itemsPlan` pushes it down into each source's own
+ * query, so paging and `total` stay exact.
  *
  * Nothing here reads the database; the route supplies the sources.
  */
@@ -23,12 +24,12 @@ import type {
   MemberItemAuthor,
   MemberSpaceItemRow,
 } from '@mantle/client-types';
-import type { ReviewState, SpaceSharing, ViewerLevel } from '@mantle/db';
+import type { ReviewState, SpaceSharing } from '@mantle/db';
 import type { AcceptedRow } from './member-accepted';
-import type { LibraryAudience, LibraryRow } from './member-library';
+import type { LibraryRow } from './member-library';
 
-/** The pill an own or teammate's row wears: where it stands in review, or,
- *  while it is a draft, who can see it. */
+/** The pill an own row wears: where it stands in review, or, while it is a
+ *  draft, who can see it. */
 export function pillOf(
   row: Pick<MemberSpaceItemRow, 'sharing' | 'reviewState'>,
 ): MemberItemPill | null {
@@ -53,58 +54,40 @@ export function pillOf(
 export type ItemsPlan = {
   own: { reviewStates?: ReviewState[]; sharing?: SpaceSharing } | null;
   withAdmin: boolean;
-  team: { reviewStates?: ReviewState[] } | null;
   library: boolean;
   /** `above-library`: only accepted items the Library does not list (they
    *  are brain rows there already); `all`: every accepted item (`by-me`). */
   accepted: 'above-library' | 'all' | null;
-  /** Clients' submitted items (client logins C5, decision 5 B). */
-  clientRequests: boolean;
 };
 
 const NONE: ItemsPlan = {
   own: null,
   withAdmin: false,
-  team: null,
   library: false,
   accepted: null,
-  clientRequests: false,
 };
 
 export function itemsPlan(filter: MemberItemFilter): ItemsPlan {
   switch (filter) {
     case 'all':
-      return {
-        own: {},
-        withAdmin: true,
-        team: {},
-        library: true,
-        accepted: 'above-library',
-        clientRequests: true,
-      };
+      return { own: {}, withAdmin: true, library: true, accepted: 'above-library' };
     case 'private':
       return { ...NONE, own: { reviewStates: ['draft'], sharing: 'private' } };
     case 'draft':
-      return {
-        ...NONE,
-        own: { reviewStates: ['draft'], sharing: 'team' },
-        team: { reviewStates: ['draft'] },
-      };
+      return { ...NONE, own: { reviewStates: ['draft'], sharing: 'team' } };
     case 'submitted':
     case 'returned':
-      return { ...NONE, own: { reviewStates: [filter] }, team: { reviewStates: [filter] } };
+      return { ...NONE, own: { reviewStates: [filter] } };
     case 'with-admin':
       return { ...NONE, withAdmin: true };
     case 'brain':
       return { ...NONE, library: true, accepted: 'above-library' };
     case 'by-me':
       return { ...NONE, accepted: 'all' };
-    case 'client-requests':
-      return { ...NONE, clientRequests: true };
   }
 }
 
-export function spaceItemRow(row: MemberSpaceItemRow, source: 'own' | 'team'): MemberItemRow {
+export function spaceItemRow(row: MemberSpaceItemRow): MemberItemRow {
   return {
     id: row.id,
     type: row.type,
@@ -112,33 +95,9 @@ export function spaceItemRow(row: MemberSpaceItemRow, source: 'own' | 'team'): M
     icon: row.icon,
     summary: null,
     updatedAt: row.updatedAt,
-    source,
+    source: 'own',
     pill: pillOf(row),
-    audience: null,
     author: null,
-    byMe: false,
-    space: row,
-  };
-}
-
-/** A client's submitted item (client logins C5, decision 5 B): read only,
- *  wearing `submitted`, its author the client. No level: it is not a brain
- *  item. */
-export function clientRequestItemRow(
-  row: MemberSpaceItemRow,
-  author: MemberItemAuthor,
-): MemberItemRow {
-  return {
-    id: row.id,
-    type: row.type,
-    title: row.title,
-    icon: row.icon,
-    summary: null,
-    updatedAt: row.updatedAt,
-    source: 'client-request',
-    pill: 'submitted',
-    audience: null,
-    author,
     byMe: false,
     space: row,
   };
@@ -157,23 +116,17 @@ export function libraryItemRow(
     updatedAt: row.updatedAt,
     source: 'library',
     pill: null,
-    audience: row.audience,
     author: extra.author ?? null,
     byMe: extra.byMe ?? false,
     space: null,
   };
 }
 
-/** An accepted row. At a level the reader's Library holds it opens as the
- *  Library item (the brain's version, as its row in the whole list does);
- *  above it, as the version accepted. */
-export function acceptedItemRow(
-  row: AcceptedRow,
-  libraryLevels: readonly LibraryAudience[],
-): MemberItemRow {
-  const levels = libraryLevels as readonly ViewerLevel[];
-  const inLibrary =
-    levels.includes(row.audience) || (!!row.inherited && levels.includes(row.inherited));
+/** An accepted row. When the member's Library holds it (`inLibrary`: a
+ *  workspace of theirs reads it, which the route asks in their scope) it
+ *  opens as the Library item (the brain's version, as its row in the whole
+ *  list does); else as the version accepted. */
+export function acceptedItemRow(row: AcceptedRow, inLibrary: boolean): MemberItemRow {
   return {
     id: row.id,
     type: row.type,
@@ -183,7 +136,6 @@ export function acceptedItemRow(
     updatedAt: row.updatedAt,
     source: inLibrary ? 'library' : 'accepted',
     pill: null,
-    audience: row.audience,
     author: null,
     byMe: true,
     space: null,
@@ -195,8 +147,7 @@ export function acceptedItemRow(
 /** Which sources a client's State filter reads: their own items (pills
  *  `private`, `submitted`, `returned`), the ones a reviewer took over
  *  (`with-admin`), and what they wrote that an admin accepted. There is no
- *  team, Library or client-request source: a client reads none of those
- *  here. */
+ *  Library source: a client reads none of it here. */
 export type ClientItemsPlan = Pick<ItemsPlan, 'own' | 'withAdmin'> & { accepted: boolean };
 
 const CLIENT_NONE: ClientItemsPlan = { own: null, withAdmin: false, accepted: false };

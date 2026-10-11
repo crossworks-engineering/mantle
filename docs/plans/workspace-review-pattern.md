@@ -132,7 +132,7 @@ Jason decided (2026-10-09, option 1): admins see what the team shares.
 This widens admin reads to items active members shared with the team; see
 docs/access-levels.md section 7c.
 
-Brain (mantle), `packages/content/src/member-items-shared.ts`:
+Brain (mantle), `member-items-shared.ts` (removed in W5c with team drafts):
 
 - One rule in SQL picks what an admin may reach: an item kind in the
   space of an active member (role member, not deactivated), shared with

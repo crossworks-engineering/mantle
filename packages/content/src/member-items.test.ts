@@ -11,7 +11,6 @@ import {
   clientAcceptedItemRow,
   clientItemsPlan,
   clientOwnItemRow,
-  clientRequestItemRow,
   itemsPlan,
   listSortCompare,
   mergeNewestFirst,
@@ -61,55 +60,30 @@ describe('pillOf', () => {
   });
 });
 
-describe('clientRequestItemRow', () => {
-  it('a client request is read only, submitted, by the client, with no level', () => {
-    const row = space({ id: 'r', reviewState: 'submitted', authorLoginId: 'c' });
-    const author = { name: 'Cleo', acceptedAt: null, role: 'client' as const };
-    expect(clientRequestItemRow(row, author)).toEqual({
-      id: 'r',
-      type: 'page',
-      title: 'X',
-      icon: null,
-      summary: null,
-      updatedAt: at(0),
-      source: 'client-request',
-      pill: 'submitted',
-      audience: null,
-      author,
-      byMe: false,
-      space: row,
-    });
-  });
-});
-
 describe('itemsPlan', () => {
   it('reads every source for all, and only the Library side for brain', () => {
     expect(itemsPlan('all')).toEqual({
       own: {},
       withAdmin: true,
-      team: {},
       library: true,
       accepted: 'above-library',
-      clientRequests: true,
     });
     expect(itemsPlan('brain')).toMatchObject({
       own: null,
-      team: null,
       withAdmin: false,
       library: true,
       accepted: 'above-library',
-      clientRequests: false,
     });
     expect(itemsPlan('by-me')).toMatchObject({ library: false, accepted: 'all', own: null });
-    // Client requests (C5): their own filter reads nothing else.
-    expect(itemsPlan('client-requests')).toEqual({
-      own: null,
-      withAdmin: false,
-      team: null,
-      library: false,
-      accepted: null,
-      clientRequests: true,
-    });
+  });
+
+  it('has no team-drafts or client-requests source any more (W5c)', () => {
+    for (const filter of MEMBER_ITEM_FILTERS) {
+      const plan = itemsPlan(filter) as Record<string, unknown>;
+      expect(plan, filter).not.toHaveProperty('team');
+      expect(plan, filter).not.toHaveProperty('clientRequests');
+    }
+    expect(MEMBER_ITEM_FILTERS as readonly string[]).not.toContain('client-requests');
   });
 
   it('narrows each space source to exactly the rows that wear the pill', () => {
@@ -133,10 +107,6 @@ describe('itemsPlan', () => {
         const pill = pillOf(r);
         const wanted = filter === 'all' || filter === pill;
         expect(keeps(plan.own, r), `${filter} own ${r.sharing}/${r.reviewState}`).toBe(wanted);
-        // A teammate's row is only ever team-shared.
-        if (r.sharing === 'team') {
-          expect(keeps(plan.team, r), `${filter} team ${r.reviewState}`).toBe(wanted);
-        }
       }
     }
   });
@@ -197,33 +167,28 @@ describe('clientItemsPlan (My requests, client logins C5)', () => {
 });
 
 describe('row mappers', () => {
-  it('keeps the space row for own and team rows', () => {
-    const r = spaceItemRow(space({ id: 's1', sharing: 'team' }), 'team');
-    expect(r).toMatchObject({ id: 's1', source: 'team', pill: 'draft', space: { id: 's1' } });
+  it('keeps the space row for own rows, with no level', () => {
+    const r = spaceItemRow(space({ id: 's1', sharing: 'team' }));
+    expect(r).toMatchObject({ id: 's1', source: 'own', pill: 'draft', space: { id: 's1' } });
+    expect(r).not.toHaveProperty('audience');
   });
 
-  it('opens an accepted item as the Library item when the Library lists it', () => {
+  it('opens an accepted item as the Library item when the Library holds it (the grants say)', () => {
     const row = {
       id: 'a',
       type: 'note' as const,
       title: 'A',
       icon: null,
+      audience: 'admin' as const,
       inherited: null,
       acceptedAt: null,
       updatedAt: at(1),
     };
-    expect(acceptedItemRow({ ...row, audience: 'team' }, ['team', 'client'])).toMatchObject({
-      source: 'library',
-      byMe: true,
-      pill: null,
-    });
-    expect(acceptedItemRow({ ...row, audience: 'admin' }, ['team', 'client']).source).toBe(
-      'accepted',
-    );
-    // An admin item in a folder shared with the team is in the Library.
-    expect(
-      acceptedItemRow({ ...row, audience: 'admin', inherited: 'team' }, ['team', 'client']).source,
-    ).toBe('library');
+    // Whatever level the row still carries, `inLibrary` (asked in the
+    // member's workspace scope) decides.
+    expect(acceptedItemRow(row, true)).toMatchObject({ source: 'library', byMe: true, pill: null });
+    expect(acceptedItemRow(row, false).source).toBe('accepted');
+    expect(acceptedItemRow(row, true)).not.toHaveProperty('audience');
   });
 });
 

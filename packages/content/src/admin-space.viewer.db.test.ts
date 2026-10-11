@@ -328,27 +328,16 @@ describe.skipIf(!URL)('admin private items', () => {
   });
 
   it('a member never reads an admin’s item, even with a team row (0179)', async () => {
-    // bNoteId still says sharing 'team' (forced above). The member's own
-    // shared note is the contrast.
-    const M = spaceOf[member]!;
-    await as(member, () => sp.setSharing(M, mNoteId, 'team'));
-    // Read from another member's side: a second member login.
+    // bNoteId still says sharing 'team' (forced above). Team drafts went in
+    // W5c: another member reads in their workspace scope, which never holds
+    // an admin's private item.
     const other = randomUUID();
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role)
       values (${other}, ${`${tag}-o@example.invalid`}, 'x', 'member')`);
     try {
-      const list = await m.withTeamDrafts(() => sp.listTeamDrafts(other, { q: tag }));
-      expect(list.items.map((i) => i.id)).toContain(mNoteId);
-      expect(list.items.map((i) => i.id)).not.toContain(bNoteId);
-      expect(await m.withTeamDrafts(() => sp.getTeamDraftItem(bNoteId))).toBeNull();
-      expect(await m.withTeamDrafts(() => sp.getTeamDraftRow(bNoteId))).toBeNull();
-      // Not even the state row or the node, read straight.
-      const si = await m.withTeamDrafts(() =>
-        m.db.execute(sqlTag`select node_id from space_items where node_id = ${bNoteId}`),
-      );
-      expect((si as unknown as unknown[]).length).toBe(0);
-      const node = await m.withTeamDrafts(() =>
+      // Not the node, read straight.
+      const node = await m.withViewer('team', { login: other }, () =>
         m.db.execute(sqlTag`select id from nodes where id = ${bNoteId}`),
       );
       expect((node as unknown as unknown[]).length).toBe(0);

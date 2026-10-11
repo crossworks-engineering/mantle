@@ -1,10 +1,10 @@
 /**
  * The member API's wire shapes (member logins, Phase 1): what a MEMBER login's
- * client reads from /api/member/*. A member reads team-level items only (the
- * brain enforces it with row security) and chats with the team-level agent in
- * its own thread.
+ * client reads from /api/member/*. A member reads what its workspaces hold
+ * (the brain enforces it with row security) and chats with the Team
+ * workspace's assistant in its own thread.
  */
-import type { AccessLevel, MemberItemAuthor } from './access';
+import type { MemberItemAuthor } from './access';
 import type { MemberItemKind } from '../member-kinds';
 import type { TreeKind } from '../tree';
 export type { MemberItemFilter } from '../member-kinds';
@@ -45,9 +45,6 @@ export type MemberLibraryRow = {
   title: string;
   icon: string | null;
   summary: string | null;
-  /** A member's Library holds team and client items (client logins,
-   *  decision 6): 'client' = a client login reads it too (the Client badge). */
-  audience: 'team' | 'client';
   updatedAt: string;
   /** A member wrote it and an admin accepted it (the member-authored badge).
    *  Absent from brains before 0.232.285. */
@@ -84,7 +81,8 @@ export type MemberChatMessage = {
   createdAt: string;
 };
 
-/** GET /api/member/chat. `agent` null = chat not open yet (no team-level agent). */
+/** GET /api/member/chat. `agent` null = chat not open yet (the Team workspace
+ *  has no assistant). */
 export type MemberChatThread = {
   agent: { slug: string; name: string } | null;
   messages: MemberChatMessage[];
@@ -103,7 +101,7 @@ export type MemberReviewState = 'draft' | 'submitted' | 'returned' | 'accepted' 
  *  opening it answers 409 `with-admin`). */
 export type MemberSpaceItemState = MemberReviewState | 'with-admin';
 
-/** One item of a personal space: GET /api/member/space[/team] rows. */
+/** One item of a personal space: GET /api/member/space rows. */
 export type MemberSpaceItemRow = {
   id: string;
   type: MemberItemKind;
@@ -113,7 +111,7 @@ export type MemberSpaceItemRow = {
   reviewState: MemberSpaceItemState;
   submittedAt: string | null;
   returnedNote: string | null;
-  /** The login that wrote it (team drafts show whose it is). */
+  /** The login that wrote it. */
   authorLoginId: string | null;
   /** Brains from the item-list alignment release on. */
   createdAt?: string;
@@ -121,7 +119,7 @@ export type MemberSpaceItemRow = {
 };
 
 /**
- * GET /api/member/space?kind=&q=&review=&page= (and /space/team). On the
+ * GET /api/member/space?kind=&q=&review=&page=. On the
  * member's own list, page 1 also carries the member's items an admin has
  * taken over (reviewState `with-admin`, before the own rows; `total` counts
  * them), unless `review=` names states without `with-admin`.
@@ -216,12 +214,12 @@ export type MemberSpaceItemBody<TDoc = unknown, TTable = unknown> =
       };
     }
   | { type: 'note'; note: { content: string; title: string } }
-  /** Null for a teammate: their drawing shows from its saved SVG route. */
+  /** Null when only the saved SVG route shows the drawing. */
   | { type: 'draw'; draw: { scene: TDoc; draft: TDoc | null; draftRev?: number } | null }
   | { type: 'table'; table: TTable }
   | { type: 'file'; file: MemberSpaceFile };
 
-/** GET /api/member/space/:id (and the team read): the row and its body. */
+/** GET /api/member/space/:id: the row and its body. */
 export type MemberSpaceItem<TDoc = unknown, TTable = unknown> = {
   row: MemberSpaceItemRow;
   body: MemberSpaceItemBody<TDoc, TTable>;
@@ -229,18 +227,14 @@ export type MemberSpaceItem<TDoc = unknown, TTable = unknown> = {
 
 // ── Accepted items (member logins Phase 4, plan 6.2) ────────────────────
 
-/** An item this member wrote and an admin accepted into the brain. */
+/** An item this member wrote and an admin accepted into the brain. No
+ *  level (workspaces W5c): whether the member's Library holds it too is
+ *  its row in GET /api/member/items (`source` 'library'). */
 export type MemberAcceptedRow = {
   id: string;
   type: MemberItemKind;
   title: string;
   icon: string | null;
-  /** The level the admin chose: at team or lower it is in the Library too. */
-  audience: AccessLevel;
-  /** The share it takes from a folder holding it: in the Library at that
-   *  level too, whatever `audience` says. Absent from brains before folder
-   *  sharing. */
-  inherited?: 'team' | 'client' | null;
   acceptedAt: string | null;
   updatedAt: string;
 };
@@ -255,7 +249,7 @@ export type MemberAcceptedPage = {
 
 /** GET /api/member/accepted/:id -> { item }: the version ACCEPTED (the
  *  snapshot taken at Accept, brains from the take-over release; never the
- *  brain's current version), whatever its level. A drawing shows from
+ *  brain's current version), whoever reads it now. A drawing shows from
  *  /api/member/draws/:id/svg, a file's bytes from /api/member/files/:id.
  *  `changedByAdmin: true`: an admin changed the file (or a drawing with no
  *  saved picture) since, so its bytes are not served any more; the metadata
@@ -276,13 +270,11 @@ export type MemberAcceptedItem =
 // ── One list of everything a member can see (item-list alignment) ───────
 
 /** Where a row of the one list comes from; it picks the item view that
- *  opens it: `own` the member's editor, `team` a teammate's saved draft,
- *  `library` the brain item, `accepted` the version this member wrote and an
- *  admin accepted at a level above the Library's (admin or public),
- *  `client-request` a client's SUBMITTED item (client logins C5, decision
- *  5 B), read only from /api/member/client-requests/:id; its `space` row
- *  carries the review state, its `author` the client (role `client`). */
-export type MemberItemSource = 'own' | 'team' | 'library' | 'accepted' | 'client-request';
+ *  opens it: `own` the member's editor, `library` the brain item, `accepted`
+ *  the version this member wrote and an admin accepted, which the member's
+ *  Library does not hold. (`team` and `client-request` rows went with review
+ *  in workspaces W5c.) */
+export type MemberItemSource = 'own' | 'library' | 'accepted';
 
 /** The small state pill a row wears beside its actions. Brain items (the
  *  Library and accepted rows) wear none. */
@@ -298,29 +290,19 @@ export type MemberItemRow = {
   updatedAt: string;
   source: MemberItemSource;
   pill: MemberItemPill | null;
-  /** The brain item's level (library and accepted rows); null on a draft. */
-  audience: AccessLevel | null;
   /** A brain item a member wrote and an admin accepted: whose it is. */
   author: MemberItemAuthor | null;
   /** This member wrote it and an admin accepted it. */
   byMe: boolean;
-  /** The personal-space row (own and team rows): sharing, review state, the
+  /** The personal-space row (own rows): sharing, review state, the
    *  returned note, for the item view and the detail header. */
   space: MemberSpaceItemRow | null;
 };
 
-/** GET /api/member/client-requests/:id (client logins C5, decision 5 B): a
- *  client's SUBMITTED item, read only, with its author (the client). File
- *  bytes: /api/member/client-requests/:id/bytes. */
-export type MemberClientRequestItem<TDoc = unknown, TTable = unknown> = MemberSpaceItem<
-  TDoc,
-  TTable
-> & { author: MemberItemAuthor };
-
 /**
  * GET /api/member/items?kind=&q=&state=&page= (brains from the item-list
- * alignment release): the member's own items, teammates' shared drafts, the
- * Library and their accepted items above it, in ONE list, newest first.
+ * alignment release): the member's own items, the Library and their accepted
+ * items above it, in ONE list, newest first.
  * `state` is a MemberItemFilter (default `all`). Absent on older brains: the
  * client then falls back to the four source lists.
  */

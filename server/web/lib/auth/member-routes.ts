@@ -12,11 +12,11 @@
 export const MEMBER_ROUTES: readonly string[] = [
   // Who am I + the brain's brand (Phase 1).
   'GET /api/member/shell',
-  // The Library: team-level items, read at the team level (Phase 1).
+  // The Library: the items the member's workspaces hold (Phase 1).
   'GET /api/member/library',
   'GET /api/member/library/:id',
-  // The Library as a read-only folder tree (folder sharing): items read at
-  // the team level, folders shown only on the way to them.
+  // The Library as a read-only folder tree (folder sharing): items the
+  // member's workspaces hold, folders shown only on the way to them.
   'GET /api/member/tree/:kind',
   'GET /api/member/tree/:kind/search',
   // The member's own folders in that tree and filing its own drafts (folder
@@ -27,7 +27,7 @@ export const MEMBER_ROUTES: readonly string[] = [
   'POST /api/member/tree/:kind/move',
   'GET /api/member/files/:id',
   'GET /api/member/draws/:id/svg',
-  // Chat with the team-level agent, the login's own thread (Phase 1).
+  // Chat with the Team workspace's assistant, the login's own thread.
   'GET /api/member/chat',
   'POST /api/member/chat',
   // Its own unread count and read cursor (the phone app's badge, mobile_roles_push).
@@ -48,6 +48,8 @@ export const MEMBER_ROUTES: readonly string[] = [
   'DELETE /api/member/space/:id',
   'PUT /api/member/space/:id/draft',
   'POST /api/member/space/:id/save',
+  // Share, submit and recall: removed in W5c, 410 gone (lib/gone.ts). Kept
+  // here so a member's old app reaches the 410.
   'POST /api/member/space/:id/share',
   'POST /api/member/space/:id/submit',
   'POST /api/member/space/:id/recall',
@@ -56,7 +58,7 @@ export const MEMBER_ROUTES: readonly string[] = [
   'GET /api/member/space/:id/bytes',
   // Live changes to own and team-shared personal items (SSE).
   'GET /api/member/realtime',
-  // Teammates' team-shared items (Phase 2): team role, human flag on.
+  // Teammates' team-shared items (Phase 2): removed in W5c, 410 gone.
   'GET /api/member/team-drafts',
   'GET /api/member/team-drafts/:id',
   'GET /api/member/team-drafts/:id/bytes',
@@ -68,9 +70,9 @@ export const MEMBER_ROUTES: readonly string[] = [
   'POST /api/member/apps/:id/tool-broker',
   'POST /api/member/apps/:id/db-broker',
   // Apps members build (team apps Phase 3): their own and the team's, to
-  // share, submit, recall and read the history of; their own trash and
-  // their own snapshots to delete (access matrix N6). Building is the
-  // my_app_* tools on their own MCP.
+  // share and read the history of; their own trash and their own snapshots
+  // to delete (access matrix N6). Building is the my_app_* tools on their
+  // own MCP. Submit and recall: removed in W5c, 410 gone.
   'GET /api/member/my-apps',
   'GET /api/member/my-apps/deleted',
   'POST /api/member/my-apps/:id/share',
@@ -90,8 +92,8 @@ export const MEMBER_ROUTES: readonly string[] = [
   // Everything above in ONE list (item-list alignment): each source read
   // under its own rules, exactly as its own route reads it (member-items.ts).
   'GET /api/member/items',
-  // Clients' submitted items (client logins C5, decision 5 B): read only, on
-  // the team role with the human flag on (client-requests.ts).
+  // Clients' submitted items (client logins C5, decision 5 B): removed in
+  // W5c, 410 gone.
   'GET /api/member/client-requests',
   'GET /api/member/client-requests/:id',
   'GET /api/member/client-requests/:id/bytes',

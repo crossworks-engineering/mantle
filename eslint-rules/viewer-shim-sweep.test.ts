@@ -10,9 +10,10 @@ import { isSwept } from './level-reads.mjs';
  * withViewer says whom it acts for, and no product code reaches a level
  * role any other way. withViewer builds a WORKSPACE scope from that (a
  * login's workspaces, an assistant's workspace, a link's served list): the
- * old level roles serve only personal spaces (until W6b) and
- * withHumanViewer (the review flows, until W5c), both inside
- * packages/db/src/client.ts. The runtime half (what each scope reads) is
+ * old level roles serve only personal spaces (until W6b), inside
+ * packages/db/src/client.ts. withHumanViewer and withTeamDrafts, the last
+ * level-role path (the review flows), went in W5c: nothing may call them.
+ * The runtime half (what each scope reads) is
  * packages/db/src/viewer-shim.db.test.ts.
  *
  * A guarded function is found however it is reached: by its own name, on a
@@ -40,39 +41,14 @@ const CLIENT_ONLY = ['withScope', 'runInViewerScope'] as const;
 const LEVEL_ENTRIES = ['runInTxScope', 'getViewerDb', 'runInLevelRoleForTest'] as const;
 
 /**
- * withHumanViewer is the one level-role path left (the review flows, until
- * W5c): its callers, and those of its team wrapper withTeamDrafts, are
- * exactly these. Each reads team drafts or client requests for a login's
- * own request, never for an agent. A new caller fails here: it reads in a
- * workspace scope (withViewer) instead.
+ * The human level-role path (team drafts, client requests) went with review
+ * in workspaces W5c: no caller is left, and client.ts defines neither any
+ * more. A call anywhere fails here: a member reads in a workspace scope
+ * (withViewer) instead.
  */
-const HUMAN_VIEWER_CALLERS: Record<string, readonly string[]> = {
-  withHumanViewer: [
-    CLIENT, // withTeamDrafts
-    'server/web/app/api/member/client-requests/route.ts',
-    'server/web/app/api/member/client-requests/[id]/route.ts',
-    'server/web/app/api/member/client-requests/[id]/bytes/route.ts',
-    'server/web/app/api/member/items/route.ts',
-  ],
-  withTeamDrafts: [
-    'server/web/app/api/member/team-drafts/route.ts',
-    'server/web/app/api/member/team-drafts/[id]/route.ts',
-    'server/web/app/api/member/team-drafts/[id]/bytes/route.ts',
-    'server/web/app/api/member/draws/[id]/svg/route.ts',
-    'server/web/app/api/member/items/route.ts',
-    // The member's tree (teammates' team drafts next to their own) and the
-    // admin's list of team-shared member items: the same team drafts reads.
-    'packages/content/src/tree/member-tree.ts',
-    'packages/content/src/member-items-shared.ts',
-  ],
-};
+const GONE_SCOPES = ['withHumanViewer', 'withTeamDrafts'] as const;
 
-const GUARDED = [
-  'withViewer',
-  ...CLIENT_ONLY,
-  ...LEVEL_ENTRIES,
-  ...Object.keys(HUMAN_VIEWER_CALLERS),
-] as const;
+const GUARDED = ['withViewer', ...CLIENT_ONLY, ...LEVEL_ENTRIES, ...GONE_SCOPES] as const;
 
 function sweptFiles(): string[] {
   const out = execFileSync(
@@ -228,8 +204,6 @@ function problems(f: string, raw: string, keys: readonly string[]): string[] {
         for (const c of found) {
           if (!actsFor.test(c)) bad.push(`${f}: ${c.slice(0, 80).replace(/\s+/g, ' ')}`);
         }
-      } else if (name in HUMAN_VIEWER_CALLERS) {
-        if (!HUMAN_VIEWER_CALLERS[name]!.includes(f)) bad.push(`${f}: ${name}`);
       } else {
         bad.push(`${f}: ${name}`);
       }
@@ -261,18 +235,13 @@ describe('the withViewer shim sweep (R6)', () => {
     expect(all.filter((p) => names.some((n) => p.endsWith(`: ${n}`)))).toEqual([]);
   });
 
-  it('withHumanViewer and withTeamDrafts are called by the review flows only', () => {
-    const names = Object.keys(HUMAN_VIEWER_CALLERS);
-    expect(all.filter((p) => names.some((n) => p.endsWith(`: ${n}`)))).toEqual([]);
-    // Each listed caller still calls it (a stale entry would let a new file
-    // take its place unnoticed).
-    for (const [name, files] of Object.entries(HUMAN_VIEWER_CALLERS)) {
-      for (const f of files) {
-        const text = blanked(code(load(f) ?? ''));
-        expect(
-          localNames(code(load(f) ?? ''), name).some((l) => calls(text, l).length),
-          `${f} calls ${name}`,
-        ).toBe(true);
+  it('withHumanViewer and withTeamDrafts are gone: no caller is left (W5c)', () => {
+    expect(all.filter((p) => GONE_SCOPES.some((n) => p.endsWith(`: ${n}`)))).toEqual([]);
+    // Nor are they defined or exported where the scopes live.
+    for (const f of HOME) {
+      const text = blanked(code(load(f)!));
+      for (const name of GONE_SCOPES) {
+        expect(new RegExp(`\\b${name}\\b`).test(text), `${f} names ${name}`).toBe(false);
       }
     }
   });
@@ -285,22 +254,15 @@ describe('the withViewer shim sweep (R6)', () => {
     expect(all).toEqual([]);
   });
 
-  it('in client.ts a level pool is opened only by getDb, withSpace and withHumanViewer', () => {
+  it('in client.ts a level pool is opened only by getDb and withSpace', () => {
     const text = blanked(code(load(CLIENT)!));
     const levelPools = calls(text, 'getViewerDb').filter(
       (c) => !/getViewerDb\('(user|space)'\)/.test(c),
     );
-    // getDb (a level scope already entered by the two paths below) and
-    // withHumanViewer's own transaction.
-    expect(levelPools.map((c) => c.replace(/\s+/g, ' '))).toEqual([
-      'getViewerDb(level)',
-      'getViewerDb(effective)',
-    ]);
+    // getDb (a level scope already entered by withSpace below).
+    expect(levelPools.map((c) => c.replace(/\s+/g, ' '))).toEqual(['getViewerDb(level)']);
     const entries = calls(text, 'runInTxScope').map((c) => c.replace(/\s+/g, ' '));
-    expect(entries).toEqual([
-      'runInTxScope({ level, space: { ...scope }, tx, hooks }, fn)',
-      'runInTxScope({ level: effective, tx }, fn)',
-    ]);
+    expect(entries).toEqual(['runInTxScope({ level, space: { ...scope }, tx, hooks }, fn)']);
   });
 
   it('in viewer.ts only the test runner enters a bare level scope', () => {
@@ -381,13 +343,15 @@ describe('the sweep itself (fixtures)', () => {
     ).toEqual([]);
   });
 
-  it('allows withHumanViewer and withTeamDrafts only in the listed review flows', () => {
+  it('catches withHumanViewer and withTeamDrafts anywhere, the old review routes too', () => {
     const human = `import { withHumanViewer as hv } from '@mantle/db'; hv('team', fn);`;
     expect(run(human)).toEqual([`${F}: withHumanViewer`]);
-    expect(run(human, 'server/web/app/api/member/client-requests/route.ts')).toEqual([]);
+    const old = 'server/web/app/api/member/client-requests/route.ts';
+    expect(run(human, old)).toEqual([`${old}: withHumanViewer`]);
     const drafts = `import * as db from '@mantle/db'; db.withTeamDrafts(fn);`;
     expect(run(drafts)).toEqual([`${F}: withTeamDrafts`]);
-    expect(run(drafts, 'server/web/app/api/member/team-drafts/route.ts')).toEqual([]);
+    const tree = 'packages/content/src/tree/member-tree.ts';
+    expect(run(drafts, tree)).toEqual([`${tree}: withTeamDrafts`]);
   });
 
   it('ignores names in comments and double-quoted strings, and declarations', () => {

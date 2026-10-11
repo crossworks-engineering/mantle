@@ -198,6 +198,7 @@ export {
   type UnshareItemResult,
 } from './access';
 export { teamReadsItem } from './team-grant';
+export { teamAssistant, type TeamAssistant } from './team-assistant';
 // What an item embeds (W5b2: an embed never changes who reads anything).
 // LoweredItem is a deprecated type: callers go in the writers/links helpers.
 export { EMBEDDING_KINDS, drawPlacedFileIds, type LoweredItem } from './embed-closure';
@@ -207,8 +208,7 @@ export {
   isLibraryKind,
   listLibrary,
   libraryCounts,
-  libraryLevelsOf,
-  type LibraryAudience,
+  libraryHolds,
   type LibraryItem,
   type LibraryKind,
   type LibraryRow,
@@ -225,11 +225,8 @@ export {
   isWithAdmin,
   listWithAdmin,
   withAdminError,
-  getTeamDraftDrawSvg,
-  getTeamDraftItem,
   isSpaceItemKind,
   listMine,
-  listTeamDrafts,
   recallItem,
   setSharing,
   submitItem,
@@ -238,10 +235,8 @@ export {
   saveMinePage,
   saveMineDraft,
   saveMineDraw,
-  getTeamDraftRow,
   disallowedPageRefs,
   disallowedRefs,
-  openTeamDraftFile,
   type CreateSpaceItemInput,
   type ListSpaceOpts,
   type SpaceListSort,
@@ -296,16 +291,6 @@ export {
   type ReviewReason,
 } from './member-review';
 export {
-  SHARED_ITEMS_MAX,
-  adminUnshareMemberItem,
-  getMemberItemShared,
-  listMemberItemsShared,
-  memberDrawSvgShared,
-  openMemberFileShared,
-  type SharedItemAuthor,
-  type SharedMemberItem,
-} from './member-items-shared';
-export {
   acceptedAuthors,
   acceptedByLogin,
   acceptedDrawSnapshot,
@@ -327,7 +312,6 @@ export {
   clientAcceptedItemRow,
   clientItemsPlan,
   clientOwnItemRow,
-  clientRequestItemRow,
   itemsPlan,
   libraryItemRow,
   mergeNewestFirst,
@@ -428,15 +412,6 @@ export {
   type ChatImageKind,
   type ChatImageReader,
 } from './chat-images';
-// Client logins (C5): clients' submitted items for members (decision 5 B),
-// and the client thread on client-level items (decision 8).
-export {
-  getClientRequestItem,
-  listClientRequests,
-  openClientRequestFile,
-  type ClientRequestRow,
-  type ListClientRequestsOpts,
-} from './client-requests';
 export {
   LOGIN_NOTICE_CHANNEL,
   LOGIN_NOTICE_FRESH_MS,

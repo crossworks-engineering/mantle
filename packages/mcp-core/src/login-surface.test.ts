@@ -111,14 +111,13 @@ describe('member and client tool filter', () => {
   it('write off: read-only builtins only', () => {
     expect(loginMayHaveTool(row('note_list'), false)).toBe(true);
     expect(loginMayHaveTool(row('note_create'), false)).toBe(false);
-    expect(loginMayHaveTool(row('my_note_create'), false)).toBe(false);
     expect(loginMayHaveTool(row('team_request_create'), false)).toBe(false);
   });
 
-  it('write on: draft and request tools, never a library write', () => {
-    expect(loginMayHaveTool(row('my_note_create'), true)).toBe(true);
-    expect(loginMayHaveTool(row('my_file_upload'), true)).toBe(true);
+  it('write on: request, app data and own-app tools, never a library write', () => {
     expect(loginMayHaveTool(row('team_request_create'), true)).toBe(true);
+    expect(loginMayHaveTool(row('app_data_write'), true)).toBe(true);
+    expect(loginMayHaveTool(row('my_app_create'), true)).toBe(true);
     expect(loginMayHaveTool(row('note_create'), true)).toBe(false);
     expect(loginMayHaveTool(row('file_upload'), true)).toBe(false);
   });
@@ -147,11 +146,33 @@ describe('member and client tool filter', () => {
     }
   });
 
-  it('tells a login who it acts as', () => {
+  it('never offers the draft and submit tools removed in W5c (plan R7)', () => {
+    for (const slug of [
+      'my_note_create',
+      'my_page_create',
+      'my_file_upload',
+      'my_item_submit',
+      'my_app_submit',
+      'my_app_recall',
+    ]) {
+      expect(
+        BUILTIN_TOOLS.some((d) => d.slug === slug),
+        slug,
+      ).toBe(false);
+      expect(loginMayHaveTool(row(slug), true), slug).toBe(false);
+      expect(loginMayHaveTool(row(slug), false), slug).toBe(false);
+    }
+  });
+
+  it('tells a login who it acts as, and names no draft or submit tool', () => {
     const base = { anchorId: 'a', loginId: 'l', via: 'oauth' as const };
     expect(mcpInstructionsFor({ ...base, role: 'member', write: false })).toContain('read-only');
-    expect(mcpInstructionsFor({ ...base, role: 'client', write: true })).toContain(
-      'my_note_create',
-    );
+    for (const role of ['member', 'client'] as const) {
+      const text = mcpInstructionsFor({ ...base, role, write: true });
+      expect(text).toContain('app_data_write');
+      expect(text).not.toMatch(/my_note_create|my_page_create|my_file_upload/);
+      expect(text).not.toMatch(/my_item_submit|my_app_submit|my_app_recall/);
+      expect(text).not.toMatch(/submit/i);
+    }
   });
 });

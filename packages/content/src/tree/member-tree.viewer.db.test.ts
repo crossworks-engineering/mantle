@@ -1,8 +1,9 @@
 /**
- * A member's tree (folder plan phase 5): the brain's items the member reads,
- * its own folders and drafts, and teammates' shared drafts, merged per path;
- * and the member's writes (its own folders, filing its own drafts). Reads run
- * as the real roles (withSpace, withTeamDrafts, withViewer inside the module).
+ * A member's tree (folder plan phase 5): the brain's items the member reads
+ * and its own folders and drafts, merged per path; and the member's writes
+ * (its own folders, filing its own drafts). Teammates' shared drafts went with
+ * team drafts in W5c: a teammate's item never shows. Reads run as the real
+ * roles (withSpace, withViewer inside the module).
  *
  * Fixture, under folders of this run's own on the shared test anchor:
  *   notes.<L>_team    held by the members' workspace (A and B are its
@@ -18,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammates’ drafts', () => {
+describe.skipIf(!URL)('a member’s tree: own folders, drafts in place', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let tree: typeof import('./index');
@@ -198,7 +199,7 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     await tree.deleteMemberFolder(scopeA, 'notes', own.id);
   });
 
-  it('a teammate’s shared draft below a hidden folder shows at a folder the member sees', async () => {
+  it('a teammate’s team-shared draft never shows, nor reveals a hidden folder (W5c)', async () => {
     const S = spaceOf[b]!;
     const inClosed = await draft(b, 'ben in closed', `notes.${L}_closed`);
     await m.systemDb.execute(
@@ -206,7 +207,8 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     );
     const top = (await page(null))!;
     expect(top.folders.some((f) => f.id === ids.closedF)).toBe(false);
-    expect(top.items.find((i) => i.id === inClosed)).toMatchObject({ source: 'team' });
+    expect(top.items.some((i) => i.id === inClosed)).toBe(false);
+    expect(top.items.every((i) => i.source !== 'team')).toBe(true);
     await m.systemDb.execute(sqlTag`delete from nodes where id = ${inClosed} and owner_id = ${S}`);
   });
 
@@ -234,7 +236,7 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     expect(seen.length).toBe((await page(mine.id))!.folder!.itemCount);
   });
 
-  it('a teammate’s shared draft shows at the deepest folder the member sees; a private one never', async () => {
+  it('a teammate’s draft never shows, shared or private, and is never the member’s to move', async () => {
     const S = spaceOf[b]!;
     await m.systemDb.execute(sqlTag`
       insert into nodes (owner_id, type, title, slug, path, audience, data, tags)
@@ -247,12 +249,10 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     );
     const inTeam = (await page(ids.teamF))!;
     expect(inTeam.folders.map((f) => f.name)).toEqual(['Mine']);
-    expect(inTeam.items.find((i) => i.id === shared)).toMatchObject({
-      source: 'team',
-      author: 'Ben',
-      state: 'draft',
-    });
+    expect(inTeam.items.some((i) => i.id === shared)).toBe(false);
     expect(inTeam.items.some((i) => i.id === priv)).toBe(false);
+    const found = await tree.searchMemberTree(scopeA, 'notes', 'ben shared');
+    expect(found.items.some((i) => i.id === shared)).toBe(false);
     // Nothing of B's is A's to move.
     const res = await tree.moveMemberItems(scopeA, 'notes', [shared], ids.teamF);
     expect(res).toMatchObject({ moved: 0 });

@@ -586,6 +586,11 @@ review). The client shows it as the R and R/W pill and never derives it.
 
 ## 7c. Admins read what members share with the team (2026-10-09)
 
+Removed in workspaces W5c with team drafts: a personal item is no longer
+shared with the team, `member-items-shared.ts` and `withTeamDrafts` are
+gone, and the member routes that read teammates' items answer 410 `gone`.
+The section below is the record of what it was.
+
 Jason decided (2026-10-09, option 1) that admins see what the team
 shares. Before this, an admin read a member's personal item only when it
 was submitted, or team-shared by a login that is gone (member-review.ts
@@ -637,7 +642,7 @@ rule in the query too, but these hold whatever the code asks for.
   check, read at client level.
 - **Never a team draft** (0189). The trigger `space_items_client_private`
   refuses `sharing = 'team'` on an item a client wrote: it stays private
-  until submitted, and never shows in Team drafts.
+  until submitted. (Team drafts themselves went in W5c.)
 - **Who wrote it, for good** (0194). `space_items.author_role` is stamped
   from `auth.users` by a trigger when the row is made and kept by another
   on every update, never written by the app. It outlives the login (whose

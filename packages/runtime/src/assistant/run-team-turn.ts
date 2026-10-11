@@ -1,8 +1,9 @@
 /**
  * Member chat turn execution: one conversational turn for a MEMBER LOGIN
- * against the permission-limited `team-responder` agent (member logins; the
- * team-code portal contact path this once also served was retired in Phase 6).
- * The member chat route (POST /api/member/chat) enqueues it.
+ * against the assistant of the brain's Team workspace (member logins; the
+ * team-code portal contact path this once also served was retired in Phase 6;
+ * the client chat this engine also ran went in workspaces W5c). The member
+ * chat route (POST /api/member/chat) enqueues it.
  *
  * Deliberately a SIBLING of runAssistantTurn, not a flag on it: the owner path
  * carries a pile of owner-personal machinery (identity/journal injection,
@@ -10,7 +11,8 @@
  * persisted thought trails) that must never run for an outsider. This path is
  * the minimal, auditable subset:
  *
- *   1. Resolve the `team-responder` agent (explicit slug — never the persona).
+ *   1. Resolve the Team workspace's assistant (teamAssistant: a workspace
+ *      resource, never an agent level and never the persona).
  *   2. loadConversationContext for RETRIEVAL ONLY — the agent has no
  *      assistant_messages rows so its history is structurally empty; digests
  *      are off via the agent's memoryConfig (digest_limit 0); journal/identity
@@ -34,8 +36,6 @@ import { and, eq } from 'drizzle-orm';
 import {
   db,
   agents,
-  withViewer,
-  type ViewerLevel,
   type Agent,
   type ConversationAttachment,
   type TeamChannel,
@@ -57,9 +57,8 @@ import {
   isTeamPrivateReadsEnabled,
   teamHiddenNodeTypes,
   TEAM_PRIVATE_READ_SLUGS,
-  clientTurnMayRun,
+  teamAssistant,
 } from '@mantle/content';
-import type { ContextSnapshot } from '@mantle/client-types';
 import { assembleResponderTurn } from './assemble-turn';
 import { durableAttachmentsFor } from './inline-images';
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
@@ -74,27 +73,18 @@ import {
   withTracePrelude,
 } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
-import { CLIENT_TURN_TOOL_SLUGS, PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
-import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
+import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
+import { withAgentViewer } from '../agent/agent-viewer';
 
-/** The one agent that serves the team surface. Provisioned by the manifest;
- *  resolved explicitly — priority/default selection never applies here. */
+/** The agent the manifest ships for the team surface. Since workspaces W5c a
+ *  member chats with whichever assistant the Team workspace holds (which is
+ *  this one unless an admin chose another); the slug still names it for the
+ *  MCP login surface and the turn-input tools. */
 export const TEAM_RESPONDER_SLUG = 'team-responder';
 
-/** The agent that serves a CLIENT login's chat (client logins C4). The
- *  manifest ships it at client level on every brain. */
+/** The agent that served a CLIENT login's chat (client logins C4). Client
+ *  chat went in workspaces W5c; the slug stays for the MCP login surface. */
 export const CLIENT_RESPONDER_SLUG = 'client-responder';
-
-/** Who a login turn serves: a team member or a client (client logins C4). */
-export type LoginTurnRole = 'member' | 'client';
-
-/** The ONE agent level each role chats with (plan section 8): a member with a
- *  team-level agent, a client with a client-level one. */
-const ROLE_AGENT_LEVEL: Record<LoginTurnRole, ViewerLevel> = { member: 'team', client: 'client' };
-const ROLE_DEFAULT_AGENT: Record<LoginTurnRole, string> = {
-  member: TEAM_RESPONDER_SLUG,
-  client: CLIENT_RESPONDER_SLUG,
-};
 
 export type RunTeamTurnOptions = {
   /** Display name for the member-identity context line + request provenance. */
@@ -111,16 +101,18 @@ export type RunTeamTurnOptions = {
    *  owner surface — see docs/live-turn-streaming.md). */
   streamId?: string;
   /** The MEMBER login this turn belongs to (member logins, plan section 5):
-   *  the turn joins that login's own thread, and the agent must be below
-   *  admin (members chat only with team-level agents). Required: the
-   *  team-code portal's contact turns are retired (Phase 6). */
+   *  the turn joins that login's own thread, and runs in the Team
+   *  workspace's scope for that login. Required: the team-code portal's
+   *  contact turns are retired (Phase 6). */
   loginId: string;
-  /** The agent to answer (default team-responder). A member turn takes a
-   *  team-level agent only. */
+  /** The agent the route resolved (the Team workspace's assistant). The turn
+   *  re-checks it: an agent that is not the Team workspace's assistant now
+   *  is refused. Absent: the Team workspace's assistant. */
   agentSlug?: string;
 };
 
-/** A CLIENT login's turn (client logins C4, POST /api/client/chat). */
+/** A CLIENT login's turn (client logins C4). Client chat went in W5c: the
+ *  type stays only so a queued turn's input still parses. */
 export type RunClientTurnOptions = Omit<RunTeamTurnOptions, 'attachments'> & {
   /** The login's session epoch when the turn was queued: the turn runs only
    *  while it is still the login's epoch (sign-out everywhere, End sessions
@@ -134,71 +126,40 @@ export type TeamTurnResult = {
   reply: string;
 };
 
-async function resolveLoginAgent(ownerId: string, slug: string): Promise<Agent | null> {
+async function resolveAgentById(ownerId: string, id: string): Promise<Agent | null> {
   const [row] = await db
     .select()
     .from(agents)
-    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug), eq(agents.enabled, true)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.id, id), eq(agents.enabled, true)))
     .limit(1);
   return row ?? null;
 }
 
 /**
- * A login chats with an agent at exactly its role's level (plan section 8):
- * a member with a team-level agent, a client with a client-level one. The
- * chat routes check this too; this is the engine's own refusal, so no caller
- * can hand a member an admin or client agent, or a client a team agent.
- * Exported for the tests.
+ * The agent a member turn runs: the Team workspace's assistant, never one
+ * picked by level (workspaces W5c). The route resolves it too; this is the
+ * engine's own check, so no caller can hand a member another agent: a slug
+ * that is not the Team workspace's assistant now is refused.
  */
-export function assertAgentForRole(
-  agent: { slug: string; audience?: string | null },
-  role: LoginTurnRole,
-): void {
-  const level = agentLevel(agent);
-  const want = ROLE_AGENT_LEVEL[role];
-  if (level !== want) {
+async function resolveMemberAgent(ownerId: string, slug: string | undefined): Promise<Agent> {
+  const team = await teamAssistant(ownerId);
+  if (!team) {
     throw new Error(
-      `Agent '${agent.slug}' is at the ${level} level: a ${role} login may only chat with a ${want}-level agent.`,
+      "Team chat isn't provisioned on this brain: the Team workspace has no enabled assistant.",
     );
   }
-}
-
-/** The client turn's tools: the assembled ones that are client tools
- *  (CLIENT_TURN_TOOL_SLUGS), the rest dropped. */
-function clientToolsOnly<T extends { allowedTools: Array<{ slug: string }> }>(assembled: T): T {
-  const allowed = new Set(CLIENT_TURN_TOOL_SLUGS);
-  return { ...assembled, allowedTools: assembled.allowedTools.filter((t) => allowed.has(t.slug)) };
-}
-
-/** A client turn's retrieval context: none at all. Facts, summaries, chunks
- *  and the graph were built from page text that can name team and admin
- *  items (mention and link labels, plan N6), so a client turn reads only
- *  through its client tools, which serve the portal's redacted bodies.
- *  Exported for the tests. */
-export function emptyLoginContext(inboundText: string): ConversationContext {
-  const snapshot: ContextSnapshot = {
-    query: { inbound: inboundText.slice(0, 600), enriched: null, embedded: false },
-    facts: { sent: [], dropped: [], guard: 0 },
-    contentHits: { sent: [], dropped: [], cutoff: 0 },
-    chunkHits: { sent: [], dropped: [], cutoff: 0 },
-    relations: [],
-    digests: { count: 0, topics: [] },
-    history: { count: 0, toolRecords: 0, mediaRecords: 0 },
-    personaNotes: { count: 0 },
-    corpusMap: { count: 0, truncated: false },
-  };
-  return {
-    personaNotes: [],
-    facts: [],
-    corpusMap: { entries: [], truncated: false },
-    contentHits: [],
-    chunkHits: [],
-    relations: [],
-    digests: [],
-    history: [],
-    journalRelevant: '',
-    snapshot,
-  };
+  if (slug && slug !== team.slug) {
+    throw new Error(
+      `Agent '${slug}' is not the Team workspace's assistant: a member chats only with '${team.slug}'.`,
+    );
+  }
+  const agent = await resolveAgentById(ownerId, team.id);
+  if (!agent) {
+    throw new Error(
+      "Team chat isn't provisioned on this brain: the Team workspace has no enabled assistant.",
+    );
+  }
+  return agent;
 }
 
 /**
@@ -234,46 +195,26 @@ export function historyBeforeInbound<T extends { id: string }>(rows: T[], inboun
   return rows.filter((r) => r.id !== inboundId);
 }
 
+/**
+ * A CLIENT login's chat turn: removed with client chat in workspaces W5c. A
+ * turn still queued from before refuses before anything is written and no
+ * model is called.
+ */
+export async function runClientTurn(
+  _ownerId: string,
+  _text: string,
+  _options: RunClientTurnOptions,
+): Promise<TeamTurnResult> {
+  throw new Error('client turn dropped: client chat was removed');
+}
+
 export async function runTeamTurn(
   ownerId: string,
   text: string,
   options: RunTeamTurnOptions,
 ): Promise<TeamTurnResult> {
-  return runLoginTurn('member', ownerId, text, options);
-}
-
-/**
- * A CLIENT login's chat turn (client logins C4, plan section 8): the member
- * turn's engine with the client's limits. The agent must be at client level;
- * the whole turn ALSO runs inside withViewer('client'), so the level is the
- * lower of the agent's and the login's (N7) even if an agent were raised; no
- * retrieval context (emptyLoginContext); the client tools on a client surface;
- * and the login is re-read before anything runs (clientTurnMayRun).
- */
-export async function runClientTurn(
-  ownerId: string,
-  text: string,
-  options: RunClientTurnOptions,
-): Promise<TeamTurnResult> {
-  return runLoginTurn('client', ownerId, text, options);
-}
-
-async function runLoginTurn(
-  role: LoginTurnRole,
-  ownerId: string,
-  text: string,
-  options: RunTeamTurnOptions & { sessionEpoch?: number },
-): Promise<TeamTurnResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('runTeamTurn: empty text');
-  // A client turn queued before a sign-out everywhere, End sessions or
-  // Disable never runs: nothing is written and no model is called.
-  if (role === 'client') {
-    const epoch = options.sessionEpoch;
-    if (typeof epoch !== 'number' || !(await clientTurnMayRun(options.loginId, epoch))) {
-      throw new Error('client turn dropped: the client login is no longer signed in');
-    }
-  }
   // A turn input from before Phase 6 may still name only a portal contact
   // (a workflow recovered on upgrade): refuse it, as the portal is gone.
   if (!options.loginId) {
@@ -283,13 +224,7 @@ async function runLoginTurn(
   const channel: TeamChannel = options.channel ?? 'web';
   const progress = { inboundWritten: false };
   try {
-    const steps = () =>
-      runTeamTurnSteps(role, ownerId, trimmed, displayText, channel, options, progress);
-    // The client's own wrap (N7): the turn never reads above client level,
-    // whatever the agent's level says.
-    return await (role === 'client'
-      ? withViewer('client', { login: options.loginId }, steps)
-      : steps());
+    return await runTeamTurnSteps(ownerId, trimmed, displayText, channel, options, progress);
   } catch (err) {
     // A turn that fails BEFORE the inbound row is written (no agent, no key,
     // retrieval down) used to leave nothing behind: the route had already
@@ -326,7 +261,6 @@ async function runLoginTurn(
 }
 
 async function runTeamTurnSteps(
-  role: LoginTurnRole,
   ownerId: string,
   trimmed: string,
   displayText: string,
@@ -335,14 +269,7 @@ async function runTeamTurnSteps(
   progress: { inboundWritten: boolean },
 ): Promise<TeamTurnResult> {
   const { loginId } = options;
-  const agentSlug = options.agentSlug ?? ROLE_DEFAULT_AGENT[role];
-  const agent = await resolveLoginAgent(ownerId, agentSlug);
-  if (!agent) {
-    throw new Error(
-      `${role === 'client' ? 'Client' : 'Team'} chat isn't provisioned on this brain: the '${agentSlug}' agent is missing or disabled.`,
-    );
-  }
-  assertAgentForRole(agent, role);
+  const agent = await resolveMemberAgent(ownerId, options.agentSlug);
   if (!agent.apiKeyId) {
     throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
   }
@@ -351,8 +278,9 @@ async function runTeamTurnSteps(
     throw new Error(`api_key_id ${agent.apiKeyId} not found for agent '${agent.slug}'.`);
   }
 
-  // Everything below runs at the agent's level (agents.audience): a team
-  // responder reads only what row level security shows the team role.
+  // Everything below runs in the Team workspace's turn scope for this login
+  // (withAgentViewer): the assistant reads only what row security shows that
+  // workspace.
   return withAgentViewer(
     agent,
     async () => {
@@ -366,8 +294,7 @@ async function runTeamTurnSteps(
       // The owner's private-reads switch is read BEFORE retrieval: the context
       // loader hides the same node types the read tools do.
       const prefs = await loadProfilePreferences(ownerId);
-      // The owner's private-reads switch is for team turns only.
-      const privateReads = role === 'member' && isTeamPrivateReadsEnabled(prefs);
+      const privateReads = isTeamPrivateReadsEnabled(prefs);
       const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
       const loadedHistoryRows = await recentTeamMessages(
         ownerId,
@@ -375,22 +302,18 @@ async function runTeamTurnSteps(
         memoryConfig.history_limit ?? 20,
         loginId,
       );
-      const ctx =
-        role === 'client'
-          ? emptyLoginContext(trimmed)
-          : await withTracePrelude(prelude, () =>
-              loadConversationContext({
-                ownerId,
-                agent,
-                inboundText: trimmed,
-                includeJournal: false,
-                excludeNodeTypes: teamHiddenNodeTypes(privateReads),
-                // A short follow-up ("what about in pages?") is enriched from
-                // the member's own thread: the owner's chat is not readable at
-                // team.
-                recentTurnTexts: teamThreadToHistory(loadedHistoryRows).map((t) => t.text),
-              }),
-            );
+      const ctx: ConversationContext = await withTracePrelude(prelude, () =>
+        loadConversationContext({
+          ownerId,
+          agent,
+          inboundText: trimmed,
+          includeJournal: false,
+          excludeNodeTypes: teamHiddenNodeTypes(privateReads),
+          // A short follow-up ("what about in pages?") is enriched from the
+          // member's own thread: the owner's chat is not readable at team.
+          recentTurnTexts: teamThreadToHistory(loadedHistoryRows).map((t) => t.text),
+        }),
+      );
 
       const inbound = await runDurableStep('record_team_inbound', () =>
         appendTeamMessage({
@@ -446,10 +369,7 @@ async function runTeamTurnSteps(
 
       // Member identity rides the VOLATILE block: per-contact text in the cached
       // prefix would bust the shared per-agent cache on every member switch.
-      const memberLine =
-        role === 'client'
-          ? `Client: ${options.contactName ?? 'unknown name'} (client login ${loginId}). You are serving this person: a client of the team, not a team member and not the brain's owner.`
-          : `Team member: ${options.contactName ?? 'unknown name'} (user ${loginId}). You are serving this person: a member of the team, not the brain's owner.`;
+      const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (user ${loginId}). You are serving this person: a member of the team, not the brain's owner.`;
 
       // Shared responder-turn assembly (audit #5c), configured for the team
       // surface's HARD isolation: no identity/journal block, no heartbeats, no
@@ -458,7 +378,7 @@ async function runTeamTurnSteps(
       // switch (default OFF) is enforced HERE, at tool resolution — independent
       // of the `team-read` group grant, so it can't be bypassed by a manifest
       // change that re-adds the slugs.
-      const assembledForAgent = await withTracePrelude(prelude, () =>
+      const assembled = await withTracePrelude(prelude, () =>
         assembleResponderTurn({
           ownerId,
           agent,
@@ -471,11 +391,6 @@ async function runTeamTurnSteps(
           excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
         }),
       );
-      // A client turn gets the client tools and nothing else, whatever the
-      // agent's groups hold (client logins C5 audit, L3): a group is config,
-      // and a brain-wide read tool at client level still shows what the portal
-      // never does. Applied last, to everything the assembly offers.
-      const assembled = role === 'client' ? clientToolsOnly(assembledForAgent) : assembledForAgent;
       const { volatileContext, allowedTools } = assembled;
 
       const adapter = getChatAdapter(agent.provider);
@@ -516,8 +431,8 @@ async function runTeamTurnSteps(
             subjectKind: 'team_turn',
             agentId: agent.id,
             data: {
-              surface: role === 'client' ? 'client' : 'team',
-              login_role: role,
+              surface: 'team',
+              login_role: 'member',
               contact_id: null,
               login_id: loginId,
               channel,
@@ -551,21 +466,13 @@ async function runTeamTurnSteps(
               buildMessages: () => messages,
               // The provenance channel: team_request_create reads WHO is asking
               // from here; owner-side tools see 'team' and refuse.
-              surface:
-                role === 'client'
-                  ? {
-                      kind: 'client',
-                      loginId,
-                      contactName: options.contactName,
-                      inboundMessageId: inbound.id,
-                    }
-                  : {
-                      kind: 'team',
-                      loginId,
-                      contactName: options.contactName,
-                      privateReads,
-                      inboundMessageId: inbound.id,
-                    },
+              surface: {
+                kind: 'team',
+                loginId,
+                contactName: options.contactName,
+                privateReads,
+                inboundMessageId: inbound.id,
+              },
               abortSignal: abortController?.signal ?? null,
             });
           },
