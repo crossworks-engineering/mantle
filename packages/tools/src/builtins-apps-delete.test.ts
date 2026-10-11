@@ -79,6 +79,31 @@ describe('app_delete', () => {
     });
   });
 
+  it('names who deletes: only the anchor login (the brain id) is the owner (W6b fix round 2, M-2)', async () => {
+    vi.mocked(deleteApp).mockResolvedValue(true);
+    const by = async (surface: ToolHandlerContext['surface']) => {
+      vi.mocked(deleteApp).mockClear();
+      await appDel.handler({ id: APP_ID }, { ownerId: 'o1', surface });
+      return vi.mocked(deleteApp).mock.calls[0]![2]!.deletedBy;
+    };
+    expect(await by({ kind: 'web', loginId: 'o1' })).toEqual({ loginId: 'o1', owner: true });
+    expect(await by({ kind: 'web', loginId: 'a2' })).toEqual({ loginId: 'a2', owner: false });
+    expect(await by({ kind: 'web' })).toEqual({ loginId: null, owner: false });
+    expect(await by({ kind: 'owner', via: 'mcp', loginId: 'o1' })).toEqual({
+      loginId: 'o1',
+      owner: true,
+    });
+    expect(await by({ kind: 'owner', via: 'api', loginId: 'a2' })).toEqual({
+      loginId: 'a2',
+      owner: false,
+    });
+    expect(await by({ kind: 'owner', via: 'run' })).toEqual({ loginId: null, owner: false });
+    expect(await by({ kind: 'telegram', telegramChatId: '1' })).toEqual({
+      loginId: null,
+      owner: false,
+    });
+  });
+
   it('surfaces a store failure instead of reporting success', async () => {
     vi.mocked(deleteApp).mockRejectedValue(new Error('db down'));
     expect(errorOf(await appDel.handler({ id: APP_ID }, ctx))).toBe('db down');

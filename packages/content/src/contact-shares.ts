@@ -16,7 +16,15 @@
  */
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
-import { contactShareCodes, db, nodes, shares, WORKSPACE_NODE_TYPES } from '@mantle/db';
+import {
+  contactShareCodes,
+  db,
+  isSnapshotCopy,
+  nodes,
+  shares,
+  SNAPSHOT_COPY_NO_SHARE,
+  WORKSPACE_NODE_TYPES,
+} from '@mantle/db';
 import type {
   AccessContactShare,
   ContactShareRefusedReason,
@@ -68,11 +76,16 @@ export async function createContactShares(
   if (ids.length === 0) return [];
   return db.transaction(async (tx) => {
     const [node] = await tx
-      .select({ id: nodes.id, type: nodes.type })
+      .select({ id: nodes.id, type: nodes.type, data: nodes.data })
       .from(nodes)
       .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
       .limit(1);
     if (!node) throw new ContactShareRefusedError('not-shareable', 'item not found');
+    // A read-only snapshot copy is shared with no one (W6b fix round 2,
+    // L-1; the database refuses it too).
+    if (isSnapshotCopy(node)) {
+      throw new ContactShareRefusedError('not-shareable', SNAPSHOT_COPY_NO_SHARE);
+    }
     if (node.type === 'branch') {
       throw new ContactShareRefusedError(
         'folder',

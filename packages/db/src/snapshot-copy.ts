@@ -24,6 +24,11 @@ export function isSnapshotCopy(node: { data?: unknown } | null | undefined): boo
 export const SNAPSHOT_COPY_READ_ONLY_MESSAGE =
   'not allowed to change this item: it is a read-only snapshot copy';
 
+/** Why a snapshot copy carries no link and no contact share (fix round 2,
+ *  L-1): the database's own words (0267, shares_snapshot_copy). */
+export const SNAPSHOT_COPY_NO_SHARE =
+  'not allowed to share this item: it is a read-only snapshot copy in its private workspace';
+
 /** A write to a snapshot copy, refused before it reaches the database. */
 export class SnapshotCopyReadOnlyError extends Error {
   readonly code = '42501';

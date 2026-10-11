@@ -747,7 +747,9 @@ Former user workspace), with exactly the grants that home names, Write off.
 - **Members write through the owner routes** (contract "W6b CONTRACT" in
   the build reports): a create lands in `?ws=` when the login moderates it,
   else in the folder it is made in when the login may edit that, else in
-  the login's private workspace (made on its first create). Kind roots stay
+  the login's private workspace (made on its first write that may make an
+  item: a create, an edit, a move or a copy; never a delete, a pin or an
+  opened mark). Kind roots stay
   homed as before.
 - **Snapshot copies (plan S3).** For each `space_item_homes` row with
   `snapshot` (an accepted item homed in a private or Former user

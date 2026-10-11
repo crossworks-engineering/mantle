@@ -201,11 +201,14 @@ export function registerMantleTools(
     /** Checked before every call (an API key without the Search area,
      *  key-email-guard.ts). Needs `allow`. */
     guard?: ToolCallGuard;
+    /** The login of this connection, handed to the builtins on their owner
+     *  surface (W6b fix round 2, M-2). Absent on stdio. */
+    loginId?: string;
   } = {},
 ): void {
   const transport = opts.transport ?? 'http';
   const target = opts.allow ? filteredServer(server, opts.allow, opts.guard) : server;
-  const ctx = makeRegisterContext(target, ownerId, transport, opts.via);
+  const ctx = makeRegisterContext(target, ownerId, transport, opts.via, opts.loginId);
   const { exposeTerminal, registerBuiltinTools } = ctx;
 
   registerSearchTools(ctx);

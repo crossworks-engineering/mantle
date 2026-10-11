@@ -110,11 +110,13 @@ export type AppSnapshotMeta = {
    *  workspace. */
   homeWs?: string;
   /** On a pre_delete snapshot (CEO decision 1, W6b fix round 1): the app
-   *  was deleted by a login other than the brain's owner, so it stays in
-   *  the trash until the owner purges it (the nightly purge skips it). */
+   *  was deleted by a login other than the brain's owner, or by a caller
+   *  that named no login (fix round 2), so it stays in the trash until the
+   *  owner purges it (the nightly purge skips it). */
   keepForOwner?: true;
-  /** Who deleted it, with keepForOwner. */
-  deletedBy?: string;
+  /** Who deleted it, with keepForOwner: null when the caller named no
+   *  login. */
+  deletedBy?: string | null;
 };
 
 export type NodeSnapshot = typeof nodeSnapshots.$inferSelect;

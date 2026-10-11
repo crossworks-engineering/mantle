@@ -1023,7 +1023,11 @@ async function createHomeFor(
   if (!ownWork) return { createWs, privateWs: null };
   // A write that makes no item (a delete, a pin, an opened mark) never
   // makes the private workspace (W6b fix round 1): its existing one, if
-  // any, else none.
+  // any, else none. Any other write may make it: a create, and also an
+  // edit, a move or a copy (fix round 2: the contract says so; such a write
+  // may land a new item, and with no private workspace named its home would
+  // fall back to the rule before W6b, the folder's home else Admin, so it
+  // is not narrowed to the create routes).
   const reqPath = getRequestContext()?.path;
   const target = reqPath ? itemWriteTarget(method, pattern, reqPath) : null;
   if (method.toUpperCase() === 'DELETE' || target?.need === 'read') {

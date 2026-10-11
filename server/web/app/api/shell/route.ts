@@ -108,6 +108,9 @@ async function handleGET() {
   const body: Shell = {
     role: login.kind,
     loginId,
+    // The brain's anchor login (its id is the brain's): the app delete
+    // confirm says 30 days for it, "until the owner deletes it" for others.
+    isOwner: login.kind === 'admin' && loginId === anchorId,
     onboarded,
     // What this BRAIN can do, for a client on its own release cadence: the
     // client branches on capability rather than on a version number.

@@ -79,7 +79,7 @@ import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
-import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
+import { isOwnerSurface, OWNER_ONLY_ERROR, ownerSurfaceLoginId } from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { and as andWhere, eq as eqWhere } from 'drizzle-orm';
 import { db as scopedDb, nodes as nodesTable } from '@mantle/db';
@@ -832,7 +832,7 @@ const app_delete: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Delete a mini app',
   description:
-    'Delete a mini app by id: its source, builds and database. A snapshot is kept first, so for 30 days it can come back with `app_undelete` (`app_deleted_list` shows it); after that it is gone for good. Confirm with the user first.',
+    'Delete a mini app by id: its source, builds and database. A snapshot is kept first, so it can come back with `app_undelete` (`app_deleted_list` shows it): for 30 days when the brain owner deletes it, else until the brain owner deletes it for good. Confirm with the user first.',
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
@@ -845,7 +845,16 @@ const app_delete: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
-      const ok = await deleteApp(ctx.ownerId, id, { actor: historyActor(ctx) });
+      // Only a delete provably by the brain's anchor login (its chat turn,
+      // its MCP connection, its API key) is purged after 30 days; any other
+      // caller's, or one whose path names no login, waits in the trash for
+      // the owner (CEO decision 1; W6b fix round 2, M-2). The anchor
+      // login's id is the brain's id.
+      const by = ownerSurfaceLoginId(ctx.surface);
+      const ok = await deleteApp(ctx.ownerId, id, {
+        actor: historyActor(ctx),
+        deletedBy: { loginId: by, owner: by !== null && by === ctx.ownerId },
+      });
       if (!ok) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, deleted: true });
       void notifyAppNavChanged(ctx.ownerId);

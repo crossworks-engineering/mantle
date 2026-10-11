@@ -151,6 +151,8 @@ describe('shell chrome reads never fail the shell', () => {
         areas: ['users'],
         role: 'admin',
         loginId: ACTOR,
+        // An Admin user who is not the anchor login (W6b fix round 2).
+        isOwner: false,
       });
       expect(h.minted).toEqual([{ anchorId: ANCHOR, loginId: ACTOR, ttlSeconds: undefined }]);
     });

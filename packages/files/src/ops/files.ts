@@ -28,6 +28,7 @@ import { deleteThumbnailsFor } from '../thumbnail';
 import {
   asSystem,
   assertNotSnapshotCopy,
+  currentCreateHome,
   requestWriteScope,
   withViewer,
   contentChunks,
@@ -249,6 +250,9 @@ export async function upsertFile(args: {
   // between our lookup and this insert. That node IS this file; fall through
   // and update it like any existing row, so the caller's title/data/tags land.
   let target: Node | undefined = existing;
+  // The watcher's row this create lands on (the race below): made outside
+  // this create's transaction, so without the create's stamp and home.
+  let raced = false;
   if (!target) {
     // Heads first (workspaces plan U1): the folder it lands in, shared.
     const [inserted] = await withDeadlockRetry(() =>
@@ -287,7 +291,14 @@ export async function upsertFile(args: {
       )
       .limit(1);
     if (!target) throw new Error('upsertFile: insert returned no row');
+    raced = true;
   }
+  // A create that names a stamp and a home (a snapshot copy, W6b) and lost
+  // the race to the watcher: its row is stamped and homed here, as its own
+  // insert would have been (fix round 2, L-4), so a copy is never left
+  // editable or homed where its create did not put it.
+  const home = raced ? currentCreateHome() : null;
+  const stamp = home?.stamp && Object.keys(home.stamp).length > 0 ? home.stamp : null;
 
   const oldData = { ...((target.data ?? {}) as Record<string, unknown>) };
   // A folded member file (W6b) overwritten: its new bytes are in the tree
@@ -326,6 +337,7 @@ export async function upsertFile(args: {
       // Old passages go now, not when the re-extract lands: until then (and
       // for good, should it never run) search would quote the old bytes.
       if (u && !sameContent) await tx.delete(contentChunks).where(eq(contentChunks.nodeId, u.id));
+      if (u && stamp) return restampRacedCreate(tx, u.id, stamp, home?.createWs ?? null);
       return u;
     }),
   );
@@ -336,6 +348,39 @@ export async function upsertFile(args: {
   }
 
   return fileRowFromNode(updated);
+}
+
+/**
+ * The create stamp and home on a row a create found made by the watcher
+ * (see upsertFile): the stamp merged into its data after the write (its
+ * extract_skipped at the row's own time, as 0267's create stamp trigger
+ * does), then its grants replaced by one home row in `createWs`, Write off.
+ * The stamp goes on before the home: on a snapshot copy the database lets
+ * that home through (a private workspace, Write off) and nothing wider.
+ * @heads-held by upsertFile (withHeads on the row).
+ */
+async function restampRacedCreate(
+  tx: Parameters<Parameters<typeof withHeads>[2]>[0],
+  id: string,
+  stamp: Readonly<Record<string, unknown>>,
+  createWs: string | null,
+): Promise<Node> {
+  const s = JSON.stringify(stamp);
+  await tx.execute(sql`
+    update nodes
+       set data = case when (coalesce(data, '{}'::jsonb) || ${s}::jsonb) ? 'extract_skipped'
+                       then jsonb_set(coalesce(data, '{}'::jsonb) || ${s}::jsonb, '{extract_skipped,at}',
+                                      to_jsonb(greatest(clock_timestamp(), updated_at)))
+                       else coalesce(data, '{}'::jsonb) || ${s}::jsonb end
+     where id = ${id}::uuid`);
+  if (createWs) {
+    await tx.execute(sql`delete from item_grants where node_id = ${id}::uuid`);
+    await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home, write)
+                         values (${id}::uuid, ${createWs}::uuid, true, false)`);
+  }
+  const [row] = await tx.select().from(nodes).where(eq(nodes.id, id)).limit(1);
+  if (!row) throw new Error('upsertFile: the raced row is gone');
+  return row;
 }
 
 /**
@@ -609,14 +654,16 @@ export async function deleteFileById(args: {
  *      catches editor-save-twice and our own UI writes (which set
  *      sha256 before chokidar even reports the change).
  *
- * Returns 'noop' | 'inserted' | 'updated' so the watcher can log.
+ * Returns 'noop' | 'inserted' | 'updated' so the watcher can log, or
+ * 'skipped' (logged here) for a disk file that takes a folded member file's
+ * name.
  */
 export async function syncFileFromDisk(args: {
   ownerId: string;
   parentPath: string;
   filename: string;
   bytes: Buffer;
-}): Promise<{ status: 'noop' | 'inserted' | 'updated'; nodeId: string | null }> {
+}): Promise<{ status: 'noop' | 'inserted' | 'updated' | 'skipped'; nodeId: string | null }> {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`syncFileFromDisk: parent '${args.parentPath}' is outside the files root`);
   }
@@ -732,6 +779,32 @@ export async function syncFileFromDisk(args: {
     await notifyNodeIngested(updated.id);
     return { status: 'updated', nodeId: updated.id };
   }
+  // No tree row of this name: a folded member file (W6b) of this name in
+  // this folder, any case, has its bytes in its old space's directory, so
+  // the disk cannot see the name is taken. A disk file of that name never
+  // becomes a brain file beside it (a second file of one name, or, on an
+  // exact name, the folded row's own by the conflict below): skipped and
+  // logged, the disk file left as it is (fix round 2, L-3).
+  const [folded] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.path}::text = ${args.parentPath}`,
+        sql`lower(${nodes.data}->>'filename') = lower(${filename})`,
+        sql`coalesce(${nodes.data} ? 'space_file', false)`,
+      ),
+    )
+    .limit(1);
+  if (folded) {
+    console.warn(
+      `[files] SKIPPED ${args.parentPath}/${filename}: a folded member file (${folded.id}) has this name; the disk file was left as it is, no node made`,
+    );
+    return { status: 'skipped', nodeId: null };
+  }
+
   // Heads first (workspaces plan U1): the folder it lands in, shared.
   const [inserted] = await withDeadlockRetry(() =>
     withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], (tx) =>

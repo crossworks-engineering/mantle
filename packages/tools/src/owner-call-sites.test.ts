@@ -73,7 +73,9 @@ const SITES: Record<string, Site> = {
   },
   'packages/runtime/src/assistant/run-turn.ts': {
     calls: 1,
-    surface: /surface: \{ kind: 'web' \}/,
+    // With the signed-in login (W6b fix round 2, M-2): app_delete reads it.
+    surface:
+      /surface: \{ kind: 'web', \.\.\.\(options\?\.loginId \? \{ loginId: options\.loginId \} : \{\}\) \}/,
     scope: 'call',
     why: "the owner's web /assistant turn",
   },

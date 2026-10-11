@@ -22,6 +22,14 @@ export function isOwnerSurface(surface: ToolHandlerContext['surface']): boolean 
   return kind === 'web' || kind === 'telegram' || kind === 'owner';
 }
 
+/** The login an owner surface names (its web chat's signed-in login, an MCP
+ *  connection's or an API key's), or null when the path names none (W6b fix
+ *  round 2, M-2). Never read from model arguments. */
+export function ownerSurfaceLoginId(surface: ToolHandlerContext['surface']): string | null {
+  if (surface?.kind !== 'web' && surface?.kind !== 'owner') return null;
+  return typeof surface.loginId === 'string' && surface.loginId !== '' ? surface.loginId : null;
+}
+
 /** The refusal an owner-only tool returns to anyone else. */
 export const OWNER_ONLY_ERROR =
   'owner-side tool: not available here (it runs only for the brain owner).';

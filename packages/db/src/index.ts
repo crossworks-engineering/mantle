@@ -207,6 +207,7 @@ export {
   assertNotSnapshotCopy,
   SnapshotCopyReadOnlyError,
   SNAPSHOT_COPY_READ_ONLY_MESSAGE,
+  SNAPSHOT_COPY_NO_SHARE,
 } from './snapshot-copy';
 export {
   countUsers,

@@ -12,7 +12,16 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { bestEffortWrite, db, nodes, shares, type Share, type ViewerLevel } from '@mantle/db';
+import {
+  bestEffortWrite,
+  db,
+  isSnapshotCopy,
+  nodes,
+  shares,
+  SNAPSHOT_COPY_NO_SHARE,
+  type Share,
+  type ViewerLevel,
+} from '@mantle/db';
 import type { ShareMode } from '@mantle/client-types';
 import { env } from '@mantle/config';
 
@@ -327,7 +336,7 @@ export async function createShare(
 ): Promise<ShareSummary> {
   assertLinkMode(opts.mode);
   const [node] = await q
-    .select({ id: nodes.id, type: nodes.type, path: nodes.path })
+    .select({ id: nodes.id, type: nodes.type, path: nodes.path, data: nodes.data })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
@@ -335,6 +344,9 @@ export async function createShare(
   if (!isShareable(node.type)) {
     throw new ShareInputError('not-shareable', `type '${node.type}' is not shareable`);
   }
+  // A read-only snapshot copy carries no link (W6b fix round 2, L-1; the
+  // database refuses it too).
+  if (isSnapshotCopy(node)) throw new ShareInputError('not-shareable', SNAPSHOT_COPY_NO_SHARE);
   if (node.type === 'branch' && !isShareableFolderPath(node.path)) {
     throw new ShareInputError('not-shareable', 'only folders under files can be shared');
   }

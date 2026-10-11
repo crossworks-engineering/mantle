@@ -589,7 +589,10 @@ export function registerPreparedTools(
   if (prepared.kind === 'owner') {
     const { caller } = prepared;
     if (caller.via === 'oauth') {
-      registerMantleTools(server, caller.anchorId, { transport: opts.transport ?? 'http' });
+      registerMantleTools(server, caller.anchorId, {
+        transport: opts.transport ?? 'http',
+        loginId: caller.loginId,
+      });
       return;
     }
     // A peer or an API key acting as the owner: the owner's surface,
@@ -597,6 +600,7 @@ export function registerPreparedTools(
     // its areas too (plan 7.5 and 7.6: it narrows, never widens).
     registerMantleTools(server, caller.anchorId, {
       transport: opts.transport ?? 'http',
+      loginId: caller.loginId,
       via: caller.via === 'key' ? 'api' : 'federation',
       allow: (slug) => ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller),
       // A key without Search does not reach email through Files (M4).

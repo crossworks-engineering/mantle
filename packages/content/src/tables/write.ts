@@ -47,7 +47,7 @@ import {
 import {
   TABLES_ROOT_LABEL,
   TAB_NAME,
-  assertTableWritable,
+  assertTableNotAppBound,
   dedupeTags,
   detailOf,
   docsOf,
@@ -229,8 +229,10 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
     .limit(1);
   if (!row) return false;
   // An app table can't be deleted out from under its export link — remove the
-  // export first (or delete the app; the link cascades either way).
-  await assertTableWritable(id);
+  // export first (or delete the app; the link cascades either way). A
+  // read-only snapshot copy may be deleted (W6b fix round 2, M-1): only the
+  // app-bound check, never the copy check of assertTableWritable.
+  await assertTableNotAppBound(id);
   // `tables` row cascades.
   await headsOrSpace(
     (f) => withDeadlockRetry(() => withNodeDeleteHeads([id], f)),

@@ -19,6 +19,10 @@ export type Shell = {
   role: ShellRole;
   /** The login at the keyboard (the actor), never the anchor account. */
   loginId: string;
+  /** Whether this login is the brain's owner (its anchor login): only the
+   *  owner's app deletes are purged after 30 days; anyone else's stay in the
+   *  trash until the owner deletes them for good (W6b fix round 2). */
+  isOwner: boolean;
   /** Always true for a member or a client: onboarding is an admin's. */
   onboarded: boolean;
   features: ShellFeatures;

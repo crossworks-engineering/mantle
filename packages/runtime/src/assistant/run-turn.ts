@@ -524,7 +524,8 @@ export async function runAssistantTurn(
           // /assistant has no outbound channel beyond the reply stream
           // itself — tools that want to "send a voice note" or similar
           // refuse here with a clean error so the LLM falls back to text.
-          surface: { kind: 'web' },
+          // The signed-in login rides along (W6b fix round 2, M-2).
+          surface: { kind: 'web', ...(options?.loginId ? { loginId: options.loginId } : {}) },
           abortSignal: abortController?.signal ?? null,
         }),
     );

@@ -8,6 +8,7 @@
  */
 import { eq, sql } from 'drizzle-orm';
 import {
+  asSystem,
   asViewerLevel,
   assertNotSnapshotCopy,
   currentSpaceScope,
@@ -70,11 +71,23 @@ export async function assertTableWritable(tableNodeId: string, appSync?: boolean
     .where(eq(nodes.id, tableNodeId))
     .limit(1);
   assertNotSnapshotCopy(own);
+  await assertTableNotAppBound(tableNodeId);
+}
+
+/** Refuse a change to an app-bound table (its export link): a grid write
+ *  through assertTableWritable, and a delete, which a snapshot copy's
+ *  author or the owner may still make (W6b fix round 2, M-1: a copy is
+ *  read only, never undeletable). */
+export async function assertTableNotAppBound(tableNodeId: string): Promise<void> {
   // A personal table is never app-bound (exports are brain tables), and the
   // personal-space role holds no grant on the export registry: asking would
   // fail, and inside a space transaction even a caught failure aborts it.
   if (currentSpaceScope()) return;
-  const link = await appExportLinkOf(tableNodeId);
+  // The export registry is the system's (no workspace role reads it): asked
+  // on the system pool, yes or no, so a member's own table write or delete
+  // is checked rather than failing on the grant (W6b fix round 2). The
+  // app's name below is read in the caller's scope.
+  const link = await asSystem(() => appExportLinkOf(tableNodeId), 'kind-root');
   if (!link) return;
   const [app] = await db
     .select({ title: nodes.title })

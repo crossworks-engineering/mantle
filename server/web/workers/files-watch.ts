@@ -108,7 +108,8 @@ async function handleUpsert(absPath: string): Promise<void> {
       filename: loc.filename,
       bytes,
     });
-    if (res.status !== 'noop') {
+    // 'skipped' was logged by syncFileFromDisk itself.
+    if (res.status === 'inserted' || res.status === 'updated') {
       console.log(`[files-watch] ${res.status} ${loc.parentPath}/${loc.filename}`);
     }
   } catch (err) {

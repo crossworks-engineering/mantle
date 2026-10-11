@@ -35,8 +35,15 @@ export function makeRegisterContext(
   /** The owner path the builtins name: 'mcp', or 'federation' for a peer
    *  that acts as the owner (plan page e5b854dd). */
   via: OwnerSurfaceVia = 'mcp',
+  /** The login of this connection (its OAuth consent, its API key, the
+   *  login a peer is bound to), from the credential the route resolved
+   *  (W6b fix round 2, M-2). Absent on stdio. */
+  loginId?: string,
 ) {
   const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
+  // The handlers get the connection's login with it: who deletes an app
+  // decides whether the trash keeps it for the owner (app_delete).
+  const callSurface: ToolSurface = loginId ? { kind: 'owner', via, loginId } : surface;
   // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
   // a local one out. Unset means stdio yes, HTTP no.
   const terminalEnv = env('MANTLE_MCP_TERMINAL') ?? '';
@@ -159,7 +166,7 @@ export function makeRegisterContext(
     // that text to the client (workspaces W3): the texts errorMessage gave
     // for database errors during the call are collected and matched.
     const { value: result, texts } = await watchDatabaseErrors(() =>
-      def.handler(input, { ownerId: ownerId, surface }),
+      def.handler(input, { ownerId: ownerId, surface: callSurface }),
     );
     if (!result.ok) {
       return {

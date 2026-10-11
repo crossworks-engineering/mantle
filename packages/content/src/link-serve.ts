@@ -18,7 +18,7 @@
  * owner gate of the caller decides alone, as before workspaces.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { db, nodeEmbeds, nodes, pages } from '@mantle/db';
+import { db, nodeEmbeds, nodes, pages, SNAPSHOT_COPY_NO_SHARE } from '@mantle/db';
 import { clientOwnUrl, docRefIds, noteRefIds } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
 import { canShareNode, ShareInputError, shareServedIds, type ShareDb } from './shares';
@@ -49,6 +49,8 @@ export type LinkRights = {
   edit: boolean;
   /** A Moderator of the home. */
   manage: boolean;
+  /** A read-only snapshot copy (W6b): it never carries a link. */
+  snapshotCopy?: boolean;
 };
 
 /** The caller's rights on `ids` (the owner's items; an id with no row is
@@ -74,7 +76,8 @@ export async function linkRights(
            (not m.yes or exists (select 1 from mine where mine.ws = any (n.read_ws))) as read,
            (not m.yes or exists (select 1 from mine where mine.ws = n.home_ws and mine.moderator))
              as manage,
-           (not m.yes or exists (select 1 from mine where mine.ws = any (n.write_ws))) as write_any
+           (not m.yes or exists (select 1 from mine where mine.ws = any (n.write_ws))) as write_any,
+           coalesce(n.data ? 'snapshot_of', false) as copy
       from nodes n cross join migrated m
      where n.owner_id = ${ownerId}
        and n.id = any (${`{${wanted.join(',')}}`}::uuid[])
@@ -85,6 +88,7 @@ export async function linkRights(
     read: boolean;
     manage: boolean;
     write_any: boolean;
+    copy: boolean;
   }[];
   return new Map(
     rows.map((r) => [
@@ -96,6 +100,7 @@ export async function linkRights(
         read: r.read === true,
         manage: r.manage === true,
         edit: r.manage === true || r.write_any === true,
+        snapshotCopy: r.copy === true,
       },
     ]),
   );
@@ -117,6 +122,11 @@ export async function assertMayLink(
   if (!r || !r.read) throw NOT_FOUND();
   if (!canShareNode(r)) {
     throw new ShareInputError('not-shareable', `type '${r.type}' cannot carry a link here`);
+  }
+  // A read-only snapshot copy stays in its private workspace (W6b fix
+  // round 2, L-1): no link, whoever asks (the database refuses it too).
+  if (r.snapshotCopy) {
+    throw new LinkRefusedError(403, 'forbidden', SNAPSHOT_COPY_NO_SHARE);
   }
   if (!(r.type === 'app' ? r.manage : r.edit)) {
     throw new LinkRefusedError(

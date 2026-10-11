@@ -1172,10 +1172,11 @@ export async function deleteApp(
   opts: {
     actor?: AppHistoryActor;
     /** Who deletes it (CEO decision 1, W6b fix round 1): a login other than
-     *  the brain's owner leaves it in the trash until the owner purges it
-     *  (pre_delete meta.keepForOwner). Absent: the owner's own delete (its
-     *  tools and the system). */
-    deletedBy?: { loginId: string; owner: boolean };
+     *  the brain's owner, or a caller that names no login (loginId null,
+     *  fix round 2), leaves it in the trash until the owner purges it
+     *  (pre_delete meta.keepForOwner). Absent: the owner's own delete (the
+     *  owner's routes and the system). */
+    deletedBy?: { loginId: string | null; owner: boolean };
   } = {},
 ): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
@@ -1195,7 +1196,7 @@ export async function deleteApp(
          set code = jsonb_set(coalesce(code, '{}'::jsonb), '{meta}',
                      coalesce(code->'meta', '{}'::jsonb)
                      || jsonb_build_object('keepForOwner', true,
-                                           'deletedBy', ${opts.deletedBy.loginId}::text))
+                                           'deletedBy', ${opts.deletedBy.loginId ?? null}::text))
        where id = ${snap.id}`);
   }
   // The node goes first, then the live database file (apps audit D6). Its

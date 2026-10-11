@@ -47,6 +47,8 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
   const gone = randomUUID();
   const arch = randomUUID(); // a member whose private workspace was archived
   let archWs = '';
+  const kept = randomUUID(); // a member whose item's home is an archived kept workspace
+  let keptWs = '';
   const ids: Record<string, string> = {};
   const spaces: Record<string, string> = {};
   let queueBefore = 0;
@@ -126,10 +128,11 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
       (${member}, 'sf-m@example.invalid', 'x', 'member', false, 'Member One'),
       (${mate}, 'sf-t@example.invalid', 'x', 'member', false, 'Teammate'),
       (${gone}, 'sf-g@example.invalid', 'x', 'member', false, null),
-      (${arch}, 'sf-r@example.invalid', 'x', 'member', false, 'Archived One')`;
+      (${arch}, 'sf-r@example.invalid', 'x', 'member', false, 'Archived One'),
+      (${kept}, 'sf-k@example.invalid', 'x', 'member', false, 'Kept One')`;
     const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
-    for (const [k, v] of Object.entries({ member, gone, admin2, arch })) {
+    for (const [k, v] of Object.entries({ member, gone, admin2, arch, kept })) {
       spaces[k] = (
         await sql<
           { id: string }[]
@@ -157,6 +160,21 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
     await sql`update workspaces set archived_at = now() where id = ${archWs}`;
     await node('archDraft', 'page', 'pages', spaces.arch!);
     await item('archDraft', arch, 'draft');
+    // A live member (no private workspace) whose item's recorded home is an
+    // archived workspace the brain keeps (a Former user workspace): it stays
+    // archived; only an author's own private workspace is un-archived (fix
+    // round 2, L-2).
+    keptWs = (
+      await sql<{ id: string }[]>`insert into workspaces (owner_id, name, description)
+        values (${owner}, 'Former user', 'x') returning id::text as id`
+    )[0]!.id;
+    await sql`insert into former_user_workspaces (former_key, workspace_id)
+      values (${randomUUID()}, ${keptWs})`;
+    await sql`update workspaces set archived_at = now() where id = ${keptWs}`;
+    await node('keptDraft', 'page', 'pages', spaces.kept!);
+    await item('keptDraft', kept, 'draft');
+    await sql`insert into space_item_homes (node_id, home_workspace_id, state_before, sharing_before)
+      values (${ids.keptDraft!}, ${keptWs}, 'draft', 'private')`;
 
     // The member's space: kind roots, drafts, a folder that clashes, files.
     await node('rootPages', 'branch', 'pages', spaces.member!);
@@ -352,6 +370,21 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
     expect(await reads(arch, ['archDraft'])).toEqual(['archDraft']);
   });
 
+  it('never un-archives a kept workspace: the author’s item leaves it for its own (fix round 2, L-2)', async () => {
+    const [w] = await sql<{ archived: Date | null }[]>`
+      select archived_at as archived from workspaces where id = ${keptWs}`;
+    expect(w!.archived).not.toBeNull();
+    const ev = await sql<{ n: number }[]>`
+      select count(*)::int as n from workspace_events
+       where workspace_id = ${keptWs} and action = 'spaces_fold.unarchived'`;
+    expect(ev[0]!.n).toBe(0);
+    const mine = await privateOf(kept);
+    expect(mine).toBeTruthy();
+    const r = await row('keptDraft');
+    expect({ home: r.home, read: r.read }).toEqual({ home: mine, read: [mine] });
+    expect(await reads(kept, ['keptDraft'])).toEqual(['keptDraft']);
+  });
+
   it('leaves no item in a space, archives the spaces, keeps only the accepted rows', async () => {
     const check = Object.fromEntries(
       (
@@ -366,7 +399,7 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
       'kind roots left with children': 0,
       'space_items rows other than accepted': 0,
       'accepted rows kept (the author read path until its snapshot copy)': 1,
-      'items moved': 17,
+      'items moved': 18,
       'folded files sharing a name in their folder': 0,
       'moved items without their home': 0,
       'snapshot copies wanted': 1,
@@ -384,7 +417,10 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
 
   it('no login reads more than before; every author reaches its items', async () => {
     const all = Object.keys(ids).filter(
-      (k) => !['brainFolder', 'brainPage', 'brainFile', 'accepted', 'archDraft'].includes(k),
+      (k) =>
+        !['brainFolder', 'brainPage', 'brainFile', 'accepted', 'archDraft', 'keptDraft'].includes(
+          k,
+        ),
     );
     // The teammate: the team-shared drafts only.
     expect(await reads(mate, all)).toEqual(['teamApp', 'teamDraft']);

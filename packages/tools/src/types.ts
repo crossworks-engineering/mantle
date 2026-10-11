@@ -79,7 +79,13 @@ export type ToolHandlerContext = {
          *  not have a natural parent message. */
         replyToTelegramMessageId?: string;
       }
-    | { kind: 'web' }
+    | {
+        kind: 'web';
+        /** The signed-in login the chat turn serves (W6b fix round 2, M-2):
+         *  set by the server from the session, never from model arguments.
+         *  Absent when the path names none. */
+        loginId?: string;
+      }
     | {
         /** A team member is on the other end, not the owner: a member
          *  login's chat turn (POST /api/member/chat) or app tool call.
@@ -138,6 +144,11 @@ export type ToolHandlerContext = {
         kind: 'owner';
         /** Which owner path (telemetry and the owner-regression sweep). */
         via: OwnerSurfaceVia;
+        /** The login acting on this path (W6b fix round 2, M-2): an MCP
+         *  connection's login, an API key's login. Set by the server from
+         *  the credential, never from model arguments. Absent when the path
+         *  names none (stdio, a run, a pending approval). */
+        loginId?: string;
       };
 };
 

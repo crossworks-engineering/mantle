@@ -578,11 +578,15 @@ BEGIN
   UPDATE pg_temp."ws_fold" f SET "home" = fw."workspace_id"
     FROM "public"."former_user_workspaces" fw
    WHERE f."home" IS NULL AND f."login_id" IS NULL AND fw."former_key" = f."space_id";
-  -- A home its live author cannot reach any more (its private workspace was
-  -- archived since 0264; W6b fix round 1): the author's live private
-  -- workspace when it has one, else that workspace is un-archived (its
+  -- A home its live author cannot reach any more (archived since 0264; W6b
+  -- fix round 1): the author's live private workspace when it has one,
+  -- else its own archived private workspace, which is un-archived (its
   -- author's own work goes back where its author reaches it; recorded as a
-  -- workspace event). Without this the proof below refused the whole fold.
+  -- workspace event), else none (a private workspace is made below). Only
+  -- the author's OWN private workspace is ever un-archived (fix round 2):
+  -- an archived workspace the brain keeps (a Former user workspace, any
+  -- shared one) stays archived, and the author's item leaves it. Without
+  -- this the proof below refused the whole fold.
   UPDATE pg_temp."ws_fold" f SET "home" = p."workspace_id"
     FROM "public"."private_workspaces" p
     JOIN "public"."workspaces" w ON w."id" = p."workspace_id" AND w."archived_at" IS NULL
@@ -590,11 +594,26 @@ BEGIN
      AND EXISTS (SELECT 1 FROM auth.users u WHERE u."id" = f."login_id")
      AND EXISTS (SELECT 1 FROM "public"."workspaces" a
                   WHERE a."id" = f."home" AND a."archived_at" IS NOT NULL);
+  UPDATE pg_temp."ws_fold" f SET "home" = p."workspace_id"
+    FROM "public"."private_workspaces" p
+   WHERE p."login_id" = f."login_id" AND f."home" IS NOT NULL AND f."home" <> p."workspace_id"
+     AND EXISTS (SELECT 1 FROM auth.users u WHERE u."id" = f."login_id")
+     AND EXISTS (SELECT 1 FROM "public"."workspaces" a
+                  WHERE a."id" = f."home" AND a."archived_at" IS NOT NULL);
+  UPDATE pg_temp."ws_fold" f SET "home" = NULL
+   WHERE f."home" IS NOT NULL
+     AND EXISTS (SELECT 1 FROM auth.users u WHERE u."id" = f."login_id")
+     AND EXISTS (SELECT 1 FROM "public"."workspaces" a
+                  WHERE a."id" = f."home" AND a."archived_at" IS NOT NULL)
+     AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p
+                      WHERE p."login_id" = f."login_id");
   WITH back AS (
     UPDATE "public"."workspaces" w SET "archived_at" = NULL, "updated_at" = now()
      WHERE w."archived_at" IS NOT NULL
        AND w."id" IN (SELECT f."home" FROM pg_temp."ws_fold" f
-                       JOIN auth.users u ON u."id" = f."login_id")
+                       JOIN auth.users u ON u."id" = f."login_id"
+                       JOIN "public"."private_workspaces" p
+                         ON p."workspace_id" = f."home" AND p."login_id" = f."login_id")
     RETURNING w."id"
   ), ev AS (
     INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
@@ -1092,6 +1111,33 @@ DROP TRIGGER IF EXISTS "item_grants_snapshot_copy" ON "public"."item_grants";
 --> statement-breakpoint
 CREATE TRIGGER "item_grants_snapshot_copy" BEFORE INSERT OR UPDATE ON "public"."item_grants"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_snapshot_copy_grant_trg"();
+--> statement-breakpoint
+-- Its links (fix round 2, L-1): an open link or a contact share of a copy
+-- would hand it to someone outside its private workspace. A live share row
+-- (made, or moved onto a copy, or a revoked one reopened) is refused; a
+-- revoke always passes.
+CREATE OR REPLACE FUNCTION "public"."mantle_snapshot_copy_share_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF NEW."revoked_at" IS NULL
+     AND EXISTS (SELECT 1 FROM "public"."nodes" n
+                  WHERE n."id" = NEW."node_id" AND n."data" ? 'snapshot_of')
+     AND NOT "public"."mantle_bypass_verified"() THEN
+    RAISE EXCEPTION 'not allowed to share this item: it is a read-only snapshot copy in its private workspace'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_snapshot_copy_share_trg"() FROM PUBLIC;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "shares_snapshot_copy" ON "public"."shares";
+--> statement-breakpoint
+CREATE TRIGGER "shares_snapshot_copy" BEFORE INSERT OR UPDATE OF "node_id", "revoked_at"
+  ON "public"."shares"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_snapshot_copy_share_trg"();
 --> statement-breakpoint
 -- The create stamp (fix round 1, M4): a transaction that names one
 -- (mantle.create_stamp, a json object, set by withSystemTx from the app's
