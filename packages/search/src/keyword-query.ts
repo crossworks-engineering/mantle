@@ -46,7 +46,6 @@
  */
 import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { asSystem, db } from '@mantle/db';
-import { pgArrayLiteral } from './pg';
 
 /** Most terms kept for the OR query. Long enough to cover a paragraph's
  *  distinctive words; short enough that the match set stays small. */
@@ -197,64 +196,31 @@ export function lexemesToTsqueryText(lexemes: readonly string[]): string {
  * (exact below `COUNT_CAP`), the tracked frequency times the table size, or
  * null for the uncounted. A lexeme holding a backslash is left uncounted: the
  * in-SQL quoting below only doubles quotes.
+ *
+ * On the system pool, by its named reason, in any scope (W7a): the
+ * frequencies are the vocabulary's, table-wide by design, and Postgres hides
+ * `pg_stats` of a table under row security from every role that does not
+ * bypass it, so in a workspace scope every lexeme read as untracked and was
+ * counted under the row rule (10 ms on a dev copy, 46 ms on a large one, per
+ * query). The query returns numbers for the caller's own query terms only,
+ * never a row; the search itself runs in the caller's scope.
  */
-/** ANALYZE's tracked lexemes of a table (`most_common_elems` and their
- *  frequencies, the trailing min/max/null values included) and its size. */
-type TableLexemeStats = { elems: string[]; freqs: number[]; n: number };
-
-const STATS_TTL_MS = 60_000;
-const statsCache = new Map<string, { at: number; stats: Promise<TableLexemeStats> }>();
-
-/**
- * The table-wide statistics the frequencies start from, read on the system
- * pool (W7a): Postgres hides `pg_stats` of a table with row security from
- * every role that does not bypass it, so in a workspace scope every lexeme
- * read as untracked and was counted under the row rule (10 ms and more per
- * query on a dev copy). These are planner statistics of the vocabulary (the
- * common words and their share of rows), never a row, and the frequencies
- * were table-wide by design; the counts of untracked lexemes below still run
- * in the caller's scope. Kept a minute per table (they change on ANALYZE).
- */
-function tableLexemeStats(table: 'content_chunks' | 'nodes'): Promise<TableLexemeStats> {
-  const hit = statsCache.get(table);
-  if (hit && Date.now() - hit.at < STATS_TTL_MS) return hit.stats;
-  const stats = asSystem(async () => {
-    const rows = (await db.execute(sql`
-      select coalesce((select most_common_elems::text::text[] from pg_stats
-                        where schemaname = current_schema() and tablename = ${table}
-                          and attname = 'search_tsv'), '{}') as elems,
-             coalesce((select most_common_elem_freqs::float8[] from pg_stats
-                        where schemaname = current_schema() and tablename = ${table}
-                          and attname = 'search_tsv'), '{}') as freqs,
-             coalesce((select greatest(reltuples, 1)::float8 from pg_class
-                        where oid = to_regclass(quote_ident(current_schema()) || '.' || ${table})), 1) as n
-    `)) as unknown as Array<{ elems: string[]; freqs: (number | string)[]; n: number | string }>;
-    const r = rows[0];
-    return {
-      elems: r?.elems ?? [],
-      freqs: (r?.freqs ?? []).map(Number),
-      n: Number(r?.n ?? 1),
-    };
-  }, 'lexeme-stats');
-  statsCache.set(table, { at: Date.now(), stats });
-  stats.catch(() => statsCache.delete(table));
-  return stats;
-}
-
 async function lexemeFrequencies(
   text: string,
   table: 'content_chunks' | 'nodes',
 ): Promise<LexemeDf[]> {
   // `table` is one of two literals (the type), so raw is safe here.
   const tbl = sql.raw(`"${table}"`);
-  const st = await tableLexemeStats(table);
-  const freqsLiteral = `{${st.freqs.map((f) => (Number.isFinite(f) ? String(f) : '0')).join(',')}}`;
-  const rows = (await db.execute(sql`
+  const rows = (await asSystem(
+    () =>
+      db.execute(sql`
     with lex as (
       select distinct unnest(tsvector_to_array(to_tsvector('english', ${text}))) as lexeme
     ),
     col as (
-      select ${pgArrayLiteral(st.elems)}::text[] as elems, ${freqsLiteral}::float8[] as freqs
+      select most_common_elems::text::text[] as elems, most_common_elem_freqs as freqs
+      from pg_stats
+      where schemaname = current_schema() and tablename = ${table} and attname = 'search_tsv'
     ),
     stats as (
       select unnest(elems) as lexeme, unnest(freqs[1:array_length(elems, 1)]) as freq from col
@@ -270,7 +236,8 @@ async function lexemeFrequencies(
       from tracked where freq is null and strpos(lexeme, chr(92)) = 0
     ),
     total as (
-      select ${st.n}::float8 as n
+      select greatest(reltuples, 1)::float8 as n from pg_class
+      where oid = to_regclass(quote_ident(current_schema()) || '.' || ${table})
     ),
     counted as (
       select t.lexeme, t.freq,
@@ -294,7 +261,9 @@ async function lexemeFrequencies(
         else coalesce((select freqs[array_length(elems, 1) + 1] from col), ${KEYWORD_DF_CEILING})::float8
       end as df
     from counted k
-  `)) as unknown as Array<{ lexeme: string; df: number | string; rows: number | string | null }>;
+  `),
+    'lexeme-stats',
+  )) as unknown as Array<{ lexeme: string; df: number | string; rows: number | string | null }>;
   return rows.map((r) => ({
     lexeme: r.lexeme,
     df: Number(r.df),
