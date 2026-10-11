@@ -12,13 +12,17 @@
  *    workspace (bridge_key stays NULL).
  *  - former_user_workspaces: the "Former user" workspace (no users) of a
  *    login that is gone, one per former user. former_key is the former
- *    login's id while an archive row still names it, else its personal
- *    space's id (one space per login); the brain id only for accepted items
- *    with no trace of their author. No foreign key: the record outlives the
- *    login and a purged space.
+ *    login's id while an archive row (or the event that made its private
+ *    workspace) still names it, else its personal space's id (one space per
+ *    login). A login deleted after its private workspace was made: the next
+ *    run renames that workspace "Former user" and keys it by the login id.
+ *    No foreign key: the record outlives the login and a purged space.
  *  - space_item_homes: one row per space item. home_workspace_id is the
  *    private (or Former user) workspace; for an accepted item, its author's,
- *    where the author's snapshot copy goes (S3). grant_admin, grant_team
+ *    where the author's snapshot copy goes (S3); for an accepted item whose
+ *    author was erased before 0264, the home it has in the brain (no Former
+ *    user workspace). A home that stops being a registered private or Former
+ *    user workspace is moved on the next run. grant_admin, grant_team
  *    and write are the grants W6b writes besides the home (write is always
  *    false: Write off). state_before, sharing_before and author_role are the
  *    item's review state, sharing and author role before 0264.

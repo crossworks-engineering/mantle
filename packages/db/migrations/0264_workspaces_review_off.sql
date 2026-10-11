@@ -19,7 +19,17 @@
 --       no users, "Former user" (former_user_workspaces), one per former
 --       user: keyed by the former login's id while an archive row still
 --       names it, else by its personal space (one per login); so does an
---       accepted item whose author is gone.
+--       accepted item whose author is gone. An accepted item whose author
+--       was erased before 0264 archived it (no trace of who wrote it) gets
+--       no Former user workspace: its home is the one it has now in the
+--       brain (S3 has no author to copy it for).
+--     - homes are kept current: a login deleted after its private
+--       workspace was made takes its private_workspaces row with it
+--       (cascade). The next run turns that workspace into the login's
+--       "Former user" workspace (renamed, the name gone; keyed by the login
+--       id the workspace was made for), and any item whose home is no
+--       longer a registered private or Former user workspace moves to the
+--       Former user workspace of its former login.
 --     - grant_admin: submitted (an item in a submitted bundle counts), or
 --       left behind (team-shared draft or returned of a member or client
 --       login now gone or disabled; never an admin's own item), or taken
@@ -118,9 +128,10 @@ CREATE TABLE IF NOT EXISTS "public"."private_workspaces" (
 --> statement-breakpoint
 -- The "Former user" workspace (no users) of a login that is gone, one per
 -- former user. former_key is the former login's id while an archive row
--- still names it, else its personal space's id (one space per login); the
--- brain id only for accepted items with no trace of their author left. No
--- foreign key: the record outlives the login and a purged space.
+-- (or the event that made its private workspace) still names it, else its
+-- personal space's id (one space per login). An accepted item with no
+-- trace of its author gets none (it keeps its brain home). No foreign key:
+-- the record outlives the login and a purged space.
 CREATE TABLE IF NOT EXISTS "public"."former_user_workspaces" (
   "former_key" uuid PRIMARY KEY,
   "workspace_id" uuid NOT NULL UNIQUE REFERENCES "public"."workspaces"("id") ON DELETE CASCADE,
@@ -281,13 +292,53 @@ BEGIN
   --    still sees them; sharing, the trash and the logins are today's. Every
   --    space item is looked at: a new one gets its home, one recorded before
   --    gets its grants refreshed (app sharing and the app trash still change
-  --    until W6b).
+  --    until W6b), and its home moved when that home is no longer a
+  --    registered private or Former user workspace.
   IF admin_ws IS NOT NULL THEN
+    -- Private workspaces whose login was deleted since they were made
+    -- (private_workspaces went with the login, ON DELETE CASCADE): each
+    -- becomes that login's "Former user" workspace, keyed by the login id
+    -- the event that made it names, and is renamed so no name is left.
+    -- Should that login have a Former user workspace already (homes are not
+    -- made that way, a hand edit could), the orphan is renamed and archived
+    -- and its items move below.
+    c := 0;
+    FOR r IN
+      SELECT DISTINCT ON (w."id") w."id" AS ws, (e."subject"->>'login')::uuid AS former
+        FROM "public"."workspace_events" e
+        JOIN "public"."workspaces" w ON w."id" = e."workspace_id"
+       WHERE e."action" = 'review_off.private' AND e."subject" ? 'login' AND w."owner_id" = brain
+         AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p WHERE p."workspace_id" = w."id")
+         AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."workspace_id" = w."id")
+         AND NOT EXISTS (SELECT 1 FROM "public"."workspace_events" e2
+                          WHERE e2."workspace_id" = w."id" AND e2."action" = 'review_off.former_renamed')
+       ORDER BY w."id", e."at"
+    LOOP
+      UPDATE "public"."workspaces"
+         SET "name" = 'Former user',
+             "description" = 'The work of a login that was removed. It has no users; an Admin user may join it.',
+             "updated_at" = now()
+       WHERE "id" = r.ws;
+      IF NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."former_key" = r.former) THEN
+        INSERT INTO "public"."former_user_workspaces" ("former_key", "workspace_id") VALUES (r.former, r.ws);
+        INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+        VALUES (r.ws, NULL, 'review_off.former', '{}'::jsonb);
+      ELSE
+        UPDATE "public"."workspaces" SET "archived_at" = coalesce("archived_at", now()) WHERE "id" = r.ws;
+        INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+        VALUES (r.ws, NULL, 'review_off.former_renamed', '{}'::jsonb);
+      END IF;
+      c := c + 1;
+    END LOOP;
+    RETURN QUERY SELECT 'homes'::text, 'private workspaces of removed logins'::text,
+                        'made Former user'::text, c;
+
     IF to_regclass('pg_temp.ws_review_items') IS NULL THEN
       CREATE TEMP TABLE pg_temp."ws_review_items" (
         "node_id" uuid PRIMARY KEY, "state" text, "sharing" text, "sharing_before" text,
         "author_role" text, "trashed" boolean, "personal" boolean, "space_login" uuid,
-        "home_login" uuid, "former_key" uuid, "taken_by" uuid, "fresh" boolean) ON COMMIT DROP;
+        "home_login" uuid, "former_key" uuid, "kept_home" uuid, "taken_by" uuid,
+        "fresh" boolean, "stranded" boolean NOT NULL DEFAULT false) ON COMMIT DROP;
     END IF;
     TRUNCATE pg_temp."ws_review_items";
     INSERT INTO pg_temp."ws_review_items"
@@ -302,12 +353,18 @@ BEGIN
            CASE WHEN s."kind" = 'personal' THEN s."login_id" ELSE si."author_login_id" END,
            -- One Former user workspace per former user (used only when the
            -- login is gone): the login's id while the archive names it,
-           -- else its personal space (one per login); the brain only for
-           -- an accepted item with no trace of its author.
+           -- else its personal space (one per login). An accepted item with
+           -- no trace of its author has none.
            CASE WHEN s."kind" = 'personal' THEN coalesce(sib."login", s."id")
-                ELSE coalesce(a."author_login_id", brain) END,
+                ELSE coalesce(a."author_login_id", si."author_login_id") END,
+           -- That accepted item keeps the home it has in the brain now.
+           CASE WHEN s."kind" IS DISTINCT FROM 'personal'
+                     AND coalesce(a."author_login_id", si."author_login_id") IS NULL
+                THEN coalesce((SELECT g."workspace_id" FROM "public"."item_grants" g
+                                WHERE g."node_id" = si."node_id" AND g."is_home"), admin_ws) END,
            coalesce(a."taken_by", si."taken_by"),
-           NOT EXISTS (SELECT 1 FROM "public"."space_item_homes" h WHERE h."node_id" = si."node_id")
+           NOT EXISTS (SELECT 1 FROM "public"."space_item_homes" h WHERE h."node_id" = si."node_id"),
+           false
       FROM "public"."space_items" si
       JOIN "public"."nodes" n ON n."id" = si."node_id"
       LEFT JOIN "public"."spaces" s ON s."id" = n."owner_id"
@@ -324,6 +381,18 @@ BEGIN
          ORDER BY a2."archived_at", a2."node_id"
          LIMIT 1) sib ON true;
 
+    -- Recorded before, its home no longer a registered private or Former
+    -- user workspace (its login deleted and the orphan not taken over
+    -- above): it moves to its login's workspace (Former user when gone).
+    UPDATE pg_temp."ws_review_items" i SET "stranded" = true
+      FROM "public"."space_item_homes" h
+     WHERE h."node_id" = i."node_id" AND NOT i."fresh"
+       AND (i."home_login" IS NOT NULL OR i."former_key" IS NOT NULL)
+       AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p
+                        WHERE p."workspace_id" = h."home_workspace_id")
+       AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f
+                        WHERE f."workspace_id" = h."home_workspace_id");
+
     -- The private workspaces still missing.
     c := 0;
     FOR r IN
@@ -331,7 +400,7 @@ BEGIN
              left(coalesce(nullif(btrim(u."display_name"), ''), split_part(u."email", '@', 1)), 100) AS label
         FROM pg_temp."ws_review_items" i
         JOIN auth.users u ON u."id" = i."home_login"
-       WHERE i."fresh"
+       WHERE (i."fresh" OR i."stranded")
          AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p WHERE p."login_id" = i."home_login")
        ORDER BY 1
     LOOP
@@ -353,7 +422,7 @@ BEGIN
     FOR r IN
       SELECT DISTINCT i."former_key" AS former
         FROM pg_temp."ws_review_items" i
-       WHERE i."fresh" AND i."home_login" IS NULL AND i."former_key" IS NOT NULL
+       WHERE (i."fresh" OR i."stranded") AND i."home_login" IS NULL AND i."former_key" IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."former_key" = i."former_key")
        ORDER BY 1
     LOOP
@@ -366,6 +435,17 @@ BEGIN
       c := c + 1;
     END LOOP;
     RETURN QUERY SELECT 'homes'::text, 'former user workspaces'::text, 'made'::text, c;
+
+    UPDATE "public"."space_item_homes" h
+       SET "home_workspace_id" = coalesce(p."workspace_id", f."workspace_id"), "resolved_at" = now()
+      FROM pg_temp."ws_review_items" i
+      LEFT JOIN "public"."private_workspaces" p ON p."login_id" = i."home_login"
+      LEFT JOIN "public"."former_user_workspaces" f
+        ON i."home_login" IS NULL AND f."former_key" = i."former_key"
+     WHERE i."node_id" = h."node_id" AND i."stranded"
+       AND coalesce(p."workspace_id", f."workspace_id") IS NOT NULL;
+    GET DIAGNOSTICS c = ROW_COUNT;
+    RETURN QUERY SELECT 'homes'::text, 'moved off a removed workspace'::text, 'rows'::text, c;
 
     -- The grants W6b writes (9.3), for every space item.
     IF to_regclass('pg_temp.ws_review_grants') IS NULL THEN
@@ -413,7 +493,7 @@ BEGIN
     INSERT INTO "public"."space_item_homes"
            ("node_id", "home_workspace_id", "grant_admin", "grant_team", "write",
             "state_before", "sharing_before", "author_role", "resolved_at")
-    SELECT i."node_id", coalesce(p."workspace_id", f."workspace_id"),
+    SELECT i."node_id", coalesce(p."workspace_id", f."workspace_id", i."kept_home"),
            g."grant_admin", g."grant_team", false, i."state", i."sharing_before", i."author_role", now()
       FROM pg_temp."ws_review_items" i
       JOIN pg_temp."ws_review_grants" g ON g."node_id" = i."node_id"
@@ -424,8 +504,10 @@ BEGIN
     RETURN QUERY
       SELECT 'homes'::text,
              CASE WHEN EXISTS (SELECT 1 FROM "public"."private_workspaces" p
-                                WHERE p."workspace_id" = h."home_workspace_id")
-                  THEN 'private' ELSE 'former user' END
+                                WHERE p."workspace_id" = h."home_workspace_id") THEN 'private'
+                  WHEN EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f
+                                WHERE f."workspace_id" = h."home_workspace_id") THEN 'former user'
+                  ELSE 'kept (author unknown)' END
                || ', ' || h."state_before" || CASE WHEN h."sharing_before" = 'team' THEN ' (team-shared)' ELSE '' END,
              'recorded' || CASE WHEN h."grant_admin" THEN ', grant Admin' ELSE '' END
                         || CASE WHEN h."grant_team" THEN ', grant Team' ELSE '' END,

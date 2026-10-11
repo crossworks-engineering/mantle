@@ -659,7 +659,10 @@ on `mantle_ws_migrate_locked()` is revoked from PUBLIC. Set it with `SET`
 in the session of the manual run and nowhere else. Do not use `ALTER
 DATABASE ... SET mantle.ws_switch_budget` or `ALTER ROLE ... SET`: either
 would also apply at every boot, so the boot switch would hold the brain for
-that long.
+that long. The same goes for `mantle.ws_ddl_retry_pause` (the pause between
+busy tries, which tests shorten): never `ALTER DATABASE ... SET` or `ALTER
+ROLE ... SET` it either, or every migration retries busy tables with that
+pause. Under a budget the pause never drops below 1 s whatever it says.
 
 **Review states (W5c, migration 0264).** The review routes are gone, so
 0264 settles what they left, without loss (plan 9.3): every row of
@@ -669,11 +672,14 @@ space_items, space_submissions and space_item_bundles is copied to an
 rows go. Personal items stay in their spaces until W6b, so no grant is
 written: `space_item_homes` records each item's home (its login's private
 workspace, "Name (only you)", or a "Former user" workspace with no users,
-one per former user, when the login is gone) and the Admin and Team grants
-W6b writes. Those grants follow what is live (sharing, the trash, the
-logins): a member can still share or trash an app until W6b, so each run of
-`select * from mantle_ws_review_off()` refreshes them, and W6b runs it
-first. A box not on workspaces is archived and resolved now; its homes are
+one per former user, when the login is gone; an accepted item whose author
+was erased before 0264 keeps its brain home) and the Admin and Team grants
+W6b writes. Those grants and homes follow what is live (sharing, the trash,
+the logins): a member can still share or trash an app until W6b, and a
+login deleted after 0264 leaves its private workspace behind, so each run
+of `select * from mantle_ws_review_off()` refreshes the grants, renames
+such a workspace "Former user" (no name left) and keeps the items in it,
+and W6b runs it first. A box not on workspaces is archived and resolved now; its homes are
 recorded when it switches. On the copy, `select * from
 mantle_ws_review_homes_check()` must show no item without a home, nothing
 left in review and no row not archived.

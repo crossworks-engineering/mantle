@@ -20,18 +20,21 @@
 --    under a budget only the deadline ends the retries (a budget longer
 --    than 12 attempts, about 105 s, keeps retrying). The 12-attempt path
 --    (no budget armed: a migration) is unchanged. The pause between tries
---    is at most 5 s; mantle.ws_ddl_retry_pause shortens it (tests).
+--    is at most 5 s; mantle.ws_ddl_retry_pause shortens it (tests), and
+--    under a budget never below 1 s, so a long budget cannot fire lock
+--    requests back to back for an hour.
 --
 -- The head wait is not in the budget: mantle_ws_migrate_locked locks the
 -- head of every brain item first and waits at most 10 s for it (less when
 -- the budget is shorter). So a boot switch holds at most about 10 s, plus
 -- the 0251 grant pass, plus the budget.
 --
--- mantle.ws_switch_budget is a convention, not a permission: any role may
--- SET it in its own session. Only the EXECUTE revoke on
--- mantle_ws_migrate_locked limits who runs the switch. Set it with SET in
--- the session of a manual run, never with ALTER DATABASE or ALTER ROLE
--- ... SET: those apply at every boot too.
+-- mantle.ws_switch_budget and mantle.ws_ddl_retry_pause are conventions,
+-- not permissions: any role may SET them in its own session. Only the
+-- EXECUTE revoke on mantle_ws_migrate_locked limits who runs the switch.
+-- Set them with SET in the session of a manual run (or a test), never with
+-- ALTER DATABASE or ALTER ROLE ... SET: those apply at every boot and every
+-- migration too.
 --
 -- Functions only: no row written, no LLM work, no extractor notify.
 
@@ -72,7 +75,9 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_switch_budget"() FROM PUBLIC;
 -- minutes): 55P03, the whole transaction rolls back (no half switch) and
 -- the next start tries again. The pause between tries grows to 5 s;
 -- mantle.ws_ddl_retry_pause (seconds) caps it lower, never higher: a test
--- runs many tries in little time.
+-- runs many tries in little time. Under a budget the pause is at least
+-- 1 s whatever it says, so a budget of up to an hour makes at most about
+-- one lock request a second, never a tight loop.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_ddl_retry"(stmts text[], what text)
   RETURNS void LANGUAGE plpgsql VOLATILE
   SET search_path = "public", pg_temp AS $$
@@ -91,6 +96,9 @@ BEGIN
   EXCEPTION WHEN others THEN
     pause := 5;
   END;
+  IF deadline IS NOT NULL THEN
+    pause := greatest(1, pause);
+  END IF;
   LOOP
     attempt := attempt + 1;
     IF deadline IS NOT NULL THEN
