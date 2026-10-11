@@ -264,6 +264,12 @@ BEGIN
   SELECT w."id" INTO admin_ws FROM "public"."workspaces" w
    WHERE w."owner_id" = o AND w."is_admin" LIMIT 1;
   IF admin_ws IS NULL THEN RETURN NULL; END IF;
+  -- A kind's root folder is the brain's structure, whoever's request made
+  -- it first: as before (0261).
+  IF t = 'branch' AND nlevel(p) = 1 THEN
+    req := NULL;
+    priv := NULL;
+  END IF;
   IF req IS NOT NULL
      AND EXISTS (SELECT 1 FROM "public"."workspaces" w
                   WHERE w."id" = req AND w."owner_id" = o AND w."archived_at" IS NULL)

@@ -191,9 +191,11 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
   });
 
   it('a create in a folder it may edit takes the folder home; a folder it may not is refused', async () => {
+    // A shared folder: its grants pass on, so the create confirms it.
     const r = await call('/api/pages', mem, 'POST', {
       title: `${tag} in team`,
       folderId: teamFolder,
+      confirm: true,
     });
     expect(r.status, r.text.slice(0, 200)).toBeLessThan(300);
     const id = idOf(r, 'page');
@@ -201,6 +203,7 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
     const no = await call('/api/pages', mem, 'POST', {
       title: `${tag} in admin`,
       folderId: adminFolder,
+      confirm: true,
     });
     expect(no.status, no.text.slice(0, 200)).toBeGreaterThanOrEqual(400);
     expect(no.status).toBeLessThan(500);

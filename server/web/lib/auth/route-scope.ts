@@ -194,10 +194,9 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/mentions/search',
   'GET /api/formulas',
   'GET /api/formulas/:id',
-  // W6b: a member's own files and drawings are brain items now.
-  'GET /api/draws/:id/svg',
+  // W6b: a member's own files are brain items now (their bytes and a
+  // drawing's SVG through /api/member/files/:id and /api/member/draws/:id/svg).
   'GET /api/files/files',
-  'GET /api/files/files/:id',
   'GET /api/files/folders',
   'GET /api/files/folders/:id',
   'GET /api/tree/:kind/marks',

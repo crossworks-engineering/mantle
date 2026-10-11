@@ -807,6 +807,9 @@ export function runInSystemTx<T>(
  *    that hold the workspace rule in their own SQL on the system pool
  *    (lib/workspaces.ts, lib/grants.ts, the shell, access keys): the rule
  *    is the query's, as it was before the request scope.
+ *  - `kind-root`: a kind's root folder row (the files root), structure with
+ *    no content, looked up for a reader whose scope does not hold it (a
+ *    member: roots are homed in Admin) so it is not made again (W6b).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -823,6 +826,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'client-sourced-check',
   'app-data',
   'rule-in-query',
+  'kind-root',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 

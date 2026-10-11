@@ -8,6 +8,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
 import {
+  asSystem,
   asViewerLevel,
   db,
   isWriteRefused,
@@ -93,17 +94,26 @@ export type FileRow = {
  * then finds no files, and a write that follows fails by itself.
  */
 export async function ensureFilesRootBranch(ownerId: string): Promise<Node | null> {
-  const existing = await db
-    .select()
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'branch'),
-        sql`${nodes.path}::text = ${FILES_ROOT_LABEL}`,
-      ),
-    )
-    .limit(1);
+  // The root is structure, not content: read it whatever the reader's scope
+  // holds (a member's scope does not hold the Admin-homed root, W6b), so a
+  // reader that does not see it never makes it again.
+  const readRoot = () =>
+    asSystem(
+      () =>
+        db
+          .select()
+          .from(nodes)
+          .where(
+            and(
+              eq(nodes.ownerId, ownerId),
+              eq(nodes.type, 'branch'),
+              sql`${nodes.path}::text = ${FILES_ROOT_LABEL}`,
+            ),
+          )
+          .limit(1),
+      'kind-root',
+    );
+  const existing = await readRoot();
   if (existing[0]) {
     await ensureRoot();
     return existing[0];
@@ -141,17 +151,7 @@ export async function ensureFilesRootBranch(ownerId: string): Promise<Node | nul
     return null;
   }
   if (!row) {
-    const [won] = await db
-      .select()
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          eq(nodes.type, 'branch'),
-          sql`${nodes.path}::text = ${FILES_ROOT_LABEL}`,
-        ),
-      )
-      .limit(1);
+    const [won] = await readRoot();
     if (!won) throw new Error('ensureFilesRootBranch: insert failed');
     await ensureRoot();
     return won;
