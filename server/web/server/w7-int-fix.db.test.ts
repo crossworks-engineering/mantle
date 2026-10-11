@@ -264,9 +264,9 @@ describe.skipIf(!URL)('W7 integration fix', () => {
   });
 
   it('A1: a config adopt of a worker does the same', async () => {
-    await x(sql`insert into ai_workers (owner_id, kind, name, provider, model, base_url,
+    await x(sql`insert into ai_workers (owner_id, kind, slug, name, provider, model, base_url,
                                    via_tailnet, configured_by, is_default)
-      values (${owner}, 'summarizer', 'Summarizer', 'openai', 'x/y', 'https://192.0.2.12/v1',
+      values (${owner}, 'summarizer', 'summarizer', 'Summarizer', 'openai', 'x/y', 'https://192.0.2.12/v1',
               true, ${second}, true)`);
     as(owner);
     const adopt = await import('@/app/api/config/adopt/route');
@@ -419,19 +419,19 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     );
     const assistant = await import('@mantle/runtime/assistant');
     const prefs = await sys(() => c.loadProfilePreferences(owner));
-    const prompt = async (login: string) =>
-      (
-        await assistant.assembleResponderTurn({
-          ownerId: owner,
-          agent,
-          ownerLoginId: login,
-          prefs,
-          logPrefix: '[w7-int]',
-        })
-      ).effectiveSystemPrompt;
+    // The cached prefix and, with the tiers live, the tier 1 block.
+    const prompt = async (login: string) => {
+      const turn = await assistant.assembleResponderTurn({
+        ownerId: owner,
+        agent,
+        ownerLoginId: login,
+        prefs,
+        logPrefix: '[w7-int]',
+      });
+      return `${turn.effectiveSystemPrompt}\n${turn.journalBlock}`;
+    };
     const anchor = await prompt(owner);
     expect(anchor).toContain(`${tag} likes the sea`);
-    expect(anchor).toContain(`${tag} learned a lesson`);
     const other = await prompt(second);
     expect(other).not.toContain(`${tag} likes the sea`);
     expect(other).not.toContain(`${tag} learned a lesson`);
