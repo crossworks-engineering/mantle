@@ -156,6 +156,19 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
+  it('bench: the scope read with the login row is the scope the lookup builds', async () => {
+    const { loadLoginRow } = await import('../lib/auth/login-row');
+    for (const login of [owner, mem, mem2]) {
+      const looked = await m.loginScopeFor(login); // outside a request: the lookup
+      const seeded = await m.runInRequestSlot(async () => {
+        await loadLoginRow(login);
+        return m.loginScopeFor(login);
+      });
+      expect(seeded).toEqual(looked);
+      expect(seeded.ws.length).toBeGreaterThan(0);
+    }
+  });
+
   // ── H1 ────────────────────────────────────────────────────────────────────
 
   it('H1: a table draft is read only by a caller who may edit the table', async () => {

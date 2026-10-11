@@ -813,20 +813,22 @@ function memoScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope> {
  * auth.users (W6a fix round 1, the bench): the session's one login read
  * carries them, and seedLoginScope keeps them as this request's scope, so
  * the guard needs no second lookup. The same rule as viewerScopeFor: live
- * workspaces only, none for a disabled login.
+ * workspaces only, none for a disabled login. The login is a bound id, not
+ * the outer column: drizzle writes a single-table query's columns without
+ * their table, and a bare "id" in the subquery would be the workspace's.
  */
-export function loginScopeColumns(login: AnyPgColumn, disabledAt: AnyPgColumn) {
+export function loginScopeColumns(loginId: string, disabledAt: AnyPgColumn) {
   return {
     scopeWs: sqlTag<string[]>`case when ${disabledAt} is null then coalesce((
         select array_agg(u.workspace_id::text order by u.workspace_id)
           from workspace_users u
           join workspaces w on w.id = u.workspace_id and w.archived_at is null
-         where u.login_id = ${login}), '{}') else '{}' end`,
+         where u.login_id = ${loginId}::uuid), '{}') else '{}' end`,
     scopeModWs: sqlTag<string[]>`case when ${disabledAt} is null then coalesce((
         select array_agg(u.workspace_id::text order by u.workspace_id)
           from workspace_users u
           join workspaces w on w.id = u.workspace_id and w.archived_at is null
-         where u.login_id = ${login} and u.moderator), '{}') else '{}' end`,
+         where u.login_id = ${loginId}::uuid and u.moderator), '{}') else '{}' end`,
   };
 }
 

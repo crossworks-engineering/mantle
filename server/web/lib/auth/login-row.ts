@@ -42,7 +42,7 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       sessionEpoch: authUsers.sessionEpoch,
       // The login's workspaces with the same read (W6a fix round 1): the
       // request's scope, so the guard looks nothing up twice.
-      ...loginScopeColumns(authUsers.id, authUsers.disabledAt),
+      ...loginScopeColumns(id, authUsers.disabledAt),
     })
     .from(authUsers)
     .where(eq(authUsers.id, id))

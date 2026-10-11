@@ -10,7 +10,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { publicErrorMessage } from '@mantle/std';
-import { BUSY_MESSAGE, db, isBusy, nodes, executeWrite } from '@mantle/db';
+import { BUSY_MESSAGE, db, isBusy, isScopeWriteRefusal, nodes, executeWrite } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
   moveFileById,
@@ -154,6 +154,9 @@ function refusingError(err: unknown): never {
   if (err instanceof TreeError) throw err;
   if (err instanceof NodeOpRefusal) throw new TreeError(err.code, err.message);
   if (err instanceof FilesMergeRefusal) throw new TreeError('conflict', err.message);
+  // The database refused it under the caller's workspaces (W6a fix round 1):
+  // the HTTP layer answers 403 item-workspace, never the SQL.
+  if (isScopeWriteRefusal(err)) throw err;
   const message = err instanceof Error ? err.message : String(err);
   throw new TreeError(/already exists|unique/i.test(message) ? 'conflict' : 'invalid', message);
 }
