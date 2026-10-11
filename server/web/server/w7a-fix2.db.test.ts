@@ -41,6 +41,12 @@ vi.mock('@mantle/api-keys', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getApiKeyById: vi.fn(async () => 'sk-fake'),
 }));
+// secret_create seals with the box's master key; the test key is the
+// viewer roles' and is not a sealing key.
+vi.mock('@mantle/crypto', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  seal: vi.fn(() => ({ ciphertext: Buffer.from('sealed'), keyVersion: 1 })),
+}));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   embed: vi.fn(async () => Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0))),
