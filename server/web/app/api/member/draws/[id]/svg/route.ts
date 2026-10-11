@@ -38,7 +38,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       'content-type': 'image/svg+xml; charset=utf-8',
       'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
       'x-content-type-options': 'nosniff',
-      'cache-control': 'private, max-age=300',
+      // Read in the member's scope: revalidated before reuse (W7d+e).
+      'cache-control': 'private, no-cache',
     },
   });
 }

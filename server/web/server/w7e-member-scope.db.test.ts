@@ -282,6 +282,8 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
       expect(r.text).toContain('VEVBTQ==');
       expect(r.text).not.toContain('U0lERQ==');
       expect(r.outcome).toMatchObject({ kind: 'user', loginId: mem });
+      // Read in the member's scope: a cache revalidates before reuse (W7d+e).
+      expect(r.headers.get('cache-control'), url).toBe('private, no-cache');
     }
     const json = await call(`/api/draws/${teamDraw}/svg`, mem);
     expect(json.status).toBe(200);

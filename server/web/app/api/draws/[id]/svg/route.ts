@@ -63,7 +63,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       'content-type': 'image/svg+xml; charset=utf-8',
       'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
       'x-content-type-options': 'nosniff',
-      'cache-control': 'private, max-age=300',
+      // A member's bytes were read in its scope, which a Moderator may
+      // narrow at any time: a cache revalidates before reuse (W7d+e).
+      'cache-control': reader.member ? 'private, no-cache' : 'private, max-age=300',
     },
   });
 }
