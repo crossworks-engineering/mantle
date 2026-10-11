@@ -1835,6 +1835,20 @@
       "when": 1790194800000,
       "tag": "0262_workspaces_served_links",
       "breakpoints": true
+    },
+    {
+      "idx": 263,
+      "version": "7",
+      "when": 1790194860000,
+      "tag": "0263_workspaces_switch_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 264,
+      "version": "7",
+      "when": 1790194920000,
+      "tag": "0264_workspaces_review_off",
+      "breakpoints": true
     }
   ]
 }
