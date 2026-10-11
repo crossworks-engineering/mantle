@@ -68,6 +68,7 @@ describe('mcpOnly builtins', () => {
         'tree_folder_delete',
         'worker_group_ensure',
         'worker_group_list',
+        'workspaces_list',
       ].sort(),
     );
   });

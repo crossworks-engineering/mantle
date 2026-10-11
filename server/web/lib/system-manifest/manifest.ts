@@ -620,6 +620,8 @@ export const MANIFEST_ADMIN_ONLY_GROUPS: readonly string[] = [
   'tasks',
   'team-read-admin',
   'access',
+  // Retired in W7b (RETIRED_TOOL_GROUP_SLUGS), kept here as 0254 set it.
+  'team-admin',
   'runs',
   'export',
   'replay',

@@ -92,9 +92,6 @@ const EXPECTED_OWNER_ONLY = [
   'table_snapshot_create',
   'table_snapshot_delete',
   'table_snapshot_restore',
-  'team_access_list',
-  'team_chat_list',
-  'team_chat_read',
   // The item tree's folders (builtins-tree.ts): members and clients browse a
   // pruned tree from phase 4; until then only the owner reorganises it.
   'tree_folder_create',
@@ -250,8 +247,6 @@ describe('a recipe runs its steps for the recipe caller', () => {
 /** The only places in packages/tools/src allowed to compare a surface kind to
  *  'team', each for a reason other than "is this the owner". */
 const TEAM_KIND_ALLOWED: Record<string, string[]> = {
-  // team_request_create REQUIRES a team surface (positive check).
-  'builtins-team.ts': ["if (surface?.kind !== 'team') {"],
   // The hidden-types team branch: privateReads applies to a team surface only.
   'team-visibility.ts': ["if (surface?.kind === 'team') {"],
   // Team-level apps for a team surface; client and missing reach none.
@@ -261,14 +256,6 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // App data on a login's own MCP (team apps Phase 1): a member on a team
   // surface, only with the MCP connection stamped.
   'builtins-app-data.ts': ["if (s?.kind === 'team' && s.loginId && s.mcp) {"],
-  // A member's own apps (team apps Phase 3): a member on their own MCP only.
-  // The login's MCP scope is left only for the member the surface names.
-  'builtins-my-apps.ts': [
-    "if (s?.kind !== 'team' || !s.loginId || !s.mcp) return null;",
-    "return s?.kind === 'team' && s.mcp?.write === true;",
-    "if (s?.kind !== 'team' || !s.loginId || scope.loginId !== s.loginId) {",
-    "const loginId = s?.kind === 'team' ? s.loginId : undefined;",
-  ],
   // A connector call below the owner runs at the level its surface names;
   // a member's or client's call by the login's workspace rule (W5b2).
   'dispatch.ts': [

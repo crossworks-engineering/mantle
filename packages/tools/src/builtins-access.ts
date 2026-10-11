@@ -92,7 +92,6 @@ export const access_get: BuiltinToolDef = {
         description: 'a brain item id (page, file, folder, …)',
       },
     },
-    required: ['node_id'],
   },
   handler: async (input, ctx) => {
     const refused = ownerOnly(ctx);

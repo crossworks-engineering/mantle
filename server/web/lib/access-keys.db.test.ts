@@ -243,39 +243,6 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect((await call('/api/access-keys', { bearer: adminKey.secret })).status).toBe(401);
   });
 
-  it('a member or client makes no key while an admin has their MCP off (T16)', async () => {
-    const live = async (who: string) =>
-      Number(
-        (
-          await sql<Row[]>`select count(*)::int as n from access_keys
-                           where login_id = ${who} and revoked_at is null`
-        )[0]!.n,
-      );
-    for (const who of [member, client]) {
-      await sql`insert into mcp_login_access (login_id, enabled, write_enabled)
-                values (${who}, false, false)
-                on conflict (login_id) do update set enabled = false`;
-      const before = await live(who);
-      const off = await make({ name: 'while off', access: 'read', areas: null }, who);
-      expect(off.status).toBe(403);
-      expect((await json(off)).reason).toBe('mcp-off');
-      expect(await live(who)).toBe(before);
-      await sql`update mcp_login_access set enabled = true where login_id = ${who}`;
-      const on = await makeKey({ name: 'while on' }, who);
-      await call(`/api/access-keys/${on.id}`, {
-        method: 'DELETE',
-        cookie: cookieOf(who, await epochOf(who)),
-      });
-      await sql`delete from mcp_login_access where login_id = ${who}`;
-    }
-    // An admin's keys never hang on a login MCP switch.
-    const own = await makeKey({ name: 'admin' });
-    await call(`/api/access-keys/${own.id}`, {
-      method: 'DELETE',
-      cookie: cookieOf(admin, await epochOf(admin)),
-    });
-  });
-
   it('holds a login to 50 live keys', async () => {
     const rows = Array.from({ length: 50 }, (_, i) => ({
       name: `filler ${i}`,

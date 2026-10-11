@@ -9,9 +9,9 @@
  *    so a key limited to areas, the one the email-attachment guard is for,
  *    never gets it;
  *  - a peer bound to the owner gets it read-only (draw_get only reads);
- *  - a member's call runs through the login path with the member stamped on
- *    the surface (their image rule), and comes back with the image block;
- *  - a client never gets draw_get (the client cut).
+ *  - a member has the same surface since W7b (draw_get listed, its login
+ *    stamped); off workspaces its call is refused, never run unscoped;
+ *  - a client login is refused before any tool (plan 21.9).
  *
  * The drawing's reads are stubbed (the DB-backed reader rules are in
  * packages/content/src/draw-reader.viewer.db.test.ts); the renderer is real.
@@ -60,17 +60,25 @@ vi.mock('@mantle/tools', async (importOriginal) => {
   };
 });
 
-import type { Tool } from '@mantle/db';
 import { registerMantleTools } from './build-server';
 import { keyAreasAllowTool } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
 import {
-  loginMayHaveTool,
   ownerPeerAllows,
   preparedAllows,
-  registerLoginRows,
+  registerPreparedTools,
   type McpCaller,
+  type PreparedCallerTools,
 } from './login-surface';
+import { NOT_ON_WORKSPACES_ERROR } from './owner-scope';
+
+const prepared = (caller: McpCaller): PreparedCallerTools => ({
+  kind: 'owner',
+  caller,
+  view: null,
+  privateWs: null,
+  connectors: [],
+});
 
 type Reply = { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> };
 type Handler = (args: Record<string, unknown>) => Promise<Reply>;
@@ -122,10 +130,8 @@ describe('draw_get picture on MCP', () => {
       write: false,
       areas,
     });
-    expect(preparedAllows({ kind: 'owner', caller: key(null) }, 'draw_get')).toBe(true);
-    expect(preparedAllows({ kind: 'owner', caller: key(['files', 'search']) }, 'draw_get')).toBe(
-      false,
-    );
+    expect(preparedAllows(prepared(key(null)), 'draw_get')).toBe(true);
+    expect(preparedAllows(prepared(key(['files', 'search'])), 'draw_get')).toBe(false);
     const limited = ownerSurface({
       via: 'api',
       allow: (s) => keyAreasAllowTool(s, ['files']),
@@ -144,37 +150,23 @@ describe('draw_get picture on MCP', () => {
     expect(reply.content.map((c) => c.type)).toEqual(['text', 'image']);
   });
 
-  it('member login: the member is stamped on the surface and the image block comes back', async () => {
-    const row = {
-      slug: 'draw_get',
-      handler: { kind: 'builtin', ref: 'draw_get' },
-      requiresConfirm: false,
-      description: '',
-      inputSchema: {},
-    } as unknown as Tool;
-    expect(loginMayHaveTool(row, false)).toBe(true);
+  it('member login: the one surface lists draw_get; off workspaces the call is refused', async () => {
     const out = new Map<string, Handler>();
     const fake = {
       registerTool: (name: string, _c: unknown, handler: Handler) => void out.set(name, handler),
     };
-    registerLoginRows(fake as never, {
-      kind: 'login',
-      caller: {
-        role: 'member',
-        anchorId: 'anchor',
-        loginId: MEMBER,
-        via: 'oauth',
-        write: false,
-      },
-      rows: [row],
-      level: 'team',
-      privateReads: false,
+    registerPreparedTools(fake as never, {
+      kind: 'owner',
+      caller: { role: 'member', anchorId: 'anchor', loginId: MEMBER, via: 'oauth', write: true },
+      view: { holdsAdmin: false, areas: new Set() },
+      privateWs: null,
+      connectors: [],
     });
+    expect(out.has('draw_get')).toBe(true);
+    // An adminOnly tool is not listed for a scope without Admin.
+    expect(out.has('replay_window')).toBe(false);
     const reply = await out.get('draw_get')!({ id: ID, image: true });
-    expect(reply.content.map((c) => c.type)).toEqual(['text', 'image']);
-    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, {
-      kind: 'member',
-      loginId: MEMBER,
-    });
+    expect(reply.content[0]!.text).toContain(NOT_ON_WORKSPACES_ERROR);
+    expect(h.readableDrawSvg).not.toHaveBeenCalled();
   });
 });

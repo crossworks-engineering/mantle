@@ -173,32 +173,6 @@ describe('every in-app tool reaches the MCP surface', () => {
     // tools could only ever answer "nobody to act for".
     my_items_list: 'acts for the member of a team turn; MCP has none',
     my_item_open: 'acts for the member of a team turn; MCP has none',
-    // App data on a login's own MCP (team apps Phase 1): the owner has
-    // app_db_* and app_* instead.
-    app_data_list: "a login's own MCP only; the owner surface has app_db_list",
-    app_data_schema: "a login's own MCP only; the owner surface has app_db_list",
-    app_data_query: "a login's own MCP only; the owner surface has app_db_query",
-    app_data_write: "a login's own MCP only; the owner surface has the app tools",
-    // A member's own apps (team apps Phase 3): the owner has the app_* tools.
-    my_app_guide: "a member's own MCP only; the owner surface has the app tools",
-    my_app_list: "a member's own MCP only; the owner surface has the app tools",
-    my_app_get: "a member's own MCP only; the owner surface has the app tools",
-    my_app_errors: "a member's own MCP only; the owner surface has the app tools",
-    my_app_snapshot_list: "a member's own MCP only; the owner surface has the app tools",
-    my_app_create: "a member's own MCP only; the owner surface has the app tools",
-    my_app_file_write: "a member's own MCP only; the owner surface has the app tools",
-    my_app_file_delete: "a member's own MCP only; the owner surface has the app tools",
-    my_app_build: "a member's own MCP only; the owner surface has the app tools",
-    my_app_publish: "a member's own MCP only; the owner surface has the app tools",
-    my_app_schema_set: "a member's own MCP only; the owner surface has the app tools",
-    my_app_tools_set: "a member's own MCP only; the owner surface has the app tools",
-    my_app_snapshot_create: "a member's own MCP only; the owner surface has the app tools",
-    my_app_snapshot_restore: "a member's own MCP only; the owner surface has the app tools",
-    my_app_snapshot_delete: "a member's own MCP only; the owner surface has the app tools",
-    my_app_unshare: "a member's own MCP only; the owner surface has the app tools",
-    my_app_delete: "a member's own MCP only; the owner surface has the app tools",
-    my_app_undelete: "a member's own MCP only; the owner surface has the app tools",
-    my_app_deleted_list: "a member's own MCP only; the owner surface has the app tools",
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

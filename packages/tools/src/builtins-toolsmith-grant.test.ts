@@ -492,7 +492,9 @@ describe('tool_group_ensure', () => {
   });
 });
 
-describe('tool_group_ensure on a group below admin (client logins C5 audit, L3)', () => {
+describe('tool_group_ensure on a group an assistant of another workspace holds (C5 audit L3; W7b)', () => {
+  // The holder query's answer: an assistant outside Admin holds the group.
+  const HELD = [{ id: 'agent-team' }];
   // client-read as the manifest ships it: the client agent's whole surface.
   const CLIENT_READ = {
     ...EXISTING_GROUP,
@@ -503,7 +505,7 @@ describe('tool_group_ensure on a group below admin (client logins C5 audit, L3)'
   const owner: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
 
   it('an agent adding a recipe to client-read waits in Pending; nothing is written', async () => {
-    h.selectQueue.push([CLIENT_READ], [{ id: 'agent-toolsmith' }]);
+    h.selectQueue.push([CLIENT_READ], HELD, [{ id: 'agent-toolsmith' }]);
     h.insertReturning.mockResolvedValueOnce([{ id: 'p1' }]);
     const input = { slug: 'client-read', tool_slugs: ['note_to_page'] };
     const res = await ensure.handler(input, agentCtx);
@@ -521,8 +523,8 @@ describe('tool_group_ensure on a group below admin (client logins C5 audit, L3)'
     );
   });
 
-  it("an agent's replace of a team group waits too", async () => {
-    h.selectQueue.push([{ ...CLIENT_READ, audience: 'team' }], [{ id: 'agent-toolsmith' }]);
+  it("an agent's replace of such a group waits too", async () => {
+    h.selectQueue.push([CLIENT_READ], HELD, [{ id: 'agent-toolsmith' }]);
     const res = await ensure.handler(
       { slug: 'client-read', tool_slugs: ['client_shared_list'], mode: 'replace' },
       agentCtx,
@@ -532,7 +534,7 @@ describe('tool_group_ensure on a group below admin (client logins C5 audit, L3)'
   });
 
   it('the owner (the approved pending call, MCP) changes it directly', async () => {
-    h.selectQueue.push([CLIENT_READ]);
+    h.selectQueue.push([CLIENT_READ], HELD);
     const res = await ensure.handler(
       { slug: 'client-read', tool_slugs: ['note_to_page'] },
       { ownerId: 'o1', surface: { kind: 'owner', via: 'pending' } },
@@ -543,13 +545,13 @@ describe('tool_group_ensure on a group below admin (client logins C5 audit, L3)'
         toolSlugs: ['client_shared_list', 'client_shared_open', 'note_to_page'],
       }),
     );
-    h.selectQueue.push([CLIENT_READ]);
+    h.selectQueue.push([CLIENT_READ], HELD);
     await ensure.handler({ slug: 'client-read', tool_slugs: ['note_to_page'] }, owner);
     expect(h.update).toHaveBeenCalledTimes(2);
   });
 
   it('a caller that is neither an agent nor the owner is refused', async () => {
-    h.selectQueue.push([CLIENT_READ]);
+    h.selectQueue.push([CLIENT_READ], HELD);
     const res = await ensure.handler(
       { slug: 'client-read', tool_slugs: ['note_to_page'] },
       { ownerId: 'o1', surface: { kind: 'client', loginId: 'c1' } },
@@ -559,13 +561,13 @@ describe('tool_group_ensure on a group below admin (client logins C5 audit, L3)'
     expect(h.insert).not.toHaveBeenCalled();
   });
 
-  it('control: an agent may still add to an admin group, and re-send what a client group holds', async () => {
-    h.selectQueue.push([EXISTING_GROUP]);
+  it('control: an agent may still add to a group no other workspace holds, and re-send what a held group holds', async () => {
+    h.selectQueue.push([EXISTING_GROUP], []);
     await ensure.handler({ slug: 'geo-tools', tool_slugs: ['note_to_page'] }, agentCtx);
     expect(h.updateSet).toHaveBeenCalledWith(
       expect.objectContaining({ toolSlugs: ['geocode', 'note_to_page'] }),
     );
-    h.selectQueue.push([CLIENT_READ]);
+    h.selectQueue.push([CLIENT_READ], HELD);
     const res = await ensure.handler(
       { slug: 'client-read', tool_slugs: ['client_shared_open'] },
       agentCtx,

@@ -28,6 +28,9 @@ function registeredFor(caller: Partial<McpCaller>): string[] {
       write: false,
       ...caller,
     },
+    view: null,
+    privateWs: null,
+    connectors: [],
   });
   return out;
 }

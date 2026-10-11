@@ -577,31 +577,6 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     expect(await left(a)).toBe(0);
   });
 
-  it('M6: my_app_errors needs edit', async () => {
-    const tools = await import('@mantle/tools');
-    const errors = tools.MY_APP_TOOLS.find((t) => t.slug === 'my_app_errors')!;
-    const ctxOf = (login: string) => ({
-      ownerId: owner,
-      surface: {
-        kind: 'team' as const,
-        loginId: login,
-        mcp: { via: 'token' as const, write: false },
-      },
-    });
-    const roApp = await sys(() =>
-      c.createMemberApp({ loginId: mem2, brainId: owner }, { title: `${tag} ro errors` }),
-    );
-    await homeIn(roApp.id, ro);
-    const refused = await asLogin(mem, () => errors.handler({ id: roApp.id }, ctxOf(mem)));
-    expect(refused.ok).toBe(false);
-    expect(String((refused as { error?: string }).error)).toMatch(/not read its errors/);
-    const own = await sys(() =>
-      c.createMemberApp({ loginId: mem, brainId: owner }, { title: `${tag} own errors` }),
-    );
-    const ok = await asLogin(mem, () => errors.handler({ id: own.id }, ctxOf(mem)));
-    expect(ok.ok, JSON.stringify(ok).slice(0, 200)).toBe(true);
-  });
-
   it('the shell marks the private workspace; a member opens a file’s detail', async () => {
     const priv = await privateFor(mem);
     const shell = await call('/api/shell', mem);

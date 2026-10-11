@@ -2,16 +2,15 @@
  * App data over a login's own MCP, end to end on a real migrated Postgres
  * (team apps M1 audit, low 6 and medium 1):
  *
- *  - through the real login path (callLoginTool: the login's read scope,
- *    dispatchTool, the surface the route stamps), on the box's brain of a
- *    scratch database of its own, migrated to workspaces, so row security
- *    applies for real;
+ *  - through the one MCP surface every login has since W7b
+ *    (registerPreparedTools: the login's scope per call, the builtin with
+ *    the surface the route stamps), on the box's brain of a scratch database
+ *    of its own, migrated to workspaces, so row security applies for real;
  *  - the Team grant decides (workspaces W5b2): an app placed in a folder
  *    Team holds takes the folder's grant (S6) and is reached, its data
  *    written by the grant's Write switch;
- *  - a peer bound to a member acts under that member's MCP and Write
- *    switches (resolveMcpCaller), narrowed by its own Write switch (plan
- *    7.6).
+ *  - a peer bound to a member acts as that member, narrowed by its own
+ *    Write switch only (plan 7.6; the per-login switches went in W7b).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/app-data-mcp.db.test.ts
  */
@@ -68,18 +67,29 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     keyId: 'key-e2e',
     write,
   });
-  const toolRow = (slug: string) =>
-    ({
-      slug,
-      description: '',
-      inputSchema: {},
-      handler: { kind: 'builtin', ref: slug },
-      requiresConfirm: false,
-    }) as unknown as import('@mantle/db').Tool;
+  type Handler = (args: Record<string, unknown>, extra: unknown) => Promise<unknown>;
+  /** The tools the one surface registers for the member's key. */
+  const surfaceFor = (write: boolean) => {
+    const out = new Map<string, Handler>();
+    const fake = {
+      registerTool: (name: string, _c: unknown, handler: Handler) => void out.set(name, handler),
+    };
+    ls.registerPreparedTools(fake as never, {
+      kind: 'owner',
+      caller: caller(write),
+      view: { holdsAdmin: false, areas: new Set() },
+      privateWs: null,
+      connectors: [],
+    });
+    return out;
+  };
   const text = (r: unknown) =>
     ((r as { content?: { text?: string }[] }).content ?? []).map((p) => p.text ?? '').join('\n');
-  const run = (slug: string, args: Record<string, unknown>, write = true) =>
-    ls.callLoginTool(caller(write), toolRow(slug), args, 'team', false);
+  const run = async (slug: string, args: Record<string, unknown>, write = true) => {
+    const tool = surfaceFor(write).get(slug);
+    if (!tool) throw new Error(`${slug} is not on the surface`);
+    return (await tool(args, {})) as { isError?: boolean; content?: { text?: string }[] };
+  };
 
   async function publishedApp(title: string): Promise<string> {
     const a = await content.createApp(anchor, { title: `${tag} ${title}` });
@@ -192,7 +202,7 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     expect(ro).toMatchObject({ access: 'read' });
   });
 
-  it("a peer bound to a member acts under the member's MCP and Write switches", async () => {
+  it('a peer bound to a member acts as the member, narrowed by its own Write switch', async () => {
     await sql`insert into nodes (id, owner_id, type, title, path)
       values (${peerNode}, ${anchor}, 'mantle_peer', ${`${tag} peer`}, 'peers')`;
     await sql`insert into mantle_peers
@@ -207,17 +217,8 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
           headers: { authorization: `Bearer ${peerToken}` },
         }),
       );
-    // The member's MCP switch off (no row, or off): the peer is refused.
-    expect(await resolve()).toBeNull();
-    await sql`insert into mcp_login_access (login_id, enabled, write_enabled)
-              values (${member}, false, true)`;
-    expect(await resolve()).toBeNull();
-    // MCP on, the member's Write off: the peer reads only, whatever its own.
-    await sql`update mcp_login_access set enabled = true, write_enabled = false
-              where login_id = ${member}`;
-    expect(await resolve()).toMatchObject({ role: 'member', via: 'peer', write: false });
-    // Both on: the peer writes.
-    await sql`update mcp_login_access set write_enabled = true where login_id = ${member}`;
+    // No per-login switch since W7b: the peer acts as the member, and writes
+    // while its own Write switch is on.
     expect(await resolve()).toMatchObject({ role: 'member', via: 'peer', write: true });
     // The peer's own Write off still wins (it narrows, plan 7.6).
     await sql`update mantle_peers set write_enabled = false where id = ${peerId}`;

@@ -289,12 +289,28 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       via: 'oauth' as const,
       write: true,
     });
+    // The one MCP surface (W7b): the connector registered and called as
+    // /api/mcp does, in the login's scope.
     const call = async (loginId: string) => {
       const ls = await import('@mantle/mcp-core');
-      const out = await ls.callLoginTool(caller(loginId), connTool, {}, 'team', false);
+      type Out = { isError?: boolean; content: { text?: string }[] };
+      let handler: ((a: unknown, e: unknown) => Promise<Out>) | undefined;
+      const fake = {
+        registerTool: (name: string, _c: unknown, cb: (a: unknown, e: unknown) => Promise<Out>) => {
+          if (name === connTool.slug) handler = cb;
+        },
+      };
+      ls.registerPreparedTools(fake as never, {
+        kind: 'owner',
+        caller: caller(loginId),
+        view: { holdsAdmin: false, areas: new Set() },
+        privateWs: null,
+        connectors: [connTool],
+      });
+      const out = await handler!({}, {});
       return {
         isError: out.isError === true,
-        text: out.content.map((c) => (c as { text?: string }).text ?? '').join('\n'),
+        text: out.content.map((c) => c.text ?? '').join('\n'),
       };
     };
 
@@ -302,25 +318,23 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       await setTeamResource(null);
       const out = await call(member);
       expect(out.isError).toBe(true);
-      expect(out.text).toMatch(/not a resource of any of your workspaces/);
+      expect(out.text).toMatch(/not one of this workspace.s resources/);
     });
 
     it('a write tool refused with Write off', async () => {
       await setTeamResource({ write: false });
-      expect((await call(member)).text).toMatch(
-        /Write switched on in a workspace where you are a Moderator/,
-      );
+      expect((await call(member)).text).toMatch(/Write switched on in this workspace/);
     });
 
     it('a write tool refused when the login moderates no workspace holding it', async () => {
       await setTeamResource({ write: true });
       await x(sql`update workspace_users set moderator = false
         where workspace_id = ${team} and login_id = ${member2}`);
-      expect((await call(member2)).text).toMatch(/where you are a Moderator/);
+      expect((await call(member2)).text).toMatch(/to be a Moderator here/);
     });
 
     it('a login with no workspace on a migrated brain is refused', async () => {
-      expect((await call(stranger)).text).toMatch(/not a user of any workspace/);
+      expect((await call(stranger)).text).toMatch(/user of no workspace/);
     });
 
     it('what the rule lets through: a read with the resource; a write with Write and a Moderator', async () => {

@@ -244,8 +244,9 @@ describe('system manifest integrity', () => {
     // fails CI if a future edit re-adds a dangerous slug to the group.
     const team = MANIFEST_AGENTS.find((a) => a.slug === 'team-responder')!;
     const grant = effectiveTools(team);
-    // The single write path.
-    expect(grant.has('team_request_create'), 'the one write tool').toBe(true);
+    // No write at all since W7b: team_request_create was retired (a member
+    // changes what it may edit, in its own scope).
+    expect(grant.has('team_request_create'), 'no write tool').toBe(false);
     // Deliberate exclusions (see team-read group description).
     for (const forbidden of [
       'export_node', // bulk exfiltration ease
@@ -326,7 +327,6 @@ describe('system manifest integrity', () => {
       'app_db_query',
       'summarize_text',
       'read_result',
-      'team_request_create',
     ]);
     // The reads a team-level role may never make stay in the admin group.
     const teamLevel = new Set([
@@ -521,13 +521,17 @@ describe('system manifest integrity', () => {
   // silently never fires. Checked against the commits that shipped them when
   // the history is there (a shallow CI clone skips it).
   it('the retired team-responder hashes are the defaults git shipped', () => {
-    const shipped = [
-      '0f4b2246f72b9136e2374930b72fd04a79880da3', // 2026-07-05, the 1:1 portal chat
-      '5dc930df4bca33f1c7025b25f296857ffc24d9ef', // 2026-07-17, the forum
+    const shipped: [string, string][] = [
+      // 2026-07-05, the 1:1 portal chat
+      ['0f4b2246f72b9136e2374930b72fd04a79880da3', 'apps/web'],
+      // 2026-07-17, the forum
+      ['5dc930df4bca33f1c7025b25f296857ffc24d9ef', 'apps/web'],
+      // v0.239.95, the member chat with team_request_create (retired in W7b)
+      ['c71f3636a', 'server/web'],
     ];
-    const src = (sha: string): string | null => {
+    const src = ([sha, dir]: [string, string]): string | null => {
       try {
-        return execSync(`git show ${sha}:apps/web/lib/system-manifest/prompts.ts`, {
+        return execSync(`git show ${sha}:${dir}/lib/system-manifest/prompts.ts`, {
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'ignore'],
           maxBuffer: 1e8,
@@ -557,7 +561,8 @@ describe('system manifest integrity', () => {
     const p = MANIFEST_AGENTS.find((a) => a.slug === 'team-responder')!.systemPrompt!;
     expect(p).not.toMatch(/forum|topic|1:1|portal|team code/i);
     expect(p).toMatch(/member login/);
-    expect(p).toMatch(/team_request_create/);
+    // Retired in W7b: the responder files no request any more.
+    expect(p).not.toMatch(/team_request_create/);
     expect(p).not.toMatch(/\u2014/); // house style: no em dashes
   });
 
@@ -646,7 +651,10 @@ describe('adminOnly tool groups (workspaces W4b)', () => {
     const { join } = await import('node:path');
     const { MANIFEST_ADMIN_ONLY_GROUPS } = await import('./manifest');
     const groupSlugs = new Set(MANIFEST_TOOL_GROUPS.map((g) => g.slug));
-    for (const slug of MANIFEST_ADMIN_ONLY_GROUPS) expect(groupSlugs.has(slug), slug).toBe(true);
+    const { RETIRED_TOOL_GROUP_SLUGS } = await import('./manifest');
+    for (const slug of MANIFEST_ADMIN_ONLY_GROUPS) {
+      expect(groupSlugs.has(slug) || RETIRED_TOOL_GROUP_SLUGS.includes(slug), slug).toBe(true);
+    }
     const sqlText = readFileSync(
       join(
         __dirname,

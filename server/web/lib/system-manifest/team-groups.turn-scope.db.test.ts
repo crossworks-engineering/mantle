@@ -223,7 +223,7 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
   it('the turn’s own reads: tool groups (no adminOnly) and the context loader', async () => {
     const rt = await import('@mantle/runtime/agent');
     const tools = await m.withTurnScope(scope(), () =>
-      rt.resolveAgentToolGroups(owner, ['team-read', 'formulas-eval', 'team-read-admin'], 'team'),
+      rt.resolveAgentToolGroups(owner, ['team-read', 'formulas-eval', 'team-read-admin']),
     );
     expect(tools).toContain('search_nodes');
     expect(tools).not.toContain('email_list');

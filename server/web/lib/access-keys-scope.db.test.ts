@@ -292,7 +292,13 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
         ),
     };
     const core = await import('@mantle/mcp-core');
-    core.registerPreparedTools(fakeServer as never, { kind: 'owner', caller: caller! });
+    core.registerPreparedTools(fakeServer as never, {
+      kind: 'owner',
+      caller: caller!,
+      view: null,
+      privateWs: null,
+      connectors: [],
+    });
     const update = handlers.get('page_update');
     expect(update).toBeDefined();
     const out = (await update!({ id: sharedPage, title: `${tag} via mcp` })) as {
@@ -411,29 +417,19 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     expect(await mcpCaller(key.secret)).toBeNull();
   });
 
-  it("a member key on MCP needs the login's switch, and both write switches", async () => {
+  it('a member key on MCP acts as its login, held to its own write switch (W7b)', async () => {
     const key = await makeKey({ access: 'read_write' }, member);
-    expect(await mcpCaller(key.secret)).toBeNull();
-
-    await sql`insert into mcp_login_access (login_id, enabled, write_enabled)
-              values (${member}, true, false)
-              on conflict (login_id) do update set enabled = true, write_enabled = false`;
+    // No per-login switch: the key acts as the member at once.
     expect(await mcpCaller(key.secret)).toMatchObject({
       role: 'member',
       loginId: member,
       via: 'key',
-      write: false,
+      write: true,
       keyId: key.id,
       areas: null,
     });
-
-    await sql`update mcp_login_access set write_enabled = true where login_id = ${member}`;
-    expect((await mcpCaller(key.secret))?.write).toBe(true);
-
-    // A read key narrows its login: it never writes, whatever the login's.
+    // A read key narrows its login: it never writes.
     const reader = await makeKey({ access: 'read' }, member);
     expect((await mcpCaller(reader.secret))?.write).toBe(false);
-    await sql`update mcp_login_access set write_enabled = false where login_id = ${member}`;
-    expect((await mcpCaller(key.secret))?.write).toBe(false);
   });
 });

@@ -169,7 +169,9 @@ export function isPeerRiskyTool(slug: string): boolean {
     PEER_RISKY_TOOL_PREFIXES.some((p) => slug.startsWith(p)) ||
     isBuiltinSpending(slug) ||
     def?.requiresConfirm === true ||
-    (slug.startsWith('app_') && !isBuiltinReadOnly(slug))
+    // App data rows are data, not the app's code (app_data_write is the
+    // connection's own app data tool, held to the grant's Write).
+    (slug.startsWith('app_') && !slug.startsWith('app_data_') && !isBuiltinReadOnly(slug))
   );
 }
 

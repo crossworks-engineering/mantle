@@ -67,7 +67,13 @@ function toolsFor(areas: readonly string[] | null): Map<string, Cb> {
     write: false,
     areas,
   };
-  registerPreparedTools(fakeServer as never, { kind: 'owner', caller });
+  registerPreparedTools(fakeServer as never, {
+    kind: 'owner',
+    caller,
+    view: null,
+    privateWs: null,
+    connectors: [],
+  });
   return out;
 }
 

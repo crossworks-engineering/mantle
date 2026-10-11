@@ -140,29 +140,4 @@ describe.skipIf(!URL)('the OAuth lock', () => {
     expect(await oauth.mintAuthCode({ ...input, consentEpoch: epoch })).toBeNull();
   });
 
-  it("revokes grants and deletes open codes when a login's MCP is turned off (N3)", async () => {
-    await sql`insert into mcp_login_access (login_id, enabled, write_enabled)
-              values (${member}, true, false)
-              on conflict (login_id) do update set enabled = true`;
-    const g = await grant(member);
-    await sql`insert into oauth_auth_codes
-        (code_hash, client_id, owner_id, actor_id, code_challenge, code_challenge_method,
-         redirect_uri, scope, expires_at)
-      values (${sha(`code-${randomUUID()}`)}, ${client}, ${anchor}, ${member}, ${'c'.repeat(43)},
-              'S256', 'https://c.example/cb', 'mcp', now() + interval '5 minutes')`;
-    const [a] = await sql<Row[]>`select session_epoch from auth.users where id = ${admin}`;
-    const cookie = `mantle_session=${
-      tokens.buildSessionCookie(admin, { epoch: Number(a!.session_epoch) }).value
-    }`;
-    const res = await app.request(`/api/mcp-logins/${member}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ enabled: false }),
-    });
-    expect(res.status).toBe(200);
-    const [row] = await sql<Row[]>`select revoked_at from oauth_access_tokens where id = ${g.id}`;
-    expect(row!.revoked_at).not.toBeNull();
-    const codes = await sql<Row[]>`select 1 from oauth_auth_codes where actor_id = ${member}`;
-    expect(codes).toHaveLength(0);
-  });
 });
