@@ -27,6 +27,16 @@ const MY_APP_READS = [
   'my_app_list',
   'my_app_snapshot_list',
 ];
+/** The draft and submit tools removed in W5c (plan R7). A brain whose rows
+ *  and groups still name them must not offer them on any login's MCP. */
+const REMOVED_W5C = [
+  'my_note_create',
+  'my_page_create',
+  'my_file_upload',
+  'my_item_submit',
+  'my_app_submit',
+  'my_app_recall',
+];
 const MY_APP_SLUGS = [
   ...MY_APP_READS,
   'my_app_create',
@@ -40,8 +50,6 @@ const MY_APP_SLUGS = [
   'my_app_snapshot_restore',
   'my_app_snapshot_delete',
   'my_app_unshare',
-  'my_app_submit',
-  'my_app_recall',
   'my_app_delete',
   'my_app_undelete',
 ];
@@ -124,8 +132,9 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       'event_list',
       'my_items_list',
       'client_shared_list',
-      'my_note_create',
-      'my_item_submit',
+      // Stale rows of the removed tools (a brain before the boot reconcile
+      // disables them).
+      ...REMOVED_W5C,
       'app_db_query',
       'app_data_list',
       'app_data_schema',
@@ -142,7 +151,8 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     }
     await exec(sqlTag`
       insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled) values
-        (${anchor}, 'g-team', 'g', ARRAY['note_list','note_create','my_items_list','app_db_query'], 'team', true),
+        (${anchor}, 'g-team', 'g', ARRAY['note_list','note_create','my_items_list','app_db_query',
+          ${sqlTag.raw(REMOVED_W5C.map((s) => `'${s}'`).join(','))}], 'team', true),
         (${anchor}, 'g-admin', 'g', ARRAY['event_list'], 'admin', true),
         (${anchor}, 'g-client', 'g', ARRAY['client_shared_list','note_list','my_items_list'], 'client', true)`);
     await exec(sqlTag`
@@ -243,30 +253,25 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     ]);
   });
 
-  it('write on: a member draft lands in their own space; a library write is refused', async () => {
+  it('write on: no draft or submit tool (removed in W5c), even where a group still names one; a library write is refused', async () => {
     const c = await connect(asMember(true));
     const list = await names(c);
-    expect(list).toContain('my_note_create');
-    expect(list).toContain('my_item_submit');
+    for (const s of REMOVED_W5C) expect(list, s).not.toContain(s);
     expect(list).toContain('app_data_write');
+    expect(list).toContain('my_app_create');
     expect(list).not.toContain('app_db_query');
     expect(list).not.toContain('event_list');
     expect(list).not.toContain('note_create');
-
-    const made = await c.callTool({
-      name: 'my_note_create',
-      arguments: { title: `${tag} draft`, content: 'by mcp' },
-    });
-    expect(text(made)).not.toMatch(/^Error/);
-    expect(made.isError ?? false).toBe(false);
-    const madeId = (JSON.parse(text(made)) as { id: string }).id;
-    const [draft] = (await exec(sqlTag`
-      select owner_id, title from nodes where id = ${madeId}`)) as unknown as {
-      owner_id: string;
-      title: string;
-    }[];
-    expect(draft?.title, text(made)).toBe(`${tag} draft`);
-    expect(draft?.owner_id).toBe(memberSpace);
+    // Nor callable past the list.
+    await expect(
+      c.callTool({ name: 'my_note_create', arguments: { title: `${tag} draft`, content: 'x' } }),
+    ).rejects.toThrow(/not found/i);
+    await expect(
+      c.callTool({ name: 'my_item_submit', arguments: { id: randomUUID() } }),
+    ).rejects.toThrow(/not found/i);
+    const [stray] = (await exec(sqlTag`
+      select id from nodes where title = ${`${tag} draft`}`)) as unknown as unknown[];
+    expect(stray).toBeUndefined();
 
     await expect(
       c.callTool({
@@ -405,10 +410,10 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     }
   });
 
-  it('a client with write on gets the draft tools too, and still no library tool', async () => {
+  it('a client with write on gets no draft tool (removed in W5c), and still no library tool', async () => {
     const c = await connect(asClient(true));
     const list = await names(c);
-    expect(list).toContain('my_note_create');
+    for (const s of REMOVED_W5C) expect(list, s).not.toContain(s);
     expect(list).not.toContain('note_list');
     expect(list).not.toContain('note_create');
   });

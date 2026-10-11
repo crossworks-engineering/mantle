@@ -32,20 +32,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'the level helpers the client portal, member Library and member drawings still import (apps read grants since W5b2)',
   },
-  'packages/content/src/member-apps.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'DTO: the member launcher card still carries its level field (always team since W5b2)',
-  },
-  'packages/client-types/src/dto/member-apps.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'DTO: member launcher card level',
-  },
-  'packages/client-types/src/dto/member.ts': {
-    lines: 4,
-    phase: 'W5c',
-    why: 'DTO: member Library and review rows level',
   },
   'packages/content/src/app-table-exports.ts': {
     lines: 3,
@@ -77,30 +63,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'client: client report',
   },
-  'packages/content/src/member-draw-images.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'member drawing images (Library levels)',
-  },
-  'packages/content/src/member-items.ts': {
-    lines: 5,
-    phase: 'W5c',
-    why: 'member Library and accepted rows',
-  },
-  'packages/content/src/member-library.ts': {
-    lines: 6,
-    phase: 'W5c',
-    why: 'member Library (team levels without public)',
-  },
-  'packages/content/src/tree/member-tree.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'member tree (Library levels)',
-  },
-  'packages/runtime/src/assistant/run-team-turn.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'agent level per login role',
   },
   'packages/tools/src/client-app-tools.ts': {
     lines: 1,
@@ -122,10 +84,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'client chat agent level',
   },
-  'server/web/app/api/member/chat/route.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'member chat agent level',
   },
   // ── W6b (personal-space rows, accepted-item author path) ──
   'packages/content/src/member-accepted.ts': {

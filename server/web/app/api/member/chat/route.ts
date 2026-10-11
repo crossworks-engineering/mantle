@@ -1,11 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
-import { agents, db } from '@mantle/db';
 import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
 import {
-  TEAM_RESPONDER_SLUG,
   TEAM_TURN_WORKFLOW,
   MEMBER_TURN_QUEUE,
   type TeamTurnInput,
@@ -17,6 +14,7 @@ import {
   listTeamThread,
   recordTeamAccess,
   releaseMemberTurn,
+  teamAssistant,
 } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
 import type { MemberChatThread } from '@mantle/client-types';
@@ -29,7 +27,7 @@ import { firstIssue } from '@/lib/zod-issue';
 
 /**
  * Member chat (member logins, plan section 5): a MEMBER login's own thread
- * with the brain's team-level agent.
+ * with the assistant of the brain's Team workspace.
  *
  *   GET  /api/member/chat[?before=ISO] -> { agent, messages }
  *   POST /api/member/chat { text }     -> 202 { turnId }; the reply lands in
@@ -37,13 +35,14 @@ import { firstIssue } from '@/lib/zod-issue';
  *                                         the same Idempotency-Key is the same
  *                                         turn; the key with new text, a 409.
  *
- * The agent is team-responder, and only while an admin has set it to team:
- * members chat only with team-level agents, and the turn engine refuses any
- * other level for a member too. The turn runs at the agent's level (RLS), so
- * the agent reads only what the member's level may see. One thread per login
+ * The agent is the assistant the Team workspace holds (a workspace resource,
+ * workspaces W5c: no agent level is read); with none, chat is not open. The
+ * turn engine re-checks it. The turn runs in the Team workspace's scope for
+ * the member (row security on the grants), so the agent reads only what that
+ * workspace may see. One thread per login
  * (team_messages.login_id), never in the owner's assistant stream. A
  * picture in the thread points at the member's own file or drawing route,
- * and only at an item at team level or below; every other image is left out
+ * and only at an item the member may read; every other image is left out
  * (chat-images.ts, client logins C6), never an owner route. The login
  * IS the team member: no contact is needed (0167). Limits, per login: 6
  * messages a minute, and the daily turn cap and token budget
@@ -69,22 +68,11 @@ function memberName(member: MemberCaller): string {
   return member.displayName?.trim() || member.email.split('@')[0] || 'team member';
 }
 
-/** The agent a member chats with, or null while it is not at team level. */
+/** The agent a member chats with: the Team workspace's assistant, or null
+ *  while the Team workspace holds none (or a disabled one). */
 async function memberAgent(member: MemberCaller) {
-  const [row] = await db
-    .select({ slug: agents.slug, name: agents.name, audience: agents.audience })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, member.anchorId),
-        eq(agents.slug, TEAM_RESPONDER_SLUG),
-        eq(agents.enabled, true),
-      ),
-    )
-    .limit(1);
-  // Exactly team (client logins C4, plan section 8): not admin, and not
-  // client or public either (those serve other logins).
-  return row && row.audience === 'team' ? { slug: row.slug, name: row.name } : null;
+  const agent = await teamAssistant(member.anchorId);
+  return agent ? { slug: agent.slug, name: agent.name } : null;
 }
 
 export async function GET(req: Request) {
@@ -132,7 +120,7 @@ export async function POST(req: Request) {
   const agent = await memberAgent(member);
   if (!agent) {
     return NextResponse.json(
-      { error: 'Chat is not open yet: the admin has not set a team-level agent.' },
+      { error: 'Chat is not open yet: the Team workspace has no assistant.' },
       { status: 409 },
     );
   }

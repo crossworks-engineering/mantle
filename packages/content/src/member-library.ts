@@ -1,33 +1,21 @@
 /**
  * The member Library (member logins, Phase 1): the brain items a member login
- * may read. There is no ACCESS filter here on purpose. The caller runs these
- * inside `withViewer('team', …)`, and Postgres row security on the team role
- * decides what exists: team-, client- and public-level workspace items,
- * published content only (draft columns are never granted). A row this code
- * cannot see is simply absent, so a member can never reach an admin item by id.
+ * may read. There is no ACCESS filter here on purpose. The routes read as the
+ * login (`withViewer(level, { login }, …)`, workspaces W5b2): row security on
+ * the workspace role shows the items the login's workspaces hold (their
+ * grants), published content only (draft columns are never granted). A row
+ * this code cannot see is simply absent, so a member can never reach an
+ * admin item by id. A client's "Shared with you" reads the same way
+ * (client-shared.ts).
  *
- * The Library is narrower than what row security allows (client logins,
- * decision 6): a member (team level) lists team and client items, each row
- * carrying its `audience` so the app can badge a client item; a client lists
- * and opens client items only. Public items are not in anyone's Library
- * LIST: an open link makes an item public (0161), and listing every item
- * ever link-shared with an outsider was a surprise nobody chose. A member
- * still OPENS a public item by id (audit B10, Jason 2026-09-29): anyone with
- * its link can read it, so hiding it from staff helped nobody, and a team
- * page that gained an open link vanished from the member app while its
- * images still loaded. A public item reads as `audience: 'team'` there (no
- * Client badge: a client login does not read it).
- *
- * Since workspaces W5b2 the routes read as the login (withViewer with
- * { login }): the grants decide (row security on the workspace role) and no
- * level narrows the list; the row's badge field still shows the frozen
- * level (W5c moves it). The level rules below serve a level scope only.
+ * No level is read (workspaces W5c): a row carries no level badge, and no
+ * level narrows the list. A level-role scope (a test) reads what that role's
+ * row security shows.
  *
  * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
  */
 import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
-import { db, nodes, type ViewerLevel, currentScope } from '@mantle/db';
-import { isReadAt, readAtSql } from './item-level';
+import { db, nodes, currentScope } from '@mantle/db';
 import { getNote } from './notes';
 import { getPage } from './pages/read';
 import { getTable } from './tables/read';
@@ -46,64 +34,14 @@ export {
   type MemberItemKind as LibraryKind,
 } from '@mantle/client-types/member-kinds';
 
-/** The levels an item in a Library can have (see LIBRARY_LEVELS). */
-export type LibraryAudience = 'team' | 'client';
-
 export type LibraryRow = {
   id: string;
   type: LibraryKind;
   title: string;
   icon: string | null;
   summary: string | null;
-  /** 'client' = a client login reads it too (the app's Client badge). */
-  audience: LibraryAudience;
   updatedAt: string;
 };
-
-/** The item levels each reader's Library lists and opens (decision 6). Every
- *  level is named; a level not here (or an empty list) lists nothing, so a
- *  new level fails closed until someone decides what its Library holds. */
-const LIBRARY_LEVELS: Readonly<Record<ViewerLevel, readonly LibraryAudience[]>> = {
-  admin: [],
-  team: ['team', 'client'],
-  client: ['client'],
-  public: [],
-};
-
-/** The item levels each reader OPENS by id: the Library's, and for a member
- *  public items too (audit B10). A client does not: public is not a client
- *  level (client logins decision 3). */
-const OPEN_LEVELS: Readonly<Record<ViewerLevel, readonly ViewerLevel[]>> = {
-  admin: [],
-  team: ['team', 'client', 'public'],
-  client: ['client'],
-  public: [],
-};
-
-/** The item levels a reader at `level` finds in their Library. */
-export function libraryLevelsOf(level: ViewerLevel): readonly LibraryAudience[] {
-  return Object.hasOwn(LIBRARY_LEVELS, level) ? LIBRARY_LEVELS[level] : [];
-}
-
-/** The levels of `table` the current reader has (empty for an unknown one).
- *  Null in a login's workspace scope (withViewer with `{ login }`, W5b2):
- *  brain items have no level there, the grants of the login's workspaces
- *  decide (row security), so there is no level rule to add. */
-function levelsOf<T>(table: Readonly<Record<ViewerLevel, readonly T[]>>): readonly T[] | null {
-  const scope = currentScope();
-  if (scope.kind === 'user') return null;
-  if (scope.kind !== 'level') return [];
-  return Object.hasOwn(table, scope.level) ? table[scope.level] : [];
-}
-
-/** A level rule as SQL: false when the reader has no level there, none in a
- *  login's workspace scope (null: the grants decide). An item counts at its
- *  own level OR the share it inherits from a folder holding it (folder
- *  sharing), the union rule the row policy uses: a note an admin keeps at
- *  admin in a folder shared with the team is in a member's Library. */
-function levelWhere(levels: readonly string[] | null = levelsOf(LIBRARY_LEVELS)) {
-  return levels === null ? undefined : readAtSql(levels);
-}
 
 /** Refuse to run at admin: this module exists to be read as a member or a
  *  client (a login's workspace scope, or a level role in a test), and at
@@ -123,12 +61,6 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
     title: n.title,
     icon: typeof d.icon === 'string' && d.icon.trim() ? d.icon : null,
     summary: typeof d.summary === 'string' ? d.summary : null,
-    // The list admits only these two; a public item opened by id (B10), or
-    // anything else, reads as team: the Client badge is never gained. A
-    // client reads it at its own level or through a client-shared folder.
-    audience: isReadAt(n.audience, n.inheritedLevel, ['client'], n.embeddedLevel)
-      ? 'client'
-      : 'team',
     updatedAt: n.updatedAt.toISOString(),
   };
 }
@@ -143,21 +75,20 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
  */
 const notExtractedFragment = sql`NOT (${nodes.type} = 'file' AND ${nodes.data} ? 'sourceFileId')`;
 
-/** What the Library lists: this brain's items of a Library kind at a level
- *  the reader's Library holds, without extracted image fragments. */
+/** What the Library lists: this brain's items of a Library kind the reader
+ *  reads, without extracted image fragments. */
 function libraryWhere(anchorId: string, opts: { kind?: LibraryKind; q?: string } = {}) {
   const q = opts.q?.trim();
   return and(
     eq(nodes.ownerId, anchorId),
-    levelWhere(),
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...LIBRARY_KINDS]),
     notExtractedFragment,
     q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
   );
 }
 
-/** The Library, newest first: the items at a level the reader's Library
- *  holds, without extracted image fragments. `q` matches the title. */
+/** The Library, newest first: the items the reader reads, without
+ *  extracted image fragments. `q` matches the title. */
 export async function listLibrary(
   anchorId: string,
   opts: { kind?: LibraryKind; q?: string; limit?: number; offset?: number } = {},
@@ -174,6 +105,19 @@ export async function listLibrary(
       .where(where),
   ]);
   return { items: rows.map(rowOf), total: count?.n ?? 0 };
+}
+
+/** The ids among `ids` the reader's Library holds: this brain's items the
+ *  current scope reads (row security on the grants decides). For the one
+ *  list's accepted rows: one the Library holds opens as the Library item. */
+export async function libraryHolds(anchorId: string, ids: readonly string[]): Promise<Set<string>> {
+  assertLimited();
+  if (!ids.length) return new Set();
+  const rows = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, anchorId), inArray(nodes.id, [...ids])));
+  return new Set(rows.map((r) => r.id));
 }
 
 /** How many items the Library lists, per kind (zeros included): the stat
@@ -202,11 +146,9 @@ export type LibraryItem =
       sizeBytes: number | null;
     });
 
-/** One Library item with its readable body, or null when the reader's level
- *  cannot see it, its level is not one the reader opens (OPEN_LEVELS: the
- *  list's, plus public for a member), or it is not a Library kind. `tabId`
- *  picks a table's tab (default the first); the table's `tabs` list names
- *  them all. */
+/** One Library item with its readable body, or null when the reader cannot
+ *  see it or it is not a Library kind. `tabId` picks a table's tab (default
+ *  the first); the table's `tabs` list names them all. */
 export async function getLibraryItem(
   anchorId: string,
   id: string,
@@ -216,7 +158,7 @@ export async function getLibraryItem(
   const [n] = await db
     .select()
     .from(nodes)
-    .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId), levelWhere(levelsOf(OPEN_LEVELS))))
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId)))
     .limit(1);
   if (!n || !isLibraryKind(n.type)) return null;
   const base = rowOf(n);

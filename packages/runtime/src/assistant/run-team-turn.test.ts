@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  assertAgentForRole,
-  emptyLoginContext,
-  replyUsedPrivate,
-  teamThreadToHistory,
-} from './run-team-turn';
+import { replyUsedPrivate, teamThreadToHistory } from './run-team-turn';
 import { isTeamPrivateReadsEnabled, TEAM_PRIVATE_READ_SLUGS } from '@mantle/content';
 import type { TeamMessage } from '@mantle/db';
 
@@ -102,48 +97,6 @@ describe('private-reads switch', () => {
       ? resolved
       : resolved.filter((s) => !gated.has(s));
     expect(on).toEqual(resolved);
-  });
-});
-
-describe('assertAgentForRole (a login chats with its own level only, plan section 8)', () => {
-  it('a member takes a team-level agent and nothing else', () => {
-    expect(() =>
-      assertAgentForRole({ slug: 'team-responder', audience: 'team' }, 'member'),
-    ).not.toThrow();
-    for (const audience of ['admin', 'client', 'public']) {
-      expect(() => assertAgentForRole({ slug: 'a', audience }, 'member')).toThrow(
-        /only chat with a team-level agent/,
-      );
-    }
-    // A stand-in with no level counts as admin: fail closed.
-    expect(() => assertAgentForRole({ slug: 'x' }, 'member')).toThrow(/admin level/);
-  });
-
-  it('a client takes a client-level agent and nothing else', () => {
-    expect(() =>
-      assertAgentForRole({ slug: 'client-responder', audience: 'client' }, 'client'),
-    ).not.toThrow();
-    for (const audience of ['admin', 'team', 'public']) {
-      expect(() => assertAgentForRole({ slug: 'a', audience }, 'client')).toThrow(
-        /only chat with a client-level agent/,
-      );
-    }
-    expect(() => assertAgentForRole({ slug: 'x' }, 'client')).toThrow(/admin level/);
-  });
-});
-
-describe('emptyLoginContext (a client turn loads no retrieval context)', () => {
-  it('carries no fact, hit, relation, digest, note or history', () => {
-    const ctx = emptyLoginContext('what is on the schedule?');
-    expect(ctx.facts).toEqual([]);
-    expect(ctx.contentHits).toEqual([]);
-    expect(ctx.chunkHits).toEqual([]);
-    expect(ctx.relations).toEqual([]);
-    expect(ctx.digests).toEqual([]);
-    expect(ctx.personaNotes).toEqual([]);
-    expect(ctx.history).toEqual([]);
-    expect(ctx.corpusMap.entries).toEqual([]);
-    expect(ctx.journalRelevant).toBe('');
   });
 });
 

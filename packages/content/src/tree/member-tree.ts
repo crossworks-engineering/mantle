@@ -1,13 +1,12 @@
 /**
  * A member's tree (folder plan phase 5, "Members and clients"): one tree per
  * kind that merges, per path,
- *   - the brain's items the member reads (as the reader, ./reader),
+ *   - the brain's items the member reads (as the reader, ./reader), and
  *   - the member's own folders and drafts (rows its space owns at a brain
- *     folder path), and
- *   - teammates' drafts shared with the team.
- * A member's own folders are private: only they see them. A teammate's draft
- * shows at the deepest folder of its path that this member sees (never the
- * teammate's private folders), else at the top level.
+ *     folder path).
+ * A member's own folders are private: only they see them. (Teammates' drafts
+ * shared with the team were a third source; they went with team drafts in
+ * workspaces W5c.)
  *
  * A brain folder shows only by the reader rules (./reader): a workspace of
  * the member holds it, or it leads to something the member reads. Where a member's
@@ -16,15 +15,14 @@
  * cannot learn a hidden folder's name, look or id by naming a folder like it
  * (folder audit 2026-09-30, S4). A member's rows that end up below a hidden
  * brain folder (the admin unshared or moved it) show at the deepest folder
- * above them the member sees, like a teammate's draft.
+ * above them the member sees, else at the top level.
  *
- * In a folder, drafts come before the brain's items, newest first (own, then
- * the team's), and page like them: a folder's pages run through its drafts
+ * In a folder, drafts come before the brain's items, newest first, and page
+ * like them: a folder's pages run through its drafts
  * first, then its brain items (a draft cursor, then the reader tree's keyset
  * cursor). By name (search and the A to Z view) drafts and brain items are
  * one list in one order, paged by one keyset cursor. A space holds at most
- * SPACE_ITEM_LIMIT items, so a member's own drafts are read whole; the
- * team's newest SPACE_ITEM_LIMIT drafts of the kind are.
+ * SPACE_ITEM_LIMIT items, so a member's own drafts are read whole.
  *
  * Files: a member's files and file folders sit under `space_files`, the
  * mirror of the brain's `files` (spaceFilesPath, @mantle/db), so no brain
@@ -32,8 +30,7 @@
  * and maps at the edge.
  *
  * Call it on the admin pool, outside any viewer scope: it scopes its own
- * reads (withSpace for the member's rows, withTeamDrafts for the team's,
- * withViewer for the brain's).
+ * reads (withSpace for the member's rows, withViewer for the brain's).
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -42,7 +39,6 @@ import {
   db,
   spaceFilesPath,
   withSpace,
-  withTeamDrafts,
   withViewer,
   isSystemScope,
 } from '@mantle/db';
@@ -82,8 +78,7 @@ import { readerItems, visibleFolders } from './reader';
 /** Who browses: the anchor (brain), and the member's space and login. */
 export type MemberTreeScope = { anchorId: string; spaceId: string; loginId: string };
 
-/** How many drafts of a kind are read at once (own, and the team's): all a
- *  space can hold. */
+/** How many drafts of a kind are read at once: all a space can hold. */
 const DRAFTS_MAX = SPACE_ITEM_LIMIT;
 
 function assertAdminScope(): void {
@@ -114,7 +109,6 @@ function storedRoot(kind: TreeKind): string {
 type DraftRow = ItemSqlRow & {
   sharing: 'private' | 'team';
   review_state: string;
-  author_login_id: string | null;
 };
 
 /** A draft, the tree path it shows at, and its name key as the database
@@ -133,7 +127,7 @@ export type MemberView = {
   byId: Map<string, TreeFolder>;
   /** The member's own folders by id (the ones it may change). */
   ownById: Map<string, TreeFolder>;
-  /** Drafts, each at the tree path it shows at, own first, newest first. */
+  /** The member's drafts, each at the tree path it shows at, newest first. */
   drafts: MemberDraft[];
   /** Brain items the member reads, per tree path. */
   brainItems: Map<string, number>;
@@ -141,18 +135,13 @@ export type MemberView = {
   order: Map<string, number>;
 };
 
-function draftItem(kind: TreeKind, r: DraftRow, source: 'own' | 'team', author?: string): TreeItem {
+function draftItem(kind: TreeKind, r: DraftRow): TreeItem {
   const item = treeItemFromRow(kind, r);
   const state = pillOf({
     sharing: r.sharing,
     reviewState: r.review_state as Parameters<typeof pillOf>[0]['reviewState'],
   });
-  return {
-    ...item,
-    state: (state ?? null) as TreeItemState | null,
-    source,
-    ...(author ? { author } : {}),
-  };
+  return { ...item, state: (state ?? null) as TreeItemState | null, source: 'own' };
 }
 
 function ownFolder(r: {
@@ -181,8 +170,8 @@ function ownFolder(r: {
   };
 }
 
-const draftColumns = sql`n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.embedded_level,
-  n.updated_at, lower(n.title) as sort_key, si.sharing, si.review_state, si.author_login_id`;
+const draftColumns = sql`n.id, n.path::text as path, n.title, n.data,
+  n.updated_at, lower(n.title) as sort_key, si.sharing, si.review_state`;
 
 /** Read everything a member's tree of `kind` needs, once per call. */
 export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promise<MemberView> {
@@ -190,7 +179,7 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
   const spec = TREE_KIND_SPECS[kind];
   const root = storedRoot(kind);
   const space = { spaceId: scope.spaceId, loginId: scope.loginId };
-  const [vis, own, team] = await Promise.all([
+  const [vis, own] = await Promise.all([
     visibleFolders(scope.anchorId, 'team', scope.loginId, kind),
     withSpace(space, async () => {
       const folders = (await db.execute(sql`
@@ -211,29 +200,15 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
          limit ${DRAFTS_MAX}`)) as unknown as DraftRow[];
       return { folders, items };
     }),
-    withTeamDrafts(
-      async () =>
-        (await db.execute(sql`
-          select ${draftColumns}
-            from nodes n join space_items si on si.node_id = n.id
-           where si.sharing = 'team' and mantle_member_space(n.owner_id)
-             and si.author_login_id is distinct from ${scope.loginId}
-             and n.type = ${spec.nodeType}
-             and n.path <@ ${root}::ltree ${kindItemFilter(kind, 'n')}
-           order by n.updated_at desc, n.id
-           limit ${DRAFTS_MAX}`)) as unknown as DraftRow[],
-    ),
   ]);
 
   const ownFolders = own.folders.map((r) => ownFolder({ ...r, path: treePathOf(kind, r.path) }));
   const ownItems = own.items.map((r) => ({ ...r, path: treePathOf(kind, r.path) }));
-  const teamItems = team.map((r) => ({ ...r, path: treePathOf(kind, r.path) }));
 
   // The paths that show: the brain folders the member sees by the reader
   // rules, and the member's own folders. A brain row shows only where the
   // member sees it; elsewhere the member's own row at that path does (never
-  // the brain's name, look or id). Teammates' drafts add no folder: they
-  // show at the deepest folder above them the member sees.
+  // the brain's name, look or id).
   const brainPaths = [...vis.paths];
   const brainRows = brainPaths.length
     ? await selectFolders(
@@ -268,24 +243,11 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
     return TREE_KIND_SPECS[kind].root;
   };
 
-  const names = await authorNames(teamItems.map((r) => r.author_login_id));
-  const drafts: MemberDraft[] = [
-    ...ownItems.map((r) => ({
-      item: draftItem(kind, r, 'own'),
-      path: shownAt(r.path),
-      sortKey: String(r.sort_key),
-    })),
-    ...teamItems.map((r) => ({
-      item: draftItem(
-        kind,
-        r,
-        'team',
-        (r.author_login_id && names.get(r.author_login_id)) || 'A teammate',
-      ),
-      path: shownAt(r.path),
-      sortKey: String(r.sort_key),
-    })),
-  ];
+  const drafts: MemberDraft[] = ownItems.map((r) => ({
+    item: draftItem(kind, r),
+    path: shownAt(r.path),
+    sortKey: String(r.sort_key),
+  }));
 
   // Parents and counts are this member's (one pass each: a brain with
   // thousands of visible folders stays linear).
@@ -316,21 +278,6 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
   }
   const order = new Map(brainRows.map((f, i) => [f.id, i]));
   return { kind, byPath, byId, ownById, drafts, brainItems: vis.items, order };
-}
-
-/** Display names for teammates' logins (a name a member sees on any team
- *  draft already). */
-async function authorNames(ids: Array<string | null>): Promise<Map<string, string>> {
-  const wanted = [...new Set(ids.filter((i): i is string => !!i))];
-  if (!wanted.length) return new Map();
-  const rows = (await db.execute(sql`
-    select id, coalesce(nullif(trim(display_name), ''), split_part(email, '@', 1)) as name
-      from auth.users
-     where id in (${sql.join(
-       wanted.map((i) => sql`${i}::uuid`),
-       sql`, `,
-     )})`)) as unknown as Array<{ id: string; name: string }>;
-  return new Map(rows.map((r) => [r.id, r.name]));
 }
 
 /** Brain folders in their manual order, then the member's own by name. */

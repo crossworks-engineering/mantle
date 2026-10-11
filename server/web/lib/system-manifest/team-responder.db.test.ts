@@ -14,7 +14,9 @@
  *  - the responder itself still ships CLOSED (admin); one call opens it, and
  *    that call takes `team-read-admin` off it (`dropGroupsAbove`);
  *  - at team level it reaches the tools of `team-read` and `formulas-eval`
- *    and nothing else, and no other group moved below admin.
+ *    and nothing else, and no other group moved below admin;
+ *  - the member chat no longer follows that level (W5c): a member chats with
+ *    the assistant the brain's Team workspace holds, whatever its level.
  * The client twin (client-responder, client-read) ships open at client level.
  *
  * Only the two auth checks are stubbed. Seeds its own brains; removes them.
@@ -204,7 +206,9 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
       audience: 'team',
       tool_group_slugs: ['team-read', 'formulas-eval'],
     });
-    expect(await memberChatAgent(brains.fresh)).toMatchObject({ slug: 'team-responder' });
+    // The member chat follows the Team workspace's assistant, not the level
+    // (W5c): this brain has no Team workspace, so it stays closed.
+    expect(await memberChatAgent(brains.fresh)).toBeNull();
     // No group moved with it.
     expect(belowAdmin(await groupLevels(brains.fresh))).toEqual({
       'team-read': 'team',
@@ -289,7 +293,8 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
       ok: true,
       output: { agent: { audience: 'team', removedGroups: ['team-read-admin'] } },
     });
-    expect(await memberChatAgent(brains.wrong)).toMatchObject({ slug: 'team-responder' });
+    // Still no Team workspace here: the level alone opens no chat (W5c).
+    expect(await memberChatAgent(brains.wrong)).toBeNull();
     // A second reconcile changes nothing more.
     await rec.reconcileOwner(brains.wrong);
     expect(await groupLevels(brains.wrong)).toEqual(levelsAfter);
@@ -307,8 +312,29 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
       audience: 'team',
       tool_group_slugs: ['team-read', 'formulas-eval'],
     });
-    expect(await memberChatAgent(brains.opened)).toMatchObject({ slug: 'team-responder' });
+    expect(await memberChatAgent(brains.opened)).toBeNull();
   }, 240_000);
+
+  it('the member chat is the Team workspace’s assistant, whatever its level (W5c)', async () => {
+    const owner = brains.fresh;
+    const row = await agent(owner, 'team-responder');
+    // Raised back to admin by the test above: the level does not matter now.
+    expect(row.audience).toBe('admin');
+    const [ws] = await admin<Row[]>`
+      insert into workspaces (owner_id, name, bridge_key) values (${owner}, 'Team', 'team')
+      returning id`;
+    await admin`insert into workspace_resources (workspace_id, type, ref_id, write)
+                values (${ws!.id as string}, 'assistant', ${row.id as string}, true)`;
+    expect(await memberChatAgent(owner)).toMatchObject({ slug: 'team-responder' });
+    // A disabled assistant, or an archived Team, closes it.
+    await admin`update agents set enabled = false where id = ${row.id as string}`;
+    expect(await memberChatAgent(owner)).toBeNull();
+    await admin`update agents set enabled = true where id = ${row.id as string}`;
+    await admin`update workspaces set archived_at = now() where id = ${ws!.id as string}`;
+    expect(await memberChatAgent(owner)).toBeNull();
+    await admin`update workspaces set archived_at = null where id = ${ws!.id as string}`;
+    expect(await memberChatAgent(owner)).toMatchObject({ slug: 'team-responder' });
+  }, 120_000);
 
   it('the client twin ships open: client-responder at client, one PATCH is a clean no-op', async () => {
     expect(await agent(brains.fresh, 'client-responder')).toMatchObject({

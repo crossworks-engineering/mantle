@@ -9,7 +9,9 @@
  *  - a public link reads no workspace and carries its served list;
  *  - 'admin' is system work; nested in the same scope it runs as is, in
  *    another one it is refused; inside, currentScope() never says system
- *    and a level question throws.
+ *    and a level question throws;
+ *  - the human level-role path (withHumanViewer, withTeamDrafts) is gone
+ *    (W5c): nothing exports it and no scope sets the human flag.
  * The static half (every caller names whom it acts for) is
  * eslint-rules/viewer-shim-sweep.test.ts.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/viewer-shim.db.test.ts
@@ -152,5 +154,19 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
       m.withViewer('team', { login: gone }, titles),
     );
     expect(fromLevel).toEqual([]);
+  });
+
+  it('the human level-role path is gone (W5c): nothing exports it, no scope sets the flag', async () => {
+    // withHumanViewer and withTeamDrafts (team drafts, client requests) were
+    // the last way onto a level role with the human flag; no caller is left.
+    for (const name of ['withHumanViewer', 'withTeamDrafts']) {
+      expect(Object.keys(m), name).not.toContain(name);
+    }
+    const human = sql`select coalesce(current_setting('mantle.human', true), '') as h`;
+    const flagIn = async () => ((await m.db.execute(human)) as unknown as { h: string }[])[0]!.h;
+    // A member's request reads in its workspace scope, never as a human on
+    // the team role; nor does an assistant's.
+    expect(await m.withViewer('team', { login: member }, flagIn)).not.toBe('on');
+    expect(await m.withViewer('team', { agent: ids.agent! }, flagIn)).not.toBe('on');
   });
 });

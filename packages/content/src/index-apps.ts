@@ -112,7 +112,6 @@ export {
 } from './apps';
 
 export {
-  MEMBER_APP_LEVELS,
   listMemberApps,
   getMemberRunnableApp,
   listTeamLevelAppIds,

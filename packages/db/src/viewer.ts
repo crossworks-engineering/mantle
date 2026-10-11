@@ -368,9 +368,8 @@ export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): P
 /**
  * TESTS ONLY (exported by @mantle/db/test-support): run `fn` on a level
  * role, as withViewer did before W5b2, to prove that role's row security
- * (the level roles still serve personal spaces and withHumanViewer until
- * W5c and W6b). Product code never enters a level scope this way (the R6
- * sweep checks it).
+ * (the level roles still serve personal spaces until W6b). Product code
+ * never enters a level scope this way (the R6 sweep checks it).
  */
 export function runInLevelRoleForTest<T>(level: ViewerLevel, fn: () => Promise<T>): Promise<T> {
   let next: ViewerLevel;
@@ -381,13 +380,6 @@ export function runInLevelRoleForTest<T>(level: ViewerLevel, fn: () => Promise<T
   }
   if (level === 'admin' || next === 'admin') return fn();
   return store.run({ level: next }, fn);
-}
-
-/** Run `fn` outside every scope (system work). Only client.ts calls this,
- *  for a level-role transaction that must not inherit the scope around it
- *  (withHumanViewer, kept until W5c). */
-export function exitScope<T>(fn: () => T): T {
-  return store.exit(fn);
 }
 
 /** Enter a scope that runs in one transaction at `level` (or lower). Only

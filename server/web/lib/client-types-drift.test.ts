@@ -7,7 +7,6 @@ import type {
   ConversationAttachment,
   ContextSource as CtContextSource,
   MemberAppCard,
-  MemberAppLevel,
   MemberChatArchiveMessage,
   MemberChatRow,
   MemberHomeApp,
@@ -18,7 +17,6 @@ import type {
 import type * as Db from '@mantle/db';
 import type { ContextSource } from '@mantle/tracing';
 import {
-  MEMBER_APP_LEVELS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   type listMemberApps,
@@ -132,17 +130,10 @@ describe('client-types mirrors have not drifted from their source of truth', () 
   /**
    * The member app routes (member logins Phase 4b) and the admin's member
    * chats. The routes check their bodies with `satisfies`; these pin the
-   * builders in content, and the level list the queries filter on, to the
-   * published shapes. A level added to MEMBER_APP_LEVELS (say admin) without
-   * the contract fails here.
+   * builders in content to the published shapes. The launcher card carries
+   * no level since workspaces W5c.
    */
   it('member apps and member chats match the builders in content', () => {
-    expectTypeOf<
-      SameUnion<(typeof MEMBER_APP_LEVELS)[number], MemberAppLevel>
-    >().toEqualTypeOf<true>();
-    expectTypeOf<
-      SameUnion<(typeof MEMBER_APP_LEVELS)[number], MemberAppCard['audience']>
-    >().toEqualTypeOf<true>();
     expectTypeOf<Awaited<ReturnType<typeof listMemberApps>>>().toEqualTypeOf<MemberAppCard[]>();
     expectTypeOf<
       Awaited<ReturnType<typeof resolveMemberHomeApp>>

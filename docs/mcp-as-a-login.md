@@ -41,11 +41,13 @@ for a confirm, is `ownerOnly` or `mcpOnly`. Every call runs through
 decides what is read.
 
 Read-only by default (plus the app data reads below). With write on, the
-login also gets the draft tools of its own space
-(`packages/tools/src/builtins-my-space-write.ts`: `my_note_create`,
-`my_page_create`, `my_file_upload`, `my_item_submit`), its request tool and
-`app_data_write` (below). Never a library write: a draft reaches the brain
-only when an admin accepts it.
+login also gets its request tool, `app_data_write` (below) and, for a
+member, the changes of its own apps. Never a library write. The draft and
+submit tools of a login's own space (`my_note_create`, `my_page_create`,
+`my_file_upload`, `my_item_submit`) and `my_app_submit` / `my_app_recall`
+went with review in workspaces W5c (plan R7): no login's MCP offers them,
+and the boot reconcile disables their old rows (the `my-space-write`
+group with them).
 
 ## App data (team apps Phase 1, migration 0234)
 
@@ -119,7 +121,7 @@ the connectors open to them in their own Settings > MCP
 Sharing an app with the team is the member's own click in the app (Apps >
 Your apps), never an MCP tool: a key, a peer or a model must not open an app
 to the whole team (access matrix N1). `my_app_unshare` makes one private. An
-admin sees the shared and submitted ones in Apps, above the brain's own
+admin sees the shared ones in Apps, above the brain's own
 apps, with their activity, and may unshare or delete them; an app runs only while its
 author is an active member. The member deletes their own app to a trash in
 their space (`my_app_delete`, access matrix N6), where nothing is removed, and
@@ -133,8 +135,9 @@ A member's MCP also lists the `my_app_*` tools
 with the Write switch. A client never gets them. They act only on the
 member's own apps, found by the author's row in the member's own space
 (`authorSpaceApp`), and run as the system with the space as owner, so they
-never reach a brain app. Key area: `apps` (prefix `my_app_`). The app rules
-(private, shared, submitted, accepted, the author ceiling) are in
+never reach a brain app. Key area: `apps` (prefix `my_app_`). Submit and
+recall are gone since W5c. The app rules (private, shared, the author
+ceiling) are in
 [app-authoring-guide.md](app-authoring-guide.md), "Members build apps".
 
 ## A member's own MCP screen
@@ -174,8 +177,10 @@ unless the same request sets them. Each peer has its own rate budget.
 
 The calling brain uses `peer_tools`, `peer_call` and `peer_file_copy`
 (`packages/tools/src/builtins-peer-mcp.ts`) against the peer's `/api/mcp`.
-`peer_file_copy` uses the peer's `file_upload` (bound to the owner) or
-`my_file_upload` (bound to a member or client).
+`peer_file_copy` uses the peer's `file_upload` (bound to the owner) or,
+on a peer bound to a member or client that still offers it (an older
+brain), its `my_file_upload`. This brain no longer offers `my_file_upload`
+(W5c).
 
 Turning a login's MCP off revokes its grants and static tokens. A client's
 sign-out ends all its sessions by design, so it also ends that client's MCP

@@ -211,25 +211,6 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
     expect(after[0]?.doc_text).toBe('edited');
   });
 
-  it('team drafts: a human request at team sees team-shared items, published columns only', async () => {
-    const seen = await m.withTeamDrafts(titles);
-    expect(seen).toContain('b-team');
-    expect(seen).toContain('brain-team');
-    expect(seen).not.toContain('b-private');
-    expect(seen).not.toContain('a-private');
-
-    const doc = await m.withTeamDrafts(() =>
-      rows<{ doc_text: string }>(sqlTag`select doc_text from pages where node_id = ${ids.bTeam}`),
-    );
-    expect(doc[0]?.doc_text).toBe('b');
-    const draft = await m
-      .withTeamDrafts(() =>
-        m.db.execute(sqlTag`select draft_doc from pages where node_id = ${ids.bTeam}`),
-      )
-      .catch((e: unknown) => e);
-    expect(codeOf(draft)).toBe(INSUFFICIENT_PRIVILEGE);
-  });
-
   it('an agent at team (no human flag) and a client viewer never see anyone’s drafts', async () => {
     expect(await m.runInLevelRoleForTest('team', titles)).toEqual(['brain-team']);
     expect(await m.runInLevelRoleForTest('client', titles)).toEqual([]);
@@ -273,36 +254,6 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
       sqlTag`select count(*)::int as n from nodes where title = ${`${tag} orphan`}`,
     )) as unknown as { n: number }[];
     expect(cascaded[0]?.n).toBe(0);
-  });
-
-  it('a deleted member is not a member: their shared items leave team drafts (F21)', async () => {
-    const gone = randomUUID();
-    const shared = randomUUID();
-    await m.systemDb.execute(sqlTag`
-      insert into auth.users (id, email, password_hash, role)
-      values (${gone}, ${`${tag}-gone2@example.invalid`}, 'x', 'member')`);
-    const [space] = (await m.systemDb.execute(
-      sqlTag`select id from spaces where login_id = ${gone}`,
-    )) as unknown as { id: string }[];
-    await m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path)
-      values (${shared}, ${space!.id}, 'note', ${`${tag} gone-team`}, 'notes')`);
-    await m.systemDb.execute(sqlTag`
-      insert into space_items (node_id, author_login_id, sharing) values (${shared}, ${gone}, 'team')`);
-    try {
-      expect(await m.withTeamDrafts(titles)).toContain('gone-team');
-      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${gone}`);
-      expect(await m.withTeamDrafts(titles)).not.toContain('gone-team');
-      const si = await m.withTeamDrafts(() =>
-        rows<{ node_id: string }>(
-          sqlTag`select node_id from space_items where node_id = ${shared}`,
-        ),
-      );
-      expect(si).toEqual([]);
-    } finally {
-      await m.systemDb.execute(sqlTag`delete from spaces where id = ${space!.id}`);
-      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${gone}`);
-    }
   });
 
   it('the bundle of a submitted item is frozen with it, and stays recorded (F04)', async () => {

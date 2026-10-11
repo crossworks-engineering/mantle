@@ -144,7 +144,6 @@ export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
 export { MY_SPACE_TOOLS } from './builtins-my-space';
-export { MY_SPACE_WRITE_TOOLS, MY_SPACE_WRITE_TOOL_SLUGS } from './builtins-my-space-write';
 export {
   LOGIN_APP_DATA_TOOLS,
   APP_DATA_READ_TOOL_SLUGS,

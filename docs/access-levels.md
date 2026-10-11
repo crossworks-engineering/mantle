@@ -608,7 +608,7 @@ rule in the query too, but these hold whatever the code asks for.
   check, read at client level.
 - **Never a team draft** (0189). The trigger `space_items_client_private`
   refuses `sharing = 'team'` on an item a client wrote: it stays private
-  until submitted, and never shows in Team drafts.
+  until submitted. (Team drafts themselves went in W5c.)
 - **Who wrote it, for good** (0194). `space_items.author_role` is stamped
   from `auth.users` by a trigger when the row is made and kept by another
   on every update, never written by the app. It outlives the login (whose

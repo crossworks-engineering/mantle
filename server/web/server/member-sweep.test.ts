@@ -344,13 +344,46 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   const PAST_THE_GATE = [
     '/api/member/library/not-a-uuid',
     '/api/member/space/not-a-uuid',
-    '/api/member/team-drafts/not-a-uuid',
     '/api/member/files/not-a-uuid',
     '/api/member/space/not-a-uuid/bytes',
-    // Client requests (client logins C5).
-    '/api/member/client-requests/not-a-uuid',
-    '/api/member/client-requests/not-a-uuid/bytes',
   ];
+
+  // Removed in workspaces W5c (team drafts, client requests, member submit,
+  // recall and share): still member routes, so a member's old app reaches
+  // them, and each answers 410 `code: 'gone'`.
+  const GONE_W5C = [
+    'GET /api/member/team-drafts',
+    'GET /api/member/team-drafts/:id',
+    'GET /api/member/team-drafts/:id/bytes',
+    'GET /api/member/client-requests',
+    'GET /api/member/client-requests/:id',
+    'GET /api/member/client-requests/:id/bytes',
+    'POST /api/member/space/:id/submit',
+    'POST /api/member/space/:id/recall',
+    'POST /api/member/space/:id/share',
+    'POST /api/member/my-apps/:id/submit',
+    'POST /api/member/my-apps/:id/recall',
+  ];
+
+  it('answers 410 code gone to a member on every route removed in W5c; an admin is still refused', async () => {
+    const { buildSessionCookie } = await import('../lib/auth/tokens');
+    const adminCookie = `${SESSION_COOKIE_NAME}=${buildSessionCookie(ADMIN_ID).value}`;
+    for (const route of GONE_W5C) {
+      expect(MEMBER_ROUTES, route).toContain(route);
+      const [method, pattern] = route.split(' ') as [string, string];
+      const path = concretePath(pattern);
+      for (const headers of [{ cookie }, bearerFor(MEMBER_ID)]) {
+        const res = await app.request(path, { method, headers });
+        const body = (await res.json().catch(() => null)) as { code?: string } | null;
+        expect(res.status, `${route} → ${res.status}`).toBe(410);
+        expect(body?.code, route).toBe('gone');
+      }
+      const asAdmin = await app.request(path, { method, headers: { cookie: adminCookie } });
+      expect([401, 403], `${route} as admin`).toContain(asAdmin.status);
+      const anon = await app.request(path, { method });
+      expect(anon.status, `${route} without a session`).toBe(401);
+    }
+  });
 
   it('lets a member session through to member routes', async () => {
     const { buildSessionCookie } = await import('../lib/auth/tokens');

@@ -401,13 +401,13 @@ describe.skipIf(!URL)('what a client reads', () => {
     ).toBeNull();
   });
 
-  it('the member Library lists team and client items with their level, never admin or public; opens a public one by id', async () => {
+  it('the member Library lists team and client items with no level, never admin; opens a public one by id', async () => {
     const { items } = await m.runInLevelRoleForTest('team', () =>
       lib.listLibrary(brain, { q: tag }),
     );
-    const byId = new Map(items.map((i) => [i.id, i.audience]));
-    expect([...byId.keys()].sort()).toEqual(
-      [
+    const listed = items.map((i) => i.id);
+    expect(listed).toEqual(
+      expect.arrayContaining([
         b.clientPage,
         b.clientPage2,
         b.clientNote,
@@ -416,13 +416,14 @@ describe.skipIf(!URL)('what a client reads', () => {
         b.teamPage,
         b.teamFile,
         b.teamDraw,
-      ].sort(),
+      ]),
     );
-    expect(byId.get(b.teamPage)).toBe('team');
-    expect(byId.get(b.clientNote)).toBe('client');
+    expect(listed).not.toContain(b.adminPage);
+    // No level badge since W5c.
+    for (const i of items) expect('audience' in i, i.id).toBe(false);
     const counts = await m.runInLevelRoleForTest('team', () => lib.libraryCounts(brain));
     expect(counts.page).toBeGreaterThanOrEqual(3);
-    // A public item is not listed, but a member opens it by id (audit B10).
+    // A member opens a public item by id (audit B10).
     expect(
       (await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.publicNote)))?.id,
     ).toBe(b.publicNote);
@@ -430,8 +431,7 @@ describe.skipIf(!URL)('what a client reads', () => {
       await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.adminPage)),
     ).toBeNull();
     expect(
-      (await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.clientNote)))
-        ?.audience,
-    ).toBe('client');
+      (await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.clientNote)))?.id,
+    ).toBe(b.clientNote);
   });
 });

@@ -34,18 +34,9 @@ import {
   type BuildRef,
 } from '@mantle/db';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
-import type { AppTint, MemberAppCard, MemberAppLevel, MemberHomeApp } from '@mantle/client-types';
+import type { AppTint, MemberAppCard, MemberHomeApp } from '@mantle/client-types';
 import type { AppPlace } from './app-folders';
 import { dataAccessOf } from './app-data-access';
-
-/** The values of the launcher card's legacy level field (`MemberAppCard`,
- *  until W5c). Pinned to the published `MemberAppLevel` in
- *  server/web/lib/client-types-drift.test.ts. */
-export const MEMBER_APP_LEVELS = [
-  'team',
-  'client',
-  'public',
-] as const satisfies readonly MemberAppLevel[];
 
 /** One launcher card: the published contract type. */
 export type { MemberAppCard };
@@ -142,9 +133,6 @@ export async function listMemberAppsPlaced(
       icon: projectAppIcon(d.icon) ?? null,
       color: projectAppTint(d.color) ?? null,
       description: typeof description === 'string' && description.trim() ? description : null,
-      // The card's legacy level field (the DTO keeps it until W5c): every
-      // app a member is granted reads as team.
-      audience: 'team',
       updatedAt: r.updatedAt.toISOString(),
       dataReadOnly: !mayWrite,
       dataAccess: dataAccessOf(mayWrite),

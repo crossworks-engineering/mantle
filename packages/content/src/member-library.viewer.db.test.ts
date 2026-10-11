@@ -1,9 +1,10 @@
 /**
- * The member Library on a real, migrated Postgres, read at the team level
- * (member logins, Phase 1): row security alone decides what a member sees.
- * The level rules run on the level roles (runInLevelRoleForTest); the last
- * block reads as a login in the shim's workspace scope (withViewer with
- * { login }, workspaces W5b2), where the grants decide and no level narrows.
+ * The member Library on a real, migrated Postgres (member logins, Phase 1):
+ * row security alone decides what a member sees. No level narrows it and no
+ * row carries a level (W5c). The level roles (runInLevelRoleForTest) still
+ * prove the published-columns rule; the last block reads as a login in the
+ * shim's workspace scope (withViewer with { login }, workspaces W5b2), where
+ * the grants decide.
  * Seeds its own rows under the brain's anchor and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-library.viewer.db.test.ts
  */
@@ -80,27 +81,15 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     await expect(lib.listLibrary(anchor)).rejects.toThrow(/viewer scope/);
   });
 
-  it('lists team and client items with their level: never admin, and not open-link (public) ones', async () => {
-    const { items, total } = await m.runInLevelRoleForTest('team', () =>
+  it('no level narrows the list and no row carries one: row security decides', async () => {
+    const { items } = await m.runInLevelRoleForTest('team', () =>
       lib.listLibrary(anchor, { q: tag }),
     );
-    expect(items.map((i) => [i.id, i.audience]).sort()).toEqual(
-      [
-        [ids.teamPage, 'team'],
-        [ids.clientNote, 'client'],
-      ].sort(),
-    );
-    expect(total).toBe(2);
-  });
-
-  it('shows a client-level reader only client items', async () => {
-    const { items } = await m.runInLevelRoleForTest('client', () =>
-      lib.listLibrary(anchor, { q: tag }),
-    );
-    expect(items.map((i) => i.id)).toEqual([ids.clientNote]);
-    expect(
-      await m.runInLevelRoleForTest('client', () => lib.getLibraryItem(anchor, ids.teamPage)),
-    ).toBeNull();
+    const listed = items.map((i) => i.id);
+    expect(listed).toEqual(expect.arrayContaining([ids.teamPage, ids.clientNote]));
+    expect(listed).not.toContain(ids.adminPage);
+    expect(listed).not.toContain(ids.task);
+    for (const i of items) expect('audience' in i, i.id).toBe(false);
   });
 
   it('leaves images cut out of documents out of the list, but reads them by id', async () => {
@@ -112,24 +101,6 @@ describe.skipIf(!URL)('member Library at the team level', () => {
       lib.getLibraryItem(anchor, ids.fragment),
     );
     expect(frag?.type).toBe('file');
-  });
-
-  it('reads a client item by id at the team level, and a public one too (audit B10)', async () => {
-    const note = await m.runInLevelRoleForTest('team', () =>
-      lib.getLibraryItem(anchor, ids.clientNote),
-    );
-    expect(note).toMatchObject({ type: 'note', audience: 'client' });
-    // Not listed (the test above), but opened by id: no Client badge.
-    const open = await m.runInLevelRoleForTest('team', () =>
-      lib.getLibraryItem(anchor, ids.publicNote),
-    );
-    expect(open).toMatchObject({ id: ids.publicNote, type: 'note', audience: 'team' });
-  });
-
-  it('a client does not open a public item by id', async () => {
-    expect(
-      await m.runInLevelRoleForTest('client', () => lib.getLibraryItem(anchor, ids.publicNote)),
-    ).toBeNull();
   });
 
   it('reads a team page (published doc only) and 404s an admin one', async () => {
@@ -144,24 +115,6 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     expect(
       await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.task)),
     ).toBeNull();
-  });
-
-  it('lists nothing for a level with no Library (public): fail closed', async () => {
-    const { items, total } = await m.runInLevelRoleForTest('public', () =>
-      lib.listLibrary(anchor, { q: tag }),
-    );
-    expect(items).toEqual([]);
-    expect(total).toBe(0);
-    expect(
-      await m.runInLevelRoleForTest('public', () => lib.getLibraryItem(anchor, ids.publicNote)),
-    ).toBeNull();
-    expect(await m.runInLevelRoleForTest('public', () => lib.libraryCounts(anchor))).toEqual({
-      page: 0,
-      note: 0,
-      draw: 0,
-      table: 0,
-      file: 0,
-    });
   });
 
   it('reads a team table’s published workbook only, never the admin’s unsaved draft', async () => {

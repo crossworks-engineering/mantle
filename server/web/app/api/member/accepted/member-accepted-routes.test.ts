@@ -51,7 +51,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
       h.drawSteps.push('space');
       return fn();
     }),
-    withTeamDrafts: vi.fn(async (fn: () => Promise<unknown>) => fn()),
     // The R6 shim reads the login's workspaces on the admin pool; here it
     // runs `fn` at the level asked, so the stubs see who reads.
     withViewer: vi.fn(

@@ -9,8 +9,8 @@
  *  - shared with the team (in the app, Apps > Your apps; never over MCP,
  *    access matrix N1): every member runs it, at team
  *    rules;
- *  - submitted (`my_app_submit`): frozen until an admin accepts it into the
- *    brain or rejects it (`my_app_recall` takes it back);
+ *  - submitted (an app sent to review before workspaces W5c removed
+ *    submit and recall): frozen, as it was left;
  *  - in the member's trash (`my_app_delete`, access matrix N6): it runs for
  *    no one and nothing is removed; `my_app_undelete` brings it back
  *    private. A member also deletes the snapshots they took
@@ -58,10 +58,8 @@ import {
   listDeletedSpaceApps,
   listSpaceApps,
   publishApp,
-  recallSpaceApp,
   setManifest,
   setSpaceAppSharing,
-  submitSpaceApp,
   undeleteSpaceApp,
   withAuthorWrite,
   workingSource,
@@ -267,7 +265,7 @@ const my_app_create: BuiltinToolDef = {
   slug: 'my_app_create',
   name: 'Create a mini app of my own',
   description:
-    'Create a new mini app in your own space: PRIVATE, only you run it. It starts with a trivial entry file: write files with `my_app_file_write`, compile with `my_app_build`, go live for yourself with `my_app_publish`, then share it with the team in the app (Apps > Your apps) or `my_app_submit` for an admin. Read `my_app_guide` first. Your apps run tools at team rules at most.',
+    'Create a new mini app in your own space: PRIVATE, only you run it. It starts with a trivial entry file: write files with `my_app_file_write`, compile with `my_app_build`, go live for yourself with `my_app_publish`, then share it with the team in the app (Apps > Your apps). Read `my_app_guide` first. Your apps run tools at team rules at most.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -767,44 +765,6 @@ const my_app_unshare: BuiltinToolDef = {
   },
 };
 
-const my_app_submit: BuiltinToolDef = {
-  slug: 'my_app_submit',
-  name: 'Submit my mini app for review',
-  description:
-    'Submit your own app to an admin, who may accept it into the brain or reject it (it comes back to you to change and submit again). The admin reviews the PUBLISHED version: publish first. While submitted it is frozen and its data is read only; `my_app_recall` takes it back.',
-  inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
-  handler: async (input, ctx) => {
-    const p = await prepare(input, ctx, { write: true });
-    if (!isPrepared(p)) return p;
-    try {
-      const state = await ownSpace(() => submitSpaceApp(p.author, p.id));
-      return { ok: true, output: { id: p.id, reviewState: state.reviewState } };
-    } catch (err) {
-      return refusal(err);
-    }
-  },
-};
-
-const my_app_recall: BuiltinToolDef = {
-  slug: 'my_app_recall',
-  name: 'Recall my submitted mini app',
-  description:
-    "Take your own submitted app back from review, to a draft you may change again. An accepted app is the brain's and cannot be recalled.",
-  inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
-  handler: async (input, ctx) => {
-    // A submitted app is frozen for writes, so this checks ownership only.
-    const p = await prepare(input, ctx, { write: false });
-    if (!isPrepared(p)) return p;
-    if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
-    try {
-      const state = await ownSpace(() => recallSpaceApp(p.author, p.id));
-      return { ok: true, output: { id: p.id, reviewState: state.reviewState } };
-    } catch (err) {
-      return refusal(err);
-    }
-  },
-};
-
 const my_app_snapshot_delete: BuiltinToolDef = {
   slug: 'my_app_snapshot_delete',
   name: 'Delete a snapshot of my mini app',
@@ -863,7 +823,7 @@ const my_app_delete: BuiltinToolDef = {
     if (inTrash >= MY_APPS_TRASH_MAX) {
       return {
         ok: false,
-        error: `Your trash already holds ${inTrash} apps, the most it keeps, and nothing in it is ever deleted. Bring one back with my_app_undelete and submit it (my_app_submit) so an admin can approve it into the brain or delete it, then try again.`,
+        error: `Your trash already holds ${inTrash} apps, the most it keeps, and nothing in it is ever deleted. Bring one back with my_app_undelete, or ask an admin to clear it, then try again.`,
       };
     }
     try {
@@ -890,7 +850,7 @@ const my_app_undelete: BuiltinToolDef = {
   slug: 'my_app_undelete',
   name: 'Bring back my deleted mini app',
   description:
-    "Bring one of your own apps back from your trash (`my_app_deleted_list`), with its code, data and history: private and a draft, so only you run it until you share it again in the app or submit it. For a snapshot of an app's history use `my_app_snapshot_restore` instead.",
+    "Bring one of your own apps back from your trash (`my_app_deleted_list`), with its code, data and history: private and a draft, so only you run it until you share it again in the app. For a snapshot of an app's history use `my_app_snapshot_restore` instead.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -917,7 +877,7 @@ const my_app_undelete: BuiltinToolDef = {
           name: state.title,
           sharing: state.sharing,
           reviewState: state.reviewState,
-          hint: 'It is private again: only you run it. Share it with the team in the app, or my_app_submit it.',
+          hint: 'It is private again: only you run it. Share it with the team in the app.',
         },
       };
     } catch (err) {
@@ -1047,8 +1007,6 @@ export const MY_APP_WRITE_TOOLS: BuiltinToolDef[] = [
   my_app_snapshot_restore,
   my_app_snapshot_delete,
   my_app_unshare,
-  my_app_submit,
-  my_app_recall,
   my_app_delete,
   my_app_undelete,
 ]

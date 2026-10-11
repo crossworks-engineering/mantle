@@ -697,12 +697,9 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
   Unshare makes it private, but its author can share it again at once;
   to stop it for good, an admin deletes it (to the brain's trash) or
   disables the author's login.
-- **Submit:** `my_app_submit` sends the PUBLISHED version to an admin. It is
-  frozen and its data is read only until the admin approves or rejects it
-  (no note: you hear from them through your own channels). A rejected app
-  comes back to you to change and submit again. The admin
-  may test it first, on a throwaway copy of its data; nothing real changes.
-  `my_app_recall` takes it back.
+- **Submit and recall are gone** (workspaces W5c): `my_app_submit` and
+  `my_app_recall` were removed with review. Share the app with the team in
+  the app; an app submitted before stays as it was left.
 - **Approve (an admin):** Apps > Waiting for approval. The app moves into the
   brain's Apps at admin or team level, with the same id, its data and its
   history. Client and public are set later, by an admin, as for any app.

@@ -46,7 +46,6 @@ describe('API key areas for MCP tools', () => {
     expect(toolKeyArea('app_list')).toBe('apps');
     expect(toolKeyArea('search')).toBe('search');
     expect(toolKeyArea('entity_search')).toBe('search');
-    expect(toolKeyArea('my_page_create')).toBe('pages');
   });
 
   it('gives every conversion tool no area: it reads one kind to write another', () => {

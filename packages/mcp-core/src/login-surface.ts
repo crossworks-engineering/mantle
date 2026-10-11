@@ -14,8 +14,9 @@
  *    run through `dispatchTool` (so the owner-only gate and the declared
  *    preconditions run) inside `withViewer` at the login's level (so row
  *    level security decides what is read). Read-only unless write is on;
- *    write adds the draft tools of the login's own space, never a library
- *    write.
+ *    write adds the one request each role may file, app data writes and a
+ *    member's own mini apps, never a library write. (The draft and submit
+ *    tools of the login's own space went with review in workspaces W5c.)
  *
  * `McpCaller` is the one context every MCP auth path resolves to, so a tool
  * that must act for the calling login (the forum's notifications and threads,
@@ -39,7 +40,6 @@ import {
   CLIENT_TURN_TOOL_SLUGS,
   MY_APP_READ_TOOL_SLUGS,
   MY_APP_WRITE_TOOL_SLUGS,
-  MY_SPACE_WRITE_TOOL_SLUGS,
   dispatchTool,
   connectorMarkState,
   loginConnectorRefused,
@@ -220,9 +220,9 @@ const ROLE_AGENT: Record<'member' | 'client', string> = {
  * egress is not classified: left out), never one that spends, never one
  * that waits for an approval nobody is there to give, never mcpOnly
  * (operator surface) and never ownerOnly. Without write: `readOnly` only.
- * With write: also the draft tools of the login's own space and the one
- * request each role may file, never a library write (a member's or
- * client's write is a draft for review; RLS would refuse the rest anyway).
+ * With write: also the one request each role may file, app data writes and
+ * a member's own mini apps, never a library write (RLS would refuse it
+ * anyway).
  */
 export function loginMayHaveTool(
   row: Pick<Tool, 'slug' | 'handler' | 'requiresConfirm'>,
@@ -246,7 +246,6 @@ export const LOGIN_REPLACED_APP_DB_SLUGS: readonly string[] = ['app_db_list', 'a
 
 /** The only non-read tools a member or client gets, with write on. */
 const LOGIN_WRITE_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  ...MY_SPACE_WRITE_TOOL_SLUGS,
   ...APP_DATA_WRITE_TOOL_SLUGS,
   ...MY_APP_WRITE_TOOL_SLUGS,
   'team_request_create',
@@ -258,8 +257,8 @@ const LOGIN_WRITE_TOOL_SLUGS: ReadonlySet<string> = new Set([
  * role's responder agent: its groups at the LOGIN's level (so an admin-level
  * group, `team-read-admin`, drops out even if the responder were raised),
  * the private reads only with the owner's `teamPrivateReads`, a client cut
- * to `CLIENT_TURN_TOOL_SLUGS` in code. With write: plus the draft tools of
- * the login's own space. Then `loginMayHaveTool`.
+ * to `CLIENT_TURN_TOOL_SLUGS` in code. With write: plus the app data
+ * writes. Then `loginMayHaveTool`.
  */
 export async function resolveLoginToolRows(
   caller: McpCaller & { role: 'member' | 'client' },
@@ -280,9 +279,9 @@ export async function resolveLoginToolRows(
       )
       .limit(1);
     let slugs: string[] = [];
-    // The role's responder must sit at the role's level, as for chat
-    // (assertAgentForRole): a responder left at admin is "closed" to that
-    // role, on MCP as in chat.
+    // The role's responder must sit at the role's level: a responder left
+    // at admin is "closed" to that role on MCP (agent levels go in W7; chat
+    // picks the Team workspace's assistant since W5c).
     if (agent && agent.audience === level) {
       const agentLevel = agent.audience as ViewerLevel;
       slugs = effectiveToolSlugs(
@@ -313,7 +312,7 @@ export async function resolveLoginToolRows(
           : [];
       const extra = [
         ...APP_DATA_READ_TOOL_SLUGS,
-        ...(caller.write ? [...MY_SPACE_WRITE_TOOL_SLUGS, ...APP_DATA_WRITE_TOOL_SLUGS] : []),
+        ...(caller.write ? APP_DATA_WRITE_TOOL_SLUGS : []),
         ...memberApps,
       ];
       slugs = [...slugs, ...extra.filter((s) => !slugs.includes(s))];
@@ -647,7 +646,7 @@ export function mcpInstructionsFor(caller: McpCaller): string {
   if (caller.role === 'admin') return MANTLE_MCP_INSTRUCTIONS;
   const who = caller.role === 'member' ? 'a team member' : 'a client';
   const write = caller.write
-    ? ' You may also create drafts in their own personal space (my_note_create, my_page_create, my_file_upload) and submit them for review (my_item_submit). Drafts reach the brain only when an admin accepts them. On mini apps an admin opened to MCP you may also change rows (app_data_write), never the schema.'
+    ? ' On mini apps an admin opened to MCP you may also change rows (app_data_write), never the schema.'
     : ' This connection is read-only.';
   const apps =
     ' Mini app data: app_data_list shows the apps an admin opened to MCP, then app_data_schema and app_data_query. Tools named mcp_* reach outside data sources (connectors) an admin opened at your level.';
@@ -655,7 +654,7 @@ export function mcpInstructionsFor(caller: McpCaller): string {
     caller.role !== 'member'
       ? ''
       : caller.write
-        ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until the member shares it with the team in the app (never over MCP; my_app_unshare makes it private again) or submits it to an admin (my_app_submit). my_app_delete moves one of their apps to their trash, where nothing is removed (my_app_undelete brings it back). Their apps run tools at team rules at most.'
+        ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until the member shares it with the team in the app (never over MCP; my_app_unshare makes it private again). my_app_delete moves one of their apps to their trash, where nothing is removed (my_app_undelete brings it back). Their apps run tools at team rules at most.'
         : " my_app_list and my_app_get read the member's own mini apps; building them needs the Write switch.";
   return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}${build}`;
 }

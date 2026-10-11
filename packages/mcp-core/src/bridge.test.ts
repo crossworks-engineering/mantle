@@ -171,12 +171,6 @@ describe('every in-app tool reaches the MCP surface', () => {
     client_shared_search: 'serves the client of a client turn; MCP has none',
     client_shared_open: 'serves the client of a client turn; MCP has none',
     client_request_create: 'files for the client of a client turn; MCP has none',
-    // Draft writes into a member's or client's own space (MCP as a login):
-    // the LOGIN surface offers them (login-surface.ts), never the owner's.
-    my_note_create: "writes a login's own space; the owner surface has no login",
-    my_page_create: "writes a login's own space; the owner surface has no login",
-    my_file_upload: "writes a login's own space; the owner surface has no login",
-    my_item_submit: "submits a login's own item; the owner surface has no login",
     // App data on a login's own MCP (team apps Phase 1): the owner has
     // app_db_* and app_* instead.
     app_data_list: "a login's own MCP only; the owner surface has app_db_list",
@@ -200,8 +194,6 @@ describe('every in-app tool reaches the MCP surface', () => {
     my_app_snapshot_restore: "a member's own MCP only; the owner surface has the app tools",
     my_app_snapshot_delete: "a member's own MCP only; the owner surface has the app tools",
     my_app_unshare: "a member's own MCP only; the owner surface has the app tools",
-    my_app_submit: "a member's own MCP only; the owner surface has the app tools",
-    my_app_recall: "a member's own MCP only; the owner surface has the app tools",
     my_app_delete: "a member's own MCP only; the owner surface has the app tools",
     my_app_undelete: "a member's own MCP only; the owner surface has the app tools",
     my_app_deleted_list: "a member's own MCP only; the owner surface has the app tools",

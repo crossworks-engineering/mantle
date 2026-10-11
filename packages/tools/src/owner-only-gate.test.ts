@@ -279,8 +279,6 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
     "s?.kind === 'team'",
     "if ((s?.kind === 'team' || s?.kind === 'client') && s.loginId) {",
   ],
-  // Own-space drafts: a folder is for a member's space only (clients have none).
-  'builtins-my-space-write.ts': ["if (ctx.surface?.kind !== 'team') {"],
   // read_result binds a client's or member's turn to its own spills.
   'builtins-tool-results.ts': ["if (kind !== 'client' && kind !== 'team') return undefined;"],
   // draw_get's picture follows a member's own image rule (draw-reader.ts).

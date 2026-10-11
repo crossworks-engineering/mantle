@@ -1,9 +1,9 @@
 /**
- * Audit F31: member writes (autosave, Save version, create, delete, share,
- * submit, recall, comments, uploads) are rate limited per login. The gate
- * itself, and a scan that every write handler under /api/member/space*,
- * /api/member/space-files and /api/member/team-drafts calls it before doing
- * anything else, so a new write route cannot ship without it.
+ * Audit F31: member writes (autosave, Save version, create, delete, comments,
+ * uploads) are rate limited per login. The gate itself, and a scan that every
+ * write handler under /api/member/space* and /api/member/space-files calls it
+ * before doing anything else, so a new write route cannot ship without it.
+ * (Share, submit and recall are 410 stubs since W5c: they write nothing.)
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,11 +38,11 @@ function routes(dir: string): string[] {
 
 describe('every member write route is rate limited', () => {
   const api = join(__dirname, '..', 'app', 'api', 'member');
-  const files = ['space', 'space-files', 'team-drafts'].flatMap((d) => routes(join(api, d)));
+  const files = ['space', 'space-files'].flatMap((d) => routes(join(api, d)));
 
   it('finds the write routes (the scan is not vacuous)', () => {
     expect(files.some((f) => f.endsWith(join('space', '[id]', 'draft', 'route.ts')))).toBe(true);
-    expect(files.length).toBeGreaterThanOrEqual(10);
+    expect(files.length).toBeGreaterThanOrEqual(9);
   });
 
   it('calls memberWriteGate first in every POST, PUT, PATCH and DELETE', () => {

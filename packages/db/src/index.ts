@@ -14,8 +14,6 @@ export {
   closeDb,
   withSpace,
   withSystemTx,
-  withTeamDrafts,
-  withHumanViewer,
   withViewer,
   viewerScopeFor,
   withScope,

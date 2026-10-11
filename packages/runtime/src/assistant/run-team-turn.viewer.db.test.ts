@@ -1,9 +1,9 @@
 /**
  * A REAL team turn in its workspace (member logins Phase 0b, plan section 2b
  * spike item 3; workspaces W5b2): runTeamTurn end to end with row level
- * security on. The test's team agent answers in Team (agents.workspace_id),
- * so its turn runs in a Team turn scope on the workspace role, with no outer
- * wrap. Only the model, the embedder and the API key are faked; everything
+ * security on. The test's team agent is the Team workspace's assistant (its
+ * workspace_resources row, W5c: no agent level picks it), so its turn runs
+ * in a Team turn scope on the workspace role, with no outer wrap. Only the model, the embedder and the API key are faked; everything
  * else (context loader, tool resolution, dispatch, traces, the team thread)
  * is the production code.
  *
@@ -177,7 +177,10 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
     const [t] = await admin<{ id: string }[]>`
       select id::text as id from workspaces where owner_id = ${ownerId} and bridge_key = 'team'`;
     team = t!.id;
-    await admin`update agents set workspace_id = ${team} where id = ${agentId}`;
+    // The Team workspace's assistant (the resource trigger writes
+    // agents.workspace_id).
+    await admin`insert into workspace_resources (workspace_id, type, ref_id, write)
+      values (${team}, 'assistant', ${agentId}, true)`;
   }, 180_000);
 
   afterAll(async () => {
@@ -246,11 +249,15 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
     }
   });
 
-  // The old control ran the same turn at admin for a portal contact and saw
-  // admin-only items. That path is retired (Phase 6): a member login is never
-  // served by an admin-level agent at all.
-  it('control: with the agent at admin, a member turn is refused outright', async () => {
-    await admin`update agents set audience = 'admin' where id = ${agentId}`;
+  // W5c: the agent is the Team workspace's assistant, never one picked by
+  // its level. Another agent, even one at team level, is refused outright.
+  it('control: an agent that is not the Team workspace’s assistant is refused outright', async () => {
+    const otherSlug = `other-${tag}`;
+    await admin`
+      insert into agents (owner_id, slug, name, model, provider, api_key_id, system_prompt,
+                          tool_group_slugs, memory_config, audience)
+      values (${ownerId}, ${otherSlug}, 'Other', 'fake/model', 'openrouter', ${apiKeyId},
+              'Other.', ${[groupSlug]}, ${JSON.stringify({ digest_limit: 0 })}::jsonb, 'team')`;
     h.calls = 0;
     h.seenToolResults = [];
     try {
@@ -258,10 +265,28 @@ describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
       await expect(
         runTeamTurn(ownerId, 'what does the brain say about itself?', {
           loginId: memberLoginId,
-          agentSlug,
+          agentSlug: otherSlug,
         }),
-      ).rejects.toThrow(/admin level/);
+      ).rejects.toThrow(/not the Team workspace's assistant/);
+      expect(h.calls).toBe(0);
       expect(h.seenToolResults).toEqual([]);
+    } finally {
+      await admin`delete from agents where owner_id = ${ownerId} and slug = ${otherSlug}`;
+    }
+  });
+
+  it('the Team workspace’s assistant answers whatever level it still stores, and reads only Team', async () => {
+    await admin`update agents set audience = 'admin' where id = ${agentId}`;
+    h.calls = 0;
+    h.seenToolResults = [];
+    try {
+      const { runTeamTurn } = await import('./run-team-turn');
+      const result = await runTeamTurn(ownerId, `what does the brain say about ${tag}?`, {
+        loginId: memberLoginId,
+      });
+      expect(result.reply).toBe('ok, done');
+      expect(returnedIds().filter((id) => adminOnly().includes(id))).toEqual([]);
+      expect(h.seenToolResults.join(' ')).not.toContain(h.hiddenTitle);
     } finally {
       await admin`update agents set audience = 'team' where id = ${agentId}`;
     }

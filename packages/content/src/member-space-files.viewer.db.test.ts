@@ -3,7 +3,7 @@
  * (member logins Phase 2, the space disk root): a table's workbook lives
  * under TABLE_DB_DIR/<spaceId>/, a file's bytes under
  * MANTLE_SPACES_ROOT/<spaceId>/files/<nodeId>. Every call runs inside
- * withSpace (or withTeamDrafts), like the member routes.
+ * withSpace, like the member routes.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-space-files.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -119,18 +119,8 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
     expect(await asA(() => sp.saveMineTable(spaceA, tableId))).not.toBeNull();
   });
 
-  it('a teammate reads a shared table’s saved version, never its draft', async () => {
-    await asA(() => sp.setSharing(spaceA, tableId, 'team'));
-    const got = await asA(() => sp.getMineItem(spaceA, tableId));
-    const col = got?.body.type === 'table' ? got.body.table.data.columns[0]!.id : '';
-    await asA(() =>
-      td.applyTableOps(spaceA, tableId, [{ op: 'row_add', cells: { [col]: 'draft secret' } }]),
-    );
-    const item = await m.withTeamDrafts(() => sp.getTeamDraftItem(tableId));
-    const text = JSON.stringify(item?.body.type === 'table' ? item.body.table : null);
-    expect(text).toContain('saved cell');
-    expect(text).not.toContain('draft secret');
-    // Another member cannot open it as their own.
+  it('another member cannot open a member’s table as their own', async () => {
+    // Team drafts (a teammate's saved version) went in W5c.
     expect(await asB(() => sp.getMineItem(spaceB, tableId))).toBeNull();
   });
 
@@ -228,18 +218,9 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
     expect(opened?.size).toBe('hello from a member'.length);
     opened?.stream.destroy();
     expect(await asB(() => sf.openMineFile(spaceB, fileId))).toBeNull();
-    expect(await m.withTeamDrafts(() => sp.openTeamDraftFile(fileId))).toBeNull();
     // The brain's own reader, scoped to the space id, resolves no disk path.
     const byId = await fp.readFileById({ ownerId: spaceA, fileId });
     expect(byId).toBeNull();
-  });
-
-  it('shared with the team: a teammate streams it', async () => {
-    await asA(() => sp.setSharing(spaceA, fileId, 'team'));
-    const opened = await m.withTeamDrafts(() => sp.openTeamDraftFile(fileId));
-    const chunks: Buffer[] = [];
-    for await (const c of opened!.stream) chunks.push(c as Buffer);
-    expect(Buffer.concat(chunks).toString('utf8')).toBe('hello from a member');
   });
 
   it('renames a file (metadata only) and keeps its extension', async () => {

@@ -25,8 +25,6 @@ export const MEMBER_ITEM_FILTERS = [
   'with-admin',
   'brain',
   'by-me',
-  // A client's submitted items (client logins C5, decision 5 B): read only.
-  'client-requests',
 ] as const;
 export type MemberItemFilter = (typeof MEMBER_ITEM_FILTERS)[number];
 

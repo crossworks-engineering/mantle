@@ -1,13 +1,15 @@
 /**
  * A login's personal space (member logins, Phase 2; plan v3.1 section 2d).
  *
- * Three sources a member works with:
+ * Two sources a member works with:
  *  - Mine: items in the caller's own space. Run inside `withSpace`: the space
  *    role and its row rules see and write that space only. Every item carries a
- *    `space_items` row: sharing (private | team) and review state.
- *  - Team drafts: other members' items shared with the team, published
- *    content only. Run inside `withTeamDrafts` (the team role, human flag on).
- *  - Library: brain items at the team level (member-library.ts).
+ *    `space_items` row: sharing and review state.
+ *  - Library: brain items the member's workspaces read (member-library.ts).
+ *
+ * Team drafts (teammates' items shared with the team) were removed in
+ * workspaces W5c: a personal item is no longer shared with the team (W6b
+ * grants it).
  *
  * Nothing here learns: a personal item is never announced to the extractor,
  * never compiled into Recall, never searched by the brain (the brain's filters
@@ -23,7 +25,6 @@ import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } fro
 import {
   asSystem,
   authUsers,
-  currentSpaceScope,
   db,
   draws,
   nodes,
@@ -36,7 +37,6 @@ import {
   tables,
   withSpaceRows,
   withViewer,
-  currentScope,
 } from '@mantle/db';
 import { existsSync } from 'node:fs';
 import type {
@@ -50,7 +50,7 @@ import {
   MEMBER_ITEM_KINDS as SPACE_ITEM_KINDS,
   type MemberItemKind as SpaceItemKind,
 } from '@mantle/client-types/member-kinds';
-import { createDraw, deleteDraw, getDraw, getDrawSvg, updateDraw, type DrawDetail } from './draws';
+import { createDraw, deleteDraw, getDraw, updateDraw, type DrawDetail } from './draws';
 import { createNote, deleteNote, getNote, updateNote, type NoteRow } from './notes';
 import { getPage } from './pages/read';
 import {
@@ -77,10 +77,8 @@ import {
   renameMineFile,
   spaceFileOf,
   withClientTextRoom,
-  type OpenedSpaceFile,
   type SpaceFile,
 } from './member-space-files';
-import { openSpaceFile } from '@mantle/files';
 import { inClientSpace, spaceLimits } from './space-limits';
 import {
   SpaceItemStateError,
@@ -123,21 +121,6 @@ export type SpaceWriter = { adminOfBrain?: string };
 /** The row is the published contract's own type (audit M3), so the wire
  *  shape the client reads cannot drift from what the brain sends. */
 export type SpaceItemRow = MemberSpaceItemRow;
-
-/**
- * A team draft sits in a MEMBER's space. Row security holds it too (0179),
- * but the same human scope also shows clients' submitted items (client
- * requests, 0194): a client's item is never a team draft, even one with a
- * 'team' sharing row, so every team-drafts query names it here.
- */
-const inMemberSpace = sql`mantle_member_space(${nodes.ownerId})`;
-
-/** Team drafts run on the team role with the human flag; never at admin. */
-function requireTeamDrafts(): void {
-  if (currentScope().kind !== 'level' || currentSpaceScope()) {
-    throw new Error('team drafts read outside withTeamDrafts');
-  }
-}
 
 type Joined = { node: typeof nodes.$inferSelect; item: typeof spaceItems.$inferSelect | null };
 
@@ -185,9 +168,6 @@ export type ListSpaceOpts = {
    *  items an admin has taken over, as `with-admin` rows (title and kind
    *  only), before the own rows; `total` counts them. */
   withAdmin?: boolean;
-  /** Only these items (Team drafts: the admin's Shared by members, which
-   *  picks the eligible ids first, member-items-shared.ts). */
-  ids?: readonly string[];
   limit?: number;
   offset?: number;
 };
@@ -534,7 +514,10 @@ function frozenBy(holder: { id: string; title: string }): SpaceItemStateError {
 }
 
 /** Private or shared with the team. Allowed in any state before Accept: it
- *  changes who may read the item, never what it says. */
+ *  changes who may read the item, never what it says. No route sets it since
+ *  workspaces W5c (team drafts went; W6b grants a personal item instead):
+ *  kept for the rows that already say 'team' and the tests that build them,
+ *  removed with personal spaces in W6b. */
 export async function setSharing(
   spaceId: string,
   id: string,
@@ -1068,124 +1051,4 @@ export async function updateMineItem(
   }
   await notifySpaceItemChanged(id, 'saved', { spaceId, team: row.sharing === 'team' });
   return getMineItem(spaceId, id);
-}
-
-// ── Team drafts ──────────────────────────────────────────────────────────────
-
-/** Other members' items shared with the team, newest first. The caller's own
- *  shared items are in Mine, not here. Published content only.
- *  `reviewStates` narrows by review state as on Mine. */
-export async function listTeamDrafts(
-  loginId: string,
-  opts: ListSpaceOpts = {},
-): Promise<{ items: SpaceItemRow[]; total: number }> {
-  requireTeamDrafts();
-  const { limit, offset } = page(opts);
-  const where = and(
-    eq(spaceItems.sharing, 'team'),
-    inMemberSpace,
-    sql`${spaceItems.authorLoginId} IS DISTINCT FROM ${loginId}`,
-    opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
-    opts.ids ? (opts.ids.length ? inArray(nodes.id, [...opts.ids]) : sql`false`) : undefined,
-    titleFilter(opts.q),
-    reviewFilter(opts.reviewStates),
-  );
-  const rows = await db
-    .select({ node: nodes, item: spaceItems })
-    .from(nodes)
-    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-    .where(where)
-    .orderBy(desc(nodes.updatedAt))
-    .limit(limit)
-    .offset(offset);
-  const [count] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(nodes)
-    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-    .where(where);
-  return { items: rows.map(rowOf), total: count?.n ?? 0 };
-}
-
-/** One team draft's row (no body), or null when the caller may not read it. */
-export async function getTeamDraftRow(id: string): Promise<SpaceItemRow | null> {
-  requireTeamDrafts();
-  const [joined] = await db
-    .select({ node: nodes, item: spaceItems })
-    .from(nodes)
-    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-    .where(
-      and(
-        eq(nodes.id, id),
-        eq(spaceItems.sharing, 'team'),
-        inMemberSpace,
-        inArray(nodes.type, [...SPACE_ITEM_KINDS]),
-      ),
-    )
-    .limit(1);
-  return joined ? rowOf(joined) : null;
-}
-
-/** One team draft with its published body, or null when the caller may not
- *  read it (private, the brain's, or gone). */
-export async function getTeamDraftItem(
-  id: string,
-  opts: { tabId?: string } = {},
-): Promise<{ row: SpaceItemRow; body: SpaceItemBody } | null> {
-  requireTeamDrafts();
-  const [joined] = await db
-    .select({ node: nodes, item: spaceItems })
-    .from(nodes)
-    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-    .where(
-      and(
-        eq(nodes.id, id),
-        eq(spaceItems.sharing, 'team'),
-        inMemberSpace,
-        inArray(nodes.type, [...SPACE_ITEM_KINDS]),
-      ),
-    )
-    .limit(1);
-  if (!joined) return null;
-  const row = rowOf(joined);
-  if (row.type === 'draw') {
-    // The scene reader asks for draft columns; a teammate gets the drawing's
-    // published SVG through its own route instead.
-    return { row, body: { type: 'draw', draw: null } };
-  }
-  const body = await spaceItemBody(joined.node.ownerId, row.type, id, opts);
-  return body ? { row, body } : null;
-}
-
-/** A team-shared drawing's saved SVG, or null. Its owner is whichever space
- *  holds it; row security decides whether the caller may see it at all. */
-export async function getTeamDraftDrawSvg(id: string): Promise<string | null> {
-  requireTeamDrafts();
-  const [n] = await db
-    .select({ ownerId: nodes.ownerId })
-    .from(nodes)
-    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-    .where(
-      and(eq(nodes.id, id), eq(nodes.type, 'draw'), eq(spaceItems.sharing, 'team'), inMemberSpace),
-    )
-    .limit(1);
-  return n ? getDrawSvg(n.ownerId, id) : null;
-}
-
-/** A team-shared file's bytes, or null. Row security decides whether the
- *  caller may see the node; the bytes are then read from its own space. */
-export async function openTeamDraftFile(id: string): Promise<OpenedSpaceFile | null> {
-  requireTeamDrafts();
-  const [n] = await db
-    .select({ ownerId: nodes.ownerId })
-    .from(nodes)
-    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-    .where(
-      and(eq(nodes.id, id), eq(nodes.type, 'file'), eq(spaceItems.sharing, 'team'), inMemberSpace),
-    )
-    .limit(1);
-  if (!n) return null;
-  const file = await spaceFileOf(n.ownerId, id);
-  if (!file) return null;
-  const opened = await openSpaceFile(n.ownerId, id);
-  return opened ? { file, spaceId: n.ownerId, ...opened } : null;
 }

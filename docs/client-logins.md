@@ -535,8 +535,10 @@ took one over, and accepted.
   under their own caps. The gate refuses a declared length before the
   handler runs, and a body without one is cut off while it is read
   (`server/web/lib/body-limit.ts`).
-- **Members read client requests** (decision 5 B). A client's SUBMITTED
-  item, and what renders inside it, is readable by members as a "Client
+- **Members read client requests** (decision 5 B; removed in workspaces
+  W5c: the three routes answer 410 `gone`, and the one list has no client
+  requests source or filter). A client's SUBMITTED
+  item, and what renders inside it, was readable by members as a "Client
   requests" source in their one list (`GET /api/member/client-requests`,
   `/:id`, `/:id/bytes`), read only. A client's draft, returned or accepted
   item is not. Row security holds it: the team role reads a client's item

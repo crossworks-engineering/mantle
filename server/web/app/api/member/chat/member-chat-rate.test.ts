@@ -21,18 +21,9 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   })),
 }));
 
-vi.mock('@mantle/db', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>();
-  const chain = {
-    from: () => chain,
-    where: () => chain,
-    limit: async () => [{ slug: 'team-responder', name: 'Team', audience: 'team' }],
-  };
-  return { ...actual, db: { select: () => chain } };
-});
-
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
+  teamAssistant: vi.fn(async () => ({ id: 'agent-1', slug: 'team-responder', name: 'Team' })),
   countMemberInboundSince: vi.fn(async () => 0),
   recordTeamAccess: vi.fn(),
   // The turn ledger (member-turn-ledger.ts) always has room here: this file

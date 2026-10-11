@@ -79,11 +79,6 @@ const PRECONDITION_EXEMPT = new Set<string>([
   'app_data_schema.app_id',
   'app_data_query.app_id',
   'app_data_write.app_id',
-  // A folder of the calling login's OWN space tree (MCP as a login): it is
-  // owned by that space, not the brain, and memberFilingPath checks it.
-  'my_note_create.folder_id',
-  'my_page_create.folder_id',
-  'my_file_upload.folder_id',
 ]);
 
 /** Walk every {path, schema} pair under `properties` (nested objects and

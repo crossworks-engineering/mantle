@@ -656,9 +656,10 @@ export async function acceptedByLogin(
 }
 
 // Compile-time locks: what the routes send must fit the published contract.
-type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+// The row carries more than the contract names (its frozen level fields, no
+// longer published since workspaces W5c; W6b drops them here).
 const contractLocks: [
-  Same<AcceptedRow, MemberAcceptedRow>,
+  AcceptedRow extends MemberAcceptedRow ? true : false,
   AcceptedItem extends MemberAcceptedItem ? true : false,
 ] = [true, true];
 void contractLocks;
