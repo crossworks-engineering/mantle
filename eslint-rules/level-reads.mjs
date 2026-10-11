@@ -26,57 +26,7 @@ export const LEVEL_READ_PATTERN =
 
 /** @type {Record<string, { lines: number, phase: 'W5b2' | 'W5c' | 'W6b' | 'W7' | 'W8' | 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
-  // ── W7 (MCP, peers, Telegram, agent and tool-group levels) ──
-  'packages/tools/src/client-sourced-rules.ts': {
-    lines: 4,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): an agent or tool group a client or the public meets holds a client-marked write',
-  },
-  'packages/content/src/access.ts': {
-    lines: 29,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): agent level writer, tool-group level writer, the agent-holds-group rule, the Telegram rule',
-  },
-  'packages/runtime/src/agent/skills.ts': {
-    lines: 2,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): a connector group is capped by the agent level only, the scope decides the caller',
-  },
-  'packages/tools/src/builtins-access.ts': {
-    lines: 4,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): access_get and access_set on agents and connectors',
-  },
-  'server/web/app/api/access/agents/[slug]/route.ts': {
-    lines: 5,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): the agent level route',
-  },
-  'server/web/app/api/access/tool-groups/[slug]/route.ts': {
-    lines: 3,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): the connector level route',
-  },
-  'packages/tools/src/agent-grants.ts': {
-    lines: 5,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): an agent holds groups at or below its level',
-  },
-  'packages/tools/src/member-app-tools.ts': {
-    lines: 1,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): a member app draws built-ins from team-level groups',
-  },
-  'packages/tools/src/toolsmith/groups.ts': {
-    lines: 6,
-    phase: 'W7',
-    why: 'agent and tool-group levels (kept until W7, contract 21): grant and group-change rules (4 lines); OAuth audience (2 lines, keep)',
-  },
-  'packages/mcp-core/src/login-surface.ts': {
-    lines: 3,
-    phase: 'W7',
-    why: 'agent level of the MCP login responder',
-  },
+  // ── W7 (Telegram, W7d; the rest went in W7b) ──
   'packages/telegram/src/chat-level.ts': {
     lines: 2,
     phase: 'W7',
@@ -208,11 +158,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W8',
     why: 'agent level passed to the scope',
   },
-  'server/web/app/api/agents/[id]/route.ts': {
-    lines: 2,
-    phase: 'W8',
-    why: 'agent vs group level on grant',
-  },
   'server/web/lib/mcp-connectors.ts': {
     lines: 1,
     phase: 'W8',
@@ -243,6 +188,11 @@ export const LEVEL_READ_ALLOWLIST = {
     lines: 7,
     phase: 'keep',
     why: 'unrelated: the OAuth2 audience parameter',
+  },
+  'packages/tools/src/toolsmith/groups.ts': {
+    lines: 3,
+    phase: 'keep',
+    why: 'unrelated: the OAuth2 audience parameter of an integration group',
   },
   'packages/tools/src/mcp-oauth.ts': {
     lines: 1,

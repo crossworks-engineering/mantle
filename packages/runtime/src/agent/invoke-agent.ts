@@ -235,7 +235,6 @@ export const invokeAgent: AgentInvoker = async ({
     const groupTools = await resolveAgentToolGroups(
       ownerId,
       (target as Agent).toolGroupSlugs ?? [],
-      agentLevel(target),
     );
     return resolveAgentTools(ownerId, effectiveToolSlugs(groupTools));
   });

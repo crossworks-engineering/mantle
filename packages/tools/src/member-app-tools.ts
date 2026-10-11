@@ -15,12 +15,12 @@
  *   4. that builtin does not spend (`spends`: it starts paid model work on a
  *      call) and is marked read-only (`readOnly`, the default-deny flag the
  *      read-only turn uses): an app loop has no model in between, so a
- *      writing or spending builtin an admin put in a team-level group for
+ *      writing or spending builtin an admin put in a system-wide group for
  *      chat must not become callable 60 times a minute (audit 2026-09-27;
  *      `spends` since audit F17, as a read can spend too);
- *   5. an ENABLED tool group at team level or lower holds it (the group's
- *      level as the rule of which app tools may hold it: kept until W7,
- *      contract 21).
+ *   5. an ENABLED system-wide tool group holds it (not an adminOnly one:
+ *      those run only in the Admin workspace; tool-group levels went in
+ *      workspaces W7b, plan 5.4).
  * An OUTSIDE tool takes another path after rule 2 (external-access.ts). A
  * CONNECTOR tool (mcp): the workspaces that hold its connector decide (the
  * runner's login's workspaces, and with `check.appId` every workspace that
@@ -37,16 +37,13 @@
  * rules in app-tool-level.ts (client tier audit L1): a client-level app gets
  * the client rules instead, for every runner.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
 import { resolveTool } from './resolve';
 import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
 
-/** The group levels a member's app may draw tools from. */
-const MEMBER_GROUP_LEVELS = ['team', 'client', 'public'];
-
 /**
- * Tools a member's app may never call, even from a team-level group:
+ * Tools a member's app may never call, even from a system-wide group:
  * - my_items_list / my_item_open read the runner's PRIVATE items; an app
  *   could copy them into its database, which every member and admin reads.
  *   The same reasoning, one level up, is why no app tool reads above the
@@ -76,8 +73,8 @@ export const MEMBER_APP_REFUSED_SLUGS: readonly string[] = [
 export type MemberAppToolVerdict =
   { ok: true; tool: Tool; write?: boolean } | { ok: false; status: 403 | 404; reason: string };
 
-/** Whether an enabled tool group at team level or lower holds `slug`. */
-async function inTeamLevelGroup(ownerId: string, slug: string): Promise<boolean> {
+/** Whether an enabled system-wide (not adminOnly) tool group holds `slug`. */
+async function inSystemWideGroup(ownerId: string, slug: string): Promise<boolean> {
   const [row] = await db
     .select({ slug: toolGroups.slug })
     .from(toolGroups)
@@ -85,7 +82,7 @@ async function inTeamLevelGroup(ownerId: string, slug: string): Promise<boolean>
       and(
         eq(toolGroups.ownerId, ownerId),
         eq(toolGroups.enabled, true),
-        inArray(toolGroups.audience, MEMBER_GROUP_LEVELS),
+        eq(toolGroups.adminOnly, false),
         sql`${slug} = any(${toolGroups.toolSlugs})`,
       ),
     )
@@ -149,11 +146,11 @@ export async function memberAppToolVerdict(
       reason: `The tool '${slug}' needs an admin's confirmation, so a team app can't use it.`,
     };
   }
-  if (!(await inTeamLevelGroup(ownerId, slug))) {
+  if (!(await inSystemWideGroup(ownerId, slug))) {
     return {
       ok: false,
       status: 403,
-      reason: `The tool '${slug}' is not in a team-level tool group, so team members can't use it.`,
+      reason: `The tool '${slug}' is only in Admin-only tool groups, so this app can't use it outside the Admin workspace.`,
     };
   }
   return { ok: true, tool };

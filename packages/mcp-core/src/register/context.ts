@@ -14,7 +14,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/server';
 import { checkToolPreconditions, toolItemWriteRefusal } from '@mantle/tools';
-import type { BuiltinToolDef, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
+import type { BuiltinToolDef, LoginMcpChannel, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
 import { publicToolError } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
@@ -39,11 +39,21 @@ export function makeRegisterContext(
    *  login a peer is bound to), from the credential the route resolved
    *  (W6b fix round 2, M-2). Absent on stdio. */
   loginId?: string,
+  /** The login's own connection (W7b): how it connected and its Write
+   *  switch, for the app_data_* tools. Absent on stdio. */
+  mcp?: LoginMcpChannel,
 ) {
   const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
   // The handlers get the connection's login with it: who deletes an app
-  // decides whether the trash keeps it for the owner (app_delete).
-  const callSurface: ToolSurface = loginId ? { kind: 'owner', via, loginId } : surface;
+  // decides whether the trash keeps it for the owner (app_delete). The
+  // channel goes with or without a login (W7b fix round 3): a peer bound to
+  // an admin login that is not the owner's own peer has no loginId here,
+  // and its `ownerKeysOff` must still reach the tools.
+  const callSurface: ToolSurface = loginId
+    ? { kind: 'owner', via, loginId, ...(mcp ? { mcp } : {}) }
+    : mcp
+      ? { kind: 'owner', via, mcp }
+      : surface;
   // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
   // a local one out. Unset means stdio yes, HTTP no.
   const terminalEnv = env('MANTLE_MCP_TERMINAL') ?? '';

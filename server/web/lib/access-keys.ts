@@ -26,7 +26,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, count, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { accessKeys, db, isUniqueViolation, isWriteRefused, mcpLoginAccess } from '@mantle/db';
+import { accessKeys, db, isUniqueViolation, isWriteRefused } from '@mantle/db';
 import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
 import { loadLoginRow, type LoginRow } from './auth/login-row';
 import { auditFireAndForget } from './audit';
@@ -122,6 +122,9 @@ export type AccessKeyGrant = {
   createdBy: string | null;
   /** The login row the key was checked against on this request. */
   login: LoginRow;
+  /** The key works on /api/v1 only (0268, W7b fix round 2): /api/mcp
+   *  refuses it. Absent = both. */
+  apiOnly?: true;
 };
 
 export type AccessKeyRefusal = 'malformed' | 'unknown' | 'revoked' | 'expired' | 'login';
@@ -206,6 +209,7 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
       riskyTools: row.loginRole === 'admin' ? row.riskyTools : [],
       createdBy: row.createdBy,
       login,
+      ...(row.apiOnly ? { apiOnly: true as const } : {}),
     },
   };
 }
@@ -321,18 +325,11 @@ export type MintAccessKeyInput = {
   maxLive: number;
 };
 
-/** A member's or client's mint while an admin has the login's MCP switched
- *  off (access matrix T16). */
-export const MINT_REFUSED_MCP_OFF = 'mcp-off';
-
 /** Mint a key. The plaintext is returned ONCE; only its hash is kept. Null
  *  when the login already holds `maxLive` live keys: the count and the
  *  insert run in one transaction under a per-login lock, so two creates at
- *  once cannot both pass the cap (M2 audit F7). MINT_REFUSED_MCP_OFF for a
- *  member or client whose MCP an admin turned off: the switch revoked the
- *  login's keys, and a key made while it is off would work again the moment
- *  it is back on (access matrix T16). Read under the same lock the switch
- *  takes, so a mint and the switch never cross. */
+ *  once cannot both pass the cap (M2 audit F7). (The per-login MCP switch
+ *  that could refuse a mint went in workspaces W7b.) */
 /**
  * Serialize what mints or ends one login's keys: a mint (its live-key cap),
  * and a bulk revoke (endLoginSessions with endKeys, the MCP switch turned
@@ -351,7 +348,7 @@ export async function lockLoginKeys(
 
 export async function mintAccessKey(
   input: MintAccessKeyInput,
-): Promise<{ id: string; prefix: string; key: string } | null | typeof MINT_REFUSED_MCP_OFF> {
+): Promise<{ id: string; prefix: string; key: string } | null> {
   const areas = input.areas ? [...new Set(input.areas)].sort() : null;
   const riskyTools = input.loginRole === 'admin' ? [...new Set(input.riskyTools)].sort() : [];
   // A prefix clash is about 1 in 10^14; try again rather than fail.
@@ -361,18 +358,6 @@ export async function mintAccessKey(
     try {
       const row = await db.transaction(async (tx) => {
         await lockLoginKeys(tx, input.loginId);
-        if (input.loginRole !== 'admin') {
-          // An admin turned it off (a row that says so). A login no admin
-          // ever switched has no row, and makes keys as before.
-          const [mcp] = await tx
-            .select({ enabled: mcpLoginAccess.enabled })
-            .from(mcpLoginAccess)
-            .where(eq(mcpLoginAccess.loginId, input.loginId))
-            .limit(1);
-          // A row that does not say on counts as off (fail closed); no row
-          // keeps the decision above (T16 option a).
-          if (mcp && mcp.enabled !== true) return MINT_REFUSED_MCP_OFF;
-        }
         const [live] = await tx
           .select({ n: count() })
           .from(accessKeys)
@@ -402,7 +387,6 @@ export async function mintAccessKey(
           .returning({ id: accessKeys.id });
         return inserted!;
       });
-      if (row === MINT_REFUSED_MCP_OFF) return row;
       return row ? { id: row.id, prefix, key } : null;
     } catch (err) {
       if (attempt < 3 && isUniqueViolation(err)) continue;

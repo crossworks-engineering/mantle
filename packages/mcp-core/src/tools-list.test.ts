@@ -8,6 +8,7 @@
  * so an SDK upgrade cannot change what the assistant sees without a red test.
  */
 
+import { MCP_CREATE_TOOL_SLUGS, WORKSPACE_ARG } from './create-home';
 import { describe, expect, it } from 'vitest';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { Client } from '@modelcontextprotocol/client';
@@ -62,8 +63,10 @@ describe('tools/list over the SDK', () => {
       // hand-written twins (no-duplicate-tools.test.ts) keep their own.
       if (!def || t.description !== def.description) continue;
       const props = (def.inputSchema.properties ?? {}) as Record<string, unknown>;
+      // A create also takes `workspace` (W7b, create-home.ts), optional.
+      const extra = MCP_CREATE_TOOL_SLUGS.has(t.name) ? [WORKSPACE_ARG] : [];
       expect(Object.keys(t.inputSchema.properties ?? {}).sort(), t.name).toEqual(
-        Object.keys(props).sort(),
+        [...Object.keys(props), ...extra].sort(),
       );
       expect([...(t.inputSchema.required ?? [])].sort(), t.name).toEqual(
         [...((def.inputSchema.required as string[] | undefined) ?? [])].sort(),
@@ -71,5 +74,16 @@ describe('tools/list over the SDK', () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(200);
+  });
+
+  it('every create tool advertises the optional workspace argument (W7b)', async () => {
+    const tools = await listedTools();
+    const names = new Set(tools.map((t) => t.name));
+    for (const slug of MCP_CREATE_TOOL_SLUGS) {
+      expect(names.has(slug), slug).toBe(true);
+      const t = tools.find((x) => x.name === slug)!;
+      expect(Object.keys(t.inputSchema.properties ?? {}), slug).toContain(WORKSPACE_ARG);
+      expect(t.inputSchema.required ?? [], slug).not.toContain(WORKSPACE_ARG);
+    }
   });
 });

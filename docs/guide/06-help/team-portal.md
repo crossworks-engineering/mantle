@@ -1,6 +1,6 @@
 ---
 title: Team Portal
-toolGroups: [team-admin]
+toolGroups: []
 ---
 
 ## Team Portal

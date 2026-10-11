@@ -5,9 +5,8 @@
  *  - L12: End sessions (and a password change, which runs the same
  *    endLoginSessions with endKeys) unbinds every peer that acts as the
  *    login; a peer bound to someone else is not touched;
- *  - L13: turning the login's MCP off revokes its API keys and unbinds its
- *    peers, so turning MCP on again brings neither back. The key rows, like
- *    the peer rows, say the MCP switch did it (T17).
+ *  - L13 (until W7b): the login's MCP switch went with workspaces W7b; its
+ *    route answers 410 and changes no key or peer.
  *
  * An unbound peer keeps its federation grants; it only stops acting as the
  * login (mcp-auth.ts refuses a peer bound to nobody).
@@ -76,8 +75,6 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     await bound('member', member, 'member');
     await bound('client', client, 'client');
     await bound('other', who.anchor, 'admin');
-    await sql`insert into mcp_login_access (login_id, enabled, write_enabled)
-              values (${client}, true, true)`;
     // A client key carries the session epoch it was made in.
     await sql`insert into access_keys
                 (id, name, login_id, login_role, key_prefix, key_hash, access, session_epoch)
@@ -122,51 +119,16 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);
   }, 30_000);
 
-  it('turning MCP off revokes the keys and unbinds the peers, for good', async () => {
+  it('W7b: the per-login MCP switch is gone (410); a key and a peer stay as they are', async () => {
     const { PATCH } = await import('../app/api/mcp-logins/[id]/route');
-    const patch = (enabled: boolean) =>
-      PATCH(
-        new Request('http://x/api/mcp-logins/x', {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ enabled }),
-        }),
-        { params: Promise.resolve({ id: client }) },
-      );
-    const off = await patch(false);
-    expect(off.status).toBe(200);
-    expect(await off.json()).toMatchObject({ enabled: false, peersUnbound: 1 });
-    await vi.waitFor(
-      async () => expect(await unboundAudits(peers.client)).toEqual([{ reason: 'mcp-off' }]),
-      AUDIT_WAIT,
-    );
-    const [k] =
-      (await sql`select revoked_at, revoked_by from access_keys where id = ${key}`) as unknown as {
-        revoked_at: Date | null;
-        revoked_by: string | null;
-      }[];
-    expect(k!.revoked_at).not.toBeNull();
-    expect(k!.revoked_by).toBe(who.admin);
-    expect((await peer(peers.client)).acts_as_login_id).toBeNull();
-    // The key row names the switch, as the peer row does (T17).
-    await vi.waitFor(
-      async () =>
-        expect(
-          (
-            await sql`select actor_email, detail->>'reason' as reason from audit_log
-                     where action = 'key.revoked' and detail->'keyIds' ? ${key}`
-          ).map((r) => ({ ...r })),
-        ).toEqual([{ actor_email: 'mcp-switch', reason: 'mcp-off' }]),
-      AUDIT_WAIT,
-    );
-    // On again: nothing comes back.
-    expect((await patch(true)).status).toBe(200);
-    const [again] =
-      (await sql`select revoked_at from access_keys where id = ${key}`) as unknown as {
-        revoked_at: Date | null;
-      }[];
-    expect(again!.revoked_at).not.toBeNull();
-    expect((await peer(peers.client)).acts_as_login_id).toBeNull();
+    const res = await PATCH();
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ code: 'gone' });
+    const [k] = (await sql`select revoked_at from access_keys where id = ${key}`) as unknown as {
+      revoked_at: Date | null;
+    }[];
+    expect(k!.revoked_at).toBeNull();
+    expect((await peer(peers.client)).acts_as_login_id).toBe(client);
     expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);
   }, 30_000);
 

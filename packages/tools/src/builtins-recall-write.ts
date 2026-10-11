@@ -208,6 +208,9 @@ const recall_map_create: BuiltinToolDef = {
         ok: true,
         output: {
           map: made.slug,
+          // The map's item id (its node): the MCP create reply names where
+          // it landed from it (W7b fix round 1).
+          id: made.mapId,
           version: made.version,
           published: made.published,
           note: `Created with an entry card ('start'). It is unpublished, so no agent can reach it yet: add its cards with recall_card_put, then ask the owner to publish it.`,

@@ -99,7 +99,7 @@ describe('level-reads sweep', () => {
     tester.run('level-reads', rule, {
       valid: [
         { code: 'const x = currentScope();', filename: '/r/packages/search/src/index.ts' },
-        { code: 'const a = n.audience;', filename: '/r/packages/content/src/access.ts' },
+        { code: 'const a = n.audience;', filename: '/r/packages/telegram/src/level.ts' },
         { code: 'const a = n.audience;', filename: '/r/packages/search/src/index.test.ts' },
       ],
       invalid: [

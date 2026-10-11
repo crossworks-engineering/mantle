@@ -98,11 +98,11 @@ const ITEM_RIGHTS =
 const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   [
     'input',
-    /is required|must be|must match|must name|must decode|pass (one of|either|content_|a branch id)|Provide either|nothing to (change|update)|needs at least|invalid|non-empty|specify a destination|unknown (pool|worker)|not a recognised|Undefined symbol|already exists in|is not a spreadsheet|is a binary file|not an image|no top-level heading|no h1 headings|not a \.mantleapp|is not allowlisted|validation|expected|code must be|is not deleted|from must be|\brequired\b|pass `|pass folder_id|already exists|not empty|no tab '|is not under files|has no mantleapp\.json|is not in Recently deleted/i,
+    /is required|must be|must match|must name|must decode|pass (one of|either|content_|a branch id)|Provide either|nothing to (change|update)|needs at least|invalid|non-empty|specify a destination|unknown (pool|worker)|not a recognised|Undefined symbol|already exists in|is not a spreadsheet|is a binary file|not an image|no top-level heading|no h1 headings|not a \.mantleapp|is not allowlisted|validation|expected|code must be|is not deleted|from must be|\brequired\b|pass `|pass folder_id|already exists|not empty|no tab '|is not under files|has no mantleapp\.json|is not in Recently deleted|runs one INSERT, UPDATE, DELETE or REPLACE/i,
   ],
   [
     'not found',
-    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured)|no such message|no entry|not found or already decided|no indexed passages/i,
+    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured)|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection/i,
   ],
   ['wrong type', /is an? \w+, not an? \w+ . pass/],
   [
@@ -113,6 +113,8 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
     'context',
     /No one to act for|only runs on the team surface|can only run inside an agent turn|no heartbeat context|missing parent agent context|No enabled assistant agent|made by Mantle and found by its path/i,
   ],
+  // A switch W7b retired (agent and tool group levels) says so.
+  ['retired', /Agents and tool groups have no level any more/],
   ['item rights', ITEM_RIGHTS],
   ['item workspace', ITEM_WS],
 ];
@@ -621,7 +623,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
   it('outside Admin: every adminOnly, ownerOnly or Admin-area tool is refused', async () => {
     const defs = t.listBuiltins();
     const gated = defs.filter(
-      (d) => d.ownerOnly || t.ADMIN_ONLY_TOOL_SLUGS.has(d.slug) || t.toolAdminArea(d.slug) !== null,
+      (d) =>
+        t.isAdminOnlyTool(d.slug, { ownerOnly: d.ownerOnly }) || t.toolAdminArea(d.slug) !== null,
     );
     expect(gated.length).toBeGreaterThan(20);
     // The Team assistant's turn, answering a member, on an owner surface

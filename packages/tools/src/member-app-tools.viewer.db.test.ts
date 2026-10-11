@@ -73,10 +73,10 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
         (${anchor}, 'quick_sum', 'n', 'd', ${b('summarize_text')}::jsonb, false),
         (${anchor}, 'note_create', 'n', 'd', ${b('note_create')}::jsonb, false)`);
     await exec(sqlTag`
-      insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled) values
-        (${anchor}, 'g-team', 'g', ARRAY['note_list','shell_thing','confirm_thing','my_items_list','page_list','quick_sum','note_create'], 'team', true),
-        (${anchor}, 'g-admin', 'g', ARRAY['admin_only','note_list'], 'admin', true),
-        (${anchor}, 'g-off', 'g', ARRAY['off_group'], 'team', false)`);
+      insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, admin_only) values
+        (${anchor}, 'g-team', 'g', ARRAY['note_list','shell_thing','confirm_thing','my_items_list','page_list','quick_sum','note_create'], 'team', true, false),
+        (${anchor}, 'g-admin', 'g', ARRAY['admin_only','note_list'], 'admin', true, true),
+        (${anchor}, 'g-off', 'g', ARRAY['off_group'], 'team', false, false)`);
     await exec(sqlTag`
       insert into nodes (owner_id, type, title, path, audience, data) values
         (${anchor}, 'note', ${`${tag} team note`}, 'notes', 'team', '{"content":"t"}'::jsonb),
@@ -115,7 +115,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     expect(await verdict('note_list', ['page_list'])).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('refuses a tool held only by an admin-level group', async () => {
+  it('refuses a tool held only by an adminOnly group (W7b: no levels)', async () => {
     expect(await verdict('admin_only')).toMatchObject({ ok: false, status: 403 });
   });
 
@@ -140,16 +140,16 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     expect(await verdict('my_items_list')).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('checks at call time: a group raised to admin refuses the next call', async () => {
+  it('checks at call time: a group made adminOnly refuses the next call (W7b)', async () => {
     expect((await verdict('page_list')).ok).toBe(true);
     await exec(
-      sqlTag`update tool_groups set audience = 'admin' where owner_id = ${anchor} and slug = 'g-team'`,
+      sqlTag`update tool_groups set admin_only = true where owner_id = ${anchor} and slug = 'g-team'`,
     );
     try {
       expect(await verdict('page_list')).toMatchObject({ ok: false, status: 403 });
     } finally {
       await exec(
-        sqlTag`update tool_groups set audience = 'team' where owner_id = ${anchor} and slug = 'g-team'`,
+        sqlTag`update tool_groups set admin_only = false where owner_id = ${anchor} and slug = 'g-team'`,
       );
     }
   });

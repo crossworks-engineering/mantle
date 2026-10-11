@@ -1,10 +1,10 @@
 /**
- * access_get / access_set: owner-side only, levels validated, and a brain
- * item refused by access_set (workspaces W5b2: items have no level, their
- * grants are set in Grant Access).
+ * access_get / access_set: owner-side only, and a brain item refused by
+ * access_set (workspaces W5b2: items have no level, their grants are set in
+ * Grant Access); agents and tool groups have none either since W7b.
  */
 import { describe, expect, it } from 'vitest';
-import { access_get, access_set, ITEM_LEVEL_GONE } from './builtins-access';
+import { access_get, access_set, AGENT_LEVEL_GONE, ITEM_LEVEL_GONE } from './builtins-access';
 import type { ToolHandlerContext } from './types';
 
 const OWNER: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
@@ -18,9 +18,19 @@ describe('access tools', () => {
     }
   });
 
-  it('refuse a value that is not a level', async () => {
-    const res = await access_set.handler({ agent_slug: 'a1', level: 'everyone' }, OWNER);
-    expect(res.ok === false && res.error).toMatch(/admin, team, client, public/);
+  it('agents and tool groups have no level (W7b): access_set answers how instead', async () => {
+    for (const input of [
+      { agent_slug: 'a1', level: 'team' },
+      { tool_group_slug: 'g1', level: 'admin' },
+      {},
+    ]) {
+      expect(await access_set.handler(input, OWNER)).toEqual({
+        ok: false,
+        error: AGENT_LEVEL_GONE,
+      });
+    }
+    expect(Object.keys(access_get.inputSchema.properties as object)).toEqual(['node_id']);
+    expect(Object.keys(access_set.inputSchema.properties as object)).toEqual(['node_id']);
   });
 
   it('refuse to set a level on a brain item, pointing at Grant Access', async () => {

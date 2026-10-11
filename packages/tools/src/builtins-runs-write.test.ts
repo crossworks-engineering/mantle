@@ -214,11 +214,11 @@ describe('run_plan', () => {
       ownerId: 'o1',
       agent: { slug: 'persona', depth: 1, delegateTo: [] },
     };
-    // The agent row, then its granted groups (read for the level check,
+    // The agent row, then its granted groups (read for the workspace check,
     // then for the grant): none grants `search`.
     const grant = [
-      [{ slug: 'persona', toolGroupSlugs: ['g-notes'], audience: 'admin' }],
-      [{ toolSlugs: ['note_list'], audience: 'admin' }],
+      [{ slug: 'persona', toolGroupSlugs: ['g-notes'], admin: true }],
+      [{ toolSlugs: ['note_list'] }],
     ];
     selectQueue.push(...grant, ...grant);
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, persona);
@@ -226,17 +226,19 @@ describe('run_plan', () => {
     expect(createRun).not.toHaveBeenCalled();
   });
 
-  it('refuses a planning agent below admin, inside an admin turn too (B3)', async () => {
+  it('refuses a planning agent of another workspace, inside an admin turn too (B3)', async () => {
     const teamBot: ToolHandlerContext = {
       ownerId: 'o1',
       agent: { slug: 'team-bot', depth: 1, delegateTo: [] },
     };
     selectQueue.push(
-      [{ slug: 'team-bot', toolGroupSlugs: ['g-search'], audience: 'team' }],
-      [{ toolSlugs: ['search'], audience: 'team' }],
+      [{ slug: 'team-bot', toolGroupSlugs: ['g-search'], admin: false }],
+      [{ toolSlugs: ['search'] }],
     );
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, teamBot);
-    expect(errorOf(res)).toMatch(/admin-level agents only, and 'team-bot' is team level/);
+    expect(errorOf(res)).toMatch(
+      /Admin workspace's agents only, and 'team-bot' answers in another workspace/,
+    );
     expect(createRun).not.toHaveBeenCalled();
   });
 
@@ -246,8 +248,8 @@ describe('run_plan', () => {
       agent: { slug: 'persona', depth: 1, delegateTo: [] },
     };
     const grant = [
-      [{ slug: 'persona', toolGroupSlugs: ['g-search'], audience: 'admin' }],
-      [{ toolSlugs: ['search'], audience: 'admin' }],
+      [{ slug: 'persona', toolGroupSlugs: ['g-search'], admin: true }],
+      [{ toolSlugs: ['search'] }],
     ];
     selectQueue.push(...grant, ...grant, [{ id: 'a1' }]);
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, persona);

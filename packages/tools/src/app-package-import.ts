@@ -56,7 +56,13 @@ export type AppPackageImportResult = {
 export async function importAppPackage(
   ownerId: string,
   bytes: Buffer | Uint8Array,
-  opts: { title?: string; withData?: boolean; actor?: AppHistoryActor } = {},
+  opts: {
+    title?: string;
+    withData?: boolean;
+    actor?: AppHistoryActor;
+    /** The importing login when it is not an Admin user (W7b fix round 1). */
+    authorLoginId?: string;
+  } = {},
 ): Promise<AppPackageImportResult> {
   const opened = await openAppPackage(bytes);
   const { pkg } = opened;
@@ -98,6 +104,7 @@ export async function importAppPackage(
       ...(opts.title ? { title: opts.title } : {}),
       toolSlugs: [],
       data,
+      ...(opts.authorLoginId ? { authorLoginId: opts.authorLoginId } : {}),
     });
     try {
       return await finishImport(ownerId, app, pkg, opts, data, {

@@ -123,15 +123,18 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
     expect(slugs).toEqual({ agents: [agentSlug('client')], groups: [groupSlug('client')] });
   });
 
-  it('a client-level agent never gets a public tool group, and a public one under a client caller gets none', async () => {
+  it('W7b: no level cap on groups: an agent gets the groups it holds that the reader may load', async () => {
     const { resolveAgentToolGroups } = await import('./skills');
     const both = [groupSlug('client'), groupSlug('public')];
-    // Admin caller, client agent: the public group is not the client's.
-    expect(await resolveAgentToolGroups(anchor, both, 'client')).toEqual([`${tag}-tool-client`]);
-    // Client caller, public agent: no common level, no tools.
+    // System work: every group it holds (tool-group levels went in W7b).
+    expect(await resolveAgentToolGroups(anchor, both)).toEqual([
+      `${tag}-tool-client`,
+      `${tag}-tool-public`,
+    ]);
+    // The client role loads its own groups only (0189): never wider.
     expect(
-      await m.runInLevelRoleForTest('client', () => resolveAgentToolGroups(anchor, both, 'public')),
-    ).toEqual([]);
+      await m.runInLevelRoleForTest('client', () => resolveAgentToolGroups(anchor, both)),
+    ).toEqual([`${tag}-tool-client`]);
   });
 
   it('invoke_agent: no public agent for a client, no client agent for a public caller', async () => {

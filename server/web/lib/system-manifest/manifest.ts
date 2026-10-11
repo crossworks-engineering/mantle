@@ -547,6 +547,8 @@ export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = [
   'team-notify',
   'my-space-write',
   'client-read',
+  'team-admin',
+  'my-apps-mcp',
 ];
 export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'team_member_list',
@@ -570,6 +572,33 @@ export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'client_shared_search',
   'client_shared_open',
   'client_request_create',
+  // Workspaces W7b: one MCP surface for every login. A member builds apps
+  // with the app_* tools in its own scope (builtins-my-apps.ts retired), and
+  // the owner-side team tools went (builtins-team.ts): every user reads only
+  // their own chats (owner answer 2), and a member's change is made where
+  // they may edit, not filed as a request.
+  'team_request_create',
+  'team_chat_list',
+  'team_chat_read',
+  'team_access_list',
+  'my_app_guide',
+  'my_app_list',
+  'my_app_get',
+  'my_app_errors',
+  'my_app_snapshot_list',
+  'my_app_deleted_list',
+  'my_app_create',
+  'my_app_file_write',
+  'my_app_file_delete',
+  'my_app_build',
+  'my_app_publish',
+  'my_app_schema_set',
+  'my_app_tools_set',
+  'my_app_snapshot_create',
+  'my_app_snapshot_restore',
+  'my_app_snapshot_delete',
+  'my_app_delete',
+  'my_app_undelete',
 ];
 
 /**
@@ -591,6 +620,7 @@ export const MANIFEST_ADMIN_ONLY_GROUPS: readonly string[] = [
   'tasks',
   'team-read-admin',
   'access',
+  // Retired in W7b (RETIRED_TOOL_GROUP_SLUGS), kept here as 0254 set it.
   'team-admin',
   'runs',
   'export',
@@ -1231,8 +1261,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       // utilities the read loop needs
       'summarize_text',
       'read_result',
-      // the single write path: provenance-stamped request task
-      'team_request_create',
     ],
   },
   {
@@ -1241,32 +1269,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     description:
       "Read and change the data of the mini apps an admin opened to MCP, on a member's or client's own MCP connection: list them, read tables and columns, query rows, and (with the login's Write switch) insert, update or delete rows. Never the schema. Attached to no agent (admin level: the login MCP surface adds these tools itself, never through a group).",
     toolSlugs: ['app_data_list', 'app_data_schema', 'app_data_query', 'app_data_write'],
-  },
-  {
-    slug: 'my-apps-mcp',
-    name: 'Member-built apps over MCP',
-    description:
-      "Build a team member's mini apps on their own MCP connection: create (in the member's private workspace), write files, build, publish, set the schema and tools, snapshots (and delete the ones they took), delete and bring back. Each change needs the member to be able to edit the app under the grant rules (sharing is a grant, never MCP). Apps made here run tools at team rules at most (the author ceiling). Reads always; changes with the login's Write switch. Attached to no agent (admin level: the login MCP surface adds these tools itself, for members only, never through a group).",
-    toolSlugs: [
-      'my_app_guide',
-      'my_app_list',
-      'my_app_get',
-      'my_app_errors',
-      'my_app_snapshot_list',
-      'my_app_deleted_list',
-      'my_app_create',
-      'my_app_file_write',
-      'my_app_file_delete',
-      'my_app_build',
-      'my_app_publish',
-      'my_app_schema_set',
-      'my_app_tools_set',
-      'my_app_snapshot_create',
-      'my_app_snapshot_restore',
-      'my_app_snapshot_delete',
-      'my_app_delete',
-      'my_app_undelete',
-    ],
   },
   {
     slug: 'team-read-admin',
@@ -1300,13 +1302,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     description:
       "The owner's access levers: read who reads a brain item (its grants: the workspaces that read it; changed in its Grant Access panel), and read or set the level of an agent or tool group (admin > team > client > public). Owner-side only (refused on team surfaces). ⚠ ATTACHED TO NO AGENT: the owner uses it through MCP / the API.",
     toolSlugs: ['access_get', 'access_set'],
-  },
-  {
-    slug: 'team-admin',
-    name: 'Team chat admin',
-    description:
-      "Owner-side view over the member chats: list member logins + activity, read any member's thread (and old team-code portal threads, history), read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?', NEVER to the team responder itself.",
-    toolSlugs: ['team_chat_list', 'team_chat_read', 'team_access_list'],
   },
   {
     slug: 'runs',
@@ -1419,7 +1414,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'pages-draft',
       'draw-read',
       'app-data',
-      'team-admin',
       'federation',
       // Powers the brain_health heartbeat (brain_capacity + recall_eval). The
       // group existed from the start and was granted to NOBODY, so its own
@@ -1717,7 +1711,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     slug: 'team-responder',
     name: 'Team Responder',
     description:
-      "Permission-limited responder for the member chat (member logins chat with it in the assistant dock): read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
+      "Permission-limited responder for the member chat (member logins chat with it in the assistant dock): read-only. Never appears in the owner's Conversations inbox and is never a delegate.",
     role: 'custom',
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TEAM_RESPONDER_MODEL',
@@ -1725,9 +1719,12 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // The two defaults it shipped with before member logins Phase 6 (the
     // 1:1 portal chat, 2026-07-05, and the forum, 2026-07-17). A brain whose
     // prompt is still one of them gets the member-chat rewrite on upgrade.
+    // And the one before workspaces W7b, which filed change requests with
+    // team_request_create (retired with builtins-team.ts).
     retiredPromptSha256: [
       '60f5262a299ecaefe17696d89fba1234cf03d76de1283aed8c61f62d2cb305b1',
       '3cc6514ff02f41ae7c32bc2bca326b764440ebbadd39ff23a883d4c1da074841',
+      '1bfb73a81b0513e88302a9c3d6b27dc0b05a083a8a3eab31a6758acb188889ab',
     ],
     // `team-read` is the bulk of its surface (see that group's description for
     // the exclusion rationale). `formulas-eval` is the one addition, and it

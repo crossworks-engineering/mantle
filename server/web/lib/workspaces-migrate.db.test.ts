@@ -112,12 +112,18 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     // assistant on Team would bring admin-level tools into Team turns.
     expect(await wm.attachDefaultAssistants()).toBe(1);
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
-    // Opening it puts it on Team, by any path that sets the level: the level
-    // function attaches it itself (W5b1 audit L2; access_set calls it too).
-    const { setAgentAudience } = await import('@mantle/content');
+    // A brain whose admin opened it before W7b (levels are frozen since
+    // 0268, so the fixture sets it past the freeze): the attach puts it on
+    // Team.
     const [tr] = await sql<{ id: string }[]>`
       select id from agents where owner_id = ${owner} and slug = 'team-responder'`;
-    await setAgentAudience(owner, tr!.id, 'team', { dropGroupsAbove: true });
+    const setLevel = (level: string) =>
+      sql.begin(async (tx) => {
+        await tx`select mantle_heads_bypass('test fixture')`;
+        await tx`update agents set audience = ${level} where id = ${tr!.id}`;
+      });
+    await setLevel('team');
+    expect(await wm.attachDefaultAssistants()).toBe(1);
     expect(await assistants()).toEqual([
       { key: 'admin', slug: 'persona-test' },
       { key: 'team', slug: 'team-responder' },
@@ -133,11 +139,8 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
       { key: 'admin', by: 'attach' },
       { key: 'team', by: 'attach' },
     ]);
-    // L3: an assistant that sits on Team is not raised to admin (its Team
-    // turns would carry admin-level tools).
-    await expect(setAgentAudience(owner, tr!.id, 'admin')).rejects.toMatchObject({
-      code: 'agent_in_workspace',
-    });
+    // L3 went with the levels (W7b): nothing raises an assistant's level,
+    // and its tools in a Team turn are the scope's (adminOnly groups out).
     // L1: a Moderator takes Team's assistant off. Neither a boot nor a level
     // change puts it back.
     const [team] = await sql<{ id: string }[]>`select id from workspaces where bridge_key = 'team'`;
@@ -147,11 +150,9 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     });
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
     expect(await wm.attachDefaultAssistants()).toBe(0);
-    await setAgentAudience(owner, tr!.id, 'team');
     await wm.migrateWorkspacesQuietly('boot');
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
-    // Off Team, it may be raised again.
-    await setAgentAudience(owner, tr!.id, 'admin');
+    await setLevel('admin');
 
     // No boot repair (W5b2): an item that lost its grants stays as it is,
     // and the check counts it.

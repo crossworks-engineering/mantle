@@ -89,7 +89,6 @@ const supersedes = (field: string) => (input: Input) =>
 const READS = 'reads only';
 const OUTWARD = 'sends outside the brain (confirm-gated as well)';
 const WEB = 'reads the web';
-const OWN_APP = "the caller's own app in their own space";
 const UNSEEN = 'it runs code or actions whose target its input does not name';
 const LATER = "a run's workers act later, outside this turn";
 const RECALL_GUIDANCE =
@@ -243,7 +242,6 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   task_create: creates(),
   task_update: onNodes('id'),
   task_delete: onNodes('id'),
-  team_request_create: creates(),
   event_create: creates(),
   event_update: onNodes('id'),
   event_delete: onNodes('id'),
@@ -326,19 +324,7 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   // A member's own mini apps (team apps Phase 3): the caller's own app in
   // their own space, private until they share it; no agent turn
   // holds them (the login MCP surface adds them for a member).
-  my_app_create: free(OWN_APP),
-  my_app_file_write: free(OWN_APP),
-  my_app_file_delete: free(OWN_APP),
-  my_app_build: free(OWN_APP),
-  my_app_publish: free(OWN_APP),
-  my_app_schema_set: free(OWN_APP),
-  my_app_tools_set: free(OWN_APP),
-  my_app_snapshot_create: free(OWN_APP),
-  my_app_snapshot_restore: free(OWN_APP),
-  my_app_snapshot_delete: free(OWN_APP),
   // To the member's own trash and back (access matrix N6): nothing removed.
-  my_app_delete: free(OWN_APP),
-  my_app_undelete: free(OWN_APP),
   // Calls on a federated peer as the login it binds us to.
   peer_call: always(OUTWARD),
   peer_file_copy: always(OUTWARD),
@@ -350,9 +336,6 @@ export type GateTool = { slug: string; handler: unknown };
 export type GateVerdict = { gate: false } | { gate: true; why: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** The agent and tool-group levels a client or the public meets (agents and
- *  tool groups keep their levels until W7, contract 21). */
-const EXPOSED: ReadonlySet<string> = new Set(['client', 'public']);
 
 /** Whether a client or the public reads the row's item: a client workspace
  *  holds it (its own grant or its folder's), or a live open link shows it
@@ -540,25 +523,49 @@ async function writeVerdict(
         .limit(1);
       if (shared) return wait('it puts something in a folder shared with clients');
     }
+    // An agent a client talks to: the assistant of a workspace with a
+    // client user (agent and tool-group levels are gone, workspaces W7b).
     if (agentSlugs.length > 0) {
       const rows = await db
-        .select({ audience: agents.audience })
+        .select({ id: agents.id })
         .from(agents)
-        .where(and(eq(agents.ownerId, ownerId), inArray(agents.slug, agentSlugs)));
-      if (rows.some((r) => EXPOSED.has(r.audience))) {
-        return wait('it changes an agent clients or the public talk to');
+        .where(
+          and(
+            eq(agents.ownerId, ownerId),
+            inArray(agents.slug, agentSlugs),
+            sql`${agents.workspaceId} = any(${clientWsSql(ownerId)})`,
+          ),
+        )
+        .limit(1);
+      if (rows.length > 0) {
+        return wait('it changes an agent clients talk to');
       }
     }
+    // A tool group such an assistant holds.
     if (groupSlugs.length > 0 || toolSlugs.length > 0) {
       const byGroup = groupSlugs.length > 0 ? inArray(toolGroups.slug, groupSlugs) : undefined;
       const byTool =
         toolSlugs.length > 0 ? arrayOverlaps(toolGroups.toolSlugs, toolSlugs) : undefined;
       const rows = await db
-        .select({ audience: toolGroups.audience })
+        .select({ slug: toolGroups.slug })
         .from(toolGroups)
-        .where(and(eq(toolGroups.ownerId, ownerId), or(byGroup, byTool)));
-      if (rows.some((r) => EXPOSED.has(r.audience))) {
-        return wait('it changes a tool group a client or public agent can hold');
+        .innerJoin(
+          agents,
+          and(
+            eq(agents.ownerId, toolGroups.ownerId),
+            sql`${toolGroups.slug} = any(${agents.toolGroupSlugs})`,
+          ),
+        )
+        .where(
+          and(
+            eq(toolGroups.ownerId, ownerId),
+            or(byGroup, byTool),
+            sql`${agents.workspaceId} = any(${clientWsSql(ownerId)})`,
+          ),
+        )
+        .limit(1);
+      if (rows.length > 0) {
+        return wait('it changes a tool group an agent clients talk to holds');
       }
     }
     return RUN;

@@ -3,9 +3,10 @@
  * offers (access matrix N10), on a real migrated Postgres. The screen used
  * its own rule: every connector tool at team level, write tools counted with
  * the member's Write switch off, and connectors listed while the team
- * responder held no tool, when the surface offers no tool at all. It now
- * reads the surface's own list (resolveLoginToolRows). Only the member
- * check is stubbed.
+ * responder held no tool. Since W7b every login has the one surface: the
+ * connector tools of the member's workspaces, read and write (no per-login
+ * switch; the call checks Write and Moderator). Only the member check is
+ * stubbed.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run member-mcp-connectors.db.test
  */
 import { randomUUID } from 'node:crypto';
@@ -41,8 +42,6 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
       connectors: Array<{ name: string; readTools: number; writeTools: number }>;
     };
   };
-  const setWrite = (on: boolean) =>
-    exec(sqlTag`update mcp_login_access set write_enabled = ${on} where login_id = ${member}`);
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -66,8 +65,6 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
       insert into profiles (user_id, preferences)
       values (${anchor}, '{"remoteMcpEnabled":true}'::jsonb)
       on conflict (user_id) do update set preferences = excluded.preferences`);
-    await exec(sqlTag`
-      insert into mcp_login_access (login_id, enabled, write_enabled) values (${member}, true, false)`);
     const handler = (toolName: string) => ({ kind: 'mcp', group: 'mcp-src', toolName });
     const mark = JSON.stringify({
       confirmedReadOnlyAt: new Date().toISOString(),
@@ -118,29 +115,17 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
     await m.closeDb();
   }, 60_000);
 
-  it('Write off: the read tool only, as the surface lists', async () => {
-    await setWrite(false);
+  it("the connector tools of the member's workspaces, read and write (W7b)", async () => {
     expect((await view()).connectors).toEqual([
-      expect.objectContaining({ name: 'Source', readTools: 1, writeTools: 0 }),
+      expect.objectContaining({ name: 'Source', readTools: 1, writeTools: 1 }),
     ]);
   });
 
-  it('Write on: the write tool too', async () => {
-    await setWrite(true);
-    try {
-      expect((await view()).connectors).toEqual([
-        expect.objectContaining({ name: 'Source', readTools: 1, writeTools: 1 }),
-      ]);
-    } finally {
-      await setWrite(false);
-    }
-  });
-
-  it('a responder with no tool of its own: the surface offers nothing, so no connector', async () => {
+  it('the responder holding no tool changes nothing (no team tool set since W7b)', async () => {
     await exec(sqlTag`
       update agents set tool_group_slugs = '{}' where owner_id = ${anchor} and slug = 'team-responder'`);
     try {
-      expect((await view()).connectors).toEqual([]);
+      expect((await view()).connectors).toHaveLength(1);
     } finally {
       await exec(sqlTag`
         update agents set tool_group_slugs = ARRAY['g-team']

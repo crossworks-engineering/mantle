@@ -1,9 +1,8 @@
 /**
- * Agent and tool-group levels against a real, migrated Postgres (member
- * logins Phase 0b; kept until W7), and the plain unshare of workspaces W5b2:
- * revoking a link changes no level and no grant. Brain items have no level
- * any more, so nothing here sets one. Seeds its own owner and rows and
- * removes them.
+ * The frozen agent and tool-group levels and the frozen per-login MCP switch
+ * (migration 0268, workspaces W7b) against a real, migrated Postgres, and the
+ * plain unshare of workspaces W5b2: revoking a link changes no level and no
+ * grant. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/access.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -11,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('agent and tool-group levels, and the plain unshare, on Postgres', () => {
+describe.skipIf(!URL)('frozen levels and switches, and the plain unshare, on Postgres', () => {
   type Db = typeof import('@mantle/db');
   type Access = typeof import('./access');
   let m: Db;
@@ -78,100 +77,50 @@ describe.skipIf(!URL)('agent and tool-group levels, and the plain unshare, on Po
     await expect(a.unshareItem(randomUUID(), shareId)).resolves.toEqual({ revoked: false });
   });
 
-  it('an agent cannot be lowered while it holds a group above the new level', async () => {
-    await expect(a.setAgentAudience(owner, ids.agent, 'team')).rejects.toMatchObject({
-      code: 'group_above_agent',
-    });
+  it('agent and tool-group levels are frozen (0268, W7b): a change keeps the old value; the MCP switch refuses', async () => {
+    const frozen = { code: '55000' };
+    const caught = async (q: Promise<unknown>) => {
+      try {
+        await q;
+        return null;
+      } catch (err) {
+        const e = err as { code?: string; cause?: { code?: string } };
+        return { code: e.cause?.code ?? e.code };
+      }
+    };
+    const level = async (q: ReturnType<typeof sqlTag>) =>
+      ((await m.db.execute(q)) as unknown as { audience: string }[])[0]?.audience;
     await m.db.execute(
-      sqlTag`update agents set tool_group_slugs = ${`{${tag}-team}`}::text[] where id = ${ids.agent}`,
+      sqlTag`update agents set audience = 'team', name = 'B' where id = ${ids.agent}`,
     );
-    await expect(a.setAgentAudience(owner, ids.agent, 'team')).resolves.toMatchObject({
-      audience: 'team',
-    });
-    // The Team settings card reads the new level back by slug.
-    await expect(a.getAgentAccess(owner, `${tag}-agent`)).resolves.toEqual({
-      slug: `${tag}-agent`,
-      name: 'A',
-      audience: 'team',
-      enabled: true,
-    });
-    await expect(a.getAgentAccess(owner, `${tag}-missing`)).resolves.toBeNull();
-  });
-
-  it('a tool group cannot be raised above an agent that holds it', async () => {
-    await expect(a.setToolGroupAudience(owner, `${tag}-team`, 'admin')).rejects.toMatchObject({
-      code: 'group_above_agent',
-    });
-    await expect(a.setToolGroupAudience(owner, `${tag}-team`, 'client')).resolves.toMatchObject({
-      audience: 'client',
-    });
-  });
-
-  it('client and public are siblings: a client agent holds no public group, a public agent no client group', async () => {
-    // State from the tests above: the agent is at team and holds the `-team`
-    // group, which now sits at client.
-    await m.db.execute(sqlTag`
-      insert into tool_groups (owner_id, slug, name, audience) values
-        (${owner}, ${`${tag}-public`}, 'public group', 'public')`);
+    expect(await level(sqlTag`select audience, name from agents where id = ${ids.agent}`)).toBe(
+      'admin',
+    );
     await m.db.execute(
-      sqlTag`update agents set tool_group_slugs = ${`{${tag}-team,${tag}-public}`}::text[] where id = ${ids.agent}`,
+      sqlTag`update tool_groups set audience = 'admin' where owner_id = ${owner} and slug = ${`${tag}-team`}`,
     );
-    // A team agent reads public, so it may hold both.
-    await expect(
-      a.agentGrantProblems(owner, 'team', [`${tag}-team`, `${tag}-public`]),
-    ).resolves.toEqual([]);
-    // A client agent does not read public items: the public group is refused.
-    await expect(a.setAgentAudience(owner, ids.agent, 'client')).rejects.toMatchObject({
-      code: 'group_above_agent',
-    });
-    await m.db.execute(
-      sqlTag`update agents set tool_group_slugs = ${`{${tag}-team}`}::text[] where id = ${ids.agent}`,
-    );
-    await expect(a.setAgentAudience(owner, ids.agent, 'client')).resolves.toMatchObject({
-      audience: 'client',
-    });
-    // Its client group cannot move to public under it either.
-    await expect(a.setToolGroupAudience(owner, `${tag}-team`, 'public')).rejects.toMatchObject({
-      code: 'group_above_agent',
-    });
-  });
-
-  it('dropGroupsAbove lowers the agent and takes the groups above the new level off it', async () => {
-    // State from the tests above: `-admin` at admin, `-team` at client,
-    // `-public` at public. A new agent at admin holds all three.
-    const id = randomUUID();
-    const held = [`${tag}-admin`, `${tag}-team`, `${tag}-public`];
-    await m.db.execute(sqlTag`
-      insert into agents (id, owner_id, slug, name, model, system_prompt, tool_group_slugs)
-      values (${id}, ${owner}, ${`${tag}-agent2`}, 'B', 'm', 'p', ${`{${held.join(',')}}`}::text[])`);
-    const groupsOf = async () =>
-      (
-        (await m.db.execute(
-          sqlTag`select audience, tool_group_slugs from agents where id = ${id}`,
-        )) as unknown as { audience: string; tool_group_slugs: string[] }[]
-      )[0]!;
-
-    // Without it: refused, nothing changes, and the refusal names the fix.
-    const refusal = await a.setAgentAudience(owner, id, 'client').catch((e: Error) => e);
-    expect(refusal).toMatchObject({ code: 'group_above_agent' });
-    expect((refusal as Error).message).toContain(`'${tag}-admin' is admin-level`);
-    expect((refusal as Error).message).toContain(`agent '${tag}-agent2'`);
-    expect((refusal as Error).message).toContain('dropGroupsAbove: true');
-    expect(await groupsOf()).toEqual({ audience: 'admin', tool_group_slugs: held });
-
-    // With it: one call. A client agent reads neither admin nor public.
-    await expect(
-      a.setAgentAudience(owner, id, 'client', { dropGroupsAbove: true }),
-    ).resolves.toMatchObject({
-      audience: 'client',
-      removedGroups: [`${tag}-admin`, `${tag}-public`],
-    });
-    expect(await groupsOf()).toEqual({ audience: 'client', tool_group_slugs: [`${tag}-team`] });
-
-    // Raising never touches the groups, with or without the option.
-    await expect(
-      a.setAgentAudience(owner, id, 'admin', { dropGroupsAbove: true }),
-    ).resolves.toMatchObject({ audience: 'admin', removedGroups: [] });
-    expect(await groupsOf()).toEqual({ audience: 'admin', tool_group_slugs: [`${tag}-team`] });
+    expect(
+      await level(
+        sqlTag`select audience from tool_groups where owner_id = ${owner} and slug = ${`${tag}-team`}`,
+      ),
+    ).toBe('team');
+    // The other columns of the row still change.
+    const [named] = (await m.db.execute(
+      sqlTag`select name from agents where id = ${ids.agent}`,
+    )) as unknown as { name: string }[];
+    expect(named?.name).toBe('B');
+    // A per-login MCP switch can be neither made nor changed.
+    expect(
+      await caught(
+        m.db.execute(
+          sqlTag`insert into mcp_login_access (login_id, enabled, write_enabled) values (${owner}, true, true)`,
+        ),
+      ),
+    ).toEqual(frozen);
+    // The archive tables are the system's alone.
+    const [n] = (await m.db.execute(
+      sqlTag`select count(*)::int as n from archive_tool_levels where owner_id = ${owner}`,
+    )) as unknown as { n: number }[];
+    expect(n?.n).toBe(0);
   });
 });

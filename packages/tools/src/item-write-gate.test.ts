@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AREA_SYSTEM_TOOLS,
   ADMIN_ONLY_TOOL_SLUGS,
+  adminGateLists,
   TOOL_ADMIN_AREAS,
   toolAdminArea,
 } from './admin-gate';
@@ -56,7 +57,7 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       if (!def) continue; // registered by its own package (the heartbeat tools)
       // A contact is an Admin-only kind: a scope that passed the area check
       // holds Admin and reads every contact, so its precondition reads
-      // nothing more on the system pool (team_access_list, team_chat_read).
+      // nothing more on the system pool.
       const pre = (def.preconditions ?? []).filter(
         (p) => !(p.kind === 'node_exists' && p.nodeType === 'contact'),
       );
@@ -94,9 +95,6 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       'api_tool_test',
       'secret_create',
       'brain_capacity',
-      'team_access_list',
-      'team_chat_list',
-      'team_chat_read',
     ]) {
       expect(toolAdminArea(slug), slug).not.toBeNull();
       expect(AREA_SYSTEM_TOOLS.has(slug), slug).toBe(false);
@@ -106,6 +104,15 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
   it('run_terminal is adminOnly and needs the settings area (M3)', () => {
     expect(ADMIN_ONLY_TOOL_SLUGS.has('run_terminal')).toBe(true);
     expect(toolAdminArea('run_terminal')).toBe('settings');
+    // For a member's scope too (W7b fix round 1, H1): never listed without
+    // Admin, nor without the settings area.
+    expect(
+      adminGateLists('run_terminal', { holdsAdmin: false, areas: new Set(['settings']) }),
+    ).toBe(false);
+    expect(adminGateLists('run_terminal', { holdsAdmin: true, areas: new Set() })).toBe(false);
+    expect(adminGateLists('run_terminal', { holdsAdmin: true, areas: new Set(['settings']) })).toBe(
+      true,
+    );
   });
 
   it('every item write target names a real builtin and one of its arguments', () => {

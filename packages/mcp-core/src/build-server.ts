@@ -39,6 +39,8 @@ import {
   DRAW_TOOLS,
   APP_TOOLS,
   APP_GUIDE_TOOLS,
+  WORKSPACE_TOOLS,
+  LOGIN_APP_DATA_TOOLS,
   TOOLSMITH_TOOLS,
   NOTE_TOOLS,
   TREE_TOOLS,
@@ -71,7 +73,6 @@ import {
   APP_DATA_TOOLS,
   REPLAY_TOOLS,
   IMAGE_TOOLS,
-  TEAM_TOOLS,
   RESEARCH_TOOLS,
   CURATION_TOOLS,
   CRAWL_TOOLS,
@@ -88,13 +89,14 @@ import {
 import {} from '@mantle/content';
 import { env } from '@mantle/config';
 import { makeRegisterContext } from './register/context';
-import type { OwnerSurfaceVia } from '@mantle/tools';
+import type { LoginMcpChannel, OwnerSurfaceVia } from '@mantle/tools';
 import { registerSearchTools } from './register/search';
 import { registerFileTools } from './register/files';
 import { registerPageTools } from './register/pages';
 import { registerTableTools } from './register/tables';
 import { registerResponderTools } from './register/responder';
 import { ownerScopedServer } from './owner-scope';
+import { createHomeServer } from './create-home';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
@@ -185,6 +187,27 @@ export type ToolCallGuard = {
  *  header); everything else is identical on both. */
 export type MantleMcpTransport = 'stdio' | 'http';
 
+/**
+ * The server every MCP tool of a login registers on: each call in the
+ * login's scope, gated (owner-scope.ts), then under its create home
+ * (create-home.ts: creates take `workspace` and say where they landed; a
+ * user outside Admin runs every call under its private workspace). The
+ * builtins and the connector tools (login-surface.ts) share it (W7b fix
+ * round 2, L-a).
+ */
+export function loginToolServer(
+  server: McpServer,
+  scopeLogin: string,
+  opts: { adminLogin: boolean; privateWs: string | null; noCreateHome?: boolean },
+): McpServer {
+  const scoped = ownerScopedServer(server, scopeLogin, { adminLogin: opts.adminLogin });
+  return createHomeServer(scoped, {
+    loginId: scopeLogin,
+    privateWs: opts.privateWs,
+    ...(opts.noCreateHome ? { noHome: true } : {}),
+  });
+}
+
 /** Register every Mantle MCP tool onto `server`, scoped to `ownerId`. Both the
  *  stdio entry and the HTTP route call this; `ownerId` is already authenticated
  *  by the caller. `transport` defaults to the SAFER of the two: a caller that
@@ -210,12 +233,31 @@ export function registerMantleTools(
      *  none to the builtins). Default: `loginId`, else the anchor (stdio
      *  runs as the anchor login). */
     scopeLoginId?: string;
+    /** Whether the scope login is an Admin user (W7b; default yes, the
+     *  stdio anchor): only then may the rollback switch or a brain not on
+     *  workspaces put its calls on the system pool (owner-scope.ts). */
+    adminLogin?: boolean;
+    /** The scope login's private workspace when it is not an Admin user:
+     *  where a create without `workspace` lands outside a folder it may
+     *  edit (create-home.ts). */
+    privateWs?: string | null;
+    /** The scope login is outside Admin and in no workspace, so it has no
+     *  private workspace: its creates are refused (create-home.ts). */
+    noCreateHome?: boolean;
+    /** The login's own MCP connection, stamped on the builtins' surface
+     *  (the app_data_* tools read it). */
+    mcp?: LoginMcpChannel;
   } = {},
 ): void {
   const transport = opts.transport ?? 'http';
-  const scoped = ownerScopedServer(server, opts.scopeLoginId ?? opts.loginId ?? ownerId);
-  const target = opts.allow ? filteredServer(scoped, opts.allow, opts.guard) : scoped;
-  const ctx = makeRegisterContext(target, ownerId, transport, opts.via, opts.loginId);
+  const scopeLogin = opts.scopeLoginId ?? opts.loginId ?? ownerId;
+  const homed = loginToolServer(server, scopeLogin, {
+    adminLogin: opts.adminLogin !== false,
+    privateWs: opts.privateWs ?? null,
+    noCreateHome: opts.noCreateHome === true,
+  });
+  const target = opts.allow ? filteredServer(homed, opts.allow, opts.guard) : homed;
+  const ctx = makeRegisterContext(target, ownerId, transport, opts.via, opts.loginId, opts.mcp);
   const { exposeTerminal, registerBuiltinTools } = ctx;
 
   registerSearchTools(ctx);
@@ -328,8 +370,8 @@ export function registerMantleTools(
   // Renders a page/note → .docx or a table → .xlsx into /files/auto-filed/exports and returns
   // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
   registerBuiltinTools(EXPORT_TOOLS);
-  // Levels (member logins Phase 0b): the owner sets item / agent / tool-group
-  // levels from Claude before the UI exists.
+  // Who reads an item (its grants); access_set only explains that nothing
+  // has a level any more (W7b).
   registerBuiltinTools(ACCESS_TOOLS);
 
   // ─── Spreadsheet authoring ───────────────────────────────────────────────────
@@ -394,6 +436,11 @@ export function registerMantleTools(
   registerBuiltinTools(TOOL_RESULT_TOOLS);
   registerBuiltinTools(IMAGE_TOOLS);
   registerBuiltinTools(APP_DATA_TOOLS);
+  // The caller's workspaces (W7b): where a create may land (`workspace`).
+  registerBuiltinTools(WORKSPACE_TOOLS);
+  // App data on the login's own connection (team apps Phase 1): every login
+  // since W7b, on the apps its scope holds with MCP access on.
+  registerBuiltinTools(LOGIN_APP_DATA_TOOLS);
 
   // Pure computation — no I/O, no spend.
   registerBuiltinTools(CALCULATE_TOOLS);
@@ -411,11 +458,6 @@ export function registerMantleTools(
   // Replay reads the owner's OWN past conversations. Private, but the caller is
   // the authenticated owner — the same person those conversations belong to.
   registerBuiltinTools(REPLAY_TOOLS);
-
-  // Owner-side Team Chat: read members, threads and the access log, and file a
-  // member-to-member notification. This is the OWNER's view over the team
-  // surface, never the team responder's own tools.
-  registerBuiltinTools(TEAM_TOOLS);
 
   // Outbound and spend. web_search / video_ingest / web_map / web_crawl all
   // reach the open internet and bill the owner's keys, so they are real actions

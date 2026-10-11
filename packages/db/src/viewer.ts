@@ -887,6 +887,10 @@ export function runInSystemTx<T>(
  *    not leakproof, so under the row rule its index is never used); only the
  *    ids the scope reads are kept, re-read in the scope by id (searchNodes,
  *    W7a). No row leaves the system pool.
+ *  - `app-trash`: a deleted app's snapshots, which the scope's row rule
+ *    hides once the app's row is gone (0265), read only for the deleted
+ *    apps whose home the caller moderates, checked first (app_deleted_list
+ *    and app_undelete, W7b fix round 1).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -912,6 +916,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'owner-preferences',
   'lexeme-stats',
   'keyword-candidates',
+  'app-trash',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 

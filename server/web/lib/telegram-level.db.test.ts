@@ -56,10 +56,6 @@ describe.skipIf(!URL)('Telegram is for admin-level agents only (T21)', () => {
       (await sql`select allowlist_status as s, pairing_code as c from telegram_chats
                  where id = ${id}`) as unknown as { s: string; c: string | null }[]
     )[0]!;
-  const levelOf = async (id: string) =>
-    (
-      (await sql`select audience from agents where id = ${id}`) as unknown as { audience: string }[]
-    )[0]!.audience;
   const json = (body: unknown) => ({
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -201,42 +197,5 @@ describe.skipIf(!URL)('Telegram is for admin-level agents only (T21)', () => {
     expect(((await refused.json()) as { code?: string }).code).toBe('agent_below_admin');
     expect((await pin(agent.pin)).status).toBe(200);
     await sql`update telegram_chats set responder_agent_id = null where id = ${chat.onAdminBot}`;
-  });
-
-  it('lowering an agent with a bot is refused, and goes through once the bot is off', async () => {
-    const { setAgentAudience } = await import('@mantle/content');
-    const refusal = await setAgentAudience(who.anchor, agent.lower, 'team').catch((e: Error) => e);
-    expect(refusal).toMatchObject({ code: 'telegram_paired' });
-    expect((refusal as Error).message).toContain(`has a Telegram bot (@${tag}_lower_bot)`);
-    expect((refusal as Error).message).toContain('Disconnect the bot first');
-    expect(await levelOf(agent.lower)).toBe('admin');
-
-    // Raising or keeping admin is never in the way.
-    await expect(setAgentAudience(who.anchor, agent.lower, 'admin')).resolves.toMatchObject({
-      audience: 'admin',
-    });
-
-    await sql`update channels set enabled = false where id = ${channel.lower}`;
-    await expect(setAgentAudience(who.anchor, agent.lower, 'team')).resolves.toMatchObject({
-      audience: 'team',
-    });
-  });
-
-  it('lowering an agent that answers a paired chat is refused, on the route too', async () => {
-    const { PATCH } = await import('../app/api/access/agents/[slug]/route');
-    const lower = () =>
-      PATCH(new Request('http://x/api', { method: 'PATCH', ...json({ audience: 'client' }) }), {
-        params: Promise.resolve({ slug: `${tag}-pin` }),
-      });
-    const refused = await lower();
-    expect(refused.status).toBe(400);
-    const body = (await refused.json()) as { error: string; code?: string };
-    expect(body.code).toBe('telegram_paired');
-    expect(body.error).toContain('answers 1 paired Telegram chat');
-    expect(await levelOf(agent.pin)).toBe('admin');
-
-    await sql`update telegram_chats set allowlist_status = 'denied' where id = ${chat.pinnedToPin}`;
-    expect((await lower()).status).toBe(200);
-    expect(await levelOf(agent.pin)).toBe('client');
   });
 });

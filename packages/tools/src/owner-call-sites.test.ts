@@ -49,9 +49,9 @@ const SITES: Record<string, Site> = {
   // ── a member's or client's own MCP login ──
   'packages/mcp-core/src/login-surface.ts': {
     calls: 1,
-    surface: /surface: loginSurface\(caller, privateReads\)/,
+    surface: /surface: \{\s+kind: 'owner',/,
     scope: 'call',
-    why: "a member's or client's MCP call runs as that login (team / client surface)",
+    why: "a connector call on a login's own MCP (W7b: every login's) runs on the owner surface, in that login's scope, its login and connection stamped",
   },
   'packages/tools/src/pending.ts': {
     calls: 1,
@@ -159,12 +159,12 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: 'recipe_tool_test runs for whoever asked for the test',
   },
-  'packages/tools/src/builtins-my-apps.ts': {
-    calls: 4,
+  'packages/tools/src/builtins-apps.ts': {
+    calls: 1,
     // The same ctx object, untouched: the surface is the caller's.
     surface: /def\.handler\(input, ctx\)/,
     scope: 'call',
-    why: "the per-login write slot and the exit from the login's scope ('app-data' since W6b) wrap a member's own my_app_* handler and pass its ctx on unchanged",
+    why: "the author ceiling (W7b) wraps an app tool's own handler for a user outside Admin and passes its ctx on unchanged",
   },
   'packages/tools/src/toolsmith/api-tools.ts': {
     calls: 1,

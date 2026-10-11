@@ -178,12 +178,16 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id) values
       (${ownerId}, ${ids.app}, 'rows', ${ids.appTable}),
       (${ownerId}, ${ids.appTeamOnly}, 'rows', ${ids.appTableTeam})`;
-    // A tool group and an agent at client level; a group at team level.
+    // The assistant of the clients' workspace and the group it holds (W7b:
+    // what clients meet is that workspace's assistant, not a level); a group
+    // no such assistant holds.
     await admin`insert into tool_groups (owner_id, slug, name, tool_slugs, audience) values
       (${ownerId}, ${groupClient}, 'c', ARRAY['client_shared_list', ${`${tag}_tool`}]::text[], 'client'),
       (${ownerId}, ${groupTeam}, 't', ARRAY['page_get']::text[], 'team')`;
-    await admin`insert into agents (owner_id, slug, name, model, system_prompt, audience)
-      values (${ownerId}, ${agentClient}, 'c', 'fake/model', 'x', 'client')`;
+    await admin`insert into agents
+        (owner_id, slug, name, model, system_prompt, audience, workspace_id, tool_group_slugs)
+      values (${ownerId}, ${agentClient}, 'c', 'fake/model', 'x', 'client', ${clientsWs},
+              ${[groupClient]}::text[])`;
   }, 120_000);
 
   afterAll(async () => {

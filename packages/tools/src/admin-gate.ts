@@ -57,10 +57,97 @@ export const ADMIN_ONLY_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'run_audit',
   'heartbeat_list',
   'heartbeat_fire',
+  // Since W7b every login has the owner MCP surface (workspaces plan 7.4):
+  // the owner's own approvals queue, the owner's profile clock, writing into
+  // the owner's assistant conversation, and the retrieval eval stay Admin.
+  'pending_list',
+  'pending_get',
+  'pending_approve',
+  'pending_reject',
+  'set_timezone',
+  'responder_turn_input',
+  'responder_turn_record',
+  'recall_eval',
   // A shell on the server (MANTLE_MCP_TERMINAL): the brain's settings area
   // too (W7a fix round 1, M3), never any Admin-role login.
   'run_terminal',
 ]);
+
+/**
+ * The ownerOnly builtins that run in ANY user's scope since workspaces W7b
+ * (plan 7.4: one MCP surface for every login): they read and change items
+ * (apps, folders of the row-only trees, a page's place, a table's history),
+ * and the scope and the database's checks decide which (a create lands by
+ * the route rule; a move, a create in a folder and a delete are checked
+ * against the scope). `ownerOnly` still keeps them off a team or client
+ * turn surface (dispatch, and each handler's own owner-surface check).
+ * Every OTHER ownerOnly builtin is adminOnly: it runs only in a scope that
+ * holds the Admin workspace.
+ */
+export const OWNER_ONLY_IN_SCOPE: ReadonlySet<string> = new Set([
+  'tree_folders',
+  'tree_folder_create',
+  'tree_folder_update',
+  'tree_folder_delete',
+  'tree_item_move',
+  'page_move',
+  'app_create',
+  'app_update',
+  'app_file_write',
+  'app_file_delete',
+  'app_source_set',
+  'app_build',
+  'app_tools_set',
+  'app_db_schema_set',
+  'app_db_seed',
+  'app_table_export_set',
+  'app_table_export_remove',
+  'app_publish',
+  'app_delete',
+  'app_snapshot_create',
+  'app_snapshot_list',
+  'app_snapshot_restore',
+  'app_snapshot_delete',
+  'app_deleted_list',
+  'app_undelete',
+  'app_duplicate',
+  'app_export',
+  'app_import',
+  'app_errors',
+  'table_history',
+  'table_snapshot_create',
+  'table_snapshot_restore',
+  'table_snapshot_delete',
+]);
+
+/** Whether a tool is adminOnly: listed, or ownerOnly and not one of the
+ *  ownerOnly tools that run in any user's scope (by slug or builtin ref). */
+export function isAdminOnlyTool(slug: string, opts: { ref?: string; ownerOnly?: boolean } = {}) {
+  const ref = opts.ref;
+  if (ADMIN_ONLY_TOOL_SLUGS.has(slug) || (ref !== undefined && ADMIN_ONLY_TOOL_SLUGS.has(ref))) {
+    return true;
+  }
+  return opts.ownerOnly === true && !OWNER_ONLY_IN_SCOPE.has(ref ?? slug);
+}
+
+/** What a scope may list (workspaces W7b): whether it holds Admin, and the
+ *  Admin areas it may do. Read once per MCP connection. */
+export type AdminGateView = { holdsAdmin: boolean; areas: ReadonlySet<ScopeArea> };
+
+/**
+ * Whether a tool is LISTED for a scope with `view` (W7b): an adminOnly tool
+ * only where the scope holds Admin, an Admin-area tool only where the area
+ * is on. The call is still gated (adminToolGate): listing is not the check.
+ */
+export function adminGateLists(
+  slug: string,
+  view: AdminGateView,
+  opts: { ref?: string; ownerOnly?: boolean } = {},
+): boolean {
+  const area = toolAdminArea(slug, opts.ref);
+  if ((isAdminOnlyTool(slug, opts) || area) && !view.holdsAdmin) return false;
+  return !area || view.areas.has(area);
+}
 
 /** The refusal of an adminOnly tool outside the Admin workspace. */
 export const ADMIN_ONLY_ERROR =
@@ -102,10 +189,6 @@ export const TOOL_ADMIN_AREAS: ReadonlyMap<string, ScopeArea> = new Map<string, 
   ['sandbox_rm', 'settings'],
   ['sandbox_stop', 'settings'],
   ['run_terminal', 'settings'],
-  // Users: who reached the team surfaces, and the team chat portal.
-  ['team_access_list', 'users'],
-  ['team_chat_list', 'users'],
-  ['team_chat_read', 'users'],
   // Assistants: agents, personas, tool and worker groups.
   ['agent_list', 'assistants'],
   ['agent_grant_tool_group', 'assistants'],
@@ -201,9 +284,7 @@ export function toolAdminArea(slug: string, ref?: string): ScopeArea | null {
  * steps are tools), api_tool_test (it runs the tool), api_docs_set and
  * api_docs_get (the docs file), update_persona (Journal entries),
  * heartbeat_fire (a turn, in the caller's scope), secret_create (the secret
- * node; its Secrets root on the system pool), team_chat_list,
- * team_chat_read and team_access_list (contacts named in the scope),
- * brain_capacity (two counts on the system pool, numbers only; its score's
+ * node; its Secrets root on the system pool), brain_capacity (two counts on the system pool, numbers only; its score's
  * note in the scope), the email tools (pages, files, contacts and mail
  * rows), run_terminal (no database). A test runs each listed tool with item
  * tables closed to the system pool (server/web/server/w7a-area-system-sweep.db.test.ts).
@@ -264,10 +345,7 @@ export async function adminToolGate(
   opts: { ref?: string; ownerOnly?: boolean } = {},
 ): Promise<AdminGate> {
   if (!currentWorkspaceScope()) return { system: false };
-  const adminOnly =
-    opts.ownerOnly ||
-    ADMIN_ONLY_TOOL_SLUGS.has(slug) ||
-    (opts.ref !== undefined && ADMIN_ONLY_TOOL_SLUGS.has(opts.ref));
+  const adminOnly = isAdminOnlyTool(slug, opts);
   const area = toolAdminArea(slug, opts.ref);
   if ((adminOnly || area) && !(await scopeHoldsAdmin())) return { refused: ADMIN_ONLY_ERROR };
   if (!area) return { system: false };

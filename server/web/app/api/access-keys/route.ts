@@ -40,7 +40,6 @@ import {
   MAX_ACCESS_KEY_EXPIRY_DAYS,
   MAX_KEY_DAYS_BY_ROLE,
   MAX_LIVE_KEYS_PER_LOGIN,
-  MINT_REFUSED_MCP_OFF,
   expiryFromDays,
   keyNeedsPassword,
   mintAccessKey,
@@ -164,15 +163,6 @@ async function handlePOST(req: Request) {
     sessionEpoch: login.kind === 'client' ? login.client.sessionEpoch : null,
     maxLive: MAX_LIVE_KEYS_PER_LOGIN,
   });
-  if (minted === MINT_REFUSED_MCP_OFF) {
-    return NextResponse.json(
-      {
-        error: 'An admin has turned MCP off for your login, so you cannot make a key now.',
-        reason: 'mcp-off',
-      },
-      { status: 403 },
-    );
-  }
   if (!minted) {
     return NextResponse.json(
       {

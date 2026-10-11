@@ -8,15 +8,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { toolServiceAvailable } from '@mantle/config';
 import { db, scopeHoldsAdmin, skills, toolGroups, type Skill } from '@mantle/db';
-import {
-  currentWorkspaceScope,
-  isViewerLevel,
-  levelCovers,
-  levelsMeet,
-  lowerLevel,
-  type ViewerLevel,
-  currentScope,
-} from '@mantle/db/viewer';
 
 export type SkillForRuntime = {
   id: string;
@@ -125,43 +116,20 @@ export function effectiveSkillSlugs(ownSlugs: string[], groupSkillSlugs: string[
  * tool slugs (ENABLED groups only, matching the runtime's resolve-or-omit rule).
  * Empty in ⇒ empty out (no DB hit). See docs/tools-and-skills.md (Phase 3).
  */
-export async function resolveAgentToolGroups(
-  ownerId: string,
-  slugs: string[],
-  level: ViewerLevel = 'admin',
-): Promise<string[]> {
+export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): Promise<string[]> {
   if (slugs.length === 0) return [];
-  // Level cap (member logins Phase 0b): a group above the agent's level, or
-  // above the current viewer scope (whichever is lower), is left out whatever
-  // the grant says. Fail closed: the tools simply are not there. A client
-  // scope and a public agent (or the reverse) have no common level: no tools.
-  // Inside a workspace turn scope (W4b) there is no viewer level: the agent's
-  // own level caps, the workspace role's rule hides what the scope may not
-  // hold (adminOnly groups outside Admin, connectors that are not a resource
-  // of the workspace), and an adminOnly group is left out here too.
-  // A CONNECTOR group is capped by the agent's level alone (which agent may
-  // hold it, kept until W7): whether the caller reaches it comes from the
-  // scope (W5b2), the workspace role's rule in a workspace scope, and in a
-  // level scope the dispatch's workspace rule on every call (dispatch.ts
-  // connectorCallRefused), never the connector's level against the caller's.
-  const inWorkspace = currentWorkspaceScope() !== null;
-  // Outside a workspace scope: system work, or a personal space at its
-  // login's level (until W6b).
-  const outer = currentScope();
-  const current = inWorkspace ? level : outer.kind === 'level' ? outer.level : 'admin';
-  if (!levelsMeet(current, level)) {
-    console.warn(`[skills] a ${level}-level agent under a ${current}-level caller gets no tools`);
-    return [];
-  }
-  const cap = lowerLevel(current, level);
-  const adminScope = inWorkspace ? await scopeHoldsAdmin() : true;
+  // Agents and tool groups have no level since workspaces W7b (plan 5.4):
+  // a group is system-wide, or adminOnly, which runs only where the scope
+  // holds the Admin workspace (unscoped system work does; a workspace turn
+  // scope when it holds Admin; a level scope never). What a tool then reads
+  // is the scope's. A connector group's call is checked in dispatch
+  // (connectorCallRefused: a resource of the scope's workspace).
+  const adminScope = await scopeHoldsAdmin();
   const rows = await db
     .select({
       slug: toolGroups.slug,
       toolSlugs: toolGroups.toolSlugs,
-      audience: toolGroups.audience,
       adminOnly: toolGroups.adminOnly,
-      integration: toolGroups.integration,
     })
     .from(toolGroups)
     .where(
@@ -179,13 +147,7 @@ export async function resolveAgentToolGroups(
       console.warn(`[skills] tool group '${r.slug}' is adminOnly; left out outside Admin`);
       return false;
     }
-    const groupLevel = isViewerLevel(r.audience) ? r.audience : 'admin';
-    const limit = r.integration ? level : cap;
-    if (levelCovers(limit, groupLevel)) return true;
-    console.warn(
-      `[skills] tool group '${r.slug}' is ${groupLevel}-level; left out for a ${limit}-level agent`,
-    );
-    return false;
+    return true;
   });
   const bySlug = new Map(allowed.map((r) => [r.slug, r]));
   const set = new Set<string>();

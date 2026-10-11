@@ -287,11 +287,26 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
     });
     const listed = async (login: string) =>
       (await tools.listLoginConnectorTools(owner, login)).map((c) => c.tool.slug).sort();
+    // The one MCP surface (W7b): the connector rows the route prepares,
+    // registered and called as /api/mcp calls them, in the login's scope.
     const callable = async (login: string) => {
+      const rows = [];
+      for (const slug of Object.values(SLUGS)) rows.push((await tools.resolveTool(owner, slug))!);
+      type Handler = (a: unknown, e: unknown) => Promise<{ isError?: boolean }>;
+      const handlers = new Map<string, Handler>();
+      const fake = {
+        registerTool: (name: string, _c: unknown, cb: Handler) => void handlers.set(name, cb),
+      };
+      mcp.registerPreparedTools(fake as never, {
+        kind: 'owner',
+        caller: caller(login),
+        view: { holdsAdmin: false, areas: new Set() },
+        privateWs: null,
+        connectors: rows,
+      });
       const out: string[] = [];
       for (const slug of Object.values(SLUGS)) {
-        const row = await tools.resolveTool(owner, slug);
-        const res = await mcp.callLoginTool(caller(login), row!, {}, 'team', false);
+        const res = await handlers.get(slug)!({}, {});
         if (!res.isError) out.push(slug);
       }
       return out.sort();

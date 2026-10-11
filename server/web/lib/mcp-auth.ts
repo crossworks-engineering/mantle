@@ -5,24 +5,30 @@
  * an inbound API key (`mtlk_`), is `callerFromAccessKey` below. The others:
  *
  *  1. An OAuth access token (`mtlmcp_at_`): the login that consented. An
- *     admin's grant is the owner's connector, unchanged. A member's or
- *     client's grant needs the admin's per-login MCP switch, and dies with
- *     the login's session epoch (actorMayConnect).
+ *     admin's grant is the owner's connector, unchanged. A member's grant
+ *     dies with the login's session epoch (actorMayConnect).
  *  2. A static login token (`mtlmcpk_`): minted by an admin for one member
- *     or client login, for an MCP client without OAuth. Same switch, same
- *     epoch rule. Minting is RETIRED (2026-10-07: nobody makes a credential
- *     for another login; each login makes its own API key); tokens made
- *     before keep working until revoked.
+ *     login, for an MCP client without OAuth. Same epoch rule. Minting is
+ *     RETIRED (2026-10-07: nobody makes a credential for another login;
+ *     each login makes its own API key), and migration 0268 revoked every
+ *     token made before (W7b fix round 1): this path only refuses now.
  *  3. A peer token (`mtlpeer_`) whose peer is bound to a login: the peer
- *     acts as that login (owner, member or client) with the peer's own write
- *     switch. The login must still be usable and still hold the role it had
- *     when it was bound: a role change fails closed.
+ *     acts as that login with the peer's own write switch. The login must
+ *     still be usable and still hold the role it had when it was bound: a
+ *     role change fails closed.
+ *
+ * Since workspaces W7b every login gets the one MCP surface in its own
+ * scope (@mantle/mcp-core login-surface.ts): the per-login MCP switch
+ * (mcp_login_access, archived by migration 0268) is gone, and a login
+ * carries no permission of its own. A key's or a peer's write switch and
+ * the risky-tool rule only narrow. A client login stays refused (no client
+ * exists yet, plan 21.9).
  *
  * Every rule is read from the rows on every request, never from the token.
  */
 import { createHash } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
-import { authUsers, db, mcpLoginAccess, mcpLoginTokens, resolveSingleOwnerId } from '@mantle/db';
+import { authUsers, db, mcpLoginTokens, resolveSingleOwnerId } from '@mantle/db';
 import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
 import { isMcpToolReadOnly, type McpCaller, type McpLoginRole } from '@mantle/mcp-core';
 import { bearerFrom } from './auth/request';
@@ -58,8 +64,6 @@ type LoginRow = {
   displayName: string | null;
   disabledAt: Date | null;
   sessionEpoch: number;
-  mcpEnabled: boolean | null;
-  mcpWrite: boolean | null;
 };
 
 async function loadLogin(loginId: string): Promise<LoginRow | null> {
@@ -71,11 +75,8 @@ async function loadLogin(loginId: string): Promise<LoginRow | null> {
       displayName: authUsers.displayName,
       disabledAt: authUsers.disabledAt,
       sessionEpoch: authUsers.sessionEpoch,
-      mcpEnabled: mcpLoginAccess.enabled,
-      mcpWrite: mcpLoginAccess.writeEnabled,
     })
     .from(authUsers)
-    .leftJoin(mcpLoginAccess, eq(mcpLoginAccess.loginId, authUsers.id))
     .where(eq(authUsers.id, loginId))
     .limit(1);
   return row ?? null;
@@ -85,22 +86,26 @@ function isRole(v: string): v is McpLoginRole {
   return v === 'admin' || v === 'member' || v === 'client';
 }
 
-/** A member's or client's caller from its login row, or null. */
+/** A member's or client's caller from its login row, or null. Its writes
+ *  are whatever its scope may write (W7b: no per-login switch); a client
+ *  caller is refused by the surface (prepareCallerTools). */
 function loginCaller(
   row: LoginRow,
   anchorId: string,
   via: 'oauth' | 'token',
   oauthClientId?: string,
+  /** The grant was narrowed to read-only (0268, MCP_READ_ONLY_SCOPE). */
+  readOnly = false,
 ): McpCaller | null {
   if (row.role !== 'member' && row.role !== 'client') return null;
-  if (row.disabledAt || !row.email || row.mcpEnabled !== true) return null;
+  if (row.disabledAt || !row.email) return null;
   return {
     role: row.role,
     anchorId,
     loginId: row.id,
     displayName: row.displayName,
     via,
-    write: row.mcpWrite === true,
+    write: !readOnly,
     ...(oauthClientId ? { oauthClientId } : {}),
   };
 }
@@ -124,11 +129,11 @@ export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> 
       anchorId: grant.ownerId,
       loginId: grant.actorId,
       via: 'oauth',
-      write: true,
+      write: !grant.readOnly,
     };
   }
   const row = await loadLogin(grant.actorId);
-  return row ? loginCaller(row, grant.ownerId, 'oauth', grant.clientId) : null;
+  return row ? loginCaller(row, grant.ownerId, 'oauth', grant.clientId, grant.readOnly) : null;
 }
 
 async function callerFromLoginToken(token: string): Promise<McpCaller | null> {
@@ -158,11 +163,10 @@ async function callerFromLoginToken(token: string): Promise<McpCaller | null> {
 
 /**
  * An inbound API key (`mtlk_`, migration 0232): it acts as its login (that
- * login's workspaces, workspaces plan 7.5) and only narrows it. An admin
- * key gets the owner tools held to the key's write switch, its risky tools
- * and its areas (as a peer bound to the owner). A member or client key also
- * needs the login's MCP switch on, and writes only while both the key and
- * the login's Write switch allow it; its areas narrow that login's tools.
+ * login's workspaces, workspaces plan 7.5) and only narrows it: the one MCP
+ * surface in the login's scope, held to the key's write switch, its risky
+ * tools and its areas (W7b: a member key as an admin key). An `api_only`
+ * key (0268) is refused here and works on /api/v1 only.
  * A refused key is a 401 like any bad bearer; the failed try counts
  * against the caller's address, as on /api/v1.
  */
@@ -185,6 +189,19 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
     return null;
   }
   const key = check.grant;
+  // A key made for /api/v1 by a login that never had MCP (0268, W7b fix
+  // round 2): it keeps working there and never reaches MCP. Refused like a
+  // bad bearer, but not counted as a failed try (the key is real).
+  if (key.apiOnly) {
+    auditKeyRefusal({
+      keyId: key.id,
+      reason: 'api_only',
+      method: req.method,
+      path: '/api/mcp',
+      ...requestMetaFrom(req),
+    });
+    return null;
+  }
   const anchorId = await resolveSingleOwnerId();
   if (!anchorId) return null;
   const keyWrite = key.access === 'read_write';
@@ -202,7 +219,9 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
   } else {
     const row = await loadLogin(key.loginId);
     const login = row ? loginCaller(row, anchorId, 'token') : null;
-    caller = login ? { ...login, via: 'key', write: login.write && keyWrite } : null;
+    caller = login
+      ? { ...login, via: 'key', write: keyWrite, riskyAllowed: key.riskyTools ?? [] }
+      : null;
   }
   if (!caller) return null;
   touchAccessKey(key.id, ip);
@@ -237,10 +256,10 @@ export async function auditMcpKeyCall(
   // refused anyway (413 from the route), so there is nothing to audit.
   let body: unknown;
   try {
-    // The route's own rule: an admin's body may be an owner document (a file
-    // upload), a member's or client's is held to the plain JSON ceiling.
+    // The route's own rule: a body may be an owner document (a file upload,
+    // the one surface, W7b); a client's is held to the plain JSON ceiling.
     const ceiling =
-      caller.role === 'admin' ? OWNER_DOCUMENT_CEILING_BYTES : JSON_BODY_CEILING_BYTES;
+      caller.role === 'client' ? JSON_BODY_CEILING_BYTES : OWNER_DOCUMENT_CEILING_BYTES;
     body = JSON.parse(await readBodyCapped(req.clone(), ceiling));
   } catch (err) {
     if (err instanceof BodyTooLargeError) throw err;
@@ -269,14 +288,9 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
   if (!row || row.disabledAt || !row.email) return null;
   if (!isRole(row.role) || row.role !== peer.actsAsRole) return null;
   // A linked brain acts as the login it is bound to (workspaces plan 7.6):
-  // it reads that login's workspaces, and only narrows it. A peer bound to
-  // a member or client is under that login's switches too (team apps M1
-  // audit, medium 1): the login's MCP switch off ends the peer, and it
-  // writes only while both the peer's and the login's Write switches are
-  // on. A peer bound to the owner keeps its own write switch and the
-  // risky-tool rule (the tools the owner named on it).
-  const login = row.role === 'member' || row.role === 'client';
-  if (login && row.mcpEnabled !== true) return null;
+  // it reads that login's workspaces, and only narrows it, with its own
+  // write switch and the risky-tool rule (the tools named on it; a peer
+  // bound to a member names none). No per-login switch since W7b.
   return {
     role: row.role,
     anchorId: peer.ownerId,
@@ -286,25 +300,21 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
     peerId: peer.id,
     // The owner's own peer: bound to the anchor login and made by it.
     peerByOwner: row.role === 'admin' && row.id === peer.ownerId && peer.createdBy === peer.ownerId,
-    write: login ? peer.writeEnabled && row.mcpWrite === true : peer.writeEnabled,
+    write: peer.writeEnabled,
     riskyAllowed: row.role === 'admin' ? (peer.allowedRiskyTools ?? []) : [],
   };
 }
 
-// ── Admin side: the per-login switch ─────────────────────────────────────────
+// ── The OAuth consent and the token check ───────────────────────────────────
 
-/** Whether this member or client login may connect an MCP client now. */
+/** Whether this member login may connect an MCP client now (W7b: any
+ *  usable member; a client login never, plan 21.9). */
 export async function mcpLoginEnabled(loginId: string): Promise<boolean> {
   const row = await loadLogin(loginId);
-  return (
-    !!row &&
-    (row.role === 'member' || row.role === 'client') &&
-    !row.disabledAt &&
-    row.mcpEnabled === true
-  );
+  return !!row && row.role === 'member' && !row.disabledAt && !!row.email;
 }
 
-/** A member or client login by id (the admin routes check it first). */
+/** A member or client login by id (the consent route checks it first). */
 export async function mcpTargetLogin(
   loginId: string,
 ): Promise<{ id: string; role: 'member' | 'client'; sessionEpoch: number } | null> {

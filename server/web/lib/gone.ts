@@ -23,6 +23,17 @@ export const GONE_MESSAGE = 'This feature was removed. Update the app.';
 export const SPACE_FOLDED_MESSAGE =
   'Your own items are in your private workspace now. Open them from the normal lists.';
 
+/** The per-login MCP switches and static login tokens (/api/mcp-logins),
+ *  removed in workspaces W7b: every login has the one MCP surface in its
+ *  own workspaces. */
+export const MCP_LOGINS_GONE_MESSAGE =
+  'There is no per-login MCP switch any more: every login reaches MCP in its own workspaces. Update the app.';
+
+/** The agent and tool-group level routes (/api/access/agents/:slug,
+ *  /api/access/tool-groups/:slug), removed in workspaces W7b. */
+export const LEVELS_GONE_MESSAGE =
+  'Agents and tool groups have no level any more: an assistant reads its workspace. Update the app.';
+
 /** The 410 body every removed route answers. */
 export function goneResponse(error: string = GONE_MESSAGE): NextResponse {
   return NextResponse.json({ error, code: 'gone' }, { status: 410 });

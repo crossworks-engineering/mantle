@@ -19,6 +19,7 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   const anchor = randomUUID();
   const tag = `xi-${randomUUID().slice(0, 8)}`;
   let agentId = '';
+  const otherWs = randomUUID();
   const q = (s: ReturnType<typeof sqlTag>) => m.systemDb.execute(s);
   const rows = async <T>(s: ReturnType<typeof sqlTag>) => (await q(s)) as unknown as T[];
 
@@ -32,13 +33,18 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     await q(sqlTag`insert into auth.users (id, email, password_hash, role)
       values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await q(sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
-    for (const slug of ['access_set', 'note_list']) {
+    for (const slug of ['tool_group_ensure', 'note_list']) {
       await q(sqlTag`
         insert into tools (owner_id, slug, name, description, handler, input_schema)
         values (${anchor}, ${slug}, ${slug}, ${`${slug} tool`},
           ${JSON.stringify({ kind: 'builtin', ref: slug })}::jsonb,
           '{"type":"object","properties":{}}'::jsonb)`);
     }
+    await q(sqlTag`
+      insert into tools (owner_id, slug, name, description, handler, input_schema)
+      values (${anchor}, 'xi_http', 'xi_http', 'an http tool',
+        ${JSON.stringify({ kind: 'http', method: 'GET', url: 'https://example.invalid/x' })}::jsonb,
+        '{"type":"object","properties":{}}'::jsonb)`);
     const binding = JSON.stringify({
       service: 'mcp-src',
       mcp: { url: 'https://mcp.example.invalid/mcp' },
@@ -46,7 +52,17 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     await q(sqlTag`
       insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration) values
         (${anchor}, 'mcp-src', ${`${tag} source`}, ARRAY[]::text[], 'admin', true, ${binding}::jsonb),
-        (${anchor}, 'g-access', 'g', ARRAY['access_set'], 'admin', true, null)`);
+        (${anchor}, 'g-access', 'g', ARRAY['tool_group_ensure'], 'admin', true, null),
+        (${anchor}, 'g-held', 'g', ARRAY[]::text[], 'admin', true, null)`);
+    // A workspace other than Admin, and its assistant, which holds g-held:
+    // a change to g-held reaches that workspace's users (W7b), so an agent's
+    // change waits for the owner.
+    await q(
+      sqlTag`insert into workspaces (id, owner_id, name) values (${otherWs}, ${anchor}, ${`${tag} other`})`,
+    );
+    await q(sqlTag`
+      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, workspace_id)
+      values (${anchor}, 'other-assistant', 'o', 'm', 'p', ARRAY['g-held'], ${otherWs})`);
     const [a] = await rows<{ id: string }>(sqlTag`
       insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs) values
         (${anchor}, 'persona', 'p', 'm', 'p', ARRAY['g-access']) returning id`);
@@ -57,6 +73,7 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     await q(sqlTag`delete from pending_tool_calls where owner_id = ${anchor}`);
     await q(sqlTag`delete from runs where owner_id = ${anchor}`);
     await q(sqlTag`delete from agents where owner_id = ${anchor}`);
+    await q(sqlTag`delete from workspaces where id = ${otherWs}`);
     await q(sqlTag`delete from tool_groups where owner_id = ${anchor}`);
     await q(sqlTag`delete from tools where owner_id = ${anchor}`);
     await q(sqlTag`delete from spaces where login_id = ${anchor}`);
@@ -81,23 +98,26 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     return after!;
   }
 
-  const groupLevel = async () =>
+  /** g-held's tools: unchanged while the change waits. */
+  const heldTools = async () =>
     (
-      await rows<{ audience: string }>(sqlTag`
-      select audience from tool_groups where owner_id = ${anchor} and slug = 'mcp-src'`)
-    )[0]!.audience;
+      await rows<{ tools: string[] }>(sqlTag`
+      select tool_slugs as tools from tool_groups where owner_id = ${anchor} and slug = 'g-held'`)
+    )[0]!.tools;
+  // An http tool: the only kind an agent may bundle into a group.
+  const ENSURE = { slug: 'g-held', tool_slugs: ['xi_http'] };
   const pendingCount = async () =>
     (
       await rows<{ n: number }>(sqlTag`
       select count(*)::int as n from pending_tool_calls
-      where owner_id = ${anchor} and tool_slug = 'access_set' and status = 'pending'`)
+      where owner_id = ${anchor} and tool_slug = 'tool_group_ensure' and status = 'pending'`)
     )[0]!.n;
 
-  it('lowering a connector through a run waits in Pending, as it would inline', async () => {
+  it('changing a group another workspace uses, through a run, waits in Pending, as it would inline', async () => {
     const before = await pendingCount();
-    const item = await runOne('access_set', { tool_group_slug: 'mcp-src', level: 'team' }, agentId);
-    expect(item.state).toBe('done');
-    expect(await groupLevel()).toBe('admin');
+    const item = await runOne('tool_group_ensure', ENSURE, agentId);
+    expect(item.state, JSON.stringify(item.failure)).toBe('done');
+    expect(await heldTools()).toEqual([]);
     expect(await pendingCount()).toBe(before + 1);
   });
 
@@ -108,21 +128,17 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
   });
 
   it('a run whose agent is gone runs nothing', async () => {
-    const item = await runOne(
-      'access_set',
-      { tool_group_slug: 'mcp-src', level: 'team' },
-      randomUUID(),
-    );
+    const item = await runOne('tool_group_ensure', ENSURE, randomUUID());
     expect(item.state).toBe('failed');
     expect(item.failure?.type).toBe('agent_missing');
-    expect(await groupLevel()).toBe('admin');
+    expect(await heldTools()).toEqual([]);
   });
 
-  it("a run of an agent below admin runs nothing: it would read past the agent's level", async () => {
+  it("a run of another workspace's agent runs nothing: it would read past that workspace", async () => {
     const [low] = await rows<{ id: string }>(sqlTag`
-      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, audience)
-      values (${anchor}, 'team-helper', 't', 'm', 'p', ARRAY['g-access'], 'team') returning id`);
-    const item = await runOne('access_set', { tool_group_slug: 'mcp-src', level: 'team' }, low!.id);
+      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, workspace_id)
+      values (${anchor}, 'team-helper', 't', 'm', 'p', ARRAY['g-access'], ${otherWs}) returning id`);
+    const item = await runOne('tool_group_ensure', ENSURE, low!.id);
     expect(item.state).toBe('failed');
     expect(item.failure?.type).toBe('below_admin');
   });
@@ -147,10 +163,10 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     return after!;
   }
 
-  it("a worker step of a below-admin agent's run runs nothing (B3)", async () => {
+  it("a worker step of another workspace's agent's run runs nothing (B3)", async () => {
     const [low] = await rows<{ id: string }>(sqlTag`
-      insert into agents (owner_id, slug, name, model, system_prompt, audience)
-      values (${anchor}, 'team-planner', 't', 'm', 'p', 'team') returning id`);
+      insert into agents (owner_id, slug, name, model, system_prompt, workspace_id)
+      values (${anchor}, 'team-planner', 't', 'm', 'p', ${otherWs}) returning id`);
     const after = await runWorker(low!.id);
     expect(after.state).toBe('failed');
     expect(after.failure?.type).toBe('below_admin');
@@ -168,8 +184,8 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     await q(sqlTag`
       insert into agents (owner_id, slug, name, model, system_prompt)
       values (${anchor}, 'run', 'r', 'm', 'p') on conflict do nothing`);
-    await runOne('access_set', { tool_group_slug: 'mcp-src', level: 'team' });
-    expect(await groupLevel()).toBe('admin');
+    await runOne('tool_group_ensure', ENSURE);
+    expect(await heldTools()).toEqual([]);
     expect(await pendingCount()).toBe(before + 1);
     // No agent planned it: the Pending row names no requester.
     const [last] = await rows<{ agent_id: string | null }>(sqlTag`

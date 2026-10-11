@@ -289,12 +289,28 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       via: 'oauth' as const,
       write: true,
     });
+    // The one MCP surface (W7b): the connector registered and called as
+    // /api/mcp does, in the login's scope.
     const call = async (loginId: string) => {
       const ls = await import('@mantle/mcp-core');
-      const out = await ls.callLoginTool(caller(loginId), connTool, {}, 'team', false);
+      type Out = { isError?: boolean; content: { text?: string }[] };
+      let handler: ((a: unknown, e: unknown) => Promise<Out>) | undefined;
+      const fake = {
+        registerTool: (name: string, _c: unknown, cb: (a: unknown, e: unknown) => Promise<Out>) => {
+          if (name === connTool.slug) handler = cb;
+        },
+      };
+      ls.registerPreparedTools(fake as never, {
+        kind: 'owner',
+        caller: caller(loginId),
+        view: { holdsAdmin: false, areas: new Set() },
+        privateWs: null,
+        connectors: [connTool],
+      });
+      const out = await handler!({}, {});
       return {
         isError: out.isError === true,
-        text: out.content.map((c) => (c as { text?: string }).text ?? '').join('\n'),
+        text: out.content.map((c) => c.text ?? '').join('\n'),
       };
     };
 
@@ -320,7 +336,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     });
 
     it('a login with no workspace on a migrated brain is refused', async () => {
-      expect((await call(stranger)).text).toMatch(/not a user of any workspace/);
+      expect((await call(stranger)).text).toMatch(/user of no workspace/);
     });
 
     it('what the rule lets through: a read with the resource; a write with Write and a Moderator', async () => {

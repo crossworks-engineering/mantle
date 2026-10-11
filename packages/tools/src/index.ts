@@ -96,6 +96,7 @@ export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
 export { APP_TOOLS, APP_TOOL_SLUGS, APP_DATA_TOOLS, APP_DATA_TOOL_SLUGS } from './builtins-apps';
 export { APP_GUIDE_TOOLS } from './builtins-app-guide';
+export { WORKSPACE_TOOLS, type WorkspaceListRow } from './builtins-workspaces';
 export { TABLE_TOOLS, TABLE_TOOL_SLUGS } from './builtins-tables';
 export { TOOL_RESULT_TOOLS, TOOL_RESULT_TOOL_SLUGS } from './builtins-tool-results';
 export {
@@ -142,18 +143,11 @@ export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
 export { loadAgentGrant, NO_AGENT_RUN_SLUG, type AgentGrant } from './agent-grants';
 export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
-export { TEAM_TOOLS } from './builtins-team';
 export {
   LOGIN_APP_DATA_TOOLS,
   APP_DATA_READ_TOOL_SLUGS,
   APP_DATA_WRITE_TOOL_SLUGS,
 } from './builtins-app-data';
-export {
-  MY_APP_TOOLS,
-  MY_APP_READ_TOOL_SLUGS,
-  MY_APP_WRITE_TOOL_SLUGS,
-  MY_APPS_MAX,
-} from './builtins-my-apps';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
 export { CURATION_TOOLS } from './builtins-curation';
 export { CRAWL_TOOLS } from './builtins-crawl';
@@ -174,14 +168,18 @@ export {
 export {
   AREA_SYSTEM_TOOLS,
   TOOL_ADMIN_AREAS,
+  OWNER_ONLY_IN_SCOPE,
   adminAreaError,
+  adminGateLists,
   adminToolGate,
   areaSystem,
   callerHasArea,
   isAdminGateRefusal,
+  isAdminOnlyTool,
   runGated,
   toolAdminArea,
   type AdminGate,
+  type AdminGateView,
 } from './admin-gate';
 export { ITEM_WRITE_TARGETS, itemWriteTargetsOf, toolItemWriteRefusal } from './item-write-gate';
 export {
@@ -253,7 +251,7 @@ export {
   type AppToolVerdict,
 } from './app-tool-level';
 export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
-export { isOwnerSurface, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
+export { isOwnerSurface, ownerKeysOff, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
 export type { LoginMcpChannel, OwnerSurfaceVia } from './types';
 export { safeFetch } from './safe-fetch';
 export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';

@@ -134,7 +134,12 @@ describe.skipIf(!URL)('a Telegram turn needs an admin-level agent (T21)', () => 
     await handleTelegramMessage(before);
     expect(h.turns).toHaveLength(1);
 
-    await sql`update agents set audience = 'client' where id = ${agent.lowered}`;
+    // Levels are frozen since 0268 (W7b): the fixture lowers it past the
+    // freeze, as a brain that did so before W7b has it.
+    await sql.begin(async (tx) => {
+      await tx`select mantle_heads_bypass('test fixture')`;
+      await tx`update agents set audience = 'client' where id = ${agent.lowered}`;
+    });
     h.turns.length = 0;
     const after = await inbound('lowered');
     await handleTelegramMessage(after);

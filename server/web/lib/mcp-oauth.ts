@@ -18,7 +18,6 @@ import { bearerFrom } from './auth/request';
 import {
   authUsers,
   db,
-  mcpLoginAccess,
   oauthAccessTokens,
   oauthAuthCodes,
   oauthClients,
@@ -230,9 +229,9 @@ type GrantResult =
  *
  *  - An ADMIN grant (no epoch on it): the login is still an admin.
  *  - A MEMBER's or CLIENT's grant (0227, MCP as a login): the login still has
- *    that kind of role, its session epoch is the one the grant was made
+ *    that kind of role and its session epoch is the one the grant was made
  *    under (sign out everywhere, a password change, a disable or a role
- *    change ends it), and an admin still has its MCP switch on.
+ *    change ends it). The per-login MCP switch went in workspaces W7b.
  */
 export async function actorMayConnect(
   actorId: string,
@@ -257,19 +256,15 @@ async function connectingLogin(
       disabledAt: authUsers.disabledAt,
       email: authUsers.email,
       sessionEpoch: authUsers.sessionEpoch,
-      mcpEnabled: mcpLoginAccess.enabled,
     })
     .from(authUsers)
-    .leftJoin(mcpLoginAccess, eq(mcpLoginAccess.loginId, authUsers.id))
     .where(eq(authUsers.id, actorId))
     .limit(1);
   if (!row || row.disabledAt || !row.email) return null;
   const may =
     sessionEpoch === null
       ? row.role === 'admin'
-      : (row.role === 'member' || row.role === 'client') &&
-        row.sessionEpoch === sessionEpoch &&
-        row.mcpEnabled === true;
+      : (row.role === 'member' || row.role === 'client') && row.sessionEpoch === sessionEpoch;
   return may ? { id: actorId, email: row.email } : null;
 }
 
@@ -528,6 +523,8 @@ export async function grantFromAccessToken(token: string): Promise<{
   actorId: string;
   clientId: string;
   sessionEpoch: number | null;
+  /** The grant is read-only (its scope carries MCP_READ_ONLY_SCOPE). */
+  readOnly: boolean;
 } | null> {
   const [row] = await db
     .select({
@@ -536,6 +533,7 @@ export async function grantFromAccessToken(token: string): Promise<{
       actorId: oauthAccessTokens.actorId,
       clientId: oauthAccessTokens.clientId,
       sessionEpoch: oauthAccessTokens.sessionEpoch,
+      scope: oauthAccessTokens.scope,
     })
     .from(oauthAccessTokens)
     .where(
@@ -552,5 +550,18 @@ export async function grantFromAccessToken(token: string): Promise<{
     .set({ lastUsedAt: new Date() })
     .where(eq(oauthAccessTokens.id, row.id))
     .catch(() => {});
-  return { ...row, sessionEpoch: row.sessionEpoch ?? null };
+  const { scope, ...grant } = row;
+  return {
+    ...grant,
+    sessionEpoch: row.sessionEpoch ?? null,
+    readOnly: (scope ?? '').split(/\s+/).includes(MCP_READ_ONLY_SCOPE),
+  };
 }
+
+/**
+ * The scope word that keeps an OAuth grant read-only (W7b fix round 1, M3):
+ * migration 0268 adds it to the grants of a login whose MCP Write switch
+ * was off when the switch was archived, and a refresh copies the scope, so
+ * the grant stays narrowed. A client may ask for it too; nothing removes it.
+ */
+export const MCP_READ_ONLY_SCOPE = 'mantle:read-only';

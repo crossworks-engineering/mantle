@@ -78,19 +78,6 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   page_block_delete: { reason: 'writes to DRAFT; page_discard_draft reverts it' },
   model_pool_remove: { reason: 'pool entry; model_pool_set restores it' },
   app_table_export_remove: { reason: 'dissolves a mirror link; deletes no data' },
-  my_app_file_delete: {
-    reason: "the member's own app DRAFT; the published app runs on, and a publish is a version",
-  },
-  // A login's MCP never offers a confirm-gated tool (loginMayHaveTool), so
-  // these carry no gate; each says what it keeps (access matrix N6).
-  my_app_delete: {
-    reason:
-      "the brain's app delete on an app the member manages; its last snapshot keeps code and data, my_app_undelete restores it while the trash keeps it",
-  },
-  my_app_snapshot_delete: {
-    reason:
-      "a copy the member took themselves, never the app's data, a version or an automatic snapshot",
-  },
   // Routine editing inside an authoring kit whose whole-object delete IS gated
   // (table_delete, app_delete) and lives in a deliberate *-admin group.
   table_row_delete: { reason: 'grid editing; the gated whole is table_delete' },

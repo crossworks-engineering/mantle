@@ -83,8 +83,6 @@ describe.skipIf(!URL)("a member's own MCP screen", () => {
     await sql`insert into oauth_clients (id, client_name, redirect_uris) values
       (${clientA}, ${`${tag} A`}, ${['https://c.example/cb']}),
       (${clientB}, ${`${tag} B`}, ${['https://c.example/cb']})`;
-    await sql`insert into mcp_login_access (login_id, enabled, write_enabled)
-              values (${member}, true, true)`;
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);

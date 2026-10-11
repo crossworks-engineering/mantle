@@ -3,18 +3,25 @@
  * e5b854dd): read-only unless the peer's write switch is on, and never the
  * risky tools unless the owner named them. Driven through the real
  * registration path against a capturing fake server; no database, no model.
- * The DB-backed member and client half is login-surface.viewer.db.test.ts.
+ * Since W7b every login has this surface: what a scope lists is pinned
+ * below; the DB-backed sweep is server/web/server/w7b-mcp-surface.db.test.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_TOOLS } from '@mantle/tools';
+import { BUILTIN_TOOLS, OWNER_ONLY_IN_SCOPE } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
+import { ADMIN_KIND_CREATE_TOOL_SLUGS, MCP_CREATE_TOOL_SLUGS } from './create-home';
 import {
   MCP_HANDWRITTEN_READ_ONLY,
+  OWNER_KEY_SPENDING_TOOLS,
+  spendsOwnerKeys,
   isMcpToolReadOnly,
   isPeerRiskyTool,
-  loginMayHaveTool,
   mcpInstructionsFor,
   ownerPeerAllows,
+  preparedAllows,
+  CLIENT_LOGIN_REFUSED,
+  type McpCaller,
+  type PreparedCallerTools,
 } from './login-surface';
 
 function registered(allow?: (slug: string) => boolean): string[] {
@@ -104,85 +111,178 @@ describe('owner surface for a peer', () => {
   });
 });
 
-describe('member and client tool filter', () => {
-  const row = (slug: string, extra: Record<string, unknown> = {}) =>
-    ({ slug, handler: { kind: 'builtin', ref: slug }, requiresConfirm: false, ...extra }) as never;
+describe('one surface for every login (W7b): what a scope lists', () => {
+  const member: McpCaller = {
+    role: 'member',
+    anchorId: 'a',
+    loginId: 'l',
+    via: 'oauth',
+    write: true,
+  };
+  const prep = (
+    caller: McpCaller,
+    view: { holdsAdmin: boolean; areas: string[] } | null,
+  ): PreparedCallerTools => ({
+    kind: 'owner',
+    caller,
+    view: view ? { holdsAdmin: view.holdsAdmin, areas: new Set(view.areas as never[]) } : null,
+    privateWs: null,
+    connectors: [],
+  });
+  const ALL_AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'];
+  const ITEM_TOOLS = [
+    'note_create',
+    'page_create',
+    'table_create',
+    'file_upload',
+    'app_create',
+    'app_file_write',
+    'app_publish',
+    'tree_folder_create',
+    'page_move',
+    'workspaces_list',
+    'app_data_list',
+    'app_data_write',
+    'search',
+  ];
+  const ADMIN_ONLY = [
+    'replay_window',
+    'run_plan',
+    'pending_approve',
+    'set_timezone',
+    'responder_turn_record',
+    'access_set',
+    'recall_map_publish',
+    'content_supersede',
+  ];
+  const AREA = ['model_pool_set', 'agent_list', 'peer_call', 'secret_create', 'email_send'];
 
-  it('write off: read-only builtins only', () => {
-    expect(loginMayHaveTool(row('note_list'), false)).toBe(true);
-    expect(loginMayHaveTool(row('note_create'), false)).toBe(false);
-    expect(loginMayHaveTool(row('team_request_create'), false)).toBe(false);
+  it('a scope without Admin: item tools listed, adminOnly and Admin-area tools not', () => {
+    const p = prep(member, { holdsAdmin: false, areas: [] });
+    for (const s of ITEM_TOOLS) expect(preparedAllows(p, s), s).toBe(true);
+    for (const s of [...ADMIN_ONLY, ...AREA]) expect(preparedAllows(p, s), s).toBe(false);
   });
 
-  it('write on: request, app data and own-app tools, never a library write', () => {
-    expect(loginMayHaveTool(row('team_request_create'), true)).toBe(true);
-    expect(loginMayHaveTool(row('app_data_write'), true)).toBe(true);
-    expect(loginMayHaveTool(row('my_app_create'), true)).toBe(true);
-    expect(loginMayHaveTool(row('note_create'), true)).toBe(false);
-    expect(loginMayHaveTool(row('file_upload'), true)).toBe(false);
-  });
-
-  it('app data: the reads always, the write only with write on', () => {
-    for (const slug of ['app_data_list', 'app_data_schema', 'app_data_query']) {
-      expect(loginMayHaveTool(row(slug), false), slug).toBe(true);
+  it('a scope holding Admin: adminOnly tools listed, an area tool only with its area on', () => {
+    const full = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
+    for (const s of [...ITEM_TOOLS, ...ADMIN_ONLY, ...AREA]) {
+      expect(preparedAllows(full, s), s).toBe(true);
     }
-    expect(loginMayHaveTool(row('app_data_write'), false)).toBe(false);
-    expect(loginMayHaveTool(row('app_data_write'), true)).toBe(true);
+    const noAreas = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: [] });
+    for (const s of ADMIN_ONLY) expect(preparedAllows(noAreas, s), s).toBe(true);
+    for (const s of AREA) expect(preparedAllows(noAreas, s), s).toBe(false);
   });
 
-  it('never a non-builtin, a renamed builtin, a confirm-gated, spending or owner-only tool', () => {
-    expect(loginMayHaveTool({ slug: 'x', handler: { kind: 'http' } } as never, true)).toBe(false);
-    expect(
-      loginMayHaveTool(
-        { slug: 'alias', handler: { kind: 'builtin', ref: 'note_list' } } as never,
-        false,
-      ),
-    ).toBe(false);
-    expect(loginMayHaveTool(row('note_list', { requiresConfirm: true }), false)).toBe(false);
+  it('every ownerOnly builtin is adminOnly unless it is an item tool that runs in scope', () => {
+    const p = prep(member, { holdsAdmin: false, areas: [] });
     for (const d of BUILTIN_TOOLS) {
-      if (d.spends || d.ownerOnly || d.mcpOnly) {
-        expect(loginMayHaveTool(row(d.slug), true), d.slug).toBe(false);
-      }
+      if (!d.ownerOnly) continue;
+      expect(preparedAllows(p, d.slug), d.slug).toBe(OWNER_ONLY_IN_SCOPE.has(d.slug));
     }
   });
 
-  it('never offers the draft and submit tools removed in W5c (plan R7)', () => {
+  it('a member key or peer is narrowed like an admin one: write switch and risky tools', () => {
+    const view = { holdsAdmin: false, areas: [] };
+    const key = prep({ ...member, via: 'key', write: false, areas: null }, view);
+    expect(preparedAllows(key, 'search')).toBe(true);
+    expect(preparedAllows(key, 'note_create')).toBe(false);
+    const peerRw = prep({ ...member, via: 'peer', write: true, riskyAllowed: [] }, view);
+    expect(preparedAllows(peerRw, 'note_create')).toBe(true);
+    // App code changes are risky for a peer or a key (a published app runs them).
+    expect(preparedAllows(peerRw, 'app_file_write')).toBe(false);
+    expect(preparedAllows(peerRw, 'replay_window')).toBe(false);
+  });
+
+  it('a refused caller lists nothing; a client login is told it has no tools', () => {
+    const refused: PreparedCallerTools = { kind: 'refused', caller: member, message: 'x' };
+    expect(preparedAllows(refused, 'search')).toBe(false);
+    expect(mcpInstructionsFor({ ...member, role: 'client' })).toBe(CLIENT_LOGIN_REFUSED);
+  });
+
+  it('every login is told about its workspaces and where a create lands', () => {
+    for (const role of ['admin', 'member'] as const) {
+      const text = mcpInstructionsFor({ ...member, role });
+      expect(text).toContain('workspaces_list');
+      expect(text).toContain('landedIn');
+      expect(text).not.toMatch(/my_app_|my_note_create|team_request_create/);
+    }
+  });
+
+  // W7b fix round 1.
+  const SPENDING = [
+    'web_search_pro',
+    'web_search',
+    'generate_image',
+    'summarize_text',
+    'process_extraction',
+    'invoke_agent',
+    'ask_responder',
+    'ask_as_responder',
+  ];
+
+  it('M4: outside Admin nothing that spends on the owner’s keys is listed', () => {
+    const p = prep(member, { holdsAdmin: false, areas: [] });
+    for (const s of SPENDING) {
+      expect(spendsOwnerKeys(s), s).toBe(true);
+      expect(preparedAllows(p, s), s).toBe(false);
+    }
+    for (const d of BUILTIN_TOOLS.filter((x) => x.spends && x.slug !== 'search_chunks')) {
+      expect(preparedAllows(p, d.slug), d.slug).toBe(false);
+    }
+    // The query embedding of a passage search is not a paid turn.
+    expect(preparedAllows(p, 'search_chunks')).toBe(true);
+    // A scope holding Admin keeps them (subject to its areas).
+    const admin = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
+    for (const s of ['web_search_pro', 'generate_image', 'summarize_text', 'invoke_agent']) {
+      expect(preparedAllows(admin, s), s).toBe(true);
+    }
+    for (const s of OWNER_KEY_SPENDING_TOOLS) expect(spendsOwnerKeys(s), s).toBe(true);
+  });
+
+  it('H2: outside Admin no Admin-only kind is created; task, event and map creates land by the rule', () => {
+    const p = prep(member, { holdsAdmin: false, areas: [] });
+    for (const s of ADMIN_KIND_CREATE_TOOL_SLUGS) expect(preparedAllows(p, s), s).toBe(false);
+    for (const s of ['contact_create', 'journal_create', 'location_save']) {
+      expect(ADMIN_KIND_CREATE_TOOL_SLUGS.has(s), s).toBe(true);
+    }
+    for (const s of ['task_create', 'event_create', 'recall_map_create']) {
+      expect(MCP_CREATE_TOOL_SLUGS.has(s), s).toBe(true);
+      expect(preparedAllows(p, s), s).toBe(true);
+    }
+    const admin = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
+    for (const s of ADMIN_KIND_CREATE_TOOL_SLUGS) expect(preparedAllows(admin, s), s).toBe(true);
+  });
+
+  it('H1: run_terminal is listed for no scope without Admin and the settings area', () => {
+    expect(
+      preparedAllows(prep(member, { holdsAdmin: false, areas: ALL_AREAS }), 'run_terminal'),
+    ).toBe(false);
+    expect(preparedAllows(prep(member, { holdsAdmin: true, areas: [] }), 'run_terminal')).toBe(
+      false,
+    );
+  });
+
+  it('M3: a read-only OAuth grant lists only the tools that read', () => {
+    const p = prep({ ...member, write: false }, { holdsAdmin: false, areas: [] });
+    const listed = registered((s) => preparedAllows(p, s));
+    expect(listed.length).toBeGreaterThan(20);
+    for (const s of listed) expect(isMcpToolReadOnly(s), s).toBe(true);
+    expect(listed).not.toContain('note_create');
+  });
+
+  it('the member tool sets are gone from the registry (W7b)', () => {
     for (const slug of [
-      'my_note_create',
-      'my_page_create',
-      'my_file_upload',
-      'my_item_submit',
-      'my_app_submit',
-      'my_app_recall',
+      'my_app_create',
+      'my_app_list',
+      'team_request_create',
+      'team_chat_list',
+      'team_chat_read',
+      'team_access_list',
     ]) {
       expect(
         BUILTIN_TOOLS.some((d) => d.slug === slug),
         slug,
       ).toBe(false);
-      expect(loginMayHaveTool(row(slug), true), slug).toBe(false);
-      expect(loginMayHaveTool(row(slug), false), slug).toBe(false);
-    }
-  });
-
-  it('tells a login who it acts as, and names no draft or submit tool', () => {
-    const base = { anchorId: 'a', loginId: 'l', via: 'oauth' as const };
-    expect(mcpInstructionsFor({ ...base, role: 'member', write: false })).toContain('read-only');
-    for (const role of ['member', 'client'] as const) {
-      const text = mcpInstructionsFor({ ...base, role, write: true });
-      if (role === 'member') expect(text).toContain('app_data_write');
-      expect(text).not.toMatch(/my_note_create|my_page_create|my_file_upload/);
-      expect(text).not.toMatch(/my_item_submit|my_app_submit|my_app_recall/);
-      expect(text).not.toMatch(/submit/i);
-    }
-  });
-
-  it('names no tool to a client login, which gets none (W5c)', () => {
-    const base = { anchorId: 'a', loginId: 'l', via: 'oauth' as const, role: 'client' as const };
-    for (const write of [true, false]) {
-      const text = mcpInstructionsFor({ ...base, write });
-      expect(text).toContain('a client of this brain');
-      expect(text).toContain('no tools');
-      expect(text).not.toMatch(/app_data_|mcp_|my_app_/);
     }
   });
 });

@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, pgTable, text, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 
 /**
  * Inbound API keys (migration 0232, plan page 1e62e204). An admin makes a
@@ -44,6 +53,11 @@ export const accessKeys = pgTable(
     lastUsedIp: text('last_used_ip'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: uuid('revoked_by'),
+    /** The key works on /api/v1 only, never on /api/mcp (migration 0268,
+     *  W7b fix round 2): set on a member's or client's key made before the
+     *  per-login MCP switch went, when that login never had MCP. A new key
+     *  is made without it. */
+    apiOnly: boolean('api_only').notNull().default(false),
   },
   (t) => [
     uniqueIndex('access_keys_prefix_uq').on(t.keyPrefix),

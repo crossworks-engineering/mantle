@@ -4,8 +4,8 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
 import { deleteAgent, updateAgent } from '@/lib/agents';
-import { AGENT_THINKING_EFFORTS, agentGrantProblems } from '@mantle/content';
-import { agents, db, isViewerLevel } from '@mantle/db';
+import { AGENT_THINKING_EFFORTS } from '@mantle/content';
+import { agents, db } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
 import { firstIssue } from '@/lib/zod-issue';
 import { AGENT_ROUTES, modelRoutesRepaired, modelRoutesTouched } from '@/lib/model-route-pair';
@@ -108,25 +108,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       const refused = await vaultPairRefusalFor(user);
       if (refused) return NextResponse.json({ error: refused }, { status: 403 });
       configuredBy = { configuredBy: toolMakerFor(user) };
-    }
-  }
-  // Level rule (member logins Phase 0b): an agent may hold only tool groups
-  // at or below its own level.
-  if (parsed.data.toolGroupSlugs) {
-    const [current] = await db
-      .select({ audience: agents.audience })
-      .from(agents)
-      .where(and(eq(agents.id, idParsed.data.id), eq(agents.ownerId, user.id)))
-      .limit(1);
-    if (current) {
-      const problems = await agentGrantProblems(
-        user.id,
-        isViewerLevel(current.audience) ? current.audience : 'admin',
-        parsed.data.toolGroupSlugs,
-      );
-      if (problems.length > 0) {
-        return NextResponse.json({ error: problems.join('; ') }, { status: 400 });
-      }
     }
   }
   const row = await updateAgent(user.id, idParsed.data.id, { ...parsed.data, ...configuredBy });

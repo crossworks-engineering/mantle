@@ -10,6 +10,7 @@
  */
 import {
   createApp,
+  setAppAuthorLevel,
   getApp,
   listApps,
   writeDraftFile,
@@ -47,6 +48,7 @@ import {
 } from '@mantle/content/app-table-exports';
 import {
   AppTrashRefusedError,
+  deletedAppHomes,
   listDeletedApps,
   restoreDeletedApp,
 } from '@mantle/content/app-trash';
@@ -81,8 +83,15 @@ import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR, ownerSurfaceLoginId } from './surface';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
-import { and as andWhere, eq as eqWhere } from 'drizzle-orm';
-import { db as scopedDb, nodes as nodesTable } from '@mantle/db';
+import { and as andWhere, eq as eqWhere, sql as sqlTag } from 'drizzle-orm';
+import {
+  asSystem,
+  db as scopedDb,
+  nodes as nodesTable,
+  scopeHoldsAdmin,
+  withCreateHome,
+} from '@mantle/db';
+import { toolItemWriteRefusal } from './item-write-gate';
 
 /**
  * The app write tools (everything that writes an app's code, manifest,
@@ -168,7 +177,12 @@ const app_create: BuiltinToolDef = {
     const name = str(input.name).trim();
     if (!name) return { ok: false, error: 'name is required' };
     try {
+      // A user outside the Admin workspace (W7b): at team rules, its author
+      // named, as the web create route makes it.
+      const author = ownerSurfaceLoginId(ctx.surface);
+      const member = author && (await outsideAdmin());
       const app = await createApp(ctx.ownerId, {
+        ...(member ? { authorLevel: 'team' as const, authorLoginId: author } : {}),
         title: name.slice(0, 200),
         ...(str(input.icon).trim() ? { icon: str(input.icon).trim() } : {}),
         ...(str(input.description).trim() ? { description: str(input.description).trim() } : {}),
@@ -1293,6 +1307,27 @@ const app_snapshot_delete: BuiltinToolDef = {
   },
 };
 
+/**
+ * In a workspace scope, the deleted apps the caller may manage, by id, with
+ * the workspace each was homed in (W7b fix round 1): a deleted app's rows
+ * are gone, so the scope's row rule hides its snapshots (0265), and the
+ * trash is read on the system pool by the named reason 'app-trash', ONLY
+ * for these: a home the caller moderates (mantle_may_manage), or, for a
+ * snapshot that names no home (taken before W6a), the brain's anchor
+ * login. Outside a workspace scope: null (the trash as before).
+ */
+async function manageableDeletedApps(ownerId: string): Promise<Map<string, string | null> | null> {
+  const scope = currentWorkspaceScope();
+  if (!scope) return null;
+  const mod = new Set(scope.modWs);
+  const all = await asSystem(() => deletedAppHomes(ownerId), 'app-trash');
+  const out = new Map<string, string | null>();
+  for (const [id, home] of all) {
+    if (home ? mod.has(home) : scope.loginId === ownerId) out.set(id.toLowerCase(), home);
+  }
+  return out;
+}
+
 const app_deleted_list: BuiltinToolDef = {
   slug: 'app_deleted_list',
   ownerOnly: true,
@@ -1305,7 +1340,12 @@ const app_deleted_list: BuiltinToolDef = {
     const refused = ownerOnlyRefusal(ctx);
     if (refused) return refused;
     try {
-      const deleted = await listDeletedApps(ctx.ownerId);
+      const homes = await manageableDeletedApps(ctx.ownerId);
+      const deleted = homes
+        ? (await asSystem(() => listDeletedApps(ctx.ownerId), 'app-trash')).filter((d) =>
+            homes.has(d.id),
+          )
+        : await listDeletedApps(ctx.ownerId);
       ctx.step?.setOutput({ count: deleted.length });
       return { ok: true, output: { apps: deleted } };
     } catch (err) {
@@ -1333,7 +1373,21 @@ const app_undelete: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
-      const app = await restoreDeletedApp(ctx.ownerId, id, { actor: historyActor(ctx) });
+      const homes = await manageableDeletedApps(ctx.ownerId);
+      const restore = () => restoreDeletedApp(ctx.ownerId, id, { actor: historyActor(ctx) });
+      let app: Awaited<ReturnType<typeof restoreDeletedApp>>;
+      if (!homes) {
+        app = await restore();
+      } else if (!homes.has(id.toLowerCase())) {
+        app = null;
+      } else {
+        // Back into the workspace it was homed in (the caller moderates it).
+        const home = homes.get(id.toLowerCase()) ?? null;
+        app = await asSystem(
+          () => (home ? withCreateHome({ createWs: home, privateWs: null }, restore) : restore()),
+          'app-trash',
+        );
+      }
       if (!app) {
         return {
           ok: false,
@@ -1379,7 +1433,12 @@ const app_duplicate: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     const name = str(input.name).trim();
     try {
+      // A user outside the Admin workspace (W7b): the copy is made at team
+      // rules, its author named (W7b fix round 1), never lowered after.
+      const author = ownerSurfaceLoginId(ctx.surface);
+      const member = author && (await outsideAdmin());
       const copy = await duplicateApp(ctx.ownerId, id, {
+        ...(member ? { authorLoginId: author } : {}),
         ...(name ? { title: name } : {}),
         withData: input.with_data !== false,
         actor: historyActor(ctx),
@@ -1514,7 +1573,12 @@ const app_import: BuiltinToolDef = {
         return { ok: false, error: 'the file is larger than an app package can be' };
       }
       const bytes = await readStreamCapped(file.stream, file.size, appPackageMaxBytes());
+      // Imported code always starts at team rules; a user outside the Admin
+      // workspace (W7b) is named its author (W7b fix round 1).
+      const author = ownerSurfaceLoginId(ctx.surface);
+      const member = author && (await outsideAdmin());
       const res = await importAppPackage(ctx.ownerId, bytes, {
+        ...(member ? { authorLoginId: author } : {}),
         ...(name ? { title: name } : {}),
         withData: input.with_data !== false,
         actor: historyActor(ctx),
@@ -1629,6 +1693,64 @@ const app_errors: BuiltinToolDef = {
   },
 };
 
+// ─── The author ceiling for a user outside the Admin workspace (W7b) ─────────
+
+/** Whether the call runs in a user's scope that does not hold the Admin
+ *  workspace (a member's MCP, workspaces W7b). */
+async function outsideAdmin(): Promise<boolean> {
+  return currentWorkspaceScope() !== null && !(await scopeHoldsAdmin());
+}
+
+/** The app tools whose change reaches what the app's code or tools do. */
+const CODE_TOOLS: ReadonlySet<string> = new Set([
+  'app_file_write',
+  'app_file_delete',
+  'app_source_set',
+  'app_tools_set',
+  'app_publish',
+  'app_snapshot_restore',
+]);
+
+/** Put app `id` at team rules (the author ceiling, apps.author_level) when
+ *  the caller may edit it: never lifted here, only lowered. */
+async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
+  const rows = (await scopedDb.execute(
+    sqlTag`select coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit
+          from nodes n where n.id = ${id} and n.owner_id = ${ownerId} and n.type = 'app'`,
+  )) as unknown as { edit: boolean }[];
+  if (rows[0]?.edit !== true) return;
+  await setAppAuthorLevel(ownerId, id, 'team');
+}
+
+/**
+ * The app tools run in any user's scope since workspaces W7b (one MCP
+ * surface; the my_app_* tools are retired). For a user outside the Admin
+ * workspace an app keeps the author ceiling the member app tools kept: an
+ * app it makes runs its tools at team rules at most (app_create,
+ * app_duplicate and app_import make it so, author named), and so does an
+ * app whose code or tools it changes (lowered first, never lifted: only the
+ * owner's app update route lifts it). The item write check runs before the
+ * ceiling (W7b fix round 1, H1): a change the caller may not make lowers
+ * nothing (dispatch and the MCP bridge ask it too).
+ */
+function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
+  if (!CODE_TOOLS.has(def.slug)) return def;
+  return {
+    ...def,
+    handler: async (input, ctx) => {
+      const target = str(input.id).trim().toLowerCase();
+      if (UUID_RE.test(target) && (await outsideAdmin())) {
+        const refused = await toolItemWriteRefusal(def.slug, input, ctx.ownerId);
+        if (refused) return { ok: false, error: refused };
+        await lowerToTeamRules(ctx.ownerId, target);
+      }
+      return def.handler(input, ctx);
+    },
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,
   app_get,
@@ -1655,6 +1777,6 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_export,
   app_import,
   app_errors,
-];
+].map(withAuthorCeiling);
 
 export const APP_TOOL_SLUGS: string[] = APP_TOOLS.map((t) => t.slug);

@@ -631,7 +631,7 @@ PUBLISHED build only and never edit it.
   so are http tools unless an admin switched "External access" on for them,
   and MCP connector tools unless the connector's level is team or lower,
   so are built-ins that write, and so are `summarize_text`,
-  `search_chunks`, `team_request_create` and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
+  `search_chunks` and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
   warning for each declared tool members would be refused.
 - **Data:** `host.db.query` and `host.db.exec` both work on a team- or
   client-level app (unless an admin marked it informational); on a
@@ -650,73 +650,48 @@ PUBLISHED build only and never edit it.
   published build. `host.hub.get()` answers there too: sections are the
   newest team pages, and a section's `token` is the page id.
 
-## Members build apps (team apps Phase 3)
+## Members build apps (team apps Phase 3; one MCP surface since W7b)
 
-A team member builds their own apps over their own MCP connection, with
-the `my_app_*` tools (Jason, 2026-10-08: apps work like Pages). The tools
-mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
+A team member builds apps over their own MCP connection with the same
+`app_*` tools as an admin (workspaces W7b: one MCP surface for every login;
+the member-only `my_app_*` tools were retired). Read `app_authoring_guide`
+(this guide) first. Every call runs in the member's own workspaces.
 
-- **Where it lives:** a member's app is a brain app in the member's
-  **private workspace** ("<name> (only you)", made on the first thing the
-  member makes; the member is its only user and its Moderator). Only the
-  member reads and runs it. No admin list shows it unless an Admin user
-  joins that workspace. Personal spaces are gone (workspaces W6b): a
-  member's older apps were moved into its private workspace with their
-  data and history.
-- **The loop:** `my_app_create`, `my_app_file_write`, `my_app_build`,
-  `my_app_publish`. `my_app_schema_set` and `my_app_tools_set` declare the
-  database and the tools. `my_app_snapshot_*` work as for an admin.
-  `my_app_list` shows every app the member may run, with `mine` for the
-  ones it may change. The tools change an app only where the member may
-  edit it (a Moderator of its workspace, or a grant with Write on);
-  `my_app_errors` too, since an app's errors carry its SQL and its callers.
-  A member keeps at most 50 apps of its own.
-- **Delete (the brain's trash):** `my_app_delete` deletes an app whose
-  workspace the member moderates (its private workspace's apps among
-  them). It stops running for everyone at once. Its last snapshot keeps
-  its code, builds, data and history in the brain's trash
-  (`my_app_deleted_list`), and `my_app_undelete` brings it back into the
-  workspace it lived in. **A delete by anyone other than the brain's owner
-  is never removed by itself** (CEO decision, W6b): the nightly purge that
-  ends the brain's own deletes after 30 days skips it, and only the
-  brain's owner deletes it for good. `my_app_deleted_list` shows such an
-  app with no last day (`purgeAfter` null).
-- **Delete a snapshot:** `my_app_snapshot_delete` deletes one snapshot YOU
-  took (`my_app_snapshot_create`), with its copy of the data, to free your
-  snapshot budget (it counts the manual snapshots of your login only). The
-  app's own data is never touched. A version (what a publish made live), an
-  automatic snapshot (before a schema change, a restore or an MCP write;
-  never in your budget) and a snapshot another login took stay.
+- **Where it lives:** `app_create` without `workspace` makes the app in the
+  member's **private workspace** ("<name> (only you)", made with the
+  login; the member is its only user and its Moderator), and the reply
+  names it (`landedIn`). With `workspace` (one the member moderates, from
+  `workspaces_list`) it lands there. Only users of its workspace read and
+  run it.
+- **The loop:** `app_create`, `app_file_write`, `app_build`, `app_publish`.
+  `app_db_schema_set` and `app_tools_set` declare the database and the
+  tools. A tool changes an app only where the member may edit it (a
+  Moderator of its workspace, or a grant with Write on).
+- **Delete (the brain's trash):** `app_delete` deletes an app whose
+  workspace the member moderates. Its last snapshot keeps its code, builds,
+  data and history in the brain's trash (`app_deleted_list`), and
+  `app_undelete` brings it back. **A delete by anyone other than the
+  brain's owner is never removed by itself** (CEO decision, W6b): only the
+  brain's owner deletes it for good.
 - **Share with the team:** sharing is a grant, as for every brain item: in
-  the app, add a grant for a workspace the member moderates (Team, for
-  most members) from its Grant Access panel. Never over MCP, so no key,
-  peer or model opens an app to anyone. Every user of that workspace
-  then runs its published version. To make it private again, remove the
-  grant there.
+  the app, add a grant for a workspace the member moderates from its Grant
+  Access panel. Never over MCP, so no key, peer or model opens an app to
+  anyone.
 - **Changes reach the workspace at once:** a grant is for the app, not for
-  one version. While it is shared, every `my_app_publish` (over MCP too) is
-  what the workspace's users run from their next open, with no new click
-  and no review. Test a change on a private copy first, or remove the
-  grant while you work. An Admin user in that workspace sees what it did
-  in the app's Activity, and can remove the grant or delete it.
-- **Submit, recall and approve are gone** (workspaces W5c): review was
-  removed. Share the app with a grant; an Admin user who wants it in the
-  Admin workspace adds a grant there.
-- **The author ceiling:** a member-built app runs its tools at TEAM rules
-  at most, for every runner, an admin included (`apps.author_level`
-  'team'; every tool broker applies it through `appToolLevel`). That holds
-  for an app a member makes in the app as well as over MCP. So declare
-  read-only built-ins from an enabled team-level group, or connector tools
-  at team level or lower. `my_app_tools_set` warns for each tool those
-  rules refuse. An Admin user who read the declared tools may switch on
-  "trust its tools" in the app's settings, which lifts the ceiling; that
-  switch, MCP access and the informational flag are an Admin user's only.
-  A copy, an import or a restore of your code keeps the ceiling; only an
-  Admin user's own "trust its tools" lifts it.
-- **Writes need the Write switch** on the member's MCP. Reads
-  (`my_app_list`, `my_app_get`, `my_app_errors`, `my_app_snapshot_list`,
-  `my_app_deleted_list`, `my_app_guide`) do not. A client never gets these
-  tools.
+  one version. While it is shared, every `app_publish` is what the
+  workspace's users run from their next open, with no new click and no
+  review. Test a change on a private copy first, or remove the grant while
+  you work.
+- **The author ceiling:** an app a user outside the Admin workspace makes,
+  duplicates or imports, or whose code or tools it changes, runs its tools
+  at TEAM rules at most, for every runner, an admin included
+  (`apps.author_level` 'team'; every tool broker applies it through
+  `appToolLevel`). So declare read-only built-ins from an enabled
+  system-wide (not Admin-only) group, or connector tools of the app's
+  workspaces. `app_tools_set` warns for each tool those rules refuse. Only
+  an Admin user's own "trust its tools" in the app's settings lifts it.
+- **Keys and peers** never change an app's code (the risky-tool rule): a
+  member builds over its own OAuth connection.
 
 ## Team Hub apps (a designated app as the members' home)
 

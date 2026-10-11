@@ -4,7 +4,7 @@
  * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, agents, pendingToolCalls, toolGroups } from '@mantle/db';
 import { appUrl } from '@mantle/content';
 import { listToolsForOwner } from '../crud';
@@ -21,12 +21,7 @@ import {
   vaultPairingChanged,
 } from '../secret-ref-gate';
 import { restampHeartbeatMakers } from '../heartbeat-maker';
-import {
-  AGENT_THINKING_EFFORTS,
-  agentGrantProblems,
-  parseAgentThinkingEffort,
-} from '@mantle/content';
-import { isViewerLevel } from '@mantle/db/viewer';
+import { AGENT_THINKING_EFFORTS, parseAgentThinkingEffort } from '@mantle/content';
 import { isOwnerSurface } from '../surface';
 
 export const tool_group_list: BuiltinToolDef = {
@@ -98,7 +93,7 @@ export const tool_group_ensure: BuiltinToolDef = {
   description:
     "Create a tool group if it doesn't exist, or update its tool list. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Unknown tool slugs are reported as warnings, not errors. " +
     'Pass `service` (+ `base_url` / `secret_ref` or `oauth2` / `auth_template`) to make the group an INTEGRATION: auth placement and the base URL are decided ONCE here, and every tool later authored with group_slug inherits them. ' +
-    "Changing the tools of a group below admin level (a team or client group) waits for the operator's approval (Pending). " +
+    "Changing the tools of a group an assistant of another workspace than Admin holds waits for the operator's approval (Pending). " +
     'Then `api_docs_set` the API documentation onto the same group so the next authoring pass reads it instead of the web.',
   inputSchema: {
     type: 'object',
@@ -232,14 +227,30 @@ export const tool_group_ensure: BuiltinToolDef = {
       };
     }
 
-    // A group below admin level is what team and client agents hold: a tool
-    // added to it reaches members or clients (client-read is the client
-    // agent's whole surface). An agent never changes its tools on its own
-    // say-so (client logins C5 audit, L3): the call waits in Pending for the
+    // A group an assistant of another workspace than Admin holds: a tool
+    // added to it reaches that workspace's users (tool-group levels went in
+    // workspaces W7b). An agent never changes its tools on its own say-so
+    // (client logins C5 audit, L3): the call waits in Pending for the
     // operator, as agent_grant_tool_group does, and on approval runs again
     // with no agent, as the owner. Only the owner changes it directly.
-    const level = existing && isViewerLevel(existing.audience) ? existing.audience : 'admin';
-    if (existing && level !== 'admin') {
+    const reachesOthers = existing
+      ? (
+          await db
+            .select({ id: agents.id })
+            .from(agents)
+            .where(
+              and(
+                eq(agents.ownerId, ctx.ownerId),
+                sql`${slug} = any(${agents.toolGroupSlugs})`,
+                sql`${agents.workspaceId} is not null`,
+                sql`not exists (select 1 from "public"."workspaces" w
+                                 where w.id = ${agents.workspaceId} and w.is_admin)`,
+              ),
+            )
+            .limit(1)
+        ).length > 0
+      : false;
+    if (existing && reachesOthers) {
       const next =
         mode === 'replace'
           ? [...new Set(requested)]
@@ -276,7 +287,7 @@ export const tool_group_ensure: BuiltinToolDef = {
             status: 'queued_for_approval',
             pending_id: pending?.id ?? null,
             message:
-              `'${slug}' is a ${level}-level group: changing its tools needs operator approval. ` +
+              `'${slug}' is held by an assistant of another workspace than Admin: changing its tools needs operator approval. ` +
               `Queued at /pending; it applies once approved. Do not retry this turn.`,
           },
         };
@@ -284,7 +295,7 @@ export const tool_group_ensure: BuiltinToolDef = {
       if (changed && !isOwnerSurface(ctx.surface)) {
         return {
           ok: false,
-          error: `'${slug}' is a ${level}-level group: only the owner changes its tools.`,
+          error: `'${slug}' is held by an assistant of another workspace than Admin: only the owner changes its tools.`,
         };
       }
     }
@@ -484,24 +495,13 @@ export const agent_grant_tool_group: BuiltinToolDef = {
       };
     }
     const [agent] = await db
-      .select({ id: agents.id, groups: agents.toolGroupSlugs, audience: agents.audience })
+      .select({ id: agents.id, groups: agents.toolGroupSlugs })
       .from(agents)
       .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, agentSlug)))
       .limit(1);
     if (!agent) return { ok: false, error: `agent '${agentSlug}' not found` };
-    // Level rule (member logins Phase 0b): an agent may hold only groups at or
-    // below its own level.
-    const levelProblems = await agentGrantProblems(
-      ctx.ownerId,
-      isViewerLevel(agent.audience) ? agent.audience : 'admin',
-      [groupSlug],
-    );
-    if (levelProblems.length > 0) {
-      return {
-        ok: false,
-        error: `${levelProblems[0]}: grant a group at or below the agent's level, or ask the operator to raise the agent's level`,
-      };
-    }
+    // No level rule since workspaces W7b: an adminOnly group runs only in a
+    // turn of the Admin workspace, whoever holds it (skills.ts).
     const [group] = await db
       .select({ id: toolGroups.id, toolSlugs: toolGroups.toolSlugs })
       .from(toolGroups)

@@ -1,6 +1,7 @@
 /**
- * The team responder opens in ONE step on every brain, a fresh install
- * included.
+ * The team responder on every brain, a fresh install included. Agent and
+ * tool-group levels went in workspaces W7b (frozen by 0268, their route
+ * answers 410); what follows is the history the fixtures still model.
  *
  * Migration 0159 set `team-read` and `formulas-eval` to team level by UPDATE,
  * which reached only the brains that existed when it ran: on a brain installed
@@ -24,7 +25,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { MANIFEST_TOOL_GROUPS } from './manifest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ owner: '' }));
@@ -49,17 +49,11 @@ vi.mock('@/lib/auth', async (importOriginal) => {
 
 type Row = Record<string, unknown>;
 
-const toolsOf = (slug: string) => MANIFEST_TOOL_GROUPS.find((g) => g.slug === slug)!.toolSlugs;
-const TEAM_TOOLS = [...new Set([...toolsOf('team-read'), ...toolsOf('formulas-eval')])];
-const ADMIN_ONLY_TOOLS = toolsOf('team-read-admin');
-
 describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   let m: typeof import('@mantle/db');
   let admin: Parameters<typeof m.ensureViewerRoles>[0];
   let seed: typeof import('./seed');
   let rec: typeof import('./reconcile');
-  let content: typeof import('@mantle/content');
-  let runtime: typeof import('@mantle/runtime/agent');
   let levelRoute: typeof import('../../app/api/access/agents/[slug]/route');
   let memberChat: typeof import('../../app/api/member/chat/route');
   // fresh: installed with this manifest. wrong: installed after 0159 and
@@ -81,15 +75,9 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     );
   const belowAdmin = (levels: Record<string, string>) =>
     Object.fromEntries(Object.entries(levels).filter(([, level]) => level !== 'admin'));
-  const setLevel = (owner: string, slug: string, body: Row) => {
+  const setLevel = (owner: string) => {
     h.owner = owner;
-    return levelRoute.PATCH(
-      new Request(`http://brain.test/api/access/agents/${slug}`, {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      }),
-      { params: Promise.resolve({ slug }) },
-    );
+    return levelRoute.PATCH();
   };
   const memberChatAgent = async (owner: string) => {
     h.owner = owner;
@@ -104,8 +92,6 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     seed = await import('./seed');
     rec = await import('./reconcile');
-    content = await import('@mantle/content');
-    runtime = await import('@mantle/runtime/agent');
     levelRoute = await import('../../app/api/access/agents/[slug]/route');
     memberChat = await import('../../app/api/member/chat/route');
     for (const owner of Object.values(brains)) {
@@ -117,10 +103,15 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     }
     // Each starts as onboarding leaves it, then the two older shapes are set.
     for (const owner of Object.values(brains)) await seed.applyManifest(owner);
-    await admin`update tool_groups set audience = 'admin'
-                where owner_id = ${brains.wrong} and slug in ('team-read', 'formulas-eval')`;
-    await admin`update agents set audience = 'team', tool_group_slugs = ${['team-read', 'formulas-eval']}
-                where owner_id = ${brains.opened} and slug = 'team-responder'`;
+    // The levels are frozen since 0268 (W7b): the older shapes are set past
+    // the freeze, by a named bypass, as a brain upgraded from them has them.
+    await admin.begin(async (tx) => {
+      await tx`select mantle_heads_bypass('test fixture')`;
+      await tx`update tool_groups set audience = 'admin'
+               where owner_id = ${brains.wrong} and slug in ('team-read', 'formulas-eval')`;
+      await tx`update agents set audience = 'team', tool_group_slugs = ${['team-read', 'formulas-eval']}
+               where owner_id = ${brains.opened} and slug = 'team-responder'`;
+    });
   }, 240_000);
 
   afterAll(async () => {
@@ -172,143 +163,19 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     expect(post.status).toBe(409);
   }, 120_000);
 
-  it('the refusal names the one group in the way and the fix', async () => {
-    const res = await setLevel(brains.fresh, 'team-responder', { audience: 'team' });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; code: string };
-    expect(body.code).toBe('group_above_agent');
-    expect(body.error).toContain("'team-read-admin' is admin-level");
-    expect(body.error).toContain('dropGroupsAbove: true');
-    expect(body.error).toContain('drop_groups_above: true');
-    // The two member groups are no longer in the way.
-    expect(body.error).not.toContain("'team-read' is");
-    expect(body.error).not.toContain("'formulas-eval' is");
-    // Nothing changed.
-    expect((await agent(brains.fresh, 'team-responder')).audience).toBe('admin');
-  }, 120_000);
-
-  it('one call opens it: team level, team-read-admin off, the member chat open', async () => {
-    const res = await setLevel(brains.fresh, 'team-responder', {
-      audience: 'team',
-      dropGroupsAbove: true,
-    });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { agent: Row }).agent).toMatchObject({
-      slug: 'team-responder',
-      audience: 'team',
-      removedGroups: ['team-read-admin'],
-    });
-    const row = await agent(brains.fresh, 'team-responder');
-    expect(row).toMatchObject({
-      audience: 'team',
-      tool_group_slugs: ['team-read', 'formulas-eval'],
-    });
-    // The member chat follows the Team workspace's assistant, not the level
-    // (W5c): this brain has no Team workspace, so it stays closed.
-    expect(await memberChatAgent(brains.fresh)).toBeNull();
-    // No group moved with it.
-    expect(belowAdmin(await groupLevels(brains.fresh))).toEqual({
-      'team-read': 'team',
-      'formulas-eval': 'team',
-    });
-  }, 120_000);
-
-  it('at team level it reaches the member tools and no admin-only tool', async () => {
-    const row = await agent(brains.fresh, 'team-responder');
-    const tools = await runtime.resolveAgentToolGroups(
-      brains.fresh,
-      row.tool_group_slugs as string[],
-      'team',
-    );
-    expect([...tools].sort()).toEqual([...TEAM_TOOLS].sort());
-    for (const slug of ADMIN_ONLY_TOOLS) expect(tools, slug).not.toContain(slug);
-    // Granting the admin group back to it is refused at team level...
-    expect(
-      await content.agentGrantProblems(brains.fresh, 'team', ['team-read-admin']),
-    ).toHaveLength(1);
-    // ...and a grant that got there anyway is left out at run time.
-    const capped = await runtime.resolveAgentToolGroups(
-      brains.fresh,
-      ['team-read', 'team-read-admin', 'formulas-eval'],
-      'team',
-    );
-    for (const slug of ADMIN_ONLY_TOOLS) expect(capped, slug).not.toContain(slug);
-    // The control: at admin the same grant does reach them.
-    const atAdmin = await runtime.resolveAgentToolGroups(
-      brains.fresh,
-      ['team-read', 'team-read-admin', 'formulas-eval'],
-      'admin',
-    );
-    expect(atAdmin).toEqual(expect.arrayContaining(ADMIN_ONLY_TOOLS));
-  }, 120_000);
-
-  it('raising it back to admin closes the chat and keeps its groups as they are', async () => {
-    const res = await setLevel(brains.fresh, 'team-responder', { audience: 'admin' });
-    expect(res.status).toBe(200);
-    expect(await agent(brains.fresh, 'team-responder')).toMatchObject({
-      audience: 'admin',
-      tool_group_slugs: ['team-read', 'formulas-eval'],
-    });
-    expect(await memberChatAgent(brains.fresh)).toBeNull();
-    // The next reconcile gives an admin-level responder its admin group back.
-    await rec.reconcileOwner(brains.fresh);
-    expect((await agent(brains.fresh, 'team-responder')).tool_group_slugs).toEqual([
-      'team-read',
-      'formulas-eval',
-      'team-read-admin',
-    ]);
-  }, 120_000);
-
-  it('a brain installed with the wrong levels: the reconcile sets the two groups, one call opens it', async () => {
-    // As found: the plain call is refused for all three groups.
-    const before = await setLevel(brains.wrong, 'team-responder', { audience: 'team' });
-    expect(before.status).toBe(400);
-    const error = ((await before.json()) as { error: string }).error;
-    expect(error).toContain("'team-read' is admin-level");
-    expect(error).toContain("'formulas-eval' is admin-level");
-
+  it('W7b: the level route answers 410, and the reconcile cannot move a frozen level', async () => {
+    const res = await setLevel(brains.wrong);
+    expect(res.status).toBe(410);
+    // The manifest still names team-read and formulas-eval at team (W8 drops
+    // it): the boot reconcile runs without an error and the levels stay.
     const levelsBefore = await groupLevels(brains.wrong);
+    expect(levelsBefore['team-read']).toBe('admin');
     await rec.reconcileOwner(brains.wrong);
-    const levelsAfter = await groupLevels(brains.wrong);
-    // Only the two groups moved; the responder stays closed.
-    expect(levelsAfter).toEqual({ ...levelsBefore, 'team-read': 'team', 'formulas-eval': 'team' });
-    expect(await agent(brains.wrong, 'team-responder')).toMatchObject({
-      audience: 'admin',
-      tool_group_slugs: ['team-read', 'team-read-admin', 'formulas-eval'],
-    });
-    expect(await memberChatAgent(brains.wrong)).toBeNull();
-
-    // The same one step through the owner's tool (MCP / the assistant).
-    const { BUILTIN_TOOLS } = await import('@mantle/tools');
-    const accessSet = BUILTIN_TOOLS.find((t) => t.slug === 'access_set')!;
-    const res = await accessSet.handler(
-      { agent_slug: 'team-responder', level: 'team', drop_groups_above: true },
-      { ownerId: brains.wrong, surface: { kind: 'web' } },
-    );
-    expect(res).toMatchObject({
-      ok: true,
-      output: { agent: { audience: 'team', removedGroups: ['team-read-admin'] } },
-    });
-    // Still no Team workspace here: the level alone opens no chat (W5c).
-    expect(await memberChatAgent(brains.wrong)).toBeNull();
-    // A second reconcile changes nothing more.
-    await rec.reconcileOwner(brains.wrong);
-    expect(await groupLevels(brains.wrong)).toEqual(levelsAfter);
-    expect(await agent(brains.wrong, 'team-responder')).toMatchObject({
-      audience: 'team',
-      tool_group_slugs: ['team-read', 'formulas-eval'],
-    });
-  }, 240_000);
-
-  it('a brain whose admin already opened it: the reconcile leaves it open and adds no admin group', async () => {
-    const levelsBefore = await groupLevels(brains.opened);
+    expect(await groupLevels(brains.wrong)).toEqual(levelsBefore);
+    const levelsOpened = await groupLevels(brains.opened);
     await rec.reconcileOwner(brains.opened);
-    expect(await groupLevels(brains.opened)).toEqual(levelsBefore);
-    expect(await agent(brains.opened, 'team-responder')).toMatchObject({
-      audience: 'team',
-      tool_group_slugs: ['team-read', 'formulas-eval'],
-    });
-    expect(await memberChatAgent(brains.opened)).toBeNull();
+    expect(await groupLevels(brains.opened)).toEqual(levelsOpened);
+    expect(await agent(brains.opened, 'team-responder')).toMatchObject({ audience: 'team' });
   }, 240_000);
 
   it('the member chat is the Team workspace’s assistant, whatever its level (W5c)', async () => {

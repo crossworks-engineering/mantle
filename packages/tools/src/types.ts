@@ -149,6 +149,10 @@ export type ToolHandlerContext = {
          *  the credential, never from model arguments. Absent when the path
          *  names none (stdio, a run, a pending approval). */
         loginId?: string;
+        /** The login's own MCP connection (workspaces W7b: every login has
+         *  this surface): how it connected and its Write switch, for the
+         *  app_data_* tools. Set by the server, never from model arguments. */
+        mcp?: LoginMcpChannel;
       };
 };
 
@@ -169,6 +173,11 @@ export type LoginMcpChannel = {
   keyId?: string;
   peerId?: string;
   oauthClientId?: string;
+  /** The connection's login is outside an Admin scope (W7b fix round 2,
+   *  M-a): nothing on it spends on the brain owner's provider keys, so a
+   *  listed tool with a paid step (search_chunks' passage scoring) runs
+   *  its plain path. Stamped by the login surface, never from arguments. */
+  ownerKeysOff?: boolean;
 };
 
 /** The owner paths that carry an explicit owner surface (client logins C4). */

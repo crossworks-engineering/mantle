@@ -181,17 +181,8 @@ export {
   type RedeemedMemberInvite,
 } from './member-invites';
 
-// Agent and tool-group levels (until W7), and the plain unshare.
-export {
-  AccessError,
-  agentGrantProblems,
-  getAgentAccess,
-  isWorkspaceKind,
-  setAgentAudience,
-  setToolGroupAudience,
-  unshareItem,
-  type UnshareItemResult,
-} from './access';
+// The plain unshare (agent and tool-group levels went in workspaces W7b).
+export { AccessError, isWorkspaceKind, unshareItem, type UnshareItemResult } from './access';
 export { teamReadsItem } from './team-grant';
 export { teamAssistant, type TeamAssistant } from './team-assistant';
 // What an item embeds (W5b2: an embed never changes who reads anything).
