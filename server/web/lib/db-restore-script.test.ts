@@ -115,7 +115,7 @@ describe('db-restore.sh', () => {
     // 0261 drops it only on a brain it switches; one it leaves on its levels
     // keeps it, and a dump that lists it must restore it.
     expect(read('packages/db/migrations/0261_workspaces_bridge_off.sql')).toContain(
-      'DROP TRIGGER IF EXISTS "nodes_share_refresh_after" ON "public"."nodes"',
+      "'nodes.nodes_share_refresh_after'",
     );
     expect(script).toContain('*$\'\\n\'"$SHARE_REFRESH"$\'\\n\'*) SHARE_REFRESH_LISTED=1 ;;');
     expect(required).toBeGreaterThan(create);

@@ -145,33 +145,45 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_ddl_retry"(text[], text) FROM PUB
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_switch_off"()
   RETURNS void LANGUAGE plpgsql VOLATILE
   SET search_path = "public", pg_temp AS $$
+DECLARE
+  gone CONSTANT text[] := ARRAY[
+    'nodes.nodes_zz_bridge_before', 'nodes.nodes_zz_bridge_ins', 'nodes.nodes_zz_bridge_upd',
+    'nodes.nodes_zz_bridge_upd_stmt', 'apps.apps_zz_bridge', 'apps.apps_zz_bridge_ins',
+    'tool_groups.tool_groups_zz_bridge', 'users.users_zz_bridge', 'nodes.nodes_inherit_before',
+    'nodes.nodes_share_refresh_after', 'nodes.nodes_share_deleted_after',
+    'nodes.nodes_embed_reach_after', 'node_embeds.node_embeds_added_after',
+    'node_embeds.node_embeds_removed_after'];
+  stmts text[] := '{}';
+  t record;
 BEGIN
   INSERT INTO "public"."archive_node_levels"
          ("node_id", "owner_id", "audience", "share_level", "inherited_level", "embedded_level", "archived_at")
   SELECT n."id", n."owner_id", n."audience", n."share_level", n."inherited_level", n."embedded_level", now()
     FROM "public"."nodes" n
   ON CONFLICT ("node_id") DO NOTHING;
-  PERFORM "public"."mantle_ws_ddl_retry"(ARRAY[
-    'DROP TRIGGER IF EXISTS "nodes_zz_bridge_before" ON "public"."nodes"',
-    'DROP TRIGGER IF EXISTS "nodes_zz_bridge_ins" ON "public"."nodes"',
-    'DROP TRIGGER IF EXISTS "nodes_zz_bridge_upd" ON "public"."nodes"',
-    'DROP TRIGGER IF EXISTS "nodes_zz_bridge_upd_stmt" ON "public"."nodes"',
-    'DROP TRIGGER IF EXISTS "apps_zz_bridge" ON "public"."apps"',
-    'DROP TRIGGER IF EXISTS "apps_zz_bridge_ins" ON "public"."apps"',
-    'DROP TRIGGER IF EXISTS "tool_groups_zz_bridge" ON "public"."tool_groups"',
-    'DROP TRIGGER IF EXISTS "users_zz_bridge" ON auth.users',
-    'DROP TRIGGER IF EXISTS "nodes_inherit_before" ON "public"."nodes"',
-    'DROP TRIGGER IF EXISTS "nodes_share_refresh_after" ON "public"."nodes"',
-    'DROP TRIGGER IF EXISTS "nodes_share_deleted_after" ON "public"."nodes"',
-    'DROP TRIGGER IF EXISTS "nodes_embed_reach_after" ON "public"."nodes"',
-    'DROP TRIGGER IF EXISTS "node_embeds_added_after" ON "public"."node_embeds"',
-    'DROP TRIGGER IF EXISTS "node_embeds_removed_after" ON "public"."node_embeds"',
-    'DROP TRIGGER IF EXISTS "nodes_levels_frozen" ON "public"."nodes"',
-    'CREATE TRIGGER "nodes_levels_frozen"
+  -- Only the DDL still to do: a DROP TRIGGER IF EXISTS locks its table even
+  -- when the trigger is gone, and a brain switched before (or a fresh one)
+  -- must not wait on its writers for nothing.
+  FOR t IN
+    SELECT tg."tgname", ns."nspname", c."relname"
+      FROM pg_trigger tg
+      JOIN pg_class c ON c."oid" = tg."tgrelid"
+      JOIN pg_namespace ns ON ns."oid" = c."relnamespace"
+     WHERE NOT tg."tgisinternal" AND ns."nspname" IN ('public', 'auth')
+       AND (c."relname" || '.' || tg."tgname") = ANY (gone)
+  LOOP
+    stmts := stmts || format('DROP TRIGGER IF EXISTS %I ON %I.%I', t."tgname", t."nspname", t."relname");
+  END LOOP;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger tg WHERE tg."tgname" = 'nodes_levels_frozen'
+                    AND tg."tgrelid" = '"public"."nodes"'::regclass) THEN
+    stmts := stmts || 'CREATE TRIGGER "nodes_levels_frozen"
        BEFORE UPDATE OF "audience", "share_level", "inherited_level", "embedded_level"
        ON "public"."nodes"
-       FOR EACH ROW EXECUTE FUNCTION "public"."mantle_levels_frozen_trg"()'
-  ], 'the workspaces switch');
+       FOR EACH ROW EXECUTE FUNCTION "public"."mantle_levels_frozen_trg"()'::text;
+  END IF;
+  IF cardinality(stmts) > 0 THEN
+    PERFORM "public"."mantle_ws_ddl_retry"(stmts, 'the workspaces switch');
+  END IF;
 END
 $$;
 --> statement-breakpoint
