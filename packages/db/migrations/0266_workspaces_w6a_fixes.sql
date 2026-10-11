@@ -19,6 +19,8 @@
 --     ran (trigger depth 1): rows a trigger or a cascade writes follow the
 --     row that was checked. With no scope set (workers, system work, the
 --     owner paths on a brain not on workspaces) nothing changes.
+--  5. profiles (fix round 2): the workspace role reads its own login's row,
+--     the brain's row, or every row when the scope holds Admin.
 --
 -- Idempotent.
 SET LOCAL lock_timeout = '30s';
@@ -103,3 +105,24 @@ DROP TRIGGER IF EXISTS "nodes_scope_delete" ON "public"."nodes";
 --> statement-breakpoint
 CREATE TRIGGER "nodes_scope_delete" BEFORE DELETE ON "public"."nodes"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_nodes_scope_delete_trg"();
+--> statement-breakpoint
+-- 5. profiles (fix round 2, L-d): the workspace role read every login's
+--    row. It now reads its login's own row, the brain's row (the brain-wide
+--    settings every turn and screen reads: time zone, site name, look), or
+--    every row when the scope holds the Admin workspace. The level roles
+--    keep every row (their rule is all-rows): a policy of their own, now
+--    that row level security is on.
+ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+DROP POLICY IF EXISTS "profiles_level_read" ON "public"."profiles";
+--> statement-breakpoint
+CREATE POLICY "profiles_level_read" ON "public"."profiles" FOR SELECT
+  TO mantle_view_team, mantle_view_client, mantle_view_public
+  USING (true);
+--> statement-breakpoint
+DROP POLICY IF EXISTS "profiles_user_read" ON "public"."profiles";
+--> statement-breakpoint
+CREATE POLICY "profiles_user_read" ON "public"."profiles" FOR SELECT TO mantle_view_user
+  USING ("user_id" = (SELECT "public"."mantle_login_id"())
+         OR "user_id" = (SELECT "public"."mantle_brain_id"())
+         OR (SELECT "public"."mantle_scope_is_admin"()));

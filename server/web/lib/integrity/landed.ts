@@ -216,15 +216,19 @@ export async function deleteLandedNode(
   ownerId: string,
   nodeId: string,
 ): Promise<DeleteLandedResult> {
+  // A read through db, the raw delete through executeWrite (W6a fix round
+  // 2: executeWrite refuses a read, so the route always answered 500).
   const row = rowsOf<{ type: string }>(
-    await executeWrite(
+    await db.execute(
       sql`SELECT type::text AS type FROM nodes WHERE id = ${nodeId} AND owner_id = ${ownerId} LIMIT 1`,
     ),
   )[0];
   if (!row) return { ok: false, error: 'node not found' };
 
   // Traces first (no FK to nodes; trace_steps cascade from traces).
-  await db.execute(sql`DELETE FROM traces WHERE subject_id = ${nodeId} AND owner_id = ${ownerId}`);
+  await executeWrite(
+    sql`DELETE FROM traces WHERE subject_id = ${nodeId} AND owner_id = ${ownerId}`,
+  );
 
   if (row.type === 'file') {
     const res = await deleteFileById({ ownerId, fileId: nodeId });

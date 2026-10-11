@@ -21,7 +21,7 @@ import { promises as fs } from 'node:fs';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
-import { isBusy, isUniqueViolation } from '@mantle/db';
+import { isBusy, isScopeWriteRefusal, isUniqueViolation } from '@mantle/db';
 import { TreeVisibilityError, guardNewFileIn } from '@mantle/content/tree';
 import { treeErrorResponse } from '@/lib/tree-route';
 
@@ -237,6 +237,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ file: row });
   } catch (err) {
     if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
+    // A workspace check refused the write (W6a): app.onError answers 403.
+    if (isScopeWriteRefusal(err)) throw err;
     const msg = errorMessage(err);
     if (isUniqueViolation(err)) {
       return NextResponse.json(

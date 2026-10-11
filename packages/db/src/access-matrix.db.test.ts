@@ -276,7 +276,7 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
     // role (mantle_view_user) may SELECT is filtered by a policy of its own.
     const missing: string[] = [];
     for (const t of ACCESS_MATRIX) {
-      if (userReadFor(t) === 'none' || t.rule === 'all-rows') continue;
+      if (userReadFor(t) === 'none' || (t.rule === 'all-rows' && !t.userRule)) continue;
       const [schema, name] = t.table.split('.');
       const [rls] = await sql<{ on: boolean }[]>`
         select relrowsecurity as on from pg_class
@@ -294,6 +294,26 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
     for (const t of ['public.emails', 'public.email_attachments']) {
       const entry = ACCESS_MATRIX.find((e) => e.table === t)!;
       expect(userReadFor(entry), t).not.toBe('none');
+    }
+  });
+
+  it('profiles: the workspace role has its own-login rule, the level roles keep every row (W6a fix round 2)', async () => {
+    const entry = ACCESS_MATRIX.find((e) => e.table === 'public.profiles')!;
+    expect(entry.userRule).toBe('own-login');
+    const policies = await sql<{ roles: string[]; qual: string }[]>`
+      select roles, qual from pg_policies
+       where schemaname = 'public' and tablename = 'profiles' and cmd = 'SELECT'`;
+    const user = policies.filter((p) => p.roles.includes('mantle_view_user'));
+    expect(user).toHaveLength(1);
+    expect(user[0]!.qual).toContain('mantle_login_id');
+    expect(user[0]!.qual).toContain('mantle_brain_id');
+    expect(user[0]!.qual).toContain('mantle_scope_is_admin');
+    for (const role of ROLES) {
+      const own = policies.filter((p) => p.roles.includes(role));
+      expect(
+        own.map((p) => p.qual),
+        role,
+      ).toEqual(['true']);
     }
   });
 

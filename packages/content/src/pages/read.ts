@@ -20,7 +20,7 @@ import {
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { Backlink, PageRow, PageSort } from '@mantle/client-types';
 import { EMPTY_DOC, PAGES_ROOT_LABEL, detailOf, rowOf, type PageDetail } from './shared';
-import { currentSpaceScope, readsDrafts } from '@mantle/db/viewer';
+import { inScopeTransaction, readsDrafts } from '@mantle/db/viewer';
 
 type ListPagesOpts = {
   query?: string;
@@ -154,11 +154,14 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
 
   const docChanged = doc !== rawDoc && row.doc !== null; // only persist if there's a row to update
   const draftChanged = draft !== rawDraft && rawDraft !== null;
-  // Never from a personal-space scope: its transaction ends with the request,
-  // before a fire-and-forget write would run.
+  // Never inside a scope's own transaction (a personal space, withScope,
+  // withSystemTx): it ends with its caller, before a fire-and-forget write
+  // would run, and on a viewer role the write is refused (W6a fix round 2).
+  // The next read outside one repairs the page. In a request scope the
+  // write goes to the system pool (`db`, client.ts).
   // Nor for a reader who may not edit the page (an Admin user with Read
   // only): a read never writes an item its reader cannot change.
-  if ((docChanged || draftChanged) && !published && row.mayEdit === true && !currentSpaceScope()) {
+  if ((docChanged || draftChanged) && !published && row.mayEdit === true && !inScopeTransaction()) {
     void persistBlockIdBackfill(id, docChanged ? doc : null, draftChanged ? draft : null);
   }
 

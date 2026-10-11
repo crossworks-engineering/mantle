@@ -59,27 +59,43 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 
 /**
- * The writes a request scope sends to the system pool through `db` (W6a
- * fix round 1, L2), by login kind, route and calling file: the typed writes
- * (insert, update, delete) and executeWrite of a READ request in the
- * login's scope. A member's reads write nothing (the list has no member
- * entry). An Admin user's reads make the system's own bookkeeping only:
+ * The writes a request scope sends to the system pool (W6a fix round 1,
+ * L2), by login kind, route and calling file (the first outside
+ * @mantle/db): the typed writes (insert, update, delete), executeWrite and,
+ * since fix round 2 (L-c), each system transaction (withSystemTx and the
+ * heads helpers) of a READ request in the login's scope. The system's own
+ * bookkeeping only:
  *  - GET /api/activity: journey.ts closes abandoned running traces (the
  *    self-heal before the read);
  *  - GET /api/app-nav: tree/apps-nav.ts moves the pre-tree sidebar layout
- *    and the login's own pins and opens into the tree, once;
+ *    and the login's own pins and opens into the tree, once; the apps
+ *    kind root (tree/node-ops.ts ensureKindRoot) when it is missing;
  *  - GET /api/docs/reader: files/docs.ts registers the documentation
  *    collection on first read;
+ *  - GET /api/files/files: files/ops/shared.ts makes the files root row
+ *    when it is missing;
  *  - GET /api/pages/:id: pages/read.ts stores missing block ids, only for a
- *    reader who may edit the page (mayEdit).
+ *    reader who may edit the page (mayEdit);
+ *  - GET /api/tree/:kind (an Admin user and a member): tree/node-ops.ts
+ *    makes the kind's root row when the reader does not see one (insert on
+ *    conflict do nothing; it returns no row to the reader).
  * The list only shrinks; a new entry needs review.
  */
 const REQUEST_SCOPE_SYSTEM_WRITES: ReadonlySet<string> = new Set<string>([
   'admin GET /api/activity update server/web/lib/journey.ts',
   'admin GET /api/app-nav executeWrite packages/content/src/tree/apps-nav.ts',
+  'admin GET /api/app-nav withSystemTx packages/content/src/tree/node-ops.ts',
   'admin GET /api/docs/reader insert packages/files/src/docs.ts',
+  'admin GET /api/files/files withSystemTx packages/files/src/ops/shared.ts',
   'admin GET /api/pages/:id update packages/content/src/pages/read.ts',
+  'admin GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
+  'member GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
 ]);
+
+/** The member entries of that list: a member's read writes nothing else. */
+const MEMBER_SCOPE_SYSTEM_WRITES = [
+  'member GET /api/tree/:kind withSystemTx packages/content/src/tree/node-ops.ts',
+];
 
 /**
  * The reads a member route ('own-rule', W6a) sends to the system pool, by
@@ -564,7 +580,9 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   it('L2: the system-pool writes of request scopes are the pinned list', () => {
     // Runs after the Admin and member sweeps above (same file, in order).
     expect([...scopeWrites].filter((w) => !REQUEST_SCOPE_SYSTEM_WRITES.has(w)).sort()).toEqual([]);
-    expect([...scopeWrites].filter((w) => w.startsWith('member ')).sort()).toEqual([]);
+    expect([...scopeWrites].filter((w) => w.startsWith('member ')).sort()).toEqual(
+      MEMBER_SCOPE_SYSTEM_WRITES,
+    );
   });
 
   it('drafts: an Admin user reads the draft of an item it may edit, a member none', async () => {

@@ -4,7 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from '@/lib/files';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
-import { isUniqueViolation } from '@mantle/db';
+import { isScopeWriteRefusal, isUniqueViolation } from '@mantle/db';
 
 const ListQuery = z.object({
   parent: z.string().optional(),
@@ -53,6 +53,8 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ folder });
   } catch (err) {
+    // A workspace check refused the write (W6a): app.onError answers 403.
+    if (isScopeWriteRefusal(err)) throw err;
     const msg = errorMessage(err);
     if (isUniqueViolation(err)) {
       return NextResponse.json(

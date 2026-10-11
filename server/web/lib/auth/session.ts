@@ -844,22 +844,27 @@ async function adminItemWriteGate(
   let row: { edit: boolean | null; manage: boolean | null } | undefined;
   if (target.ref === 'deleted-app') {
     // The app is gone: its last snapshot names the workspace it was homed
-    // in (meta.homeWs since W6a fix round 1; the Admin workspace before).
+    // in (meta.homeWs since W6a fix round 1): a Moderator of that workspace
+    // purges or restores it. A snapshot with no home stored (taken before
+    // then) does not say where the app lived, so only the brain's owner
+    // may (W6a fix round 2, L-b), not every Admin user.
     // No snapshot: the handler's 404.
     const snap = (await db.execute(sql`
-      select coalesce(nullif(s.code->'meta'->>'homeWs', ''),
-                      (select w.id::text from workspaces w
-                        where w.owner_id = mantle_brain_id() and w.is_admin limit 1)) as home
+      select nullif(s.code->'meta'->>'homeWs', '') as home
         from node_snapshots s
        where s.node_id = ${target.id} and s.node_kind = 'app' and s.trigger = 'pre_delete'
          and not exists (select 1 from nodes n where n.id = s.node_id)
        order by s.seq desc limit 1`)) as unknown as { home: string | null }[];
     if (snap.length === 0) return null;
     const home = snap[0]!.home;
-    const manage = (await withViewer('team', { login: loginId }, () =>
-      db.execute(sql`select "public"."mantle_may_manage"(${home}::uuid) as manage`),
-    )) as unknown as { manage: boolean | null }[];
-    if (manage[0]?.manage === true) return null;
+    if (home === null) {
+      if (loginId === (await getAnchorId())) return null;
+    } else {
+      const manage = (await withViewer('team', { login: loginId }, () =>
+        db.execute(sql`select "public"."mantle_may_manage"(${home}::uuid) as manage`),
+      )) as unknown as { manage: boolean | null }[];
+      if (manage[0]?.manage === true) return null;
+    }
     row = { edit: false, manage: false };
   } else {
     // The item the route names: the id itself, or through a share or a

@@ -475,4 +475,152 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await homeIn(page, adminWs);
     expect((await call(`/api/pages/${page}`, owner)).text).toContain(DRAFT);
   }, 900_000);
+
+  // ── Fix round 2 ───────────────────────────────────────────────────────────
+
+  it('M-a: the integrity delete removes the node and its traces (no 500)', async () => {
+    const note = await node('note', `${tag} landed note`, 'notes');
+    const trace = randomUUID();
+    await x(sql`insert into traces (id, owner_id, kind, subject_id)
+                values (${trace}, ${owner}, 'responder_turn', ${note})`);
+    const r = await call('/api/debug/integrity/landed/delete', owner, 'POST', { nodeId: note });
+    expect(r.status, r.text.slice(0, 200)).toBe(200);
+    expect(json(r.text).ok).toBe(true);
+    expect(await exists(note)).toBe(0);
+    const left = await x<{ n: number }>(
+      sql`select count(*)::int as n from traces where id = ${trace}`,
+    );
+    expect(left[0]!.n).toBe(0);
+    // An id no row has: the handler's own answer, not a 500.
+    const gone = await call('/api/debug/integrity/landed/delete', owner, 'POST', {
+      nodeId: randomUUID(),
+    });
+    expect(gone.status, gone.text.slice(0, 200)).toBe(400);
+  }, 60_000);
+
+  it('L-a: a workspace refusal on a files create answers 403 item-workspace, not 400', async () => {
+    await call('/api/files/folders', owner, 'GET');
+    const folder = await node('branch', `${tag} side files`, 'files.w6af2side');
+    await homeIn(folder, side);
+    const mk = await call('/api/files/folders', owner, 'POST', {
+      parentPath: 'files.w6af2side',
+      slug: 'inner',
+    });
+    expect(mk.status, mk.text.slice(0, 200)).toBe(403);
+    expect(json(mk.text).reason).toBe('item-workspace');
+    expect(mk.text).not.toContain('not allowed');
+    const file = await call('/api/files/files', owner, 'POST', {
+      parentPath: 'files.w6af2side',
+      filename: 'note.txt',
+      content: 'hello',
+      confirm: true,
+    });
+    expect(file.status, file.text.slice(0, 200)).toBe(403);
+    expect(json(file.text).reason).toBe('item-workspace');
+    const made = await x<{ n: number }>(
+      sql`select count(*)::int as n from nodes where path <@ 'files.w6af2side' and id <> ${folder}`,
+    );
+    expect(made[0]!.n).toBe(0);
+  }, 60_000);
+
+  it('L-b: a deleted app with no stored home is purged and restored by the owner only', async () => {
+    const admin2 = randomUUID();
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+                values (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Ada Admin')`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${adminWs}, ${admin2}, true) on conflict do nothing`);
+    const apps = await import('@mantle/content');
+    const stripHome = (id: string) =>
+      x(sql`update node_snapshots set code = code #- '{meta,homeWs}'
+             where node_id = ${id} and trigger = 'pre_delete'`);
+
+    // Homed in Admin and stored: a Moderator of Admin (not the owner) purges it.
+    const stored = await apps.createApp(owner, { title: `${tag} l-b stored` });
+    await apps.deleteApp(owner, stored.id);
+    const ok = await call(`/api/apps/deleted/${stored.id}`, admin2, 'DELETE');
+    expect(ok.status, ok.text.slice(0, 200)).toBe(200);
+
+    // No home stored: refused for that Admin user, both ways.
+    const old = await apps.createApp(owner, { title: `${tag} l-b old` });
+    await apps.deleteApp(owner, old.id);
+    await stripHome(old.id);
+    const purge = await call(`/api/apps/deleted/${old.id}`, admin2, 'DELETE');
+    expect(purge.status, purge.text.slice(0, 200)).toBe(403);
+    expect(json(purge.text).reason).toBe('item-workspace');
+    const restore = await call(`/api/apps/deleted/${old.id}/restore`, admin2, 'POST');
+    expect(restore.status, restore.text.slice(0, 200)).toBe(403);
+    expect(await exists(old.id)).toBe(0);
+    // The owner restores it.
+    const back = await call(`/api/apps/deleted/${old.id}/restore`, owner, 'POST');
+    expect(back.status, back.text.slice(0, 200)).toBeLessThan(300);
+    expect(await exists(old.id)).toBe(1);
+  }, 120_000);
+
+  it('L-c: a request scope notes its system transactions', async () => {
+    const scope = await m.loginScopeFor(owner);
+    const writes = await m.runInRequestSlot(async () => {
+      m.enterRequestScope(scope, { writes: false, drafts: true });
+      await m.withSystemTx(async (tx) => tx.execute(sql`select 1`));
+      return m.requestSystemWrites();
+    });
+    expect(writes.some((w) => w.startsWith('withSystemTx '))).toBe(true);
+    expect(writes.join('\n')).toContain('w6a-fix-sweep.db.test.ts');
+  });
+
+  it('L-d: profiles: the login’s own row and the brain’s, every row only in an Admin scope', async () => {
+    await x(sql`insert into profiles (user_id) values (${owner}), (${mem}), (${mem2})
+                on conflict (user_id) do nothing`);
+    const rowsFor = (login: string) =>
+      m.withViewer('team', { login }, async () =>
+        (
+          (await m.db.execute(
+            sql`select user_id::text as u from profiles
+                 where user_id in (${owner}, ${mem}, ${mem2}) order by 1`,
+          )) as unknown as { u: string }[]
+        ).map((r) => r.u),
+      );
+    expect(await rowsFor(mem)).toEqual([owner, mem].sort());
+    expect(await rowsFor(mem2)).toEqual([owner, mem2].sort());
+    expect(await rowsFor(owner)).toEqual([owner, mem, mem2].sort());
+  });
+
+  it('pages: the block-id repair lands from a request scope, and never runs inside a transaction', async () => {
+    const bare = JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'no ids yet' }] }],
+    });
+    const mkPage = async (title: string) => {
+      const id = await node('page', title, 'pages');
+      await x(sql`insert into pages (node_id, doc, draft_doc, draft_rev, draft_updated_at)
+                  values (${id}, ${bare}::jsonb, ${bare}::jsonb, 1, now())`);
+      return id;
+    };
+    const hasIds = async (id: string) =>
+      (
+        await x<{ d: string }>(sql`select draft_doc::text as d from pages where node_id = ${id}`)
+      )[0]!.d.includes('"id"');
+    const settle = async (id: string, want: boolean) => {
+      for (let i = 0; i < 40 && (await hasIds(id)) !== want; i += 1) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return hasIds(id);
+    };
+
+    // An Admin user's GET (its request scope): the repair goes to the system
+    // pool (it failed on the workspace role before).
+    const viaRoute = await mkPage(`${tag} backfill route`);
+    const r = await call(`/api/pages/${viaRoute}`, owner);
+    expect(r.status, r.text.slice(0, 200)).toBe(200);
+    expect(await settle(viaRoute, true)).toBe(true);
+
+    // Inside a system transaction: no repair; the next plain read makes it.
+    const pagesApi = await import('@mantle/content/pages');
+    const inTx = await mkPage(`${tag} backfill tx`);
+    const read = await m.withSystemTx(async () => pagesApi.getPage(owner, inTx));
+    expect(read?.id).toBe(inTx);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await hasIds(inTx)).toBe(false);
+    await pagesApi.getPage(owner, inTx);
+    expect(await settle(inTx, true)).toBe(true);
+  }, 60_000);
 });

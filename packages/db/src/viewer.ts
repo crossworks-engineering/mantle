@@ -390,13 +390,19 @@ export function requestWriteScope(): WorkspaceScope | null {
 
 /**
  * Tests and development only (W6a fix round 1, L2): note a write a request
- * scope sends to the system pool through `db` (client.ts), with the file
- * that sent it. The route sweep pins the list.
+ * scope sends to the system pool through `db` or a system transaction
+ * (withSystemTx and the heads helpers, fix round 2), with the file that
+ * sent it: the first frame outside @mantle/db (bestEffortWrite and the
+ * heads helpers are only the way there). The route sweep pins the list.
  */
 export function noteRequestSystemWrite(what: string): void {
   const slot = requestSlots.getStore();
   if (!slot?.scope || store.getStore() || !strictTurnExits()) return;
-  (slot.systemWrites ??= []).push(`${what} ${systemDbCallerOf(new Error().stack ?? '') ?? '?'}`);
+  const stack = (new Error().stack ?? '')
+    .split('\n')
+    .filter((line, i) => i === 0 || !line.replace(/\\/g, '/').includes('packages/db/src/'))
+    .join('\n');
+  (slot.systemWrites ??= []).push(`${what} ${systemDbCallerOf(stack) ?? '?'}`);
 }
 
 /** The writes noteRequestSystemWrite noted in the current request. */
@@ -542,6 +548,13 @@ export function inTurnScope(): boolean {
 /** The transaction the current scope runs in, if it carries one. */
 export function currentScopeTx(): unknown {
   return active()?.tx ?? null;
+}
+
+/** Whether the current code runs inside a scope's own transaction (a
+ *  personal space, withScope, withSystemTx): work it fires and forgets
+ *  would outlive the transaction it is bound to. */
+export function inScopeTransaction(): boolean {
+  return currentScopeTx() !== null;
 }
 
 /**

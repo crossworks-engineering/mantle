@@ -56,6 +56,7 @@ export {
   withTurnStamp,
   isUnscoped,
   inTurnScope,
+  inScopeTransaction,
   ScopeLevelError,
   currentSpaceScope,
   readsDrafts,

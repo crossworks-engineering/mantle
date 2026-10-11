@@ -321,6 +321,10 @@ export async function withSystemTx<T>(
   if ((!isSystemScope() && !inRequest) || currentScopeTx()) {
     throw new Error('withSystemTx: only outside a viewer scope and any other transaction');
   }
+  // Tests and development: a request scope's system transaction is one of
+  // its writes (W6a fix round 2, L-c), pinned by the route sweep with the
+  // file that opened it.
+  if (inRequest) noteRequestSystemWrite('withSystemTx');
   // An Admin user's write request (W6a fix round 1, M1): the login's scope
   // on the transaction, so the database checks moves (0241/0245), creates in
   // a folder and deletes (0266) against its workspaces. mantle.login_id is
@@ -1002,7 +1006,13 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
         (prop === 'transaction' && mode.writes)
       ) {
         noteRequestSystemWrite(String(prop));
-        return Reflect.get(getAdminDb() as object, prop);
+        // Bound to the system handle (W6a fix round 2): drizzle's builders
+        // read `this.session`, which on this proxy is the scope's session, so
+        // an unbound method ran the write on the workspace role (a page's
+        // block-id backfill failed with permission denied).
+        const admin = getAdminDb();
+        const fn = Reflect.get(admin as object, prop) as (...args: unknown[]) => unknown;
+        return fn.bind(admin);
       }
     }
     if (prop === 'select' || prop === 'selectDistinct' || prop === 'execute' || prop === 'query') {
