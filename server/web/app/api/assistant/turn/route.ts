@@ -275,7 +275,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
   let agentSlug: string | undefined;
   let attachment: Attachment | null = null;
   let location: LocationPing | undefined;
-  let chatAgent: ChatAgent | null = null;
+  let chatAgent: ChatAgent | null;
   const noAgent: TurnResult = {
     status: 404,
     body: { error: 'no assistant to chat with here', reason: 'no-chat-agent' },
