@@ -9,13 +9,11 @@
 -- never holds the Admin workspace, so the Admin-only rows stay Admin's.
 --
 --  - rows of an item: visible when the item's row is (the nodes policy):
---    shares, node_snapshots, emails, item_marks, recall_maps,
---    app_access_log (by app_node_id); email_attachments by their email;
---    recall_nodes and recall_revisions by their map.
---  - the entity graph, the documentation collections and the mail accounts
---    (never their sealed credentials, a column the role is not granted): a
---    scope that holds the Admin workspace only (plan 2.2: only the Admin
---    workspace reads the graph and holds mail).
+--    shares, node_snapshots, item_marks, recall_maps, app_access_log (by
+--    app_node_id); recall_nodes and recall_revisions by their map.
+--  - the entity graph and the documentation collections: a scope that
+--    holds the Admin workspace only (plan 2.2: only the Admin workspace
+--    reads the graph).
 --  - spaces: the brain's row and the login's own personal space only.
 --  - traces: stamped with a workspace since W4b (R3): a trace of a
 --    workspace in the scope, or an unstamped one (system work, Admin by
@@ -30,10 +28,10 @@ DECLARE
   t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'shares', 'node_snapshots', 'emails', 'item_marks', 'recall_maps',
-    'app_access_log', 'email_attachments', 'recall_nodes', 'recall_revisions',
+    'shares', 'node_snapshots', 'item_marks', 'recall_maps',
+    'app_access_log', 'recall_nodes', 'recall_revisions',
     'entities', 'entity_edges', 'entity_merge_dismissals', 'doc_collections',
-    'traces', 'email_accounts', 'spaces'
+    'traces', 'spaces'
   ] LOOP
     EXECUTE format('ALTER TABLE "public".%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON "public".%I', t || '_user_read', t);
@@ -44,7 +42,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['shares', 'node_snapshots', 'emails', 'item_marks', 'recall_maps'] LOOP
+  FOREACH t IN ARRAY ARRAY['shares', 'node_snapshots', 'item_marks', 'recall_maps'] LOOP
     EXECUTE format(
       'CREATE POLICY %I ON "public".%I FOR SELECT TO mantle_view_user '
       'USING (EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = %I.node_id))',
@@ -54,9 +52,7 @@ END $$;
 --> statement-breakpoint
 CREATE POLICY "app_access_log_user_read" ON "public"."app_access_log" FOR SELECT TO mantle_view_user
   USING (EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = "app_access_log"."app_node_id"));
---> statement-breakpoint
-CREATE POLICY "email_attachments_user_read" ON "public"."email_attachments" FOR SELECT TO mantle_view_user
-  USING (EXISTS (SELECT 1 FROM "public"."emails" e WHERE e.id = "email_attachments"."email_id"));
+
 --> statement-breakpoint
 CREATE POLICY "recall_nodes_user_read" ON "public"."recall_nodes" FOR SELECT TO mantle_view_user
   USING (EXISTS (SELECT 1 FROM "public"."recall_maps" m WHERE m.id = "recall_nodes"."map_id"));
@@ -68,9 +64,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY[
-    'entities', 'entity_edges', 'entity_merge_dismissals', 'doc_collections', 'email_accounts'
-  ] LOOP
+  FOREACH t IN ARRAY ARRAY['entities', 'entity_edges', 'entity_merge_dismissals', 'doc_collections'] LOOP
     EXECUTE format(
       'CREATE POLICY %I ON "public".%I FOR SELECT TO mantle_view_user '
       'USING ((SELECT "public"."mantle_scope_is_admin"()))',

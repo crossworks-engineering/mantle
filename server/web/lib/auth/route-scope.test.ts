@@ -58,8 +58,8 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
   });
 
   it('takes the longest prefix and knows reads', () => {
-    expect(routeClass('/api/email/messages')).toEqual({ kind: 'content' });
-    expect(routeClass('/api/email/accounts/:id')).toEqual({ kind: 'area', area: 'connectors' });
+    expect(routeClass('/api/apps/:id')).toEqual({ kind: 'content' });
+    expect(routeClass('/api/apps/:id/access-log')).toEqual({ kind: 'area', area: 'users' });
     expect(routeClass('/api/docs/reader')).toEqual({ kind: 'content' });
     expect(routeClass('/api/docs/collections/:id')).toEqual({ kind: 'area', area: 'settings' });
     expect(routeClass('/api/pagesx')).toBeNull();

@@ -47,7 +47,6 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/tasks', 'content'],
   ['/api/entities', 'content'],
   ['/api/journal', 'content'],
-  ['/api/email', 'content'],
   ['/api/contacts', 'content'],
   ['/api/events', 'content'],
   ['/api/recall', 'content'],
@@ -55,8 +54,6 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/shares', 'content'],
   ['/api/docs', 'content'],
   ['/api/activity', 'content'],
-  ['/api/dashboard', 'content'],
-  ['/api/attachments', 'content'],
   ['/api/v1', 'content'],
   // The login's own things.
   ['/api/profile', 'self'],
@@ -73,6 +70,8 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/admin', 'self'],
   // Management: settings.
   ['/api/onboarding', 'settings'],
+  // The brain overview: counts over every store, telegram and mail included.
+  ['/api/dashboard', 'settings'],
   ['/api/settings', 'settings'],
   ['/api/appearance', 'settings'],
   ['/api/config', 'settings'],
@@ -123,9 +122,9 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/telegram', 'connectors'],
   // Calendar feeds: accounts with their feed secrets, management.
   ['/api/calendar', 'connectors'],
-  ['/api/email/accounts', 'connectors'],
-  ['/api/email/discover', 'connectors'],
-  ['/api/email/contact-gate', 'connectors'],
+  // Mail (Admin-only items) with its accounts, sealed credentials included.
+  ['/api/email', 'connectors'],
+  ['/api/attachments', 'connectors'],
   // Management: keys.
   ['/api/keys', 'keys'],
   ['/api/secrets', 'keys'],
@@ -184,9 +183,6 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/tables',
   'GET /api/tables/:id',
   'GET /api/tables/:id/rows',
-  'GET /api/files/files',
-  'GET /api/files/folders',
-  'GET /api/files/folders/:id',
   'GET /api/tree/:kind',
   'GET /api/tree/:kind/search',
   'GET /api/tree/:kind/tags',
