@@ -9,11 +9,19 @@
  *  - a tool of an Admin AREA (TOOL_ADMIN_AREAS: the brain's settings,
  *    assistants, connectors, keys and users) runs only when the scope may
  *    do that area (scopeHasArea: it holds Admin, its login is a user there
- *    and its limits leave the area on). Such a tool reads and writes system
- *    tables the workspace role is never granted (model pools, agents, tool
- *    groups, connectors, secrets, peers, Telegram accounts): AFTER the area
- *    check it runs on the system pool, by the one named reason
- *    'admin-area'. It reads no brain items there.
+ *    and its limits leave the area on).
+ *
+ * After the area check an area tool still runs IN THE CALLER'S SCOPE (W7a
+ * fix round 1, H1): its item reads and writes (a file it imports or
+ * exports, a page it mails, a folder it mounts, a recipe's steps) are the
+ * scope's, with the normal edit and create checks. Its own system tables
+ * (sandbox rows, peers, mail accounts, tool groups), which the workspace
+ * role is never granted, it reads through areaSystem, by the one named
+ * reason 'admin-area'. Only the tools of AREA_SYSTEM_TOOLS run whole on
+ * the system pool: each of them reads and writes system tables only, takes
+ * no item id and reads no brain item (a test pins that). A new area tool is
+ * not on that list, so it runs in the scope until it is shown not to touch
+ * an item: fail closed.
  *
  * Outside any workspace scope (system work, and MANTLE_ADMIN_READS=system)
  * the gate lets everything through: the surface rules decide, as before.
@@ -57,6 +65,9 @@ export const ADMIN_ONLY_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'responder_turn_input',
   'responder_turn_record',
   'recall_eval',
+  // A shell on the server (MANTLE_MCP_TERMINAL): the brain's settings area
+  // too (W7a fix round 1, M3), never any Admin-role login.
+  'run_terminal',
 ]);
 
 /**
@@ -174,6 +185,7 @@ export const TOOL_ADMIN_AREAS: ReadonlyMap<string, ScopeArea> = new Map<string, 
   ['sandbox_publish', 'settings'],
   ['sandbox_rm', 'settings'],
   ['sandbox_stop', 'settings'],
+  ['run_terminal', 'settings'],
   // Assistants: agents, personas, tool and worker groups.
   ['agent_list', 'assistants'],
   ['agent_grant_tool_group', 'assistants'],
@@ -231,8 +243,73 @@ export function toolAdminArea(slug: string, ref?: string): ScopeArea | null {
   return TOOL_ADMIN_AREAS.get(slug) ?? (ref ? (TOOL_ADMIN_AREAS.get(ref) ?? null) : null);
 }
 
-/** What the gate says about a call: refused (with the reply), or run, on
- *  the system pool (an Admin-area tool) or in the scope. */
+/**
+ * The Admin-area tools that run WHOLE on the system pool after the area
+ * check (W7a fix round 1, H1): each reads and writes system tables only
+ * (model pools, sandbox rows and the sandbox daemon, agents, tool and
+ * worker groups, heartbeats, API tools and their docs, peers and the remote
+ * brains they reach, Telegram accounts and chats, secrets, the team access
+ * log and chat portal), takes no item id and reads no brain item. Every
+ * other area tool runs in the caller's scope and takes areaSystem only
+ * around its own system tables: sandbox_create (it mounts a folder),
+ * sandbox_import and sandbox_export (a file), peer_file_copy (a file),
+ * recipe_tool_test (its steps are tools), email_send, email_page,
+ * email_list and email_get (pages, files, contacts and mail rows),
+ * run_terminal (no database). brain_capacity counts the brain's items
+ * (numbers, never a row) for the settings area.
+ */
+export const AREA_SYSTEM_TOOLS: ReadonlySet<string> = new Set([
+  'model_catalog',
+  'model_pool_list',
+  'model_pool_set',
+  'model_pool_remove',
+  'brain_capacity',
+  'sandbox_autostart',
+  'sandbox_exec',
+  'sandbox_list',
+  'sandbox_ls',
+  'sandbox_mcp_call',
+  'sandbox_mcp_tools',
+  'sandbox_publish',
+  'sandbox_rm',
+  'sandbox_stop',
+  'agent_list',
+  'agent_grant_tool_group',
+  'agent_set_thinking_effort',
+  'update_persona',
+  'tool_group_ensure',
+  'tool_group_list',
+  'worker_group_ensure',
+  'worker_group_list',
+  'heartbeat_list',
+  'heartbeat_fire',
+  'api_tool_create',
+  'api_tool_delete',
+  'api_tool_get',
+  'api_tool_list',
+  'api_tool_test',
+  'api_docs_get',
+  'api_docs_set',
+  'api_skill_set',
+  'recipe_tool_create',
+  'peer_list',
+  'peer_tools',
+  'peer_call',
+  'peer_query',
+  'peer_node_get',
+  'peer_search_chunks',
+  'telegram_pair',
+  'telegram_send',
+  'telegram_edit',
+  'telegram_react',
+  'telegram_pending',
+  'telegram_mark_processed',
+  'secret_create',
+  'api_key_refs',
+]);
+
+/** What the gate says about a call: refused (with the reply), or run, whole
+ *  on the system pool (an AREA_SYSTEM_TOOLS tool) or in the scope. */
 export type AdminGate = { refused: string } | { system: boolean };
 
 /**
@@ -249,11 +326,28 @@ export async function adminToolGate(
   if ((adminOnly || area) && !(await scopeHoldsAdmin())) return { refused: ADMIN_ONLY_ERROR };
   if (!area) return { system: false };
   if (!(await scopeHasArea(area))) return { refused: adminAreaError(area) };
-  return { system: true };
+  const whole =
+    AREA_SYSTEM_TOOLS.has(slug) || (opts.ref !== undefined && AREA_SYSTEM_TOOLS.has(opts.ref));
+  return { system: whole };
 }
 
-/** Run `fn` as the gate said: on the system pool for an Admin-area tool
- *  (after its area check, by the named reason), else as is. */
+/** Run `fn` as the gate said: whole on the system pool for an
+ *  AREA_SYSTEM_TOOLS tool (after its area check, by the named reason), else
+ *  in the caller's scope. */
 export function runGated<T>(gate: { system: boolean }, fn: () => Promise<T>): Promise<T> {
   return gate.system ? asSystem(fn, 'admin-area') : fn();
+}
+
+/**
+ * An Admin-area tool's own system-table work (W7a fix round 1, H1): its
+ * sandbox row, its peer, its mail account. In a workspace scope it runs on
+ * the system pool by the named reason 'admin-area', and only when the scope
+ * may do `area` (the gate checked it; asked again here so a helper reached
+ * some other way never leaves the scope). Outside a workspace scope it runs
+ * as is. Never for an item: items are read and written in the scope.
+ */
+export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Promise<T> {
+  if (!currentWorkspaceScope()) return fn();
+  if (!(await scopeHasArea(area))) throw new Error(adminAreaError(area));
+  return asSystem(fn, 'admin-area');
 }

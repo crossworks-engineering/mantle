@@ -1,0 +1,77 @@
+/**
+ * What the current workspace scope may do to items (workspaces W7a fix
+ * round 1, M2): the one edit check of a write to an item made from a tool,
+ * in a turn or on MCP, as the item routes ask it since W6a (the session's
+ * item write gate): mantle_may_edit for a content change, mantle_may_manage
+ * for a delete, a move or a link, a read for a write that only needs to see
+ * the item. A read-only snapshot copy (data.snapshot_of) is never edited.
+ *
+ * A typed write in a scope runs on the system pool with no scope on its
+ * statement (client.ts), so the database cannot ask this itself: the tool
+ * asks it here first, in the caller's scope, before it writes.
+ *
+ * Asked in the scope only: an item the scope does not read answers "not in
+ * your workspaces", whether it exists or not, so no item's existence leaves
+ * the scope. Outside a workspace scope (system work, MANTLE_ADMIN_READS
+ * =system, a brain not on workspaces) nothing is checked: the surface rules
+ * decide, as before.
+ */
+import { sql } from 'drizzle-orm';
+import { db } from './client';
+import { currentWorkspaceScope } from './viewer';
+
+/** What a write needs of an item. */
+export type ItemNeed = 'read' | 'edit' | 'manage';
+
+/** The refusal of a write to an item the scope cannot read (W6a style). */
+export function itemNotInScopeError(id: string): string {
+  return `Item ${id} is not in your workspaces: it is in a workspace you are not in (add yourself to it first), or there is no such item (find it with search_nodes).`;
+}
+
+/** The refusal of a write the scope may read but not make. */
+export function itemNoRightError(id: string, need: ItemNeed): string {
+  return need === 'manage'
+    ? `You cannot change this item in your workspaces (${id}): deleting, moving or linking it is for a Moderator of its workspace.`
+    : `You cannot change this item in your workspaces (${id}): ask for Write on it, or a Moderator of its workspace.`;
+}
+
+/** The refusal of an edit to a read-only snapshot copy. */
+export const READ_ONLY_COPY_ERROR =
+  'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Why the current scope may not do `need` to the items `ids`, or null when it
+ * may (or when no workspace scope is active). An id that is not a UUID is
+ * left to the tool's own error.
+ */
+export async function itemWriteRefusal(
+  ids: readonly string[],
+  need: ItemNeed,
+): Promise<string | null> {
+  if (!currentWorkspaceScope()) return null;
+  const list = [...new Set(ids.map((i) => i.trim().toLowerCase()).filter((i) => UUID_RE.test(i)))];
+  if (list.length === 0) return null;
+  const arr = `{${list.join(',')}}`;
+  const rows = (await db.execute(sql`
+    select n.id::text as id,
+           coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit,
+           coalesce("public"."mantle_may_manage"(n.home_ws), false) as manage,
+           coalesce(n.data ? 'snapshot_of', false) as copy
+      from nodes n where n.id = any(${arr}::uuid[])`)) as unknown as {
+    id: string;
+    edit: boolean;
+    manage: boolean;
+    copy: boolean;
+  }[];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const id of list) {
+    const r = byId.get(id);
+    if (!r) return itemNotInScopeError(id);
+    if (need === 'read') continue;
+    if (need === 'edit' && r.copy) return READ_ONLY_COPY_ERROR;
+    if (need === 'edit' ? !r.edit : !r.manage) return itemNoRightError(id, need);
+  }
+  return null;
+}

@@ -80,10 +80,14 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
   // The Admin assistant answering another Admin user (W7a) still works with
   // the brain owner's preferences (time zone, purpose, house style), as it
   // did on the system pool: read by the named reason in a scope that holds
-  // Admin, for a login other than the scope's own.
+  // Admin, for the brain owner's (the anchor login's) row only (W7a fix
+  // round 1, L2): never another user's.
   const scope = currentWorkspaceScope();
   const [row] =
-    scope && scope.loginId !== userId && (await scopeHoldsAdmin())
+    scope &&
+    scope.loginId !== userId &&
+    userId === (await resolveSingleOwnerId()) &&
+    (await scopeHoldsAdmin())
       ? await asSystem(read, 'owner-preferences')
       : await read();
   if (!row) {

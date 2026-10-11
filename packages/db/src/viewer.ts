@@ -731,10 +731,14 @@ export function runInTurnScope<T>(
 }
 
 /** Whether `inner` reads and edits no more than `outer`: its workspaces
- *  and Moderator workspaces are subsets, and a user scope stays its
- *  login's. */
+ *  and Moderator workspaces are subsets, and a user scope, or an assistant
+ *  turn inside one, stays its login's (W7a fix round 1, M1: an assistant
+ *  that answered another login, or none, took that login's areas and
+ *  rows). */
 export function narrowsWorkspaceScope(outer: WorkspaceScope, inner: WorkspaceScope): boolean {
-  if (inner.kind === 'user' && inner.loginId !== outer.loginId) return false;
+  if ((inner.kind === 'user' || inner.kind === 'assistant') && inner.loginId !== outer.loginId) {
+    return false;
+  }
   if (inner.kind === 'link') return false;
   const ws = new Set(outer.ws);
   const mod = new Set(outer.modWs);

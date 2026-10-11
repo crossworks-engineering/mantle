@@ -211,6 +211,10 @@ async function lexemeFrequencies(
 ): Promise<LexemeDf[]> {
   // `table` is one of two literals (the type), so raw is safe here.
   const tbl = sql.raw(`"${table}"`);
+  // Residual signal (W7a audit L4, accepted): the document frequencies are
+  // the whole table's, so which of the caller's terms the keyword arm ORs
+  // can shift with what other workspaces hold: a faint existence signal by
+  // count for the caller's own terms, never a row.
   const rows = (await asSystem(
     () =>
       db.execute(sql`

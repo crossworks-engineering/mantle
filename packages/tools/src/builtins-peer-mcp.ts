@@ -19,6 +19,7 @@ import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { boolOpt, str, strOpt } from './coerce';
 import { FILE_ID_PRE } from './builtins-common';
+import { areaSystem } from './admin-gate';
 
 const CALL_TIMEOUT_MS = 120_000;
 const RESULT_TEXT_CAP = 80_000;
@@ -29,7 +30,9 @@ const COPY_MAX_BYTES = 48 * 1024 * 1024;
 type PeerSession = { client: Client; peerName: string; close: () => Promise<void> };
 
 async function openPeer(ownerId: string, ref: string): Promise<PeerSession | { error: string }> {
-  const target = await peerCallTarget(ownerId, ref);
+  // The peer row and its token are system tables (W7a fix round 1, H1):
+  // peer_file_copy runs in the caller's scope and reads only them here.
+  const target = await areaSystem('connectors', () => peerCallTarget(ownerId, ref));
   if ('error' in target) return target;
   const url = new URL(`${target.peer.baseUrl}/api/mcp`);
   const transport = new StreamableHTTPClientTransport(url, {
@@ -53,7 +56,9 @@ async function openPeer(ownerId: string, ref: string): Promise<PeerSession | { e
     peerName: target.peer.displayName,
     close: async () => {
       await client.close().catch(() => {});
-      await markPeerContacted(ownerId, target.peer.id).catch(() => {});
+      await areaSystem('connectors', () => markPeerContacted(ownerId, target.peer.id)).catch(
+        () => {},
+      );
     },
   };
 }
@@ -223,6 +228,8 @@ const peer_file_copy: BuiltinToolDef = {
   },
   handler: async (input, ctx) => {
     const fileId = str(input.file_id).trim();
+    // Read in the caller's scope (W7a fix round 1, H1): a file the scope does
+    // not read is not found here, and nothing leaves for the peer.
     const file = await readFileById({ ownerId: ctx.ownerId, fileId }).catch(() => null);
     if (!file) {
       return {

@@ -51,6 +51,18 @@ outside the Admin workspace makes, duplicates or imports, or whose code or
 tools it changes, runs its tools at team rules (`apps.author_level`, the
 author ceiling); nothing lifts it but the owner's app update route.
 
+A tool that manages the brain (`run_terminal` too, which needs the settings
+area) still runs in the login's workspaces (W7a fix round 1): a file it
+imports into a sandbox or copies to a peer, a page it mails, a folder it
+mounts are read there, and a file it exports is written there with the
+normal checks. Only its own system tables (sandbox rows, peers, mail
+accounts, tool groups) are read on the system pool; the tools that touch
+nothing else (`AREA_SYSTEM_TOOLS` in admin-gate.ts) run there whole. A write
+to an item (an edit, a delete, a move, a link) is checked against the
+login's rights on that item first, as the item routes do
+(`packages/tools/src/item-write-gate.ts`): an item shared with Read only is
+refused.
+
 `MANTLE_ADMIN_READS=system` puts an admin login's calls back on the system
 pool, as before W7a. A member's never: on a brain not on workspaces a
 member's MCP is refused.

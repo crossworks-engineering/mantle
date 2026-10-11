@@ -53,7 +53,16 @@ const recentCounts = new Map<string, { at: number; byTable: Map<ScopeTable, Prom
 function countsFor(scope: WorkspaceScope): Map<ScopeTable, Promise<number>> {
   const own = counted.get(scope);
   if (own) return own;
-  const key = `${[...scope.ws].sort().join(',')}|${scope.loginId ?? ''}`;
+  // Everything that changes what the scope reads (W7a fix round 1): its
+  // kind, workspaces, Moderator workspaces (drafts), login and a link's
+  // served list.
+  const key = [
+    scope.kind,
+    [...scope.ws].sort().join(','),
+    [...scope.modWs].sort().join(','),
+    scope.loginId ?? '',
+    [...(scope.served ?? [])].sort().join(','),
+  ].join('|');
   const now = Date.now();
   let hit = recentCounts.get(key);
   if (!hit || now - hit.at > COUNT_TTL_MS) {

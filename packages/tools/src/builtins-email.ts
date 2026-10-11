@@ -10,8 +10,15 @@
  * /settings/tools if injected-send ever becomes a concern.
  */
 
-import { and, desc, eq, gte, or } from 'drizzle-orm';
-import { db, emailAccounts, emails, msAccounts, type EmailAccount } from '@mantle/db';
+import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
+import {
+  db,
+  emailAccounts,
+  emails,
+  itemWriteRefusal,
+  msAccounts,
+  type EmailAccount,
+} from '@mantle/db';
 import {
   accountCanSend,
   sendEmail,
@@ -38,6 +45,29 @@ import type { BuiltinToolDef } from './types';
 import { linkError, openLink } from './builtins-share';
 import { str, strOptTrim as strOpt } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { areaSystem } from './admin-gate';
+
+/**
+ * The email tools run in the caller's scope (W7a fix round 1, H1): the
+ * page, the files and the contacts they read are items, and the mail rows
+ * follow their item (an Admin kind: a scope that holds Admin reads them).
+ * The mail accounts (sealed credentials), the Microsoft accounts and the
+ * logins' addresses are system tables, read here through areaSystem.
+ */
+function mailSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return areaSystem('connectors', fn);
+}
+
+/** The ids of the owner's mail accounts (system pool, by the named reason). */
+async function ownerAccountIds(ownerId: string): Promise<string[]> {
+  const rows = await mailSystem(() =>
+    db
+      .select({ id: emailAccounts.id })
+      .from(emailAccounts)
+      .where(eq(emailAccounts.userId, ownerId)),
+  );
+  return rows.map((r) => r.id);
+}
 
 /** Split a comma-separated recipient string into one-or-many. */
 function recipients(raw: string): string | string[] {
@@ -74,11 +104,13 @@ async function blockedRecipients(ownerId: string, addrs: string[]): Promise<stri
   // this domain"); you can't send to a whole domain. The inbound ContactGate
   // (@mantle/content) is the side that honours domains.
   const contacts = await contactEmails(ownerId); // already lower-cased + deduped
-  const accounts = await db
-    .select({ address: emailAccounts.address })
-    .from(emailAccounts)
-    .where(eq(emailAccounts.userId, ownerId));
-  const logins = await loginEmails();
+  const accounts = await mailSystem(() =>
+    db
+      .select({ address: emailAccounts.address })
+      .from(emailAccounts)
+      .where(eq(emailAccounts.userId, ownerId)),
+  );
+  const logins = await mailSystem(() => loginEmails());
   const allowed = new Set<string>([
     ...contacts,
     ...logins,
@@ -163,6 +195,13 @@ const NO_SEND_ACCOUNT_ERROR =
 /** Pick the account to send from: an explicit `from` address if it matches one
  *  of the user's accounts, else the first enabled account that can send. */
 async function resolveSendAccount(
+  ownerId: string,
+  fromAddr?: string,
+): Promise<EmailAccount | null> {
+  return mailSystem(() => resolveSendAccountOnSystem(ownerId, fromAddr));
+}
+
+async function resolveSendAccountOnSystem(
   ownerId: string,
   fromAddr?: string,
 ): Promise<EmailAccount | null> {
@@ -300,8 +339,16 @@ const email_page: BuiltinToolDef = {
     if (!pageId) return { ok: false, error: 'pageId is required' };
     if (!to) return { ok: false, error: 'to is required' };
 
+    // Read in the caller's scope (W7a fix round 1, H1): a page the scope does
+    // not read is not found, and nothing is sent.
     const page = await getPage(ctx.ownerId, pageId);
     if (!page) return { ok: false, error: `page ${pageId} not found` };
+    // A public link is a link on the page: Moderators of its home only, as
+    // page_share. Refused before anything is sent.
+    if (input.includeLink === true) {
+      const refused = await itemWriteRefusal([pageId], 'manage');
+      if (refused) return { ok: false, error: `Nothing was sent: ${refused}` };
+    }
 
     const account = await resolveSendAccount(ctx.ownerId, strOpt(input.from));
     if (!account) {
@@ -448,7 +495,11 @@ const email_list: BuiltinToolDef = {
     // `emails` carries no owner column: it scopes through account_id to
     // email_accounts.user_id, so the join IS the scope. Without it this listed
     // every email row on the box. See builtins-read-scope.test.ts.
-    const conds = [eq(emailAccounts.userId, ctx.ownerId)] as ReturnType<typeof eq>[];
+    // The owner's accounts are read on the system pool (their credentials are
+    // sealed there); the mail rows in the caller's scope (W7a fix round 1).
+    const accountIds = await ownerAccountIds(ctx.ownerId);
+    if (accountIds.length === 0) return { ok: true, output: [] };
+    const conds = [inArray(emails.accountId, accountIds)] as ReturnType<typeof eq>[];
     if (accountId) conds.push(eq(emails.accountId, accountId));
     if (since) {
       const d = new Date(since);
@@ -472,7 +523,6 @@ const email_list: BuiltinToolDef = {
           hasAttachments: emails.hasAttachments,
         })
         .from(emails)
-        .innerJoin(emailAccounts, eq(emails.accountId, emailAccounts.id))
         .where(and(...conds))
         .orderBy(desc(emails.internalDate))
         .limit(limit);
@@ -533,6 +583,7 @@ const email_get: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
+      const accountIds = await ownerAccountIds(ctx.ownerId);
       // Explicit columns — the full row carries body_html, which for a typical
       // newsletter/marketing mail is ~50 KB of markup wrapping a few hundred
       // chars of text. Shipping it blew past the inline tool-result cap, forced
@@ -566,11 +617,13 @@ const email_get: BuiltinToolDef = {
           deliveryKind: emails.deliveryKind,
         })
         .from(emails)
-        // Owner scope, same account join as email_list: an id on its own must
-        // not open another owner's mail.
-        .innerJoin(emailAccounts, eq(emails.accountId, emailAccounts.id))
+        // Owner scope, the owner's accounts as email_list: an id on its own
+        // must not open another owner's mail.
         .where(
-          and(eq(emailAccounts.userId, ctx.ownerId), or(eq(emails.id, id), eq(emails.nodeId, id))),
+          and(
+            accountIds.length > 0 ? inArray(emails.accountId, accountIds) : sql`false`,
+            or(eq(emails.id, id), eq(emails.nodeId, id)),
+          ),
         )
         .limit(1);
       if (!row) return { ok: false, error: `email '${id}' not found` };

@@ -55,6 +55,7 @@ import type { ToolHandlerContext, ToolHandlerResult } from './types';
 import { registerToolDispatcher } from './dispatch-bridge';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { adminToolGate, runGated } from './admin-gate';
+import { toolItemWriteRefusal } from './item-write-gate';
 
 // Same-package callers that must not import this module (it imports the
 // registry, which imports every builtin) reach dispatchTool through the bridge.
@@ -92,8 +93,9 @@ export async function dispatchTool(
     }
     // adminOnly (W4b, plan 5.4): an ownerOnly or adminOnly tool runs in a
     // workspace scope only when that scope holds the Admin workspace; an
-    // Admin-area tool only when the scope may do that area, and then on the
-    // system pool (W7a, admin-gate.ts).
+    // Admin-area tool only when the scope may do that area, and then still
+    // in the scope, except the system-table tools (W7a fix round 1, H1,
+    // admin-gate.ts).
     const gate = await adminToolGate(tool.slug, { ref: h.ref, ownerOnly: def?.ownerOnly });
     if ('refused' in gate) return { ok: false, error: gate.refused };
     try {
@@ -105,6 +107,10 @@ export async function dispatchTool(
         const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
         if (failure) return failure;
       }
+      // A write to an item checks the scope may make it (W7a fix round 1,
+      // M2): the item routes' rule, asked before any write.
+      const refused = await toolItemWriteRefusal(tool.slug, input, ctx.ownerId, h.ref);
+      if (refused) return { ok: false, error: refused };
       return await runGated(gate, () => fn(input, ctx));
     } catch (err) {
       return { ok: false, error: errorMessage(err) };

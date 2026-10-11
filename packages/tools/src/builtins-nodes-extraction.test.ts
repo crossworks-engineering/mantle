@@ -123,6 +123,9 @@ describe('process_extraction single node', () => {
   });
 
   it('fires exactly one signal for the chosen node and runs no sweep', async () => {
+    // The handler reads the node in the caller's scope first (W7a fix round
+    // 1, L1): one row, limit 1, then one signal; no sweep query.
+    selectRows = [{ id: NODE }];
     const setOutput = vi.fn();
     const res = await extraction.handler(
       { node_id: NODE },
@@ -131,8 +134,19 @@ describe('process_extraction single node', () => {
     expect(outputOf(res)).toEqual({ fired: 1, node_id: NODE });
     expect(notifyNodeIngested).toHaveBeenCalledTimes(1);
     expect(notifyNodeIngested).toHaveBeenCalledWith(NODE);
-    expect(dbmod.db.select).not.toHaveBeenCalled();
+    expect(dbmod.db.select).toHaveBeenCalledTimes(1);
+    expect(limitArgs).toEqual([1]);
     expect(setOutput).toHaveBeenCalledWith({ fired: 1, node_id: NODE });
+  });
+});
+
+describe('process_extraction single node outside the scope (W7a fix round 1, L1)', () => {
+  it('refuses a node the caller does not read, and fires nothing', async () => {
+    selectRows = [];
+    const res = await extraction.handler({ node_id: NODE }, ctx);
+    expect(errorOf(res)).toMatch(new RegExp(`node ${NODE} not found`));
+    expect(notifyNodeIngested).not.toHaveBeenCalled();
+    expect(paramsOf(whereArgs[0])).toContain('o1');
   });
 });
 

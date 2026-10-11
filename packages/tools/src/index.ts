@@ -166,11 +166,13 @@ export {
   ADMIN_ONLY_TOOL_SLUGS,
 } from './dispatch';
 export {
+  AREA_SYSTEM_TOOLS,
   TOOL_ADMIN_AREAS,
   OWNER_ONLY_IN_SCOPE,
   adminAreaError,
   adminGateLists,
   adminToolGate,
+  areaSystem,
   isAdminGateRefusal,
   isAdminOnlyTool,
   runGated,
@@ -178,6 +180,7 @@ export {
   type AdminGate,
   type AdminGateView,
 } from './admin-gate';
+export { ITEM_WRITE_TARGETS, itemWriteTargetsOf, toolItemWriteRefusal } from './item-write-gate';
 export {
   memberAppToolVerdict,
   MEMBER_APP_REFUSED_SLUGS,

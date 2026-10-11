@@ -167,6 +167,15 @@ export async function supersedeNode(input: SupersedeNodeInput): Promise<Node> {
 
 /** Undo a supersession mark: clear the edge + reason, restore full salience. */
 export async function unsupersedeNode(ownerId: string, id: string): Promise<Node> {
+  // Read in the caller's scope first, as supersedeNode does (W7a fix round
+  // 1, L5): the write runs on the system pool in a scope, so an id the scope
+  // does not read must never be changed, nor its title returned.
+  const [seen] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, id)))
+    .limit(1);
+  if (!seen) throw new Error('supersede: node not found');
   const [row] = await db
     .update(nodes)
     .set({ supersededBy: null, supersededReason: null, salience: 1, updatedAt: new Date() })
