@@ -1,16 +1,18 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createHeartbeat, listHeartbeats } from '@/lib/heartbeats';
+import { toolMakerFor } from '@/lib/tools';
 import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 
-/** List the owner's heartbeats (summaries). */
+/** List the owner's heartbeats (summaries). A heartbeat's state shows only
+ *  to its maker (W7 integration fix 2). */
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const heartbeats = await listHeartbeats(user.id);
+  const heartbeats = await listHeartbeats(user.id, toolMakerFor(user));
   return NextResponse.json({ heartbeats });
 }
 

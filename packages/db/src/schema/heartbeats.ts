@@ -159,6 +159,11 @@ export const heartbeatFires = pgTable(
     replyText: text('reply_text'),
     replySurfaceRef: jsonb('reply_surface_ref').$type<Record<string, unknown> | null>(),
     errorMessage: text('error_message'),
+    /** The login this fire answered (0271, W7 integration fix 2): the
+     *  firer for Fire now and heartbeat_fire, the maker for the tick. Null
+     *  = the brain owner (the anchor login). Only that login reads the
+     *  fire's reply, state and trace. */
+    answeredBy: uuid('answered_by'),
   },
   (t) => [
     index('heartbeat_fires_hb_idx').on(t.heartbeatId, t.firedAt),

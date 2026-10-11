@@ -55,6 +55,7 @@ export {
   type ScopeArea,
   currentWorkspaceScope,
   scopeLeftForSystem,
+  withoutLeftScope,
   currentTurnStamp,
   withTurnStamp,
   isUnscoped,

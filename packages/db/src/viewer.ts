@@ -1002,6 +1002,18 @@ export function scopeLeftForSystem(): WorkspaceScope | null {
 }
 
 /**
+ * Run `fn` with no scope left behind (W7 integration fix 2, M5): inside it
+ * scopeLeftForSystem is null, as on the tick. For work that must run by its
+ * own rules whoever started it: a forced fire of an assistant of a
+ * workspace other than Admin answers no login, never the login whose tool
+ * call left its scope for the system pool. It opens no scope and widens
+ * none: inside an open scope it changes nothing.
+ */
+export function withoutLeftScope<T>(fn: () => Promise<T>): Promise<T> {
+  return leftStore.exit(fn);
+}
+
+/**
  * The modules that may use `systemDb` (workspaces W4b fix round 2): the same
  * list as eslint-rules/system-db-allowlist.mjs, which refuses the import
  * anywhere else (viewer.test.ts keeps the two equal). Test files may too.

@@ -54,3 +54,10 @@ ALTER TABLE agents ADD COLUMN IF NOT EXISTS configured_by uuid;
 ALTER TABLE ai_workers ADD COLUMN IF NOT EXISTS configured_by uuid;
 --> statement-breakpoint
 ALTER TABLE embedding_config ADD COLUMN IF NOT EXISTS configured_by uuid;
+--> statement-breakpoint
+-- A heartbeat fire (W7 integration fix 2) records the login it answered:
+-- the firer for Fire now and heartbeat_fire, the maker (created_by) for the
+-- tick. Only that login reads the fire's reply, its state before and after
+-- and its trace. Null: the brain owner (and every fire made before this
+-- column).
+ALTER TABLE heartbeat_fires ADD COLUMN IF NOT EXISTS answered_by uuid;

@@ -22,6 +22,7 @@
 import { and, eq } from 'drizzle-orm';
 import {
   db,
+  withoutLeftScope,
   agents,
   skills,
   heartbeats,
@@ -112,17 +113,32 @@ export async function forceFire(hb: Heartbeat, opts: FireOpts = {}): Promise<Fir
 /** How a fire is run. `inCaller` (W7a fix round 2, N1): heartbeat_fire in a
  *  workspace scope runs the fire's bookkeeping on the system pool and passes
  *  this to put the tool resolution and the turn back in its caller's scope,
- *  so the turn answers that caller's login, never the anchor. */
+ *  so the turn answers that caller's login, never the anchor.
+ *
+ *  `answeredBy` (W7 integration fix 2, H1): the login that fired (Fire now,
+ *  heartbeat_fire), null for the brain owner (the anchor login). A forced
+ *  fire answers its firer, the anchor included; with no `inCaller` it runs
+ *  in that login's own scope (loginCaller). Left out (the tick), the fire
+ *  answers the heartbeat's maker (heartbeats.created_by, null the anchor).
+ *  The fire row records it (heartbeat_fires.answered_by): only that login
+ *  reads the fire's reply, state and trace. */
 export type FireOpts = {
   inCaller?: <T>(fn: () => Promise<T>) => Promise<T>;
+  answeredBy?: string | null;
 };
+
+/** The login a fire answers, as heartbeat_fires.answered_by stores it: null
+ *  for the brain owner (whose login id is the owner id). */
+function answerer(hb: Heartbeat, login: string | null | undefined): string | null {
+  return login && login.toLowerCase() !== hb.ownerId.toLowerCase() ? login : null;
+}
 
 /** Tick-driven fire: runs gate checks, fires if all pass.
  *  The tick loop already filters in-flight rows out before calling
  *  this, but we wrap defensively in case a future caller skips the
  *  filter — exclusion still holds. A heartbeat another Admin login set up
  *  (heartbeats.created_by, W7a fix round 3) fires as that login
- *  (makerCaller), never as the brain owner. */
+ *  (loginCaller), never as the brain owner. */
 export async function tickFire(hb: Heartbeat): Promise<FireResult> {
   return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false }));
 }
@@ -132,9 +148,10 @@ const MAKER_GONE =
   'the login that set it up is not a user of the Admin workspace now (removed or disabled); ask an Admin user to edit and resume it';
 
 /**
- * The scope a fire with no caller (the tick, or a forced fire from outside
- * any scope) runs heartbeat `hb` in: the login that set it up
- * (heartbeats.created_by, W7a fix round 3; null is the anchor) answers it.
+ * The scope a fire with no caller runs heartbeat `hb` in, for the login it
+ * answers: the tick's is the login that set it up (heartbeats.created_by,
+ * W7a fix round 3; null is the anchor), a forced fire's is its firer
+ * (FireOpts.answeredBy, W7 integration fix 2, H1).
  * The Admin assistant runs in that login's turn scope of Admin; a helper
  * with no workspace (the replay agent, a specialist) takes the branch a
  * chat with it takes (W7c fix round 2, H1; W7 integration fix): that
@@ -144,14 +161,15 @@ const MAKER_GONE =
  * change. The rollback switch and a brain not on workspaces are
  * withAgentScope's (the system pool, or the level, as before).
  */
-function makerCaller(
+function loginCaller(
   hb: Heartbeat,
   agent: ScopedAgent,
   kind: 'admin' | 'workspace' | 'none',
+  login: string | null,
 ): FireOpts['inCaller'] | null {
   if (kind === 'workspace') return null;
-  const maker = hb.createdBy ?? hb.ownerId;
-  return (fn) => withAgentScope(agent, fn, { ownerLoginId: maker });
+  const actsFor = login ?? hb.ownerId;
+  return (fn) => withAgentScope(agent, fn, { ownerLoginId: actsFor });
 }
 
 async function fireInner(
@@ -160,6 +178,10 @@ async function fireInner(
 ): Promise<FireResult> {
   const now = new Date();
   let inCaller = opts.inCaller ?? (<T>(fn: () => Promise<T>) => fn());
+  // The login this fire answers (H1): its firer when forced by one, else
+  // the heartbeat's maker. Only that login reads the fire's row in full.
+  const answersMaker = opts.answeredBy === undefined;
+  const answeredBy = answersMaker ? answerer(hb, hb.createdBy) : answerer(hb, opts.answeredBy);
 
   // Capture the heartbeat's `next_fire_at` as it was when the fire
   // started. We need this at the end of the success path to detect
@@ -204,7 +226,7 @@ async function fireInner(
           detail: gate.detail,
         },
       });
-      await recordFire(hb, {
+      await recordFire(hb, answeredBy, {
         disposition: gate.reason,
         stateBefore: hb.state,
         stateAfter: null,
@@ -222,7 +244,7 @@ async function fireInner(
       and(eq(agents.ownerId, hb.ownerId), eq(agents.slug, hb.agentSlug), eq(agents.enabled, true)),
     )
     .limit(1);
-  if (!agent) return autoPause(hb, `agent '${hb.agentSlug}' not found or disabled`);
+  if (!agent) return autoPause(hb, answeredBy, `agent '${hb.agentSlug}' not found or disabled`);
 
   const [skill] = await db
     .select()
@@ -231,7 +253,7 @@ async function fireInner(
       and(eq(skills.ownerId, hb.ownerId), eq(skills.slug, hb.skillSlug), eq(skills.enabled, true)),
     )
     .limit(1);
-  if (!skill) return autoPause(hb, `skill '${hb.skillSlug}' not found or disabled`);
+  if (!skill) return autoPause(hb, answeredBy, `skill '${hb.skillSlug}' not found or disabled`);
 
   // An assistant of a workspace other than Admin (the Team assistant) fires
   // inside its workspace (W4b fix round 1, M2): its tools are resolved and
@@ -250,20 +272,29 @@ async function fireInner(
     kind = await agentWorkspaceKind(agent);
     adminAssistant = kind === 'admin';
   } catch (err) {
-    return autoPause(hb, `agent '${agent.slug}': ${errorMessage(err)}`);
+    return autoPause(hb, answeredBy, `agent '${agent.slug}': ${errorMessage(err)}`);
   }
-  // No caller: the heartbeat's maker answers the fire (makerCaller).
-  const answersMaker = !opts.inCaller;
-  if (answersMaker) inCaller = makerCaller(hb, agent, kind) ?? inCaller;
+  // No caller: the login the fire answers runs it in its own scope
+  // (loginCaller). An assistant of a workspace other than Admin fires by its
+  // own rules whoever fired it (W7 integration fix 2, M5): in a turn scope
+  // of its workspace that answers no login, never in the firer's scope
+  // (which its scope cannot change into) nor in the scope a tool's system
+  // pool work left behind.
+  if (kind === 'workspace') inCaller = (fn) => withoutLeftScope(fn);
+  else if (!opts.inCaller) inCaller = loginCaller(hb, agent, kind, answeredBy) ?? inCaller;
 
-  if (!agent.apiKeyId) return autoPause(hb, `agent '${agent.slug}' has no api_key configured`);
+  if (!agent.apiKeyId) {
+    return autoPause(hb, answeredBy, `agent '${agent.slug}' has no api_key configured`);
+  }
   const apiKey = await getApiKeyById(agent.apiKeyId);
-  if (!apiKey) return autoPause(hb, `agent '${agent.slug}' api key could not be decrypted`);
+  if (!apiKey) {
+    return autoPause(hb, answeredBy, `agent '${agent.slug}' api key could not be decrypted`);
+  }
   // The key goes to the agent's base URL only while the login that paired
   // them holds the keys area (W7a fix round 5); a keyless provider runs keyless.
   const routeRefused = await chatRouteKeyRefusal(hb.ownerId, agent);
   if (routeRefused && agent.provider !== 'local') {
-    return autoPause(hb, `agent '${agent.slug}': ${routeRefused}`);
+    return autoPause(hb, answeredBy, `agent '${agent.slug}': ${routeRefused}`);
   }
   const routeKey = routeRefused ? 'local' : apiKey;
 
@@ -308,10 +339,8 @@ async function fireInner(
     );
   } catch (err) {
     if (!(err instanceof AgentWorkspaceError)) throw err;
-    if (answersMaker && hb.createdBy && hb.createdBy !== hb.ownerId) {
-      return autoPause(hb, MAKER_GONE);
-    }
-    return autoPause(hb, `agent '${agent.slug}': ${errorMessage(err)}`);
+    if (answersMaker && answeredBy) return autoPause(hb, answeredBy, MAKER_GONE);
+    return autoPause(hb, answeredBy, `agent '${agent.slug}': ${errorMessage(err)}`);
   }
   // Egress gate (opt-in): on an unattended fire, route email/web tools
   // through the approval queue rather than letting them run inline. The
@@ -545,7 +574,7 @@ async function fireInner(
     const disposition: FireResult['disposition'] =
       finalStatus === 'completed' ? 'completed' : delivered ? 'fired' : 'fired_undelivered';
 
-    await recordFire(hb, {
+    await recordFire(hb, answeredBy, {
       disposition,
       stateBefore: hb.state,
       stateAfter: after.state,
@@ -557,7 +586,7 @@ async function fireInner(
     return { disposition, replyText: reply };
   } catch (err) {
     const msg = errorMessage(err);
-    await recordFire(hb, {
+    await recordFire(hb, answeredBy, {
       disposition: 'error',
       stateBefore: hb.state,
       stateAfter: null,
@@ -580,7 +609,11 @@ async function fireInner(
   }
 }
 
-async function autoPause(hb: Heartbeat, reason: string): Promise<FireResult> {
+async function autoPause(
+  hb: Heartbeat,
+  answeredBy: string | null,
+  reason: string,
+): Promise<FireResult> {
   // Distinct from the catch-block 'error' path: auto-pause is for
   // config issues caught BEFORE the LLM runs (agent missing,
   // skill missing, key undecryptable). The heartbeat is moved to
@@ -597,7 +630,7 @@ async function autoPause(hb: Heartbeat, reason: string): Promise<FireResult> {
       updatedAt: new Date(),
     })
     .where(eq(heartbeats.id, hb.id));
-  await recordFire(hb, {
+  await recordFire(hb, answeredBy, {
     disposition: 'auto_paused',
     stateBefore: hb.state,
     stateAfter: null,
@@ -608,6 +641,7 @@ async function autoPause(hb: Heartbeat, reason: string): Promise<FireResult> {
 
 async function recordFire(
   hb: Heartbeat,
+  answeredBy: string | null,
   fields: {
     disposition: FireResult['disposition'];
     stateBefore?: Record<string, unknown> | null;
@@ -628,6 +662,7 @@ async function recordFire(
       replyText: fields.replyText ?? null,
       replySurfaceRef: fields.replySurfaceRef ?? null,
       errorMessage: fields.errorMessage ?? null,
+      answeredBy,
     });
   } catch (err) {
     // Soft-fail: don't let an audit-log write failure kill the fire.

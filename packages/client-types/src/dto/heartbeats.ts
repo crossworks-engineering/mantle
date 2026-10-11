@@ -52,7 +52,12 @@ export interface HeartbeatDTO {
   quietHours: HeartbeatQuietHoursDTO | null;
   earliestAt: string | null;
   cooldownMinutes: number | null;
+  /** Empty for a login that is not the heartbeat's maker (workspaces W7):
+   *  `stateHidden` is then true. */
   state: Record<string, unknown>;
+  /** The state is another login's, so it is not shown (and an empty `state`
+   *  sent back on an edit leaves it as it is). Absent for the maker. */
+  stateHidden?: boolean;
   status: 'active' | 'paused' | 'completed' | 'cancelled';
   completionReason: string | null;
   /** The login that set up what this heartbeat does, when it is not the

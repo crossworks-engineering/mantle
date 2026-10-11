@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteHeartbeat, getHeartbeat, updateHeartbeat } from '@/lib/heartbeats';
+import { toolMakerFor } from '@/lib/tools';
 import { UpdateHeartbeatBody, toUpdateInput } from '@/lib/heartbeat-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -10,7 +11,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await params;
-  const heartbeat = await getHeartbeat(user.id, id);
+  const heartbeat = await getHeartbeat(user.id, id, toolMakerFor(user));
   if (!heartbeat) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });
   return NextResponse.json({ heartbeat });
 }

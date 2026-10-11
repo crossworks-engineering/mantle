@@ -13,8 +13,8 @@
  *  A4. A provider change on a keyed route with a base URL is a new pairing.
  *  A5. Provisioning an Azure route is the keys area's, and stamps it.
  * Chat isolation (each user reads only their own chats and digests):
- *  C1. A heartbeat on a helper or the Admin assistant answers its maker;
- *      its replies go to the maker and the anchor only.
+ *  C1. A heartbeat on a helper or the Admin assistant answers its maker on
+ *      the tick; a fire's reply goes only to the login it answered.
  *  C3. The learned lanes ride only the anchor's own thread.
  *  C4. A brain not on workspaces: a helper answering a login runs.
  *  C5. Persona notes are the anchor login's only.
@@ -385,12 +385,15 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     expect(h.digests).not.toContain(second);
   });
 
-  it('C1: a fire’s reply goes to the heartbeat’s maker and the anchor only', async () => {
+  it('C1: a fire’s reply goes to the login it answered only (W7 integration fix 2)', async () => {
     const mine = await newHeartbeat(`${tag}-hb-reply-o`, agent.slug, null);
     const theirs = await newHeartbeat(`${tag}-hb-reply-l`, agent.slug, second);
-    for (const hb of [mine, theirs]) {
-      await x(sql`insert into heartbeat_fires (heartbeat_id, disposition, reply_text)
-        values (${hb.id}, 'fired', ${`${tag} reply ${hb.slug}`})`);
+    for (const [hb, by] of [
+      [mine, null],
+      [theirs, second],
+    ] as const) {
+      await x(sql`insert into heartbeat_fires (heartbeat_id, disposition, reply_text, answered_by)
+        values (${hb.id}, 'fired', ${`${tag} reply ${hb.slug}`}, ${by})`);
     }
     const detail = await import('@/app/api/heartbeats/[id]/detail/route');
     const reply = async (hbId: string) => {
@@ -404,7 +407,7 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     expect(await reply(theirs.id)).toMatch(tag);
     as(owner);
     expect(await reply(mine.id)).toMatch(tag);
-    expect(await reply(theirs.id)).toMatch(tag);
+    expect(await reply(theirs.id)).toBeNull();
   });
 
   it("C3: the learned lanes ride only the anchor's own thread", async () => {

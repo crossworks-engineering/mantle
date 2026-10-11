@@ -43,12 +43,18 @@ import {
   withTurnScope,
   type Heartbeat,
 } from '@mantle/db';
-import { currentRequestMode, currentWorkspaceScope } from '@mantle/db/viewer';
+import {
+  currentRequestMode,
+  currentWorkspaceScope,
+  scopeLeftForSystem,
+} from '@mantle/db/viewer';
 import {
   adminAreaError,
   areaSystem,
+  ownerSurfaceLoginId,
   registerBuiltin,
   type BuiltinToolDef,
+  type ToolHandlerContext,
   type ToolHandlerResult,
 } from '@mantle/tools';
 import { currentHeartbeat, MAX_HEARTBEAT_DEPTH } from './context';
@@ -68,6 +74,20 @@ async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
   if (!currentWorkspaceScope()) return fn();
   if (await scopeHoldsAdmin()) return asSystem(fn, 'admin-area');
   return asSystem(fn, 'heartbeat-own-row');
+}
+
+/**
+ * The login a heartbeat tool call answers, as heartbeats.created_by and
+ * heartbeat_fires.answered_by store it (W7 integration fix 2, H1): the login
+ * of the caller's scope (or of the scope its area work left for the system
+ * pool), else the login its owner surface names; null for the brain owner
+ * (the anchor login) and for a call that names none (the anchor's stdio MCP,
+ * a brain not on workspaces).
+ */
+function callerLogin(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string | null {
+  const scope = currentWorkspaceScope() ?? scopeLeftForSystem();
+  const login = scope ? scope.loginId : ownerSurfaceLoginId(ctx.surface);
+  return login && login.toLowerCase() !== ctx.ownerId.toLowerCase() ? login : null;
 }
 
 async function loadOwnedHeartbeatById(ownerId: string, id: string): Promise<Heartbeat | null> {
@@ -364,7 +384,12 @@ const heartbeat_list: BuiltinToolDef = {
       lastFiredAt: heartbeats.lastFiredAt,
       fireCount: heartbeats.fireCount,
     };
-    const columns = includeState ? { ...baseColumns, state: heartbeats.state } : baseColumns;
+    // A heartbeat's state is its maker's only (W7 integration fix 2, H1):
+    // the caller reads the state of the heartbeats it set up, never another
+    // login's (the anchor's included).
+    const columns = includeState
+      ? { ...baseColumns, state: heartbeats.state, createdBy: heartbeats.createdBy }
+      : baseColumns;
 
     const baseQuery = db.select(columns).from(heartbeats);
     const rows = status
@@ -378,6 +403,14 @@ const heartbeat_list: BuiltinToolDef = {
           .limit(limit)
       : await baseQuery.where(eq(heartbeats.ownerId, ctx.ownerId)).limit(limit);
 
+    const me = callerLogin(ctx);
+    const shown = includeState
+      ? rows.map((r) => {
+          const { createdBy, ...rest } = r as typeof r & { createdBy: string | null };
+          const maker = createdBy && createdBy !== ctx.ownerId ? createdBy : null;
+          return maker === me ? rest : { ...rest, state: null, state_hidden: true };
+        })
+      : rows;
     ctx.step?.setMeta({
       count: rows.length,
       limit,
@@ -387,7 +420,7 @@ const heartbeat_list: BuiltinToolDef = {
     return {
       ok: true,
       output: {
-        heartbeats: rows,
+        heartbeats: shown,
         count: rows.length,
         limit,
         truncated: rows.length === limit,
@@ -459,14 +492,18 @@ const heartbeat_fire: BuiltinToolDef = {
     if (hb.status !== 'active') {
       return { ok: false, error: `heartbeat '${slug}' is '${hb.status}', not 'active'` };
     }
+    // The fire answers its firer (W7 integration fix 2, H1), the anchor
+    // included: its reply, state and trace are the firer's to read.
     const writes = currentRequestMode()?.writes === true;
+    const answeredBy = callerLogin(ctx);
     const result = caller
       ? await areaSystem('assistants', () =>
           forceFire(hb, {
             inCaller: (fn) => withTurnScope(caller, fn, { writes }),
+            answeredBy,
           }),
         )
-      : await forceFire(hb);
+      : await forceFire(hb, { answeredBy });
     ctx.step?.setMeta({
       branch: 'fired',
       heartbeat_id: hb.id,

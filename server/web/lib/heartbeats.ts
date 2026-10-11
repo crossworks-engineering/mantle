@@ -58,7 +58,18 @@ export type { HeartbeatFireSummary };
  */
 export type HeartbeatSummary = HeartbeatDTO;
 
-function toSummary(h: Heartbeat): HeartbeatSummary {
+/**
+ * Whether `reader` (the signed-in login, null for the brain owner) is the
+ * heartbeat's maker (heartbeats.created_by, null the brain owner): only the
+ * maker reads its state (W7 integration fix 2, H1), the running memory the
+ * maker's own turns wrote. The anchor reads only its own.
+ */
+function readsState(h: Pick<Heartbeat, 'createdBy' | 'ownerId'>, reader: string | null): boolean {
+  return heartbeatMaker(h.ownerId, reader) === heartbeatMaker(h.ownerId, h.createdBy);
+}
+
+function toSummary(h: Heartbeat, reader: string | null): HeartbeatSummary {
+  const own = readsState(h, reader);
   return {
     id: h.id,
     slug: h.slug,
@@ -77,7 +88,9 @@ function toSummary(h: Heartbeat): HeartbeatSummary {
     quietHours: h.quietHours,
     earliestAt: h.earliestAt?.toISOString() ?? null,
     cooldownMinutes: h.cooldownMinutes,
-    state: (h.state ?? {}) as Record<string, unknown>,
+    // Another login's state is hidden (H1): an empty object, flagged.
+    state: own ? ((h.state ?? {}) as Record<string, unknown>) : {},
+    ...(own ? {} : { stateHidden: true }),
     status: h.status,
     completionReason: h.completionReason,
     createdBy: h.createdBy ?? null,
@@ -86,22 +99,31 @@ function toSummary(h: Heartbeat): HeartbeatSummary {
   };
 }
 
-export async function listHeartbeats(ownerId: string): Promise<HeartbeatSummary[]> {
+/** `reader`: the signed-in login, null for the brain owner (toolMakerFor):
+ *  a heartbeat's state shows only to its maker (H1). */
+export async function listHeartbeats(
+  ownerId: string,
+  reader: string | null,
+): Promise<HeartbeatSummary[]> {
   const rows = await db
     .select()
     .from(heartbeats)
     .where(eq(heartbeats.ownerId, ownerId))
     .orderBy(asc(heartbeats.slug));
-  return rows.map(toSummary);
+  return rows.map((r) => toSummary(r, reader));
 }
 
-export async function getHeartbeat(ownerId: string, id: string): Promise<HeartbeatSummary | null> {
+export async function getHeartbeat(
+  ownerId: string,
+  id: string,
+  reader: string | null,
+): Promise<HeartbeatSummary | null> {
   const [row] = await db
     .select()
     .from(heartbeats)
     .where(and(eq(heartbeats.id, id), eq(heartbeats.ownerId, ownerId)))
     .limit(1);
-  return row ? toSummary(row) : null;
+  return row ? toSummary(row, reader) : null;
 }
 
 /**
@@ -147,20 +169,25 @@ export function heartbeatMaker(ownerId: string, loginId: string | null | undefin
 export class FireRefused extends Error {}
 
 /**
- * How the Fire now route fires for the signed-in login (W7a fix round 3):
- * a login other than the brain owner fires in its own scope, as the
- * heartbeat_fire tool does (the fire's tool resolution and turn answer that
- * login, with its rights), never as the anchor. The brain owner, the
- * rollback switch and a brain not on workspaces: as before.
+ * How the Fire now route fires for the signed-in login (W7a fix round 3; W7
+ * integration fix 2, H1): the fire answers its firer, the brain owner
+ * included, never the heartbeat's maker. A login other than the brain owner
+ * fires in its own scope, as the heartbeat_fire tool does (the fire's tool
+ * resolution and turn answer that login, with its rights); the brain owner
+ * fires in its own scope too (the engine's loginCaller), so its Fire now on
+ * another login's heartbeat answers the brain owner. Under the rollback
+ * switch and on a brain not on workspaces the engine's scope rules apply,
+ * the fire still answering its firer.
  */
 export async function fireOptsFor(ownerId: string, loginId: string): Promise<FireOpts> {
-  if (!heartbeatMaker(ownerId, loginId)) return {};
-  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return {};
+  const firer = heartbeatMaker(ownerId, loginId);
+  if (!firer) return { answeredBy: null };
+  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return { answeredBy: firer };
   const scope = await loginScopeFor(loginId);
   if (scope.ws.length === 0) {
     throw new FireRefused('This login is a user of no workspace, so it fires nothing.');
   }
-  return { inCaller: (fn) => withTurnScope(scope, fn, { writes: true }) };
+  return { inCaller: (fn) => withTurnScope(scope, fn, { writes: true }), answeredBy: firer };
 }
 
 export async function createHeartbeat(
@@ -224,7 +251,7 @@ export async function createHeartbeat(
   // within seconds, not up to 60. Soft-fail; the next regular tick
   // recovers anyway. (NEW-7.)
   void notifyHeartbeatDue(ownerId);
-  return toSummary(row);
+  return toSummary(row, heartbeatMaker(ownerId, loginId));
 }
 
 export type UpdateHeartbeatInput = Partial<Omit<CreateHeartbeatInput, 'slug'>> & {
@@ -245,6 +272,17 @@ export async function updateHeartbeat(
   loginId?: string | null,
 ): Promise<HeartbeatSummary | null> {
   const next: Record<string, unknown> = { updatedAt: new Date() };
+  const reader = heartbeatMaker(ownerId, loginId);
+  // A login that is not the maker was shown an empty, hidden state (H1): an
+  // edit form that sends that back must not wipe the maker's state.
+  if (patch.state !== undefined && loginId !== undefined && Object.keys(patch.state).length === 0) {
+    const [cur] = await db
+      .select({ createdBy: heartbeats.createdBy, ownerId: heartbeats.ownerId })
+      .from(heartbeats)
+      .where(and(eq(heartbeats.id, id), eq(heartbeats.ownerId, ownerId)))
+      .limit(1);
+    if (cur && !readsState(cur, reader)) patch = { ...patch, state: undefined };
+  }
   if (loginId !== undefined && MAKER_FIELDS.some((k) => patch[k] !== undefined)) {
     next.createdBy = heartbeatMaker(ownerId, loginId);
   }
@@ -275,7 +313,7 @@ export async function updateHeartbeat(
     // Resuming an inactive heartbeat? Recompute its next_fire_at so
     // the tick loop picks it up.
     if (patch.status === 'active' && patch.schedule === undefined) {
-      const existing = await getHeartbeat(ownerId, id);
+      const existing = await getHeartbeat(ownerId, id, reader);
       if (existing) {
         next.nextFireAt = computeNextFireAt({
           schedule: existing.schedule,
@@ -297,7 +335,7 @@ export async function updateHeartbeat(
   // explicit state changes that might have re-armed the row. Soft-
   // fail; the regular tick recovers. (NEW-7.)
   if (row) void notifyHeartbeatDue(ownerId);
-  return row ? toSummary(row) : null;
+  return row ? toSummary(row, reader) : null;
 }
 
 export async function deleteHeartbeat(ownerId: string, id: string): Promise<boolean> {
@@ -326,11 +364,12 @@ function toFireSummary(f: HeartbeatFire): HeartbeatFireSummary {
  *  these as a table; default cap is 50 since heartbeats can fire
  *  often and the audit log only matters for recent activity.
  *
- *  `reader` is the login asking (null: the anchor). A fire's reply is the
- *  turn of the login that set the heartbeat up (heartbeats.created_by,
- *  null the anchor), read with that login's chats and digests: it goes
- *  only to that login and the anchor; anyone else gets the fire with no
- *  reply text (W7 integration fix). */
+ *  `reader` is the login asking (null: the anchor). A fire is the turn of
+ *  the login it answered (heartbeat_fires.answered_by, W7 integration fix
+ *  2, H1: the firer for Fire now and heartbeat_fire, the maker for the
+ *  tick; null the anchor), read with that login's chats and digests: its
+ *  reply, its state before and after and its trace go only to that login.
+ *  Anyone else, the anchor included, gets the fire with those empty. */
 export async function listHeartbeatFires(
   ownerId: string,
   heartbeatId: string,
@@ -339,7 +378,7 @@ export async function listHeartbeatFires(
 ): Promise<HeartbeatFireSummary[]> {
   // Ownership join via heartbeats — the fires table doesn't carry
   // owner_id directly; the FK cascade keeps the data clean.
-  const owns = await getHeartbeat(ownerId, heartbeatId);
+  const owns = await getHeartbeat(ownerId, heartbeatId, reader);
   if (!owns) return [];
   const rows = await db
     .select()
@@ -347,10 +386,10 @@ export async function listHeartbeatFires(
     .where(eq(heartbeatFires.heartbeatId, heartbeatId))
     .orderBy(desc(heartbeatFires.firedAt))
     .limit(limit);
-  const asker = reader ?? ownerId;
-  const repliesVisible = asker === ownerId || asker === (owns.createdBy ?? ownerId);
+  const asker = heartbeatMaker(ownerId, reader);
   return rows.map((f) => {
     const fire = toFireSummary(f);
-    return repliesVisible ? fire : { ...fire, replyText: null };
+    if (heartbeatMaker(ownerId, f.answeredBy) === asker) return fire;
+    return { ...fire, replyText: null, stateBefore: null, stateAfter: null, traceId: null };
   });
 }
