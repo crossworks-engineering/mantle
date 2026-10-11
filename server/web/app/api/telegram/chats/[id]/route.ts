@@ -2,11 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, agents, telegramChats } from '@mantle/db';
-import {
-  isBelowAdminAgent,
-  TELEGRAM_LEVEL_CODE,
-  telegramResponderRefusal,
-} from '@mantle/telegram/level';
+import { chatLoginRefusal, TELEGRAM_NOT_A_USER_CODE } from '@mantle/telegram';
 import { getOwnerOr401 } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -35,26 +31,46 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   // Verify the chat belongs to this owner.
   const [chat] = await db
-    .select({ id: telegramChats.id })
+    .select({
+      id: telegramChats.id,
+      accountId: telegramChats.accountId,
+      loginId: telegramChats.loginId,
+      status: telegramChats.allowlistStatus,
+    })
     .from(telegramChats)
     .where(and(eq(telegramChats.id, idParsed.data.id), eq(telegramChats.userId, user.id)))
     .limit(1);
   if (!chat) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
 
   // If setting an override, verify the agent belongs to this owner, and that
-  // it is admin-level: a Telegram chat acts as the owner (access matrix T21).
+  // a paired chat's user is a user of its workspace too (workspaces W7d): a
+  // turn runs as that user, in the workspace of every assistant the chat
+  // runs as, so an override never moves a user's chat into a workspace they
+  // are not in.
   if (parsed.data.responderAgentId) {
     const [agent] = await db
-      .select({ id: agents.id, name: agents.name, audience: agents.audience })
+      .select({ id: agents.id })
       .from(agents)
       .where(and(eq(agents.id, parsed.data.responderAgentId), eq(agents.ownerId, user.id)))
       .limit(1);
     if (!agent) return NextResponse.json({ error: 'Agent not found.' }, { status: 404 });
-    if (isBelowAdminAgent(agent)) {
-      return NextResponse.json(
-        { error: telegramResponderRefusal(agent), code: TELEGRAM_LEVEL_CODE },
-        { status: 400 },
-      );
+    if (chat.status === 'allowed' && chat.loginId) {
+      const refused = await chatLoginRefusal({
+        ownerId: user.id,
+        loginId: chat.loginId,
+        accountId: chat.accountId,
+        responderAgentId: agent.id,
+      });
+      if (refused === 'not_a_user') {
+        return NextResponse.json(
+          {
+            error:
+              "The chat's user is not a user of that assistant's workspace. Add them there first, or pick another assistant.",
+            code: TELEGRAM_NOT_A_USER_CODE,
+          },
+          { status: 400 },
+        );
+      }
     }
   }
 

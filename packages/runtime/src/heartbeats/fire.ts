@@ -33,7 +33,7 @@ import {
 import { getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { getChatAdapter, type ThinkingEffort } from '@mantle/voice';
-import { accountForChat, sendMessage } from '@mantle/telegram';
+import { accountById, pairedChatOf, sendMessage } from '@mantle/telegram';
 import {
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
@@ -184,12 +184,20 @@ async function fireInner(
   // the heartbeat's maker. Only that login reads the fire's row in full.
   const answersMaker = opts.answeredBy === undefined;
   const answeredBy = answersMaker ? answerer(hb, hb.createdBy) : answerer(hb, opts.answeredBy);
-  // The Telegram chat a heartbeat names is the brain owner's (the anchor's
-  // Telegram inbox): only a fire that answers the brain owner reaches it,
-  // as its turn's surface or its delivery (W7 integration fix 3, F1). A fire
-  // that answers another login runs on the web surface and delivers nothing.
-  const telegramChat =
-    hb.surface.kind === 'telegram' && answeredBy === null ? hb.surface.chat_id : null;
+  // The Telegram chat a heartbeat names is reached only when it is paired to
+  // the login this fire answers (workspaces W7d; the maker for the tick, the
+  // brain owner for null), as the turn's surface and its delivery. A fire
+  // whose login has no such chat runs on the web surface and delivers
+  // nothing (W7 integration fix 3, F1, now per login).
+  const pairedTelegram =
+    hb.surface.kind === 'telegram'
+      ? await pairedChatOf({
+          ownerId: hb.ownerId,
+          loginId: answeredBy ?? hb.ownerId,
+          telegramChatId: hb.surface.chat_id,
+        }).catch(() => null)
+      : null;
+  const telegramChat = pairedTelegram?.telegramChatId ?? null;
 
   // Capture the heartbeat's `next_fire_at` as it was when the fire
   // started. We need this at the end of the success path to detect
@@ -474,9 +482,9 @@ async function fireInner(
         let surfaceRef: Record<string, unknown> | null = null;
         let delivered = true;
         if (replyText.trim() && hb.surface.kind === 'telegram' && !telegramChat) {
-          // A fire that answers a login other than the brain owner never
-          // reaches the brain owner's Telegram chat (W7 integration fix 3,
-          // F1): the reply stays in the fire row, that login's to read.
+          // The named chat is not paired to the login this fire answers
+          // (W7d; W7 integration fix 3, F1): it reaches no one else's chat,
+          // and the reply stays in the fire row, that login's to read.
           await step(
             {
               name: 'deliver_surface',
@@ -501,8 +509,8 @@ async function fireInner(
               },
             },
             async (h) => {
-              if (hb.surface.kind !== 'telegram') return null;
-              const account = await accountForChat(hb.surface.chat_id);
+              if (hb.surface.kind !== 'telegram' || !pairedTelegram) return null;
+              const account = await accountById(pairedTelegram.accountId);
               if (!account) {
                 h.setSkipped('no_enabled_telegram_account');
                 delivered = false;

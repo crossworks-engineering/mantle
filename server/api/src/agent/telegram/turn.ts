@@ -48,11 +48,17 @@ export async function runTelegramTurn(args: {
   agent: Agent;
   apiKey: string;
   ownerId: string;
+  /** The login the chat is paired to (workspaces W7d): the turn answers it,
+   *  in its own thread, in the workspace of the assistant. */
+  loginId: string;
+  /** An assistant of a workspace other than Admin (W7d): text in, text
+   *  out, as its web chat. */
+  textOnly?: boolean;
   wasVoice: boolean;
   voiceFileId: string | null;
   attachmentContext: AttachmentContext | null;
 }): Promise<void> {
-  const { row, agent, apiKey, ownerId, wasVoice, voiceFileId, attachmentContext } = args;
+  const { row, agent, apiKey, ownerId, loginId, wasVoice, voiceFileId, attachmentContext } = args;
   // ── 0. Transcribe voice (if any) BEFORE anything downstream reads
   // `row.text`. Failure downgrades the turn to a text apology rather
   // than crashing the trace. See telegram/voice.ts.
@@ -80,8 +86,8 @@ export async function runTelegramTurn(args: {
     recordTurn({
       ownerId,
       agentId: agent.id,
-      // The brain owner's own surface (R3): the owner's login.
-      loginId: ownerId,
+      // The chat's own login (R3, W7d): its thread, never another's.
+      loginId,
       direction: 'inbound',
       text: row.text,
       channel: 'telegram',
@@ -94,25 +100,24 @@ export async function runTelegramTurn(args: {
     }),
   );
   // Telegram is reminder-capable, so messaging a bot makes Telegram the
-  // reminder destination (until the user next messages from the app).
-  // Best-effort — must never break the inbound. See reminder-delivery-routing.md.
-  void noteInboundChannel(ownerId, 'telegram');
+  // reminder and approval destination of THIS login (until it next messages
+  // from the app; per login since W7d). Best-effort, must never break the
+  // inbound. See reminder-delivery-routing.md.
+  void noteInboundChannel(loginId, 'telegram');
 
   // Shared responder-turn assembly (audit #5c): identity + skills
   // prompt (+ the audio-tag suffix), volatile context (time line +
   // open-heartbeat awareness), tool allowlist + heartbeat affordance,
   // thinking budget, per-agent loop overrides. Same strings, same
   // gating as the web /assistant path — one implementation, no drift.
-  const audioTagInstructions = await audioTagInstructionsFor(ownerId, agent);
+  const audioTagInstructions = args.textOnly ? '' : await audioTagInstructionsFor(ownerId, agent);
   const prefs = await loadProfilePreferences(ownerId);
   const assembled = await assembleResponderTurn({
     ownerId,
     agent,
-    // The owner's Telegram bot is the anchor's chat until W7d makes it per
-    // user: a helper (no workspace) answers the anchor login here, in its
-    // turn scope of Admin, never on the system pool at its level (W7
-    // integration fix).
-    ownerLoginId: ownerId,
+    // The chat's login (W7d): the assistant answers it in its workspace;
+    // a helper (no workspace) in that login's turn scope of Admin.
+    loginId,
     prefs,
     logPrefix: '[agent]',
     systemPromptSuffix: audioTagInstructions,
@@ -166,7 +171,7 @@ export async function runTelegramTurn(args: {
     (ctxPromise ??= loadConversationContext({
       ownerId,
       agent,
-      ownerLoginId: ownerId, // the anchor's chat, as above
+      loginId, // the chat's login, as above
       inboundText: row.text,
       // Exclude the inbound we just recorded; only look before it.
       excludeMessageId: convInbound.id,
@@ -229,6 +234,7 @@ export async function runTelegramTurn(args: {
       surface: {
         kind: 'telegram',
         telegramChatId: row.telegramChatId,
+        loginId,
         ...(row.telegramMessageId ? { replyToTelegramMessageId: row.telegramMessageId } : {}),
       },
     });
@@ -280,7 +286,7 @@ export async function runTelegramTurn(args: {
   // emitted `[VOICE]` marker) opt in. Enable/disable happens by
   // enabling/disabling the TTS worker row. Per-agent voice: the TTS
   // worker this agent pins (agent.ttsWorkerId), else the owner's default.
-  const replyAsVoice = wasVoice || requestedVoice;
+  const replyAsVoice = !args.textOnly && (wasVoice || requestedVoice);
   const ttsWorker = replyAsVoice ? await getAgentTtsWorker(ownerId, agent.ttsWorkerId) : null;
 
   const delivery = await deliverReply({
@@ -291,7 +297,7 @@ export async function runTelegramTurn(args: {
     replyAsVoice,
     ttsWorker,
   });
-  await persistOutbound({ ownerId, row, account, agent, reply, delivery, outcome });
+  await persistOutbound({ ownerId, loginId, row, account, agent, reply, delivery, outcome });
 
   // Bump agent usage outside the trace's hot path — best-effort.
   void db

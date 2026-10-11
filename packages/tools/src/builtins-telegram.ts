@@ -1,106 +1,106 @@
 /**
- * Builtins: telegram_send plus the owner's Telegram operator surface.
+ * Builtins: telegram_send plus each user's Telegram operator surface.
  *
  * Split out of builtins.ts on 2026-09-02 (audit, bloat B6) with behaviour
  * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
  *
  * The operator tools below (pending / react / edit / mark_processed / pair)
  * were hand-written on the MCP side until tier 3 of the same audit. They are
- * `mcpOnly`: the caller is the OWNER working their own inbox by hand, and
- * `telegram_pair` in particular moves the allowlist — the trust boundary that
- * decides who may talk to the brain at all — so no agent is granted them. The
- * in-brain path into Telegram stays the runtime's own turn handler.
+ * `mcpOnly`: the caller is a USER working their own Telegram chats by hand,
+ * and `telegram_pair` in particular moves the allowlist, the trust boundary
+ * that decides who may talk to the brain at all, so no agent is granted
+ * them. The in-brain path into Telegram stays the runtime's own turn handler.
+ *
+ * Telegram per paired user (workspaces W7d): a paired chat belongs to one
+ * login (telegram_chats.login_id). Every tool here acts only on chats paired
+ * to the caller's own login (the anchor: its own chats, no longer every
+ * chat), and telegram_pair pairs a chat to the caller and nobody else.
  */
 
 import { and, asc, eq } from 'drizzle-orm';
 import {
-  agents,
-  channels,
+  asSystem,
+  currentGateScope,
+  currentTurnStamp,
   db,
-  telegramAccounts,
+  scopeLeftForSystem,
   telegramChats,
   telegramMessages,
+  type TelegramAccount,
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { type BuiltinToolDef, type ToolHandlerContext } from './types';
 import { ownerSurfaceLoginId } from './surface';
 import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
 import {
-  accountForChat,
-  belowAdminChatAgent,
+  accountById,
   editMessage,
+  pairChatWithCode,
+  pairedChatOf,
   reactToMessage,
   sendMessage,
+  type PairedChat,
 } from '@mantle/telegram';
-import { telegramPairRefusal } from '@mantle/telegram/level';
 import { errorMessage } from '@mantle/std';
 
 /**
- * The outbound gate for a chat: the caller must OWN it and it must be
- * allowlisted.
- *
- * `accountForChat` reads as though it scopes and does not — its parameter is
- * `_chatId` and it returns the first enabled account on the box — so every
- * tool that reaches the Telegram API has to carry this check itself.
- * `telegram_send` always did; `telegram_react` and `telegram_edit` did not,
- * and would act on any chat id handed to them, allowlisted or not, owned or
- * not. One helper now, so the next outbound tool cannot forget it.
+ * The login this call acts for (workspaces W7d): the login its surface
+ * names (a web or Telegram chat, an MCP connection, an API key), else the
+ * login of the scope it runs in (or the scope its system-pool work left, or
+ * the rollback switch's gate scope), else the turn's stamp, else the
+ * anchor's own stdio MCP (an owner surface that names no login). Null when
+ * none is known: every tool here then refuses. Never read from model
+ * arguments.
  */
-async function allowlistedChat(
-  ownerId: string,
-  chatId: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const [chat] = await db
-    .select({ status: telegramChats.allowlistStatus })
-    .from(telegramChats)
-    .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.telegramChatId, chatId)))
-    .limit(1);
-  if (!chat || chat.status !== 'allowed') {
-    return { ok: false, error: `chat ${chatId} is not allowlisted` };
-  }
-  return { ok: true };
+export function telegramCallerLogin(ctx: ToolHandlerContext): string | null {
+  const named = ownerSurfaceLoginId(ctx.surface);
+  if (named) return named;
+  const scope = currentWorkspaceScope() ?? scopeLeftForSystem() ?? currentGateScope();
+  if (scope?.loginId) return scope.loginId;
+  const stamped = currentTurnStamp()?.loginId;
+  if (stamped) return stamped;
+  const s = ctx.surface as { kind?: string; via?: string; loginId?: unknown } | undefined;
+  if (s?.kind === 'owner' && s.via === 'mcp' && !s.loginId) return ctx.ownerId;
+  return null;
 }
 
-/** The refusal telegram_pair gives a caller that is not the anchor. */
-export const TELEGRAM_PAIR_ANCHOR_ONLY =
-  "only the brain's owner pairs a Telegram chat for now: ask them to approve the code from their own MCP client or Settings.";
+/** The refusal when no login is known for the call. */
+export const TELEGRAM_NO_LOGIN_ERROR =
+  'this call names no user, and a Telegram chat is worked only by the user it is paired to.';
 
 /**
- * Whether the caller is the anchor login (the brain's owner): the login its
- * surface names, else the login whose own scope this call runs in, else the
- * anchor's own stdio MCP (an owner surface that names no login). Anything
- * else is not the anchor.
+ * The outbound gate for a chat (W7d): it must be allowlisted AND paired to
+ * the caller's own login. Returns the chat with the bot it is on, so the
+ * send goes out on that bot (one Telegram chat id can sit on two bots).
+ * Another user's chat answers like an unknown one: nothing about it leaks.
  */
-function callerIsAnchor(ctx: ToolHandlerContext): boolean {
-  const anchor = ctx.ownerId.toLowerCase();
-  const named = ownerSurfaceLoginId(ctx.surface);
-  if (named) return named.toLowerCase() === anchor;
-  const scope = currentWorkspaceScope();
-  if (scope?.loginId) return scope.loginId.toLowerCase() === anchor;
-  const s = ctx.surface as { kind?: string; via?: string } | undefined;
-  return s?.kind === 'owner' && s.via === 'mcp';
-}
-
-/** The refusal the other operator tools give a caller that is not the
- *  anchor (W7 integration fix 2, M1). They read and write the anchor's
- *  Telegram inbox on the system pool, so a second Admin login with the
- *  connectors area must not reach them. */
-export const TELEGRAM_OPERATOR_ANCHOR_ONLY =
-  "only the brain's owner works the Telegram inbox for now: ask them to do it from their own MCP client.";
-
-/** Whether this call comes straight off an owner path (an MCP connection, an
- *  API key, a linked brain), not a chat turn: telegram_send refuses there
- *  for anyone but the anchor, while the anchor's own turns keep sending. */
-function directOwnerCall(ctx: ToolHandlerContext): boolean {
-  const s = ctx.surface;
-  return s?.kind === 'owner' && (s.via === 'mcp' || s.via === 'api' || s.via === 'federation');
+async function ownAllowedChat(
+  ctx: ToolHandlerContext,
+  chatId: string,
+): Promise<
+  { ok: true; chat: PairedChat; account: TelegramAccount } | { ok: false; error: string }
+> {
+  const loginId = telegramCallerLogin(ctx);
+  if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
+  const chat = await pairedChatOf({ ownerId: ctx.ownerId, loginId, telegramChatId: chatId });
+  if (!chat) {
+    return {
+      ok: false,
+      error: `chat ${chatId} is not one of your paired chats: see yours with telegram_pending, or pair one with telegram_pair`,
+    };
+  }
+  const account = await asSystem(() => accountById(chat.accountId), 'login-telegram');
+  if (!account || !account.enabled) {
+    return { ok: false, error: 'no enabled telegram bot for this chat' };
+  }
+  return { ok: true, chat, account };
 }
 
 export const telegram_send: BuiltinToolDef = {
   slug: 'telegram_send',
   name: 'Send a Telegram message',
   description:
-    "Send a Telegram DM to one of the user's allowlisted chats. Use only when explicitly asked to message someone — never on the user's initiative without confirmation.",
+    "Send a Telegram DM to one of the user's own paired chats. Use only when explicitly asked to message someone — never on the user's initiative without confirmation.",
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
@@ -121,18 +121,13 @@ export const telegram_send: BuiltinToolDef = {
     required: ['chat_id', 'text'],
   },
   handler: async (input, ctx) => {
-    if (directOwnerCall(ctx) && !callerIsAnchor(ctx)) {
-      return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
-    }
     const chatId = str(input.chat_id);
     const text = str(input.text);
     if (!chatId || !text) return { ok: false, error: 'chat_id + text required' };
-    const account = await accountForChat(chatId);
-    if (!account) return { ok: false, error: 'no enabled telegram account for this chat' };
-    const gate = await allowlistedChat(ctx.ownerId, chatId);
+    const gate = await ownAllowedChat(ctx, chatId);
     if (!gate.ok) return gate;
     try {
-      const ids = await sendMessage(account, chatId, text, {
+      const ids = await sendMessage(gate.account, chatId, text, {
         replyTo: strOpt(input.reply_to),
         markdown: bool(input.markdown),
       });
@@ -150,7 +145,7 @@ export const telegram_pending: BuiltinToolDef = {
   readOnly: true,
   name: 'List unanswered Telegram DMs',
   description:
-    'Unanswered Telegram DMs, oldest first. Call after each turn (or via /loop) to see what needs a reply. Returns the row id (for mark_processed), telegram_message_id (for reply threading), chat_id, sender, text, and sent_at.',
+    'Unanswered Telegram DMs in your own paired chats, oldest first. Call after each turn (or via /loop) to see what needs a reply. Returns the row id (for mark_processed), telegram_message_id (for reply threading), chat_id, sender, text, and sent_at.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -159,39 +154,40 @@ export const telegram_pending: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx) => {
-    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
+    const loginId = telegramCallerLogin(ctx);
+    if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
     const chatId = strOpt(input.chat_id);
-    // Owner scope rides on the chat: telegram_messages has no owner column, so
-    // the join to telegram_chats.user_id is what keeps one owner's pending
-    // queue out of another's. See builtins-read-scope.test.ts.
-    const conds = [eq(telegramMessages.processed, false), eq(telegramChats.userId, ctx.ownerId)];
-    if (chatId) {
-      // chat_id is the *Telegram* chat id; resolve to our internal pk first.
-      const [chat] = await db
-        .select({ id: telegramChats.id })
-        .from(telegramChats)
-        .where(and(eq(telegramChats.userId, ctx.ownerId), eq(telegramChats.telegramChatId, chatId)))
-        .limit(1);
-      if (!chat) return { ok: true, output: [] };
-      conds.push(eq(telegramMessages.chatId, chat.id));
-    }
-    const rows = await db
-      .select({
-        id: telegramMessages.id,
-        telegram_message_id: telegramMessages.telegramMessageId,
-        chat_id: telegramChats.telegramChatId,
-        from_user_id: telegramMessages.fromUserId,
-        from_username: telegramMessages.fromUsername,
-        from_name: telegramMessages.fromName,
-        text: telegramMessages.text,
-        sent_at: telegramMessages.sentAt,
-        attachments: telegramMessages.attachments,
-      })
-      .from(telegramMessages)
-      .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-      .where(and(...conds))
-      .orderBy(asc(telegramMessages.sentAt))
-      .limit(num(input.limit) ?? 20);
+    // Scope rides on the chat: telegram_messages has no owner or login
+    // column, so the join to telegram_chats (this brain, the caller's own
+    // login, still allowed) is what keeps another user's queue out.
+    const conds = [
+      eq(telegramMessages.processed, false),
+      eq(telegramChats.userId, ctx.ownerId),
+      eq(telegramChats.loginId, loginId),
+      eq(telegramChats.allowlistStatus, 'allowed'),
+    ];
+    if (chatId) conds.push(eq(telegramChats.telegramChatId, chatId));
+    const rows = await asSystem(
+      () =>
+        db
+          .select({
+            id: telegramMessages.id,
+            telegram_message_id: telegramMessages.telegramMessageId,
+            chat_id: telegramChats.telegramChatId,
+            from_user_id: telegramMessages.fromUserId,
+            from_username: telegramMessages.fromUsername,
+            from_name: telegramMessages.fromName,
+            text: telegramMessages.text,
+            sent_at: telegramMessages.sentAt,
+            attachments: telegramMessages.attachments,
+          })
+          .from(telegramMessages)
+          .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+          .where(and(...conds))
+          .orderBy(asc(telegramMessages.sentAt))
+          .limit(num(input.limit) ?? 20),
+      'login-telegram',
+    );
     return { ok: true, output: rows };
   },
 };
@@ -201,7 +197,7 @@ export const telegram_react: BuiltinToolDef = {
   mcpOnly: true,
   name: 'React to a Telegram message',
   description:
-    'Add an emoji reaction to a Telegram message. Telegram accepts only a fixed whitelist (👍 👎 ❤ 🔥 👀 🎉 etc).',
+    'Add an emoji reaction to a Telegram message in one of your own paired chats. Telegram accepts only a fixed whitelist (👍 👎 ❤ 🔥 👀 🎉 etc).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -215,16 +211,13 @@ export const telegram_react: BuiltinToolDef = {
     const chatId = str(input.chat_id);
     const messageId = str(input.message_id);
     const emoji = str(input.emoji);
-    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
     if (!chatId || !messageId || !emoji) {
       return { ok: false, error: 'chat_id + message_id + emoji required' };
     }
-    const gate = await allowlistedChat(ctx.ownerId, chatId);
+    const gate = await ownAllowedChat(ctx, chatId);
     if (!gate.ok) return gate;
-    const account = await accountForChat(chatId);
-    if (!account) return { ok: false, error: 'no enabled telegram account' };
     try {
-      await reactToMessage(account, chatId, messageId, emoji);
+      await reactToMessage(gate.account, chatId, messageId, emoji);
       return { ok: true, output: 'reacted' };
     } catch (err) {
       return { ok: false, error: `react failed: ${errorMessage(err)}` };
@@ -237,7 +230,7 @@ export const telegram_edit: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Edit a sent Telegram message',
   description:
-    'Edit a previously-sent Telegram message in place. Useful for progress updates. Edits do not trigger push notifications — send a new reply when a long task completes.',
+    'Edit a previously-sent Telegram message in one of your own paired chats, in place. Useful for progress updates. Edits do not trigger push notifications — send a new reply when a long task completes.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -256,16 +249,13 @@ export const telegram_edit: BuiltinToolDef = {
     const chatId = str(input.chat_id);
     const messageId = str(input.message_id);
     const text = str(input.text);
-    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
     if (!chatId || !messageId || !text) {
       return { ok: false, error: 'chat_id + message_id + text required' };
     }
-    const gate = await allowlistedChat(ctx.ownerId, chatId);
+    const gate = await ownAllowedChat(ctx, chatId);
     if (!gate.ok) return gate;
-    const account = await accountForChat(chatId);
-    if (!account) return { ok: false, error: 'no enabled telegram account' };
     try {
-      await editMessage(account, chatId, messageId, text, { markdown: bool(input.markdown) });
+      await editMessage(gate.account, chatId, messageId, text, { markdown: bool(input.markdown) });
       return { ok: true, output: 'edited' };
     } catch (err) {
       return { ok: false, error: `edit failed: ${errorMessage(err)}` };
@@ -278,7 +268,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Mark a Telegram message answered',
   description:
-    'Mark a telegram message as answered so it stops appearing in telegram_pending. Pass the row id from telegram_pending.',
+    'Mark a telegram message in one of your own paired chats as answered so it stops appearing in telegram_pending. Pass the row id from telegram_pending.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -287,26 +277,37 @@ export const telegram_mark_processed: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
-    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_OPERATOR_ANCHOR_ONLY };
+    const loginId = telegramCallerLogin(ctx);
+    if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
-    // Owner scope rides on the chat, telegram_messages has no owner column.
-    // Resolved first so the UPDATE cannot touch a row the caller does not own:
-    // marking someone else's inbound message processed means their assistant
-    // never answers it, and nothing anywhere errors.
-    const [owned] = await db
-      .select({ id: telegramMessages.id })
-      .from(telegramMessages)
-      .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-      .where(and(eq(telegramMessages.id, id), eq(telegramChats.userId, ctx.ownerId)))
-      .limit(1);
-    if (!owned) return { ok: false, error: 'no such message' };
-    const rows = await db
-      .update(telegramMessages)
-      .set({ processed: true, processedAt: new Date() })
-      .where(eq(telegramMessages.id, id))
-      .returning({ id: telegramMessages.id });
-    if (rows.length === 0) return { ok: false, error: 'no such message' };
+    // Scope rides on the chat, telegram_messages has no owner or login
+    // column. Resolved first so the UPDATE cannot touch a row of another
+    // user's chat: marking it processed means their assistant never
+    // answers it, and nothing anywhere errors.
+    const rows = await asSystem(async () => {
+      const [owned] = await db
+        .select({ id: telegramMessages.id })
+        .from(telegramMessages)
+        .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+        .where(
+          and(
+            eq(telegramMessages.id, id),
+            eq(telegramChats.userId, ctx.ownerId),
+            eq(telegramChats.loginId, loginId),
+          ),
+        )
+        .limit(1);
+      if (!owned) return [];
+      return db
+        .update(telegramMessages)
+        .set({ processed: true, processedAt: new Date() })
+        .where(eq(telegramMessages.id, id))
+        .returning({ id: telegramMessages.id });
+    }, 'login-telegram');
+    if (rows.length === 0) {
+      return { ok: false, error: 'no such message in your chats: take the id from telegram_pending' };
+    }
     return { ok: true, output: 'marked processed' };
   },
 };
@@ -314,9 +315,9 @@ export const telegram_mark_processed: BuiltinToolDef = {
 export const telegram_pair: BuiltinToolDef = {
   slug: 'telegram_pair',
   mcpOnly: true,
-  name: 'Approve a Telegram pairing code',
+  name: 'Pair your Telegram chat',
   description:
-    "Approve a pending Telegram pairing code. The chat gets allowlisted and a confirmation DM is sent. Refused when the bot's agent is below admin level: a paired chat acts as the owner.",
+    "Pair the Telegram chat that was sent this code to YOU (the signed-in user), never to anyone else. Works only for a bot whose assistant is in a workspace you are a user of. The chat is allowlisted and a confirmation DM is sent; the bot's assistant then answers it as you.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -329,65 +330,18 @@ export const telegram_pair: BuiltinToolDef = {
     required: ['code'],
   },
   handler: async (input, ctx) => {
-    // The owner's bot is the anchor's until Telegram is per user (W7d): only
-    // the anchor login pairs a chat to it (W7c fix round 2, M-b), never
-    // another Admin user's MCP connection.
-    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_PAIR_ANCHOR_ONLY };
+    // Only the user pairs their own chat (the owner's answer 1A, W7d): the
+    // chat is paired to the login this call acts for, whoever that is.
+    const loginId = telegramCallerLogin(ctx);
+    if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
     const code = str(input.code);
     if (!/^[a-f0-9]{6}$/i.test(code)) return { ok: false, error: 'code must be six hex digits' };
-    const [chat] = await db
-      .select()
-      .from(telegramChats)
-      .where(and(eq(telegramChats.pairingCode, code), eq(telegramChats.userId, ctx.ownerId)))
-      .limit(1);
-    if (!chat) return { ok: false, error: 'no pending pairing with that code' };
-    // A paired chat acts as the owner, so only an admin-level agent's bot is
-    // paired (access matrix T21): the bot's agent and the chat's own
-    // responder both count. Before the already-paired answer, so a chat
-    // paired before its agent was lowered reads as refused, not as fine.
-    const below = await belowAdminChatAgent(ctx.ownerId, chat.accountId, chat.responderAgentId);
-    if (below) return { ok: false, error: telegramPairRefusal(below) };
-    if (chat.allowlistStatus === 'allowed') return { ok: true, output: 'already paired' };
-    if (chat.pairingExpiresAt && chat.pairingExpiresAt.getTime() < Date.now()) {
-      return { ok: false, error: 'code expired — ask them to DM again' };
-    }
-    await db
-      .update(telegramChats)
-      .set({
-        allowlistStatus: 'allowed',
-        pairingCode: null,
-        pairingExpiresAt: null,
-        pairingReplies: 0,
-        updatedAt: new Date(),
-      })
-      .where(eq(telegramChats.id, chat.id));
-
-    const [account] = await db
-      .select()
-      .from(telegramAccounts)
-      .where(eq(telegramAccounts.id, chat.accountId))
-      .limit(1);
-    if (account) {
-      let name = 'your assistant';
-      if (account.channelId) {
-        const [agentRow] = await db
-          .select({ name: agents.name })
-          .from(agents)
-          .innerJoin(channels, eq(channels.agentId, agents.id))
-          .where(eq(channels.id, account.channelId))
-          .limit(1);
-        if (agentRow?.name) name = agentRow.name;
-      }
-      try {
-        await sendMessage(account, chat.telegramChatId, `Paired! Say hi to ${name}.`);
-      } catch (err) {
-        // The chat is paired in the DB; the confirmation DM is best-effort.
-        console.error('[telegram_pair] confirm DM failed:', err);
-      }
-    }
+    const r = await pairChatWithCode({ ownerId: ctx.ownerId, loginId, code });
+    if (!r.ok) return { ok: false, error: r.error };
+    if (r.already) return { ok: true, output: 'already paired to you' };
     return {
       ok: true,
-      output: `paired chat ${chat.telegramChatId} (${chat.title ?? chat.username ?? 'unnamed'})`,
+      output: `paired chat ${r.chat.telegramChatId} (${r.chat.label}) to you`,
     };
   },
 };
@@ -397,7 +351,7 @@ export const telegram_pair: BuiltinToolDef = {
 /** Send a Telegram message from the responder's own bot. */
 export const TELEGRAM_TOOLS: readonly BuiltinToolDef[] = [telegram_send];
 
-/** The owner's own Telegram inbox controls — MCP-only, never granted. */
+/** Each user's own Telegram chat controls — MCP-only, never granted. */
 export const TELEGRAM_OPERATOR_TOOLS: readonly BuiltinToolDef[] = [
   telegram_pending,
   telegram_react,

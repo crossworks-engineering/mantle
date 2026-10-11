@@ -38,10 +38,11 @@ import {
   unextractedNodeConds,
   noExtractSinceWriteSql,
   waitForOwner,
+  loginHoldsAdmin,
   type Agent,
 } from '@mantle/db';
-import { accountById } from '@mantle/telegram';
-import { isBelowAdminAgent, TELEGRAM_BELOW_ADMIN_REPLY } from '@mantle/telegram/level';
+import { claimMemberTurn, memberDailyLimits } from '@mantle/content';
+import { accountById, chatLoginRefusal, TELEGRAM_UNPAIRED_REPLY } from '@mantle/telegram';
 
 import { sweepLegacyTables } from '@mantle/content/table-storage';
 
@@ -49,6 +50,7 @@ import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { runDurableStep, startTrace } from '@mantle/tracing';
 import {
   ChatArchiveBusyError,
+  agentWorkspaceKind,
   archiveAgentChat,
   invokeAgent,
   resolveChatKey,
@@ -101,6 +103,20 @@ import { errorMessage } from '@mantle/std';
  *  replaced did, and routes through the sink server/api registers at boot
  *  (DBOS.logger), so a line written inside a workflow carries its id. */
 const logger = log('agent');
+
+/** A workspace assistant's chat on Telegram takes text only (W7d). */
+const TELEGRAM_TEXT_ONLY_REPLY =
+  'This assistant takes typed messages only here. Please send your message as text.';
+
+/** A login past its daily turn cap (the member turn ledger, W7d). */
+const TELEGRAM_DAILY_CAP_REPLY =
+  'Daily message limit reached for this chat. Try again tomorrow.';
+
+/** Midnight UTC today: where the daily cap's window starts. */
+function startOfUtcDay(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
 
 let runtimeOwner: string | undefined = env('ALLOWED_USER_ID');
 const DATABASE_URL = env('DATABASE_URL');
@@ -163,7 +179,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
       accountId: telegramMessages.accountId,
       responderAgentId: telegramChats.responderAgentId,
       channelAgentId: channels.agentId,
-      channelAgentAudience: agents.audience,
+      chatLoginId: telegramChats.loginId,
       allowlistStatus: telegramChats.allowlistStatus,
       attachments: telegramMessages.attachments,
     })
@@ -173,7 +189,6 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     // Left join: an account whose channel was deleted (with its agent) keeps
     // its queued messages; resolveResponderAgent refuses them.
     .leftJoin(channels, eq(telegramAccounts.channelId, channels.id))
-    .leftJoin(agents, eq(channels.agentId, agents.id))
     .where(eq(telegramMessages.id, messageId))
     .limit(1);
 
@@ -269,23 +284,53 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     await sendApology(row, 'This chat is turned off for now. Ask the owner to turn it on.');
     return;
   }
-  // Only an admin-level agent answers on Telegram (access matrix T21): a
-  // paired chat runs on the owner's surface, so a team, client or public
-  // agent here would hand the chat the owner's authority. Both the agent that
-  // would answer and the bot's own agent count, read now, so an agent lowered
-  // after its chat was paired is refused too. Before the key, the attachment
-  // ingest and `/new`: no model, no tool, nothing stored.
-  const belowAdmin = isBelowAdminAgent(agent)
-    ? `responder agent '${agent.slug}' is ${agent.audience}-level`
-    : isBelowAdminAgent({ audience: row.channelAgentAudience })
-      ? `the bot's agent is ${row.channelAgentAudience}-level`
-      : null;
-  if (belowAdmin) {
+  // The chat's user (workspaces W7d): a turn runs as the login the chat is
+  // paired to, in the workspace of its assistant. Any workspace's assistant
+  // answers, for a user of that workspace only: a chat with no login, or
+  // whose login is gone, disabled or no longer a user of the workspace of
+  // the bot's assistant (and of its responder override), is refused, read
+  // now, so a user removed from the workspace loses the bot at once. Before
+  // the key, the attachment ingest and `/new`: no model, no tool, nothing
+  // stored.
+  const loginId = row.chatLoginId ?? null;
+  const loginRefused = await chatLoginRefusal({
+    ownerId,
+    loginId,
+    accountId: row.accountId,
+    responderAgentId: row.responderAgentId,
+  });
+  if (loginRefused || !loginId) {
     logger.error(
-      `${belowAdmin} and a Telegram chat acts as the owner: refused ${messageId}. Raise it to admin, or link the bot to an admin-level agent, at /settings/agents.`,
+      `telegram chat refused (${loginRefused ?? 'no_login'}): ${messageId}. The chat's user pairs it again with a new code.`,
     );
-    await sendApology(row, TELEGRAM_BELOW_ADMIN_REPLY);
+    await sendApology(row, TELEGRAM_UNPAIRED_REPLY);
     return;
+  }
+  // An assistant of a workspace other than Admin takes text only, as on the
+  // web (the workspace turn engine, W7c): nothing is saved into the brain,
+  // no voice is transcribed or spoken.
+  const workspaceAssistant = (await agentWorkspaceKind(agent)) === 'workspace';
+  if (workspaceAssistant && (wasVoice || fileAttachment)) {
+    await sendApology(row, TELEGRAM_TEXT_ONLY_REPLY);
+    return;
+  }
+  // A login that is not an Admin user takes a slot of its daily turn cap, as
+  // its web chat does (the member turn ledger). The turn id is the message's,
+  // so a resumed turn is the same slot.
+  if (!(await loginHoldsAdmin(loginId))) {
+    const claim = await runDurableStep('claim_member_turn', () =>
+      claimMemberTurn({
+        ownerId,
+        loginId,
+        turnId: `tg-${row.id}`,
+        since: startOfUtcDay(),
+        limits: memberDailyLimits(),
+      }),
+    );
+    if (!claim.ok) {
+      await sendApology(row, TELEGRAM_DAILY_CAP_REPLY);
+      return;
+    }
   }
   // Resolve the responder's chat key via the shared resolver (keyless `local`
   // → 'local' sentinel; cloud → pinned/service key, else skip). Same single
@@ -336,7 +381,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     // thread's one summary note right here.
     if (!voiceFileId && !fileAttachment && isNewChatCommand(row.text)) {
       try {
-        const r = await archiveAgentChat({ ownerId, agentId: agent.id });
+        const r = await archiveAgentChat({ ownerId, agentId: agent.id, loginId });
         await sendApology(row, newChatReply(r.archived?.title ?? null, !!r.archived));
       } catch (err) {
         if (!(err instanceof ChatArchiveBusyError)) logger.error('/new failed:', errorMessage(err));
@@ -358,6 +403,8 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         subjectId: row.id,
         subjectKind: 'telegram_message',
         agentId: agent.id,
+        // The chat's login (W7d): its trace is listed to that login only.
+        loginId,
         data: {
           telegramChatId: row.telegramChatId,
           model: agent.model,
@@ -372,6 +419,8 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           agent,
           apiKey,
           ownerId,
+          loginId,
+          textOnly: workspaceAssistant,
           wasVoice,
           voiceFileId,
           attachmentContext,

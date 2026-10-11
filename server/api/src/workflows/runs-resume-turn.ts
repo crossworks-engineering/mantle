@@ -45,7 +45,7 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   agents,
   bumpAgentUsage,
@@ -53,7 +53,6 @@ import {
   runItems,
   runs,
   telegramAccounts,
-  telegramChats,
   workspaces,
   type Agent,
 } from '@mantle/db';
@@ -69,7 +68,7 @@ import {
   type RunsResumeTurnInput,
   type RunsResumeTurnResult,
 } from '@mantle/runs';
-import { sendMessage } from '@mantle/telegram';
+import { pairedChatOf, sendMessage } from '@mantle/telegram';
 import type { ToolHandlerContext } from '@mantle/tools';
 import { buildChatMessages, loadConversationContext, recordTurn } from '@mantle/runtime/agent';
 import {
@@ -314,16 +313,13 @@ export async function runsResumeTurnImpl(
         if (run.originChannel?.kind === 'telegram') {
           const chatId = run.originChannel.chat_id;
           const sent = await runDurableStep('deliver_telegram', async () => {
-            const [chat] = await db
-              .select({ accountId: telegramChats.accountId })
-              .from(telegramChats)
-              .where(
-                and(
-                  eq(telegramChats.userId, run.ownerId),
-                  eq(telegramChats.telegramChatId, chatId),
-                  eq(telegramChats.allowlistStatus, 'allowed'),
-                ),
-              );
+            // Only a chat paired to the run's own login (W7d; none = the
+            // anchor's run): a report never reaches another user's chat.
+            const chat = await pairedChatOf({
+              ownerId: run.ownerId,
+              loginId: runLoginId ?? run.ownerId,
+              telegramChatId: chatId,
+            });
             if (!chat) return false;
             const [account] = await db
               .select()
@@ -385,7 +381,13 @@ export async function resumeSurface(
   workspaceId: string | null,
 ): Promise<NonNullable<ToolHandlerContext['surface']>> {
   if (originChannel?.kind === 'telegram') {
-    return { kind: 'telegram', telegramChatId: originChannel.chat_id };
+    // The chat's own user (W7d): the run's login, which is the login of the
+    // Telegram turn that planned it.
+    return {
+      kind: 'telegram',
+      telegramChatId: originChannel.chat_id,
+      ...(loginId ? { loginId } : {}),
+    };
   }
   if (!loginId) return { kind: 'web' };
   if (workspaceId) {

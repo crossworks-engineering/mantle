@@ -26,32 +26,7 @@ export const LEVEL_READ_PATTERN =
 
 /** @type {Record<string, { lines: number, phase: 'W5b2' | 'W5c' | 'W6b' | 'W7' | 'W8' | 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
-  // ── W7 (Telegram, W7d; the rest went in W7b) ──
-  'packages/telegram/src/chat-level.ts': {
-    lines: 2,
-    phase: 'W7',
-    why: 'agent level of a chat',
-  },
-  'packages/telegram/src/level.ts': {
-    lines: 6,
-    phase: 'W7',
-    why: 'agent level checks',
-  },
-  'server/api/src/agent/runtime.ts': {
-    lines: 3,
-    phase: 'W7',
-    why: 'Telegram agent level',
-  },
-  'server/web/app/api/telegram/chats/[id]/route.ts': {
-    lines: 1,
-    phase: 'W7',
-    why: 'Telegram agent level',
-  },
-  'server/web/lib/agent-telegram.ts': {
-    lines: 1,
-    phase: 'W7',
-    why: 'Telegram agent level',
-  },
+  // ── W7: empty (W7b took the MCP levels, W7d the Telegram level rule) ──
   // ── W8 (schema columns, DTO fields, comments, the deprecated function) ──
   'packages/db/src/client.ts': {
     lines: 3,

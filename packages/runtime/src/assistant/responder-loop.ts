@@ -218,12 +218,11 @@ export function loadContextStep(
  *  tool it dispatches reads through row level security for a below-admin
  *  agent, whoever called it. */
 export function runResponderLoop(opts: RunResponderLoopOptions): Promise<ResponderLoopResult> {
-  // The owner's Telegram bot is the anchor's chat (until W7d makes it per
-  // user): a helper there answers the anchor login (W7 integration fix).
-  const telegram = (opts.surface as { kind?: string } | undefined)?.kind === 'telegram';
+  // A Telegram turn names the login its chat is paired to (W7d), as a web
+  // turn names its signed-in login: the surface carries it.
   return withAgentViewer(opts.agent, () => runResponderLoopAtLevel(opts), {
     loginId: surfaceLoginId(opts.surface),
-    ownerLoginId: ownerSurfaceLogin(opts.surface) ?? (telegram ? opts.ownerId : null),
+    ownerLoginId: ownerSurfaceLogin(opts.surface),
   });
 }
 

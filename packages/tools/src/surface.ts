@@ -12,21 +12,25 @@ import type { ToolHandlerContext } from './types';
 
 export type ToolSurface = NonNullable<ToolHandlerContext['surface']>;
 
-/** Whether the caller is the brain's owner: their web or Telegram chat, or
- *  an owner path that says so. Team, client and a missing surface are not.
- *  A Telegram turn exists only for an admin-level agent: a below-admin
- *  agent's bot is never paired and its chats get no turn (access matrix
- *  T21, @mantle/telegram/level). */
+/** Whether the caller is on an owner-side surface: a web or Telegram chat,
+ *  or an owner path that says so. Team, client and a missing surface are
+ *  not. Since workspaces W7d a Telegram chat is its paired user's, in the
+ *  workspace of the bot's assistant: what an owner-only or Admin-area tool
+ *  may do there is the turn scope's to decide (admin-gate.ts), as for a web
+ *  chat. */
 export function isOwnerSurface(surface: ToolHandlerContext['surface']): boolean {
   const kind = surface?.kind;
   return kind === 'web' || kind === 'telegram' || kind === 'owner';
 }
 
 /** The login an owner surface names (its web chat's signed-in login, an MCP
- *  connection's or an API key's), or null when the path names none (W6b fix
- *  round 2, M-2). Never read from model arguments. */
+ *  connection's or an API key's, a Telegram chat's paired login since W7d),
+ *  or null when the path names none (W6b fix round 2, M-2). Never read from
+ *  model arguments. */
 export function ownerSurfaceLoginId(surface: ToolHandlerContext['surface']): string | null {
-  if (surface?.kind !== 'web' && surface?.kind !== 'owner') return null;
+  if (surface?.kind !== 'web' && surface?.kind !== 'owner' && surface?.kind !== 'telegram') {
+    return null;
+  }
   return typeof surface.loginId === 'string' && surface.loginId !== '' ? surface.loginId : null;
 }
 

@@ -35,9 +35,12 @@ export interface ApprovalDecisionResult {
  * both and can wire the two together.
  */
 export interface PollHandlers {
-  /** Apply an approve/reject decision for the owner who taps the button. */
+  /** Apply an approve/reject decision for the user who taps the button:
+   *  the login the chat is paired to (workspaces W7d), never the callback's
+   *  own sender id. */
   onApproval?: (input: {
     ownerId: string;
+    loginId: string;
     decision: 'approve' | 'reject';
     pendingId: string;
   }) => Promise<ApprovalDecisionResult>;

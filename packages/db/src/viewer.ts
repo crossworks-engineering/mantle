@@ -891,9 +891,13 @@ export function runInSystemTx<T>(
  *    hides once the app's row is gone (0265), read only for the deleted
  *    apps whose home the caller moderates, checked first (app_deleted_list
  *    and app_undelete, W7b fix round 1).
- *  - `owner-telegram`: the anchor's own Telegram history in its replay
- *    (builtins-replay.ts), owner-only until W7d and granted to no role
- *    (W7c fix round 2).
+ *  - `login-telegram`: a login's own Telegram chats (telegram_chats.login_id,
+ *    W7d; until then 'owner-telegram', the anchor's history in its replay,
+ *    W7c fix round 2): the Telegram tables are granted to no role. Read for
+ *    the asking login only (replay, pairing, the operator tools), or for the
+ *    login a rule in the query checks (a chat's workspace, a bot's
+ *    Moderators, the login a queued call's approval card goes to), never
+ *    another login's chat rows.
  *  - `heartbeat-context`: the open heartbeats a turn's login set up
  *    (heartbeats.created_by, null the anchor's), for the turn's awareness
  *    block and its continuity tools (@mantle/runtime heartbeats/tick.ts, W7
@@ -923,7 +927,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'lexeme-stats',
   'keyword-candidates',
   'app-trash',
-  'owner-telegram',
+  'login-telegram',
   'heartbeat-context',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];

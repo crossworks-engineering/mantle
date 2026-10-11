@@ -21,6 +21,8 @@ import type { InboundRow } from './types';
 
 export async function persistOutbound(args: {
   ownerId: string;
+  /** The chat's login (W7d): its thread and its per-login node rows. */
+  loginId: string;
   row: InboundRow;
   account: TelegramAccount;
   agent: Agent;
@@ -28,7 +30,7 @@ export async function persistOutbound(args: {
   delivery: Delivery;
   outcome: Pick<ResponderLoopResult, 'persistedThoughts' | 'toolStats'>;
 }): Promise<void> {
-  const { ownerId, row, account, agent, reply, delivery, outcome } = args;
+  const { ownerId, loginId, row, account, agent, reply, delivery, outcome } = args;
   const { telegramMessageIds, delivered, sendError } = delivery;
   await step({ name: 'persist_outbound', kind: 'db_write' }, async (h) => {
     const now = new Date();
@@ -46,6 +48,8 @@ export async function persistOutbound(args: {
               .insert(nodes)
               .values({
                 ownerId,
+                // Read only by the chat's login (W7d, nodes.login_id).
+                loginId,
                 type: 'telegram_message',
                 title: titleStem,
                 path: account.branchPath,
@@ -92,8 +96,8 @@ export async function persistOutbound(args: {
     await recordTurn({
       ownerId,
       agentId: agent.id,
-      // The brain owner's own surface (R3): the owner's login.
-      loginId: ownerId,
+      // The chat's own login (R3, W7d).
+      loginId,
       direction: 'outbound',
       text: reply,
       channel: 'telegram',

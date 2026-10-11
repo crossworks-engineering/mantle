@@ -8,7 +8,10 @@
  *               repaints the sidebar badge + /pending live, no refresh.
  *               The push-notify worker also LISTENs and (for `mobile`
  *               operators) sends a device push deep-linking to /pending.
- *   - Telegram → a one-tap Approve/Reject card pushed to the operator's
+ *   - Telegram → (since workspaces W7d: only to a chat paired to the call's
+ *               own login, the anchor's for system calls, and only while
+ *               that login holds the settings area)
+ *               a one-tap Approve/Reject card pushed to the operator's
  *               paired chat, so an approval can be acted on from a phone
  *               while away from the app.
  *
@@ -24,7 +27,14 @@
  */
 
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, telegramChats, executeWrite } from '@mantle/db';
+import {
+  asSystem,
+  db,
+  executeWrite,
+  loginHasArea,
+  pendingToolCalls,
+  telegramChats,
+} from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
 import { loadProfilePreferences } from '@mantle/content';
 import { registerPendingCreatedNotifier } from '@mantle/runs';
@@ -76,23 +86,51 @@ function previewArgs(args: Record<string, unknown>): string | undefined {
 }
 
 /**
- * The most appropriate paired Telegram chat to send an approval card to:
- * an `allowed` chat owned by this operator, most-recently-active first.
- * Returns null if the operator has no paired chat (then we just rely on
- * the in-app surface).
+ * Who decides a queued call, for its card (workspaces W7d): the login it
+ * was queued for (pending_tool_calls.login_id), else the anchor (a call of
+ * system work, or the anchor's own). Null when the call is gone.
  */
-async function resolveApprovalChat(
-  ownerId: string,
-): Promise<{ accountId: string; telegramChatId: string } | null> {
-  const [chat] = await db
-    .select({
-      accountId: telegramChats.accountId,
-      telegramChatId: telegramChats.telegramChatId,
-    })
-    .from(telegramChats)
-    .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.allowlistStatus, 'allowed')))
-    .orderBy(desc(telegramChats.lastMessageAt))
+async function approvalLogin(ownerId: string, pendingId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ loginId: pendingToolCalls.loginId })
+    .from(pendingToolCalls)
+    .where(and(eq(pendingToolCalls.id, pendingId), eq(pendingToolCalls.ownerId, ownerId)))
     .limit(1);
+  if (!row) return null;
+  return row.loginId ?? ownerId;
+}
+
+/**
+ * The paired Telegram chat to send an approval card to (workspaces W7d): an
+ * `allowed` chat paired to `loginId` (the call's own login), most recently
+ * active first, and only while that login may decide approvals (the
+ * settings area, the rule of /api/pending and of a card's tap). Null when
+ * it has none or may not decide: the in-app surface still has the call.
+ */
+export async function resolveApprovalChat(
+  ownerId: string,
+  loginId: string,
+): Promise<{ accountId: string; telegramChatId: string } | null> {
+  if (!(await loginHasArea(loginId, 'settings'))) return null;
+  const [chat] = await asSystem(
+    () =>
+      db
+        .select({
+          accountId: telegramChats.accountId,
+          telegramChatId: telegramChats.telegramChatId,
+        })
+        .from(telegramChats)
+        .where(
+          and(
+            eq(telegramChats.userId, ownerId),
+            eq(telegramChats.loginId, loginId),
+            eq(telegramChats.allowlistStatus, 'allowed'),
+          ),
+        )
+        .orderBy(desc(telegramChats.lastMessageAt))
+        .limit(1),
+    'login-telegram',
+  );
   return chat ?? null;
 }
 
@@ -118,10 +156,17 @@ export async function notifyPendingCreated(input: {
   // companion app's /pending queue (woken by the push above), so skip the
   // card to avoid notifying on two channels.
   try {
-    const prefs = await loadProfilePreferences(input.ownerId);
+    // The card goes to the call's own login only (W7d): its chat, its last
+    // channel.
+    const loginId = await asSystem(
+      () => approvalLogin(input.ownerId, input.pendingId),
+      'login-telegram',
+    );
+    if (!loginId) return;
+    const prefs = await loadProfilePreferences(loginId);
     if (prefs.reminderChannel === 'mobile') return;
 
-    const chat = await resolveApprovalChat(input.ownerId);
+    const chat = await resolveApprovalChat(input.ownerId, loginId);
     if (!chat) return;
     const account = await accountById(chat.accountId);
     if (!account) return;

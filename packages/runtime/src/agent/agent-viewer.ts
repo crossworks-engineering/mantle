@@ -398,16 +398,25 @@ export function withAgentViewer<T>(
  *  (W7a). Never read from model arguments. */
 export function ownerSurfaceLogin(surface: unknown): string | null {
   const s = surface as { kind?: string; loginId?: unknown } | null | undefined;
-  if ((s?.kind === 'web' || s?.kind === 'owner') && typeof s.loginId === 'string') {
+  if (
+    (s?.kind === 'web' || s?.kind === 'owner' || s?.kind === 'telegram') &&
+    typeof s.loginId === 'string'
+  ) {
     return s.loginId !== '' ? s.loginId : null;
   }
   return null;
 }
 
-/** The login a tool surface names (a member's or a client's turn), if any. */
+/** The login a tool surface names (a member's or a client's turn, and a
+ *  Telegram chat's paired login since W7d, which any workspace's assistant
+ *  answers), if any. */
 export function surfaceLoginId(surface: unknown): string | null {
   const s = surface as { kind?: string; loginId?: unknown } | null | undefined;
-  if ((s?.kind === 'team' || s?.kind === 'client') && typeof s.loginId === 'string') {
+  if (
+    (s?.kind === 'team' || s?.kind === 'client' || s?.kind === 'telegram') &&
+    typeof s.loginId === 'string' &&
+    s.loginId !== ''
+  ) {
     return s.loginId;
   }
   return null;

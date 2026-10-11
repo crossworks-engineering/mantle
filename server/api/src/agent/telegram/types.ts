@@ -18,9 +18,10 @@ export interface InboundRow {
   accountId: string;
   responderAgentId: string | null;
   channelAgentId: string | null | undefined;
-  /** The bot's own agent's level (its channel's agent), read now, so an
-   *  agent lowered after pairing is caught (access matrix T21). */
-  channelAgentAudience?: string | null;
+  /** The login the chat is paired to (telegram_chats.login_id, workspaces
+   *  W7d), read now: the turn runs as it, or is refused when it is none or
+   *  no longer a user of the assistant's workspace. */
+  chatLoginId?: string | null;
   /** The chat's allowlist state now: a chat turned off after its message
    *  was queued (deleting its pinned agent does that) gets no reply. */
   allowlistStatus?: string;

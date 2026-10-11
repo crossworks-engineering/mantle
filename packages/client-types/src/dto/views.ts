@@ -760,6 +760,41 @@ export type AgentTelegramChat = {
   label: string;
   status: 'pending' | 'allowed' | 'denied';
   lastMessageAt: string | null;
+  /** The user the chat is paired to (workspaces W7d), null when none
+   *  (pending, blocked, or its login is gone). */
+  loginId: string | null;
+  /** That user's name, else email, for the list; null with no login. */
+  pairedTo: string | null;
+};
+
+/** One of the signed-in user's own paired Telegram chats (workspaces W7d,
+ *  GET /api/telegram/my-chats). */
+export type MyTelegramChat = {
+  id: string;
+  telegramChatId: string;
+  label: string;
+  /** The bot the chat is on, and its assistant. */
+  botUsername: string;
+  agentName: string | null;
+  agentSlug: string | null;
+  lastMessageAt: string | null;
+};
+
+/** A chat on a bot the signed-in user moderates (workspaces W7d, GET
+ *  /api/telegram/moderated-chats): a Moderator of the bot's assistant's
+ *  workspace, or an Admin user with the users area, blocks or unpairs it. */
+export type ModeratedTelegramChat = AgentTelegramChat & {
+  botUsername: string;
+  agentName: string | null;
+  agentSlug: string | null;
+};
+
+/** What POST /api/telegram/pair answers (workspaces W7d). */
+export type TelegramPairResult = {
+  ok: true;
+  /** True when the chat was already paired to this user (no change). */
+  already: boolean;
+  chat: { id: string; telegramChatId: string; label: string; agentName: string | null };
 };
 
 export type DiffStatus =

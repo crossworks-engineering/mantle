@@ -9,25 +9,41 @@
  * username + branch path), upsert the account's poll-state row, then write the
  * channel (token + binding) via `upsertTelegramChannel`.
  */
-import { and, eq } from 'drizzle-orm';
-import { agents, channels, db, telegramAccounts, telegramChats } from '@mantle/db';
+import { and, desc, eq } from 'drizzle-orm';
 import {
-  belowAdminChatAgent,
+  agents,
+  asSystem,
+  authUsers,
+  channels,
+  db,
+  telegramAccounts,
+  telegramChats,
+} from '@mantle/db';
+import {
   disableTelegramChannel,
-  sendMessage,
+  loginModeratesBot,
+  pairChatWithCode,
+  setChatPairing,
   upsertTelegramChannel,
+  type PairingRefusal,
 } from '@mantle/telegram';
-import {
-  isBelowAdminAgent,
-  TELEGRAM_LEVEL_CODE,
-  telegramConnectRefusal,
-  telegramPairRefusal,
-} from '@mantle/telegram/level';
-import type { AgentTelegramBinding, AgentTelegramChat } from '@mantle/client-types';
-export type { AgentTelegramBinding, AgentTelegramChat };
+import type {
+  AgentTelegramBinding,
+  AgentTelegramChat,
+  ModeratedTelegramChat,
+  MyTelegramChat,
+  TelegramPairResult,
+} from '@mantle/client-types';
+export type {
+  AgentTelegramBinding,
+  AgentTelegramChat,
+  ModeratedTelegramChat,
+  MyTelegramChat,
+  TelegramPairResult,
+};
 
-/** Thrown for user-fixable problems (bad token, username already taken, an
- *  agent below admin). The API layer surfaces `.message` to the form, and
+/** Thrown for user-fixable problems (bad token, username already taken, a
+ *  pairing refusal). The API layer surfaces `.message` to the form, and
  *  `.code` when set, so the screen can tell a standing refusal apart. */
 export class TelegramTokenError extends Error {
   constructor(
@@ -35,20 +51,6 @@ export class TelegramTokenError extends Error {
     readonly code?: string,
   ) {
     super(message);
-  }
-}
-
-/** Refuse a below-admin agent its bot (access matrix T21): a paired chat
- *  acts as the owner, so only an admin-level agent has one. Checked before
- *  the token reaches Telegram. */
-async function assertAdminLevelAgent(ownerId: string, agentId: string): Promise<void> {
-  const [agent] = await db
-    .select({ name: agents.name, audience: agents.audience })
-    .from(agents)
-    .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
-    .limit(1);
-  if (agent && isBelowAdminAgent(agent)) {
-    throw new TelegramTokenError(telegramConnectRefusal(agent), TELEGRAM_LEVEL_CODE);
   }
 }
 
@@ -138,7 +140,8 @@ export async function connectAgentTelegram(
 ): Promise<AgentTelegramBinding> {
   const trimmed = token.trim();
   if (!trimmed) throw new TelegramTokenError('Paste a bot token.');
-  await assertAdminLevelAgent(ownerId, agentId);
+  // Any workspace's assistant may have a bot (workspaces W7d): its chats are
+  // paired to users of its workspace, each answered as that user.
   const me = await getMe(trimmed);
   const branchPath = `inbox.telegram_${me.username.toLowerCase()}`;
 
@@ -232,10 +235,17 @@ const STATUS_ORDER: Record<AgentTelegramChat['status'], number> = {
   denied: 2,
 };
 
+/** A login's name for a list: its display name, else its email. */
+function nameOf(row: { displayName: string | null; email: string | null }): string | null {
+  return row.displayName?.trim() || row.email || null;
+}
+
 /**
  * Chats this agent's bot has seen — pending pairing requests first, then
- * allowed, then denied; recent within each. Powers the in-form pairing UI so
- * the owner can approve a DM without copying a code into the MCP tool.
+ * allowed, then denied; recent within each — each with the user it is
+ * paired to (workspaces W7d). For the Settings screen of the bot, where a
+ * Moderator or an Admin user blocks or unpairs a chat; pairing itself is the
+ * user's own, with the chat's code (pairMyTelegramChat).
  */
 export async function listAgentTelegramChats(
   ownerId: string,
@@ -243,17 +253,34 @@ export async function listAgentTelegramChats(
 ): Promise<AgentTelegramChat[]> {
   const binding = await getAgentTelegram(ownerId, agentId);
   if (!binding) return [];
-  const rows = await db
-    .select()
-    .from(telegramChats)
-    .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.accountId, binding.accountId)));
+  return chatsOfBot(ownerId, binding.accountId);
+}
+
+/** Every chat of bot `accountId`, with the user each is paired to, sorted
+ *  for a list. The caller has checked who may see them. */
+async function chatsOfBot(ownerId: string, accountId: string): Promise<AgentTelegramChat[]> {
+  const rows = await asSystem(
+    () =>
+      db
+        .select({
+          chat: telegramChats,
+          displayName: authUsers.displayName,
+          email: authUsers.email,
+        })
+        .from(telegramChats)
+        .leftJoin(authUsers, eq(authUsers.id, telegramChats.loginId))
+        .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.accountId, accountId))),
+    'login-telegram',
+  );
   return rows
-    .map((r) => ({
+    .map(({ chat: r, displayName, email }) => ({
       id: r.id,
       telegramChatId: r.telegramChatId,
       label: r.title ?? (r.username ? `@${r.username}` : r.telegramChatId),
       status: r.allowlistStatus,
       lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
+      loginId: r.loginId ?? null,
+      pairedTo: r.loginId ? nameOf({ displayName, email }) : null,
     }))
     .sort((a, b) => {
       const s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
@@ -262,67 +289,200 @@ export async function listAgentTelegramChats(
     });
 }
 
-/**
- * Allow or deny a chat on this agent's bot (the UI equivalent of the
- * `telegram_pair` MCP tool, keyed by chat id since the owner is authenticated).
- * Allowing clears the pairing code and sends a best-effort confirmation DM.
- */
-export async function setAgentTelegramChatStatus(
-  ownerId: string,
-  agentId: string,
-  chatId: string,
-  status: 'allowed' | 'denied',
-): Promise<void> {
-  const binding = await getAgentTelegram(ownerId, agentId);
-  if (!binding) throw new TelegramTokenError('No bot is linked to this agent.');
-  const [chat] = await db
-    .select()
-    .from(telegramChats)
-    .where(
-      and(
-        eq(telegramChats.id, chatId),
-        eq(telegramChats.userId, ownerId),
-        eq(telegramChats.accountId, binding.accountId),
-      ),
-    )
-    .limit(1);
-  if (!chat) throw new TelegramTokenError('Chat not found for this bot.');
-  // A paired chat acts as the owner, so only an admin-level agent's bot is
-  // paired (access matrix T21): the bot's agent and the chat's own responder
-  // both count. Blocking stays open whatever the level.
-  if (status === 'allowed') {
-    const below = await belowAdminChatAgent(ownerId, chat.accountId, chat.responderAgentId);
-    if (below) throw new TelegramTokenError(telegramPairRefusal(below), TELEGRAM_LEVEL_CODE);
+/** The HTTP status a pairing refusal answers with. */
+export function pairingRefusalStatus(r: PairingRefusal): number {
+  switch (r.code) {
+    case 'not_found':
+    case 'no_such_code':
+      return 404;
+    case 'not_a_workspace_user':
+    case 'not_allowed':
+      return 403;
+    case 'too_many_attempts':
+      return 429;
+    default:
+      return 409;
   }
+}
 
-  await db
-    .update(telegramChats)
-    .set({
-      allowlistStatus: status,
-      pairingCode: null,
-      pairingExpiresAt: null,
-      pairingReplies: 0,
-      updatedAt: new Date(),
-    })
-    .where(eq(telegramChats.id, chat.id));
+/**
+ * Block or unpair a chat on this agent's bot (Settings), by `actorLoginId`:
+ * a Moderator of the bot's workspace, an Admin user with the users area, or
+ * the chat's own user (workspaces W7d). Never pairs: only the user pairs
+ * their own chat, with its code. Throws TelegramTokenError on a refusal.
+ */
+export async function setAgentTelegramChat(args: {
+  ownerId: string;
+  actorLoginId: string;
+  agentId: string;
+  chatId: string;
+  action: 'block' | 'unpair';
+}): Promise<void> {
+  const binding = await getAgentTelegram(args.ownerId, args.agentId);
+  if (!binding) throw new TelegramTokenError('No bot is linked to this agent.');
+  const r = await setChatPairing({
+    ownerId: args.ownerId,
+    actorLoginId: args.actorLoginId,
+    chatId: args.chatId,
+    action: args.action,
+    accountId: binding.accountId,
+  });
+  if (!r.ok) throw new TelegramTokenError('Chat not found for this bot.', r.code);
+}
 
-  if (status === 'allowed') {
-    const [account] = await db
-      .select()
-      .from(telegramAccounts)
-      .where(eq(telegramAccounts.id, binding.accountId))
-      .limit(1);
-    if (account) {
-      const [agentRow] = await db
-        .select({ name: agents.name })
-        .from(agents)
-        .where(eq(agents.id, agentId))
-        .limit(1);
-      const name = agentRow?.name ?? 'your assistant';
-      // Best-effort — the chat is paired in the DB regardless.
-      await sendMessage(account, chat.telegramChatId, `Paired! Say hi to ${name}.`).catch((err) => {
-        console.error('[telegram pair] confirm DM failed:', err);
+/**
+ * Pair the chat holding `code` to the signed-in login (POST
+ * /api/telegram/pair, workspaces W7d): only for a bot whose assistant's
+ * workspace that login is a user of. The answer, or a refusal.
+ */
+export async function pairMyTelegramChat(args: {
+  ownerId: string;
+  loginId: string;
+  code: string;
+}): Promise<TelegramPairResult | PairingRefusal> {
+  const r = await pairChatWithCode(args);
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    already: r.already,
+    chat: {
+      id: r.chat.id,
+      telegramChatId: r.chat.telegramChatId,
+      label: r.chat.label,
+      agentName: r.chat.agentName,
+    },
+  };
+}
+
+/** The signed-in login's own paired chats (GET /api/telegram/my-chats). */
+export async function listMyTelegramChats(
+  ownerId: string,
+  loginId: string,
+): Promise<MyTelegramChat[]> {
+  const rows = await asSystem(
+    () =>
+      db
+        .select({
+          id: telegramChats.id,
+          telegramChatId: telegramChats.telegramChatId,
+          title: telegramChats.title,
+          username: telegramChats.username,
+          lastMessageAt: telegramChats.lastMessageAt,
+          botUsername: telegramAccounts.botUsername,
+          agentName: agents.name,
+          agentSlug: agents.slug,
+        })
+        .from(telegramChats)
+        .innerJoin(telegramAccounts, eq(telegramAccounts.id, telegramChats.accountId))
+        .leftJoin(channels, eq(channels.id, telegramAccounts.channelId))
+        .leftJoin(agents, eq(agents.id, channels.agentId))
+        .where(
+          and(
+            eq(telegramChats.userId, ownerId),
+            eq(telegramChats.loginId, loginId),
+            eq(telegramChats.allowlistStatus, 'allowed'),
+          ),
+        )
+        .orderBy(desc(telegramChats.lastMessageAt)),
+    'login-telegram',
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    telegramChatId: r.telegramChatId,
+    label: r.title ?? (r.username ? `@${r.username}` : r.telegramChatId),
+    botUsername: r.botUsername,
+    agentName: r.agentName ?? null,
+    agentSlug: r.agentSlug ?? null,
+    lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
+  }));
+}
+
+/** Unpair one of the signed-in login's own chats (DELETE
+ *  /api/telegram/my-chats/:id). False when it is not theirs. */
+export async function unpairMyTelegramChat(
+  ownerId: string,
+  loginId: string,
+  chatId: string,
+): Promise<boolean> {
+  const r = await setChatPairing({ ownerId, actorLoginId: loginId, chatId, action: 'unpair' });
+  return r.ok;
+}
+
+/**
+ * The chats of every bot the signed-in login moderates (GET
+ * /api/telegram/moderated-chats, workspaces W7d): bots whose assistant's
+ * workspace it is a Moderator of, or every bot for an Admin user with the
+ * users area (loginModeratesBot). Empty for anyone else.
+ */
+export async function listModeratedTelegramChats(
+  ownerId: string,
+  loginId: string,
+): Promise<ModeratedTelegramChat[]> {
+  const bots = await asSystem(
+    () =>
+      db
+        .select({
+          accountId: telegramAccounts.id,
+          botUsername: telegramAccounts.botUsername,
+          agentName: agents.name,
+          agentSlug: agents.slug,
+        })
+        .from(telegramAccounts)
+        .leftJoin(channels, eq(channels.id, telegramAccounts.channelId))
+        .leftJoin(agents, eq(agents.id, channels.agentId))
+        .where(eq(telegramAccounts.userId, ownerId)),
+    'login-telegram',
+  );
+  const out: ModeratedTelegramChat[] = [];
+  for (const bot of bots) {
+    if (!(await loginModeratesBot({ ownerId, loginId, accountId: bot.accountId }))) continue;
+    for (const chat of await chatsOfBot(ownerId, bot.accountId)) {
+      out.push({
+        ...chat,
+        botUsername: bot.botUsername,
+        agentName: bot.agentName ?? null,
+        agentSlug: bot.agentSlug ?? null,
       });
     }
   }
+  return out;
+}
+
+/**
+ * Block or unpair chat `chatId` by `actorLoginId` (POST
+ * /api/telegram/chats/:id/block|unpair, workspaces W7d): its own user, a
+ * Moderator of its bot's workspace, or an Admin user with the users area.
+ * Null when done, else the refusal (a chat the login may not touch reads
+ * as not found).
+ */
+export async function moderateTelegramChat(args: {
+  ownerId: string;
+  actorLoginId: string;
+  chatId: string;
+  action: 'block' | 'unpair';
+}): Promise<PairingRefusal | null> {
+  const r = await setChatPairing(args);
+  return r.ok ? null : r;
+}
+
+/** The answer of POST /api/telegram/chats/:id/block and /unpair (any login
+ *  but a client): `{ ok: true }`, 400 for a bad id, 404 for a chat the
+ *  login may not touch. */
+export async function moderateTelegramChatResponse(
+  login: { kind: string; ownerId: string; loginId: string },
+  rawId: string,
+  action: 'block' | 'unpair',
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId)) {
+    return { status: 400, body: { error: 'Invalid id.' } };
+  }
+  if (login.kind === 'client') return { status: 404, body: { error: 'Not found.' } };
+  const refused = await moderateTelegramChat({
+    ownerId: login.ownerId,
+    actorLoginId: login.loginId,
+    chatId: rawId,
+    action,
+  });
+  if (refused) return { status: 404, body: { error: 'Not found.' } };
+  return { status: 200, body: { ok: true } };
 }

@@ -20,7 +20,14 @@
  * Env loading via `--env-file-if-exists=.env.local` in package.json.
  */
 import { eq } from 'drizzle-orm';
-import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
+import {
+  channels,
+  db,
+  loginHasArea,
+  telegramAccounts,
+  type Channel,
+  type TelegramAccount,
+} from '@mantle/db';
 import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
 import { registerRecallEmbedder } from '@mantle/content';
@@ -68,8 +75,14 @@ const loops = new Map<string, { stop: () => void }>();
  * tapped chat's allowlist row — never trusted from the callback itself.
  */
 const approvalHandlers: PollHandlers = {
-  onApproval: async ({ ownerId, decision, pendingId }) => {
+  onApproval: async ({ ownerId, loginId, decision, pendingId }) => {
     try {
+      // A tap decides as the chat's own login (workspaces W7d), by the rule
+      // of /api/pending: only a login holding the settings area decides, and
+      // it decides only the calls queued for it (the anchor: every call).
+      if (!(await loginHasArea(loginId, 'settings'))) {
+        return { ok: false, text: 'You cannot decide approvals: ask an Admin user to.' };
+      }
       // Telegram announces runner questions; it never answers them. Current
       // question notices ship with no buttons at all, so this only catches a
       // card sent by an older build that is still sitting in a chat — but
@@ -84,8 +97,8 @@ const approvalHandlers: PollHandlers = {
       }
       const row =
         decision === 'approve'
-          ? await approvePendingCall(ownerId, pendingId)
-          : await rejectPendingCall(ownerId, pendingId);
+          ? await approvePendingCall(ownerId, pendingId, { approverLoginId: loginId })
+          : await rejectPendingCall(ownerId, pendingId, loginId);
       if (!row) return { ok: false, text: 'Already decided, or no longer pending.' };
       if (decision === 'reject') return { ok: true, text: `Rejected ${row.toolSlug}.` };
       if (row.error) {

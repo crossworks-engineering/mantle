@@ -123,6 +123,7 @@ export {
   claimMemberTurn,
   releaseMemberTurn,
   memberTokensSince,
+  memberDailyLimits,
   clientChatUsageSince,
   type MemberTurnLimits,
   type ClaimMemberTurnResult,

@@ -14,8 +14,7 @@ import {
 } from '@mantle/db';
 import { botFor } from './client';
 import { gate } from './gate';
-import { belowAdminChatAgent } from './chat-level';
-import { TELEGRAM_BELOW_ADMIN_REPLY } from './level';
+import { chatLoginRefusal, TELEGRAM_UNPAIRED_REPLY } from './chat-login';
 import { answerCallback, editApprovalCard, parseApprovalCallback } from './outbound';
 import type { InboundMessage, PollHandlers } from './types';
 import { errorMessage } from '@mantle/std';
@@ -94,12 +93,15 @@ export async function pollOnce(
       const ok = await persist(account, inbound);
       if (ok) delivered++;
     } else if (result.action === 'pair') {
-      const lead = result.isResend ? 'Still pending approval' : 'Approval required';
+      // Only the user pairs their own chat (workspaces W7d): signed in to
+      // Mantle, they enter this code (the web, the phone, or the
+      // telegram_pair tool from their own MCP client).
+      const lead = result.isResend ? 'Still not paired' : 'This chat is not paired yet';
       await bot.api
         .sendMessage(
           inbound.chatId,
-          `${lead}. The owner can approve this chat in Mantle: Settings → Agents → ` +
-            `this bot's responder → Telegram bot.\n\n(Pairing code: ${result.code})`,
+          `${lead}. To pair it, sign in to Mantle and enter this pairing code ` +
+            `under Telegram pairing.\n\n(Pairing code: ${result.code})`,
         )
         .catch((e) => console.error(`[telegram-sync] pair-reply failed: ${e}`));
     }
@@ -152,19 +154,27 @@ async function handleCallback(
     .select({
       status: telegramChats.allowlistStatus,
       userId: telegramChats.userId,
+      loginId: telegramChats.loginId,
       responderAgentId: telegramChats.responderAgentId,
     })
     .from(telegramChats)
     .where(and(eq(telegramChats.accountId, account.id), eq(telegramChats.telegramChatId, chatId)))
     .limit(1);
-  if (!chat || chat.status !== 'allowed') {
+  if (!chat || chat.status !== 'allowed' || !chat.loginId) {
     await answerCallback(account, cq.id, 'Not authorised.');
     return;
   }
-  // A tap decides for the owner, so it holds only where a turn would run:
-  // a below-admin agent's chat gets neither (access matrix T21).
-  if (await belowAdminChatAgent(chat.userId, account.id, chat.responderAgentId)) {
-    await answerCallback(account, cq.id, TELEGRAM_BELOW_ADMIN_REPLY);
+  // A tap decides as the chat's login (workspaces W7d), so it holds only
+  // where a turn would run: a chat whose login is no longer a user of its
+  // assistant's workspace gets neither.
+  const refused = await chatLoginRefusal({
+    ownerId: chat.userId,
+    loginId: chat.loginId,
+    accountId: account.id,
+    responderAgentId: chat.responderAgentId,
+  });
+  if (refused) {
+    await answerCallback(account, cq.id, TELEGRAM_UNPAIRED_REPLY);
     return;
   }
 
@@ -172,6 +182,7 @@ async function handleCallback(
   try {
     outcome = await handlers.onApproval({
       ownerId: chat.userId,
+      loginId: chat.loginId,
       decision: parsed.decision,
       pendingId: parsed.pendingId,
     });
@@ -316,6 +327,9 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
         .insert(nodes)
         .values({
           ownerId: account.userId,
+          // A paired chat's messages are its login's (W7d, nodes.login_id):
+          // no other user reads them.
+          loginId: chat.loginId ?? null,
           type: 'telegram_message',
           title,
           path,

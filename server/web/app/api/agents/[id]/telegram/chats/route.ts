@@ -2,15 +2,26 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
-import { setAgentTelegramChatStatus, TelegramTokenError } from '@/lib/agent-telegram';
+import { setAgentTelegramChat, TelegramTokenError } from '@/lib/agent-telegram';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Body = z.object({
   chatId: z.string().uuid(),
-  status: z.enum(['allowed', 'denied']),
+  /** 'denied' blocks the chat; 'pending' unpairs it (back to pending, no
+   *  user). 'allowed' is refused: only the user pairs their own chat, with
+   *  its code (POST /api/telegram/pair, workspaces W7d). */
+  status: z.enum(['allowed', 'denied', 'pending']),
 });
 
-/** Approve (pair) or deny a chat on the agent's linked Telegram bot. */
+/** The code a refused 'allowed' answers with, so the screen can point the
+ *  user at pairing with a code. */
+const PAIR_WITH_CODE = 'pair_with_code';
+
+/**
+ * Block or unpair a chat on the agent's linked Telegram bot (Settings), by
+ * a Moderator of the bot's workspace or an Admin user with the users area.
+ * Pairing is the chat's own user's, with its code: 'allowed' answers 403.
+ */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
@@ -21,15 +32,30 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
+  if (parsed.data.status === 'allowed') {
+    return NextResponse.json(
+      {
+        error: "Only the chat's own user pairs it: signed in, they enter the code the bot sent them.",
+        code: PAIR_WITH_CODE,
+      },
+      { status: 403 },
+    );
+  }
 
   try {
-    await setAgentTelegramChatStatus(user.id, agent.id, parsed.data.chatId, parsed.data.status);
+    await setAgentTelegramChat({
+      ownerId: user.id,
+      actorLoginId: user.actor.id,
+      agentId: agent.id,
+      chatId: parsed.data.chatId,
+      action: parsed.data.status === 'denied' ? 'block' : 'unpair',
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof TelegramTokenError) {
       return NextResponse.json(
         { error: err.message, ...(err.code ? { code: err.code } : {}) },
-        { status: 400 },
+        { status: err.code === 'not_found' ? 404 : 400 },
       );
     }
     console.error('[telegram chat status]', err);

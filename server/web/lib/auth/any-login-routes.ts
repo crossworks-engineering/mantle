@@ -76,8 +76,31 @@ export function isChatLoginRoute(method: string, pattern: string): boolean {
   return CHAT_LOGIN_ROUTES.includes(`${method.toUpperCase()} ${pattern}`);
 }
 
-/** A route every login reaches: ANY_LOGIN_ROUTES and the chat routes. */
+/**
+ * The Telegram pairing routes (workspaces W7d): every user pairs their own
+ * Telegram chat with its code, lists and unpairs their own chats, and a
+ * Moderator of a bot's workspace (or an Admin user with the users area)
+ * lists, blocks and unpairs that bot's chats. They hold their own gate
+ * (getChatLoginOr401, lib/agent-telegram.ts, @mantle/telegram pairing.ts):
+ * a client is refused, every rule is in the query and names the login.
+ * Proved per role in server/web/server/w7d-telegram.db.test.ts.
+ */
+export const TELEGRAM_LOGIN_ROUTES: readonly string[] = [
+  'POST /api/telegram/pair',
+  'GET /api/telegram/my-chats',
+  'DELETE /api/telegram/my-chats/:id',
+  'GET /api/telegram/moderated-chats',
+  'POST /api/telegram/chats/:id/block',
+  'POST /api/telegram/chats/:id/unpair',
+];
+
+/** A route every login reaches: ANY_LOGIN_ROUTES, the chat routes and the
+ *  Telegram pairing routes. */
 export function isAnyLoginRoute(method: string, pattern: string): boolean {
   const key = `${method.toUpperCase()} ${pattern}`;
-  return ANY_LOGIN_ROUTES.includes(key) || CHAT_LOGIN_ROUTES.includes(key);
+  return (
+    ANY_LOGIN_ROUTES.includes(key) ||
+    CHAT_LOGIN_ROUTES.includes(key) ||
+    TELEGRAM_LOGIN_ROUTES.includes(key)
+  );
 }

@@ -74,6 +74,12 @@ export type ToolHandlerContext = {
     | {
         kind: 'telegram';
         telegramChatId: string;
+        /** The login the chat is paired to (telegram_chats.login_id,
+         *  workspaces W7d): set by the runtime from the chat row, never from
+         *  model arguments. The turn answers it; outbound sends reach only
+         *  its own chats. Absent on a path that names none (a run resumed
+         *  into its origin chat, a heartbeat's surface). */
+        loginId?: string;
         /** When set, voice/text replies thread under this Telegram
          *  message_id. Optional because a tool-initiated send might
          *  not have a natural parent message. */

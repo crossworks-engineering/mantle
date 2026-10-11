@@ -124,9 +124,10 @@ function stepSummary(
  * web chat's, an MCP connection's, an API key's), else the login
  * whose own MCP call this is (its user scope). The anchor is used only
  * where the surface IS the anchor: its own stdio MCP (the owner surface
- * with no login) and its Telegram chat (owner-only until W7d). Anything
- * else (a heartbeat, a run, a peer that names no login) gets null and the
- * tool refuses: it never falls back to the anchor's history.
+ * with no login). A Telegram chat names its paired login (W7d). Anything
+ * else (a heartbeat, a run, a Telegram surface or a peer that names no
+ * login) gets null and the tool refuses: it never falls back to the
+ * anchor's history.
  */
 export function replayAsker(
   ownerId: string,
@@ -140,7 +141,6 @@ export function replayAsker(
   const scope = currentWorkspaceScope();
   if (scope?.kind === 'user' && scope.loginId) return scope.loginId;
   if (s?.kind === 'owner' && s.via === 'mcp' && !s.loginId) return ownerId;
-  if (s?.kind === 'telegram') return ownerId;
   return null;
 }
 
@@ -395,11 +395,14 @@ const replay_window: BuiltinToolDef = {
 
     const turns: RecallTurn[] = [];
 
-    // Telegram is the anchor's own chat (owner-only until W7d): only the
-    // anchor replays it. No role is granted it, so inside the anchor's turn
-    // scope (its chat with the replay agent, W7c fix round 2) the read
-    // leaves for the system pool, named; the anchor check above is the gate.
-    if ((surface === 'all' || surface === 'telegram') && asker === ctx.ownerId) {
+    // Telegram: the asker's own messages only (W7d): each message's node
+    // carries its chat's login (nodes.login_id); one from before W7d has
+    // none and was the anchor's chat. Per message, not per chat, so a chat
+    // paired to another user later never hands over its old messages. No
+    // role is granted the Telegram tables, so inside the asker's turn scope
+    // the read leaves for the system pool, named; the login filter in the
+    // query is the gate.
+    if (surface === 'all' || surface === 'telegram') {
       const tg = await asSystem(
         () =>
           db
@@ -411,16 +414,18 @@ const replay_window: BuiltinToolDef = {
             })
             .from(telegramMessages)
             .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+            .innerJoin(nodes, eq(nodes.id, telegramMessages.nodeId))
             .where(
               and(
                 eq(telegramChats.userId, ctx.ownerId),
+                sql`(${nodes.loginId} = ${asker}::uuid or (${nodes.loginId} is null and ${asker}::uuid = ${ctx.ownerId}::uuid))`,
                 gte(telegramMessages.sentAt, from),
                 lte(telegramMessages.sentAt, to),
               ),
             )
             .orderBy(asc(telegramMessages.sentAt))
             .limit(limit + 1),
-        'owner-telegram',
+        'login-telegram',
       );
       for (const r of tg) {
         turns.push({

@@ -225,7 +225,6 @@ export const TOOL_ADMIN_AREAS: ReadonlyMap<string, ScopeArea> = new Map<string, 
   ['peer_node_get', 'connectors'],
   ['peer_search_chunks', 'connectors'],
   ['peer_file_copy', 'connectors'],
-  ['telegram_pair', 'connectors'],
   ['telegram_send', 'connectors'],
   ['telegram_edit', 'connectors'],
   ['telegram_react', 'connectors'],
@@ -276,9 +275,11 @@ export function toolAdminArea(slug: string, ref?: string): ScopeArea | null {
  *  - peer_list, peer_tools, peer_call, peer_query, peer_node_get,
  *    peer_search_chunks: peer rows and the linked brain over its link (the
  *    ids they take name the PEER's items, never this brain's).
- *  - telegram_pair, telegram_send, telegram_edit, telegram_react,
- *    telegram_pending, telegram_mark_processed: Telegram accounts, chats and
- *    messages, and the Bot API (text only).
+ *  - telegram_send, telegram_edit, telegram_react, telegram_pending,
+ *    telegram_mark_processed: Telegram accounts, chats and messages, and
+ *    the Bot API (text only), each on the caller's own paired chats only
+ *    (W7d). telegram_pair has no area: any user pairs their own chat (the
+ *    owner's answer 1A); it leaves the scope itself, by name.
  *
  * Every other area tool runs in the caller's scope and takes areaSystem only
  * around its own system tables: sandbox_create (its folder), sandbox_import
@@ -325,7 +326,6 @@ export const AREA_SYSTEM_TOOLS: ReadonlySet<string> = new Set([
   'peer_query',
   'peer_node_get',
   'peer_search_chunks',
-  'telegram_pair',
   'telegram_send',
   'telegram_edit',
   'telegram_react',

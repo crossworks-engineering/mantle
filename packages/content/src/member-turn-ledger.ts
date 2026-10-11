@@ -21,6 +21,7 @@
  */
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { authUsers, memberTurnLedger, systemDb, traces } from '@mantle/db';
+import { env } from '@mantle/config';
 
 export type MemberTurnLimits = {
   /** Turns per UTC day. */
@@ -33,6 +34,23 @@ export type ClaimMemberTurnResult =
   | { ok: true; fresh: boolean }
   | { ok: false; reason: 'daily_cap'; used: number }
   | { ok: false; reason: 'token_budget'; used: number };
+
+/**
+ * The member daily limits from the environment: TEAM_CHAT_DAILY_TURNS turns
+ * (default 100) and MANTLE_MEMBER_DAILY_TOKENS tokens (default 2,000,000; 0
+ * turns the budget off). The same reading as server/web
+ * lib/member-daily-cap.ts, for a path outside the web tier: a Telegram turn
+ * of a login that is not an Admin user (workspaces W7d).
+ */
+export function memberDailyLimits(): MemberTurnLimits {
+  const turns = Number(env('TEAM_CHAT_DAILY_TURNS'));
+  const rawTokens = env('MANTLE_MEMBER_DAILY_TOKENS');
+  const tokens = rawTokens === undefined || rawTokens === '' ? NaN : Number(rawTokens);
+  return {
+    dailyTurns: Number.isFinite(turns) && turns > 0 ? Math.floor(turns) : 100,
+    dailyTokens: Number.isFinite(tokens) && tokens >= 0 ? Math.floor(tokens) : 2_000_000,
+  };
+}
 
 /** How long ledger rows are kept: well past the one day the cap reads. */
 const LEDGER_KEEP_MS = 7 * 24 * 60 * 60 * 1000;

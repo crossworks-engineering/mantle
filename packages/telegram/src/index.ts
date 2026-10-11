@@ -3,8 +3,24 @@ export { botFor, evictBot } from './client';
 export { gate } from './gate';
 export { pollOnce } from './sync';
 export { upsertTelegramChannel, disableTelegramChannel } from './channels';
-export { belowAdminChatAgent, type BelowAdminChatAgent } from './chat-level';
-export * from './level';
+export {
+  chatLoginRefusal,
+  loginModeratesBot,
+  pairedChatOf,
+  TELEGRAM_UNPAIRED_REPLY,
+  TELEGRAM_NOT_A_USER_CODE,
+  type ChatLoginRefusal,
+  type PairedChat,
+} from './chat-login';
+export {
+  pairChatWithCode,
+  setChatPairing,
+  resetPairingAttempts,
+  NOT_A_WORKSPACE_USER_ERROR,
+  type PairingRefusal,
+  type PairingRefusalCode,
+  type PairedChatSummary,
+} from './pairing';
 export {
   sendMessage,
   sendVoice,
