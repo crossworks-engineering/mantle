@@ -11,6 +11,8 @@ export {
   runInOwnerMcpScope,
 } from './owner-scope';
 export {
+  ADMIN_KIND_CREATE_ERROR,
+  ADMIN_KIND_CREATE_TOOL_SLUGS,
   MCP_CREATE_TOOL_SLUGS,
   WORKSPACE_ARG,
   createHomeServer,
@@ -23,6 +25,7 @@ export {
   MCP_HANDWRITTEN_READ_ONLY,
   MCP_WORKSPACE_INSTRUCTIONS,
   NOT_ON_WORKSPACES_REFUSED,
+  OWNER_KEY_SPENDING_TOOLS,
   PEER_RISKY_TOOL_PREFIXES,
   PEER_RISKY_TOOL_SLUGS,
   isMcpToolReadOnly,
@@ -32,6 +35,7 @@ export {
   prepareCallerTools,
   preparedAllows,
   registerPreparedTools,
+  spendsOwnerKeys,
   type McpCaller,
   type McpLoginRole,
   type PreparedCallerTools,

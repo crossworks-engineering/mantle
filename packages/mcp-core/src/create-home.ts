@@ -22,9 +22,9 @@ import { currentWorkspaceScope } from '@mantle/db/viewer';
 
 /**
  * The create tools that make an item of a workspace kind (page, note, draw,
- * table, file, folder, app, formula): they take `workspace`. A create of an
- * Admin-only kind (a task, an event, a contact, a journal entry) always
- * lands in Admin and takes none.
+ * table, file, folder, app, formula, task, event, recall map): they take
+ * `workspace` and name where the item landed. A create of an Admin-only
+ * kind is ADMIN_KIND_CREATE_TOOL_SLUGS.
  */
 export const MCP_CREATE_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'note_create',
@@ -52,7 +52,27 @@ export const MCP_CREATE_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'formula_create',
   'sheet_build',
   'generate_image',
+  'task_create',
+  'event_create',
+  'recall_map_create',
 ]);
+
+/**
+ * The create tools whose kind lives in the Admin workspace only (a contact,
+ * a journal entry, a saved place: mantle_kind_class 'admin_only'). A user
+ * outside Admin is refused them (W7b fix round 1, H2): not listed, refused
+ * here before the tool runs, and the database's create home refuses the row
+ * (every call of such a user runs under its private workspace).
+ */
+export const ADMIN_KIND_CREATE_TOOL_SLUGS: ReadonlySet<string> = new Set([
+  'contact_create',
+  'journal_create',
+  'location_save',
+]);
+
+/** The refusal of an Admin-only kind's create outside Admin. */
+export const ADMIN_KIND_CREATE_ERROR =
+  'This kind of item (a contact, a journal entry, a saved place) lives in the Admin workspace only, and you are not a user of it. Make a note or a page instead.';
 
 /** The argument every create tool takes. */
 export const WORKSPACE_ARG = 'workspace';
@@ -265,19 +285,30 @@ export type CreateHomeOpts = {
  * `workspace` and naming where its item landed (see the module comment).
  * Registered UNDER the scope wrapper (owner-scope.ts), so each call runs in
  * the login's scope, already gated.
+ *
+ * For a user outside Admin (`privateWs` set) EVERY call runs under its
+ * private workspace (W7b fix round 1, H2), not only the listed creates: an
+ * item any tool makes lands by the route rule, never in Admin, and the
+ * database refuses an Admin-only kind outright. Its Admin-only creates are
+ * refused here first, with a reply that says why.
  */
 export function createHomeServer(server: McpServer, opts: CreateHomeOpts): McpServer {
+  const privateWs = opts.privateWs;
   return new Proxy(server, {
     get(target, prop) {
       if (prop === 'registerTool') {
         const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
         return (name: unknown, config: unknown, cb: unknown) => {
-          if (
-            typeof name !== 'string' ||
-            typeof cb !== 'function' ||
-            !MCP_CREATE_TOOL_SLUGS.has(name)
-          ) {
+          if (typeof name !== 'string' || typeof cb !== 'function') {
             return fn.call(target, name, config, cb);
+          }
+          if (!MCP_CREATE_TOOL_SLUGS.has(name)) {
+            if (!privateWs) return fn.call(target, name, config, cb);
+            const plain = cb as (args: unknown, extra: unknown) => Promise<unknown>;
+            return fn.call(target, name, config, async (args: unknown, extra: unknown) => {
+              if (ADMIN_KIND_CREATE_TOOL_SLUGS.has(name)) return refusal(ADMIN_KIND_CREATE_ERROR);
+              return withCreateHome({ createWs: null, privateWs }, () => plain(args, extra));
+            });
           }
           const handler = cb as (args: unknown, extra: unknown) => Promise<unknown>;
           const cfg = (config ?? {}) as { inputSchema?: unknown };
@@ -295,8 +326,8 @@ export function createHomeServer(server: McpServer, opts: CreateHomeOpts): McpSe
             const since = new Date(Date.now() - 1000);
             const run = () => handler(input, extra);
             const reply =
-              createWs || opts.privateWs
-                ? await withCreateHome({ createWs, privateWs: opts.privateWs }, run)
+              createWs || privateWs
+                ? await withCreateHome({ createWs, privateWs }, run)
                 : await run();
             return withLanding(reply, since);
           });

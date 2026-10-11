@@ -84,6 +84,23 @@ async function deletedRows(ownerId: string, appId?: string): Promise<DeletedRow[
   return rows;
 }
 
+/**
+ * Each deleted app's home workspace, from its newest pre_delete snapshot
+ * (meta.homeWs since W6a fix round 1; null for a snapshot taken before):
+ * ids and homes only, no code. A scope decides from it which deleted apps
+ * its caller may manage before any of them is read (W7b fix round 1).
+ */
+export async function deletedAppHomes(ownerId: string): Promise<Map<string, string | null>> {
+  const rows = (await db.execute(sql`
+    select distinct on (s.node_id) s.node_id::text as id,
+           nullif(s.code->'meta'->>'homeWs', '') as home
+      from node_snapshots s
+     where s.owner_id = ${ownerId} and s.node_kind = 'app' and s.trigger = 'pre_delete'
+       and not exists (select 1 from nodes n where n.id = s.node_id)
+     order by s.node_id, s.seq desc`)) as unknown as { id: string; home: string | null }[];
+  return new Map(rows.map((r) => [r.id, r.home]));
+}
+
 const purgeAfterOf = (deletedAt: Date) =>
   new Date(deletedAt.getTime() + APP_TRASH_DAYS * 24 * 60 * 60 * 1000);
 

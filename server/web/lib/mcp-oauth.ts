@@ -523,6 +523,8 @@ export async function grantFromAccessToken(token: string): Promise<{
   actorId: string;
   clientId: string;
   sessionEpoch: number | null;
+  /** The grant is read-only (its scope carries MCP_READ_ONLY_SCOPE). */
+  readOnly: boolean;
 } | null> {
   const [row] = await db
     .select({
@@ -531,6 +533,7 @@ export async function grantFromAccessToken(token: string): Promise<{
       actorId: oauthAccessTokens.actorId,
       clientId: oauthAccessTokens.clientId,
       sessionEpoch: oauthAccessTokens.sessionEpoch,
+      scope: oauthAccessTokens.scope,
     })
     .from(oauthAccessTokens)
     .where(
@@ -547,5 +550,18 @@ export async function grantFromAccessToken(token: string): Promise<{
     .set({ lastUsedAt: new Date() })
     .where(eq(oauthAccessTokens.id, row.id))
     .catch(() => {});
-  return { ...row, sessionEpoch: row.sessionEpoch ?? null };
+  const { scope, ...grant } = row;
+  return {
+    ...grant,
+    sessionEpoch: row.sessionEpoch ?? null,
+    readOnly: (scope ?? '').split(/\s+/).includes(MCP_READ_ONLY_SCOPE),
+  };
 }
+
+/**
+ * The scope word that keeps an OAuth grant read-only (W7b fix round 1, M3):
+ * migration 0268 adds it to the grants of a login whose MCP Write switch
+ * was off when the switch was archived, and a refresh copies the scope, so
+ * the grant stays narrowed. A client may ask for it too; nothing removes it.
+ */
+export const MCP_READ_ONLY_SCOPE = 'mantle:read-only';

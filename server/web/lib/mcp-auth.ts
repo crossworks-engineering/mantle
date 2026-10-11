@@ -94,6 +94,8 @@ function loginCaller(
   anchorId: string,
   via: 'oauth' | 'token',
   oauthClientId?: string,
+  /** The grant was narrowed to read-only (0268, MCP_READ_ONLY_SCOPE). */
+  readOnly = false,
 ): McpCaller | null {
   if (row.role !== 'member' && row.role !== 'client') return null;
   if (row.disabledAt || !row.email) return null;
@@ -103,7 +105,7 @@ function loginCaller(
     loginId: row.id,
     displayName: row.displayName,
     via,
-    write: true,
+    write: !readOnly,
     ...(oauthClientId ? { oauthClientId } : {}),
   };
 }
@@ -127,11 +129,11 @@ export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> 
       anchorId: grant.ownerId,
       loginId: grant.actorId,
       via: 'oauth',
-      write: true,
+      write: !grant.readOnly,
     };
   }
   const row = await loadLogin(grant.actorId);
-  return row ? loginCaller(row, grant.ownerId, 'oauth', grant.clientId) : null;
+  return row ? loginCaller(row, grant.ownerId, 'oauth', grant.clientId, grant.readOnly) : null;
 }
 
 async function callerFromLoginToken(token: string): Promise<McpCaller | null> {

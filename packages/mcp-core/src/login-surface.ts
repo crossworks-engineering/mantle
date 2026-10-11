@@ -65,6 +65,7 @@ import { withModelImages } from './register/model-images';
 import { keyAreasAllowTool, keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
 import { ownerScopedServer } from './owner-scope';
+import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 
 export type McpLoginRole = 'admin' | 'member' | 'client';
 
@@ -313,15 +314,58 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
   return { kind: 'owner', caller, view, privateWs, connectors };
 }
 
+/**
+ * The tools that spend on the brain owner's provider keys besides the
+ * registry's `spends` builtins: a crawl (Firecrawl credits), a re-run of the
+ * extractor (model work per node), and a turn of another agent or of a
+ * responder (W7b fix round 1, M4).
+ */
+export const OWNER_KEY_SPENDING_TOOLS: ReadonlySet<string> = new Set([
+  'web_crawl',
+  'process_extraction',
+  'invoke_agent',
+  'ask_responder',
+  'ask_as_responder',
+]);
+
+/** Spending builtins that stay with every login: a search's query embedding
+ *  is the one search_nodes makes too, not a paid turn. */
+const SPENDING_KEPT: ReadonlySet<string> = new Set(['search_chunks']);
+
+/**
+ * Whether a tool spends on the brain owner's keys (W7b fix round 1, M4: a
+ * CEO default, reversible). Outside an Admin scope such a tool is not
+ * listed on MCP, so a direct MCP, key or peer call of a user who is not a
+ * user of the Admin workspace cannot reach it. A workspace assistant's turn
+ * keeps its own rules (the member turn ledger limits), untouched here.
+ */
+export function spendsOwnerKeys(slug: string): boolean {
+  if (SPENDING_KEPT.has(slug)) return false;
+  return isBuiltinSpending(slug) || OWNER_KEY_SPENDING_TOOLS.has(slug);
+}
+
 /** Whether the prepared surface LISTS `slug` for this caller: the scope's
  *  listing (adminOnly and Admin-area tools only where the scope holds
- *  them), then a key's, a peer's or a static token's narrowing. */
+ *  them; outside Admin, no Admin-only kind's create and nothing that
+ *  spends on the owner's keys), then a key's, a peer's or a static
+ *  token's narrowing. A tool not listed is not registered: a call of it
+ *  is refused as an unknown tool. */
 export function preparedAllows(prepared: PreparedCallerTools, slug: string): boolean {
   if (prepared.kind === 'refused') return false;
   const { caller, view } = prepared;
   if (view && !adminGateLists(slug, view, { ownerOnly: getBuiltin(slug)?.ownerOnly })) {
     return false;
   }
+  if (
+    view &&
+    !view.holdsAdmin &&
+    (ADMIN_KIND_CREATE_TOOL_SLUGS.has(slug) || spendsOwnerKeys(slug))
+  ) {
+    return false;
+  }
+  // A read-only connection (a key or a peer with Write off, an OAuth grant
+  // narrowed by 0268) lists only the tools that read.
+  if (!caller.write && !isMcpToolReadOnly(slug)) return false;
   if (!narrowed(caller)) return true;
   return ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller);
 }

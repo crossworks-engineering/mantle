@@ -17,6 +17,17 @@
 --
 -- Both freezes yield to a named migration bypass (mantle_heads_bypass_on),
 -- like the item levels' (0261). Nothing here changes who reads what.
+--
+-- 3. No credential comes back to life (W7b fix round 1, M3). With the
+--    switch gone, a credential the switch had stopped would work again, so
+--    it is ended or narrowed here, by the archived switch: every static
+--    login token (mtlmcpk_; minting is retired) is revoked; a login whose
+--    MCP was off has its OAuth grants revoked and the peers bound to it
+--    disabled; a login whose MCP was on with Write off keeps its OAuth
+--    grants and its peers read-only (the grant's scope carries
+--    `mantle:read-only`, which a refresh keeps; the peer's write switch
+--    off). Only credentials made before the archive are touched. It only
+--    narrows, starts no work, and a second run changes nothing.
 
 -- The triggers below take a lock on agents and tool_groups: wait at most
 -- 30 s for it (0165), never queue behind a long transaction.
@@ -115,3 +126,34 @@ DROP TRIGGER IF EXISTS "tool_groups_level_frozen" ON "public"."tool_groups";
 CREATE TRIGGER "tool_groups_level_frozen"
   BEFORE UPDATE OF "audience" ON "public"."tool_groups"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_tool_levels_frozen_trg"();
+--> statement-breakpoint
+
+-- ── 3. No credential comes back to life ───────────────────────────────────────
+
+UPDATE "public"."mcp_login_tokens" SET "revoked_at" = now() WHERE "revoked_at" IS NULL;
+--> statement-breakpoint
+UPDATE "public"."oauth_access_tokens" t SET "revoked_at" = now()
+  FROM "public"."archive_mcp_login_access" a
+ WHERE t."actor_id" = a."login_id" AND NOT a."enabled"
+   AND t."revoked_at" IS NULL AND t."created_at" <= a."archived_at";
+--> statement-breakpoint
+DELETE FROM "public"."oauth_auth_codes" c
+ USING "public"."archive_mcp_login_access" a
+ WHERE c."actor_id" = a."login_id" AND NOT a."enabled" AND c."created_at" <= a."archived_at";
+--> statement-breakpoint
+UPDATE "public"."mantle_peers" p SET "enabled" = false
+  FROM "public"."archive_mcp_login_access" a
+ WHERE p."acts_as_login_id" = a."login_id" AND NOT a."enabled"
+   AND p."enabled" AND p."created_at" <= a."archived_at";
+--> statement-breakpoint
+UPDATE "public"."oauth_access_tokens" t
+   SET "scope" = btrim(t."scope" || ' mantle:read-only')
+  FROM "public"."archive_mcp_login_access" a
+ WHERE t."actor_id" = a."login_id" AND a."enabled" AND NOT a."write_enabled"
+   AND t."revoked_at" IS NULL AND t."created_at" <= a."archived_at"
+   AND NOT ('mantle:read-only' = ANY (string_to_array(t."scope", ' ')));
+--> statement-breakpoint
+UPDATE "public"."mantle_peers" p SET "write_enabled" = false
+  FROM "public"."archive_mcp_login_access" a
+ WHERE p."acts_as_login_id" = a."login_id" AND a."enabled" AND NOT a."write_enabled"
+   AND p."write_enabled" AND p."created_at" <= a."archived_at";

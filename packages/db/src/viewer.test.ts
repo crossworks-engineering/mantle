@@ -550,8 +550,9 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // dates ('contact-sharing'), login names on rows already read
     // ('login-names') and the owner's preferences ('owner-preferences'). 19: the search vocabulary's table-wide
     // statistics ('lexeme-stats'), hidden from a role under row security. 20: the ranked text match of a big
-    // scope's search as ids only ('keyword-candidates').
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(20);
+    // scope's search as ids only ('keyword-candidates'). 21 (W7b fix round 1): a deleted app's
+    // snapshots for a caller who moderates its home ('app-trash').
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(21);
   });
 
   it('each W7a exit names its own reason', () => {

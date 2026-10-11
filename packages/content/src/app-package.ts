@@ -499,6 +499,9 @@ export async function installAppPackage(
     title?: string;
     toolSlugs: string[];
     data: { path: string; schemaVersion: number } | null;
+    /** The login that imports it, when it is not an Admin user (W7b fix
+     *  round 1): named its author. */
+    authorLoginId?: string;
   },
 ): Promise<AppDetail> {
   const app = await createApp(ownerId, {
@@ -511,6 +514,7 @@ export async function installAppPackage(
     // Code from a package was not written here: it runs its tools at team
     // rules until an admin trusts them (team apps Phase 3, M3 audit).
     authorLevel: 'team',
+    ...(opts.authorLoginId ? { authorLoginId: opts.authorLoginId } : {}),
   });
   try {
     await setManifest(ownerId, app.id, {
@@ -541,7 +545,14 @@ export async function installAppPackage(
 export async function duplicateApp(
   ownerId: string,
   appId: string,
-  opts: { title?: string; withData?: boolean; actor?: AppHistoryActor } = {},
+  opts: {
+    title?: string;
+    withData?: boolean;
+    actor?: AppHistoryActor;
+    /** A user outside the Admin workspace makes the copy (W7b fix round
+     *  1): it starts at team rules with this author, never above. */
+    authorLoginId?: string;
+  } = {},
 ): Promise<{ id: string; title: string; hasData: boolean } | null> {
   const app = await getApp(ownerId, appId);
   if (!app) return null;
@@ -556,8 +567,10 @@ export async function duplicateApp(
       ...(app.manifest.description ? { description: app.manifest.description } : {}),
       tags: app.tags,
       source: app.source,
-      // A copy never runs above its source (team apps Phase 3, M3 audit).
-      authorLevel: app.authorLevel === 'team' ? 'team' : 'admin',
+      // A copy never runs above its source (team apps Phase 3, M3 audit),
+      // nor above its maker's ceiling.
+      authorLevel: app.authorLevel === 'team' || opts.authorLoginId ? 'team' : 'admin',
+      ...(opts.authorLoginId ? { authorLoginId: opts.authorLoginId } : {}),
     });
     try {
       await installAppCode(
