@@ -178,7 +178,7 @@ export async function updateOpenapiConnector(
     .where(eq(toolGroups.id, row.id))
     .returning();
   if (repaired) {
-    warnings.push('auth or host changed — re-run the sync so the mirrored tools carry it');
+    warnings.push('auth or host changed: re-run the sync so the mirrored tools carry it');
   }
   const backrefs = await listToolGroupBackrefs(ownerId);
   return { connector: toDTO(updated!, backrefs.get(groupSlug) ?? []), warnings };

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import type { AiWorkerParams } from '@mantle/db';
+import type { AiWorker, AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
@@ -11,7 +11,12 @@ import {
   updateAiWorker,
 } from '@/lib/ai-workers';
 import { firstIssue } from '@/lib/zod-issue';
-import { AGENT_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
+import {
+  AGENT_ROUTES,
+  modelRoutesRefusal,
+  modelRoutesStamp,
+  modelRoutesTouched,
+} from '@/lib/model-route-pair';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -57,14 +62,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { params, ...rest } = parsed.data;
-  // A key with a base URL of the writer's choosing (setting a key while a
-  // base URL is set, or a base URL while a key is set) is the keys area's
-  // (W7a fix round 4, lib/model-route-pair.ts).
-  if (AGENT_ROUTES.some(([k, u]) => k in rest || u in rest)) {
+  // A vault key (the key id, or the provider's key a route without one falls
+  // back to) with a base URL of the writer's choosing is the keys area's,
+  // and the row records who paired them (W7a fix rounds 4 and 5,
+  // lib/model-route-pair.ts).
+  let configuredBy: Pick<Partial<AiWorker>, 'configuredBy'> = {};
+  if (modelRoutesTouched(rest, AGENT_ROUTES)) {
     const stored = await getAiWorker(user.id, idParsed.data.id);
     if (!stored) return NextResponse.json({ error: 'not found' }, { status: 404 });
     const refused = await modelRoutesRefusal(user, stored, rest, AGENT_ROUTES);
     if (refused) return NextResponse.json({ error: refused }, { status: 403 });
+    configuredBy = modelRoutesStamp(user, stored, rest, AGENT_ROUTES);
   }
   // Save-time catalog check against the EFFECTIVE post-patch config — a
   // patch may change only the model, only the provider, or both. Fail-open
@@ -85,6 +93,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   const worker = await updateAiWorker(user.id, idParsed.data.id, {
     ...rest,
+    ...configuredBy,
     ...(params !== undefined ? { params: params as AiWorkerParams } : {}),
   });
   if (!worker) return NextResponse.json({ error: 'not found' }, { status: 404 });

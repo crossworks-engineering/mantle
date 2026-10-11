@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { getOwnerOr401 } from '@/lib/auth';
-import { AGENT_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
+import { AGENT_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import {
   createAiWorker,
   listAiWorkers,
@@ -93,6 +93,7 @@ export async function POST(req: Request) {
     const worker = await createAiWorker({
       ownerId: user.id,
       ...rest,
+      ...modelRoutesStamp(user, null, parsed.data, AGENT_ROUTES),
       ...(params !== undefined ? { params: params as AiWorkerParams } : {}),
     });
     // Embedding model changes must drop the resolver cache NOW (next ingest/recall

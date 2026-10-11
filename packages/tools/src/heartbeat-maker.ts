@@ -9,12 +9,13 @@
  *
  * The anchor's own saves leave every maker as it is.
  */
-import { and, arrayContains, eq, inArray, or, type SQL } from 'drizzle-orm';
-import { agents, db, heartbeats } from '@mantle/db';
+import { and, arrayContains, arrayOverlaps, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { agents, db, heartbeats, toolGroups } from '@mantle/db';
 
 export type HeartbeatPromptSource = {
-  /** A skill saved: the heartbeats that run it, and those of every agent
-   *  that carries it among its own skills. */
+  /** A skill saved: the heartbeats that run it, those of every agent that
+   *  carries it among its own skills, and those of every agent granted a
+   *  group whose usage skill it is (W7a fix round 5). */
   skillSlug?: string;
   /** An integration group whose usage skill was saved: the heartbeats of
    *  every agent granted the group (the skill rides with the grant). */
@@ -38,9 +39,21 @@ export async function restampHeartbeatMakers(
   if (source.agentSlug) agentSlugs.add(source.agentSlug);
   const holders: SQL[] = [];
   if (source.skillSlug) holders.push(arrayContains(agents.skillSlugs, [source.skillSlug]));
-  if (source.toolGroupSlug) {
-    holders.push(arrayContains(agents.toolGroupSlugs, [source.toolGroupSlug]));
+  const groupSlugs = new Set<string>();
+  if (source.toolGroupSlug) groupSlugs.add(source.toolGroupSlug);
+  if (source.skillSlug) {
+    const usageOf = await db
+      .select({ slug: toolGroups.slug })
+      .from(toolGroups)
+      .where(
+        and(
+          eq(toolGroups.ownerId, ownerId),
+          sql`${toolGroups.integration} ->> 'skillSlug' = ${source.skillSlug}`,
+        ),
+      );
+    for (const g of usageOf) groupSlugs.add(g.slug);
   }
+  if (groupSlugs.size > 0) holders.push(arrayOverlaps(agents.toolGroupSlugs, [...groupSlugs]));
   if (holders.length > 0) {
     const rows = await db
       .select({ slug: agents.slug })

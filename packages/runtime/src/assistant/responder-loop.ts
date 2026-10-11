@@ -20,6 +20,7 @@
 
 import type { Agent, AgentParams } from '@mantle/db';
 import {
+  chatRouteKeyRefusal,
   resolveBackupAdapter,
   runToolLoop,
   summarizeToolOutcomes,
@@ -258,9 +259,15 @@ async function runResponderLoopAtLevel(
     'context',
   );
 
+  // The caller resolved the agent's key; it goes to the agent's base URL only
+  // while the login that paired them holds the keys area (W7a fix round 5).
+  // A keyless provider runs keyless instead.
+  const routeRefused = await chatRouteKeyRefusal(opts.ownerId, agent);
+  if (routeRefused && agent.provider !== 'local') throw new Error(routeRefused);
+
   const loop = await runToolLoop({
     adapter: opts.adapter,
-    apiKey: opts.apiKey,
+    apiKey: routeRefused ? 'local' : opts.apiKey,
     model: agent.model,
     baseUrl: agent.baseUrl,
     viaTailnet: agent.viaTailnet,

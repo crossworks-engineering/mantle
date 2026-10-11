@@ -19,6 +19,7 @@
  * circuit breaker).
  */
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { VAULT_PAIR_MAKER_NO_KEYS, vaultPairRunRefusal } from '@mantle/db';
 import {
   classifyChatError,
   getChatAdapter,
@@ -40,6 +41,9 @@ export interface ChatRoute {
   /** Dispatch this route's HTTP through the Tailscale proxy so a `baseUrl` at a
    *  MagicDNS name reaches a NAT'd box. Inert unless the tailnet proxy is up. */
   viaTailnet: boolean;
+  /** The login that paired this route's key with its base URL (W7a fix
+   *  round 5, the row's configured_by). Null or absent: the brain owner's. */
+  configuredBy?: string | null;
 }
 
 /** The active + optional backup routes resolved from a row. */
@@ -61,6 +65,8 @@ export interface ChatRouteRow {
   backupEnabled: boolean;
   backupBaseUrl: string | null;
   backupViaTailnet: boolean;
+  /** configured_by (W7a fix round 5): it covers both routes. */
+  configuredBy?: string | null;
 }
 
 /** Split a row into its active (primary) + optional backup routes. The backup
@@ -73,6 +79,7 @@ export function resolveChatRoutes(row: ChatRouteRow): ChatRoutes {
       apiKeyId: row.apiKeyId ?? null,
       baseUrl: row.baseUrl ?? null,
       viaTailnet: row.viaTailnet ?? false,
+      configuredBy: row.configuredBy ?? null,
     },
     backup:
       row.backupEnabled && row.backupProvider && row.backupModel
@@ -82,6 +89,7 @@ export function resolveChatRoutes(row: ChatRouteRow): ChatRoutes {
             apiKeyId: row.backupApiKeyId ?? null,
             baseUrl: row.backupBaseUrl ?? null,
             viaTailnet: row.backupViaTailnet ?? false,
+            configuredBy: row.configuredBy ?? null,
           }
         : null,
   };
@@ -131,7 +139,9 @@ export async function resolveRouteAdapter(
     throw new Error(
       key.disposition === 'no_api_key_id'
         ? `chat: no api key for provider '${route.provider}'. Add one at /settings/keys.`
-        : `chat: api key for provider '${route.provider}' could not be resolved (${key.detail}).`,
+        : key.disposition === 'api_key_maker_no_keys'
+          ? `chat: ${key.detail}`
+          : `chat: api key for provider '${route.provider}' could not be resolved (${key.detail}).`,
     );
   }
   return {
@@ -150,8 +160,10 @@ export type ChatKeyResult =
   | {
       ok: false;
       /** Stable disposition for skipped-trace rows + logs. Mirrors what the
-       *  worker pre-flights have always recorded. */
-      disposition: 'no_api_key_id' | 'api_key_not_decryptable';
+       *  worker pre-flights have always recorded.
+       *  `api_key_maker_no_keys`: the route has a base URL and the login that
+       *  paired it no longer holds the keys area (W7a fix round 5). */
+      disposition: 'no_api_key_id' | 'api_key_not_decryptable' | 'api_key_maker_no_keys';
       /** Short human detail for the log line. */
       detail: string;
     };
@@ -168,15 +180,28 @@ export type ChatKeyResult =
  * Adding the next keyless provider is a one-line change HERE — not a grep across
  * five worker pre-flights (which is exactly the drift that silently stopped
  * ingest when `local` workers were first configured).
+ *
+ * A route with a base URL sends its key (pinned, or the provider's) to a host
+ * a login chose: it resolves a vault key only while the login that paired
+ * them (`configuredBy`, null for the brain owner) holds the keys area (W7a
+ * fix round 5, @mantle/tools secret-ref-gate.ts). Refused, a keyless
+ * provider still runs keyless; any other has no key.
  */
 export async function resolveChatKey(
   ownerId: string,
-  route: Pick<ChatRoute, 'provider' | 'apiKeyId'>,
+  route: Pick<ChatRoute, 'provider' | 'apiKeyId'> &
+    Partial<Pick<ChatRoute, 'baseUrl' | 'configuredBy'>>,
 ): Promise<ChatKeyResult> {
   // Keyless providers: `local` needs no credential. Pinned/service keys are
   // still honoured if present (e.g. a proxy that wants a token), but their
   // absence is NOT a miss.
   const keyless = route.provider === 'local';
+
+  if (await chatRouteKeyRefusal(ownerId, route)) {
+    return keyless
+      ? { ok: true, apiKey: 'local' }
+      : { ok: false, disposition: 'api_key_maker_no_keys', detail: VAULT_PAIR_MAKER_NO_KEYS };
+  }
 
   let apiKey: string | null = null;
   if (route.apiKeyId) apiKey = await getApiKeyById(route.apiKeyId);
@@ -194,6 +219,21 @@ export async function resolveChatKey(
         detail: `api_key_id ${route.apiKeyId} not found`,
       }
     : { ok: false, disposition: 'no_api_key_id', detail: 'no api_key_id set' };
+}
+
+/**
+ * Why a route's vault key may not go to its base URL now, or null (W7a fix
+ * round 5): the route has a base URL and the login that paired them
+ * (`configuredBy`) is not the brain owner and no longer holds the keys area.
+ * For the paths that resolve an agent's key themselves and send it to the
+ * agent's base URL (the responder loop, a heartbeat fire).
+ */
+export async function chatRouteKeyRefusal(
+  ownerId: string,
+  route: { baseUrl?: string | null; configuredBy?: string | null },
+): Promise<string | null> {
+  if (!route.baseUrl?.trim()) return null;
+  return vaultPairRunRefusal(route.configuredBy, ownerId, true);
 }
 
 /**

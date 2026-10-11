@@ -4,6 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import {
   integrationPairing,
   parseIntegrationMeta,
+  restampHeartbeatMakers,
   vaultPairingChanged,
   vaultPairLoginRefusal,
 } from '@mantle/tools';
@@ -133,6 +134,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     ...(configuredBy !== undefined ? { configuredBy } : {}),
   });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // A new usage skill on the group is what its grantees' heartbeats now run:
+  // they become the writer's (W7a fix round 5, @mantle/tools heartbeat-maker.ts).
+  if (
+    integration !== undefined &&
+    (integrationPatch?.skillSlug ?? null) !== (current.integration?.skillSlug ?? null)
+  ) {
+    await restampHeartbeatMakers(user.id, toolMakerFor(user), { toolGroupSlug: row.slug });
+  }
   return NextResponse.json({ group: row, ...(warnings.length > 0 ? { warnings } : {}) });
 }
 

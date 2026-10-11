@@ -20,6 +20,7 @@ import {
   vaultPairCallerRefusal,
   vaultPairingChanged,
 } from '../secret-ref-gate';
+import { restampHeartbeatMakers } from '../heartbeat-maker';
 import {
   AGENT_THINKING_EFFORTS,
   agentGrantProblems,
@@ -359,6 +360,15 @@ export const tool_group_ensure: BuiltinToolDef = {
           updatedAt: new Date(),
         })
         .where(eq(toolGroups.id, existing.id));
+      // A new usage skill on the group is what its grantees' heartbeats now
+      // run: they become the caller's (W7a fix round 5, heartbeat-maker.ts).
+      const skillBefore = existing.integration?.skillSlug ?? null;
+      const skillAfter = integration?.skillSlug ?? null;
+      if (skillAfter !== skillBefore) {
+        await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), {
+          toolGroupSlug: slug,
+        });
+      }
     } else {
       const name = str(input.name).trim();
       if (!name) return { ok: false, error: 'name is required when creating a new group' };
@@ -583,6 +593,9 @@ export const agent_grant_tool_group: BuiltinToolDef = {
       .update(agents)
       .set({ toolGroupSlugs: [...current, groupSlug], updatedAt: new Date() })
       .where(eq(agents.id, agent.id));
+    // The group's tools and usage skill now ride with the agent's heartbeats:
+    // they become the granting login's (W7a fix round 5, heartbeat-maker.ts).
+    await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), { agentSlug });
     ctx.step?.setOutput({ agentSlug, groupSlug });
     return {
       ok: true,

@@ -205,6 +205,10 @@ export type CreateAgentInput = {
   viaTailnet?: boolean;
   backupBaseUrl?: string | null;
   backupViaTailnet?: boolean;
+  /** The login that paired a route's vault key with its base URL (W7a fix
+   *  round 5, lib/model-route-pair.ts); null for the brain owner. Absent on
+   *  an update: the stored configurer stays. */
+  configuredBy?: string | null;
   /** Pinned TTS worker (migration 0066). null = use the default TTS worker. */
   ttsWorkerId?: string | null;
   systemPrompt: string;
@@ -257,6 +261,7 @@ export async function createAgent(
       viaTailnet: input.viaTailnet ?? false,
       backupBaseUrl: input.backupBaseUrl ?? null,
       backupViaTailnet: input.backupViaTailnet ?? false,
+      configuredBy: input.configuredBy ?? null,
       ttsWorkerId: input.ttsWorkerId ?? null,
       systemPrompt: input.systemPrompt,
       skillSlugs: input.skillSlugs ?? [],
@@ -295,6 +300,7 @@ export async function updateAgent(
   if (patch.viaTailnet !== undefined) next.viaTailnet = patch.viaTailnet;
   if (patch.backupBaseUrl !== undefined) next.backupBaseUrl = patch.backupBaseUrl;
   if (patch.backupViaTailnet !== undefined) next.backupViaTailnet = patch.backupViaTailnet;
+  if (patch.configuredBy !== undefined) next.configuredBy = patch.configuredBy;
   if (patch.ttsWorkerId !== undefined) next.ttsWorkerId = patch.ttsWorkerId;
   if (patch.systemPrompt !== undefined) next.systemPrompt = patch.systemPrompt;
   if (patch.skillSlugs !== undefined) next.skillSlugs = patch.skillSlugs;
@@ -467,11 +473,16 @@ export async function cloneAgentForUser(
 
     const created = await createAgent(
       userId,
-      cloneAgentFields(toSummary(source), {
-        name: input.name,
-        slug,
-        assignedUserEmail: input.actorEmail,
-      }),
+      {
+        ...cloneAgentFields(toSummary(source), {
+          name: input.name,
+          slug,
+          assignedUserEmail: input.actorEmail,
+        }),
+        // The clone carries the source's routes, so it answers to the same
+        // configuring login (W7a fix round 5).
+        configuredBy: source.configuredBy ?? null,
+      },
       tx,
     );
     const [assigned] = await tx

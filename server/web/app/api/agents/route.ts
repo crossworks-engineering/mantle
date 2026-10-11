@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { AGENT_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
+import { AGENT_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { toolMakerFor } from '@/lib/tools';
 import { restampHeartbeatMakers } from '@mantle/tools';
 import { AvatarSchema } from '@/lib/avatar-schema';
@@ -102,7 +102,10 @@ export async function POST(req: Request) {
   const keysRefused = await modelRoutesRefusal(user, null, parsed.data, AGENT_ROUTES);
   if (keysRefused) return NextResponse.json({ error: keysRefused }, { status: 403 });
   try {
-    const row = await createAgent(user.id, parsed.data);
+    const row = await createAgent(user.id, {
+      ...parsed.data,
+      ...modelRoutesStamp(user, null, parsed.data, AGENT_ROUTES),
+    });
     // A heartbeat already bound to this slug now runs this prompt (W7a fix
     // round 4, @mantle/tools heartbeat-maker.ts).
     await restampHeartbeatMakers(user.id, toolMakerFor(user), { agentSlug: row.slug });

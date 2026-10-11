@@ -45,6 +45,7 @@ import {
   resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
+  chatRouteKeyRefusal,
   type ChatMessage,
 } from '../agent';
 import {
@@ -260,6 +261,13 @@ async function fireInner(
   if (!agent.apiKeyId) return autoPause(hb, `agent '${agent.slug}' has no api_key configured`);
   const apiKey = await getApiKeyById(agent.apiKeyId);
   if (!apiKey) return autoPause(hb, `agent '${agent.slug}' api key could not be decrypted`);
+  // The key goes to the agent's base URL only while the login that paired
+  // them holds the keys area (W7a fix round 5); a keyless provider runs keyless.
+  const routeRefused = await chatRouteKeyRefusal(hb.ownerId, agent);
+  if (routeRefused && agent.provider !== 'local') {
+    return autoPause(hb, `agent '${agent.slug}': ${routeRefused}`);
+  }
+  const routeKey = routeRefused ? 'local' : apiKey;
 
   // 3. Compose system prompt -----------------------------------
   //    Agent's normal persistent skills go in (these are general
@@ -378,7 +386,7 @@ async function fireInner(
             inCaller(() =>
               runToolLoop({
                 adapter: hbAdapter,
-                apiKey,
+                apiKey: routeKey,
                 model: agent.model,
                 baseUrl: agent.baseUrl,
                 viaTailnet: agent.viaTailnet,

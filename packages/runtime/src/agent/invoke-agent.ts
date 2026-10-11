@@ -184,7 +184,9 @@ export const invokeAgent: AgentInvoker = async ({
       error:
         keyCheck.disposition === 'no_api_key_id'
           ? `agent '${agentSlug}' has no api_key_id configured`
-          : `agent '${agentSlug}' api key could not be decrypted`,
+          : keyCheck.disposition === 'api_key_maker_no_keys'
+            ? `agent '${agentSlug}': ${keyCheck.detail}`
+            : `agent '${agentSlug}' api key could not be decrypted`,
     };
   }
   const apiKey = keyCheck.apiKey;

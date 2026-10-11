@@ -26,7 +26,13 @@
 
 import { createHash } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
-import { systemDb, embeddingCache, embeddingConfig, isWriteRefused } from '@mantle/db';
+import {
+  systemDb,
+  embeddingCache,
+  embeddingConfig,
+  isWriteRefused,
+  vaultPairRunRefusal,
+} from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
@@ -157,6 +163,34 @@ export interface EmbeddingRoute {
   apiKeyId: string | null;
   /** Operator-facing label for the failover UI ("Mac Ollama", "HF endpoint"). */
   label: string | null;
+  /** The login that paired the route's key with its base URL (W7a fix round
+   *  5, embedding_config.configured_by). Null or absent: the brain owner's. */
+  configuredBy?: string | null;
+}
+
+/**
+ * The vault key a route sends (W7a fix round 5): the pinned key, else the
+ * provider's, else the keyless `local` sentinel, else null. A route with a
+ * base URL resolves a vault key only while the login that paired them
+ * (`configuredBy`, null for the brain owner) holds the keys area; refused, a
+ * `local` route runs keyless and any other throws.
+ */
+async function routeApiKey(
+  ownerId: string,
+  r: Pick<EmbeddingRoute, 'provider' | 'baseUrl' | 'apiKeyId' | 'configuredBy'>,
+): Promise<string | null> {
+  if (r.baseUrl?.trim()) {
+    const refused = await vaultPairRunRefusal(r.configuredBy, ownerId, true);
+    if (refused) {
+      if (r.provider === 'local') return 'local';
+      throw new Error(`embed: ${refused}`);
+    }
+  }
+  let apiKey: string | null = null;
+  if (r.apiKeyId) apiKey = await getApiKeyById(r.apiKeyId);
+  if (!apiKey) apiKey = await getApiKey(ownerId, r.provider);
+  if (!apiKey && r.provider === 'local') apiKey = 'local';
+  return apiKey;
 }
 
 /**
@@ -254,6 +288,7 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
           baseUrl: row.primaryBaseUrl ?? null,
           apiKeyId: row.primaryApiKeyId ?? null,
           label: row.primaryLabel ?? 'Primary',
+          configuredBy: row.configuredBy ?? null,
         },
         backup:
           row.backupEnabled && row.backupProvider
@@ -262,6 +297,7 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
                 baseUrl: row.backupBaseUrl ?? null,
                 apiKeyId: row.backupApiKeyId ?? null,
                 label: row.backupLabel ?? 'Backup',
+                configuredBy: row.configuredBy ?? null,
               }
             : null,
         extractionConcurrency: row.extractionConcurrency,
@@ -310,14 +346,25 @@ export function clearEmbeddingModelCache(ownerId?: string): void {
  */
 export async function probeEmbeddingRoute(
   ownerId: string,
-  route: { provider: string; model: string; baseUrl?: string | null; apiKeyId?: string | null },
+  route: {
+    provider: string;
+    model: string;
+    baseUrl?: string | null;
+    apiKeyId?: string | null;
+    /** The login answering for the key-to-host pairing (W7a fix round 5):
+     *  a saved route's configurer, or the login probing an unsaved one.
+     *  Null or absent: the brain owner. */
+    configuredBy?: string | null;
+  },
 ): Promise<number> {
   const adapter = getEmbeddingAdapter(route.provider);
   if (!adapter) throw new Error(`no embedding adapter registered for provider '${route.provider}'`);
-  let apiKey: string | null = null;
-  if (route.apiKeyId) apiKey = await getApiKeyById(route.apiKeyId);
-  if (!apiKey) apiKey = await getApiKey(ownerId, route.provider);
-  if (!apiKey) apiKey = route.provider === 'local' ? 'local' : null;
+  const apiKey = await routeApiKey(ownerId, {
+    provider: route.provider,
+    baseUrl: route.baseUrl ?? null,
+    apiKeyId: route.apiKeyId ?? null,
+    configuredBy: route.configuredBy ?? null,
+  });
   if (!apiKey) throw new Error(`no api key for provider '${route.provider}'`);
   const res = await adapter.embed({
     apiKey,
@@ -550,19 +597,14 @@ async function doEmbed(
       }
     }
     // Resolve the api key. Route-pinned id wins; fall back to the provider's
-    // canonical service slug; `local` is keyless (self-hosted server).
-    let apiKey: string | null = null;
-    if (r.apiKeyId) apiKey = await getApiKeyById(r.apiKeyId);
-    if (!apiKey) apiKey = await getApiKey(ownerId, r.provider);
+    // canonical service slug; `local` is keyless (self-hosted server). A
+    // route with a base URL answers to its configurer (routeApiKey).
+    const apiKey = await routeApiKey(ownerId, r);
     if (!apiKey) {
-      if (r.provider === 'local') {
-        apiKey = 'local';
-      } else {
-        throw new Error(
-          `embed: no api key for provider '${r.provider}'. Add one at /settings/keys ` +
-            `and assign it to the route at /settings/embedding.`,
-        );
-      }
+      throw new Error(
+        `embed: no api key for provider '${r.provider}'. Add one at /settings/keys ` +
+          `and assign it to the route at /settings/embedding.`,
+      );
     }
 
     for (let start = 0; start < missInputs.length; start += MAX_BATCH) {
@@ -580,7 +622,7 @@ async function doEmbed(
       if (slice.length === 0) continue;
       const result = await withRateLimitBackoff(() =>
         adapter.embed({
-          apiKey: apiKey!,
+          apiKey,
           model,
           input: slice,
           // MRL truncation where supported (OpenAI's text-embedding-3-*, Google's

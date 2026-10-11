@@ -185,13 +185,20 @@ client browse and test the registry.
   a vault key meets a host: an integration group's secret ref, auth template
   or OAuth2 credentials against its base URL or token URL
   (`tool_group_ensure`, the tool-groups PATCH route), OpenAPI and MCP
-  connectors, the API Console proxy, and model routes (an agent's, an AI
-  worker's or the embedder's key id with a base URL other than the
-  provider's). Setting or changing either side while the other is present
-  needs the keys area or the anchor login. A group or connector records who
-  paired them (tool_groups.configured_by); a tool authored into the group, or
-  synced by an OpenAPI connector, takes that login as its maker, and an MCP
-  connector's key goes out only while that login holds the keys area.
+  connectors (an OpenAPI connector's spec URL counts as part of its host,
+  base URL or not), the API Console proxy, a mail account's stored password
+  against its IMAP and SMTP host and port, and model routes (an agent's, an
+  AI worker's or the embedder's route with a base URL other than the
+  provider's: its key id, or with none the provider's vault key it falls back
+  to). Setting or changing either side while the other is present needs the
+  keys area or the anchor login (a mail account may instead re-enter its
+  password). A group, connector or model route records who paired them
+  (tool_groups, agents, ai_workers and embedding_config.configured_by); a
+  tool authored into the group, or synced by an OpenAPI connector, takes that
+  login as its maker, and an MCP connector's key, or a model route's key on
+  its base URL, goes out only while that login holds the keys area. A synced
+  spec path that is not relative (`https://...`) is not compiled, so every
+  synced tool stays under the connector's base URL.
 - `api_key_refs`, vault entries as `{{secret:service/label}}` refs,
   masked previews only; plaintext never leaves the dispatcher.
 - `tool_group_list / tool_group_ensure`, capability bundles, with

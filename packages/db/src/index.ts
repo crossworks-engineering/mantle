@@ -258,3 +258,4 @@ export {
   READ_ONLY_COPY_ERROR,
   type ItemNeed,
 } from './item-rights';
+export { VAULT_PAIR_MAKER_NO_KEYS, vaultPairRunRefusal } from './vault-pair';

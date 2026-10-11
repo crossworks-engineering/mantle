@@ -34,6 +34,7 @@ export {
   resolveRouteAdapter,
   resolveBackupAdapter,
   resolveChatKey,
+  chatRouteKeyRefusal,
   isChatFailover,
   chatWithFailover,
   type ChatKeyResult,

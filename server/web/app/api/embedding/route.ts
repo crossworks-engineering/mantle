@@ -5,7 +5,7 @@ import { suggestBackupRoute } from '@/lib/embedding-backup';
 import { EXTRACTION_CONCURRENCY_MAX } from '@mantle/embeddings';
 import { loadProviderAlerts } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { EMBEDDING_ROUTES, modelRoutesRefusal } from '@/lib/model-route-pair';
+import { EMBEDDING_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { errorMessage } from '@mantle/std';
 
 /** The single embedder config + the vector-column dim + the owner's API keys
@@ -78,16 +78,21 @@ export async function POST(req: Request) {
   const backupProvider = orNull(body.backup_provider);
 
   const routes = {
+    primaryProvider,
     primaryBaseUrl: orNull(body.primary_base_url),
     primaryApiKeyId: orNull(body.primary_api_key_id),
+    backupProvider: backupEnabled ? backupProvider : null,
     backupBaseUrl: backupEnabled ? orNull(body.backup_base_url) : null,
     backupApiKeyId: backupEnabled ? orNull(body.backup_api_key_id) : null,
   };
-  // A key with a base URL of the writer's choosing is the keys area's (W7a
-  // fix round 4, lib/model-route-pair.ts).
+  // A vault key (the key id, or the provider's key a route without one falls
+  // back to) with a base URL of the writer's choosing is the keys area's,
+  // and the config records who paired them (W7a fix rounds 4 and 5,
+  // lib/model-route-pair.ts).
   const stored = await getEmbeddingConfig(user.id);
   const keysRefused = await modelRoutesRefusal(user, stored, routes, EMBEDDING_ROUTES);
   if (keysRefused) return NextResponse.json({ ok: false, error: keysRefused }, { status: 403 });
+  const stamp = modelRoutesStamp(user, stored, routes, EMBEDDING_ROUTES);
 
   try {
     await upsertEmbeddingConfig(user.id, {
@@ -109,6 +114,7 @@ export async function POST(req: Request) {
       extractionTimeBudgetMinutes: nullableInt(body.extraction_time_budget_minutes, 1, 720),
       localEmbedBatchSize: nullableInt(body.local_embed_batch_size, 1, 512),
       localEmbedRequestTimeoutMs: nullableInt(body.local_embed_request_timeout_ms, 1000, 600000),
+      ...stamp,
     });
     // No backup route: say which same-model one the brain could add (the
     // form offers it). A save also tells the agent to probe and recover

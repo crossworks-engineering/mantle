@@ -30,6 +30,12 @@
 -- it as their maker, and an MCP connector's key resolves only while that
 -- login holds the keys area. Null: the brain owner's.
 --
+-- An agent, an AI worker and the embedding config (fix round 5) record the
+-- login that last paired a model route's vault key (its key id, or the
+-- provider's own key it falls back to) with a base URL of its choosing,
+-- when that is not the brain owner: a route with a base URL resolves its key
+-- only while that login holds the keys area. Null: the brain owner's.
+--
 -- No foreign keys: a login that is gone leaves its rows to the rules above
 -- (a sandbox to the brain owner; a heartbeat pauses; a tool's or a
 -- connector's secrets stop resolving).
@@ -42,3 +48,9 @@ ALTER TABLE heartbeats ADD COLUMN IF NOT EXISTS created_by uuid;
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS created_by uuid;
 --> statement-breakpoint
 ALTER TABLE tool_groups ADD COLUMN IF NOT EXISTS configured_by uuid;
+--> statement-breakpoint
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS configured_by uuid;
+--> statement-breakpoint
+ALTER TABLE ai_workers ADD COLUMN IF NOT EXISTS configured_by uuid;
+--> statement-breakpoint
+ALTER TABLE embedding_config ADD COLUMN IF NOT EXISTS configured_by uuid;

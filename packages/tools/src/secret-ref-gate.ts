@@ -104,9 +104,9 @@ export type VaultPairing = { key: string; dest: string };
 export const VAULT_PAIR_NEEDS_KEYS =
   'This pairs a key from the API-key vault (a {{secret:...}} or {{oauth:...}} ref, a secret ref or a key id) with the host it is sent to: setting or changing either side while the other is present needs the keys area, and this login does not hold it. Leave the key or the host as it is, or ask a user with the keys area to make this change.';
 
-/** The refusal at run time of a pairing whose configuring login lost the keys area. */
-export const VAULT_PAIR_MAKER_NO_KEYS =
-  "This connection's vault key does not resolve: the login that paired it with its host does not hold the keys area. Ask a user with the keys area to save the connection again.";
+/** The run-time check (vaultPairRunRefusal) and its refusal live in
+ *  @mantle/db, so the model route resolvers below @mantle/tools use it too. */
+export { VAULT_PAIR_MAKER_NO_KEYS, vaultPairRunRefusal } from '@mantle/db';
 
 /** The vault refs (sorted, distinct) in an auth template's headers and query. */
 export function templateVaultRefs(
@@ -139,8 +139,10 @@ type IntegrationLike = {
 /**
  * The key and destination of a tool group's integration: its secretRef, the
  * vault refs of its auth template and its OAuth2 credentials, sent to its
- * base URL and its OAuth2 token URL. An OpenAPI connector without a base URL
- * adopts the spec's server, so its spec URL stands for the host. An MCP
+ * base URL and its OAuth2 token URL. An OpenAPI connector's spec URL is part
+ * of the destination too, base URL or not (W7a fix round 5): without one the
+ * connector adopts the spec's server, and with one the spec still chooses
+ * the paths and parameters its synced tools send the key with. An MCP
  * connector's binding is mcpPairing.
  */
 export function integrationPairing(i: IntegrationLike | null | undefined): VaultPairing {
@@ -151,7 +153,8 @@ export function integrationPairing(i: IntegrationLike | null | undefined): Vault
     ...(i.oauth2 ? [`oauth2:${i.oauth2.clientIdRef ?? ''}|${i.oauth2.clientSecretRef ?? ''}`] : []),
   ];
   const dests = [
-    i.baseUrl ?? (i.openapi?.specUrl ? `spec:${i.openapi.specUrl}` : ''),
+    i.baseUrl ?? '',
+    i.openapi?.specUrl ? `spec:${i.openapi.specUrl}` : '',
     i.oauth2?.tokenUrl ?? '',
   ];
   return {
@@ -198,19 +201,4 @@ export async function vaultPairLoginRefusal(login: string | null): Promise<strin
 /** Why the current tool caller may not make a pairing change, or null. */
 export async function vaultPairCallerRefusal(): Promise<string | null> {
   return (await callerHasArea('keys')) ? null : VAULT_PAIR_NEEDS_KEYS;
-}
-
-/**
- * Why a stored pairing (`carriesKey`) whose configuring login is `maker`
- * may not resolve its key now, or null: a maker other than the brain owner
- * that does not hold the keys area (any more). Null maker: the anchor's or
- * the system's, as before.
- */
-export async function vaultPairRunRefusal(
-  maker: string | null | undefined,
-  ownerId: string,
-  carriesKey: boolean,
-): Promise<string | null> {
-  if (!maker || maker === ownerId || !carriesKey) return null;
-  return (await loginHasArea(maker, 'keys')) ? null : VAULT_PAIR_MAKER_NO_KEYS;
 }

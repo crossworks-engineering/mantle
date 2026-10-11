@@ -27,6 +27,9 @@ export type EmbeddingConfigInput = {
   extractionTimeBudgetMinutes: number | null;
   localEmbedBatchSize: number | null;
   localEmbedRequestTimeoutMs: number | null;
+  /** The login that paired a route's vault key with its base URL (W7a fix
+   *  round 5); null for the brain owner. Absent: the stored one stays. */
+  configuredBy?: string | null;
 };
 
 export async function getEmbeddingConfig(ownerId: string): Promise<EmbeddingConfigRow | null> {

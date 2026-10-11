@@ -128,7 +128,18 @@ Migration `0030_heartbeats.sql` adds two tables and one enum value.
 its maker's scope. A login other than the brain owner becomes the maker when
 it changes what the heartbeat does (its name, agent, skill, schedule, surface
 or state), or saves the prompt it runs (its skill, or its agent's system
-prompt, skills or persona notes). The API returns it as `createdBy`.
+prompt, skills or persona notes). Granting the agent a tool group, or
+setting a group's usage skill, counts too: the heartbeats of every agent
+that holds the group become the writer's, and saving a skill that is some
+group's usage skill reaches the heartbeats of that group's grantees. The
+API returns it as `createdBy`.
+
+Accepted, not restamped: the house style and the descriptions of the tools
+a heartbeat may call are part of what it runs, and a login with the
+connectors area may edit them (a tool's description, a connector's
+synced tools) without becoming the maker of the heartbeats that read
+them. Those words steer the model but grant nothing: the fire still runs
+in its maker's scope, with its maker's tools and keys.
 
 **Per-heartbeat-only gates.** There are no system-wide defaults.
 A null gate column means "no check of that kind". The UI form offers

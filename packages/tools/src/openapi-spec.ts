@@ -429,6 +429,15 @@ export function compileOperations(
 
   const tools: CompiledOperation[] = [];
   for (const op of selected) {
+    // Every tool URL stays under the connector's base_url (W7a fix round 5):
+    // a path key that is not relative ('https://host/x', 'host/x') would
+    // send the group's auth to a host the spec chose, so it is not compiled.
+    if (!op.path.startsWith('/')) {
+      warnings.add(
+        `${op.op}: path '${op.path.slice(0, 120)}' does not start with '/' (a spec path is relative to the connector's base_url), so it was skipped`,
+      );
+      continue;
+    }
     const method = op.method.toUpperCase();
     if (!HANDLER_METHODS.has(method)) {
       warnings.add(`${op.op}: method '${method}' is not supported by http tools — skipped`);
