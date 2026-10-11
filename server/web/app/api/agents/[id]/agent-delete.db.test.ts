@@ -52,7 +52,8 @@ describe.skipIf(!URL)('DELETE /api/agents/:id conversation handling on Postgres'
   const replayTexts = async () => {
     const res = await replayWindow.handler(
       { from: day, to: day, surface: 'web' },
-      { ownerId: owner },
+      // The owner asks for its own history (replay reads one login's).
+      { ownerId: owner, surface: { kind: 'owner', via: 'mcp', loginId: owner } },
     );
     if (!res.ok) throw new Error(res.error);
     return (res.output as { turns: { text: string }[] }).turns.map((t) => t.text).sort();

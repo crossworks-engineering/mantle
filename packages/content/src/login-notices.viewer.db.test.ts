@@ -254,12 +254,18 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     expect(await ln.chatReplyNotice({ loginId: member2, id: m2.id })).not.toBeNull();
   });
 
-  it('an Admin user’s finished reply raises no login_notice: one push, by its own path (W7c fix round 1, L5)', async () => {
+  it('an Admin user’s finished reply makes no member-path push: one push per reply (W7c fix round 1, L5)', async () => {
+    // The event may fire (the trigger cannot read roles); the handler's
+    // notice for an Admin login is null, so only pushOutbound (the Admin
+    // user's own devices) sends.
     const got = await sent(() => reply(adminA, 'second admin reply'));
-    expect(got.filter((n) => n.kind === 'chat' && n.loginId === adminA)).toEqual([]);
-    // A member's reply still does.
+    for (const n of got) {
+      if (n.kind === 'chat') expect(await ln.chatReplyNotice(n)).toBeNull();
+    }
+    // A member's reply still tells the member.
     const mine = await sent(() => reply(member, 'member reply'));
-    expect(mine.some((n) => n.kind === 'chat' && n.loginId === member)).toBe(true);
+    const forMember = mine.find((n) => n.kind === 'chat' && n.loginId === member);
+    expect(forMember && (await ln.chatReplyNotice(forMember))).not.toBeNull();
   });
 
   // ── Cost safety ─────────────────────────────────────────────────────────

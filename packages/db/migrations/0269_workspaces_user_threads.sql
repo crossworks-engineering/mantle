@@ -115,25 +115,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 --> statement-breakpoint
--- A member's (or a client's) phone only: an Admin user's own replies reach
--- its devices by conversation_changed (pushOutbound), so one reply is one
--- push, never two (W7c fix round 1, L5). Whether a login is an Admin user
--- is read with definer rights (the scoped role a member's write runs as
--- reads no auth.users); the notify function itself keeps invoker rights, so
--- the quiet check above sees the writing role.
-CREATE OR REPLACE FUNCTION "public"."mantle_login_is_admin"(login uuid)
-  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
-  SET search_path = "public", pg_temp AS $$
-  SELECT EXISTS (SELECT 1 FROM "auth"."users" u WHERE u."id" = login AND u."role" = 'admin')
-$$;
---> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_notify_login_chat"()
   RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF "public"."mantle_conversation_quiet"() THEN
-    RETURN NULL;
-  END IF;
-  IF "public"."mantle_login_is_admin"(new.login_id) THEN
     RETURN NULL;
   END IF;
   PERFORM pg_notify(

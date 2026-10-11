@@ -56,18 +56,25 @@ type Handler = (
 ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
 
 /** Register the full surface onto a fake server and return the named handler. */
-function handlerFor(slug: string): Handler {
+function handlerFor(
+  slug: string,
+  opts: Parameters<typeof registerMantleTools>[2] = {},
+): Handler {
   const handlers = new Map<string, Handler>();
   const fakeServer = {
     registerTool: (name: string, _config: unknown, handler: Handler) => {
       handlers.set(name, handler);
     },
   };
-  registerMantleTools(fakeServer as never, 'owner-1');
+  registerMantleTools(fakeServer as never, 'owner-1', opts);
   const handler = handlers.get(slug);
   if (!handler) throw new Error(`handler ${slug} not registered`);
   return handler;
 }
+
+/** An owner MCP connection's login (W7c fix round 1, M1): the responder
+ *  tools read and write that login's own thread. */
+const CONN = { loginId: 'owner-1' } as const;
 
 function parseReply(res: { content: Array<{ text: string }> }) {
   return JSON.parse(res.content[0]!.text);
@@ -110,11 +117,11 @@ beforeEach(() => {
 
 describe('ask_responder MCP tool', () => {
   it('is registered on the surface', () => {
-    expect(handlerFor('ask_responder')).toBeTypeOf('function');
+    expect(handlerFor('ask_responder', CONN)).toBeTypeOf('function');
   });
 
   it('rejects an over-long message without calling the engine', async () => {
-    const handler = handlerFor('ask_responder');
+    const handler = handlerFor('ask_responder', CONN);
     const res = await handler({ message: 'x'.repeat(8001) });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/max 8000/);
@@ -123,7 +130,7 @@ describe('ask_responder MCP tool', () => {
   });
 
   it('rejects an over-cap history (too many turns) without calling the engine', async () => {
-    const handler = handlerFor('ask_responder');
+    const handler = handlerFor('ask_responder', CONN);
     const history = Array.from({ length: 41 }, (_, i) => ({
       role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
       content: 'x',
@@ -136,7 +143,7 @@ describe('ask_responder MCP tool', () => {
   });
 
   it('rejects an over-long history entry without calling the engine', async () => {
-    const handler = handlerFor('ask_responder');
+    const handler = handlerFor('ask_responder', CONN);
     const history = [{ role: 'user' as const, content: 'x'.repeat(8001) }];
     const res = await handler({ message: 'hi', history });
     expect(res.isError).toBe(true);
@@ -144,7 +151,7 @@ describe('ask_responder MCP tool', () => {
   });
 
   it('returns the reply + clipped tool_calls on the happy path', async () => {
-    const handler = handlerFor('ask_responder');
+    const handler = handlerFor('ask_responder', CONN);
     const res = await handler({ message: 'hi' });
     expect(res.isError).toBeUndefined();
     const out = parseReply(res);
@@ -158,7 +165,7 @@ describe('ask_responder MCP tool', () => {
   });
 
   it('omits tool_calls when include_tool_calls is false', async () => {
-    const handler = handlerFor('ask_responder');
+    const handler = handlerFor('ask_responder', CONN);
     const res = await handler({ message: 'hi', include_tool_calls: false });
     const out = parseReply(res);
     expect(out.tool_calls).toBeUndefined();
@@ -171,7 +178,7 @@ describe('ask_responder MCP tool', () => {
     h.simResult.toolCalls = [
       { slug: 'page_update', argsJson: 'A'.repeat(900), durationMs: 3, status: 'ok', error: null },
     ];
-    const handler = handlerFor('ask_responder');
+    const handler = handlerFor('ask_responder', CONN);
     const out = parseReply(await handler({ message: 'hi' }));
     const args = out.tool_calls[0].args as string;
     expect(args.endsWith('…')).toBe(true);
@@ -179,7 +186,7 @@ describe('ask_responder MCP tool', () => {
   });
 
   it('forwards message + options to the engine', async () => {
-    const handler = handlerFor('ask_responder');
+    const handler = handlerFor('ask_responder', CONN);
     await handler({
       message: 'do it',
       agent_slug: 'planner',
@@ -202,7 +209,7 @@ describe('ask_responder MCP tool', () => {
     (runSimulatedResponderTurn as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('No enabled assistant agent'),
     );
-    const handler = handlerFor('ask_responder');
+    const handler = handlerFor('ask_responder', CONN);
     const res = await handler({ message: 'hi' });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/No enabled assistant agent/);
@@ -211,7 +218,7 @@ describe('ask_responder MCP tool', () => {
 
 describe('responder_turn_input MCP tool', () => {
   it('passes the message, history and narrowing to the engine', async () => {
-    const res = await handlerFor('responder_turn_input')({
+    const res = await handlerFor('responder_turn_input', CONN)({
       message: 'hello',
       tools: 'full',
       agent_slug: 'saskia',
@@ -221,6 +228,7 @@ describe('responder_turn_input MCP tool', () => {
     });
     expect(res.isError).toBeUndefined();
     expect(h.inputCalls[0]).toEqual({
+      loginId: 'owner-1',
       message: 'hello',
       agentSlug: 'saskia',
       history: [{ role: 'user', content: 'prior' }],
@@ -239,7 +247,7 @@ describe('responder_turn_input MCP tool', () => {
 
   it('omit_cached drops the cached prefix blocks and says how many', async () => {
     const body = parseReply(
-      await handlerFor('responder_turn_input')({ message: 'hello', omit_cached: true }),
+      await handlerFor('responder_turn_input', CONN)({ message: 'hello', omit_cached: true }),
     );
     expect(body.messages.map((m: { content: string }) => m.content)).toEqual([
       'TIME',
@@ -251,7 +259,7 @@ describe('responder_turn_input MCP tool', () => {
 
   it('tools default to brief, and schemas_for fetches chosen full schemas', async () => {
     const body = parseReply(
-      await handlerFor('responder_turn_input')({ message: 'hello', schemas_for: ['read_result'] }),
+      await handlerFor('responder_turn_input', CONN)({ message: 'hello', schemas_for: ['read_result'] }),
     );
     expect(body.tools).toEqual([
       { name: 'search_nodes', about: 'd' },
@@ -264,19 +272,19 @@ describe('responder_turn_input MCP tool', () => {
 
   it('tools "names" and "none" shrink the tool part', async () => {
     const names = parseReply(
-      await handlerFor('responder_turn_input')({ message: 'hello', tools: 'names' }),
+      await handlerFor('responder_turn_input', CONN)({ message: 'hello', tools: 'names' }),
     );
     expect(names.tools).toBeUndefined();
     expect(names.tool_names).toEqual(['search_nodes', 'read_result']);
     const none = parseReply(
-      await handlerFor('responder_turn_input')({ message: 'hello', tools: 'none' }),
+      await handlerFor('responder_turn_input', CONN)({ message: 'hello', tools: 'none' }),
     );
     expect(none.tools).toBeUndefined();
     expect(none.tool_count).toBe(2);
   });
 
   it('rejects an over-cap transcript before the engine runs', async () => {
-    const res = await handlerFor('responder_turn_input')({
+    const res = await handlerFor('responder_turn_input', CONN)({
       message: 'hello',
       history: Array.from({ length: 41 }, () => ({ role: 'user', content: 'x' })),
     });
@@ -290,7 +298,7 @@ describe('responder_turn_input MCP tool', () => {
     (describeResponderTurnInput as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('answers team or client logins'),
     );
-    const res = await handlerFor('responder_turn_input')({ message: 'hi' });
+    const res = await handlerFor('responder_turn_input', CONN)({ message: 'hi' });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/responder_turn_input failed: answers team/);
   });
@@ -302,7 +310,7 @@ describe('responder_turn_record MCP tool', () => {
   });
 
   it('passes the turn and its authorship to the engine and returns the row ids', async () => {
-    const res = await handlerFor('responder_turn_record')({
+    const res = await handlerFor('responder_turn_record', CONN)({
       message: 'What is Jev?',
       reply: 'A typed-decision model.',
       model: 'claude-haiku-4-5',
@@ -336,13 +344,13 @@ describe('responder_turn_record MCP tool', () => {
     (recordMcpResponderTurn as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('mirrors the owner turn only'),
     );
-    const res = await handlerFor('responder_turn_record')({ message: 'q', reply: 'a', model: 'm' });
+    const res = await handlerFor('responder_turn_record', CONN)({ message: 'q', reply: 'a', model: 'm' });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/responder_turn_record failed: mirrors the owner/);
   });
 
   it('ask_responder still records nothing', async () => {
-    await handlerFor('ask_responder')({ message: 'hi' });
+    await handlerFor('ask_responder', CONN)({ message: 'hi' });
     expect(h.recordCalls).toHaveLength(0);
   });
 });
@@ -356,5 +364,30 @@ describe('firstSentence', () => {
     // A short lead ("e.g.") is not a sentence end.
     expect(firstSentence('Run it, e.g. on a table. Then more.')).toBe('Run it, e.g. on a table.');
     expect(firstSentence('x'.repeat(300))).toHaveLength(200);
+  });
+});
+
+describe('responder tools: whose thread (W7c fix round 1, M1)', () => {
+  beforeEach(() => {
+    h.recordCalls = [];
+  });
+  const args = { message: 'q', reply: 'a', model: 'm' };
+
+  it('a connection writes its own login’s thread, never the anchor’s', async () => {
+    const res = await handlerFor('responder_turn_record', { loginId: 'login-b' })(args);
+    expect(res.isError).toBeUndefined();
+    expect(h.recordCalls[0]).toMatchObject({ loginId: 'login-b' });
+  });
+
+  it('the anchor’s own stdio writes the anchor’s thread', async () => {
+    const res = await handlerFor('responder_turn_record', { transport: 'stdio' })(args);
+    expect(res.isError).toBeUndefined();
+    expect(h.recordCalls[0]).toMatchObject({ loginId: 'owner-1' });
+  });
+
+  it('a network connection that names no login is refused', async () => {
+    const res = await handlerFor('responder_turn_record')(args);
+    expect(res.isError).toBe(true);
+    expect(h.recordCalls).toEqual([]);
   });
 });

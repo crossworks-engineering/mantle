@@ -84,7 +84,9 @@ const SITES: Record<string, Site> = {
   },
   'packages/runtime/src/assistant/run-sim-turn.ts': {
     calls: 1,
-    surface: /surface: \{ kind: 'web' \}/,
+    // The MCP connection's login rides along (W7c fix round 1, M1).
+    surface:
+      /surface: opts\.loginId \? \{ kind: 'web', loginId: opts\.loginId \} : \{ kind: 'web' \}/,
     scope: 'call',
     why: "ask_responder: the owner's simulated web turn",
   },
@@ -104,7 +106,7 @@ const SITES: Record<string, Site> = {
   'server/api/src/workflows/runs-resume-turn.ts': {
     calls: 1,
     surface:
-      /\? \{ kind: 'telegram', telegramChatId: run\.originChannel\.chat_id \}\s*: \{ kind: 'web' \}/,
+      /\? \{ kind: 'telegram', telegramChatId: run\.originChannel\.chat_id \}\s*: runLoginId\s*\? \{ kind: 'web', loginId: runLoginId \}\s*: \{ kind: 'web' \}/,
     scope: 'call',
     why: "the owner's run resuming on its origin channel",
   },

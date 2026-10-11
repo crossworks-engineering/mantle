@@ -119,8 +119,8 @@ function stepSummary(
 /**
  * Whose history a replay reads (W7c fix round 1, H1): each user reads only
  * their own threads, the owner included. The asker is the turn's stamp
- * (the login the turn answers), else the login the surface names (the web
- * chat's, an MCP connection's, an API key's, a member's), else the login
+ * (the login the turn answers), else the login an owner surface names (the
+ * web chat's, an MCP connection's, an API key's), else the login
  * whose own MCP call this is (its user scope). The anchor is used only
  * where the surface IS the anchor: its own stdio MCP (the owner surface
  * with no login) and its Telegram chat (owner-only until W7d). Anything
@@ -136,9 +136,6 @@ export function replayAsker(
   const named = ownerSurfaceLoginId(surface);
   if (named) return named;
   const s = surface as { kind?: string; via?: string; loginId?: unknown } | undefined;
-  if ((s?.kind === 'team' || s?.kind === 'client') && typeof s.loginId === 'string' && s.loginId) {
-    return s.loginId;
-  }
   const scope = currentWorkspaceScope();
   if (scope?.kind === 'user' && scope.loginId) return scope.loginId;
   if (s?.kind === 'owner' && s.via === 'mcp' && !s.loginId) return ownerId;
