@@ -32,6 +32,8 @@ export {
   deleteFileByPath,
   renameFileById,
   bulkDeleteFiles,
+  fileNameTaken,
+  FileNameTakenError,
 } from './ops/files';
 export { listRecentFiles, listFiles, folderById, folderByPath, fileById } from './ops/queries';
 export {

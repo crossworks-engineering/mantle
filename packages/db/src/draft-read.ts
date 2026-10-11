@@ -23,11 +23,13 @@ export function draftColumn<T>(column: AnyPgColumn): SQL<T | null> {
 }
 
 /** Whether the item row in the query may show its draft to the caller (the
- *  same rule as draftColumn), as a boolean expression. */
+ *  same rule as draftColumn), as a boolean expression. Never for a
+ *  read-only snapshot copy (W6b fix round 1): nobody edits it, so no read
+ *  repairs it either. */
 export function draftAllowed(): SQL<boolean> {
   if (!readsDrafts()) return sql<boolean>`false`;
   if (currentWorkspaceScope()) {
-    return sql<boolean>`coalesce("public"."mantle_may_edit"(${nodes.homeWs}, ${nodes.writeWs}), false)`;
+    return sql<boolean>`(coalesce("public"."mantle_may_edit"(${nodes.homeWs}, ${nodes.writeWs}), false) and not coalesce(${nodes.data} ? 'snapshot_of', false))`;
   }
-  return sql<boolean>`true`;
+  return sql<boolean>`not coalesce(${nodes.data} ? 'snapshot_of', false)`;
 }

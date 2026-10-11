@@ -308,7 +308,11 @@ export async function withSystemTx<T>(
   // Where a create lands (W6b): the database's default home reads these.
   const home = currentCreateHome();
   const homeSettings = home
-    ? [checkedUuidOrEmpty(home.createWs), checkedUuidOrEmpty(home.privateWs)]
+    ? [
+        checkedUuidOrEmpty(home.createWs),
+        checkedUuidOrEmpty(home.privateWs),
+        home.stamp && Object.keys(home.stamp).length > 0 ? JSON.stringify(home.stamp) : '',
+      ]
     : null;
   const hooks = newTxHooks();
   let result: T;
@@ -324,7 +328,8 @@ export async function withSystemTx<T>(
         await tx.execute(
           sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
                         set_config('mantle.private_ws', ${homeSettings[1]}, true),
-                        set_config('mantle.ingest_notify', ${home?.quiet ? 'off' : ''}, true)`,
+                        set_config('mantle.ingest_notify', ${home?.quiet ? 'off' : ''}, true),
+                        set_config('mantle.create_stamp', ${homeSettings[2]}, true)`,
         );
       }
       return runInSystemTx({ tx, hooks }, () => fn(tx));

@@ -32,6 +32,7 @@ import {
   withWriterHeads,
   draftAllowed,
   draftColumn,
+  isSnapshotCopy,
 } from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
@@ -124,6 +125,11 @@ export type DrawRow = {
   hasDraft: boolean;
   // Who reads it is its workspace grants (workspaces W5b2): the list's
   // chips (`workspaces`, `hasLink`), not a level on the row.
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of,
+   *  workspaces W6b fix round 1): nobody edits it, moves it out of its
+   *  private workspace or shares it; its author may delete it. Absent on
+   *  every other item. */
+  readOnly?: true;
   createdAt: string;
   updatedAt: string;
 };
@@ -154,6 +160,7 @@ function rowOf(n: Node, hasSvg = false, hasDraft = false): DrawRow {
     visibility: d.visibility === 'public' ? 'public' : 'private',
     hasSvg,
     hasDraft,
+    ...(isSnapshotCopy(n) ? { readOnly: true as const } : {}),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

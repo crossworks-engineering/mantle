@@ -22,6 +22,7 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
   withWriterHeads,
+  isSnapshotCopy,
 } from '@mantle/db';
 
 type NoteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -36,6 +37,11 @@ export type NoteRow = {
   summary: string | null;
   // Who reads it is its workspace grants (workspaces W5b2): the list's
   // chips (`workspaces`, `hasLink`), not a level on the row.
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of,
+   *  workspaces W6b fix round 1): nobody edits it, moves it out of its
+   *  private workspace or shares it; its author may delete it. Absent on
+   *  every other item. */
+  readOnly?: true;
   createdAt: string;
   updatedAt: string;
 };
@@ -48,6 +54,7 @@ function rowOf(n: Node): NoteRow {
     content: typeof d.content === 'string' ? d.content : '',
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
+    ...(isSnapshotCopy(n) ? { readOnly: true as const } : {}),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

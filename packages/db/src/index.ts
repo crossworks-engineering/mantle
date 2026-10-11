@@ -202,6 +202,13 @@ export {
   pgErrorCode,
 } from './pg-error';
 export {
+  snapshotCopyOf,
+  isSnapshotCopy,
+  assertNotSnapshotCopy,
+  SnapshotCopyReadOnlyError,
+  SNAPSHOT_COPY_READ_ONLY_MESSAGE,
+} from './snapshot-copy';
+export {
   countUsers,
   resolveSingleOwnerId,
   isBrainOwnerId,

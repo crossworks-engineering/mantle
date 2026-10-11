@@ -46,6 +46,7 @@ import { reconcileFilesIndexing } from './indexing';
 import {
   createFolder,
   fileById,
+  fileNameTaken,
   folderById,
   readFileById,
   upsertFile,
@@ -89,6 +90,23 @@ async function fileInFolder(
   return row ?? null;
 }
 
+/** A file name taken in `parentPath` that the disk cannot see, or the
+ *  caller cannot: a folded member file's (its bytes are outside the tree),
+ *  any case; any file the caller's scope does not read (W6b fix round 1,
+ *  H1 and H3). Asked on the system pool, existence only. */
+async function hiddenNameTaken(
+  ownerId: string,
+  parentPath: string,
+  filename: string,
+  movingFolded: boolean,
+): Promise<boolean> {
+  const taken = await fileNameTaken(ownerId, parentPath, filename);
+  if (!taken) return false;
+  if (taken.folded || movingFolded) return true;
+  const [seen] = await db.select({ id: nodes.id }).from(nodes).where(eq(nodes.id, taken.id)).limit(1);
+  return !seen;
+}
+
 /** A check run inside a move's transaction, after its heads (the item and
  *  both folders) are held: throw to refuse the move of that item. */
 export type MoveGuard = (tx: Pick<typeof db, 'execute'>, itemId: string) => Promise<void>;
@@ -126,7 +144,11 @@ export async function moveFileById(args: {
       `moveFileById: no folder at '${args.destPath}' — create it with folder_create, or find the right path with folder_list`,
     );
   }
-  const clash = await fileInFolder(args.ownerId, args.destPath, filename);
+  const clash =
+    (await fileInFolder(args.ownerId, args.destPath, filename)) ??
+    ((await hiddenNameTaken(args.ownerId, args.destPath, filename, !!foldedFilePath(node)))
+      ? node
+      : null);
   if (clash) {
     throw new Error(
       `moveFileById: '${filename}' already exists in '${args.destPath}' — rename one of them first (file_rename)`,

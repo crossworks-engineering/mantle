@@ -163,6 +163,17 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_spaces_fold_check"()
   SELECT 'moved items renamed (path or slug)', count(*) FROM "public"."space_fold_items" f
    WHERE f."old_path" <> f."new_path" OR f."old_slug" IS DISTINCT FROM f."new_slug"
   UNION ALL
+  -- A folded file whose name another file in its folder has (ignoring case):
+  -- its delete or a reader would reach the other's bytes (fix round 1, H1).
+  SELECT 'folded files sharing a name in their folder', count(*)
+    FROM "public"."space_fold_items" f JOIN "public"."nodes" n ON n."id" = f."node_id"
+   WHERE n."type" = 'file'
+     AND EXISTS (SELECT 1 FROM "public"."nodes" o
+                  WHERE o."owner_id" = n."owner_id" AND o."type" = 'file' AND o."id" <> n."id"
+                    AND o."path" = n."path"
+                    AND lower(coalesce(o."data"->>'filename', o."slug"))
+                        = lower(coalesce(n."data"->>'filename', n."slug")))
+  UNION ALL
   SELECT 'snapshot copies wanted', count(*) FROM "public"."space_item_homes" h WHERE h."snapshot"
   UNION ALL
   SELECT 'snapshot copies made', count(*) FROM "public"."space_item_homes" h
@@ -561,6 +572,31 @@ BEGIN
   UPDATE pg_temp."ws_fold" f SET "home" = fw."workspace_id"
     FROM "public"."former_user_workspaces" fw
    WHERE f."home" IS NULL AND f."login_id" IS NULL AND fw."former_key" = f."space_id";
+  -- A home its live author cannot reach any more (its private workspace was
+  -- archived since 0264; W6b fix round 1): the author's live private
+  -- workspace when it has one, else that workspace is un-archived (its
+  -- author's own work goes back where its author reaches it; recorded as a
+  -- workspace event). Without this the proof below refused the whole fold.
+  UPDATE pg_temp."ws_fold" f SET "home" = p."workspace_id"
+    FROM "public"."private_workspaces" p
+    JOIN "public"."workspaces" w ON w."id" = p."workspace_id" AND w."archived_at" IS NULL
+   WHERE p."login_id" = f."login_id" AND f."home" IS NOT NULL AND f."home" <> p."workspace_id"
+     AND EXISTS (SELECT 1 FROM auth.users u WHERE u."id" = f."login_id")
+     AND EXISTS (SELECT 1 FROM "public"."workspaces" a
+                  WHERE a."id" = f."home" AND a."archived_at" IS NOT NULL);
+  WITH back AS (
+    UPDATE "public"."workspaces" w SET "archived_at" = NULL, "updated_at" = now()
+     WHERE w."archived_at" IS NOT NULL
+       AND w."id" IN (SELECT f."home" FROM pg_temp."ws_fold" f
+                       JOIN auth.users u ON u."id" = f."login_id")
+    RETURNING w."id"
+  ), ev AS (
+    INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+    SELECT b."id", NULL, 'spaces_fold.unarchived', '{}'::jsonb FROM back b
+    RETURNING 1
+  )
+  SELECT count(*) INTO c FROM ev;
+  RETURN QUERY SELECT 'fold'::text, 'archived homes of live authors'::text, 'un-archived'::text, c;
   c := 0;
   FOR r IN
     SELECT DISTINCT f."login_id" AS login,
@@ -634,19 +670,45 @@ BEGIN
           OR EXISTS (SELECT 1 FROM pg_temp."ws_fold" o
                       WHERE o."new_slug" = f."new_slug" AND o."type" NOT IN ('branch', 'file')
                         AND o."node_id" < f."node_id"));
-  -- A file's name is unique per folder: a suffix before its extension.
+  -- A file's name is unique per folder, case-insensitively (W6b fix round
+  --    1, H1): its name is data.filename, which every brain file reader,
+  --    the files watcher and a delete build the tree path from, so a folded
+  --    file that kept a brain file's name would read, or on its delete
+  --    unlink, the brain file's bytes. The name a file keeps is its
+  --    data.filename (else its slug); on a clash with a brain file or an
+  --    earlier folded file in the same folder (ignoring case) it takes a
+  --    suffix before its extension. The slug is set to match, data.filename
+  --    too (step 4), and new_slug records it.
+  UPDATE pg_temp."ws_fold" f
+     SET "new_slug" = coalesce(nullif(n."data"->>'filename', ''), n."slug", n."id"::text)
+    FROM "public"."nodes" n
+   WHERE n."id" = f."node_id" AND f."type" = 'file';
   UPDATE pg_temp."ws_fold" f
      SET "new_slug" = CASE WHEN f."new_slug" ~ '\.[A-Za-z0-9]{1,10}$'
                            THEN regexp_replace(f."new_slug", '(\.[A-Za-z0-9]{1,10})$',
                                                '-' || left(md5(f."node_id"::text), 6) || '\1')
                            ELSE f."new_slug" || '-' || left(md5(f."node_id"::text), 6) END
-   WHERE f."new_slug" IS NOT NULL AND f."type" = 'file'
+   WHERE f."type" = 'file'
      AND (EXISTS (SELECT 1 FROM "public"."nodes" b
-                   WHERE b."owner_id" = brain AND b."type" = 'file'
-                     AND b."path" = f."new_path" AND b."slug" = f."new_slug")
+                   WHERE b."owner_id" = brain AND b."type" = 'file' AND b."path" = f."new_path"
+                     AND (lower(b."slug") = lower(f."new_slug")
+                          OR lower(b."data"->>'filename') = lower(f."new_slug")))
           OR EXISTS (SELECT 1 FROM pg_temp."ws_fold" o
                       WHERE o."type" = 'file' AND o."new_path" = f."new_path"
-                        AND o."new_slug" = f."new_slug" AND o."node_id" < f."node_id"));
+                        AND lower(o."new_slug") = lower(f."new_slug") AND o."node_id" < f."node_id"));
+  SELECT count(*) INTO bad FROM pg_temp."ws_fold" f
+   WHERE f."type" = 'file'
+     AND (EXISTS (SELECT 1 FROM "public"."nodes" b
+                   WHERE b."owner_id" = brain AND b."type" = 'file' AND b."path" = f."new_path"
+                     AND (lower(b."slug") = lower(f."new_slug")
+                          OR lower(b."data"->>'filename') = lower(f."new_slug")))
+          OR EXISTS (SELECT 1 FROM pg_temp."ws_fold" o
+                      WHERE o."type" = 'file' AND o."new_path" = f."new_path"
+                        AND lower(o."new_slug") = lower(f."new_slug") AND o."node_id" <> f."node_id"));
+  IF bad > 0 THEN
+    RAISE EXCEPTION 'spaces fold: % file name(s) still taken in their folder; nothing written', bad
+      USING ERRCODE = '23514';
+  END IF;
   SELECT count(*) INTO c FROM pg_temp."ws_fold" f
    WHERE f."new_path" <> f."old_path" OR f."new_slug" IS DISTINCT FROM f."old_slug";
   RETURN QUERY SELECT 'fold'::text, 'names made unique in the brain'::text, 'rows'::text, c;
@@ -674,9 +736,11 @@ BEGIN
                                  jsonb_build_object('reason', 'spaces_fold', 'at', now()))
                           ELSE '{}'::jsonb END
                   -- Where the bytes stay: <spaces root>/<space id>/files/<node id>
-                  -- (space-disk.ts); the brain's file readers look there.
+                  -- (space-disk.ts); the brain's file readers look there. Its
+                  -- name is the one step 3 made unique in its folder.
                   || CASE WHEN f."type" = 'file'
-                          THEN jsonb_build_object('space_file', f."space_id"::text)
+                          THEN jsonb_build_object('space_file', f."space_id"::text,
+                                                  'filename', f."new_slug")
                           ELSE '{}'::jsonb END
                   -- In its author's trash at the fold: still there, marked.
                   || CASE WHEN f."deleted_at" IS NOT NULL
@@ -778,7 +842,8 @@ BEGIN
   SELECT count(*) INTO bad FROM "public"."mantle_ws_spaces_fold_check"() ck
    WHERE (ck."metric" IN ('items left in a personal space', 'kind roots left with children',
                           'space_items rows other than accepted', 'moved items without their home',
-                          'personal spaces not archived')
+                          'personal spaces not archived',
+                          'folded files sharing a name in their folder')
           AND ck."n" > 0);
   IF bad > 0 THEN
     RAISE EXCEPTION 'spaces fold: an item left in a space, a space_items row left, a home missing or a space not archived; nothing written'
@@ -883,6 +948,166 @@ END
 $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_migrate"() FROM PUBLIC;
+--> statement-breakpoint
+
+-- ── 3b. Snapshot copies: read only, stamped at their create ─────────────────
+--
+-- The author's snapshot copy of an accepted item (S3, snapshot-copies.ts) is
+-- read only for everyone, its author included (CEO decision, W6b fix round
+-- 1): data.snapshot_of marks it. Its author may delete it (its home's
+-- Moderator, as any item); nobody edits it, moves it out of its private (or
+-- Former user) workspace or shares it. The app refuses first (itemWriteGate,
+-- the table, file and page writers); these triggers are the floor under
+-- every path, an MCP tool or a script included. Only a verified migration
+-- bypass (mantle_heads_bypass) passes.
+
+-- Whether this transaction holds a verified migration bypass.
+CREATE OR REPLACE FUNCTION "public"."mantle_bypass_verified"()
+  RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  bypass text := coalesce(current_setting('mantle.heads_bypass', true), '');
+BEGIN
+  RETURN bypass <> '' AND position('|' IN bypass) > 0
+     AND split_part(bypass, '|', 2)
+         = "public"."mantle_heads_mac"('bypass:' || split_part(bypass, '|', 1));
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_bypass_verified"() FROM PUBLIC;
+--> statement-breakpoint
+-- The item row: its title, slug, tags, kind, owner and data stay as made.
+-- The keys the extractor and the thumbnails write about the bytes may
+-- change (they describe, they do not edit); a move inside its home (path)
+-- is the grant check's below.
+CREATE OR REPLACE FUNCTION "public"."mantle_snapshot_copy_node_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  derived text[] := ARRAY['extract_skipped', 'extract_completed_at', 'extract_incomplete',
+                          'indexing_applied', 'summary', 'summary_model', 'summary_at',
+                          'entities', 'text', 'vision_model', 'ocr', 'native_pdf',
+                          'schemaDigest'];
+BEGIN
+  IF NEW."title" IS DISTINCT FROM OLD."title"
+     OR NEW."slug" IS DISTINCT FROM OLD."slug"
+     OR NEW."tags" IS DISTINCT FROM OLD."tags"
+     OR NEW."type" IS DISTINCT FROM OLD."type"
+     OR NEW."owner_id" IS DISTINCT FROM OLD."owner_id"
+     OR (coalesce(NEW."data", '{}'::jsonb) - derived)
+        IS DISTINCT FROM (coalesce(OLD."data", '{}'::jsonb) - derived) THEN
+    IF "public"."mantle_bypass_verified"() THEN RETURN NEW; END IF;
+    RAISE EXCEPTION 'not allowed to change this item: it is a read-only snapshot copy'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_snapshot_copy_node_trg"() FROM PUBLIC;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "nodes_snapshot_copy_read_only" ON "public"."nodes";
+--> statement-breakpoint
+CREATE TRIGGER "nodes_snapshot_copy_read_only" BEFORE UPDATE ON "public"."nodes"
+  FOR EACH ROW WHEN (OLD."data" ? 'snapshot_of')
+  EXECUTE FUNCTION "public"."mantle_snapshot_copy_node_trg"();
+--> statement-breakpoint
+-- The content rows (a page's doc and draft, a drawing's scene and draft, a
+-- table's data and draft): a change to a copy's is refused. A drawing's
+-- rendered picture (scene_svg) and the text mirrors may be refreshed.
+CREATE OR REPLACE FUNCTION "public"."mantle_snapshot_copy_content_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM "public"."nodes" n
+              WHERE n."id" = OLD."node_id" AND n."data" ? 'snapshot_of')
+     AND NOT "public"."mantle_bypass_verified"() THEN
+    RAISE EXCEPTION 'not allowed to change this item: it is a read-only snapshot copy'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_snapshot_copy_content_trg"() FROM PUBLIC;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "pages_snapshot_copy_read_only" ON "public"."pages";
+--> statement-breakpoint
+CREATE TRIGGER "pages_snapshot_copy_read_only" BEFORE UPDATE OF "doc", "draft_doc" ON "public"."pages"
+  FOR EACH ROW
+  WHEN (NEW."doc" IS DISTINCT FROM OLD."doc" OR NEW."draft_doc" IS DISTINCT FROM OLD."draft_doc")
+  EXECUTE FUNCTION "public"."mantle_snapshot_copy_content_trg"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "draws_snapshot_copy_read_only" ON "public"."draws";
+--> statement-breakpoint
+CREATE TRIGGER "draws_snapshot_copy_read_only" BEFORE UPDATE OF "scene", "draft_scene" ON "public"."draws"
+  FOR EACH ROW
+  WHEN (NEW."scene" IS DISTINCT FROM OLD."scene" OR NEW."draft_scene" IS DISTINCT FROM OLD."draft_scene")
+  EXECUTE FUNCTION "public"."mantle_snapshot_copy_content_trg"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "tables_snapshot_copy_read_only" ON "public"."tables";
+--> statement-breakpoint
+CREATE TRIGGER "tables_snapshot_copy_read_only"
+  BEFORE UPDATE OF "data", "draft_data", "storage_path" ON "public"."tables"
+  FOR EACH ROW
+  WHEN (NEW."data" IS DISTINCT FROM OLD."data" OR NEW."draft_data" IS DISTINCT FROM OLD."draft_data"
+        OR NEW."storage_path" IS DISTINCT FROM OLD."storage_path")
+  EXECUTE FUNCTION "public"."mantle_snapshot_copy_content_trg"();
+--> statement-breakpoint
+-- Its grants: one home row, Write off, in a private or Former user
+-- workspace. A grant to another workspace (a share, a folder's grant passed
+-- on by a move into a shared folder), Write on, or a home elsewhere (a move
+-- out) is refused. A "Removed here" row narrows: allowed.
+CREATE OR REPLACE FUNCTION "public"."mantle_snapshot_copy_grant_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF NEW."excluded"
+     OR NOT EXISTS (SELECT 1 FROM "public"."nodes" n
+                     WHERE n."id" = NEW."node_id" AND n."data" ? 'snapshot_of') THEN
+    RETURN NEW;
+  END IF;
+  IF NEW."is_home" AND NOT NEW."write"
+     AND (EXISTS (SELECT 1 FROM "public"."private_workspaces" p
+                   WHERE p."workspace_id" = NEW."workspace_id")
+          OR EXISTS (SELECT 1 FROM "public"."former_user_workspaces" fw
+                      WHERE fw."workspace_id" = NEW."workspace_id")) THEN
+    RETURN NEW;
+  END IF;
+  IF "public"."mantle_bypass_verified"() THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'not allowed to share this item: it is a read-only snapshot copy in its private workspace'
+    USING ERRCODE = '42501';
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_snapshot_copy_grant_trg"() FROM PUBLIC;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "item_grants_snapshot_copy" ON "public"."item_grants";
+--> statement-breakpoint
+CREATE TRIGGER "item_grants_snapshot_copy" BEFORE INSERT OR UPDATE ON "public"."item_grants"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_snapshot_copy_grant_trg"();
+--> statement-breakpoint
+-- The create stamp (fix round 1, M4): a transaction that names one
+-- (mantle.create_stamp, a json object, set by withSystemTx from the app's
+-- CreateHome) merges it into the data of every item it makes, in the
+-- insert itself, so a snapshot copy is never seen without its
+-- data.snapshot_of and extract_skipped. Folders are structure: never.
+CREATE OR REPLACE FUNCTION "public"."mantle_nodes_create_stamp_trg"()
+  RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  s text := coalesce(current_setting('mantle.create_stamp', true), '');
+BEGIN
+  IF s <> '' AND NEW."type" IS DISTINCT FROM 'branch'::node_type THEN
+    NEW."data" := coalesce(NEW."data", '{}'::jsonb) || s::jsonb;
+  END IF;
+  RETURN NEW;
+END
+$$;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "nodes_create_stamp" ON "public"."nodes";
+--> statement-breakpoint
+CREATE TRIGGER "nodes_create_stamp" BEFORE INSERT ON "public"."nodes"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_nodes_create_stamp_trg"();
 --> statement-breakpoint
 
 -- ── 4. Run it ────────────────────────────────────────────────────────────────

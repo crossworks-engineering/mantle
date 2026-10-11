@@ -9,6 +9,7 @@
 import { eq, sql } from 'drizzle-orm';
 import {
   asViewerLevel,
+  assertNotSnapshotCopy,
   currentSpaceScope,
   db,
   nodes,
@@ -17,6 +18,7 @@ import {
   headsOrSpace,
   withDeadlockRetry,
   withNodeInsertHeads,
+  isSnapshotCopy,
 } from '@mantle/db';
 import {
   ensureTableDoc,
@@ -55,9 +57,19 @@ export async function appExportLinkOf(tableNodeId: string) {
 }
 
 /** Refuse grid mutation on an app-bound table unless the caller is the export
- *  sync itself. Metadata edits (updateTable) stay allowed and don't call this. */
+ *  sync itself, and on a read-only snapshot copy always. Metadata edits
+ *  (updateTable) don't call this (a copy's are refused by the database). */
 export async function assertTableWritable(tableNodeId: string, appSync?: boolean): Promise<void> {
   if (appSync) return;
+  // A read-only snapshot copy (W6b fix round 1): its grid never changes,
+  // whoever asks (the draft ops write its SQLite file, which no database
+  // trigger sees).
+  const [own] = await db
+    .select({ data: nodes.data })
+    .from(nodes)
+    .where(eq(nodes.id, tableNodeId))
+    .limit(1);
+  assertNotSnapshotCopy(own);
   // A personal table is never app-bound (exports are brain tables), and the
   // personal-space role holds no grant on the export registry: asking would
   // fail, and inside a space transaction even a caught failure aborts it.
@@ -99,6 +111,7 @@ export function rowOf(n: Node, counts: { columnCount: number; rowCount: number }
     inherited:
       n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
     embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
+    ...(isSnapshotCopy(n) ? { readOnly: true as const } : {}),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

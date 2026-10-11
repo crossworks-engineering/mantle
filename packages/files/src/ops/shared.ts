@@ -17,6 +17,7 @@ import {
   type ViewerLevel,
   withDeadlockRetry,
   withNodeInsertHeads,
+  isSnapshotCopy,
 } from '@mantle/db';
 
 export type FolderRow = {
@@ -78,6 +79,11 @@ export type FileRow = {
    *  0208), or null. It is read at the most open of this, `inherited` and
    *  `audience`. */
   embedded: 'team' | 'client' | null;
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of,
+   *  workspaces W6b fix round 1): nobody edits it, moves it out of its
+   *  private workspace or shares it; its author may delete it. Absent on
+   *  every other item. */
+  readOnly?: true;
   createdAt: string;
   updatedAt: string;
 };
@@ -213,6 +219,7 @@ export function folderRowFromNode(
       row.inheritedLevel === 'team' || row.inheritedLevel === 'client' ? row.inheritedLevel : null,
     embedded:
       row.embeddedLevel === 'team' || row.embeddedLevel === 'client' ? row.embeddedLevel : null,
+    ...(isSnapshotCopy(row) ? { readOnly: true as const } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

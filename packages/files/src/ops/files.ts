@@ -26,6 +26,8 @@ import {
 import { derivedCountsOf, type DerivedCounts } from '../derived-counts';
 import { deleteThumbnailsFor } from '../thumbnail';
 import {
+  asSystem,
+  assertNotSnapshotCopy,
   contentChunks,
   db,
   draws,
@@ -165,20 +167,39 @@ export async function upsertFile(args: {
     throw new Error(`upsertFile: parent folder '${args.parentPath}' not found`);
   }
 
+  if (!args.bytes && !args.spooled) {
+    throw new Error('upsertFile: bytes or spooled required');
+  }
   // Look up any existing DB row for this (folder, filename) BEFORE touching
-  // disk, so we can tell a real duplicate from an orphaned disk file.
-  const [existing] = await db
-    .select()
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, args.ownerId),
-        eq(nodes.type, 'file'),
-        sql`${nodes.path}::text = ${args.parentPath}`,
-        sql`${nodes.data}->>'filename' = ${filename}`,
-      ),
-    )
-    .limit(1);
+  // disk, so we can tell a real duplicate from an orphaned disk file. The
+  // lookup is on the system pool (W6b fix round 1, H3), existence only: a
+  // caller in a workspace scope (a member, an Admin user) does not see a
+  // file it may not read, and took the name for free, so its write landed
+  // on that file's bytes. Now a name taken by a file the caller cannot
+  // read, or one it may read but not change, is refused before the disk.
+  const taken = await fileNameTaken(args.ownerId, args.parentPath, filename);
+  let existing: Node | undefined;
+  if (taken) {
+    // Read in the caller's scope: none when it may not read that file.
+    const [seen] = await db.select().from(nodes).where(eq(nodes.id, taken.id)).limit(1);
+    if (!seen) throw new FileNameTakenError(filename);
+    // A folded member file's bytes are not in the tree (W6b), so the disk
+    // cannot tell its name is taken: refuse here, whatever the case.
+    if (taken.folded && (!taken.exact || !args.overwrite)) {
+      throw new FileNameTakenError(filename);
+    }
+    if (taken.exact) {
+      existing = seen;
+      if (args.overwrite) {
+        // A read-only snapshot copy is never overwritten (W6b fix round 1),
+        // nor a file the caller may read but not change.
+        assertNotSnapshotCopy(existing);
+        if (!isSystemScope() && !(await mayEditNode(existing.id))) {
+          throw new FileNameTakenError(filename);
+        }
+      }
+    }
+  }
 
   // Disk write. The "already exists" collision is only meaningful when a real
   // DB node owns the name. A disk file with NO node is orphan residue from an
@@ -186,9 +207,6 @@ export async function upsertFile(args: {
   // adopt it by overwriting, so a re-upload self-heals instead of being stuck
   // forever on "already exists" with nothing in the UI to delete.
   const effectiveOverwrite = args.overwrite || !existing;
-  if (!args.bytes && !args.spooled) {
-    throw new Error('upsertFile: bytes or spooled required');
-  }
   const written = args.spooled
     ? await adoptSpooled(args.parentPath, filename, args.spooled, {
         overwrite: effectiveOverwrite,
@@ -262,7 +280,11 @@ export async function upsertFile(args: {
     if (!target) throw new Error('upsertFile: insert returned no row');
   }
 
-  const oldData = (target.data ?? {}) as Record<string, unknown>;
+  const oldData = { ...((target.data ?? {}) as Record<string, unknown>) };
+  // A folded member file (W6b) overwritten: its new bytes are in the tree
+  // now (written above, at its folder and name), so it no longer reads
+  // from its old space's directory (fix round 1, H1).
+  if (foldedFilePath(target)) delete oldData.space_file;
   // Merge onto the node's data (as syncFileFromDisk does). Rebuilding it
   // from the storage fields dropped the per-file `indexing: 'metadata'`
   // privacy flag on every editor save, so an excluded file went to full
@@ -557,7 +579,10 @@ export async function deleteFileById(args: {
       await tx.delete(nodes).where(eq(nodes.id, node.id));
     }),
   );
-  if (filename) await deleteFileOnDisk(node.path, filename);
+  // A folded member file (W6b) has its bytes in its old space's directory,
+  // named by its id: the tree path its name builds is another file's (fix
+  // round 1, H1). Its bytes stay where they are.
+  if (filename && !foldedFilePath(node)) await deleteFileOnDisk(node.path, filename);
   // Reap the cached thumbnail derivatives too — keyed by content hash, so a
   // deleted photo doesn't leave its preview behind. Best-effort.
   void deleteThumbnailsFor(typeof data.sha256 === 'string' ? (data.sha256 as string) : null);
@@ -641,6 +666,10 @@ export async function syncFileFromDisk(args: {
         eq(nodes.type, 'file'),
         sql`${nodes.path}::text = ${args.parentPath}`,
         sql`lower(${nodes.data}->>'filename') = lower(${filename})`,
+        // A folded member file (W6b) is not in the tree: its bytes are in
+        // its old space's directory, and a tree file of its name is another
+        // file (fix round 1, H1).
+        sql`not coalesce(${nodes.data} ? 'space_file', false)`,
       ),
     )
     .limit(1);
@@ -754,6 +783,9 @@ export async function deleteFileByPath(args: {
     eq(nodes.type, 'file'),
     sql`${nodes.path}::text = ${args.parentPath}`,
     sql`lower(${nodes.data}->>'filename') = lower(${args.filename})`,
+    // A tree file gone from disk is never a folded member file (W6b): its
+    // bytes are not in the tree (fix round 1, H1).
+    sql`not coalesce(${nodes.data} ? 'space_file', false)`,
   );
   // Heads first (workspaces plan U1): the ids are read only to know whose
   // heads to take; the delete keeps the path and name in its WHERE, and a
@@ -822,7 +854,16 @@ export async function renameFileById(args: {
   if (!sanitisedStem) return null;
   const newFilename = sanitisedStem;
   if (newFilename === oldFilename) return fileRowFromNode(node);
-  // A folded member file (W6b): its bytes are named by its id, not its name.
+  // A read-only snapshot copy keeps its name (W6b fix round 1).
+  assertNotSnapshotCopy(node);
+  // A folded member file (W6b): its bytes are named by its id, not its name,
+  // so the disk does not refuse a name another file in the folder has. Its
+  // name stays unique there, ignoring case (fix round 1, H1); and a tree
+  // file does not take a folded file's name either.
+  const taken = await fileNameTaken(args.ownerId, node.path, newFilename);
+  if (taken && taken.id !== node.id && (taken.folded || foldedFilePath(node))) {
+    throw new Error(`renameFile: '${newFilename}' already exists in this folder`);
+  }
   if (!foldedFilePath(node)) await renameFileOnDisk(node.path, oldFilename, newFilename);
   const [updated] = await db
     .update(nodes)
@@ -871,4 +912,51 @@ export async function bulkDeleteFiles(args: { ownerId: string; fileIds: string[]
     }
   }
   return { deleted, hasDerived, refused };
+}
+
+/** A file name a caller may not write over: a file it cannot read, or one
+ *  it may read but not change (W6b fix round 1, H3). */
+export class FileNameTakenError extends Error {
+  constructor(filename: string) {
+    super(`writeFile: '${filename}' already exists in this folder`);
+    this.name = 'FileNameTakenError';
+  }
+}
+
+/**
+ * Whether a file in `parentPath` has `filename` (ignoring case), asked on
+ * the system pool whatever the caller's scope: its id, whether it is a
+ * folded member file and whether its name is exactly `filename`, never its
+ * content (asSystem 'kind-root': structure). The exact match first, then a
+ * tree file before a folded one.
+ */
+export async function fileNameTaken(
+  ownerId: string,
+  parentPath: string,
+  filename: string,
+): Promise<{ id: string; folded: boolean; exact: boolean } | null> {
+  const rows = (await asSystem(
+    () =>
+      db.execute(sql`
+        select n.id::text as id, coalesce(n.data ? 'space_file', false) as folded,
+               coalesce(n.data->>'filename' = ${filename}, false) as exact
+          from nodes n
+         where n.owner_id = ${ownerId} and n.type = 'file'
+           and n.path::text = ${parentPath}
+           and (lower(n.data->>'filename') = lower(${filename}) or lower(n.slug) = lower(${filename}))
+         order by exact desc, folded, n.id
+         limit 1`),
+    'kind-root',
+  )) as unknown as { id: string; folded: boolean; exact: boolean }[];
+  return rows[0] ?? null;
+}
+
+/** Whether the caller's scope may change item `id` (mantle_may_edit, not a
+ *  snapshot copy). Asked in the caller's scope: false when it cannot read it. */
+async function mayEditNode(id: string): Promise<boolean> {
+  const rows = (await db.execute(sql`
+    select coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false)
+           and not coalesce(n.data ? 'snapshot_of', false) as edit
+      from nodes n where n.id = ${id}`)) as unknown as { edit: boolean }[];
+  return rows[0]?.edit === true;
 }

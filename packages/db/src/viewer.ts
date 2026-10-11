@@ -261,6 +261,10 @@ export type CreateHome = {
   /** No extractor notify for what is made (mantle.ingest_notify off): a
    *  read-only copy the migration makes (S3), never a user's create. */
   quiet?: boolean;
+  /** Keys merged into the data of every item made (mantle.create_stamp,
+   *  0267's create stamp trigger), in the insert itself: a snapshot copy's
+   *  snapshot_of and extract_skipped (W6b fix round 1, M4). */
+  stamp?: Readonly<Record<string, unknown>>;
 };
 
 /** Work a scope's transaction owes the world outside the database, run once
@@ -812,9 +816,12 @@ export function runInSystemTx<T>(
  *    that hold the workspace rule in their own SQL on the system pool
  *    (lib/workspaces.ts, lib/grants.ts, the shell, access keys): the rule
  *    is the query's, as it was before the request scope.
- *  - `kind-root`: a kind's root folder row (the files root), structure with
- *    no content, looked up for a reader whose scope does not hold it (a
- *    member: roots are homed in Admin) so it is not made again (W6b).
+ *  - `kind-root`: structure with no content, looked up whatever the
+ *    caller's scope holds: a kind's root folder row (the files root; a
+ *    member's scope does not hold the Admin-homed root) so it is not made
+ *    again (W6b); whether a file name is taken in a folder, its id and flags
+ *    only, so a write never lands on bytes its caller cannot read (W6b fix
+ *    round 1, H3: @mantle/files fileNameTaken).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.

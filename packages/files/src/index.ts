@@ -177,6 +177,8 @@ export {
   fileById,
   syncFileFromDisk,
   deleteFileByPath,
+  fileNameTaken,
+  FileNameTakenError,
   type FolderRow,
   type FileRow,
 } from './ops';

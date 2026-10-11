@@ -864,6 +864,11 @@ export type TableRow = {
   /** The share it is read at through something that embeds it (migration
    *  0208), or null. Optional: absent from brains before it. */
   embedded?: 'team' | 'client' | null;
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of,
+   *  workspaces W6b fix round 1): nobody edits it, moves it out of its
+   *  private workspace or shares it; its author may delete it. Absent on
+   *  every other item. */
+  readOnly?: true;
   createdAt: string;
   updatedAt: string;
 };
