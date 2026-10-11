@@ -101,9 +101,8 @@ describe('private-reads switch', () => {
 });
 
 describe('replyUsedPrivate (audit S3)', () => {
-  it('marks a reply whose turn read the member’s private items', () => {
-    expect(replyUsedPrivate([{ slug: 'page_get' }, { slug: 'my_item_open' }], [])).toBe(true);
-    expect(replyUsedPrivate([{ slug: 'my_items_list' }], [])).toBe(true);
+  it('marks no reply by its tools since the my-space tools went (W6b)', () => {
+    expect(replyUsedPrivate([{ slug: 'page_get' }, { slug: 'my_item_open' }], [])).toBe(false);
     expect(replyUsedPrivate([{ slug: 'page_get' }], [])).toBe(false);
   });
 

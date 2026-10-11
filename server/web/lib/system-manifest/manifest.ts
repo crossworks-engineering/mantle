@@ -558,6 +558,12 @@ export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'my_page_create',
   'my_file_upload',
   'my_item_submit',
+  // Workspaces W6b: the personal spaces are folded into the brain. A
+  // member's own items are brain items in its private workspace, read with
+  // the normal tools in its scope; sharing an app is a grant.
+  'my_items_list',
+  'my_item_open',
+  'my_app_unshare',
   'my_app_submit',
   'my_app_recall',
   'client_shared_list',
@@ -1227,10 +1233,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'read_result',
       // the single write path: provenance-stamped request task
       'team_request_create',
-      // the member's own personal items, on behalf of the member this turn
-      // serves (member logins Phase 2; fail closed on any other surface)
-      'my_items_list',
-      'my_item_open',
     ],
   },
   {
@@ -1244,7 +1246,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'my-apps-mcp',
     name: 'Member-built apps over MCP',
     description:
-      "Build a team member's OWN mini apps on their own MCP connection: create, write files, build, publish, set the schema and tools, snapshots (and delete the ones they took), make private, delete to their own trash and bring back (sharing with the team is the member's own click in the app, never MCP). The trash removes nothing. The apps live in the member's personal space and run tools at team rules at most (the author ceiling). Reads always; changes with the login's Write switch. Attached to no agent (admin level: the login MCP surface adds these tools itself, for members only, never through a group).",
+      "Build a team member's mini apps on their own MCP connection: create (in the member's private workspace), write files, build, publish, set the schema and tools, snapshots (and delete the ones they took), delete and bring back. Each change needs the member to be able to edit the app under the grant rules (sharing is a grant, never MCP). Apps made here run tools at team rules at most (the author ceiling). Reads always; changes with the login's Write switch. Attached to no agent (admin level: the login MCP surface adds these tools itself, for members only, never through a group).",
     toolSlugs: [
       'my_app_guide',
       'my_app_list',
@@ -1262,7 +1264,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'my_app_snapshot_create',
       'my_app_snapshot_restore',
       'my_app_snapshot_delete',
-      'my_app_unshare',
       'my_app_delete',
       'my_app_undelete',
     ],

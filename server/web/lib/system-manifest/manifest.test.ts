@@ -327,8 +327,6 @@ describe('system manifest integrity', () => {
       'summarize_text',
       'read_result',
       'team_request_create',
-      'my_items_list',
-      'my_item_open',
     ]);
     // The reads a team-level role may never make stay in the admin group.
     const teamLevel = new Set([

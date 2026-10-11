@@ -16,7 +16,6 @@ import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
 import { TEAM_TOOLS } from './builtins-team';
-import { MY_SPACE_TOOLS } from './builtins-my-space';
 import { LOGIN_APP_DATA_TOOLS } from './builtins-app-data';
 import { MY_APP_TOOLS } from './builtins-my-apps';
 import { PERSONA_TOOLS } from './builtins-persona';
@@ -141,7 +140,6 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...TEAM_TOOLS,
   // The member's own personal items, read on behalf of the member a team
   // turn serves (member logins Phase 2). Fail closed on any other surface.
-  ...MY_SPACE_TOOLS,
   // App data on a member's or client's own MCP connection (team apps
   // Phase 1). In no agent's group: only the login MCP surface offers them.
   ...LOGIN_APP_DATA_TOOLS,

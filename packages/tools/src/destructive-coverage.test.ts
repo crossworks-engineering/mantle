@@ -81,14 +81,11 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   my_app_file_delete: {
     reason: "the member's own app DRAFT; the published app runs on, and a publish is a version",
   },
-  my_app_unshare: {
-    reason: "only narrows who runs the member's own app (private again); nothing is deleted",
-  },
   // A login's MCP never offers a confirm-gated tool (loginMayHaveTool), so
   // these carry no gate; each says what it keeps (access matrix N6).
   my_app_delete: {
     reason:
-      "the member's own app to their own trash; nothing is removed, my_app_undelete restores it",
+      "the brain's app delete on an app the member manages; its last snapshot keeps code and data, my_app_undelete restores it while the trash keeps it",
   },
   my_app_snapshot_delete: {
     reason:

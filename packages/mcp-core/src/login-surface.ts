@@ -231,13 +231,9 @@ export function loginMayHaveTool(
   const def = getBuiltin(row.slug);
   if (!def || def.mcpOnly || def.ownerOnly || def.spends) return false;
   if (row.requiresConfirm || def.requiresConfirm) return false;
-  if (def.readOnly === true || LOGIN_OWN_READ_TOOL_SLUGS.has(row.slug)) return true;
+  if (def.readOnly === true) return true;
   return write && LOGIN_WRITE_TOOL_SLUGS.has(row.slug);
 }
-
-/** Reads of the login's OWN space: not flagged `readOnly` in the registry
- *  (they act for a login, not over the owner's data), but they only read. */
-const LOGIN_OWN_READ_TOOL_SLUGS: ReadonlySet<string> = new Set(['my_items_list', 'my_item_open']);
 
 /** The agent's app database reads, which a login's MCP never gets: the
  *  app_data_* tools replace them there (team apps Phase 1). */
@@ -652,7 +648,7 @@ export function mcpInstructionsFor(caller: McpCaller): string {
   const apps =
     ' Mini app data: app_data_list shows the apps an admin opened to MCP, then app_data_schema and app_data_query. Tools named mcp_* reach outside data sources (connectors) an admin opened at your level.';
   const build = caller.write
-    ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until the member shares it with the team in the app (never over MCP; my_app_unshare makes it private again). my_app_delete moves one of their apps to their trash, where nothing is removed (my_app_undelete brings it back). Their apps run tools at team rules at most.'
-    : " my_app_list and my_app_get read the member's own mini apps; building them needs the Write switch.";
+    ? " The member builds mini apps with the my_app_* tools (read my_app_guide first): my_app_create makes one in the member's private workspace, only they run it until they share it with Grant Access in the app (never over MCP). The other my_app_* tools change an app the member may edit; my_app_delete deletes one whose workspace they moderate (my_app_undelete brings it back while the trash keeps it). Their apps run tools at team rules at most."
+    : " my_app_list and my_app_get read the mini apps the member's workspaces hold; building them needs the Write switch.";
   return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}${build}`;
 }

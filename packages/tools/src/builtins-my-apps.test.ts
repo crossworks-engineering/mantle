@@ -1,16 +1,16 @@
 /**
- * A member's own mini apps over MCP (team apps Phase 3): who may call the
- * my_app_* tools, and that every change runs on the author's own app in the
- * author's own space. The content layer is mocked; its rules (the author's
- * row, a frozen state) have their own DB tests (member-space-apps).
+ * A member's mini apps over MCP (team apps Phase 3; brain apps under the
+ * grant rules since workspaces W6b): who may call the my_app_* tools, and
+ * that every change is checked against the member's edit right and keyed to
+ * the brain. The content layer is mocked; its rules (may edit, may manage,
+ * the private workspace) have their own DB test (member-brain-apps).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolHandlerContext } from './types';
 
 const h = vi.hoisted(() => ({
-  space: 'space-1' as string | null,
   authorCalls: [] as { author: unknown; id: string; write?: boolean }[],
-  frozen: false,
+  readOnly: false,
   deleteCalls: [] as { owner: string; id: string; path: string }[],
   // In-flight deletes and the most seen at once (the write slot test).
   running: 0,
@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   appUndeletes: [] as { author: unknown; id: string }[],
   snapshotDeletes: [] as { owner: string; id: string; snapshotId: string; loginId: string }[],
   inTrash: 0,
+  mine: 0,
   // The scope the call runs in (null: none), each exit from it with its
   // reason, and how deep in such an exit the code runs now.
   scope: null as { loginId: string | null } | null,
@@ -43,13 +44,6 @@ vi.mock('@mantle/db', () => ({
 }));
 vi.mock('@mantle/db/viewer', () => ({
   currentWorkspaceScope: () => h.scope,
-}));
-vi.mock('./builtins-my-space', () => ({
-  onBehalfOf: vi.fn(async (ctx: ToolHandlerContext) => {
-    const s = ctx.surface;
-    const loginId = s?.kind === 'team' ? s.loginId : undefined;
-    return loginId && h.space ? { loginId, spaceId: h.space } : null;
-  }),
 }));
 vi.mock('./builtins-app-guide', () => ({
   appGuideHandler: vi.fn(async () => ({ ok: true, output: { guide: '# Guide' } })),
@@ -79,53 +73,50 @@ vi.mock('@mantle/content/app-snapshots', () => ({
   restoreAppSnapshot: vi.fn(),
 }));
 vi.mock('@mantle/content', () => {
-  class SpaceAppError extends Error {
-    constructor(
-      readonly code: string,
-      message: string,
-    ) {
-      super(message);
-    }
-  }
+  class MemberAppError extends Error {}
+  const state = (id: string) => ({
+    id,
+    title: 'A',
+    homeWs: 'ws-p',
+    mayEdit: true,
+    mayManage: true,
+  });
   return {
-    SpaceAppError,
+    MemberAppError,
     AppRestoreDraftError: class extends Error {},
     AppSourceLimitError: class extends Error {},
     CannotDeleteEntryError: class extends Error {},
     NoGreenBuildError: class extends Error {},
-    authorSpaceApp: vi.fn(async (author: unknown, id: string, opts: { write?: boolean } = {}) => {
-      h.seen.push({ what: 'authorSpaceApp', inExit: h.exitDepth > 0 });
+    memberApp: vi.fn(async (author: unknown, id: string, opts: { write?: boolean } = {}) => {
+      h.seen.push({ what: 'memberApp', inExit: h.exitDepth > 0 });
       h.authorCalls.push({ author, id, write: opts.write });
-      if (opts.write && h.frozen) {
-        throw new SpaceAppError('frozen', 'This app is submitted for review, so it is frozen.');
+      if (opts.write && h.readOnly) {
+        throw new MemberAppError('You may run this app but not change it.');
       }
-      return { id, title: 'A', sharing: 'private', reviewState: 'draft' };
+      return state(id);
     }),
-    createSpaceApp: vi.fn(),
-    deleteSpaceApp: vi.fn(async (author: unknown, id: string) => {
-      h.appDeletes.push({ author, id });
-      return {
-        id,
-        title: 'A',
-        sharing: 'private',
-        reviewState: 'draft',
-        deletedAt: '2026-10-09T00:00:00.000Z',
-        wasShared: true,
-        wasSubmitted: false,
-      };
-    }),
-    undeleteSpaceApp: vi.fn(async (author: unknown, id: string) => {
-      h.appUndeletes.push({ author, id });
-      return { id, title: 'A', sharing: 'private', reviewState: 'draft' };
-    }),
-    listDeletedSpaceApps: vi.fn(async () =>
-      Array.from({ length: h.inTrash }, (_, i) => ({ id: `t${i}`, title: `T${i}` })),
-    ),
-    // The lock is the content layer's (its DB test); here it runs the change.
-    withAuthorWrite: vi.fn(async (_a: unknown, _id: string, fn: () => Promise<unknown>) => {
-      h.seen.push({ what: 'withAuthorWrite', inExit: h.exitDepth > 0 });
+    // The check is the content layer's (its DB test); here it runs the change.
+    withMemberAppWrite: vi.fn(async (author: unknown, id: string, fn: () => Promise<unknown>) => {
+      h.seen.push({ what: 'withMemberAppWrite', inExit: h.exitDepth > 0 });
+      h.authorCalls.push({ author, id, write: true });
+      if (h.readOnly) throw new MemberAppError('You may run this app but not change it.');
       return fn();
     }),
+    createMemberApp: vi.fn(),
+    deleteMemberApp: vi.fn(async (author: unknown, id: string) => {
+      h.appDeletes.push({ author, id });
+      return { id, title: 'A', deletedAt: '2026-10-11T00:00:00.000Z' };
+    }),
+    undeleteMemberApp: vi.fn(async (author: unknown, id: string) => {
+      h.appUndeletes.push({ author, id });
+      return { id, title: 'A' };
+    }),
+    listDeletedMemberApps: vi.fn(async () =>
+      Array.from({ length: h.inTrash }, (_, i) => ({ id: `t${i}`, title: `T${i}` })),
+    ),
+    listLoginApps: vi.fn(async () =>
+      Array.from({ length: h.mine }, (_, i) => ({ id: `a${i}`, mine: true })),
+    ),
     declareAppSchema: vi.fn(),
     deleteDraftFile: vi.fn(async (owner: string, id: string, path: string) => {
       h.running += 1;
@@ -137,20 +128,11 @@ vi.mock('@mantle/content', () => {
     }),
     getApp: vi.fn(),
     listAppAccess: vi.fn(),
-    listSpaceApps: vi.fn(async () => []),
     publishApp: vi.fn(),
-    recallSpaceApp: vi.fn(),
     setManifest: vi.fn(async (_o: string, _id: string, m: Record<string, unknown>) => {
       h.seen.push({ what: 'setManifest', inExit: h.exitDepth > 0 });
       return m;
     }),
-    setSpaceAppSharing: vi.fn(async (_a: unknown, id: string, sharing: string) => ({
-      id,
-      title: 'A',
-      sharing,
-      reviewState: 'draft',
-    })),
-    submitSpaceApp: vi.fn(),
     workingSource: vi.fn(),
     writeDraftFile: vi.fn(),
   };
@@ -173,10 +155,10 @@ const member = (write = true): ToolHandlerContext => ({
 });
 
 beforeEach(() => {
-  h.space = 'space-1';
+  h.mine = 0;
   h.authorCalls.length = 0;
   h.deleteCalls.length = 0;
-  h.frozen = false;
+  h.readOnly = false;
   h.running = 0;
   h.maxRunning = 0;
   h.deleteDelayMs = 0;
@@ -227,23 +209,21 @@ describe('who may call the my_app tools', () => {
 });
 
 describe('my_app_file_delete', () => {
-  it("deletes a file from the author's own draft, in the author's own space", async () => {
+  it('deletes a file from the draft of an app the member may edit, keyed to the brain', async () => {
     const res = await def('my_app_file_delete').handler(
       { id: APP.toUpperCase(), path: 'lib/old.ts' },
       member(),
     );
     expect(res).toMatchObject({ ok: true, output: { id: APP, deleted: true } });
-    expect(h.authorCalls).toEqual([
-      { author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP, write: true },
-    ]);
-    // Keyed to the space, never the brain the call came in on.
-    expect(h.deleteCalls).toEqual([{ owner: 'space-1', id: APP, path: 'lib/old.ts' }]);
+    expect(h.authorCalls.every((c) => c.write === true && c.id === APP)).toBe(true);
+    expect(h.authorCalls[0]!.author).toEqual({ loginId: 'login-1', brainId: 'brain' });
+    expect(h.deleteCalls).toEqual([{ owner: 'brain', id: APP, path: 'lib/old.ts' }]);
   });
 
-  it('refuses a submitted (frozen) app and deletes nothing', async () => {
-    h.frozen = true;
+  it('refuses an app the member may not edit and deletes nothing', async () => {
+    h.readOnly = true;
     const res = await def('my_app_file_delete').handler({ id: APP, path: 'a.ts' }, member());
-    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/frozen/) });
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/not change it/) });
     expect(h.deleteCalls).toEqual([]);
   });
 
@@ -283,32 +263,14 @@ describe('one change at a time per member', () => {
   });
 });
 
-// Access matrix N1: sharing with the team is UI only; MCP only makes an app
-// private again.
-describe('my_app_unshare', () => {
-  it("makes the author's own app private, never shares it", async () => {
-    expect(MY_APP_TOOLS.map((t) => t.slug)).not.toContain('my_app_share');
-    const res = await def('my_app_unshare').handler({ id: APP }, member());
-    expect(res).toMatchObject({ ok: true, output: { id: APP, sharing: 'private' } });
-    expect(def('my_app_unshare').inputSchema).toMatchObject({ required: ['id'] });
-  });
-
-  it('needs the Write switch', async () => {
-    const res = await def('my_app_unshare').handler({ id: APP }, member(false));
-    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/read-only/) });
-  });
-});
-
 // Access matrix N6 (option A): at the 50-app cap the answer names the
-// member's own delete. No admin sees a private draft, so "ask an admin to
-// delete some" pointed at nothing, and "a member cannot delete" is no
-// longer true.
+// member's own delete. Sharing is a grant since W6b: no my_app_share or
+// my_app_unshare.
 describe('my_app_create at the cap', () => {
   it("points at the member's own delete, never at an admin or a missing delete", async () => {
-    const { listSpaceApps } = await import('@mantle/content');
-    vi.mocked(listSpaceApps).mockResolvedValueOnce(
-      Array.from({ length: 50 }, (_, i) => ({ id: `a${i}`, mine: true })) as never,
-    );
+    h.mine = 50;
+    expect(MY_APP_TOOLS.map((t) => t.slug)).not.toContain('my_app_share');
+    expect(MY_APP_TOOLS.map((t) => t.slug)).not.toContain('my_app_unshare');
     const res = await def('my_app_create').handler({ name: 'One more' }, member());
     expect(res.ok).toBe(false);
     const error = (res as { error: string }).error;
@@ -320,29 +282,19 @@ describe('my_app_create at the cap', () => {
 });
 
 describe('my_app_delete', () => {
-  it("moves the author's own app to their trash, in the author's own space", async () => {
+  it('deletes an app the member manages (the content layer checks manage)', async () => {
     const res = await def('my_app_delete').handler({ id: APP.toUpperCase() }, member());
-    expect(res).toMatchObject({
-      ok: true,
-      output: { id: APP, deleted: true, was_shared: true, was_submitted: false },
-    });
-    // Found by the author's own row first (any state: a submitted app may go).
+    expect(res).toMatchObject({ ok: true, output: { id: APP, deleted: true } });
+    // Found in the member's scope first.
     expect(h.authorCalls).toEqual([
-      { author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP, write: false },
+      { author: { loginId: 'login-1', brainId: 'brain' }, id: APP, write: false },
     ]);
-    expect(h.appDeletes).toEqual([{ author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP }]);
+    expect(h.appDeletes).toEqual([{ author: { loginId: 'login-1', brainId: 'brain' }, id: APP }]);
   });
 
   it('needs the Write switch and deletes nothing without it', async () => {
     const res = await def('my_app_delete').handler({ id: APP }, member(false));
     expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/read-only/) });
-    expect(h.appDeletes).toEqual([]);
-  });
-
-  it('refuses when the trash is full, and says how to make room', async () => {
-    h.inTrash = 50;
-    const res = await def('my_app_delete').handler({ id: APP }, member());
-    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/my_app_undelete/) });
     expect(h.appDeletes).toEqual([]);
   });
 
@@ -359,22 +311,14 @@ describe('my_app_delete', () => {
 });
 
 describe('my_app_undelete', () => {
-  it("brings the author's own app back from their trash, private", async () => {
+  it('brings a deleted app back (the content layer checks its home)', async () => {
     const res = await def('my_app_undelete').handler({ id: APP }, member());
-    expect(res).toMatchObject({
-      ok: true,
-      output: { id: APP, sharing: 'private', reviewState: 'draft' },
-    });
-    expect(h.appUndeletes).toEqual([
-      { author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP },
-    ]);
+    expect(res).toMatchObject({ ok: true, output: { id: APP } });
+    expect(h.appUndeletes).toEqual([{ author: { loginId: 'login-1', brainId: 'brain' }, id: APP }]);
   });
 
   it('refuses at the 50-app cap: restore never passes it', async () => {
-    const { listSpaceApps } = await import('@mantle/content');
-    vi.mocked(listSpaceApps).mockResolvedValueOnce(
-      Array.from({ length: 50 }, (_, i) => ({ id: `a${i}`, mine: true })) as never,
-    );
+    h.mine = 50;
     const res = await def('my_app_undelete').handler({ id: APP }, member());
     expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/my_app_delete/) });
     expect(h.appUndeletes).toEqual([]);
@@ -388,7 +332,7 @@ describe('my_app_undelete', () => {
 });
 
 describe('my_app_deleted_list', () => {
-  it("lists the author's own trash, with write off too", async () => {
+  it('lists the deleted apps of the homes the member moderates, with write off too', async () => {
     h.inTrash = 2;
     const res = await def('my_app_deleted_list').handler({}, member(false));
     expect(res).toMatchObject({ ok: true, output: { count: 2 } });
@@ -399,7 +343,7 @@ describe('my_app_deleted_list', () => {
 describe('my_app_snapshot_delete', () => {
   const SNAP = '99999999-8888-4777-8666-555555555555';
 
-  it("deletes the author's own snapshot, by their login, in their own space", async () => {
+  it('deletes a snapshot the member took, by their login, keyed to the brain', async () => {
     const res = await def('my_app_snapshot_delete').handler(
       { id: APP, snapshot_id: SNAP.toUpperCase() },
       member(),
@@ -408,22 +352,19 @@ describe('my_app_snapshot_delete', () => {
       ok: true,
       output: { id: APP, deleted: SNAP, freed_bytes: 4096 },
     });
-    expect(h.authorCalls).toEqual([
-      { author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP, write: true },
-    ]);
-    // Keyed to the space and the calling login, never the brain.
+    expect(h.authorCalls.every((c) => c.write === true)).toBe(true);
     expect(h.snapshotDeletes).toEqual([
-      { owner: 'space-1', id: APP, snapshotId: SNAP, loginId: 'login-1' },
+      { owner: 'brain', id: APP, snapshotId: SNAP, loginId: 'login-1' },
     ]);
   });
 
-  it('refuses a submitted (frozen) app and deletes nothing', async () => {
-    h.frozen = true;
+  it('refuses an app the member may not edit and deletes nothing', async () => {
+    h.readOnly = true;
     const res = await def('my_app_snapshot_delete').handler(
       { id: APP, snapshot_id: SNAP },
       member(),
     );
-    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/frozen/) });
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/not change it/) });
     expect(h.snapshotDeletes).toEqual([]);
   });
 
@@ -437,8 +378,8 @@ describe('my_app_snapshot_delete', () => {
   });
 });
 
-describe("the login's scope is left only for the author's own space", () => {
-  it('my_app_tools_set checks the declared tools in the login scope, the app rows by own-space', async () => {
+describe("the login's scope is left only for the app work after the check", () => {
+  it('my_app_tools_set checks the declared tools in the login scope, the app rows by app-data', async () => {
     h.scope = { loginId: 'login-1' };
     const res = await def('my_app_tools_set').handler(
       { id: APP, tool_slugs: ['contact_list', 'page_get'] },
@@ -451,8 +392,9 @@ describe("the login's scope is left only for the author's own space", () => {
       { what: 'verdict', inExit: false },
       { what: 'verdict', inExit: false },
     ]);
-    // The author's own app: inside the named exit.
-    for (const what of ['authorSpaceApp', 'withAuthorWrite', 'setManifest']) {
+    // The app work: inside the named exit (the edit check within it reads
+    // in the login's own scope, withViewer).
+    for (const what of ['withMemberAppWrite', 'setManifest']) {
       expect(h.seen.filter((x) => x.what === what).length, what).toBeGreaterThan(0);
       expect(
         h.seen.filter((x) => x.what === what).every((x) => x.inExit),
@@ -460,7 +402,7 @@ describe("the login's scope is left only for the author's own space", () => {
       ).toBe(true);
     }
     expect(h.exits.length).toBeGreaterThan(0);
-    expect(h.exits.every((r) => r === 'own-space')).toBe(true);
+    expect(h.exits.every((r) => r === 'app-data')).toBe(true);
   });
 
   it('my_app_guide leaves the scope for nothing', async () => {

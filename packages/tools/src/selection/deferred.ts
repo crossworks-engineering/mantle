@@ -96,7 +96,7 @@ const USAGE_TIERS: readonly (readonly [number, string])[] = [
   ],
   [
     2,
-    'entity_facts openrouter_rankings recall_index task_get tree_folder_create tree_item_move web_search_pro table_from_text table_row_delete team_chat_list tool_group_list agent_list api_tool_list api_tool_test export_node my_item_open my_items_list openrouter_benchmarks openrouter_task_classes peer_node_get table_column_update table_create table_tab_add team_access_list tool_group_ensure video_ingest',
+    'entity_facts openrouter_rankings recall_index task_get tree_folder_create tree_item_move web_search_pro table_from_text table_row_delete team_chat_list tool_group_list agent_list api_tool_list api_tool_test export_node openrouter_benchmarks openrouter_task_classes peer_node_get table_column_update table_create table_tab_add team_access_list tool_group_ensure video_ingest',
   ],
 ];
 const USAGE_PRIOR: Readonly<Record<string, number>> = Object.fromEntries(

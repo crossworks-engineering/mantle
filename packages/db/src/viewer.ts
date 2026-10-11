@@ -790,10 +790,6 @@ export function runInSystemTx<T>(
  *  - `member-request`: team_request_create files a task on the member's
  *    behalf (builtins-team.ts), the one write a member turn makes;
  *    client_request_create does the same for a client (builtins-client.ts).
- *  - `own-space`: the my_* tools leave the turn to enter the login's own
- *    personal space (withSpace), checked against the scope's login; the
- *    my_app_* tools leave it the same way for the author's own apps (they
- *    run as the system, keyed to that space).
  *  - `heartbeat-own-row`: a heartbeat's control tools change the row of the
  *    heartbeat that is firing, and only that one (heartbeats/tools.ts).
  *  - `client-sourced-check`: the client-sourced taint checks and the
@@ -802,7 +798,10 @@ export function runInSystemTx<T>(
  *  - `app-data`: the app_data tools on a login's own MCP
  *    (builtins-app-data.ts) run the app's SQLite work, its registry rows and
  *    its undo snapshot as the system, only after the lookup in the login's
- *    scope found the app (as the app brokers run that work).
+ *    scope found the app (as the app brokers run that work); the my_app_*
+ *    tools (builtins-my-apps.ts) the same for an app's files, builds and
+ *    history, after the edit check in the login's scope (W6b; they used
+ *    'own-space' while member apps lived in personal spaces).
  *  - `rule-in-query`: inside a REQUEST scope (W6a), the any-login libraries
  *    that hold the workspace rule in their own SQL on the system pool
  *    (lib/workspaces.ts, lib/grants.ts, the shell, access keys): the rule
@@ -821,7 +820,6 @@ export const AS_SYSTEM_TURN_REASONS = [
   'workspace-resources',
   'runs-scope-check',
   'member-request',
-  'own-space',
   'heartbeat-own-row',
   'client-sourced-check',
   'app-data',

@@ -159,7 +159,7 @@ const SITES: Record<string, Site> = {
     // The same ctx object, untouched: the surface is the caller's.
     surface: /def\.handler\(input, ctx\)/,
     scope: 'call',
-    why: "the per-login write slot and the exit from the login's scope (W5b2: 'own-space') wrap a member's own my_app_* handler and pass its ctx on unchanged",
+    why: "the per-login write slot and the exit from the login's scope ('app-data' since W6b) wrap a member's own my_app_* handler and pass its ctx on unchanged",
   },
   'packages/tools/src/toolsmith/api-tools.ts': {
     calls: 1,

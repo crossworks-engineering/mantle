@@ -90,7 +90,6 @@ const READS = 'reads only';
 const OUTWARD = 'sends outside the brain (confirm-gated as well)';
 const WEB = 'reads the web';
 const OWN_APP = "the caller's own app in their own space";
-const OWN_SPACE = "reads the caller's own space";
 const UNSEEN = 'it runs code or actions whose target its input does not name';
 const LATER = "a run's workers act later, outside this turn";
 const RECALL_GUIDANCE =
@@ -320,7 +319,6 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   recall_revision_restore: always(RECALL_GUIDANCE),
   recall_map_set_slug: always(RECALL_GUIDANCE),
   recall_card_set_slug: always(RECALL_GUIDANCE),
-  my_items_list: free(OWN_SPACE),
   // App rows on a login's own MCP (team apps Phase 1): no agent turn holds
   // it, but if one ever did, it writes the app's data and the brain tables
   // the app exports.
@@ -338,14 +336,12 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   my_app_snapshot_create: free(OWN_APP),
   my_app_snapshot_restore: free(OWN_APP),
   my_app_snapshot_delete: free(OWN_APP),
-  my_app_unshare: free(OWN_APP),
   // To the member's own trash and back (access matrix N6): nothing removed.
   my_app_delete: free(OWN_APP),
   my_app_undelete: free(OWN_APP),
   // Calls on a federated peer as the login it binds us to.
   peer_call: always(OUTWARD),
   peer_file_copy: always(OUTWARD),
-  my_item_open: free(OWN_SPACE),
 };
 
 /** A tool as the gate sees it: its slug and its handler descriptor. */

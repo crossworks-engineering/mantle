@@ -1,44 +1,35 @@
 /**
  * Members build mini apps over their own MCP connection (team apps Phase 3,
- * plan page b6dd688e, section A; decided by Jason 2026-10-08: "apps work
- * like Pages"). The `my_app_*` tools write the member's OWN apps, which live
- * in their personal space:
+ * plan page b6dd688e, section A). Since workspaces W6b the `my_app_*` tools
+ * work on BRAIN apps under the normal grant rules (member-brain-apps.ts):
  *
- *  - private while a draft: only the author runs it, and no admin surface
- *    lists it;
- *  - shared with the team (in the app, Apps > Your apps; never over MCP,
- *    access matrix N1): every member runs it, at team
- *    rules;
- *  - submitted (an app sent to review before workspaces W5c removed
- *    submit and recall): frozen, as it was left;
- *  - in the member's trash (`my_app_delete`, access matrix N6): it runs for
- *    no one and nothing is removed; `my_app_undelete` brings it back
- *    private. A member also deletes the snapshots they took
- *    (`my_app_snapshot_delete`), never an automatic one.
+ *  - `my_app_create` makes an app homed in the member's private workspace
+ *    ("only you", made on its first need): only the member runs it until
+ *    they share it with Grant Access;
+ *  - every other change needs the member to be able to edit the app
+ *    (mantle_may_edit: a Moderator of its home, or a grant with Write on);
+ *    `my_app_delete` needs it to manage the app (a Moderator of its home)
+ *    and is the brain's delete: the app's last snapshot keeps its code and
+ *    data, and `my_app_undelete` brings it back while the brain's trash
+ *    keeps it; `my_app_deleted_list` shows the deleted apps of homes it
+ *    moderates. Apps folded in from a member's old trash carry
+ *    `trashedBeforeFold` in `my_app_list`;
+ *  - sharing is a grant now (Grant Access), never a tool: `my_app_unshare`
+ *    is retired.
  *
- * THE AUTHOR CEILING: every app these tools make has `author_level` 'team',
- * so every tool broker runs its tools at most at team rules, an admin's run
- * included (`appToolLevel`). The declared tools are the brain's tools, and a
- * member run checks each call against the member rules
- * (`memberAppToolVerdict`); `my_app_tools_set` warns for each one those
- * rules refuse. Only an admin's accept with the tools reviewed lifts the
- * ceiling. A member never sets a level: client and public are an admin's.
+ * THE AUTHOR CEILING: an app these tools make has `author_level` 'team', so
+ * every tool broker runs its tools at most at team rules, an admin's run
+ * included (`appToolLevel`). A member run checks each declared tool against
+ * the member rules (`memberAppToolVerdict`); `my_app_tools_set` warns for
+ * each one those rules refuse.
  *
  * Only a TEAM MEMBER's own MCP connection runs these (the login surface
  * stamps the login and the connection, `surface.mcp`): a client, an agent,
  * the owner, any other caller finds no one to act for and is refused. The
- * writes need the login's Write switch. The app is always found by the
- * author's own row in their own space (`authorSpaceApp`, the space derived
- * by the server, never a value from the caller); a submitted or accepted
- * app is refused for every change.
- *
- * The app work runs as the system, as the brokers do: the space role has
- * no grant on the app tables. From the login's scope each such call leaves
- * it by 'own-space' (`ownSpace`), one call at a time, never the whole tool.
- * Every change runs inside `withAuthorWrite`, which holds the app's state
- * row locked and editable for the whole change, so a Submit or an Accept
- * never races it (M3 audit). The owner the app's rows are keyed to is the
- * author's space, so nothing here reaches a brain app.
+ * writes need the login's Write switch. The check runs in the login's own
+ * scope; the app work itself (files, builds, schema, snapshots) runs as the
+ * system after it, leaving the login's scope by 'app-data' one call at a
+ * time (`appWork`), as the app brokers do.
  */
 import { asSystem } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
@@ -46,25 +37,24 @@ import {
   AppRestoreDraftError,
   AppSourceLimitError,
   CannotDeleteEntryError,
+  MemberAppError,
   NoGreenBuildError,
-  SpaceAppError,
-  authorSpaceApp,
-  createSpaceApp,
+  createMemberApp,
   declareAppSchema,
   deleteDraftFile,
-  deleteSpaceApp,
+  deleteMemberApp,
   getApp,
   listAppAccess,
-  listDeletedSpaceApps,
-  listSpaceApps,
+  listDeletedMemberApps,
+  listLoginApps,
+  memberApp,
   publishApp,
   setManifest,
-  setSpaceAppSharing,
-  undeleteSpaceApp,
-  withAuthorWrite,
+  undeleteMemberApp,
+  withMemberAppWrite,
   workingSource,
   writeDraftFile,
-  type SpaceAppAuthor,
+  type MemberAppAuthor,
 } from '@mantle/content';
 import { assertSafeScript, checkAppSchemaScript } from '@mantle/content/app-broker';
 import {
@@ -78,7 +68,6 @@ import {
 import { errorMessage } from '@mantle/std';
 import { buildAndStageApp } from './app-build-stage';
 import { appGuideHandler } from './builtins-app-guide';
-import { onBehalfOf } from './builtins-my-space';
 import { memberAppToolVerdict } from './member-app-tools';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strArr } from './coerce';
@@ -95,11 +84,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *  their trash. */
 export const MY_APPS_MAX = 50;
 
-/** The most apps one member's trash holds. Nothing in it is ever deleted
- *  (app data is never hard deleted), so this bounds what a member keeps on
- *  the box: MY_APPS_MAX live plus this many in the trash. */
-export const MY_APPS_TRASH_MAX = 50;
-
 const atAppCap = (n: number) =>
   `You have ${n} apps, the most one member keeps. Delete one you no longer need with my_app_delete (it goes to your trash, my_app_deleted_list, and my_app_undelete brings it back), then try again.`;
 
@@ -107,12 +91,15 @@ const ID_PROP = {
   id: { type: 'string', description: 'Your app id (a UUID) from `my_app_list`.' },
 } as const;
 
-/** The author: a team member on their own MCP connection, with their own
- *  personal space. Null on every other path. */
-async function authorOf(ctx: ToolHandlerContext): Promise<SpaceAppAuthor | null> {
+/** The author: a team member on their own MCP connection, in its brain.
+ *  Null on every other path. In a workspace turn scope the member is the
+ *  scope's own login, or nobody: the surface never names someone else. */
+async function authorOf(ctx: ToolHandlerContext): Promise<MemberAppAuthor | null> {
   const s = ctx.surface;
   if (s?.kind !== 'team' || !s.loginId || !s.mcp) return null;
-  return onBehalfOf(ctx);
+  const scope = currentWorkspaceScope();
+  if (scope && scope.loginId !== s.loginId) return null;
+  return { loginId: s.loginId, brainId: ctx.ownerId };
 }
 
 /** The login's MCP connection has its Write switch on. */
@@ -121,7 +108,7 @@ function writeOn(ctx: ToolHandlerContext): boolean {
   return s?.kind === 'team' && s.mcp?.write === true;
 }
 
-type Prepared = { author: SpaceAppAuthor; id: string };
+type Prepared = { author: MemberAppAuthor; id: string };
 
 /** The author and their app id, checked: the app is theirs, and for a
  *  write, in a state they may edit (draft or returned) on a connection with
@@ -137,7 +124,7 @@ async function prepare(
   const id = str(input.id).trim().toLowerCase();
   if (!UUID_RE.test(id)) return { ok: false, error: 'id must be your app id from my_app_list.' };
   try {
-    await ownSpace(() => authorSpaceApp(author, id, { write: opts.write }));
+    await memberApp(author, id, { write: opts.write });
   } catch (err) {
     return refusal(err);
   }
@@ -150,7 +137,7 @@ function isPrepared(p: Prepared | ToolHandlerResult): p is Prepared {
 
 function refusal(err: unknown): ToolHandlerResult {
   if (
-    err instanceof SpaceAppError ||
+    err instanceof MemberAppError ||
     err instanceof AppSourceLimitError ||
     err instanceof CannotDeleteEntryError ||
     err instanceof NoGreenBuildError ||
@@ -164,19 +151,18 @@ function refusal(err: unknown): ToolHandlerResult {
 }
 
 /** Who a history row names: the member, by login. */
-function actorOf(author: SpaceAppAuthor) {
+function actorOf(author: MemberAppAuthor) {
   return { actor: 'member' as const, actorLoginId: author.loginId };
 }
 
 /**
- * A call keyed to the author's own space (their app rows, files, builds,
- * history and trash): the app work runs as the system (see the file
- * header), so from the login's workspace scope it leaves by the named door
- * 'own-space', checked by inLoginScope against the scope's login. Only
- * these calls leave the scope, never a whole tool.
+ * App work after the check (its rows, files, builds, history): it runs as
+ * the system, as the app brokers do, so from the login's workspace scope it
+ * leaves by the named door 'app-data', one call at a time, never a whole
+ * tool.
  */
-function ownSpace<T>(fn: () => Promise<T>): Promise<T> {
-  return asSystem(fn, 'own-space');
+function appWork<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'app-data');
 }
 
 const NOT_FOUND = (id: string) => `No app ${id} of yours. List your apps with my_app_list.`;
@@ -207,12 +193,12 @@ const my_app_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List my mini apps',
   description:
-    'List your own mini apps (private, shared or submitted) and the published apps teammates shared with the team, newest first: id, title, mine, sharing, review state, whether it runs. Change only your own (`mine: true`); run any of them in the app. Apps in your trash are not listed: `my_app_deleted_list` shows those.',
+    'List the mini apps your workspaces hold, yours first, newest first: id, title, mine (you may change it), its home workspace, whether it runs, and `trashedBeforeFold` for an app that was in your old trash (still yours: keep it or `my_app_delete` it). Deleted apps are in `my_app_deleted_list`.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const author = await authorOf(ctx);
     if (!author) return { ok: false, error: NO_LOGIN };
-    const apps = await ownSpace(() => listSpaceApps(author));
+    const apps = await listLoginApps(author);
     return { ok: true, output: { count: apps.length, apps } };
   },
 };
@@ -222,7 +208,7 @@ const my_app_get: BuiltinToolDef = {
   readOnly: true,
   name: 'Get one of my mini apps',
   description:
-    "Read one of your own apps: title, state, sharing, declared tools, schema, entry file, the file list and build status. `include_source: true` adds every file's text.",
+    "Read one app your workspaces hold: title, whether you may change it, declared tools, schema, entry file, the file list and build status. `include_source: true` adds every file's text.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -234,8 +220,8 @@ const my_app_get: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
-    const state = await ownSpace(() => authorSpaceApp(p.author, p.id));
-    const app = await ownSpace(() => getApp(p.author.spaceId, p.id));
+    const state = await memberApp(p.author, p.id);
+    const app = await appWork(() => getApp(p.author.brainId, p.id));
     if (!app) return { ok: false, error: NOT_FOUND(p.id) };
     const src = workingSource(app);
     return {
@@ -244,8 +230,7 @@ const my_app_get: BuiltinToolDef = {
         id: app.id,
         name: app.title,
         description: app.description,
-        sharing: state.sharing,
-        reviewState: state.reviewState,
+        mine: state.mayEdit,
         manifest: app.manifest,
         hasDraft: app.hasDraft,
         draftBuild: app.draftBuild ? { ok: app.draftBuild.ok, bytes: app.draftBuild.bytes } : null,
@@ -265,7 +250,7 @@ const my_app_create: BuiltinToolDef = {
   slug: 'my_app_create',
   name: 'Create a mini app of my own',
   description:
-    'Create a new mini app in your own space: PRIVATE, only you run it. It starts with a trivial entry file: write files with `my_app_file_write`, compile with `my_app_build`, go live for yourself with `my_app_publish`, then share it with the team in the app (Apps > Your apps). Read `my_app_guide` first. Your apps run tools at team rules at most.',
+    'Create a new mini app in your private workspace: only you run it. It starts with a trivial entry file: write files with `my_app_file_write`, compile with `my_app_build`, go live for yourself with `my_app_publish`, then share it with Grant Access in the app. Read `my_app_guide` first. Your apps run tools at team rules at most.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -284,14 +269,14 @@ const my_app_create: BuiltinToolDef = {
     if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
     const name = str(input.name).trim().slice(0, 200);
     if (!name) return { ok: false, error: 'name is required, e.g. "Stock counter".' };
-    const mine = (await ownSpace(() => listSpaceApps(author))).filter((a) => a.mine).length;
-    // The member deletes their own (access matrix N6): no admin sees a
-    // private draft, so the way to room is the member's own delete.
+    const mine = (await listLoginApps(author)).filter((a) => a.mine).length;
+    // The member deletes their own (access matrix N6): the way to room is
+    // the member's own delete.
     if (mine >= MY_APPS_MAX) return { ok: false, error: atAppCap(mine) };
     try {
       const description = str(input.description).trim().slice(0, 500);
-      const app = await ownSpace(() =>
-        createSpaceApp(author, {
+      const app = await appWork(() =>
+        createMemberApp(author, {
           title: name,
           ...(description ? { description } : {}),
         }),
@@ -302,8 +287,8 @@ const my_app_create: BuiltinToolDef = {
           id: app.id,
           name: app.title,
           entry: app.source.entry,
-          sharing: 'private',
-          hint: 'Write files with my_app_file_write, then my_app_build. my_app_publish makes it run for you.',
+          home: 'your private workspace',
+          hint: 'Write files with my_app_file_write, then my_app_build. my_app_publish makes it run for you. Share it with Grant Access in the app.',
         },
       };
     } catch (err) {
@@ -334,9 +319,9 @@ const my_app_file_write: BuiltinToolDef = {
     if (!path) return { ok: false, error: "path is required, e.g. 'App.tsx'." };
     const content = str(input.content);
     try {
-      const next = await ownSpace(() =>
-        withAuthorWrite(p.author, p.id, () =>
-          writeDraftFile(p.author.spaceId, p.id, path, content),
+      const next = await appWork(() =>
+        withMemberAppWrite(p.author, p.id, () =>
+          writeDraftFile(p.author.brainId, p.id, path, content),
         ),
       );
       if (!next) return { ok: false, error: NOT_FOUND(p.id) };
@@ -371,8 +356,8 @@ const my_app_file_delete: BuiltinToolDef = {
     const path = str(input.path).trim();
     if (!path) return { ok: false, error: 'path is required.' };
     try {
-      const next = await ownSpace(() =>
-        withAuthorWrite(p.author, p.id, () => deleteDraftFile(p.author.spaceId, p.id, path)),
+      const next = await appWork(() =>
+        withMemberAppWrite(p.author, p.id, () => deleteDraftFile(p.author.brainId, p.id, path)),
       );
       if (!next) return { ok: false, error: NOT_FOUND(p.id) };
       return { ok: true, output: { id: p.id, path, deleted: true } };
@@ -392,8 +377,8 @@ const my_app_build: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const res = await ownSpace(() =>
-        withAuthorWrite(p.author, p.id, () => buildAndStageApp(p.author.spaceId, p.id)),
+      const res = await appWork(() =>
+        withMemberAppWrite(p.author, p.id, () => buildAndStageApp(p.author.brainId, p.id)),
       );
       if (!res) return { ok: false, error: NOT_FOUND(p.id) };
       if (!res.buildOk) {
@@ -446,9 +431,9 @@ const my_app_publish: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const app = await ownSpace(() =>
-        withAuthorWrite(p.author, p.id, () =>
-          publishApp(p.author.spaceId, p.id, {
+      const app = await appWork(() =>
+        withMemberAppWrite(p.author, p.id, () =>
+          publishApp(p.author.brainId, p.id, {
             note: str(input.note).trim().slice(0, 500) || null,
             ...actorOf(p.author),
           }),
@@ -489,14 +474,14 @@ const my_app_schema_set: BuiltinToolDef = {
     if (!schemaSql.trim()) return { ok: false, error: 'schema_sql is required.' };
     try {
       assertSafeScript(schemaSql);
-      await ownSpace(() => checkAppSchemaScript(p.author.spaceId, p.id, schemaSql));
+      await appWork(() => checkAppSchemaScript(p.author.brainId, p.id, schemaSql));
     } catch (err) {
       return refusal(err);
     }
     try {
-      await ownSpace(() =>
-        withAuthorWrite(p.author, p.id, () =>
-          createAppSnapshot(p.author.spaceId, p.id, {
+      await appWork(() =>
+        withMemberAppWrite(p.author, p.id, () =>
+          createAppSnapshot(p.author.brainId, p.id, {
             trigger: 'pre_schema',
             note: 'before a schema change',
             requireData: true,
@@ -510,8 +495,8 @@ const my_app_schema_set: BuiltinToolDef = {
         error: `could not take the safety snapshot before the schema change, so nothing changed: ${errorMessage(err)}`,
       };
     }
-    const version = await ownSpace(() =>
-      withAuthorWrite(p.author, p.id, () => declareAppSchema(p.author.spaceId, p.id, schemaSql)),
+    const version = await appWork(() =>
+      withMemberAppWrite(p.author, p.id, () => declareAppSchema(p.author.brainId, p.id, schemaSql)),
     );
     if (version === null) return { ok: false, error: NOT_FOUND(p.id) };
     return { ok: true, output: { id: p.id, schema_version: version } };
@@ -553,9 +538,9 @@ const my_app_tools_set: BuiltinToolDef = {
       const verdict = await memberAppToolVerdict(ctx.ownerId, slugs, slug);
       if (!verdict.ok) warnings.push(`${slug}: ${verdict.reason}`);
     }
-    const manifest = await ownSpace(() =>
-      withAuthorWrite(p.author, p.id, () =>
-        setManifest(p.author.spaceId, p.id, { toolSlugs: slugs }),
+    const manifest = await appWork(() =>
+      withMemberAppWrite(p.author, p.id, () =>
+        setManifest(p.author.brainId, p.id, { toolSlugs: slugs }),
       ),
     );
     if (!manifest) return { ok: false, error: NOT_FOUND(p.id) };
@@ -590,8 +575,8 @@ const my_app_errors: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
-    const rows = await ownSpace(() =>
-      listAppAccess(p.author.spaceId, p.id, limit, { kind: 'error' }),
+    const rows = await appWork(() =>
+      listAppAccess(p.author.brainId, p.id, limit, { kind: 'error' }),
     );
     return {
       ok: true,
@@ -629,7 +614,7 @@ const my_app_snapshot_list: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
-    const entries = await ownSpace(() => listAppSnapshots(p.author.spaceId, p.id, { limit }));
+    const entries = await appWork(() => listAppSnapshots(p.author.brainId, p.id, { limit }));
     return { ok: true, output: { id: p.id, entries } };
   },
 };
@@ -651,9 +636,9 @@ const my_app_snapshot_create: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const snap = await ownSpace(() =>
-        withAuthorWrite(p.author, p.id, () =>
-          createAppSnapshot(p.author.spaceId, p.id, {
+      const snap = await appWork(() =>
+        withMemberAppWrite(p.author, p.id, () =>
+          createAppSnapshot(p.author.brainId, p.id, {
             note: str(input.note).trim().slice(0, 500) || null,
             ...actorOf(p.author),
           }),
@@ -701,7 +686,7 @@ const my_app_snapshot_restore: BuiltinToolDef = {
     }
     try {
       const run = () =>
-        restoreAppSnapshot(p.author.spaceId, p.id, snapshotId, {
+        restoreAppSnapshot(p.author.brainId, p.id, snapshotId, {
           mode,
           discardDraft: input.discard_draft === true,
           ...actorOf(p.author),
@@ -715,8 +700,8 @@ const my_app_snapshot_restore: BuiltinToolDef = {
       // nothing an Accept relies on.
       const res =
         mode === 'code'
-          ? await ownSpace(() => withAuthorWrite(p.author, p.id, run))
-          : await ownSpace(run);
+          ? await appWork(() => withMemberAppWrite(p.author, p.id, run))
+          : await appWork(run);
       if (!res) {
         return {
           ok: false,
@@ -733,32 +718,6 @@ const my_app_snapshot_restore: BuiltinToolDef = {
           undo_snapshot_id: res.undo?.id ?? null,
         },
       };
-    } catch (err) {
-      return refusal(err);
-    }
-  },
-};
-
-/**
- * Make an app private again. SHARING with the team is in the app only (Apps
- * > Your apps, the member's own click; access matrix N1): a key, a peer or a
- * model on MCP must not open an app to the whole team. Taking it back from
- * the team stays here: it only narrows who runs it.
- */
-const my_app_unshare: BuiltinToolDef = {
-  slug: 'my_app_unshare',
-  name: 'Make my mini app private',
-  description:
-    'Make your own app private again: only you run it, and teammates no longer see it. Sharing with the team is done by the member in the app (Apps > Your apps), not over MCP.',
-  inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
-  handler: async (input, ctx) => {
-    // Any state before Accept: unsharing a submitted app only narrows it.
-    const p = await prepare(input, ctx, { write: false });
-    if (!isPrepared(p)) return p;
-    if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
-    try {
-      const state = await ownSpace(() => setSpaceAppSharing(p.author, p.id, 'private'));
-      return { ok: true, output: { id: p.id, sharing: state.sharing } };
     } catch (err) {
       return refusal(err);
     }
@@ -786,9 +745,9 @@ const my_app_snapshot_delete: BuiltinToolDef = {
       return { ok: false, error: 'snapshot_id must be an entry id from my_app_snapshot_list.' };
     }
     try {
-      const gone = await ownSpace(() =>
-        withAuthorWrite(p.author, p.id, () =>
-          deleteMemberAppSnapshot(p.author.spaceId, p.id, snapshotId, p.author.loginId),
+      const gone = await appWork(() =>
+        withMemberAppWrite(p.author, p.id, () =>
+          deleteMemberAppSnapshot(p.author.brainId, p.id, snapshotId, p.author.loginId),
         ),
       );
       if (!gone) {
@@ -811,23 +770,15 @@ const my_app_delete: BuiltinToolDef = {
   slug: 'my_app_delete',
   name: 'Delete my mini app (to my trash)',
   description:
-    "Move your own app to your trash: it stops running for everyone (teammates and you), leaves the review queue if submitted, and becomes private. Nothing is removed (code, data, history all kept): `my_app_undelete` brings it back, private; `my_app_deleted_list` shows the trash. An app an admin accepted is the brain's, not yours to delete. Ask the member first.",
+    "Delete an app whose home workspace you moderate (your private workspace's apps among them): it stops running for everyone. Its last snapshot keeps the code and data: `my_app_undelete` brings it back while the brain's trash keeps it (`my_app_deleted_list`); after that it is gone for good. Ask the member first.",
   inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
   handler: async (input, ctx) => {
-    // Any state before Accept: a submitted app may go too (it leaves the
-    // queue), so this checks ownership only; the delete locks and checks.
+    // The delete checks manage (a Moderator of the app's home) itself.
     const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
     if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
-    const inTrash = (await ownSpace(() => listDeletedSpaceApps(p.author))).length;
-    if (inTrash >= MY_APPS_TRASH_MAX) {
-      return {
-        ok: false,
-        error: `Your trash already holds ${inTrash} apps, the most it keeps, and nothing in it is ever deleted. Bring one back with my_app_undelete, or ask an admin to clear it, then try again.`,
-      };
-    }
     try {
-      const done = await ownSpace(() => deleteSpaceApp(p.author, p.id));
+      const done = await appWork(() => deleteMemberApp(p.author, p.id));
       return {
         ok: true,
         output: {
@@ -835,9 +786,7 @@ const my_app_delete: BuiltinToolDef = {
           name: done.title,
           deleted: true,
           deleted_at: done.deletedAt,
-          was_shared: done.wasShared,
-          was_submitted: done.wasSubmitted,
-          hint: 'It runs for no one now. my_app_undelete brings it back, private.',
+          hint: 'It runs for no one now. my_app_undelete brings it back while the trash keeps it.',
         },
       };
     } catch (err) {
@@ -850,7 +799,7 @@ const my_app_undelete: BuiltinToolDef = {
   slug: 'my_app_undelete',
   name: 'Bring back my deleted mini app',
   description:
-    "Bring one of your own apps back from your trash (`my_app_deleted_list`), with its code, data and history: private and a draft, so only you run it until you share it again in the app. For a snapshot of an app's history use `my_app_snapshot_restore` instead.",
+    "Bring a deleted app back (`my_app_deleted_list`) into the workspace it lived in, with its code, data and history. For a snapshot of an app's history use `my_app_snapshot_restore` instead.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -866,18 +815,16 @@ const my_app_undelete: BuiltinToolDef = {
     if (!UUID_RE.test(id)) {
       return { ok: false, error: 'id must be an app id from my_app_deleted_list.' };
     }
-    const mine = (await ownSpace(() => listSpaceApps(author))).filter((a) => a.mine).length;
+    const mine = (await listLoginApps(author)).filter((a) => a.mine).length;
     if (mine >= MY_APPS_MAX) return { ok: false, error: atAppCap(mine) };
     try {
-      const state = await ownSpace(() => undeleteSpaceApp(author, id));
+      const state = await appWork(() => undeleteMemberApp(author, id));
       return {
         ok: true,
         output: {
           id: state.id,
           name: state.title,
-          sharing: state.sharing,
-          reviewState: state.reviewState,
-          hint: 'It is private again: only you run it. Share it with the team in the app.',
+          hint: 'It is back in the workspace it lived in, with its code and data.',
         },
       };
     } catch (err) {
@@ -891,12 +838,12 @@ const my_app_deleted_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List my deleted mini apps',
   description:
-    'List the apps in your trash, newest delete first: id, title, when deleted, whether it was published and whether its data is kept. Nothing in the trash expires. Bring one back with `my_app_undelete`; your live apps are in `my_app_list`.',
+    'List the deleted apps of the workspaces you moderate, newest delete first: id, title, when deleted, the last day it can come back, whether its data is kept. Bring one back with `my_app_undelete`; live apps are in `my_app_list`.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const author = await authorOf(ctx);
     if (!author) return { ok: false, error: NO_LOGIN };
-    const apps = await ownSpace(() => listDeletedSpaceApps(author));
+    const apps = await appWork(() => listDeletedMemberApps(author));
     return { ok: true, output: { count: apps.length, apps } };
   },
 };
@@ -905,7 +852,7 @@ const my_app_deleted_list: BuiltinToolDef = {
  * The login's MCP call runs in a workspace scope since W5b2 (withViewer for
  * the login). Checked first: the login the surface names is the scope's own
  * login, never someone else. The tool then runs IN that scope: only its
- * calls keyed to the author's own space leave it (ownSpace); the rest, the
+ * app work after the check leaves it (appWork); the rest, the
  * member-rule check of declared tools among them, reads as the login.
  */
 function inLoginScope(def: BuiltinToolDef): BuiltinToolDef {
@@ -1006,7 +953,6 @@ export const MY_APP_WRITE_TOOLS: BuiltinToolDef[] = [
   my_app_snapshot_create,
   my_app_snapshot_restore,
   my_app_snapshot_delete,
-  my_app_unshare,
   my_app_delete,
   my_app_undelete,
 ]

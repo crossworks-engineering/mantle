@@ -258,10 +258,6 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   'builtins-apps.ts': [
     "if (ctx.surface?.kind === 'team') return listTeamLevelAppIds(ctx.ownerId);",
   ],
-  // my-space acts for the login on a team or client surface.
-  'builtins-my-space.ts': [
-    "const loginId = s?.kind === 'team' || s?.kind === 'client' ? s.loginId : undefined;",
-  ],
   // App data on a login's own MCP (team apps Phase 1): a member on a team
   // surface, only with the MCP connection stamped.
   'builtins-app-data.ts': ["if (s?.kind === 'team' && s.loginId && s.mcp) {"],

@@ -142,6 +142,21 @@ export {
 export { dataAccessOf, type AppDataAccess } from './app-data-access';
 
 export {
+  MemberAppError,
+  createMemberApp,
+  deleteMemberApp,
+  listDeletedMemberApps,
+  listLoginApps,
+  memberApp,
+  memberPrivateWorkspace,
+  undeleteMemberApp,
+  withMemberAppWrite,
+  type MemberAppAuthor,
+  type LoginAppCard,
+  type MemberAppState,
+} from './member-brain-apps';
+
+export {
   SpaceAppError,
   authorSpaceApp,
   createSpaceApp,

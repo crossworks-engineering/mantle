@@ -26,12 +26,6 @@ describe('toolResultPayload and private tools', () => {
       handling: { inlineMaxBytes: 1_000 } as Parameters<typeof toolResultPayload>[0]['handling'],
     });
 
-  it('keeps a my-space result inline, whatever its size', async () => {
-    const out = await call('my_item_open');
-    expect(out).toContain('xxxx');
-    expect(spill).not.toHaveBeenCalled();
-  });
-
   it('still spills any other big result', async () => {
     await call('page_get');
     expect(spill).toHaveBeenCalledTimes(1);

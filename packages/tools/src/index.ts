@@ -143,7 +143,6 @@ export { loadAgentGrant, NO_AGENT_RUN_SLUG, type AgentGrant } from './agent-gran
 export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
-export { MY_SPACE_TOOLS } from './builtins-my-space';
 export {
   LOGIN_APP_DATA_TOOLS,
   APP_DATA_READ_TOOL_SLUGS,
@@ -154,7 +153,6 @@ export {
   MY_APP_READ_TOOL_SLUGS,
   MY_APP_WRITE_TOOL_SLUGS,
   MY_APPS_MAX,
-  MY_APPS_TRASH_MAX,
 } from './builtins-my-apps';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
 export { CURATION_TOOLS } from './builtins-curation';
