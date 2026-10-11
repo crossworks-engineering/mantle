@@ -116,10 +116,9 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       },
     );
   const find = (surface: unknown) =>
-    t.getBuiltin('find_window')!.handler(
-      { topic: 'kettle' },
-      { ownerId: owner, surface: surface as never },
-    );
+    t
+      .getBuiltin('find_window')!
+      .handler({ topic: 'kettle' }, { ownerId: owner, surface: surface as never });
   const texts = (r: { ok: boolean; output?: unknown }) =>
     ((r.output as { turns?: { text: string }[] })?.turns ?? []).map((x) => x.text);
   const windowIds = (r: { ok: boolean; output?: unknown }) =>
@@ -415,9 +414,9 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     await expect(
       ra.runTeamTurn(owner, 'hello', { loginId: client, channel: 'web' }),
     ).rejects.toThrow(/client login has no chat/);
-    expect(
-      await x(sql`select 1 from assistant_messages where login_id = ${client}`),
-    ).toHaveLength(0);
+    expect(await x(sql`select 1 from assistant_messages where login_id = ${client}`)).toHaveLength(
+      0,
+    );
   });
 
   it('L1: a second login reusing an Idempotency-Key gets its own turn', async () => {

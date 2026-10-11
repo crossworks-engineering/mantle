@@ -406,7 +406,7 @@ describe('runs resume turn — crash replay (final-audit F1 regression)', () => 
 });
 
 describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
-  it("reads and writes the thread of the login the run was planned for", async () => {
+  it('reads and writes the thread of the login the run was planned for', async () => {
     seedHappyPath({ run: { loginId: 'login-b' } });
     h.runResponderLoop = vi.fn(async (...a: unknown[]) => {
       const opts = a[0] as { loadContext: () => Promise<unknown>; surface: unknown };

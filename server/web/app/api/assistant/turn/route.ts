@@ -456,7 +456,9 @@ async function runTurn(
       {
         workflowName: ASSISTANT_TURN_WORKFLOW,
         queueName: RUNNER_QUEUE,
-        ...(idempotencyKey ? { workflowID: ownerTurnWorkflowId(user.actor.id, idempotencyKey) } : {}),
+        ...(idempotencyKey
+          ? { workflowID: ownerTurnWorkflowId(user.actor.id, idempotencyKey) }
+          : {}),
       },
       input,
     );

@@ -340,7 +340,9 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
       for (const stmt of statements) await tx.unsafe(stmt);
     });
     expect(await snapshot()).toEqual(before);
-    expect(before.pk.map((r) => r.conname)).toEqual(['assistant_read_cursors_owner_agent_login_pk']);
+    expect(before.pk.map((r) => r.conname)).toEqual([
+      'assistant_read_cursors_owner_agent_login_pk',
+    ]);
     await sql`select pg_notify('summarize_due', 'barrier2')`;
     for (let i = 0; i < 100 && !heard.includes('summarize_due:barrier2'); i += 1) {
       await new Promise((r) => setTimeout(r, 20));

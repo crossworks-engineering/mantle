@@ -127,7 +127,10 @@ function stepSummary(
  * else (a heartbeat, a run, a peer that names no login) gets null and the
  * tool refuses: it never falls back to the anchor's history.
  */
-export function replayAsker(ownerId: string, surface: ToolHandlerContext['surface']): string | null {
+export function replayAsker(
+  ownerId: string,
+  surface: ToolHandlerContext['surface'],
+): string | null {
   const stamped = currentTurnStamp()?.loginId;
   if (stamped) return stamped;
   const named = ownerSurfaceLoginId(surface);
@@ -475,7 +478,9 @@ const replay_window: BuiltinToolDef = {
     const out = truncated ? sorted.slice(0, limit) : sorted;
 
     const traceList =
-      input.include_traces === true ? await fetchWindowTraces(ctx.ownerId, asker, from, to) : undefined;
+      input.include_traces === true
+        ? await fetchWindowTraces(ctx.ownerId, asker, from, to)
+        : undefined;
 
     ctx.step?.setOutput({
       count: out.length,
