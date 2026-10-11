@@ -122,6 +122,13 @@ Migration `0030_heartbeats.sql` adds two tables and one enum value.
 | `state`             | jsonb                                    | the skill's running memory; see §10 + §11           |
 | `status`            | enum (active/paused/completed/cancelled) |                                                     |
 | `completion_reason` | text                                     | free-text, e.g. `tool_call:all_topics_covered`      |
+| `created_by`        | uuid NULL                                | the maker login; null = the brain owner (see below) |
+
+**The maker** (`created_by`, workspaces W7a): the tick fires a heartbeat in
+its maker's scope. A login other than the brain owner becomes the maker when
+it changes what the heartbeat does (its name, agent, skill, schedule, surface
+or state), or saves the prompt it runs (its skill, or its agent's system
+prompt, skills or persona notes). The API returns it as `createdBy`.
 
 **Per-heartbeat-only gates.** There are no system-wide defaults.
 A null gate column means "no check of that kind". The UI form offers
@@ -797,17 +804,17 @@ the instructions are written.
 | --------------------------------------------- | ------------------------------------------------------------------------------ |
 | `packages/db/migrations/0030_heartbeats.sql`  | Schema + enum extension                                                        |
 | `packages/db/src/schema/heartbeats.ts`        | Drizzle types                                                                  |
-| `packages/runtime/src/heartbeats/schedule.ts`         | `computeNextFireAt` + `validateSchedule`                                       |
-| `packages/runtime/src/heartbeats/gates.ts`            | `checkGates` (idle / quiet / cooldown / earliest)                              |
-| `packages/runtime/src/heartbeats/prompt.ts`           | Synthetic prompt + open-heartbeat block + last_asked_at age helper             |
-| `packages/runtime/src/heartbeats/context.ts`          | AsyncLocalStorage for current heartbeat                                        |
-| `packages/runtime/src/heartbeats/inflight.ts`         | Per-process `Map<id, Promise>` lock (P0-2)                                     |
-| `packages/runtime/src/heartbeats/fire.ts`             | Single-fire orchestration (inflight lock + snooze preservation + state reload) |
-| `packages/runtime/src/heartbeats/tick.ts`             | Tick loop + `openHeartbeatsForSurface`                                         |
-| `packages/runtime/src/heartbeats/tools.ts`            | 5 builtin control tools (dual-mode addressing)                                 |
+| `packages/runtime/src/heartbeats/schedule.ts` | `computeNextFireAt` + `validateSchedule`                                       |
+| `packages/runtime/src/heartbeats/gates.ts`    | `checkGates` (idle / quiet / cooldown / earliest)                              |
+| `packages/runtime/src/heartbeats/prompt.ts`   | Synthetic prompt + open-heartbeat block + last_asked_at age helper             |
+| `packages/runtime/src/heartbeats/context.ts`  | AsyncLocalStorage for current heartbeat                                        |
+| `packages/runtime/src/heartbeats/inflight.ts` | Per-process `Map<id, Promise>` lock (P0-2)                                     |
+| `packages/runtime/src/heartbeats/fire.ts`     | Single-fire orchestration (inflight lock + snooze preservation + state reload) |
+| `packages/runtime/src/heartbeats/tick.ts`     | Tick loop + `openHeartbeatsForSurface`                                         |
+| `packages/runtime/src/heartbeats/tools.ts`    | 5 builtin control tools (dual-mode addressing)                                 |
 | `server/api/src/main.ts`                      | Tick wiring + responder context inject                                         |
-| `server/web/lib/heartbeats.ts`                  | CRUD lib                                                                       |
-| `jackdaw/app/(app)/settings/heartbeats/*`    | CRUD UI                                                                        |
-| `jackdaw/app/(app)/heartbeats/[id]/page.tsx` | Detail / fire log                                                              |
-| `server/web/scripts/seed-get-to-know-user.ts`   | Demo skill + heartbeat + tool grant                                            |
-| `server/web/scripts/test-fire-heartbeat.ts`     | Diagnostic CLI: one-shot forceFire to compare in-process vs long-running agent |
+| `server/web/lib/heartbeats.ts`                | CRUD lib                                                                       |
+| `jackdaw/app/(app)/settings/heartbeats/*`     | CRUD UI                                                                        |
+| `jackdaw/app/(app)/heartbeats/[id]/page.tsx`  | Detail / fire log                                                              |
+| `server/web/scripts/seed-get-to-know-user.ts` | Demo skill + heartbeat + tool grant                                            |
+| `server/web/scripts/test-fire-heartbeat.ts`   | Diagnostic CLI: one-shot forceFire to compare in-process vs long-running agent |

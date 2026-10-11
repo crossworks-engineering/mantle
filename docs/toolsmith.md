@@ -181,7 +181,17 @@ client browse and test the registry.
   URL) is the keys area's: creating, updating or testing such a tool needs
   it, and a tool written by a login other than the brain owner resolves its
   refs at run time only while that login holds it (tools.created_by,
-  `packages/tools/src/secret-ref-gate.ts`).
+  `packages/tools/src/secret-ref-gate.ts`). The same rule covers every place
+  a vault key meets a host: an integration group's secret ref, auth template
+  or OAuth2 credentials against its base URL or token URL
+  (`tool_group_ensure`, the tool-groups PATCH route), OpenAPI and MCP
+  connectors, the API Console proxy, and model routes (an agent's, an AI
+  worker's or the embedder's key id with a base URL other than the
+  provider's). Setting or changing either side while the other is present
+  needs the keys area or the anchor login. A group or connector records who
+  paired them (tool_groups.configured_by); a tool authored into the group, or
+  synced by an OpenAPI connector, takes that login as its maker, and an MCP
+  connector's key goes out only while that login holds the keys area.
 - `api_key_refs`, vault entries as `{{secret:service/label}}` refs,
   masked previews only; plaintext never leaves the dispatcher.
 - `tool_group_list / tool_group_ensure`, capability bundles, with

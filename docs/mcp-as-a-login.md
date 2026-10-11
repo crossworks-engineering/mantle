@@ -58,7 +58,11 @@ login's scope. A tool template that sends a vault key (`{{secret:...}}`,
 `{{oauth:...}}`, an OAuth2 group's token or base URL) is the keys area's:
 writing or testing one needs it, and a tool another login wrote resolves its
 refs only while that login holds it (`packages/tools/src/secret-ref-gate.ts`,
-tools.created_by). A write to an item (an edit, a delete, a move, a link) is
+tools.created_by). So is every other pairing of a vault key with a host
+(connectors, integration groups, the API Console proxy, model routes with a
+base URL), and a group or connector records who paired them
+(tool_groups.configured_by). A login that saves a skill or an agent's prompt
+makes the heartbeats that run it its own. A write to an item (an edit, a delete, a move, a link) is
 checked against the login's rights on that item first, as the item routes
 do (`packages/tools/src/item-write-gate.ts`): an item shared with Read only
 is refused. `MANTLE_ADMIN_READS=system` puts the whole surface back on the
