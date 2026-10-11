@@ -45,9 +45,9 @@ import {
   resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
-  chatRouteKeyRefusal,
   type ChatMessage,
 } from '../agent';
+import { chatRouteKeyRefusal } from '../agent/chat-failover';
 import {
   loadProfilePreferences,
   buildTimeContextLine,

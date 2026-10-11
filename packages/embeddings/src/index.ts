@@ -179,7 +179,8 @@ async function routeApiKey(
   ownerId: string,
   r: Pick<EmbeddingRoute, 'provider' | 'baseUrl' | 'apiKeyId' | 'configuredBy'>,
 ): Promise<string | null> {
-  if (r.baseUrl?.trim()) {
+  // The brain owner's pairing (no configurer) asks nothing.
+  if (r.baseUrl?.trim() && r.configuredBy && r.configuredBy !== ownerId) {
     const refused = await vaultPairRunRefusal(r.configuredBy, ownerId, true);
     if (refused) {
       if (r.provider === 'local') return 'local';
@@ -288,7 +289,7 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
           baseUrl: row.primaryBaseUrl ?? null,
           apiKeyId: row.primaryApiKeyId ?? null,
           label: row.primaryLabel ?? 'Primary',
-          configuredBy: row.configuredBy ?? null,
+          configuredBy: row.configuredBy,
         },
         backup:
           row.backupEnabled && row.backupProvider
@@ -297,7 +298,7 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
                 baseUrl: row.backupBaseUrl ?? null,
                 apiKeyId: row.backupApiKeyId ?? null,
                 label: row.backupLabel ?? 'Backup',
-                configuredBy: row.configuredBy ?? null,
+                configuredBy: row.configuredBy,
               }
             : null,
         extractionConcurrency: row.extractionConcurrency,

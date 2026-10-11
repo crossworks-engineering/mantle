@@ -19,8 +19,8 @@
  */
 
 import type { Agent, AgentParams } from '@mantle/db';
+import { chatRouteKeyRefusal } from '../agent/chat-failover';
 import {
-  chatRouteKeyRefusal,
   resolveBackupAdapter,
   runToolLoop,
   summarizeToolOutcomes,

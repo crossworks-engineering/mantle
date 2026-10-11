@@ -79,7 +79,7 @@ export function resolveChatRoutes(row: ChatRouteRow): ChatRoutes {
       apiKeyId: row.apiKeyId ?? null,
       baseUrl: row.baseUrl ?? null,
       viaTailnet: row.viaTailnet ?? false,
-      configuredBy: row.configuredBy ?? null,
+      configuredBy: row.configuredBy,
     },
     backup:
       row.backupEnabled && row.backupProvider && row.backupModel
@@ -89,7 +89,7 @@ export function resolveChatRoutes(row: ChatRouteRow): ChatRoutes {
             apiKeyId: row.backupApiKeyId ?? null,
             baseUrl: row.backupBaseUrl ?? null,
             viaTailnet: row.backupViaTailnet ?? false,
-            configuredBy: row.configuredBy ?? null,
+            configuredBy: row.configuredBy,
           }
         : null,
   };
@@ -232,8 +232,9 @@ export async function chatRouteKeyRefusal(
   ownerId: string,
   route: { baseUrl?: string | null; configuredBy?: string | null },
 ): Promise<string | null> {
-  if (!route.baseUrl?.trim()) return null;
-  return vaultPairRunRefusal(route.configuredBy, ownerId, true);
+  const maker = route.configuredBy;
+  if (!route.baseUrl?.trim() || !maker || maker === ownerId) return null;
+  return vaultPairRunRefusal(maker, ownerId, true);
 }
 
 /**
