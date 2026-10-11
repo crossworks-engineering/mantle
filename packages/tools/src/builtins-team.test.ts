@@ -29,6 +29,11 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listTeamAccess: vi.fn(async () => []),
     listMemberChatActivity: vi.fn(async () => []),
     listTeamMemberActivity: vi.fn(async () => []),
+    // The contacts' names, read in the caller's scope (W7a fix round 2).
+    contactTitles: vi.fn(
+      async (_o: string, ids: readonly string[]) =>
+        new Map(ids.map((id) => [id, id === 'c-old' ? 'Old' : 'None'])),
+    ),
   };
 });
 
@@ -189,6 +194,7 @@ describe('owner-side chat tools read member LOGIN threads (users are the team)',
       contactId: undefined,
       loginId: LOGIN,
       limit: 5,
+      names: false,
     });
     const bad = await bySlug.team_access_list!.handler({ loginId: 'sam' }, ownerCtx);
     expect(bad.ok).toBe(false);

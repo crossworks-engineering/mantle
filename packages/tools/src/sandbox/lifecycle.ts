@@ -176,7 +176,7 @@ export const sandbox_create: BuiltinToolDef = {
         network,
         status: 'running',
         containerId: String(created.data.containerId ?? ''),
-        createdBy: maker ?? null,
+        ...(maker ? { createdBy: maker } : {}),
       }),
     );
     ctx.step?.setMeta({ sandboxId: id, name, image, network });

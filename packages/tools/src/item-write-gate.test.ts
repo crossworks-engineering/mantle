@@ -86,6 +86,17 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       'email_list',
       'email_get',
       'run_terminal',
+      // W7a fix round 2: each reads, writes or runs something in the scope.
+      'heartbeat_fire',
+      'api_docs_set',
+      'api_docs_get',
+      'update_persona',
+      'api_tool_test',
+      'secret_create',
+      'brain_capacity',
+      'team_access_list',
+      'team_chat_list',
+      'team_chat_read',
     ]) {
       expect(toolAdminArea(slug), slug).not.toBeNull();
       expect(AREA_SYSTEM_TOOLS.has(slug), slug).toBe(false);
@@ -116,5 +127,22 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       .map((d) => d.slug)
       .filter((slug) => !ITEM_WRITE_TARGETS.has(slug) && !READS_ITS_ITEM.has(slug));
     expect(missing).toEqual([]);
+  });
+
+  it('a conversion retires its source unless supersede_source is false (N2)', async () => {
+    const cases: Array<[string, Record<string, unknown>, string[]]> = [
+      ['page_from_note', { note_id: 'n1' }, ['n1']],
+      ['page_from_file', { file_id: 'f1' }, ['f1']],
+      ['page_from_notes', { note_ids: ['n1', 'n2'] }, ['n1', 'n2']],
+      ['page_from_note', { note_id: 'n1', supersede_source: true }, ['n1']],
+    ];
+    for (const [slug, input, ids] of cases) {
+      const resolve = ITEM_WRITE_TARGETS.get(slug) as (
+        i: Record<string, unknown>,
+        o: string,
+      ) => Promise<{ ids: string[]; need: string }[]>;
+      expect(await resolve(input, 'o'), slug).toEqual([{ ids, need: 'edit' }]);
+      expect(await resolve({ ...input, supersede_source: false }, 'o'), slug).toEqual([]);
+    }
   });
 });

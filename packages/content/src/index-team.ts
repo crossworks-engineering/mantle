@@ -157,6 +157,7 @@ export { dedupeFilename } from './dedupe-filename';
 export {
   recordTeamAccess,
   listTeamAccess,
+  contactTitles,
   type TeamAccessKind,
   type TeamAccessEntry,
   type TeamAccessRow,

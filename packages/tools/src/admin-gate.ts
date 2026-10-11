@@ -164,25 +164,52 @@ export function toolAdminArea(slug: string, ref?: string): ScopeArea | null {
 
 /**
  * The Admin-area tools that run WHOLE on the system pool after the area
- * check (W7a fix round 1, H1): each reads and writes system tables only
- * (model pools, sandbox rows and the sandbox daemon, agents, tool and
- * worker groups, heartbeats, API tools and their docs, peers and the remote
- * brains they reach, Telegram accounts and chats, secrets, the team access
- * log and chat portal), takes no item id and reads no brain item. Every
- * other area tool runs in the caller's scope and takes areaSystem only
- * around its own system tables: sandbox_create (it mounts a folder),
- * sandbox_import and sandbox_export (a file), peer_file_copy (a file),
- * recipe_tool_test (its steps are tools), email_send, email_page,
- * email_list and email_get (pages, files, contacts and mail rows),
- * run_terminal (no database). brain_capacity counts the brain's items
- * (numbers, never a row) for the settings area.
+ * check (W7a fix round 1, H1; re-checked handler by handler in fix round 2).
+ * Each reads and writes system tables only, takes no item id, reads and
+ * writes no brain item (nodes, chunks, facts, windows, grants, files,
+ * Journal, contacts, mail) and runs no other tool or assistant turn:
+ *
+ *  - model_catalog, model_pool_list, model_pool_set, model_pool_remove:
+ *    curated_models and the provider's model catalog.
+ *  - sandbox_autostart, sandbox_exec, sandbox_list, sandbox_ls,
+ *    sandbox_mcp_call, sandbox_mcp_tools, sandbox_publish, sandbox_rm,
+ *    sandbox_stop: sandbox rows and the sandbox daemon (publish: an API key
+ *    and a tool group). A sandbox is its maker's: the brain owner's login
+ *    works in every one, any other login only in its own (callerScope), and
+ *    only the brain owner mounts a folder (sandbox/common.ts).
+ *  - agent_list, agent_grant_tool_group, agent_set_thinking_effort,
+ *    tool_group_ensure, tool_group_list, worker_group_ensure,
+ *    worker_group_list: agents, tool and worker groups, tools, pending calls.
+ *  - heartbeat_list: heartbeat rows.
+ *  - api_tool_create, api_tool_delete, api_tool_get, api_tool_list,
+ *    api_skill_set, recipe_tool_create, api_key_refs: tools, tool groups,
+ *    skills, API key names (recipe steps are checked against tool rows,
+ *    never run).
+ *  - peer_list, peer_tools, peer_call, peer_query, peer_node_get,
+ *    peer_search_chunks: peer rows and the linked brain over its link (the
+ *    ids they take name the PEER's items, never this brain's).
+ *  - telegram_pair, telegram_send, telegram_edit, telegram_react,
+ *    telegram_pending, telegram_mark_processed: Telegram accounts, chats and
+ *    messages, and the Bot API (text only).
+ *
+ * Every other area tool runs in the caller's scope and takes areaSystem only
+ * around its own system tables: sandbox_create (its folder), sandbox_import
+ * and sandbox_export (a file), peer_file_copy (a file), recipe_tool_test (its
+ * steps are tools), api_tool_test (it runs the tool), api_docs_set and
+ * api_docs_get (the docs file), update_persona (Journal entries),
+ * heartbeat_fire (a turn, in the caller's scope), secret_create (the secret
+ * node; its Secrets root on the system pool), team_chat_list,
+ * team_chat_read and team_access_list (contacts named in the scope),
+ * brain_capacity (two counts on the system pool, numbers only; its score's
+ * note in the scope), the email tools (pages, files, contacts and mail
+ * rows), run_terminal (no database). A test runs each listed tool with item
+ * tables closed to the system pool (server/web/server/w7a-area-system-sweep.db.test.ts).
  */
 export const AREA_SYSTEM_TOOLS: ReadonlySet<string> = new Set([
   'model_catalog',
   'model_pool_list',
   'model_pool_set',
   'model_pool_remove',
-  'brain_capacity',
   'sandbox_autostart',
   'sandbox_exec',
   'sandbox_list',
@@ -192,9 +219,6 @@ export const AREA_SYSTEM_TOOLS: ReadonlySet<string> = new Set([
   'sandbox_publish',
   'sandbox_rm',
   'sandbox_stop',
-  'team_access_list',
-  'team_chat_list',
-  'team_chat_read',
   'agent_list',
   'agent_grant_tool_group',
   'agent_set_thinking_effort',
@@ -207,7 +231,6 @@ export const AREA_SYSTEM_TOOLS: ReadonlySet<string> = new Set([
   'api_tool_delete',
   'api_tool_get',
   'api_tool_list',
-  'api_tool_test',
   'api_skill_set',
   'recipe_tool_create',
   'peer_list',
@@ -222,7 +245,6 @@ export const AREA_SYSTEM_TOOLS: ReadonlySet<string> = new Set([
   'telegram_react',
   'telegram_pending',
   'telegram_mark_processed',
-  'secret_create',
   'api_key_refs',
 ]);
 

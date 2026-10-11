@@ -6,6 +6,7 @@
  */
 
 import { isUniqueViolation, type ToolHandler } from '@mantle/db';
+import { areaSystem } from '../admin-gate';
 import { queueAgentCallForApproval } from '../pending-queue';
 import { keyOrPeerVia, OPENS_ADMIN_ONLY } from '../surface';
 import { listApiKeys } from '@mantle/api-keys';
@@ -582,7 +583,10 @@ export const api_tool_test: BuiltinToolDef = {
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const slug = str(input.slug).trim();
-    const row = await toolRowBySlug(ctx.ownerId, slug);
+    // The tool row is a system table (W7a fix round 2): read after the
+    // connectors area check. The test call itself runs in the caller's
+    // scope, as the agents that will use the tool run it.
+    const row = await areaSystem('connectors', () => toolRowBySlug(ctx.ownerId, slug));
     if (!row) return { ok: false, error: `tool '${slug}' not found` };
     const handler = row.handler as ToolHandler;
     if (handler.kind !== 'http') {

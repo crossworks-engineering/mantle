@@ -100,18 +100,27 @@ async function latestRetrieval(ownerId: string): Promise<RetrievalScore | null> 
 }
 
 /** Live counts for one brain, measured against the split policy, plus the
- *  latest measured retrieval score. */
-export async function corpusCapacity(ownerId: string): Promise<BrainCapacity> {
-  const [docRow] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(nodes)
-    .where(and(eq(nodes.ownerId, ownerId), ne(nodes.type, 'branch')));
-  const [chunkRow] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(contentChunks)
-    .where(and(eq(contentChunks.ownerId, ownerId), isNotNull(contentChunks.embedding)));
+ *  latest measured retrieval score. `countsVia` runs the two counts (W7a fix
+ *  round 2: brain_capacity counts the whole brain on the system pool,
+ *  numbers only, and reads the score's note in its caller's scope). */
+export async function corpusCapacity(
+  ownerId: string,
+  opts: { countsVia?: <T>(fn: () => Promise<T>) => Promise<T> } = {},
+): Promise<BrainCapacity> {
+  const via = opts.countsVia ?? (<T>(fn: () => Promise<T>) => fn());
+  const { docs, chunks } = await via(async () => {
+    const [docRow] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(nodes)
+      .where(and(eq(nodes.ownerId, ownerId), ne(nodes.type, 'branch')));
+    const [chunkRow] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(contentChunks)
+      .where(and(eq(contentChunks.ownerId, ownerId), isNotNull(contentChunks.embedding)));
+    return { docs: docRow?.n ?? 0, chunks: chunkRow?.n ?? 0 };
+  });
   return {
-    ...computeCapacity(docRow?.n ?? 0, chunkRow?.n ?? 0),
+    ...computeCapacity(docs, chunks),
     retrieval: await latestRetrieval(ownerId),
   };
 }

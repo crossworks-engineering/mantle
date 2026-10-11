@@ -254,6 +254,19 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
         containerId: 'c1',
       }),
     );
+    // L's own sandbox: a login works only in the sandboxes it made (W7a fix
+    // round 2), the anchor in every one.
+    await sys(() =>
+      c.createSandboxRow({
+        id: randomUUID(),
+        ownerId: owner,
+        name: `${tag}-lbox`,
+        image: 'test/image',
+        status: 'running',
+        containerId: 'c2',
+        createdBy: second,
+      }),
+    );
     // The Admin assistant, its history, a Journal entry, an entity.
     const [row] = await m.systemDb
       .insert(m.agents)
@@ -419,8 +432,9 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     };
     for (const login of [second, owner]) {
       outbound.length = 0;
+      const box = login === second ? `${tag}-lbox` : `${tag}-box`;
       const imp = await mcpCall(login, 'sandbox_import', {
-        sandbox: `${tag}-box`,
+        sandbox: box,
         file_id: memFile,
       });
       expect(imp.isError, imp.text).toBe(true);
@@ -447,7 +461,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       expect(outbound.filter((u) => !u.includes('embed'))).toEqual([]);
       // sandbox_export onto the member's same-named file: refused, unchanged.
       const exp = await mcpCall(login, 'sandbox_export', {
-        sandbox: `${tag}-box`,
+        sandbox: box,
         path: takenName,
         raw: true,
       });
@@ -502,7 +516,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
           ),
         ),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/answers the login that called it/);
   });
 
   it('M2: update tools on a Read-only shared item are refused; on an editable one they work', async () => {

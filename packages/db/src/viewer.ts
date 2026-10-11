@@ -862,7 +862,10 @@ export function runInSystemTx<T>(
  *    assistant's or the Admin MCP surface's scope (W7a), only AFTER the
  *    area check (scopeHasArea): its system tables (model pools, agents,
  *    tool groups, connectors, secrets, peers) are never granted to the
- *    workspace role. It reads no brain items there.
+ *    workspace role. It reads no brain items there; brain_capacity counts
+ *    them (two numbers, never a row), and secret_create makes the Secrets
+ *    root (structure, no content). The scope it leaves is kept
+ *    (scopeLeftForSystem): a turn started there answers that scope's login.
  *  - `provider-key`: the id of a provider's API key on file (OpenRouter,
  *    Firecrawl) that a tool calls out with (builtins-research.ts,
  *    builtins-crawl.ts): infrastructure, like a connector's keys (W7a).

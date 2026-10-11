@@ -9,6 +9,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, workspaces } from '@mantle/db';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
+import { areaSystem } from './admin-gate';
 import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num } from './coerce';
 import { errorMessage } from '@mantle/std';
@@ -24,7 +25,12 @@ export const brain_capacity: BuiltinToolDef = {
     "Corpus size vs the split policy: document and passage-vector counts with a zone per axis — 'green' (no action), 'watch' (run recall checks, identify the growing category), 'split' (break the dominant category into a federated breakout brain). Use for capacity/health checks and scheduled monitoring; alert the user when the zone is not green. Read-only.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
-    const capacity = await corpusCapacity(ctx.ownerId);
+    // The split policy is the whole brain's (W7a fix round 2): two counts on
+    // the system pool after the settings area check, numbers and never a
+    // row; the latest recall score's note is read in the caller's scope.
+    const capacity = await corpusCapacity(ctx.ownerId, {
+      countsVia: (fn) => areaSystem('settings', fn),
+    });
     ctx.step?.setMeta({ zone: capacity.zone, pct_of_split: capacity.pctOfSplit });
     return { ok: true, output: capacity };
   },

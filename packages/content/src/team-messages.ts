@@ -208,7 +208,17 @@ export async function recentTeamMessages(
  * never used to chat dropped off, and one that chats stays. Newest activity
  * first. `memberSince` is the first portal message.
  */
-export async function listTeamMemberActivity(ownerId: string): Promise<TeamMemberActivity[]> {
+export async function listTeamMemberActivity(
+  ownerId: string,
+  opts: {
+    /** false (W7a fix round 2): the threads alone, contact names null and no
+     *  read of the contacts: the caller names them in its own scope and
+     *  drops a contact it does not read (as the join drops a deleted one),
+     *  so a read of the threads on the system pool reads no item. */
+    names?: boolean;
+  } = {},
+): Promise<TeamMemberActivity[]> {
+  if (opts.names === false) return listPortalThreadsOnly(ownerId);
   const result = await db.execute(dsql`
     select n.id as contact_id,
            n.title as contact_name,
@@ -261,6 +271,65 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
   return rows.map((r) => ({
     contactId: r.contact_id,
     contactName: r.contact_name ?? '(unnamed contact)',
+    memberSince: iso(r.first_at),
+    lastMessageAt: iso(r.last_at),
+    lastMessageText: r.last_text,
+    lastMessageDirection: r.last_direction as 'inbound' | 'outbound',
+    messageCount: Number(r.message_count),
+    unread: Number(r.unread),
+  }));
+}
+
+/** listTeamMemberActivity without the contacts (names: false): the portal
+ *  threads of this owner, their contact ids and counts, contactName empty. */
+async function listPortalThreadsOnly(ownerId: string): Promise<TeamMemberActivity[]> {
+  const result = await db.execute(dsql`
+    select portal.contact_id,
+           portal.first_at,
+           portal.n as message_count,
+           last_msg.created_at as last_at,
+           last_msg.text as last_text,
+           last_msg.direction as last_direction,
+           (select count(*)
+              from team_messages tmu
+             where tmu.owner_id = ${ownerId}
+               and tmu.contact_id = portal.contact_id
+               and tmu.login_id is null
+               and tmu.direction = 'inbound'
+               and tmu.created_at > coalesce(
+                 (select c.last_read_at from team_read_cursors c
+                   where c.owner_id = ${ownerId} and c.contact_id = portal.contact_id),
+                 'epoch'::timestamptz))::int as unread
+      from (select tm.contact_id, min(tm.created_at) as first_at, count(*)::int as n
+              from team_messages tm
+             where tm.owner_id = ${ownerId}
+               and tm.contact_id is not null
+               and tm.login_id is null
+             group by tm.contact_id) portal
+      cross join lateral (
+        select tl.created_at, tl.text, tl.direction
+          from team_messages tl
+         where tl.owner_id = ${ownerId}
+           and tl.contact_id = portal.contact_id
+           and tl.login_id is null
+         order by tl.created_at desc
+         limit 1
+      ) last_msg
+     order by last_msg.created_at desc
+  `);
+  const rows = result as unknown as Array<{
+    contact_id: string;
+    first_at: string | Date;
+    message_count: number;
+    last_at: string | Date;
+    last_text: string;
+    last_direction: string;
+    unread: number;
+  }>;
+  const iso = (v: string | Date) => new Date(v).toISOString();
+  return rows.map((r) => ({
+    contactId: r.contact_id,
+    contactName: '',
     memberSince: iso(r.first_at),
     lastMessageAt: iso(r.last_at),
     lastMessageText: r.last_text,

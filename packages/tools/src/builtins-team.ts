@@ -19,6 +19,7 @@
  */
 
 import {
+  contactTitles,
   countTeamRequestsFiled,
   createTask,
   listTeamAccess,
@@ -37,6 +38,7 @@ import { str, strOpt, numOpt } from './coerce';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { asSystem } from '@mantle/db/viewer';
 import { TEAM_REQUEST_SOURCE } from '@mantle/db';
+import { areaSystem } from './admin-gate';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   {
@@ -197,15 +199,23 @@ const team_chat_list: BuiltinToolDef = {
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
-    const [members, portal] = await Promise.all([
+    // The threads are system tables (the users area); the contacts they
+    // name are items, read in the scope (a contact it does not read drops
+    // out, as a deleted one does).
+    const [members, threads] = await Promise.all([
       listMemberChatActivity(ctx.ownerId),
-      listTeamMemberActivity(ctx.ownerId),
+      areaSystem('users', () => listTeamMemberActivity(ctx.ownerId, { names: false })),
     ]);
+    const names = await contactTitles(
+      ctx.ownerId,
+      threads.map((p) => p.contactId),
+    );
+    const portal = threads.filter((p) => names.has(p.contactId));
     const portal_archive = portal
       .filter((p) => p.messageCount > 0)
       .map((p) => ({
         contactId: p.contactId,
-        contactName: p.contactName,
+        contactName: names.get(p.contactId) || '(unnamed contact)',
         messageCount: p.messageCount,
         lastMessageAt: p.lastMessageAt,
       }));
@@ -354,11 +364,24 @@ const team_access_list: BuiltinToolDef = {
     if (loginId && !UUID_RE.test(loginId)) {
       return { ok: false, error: 'loginId must be a login id from `team_chat_list`' };
     }
-    const rows = await listTeamAccess(ctx.ownerId, {
-      contactId: strOpt(input.contactId),
-      ...(loginId ? { loginId } : {}),
-      limit: numOpt(input.limit) ?? 100,
-    });
+    // The log is a system table (the users area); the contacts it names are
+    // items, named in the scope.
+    const logged = await areaSystem('users', () =>
+      listTeamAccess(ctx.ownerId, {
+        contactId: strOpt(input.contactId),
+        ...(loginId ? { loginId } : {}),
+        limit: numOpt(input.limit) ?? 100,
+        names: false,
+      }),
+    );
+    const names = await contactTitles(
+      ctx.ownerId,
+      logged.flatMap((r) => (r.contactId ? [r.contactId] : [])),
+    );
+    const rows = logged.map((r) => ({
+      ...r,
+      contactName: r.contactId ? (names.get(r.contactId) ?? null) : null,
+    }));
     ctx.step?.setMeta({ count: rows.length });
     return { ok: true, output: { entries: rows, count: rows.length } };
   },

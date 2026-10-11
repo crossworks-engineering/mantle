@@ -9,6 +9,7 @@ import { sql } from 'drizzle-orm';
 import { nodes, secrets, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { nodeUrl } from '@mantle/content';
+import { areaSystem } from './admin-gate';
 import { type BuiltinToolDef } from './types';
 import { str } from './coerce';
 
@@ -70,30 +71,35 @@ export const secret_create: BuiltinToolDef = {
     const kind = (SECRET_KIND_VALUES as readonly string[]).includes(kindRaw) ? kindRaw : 'other';
 
     // Lazy-create the `secrets` ltree root the same way the UI does. Heads
-    // first (plan U1), here and for the secret below.
-    await withDeadlockRetry(() =>
-      withNodeInsertHeads(
-        ctx.ownerId,
-        [{ type: 'branch', path: SECRETS_ROOT_LABEL }],
-        async (tx) => {
-          await tx
-            .insert(nodes)
-            .values({
-              ownerId: ctx.ownerId,
-              type: 'branch',
-              title: 'Secrets',
-              slug: SECRETS_ROOT_LABEL,
-              path: SECRETS_ROOT_LABEL,
-              data: {
-                description:
-                  'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
-              },
-            })
-            .onConflictDoNothing({
-              target: [nodes.ownerId, nodes.path],
-              where: sql`${nodes.type} = 'branch'`,
-            });
-        },
+    // first (plan U1), here and for the secret below. The root is structure
+    // with no content, made on the system pool after the keys area check
+    // (W7a fix round 2); the secret itself is created in the caller's scope,
+    // with the database's create check.
+    await areaSystem('keys', () =>
+      withDeadlockRetry(() =>
+        withNodeInsertHeads(
+          ctx.ownerId,
+          [{ type: 'branch', path: SECRETS_ROOT_LABEL }],
+          async (tx) => {
+            await tx
+              .insert(nodes)
+              .values({
+                ownerId: ctx.ownerId,
+                type: 'branch',
+                title: 'Secrets',
+                slug: SECRETS_ROOT_LABEL,
+                path: SECRETS_ROOT_LABEL,
+                data: {
+                  description:
+                    'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
+                },
+              })
+              .onConflictDoNothing({
+                target: [nodes.ownerId, nodes.path],
+                where: sql`${nodes.type} = 'branch'`,
+              });
+          },
+        ),
       ),
     );
 
