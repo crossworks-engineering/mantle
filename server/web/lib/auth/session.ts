@@ -124,8 +124,9 @@ export type MemberCaller = {
   loginId: string;
   /** The brain the member belongs to (the anchor's id). */
   anchorId: string;
-  /** The login's personal space (Phase 2): what their own items are keyed
-   *  to. Work on it only inside `withSpace` (lib/member-space.ts). */
+  /** The login's personal space (Phase 2), archived since W6b (0267): its
+   *  items are brain items in the login's private workspace now. Read by the
+   *  accepted-item path only (member-accepted.ts) until W8. */
   spaceId: string;
   email: string;
   displayName: string | null;

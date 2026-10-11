@@ -41,7 +41,8 @@ export const MEMBER_ROUTES: readonly string[] = [
   'DELETE /api/member/push/subscriptions/:id',
   'GET /api/member/push/preferences',
   'PUT /api/member/push/preferences',
-  // The member's own space, "Mine" (Phase 2): every one runs in withSpace.
+  // The member's own space, "Mine" (Phase 2): 410 since W6b (the space is
+  // folded into the brain; lib/gone.ts). Kept so an old app reaches the 410.
   'GET /api/member/space',
   'POST /api/member/space',
   'GET /api/member/space/:id',

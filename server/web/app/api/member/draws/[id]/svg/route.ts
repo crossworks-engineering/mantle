@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { withSpace, withViewer } from '@mantle/db';
+import { withViewer } from '@mantle/db';
 import { acceptedDrawSnapshot, getDrawSvg, memberDrawSvg } from '@mantle/content';
 import { getMemberForAsset } from '@/lib/auth';
 
@@ -9,8 +9,8 @@ const IdParams = z.object({ id: z.string().uuid() });
  * GET /api/member/draws/:id/svg : a drawing's committed SVG snapshot for a
  * MEMBER, as an image (member logins, Phase 1). Never the scene or the draft.
  * Looked up in the places a member may read, each under its own row rules:
- * the Library (the member's workspaces), the member's own space (Phase 2),
- * and last a drawing this member wrote and an admin accepted, whoever reads
+ * the member's workspaces (its private workspace holds its own drawings
+ * since W6b: the personal space is folded into the brain), and last a drawing this member wrote and an admin accepted, whoever reads
  * it now (Phase 4, plan 6.2: the author rule is in the query), as accepted:
  * its snapshot's SVG (audit F07), or the brain's while the drawing is still
  * at the accepted version. Anything else is a 404. No render fallback: a
@@ -28,11 +28,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return new Response('Invalid id', { status: 400 });
   const id = idParsed.data.id;
-  const readable =
-    (await withViewer('team', { login: member.loginId }, () => getDrawSvg(member.anchorId, id))) ??
-    (await withSpace({ spaceId: member.spaceId, loginId: member.loginId }, () =>
-      getDrawSvg(member.spaceId, id),
-    ));
+  const readable = await withViewer('team', { login: member.loginId }, () =>
+    getDrawSvg(member.anchorId, id),
+  );
   // The author's own accepted drawing, as ACCEPTED (audit F07): the SVG of
   // its snapshot, with the image refs it was drawn with.
   const accepted = readable
