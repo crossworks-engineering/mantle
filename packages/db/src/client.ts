@@ -31,6 +31,7 @@ import {
   viewerRolePassword,
   type PoolRole,
   currentRequestMode,
+  noteOwnRuleSystemRead,
   requestScopeMemo,
 } from './viewer';
 
@@ -929,6 +930,9 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
         return Reflect.get(getAdminDb() as object, prop);
       }
       if (prop === 'execute') return requestExecute;
+    }
+    if (prop === 'select' || prop === 'selectDistinct' || prop === 'execute' || prop === 'query') {
+      noteOwnRuleSystemRead(String(prop));
     }
     return Reflect.get(getDb() as object, prop);
   },

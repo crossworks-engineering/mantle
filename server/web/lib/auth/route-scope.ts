@@ -203,3 +203,68 @@ export function memberMayRead(method: string, pattern: string | null): boolean {
   const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
   return MEMBER_OPEN.has(`${m} ${pattern}`);
 }
+
+/**
+ * The owner item routes whose write is checked against the item's
+ * workspaces (W6a): the path segment right after the prefix (the `:id` of
+ * the pattern) names the item. An Admin user's write still runs on the
+ * system pool, but only on an item its scope may edit (plan S1: an item
+ * homed in a workspace it is not in needs it to add itself first).
+ */
+export const ITEM_WRITE_PREFIXES: readonly string[] = [
+  '/api/pages',
+  '/api/notes',
+  '/api/draws',
+  '/api/tables',
+  '/api/apps',
+  '/api/files/files',
+  '/api/files/folders',
+  '/api/tree/:kind/folders',
+  '/api/tree/items',
+  '/api/v1/pages',
+  '/api/v1/tables',
+];
+
+/** Item writes that only need the item to be readable: the login's own
+ *  marks, and running or copying an app (its data has its own rules). */
+const ITEM_READ_WRITES: ReadonlySet<string> = new Set([
+  'POST /api/apps/:id/opened',
+  'POST /api/apps/:id/frame-ticket',
+  'POST /api/apps/:id/db-broker',
+  'POST /api/apps/:id/tool-broker',
+  'POST /api/apps/:id/duplicate',
+  'POST /api/tree/items/:id/opened',
+  'PUT /api/tree/items/:id/pin',
+]);
+
+/** Item writes that manage the item (delete, move): Moderators of its home
+ *  (mantle_may_manage), as the grant rules say (0241). */
+const ITEM_MANAGE_WRITES: ReadonlySet<string> = new Set(['POST /api/pages/:id/move']);
+
+/** What an item write needs of the item: to read it, to edit it
+ *  (mantle_may_edit), or to manage it (mantle_may_manage). */
+export type ItemWriteNeed = 'read' | 'edit' | 'manage';
+
+/** The item a write request touches and what it needs, or null when the
+ *  route names no item (a create, a list, a move by body). */
+export function itemWriteTarget(
+  method: string,
+  pattern: string,
+  path: string,
+): { id: string; need: ItemWriteNeed } | null {
+  const m = method.toUpperCase();
+  for (const prefix of ITEM_WRITE_PREFIXES) {
+    const head = `${prefix}/:id`;
+    if (pattern !== head && !pattern.startsWith(`${head}/`)) continue;
+    const id = path.split('/')[prefix.split('/').length];
+    if (!id) return null;
+    const key = `${m} ${pattern}`;
+    const need: ItemWriteNeed = ITEM_READ_WRITES.has(key)
+      ? 'read'
+      : ITEM_MANAGE_WRITES.has(key) || (m === 'DELETE' && pattern === head)
+        ? 'manage'
+        : 'edit';
+    return { id, need };
+  }
+  return null;
+}

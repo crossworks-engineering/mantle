@@ -28,12 +28,12 @@ import type { RequestOutcome } from '@mantle/db';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
 import { isClientRoute } from '../lib/auth/client-routes';
 import { isMemberRoute } from '../lib/auth/member-routes';
-import { memberMayRead, routeClass } from '../lib/auth/route-scope';
+import { isReadRequest, itemWriteTarget, memberMayRead, routeClass } from '../lib/auth/route-scope';
 import { PUBLIC_PATHS } from '../lib/auth-constants';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-const seen = vi.hoisted(() => ({ last: null as unknown }));
+const seen = vi.hoisted(() => ({ last: null as unknown, reads: [] as readonly string[] }));
 
 // Read what the guard did, inside the request's own slot, once the handler
 // is done.
@@ -47,6 +47,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
           return await fn();
         } finally {
           seen.last = orig.currentRequestOutcome();
+          seen.reads = orig.ownRuleSystemReads();
         }
       }),
   };
@@ -96,8 +97,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     as: string | null,
     method = 'GET',
     body?: unknown,
-  ): Promise<{ status: number; text: string; outcome: RequestOutcome | null }> => {
+  ): Promise<{
+    status: number;
+    text: string;
+    outcome: RequestOutcome | null;
+    reads: readonly string[];
+  }> => {
     seen.last = null;
+    seen.reads = [];
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (as?.startsWith('mtlk_')) headers.authorization = `Bearer ${as}`;
     else if (as) headers.cookie = cookieOf(as);
@@ -109,9 +116,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       }),
       new Promise<null>((r) => setTimeout(() => r(null), 20_000)),
     ]);
-    if (!res) return { status: 0, text: 'timeout', outcome: null };
+    if (!res) return { status: 0, text: 'timeout', outcome: null, reads: [] };
     const text = method === 'HEAD' ? '' : await res.text().catch(() => '');
-    return { status: res.status, text, outcome: seen.last as RequestOutcome | null };
+    return {
+      status: res.status,
+      text,
+      outcome: seen.last as RequestOutcome | null,
+      reads: seen.reads,
+    };
   };
 
   const homeIn = async (id: string, ws: string) => {
@@ -272,6 +284,8 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   it('a member: never the system pool, owner routes refused but the open reads, none answers 500', async () => {
     const failures: string[] = [];
     let opened = 0;
+    let ownRule = 0;
+    const systemReads = new Set<string>();
     for (const e of manifest) {
       if (!e.pattern.startsWith('/api/') || skipped(e.pattern)) continue;
       for (const method of e.methods) {
@@ -293,6 +307,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         if (r.outcome?.kind === 'own-rule' && !isMemberRoute(method, e.pattern)) {
           failures.push(`${key} ran by its own rule outside the member routes`);
         }
+        if (r.outcome?.kind === 'own-rule') {
+          ownRule += 1;
+          for (const read of r.reads) systemReads.add(`${key}: ${read}`);
+        }
         if (isOwnerRoute(method, e.pattern)) {
           if (memberMayRead(method, e.pattern)) {
             opened += 1;
@@ -307,6 +325,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         }
       }
     }
+    console.log(`W6A_OWN_RULE ${ownRule} ${JSON.stringify([...systemReads].sort())}`);
     expect(failures).toEqual([]);
     expect(opened).toBeGreaterThan(20);
   }, 900_000);
@@ -397,6 +416,54 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     }
     expect((await call(`/api/notes/${privNote}`, owner)).status).toBe(404);
   });
+
+  it('an Admin user writes no item homed in a workspace it is not in (S1: add yourself first)', async () => {
+    // Every owner write route that names an item: the private and the Side
+    // item are refused before the handler runs (nothing is written).
+    const failures: string[] = [];
+    let checked = 0;
+    for (const e of manifest) {
+      if (skipped(e.pattern)) continue;
+      for (const method of e.methods) {
+        if (method === 'OPTIONS' || isReadRequest(method, e.pattern)) continue;
+        if (!isOwnerRoute(method, e.pattern)) continue;
+        if (routeClass(e.pattern)?.kind !== 'content') continue;
+        const probe = concrete(e.pattern, false);
+        if (!itemWriteTarget(method, e.pattern, probe)) continue;
+        for (const id of [privNote, sideNote]) {
+          const parts = probe.split('/');
+          parts[e.pattern.split('/').indexOf(':id')] = id;
+          const path = parts.join('/');
+          const r = await call(path, owner, method);
+          checked += 1;
+          if (r.status !== 403 || !r.text.includes('"item-workspace"')) {
+            failures.push(`${method} ${e.pattern} ${r.status} ${r.text.slice(0, 120)}`);
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(checked).toBeGreaterThan(60);
+    // An item of its own workspaces it still writes, and an id no row has
+    // gets the handler's answer.
+    const ok = await call(`/api/notes/${adminNote}`, owner, 'PATCH', {
+      title: `${tag} admin note`,
+    });
+    expect(ok.status, ok.text.slice(0, 200)).toBe(200);
+    const none = await call(`/api/notes/${randomUUID()}`, owner, 'PATCH', { title: 'x' });
+    expect(none.text).not.toContain('item-workspace');
+    // The member that holds the private workspace is not an Admin user:
+    // its owner-route write stays refused as before (member-login).
+    expect((await call(`/api/notes/${privNote}`, mem, 'PATCH', { title: 'x' })).status).toBe(403);
+    // The rollback switch turns the check off with the scoped reads.
+    process.env.MANTLE_ADMIN_READS = 'system';
+    try {
+      const r = await call(`/api/notes/${privNote}`, owner, 'PATCH', {});
+      expect(r.text).not.toContain('item-workspace');
+    } finally {
+      delete process.env.MANTLE_ADMIN_READS;
+    }
+  }, 600_000);
 
   it('drafts: an Admin user reads the draft of an item it may edit, a member none', async () => {
     const a = JSON.parse((await call(`/api/pages/${teamPage}`, owner)).text) as Json;

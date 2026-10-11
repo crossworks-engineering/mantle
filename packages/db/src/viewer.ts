@@ -232,6 +232,9 @@ type RequestSlot = {
    *  lookup runs once per request, not once per call (W6a; the W5b2 member
    *  search cost). */
   memo: Map<string, Promise<WorkspaceScope>>;
+  /** Tests and development only: the reads a member route ('own-rule')
+   *  sent to the system pool, by calling file (the W6a route sweep). */
+  systemReads?: string[];
 };
 
 /** Work a scope's transaction owes the world outside the database, run once
@@ -358,6 +361,23 @@ export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' 
 export function noteRequestOwnRule(loginId: string): void {
   const slot = requestSlots.getStore();
   if (slot && !slot.scope) slot.outcome = { kind: 'own-rule', loginId: loginId.toLowerCase() };
+}
+
+/**
+ * Tests and development only (W6a, the route sweep): note a read a member
+ * route ('own-rule') sends to the system pool, outside any withViewer or
+ * other scope, with the file that sent it. client.ts calls it on every
+ * read handle `db` hands out; anywhere else it is a no-op.
+ */
+export function noteOwnRuleSystemRead(what: string): void {
+  const slot = requestSlots.getStore();
+  if (!slot || slot.outcome?.kind !== 'own-rule' || active() || !strictTurnExits()) return;
+  (slot.systemReads ??= []).push(`${what} ${systemDbCallerOf(new Error().stack ?? '') ?? '?'}`);
+}
+
+/** The reads noteOwnRuleSystemRead noted in the current request. */
+export function ownRuleSystemReads(): readonly string[] {
+  return requestSlots.getStore()?.systemReads ?? [];
 }
 
 /** What the guard did for the current request, or null (no slot, no

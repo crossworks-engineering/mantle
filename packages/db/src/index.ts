@@ -86,6 +86,8 @@ export {
   enterRequestScope,
   noteRequestSystem,
   noteRequestOwnRule,
+  noteOwnRuleSystemRead,
+  ownRuleSystemReads,
   currentRequestOutcome,
   currentRequestMode,
   narrowsWorkspaceScope,

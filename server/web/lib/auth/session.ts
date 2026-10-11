@@ -28,6 +28,7 @@ import {
   hasRequestSlot,
   loginScopeFor,
   brainOnWorkspacesNow,
+  withScope,
   noteRequestSystem,
   noteRequestOwnRule,
   type RequestScopeMode,
@@ -56,7 +57,7 @@ import { isAccessKey, isApiV1Path, lockLoginKeys } from '../access-keys';
 import { keyMayCall, matchApiV1Route } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
-import { isReadRequest, memberMayRead, routeClass } from './route-scope';
+import { isReadRequest, itemWriteTarget, memberMayRead, routeClass } from './route-scope';
 import { isAnyLoginRoute } from './any-login-routes';
 import {
   SESSION_COOKIE_NAME,
@@ -793,6 +794,8 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     return null;
   }
   if (!isReadRequest(method, pattern)) {
+    const refused = await adminItemWriteGate(loginId, method, pattern);
+    if (refused) return refused;
     noteRequestSystem('admin-write');
     return null;
   }
@@ -806,6 +809,57 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
   }
   await enterLoginScope(loginId, requestMode(true));
   return null;
+}
+
+const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * An Admin user's write to one item (W6a, plan S1): allowed only when the
+ * login's scope may edit the item (mantle_may_edit: a Moderator of its
+ * home, or a Write grant to one of its workspaces), manage it for a delete
+ * or a move (mantle_may_manage), or read it for its own marks and app runs.
+ * An item homed in a workspace the user is not in is refused: the user adds
+ * itself to that workspace first. The rule is the database's, asked in the
+ * login's scope; the write itself then runs on the system pool as before.
+ * Off where Admin reads are (the rollback switch, a brain not on
+ * workspaces). An id no row has goes on to the handler (its own 404).
+ */
+async function adminItemWriteGate(
+  loginId: string,
+  method: string,
+  pattern: string,
+): Promise<NextResponse | null> {
+  const path = getRequestContext()?.path;
+  const target = path ? itemWriteTarget(method, pattern, path) : null;
+  if (!target || !ITEM_ID_RE.test(target.id)) return null;
+  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return null;
+  const rows = (await withScope(await loginScopeFor(loginId), () =>
+    db.execute(sql`
+      select "public"."mantle_may_edit"(home_ws, write_ws) as edit,
+             "public"."mantle_may_manage"(home_ws) as manage
+        from nodes where id = ${target.id}`),
+  )) as unknown as { edit: boolean | null; manage: boolean | null }[];
+  const row = rows[0];
+  if (row) {
+    if (target.need === 'read') return null;
+    if (target.need === 'edit' ? row.edit === true : row.manage === true) return null;
+  } else {
+    // Not in the scope: refused when it exists, the handler's 404 when not.
+    const seen = (await db.execute(
+      sql`select 1 from nodes where id = ${target.id}`,
+    )) as unknown as unknown[];
+    if (seen.length === 0) return null;
+  }
+  return NextResponse.json(
+    {
+      error: 'forbidden',
+      reason: 'item-workspace',
+      message: row
+        ? 'You cannot change this item in your workspaces.'
+        : 'This item is in a workspace you are not in. Add yourself to it first.',
+    },
+    { status: 403 },
+  );
 }
 
 /**

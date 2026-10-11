@@ -17,6 +17,7 @@ import {
   isReadRequest,
   memberMayRead,
   routeClass,
+  itemWriteTarget,
 } from './route-scope';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -70,5 +71,45 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
       expect(isReadRequest(method, pattern)).toBe(true);
       expect(routeClass(pattern)).toEqual({ kind: 'content' });
     }
+  });
+});
+
+describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
+  const id = '6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c';
+  it('names the item and what the write needs', () => {
+    expect(itemWriteTarget('PATCH', '/api/pages/:id', `/api/pages/${id}`)).toEqual({
+      id,
+      need: 'edit',
+    });
+    expect(itemWriteTarget('DELETE', '/api/notes/:id', `/api/notes/${id}`)).toEqual({
+      id,
+      need: 'manage',
+    });
+    expect(itemWriteTarget('POST', '/api/pages/:id/move', `/api/pages/${id}/move`)).toEqual({
+      id,
+      need: 'manage',
+    });
+    expect(itemWriteTarget('DELETE', '/api/apps/:id/draft', `/api/apps/${id}/draft`)).toEqual({
+      id,
+      need: 'edit',
+    });
+    expect(itemWriteTarget('POST', '/api/apps/:id/opened', `/api/apps/${id}/opened`)).toEqual({
+      id,
+      need: 'read',
+    });
+    expect(
+      itemWriteTarget('PATCH', '/api/tree/:kind/folders/:id', `/api/tree/pages/folders/${id}`),
+    ).toEqual({ id, need: 'edit' });
+    expect(
+      itemWriteTarget('PATCH', '/api/v1/tables/:id/rows/:rowId', `/api/v1/tables/${id}/rows/r1`),
+    ).toEqual({ id, need: 'edit' });
+  });
+  it('names no item for a create, a list or another prefix', () => {
+    expect(itemWriteTarget('POST', '/api/pages', '/api/pages')).toBeNull();
+    expect(itemWriteTarget('POST', '/api/tree/:kind/move', '/api/tree/pages/move')).toBeNull();
+    expect(
+      itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`),
+    ).toBeNull();
+    expect(itemWriteTarget('PATCH', '/api/contacts/:id', `/api/contacts/${id}`)).toBeNull();
   });
 });
