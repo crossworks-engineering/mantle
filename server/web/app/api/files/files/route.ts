@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { capped } from '@/lib/list-workspaces';
 import { callerMayConfirm, callerMayReadEmail } from '@/lib/api-v1';
 import { getOwnerOr401 } from '@/lib/auth';
 import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
@@ -64,7 +65,7 @@ export async function GET(req: Request) {
     const files = [...brain, ...own]
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
       .slice(0, Math.min(200, Math.max(1, limit ?? 50)));
-    return NextResponse.json({ files });
+    return NextResponse.json({ files: await capped(files) });
   }
   const atRoot = parsed.data.parent === FILES_ROOT_LABEL;
   const [brain, own] = await Promise.all([
@@ -76,7 +77,7 @@ export async function GET(req: Request) {
   const files = [...brain, ...own].sort((a, b) =>
     ('filename' in a ? a.filename : a.title).localeCompare('filename' in b ? b.filename : b.title),
   );
-  return NextResponse.json({ files });
+  return NextResponse.json({ files: await capped(files) });
 }
 
 /**

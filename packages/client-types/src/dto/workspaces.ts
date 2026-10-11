@@ -147,7 +147,15 @@ export type WorkspaceResourcePatchBody = { write: boolean };
 
 /** What /api/shell adds for the signed-in login: its live workspaces (for
  *  the switcher) and its Admin areas ([] when it is not an Admin user). */
-export type ShellWorkspace = { id: string; name: string; isAdmin: boolean; moderator: boolean };
+export type ShellWorkspace = {
+  id: string;
+  name: string;
+  isAdmin: boolean;
+  moderator: boolean;
+  /** The login's own private workspace ("<name> (only you)", W6b): match
+   *  on this, never on the name (W6b fix round 1). Absent on any other. */
+  private?: true;
+};
 export type ShellWorkspaces = { workspaces: ShellWorkspace[]; areas: WorkspaceArea[] };
 
 /** Every `code` a /api/workspaces refusal carries. */

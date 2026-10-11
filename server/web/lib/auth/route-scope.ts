@@ -197,6 +197,10 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   // W6b: a member's own files are brain items now (their bytes and a
   // drawing's SVG through /api/member/files/:id and /api/member/draws/:id/svg).
   'GET /api/files/files',
+  // W6b fix round 1: a file's detail (its text too), so a member opens it
+  // and a /n link finds its folder. Its bytes and thumbnail stay on
+  // /api/member/files/:id (?raw and ?thumb answer 403 member-login here).
+  'GET /api/files/files/:id',
   'GET /api/files/folders',
   'GET /api/files/folders/:id',
   'GET /api/tree/:kind/marks',

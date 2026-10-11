@@ -7,6 +7,7 @@
  * round 1); a member edits its own app's name and look.
  */
 import { NextResponse } from '@/server/http-compat';
+import { cappedOne } from '@/lib/list-workspaces';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { adminLoginActive, getOwnerOr401 } from '@/lib/auth';
@@ -26,7 +27,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const app = await getApp(user.id, id);
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
-  return NextResponse.json({ app });
+  return NextResponse.json({ app: await cappedOne(app) });
 }
 
 const PatchBody = z.object({
@@ -68,9 +69,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // edits its own app's name and look here (MEMBER_OPEN_WRITES), never its
   // author ceiling, its MCP access or the informational flag.
   if (
-    (trustTools !== undefined ||
-      rest.mcpAccess !== undefined ||
-      rest.dataReadOnly !== undefined) &&
+    (trustTools !== undefined || rest.mcpAccess !== undefined || rest.dataReadOnly !== undefined) &&
     !(await adminLoginActive(user.actor.id))
   ) {
     return NextResponse.json(

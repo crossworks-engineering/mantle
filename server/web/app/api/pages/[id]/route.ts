@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { cappedOne } from '@/lib/list-workspaces';
 import { getOwnerOr401 } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import { deletePage, getPage, updatePage } from '@/lib/pages';
@@ -30,7 +31,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
   const row = await getPage(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ page: row });
+  return NextResponse.json({ page: await cappedOne(row) });
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

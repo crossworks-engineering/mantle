@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { cappedOne } from '@/lib/list-workspaces';
 import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
 import {
   deleteFileById,
@@ -39,8 +40,29 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // getOwnerForAsset (not getOwnerOr401): the `?raw=1` bytes are loaded as an
   // <img>/<iframe>/download src that can't carry a bearer, so a detached client
   // authenticates via the `?at=` asset token. Session (cookie/bearer) still wins.
-  const user = await getOwnerForAsset(_req);
-  if (user instanceof Response) return user;
+  let user = await getOwnerForAsset(_req);
+  // A member or a client (W6b fix round 1): the file's detail in its own
+  // scope (MEMBER_OPEN_READS), never the bytes here (they stay on
+  // /api/member/files/:id, an asset route of its own).
+  let viaLogin = false;
+  if (user instanceof Response) {
+    if (user.status !== 401) return user;
+    const login = await getOwnerOr401();
+    if (login instanceof Response) return login;
+    user = login;
+    viaLogin = true;
+  }
+  const url0 = new URL(_req.url);
+  if (viaLogin && (url0.searchParams.has('raw') || url0.searchParams.has('thumb'))) {
+    return NextResponse.json(
+      {
+        error: 'forbidden',
+        reason: 'member-login',
+        message: 'Open the bytes through /api/member/files/:id.',
+      },
+      { status: 403 },
+    );
+  }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
@@ -106,11 +128,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (file.isText) {
     const res = await readFileById({ ownerId: user.id, fileId: file.id });
     return NextResponse.json({
-      file,
+      file: await cappedOne(file),
       content: res ? res.bytes.toString('utf8') : '',
     });
   }
-  return NextResponse.json({ file });
+  return NextResponse.json({ file: await cappedOne(file) });
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

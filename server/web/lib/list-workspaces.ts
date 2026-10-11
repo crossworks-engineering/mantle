@@ -11,13 +11,78 @@
  * everywhere. A workspace the caller may not name is 404, never 403.
  */
 import { db, sql } from '@mantle/db';
-import type { ListChips, ListWorkspace } from '@mantle/client-types';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
+import type { ItemCaps, ListChips, ListWorkspace } from '@mantle/client-types';
 import { NextResponse } from '@/server/http-compat';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** No workspace and no link: a row the lookup did not find (a private row). */
-const NONE: ListChips = { workspaces: [], hasLink: false };
+const NONE: ListChips = { workspaces: [], hasLink: false, mayEdit: false, mayManage: false };
+
+/**
+ * The caps columns of `n` (W6b fix round 1, ItemCaps): in a workspace scope
+ * the database's own rule (mantle_may_edit, mantle_may_manage); on the
+ * system pool (the brain's owner, an Admin user under the rollback switch,
+ * a brain not on workspaces) everything. Never edit for a read-only copy.
+ */
+function capsColumns() {
+  const scoped = currentWorkspaceScope() !== null;
+  const edit = scoped
+    ? sql`coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false)`
+    : sql`true`;
+  const manage = scoped ? sql`coalesce("public"."mantle_may_manage"(n.home_ws), false)` : sql`true`;
+  return sql`(${edit} and not coalesce(n.data ? 'snapshot_of', false)) as may_edit,
+             ${manage} as may_manage,
+             nullif(n.data->>'snapshot_of', '') as snapshot_of,
+             coalesce((n.data->>'trashedBeforeFold')::boolean, false) as trashed_before_fold`;
+}
+
+type CapsRow = {
+  may_edit: boolean;
+  may_manage: boolean;
+  snapshot_of: string | null;
+  trashed_before_fold: boolean;
+};
+
+function capsOf(r: CapsRow): ItemCaps {
+  return {
+    mayEdit: r.may_edit === true,
+    mayManage: r.may_manage === true,
+    ...(r.snapshot_of ? { readOnly: true as const, snapshotOf: r.snapshot_of } : {}),
+    ...(r.trashed_before_fold === true ? { trashedBeforeFold: true as const } : {}),
+  };
+}
+
+/** The caps of `nodeIds` for the caller, in one query (ids no row the
+ *  caller reads has are left out). */
+export async function itemCaps(nodeIds: readonly string[]): Promise<Map<string, ItemCaps>> {
+  const ids = [...new Set(nodeIds.filter((id) => UUID_RE.test(id)))];
+  const out = new Map<string, ItemCaps>();
+  if (!ids.length) return out;
+  const rows = (await db.execute(sql`
+    select n.id::text as id, ${capsColumns()}
+      from nodes n where n.id = any(${`{${ids.join(',')}}`}::uuid[])`)) as unknown as Array<
+    CapsRow & { id: string }
+  >;
+  for (const r of rows) out.set(r.id, capsOf(r));
+  return out;
+}
+
+const NO_CAPS: ItemCaps = { mayEdit: false, mayManage: false };
+
+/** `rows` with their caps, read for the caller in one query. */
+export async function capped<T extends { id: string }>(
+  rows: readonly T[],
+): Promise<Array<T & ItemCaps>> {
+  const caps = await itemCaps(rows.map((r) => r.id));
+  return rows.map((r) => ({ ...r, ...(caps.get(r.id) ?? NO_CAPS) }));
+}
+
+/** One item response with its caps. */
+export async function cappedOne<T extends { id: string }>(row: T): Promise<T & ItemCaps> {
+  return (await capped([row]))[0]!;
+}
 
 /** The caller's live workspaces (and whether one is Admin), as SQL. */
 function mine(ownerId: string, loginId: string) {
@@ -52,14 +117,19 @@ export async function workspaceChips(
              select 1 from shares s
               where s.node_id = n.id and s.revoked_at is null and s.contact_id is null
                 and (s.expires_at is null or s.expires_at > now())
-                and coalesce(s.settings->>'mode', 'public') <> 'team') as has_link
+                and coalesce(s.settings->>'mode', 'public') <> 'team') as has_link,
+           ${capsColumns()}
       from nodes n
-     where n.id = any(${`{${ids.join(',')}}`}::uuid[])`)) as unknown as Array<{
-    id: string;
-    workspaces: ListWorkspace[];
-    has_link: boolean;
-  }>;
-  for (const r of rows) out.set(r.id, { workspaces: r.workspaces, hasLink: r.has_link === true });
+     where n.id = any(${`{${ids.join(',')}}`}::uuid[])`)) as unknown as Array<
+    CapsRow & {
+      id: string;
+      workspaces: ListWorkspace[];
+      has_link: boolean;
+    }
+  >;
+  for (const r of rows) {
+    out.set(r.id, { workspaces: r.workspaces, hasLink: r.has_link === true, ...capsOf(r) });
+  }
   return out;
 }
 

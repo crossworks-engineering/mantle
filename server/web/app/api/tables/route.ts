@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { capped } from '@/lib/list-workspaces';
 import { getOwnerOr401 } from '@/lib/auth';
 import { callerMayReadEmail } from '@/lib/api-v1';
 import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
@@ -62,7 +63,7 @@ export async function GET(req: Request) {
     listTableTags(user.id),
   ]);
   return NextResponse.json({
-    tables: listed.items,
+    tables: await capped(listed.items),
     total: listed.total,
     page,
     pageSize: PAGE_SIZE,

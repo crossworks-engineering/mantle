@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { cappedOne } from '@/lib/list-workspaces';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteDraw, getDraw, updateDraw } from '@/lib/draws';
 import { firstIssue } from '@/lib/zod-issue';
@@ -20,7 +21,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const row = await getDraw(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ draw: row });
+  return NextResponse.json({ draw: await cappedOne(row) });
 }
 
 /** Metadata only (title/tags/visibility — live saves, never indexed).

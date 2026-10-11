@@ -314,9 +314,17 @@ export async function listWorkspaces(caller: WsCaller): Promise<{ workspaces: Wo
 export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces> {
   const [areas, list] = await Promise.all([
     areasFor(caller),
-    rows<{ id: string; name: string; is_admin: boolean; moderator: boolean }>(
+    rows<{
+      id: string;
+      name: string;
+      is_admin: boolean;
+      moderator: boolean;
+      private: boolean;
+    }>(
       db,
-      sql`select w.id, w.name, w.is_admin, u.moderator
+      sql`select w.id, w.name, w.is_admin, u.moderator,
+                 exists (select 1 from private_workspaces p
+                          where p.workspace_id = w.id and p.login_id = ${caller.loginId}) as private
             from workspaces w
             join workspace_users u on u.workspace_id = w.id and u.login_id = ${caller.loginId}
            where w.owner_id = ${caller.anchorId} and w.archived_at is null
@@ -329,6 +337,7 @@ export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces
       name: w.name,
       isAdmin: w.is_admin,
       moderator: w.moderator,
+      ...(w.private ? { private: true as const } : {}),
     })),
     areas,
   };

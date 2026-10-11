@@ -226,6 +226,7 @@ export type {
   GrantsResponse,
   GrantsWriteResponse,
   ListChips,
+  ItemCaps,
   ListWorkspace,
   ListWsEcho,
 } from './dto/grants';

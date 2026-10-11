@@ -192,9 +192,33 @@ export type GrantError = { error: string; code: GrantErrorCode };
 /** A workspace chip on a list row. */
 export type ListWorkspace = { id: string; name: string };
 
+/**
+ * What the caller may do with an item, and what the item is (W6b fix round
+ * 1): on every list row and item response of pages, notes, drawings,
+ * tables, files and apps, on the tree's items and folders, and on GET
+ * /api/nodes/:id. Set by the server on each of those; optional in the type
+ * only so older shapes still parse.
+ */
+export type ItemCaps = {
+  /** The caller may change it (a Moderator of its home, or a grant with
+   *  Write on, in the caller's own workspaces); never for a read-only copy. */
+  mayEdit?: boolean;
+  /** The caller may delete or move it (a Moderator of its home). */
+  mayManage?: boolean;
+  /** A read-only snapshot copy of an accepted item (data.snapshot_of):
+   *  nobody edits it, moves it out of its private workspace or shares it;
+   *  its author may delete it. Absent on every other item. */
+  readOnly?: true;
+  /** The brain item a read-only copy copies (the accepted item). */
+  snapshotOf?: string;
+  /** A member app that was in its author's trash when the spaces were
+   *  folded (W6b): show it as "was in your trash" with Delete. */
+  trashedBeforeFold?: true;
+};
+
 /** What every row of GET /api/pages and /api/notes, and every item and
  *  folder of GET /api/tree/:kind (its search and marks too), carries. */
-export type ListChips = {
+export type ListChips = ItemCaps & {
   /** The workspaces that read the item (its read_ws) and that the caller is
    *  a user of; all of them for an Admin user. Live workspaces only, by
    *  name. */

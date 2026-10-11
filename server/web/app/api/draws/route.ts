@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { capped } from '@/lib/list-workspaces';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
@@ -63,7 +64,7 @@ export async function GET(req: Request) {
     listDrawTags(user.id),
   ]);
   return NextResponse.json({
-    draws: listed.items,
+    draws: await capped(listed.items),
     total: listed.total,
     page,
     pageSize: PAGE_SIZE,
