@@ -87,15 +87,7 @@ export type AcceptedRow = {
   type: MemberItemKind;
   title: string;
   icon: string | null;
-  /** Where the item stands for its author, from its grants (workspaces
-   *  W5b2; the frozen level columns are not read): 'team' for a member,
-   *  'client' for a client, when a live workspace the author is a user of
-   *  reads it (it is in their Library too, by its own grant or its
-   *  folder's); else 'admin' (the author reads only the accepted version,
-   *  here). */
-  audience: ViewerLevel;
-  /** Always null since W5b2 (a folder's grant is in `audience`); kept for
-   *  the row's shape. */
+  /** Always null since W5b2; kept for the row's shape. */
   inherited?: 'team' | 'client' | null;
   acceptedAt: string | null;
   updatedAt: string;
@@ -166,7 +158,6 @@ function rowOf({
     type: node.type as MemberItemKind,
     title: snapTitle ?? node.title,
     icon: typeof icon === 'string' && icon.trim() ? icon : null,
-    audience: inLibrary ? (client ? 'client' : 'team') : 'admin',
     inherited: null,
     acceptedAt: acceptedAt?.toISOString() ?? null,
     updatedAt: (snapAt ?? node.updatedAt).toISOString(),
@@ -497,7 +488,6 @@ export async function acceptedItemForCopy(
     type: node.type as MemberItemKind,
     title: snap.title,
     icon: snap.icon ?? null,
-    audience: 'admin',
     inherited: null,
     acceptedAt: at,
     updatedAt: at,

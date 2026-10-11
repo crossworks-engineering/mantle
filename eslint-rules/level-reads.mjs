@@ -26,17 +26,6 @@ export const LEVEL_READ_PATTERN =
 
 /** @type {Record<string, { lines: number, phase: 'W5b2' | 'W5c' | 'W6b' | 'W7' | 'W8' | 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
-  // ── W6b (personal-space rows, accepted-item author path) ──
-  'packages/content/src/member-accepted.ts': {
-    lines: 3,
-    phase: 'W6b',
-    why: 'accepted items: author read path must stay until the S3 snapshot task (HANDOVER 4)',
-  },
-  'packages/content/src/tree/member-tree-write.ts': {
-    lines: 1,
-    phase: 'W6b',
-    why: 'personal folder insert names the level default',
-  },
   // ── W7 (MCP, peers, Telegram, agent and tool-group levels) ──
   'packages/tools/src/client-sourced-rules.ts': {
     lines: 4,

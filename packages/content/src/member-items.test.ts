@@ -142,7 +142,6 @@ describe('clientItemsPlan (My requests, client logins C5)', () => {
       type: 'note',
       title: 'A',
       icon: null,
-      audience: 'admin',
       inherited: 'client',
       acceptedAt: at(1),
       updatedAt: at(2),

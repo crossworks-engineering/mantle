@@ -125,9 +125,9 @@ export async function createMemberFolder(
     scope.spaceId,
     async (q) =>
       (await q.execute(sql`
-        insert into nodes (owner_id, type, title, slug, path, audience, data, tags)
+        insert into nodes (owner_id, type, title, slug, path, data, tags)
         values (${scope.spaceId}, 'branch', ${title}, ${slug}, ${storedPathOf(kind, path)}::ltree,
-                'admin', ${JSON.stringify(look)}::jsonb, '{}')
+                ${JSON.stringify(look)}::jsonb, '{}')
         on conflict do nothing
         returning id`)) as unknown as { id: string }[],
   );
