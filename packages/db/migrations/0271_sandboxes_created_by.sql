@@ -1,5 +1,8 @@
 -- Workspaces W7a fix round 2: the login that made a sandbox.
 --
+-- Numbered 0271: 0268 (W7b), 0269 (W7c) and 0270 (W7d) are taken by the
+-- W7 parts built alongside. It lands after them (journal when).
+--
 -- Any Admin user whose settings area is on may use the sandbox tools, and a
 -- sandbox may mount a Files folder read-only (sandbox_create's inbox). So a
 -- second Admin login could run commands in, or read files out of, a sandbox
