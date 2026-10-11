@@ -51,7 +51,7 @@ Review is gone: members no longer submit items for you to approve, and there is 
 - **Shared links**: every open link to your items, newest first.
 - **Settings**: member chat, the read posture and the member home app.
 
-Clients and **What clients see** are in **Settings > Logins**. See [Member and client logins](../05-admin/07-logins.md).
+Client logins are in **Settings > Logins**. See [Member and client logins](../05-admin/07-logins.md).
 
 ## Next
 

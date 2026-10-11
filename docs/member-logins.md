@@ -207,7 +207,7 @@
 
 | Route                           | What                                                                 |
 | ------------------------------- | -------------------------------------------------------------------- |
-| `GET /api/member/shell`         | Who is signed in, the brain's brand, a member asset token            |
+| `GET /api/shell`                | The one shell (W5c): who is signed in, the brand, an asset token     |
 | `GET /api/member/library`       | Team-level pages, notes, drawings, tables, files (see below)         |
 | `GET /api/member/library/:id`   | One item with its published body                                     |
 | `GET /api/member/files/:id`     | File bytes, streamed, rate limited per login; `?thumb=1`, `?at=` too |

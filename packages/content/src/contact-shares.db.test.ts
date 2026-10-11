@@ -41,7 +41,6 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
   let cs: typeof import('./contact-shares');
   let sh: typeof import('./shares');
   let memberApps: typeof import('./member-apps');
-  let clientApps: typeof import('./client-apps');
   let log: typeof import('./share-access-log');
 
   const owner = randomUUID();
@@ -100,7 +99,6 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
     cs = await import('./contact-shares');
     sh = await import('./shares');
     memberApps = await import('./member-apps');
-    clientApps = await import('./client-apps');
     log = await import('./share-access-log');
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
@@ -375,11 +373,10 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
       expect(await sh.setShareServed(owner, s!.shareId, [item])).toBeNull();
     });
 
-    it('a contact-shared admin app is in no member or client launcher', async () => {
+    it('a contact-shared admin app is in no member launcher', async () => {
       await cs.createContactShares(owner, app, [contactA], true);
       expect(await levelOf(app)).toBe('admin');
       expect((await memberApps.listMemberApps(owner)).map((a) => a.id)).not.toContain(app);
-      expect((await clientApps.listClientApps(owner)).map((a) => a.id)).not.toContain(app);
       expect(await memberApps.getMemberRunnableApp(owner, app)).toBeNull();
     });
   });

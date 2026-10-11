@@ -21,8 +21,6 @@ import {
   configureDBOS,
   MEMBER_TURN_QUEUE,
   memberTurnConcurrency,
-  CLIENT_TURN_QUEUE,
-  clientTurnQueueParams,
   RUNNER_QUEUE,
   runnerConcurrency,
   runsTurnConcurrency,
@@ -59,7 +57,9 @@ registerRecallEmbedder(embedBatch);
 registerLogSink(DBOS.logger);
 import './workflows/assistant-turn';
 import './workflows/team-turn';
-import './workflows/client-turn';
+// The retired client turn (workspaces W5c): a no-op under the old name, so a
+// client turn still queued or in flight on this box ends cleanly.
+import './workflows/client-turn-retired';
 // The retired forum turn: a no-op under the old name, so a forum turn still
 // queued or in flight on this box ends cleanly (see the module header).
 import './workflows/forum-turn-retired';
@@ -142,14 +142,14 @@ async function main(): Promise<void> {
   // Member chat turns get their own queue too (audit F31): a few busy members
   // must not queue ahead of the owner's turns. Low concurrency by default.
   await DBOS.registerQueue(MEMBER_TURN_QUEUE, { concurrency: memberTurnConcurrency() });
-  // Client chat turns (client logins C4): their own queue, partitioned by
-  // client login with one turn in flight each (per-login fairness).
-  await DBOS.registerQueue(CLIENT_TURN_QUEUE, clientTurnQueueParams());
+  // The client chat's queue ('mantle.client') is no longer registered
+  // (workspaces W5c). Its row persists in the DBOS system database on a box
+  // that had it, so any turn left on it still dispatches, into the retired
+  // stub.
   DBOS.logger.info(
     `[api] runner service online — queue='${RUNNER_QUEUE}' concurrency=${runnerConcurrency()}; ` +
       `runs-turn queue='${RUNS_TURN_QUEUE}' concurrency=${runsTurnConcurrency()}; ` +
-      `member-turn queue='${MEMBER_TURN_QUEUE}' concurrency=${memberTurnConcurrency()}; ` +
-      `client-turn queue='${CLIENT_TURN_QUEUE}' concurrency=${clientTurnQueueParams().globalConcurrency} (1 per login)`,
+      `member-turn queue='${MEMBER_TURN_QUEUE}' concurrency=${memberTurnConcurrency()}`,
   );
 
   // Absorbed agent runtime: wires up the Telegram responder + background ticks

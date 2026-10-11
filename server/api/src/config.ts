@@ -18,14 +18,13 @@ import {
   resolveSystemDatabaseUrl,
   RUNNER_QUEUE,
   MEMBER_TURN_QUEUE,
-  CLIENT_TURN_QUEUE,
 } from '@mantle/runtime/assistant';
 import { env } from '@mantle/config';
 
 // The system-DB resolver + queue name are the shared cross-process contract
 // (the web enqueuer uses the same), so they live in @mantle/runtime/assistant.
 // Re-exported here so the rest of server/api keeps importing them from './config'.
-export { resolveSystemDatabaseUrl, RUNNER_QUEUE, MEMBER_TURN_QUEUE, CLIENT_TURN_QUEUE };
+export { resolveSystemDatabaseUrl, RUNNER_QUEUE, MEMBER_TURN_QUEUE };
 
 /** Apply DBOS config. Call once, before DBOS.launch(). */
 export function configureDBOS(): void {
@@ -83,20 +82,4 @@ export function runsTurnConcurrency(): number {
 export function memberTurnConcurrency(): number {
   const raw = Number(env('MANTLE_MEMBER_TURN_CONCURRENCY'));
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
-}
-
-/** Concurrency cap for CLIENT_TURN_QUEUE (client logins C4): in-flight client
- *  chat turns across every client login, off the owner's and the members'
- *  queues. The queue is partitioned by login with one turn in flight each, so
- *  this is how many different clients are served at once. Override with
- *  MANTLE_CLIENT_TURN_CONCURRENCY. */
-export function clientTurnConcurrency(): number {
-  const raw = Number(env('MANTLE_CLIENT_TURN_CONCURRENCY'));
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
-}
-
-/** The client queue's parameters: the global cap, and ONE turn in flight per
- *  partition (the client login, the enqueue's queuePartitionKey). */
-export function clientTurnQueueParams(): { globalConcurrency: number; partitionConcurrency: 1 } {
-  return { globalConcurrency: clientTurnConcurrency(), partitionConcurrency: 1 };
 }

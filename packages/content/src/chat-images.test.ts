@@ -1,10 +1,10 @@
 /**
- * Pictures in a member's or a client's chat thread (client logins C6), the
+ * Pictures in a member's chat thread (client logins C6), the
  * pure half: which items the images name, and the text as its reader gets
  * it. An image of a readable file or drawing points at the reader's own
- * route; every other image (above the level, not an item, external, data:,
- * a form the pass does not know) is left out or cannot draw. The lookup at
- * the reader's level is proven on Postgres in chat-images.viewer.db.test.ts.
+ * route; every other image (not readable, not an item, external, data:, a
+ * form the pass does not know) is left out or cannot draw. The lookup in the
+ * reader's scope is proven on Postgres in chat-images.viewer.db.test.ts.
  */
 import { describe, expect, it } from 'vitest';
 import { chatImageIds, chatImageSrc, rewriteChatImages, type ChatImageKind } from './chat-images';
@@ -18,8 +18,7 @@ const readable = new Map<string, ChatImageKind>([
   [FILE, 'file'],
   [DRAW, 'draw'],
 ]);
-const rw = (text: string, reader: 'team' | 'client' = 'client') =>
-  rewriteChatImages(text, readable, reader, own);
+const rw = (text: string) => rewriteChatImages(text, readable, 'team', own);
 
 describe('chatImageIds', () => {
   it('reads the schemes, the owner routes, the reader routes and brain URLs', () => {
@@ -44,23 +43,18 @@ describe('chatImageIds', () => {
 });
 
 describe('rewriteChatImages', () => {
-  it('points a readable file or drawing at the client’s own routes', () => {
+  it('points a readable file or drawing at the member’s own routes', () => {
     expect(rw(`look ![the plan](media:${FILE}) here`)).toBe(
-      `look ![the plan](/api/client/files/${FILE}) here`,
+      `look ![the plan](/api/member/files/${FILE}) here`,
     );
-    expect(rw(`![x](/api/files/files/${FILE}?raw=1)`)).toBe(`![x](/api/client/files/${FILE})`);
+    expect(rw(`![x](/api/files/files/${FILE}?raw=1)`)).toBe(`![x](/api/member/files/${FILE})`);
     expect(rw(`![x](https://brain.example.invalid/api/files/files/${FILE}?raw=1)`)).toBe(
-      `![x](/api/client/files/${FILE})`,
+      `![x](/api/member/files/${FILE})`,
     );
-    expect(rw(`![x](draw:${DRAW})`)).toBe(`![x](/api/client/draws/${DRAW}/svg)`);
+    expect(rw(`![x](draw:${DRAW})`)).toBe(`![x](/api/member/draws/${DRAW}/svg)`);
     expect(rw(`![x](/api/draws/${DRAW}/svg?raw=1 "title")`)).toBe(
-      `![x](/api/client/draws/${DRAW}/svg)`,
+      `![x](/api/member/draws/${DRAW}/svg)`,
     );
-  });
-
-  it('points them at the member’s routes for a member', () => {
-    expect(rw(`![x](media:${FILE})`, 'team')).toBe(`![x](/api/member/files/${FILE})`);
-    expect(rw(`![x](draw:${DRAW})`, 'team')).toBe(`![x](/api/member/draws/${DRAW}/svg)`);
     expect(chatImageSrc('team', 'file', FILE)).toBe(`/api/member/files/${FILE}`);
   });
 
@@ -103,7 +97,7 @@ describe('rewriteChatImages', () => {
 
   it('a reference-style image of a readable file becomes the reader’s route', () => {
     const out = rw(`see ![pic][p]\n\n[p]: /api/files/files/${FILE}?raw=1`);
-    expect(out).toContain(`![pic](/api/client/files/${FILE})`);
+    expect(out).toContain(`![pic](/api/member/files/${FILE})`);
   });
 
   it('leaves text without images, and links, as they are', () => {

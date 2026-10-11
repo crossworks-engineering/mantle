@@ -35,7 +35,8 @@ import { env } from '@mantle/config';
  * stage 6 (migration 0176 revoked them). An old team link answers a plain
  * "sign in as a member" page instead of the not-found, pointing at /login.
  * Old client links were retired in client logins C3 (migration 0192): one
- * answers "sign in as a client", pointing at /client-signin.
+ * answers a plain 410 "this link has ended" (the client sign-in pages went in
+ * workspaces W5c, so it points nowhere).
  *
  * A CONTACT share (migration 0214) runs behind the contact gate: without a
  * cookie that admits the share's contact, the page is the code prompt (401,
@@ -62,21 +63,18 @@ function retiredTeamLinkPage(): string {
   );
 }
 
-/** The page an old client link shows (410, client logins C3): clients sign
- *  in now, and the item, if it is still at client, is in "Shared with you".
- *  No item title: the token says nothing about what it named. */
+/** The page an old client link shows (410, client logins C3; workspaces W5c
+ *  removed the client sign-in pages, so it links nowhere). No item title:
+ *  the token says nothing about what it named. */
 function retiredClientLinkPage(): string {
-  const heading = 'Sign in as a client';
-  const body =
-    'This link no longer opens the item. Clients of this brain sign in and find ' +
-    'what is shared with them there. No sign-in yet? Ask the brain admin.';
+  const heading = 'This link has ended';
+  const body = 'Ask the person who sent it for a new one.';
   return htmlPage(
     { title: heading, noindex: true },
     `<div class="flex h-dvh items-center justify-center bg-background p-6 text-foreground">
 <div class="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-card-foreground shadow-sm">
-<h1 class="text-base font-semibold">${escapeHtml(heading)}</h1>
+<h1 class="text-base font-semibold">${escapeHtml(heading)}.</h1>
 <p class="mt-2 text-sm text-muted-foreground">${escapeHtml(body)}</p>
-<p class="mt-4"><a href="/client-signin" class="text-sm font-medium text-primary underline underline-offset-4">Sign in</a></p>
 </div>
 </div>`,
   );
@@ -115,8 +113,9 @@ async function renderShare(c: Context): Promise<Response> {
   const p = url.searchParams.get('p') ?? '';
 
   // Invalid / revoked / expired all 404 — never reveal that a token existed.
-  // The exceptions are retired team and client links: their visitors were
-  // members or clients, and are told where to go now (no item title).
+  // The exceptions are retired team and client links: a team link's visitor
+  // is told where to go now, a client link's that it has ended (no item
+  // title either way).
   const gate = await gateShareCookie(c.req.raw.headers.get('cookie'), token);
   if (gate.kind === 'missing') {
     if (await isRetiredTeamLinkToken(token)) return c.html(retiredTeamLinkPage(), 410);

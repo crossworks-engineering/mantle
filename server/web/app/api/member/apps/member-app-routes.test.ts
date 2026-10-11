@@ -177,12 +177,12 @@ vi.mock('@mantle/tools', async (importOriginal) => {
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     // The level rule (appToolLevel, appToolScope) is the real one; the
-    // verdict records the level it was asked at. At client level (and at
-    // none) the REAL rules answer: they refuse before any lookup.
+    // verdict records the level it was asked at. At none the REAL rules
+    // answer: they refuse before any lookup.
     appToolVerdict: vi.fn(
       async (level: string, owner: string, declared: string[], slug: string) => {
         h.levels.push(level);
-        if (level === 'client' || level === 'none') {
+        if (level === 'none') {
           const real = await importOriginal<typeof import('@mantle/tools')>();
           return real.appToolVerdict(level, owner, declared, slug);
         }

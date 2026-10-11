@@ -68,3 +68,8 @@ export function appDbErrorResponse(err: unknown, where: string, log?: AppDbError
   console.error(`[${where}] app database error:`, err);
   return answer("The app's database is not available right now. Try again later.", 500);
 }
+
+/** The 403 a write to an informational (read-only) app answers. */
+export function readOnlyAppResponse(message: string): NextResponse {
+  return NextResponse.json({ ok: false, error: message, reason: 'read-only' }, { status: 403 });
+}

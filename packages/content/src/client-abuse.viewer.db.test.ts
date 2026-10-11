@@ -43,7 +43,7 @@ describe.skipIf(!URL)('client abuse limits: text and races', () => {
   let sp: typeof import('./member-space');
   let sf: typeof import('./member-space-files');
   let ql: typeof import('./client-quota-log');
-  let au: typeof import('./client-admin-usage');
+  let au: typeof import('./client-comments');
   let fp: typeof import('@mantle/files');
   let sqlTag: typeof import('drizzle-orm').sql;
   const tag = `cabuse-${randomUUID().slice(0, 8)}`;
@@ -161,7 +161,7 @@ describe.skipIf(!URL)('client abuse limits: text and races', () => {
     sp = await import('./member-space');
     sf = await import('./member-space-files');
     ql = await import('./client-quota-log');
-    au = await import('./client-admin-usage');
+    au = await import('./client-comments');
     fp = await import('@mantle/files');
     sqlTag = (await import('drizzle-orm')).sql;
     const { ensureTestAnchor } = await import('@mantle/db/test-support');
@@ -335,8 +335,6 @@ describe.skipIf(!URL)('client abuse limits: text and races', () => {
       select space_id, bytes::text from mantle_client_space_usage()
        where space_id in (${F}, ${FM})`);
     expect(rows.map((r) => [r.space_id, Number(r.bytes)])).toEqual([[F, held]]);
-    const admin = (await au.clientStorageRows()).find((r) => r.loginId === F);
-    expect(admin).toMatchObject({ former: true, usedBytes: held, items: expect.any(Number) });
     expect(fPage).toBeTruthy();
   });
 

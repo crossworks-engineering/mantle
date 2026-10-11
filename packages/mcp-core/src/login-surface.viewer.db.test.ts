@@ -8,7 +8,7 @@
  *    an admin-level tool the list never offered;
  *  - write off: no tool that is not read-only is listed, and calling one
  *    fails as an unknown tool;
- *  - a client gets the client list only, whatever its groups hold;
+ *  - a client gets no tool at all (W5c), whatever its groups hold;
  *  - write on: a member's draft lands in their own space, and a library
  *    write is neither offered nor done.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/mcp-core/src/login-surface.viewer.db.test.ts
@@ -242,15 +242,10 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     expect(JSON.parse(text(res))).toEqual({ apps: [] });
   });
 
-  it('a client gets the client list only, whatever its groups hold', async () => {
-    const c = await connect(asClient());
-    expect(await names(c)).toEqual([
-      'app_data_list',
-      'app_data_query',
-      'app_data_schema',
-      'client_shared_list',
-      'my_items_list',
-    ]);
+  it('a client gets no tool at all, whatever its groups hold (W5c)', async () => {
+    const prepared = await ls.prepareCallerTools(asClient());
+    // The route answers 403 for a login with no tools.
+    expect(prepared.kind === 'login' && prepared.rows).toEqual([]);
   });
 
   it('write on: no draft or submit tool (removed in W5c), even where a group still names one; a library write is refused', async () => {
@@ -392,7 +387,8 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
 
   it('a client never gets the my_app tools, write on or off', async () => {
     for (const write of [false, true]) {
-      const list = await names(await connect(asClient(write)));
+      const prepared = await ls.prepareCallerTools(asClient(write));
+      const list = prepared.kind === 'login' ? prepared.rows.map((r) => r.slug) : [];
       expect(list.filter((s) => s.startsWith('my_app_'))).toEqual([]);
     }
   });
@@ -410,12 +406,9 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     }
   });
 
-  it('a client with write on gets no draft tool (removed in W5c), and still no library tool', async () => {
-    const c = await connect(asClient(true));
-    const list = await names(c);
-    for (const s of REMOVED_W5C) expect(list, s).not.toContain(s);
-    expect(list).not.toContain('note_list');
-    expect(list).not.toContain('note_create');
+  it('a client with write on gets no tool either (W5c)', async () => {
+    const prepared = await ls.prepareCallerTools(asClient(true));
+    expect(prepared.kind === 'login' && prepared.rows).toEqual([]);
   });
 
   // Team apps Phase 2; W5b2: the workspaces that hold a connector decide
@@ -456,6 +449,11 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
         values (${wsId}, 'connector', 'mcp-src', ${write})`);
     const connectorNames = async (caller: McpCaller) =>
       (await names(await connect(caller))).filter((n) => n.startsWith('mcp_src_'));
+    // A client gets no tool at all since W5c, connectors included.
+    const clientRows = async () => {
+      const prepared = await ls.prepareCallerTools(asClient(true));
+      return prepared.kind === 'login' ? prepared.rows : null;
+    };
     try {
       // No workspace holds it: nobody below the owner gets it, whatever its
       // level.
@@ -463,16 +461,17 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
         sqlTag`update tool_groups set audience = 'public' where owner_id = ${anchor} and slug = 'mcp-src'`,
       );
       expect(await connectorNames(asMember(true))).toEqual([]);
-      expect(await connectorNames(asClient(true))).toEqual([]);
+      expect(await clientRows()).toEqual([]);
       // On the member's workspace, Write on: the write tool only with write
       // on. Clients: no.
       await hold(ws.team, true);
       expect(await connectorNames(asMember(false))).toEqual(['mcp_src_read']);
       expect(await connectorNames(asMember(true))).toEqual(['mcp_src_read', 'mcp_src_write']);
-      expect(await connectorNames(asClient(true))).toEqual([]);
-      // On the client's workspace, Write off: the read tool only.
+      expect(await clientRows()).toEqual([]);
+      // On the client's workspace: still nothing for a client (no tool at
+      // all since W5c).
       await hold(ws.clients, false);
-      expect(await connectorNames(asClient(true))).toEqual(['mcp_src_read']);
+      expect(await clientRows()).toEqual([]);
       expect(await connectorNames(asMember(false))).toEqual(['mcp_src_read']);
       // A key limited to areas never gets a connector tool (a connector tool
       // is in no key area); an all-areas key gets the login's, and no more

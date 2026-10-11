@@ -2,70 +2,74 @@ import { maxStreamedUploadBytes } from '@mantle/files';
 import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
-import { getOwnerOr401, mintAssetToken } from '@/lib/auth';
+import type { Shell } from '@mantle/client-types';
+import { getLoginOr401, mintAssetToken } from '@/lib/auth';
+import { CLIENT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
-import { TREE_LIVE_KINDS } from '@mantle/content/tree';
+import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
-import { shellWorkspaces } from '@/lib/workspaces';
+import { shellWorkspaces, type WsCaller } from '@/lib/workspaces';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
 /**
- * Chrome data for the (app) shell — the avatar, the pending-approvals badge
- * count, and the onboarding gate — fetched client-side by `AppShell` so the
- * `(app)/layout.tsx` itself stays data-free (auth + collapse cookies only) and
- * the same shell is loadable by a detached client (Electron / DB-less). The
- * three reads that used to run in-process during layout render now live behind
- * this one HTTP round-trip. `isOnboarded` is idempotent (it self-stamps an
- * established install), so it's safe in a GET.
+ * GET /api/shell: chrome data for the one (app) shell, for EVERY login (plan
+ * 7.1, workspaces W5c): the avatar, the brand, the workspaces switcher, the
+ * pending-approvals badge and the onboarding gate. Fetched client-side by
+ * `AppShell`, so `(app)/layout.tsx` stays data-free and the same shell loads
+ * in a detached client (Electron / DB-less).
  *
- * The 200 is also how the client learns this login is an ADMIN (a member or
- * a client gets 403 here). So the chrome reads never fail the route (client
- * logins audit A13): each is caught and logged, and its part answers empty
- * (the brand as unset, a pending count of 0, no asset token). Onboarding
- * answers true when it cannot be read: a failed read must not send a working
- * admin into the setup wizard.
+ * An admin, a member and a client get ONE shape (`Shell`); `role` says
+ * which, and `loginId` is the login at the keyboard. Before W5c a member
+ * read /api/member/shell and a client /api/client/shell (both 410 now), and
+ * the 200 here meant "admin". What only an admin has answers its empty
+ * value for the others: onboarded true, pendingApprovals 0, areas [].
+ *
+ * The chrome reads never fail the route (client logins audit A13): each is
+ * caught and logged, and its part answers empty (the brand as unset, a
+ * pending count of 0, no asset token). Onboarding answers true when it
+ * cannot be read: a failed read must not send a working admin into the
+ * setup wizard. `isOnboarded` is idempotent (it self-stamps an established
+ * install), so it's safe in a GET.
  */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
-  const read = await shellPart('shell', 'preferences', () => loadPreferencesFor(user.id), null);
+  const login = await getLoginOr401();
+  if (login instanceof Response) return login;
+  const caller: WsCaller =
+    login.kind === 'admin'
+      ? { kind: 'admin', loginId: login.loginId, anchorId: login.user.id, user: login.user }
+      : login.kind === 'member'
+        ? { kind: 'member', loginId: login.loginId, anchorId: login.member.anchorId, user: null }
+        : { kind: 'client', loginId: login.loginId, anchorId: login.client.anchorId, user: null };
+  const admin = login.kind === 'admin' ? login.user : null;
+  const anchorId = caller.anchorId;
+  const loginId = caller.loginId;
+
+  // The BRAND (theme, fonts, logo, site name) is the anchor's.
+  const read = await shellPart('shell', 'preferences', () => loadPreferencesFor(anchorId), null);
   const prefs: Prefs = read ?? ({} as Prefs);
   const [onboarded, pendingApprovals, ws] = await Promise.all([
-    read ? shellPart('shell', 'onboarding', () => isOnboarded(user.id, read), true) : true,
-    shellPart('shell', 'pending count', () => countPending(user.id), 0),
+    admin && read
+      ? shellPart('shell', 'onboarding', () => isOnboarded(admin.id, read), true)
+      : true,
+    admin ? shellPart('shell', 'pending count', () => countPending(admin.id), 0) : 0,
     // The login's workspaces (the switcher) and its Admin areas (W5a).
-    shellPart(
-      'shell',
-      'workspaces',
-      () => shellWorkspaces({ kind: 'admin', loginId: user.actor.id, anchorId: user.id, user }),
-      { workspaces: [], areas: [] },
-    ),
+    shellPart('shell', 'workspaces', () => shellWorkspaces(caller), { workspaces: [], areas: [] }),
   ]);
-  // The FACE is per-login: seed, builder pins, and the uploaded photo come
-  // from the ACTOR's row (loadPreferencesFor routes brain keys to the anchor
-  // regardless), while everything else here — brand, fonts, onboarding —
-  // stays on the anchor read above. Same-row when the actor IS the anchor.
+  // The FACE is per-login: seed, builder pins, the uploaded photo and the
+  // starred screens come from the LOGIN's own row (loadPreferencesFor
+  // routes brain keys to the anchor regardless), while everything else here
+  // (brand, fonts, onboarding) stays on the anchor read above. Same row
+  // when the login IS the anchor.
   const personal: Prefs =
-    user.actor.id === user.id
+    loginId === anchorId
       ? prefs
-      : ((await shellPart(
-          'shell',
-          'own preferences',
-          () => loadPreferencesFor(user.actor.id),
-          null,
-        )) ?? ({} as Prefs));
-  // Gated on the SEED, which is this user's own, not on the style, which is the
-  // brain's. It used to gate on the style back when that was personal too, and
-  // moving the style to brain level broke both directions of this: with a style
-  // set on the brain, a user who chose "use initials instead" still got an
-  // avatar (their opt-out did nothing); with no style ever set, NO user got one
-  // even though the default style exists and every agent renders in it.
-  //
-  // The seed is the honest test of "has this person chosen an avatar" — unlike
-  // an agent, a human opting out to initials is a real choice the profile
-  // screen offers, so absence here means initials rather than a default seed.
+      : ((await shellPart('shell', 'own preferences', () => loadPreferencesFor(loginId), null)) ??
+        ({} as Prefs));
+  // Gated on the SEED, which is this login's own, not on the style, which is
+  // the brain's: a human opting out to initials is a real choice the profile
+  // screen offers, so no seed means initials rather than a default avatar.
   const avatar = personal.avatarSeed
     ? {
         style: prefs.avatarStyle ?? '',
@@ -73,49 +77,63 @@ export async function GET() {
         parts: personal.avatarParts ?? null,
       }
     : null;
-  // Uploaded profile PHOTO — outranks the generated avatar in every client
-  // (photo → generated seed → initials), and is independent of the seed gate
-  // above: a photo works for someone who never rolled a generated avatar.
-  // The version is the sha8 cache-buster for GET /api/profile/photo.
-  const avatarPhotoVersion = logoVersion(personal.avatarPhotoKey);
-  // Short-lived asset-access token so a detached client's <img>/<iframe>/download
-  // srcs (which can't carry a bearer) can load `?raw=1` files + attachments. The
-  // client appends it via `assetUrl()`; same-origin ignores it (cookie auth). See
-  // lib/asset-url.ts + getOwnerForAsset.
+  // Short-lived asset-access token so a detached client's <img>/<iframe>/
+  // download srcs (which can't carry a bearer) can load bytes. `act` = this
+  // login: each byte route re-checks the login's role. A client's lasts 10
+  // minutes (audit B23).
   const assetToken = await shellPart(
     'shell',
     'asset token',
-    () => mintAssetToken(user.id, user.actor.id),
+    () =>
+      mintAssetToken(
+        anchorId,
+        loginId,
+        login.kind === 'client' ? { ttlSeconds: CLIENT_ASSET_TOKEN_TTL_SECONDS } : {},
+      ),
     undefined,
   );
-  return NextResponse.json({
+  const displayName =
+    login.kind === 'admin'
+      ? login.user.actor.displayName
+      : login.kind === 'member'
+        ? login.member.displayName
+        : login.client.displayName;
+  const email =
+    login.kind === 'admin'
+      ? login.user.actor.email
+      : login.kind === 'member'
+        ? login.member.email
+        : login.client.email;
+  const body: Shell = {
+    role: login.kind,
+    loginId,
     onboarded,
     // What this BRAIN can do, for a client on its own release cadence: the
-    // client branches on capability rather than on a version number. Absent
-    // on an older brain, so a client tests `features?.x`. See lib/features.ts.
+    // client branches on capability rather than on a version number.
     features: shellFeatures(),
     avatar,
-    avatarPhotoVersion,
+    // Uploaded profile PHOTO: outranks the generated avatar in every client
+    // (photo, then generated seed, then initials). The sha8 cache-buster for
+    // GET /api/profile/photo.
+    avatarPhotoVersion: logoVersion(personal.avatarPhotoKey),
     pendingApprovals,
     workspaces: ws.workspaces,
-    areas: ws.areas,
-    assetToken,
+    // Admin areas are an admin's only.
+    areas: admin ? ws.areas : [],
+    ...(assetToken === undefined ? {} : { assetToken }),
     // The streamed upload cap, so the uploader can refuse an oversized file
     // before sending a byte and say the real number in the message.
     maxUploadBytes: maxStreamedUploadBytes(),
-    // Who this browser is signed in AS, for the rail's profile row. The ACTOR,
-    // not the anchor account: additional logins are ways into the one brain
-    // rather than tenants, and the actor is what the audit trail records — so
-    // this names the person at the keyboard even on a shared brain. Name first,
-    // email as the fallback and as the menu's secondary line.
-    displayName: user.actor.displayName ?? null,
-    email: user.actor.email ?? null,
-    // The rail's starred screens: per LOGIN (the actor's row), so they follow
-    // the person across browsers. [] when none are starred.
+    // Who this browser is signed in AS, for the rail's profile row: the
+    // login, not the anchor account.
+    displayName: displayName ?? null,
+    email: email ?? null,
+    // The rail's starred screens: per LOGIN, so they follow the person
+    // across browsers. [] when none are starred.
     navFavorites: personal.navFavorites ?? [],
-    // The kinds this brain serves as the item tree (/api/tree/:kind). A client
-    // shows the tree for these and its older list for the rest.
-    treeKinds: TREE_LIVE_KINDS,
+    // The kinds served as the item tree: the admin tree for an admin, the
+    // read-only reader tree for a member or a client.
+    treeKinds: admin ? [...TREE_LIVE_KINDS] : [...READER_TREE_KINDS],
     siteName: prefs.siteName ?? null,
     peerName: prefs.peerName ?? null,
     colorTheme: prefs.colorTheme ?? null,
@@ -129,10 +147,11 @@ export async function GET() {
     fontLogoSize: prefs.fontLogoSize ?? null,
     fontTitleSize: prefs.fontTitleSize ?? null,
     fontProseSize: prefs.fontProseSize ?? null,
-    // Brand logo (replaces the wordmark when set) — src is the public
+    // Brand logo (replaces the wordmark when set): src is the public
     // /api/appearance/logo, these are the cache-busting versions. The dark
-    // variant is optional; renderers fall back dark → base → wordmark.
+    // variant is optional; renderers fall back dark, base, wordmark.
     logoVersion: logoVersion(prefs.logoKey),
     logoDarkVersion: logoVersion(prefs.logoDarkKey),
-  });
+  };
+  return NextResponse.json(body);
 }

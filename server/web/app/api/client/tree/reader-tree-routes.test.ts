@@ -1,10 +1,9 @@
 /**
- * The member and client tree routes without a database: the login rows and
- * the tree reads are stood in, the gate is the real one. These pin what the
- * ROUTES do: each reads as its own login (a member through its space and
- * workspaces, a client through its client workspaces), a kind the Library does not hold is a 404 before any read, a folder
- * the reader cannot see is a 404, and a client's answer carries no level,
- * share or system flag. The rules themselves are proven on Postgres in
+ * The member tree routes without a database: the login rows and the tree
+ * reads are stood in, the gate is the real one. These pin what the ROUTES
+ * do: a member reads through its space and workspaces, and a kind the
+ * Library does not hold is a 404 before any read. The client tree routes
+ * were removed in workspaces W5c: they answer 410 code gone. The rules themselves are proven on Postgres in
  * packages/content/src/tree/tree-reader.viewer.db.test.ts.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -144,49 +143,27 @@ async function call(login: string, url: string, handler: Handler, kind: string) 
   );
 }
 
-describe('the member and client tree routes', () => {
-  it('reads as each role: a member in its own space and at team, a client at client', async () => {
+describe('the member tree routes, and the retired client tree', () => {
+  it('reads as a member: in its own space and at team', async () => {
     const member = (await import('../../member/tree/[kind]/route')).GET;
-    const client = (await import('./[kind]/route')).GET;
     expect(
       (await call(MEMBER, `/api/member/tree/notes?folder=${FOLDER}`, member, 'notes')).status,
     ).toBe(200);
-    expect(
-      (await call(CLIENT, `/api/client/tree/notes?folder=${FOLDER}`, client, 'notes')).status,
-    ).toBe(200);
-    // A client reads as its own login (its client workspaces decide).
     expect(h.calls.map((c) => c.args.slice(0, 3))).toEqual([
       [{ anchorId: ANCHOR, spaceId: SPACE, loginId: MEMBER }, 'notes', expect.anything()],
-      [ANCHOR, 'client', CLIENT],
     ]);
-    expect(h.calls.map((c) => c.fn)).toEqual(['member-load', 'load']);
+    expect(h.calls.map((c) => c.fn)).toEqual(['member-load']);
   });
 
-  it('gives a member levels and a client none', async () => {
+  it('gives a member levels', async () => {
     const member = (await import('../../member/tree/[kind]/route')).GET;
-    const client = (await import('./[kind]/route')).GET;
     const m = await (await call(MEMBER, '/api/member/tree/notes', member, 'notes')).json();
     expect(m.items[0]).toMatchObject({ level: 'client' });
-    const c = await (await call(CLIENT, '/api/client/tree/notes', client, 'notes')).json();
-    for (const k of ['level', 'inherited', 'state']) expect(c.items[0]).not.toHaveProperty(k);
-    for (const k of ['share', 'inherited', 'system']) {
-      expect(c.folder).not.toHaveProperty(k);
-      expect(c.folders[0]).not.toHaveProperty(k);
-    }
-    const search = (await import('./[kind]/search/route')).GET;
-    const s = await (
-      await call(CLIENT, '/api/client/tree/notes/search?q=a', search, 'notes')
-    ).json();
-    expect(s.items[0]).not.toHaveProperty('level');
-    expect(s.folders[0]).not.toHaveProperty('share');
-    expect(h.calls.at(-1)!.args.slice(0, 5)).toEqual([ANCHOR, 'client', CLIENT, 'notes', 'a']);
   });
 
   it('refuses a kind the Library does not hold before any read', async () => {
-    const client = (await import('./[kind]/route')).GET;
     const member = (await import('../../member/tree/[kind]/search/route')).GET;
     for (const kind of ['secrets', 'tasks', 'contacts', 'nope']) {
-      expect((await call(CLIENT, `/api/client/tree/${kind}`, client, kind)).status).toBe(404);
       expect((await call(MEMBER, `/api/member/tree/${kind}/search`, member, kind)).status).toBe(
         404,
       );
@@ -194,16 +171,17 @@ describe('the member and client tree routes', () => {
     expect(h.calls).toEqual([]);
   });
 
-  it('answers 404 for a folder the reader cannot see, 400 for a bad id, 403 for an admin', async () => {
-    const client = (await import('./[kind]/route')).GET;
-    h.hidden = true;
-    expect(
-      (await call(CLIENT, `/api/client/tree/notes?folder=${FOLDER}`, client, 'notes')).status,
-    ).toBe(404);
-    expect((await call(CLIENT, '/api/client/tree/notes?folder=nope', client, 'notes')).status).toBe(
-      400,
+  it('the client tree is gone (W5c): 410 to a client, 403 to an admin, no read', async () => {
+    const client = (await import('./[kind]/route')).GET as unknown as Handler;
+    const search = (await import('./[kind]/search/route')).GET as unknown as Handler;
+    const res = await call(CLIENT, `/api/client/tree/notes?folder=${FOLDER}`, client, 'notes');
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ code: 'gone' });
+    expect((await call(CLIENT, '/api/client/tree/notes/search?q=a', search, 'notes')).status).toBe(
+      410,
     );
     expect((await call(ADMIN, '/api/client/tree/notes', client, 'notes')).status).toBe(403);
+    expect(h.calls).toEqual([]);
     const member = (await import('../../member/tree/[kind]/route')).GET;
     expect((await call(CLIENT, '/api/member/tree/notes', member, 'notes')).status).toBe(403);
   });

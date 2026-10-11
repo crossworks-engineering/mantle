@@ -19,16 +19,11 @@ You can also make a member directly: **Settings > Logins > Add login**, set **Ro
 
 Members can chat only after you click **Let members chat** once, in **Team > Settings**. See [Team and members](../03-using-jackdaw/12-team.md).
 
-## Add a client
+## Client logins
 
-1. Open **Settings > Logins**. Under **Clients**, select **What clients see**. Check the list of items clients will read and click **I have checked this list**.
-2. Click **Add client** beside **Clients**.
-3. Pick a contact, or type an email. Click **Add client**.
-4. The new client is selected. Click **Issue sign-in link**, copy the **Sign-in link** and send it.
+New client logins can no longer be added, and sign-in links are gone. A client login that already exists signs in with an emailed code and uses the same app as a member.
 
-The client opens the link and types their email to sign in. The link works once, for 72 hours.
-
-To let clients sign in with an emailed code instead, select **Client settings** under **Clients** and pick a mail account under **Send codes from**. The account must be able to send mail. A small core box has no email worker, so codes do not work there.
+To let a client sign in, select **Client settings** under **Clients** and pick a mail account under **Send codes from**. The account must be able to send mail. A small core box has no email worker, so codes do not work there.
 
 ## Add another admin
 
@@ -38,7 +33,7 @@ Open **Settings > Logins**, click **Add login**, set **Role** to Admin, and ente
 
 - **Settings > Logins**: select the login and switch on **Disabled**. Every session it holds ends at once.
 - **Sign out everywhere** on the same screen ends all sessions but keeps the login.
-- For a client, **Sign out everywhere** or **Disabled** also cancels its open sign-in links. **Disabled** keeps the client's chat. **Delete** removes it, and any comments the client wrote before comments were removed.
+- For a client, **Sign out everywhere** or **Disabled** also cancels its open sign-in codes. **Delete** removes the login, and any comments the client wrote before comments were removed.
 
 ## Check it worked
 

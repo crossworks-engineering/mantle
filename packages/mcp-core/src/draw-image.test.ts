@@ -59,7 +59,6 @@ vi.mock('@mantle/tools', async (importOriginal) => {
 });
 
 import type { Tool } from '@mantle/db';
-import { CLIENT_TURN_TOOL_SLUGS } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
 import { keyAreasAllowTool } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
@@ -175,9 +174,5 @@ describe('draw_get picture on MCP', () => {
       kind: 'member',
       loginId: MEMBER,
     });
-  });
-
-  it('client login: draw_get is cut, so there is no picture to ask for', () => {
-    expect(CLIENT_TURN_TOOL_SLUGS).not.toContain('draw_get');
   });
 });

@@ -37,7 +37,6 @@ import {
 import {
   APP_DATA_READ_TOOL_SLUGS,
   APP_DATA_WRITE_TOOL_SLUGS,
-  CLIENT_TURN_TOOL_SLUGS,
   MY_APP_READ_TOOL_SLUGS,
   MY_APP_WRITE_TOOL_SLUGS,
   dispatchTool,
@@ -249,16 +248,14 @@ const LOGIN_WRITE_TOOL_SLUGS: ReadonlySet<string> = new Set([
   ...APP_DATA_WRITE_TOOL_SLUGS,
   ...MY_APP_WRITE_TOOL_SLUGS,
   'team_request_create',
-  'client_request_create',
 ]);
 
 /**
  * The tool rows a member or client gets on MCP, resolved LIVE from the
  * role's responder agent: its groups at the LOGIN's level (so an admin-level
  * group, `team-read-admin`, drops out even if the responder were raised),
- * the private reads only with the owner's `teamPrivateReads`, a client cut
- * to `CLIENT_TURN_TOOL_SLUGS` in code. With write: plus the app data
- * writes. Then `loginMayHaveTool`.
+ * the private reads only with the owner's `teamPrivateReads`, a client none
+ * (W5c). With write: plus the app data writes. Then `loginMayHaveTool`.
  */
 export async function resolveLoginToolRows(
   caller: McpCaller & { role: 'member' | 'client' },
@@ -292,10 +289,9 @@ export async function resolveLoginToolRows(
       const hidden = new Set(TEAM_PRIVATE_READ_SLUGS);
       slugs = slugs.filter((s) => !hidden.has(s));
     }
-    if (caller.role === 'client') {
-      const allowed = new Set(CLIENT_TURN_TOOL_SLUGS);
-      slugs = slugs.filter((s) => allowed.has(s));
-    }
+    // A client gets no tools over MCP: the client tools went with the
+    // client portal in workspaces W5c.
+    if (caller.role === 'client') slugs = [];
     // App data (team apps Phase 1): the app_data_* tools, never the agent's
     // app_db_* reads, which reach every app at the level with no per-app
     // switch. The app_data tools hold the app's MCP access switch and the

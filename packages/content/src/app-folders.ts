@@ -1,11 +1,11 @@
 /**
- * The Apps launcher of a member or a client login (GET /api/member/apps,
- * /api/client/apps): the apps the reader may RUN, and the admin's Apps
- * folders those apps sit in, read only.
+ * The Apps launcher of a member login (GET /api/member/apps): the apps the
+ * reader may RUN, and the admin's Apps folders those apps sit in, read only.
+ * (The client launcher went with the client portal in workspaces W5c.)
  *
  * The rule is the list's own. The apps are read as the reader
- * (`listMemberAppsPlaced`, `listClientAppsPlaced`: the level rule and the
- * green published build, inside `withViewer`), and a folder is answered only
+ * (`listMemberAppsPlaced`: the workspace rule and the green published
+ * build, inside `withViewer`), and a folder is answered only
  * when it is on the way to one of them. So a folder that holds nothing the
  * reader may run is never named, whatever its share says: an empty shared
  * folder, a folder of drafts and a folder of admin apps are all absent.
@@ -20,11 +20,10 @@
  */
 import { sql } from 'drizzle-orm';
 import { currentSpaceScope, db, withViewer, isSystemScope } from '@mantle/db';
-import type { AppLauncherFolder, ClientAppCard, MemberAppCard } from '@mantle/client-types';
+import type { AppLauncherFolder, MemberAppCard } from '@mantle/client-types';
 import { TREE_KIND_SPECS } from '@mantle/client-types/tree';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { treeFolderChain } from '@mantle/content-core/tree';
-import { listClientAppsPlaced } from './client-apps';
 import { listMemberAppsPlaced } from './member-apps';
 
 /** An app the reader may run, and the path of the folder it sits in. */
@@ -40,7 +39,7 @@ export type AppFolderRow = {
 
 /** Who opens the launcher: a member login reads at team, a client login at
  *  client. */
-export type AppLauncherReader = 'team' | 'client';
+export type AppLauncherReader = 'team';
 
 const APPS_ROOT = TREE_KIND_SPECS.apps.root;
 
@@ -116,28 +115,17 @@ async function folderRowsFor(
  * launcher then answers no folders (one flat list) and the failure is
  * logged.
  */
-export function appLauncher(
-  anchorId: string,
-  reader: 'team',
-  loginId: string,
-): Promise<{ apps: MemberAppCard[]; folders: AppLauncherFolder[] }>;
-export function appLauncher(
-  anchorId: string,
-  reader: 'client',
-  loginId: string,
-): Promise<{ apps: ClientAppCard[]; folders: AppLauncherFolder[] }>;
 export async function appLauncher(
   anchorId: string,
   reader: AppLauncherReader,
   loginId: string,
-): Promise<{ apps: Array<MemberAppCard | ClientAppCard>; folders: AppLauncherFolder[] }> {
+): Promise<{ apps: MemberAppCard[]; folders: AppLauncherFolder[] }> {
   if (!isSystemScope() || currentSpaceScope()) {
     throw new Error('app launcher called inside a viewer scope: call it on the admin pool');
   }
-  const { apps, places }: { apps: Array<MemberAppCard | ClientAppCard>; places: AppPlace[] } =
-    reader === 'team'
-      ? await withViewer('team', { login: loginId }, () => listMemberAppsPlaced(anchorId))
-      : await withViewer('client', { login: loginId }, () => listClientAppsPlaced(anchorId));
+  const { apps, places } = await withViewer(reader, { login: loginId }, () =>
+    listMemberAppsPlaced(anchorId),
+  );
   let folders: AppLauncherFolder[] = [];
   try {
     folders = buildAppLauncherFolders(await folderRowsFor(anchorId, places), places);

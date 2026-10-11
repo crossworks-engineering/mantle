@@ -36,16 +36,10 @@ Select a login to:
   the team agent;
 - on your own login, show a code to sign in on your phone.
 
-**Clients** starts with two steps:
-
-1. **What clients see**: every item at Client level. Every client login can
-   read all of it. Check it and click **I have checked this list** before you
-   add a client. **Add client** and **Issue sign-in link** wait for this.
-2. **Client settings**: the mail account that sends sign-in codes, each
-   client's chat use today, and the storage of the clients' own spaces.
-
-Then the client logins. Select one to **Issue sign-in link** (shown once, works
-once, for 72 hours) or **Revoke link**.
+**Clients** holds **Client settings**: the mail account that sends sign-in
+codes. Then the client logins that already exist. New client logins can no
+longer be added, and sign-in links are gone: a client signs in with an
+emailed code.
 
 ## Assistant
 
@@ -58,8 +52,8 @@ ask how logins work:
 ## Technical
 
 Logins are rows in `auth.users`, each with a role of `admin`, `member` or
-`client`. Invites, client logins, What clients see and the chats are served by
-the same admin-only routes as before they moved here. Passwords are stored only as a hash, so a reset sets a new one; there
+`client`. Invites and the chats are served by the same admin-only routes as
+before they moved here. Passwords are stored only as a hash, so a reset sets a new one; there
 is no recovery email. Each session carries a counter that is checked on every
 request: a password change, disable, role change or **Sign out everywhere**
 bumps it and ends every session of that login at once.

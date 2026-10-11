@@ -26,65 +26,6 @@ export const LEVEL_READ_PATTERN =
 
 /** @type {Record<string, { lines: number, phase: 'W5b2' | 'W5c' | 'W6b' | 'W7' | 'W8' | 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
-  // ── W5c (member and client review, the client portal) ──
-  'packages/content/src/item-level.ts': {
-    lines: 24,
-    phase: 'W5c',
-    why: 'the level helpers the client portal, member Library and member drawings still import (apps read grants since W5b2)',
-  },
-  },
-  'packages/content/src/app-table-exports.ts': {
-    lines: 3,
-    phase: 'W5c',
-    why: 'client: client app state',
-  },
-  'packages/content/src/chat-images.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client: client chat image reach',
-  },
-  'packages/content/src/client-admin-usage.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'client: client app usage',
-  },
-  'packages/content/src/client-apps.ts': {
-    lines: 9,
-    phase: 'W5c',
-    why: 'client: client app list and gate',
-  },
-  'packages/content/src/client-old-links.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client: retired client links',
-  },
-  'packages/content/src/client-report.ts': {
-    lines: 9,
-    phase: 'W5c',
-    why: 'client: client report',
-  },
-  },
-  'packages/tools/src/client-app-tools.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'client app tools',
-  },
-  'scripts/client-level-counts.sql': {
-    lines: 7,
-    phase: 'W5c',
-    why: 'one-off client counts',
-  },
-  'server/web/app/api/client/apps/[id]/db-broker/route.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'client comment',
-  },
-  'server/web/app/api/client/chat/route.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client chat agent level',
-  },
-  },
   // ── W6b (personal-space rows, accepted-item author path) ──
   'packages/content/src/member-accepted.ts': {
     lines: 3,

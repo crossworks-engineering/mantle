@@ -1,14 +1,16 @@
 /**
- * The ONLY routes a CLIENT login may reach (client logins, plan section 5:
- * deny by default). Each entry is `METHOD pattern`, the pattern exactly as
- * the route manifest writes it (server/route-manifest.gen.ts). A client
- * route is always client-specific: it calls getClientOr401 (or
- * getClientForAsset for bytes) and reads under `withViewer('client', …)`.
- * Never put a shared owner or member route here.
+ * The routes of the client portal (client logins, plan section 5: deny by
+ * default). Each entry is `METHOD pattern`, the pattern exactly as the route
+ * manifest writes it (server/route-manifest.gen.ts).
+ *
+ * Workspaces W5c removed the client portal: a client login uses the one (app)
+ * shell (GET /api/shell and the routes in any-login-routes.ts), and EVERY
+ * route here is a stub that answers a client 410 code gone (lib/gone.ts).
+ * They stay listed so an old client app reaches the 410 instead of a 403.
  *
  * server/client-sweep.test.ts drives every manifest route with a client
- * session and proves each route NOT listed here refuses it, and that admins
- * and members are refused on these.
+ * session and proves each route NOT listed here (or in the any-login list)
+ * refuses it, and that admins and members are refused on these.
  */
 export const CLIENT_ROUTES: readonly string[] = [
   // Who am I + the brain's brand, and the asset token (Phase C2).

@@ -1,8 +1,7 @@
 /**
  * The ONE rule for the rules an app's tools run under (client tier audit
- * 2026-09-30, L1; workspaces W5b2, plan R2). The three app tool brokers
- * (owner, member, client) and the author warnings all ask here, so they
- * cannot drift.
+ * 2026-09-30, L1; workspaces W5b2, plan R2). The app tool brokers (owner,
+ * member) and the author warnings all ask here, so they cannot drift.
  *
  * Why: an app's database is shared by everyone who runs the app, so the app
  * reads only what EVERY holder of the app reads (R2): a tool that reads more
@@ -12,14 +11,12 @@
  * any other workspace holds (Team, or a workspace of its own) runs the team
  * rules for EVERY runner, an admin's run included. (A one-user private
  * workspace whose user is also in another holder will not count as a
- * holder: private workspaces come with W6b.) Clients are not migrated
- * (owner rule 21.9): the client rules run only for the client portal's own
- * apps (client-apps.ts), never for a workspace app.
+ * holder: private workspaces come with W6b.) Clients run no apps: the client
+ * portal and its app broker were removed in workspaces W5c.
  *
- *   runner \ held by   Admin only   another workspace   client portal app
- *   admin              admin        team                (never)
- *   member             team         team                (never)
- *   client             (never)      (never)             client
+ *   runner \ held by   Admin only   another workspace
+ *   admin              admin        team
+ *   member             team         team
  *
  * AUTHOR CEILING (team apps Phase 3, plan A.4): an app a member built
  * (`apps.author_level` 'team') runs its tools at most at team rules, for
@@ -29,29 +26,26 @@
  * lifts it.
  *
  * `admin` is the owner broker's rule as it always was (declared, exists);
- * `team` is memberAppToolVerdict; `client` is clientAppToolVerdict; `none`
- * refuses every tool.
+ * `team` is memberAppToolVerdict; `none` refuses every tool.
  */
 import type { AppAuthorLevel, AppRunFor, Tool, ViewerFor, ViewerLevel } from '@mantle/db';
 import { getAppRuntime, type AppToolRules } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict } from './member-app-tools';
-import { clientAppToolVerdict } from './client-app-tools';
 import type { OutsideToolCheck } from './external-access';
 import type { ToolHandlerContext } from './types';
 
 /** The rules an app's tool call runs under. */
-export type AppToolLevel = 'admin' | 'team' | 'client' | 'none';
+export type AppToolLevel = 'admin' | 'team' | 'none';
 
-/** Who runs the app: the owner broker's admin, a member or a client. */
-export type AppToolRunner = 'admin' | 'team' | 'client';
+/** Who runs the app: the owner broker's admin or a member. */
+export type AppToolRunner = 'admin' | 'team';
 
-/** What the app's holders allow (`AppRuntime.toolRules`), or 'client' for
- *  an app of the client portal (the client broker). */
-export type AppHolding = AppToolRules | 'client';
+/** What the app's holders allow (`AppRuntime.toolRules`). */
+export type AppHolding = AppToolRules;
 
 /** `write`: an outside call that writes (team apps Phase 2); the member
- *  and client brokers log its input. */
+ *  broker logs its input. */
 export type AppToolVerdict =
   { ok: true; tool: Tool; write?: boolean } | { ok: false; status: 403 | 404; reason: string };
 
@@ -64,9 +58,7 @@ export function appToolLevel(
   authorLevel: AppAuthorLevel = 'admin',
 ): AppToolLevel {
   let byHolders: AppToolLevel;
-  if (holding === 'client') byHolders = runner === 'client' ? 'client' : 'none';
-  else if (runner === 'client') byHolders = 'none';
-  else if (holding === 'team') byHolders = 'team';
+  if (holding === 'team') byHolders = 'team';
   else if (holding === 'admin') byHolders = runner;
   else byHolders = 'none';
   return byHolders === 'admin' && authorLevel === 'team' ? 'team' : byHolders;
@@ -75,7 +67,7 @@ export function appToolLevel(
 const notDeclared = (slug: string) =>
   `This app isn't allowed to use the tool '${slug}'. It must be declared in the app's tools before it can run.`;
 
-/** Why a run gets no tools (a client run of a non-client app, never reached). */
+/** Why a run gets no tools (an app with no known holding). */
 export const APP_NO_TOOLS = "This app can't use tools here.";
 
 /** May a run at `level` of an app that declares `declared` call `slug`?
@@ -91,8 +83,6 @@ export async function appToolVerdict(
   check?: OutsideToolCheck,
 ): Promise<AppToolVerdict> {
   switch (level) {
-    case 'client':
-      return clientAppToolVerdict(ownerId, declared, slug, loginId, check);
     case 'team':
       return memberAppToolVerdict(ownerId, declared, slug, loginId, check);
     case 'admin': {
@@ -110,8 +100,8 @@ export async function appToolVerdict(
  * Where an allowed call runs: the viewer scope, who it acts for and the
  * surface (a call at 'none' is never allowed, and throws). `admin` is the
  * owner's web surface, as the owner broker always ran (system work: only
- * an app the Admin workspace alone holds runs there); `team` and `client`
- * are the member and client brokers' surfaces, naming the runner's login
+ * an app the Admin workspace alone holds runs there); `team` is the member
+ * broker's surface, naming the runner's login
  * (for an admin who runs a lower app, the admin's own login).
  *
  * `actsFor` (plan R2, W5b2 part B fix round 1 H1): a run below admin reads
@@ -146,12 +136,6 @@ export function appToolScope(
           contactName: runner.name,
           privateReads: false,
         },
-      };
-    case 'client':
-      return {
-        viewer: 'client',
-        actsFor,
-        surface: { kind: 'client', loginId: runner.loginId, contactName: runner.name },
       };
   }
 }

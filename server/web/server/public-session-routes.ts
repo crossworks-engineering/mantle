@@ -162,12 +162,12 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     expect: { member: { status: 403 }, client: { status: 403 }, unknown: { status: 401 } },
   },
   {
-    // Client sign-in with a link (C2). It reads no session, so a cookie of any
-    // role buys nothing: a bad body is the same 401 for everyone.
+    // Client sign-in with a link (C2), removed in workspaces W5c: the same
+    // 410 code gone for everyone, before any work.
     key: 'POST /api/auth/client-link',
     path: '/api/auth/client-link',
     init: json({}),
-    expect: { member: { status: 401 }, client: { status: 401 }, unknown: { status: 401 } },
+    expect: { member: { status: 410 }, client: { status: 410 }, unknown: { status: 410 } },
   },
   {
     // Email sign-in codes (C2b). None reads a session, so a cookie of any role

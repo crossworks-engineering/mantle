@@ -76,7 +76,6 @@ export type {
   MemberLibraryPage,
   MemberLibraryRow,
   MemberReviewState,
-  MemberShell,
   MemberSpaceFile,
   MemberSpaceItem,
   MemberSpaceItemBody,
@@ -87,8 +86,6 @@ export type {
 } from './dto/member';
 export type {
   AppLauncherFolder,
-  ClientAppCard,
-  ClientAppList,
   MemberAppCard,
   MemberAppList,
   MemberChatArchiveMessage,
@@ -129,13 +126,6 @@ export type {
   ApiV1Whoami,
 } from './dto/access-keys';
 export type {
-  ClientAdminRefusedReason,
-  ClientChatMessage,
-  ClientChatQueued,
-  ClientChatRefusedReason,
-  ClientChatThread,
-  ClientChatUsage,
-  ClientLinkSignIn,
   ClientCodeAvailability,
   ClientCodeRequested,
   ClientCodeSignIn,
@@ -143,25 +133,10 @@ export type {
   ClientSigninSender,
   ClientSigninSenderPreview,
   ClientSenderRefusedReason,
-  ClientLoginCreated,
-  ClientLoginList,
-  ClientLoginRow,
-  ClientSharedItem,
-  ClientSharedPage,
-  ClientSharedRow,
-  ClientSharedTable,
-  ClientSharedTableColumn,
-  ClientSharedTableRow,
-  ClientShell,
-  ClientSigninLinkCreated,
-  ClientSigninLinkRow,
   ClientItemSource,
   ClientItemRow,
-  ClientItemsPage,
-  ClientSpaceRefusedReason,
   ClientAcceptedItem,
   ClientAcceptedBase,
-  ClientStorageUsage,
 } from './dto/client';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the
@@ -229,6 +204,8 @@ export type {
   WorkspaceUserSearchResponse,
   WorkspaceUsersResponse,
 } from './dto/workspaces';
+// GET /api/shell: the one shell, for every login (W5c).
+export type { Shell, ShellFeatures, ShellRole } from './dto/shell';
 export type {
   GrantAddBody,
   GrantContactShare,

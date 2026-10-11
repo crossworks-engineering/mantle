@@ -269,7 +269,8 @@ export type SharedLinkRow = {
 };
 
 /** An old client link the brain retired (client logins C3, migration 0192):
- *  it answers "Sign in as a client" now. No token: the link is dead. */
+ *  it answers a plain 410 now. No token: the link is dead. GET
+ *  /api/team-admin/shares sends `retired: []` since workspaces W5c. */
 export type RetiredClientLinkRow = {
   id: string;
   nodeId: string;

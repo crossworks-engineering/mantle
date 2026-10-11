@@ -132,15 +132,6 @@ export {
 } from './app-folders';
 
 export {
-  CLIENT_APP_LEVELS,
-  isClientAppLevel,
-  listClientApps,
-  getClientRunnableApp,
-  type ClientAppCard,
-  type ClientRunnableApp,
-} from './client-apps';
-
-export {
   MCP_DATA_APPS_MAX,
   getMcpDataApp,
   listMcpDataApps,

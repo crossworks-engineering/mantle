@@ -1,9 +1,9 @@
 /**
- * Folder-held items in the member Library and the client's "Shared with
- * you" (folder plan phase 4; workspaces W5b2: a folder's grant, not its share
- * level): an item in a folder a workspace holds is listed, opened and named
- * in a client's redaction for that workspace's users, through the folder's
- * grant. Reads run inside withViewer with a real login, in the shim's
+ * Folder-held items in the member Library and for a client login (folder
+ * plan phase 4; workspaces W5b2: a folder's grant, not its share level): an
+ * item in a folder a workspace holds is listed, opened and named in a
+ * client's redaction for that workspace's users, through the folder's grant.
+ * (The client portal's own lists went in workspaces W5c.) Reads run inside withViewer with a real login, in the shim's
  * workspace scope: a member who is a user of Team, a client who is a user of
  * a client workspace.
  *
@@ -28,7 +28,6 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
   let library: typeof import('./member-library');
   let shared: typeof import('./client-shared');
   let memberApps: typeof import('./member-apps');
-  let clientApps: typeof import('./client-apps');
   let chat: typeof import('./chat-images');
   let sqlTag: typeof import('drizzle-orm').sql;
   let scratch: { url: string; drop: () => Promise<void> } | null = null;
@@ -117,7 +116,6 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     library = await import('./member-library');
     shared = await import('./client-shared');
     memberApps = await import('./member-apps');
-    clientApps = await import('./client-apps');
     chat = await import('./chat-images');
     sqlTag = (await import('drizzle-orm')).sql;
     await m.systemDb.execute(sqlTag`
@@ -220,20 +218,11 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     expect(await opens('team', ids.adminPlain)).toBe(false);
   });
 
-  it('lists and opens for a client only what a folder its workspace holds holds', async () => {
-    const got = await as('client', async () => {
-      const res = await shared.listClientShared(brain, { q: label, limit: 200 });
-      return new Set(res.items.map((r) => r.id));
-    });
-    expect([...got].sort()).toEqual([ids.adminInClient, ids.teamInClient, ids.fileInClient].sort());
+  it('opens for a client only what a folder its workspace holds holds', async () => {
     expect(await opens('client', ids.adminInClient)).toBe(true);
     expect(await opens('client', ids.teamInClient)).toBe(true);
     expect(await opens('client', ids.adminInTeam)).toBe(false);
     expect(await opens('client', ids.publicInTeam)).toBe(false);
-    const item = await as('client', () => shared.getClientSharedItem(brain, ids.adminInClient));
-    expect(item).toMatchObject({ id: ids.adminInClient, type: 'note' });
-    // The client's shape carries no level.
-    expect(item && 'audience' in item).toBe(false);
   });
 
   it('keeps a folder-shared item named in a client’s redaction, and hides the rest', async () => {
@@ -282,23 +271,10 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     // The team surfaces' app-data reach (admin pool).
     const teamIds = await memberApps.listTeamLevelAppIds(brain);
     expect(teamIds.has(ids.appInTeam) && teamIds.has(ids.appInClient)).toBe(true);
-
-    const clientList = await as('client', () => clientApps.listClientApps(brain));
-    expect(clientList.map((a) => a.id)).toContain(ids.appInClient);
-    expect(clientList.map((a) => a.id)).not.toContain(ids.appInTeam);
-    expect(
-      await as('client', () => clientApps.getClientRunnableApp(brain, ids.appInClient)),
-    ).not.toBeNull();
-    expect(
-      await as('client', () => clientApps.getClientRunnableApp(brain, ids.appInTeam)),
-    ).toBeNull();
   });
 
-  it('shows a client a chat image from a folder its workspace holds, not one outside', async () => {
-    const got = await chat.chatImagesFor(brain, 'client', client, [
-      ids.fileInClient,
-      ids.filePlain,
-    ]);
+  it('shows a member a chat image from a folder its workspace holds, not one outside', async () => {
+    const got = await chat.chatImagesFor(brain, 'team', member, [ids.fileInClient, ids.filePlain]);
     expect([...got.keys()]).toEqual([ids.fileInClient.toLowerCase()]);
   });
 });

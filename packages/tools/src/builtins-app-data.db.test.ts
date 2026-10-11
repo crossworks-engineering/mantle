@@ -4,7 +4,7 @@
  *
  *  - reach: only apps with MCP access on, published, of this brain: for a
  *    member one the Team workspace holds (its grant; workspaces W5b2), for
- *    a client one at client level (clients are not migrated); never an app
+ *    a client none (the client portal and its apps went in W5c); never an app
  *    only Admin holds, one with only a public link, a draft, or MCP access
  *    off;
  *  - read or write: the login's Write switch and the browser's rule (for a
@@ -193,11 +193,10 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     expect(new Set(ro.apps.map((a) => a.access))).toEqual(new Set(['read']));
   });
 
-  it('a client reaches client-level apps only', async () => {
+  it('a client reaches no app (W5c), a client-level one included', async () => {
     const list = out<ListOut>(await call('app_data_list', {}, asClient()));
-    expect(list.apps.map((a) => a.app_id)).toEqual([ids['e client']]);
-    expect(list.apps[0]?.access).toBe('read_write');
-    for (const key of ['a team', 'f public link']) {
+    expect(list.apps).toEqual([]);
+    for (const key of ['a team', 'e client', 'f public link']) {
       const r = await call('app_data_query', { app_id: ids[key], sql: 'SELECT 1' }, asClient());
       expect(r.ok, key).toBe(false);
     }
@@ -368,19 +367,17 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     expect(String(logs[0]?.detail.me)).toMatch(/^u_/);
   });
 
-  it('a client writes a client app and marks it client-written', async () => {
+  it('a client writes no app (W5c): a client-level app stays unwritten', async () => {
     const id = ids['e client']!;
-    const res = out<{ changes: number }>(
-      await call(
-        'app_data_write',
-        { app_id: id, sql: "DELETE FROM items WHERE name = 'seed'" },
-        asClient(),
-      ),
+    const r = await call(
+      'app_data_write',
+      { app_id: id, sql: "DELETE FROM items WHERE name = 'seed'" },
+      asClient(),
     );
-    expect(res.changes).toBe(1);
+    expect(r.ok).toBe(false);
     const [reg] =
       await admin`select client_written_at from app_databases where app_node_id = ${id}`;
-    expect(reg?.client_written_at).toBeTruthy();
+    expect(reg?.client_written_at ?? null).toBeNull();
   });
 
   it('the lookup runs on the team and client roles (its columns are granted)', async () => {

@@ -1,19 +1,5 @@
-import { getClientOr401 } from '@/lib/auth';
-import { loginPushPrefs, loginPushPrefsUpdate } from '@/lib/push/login-routes';
+import { gone } from '@/lib/gone';
 
-/**
- * GET/PUT /api/client/push/preferences: this login's own push toggles
- * (mobile_roles_push): { chatReplies, reviewResults }, all on by default. PUT
- * takes a partial patch; unknown or mistyped fields are ignored.
- */
-export async function GET() {
-  const client = await getClientOr401();
-  if (client instanceof Response) return client;
-  return loginPushPrefs(client);
-}
-
-export async function PUT(req: Request) {
-  const client = await getClientOr401();
-  if (client instanceof Response) return client;
-  return loginPushPrefsUpdate(req, client);
-}
+/** Removed in workspaces W5c: the client portal is gone (a client uses the one app shell). Answers 410 code gone to a client login. */
+export const GET = gone('client');
+export const PUT = gone('client');

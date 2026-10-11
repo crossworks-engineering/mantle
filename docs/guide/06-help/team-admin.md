@@ -5,9 +5,8 @@ toolGroups: [team-admin]
 
 ## Team
 
-This screen handles what members and clients send you, and the team settings.
-Members chat with the team agent and see items set to Team level. Clients see
-items set to Client level.
+This screen handles what members send you, and the team settings. Members
+chat with the team agent and see items set to Team level.
 
 The tabs:
 
@@ -16,8 +15,7 @@ The tabs:
   members chat**: it moves the team agent to Team level), and **Expose email &
   journal**, off by default.
 
-Invites, each member's and client's chat, client logins and **What clients
-see** are in [Logins](users.md). Old links to those tabs open there. The old
+Invites, each member's chat and client logins are in [Logins](users.md). Old links to those tabs open there. The old
 **Chat archive** tab is gone; the old portal chats stay in the brain.
 
 Review is gone: members no longer submit items for approval, and the

@@ -13,12 +13,13 @@ import {
   KNOWN_TOOL_GROUP_SLUGS,
   DELEGATE_SLUGS,
   PERSONA_SLUG,
+  RETIRED_BUILTIN_TOOL_SLUGS,
+  RETIRED_TOOL_GROUP_SLUGS,
   type ManifestAgent,
 } from './manifest';
 import {
   BANNED_ITEM_TOOLS,
   BUILTIN_TOOLS,
-  CLIENT_TURN_TOOL_SLUGS,
   buildHttpRequest,
   collectParamNames,
   collectSecretRefs,
@@ -279,7 +280,7 @@ describe('system manifest integrity', () => {
     }
   });
 
-  it('only the member-facing and client-facing groups sit below admin, with a pinned tool list', () => {
+  it('only the member-facing groups sit below admin, with a pinned tool list', () => {
     // A group's level says who may hold it: lowering one makes its tools
     // grantable to ANY agent at that level. So the list of groups below admin,
     // and what the team-level ones hold, changes only on purpose, here.
@@ -289,7 +290,6 @@ describe('system manifest integrity', () => {
     expect(levels).toEqual({
       'formulas-eval': 'team',
       'team-read': 'team',
-      'client-read': 'client',
     });
     expect(groupTools.get('formulas-eval')).toEqual([
       'formula_list',
@@ -367,19 +367,20 @@ describe('system manifest integrity', () => {
     }
   });
 
-  it('the client responder holds only the client tools the client turn allows in code (audit L3)', () => {
-    // The client turn intersects its tools with CLIENT_TURN_TOOL_SLUGS
-    // (run-team-turn.ts). A client tool shipped in client-read but missing
-    // there would be silently dropped at runtime; this fails first.
-    const client = MANIFEST_AGENTS.find((a) => a.slug === 'client-responder')!;
-    const grant = effectiveTools(client);
-    expect(grant.size).toBeGreaterThan(0);
-    for (const slug of grant) {
-      expect(CLIENT_TURN_TOOL_SLUGS, `${slug} is not a client turn tool`).toContain(slug);
-    }
-    // Every allowed slug is a real builtin.
+  it('the client chat is retired: no client agent or group ships, its tools are disabled (W5c)', () => {
+    expect(MANIFEST_AGENTS.find((a) => a.slug === 'client-responder')).toBeUndefined();
+    expect(MANIFEST_TOOL_GROUPS.find((g) => g.slug === 'client-read')).toBeUndefined();
+    expect(RETIRED_TOOL_GROUP_SLUGS).toContain('client-read');
     const builtins = new Set(BUILTIN_TOOLS.map((t) => t.slug));
-    for (const slug of CLIENT_TURN_TOOL_SLUGS) expect(builtins.has(slug), slug).toBe(true);
+    for (const slug of [
+      'client_shared_list',
+      'client_shared_search',
+      'client_shared_open',
+      'client_request_create',
+    ]) {
+      expect(RETIRED_BUILTIN_TOOL_SLUGS, slug).toContain(slug);
+      expect(builtins.has(slug), slug).toBe(false);
+    }
   });
 
   it('seeded HTTP tools are well-formed, declare every placeholder, and use a vault ref', () => {

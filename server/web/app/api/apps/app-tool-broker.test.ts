@@ -65,7 +65,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
     appToolVerdict: vi.fn(
       async (level: string, owner: string, declared: string[], slug: string) => {
         h.levels.push(level);
-        if (level === 'client' || level === 'none') {
+        if (level === 'none') {
           return real.appToolVerdict(level, owner, declared, slug);
         }
         if (!declared.includes(slug)) return { ok: false, status: 403, reason: 'not declared' };

@@ -1,8 +1,9 @@
 /**
- * Pictures in a member's or a client's chat thread (client logins C6), on a
- * real, migrated Postgres: an image is pointed at the reader's own route only
- * for a file or drawing of this brain the reader may read (workspaces W5b2:
- * what a workspace of the login holds; for a client, at client level too).
+ * Pictures in a member's chat thread (client logins C6), on a real, migrated
+ * Postgres: an image is pointed at the reader's own route only for a file or
+ * drawing of this brain the reader may read (workspaces W5b2: what a
+ * workspace of the login holds). The client chat went in workspaces W5c; the
+ * client fixture stays as a login whose items a member also reads.
  * The fixture: every item is a real file or drawing of this brain, named by
  * the same image form, so only the lookup as the reader tells them apart.
  * The member is a user of a workspace that holds the team, client and public
@@ -109,14 +110,6 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
     await m.closeDb();
   });
 
-  it('a client: only the client-level files and drawings its workspace holds', async () => {
-    const got = await ci.chatImagesFor(anchor, 'client', client, Object.values(items));
-    expect(Object.fromEntries(got)).toEqual({
-      [items.clientFile]: 'file',
-      [items.clientDraw]: 'draw',
-    });
-  });
-
   it('a member: the files and drawings its workspace holds, never an admin-only one', async () => {
     const got = await ci.chatImagesFor(anchor, 'team', member, Object.values(items));
     expect(Object.fromEntries(got)).toEqual({
@@ -128,19 +121,13 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
     });
   });
 
-  it('a thread page as each reader receives it', async () => {
+  it('a thread page as the member receives it', async () => {
     const texts = [
       `one ${img(items.adminFile)} two`,
       `${img(items.teamFile)}`,
       `![d](draw:${items.clientDraw}) ![n](media:${items.clientNote})`,
       `![c](media:${items.clientFile})`,
     ];
-    expect(await ci.chatTextsForReader(anchor, 'client', client, texts)).toEqual([
-      'one  two',
-      '',
-      `![d](/api/client/draws/${items.clientDraw}/svg) `,
-      `![c](/api/client/files/${items.clientFile})`,
-    ]);
     expect(await ci.chatTextsForReader(anchor, 'team', member, texts)).toEqual([
       'one  two',
       `![pic](/api/member/files/${items.teamFile})`,

@@ -408,7 +408,7 @@ async function provisionMissingSpecialists(ownerId: string): Promise<string[]> {
  * One brain's reconcile, the steps of the boot reconcile (the propagation
  * contract in ./CLAUDE.md) without its production, owner and once-per-version
  * gates. Exported for the tests: an existing brain gets what this version
- * ships (client-responder and client-read, client logins C4, included).
+ * ships.
  */
 export async function reconcileOwner(ownerId: string) {
   await seedToolCapabilities(ownerId, 'overwrite');

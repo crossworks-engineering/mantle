@@ -277,7 +277,8 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     expect(await who.json()).toMatchObject({
       role: 'client',
       loginId: CLIENT_ID,
-      shell: '/api/client/shell',
+      // One shell for every login since W5c.
+      shell: '/api/shell',
       pushBase: '/api/client/push',
       // The pair a device files this session under, and every push names.
       brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
@@ -422,11 +423,24 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
 
   it('never answers a client with an admin or member answer on the gates', async () => {
     // An admin read and a member read, each past its gate for its own role.
+    // The one shell (W5c) answers a client as a client.
     for (const headers of [
       { cookie: cookieFor(CLIENT_ID) },
       { authorization: bearerFor(CLIENT_ID) },
     ] as Array<Record<string, string>>) {
-      for (const path of ['/api/shell', '/api/member/shell', '/api/member/space/not-a-uuid']) {
+      const shell = await app.request('/api/shell', { headers });
+      expect(shell.status).toBe(200);
+      expect(await shell.json()).toMatchObject({
+        role: 'client',
+        loginId: CLIENT_ID,
+        areas: [],
+        pendingApprovals: 0,
+      });
+      for (const path of [
+        '/api/push/subscriptions',
+        '/api/member/shell',
+        '/api/member/space/not-a-uuid',
+      ]) {
         const res = await app.request(path, { headers });
         const body = (await res.json().catch(() => null)) as { reason?: string } | null;
         expect(res.status, path).toBe(403);

@@ -128,11 +128,11 @@ describe('gate: session & bearer', () => {
     expect((await app.request(`/api/export/e1?at=${at}&format=md`)).status).toBe(200);
     expect((await app.request(`/api/admin/space/i1/bytes?at=${at}`)).status).toBe(200);
     expect((await app.request(`/api/member/space/i1/bytes?at=${at}`)).status).toBe(200);
-    expect((await app.request(`/api/client/space/i1/bytes?at=${at}`)).status).toBe(200);
     // The team-drafts and client-requests bytes are gone (W5c): no carve-out.
     expect((await app.request(`/api/member/team-drafts/i1/bytes?at=${at}`)).status).toBe(401);
     expect((await app.request(`/api/member/client-requests/i1/bytes?at=${at}`)).status).toBe(401);
-    // Wrong path
+    // Wrong path (the client byte routes were removed in W5c: no token opens them)
+    expect((await app.request(`/api/client/space/i1/bytes?at=${at}`)).status).toBe(401);
     expect((await app.request(`/api/notes?at=${at}`)).status).toBe(401);
     expect((await app.request(`/api/admin/space/i1?at=${at}`)).status).toBe(401);
     expect((await app.request(`/api/admin/space/i1/save?at=${at}`)).status).toBe(401);
@@ -179,16 +179,12 @@ describe('gate: session & bearer', () => {
     expect((await app.request(`/api/member/apps/a1/frame?t=${asset}`)).status).toBe(401);
   });
 
-  it('accepts a ?t= frame ticket on the client frame path, GET only, nothing else there', async () => {
+  it('accepts no ?t= frame ticket on the client frame path (removed in W5c)', async () => {
     const app = makeApp();
     const t = mint({ exp: future(), k: 'f' });
-    expect((await app.request(`/api/client/apps/a1/frame?t=${t}`)).status).toBe(200);
-    // The ticket opens the frame document, never a client broker.
+    expect((await app.request(`/api/client/apps/a1/frame?t=${t}`)).status).toBe(401);
     const post = { method: 'POST' };
     expect((await app.request(`/api/client/apps/a1/db-broker?t=${t}`, post)).status).toBe(401);
-    expect((await app.request(`/api/client/apps/a1/frame?t=${t}`, post)).status).toBe(401);
-    const asset = mint({ exp: future(), k: 'a' });
-    expect((await app.request(`/api/client/apps/a1/frame?t=${asset}`)).status).toBe(401);
     expect((await app.request('/api/client/apps/a1/frame')).status).toBe(401);
   });
 

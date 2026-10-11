@@ -135,12 +135,6 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "a member's app call: appToolScope, team or client by the app's level, never the owner",
   },
-  'server/web/app/api/client/apps/[id]/tool-broker/route.ts': {
-    calls: 1,
-    surface: /surface: scope\.surface/,
-    scope: 'call',
-    why: "a client's app call: appToolScope at client level (client logins C6), never the owner",
-  },
   'server/web/app/s/[token]/tool-broker/route.ts': {
     calls: 1,
     surface: /surface: \{ kind: 'contact', contactId, shareId: share\.id \}/,

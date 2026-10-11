@@ -1,9 +1,9 @@
 /**
- * The Apps launcher for members and clients, on a real, migrated Postgres
- * (./app-folders.ts, `appLauncher`): the apps are read as the real team and
- * client roles, and the folders are the brain's rows on the way to those
- * apps and nothing else, as the routes answer them (GET /api/member/apps,
- * /api/client/apps).
+ * The Apps launcher for members, on a real, migrated Postgres
+ * (./app-folders.ts, `appLauncher`): the apps are read as the real team
+ * role, and the folders are the brain's rows on the way to those apps and
+ * nothing else, as the route answers them (GET /api/member/apps). The client
+ * launcher went with the client portal in workspaces W5c.
  *
  *  - a member sees an app inside a folder Team holds (the folder's grant,
  *    workspaces W5b2), with the folder's name, icon and colour;
@@ -12,10 +12,6 @@
  *  - a folder that holds only admin-only apps, or only drafts, is not
  *    answered at all: not its name, not its id, shared or not;
  *  - the folders on the way to an app come with it, each under its parent;
- *  - a client sees a folder only through an app at CLIENT level (its own, or
- *    a folder shared with clients): a client app in a team-shared folder
- *    under an unshared one names both, and the team and public apps next to
- *    it are never named;
  *  - when Team no longer holds the folder, its apps and the folder go;
  *  - another owner's folder at the same path, and a member's own folder
  *    there, are never answered;
@@ -24,9 +20,9 @@
  * The brain is the box's brain of a scratch database of its own, migrated to
  * workspaces. The readers are real logins in the shim's workspace scope
  * (withViewer with { login }): a member who is a user of Team runs the apps
- * Team holds (its grants); a client who is a user of a client workspace runs
- * the apps that workspace holds, at client level (the client portal still
- * names the level, W5c). The levels are frozen: the fixture writes them when
+ * Team holds (its grants). The client fixture stays (a workspace of its own
+ * holds some of the folders), but no client launcher reads it. The levels
+ * are frozen: the fixture writes them when
  * it inserts a row. Every folder is inserted in one statement with what it
  * holds, so it never sits empty.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/app-folders.viewer.db.test.ts
@@ -219,14 +215,11 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   const ourFolders = new Set<string>(Object.values(f));
   const ourApps = new Set<string>(Object.values(a));
   /** What the route answers for a reader, narrowed to this run's rows. */
-  const launcher = async (reader: 'team' | 'client') => {
+  const launcher = async (reader: 'team') => {
     const all: {
       apps: Array<{ id: string }>;
       folders: Awaited<ReturnType<typeof folders.appLauncher>>['folders'];
-    } =
-      reader === 'team'
-        ? await folders.appLauncher(brain, 'team', member)
-        : await folders.appLauncher(brain, 'client', clientLogin);
+    } = await folders.appLauncher(brain, reader, member);
     return {
       apps: all.apps.filter((x) => ourApps.has(x.id)),
       folders: all.folders
@@ -472,45 +465,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     expect(got.wire).not.toContain(path.shared);
   });
 
-  it('shows a client only the folders that lead to an app at client level', async () => {
-    const got = await launcher('client');
-    expect(got.apps.map((x) => x.id).sort()).toEqual(
-      [a.adminInClient, a.clientInPlain, a.clientInParent].sort(),
-    );
-    expect(got.folders.map((x) => `${x.id} ${x.parentId} ${x.appIds.join(',')}`).sort()).toEqual(
-      [
-        `${f.client} null ${a.adminInClient}`,
-        `${f.plain} null ${a.clientInPlain}`,
-        `${f.grand} null `,
-        `${f.parent} ${f.grand} ${a.clientInParent}`,
-      ].sort(),
-    );
-    // Not the team folder, the deep chain, or anything of the admin's.
-    for (const id of [f.shared, f.hidden, f.drafts, f.deep, f.mid, f.leaf, f.side, f.embedded]) {
-      expect(got.wire, nameOf(f, id)).not.toContain(id);
-      expect(got.wire, nameOf(f, id)).not.toContain(folderName(id));
-    }
-    for (const id of [a.adminInShared, a.teamInPlain, a.teamDeep, a.teamTop, a.adminInPlain]) {
-      expect(got.wire, nameOf(a, id)).not.toContain(id);
-    }
-  });
-
-  it('names a client the team-shared folder and the unshared one above its client app, and no app of theirs it may not run', async () => {
-    const got = await launcher('client');
-    // Names are organisational: both folders on the way come, by name.
-    expect(byId(got.folders, f.grand)).toMatchObject({ name: folderName(f.grand), parentId: null });
-    expect(byId(got.folders, f.parent)).toMatchObject({
-      name: folderName(f.parent),
-      parentId: f.grand,
-      appIds: [a.clientInParent],
-    });
-    // The team app (an admin app the folder shares with the team) and the
-    // public app in the same folder are never named to the client.
-    for (const id of [a.adminInParent, a.publicInParent]) {
-      expect(got.wire, nameOf(a, id)).not.toContain(id);
-      expect(got.wire, nameOf(a, id)).not.toContain(appTitle(id));
-    }
-    // A member runs all three there.
+  it('runs every app a member may run in a shared folder (the client launcher went in W5c)', async () => {
     expect(byId((await launcher('team')).folders, f.parent)?.appIds.sort()).toEqual(
       [a.clientInParent, a.adminInParent, a.publicInParent].sort(),
     );
@@ -530,7 +485,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   });
 
   it('never answers another owner’s rows, or a member’s own folder, at the same path', async () => {
-    for (const reader of ['team', 'client'] as const) {
+    for (const reader of ['team'] as const) {
       const got = await launcher(reader);
       for (const id of Object.values(foreign)) {
         expect(got.wire, `${reader} ${nameOf(foreign, id)}`).not.toContain(id);

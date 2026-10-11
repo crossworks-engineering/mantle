@@ -44,7 +44,6 @@ const UPLOAD_PATHS: readonly RegExp[] = [
   /^\/api\/profile\/(photo|logo)$/,
   /^\/api\/member\/space-files$/,
   /^\/api\/admin\/space-files$/,
-  /^\/api\/client\/space-files$/,
 ];
 
 /** Owner document and tool surfaces (prefixes). */

@@ -81,7 +81,6 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
       'team-admin',
       'team-read',
       'team-read-admin',
-      'client-read',
       'my-space-write',
     ],
   },

@@ -62,16 +62,10 @@ function isAssetPath(path: string): boolean {
     // An admin's own private file (member logins Phase 7). The route calls
     // getOwnerForAsset and reads the space of the login the token's `act`
     // names, so the token opens only that admin's own items.
-    /^\/api\/admin\/space\/[^/]+\/bytes$/.test(path) ||
-    // Client bytes (client logins C2): file bytes and drawing SVGs of items
-    // at client level. The routes call getClientForAsset and read at the
-    // client level; the client shell mints the token with `act` = the login.
-    path.startsWith('/api/client/files/') ||
-    /^\/api\/client\/draws\/[^/]+\/svg$/.test(path) ||
-    // A client's own private file (client logins C5). The route calls
-    // getClientForAsset and reads the space of the client the token's `act`
-    // names, so the token opens only that client's own items.
-    /^\/api\/client\/space\/[^/]+\/bytes$/.test(path)
+    /^\/api\/admin\/space\/[^/]+\/bytes$/.test(path)
+    // The client byte routes (/api/client/files, draws, space bytes) were
+    // removed in workspaces W5c: no token opens them; they answer 410 to a
+    // client session.
   );
 }
 
@@ -92,10 +86,6 @@ const OWNER_FRAME_RE = /^\/api\/apps\/[^/]+\/frame$/;
 /** The member-surface frame document (member logins Phase 4b): same ticket
  *  carve; the route accepts only a MEMBER ticket (`mem` claim). */
 const MEMBER_FRAME_RE = /^\/api\/member\/apps\/[^/]+\/frame$/;
-/** The client-surface frame document (client logins C6): same ticket carve;
- *  the route accepts only a CLIENT ticket (`mem` and `cep` claims) at the
- *  login's current session epoch. */
-const CLIENT_FRAME_RE = /^\/api\/client\/apps\/[^/]+\/frame$/;
 
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
@@ -258,9 +248,9 @@ export function gate(): MiddlewareHandler {
 
     // The sandbox frame document navigates with a `?t=` frame ticket — same
     // can't-carry-a-credential shape as the asset paths above, same narrow
-    // acceptance: these three paths only, GET only, kind 'f' only.
+    // acceptance: these two paths only, GET only, kind 'f' only.
     if (
-      (OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path) || CLIENT_FRAME_RE.test(path)) &&
+      (OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path)) &&
       req.method === 'GET'
     ) {
       const t = url.searchParams.get('t');

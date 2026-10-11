@@ -10,7 +10,8 @@
  * session and proves each route NOT listed here refuses it.
  */
 export const MEMBER_ROUTES: readonly string[] = [
-  // Who am I + the brain's brand (Phase 1).
+  // Removed in W5c (410 code gone): every login reads GET /api/shell. Kept
+  // so an old app reaches the 410.
   'GET /api/member/shell',
   // The Library: the items the member's workspaces hold (Phase 1).
   'GET /api/member/library',
