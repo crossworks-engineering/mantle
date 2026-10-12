@@ -59,10 +59,7 @@ export async function isFormerClientEmail(email: string, exec: Exec = db): Promi
 
 /** Whether `contactId` was the contact of a client login (archived by 0272),
  *  whether or not that login still exists (W8a fix round 2). */
-export async function isFormerClientContact(
-  contactId: string,
-  exec: Exec = db,
-): Promise<boolean> {
+export async function isFormerClientContact(contactId: string, exec: Exec = db): Promise<boolean> {
   const [row] = await exec
     .select({ id: archiveClientLogins.loginId })
     .from(archiveClientLogins)

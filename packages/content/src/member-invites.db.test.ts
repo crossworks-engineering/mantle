@@ -171,7 +171,9 @@ describe.skipIf(!URL)('member invites', () => {
         message:
           'That contact belonged to a client login. A former client cannot be invited or given a new login.',
       });
-      expect(await admin`select 1 from member_invites where contact_id = ${contact}`).toHaveLength(0);
+      expect(await admin`select 1 from member_invites where contact_id = ${contact}`).toHaveLength(
+        0,
+      );
     });
 
     it('an invite on a contact archived as a client since redeems nothing (W8a fix round 2, L)', async () => {

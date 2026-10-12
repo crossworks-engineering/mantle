@@ -7,7 +7,9 @@
  *    (mantle_ws_migrate_locked) does not switch it, and nobody is added to
  *    a workspace (owner rule 21.9). A manual switch that says the clients
  *    were set up by hand (mantle.ws_former_clients = 'reviewed') goes
- *    ahead, and the bridge still gives the former client no row;
+ *    ahead, and the bridge still gives the former client no row; nor does
+ *    its spaces fold give it a private workspace: its draft goes to its
+ *    Former user workspace (W8a fix round 2);
  *  - on a brain ALREADY on workspaces, every workspace row of a client
  *    login is archived (archive_client_workspace_users) and removed, with a
  *    workspace event each; a member's rows stay; a later role change (the
@@ -47,6 +49,10 @@ describe.skipIf(!URL)('0272: a brain not on workspaces that had a client', () =>
   const owner = randomUUID();
   const member = randomUUID();
   const client = randomUUID();
+  // A draft in the client's personal space and one in the member's (W8a fix
+  // round 2): the spaces fold of a manual switch homes them.
+  const clientDraft = randomUUID();
+  const memberDraft = randomUUID();
 
   const rowsOf = async (login: string) =>
     (
@@ -65,6 +71,17 @@ describe.skipIf(!URL)('0272: a brain not on workspaces that had a client', () =>
       (${client}, 'fc1-c@example.invalid', 'x', 'client', false)`;
     await sql`insert into nodes (id, owner_id, type, title, path, audience)
       values (${randomUUID()}, ${owner}, 'page', 'fc1 team', 'pages', 'team')`;
+    for (const [id, login] of [
+      [clientDraft, client],
+      [memberDraft, member],
+    ] as const) {
+      const [space] = await sql<{ id: string }[]>`
+        select id::text as id from spaces where kind = 'personal' and login_id = ${login}`;
+      await sql`insert into nodes (id, owner_id, type, title, path, audience)
+        values (${id}, ${space!.id}, 'page', 'fc1 draft', 'pages', 'admin')`;
+      await sql`insert into space_items (node_id, author_login_id, sharing, review_state)
+        values (${id}, ${login}, 'private', 'draft')`;
+    }
     // Before 0272 the box is skipped for its client login.
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toMatch(/^clients present/);
     await run0272(sql);
@@ -118,6 +135,40 @@ describe.skipIf(!URL)('0272: a brain not on workspaces that had a client', () =>
     expect(await rowsOf(member)).not.toContain('admin');
     expect(await rowsOf(client)).toEqual([]);
   }, 60_000);
+
+  it("homes the former client's draft in its Former user workspace, never a private one", async () => {
+    // Runs after the manual switch above.
+    const homeOf = async (id: string) =>
+      (
+        await sql<{ owner: string; home: string | null }[]>`
+          select owner_id::text as owner, home_ws::text as home from nodes where id = ${id}`
+      )[0]!;
+    const draft = await homeOf(clientDraft);
+    expect(draft.owner).toBe(owner);
+    const [former] = await sql<{ ws: string; users: number }[]>`
+      select f.workspace_id::text as ws,
+             (select count(*)::int from workspace_users u where u.workspace_id = f.workspace_id) as users
+        from former_user_workspaces f where f.former_key = ${client}`;
+    expect(former).toBeDefined();
+    expect(draft.home).toBe(former!.ws);
+    expect(former!.users).toBe(0);
+    expect(await sql`select 1 from private_workspaces where login_id = ${client}`).toHaveLength(0);
+    // The member is homed as before (control): its own private workspace.
+    const [own] = await sql<{ ws: string }[]>`
+      select workspace_id::text as ws from private_workspaces where login_id = ${member}`;
+    expect((await homeOf(memberDraft)).home).toBe(own!.ws);
+    // The app's private workspace function makes none for a former client,
+    // even were it enabled again.
+    await sql`update auth.users set disabled_at = null where id = ${client}`;
+    try {
+      const [made] = await sql<{ ws: string | null }[]>`
+        select mantle_ws_private_workspace(${client}::uuid)::text as ws`;
+      expect(made!.ws).toBeNull();
+    } finally {
+      await sql`update auth.users set disabled_at = now() where id = ${client}`;
+    }
+    expect(await rowsOf(client)).toEqual([]);
+  });
 });
 
 describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a workspace', () => {

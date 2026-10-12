@@ -16,7 +16,7 @@ else: as a user of a workspace that holds it.
   and every gate answers it as a stranger (`server/web/server/role-sweep.test.ts`).
 - Email-code sign-in. `GET`/`POST /api/auth/client-code`,
   `POST /api/auth/client-code/verify`, `GET`/`PUT
-  /api/team-admin/clients/signin-sender` and its `preview` answer 410
+/api/team-admin/clients/signin-sender` and its `preview` answer 410
   `{ error, code: 'gone' }` before any work. The sign-in code queue
   (`mantle.client.code`) has no worker, and the nightly code reaper is gone.
 - Every role fence that came with the client: the client session and
@@ -54,11 +54,15 @@ A former client stays one (`archive_client_logins` is the list):
   `select * from mantle_ws_migrate_locked()`.
 - The login bridge (`mantle_bridge_login`) gives a former client no role:
   no switch, role change or invite puts one in Admin or Team.
+- Nor in a private workspace: the review homes, the spaces fold of a
+  switch and `mantle_ws_private_workspace` treat a former client as a
+  login that is gone. Its items go to its "Former user" workspace (no
+  users; an Admin user may join it), as a deleted login's do.
 - An admin cannot enable a former client login again (`PATCH
-  /api/users/:id` with `disabled: false` answers 409), and an invite or a
+/api/users/:id` with `disabled: false` answers 409), and an invite or a
   new login on a former client's email is refused (409, `reason:
-  'email-was-client'`), or linked to its contact (409, `reason:
-  'contact-was-client'`); an invite made before redeems nothing.
+'email-was-client'`), or linked to its contact (409, `reason:
+'contact-was-client'`); an invite made before redeems nothing.
 - What a former client wrote stays client-sourced: its login id (its old
   chat thread), an item it wrote, and a workspace it is a user of count for
   the client-sourced write hold (`packages/tools/src/client-sourced.ts`).
