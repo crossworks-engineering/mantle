@@ -25,7 +25,12 @@ import {
   dropViewerLogins,
   ensureViewerRoles,
 } from './viewer-roles';
-import { viewerDatabaseUrl, viewerLoginRoleName, viewerRolePassword } from './viewer';
+import {
+  viewerDatabaseUrl,
+  viewerLoginRoleName,
+  viewerRoleName,
+  viewerRolePassword,
+} from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const INVALID_PASSWORD = '28P01';
@@ -88,7 +93,7 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
         const url = viewerDatabaseUrl(b.url, level, viewerRolePassword(b.key, level), true);
         expect(await whoami(url)).toEqual({
           s: viewerLoginRoleName(level, b.name),
-          c: `mantle_view_${level}`,
+          c: viewerRoleName(level),
         });
       }
     }

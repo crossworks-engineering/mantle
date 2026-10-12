@@ -26,10 +26,11 @@ and in the item's Grant Access panel. Read
 
 The database roles and the restore checks still matter to an operator.
 
-- **Restore** (`scripts/db-restore.sh`) creates the five roles
+- **Restore** (`scripts/db-restore.sh`) creates the six roles
   (`mantle_view_team`, `mantle_view_client`, `mantle_view_public`,
-  `mantle_view_space` and `mantle_view_user`, the workspace role of
-  workspaces W1) before `pg_restore` (a dump does not carry roles, but
+  `mantle_view_space`, `mantle_view_user`, the workspace role of
+  workspaces W1, and `mantle_write_user`, the write role of arch A2b2a)
+  before `pg_restore` (a dump does not carry roles, but
   its policies and grants name them; migrate later gives them their login
   and password). It restores into a pristine database (it drops the empty
   `postgres` database the init scripts made and creates a new one, and

@@ -9,12 +9,15 @@ import postgres from 'postgres';
 import {
   ACCESS_MATRIX,
   WORKSPACE_NODE_TYPES,
+  WRITE_ROLE_SYSTEM_ONLY,
+  WRITE_ROLE_TABLES,
   applyViewerGrants,
   userReadFor,
 } from './access-matrix';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const USER_ROLE = 'mantle_view_user';
+const WRITE_ROLE = 'mantle_write_user';
 /** Retired in W6b (space) and W8c (the level roles): no grant, no policy. */
 const RETIRED = [
   'mantle_view_team',
@@ -78,6 +81,67 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
         `${t.table} columns`,
       ).toEqual([]);
     }
+  });
+
+  it('mantle_write_user reads exactly what mantle_view_user reads, and writes only the write tables', async () => {
+    const view = await liveGrants(USER_ROLE);
+    const write = await liveGrants(WRITE_ROLE);
+    expect(write.tables).toEqual(view.tables);
+    expect(write.cols).toEqual(view.cols);
+    const privs = await sql<{ t: string; p: string }[]>`
+      select table_schema || '.' || table_name as t, privilege_type as p
+        from information_schema.role_table_grants
+       where grantee = ${WRITE_ROLE} and privilege_type <> 'SELECT'
+         and table_schema in ('public', 'auth') order by 1, 2`;
+    // DELETE on every write table; INSERT and UPDATE on the whole table
+    // where the role reads it whole, else on exactly the columns it reads.
+    expect(privs.map((r) => `${r.t} ${r.p}`)).toEqual(
+      ACCESS_MATRIX.filter((t) => WRITE_ROLE_TABLES.includes(t.table))
+        .map((t) => t.table)
+        .sort()
+        .flatMap((t) => {
+          const whole = userReadFor(ACCESS_MATRIX.find((x) => x.table === t)!) === 'all';
+          return whole ? [`${t} DELETE`, `${t} INSERT`, `${t} UPDATE`] : [`${t} DELETE`];
+        }),
+    );
+    for (const t of ACCESS_MATRIX.filter((x) => WRITE_ROLE_TABLES.includes(x.table))) {
+      const read = userReadFor(t);
+      if (!Array.isArray(read)) continue;
+      for (const priv of ['INSERT', 'UPDATE']) {
+        const cols = await sql<{ c: string }[]>`
+          select column_name as c from information_schema.column_privileges
+           where grantee = ${WRITE_ROLE} and privilege_type = ${priv}
+             and table_schema || '.' || table_name = ${t.table} order by 1`;
+        expect(cols.map((c) => c.c).sort(), `${t.table} ${priv}`).toEqual([...read].sort());
+      }
+    }
+    // A grant's attribution and bridge mark are never the role's to write.
+    for (const c of ['granted_by', 'granted_at', 'bridge']) {
+      const [r] = await sql<{ ok: boolean }[]>`
+        select has_column_privilege(${WRITE_ROLE}, 'public.item_grants', ${c}, 'INSERT, UPDATE') as ok`;
+      expect(r!.ok, `item_grants.${c}`).toBe(false);
+    }
+    // The content tables with no read rule: no right of any kind, column
+    // rights included (node_embeds has row level security off).
+    expect(WRITE_ROLE_SYSTEM_ONLY).toContain('public.node_embeds');
+    for (const t of WRITE_ROLE_SYSTEM_ONLY) {
+      const [r] = await sql<{ ok: boolean }[]>`
+        select has_table_privilege(${WRITE_ROLE}, ${t},
+                 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+            or has_any_column_privilege(${WRITE_ROLE}, ${t}, 'SELECT, INSERT, UPDATE, REFERENCES')
+            as ok`;
+      expect(r!.ok, t).toBe(false);
+    }
+    // The role itself: a lock like the workspace role, with a smaller cap.
+    const [attrs] = await sql<
+      { rolsuper: boolean; rolbypassrls: boolean; rolinherit: boolean; rolconnlimit: number }[]
+    >`select rolsuper, rolbypassrls, rolinherit, rolconnlimit from pg_roles where rolname = ${WRITE_ROLE}`;
+    expect(attrs).toEqual({
+      rolsuper: false,
+      rolbypassrls: false,
+      rolinherit: false,
+      rolconnlimit: 20,
+    });
   });
 
   it.each(RETIRED)(
@@ -177,7 +241,18 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
     await sql.unsafe(`GRANT SELECT ("email") ON "auth"."users" TO mantle_view_user`);
     // An old migration's grant to a retired role, as on a fresh install.
     await sql.unsafe(`GRANT SELECT ON "public"."nodes" TO mantle_view_team`);
+    // And the write role: a write right on a system-only table, a truncate.
+    await sql.unsafe(`GRANT INSERT ON "public"."node_embeds" TO mantle_write_user`);
+    await sql.unsafe(`GRANT TRUNCATE ON "public"."nodes" TO mantle_write_user`);
     await applyViewerGrants(sql);
+    for (const [t, p] of [
+      ['public.node_embeds', 'INSERT'],
+      ['public.nodes', 'TRUNCATE'],
+    ] as const) {
+      const [r] = await sql<{ ok: boolean }[]>`
+        select has_table_privilege('mantle_write_user', ${t}, ${p}) as ok`;
+      expect(r!.ok, `${t} ${p}`).toBe(false);
+    }
     const live = await liveGrants(USER_ROLE);
     expect(live.tables).not.toContain('public.secrets');
     expect(live.cols.filter((c) => c.t === 'auth.users').map((c) => c.c)).not.toContain('email');

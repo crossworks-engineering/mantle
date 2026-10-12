@@ -337,8 +337,7 @@ tree, and refuses a second run on the same box. The log stays on the box in
 
 ## Rolling across the client logins releases (history)
 
-The client logins releases (v0.232.318 to v0.232.350, migrations 0186 to
-0200) are behind every box we run. Their roll notes (the client level, the
+The client logins releases (v0.232.318 to v0.232.350, migrations 0186 to 0200) are behind every box we run. Their roll notes (the client level, the
 sign-in links and codes, the client space quotas, client apps) are in the
 repository history before workspaces W8f. Client logins themselves are
 gone since W8a (below, and [client-logins.md](./client-logins.md)); the
@@ -717,8 +716,7 @@ select mantle_operator_actor('fix-slug');   -- a short reason, lower case
 The session then runs as `system:operator:fix-slug` until it ends. Without
 it, a write on an item table (nodes, pages, tables, grants, shares and the
 other item tables) is an actor miss: psql prints `NOTICE: mantle actor miss:
-UPDATE on nodes`. In `warn` a miss only logs. In `on` (A2b, migration
-0277) the write is refused: `ERROR: mantle actor check: UPDATE on nodes
+UPDATE on nodes`. In `warn` a miss only logs. In `on` (A2b, migration 0277) the write is refused: `ERROR: mantle actor check: UPDATE on nodes
 with no actor`. Name the session first.
 
 The check has three steps, set per box in the database (the box setting
@@ -775,6 +773,16 @@ changes: no new query and no new round trip.
 (A2b). Do not set it on any box until the scaling task says so (task
 2d96f472). Going back is `select mantle_set_actor_check('off');`, then
 restart the app processes.
+
+## Rolling to the write role (arch A2b2a, migration 0278)
+
+The first migrate after 0278 gives the write role (`mantle_write_user`)
+its row rules and write checks. It changes the rules table by table, each
+in its own short transaction: it waits at most 3 s for a table's lock and
+tries 8 times, 1 s apart. On a busy box the log can show a retry. If a
+table still cannot be locked, migrate stops with a lock timeout (55P03):
+run it again. A later migrate that changes nothing takes no table lock.
+No app process uses the role yet, so nothing else changes.
 
 ## Rollback
 

@@ -71,8 +71,11 @@ declare global {
   var __mantleTurnDb: PostgresJsDatabase<typeof schema> | undefined;
 }
 
-/** Connections of the limited pool. Small on purpose: max_connections is
- *  200 and every process of a box opens its own pools. */
+/** Connections of a limited pool, per process and role. Small on purpose:
+ *  every process of a box opens its own pools, and their sum must stay under
+ *  the box's max_connections (the connection ceiling, task 29008b01).
+ *  The write role's pool (getViewerDb('write')) is opened by no process
+ *  until A2b2b (docs/actors.md, "A2b2b must"). */
 const VIEWER_POOL_MAX = 3;
 
 /**

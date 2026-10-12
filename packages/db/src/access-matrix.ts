@@ -18,7 +18,7 @@
  * them on a fresh install.
  */
 import type postgres from 'postgres';
-import { POOL_ROLES, RETIRED_POOL_ROLES } from './viewer-roles';
+import { POOL_ROLES, RETIRED_POOL_ROLES, withRoleRetry } from './viewer-roles';
 import { viewerRoleName } from './viewer';
 import { kindsWhere, type WorkspaceKind } from '@mantle/client-types/kinds';
 
@@ -61,6 +61,14 @@ export type TableAccess = {
    * scope holds the Admin workspace (profiles, migration 0266).
    */
   userRule?: 'own-login';
+  /**
+   * What the write role must hold beyond reading the row (migration 0278,
+   * mantle_write_check_trg): 'self' (the item table: edit of the item), or
+   * the column naming the row's item and edit or manage of that item. A
+   * write table with none is read in an Admin scope only (write-role tests
+   * pin it).
+   */
+  writeCheck?: { kind: 'self' } | { kind: 'edit' | 'manage'; item: string };
 };
 
 /** The draft columns of the item tables. The workspace role reads them since
@@ -103,18 +111,35 @@ const userOnly = (table: string, writer: Writer = 'admin'): TableAccess => ({
 
 export const ACCESS_MATRIX: readonly TableAccess[] = [
   // ── Brain content: what the scope's workspaces hold (0242) ────────────────
-  { table: 'public.nodes', user: 'all', writer: 'content' },
-  { table: 'public.content_chunks', user: 'all', writer: 'content' },
-  { table: 'public.content_chunk_windows', user: 'all', writer: 'content' },
-  { table: 'public.facts', user: 'all', writer: 'content' },
+  { table: 'public.nodes', user: 'all', writer: 'content', writeCheck: { kind: 'self' } },
+  {
+    table: 'public.content_chunks',
+    user: 'all',
+    writer: 'content',
+    writeCheck: { kind: 'edit', item: 'node_id' },
+  },
+  {
+    table: 'public.content_chunk_windows',
+    user: 'all',
+    writer: 'content',
+    writeCheck: { kind: 'edit', item: 'node_id' },
+  },
+  {
+    table: 'public.facts',
+    user: 'all',
+    writer: 'content',
+    writeCheck: { kind: 'edit', item: 'source_node_id' },
+  },
   {
     table: 'public.pages',
+    writeCheck: { kind: 'edit', item: 'node_id' },
     user: ['node_id', 'doc', 'doc_text', 'version', 'created_at', 'updated_at'],
     drafts: true,
     writer: 'content',
   },
   {
     table: 'public.draws',
+    writeCheck: { kind: 'edit', item: 'node_id' },
     drafts: true,
     user: [
       'node_id',
@@ -131,6 +156,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.tables',
+    writeCheck: { kind: 'edit', item: 'node_id' },
     drafts: true,
     user: [
       'node_id',
@@ -149,8 +175,18 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   // Every column since W6a: an Admin user's app screens read them all;
   // drafts only where the user may edit (draftColumn).
-  { table: 'public.apps', user: 'all', writer: 'content' },
-  { table: 'public.app_databases', user: 'all', writer: 'content' },
+  {
+    table: 'public.apps',
+    user: 'all',
+    writer: 'content',
+    writeCheck: { kind: 'edit', item: 'node_id' },
+  },
+  {
+    table: 'public.app_databases',
+    user: 'all',
+    writer: 'content',
+    writeCheck: { kind: 'edit', item: 'app_node_id' },
+  },
 
   // ── Personal spaces (Phase 2; folded into the brain in W6b, 0267) ────────
   // Frozen until W10: read and written on the admin pool only.
@@ -299,6 +335,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.item_grants',
+    writeCheck: { kind: 'manage', item: 'node_id' },
     writer: 'content',
     user: ['node_id', 'workspace_id', 'write', 'is_home', 'via_folder_id', 'excluded'],
   },
@@ -381,23 +418,182 @@ export function userGrantStatements(role: string = viewerRoleName('user')): stri
 }
 
 /**
+ * Whether the write role (`mantle_write_user`, workspaces arch A2b2, plan
+ * 20.1) writes `t`: a `content` table that the workspace role reads, so it
+ * has a read rule. The write role's row rules ARE that read rule (migration
+ * 0278): a row the scope cannot read matches no row. What reading does not
+ * decide (edit, manage) is the table's `writeCheck`. A content table with
+ * no read rule stays on the system pool and its definer triggers
+ * (WRITE_ROLE_SYSTEM_ONLY) until a phase gives it one.
+ */
+export function writeRoleWrites(t: TableAccess): boolean {
+  return t.writer === 'content' && userReadFor(t) !== 'none';
+}
+
+/** The tables the write role may INSERT, UPDATE and DELETE. */
+export const WRITE_ROLE_TABLES: readonly string[] = ACCESS_MATRIX.filter(writeRoleWrites).map(
+  (t) => t.table,
+);
+
+/** Content tables the write role may not touch: no read rule, so login
+ *  writes to them stay on the system pool (docs/actors.md, "A2b2b must"). */
+export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
+  (t) => t.writer === 'content' && !writeRoleWrites(t),
+).map((t) => t.table);
+
+/**
+ * The functions the write role may run beyond the workspace role's (whose
+ * rights it mirrors: its policies call them), each with its reason.
+ * applyViewerGrants makes the role's rights exactly this, revoking the rest.
+ */
+export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
+  'public.mantle_is_brain_space(uuid)':
+    'notify_node_ingested runs with the caller rights on nodes and calls it',
+  'public.mantle_lock_heads(uuid[],text)': 'the heads lock the app takes before a write',
+  'public.mantle_lock_heads_more(uuid[])': 'more heads inside a transaction that holds some',
+  'public.mantle_lock_heads_nested(uuid[],text)': 'the nested heads lock (client.ts, withHeads)',
+};
+
+/** The GRANT statements for the write role. Pure. It reads exactly what the
+ *  workspace role reads (its policies name both roles, 0278), and writes the
+ *  WRITE_ROLE_TABLES: INSERT and UPDATE on the columns it reads, DELETE.
+ *  Sequences: see applyViewerGrants. */
+export function writeGrantStatements(role: string = viewerRoleName('write')): string[] {
+  const out = userGrantStatements(role);
+  for (const t of ACCESS_MATRIX.filter(writeRoleWrites)) {
+    const read = userReadFor(t);
+    if (read === 'none') continue;
+    const cols = read === 'all' ? '' : ` (${read.map((c) => `"${c}"`).join(', ')})`;
+    out.push(`GRANT INSERT${cols}, UPDATE${cols}, DELETE ON ${quoteTable(t.table)} TO "${role}"`);
+  }
+  return out;
+}
+
+/** The write check's arguments for `t` (mantle_write_check_trg), or null. */
+export function writeCheckArgs(t: TableAccess): string[] | null {
+  if (!writeRoleWrites(t) || !t.writeCheck) return null;
+  return t.writeCheck.kind === 'self' ? ['self'] : [t.writeCheck.kind, t.writeCheck.item];
+}
+
+/**
  * Make the live grants equal the matrix: revoke everything the workspace
- * role holds on every table, then grant what the matrix lists. The retired
- * roles (RETIRED_POOL_ROLES) lose every table, sequence and function right
- * and their schema usage, so an old migration run on a fresh install (its
- * grants to the level roles) leaves them nothing. One transaction,
- * idempotent; migrate runs it after the migrations.
+ * role and the write role hold on every table (and the write role on every
+ * sequence), then grant what the matrix lists. The write role's function
+ * rights become exactly the workspace role's plus WRITE_ROLE_FUNCTIONS. The
+ * retired roles (RETIRED_POOL_ROLES) lose every table, sequence and function
+ * right and their schema usage, so an old migration run on a fresh install
+ * (its grants to the level roles) leaves them nothing. One transaction,
+ * idempotent; migrate runs it after the migrations. Then the write role's
+ * row rules, table by table (syncWriteRoleRules).
  */
 export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promise<void> {
   const live = POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
   const retired = RETIRED_POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
-  await sql.begin(async (tx) => {
-    await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${live}, ${retired}`);
-    await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM ${live}, ${retired}`);
-    await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, auth FROM ${retired}`);
-    await tx.unsafe(`REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public, auth FROM ${retired}`);
-    await tx.unsafe(`REVOKE ALL ON SCHEMA public, auth FROM ${retired}`);
-    await tx.unsafe(`GRANT USAGE ON SCHEMA public, auth TO ${live}`);
-    for (const stmt of userGrantStatements()) await tx.unsafe(stmt);
-  });
+  const writer = `"${viewerRoleName('write')}"`;
+  // Retried on "tuple concurrently updated": two processes granting on the
+  // same objects at once (parallel test files do).
+  await withRoleRetry(() =>
+    sql.begin(async (tx) => {
+      await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${live}, ${retired}`);
+      await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM ${live}, ${retired}`);
+      await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, auth FROM ${retired}`);
+      await tx.unsafe(`REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public, auth FROM ${retired}`);
+      await tx.unsafe(`REVOKE ALL ON SCHEMA public, auth FROM ${retired}`);
+      await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, auth FROM ${writer}`);
+      await tx.unsafe(`GRANT USAGE ON SCHEMA public, auth TO ${live}`);
+      for (const stmt of userGrantStatements()) await tx.unsafe(stmt);
+      for (const stmt of writeGrantStatements()) await tx.unsafe(stmt);
+      // The sequences a write to those tables draws from (a serial or
+      // identity column), read from the catalog.
+      const seqs = await tx<{ seq: string }[]>`
+      select distinct quote_ident(sn.nspname) || '.' || quote_ident(s.relname) as seq
+        from pg_depend d
+        join pg_class s on s.oid = d.objid and s.relkind = 'S'
+        join pg_namespace sn on sn.oid = s.relnamespace
+        join pg_class t on t.oid = d.refobjid
+        join pg_namespace tn on tn.oid = t.relnamespace
+       where d.deptype in ('a', 'i')
+         and tn.nspname || '.' || t.relname = any(${WRITE_ROLE_TABLES as string[]}::text[])
+       order by 1`;
+      for (const { seq } of seqs) await tx.unsafe(`GRANT USAGE ON SEQUENCE ${seq} TO ${writer}`);
+      // Function rights: the workspace role's and WRITE_ROLE_FUNCTIONS,
+      // exactly (a right no longer wanted is revoked). Functions that do not
+      // exist yet (a database migrated part way) are left out.
+      const fns = await tx<{ fn: string; has: boolean; want: boolean }[]>`
+      with named as (
+        select to_regprocedure(n) as oid from unnest(${Object.keys(WRITE_ROLE_FUNCTIONS)}::text[]) n
+      ),
+      viewer as (
+        select p.oid from pg_proc p cross join lateral aclexplode(p.proacl) a
+         where a.grantee = to_regrole('mantle_view_user') and a.privilege_type = 'EXECUTE'
+      ),
+      writer as (
+        select p.oid from pg_proc p cross join lateral aclexplode(p.proacl) a
+         where a.grantee = to_regrole('mantle_write_user') and a.privilege_type = 'EXECUTE'
+      ),
+      every as (
+        select oid from named where oid is not null
+        union select oid from viewer union select oid from writer
+      )
+      select e.oid::regprocedure::text as fn,
+             e.oid in (select oid from writer) as has,
+             e.oid in (select oid from viewer union select oid from named) as want
+        from every e`;
+      for (const f of fns) {
+        if (f.want && !f.has) await tx.unsafe(`GRANT EXECUTE ON FUNCTION ${f.fn} TO ${writer}`);
+        if (!f.want && f.has) await tx.unsafe(`REVOKE EXECUTE ON FUNCTION ${f.fn} FROM ${writer}`);
+      }
+    }),
+  );
+  await syncWriteRoleRules(sql);
+}
+
+/** Errors a short policy change may meet on a busy box: a lock it waited
+ *  for too long (lock_timeout) or a deadlock with live traffic. */
+const RETRY_CODES = new Set(['55P03', '40P01']);
+
+/**
+ * The write role's row rules and write checks (mantle_write_role_sync_table,
+ * 0278), one table per transaction: every write table, every table with a
+ * read rule of the workspace role, and every table that still carries a
+ * rule or check of the write role (the matrix's schemas, public and auth). Each waits at most 3 s for its lock and
+ * is tried again (8 times, 1 s apart): a policy change takes its table's
+ * ACCESS EXCLUSIVE lock, so it must be short. A table whose rules match
+ * takes no lock. A database migrated part way (no sync function yet) is
+ * left as it is.
+ */
+export async function syncWriteRoleRules(sql: ReturnType<typeof postgres>): Promise<void> {
+  const [ready] = await sql<{ ok: boolean }[]>`
+    select to_regprocedure('public.mantle_write_role_sync_table(text,boolean,text[])') is not null as ok`;
+  if (!ready?.ok) return;
+  const byTable = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));
+  const others = await sql<{ t: string }[]>`
+    select distinct schemaname || '.' || tablename as t from pg_policies
+     where roles && array['mantle_view_user', 'mantle_write_user']::name[]
+       and schemaname in ('public', 'auth')
+    union
+    select distinct n.nspname || '.' || c.relname from pg_trigger tg
+      join pg_class c on c.oid = tg.tgrelid join pg_namespace n on n.oid = c.relnamespace
+     where tg.tgname = 'mantle_write_check' and n.nspname in ('public', 'auth')`;
+  const tables = [...new Set([...WRITE_ROLE_TABLES, ...others.map((r) => r.t)])].sort();
+  for (const table of tables) {
+    const t = byTable.get(table);
+    const write = t ? writeRoleWrites(t) : false;
+    const args = t ? writeCheckArgs(t) : null;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await withRoleRetry(() =>
+          sql.begin(async (tx) => {
+            await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
+            await tx`select mantle_write_role_sync_table(${table}, ${write}, ${args}::text[])`;
+          }),
+        );
+        break;
+      } catch (err) {
+        const code = (err as { code?: string }).code ?? '';
+        if (attempt >= 8 || !RETRY_CODES.has(code)) throw err;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  }
 }

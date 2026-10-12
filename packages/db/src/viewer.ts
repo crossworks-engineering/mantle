@@ -1204,8 +1204,10 @@ export function assertNoViewer(what: string): void {
   }
 }
 
-/** The limited pool: the workspace role (workspaces W1). */
-export type PoolRole = 'user';
+/** The limited pools: the workspace role (workspaces W1), which reads, and
+ *  the write role (workspaces arch A2b2), which writes under the same row
+ *  rules. */
+export type PoolRole = 'user' | 'write';
 
 /** The retired roles: the personal-space role (W6b) and the three level
  *  roles (W8c). NOLOGIN, no grant and no policy (0273); they stay as roles
@@ -1213,9 +1215,10 @@ export type PoolRole = 'user';
 export type RetiredPoolRole = 'space' | 'team' | 'client' | 'public';
 
 /** The Postgres role of the pool, or of a retired one. Not `mantle_team`:
- *  that name is already the team visitor cookie. */
+ *  that name is already the team visitor cookie. The write role is
+ *  `mantle_write_user`: 0277's gate and the plan (20.1) name it so. */
 export function viewerRoleName(level: PoolRole | RetiredPoolRole): string {
-  return `mantle_view_${level}`;
+  return level === 'write' ? 'mantle_write_user' : `mantle_view_${level}`;
 }
 
 /**

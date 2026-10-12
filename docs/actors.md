@@ -288,6 +288,7 @@ request-slot server/web/server/pages/share.tsx system(http:share-page), then the
 request-slot server/web/server/route-loader.ts system(http:no-login), then what the guard names
 timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain sleep inside an app database restore
 timeout-loop packages/content/src/app-table-exports.ts the scheduling caller's actor, which the debounce timer carries to the export sync
+timeout-loop packages/db/src/access-matrix.ts the caller's actor (migrate's): the write role sync's retry sleep
 timeout-loop packages/db/src/client.ts the caller's actor: a retry sleep
 timeout-loop packages/db/src/resolve-owner.ts the caller's actor: the wait for the first signup
 timeout-loop packages/db/src/test-support.ts none: test helpers' poll and retry sleeps
@@ -387,11 +388,63 @@ Found in the A2a audits:
   `off|warn|on`), and a statement sent in parallel with a transaction's
   first one reports the SET's own error.
 
-## A2b2 must
+## The write role (A2b2a, migration 0278)
 
-- **The write role.** Login, assistant, link and contact writes move to
-  `mantle_write_user` (no BYPASSRLS) with the pipelined scope pattern (plan
-  20.1). 0277's gate is ready for it.
+`mantle_write_user` exists on every box from A2b2a on. No write runs on it
+yet: A2b2b routes the login writes. What A2b2a gives it:
+
+- **The role.** The same code path as the workspace role
+  (`POOL_ROLES` in `packages/db/src/viewer-roles.ts`): no superuser, no
+  BYPASSRLS, NOINHERIT, its password derived from the master key, the per
+  database login with a SET-only membership, the owner note. Connection
+  limit 20 (`ROLE_CONNECTION_LIMIT`; the workspace role keeps 30). The
+  pool is `getViewerDb('write')`, at most 3 per process, and no process
+  opens it in A2b2a.
+- **Grants, from `ACCESS_MATRIX`.** SELECT exactly as the workspace role.
+  On `WRITE_ROLE_TABLES` (the `content` tables the workspace role reads,
+  `writeRoleWrites`): DELETE, and INSERT and UPDATE on the columns it reads
+  (the whole table where it reads all; never `item_grants.granted_by`,
+  `granted_at` or `bridge`). The other `content` tables
+  (`WRITE_ROLE_SYSTEM_ONLY`) have no read rule, so the role gets no right
+  on them.
+- **Function rights.** Exactly the workspace role's plus
+  `WRITE_ROLE_FUNCTIONS` (each with its reason); `applyViewerGrants`
+  revokes any other. Every definer function the role may run is on the
+  reviewed list in `write-role.db.test.ts`.
+- **Row rules.** `syncWriteRoleRules` calls `mantle_write_role_sync_table`
+  per table, each in its own transaction (lock_timeout 3 s, tried 8
+  times): every read rule of the workspace role names the write role too;
+  each write table has three write rules for the role, each the table's
+  read rule (INSERT WITH CHECK, UPDATE USING and WITH CHECK, DELETE USING).
+  A row the scope cannot read matches no row, and a write cannot move a
+  row out of what the scope reads. A table whose rules match takes no
+  lock.
+- **Write checks.** Reading is not editing. `mantle_write_check_trg`, on
+  each write table with a `writeCheck` in the matrix, fires for the write
+  role only (`WHEN current_user = 'mantle_write_user'`) and refuses
+  through `mantle_scoped_write_refuses` (so off, warn and on stage it):
+  an item needs edit (a board rank change alone: edit of the item or its
+  folder); a row of an item (a page, a chunk, a fact) needs edit of that
+  item; a grant needs manage of the item's home, and a new or moved grant
+  a Moderator of its workspace; an item with no home needs an Admin scope
+  to delete or to manage; a fact with no item stays inside the scope and
+  belongs to nobody else.
+- **Trigger functions.** Every trigger function on a `content` table runs
+  as its owner (SECURITY DEFINER, with a search_path), or is on the
+  reviewed list in `write-role.db.test.ts` with its reason. 0278 made the
+  two reap triggers definers (a delete reaps facts and edges the login
+  cannot read). The three guards (`mantle_nodes_acl_guard_trg`,
+  `mantle_follow_guard_trg`, `mantle_nodes_login_guard_trg`) stay with the
+  caller's rights: they ask `mantle_owner_role()`, which reads
+  `current_user`, so as definers they would always pass. No definer
+  trigger function is open to PUBLIC, and `mantle_page_folder_id` is open
+  to the workspace role only.
+
+## A2b2b must
+
+- **Route the writes.** Login, assistant, link and contact writes move to
+  `mantle_write_user` with the pipelined scope pattern (plan 20.1). 0277's
+  gate and A2b2a's grants and row rules are ready for it.
 - **SET LOCAL on the write pool.** Its writes set the scope and the actor
   with `SET LOCAL` in their own short transaction, never a session-level
   SET: a scope left on a pooled connection would be a stale access right.
@@ -399,13 +452,59 @@ Found in the A2a audits:
   `mantle.actor_check` is warn or on; off runs today's path. The mode is
   read from the catalog (`mantle_actor_check_mode`), where a session can
   only make it stricter, so the security note above holds.
-- **Heads functions for the write role.** If the write role runs a nested
-  `withHeads`, grant it EXECUTE on `mantle_lock_heads_nested` (not on
-  `mantle_heads_taken`, which only the definers call). Never a signer
-  (`mantle_heads_set`, `_sig`, `_mac`) or a bypass.
+- **Heads functions.** The write role runs `mantle_lock_heads`,
+  `mantle_lock_heads_more` and `mantle_lock_heads_nested`
+  (`WRITE_ROLE_FUNCTIONS`, granted by A2b2a); never `mantle_heads_taken`
+  (only the definers call it), a signer (`mantle_heads_set`, `_sig`,
+  `_mac`) or a bypass.
 - **`mantle_actor_check_mode` stays open to PUBLIC** until the view and
   write roles have an explicit grant: callers that are not definers need it.
   Grant first, then revoke PUBLIC.
+- **The trust model.** `mantle.ws`, `mantle.mod_ws` and `mantle.login_id`
+  are settings any session can set. The write role keeps an app bug from
+  reading or writing past the scope it set; it does not stop SQL that runs
+  as the role and sets its own scope. Its password is as sensitive as the
+  system pool's.
+- **Lock only what the scope reads.** The heads lock functions are definers
+  and lock any id they get. Take heads only for ids a scoped SELECT
+  returned, so a lock never tells the caller that an unreadable item
+  exists.
+- **No `RETURNING *` and no other columns on the column-limited tables**
+  (`pages`, `draws`, `tables`, `item_grants`): the role reads, inserts and
+  updates only the columns `userReadFor` names there. Name the columns.
+- **Open the write pool only in web and api** (3 connections each), or at
+  most 1 per process elsewhere: the role's limit is 20, and 12 processes
+  with 3 each would hit it (FATAL 53300, too many connections for role).
+- **The system-only content tables.** Login writes to the tables in
+  `WRITE_ROLE_SYSTEM_ONLY` (`packages/db/src/access-matrix.ts`) stay on
+  the system pool. They have no read rule for the workspace role, so the
+  write role has no right on them. A phase that gives one of them a read
+  rule (A3a or later) moves it: the matrix then puts it in
+  `WRITE_ROLE_TABLES`.
+- **A2b2b may open the write pool once the raised max_connections (task
+  29008b01) is on the box.** The worst case of the code's pool limits is
+  over max_connections 200 already, before the write pool. The owner chose
+  (2026-10-12) to raise max_connections and keep the pools as they
+  are. Counted in A2b2a (2026-10-12):
+  - 12 Node processes hold connections: web, api and 10 workers. media is
+    Python with no `DATABASE_URL` (docker-compose.yml, media service).
+  - System pool: `max: 10` per process (`packages/db/src/client.ts`,
+    getAdminDb); postgres.js never closes an idle connection. 120.
+  - Workspace role pool: 3 per process, capped by its role limit: 30.
+  - pg-boss 12.37: 10 per instance (the default; no caller passes `max`).
+    Instances: `server/web/workers/_runner.ts` createBoss,
+    `packages/runs/src/boss.ts`, `packages/email/src/backfill-queue.ts`,
+    `packages/email/src/accounts.ts`,
+    `server/api/src/agent/extract-queue.ts`. web, api and the runs worker
+    can each hold 3; the telegram worker 2; the email, microsoft, calendar
+    and maintenance workers 1. About 140.
+  - DBOS 5.2.11: the api system pool 10, and a `DBOSClient` of 10 in web
+    (`server/web/lib/dbos-client.ts`) and in the runs worker
+    (`server/web/lib/runs/dbos-enqueue.ts`): 30. None sets a pool size.
+  - LISTEN clients: api 2, web 1, push worker 2: 5.
+  - Sum: about 335 on the full shape, 295 with `MANTLE_RUNS` off, 171 on
+    the core shape (`docker-compose.core.yml`). With the write role's
+    limit (20): about 355. The measured dev peak was 77.
 
 ## A3a must
 
@@ -415,6 +514,6 @@ Found in the A2a audits:
 - **Tables that stay on the system pool until A3a:** `recall_maps`,
   `recall_nodes`, `shares` and `node_snapshots`. They are not `content`
   tables in `ACCESS_MATRIX`; A3a adds their checks and then moves them.
-- **`mantle_page_folder_id`** is a SECURITY DEFINER function open to PUBLIC
-  (pre-existing). Grant it explicitly to the roles that call it, then revoke
-  PUBLIC.
+- **The heads locks filter by the scope.** In `mantle_lock_heads` and its
+  siblings, when the caller is not the owner role, drop the ids whose
+  `read_ws && mantle_scope_ws()` is false.

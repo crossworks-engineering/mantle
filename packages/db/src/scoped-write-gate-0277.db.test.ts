@@ -23,7 +23,6 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
   const adminOnly = `mantle_a2b_gate_admin_${suffix}`;
   /** A per-database login's shape: SET only, no INHERIT. A writer. */
   const setOnly = `mantle_a2b_gate_set_${suffix}`;
-  let madeWriteRole = false;
   const owner = randomUUID();
   const folder = randomUUID();
   const ws = { admin: randomUUID(), other: randomUUID() };
@@ -35,14 +34,8 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
       prepare: false,
       onnotice: (n) => notices.push(String(n.message ?? '')),
     });
-    // The write role arrives in A2b2; a test cluster may not have it yet.
-    const [had] = await sql<{ n: number }[]>`
-      select count(*)::int as n from pg_roles where rolname = 'mantle_write_user'`;
-    if (had!.n === 0) {
-      await sql.unsafe(`do $$ begin create role mantle_write_user nologin;
-        exception when duplicate_object then null; end $$`);
-      madeWriteRole = true;
-    }
+    // The write role is one of the pool roles (A2b2a): the scratch database
+    // set-up made it.
     await sql.unsafe(`create role ${member} nologin`);
     await sql.unsafe(`grant mantle_write_user to ${member}`);
     await sql.unsafe(`create role ${adminOnly} nologin`);
@@ -67,24 +60,11 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
 
   afterAll(async () => {
     if (sql) {
-      // The test's own roles first; the write role only when this test made
-      // it and no role is a member of it any more (a cluster object: another
-      // run, or A2b2's migration, may hold it).
+      // The test's own roles; never the write role (a cluster object the
+      // pool set-up owns).
       for (const r of [member, adminOnly, setOnly]) {
         await sql.unsafe(`drop owned by ${r}`).catch(() => {});
         await sql.unsafe(`drop role if exists ${r}`).catch(() => {});
-      }
-      if (madeWriteRole) {
-        await sql
-          .unsafe(
-            `do $$ begin
-               if not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid
-                               where r.rolname = 'mantle_write_user') then
-                 drop role if exists mantle_write_user;
-               end if;
-             end $$`,
-          )
-          .catch(() => {});
       }
       await sql.end();
     }

@@ -45,7 +45,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { POOL_ROLES, RETIRED_POOL_ROLES, ensureViewerRoles, withRoleRetry } from './viewer-roles';
+import {
+  managedRolePatterns,
+  POOL_ROLES,
+  RETIRED_POOL_ROLES,
+  ensureViewerRoles,
+  withRoleRetry,
+} from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
 import { viewerRoleName } from './viewer';
 
@@ -317,7 +323,7 @@ async function prepareScratch(sql: Sql): Promise<void> {
     (
       await sql<
         { rolname: string }[]
-      >`select rolname from pg_roles where rolname like 'mantle_view_%'`
+      >`select rolname from pg_roles where rolname like any(${managedRolePatterns()}::text[])`
     ).map((r) => r.rolname),
   );
   // The retired roles too: the old migrations still grant to them.

@@ -26,7 +26,11 @@ import {
   viewerRolePassword,
 } from './viewer';
 import {
+  managedRolePatterns,
   noteOwner,
+  POOL_ROLES,
+  RETIRED_POOL_ROLES,
+  ROLE_CONNECTION_LIMIT,
   ownerNote,
   parseViewerLoginRole,
   viewerLoginDropStatements,
@@ -122,16 +126,27 @@ describe('viewer role credentials', () => {
   it('never names the team visitor cookie', () => {
     expect(viewerRoleName('team')).toBe('mantle_view_team');
   });
+
+  it('the write role is mantle_write_user (0277 gate, plan 20.1), with its own password', () => {
+    expect(viewerRoleName('write')).toBe('mantle_write_user');
+    expect(viewerRolePassword('key-1', 'write')).not.toBe(viewerRolePassword('key-1', 'user'));
+  });
 });
 
 describe('viewerRoleStatements', () => {
   it('creates a LOGIN role that can never bypass row level security', () => {
-    const [stmt] = viewerRoleStatements('user', 'key-1', false);
-    expect(stmt).toMatch(/^CREATE ROLE "mantle_view_user" WITH LOGIN /);
-    for (const attr of ['NOSUPERUSER', 'NOBYPASSRLS', 'NOCREATEROLE', 'NOINHERIT']) {
-      expect(stmt).toContain(attr);
+    for (const level of POOL_ROLES) {
+      const [stmt] = viewerRoleStatements(level, 'key-1', false);
+      expect(stmt).toMatch(new RegExp(`^CREATE ROLE "${viewerRoleName(level)}" WITH LOGIN `));
+      for (const attr of ['NOSUPERUSER', 'NOBYPASSRLS', 'NOCREATEROLE', 'NOINHERIT']) {
+        expect(stmt).toContain(attr);
+      }
+      expect(stmt).toContain(`CONNECTION LIMIT ${ROLE_CONNECTION_LIMIT[level]}`);
+      expect(stmt).toContain(`PASSWORD '${viewerRolePassword('key-1', level)}'`);
     }
-    expect(stmt).toContain(`PASSWORD '${viewerRolePassword('key-1', 'user')}'`);
+    expect(POOL_ROLES).toEqual(['user', 'write']);
+    // The write role's cap holds the box's worst case (docs/actors.md).
+    expect(ROLE_CONNECTION_LIMIT).toEqual({ user: 30, write: 20 });
   });
 
   it('alters an existing role (re-derives the password after a key change)', () => {
@@ -150,7 +165,8 @@ describe('viewerRoleStatements', () => {
 describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
   // The level roles (retired in W8c) still exist on every upgraded cluster.
   const retired = ['mantle_view_team', 'mantle_view_client', 'mantle_view_public'];
-  const live = ['mantle_view_user'];
+  const levels = POOL_ROLES;
+  const live = levels.map((l) => viewerRoleName(l));
   const shared = [...retired, ...live];
   const NOLOGIN =
     'WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL';
@@ -178,9 +194,10 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
 
   it('a box upgrading (roles with no note) resets the passwords as before and claims them', () => {
     const plan = viewerRolePlan(cluster('brain_a', null), 'key-a', false);
-    for (const role of live) {
+    for (const level of levels) {
+      const role = viewerRoleName(level);
       expect(plan).toContain(
-        `ALTER ROLE "${role}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 30 PASSWORD '${viewerRolePassword('key-a', 'user')}'`,
+        `ALTER ROLE "${role}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT ${ROLE_CONNECTION_LIMIT[level]} PASSWORD '${viewerRolePassword('key-a', level)}'`,
       );
       expect(plan).toContain(`COMMENT ON ROLE "${role}" IS '${ownerNote('brain_a')}'`);
     }
@@ -189,6 +206,18 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
       expect(plan).toContain(`ALTER ROLE "${role}" ${NOLOGIN}`);
       expect(plan.some((s) => s.startsWith(`COMMENT ON ROLE "${role}"`))).toBe(false);
     }
+  });
+
+  it('a box from before A2b2a (no write role yet) creates it with a login and claims it', () => {
+    const before = cluster('brain_a', 'brain_a');
+    before.roles.delete('mantle_write_user');
+    const plan = viewerRolePlan(before, 'key-a', false);
+    expect(plan).toContain(
+      `CREATE ROLE "mantle_write_user" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 20 PASSWORD '${viewerRolePassword('key-a', 'write')}'`,
+    );
+    expect(plan).toContain(`COMMENT ON ROLE "mantle_write_user" IS '${ownerNote('brain_a')}'`);
+    // The workspace role is only re-derived; its note is already right.
+    expect(plan.some((s) => s.startsWith('COMMENT ON ROLE "mantle_view_user"'))).toBe(false);
   });
 
   it('the owner migrating again resets the passwords (a key change) and writes no note', () => {
@@ -214,10 +243,11 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     const plan = viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', true);
     expect(plan.some((s) => shared.some((r) => s.startsWith(`ALTER ROLE "${r}" `)))).toBe(false);
     expect(plan.some((s) => s.startsWith('COMMENT'))).toBe(false);
-    for (const role of live) {
+    for (const level of levels) {
+      const role = viewerRoleName(level);
       const login = `${role}_brain_b`;
       expect(plan).toContain(
-        `CREATE ROLE "${login}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 30 PASSWORD '${viewerRolePassword('key-b', 'user')}'`,
+        `CREATE ROLE "${login}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT ${ROLE_CONNECTION_LIMIT[level]} PASSWORD '${viewerRolePassword('key-b', level)}'`,
       );
       expect(plan).toContain(
         `GRANT "${role}" TO "${login}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`,
@@ -230,7 +260,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     const plan = viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', true);
     const revoke = plan.indexOf('REVOKE CONNECT ON DATABASE "brain_b" FROM PUBLIC');
     const grant = plan.indexOf(
-      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_user_brain_b", CURRENT_USER',
+      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_user_brain_b", "mantle_write_user_brain_b", CURRENT_USER',
     );
     expect(revoke).toBeGreaterThan(-1);
     expect(grant).toBeGreaterThan(revoke);
@@ -264,11 +294,40 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     ).toBe(false);
   });
 
+  it('the catalog patterns match every managed role and its logins, and nothing else', () => {
+    // LIKE with only `\_` (a literal _) and `%` in the patterns.
+    const like = (p: string) => new RegExp(`^${p.replace(/\\_/g, '_').replace(/%/g, '.*')}$`);
+    const hit = (name: string) => managedRolePatterns().some((p) => like(p).test(name));
+    for (const n of ['mantle_view_user', 'mantle_write_user', 'mantle_write_user_brain_b']) {
+      expect(hit(n)).toBe(true);
+    }
+    expect(hit('mantle_view_space_brain_b')).toBe(true);
+    expect(hit('mantle_writer')).toBe(false);
+    expect(hit('mantle_test_reader_1')).toBe(false);
+  });
+
+  it("db-restore.sh makes every managed role before a restore (a dump's rules name them)", () => {
+    const script = readFileSync(
+      fileURLToPath(new URL('../../../scripts/db-restore.sh', import.meta.url)),
+      'utf8',
+    );
+    const list = /FOREACH r IN ARRAY ARRAY\[([^\]]*)\]/.exec(script)?.[1] ?? '';
+    const named = [...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!);
+    expect(named.sort()).toEqual(
+      [...POOL_ROLES, ...RETIRED_POOL_ROLES].map((r) => viewerRoleName(r)).sort(),
+    );
+  });
+
   it('a login role name parses back to its level and database; the shared ones do not', () => {
     expect(parseViewerLoginRole('mantle_view_space_brain_b')).toEqual({
       level: 'space',
       database: 'brain_b',
     });
+    expect(parseViewerLoginRole('mantle_write_user_brain_b')).toEqual({
+      level: 'write',
+      database: 'brain_b',
+    });
+    expect(parseViewerLoginRole('mantle_write_user')).toBeNull();
     expect(parseViewerLoginRole('mantle_view_space')).toBeNull();
     expect(parseViewerLoginRole('mantle_view_client_')).toBeNull();
     expect(parseViewerLoginRole('mantle_test_reader_1')).toBeNull();
@@ -299,7 +358,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
       'key-b',
       true,
     );
-    for (const role of ['mantle_view_user', 'mantle_view_team']) {
+    for (const role of ['mantle_view_user', 'mantle_write_user', 'mantle_view_team']) {
       expect(plan).toContain(`CREATE ROLE "${role}" ${NOLOGIN}`);
     }
   });

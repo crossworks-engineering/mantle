@@ -1940,6 +1940,13 @@
       "when": 1790195880000,
       "tag": "0277_scoped_write_gate",
       "breakpoints": true
+    },
+    {
+      "idx": 278,
+      "version": "7",
+      "when": 1790195940000,
+      "tag": "0278_write_role_rules",
+      "breakpoints": true
     }
   ]
 }

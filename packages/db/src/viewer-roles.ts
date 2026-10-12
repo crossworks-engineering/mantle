@@ -25,9 +25,14 @@ import {
   type RetiredPoolRole,
 } from './viewer';
 
-/** The LOGIN role: the workspace role (workspaces W1), which sees what the
- *  workspaces of its transaction's scope hold. */
-export const POOL_ROLES: readonly PoolRole[] = ['user'];
+/** The LOGIN roles: the workspace role (workspaces W1), which sees what the
+ *  workspaces of its transaction's scope hold, and the write role
+ *  (`mantle_write_user`, workspaces arch A2b2, plan 20.1), which writes under
+ *  the same row rules: no BYPASSRLS, so a row the scope cannot read matches
+ *  no row. One code path makes both: the lock attributes, the password from
+ *  the master key, the connection limit, the per-database login and the
+ *  owner note. */
+export const POOL_ROLES: readonly PoolRole[] = ['user', 'write'];
 
 /** Roles that no longer log in: the personal-space role (W6b, when the
  *  spaces were folded into the brain, 0267) and the three level roles
@@ -40,13 +45,25 @@ export const POOL_ROLES: readonly PoolRole[] = ['user'];
  *  them again); the roles stay because the old migrations name them. */
 export const RETIRED_POOL_ROLES: readonly RetiredPoolRole[] = ['space', 'team', 'client', 'public'];
 
+/** LIKE patterns for the roles this file manages (the shared roles, live
+ *  and retired) and their per-database logins (`<role>_<database>`), for
+ *  the catalog reads below. A function: computed on use, not at import. */
+export function managedRolePatterns(): string[] {
+  return [...POOL_ROLES, ...RETIRED_POOL_ROLES].flatMap((r) => {
+    const escaped = viewerRoleName(r).replace(/_/g, '\\_');
+    return [escaped, `${escaped}\\_%`];
+  });
+}
+
 /** The statement that retires `role`: no login, no password. */
 function retireStatement(role: string, exists = true): string {
   return `${exists ? 'ALTER' : 'CREATE'} ROLE "${role}" WITH NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
 }
 
-/** Hard cap on connections per role, across every process of a box. */
-const ROLE_CONNECTION_LIMIT = 30;
+/** Hard cap on connections per role, across every process of a box. The
+ *  write role's is smaller: no process opens its pool before A2b2b, and it
+ *  counts in the box's worst case (docs/actors.md, "A2b2b must"). */
+export const ROLE_CONNECTION_LIMIT: Readonly<Record<PoolRole, number>> = { user: 30, write: 20 };
 
 /** The attributes that make a viewer role a lock. */
 const LOCK_ATTRS = `NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`;
@@ -67,7 +84,7 @@ export function viewerRoleStatements(
     const password = viewerRolePassword(masterKey, level);
     if (!/^[A-Za-z0-9_-]+$/.test(password))
       throw new Error('viewer role password is not base64url');
-    attrs = `LOGIN ${LOCK_ATTRS} CONNECTION LIMIT ${ROLE_CONNECTION_LIMIT} PASSWORD '${password}'`;
+    attrs = `LOGIN ${LOCK_ATTRS} CONNECTION LIMIT ${ROLE_CONNECTION_LIMIT[level]} PASSWORD '${password}'`;
   } else {
     attrs = `NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
   }
@@ -100,7 +117,8 @@ export function noteOwner(note: string | null | undefined): string | null {
 export interface ClusterRoles {
   /** current_database(): the brain migrating. */
   database: string;
-  /** Every `mantle_view_%` role on the cluster, with its comment. */
+  /** Every managed role on the cluster (managedRolePatterns), with its
+   *  comment. */
   roles: ReadonlyMap<string, string | null>;
   /** Every database on the cluster. */
   databases: ReadonlySet<string>;
@@ -179,7 +197,7 @@ export function viewerRolePlan(
   if (owners.size > 0) {
     const names = [...owners].map((o) => `"${o}"`).join(', ');
     throw new Error(
-      `The viewer roles (mantle_view_*) on this Postgres cluster belong to the brain in database ${names}. ` +
+      `The viewer roles (mantle_view_*, mantle_write_user) on this Postgres cluster belong to the brain in database ${names}. ` +
         `Migrating "${cluster.database}" would reset their passwords and lock that brain's member logins out ` +
         `("password authentication failed for user mantle_view_user"). For a second brain on this cluster, ` +
         `set MANTLE_VIEWER_ROLES_PER_DATABASE=1 for its migrate and its server, or give it its own Postgres. ` +
@@ -259,7 +277,7 @@ export async function dropViewerLogins(
   database: string,
 ): Promise<string[]> {
   const roles = await sql<{ rolname: string }[]>`
-    select rolname from pg_roles where rolname like 'mantle_view_%'`;
+    select rolname from pg_roles where rolname like any(${managedRolePatterns()}::text[])`;
   const [db] = await sql<{ n: number }[]>`
     select count(*)::int as n from pg_database where datname = ${database}`;
   const plan = viewerLoginDropStatements(
@@ -282,7 +300,7 @@ export async function ensureViewerRoles(
   const database = current!.database;
   const roles = await sql<{ rolname: string; note: string | null }[]>`
     select rolname, shobj_description(oid, 'pg_authid') as note
-      from pg_roles where rolname like 'mantle_view_%'`;
+      from pg_roles where rolname like any(${managedRolePatterns()}::text[])`;
   const databases = await sql<{ datname: string }[]>`select datname from pg_database`;
   const plan = viewerRolePlan(
     {
