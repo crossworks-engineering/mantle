@@ -48,8 +48,7 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
       (${ws.admin}, ${owner}, 'gate admin', true), (${ws.other}, ${owner}, 'gate other', false)`;
     await sql`insert into nodes (id, owner_id, type, title, path)
       values (${folder}, ${owner}, 'branch', 'gate folder', 'notes.gate')`;
-    await sql`update nodes set home_ws = ${ws.admin}, write_ws = array[${ws.admin}]::uuid[],
-      read_ws = array[${ws.admin}]::uuid[] where id = ${folder}`;
+    // No grant on the folder: no workspace may edit it.
   }, 120_000);
 
   afterAll(async () => {
