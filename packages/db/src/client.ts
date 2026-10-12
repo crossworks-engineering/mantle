@@ -102,6 +102,9 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
 
 // ── The actor on the system pool (workspaces arch A2a) ──────────────────────
 
+/** The pipelined statements in flight (actorClient), for closeDb. */
+const actorPipelines = new Set<Promise<unknown>>();
+
 /** When the box's mode was last read (mantle_actor_check_mode), and the
  *  first read, which the first statements wait for. */
 let actorModeReadAt = 0;
@@ -203,7 +206,21 @@ function actorParams(): [string, string, string] | null {
  * transaction block (NO_TX_SQL) always run as they are.
  */
 function actorClient(base: PgSql): PgSql {
-  const pipelined = async (
+  const pipelined = (
+    params: [string, string, string],
+    query: string,
+    args: unknown[] | undefined,
+    mode: 'rows' | 'values' | 'simple',
+  ): Promise<unknown> => {
+    // Kept until done: closeDb waits for these first (postgres.js never
+    // finishes ending a pool whose reserved connection comes back late).
+    const p = pipelinedNow(params, query, args, mode);
+    actorPipelines.add(p);
+    const done = () => actorPipelines.delete(p);
+    p.then(done, done);
+    return p;
+  };
+  const pipelinedNow = async (
     params: [string, string, string],
     query: string,
     args: unknown[] | undefined,
@@ -1454,6 +1471,8 @@ export async function closeDb(): Promise<void> {
   actorModeFirst = null;
   actorModeKnown = false;
   noteBoxActorCheckMode(null);
+  // A detached write still on its reserved connection finishes first.
+  await Promise.allSettled([...actorPipelines]);
   if (sql) await sql.end();
   if (viewers) await Promise.all([...viewers.values()].map((v) => v.sql.end()));
 }
