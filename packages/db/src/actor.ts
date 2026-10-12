@@ -58,15 +58,35 @@ export function systemActor(reason: string): Actor {
 
 /**
  * system(reason) for work done on behalf of `outer` (the caller's actor):
- * read only when the caller is (a read key, a link, an assistant), so
- * leaving the caller's scope never turns a read-only caller into a writer
- * (arch A2a fix round, M1). A named repair or backfill does not use this:
- * it writes for any caller (runReadPathWrite, plan 20.3 item 8).
+ * read only when the caller is a read-only caller from outside, so leaving
+ * the caller's scope never turns one into a writer (arch A2a fix round,
+ * M1). Those callers are login(ro) (a read key, a peer with Write off), a
+ * public link and a contact share without can_write (A2b, the A2a audit's
+ * note). An assistant with no user still does its own system work (its
+ * traces, its turn's rows), as a peer(share) does its audit row: they keep
+ * write mode rw here. A named repair or backfill does not use this: it
+ * writes for any caller (runReadPathWrite, plan 20.3 item 8).
  */
 export function systemUnder(reason: string, outer: Actor | null): Actor {
   const actor = systemActor(reason);
-  if (outer && writeModeOf(outer) === 'ro') return Object.freeze({ ...actor, mode: 'ro' as const });
+  if (outer && narrowsSystemWork(outer)) return Object.freeze({ ...actor, mode: 'ro' as const });
   return actor;
+}
+
+/** The read-only callers whose system work stays read only (systemUnder). */
+function narrowsSystemWork(outer: Actor): boolean {
+  switch (outer.kind) {
+    case 'login':
+      return outer.mode === 'ro';
+    case 'link':
+      return true;
+    case 'contact':
+      return !outer.canWrite;
+    case 'system':
+      return outer.mode === 'ro';
+    default:
+      return false;
+  }
 }
 
 /** What the actor may write: login(ro), assistant, link, peer and a contact
@@ -212,6 +232,12 @@ let boxMode: ActorCheckMode = 'off';
 /** Set by client.ts after it read the box's mode. */
 export function noteBoxActorCheckMode(mode: string | null): void {
   boxMode = parseMode(mode);
+}
+
+/** client.ts, when its pool closes: the next pool reads the mode afresh,
+ *  and until then the process uses MANTLE_ACTOR_CHECK alone. */
+export function forgetBoxActorCheckMode(): void {
+  boxMode = 'off';
 }
 
 /**

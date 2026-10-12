@@ -41,6 +41,7 @@ import {
   actorSetting,
   checkActorBound,
   currentActor,
+  forgetBoxActorCheckMode,
   noteBoxActorCheckMode,
   onPgNotice,
   runAsSystem,
@@ -112,19 +113,30 @@ const actorPipelines = new Set<Promise<unknown>>();
 let actorModePool: PgSql | null = null;
 
 /**
+ * The pool's first mode read while it is out, else null (A2b, the startup
+ * race of docs/actors.md "A2b must"). Until it answers, a write or a
+ * transaction that has an actor waits for it, so a process's first writes
+ * never go out as off on a box that is warn or on. Reads never wait, and
+ * once it answered (or failed) nothing waits again: a one-time cost at a
+ * process's start, no statement of its own.
+ */
+let firstModeRead: Promise<void> | null = null;
+
+/**
  * Read the box's actor check mode when the pool opens, then each minute on
  * an unref'd timer: never inside a statement's path, so a request runs no
  * new query for it (fix round; the owner's no-new-query rule). Until the
  * first read lands the process uses MANTLE_ACTOR_CHECK alone (off unless
- * set), and a process's first statements run as before. Exported for
+ * set) as a floor: a read runs as before, and a write or a transaction
+ * with an actor waits for that first read (firstModeRead). Exported for
  * actor-client.test.ts only (not in index.ts).
  */
 export function refreshActorCheckMode(base: PgSql): void {
   if (actorModePool === base) return;
   actorModePool = base;
-  const read = () => {
-    if (actorModePool !== base) return;
-    base
+  const read = (): Promise<void> => {
+    if (actorModePool !== base) return Promise.resolve();
+    return base
       .unsafe(`${ACTOR_SQL_TAG} select "public"."mantle_actor_check_mode"() as m`)
       .then((rows) => {
         // A pool closed (closeDb) while the read was out: its answer is
@@ -141,10 +153,13 @@ export function refreshActorCheckMode(base: PgSql): void {
         }
       });
   };
-  read();
+  const first = read().finally(() => {
+    if (firstModeRead === first) firstModeRead = null;
+  });
+  firstModeRead = first;
   const timer = setInterval(() => {
     if (actorModePool !== base) clearInterval(timer);
-    else read();
+    else void read();
   }, 60_000);
   timer.unref();
 }
@@ -406,8 +421,9 @@ export function actorInTransaction(t: PgSql, params: [string, string, string]): 
  * A read runs plain. With the check off, or no actor
  * bound, every statement runs exactly as before. Statements Postgres refuses in a
  * transaction block (runsOutsideTransaction) always run as they are.
+ * Exported for actor-client.test.ts only (not in index.ts).
  */
-function actorClient(base: PgSql): PgSql {
+export function actorClient(base: PgSql): PgSql {
   const pipelined = (
     params: [string, string, string],
     query: string,
@@ -472,10 +488,19 @@ function actorClient(base: PgSql): PgSql {
         return (query: string, args?: unknown[], opts?: unknown) => {
           // Nothing to set: the plain query, every method of it (M3c). The
           // mode first: with the check off no statement is classified.
-          if (!actorParams() || runsOutsideTransaction(query) || !needsActorWrap(query)) {
+          // While the first mode read is out (the startup race), a write
+          // with an actor waits for it and then decides (run).
+          const waitFor = firstModeRead;
+          const wait = !actorParams() && waitFor !== null && currentActor() !== null;
+          if (
+            (!wait && !actorParams()) ||
+            runsOutsideTransaction(query) ||
+            !needsActorWrap(query)
+          ) {
             return target.unsafe(query, args as never[], opts as never);
           }
-          const go = (mode: 'rows' | 'values' | 'simple') => run(query, args, opts, mode);
+          const go = (mode: 'rows' | 'values' | 'simple') =>
+            wait ? waitFor.then(() => run(query, args, opts, mode)) : run(query, args, opts, mode);
           let pending: Promise<unknown> | null = null;
           const once = () => (pending ??= go('rows'));
           return {
@@ -495,6 +520,9 @@ function actorClient(base: PgSql): PgSql {
             return (target.begin as (...a: unknown[]) => unknown)(...args);
           }
           const wrapped = async (t: PgSql) => {
+            // The startup race: wait for the pool's first mode read once.
+            const waitFor = firstModeRead;
+            if (waitFor && currentActor() && !actorParams()) await waitFor;
             const params = actorParams();
             return fn(params ? actorInTransaction(t, params) : t);
           };
@@ -1679,7 +1707,8 @@ export async function closeDb(): Promise<void> {
   globalThis.__mantleTurnDb = undefined;
   // The next pool reads its database's actor check mode afresh.
   actorModePool = null;
-  noteBoxActorCheckMode(null);
+  firstModeRead = null;
+  forgetBoxActorCheckMode();
   // A detached write still on its reserved connection finishes first (the
   // pool is no longer globalThis.__mantleSql, so none starts now).
   while (actorPipelines.size > 0) await Promise.allSettled([...actorPipelines]);

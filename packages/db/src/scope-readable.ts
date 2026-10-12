@@ -16,7 +16,6 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { nodes } from './schema/nodes';
 import { currentGateScope, currentWorkspaceScope, requestWriteScope } from './viewer';
-import { currentActor } from './actor';
 
 type Exec = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
 
@@ -71,10 +70,11 @@ export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {
  *  - A scope surrounds the call (the request's write scope, the current
  *    workspace scope, the gate scope of the rollback switch, or one set on
  *    the transaction): yes unless that scope holds the Admin workspace.
- *  - No scope: the next free number only for true system work (the actor is
- *    system, or none is bound) and for login(owner), which reads every
- *    item. Any other actor (a login, an assistant, a link) with no scope
- *    around it takes the random suffix (arch A1 fix round low, done in A2a).
+ *  - No scope anywhere: the next free number. Code with no scope reads on
+ *    the system pool, every item, so the number tells it nothing it cannot
+ *    read. One answer for every entry and every check mode (arch A2b): the
+ *    actor is not asked, because some entries bind a different actor when
+ *    the check is off (docs/actors.md, "A2b must").
  */
 export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
   const scope = requestWriteScope() ?? currentWorkspaceScope() ?? currentGateScope();
@@ -96,8 +96,5 @@ export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
     active: boolean;
     narrow: boolean;
   }[];
-  if (rows[0]?.active === true) return rows[0].narrow === true;
-  const actor = currentActor();
-  if (actor === null || actor.kind === 'system') return false;
-  return !(actor.kind === 'login' && actor.mode === 'owner');
+  return rows[0]?.active === true && rows[0].narrow === true;
 }

@@ -14,6 +14,7 @@ import {
   runWithoutActor,
   setSlotActor,
   systemActor,
+  systemUnder,
   writeModeOf,
   READ_PATH_WRITES,
   TEST_ACTOR,
@@ -169,5 +170,20 @@ describe('binding the actor', () => {
         expect(writeModeOf(currentActor()!)).toBe('rw'),
       ),
     );
+  });
+
+  it('system work narrows to read only under login(ro), a link and a read contact only (A2b)', () => {
+    const under = (outer: Actor | null) => writeModeOf(systemUnder('x', outer));
+    expect(under(loginActor(L, 'ro'))).toBe('ro');
+    expect(under({ kind: 'link' })).toBe('ro');
+    expect(under({ kind: 'contact', canWrite: false })).toBe('ro');
+    expect(under(systemUnder('outer', loginActor(L, 'ro')))).toBe('ro');
+    // An assistant with no user and a peer(share) do their own system work.
+    expect(under({ kind: 'assistant', agentId: null })).toBe('rw');
+    expect(under({ kind: 'peer', peerId: null })).toBe('rw');
+    expect(under({ kind: 'contact', canWrite: true })).toBe('rw');
+    expect(under(loginActor(L, 'rw'))).toBe('rw');
+    expect(under(loginActor(L, 'owner'))).toBe('rw');
+    expect(under(null)).toBe('rw');
   });
 });

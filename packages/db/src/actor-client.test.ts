@@ -3,8 +3,9 @@
  * no actor set (arch A2a fix round, M3b): Postgres refuses them inside one.
  */
 import { describe, expect, it } from 'vitest';
-import { actorCheckMode, noteBoxActorCheckMode } from './actor';
+import { actorCheckMode, noteBoxActorCheckMode, runAsSystem } from './actor';
 import {
+  actorClient,
   actorInTransaction,
   closeDb,
   needsActorWrap,
@@ -305,4 +306,58 @@ describe('the box mode read (fix round 2, L2 and L8)', () => {
       await tick();
       expect(actorCheckMode()).toBe('off');
     }));
+});
+
+describe('the first mode read (A2b, the startup race)', () => {
+  /** A pool whose mode read is held until `answer`; every other statement
+   *  is recorded and answers at once. */
+  function fakePool() {
+    const sent: string[] = [];
+    let answer: (rows: unknown) => void = () => {};
+    const ok = (q: string) => {
+      sent.push(q);
+      const p = Promise.resolve([] as unknown[]);
+      return Object.assign(p, { values: () => p, simple: () => p });
+    };
+    const base = {
+      unsafe: (q: string) =>
+        q.includes('mantle_actor_check_mode') ? new Promise((r) => (answer = r)) : ok(q),
+      reserve: async () => ({ unsafe: (q: string) => ok(`conn: ${q}`), release: () => {} }),
+      end: async () => {},
+    } as unknown as PgSql;
+    return { base, sent, answer: (m: string) => answer([{ m }]) };
+  }
+
+  it('a write with an actor waits for it and then sets the actor; a read does not wait', async () => {
+    const own = process.env.MANTLE_ACTOR_CHECK;
+    process.env.MANTLE_ACTOR_CHECK = 'off';
+    const f = fakePool();
+    globalThis.__mantleSql = f.base;
+    try {
+      refreshActorCheckMode(f.base);
+      const client = actorClient(f.base);
+      const write = runAsSystem('worker:test', () =>
+        Promise.resolve(client.unsafe('insert into t values (1)')),
+      );
+      const read = runAsSystem('worker:test', () => Promise.resolve(client.unsafe('select 1')));
+      await read;
+      await tick();
+      // The read went at once; the write waits for the box's mode.
+      expect(f.sent).toEqual(['select 1']);
+      f.answer('warn');
+      await write;
+      expect(f.sent.some((q) => /^conn: .*set_config\('mantle\.actor'/.test(q))).toBe(true);
+      expect(f.sent).toContain('conn: insert into t values (1)');
+      // Answered: nothing waits again, and off runs plain.
+      noteBoxActorCheckMode('off');
+      await runAsSystem('worker:test', () =>
+        Promise.resolve(client.unsafe('insert into t values (2)')),
+      );
+      expect(f.sent.at(-1)).toBe('insert into t values (2)');
+    } finally {
+      await closeDb();
+      if (own === undefined) delete process.env.MANTLE_ACTOR_CHECK;
+      else process.env.MANTLE_ACTOR_CHECK = own;
+    }
+  });
 });
