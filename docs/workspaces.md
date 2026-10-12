@@ -98,7 +98,14 @@ they switch, the landing page changes with it.
 - The screen names the home app only to the users of the workspace. An
   Admin user outside it sees that one is set, not which.
 - **All my workspaces** in the switcher shows the Built-in home over every
-  workspace of the user. It never shows a home app.
+  workspace of the user. It never shows a home app. A user who never picked
+  a workspace lands here; the browser remembers each pick after that.
+- **Who sets it.** Every Moderator of the workspace. In Team that is every
+  member (a new login joins Team as a Moderator) and every Admin user (they
+  moderate Team). A pick opens for every user of the workspace, Admin users
+  included. The app still reads only what its holder workspaces read (see
+  "Apps"): a landing page gives it no more. Each change is logged as a
+  `workspace_events` row, `workspace.landing`.
 - An Admin area does not set another workspace's landing page: only its
   Moderators do. Admin users moderate Team, so they set Team's.
 - The brain health **Dashboard** is no landing page. Admin users with the
@@ -395,7 +402,10 @@ The users of the Admin workspace manage the brain through five areas:
   Phase 6).
 - **The one member home app** for the whole brain (Team admin >
   Settings). Since migration 0275 each workspace has its own landing page;
-  the old pick became the Team workspace's home app.
+  the old pick became the Team workspace's home app (when Team holds the
+  app). Members who never picked a workspace now land on All my
+  workspaces; the Team home app shows after a switch to Team, and the
+  browser then remembers it.
 - **Automatic Admin grants.** Nothing adds a grant to Admin. To put an item
   in Admin, an Admin user shares it with Admin by hand.
 
