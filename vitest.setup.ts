@@ -13,7 +13,8 @@
  * takeActorMisses() before it ends.
  */
 import { afterEach, beforeAll, beforeEach } from 'vitest';
-import { enterTestActor, takeActorMisses } from './packages/db/src/actor';
+import { enterTestActor, takeActorMisses, takeWriteRoleGaps } from './packages/db/src/actor';
+import { WRITE_ROLE_GAP_TABLES } from './packages/db/src/access-matrix';
 
 // Arch A2b2b: the suite runs the login write gateway as web and api do
 // (openLoginWritePool in packages/db/src/client.ts reads this flag), so
@@ -24,6 +25,19 @@ beforeAll(() => enterTestActor());
 beforeEach(() => enterTestActor());
 
 afterEach(() => {
+  // Arch A2b2b: a login write the write role has no right for runs again on
+  // the system pool (a write-role gap). Only the known tables may: a new
+  // one is a table to add to the matrix, or to WRITE_ROLE_GAP_TABLES.
+  const gaps = takeWriteRoleGaps().filter((g) => {
+    const t = /^permission denied for table (\w+)$/.exec(g)?.[1];
+    return !t || !(t in WRITE_ROLE_GAP_TABLES);
+  });
+  if (gaps.length > 0) {
+    throw new Error(
+      `${gaps.length} login write(s) met a right the write role does not hold (arch A2b2b):\n` +
+        gaps.slice(0, 10).map((g) => `  ${g}`).join('\n'),
+    );
+  }
   const misses = takeActorMisses();
   if (misses.length === 0) return;
   const lines = misses

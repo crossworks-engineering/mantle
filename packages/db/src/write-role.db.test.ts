@@ -104,6 +104,12 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_lock_heads_nested(uuid[],text)']!,
   'mantle_lock_subtree_heads(uuid,uuid[])':
     WRITE_ROLE_FUNCTIONS['public.mantle_lock_subtree_heads(uuid,uuid[])']!,
+  'mantle_grant_change(text,uuid,uuid,boolean,uuid)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_grant_change(text,uuid,uuid,boolean,uuid)']!,
+  'mantle_grant_move_home(uuid,uuid,boolean,uuid)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_grant_move_home(uuid,uuid,boolean,uuid)']!,
+  'mantle_workspace_event(uuid,uuid,text,jsonb)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_workspace_event(uuid,uuid,text,jsonb)']!,
 };
 
 /** Rolls a cell's transaction back after its checks. */

@@ -58,20 +58,37 @@ export function isHeadsCheckError(err: unknown): boolean {
 
 /**
  * A write the workspace checks refused (42501 with one of their own
- * messages, migrations 0241, 0245, 0266 and 0267): an Admin user's move,
- * create in a folder or delete of an item its workspaces may not change (W6a
- * fix round 1); a change to, or a share of, a read-only snapshot copy (W6b
- * fix round 1). Matched by message too, so a missing grant (also 42501)
- * stays a 500.
+ * messages): an Admin user's move, create in a folder or delete of an item
+ * its workspaces may not change (0241, 0245, 0266, W6a fix round 1); a
+ * change to, or a share of, a read-only snapshot copy (0267, W6b fix round
+ * 1); the create home's refusals (mantle_default_home, 0267); the write
+ * role's own checks (0278, 0279: edit, create, grant, a kind change, an
+ * app's placement) and its row rule ("new row violates row-level security
+ * policy", a row moved out of what the scope reads; arch A2b2b). Matched
+ * by message too, so a missing grant (also 42501, isPermissionGap) stays a
+ * 500.
  */
 export function isScopeWriteRefusal(err: unknown): boolean {
   const pg = findPgError(err) as (PgLike & { message?: unknown }) | null;
   if (!pg || pg.code !== '42501') return false;
   const message = typeof pg.message === 'string' ? pg.message : '';
-  return /^(not allowed to (move this item|add items to that folder|delete this item|change this item|share this item)|placing this app adds a workspace you do not moderate)/.test(
-    message,
-  );
+  return SCOPE_WRITE_REFUSALS.test(message);
 }
+
+/** The messages of the database's own write refusals (isScopeWriteRefusal). */
+const SCOPE_WRITE_REFUSALS = new RegExp(
+  '^(' +
+    [
+      'not allowed to (move this item|add items to that folder|delete this item|change this item' +
+        '|share this item|edit this item|create an item in that workspace|grant to that workspace' +
+        '|change the kind of this item)',
+      'placing this app adds a workspace you do not moderate',
+      'this kind of item lives in the Admin workspace only',
+      'no workspace to create this item in',
+      'new row violates row-level security policy',
+    ].join('|') +
+    ')',
+);
 
 /**
  * A privilege the role lacks (42501 "permission denied for ..."): a table,

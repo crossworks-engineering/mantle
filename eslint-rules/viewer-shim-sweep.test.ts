@@ -255,10 +255,14 @@ describe('the withViewer shim sweep (R6)', () => {
     expect(all).toEqual([]);
   });
 
-  it('in client.ts only the workspace pool is opened (the level pools went in W8c)', () => {
+  it('in client.ts only the workspace pool and the write pool are opened (the level pools went in W8c)', () => {
     const text = blanked(code(load(CLIENT)!));
-    const otherPools = calls(text, 'getViewerDb').filter((c) => !/getViewerDb\('user'\)/.test(c));
+    const otherPools = calls(text, 'getViewerDb').filter(
+      (c) => !/getViewerDb\('(user|write)'\)/.test(c),
+    );
     expect(otherPools).toEqual([]);
+    // The write pool is the login write gateway's only (arch A2b2b).
+    expect(calls(text, 'getViewerDb').filter((c) => /'write'/.test(c))).toHaveLength(1);
     expect(calls(text, 'runInTxScope')).toEqual([]);
     expect(/\bfunction withSpace\b/.test(text)).toBe(false);
     expect(calls(text, 'withSpace')).toEqual([]);

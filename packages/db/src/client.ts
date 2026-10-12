@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql as sqlTag } from 'drizzle-orm';
+import { getTableName, is } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+import { PgTable, getTableConfig, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import postgres from 'postgres';
 import * as schema from './schema/index';
 import { env, envFlag } from '@mantle/config';
@@ -39,6 +40,7 @@ import {
   type CreateHome,
   type SystemTxNest,
   systemDbCallerOf,
+  addPrivateToWriteScope,
 } from './viewer';
 import {
   actorCheckMode,
@@ -53,6 +55,7 @@ import {
   loginActor,
   longStack,
   noteActorMiss,
+  noteTestWriteRoleGap,
   systemActor,
   setActorMissLogger,
   writeModeOf,
@@ -62,6 +65,7 @@ import {
 import { reserveLease, withLease, type Lease } from './reserved';
 import { errorMessage } from '@mantle/std';
 import { isPermissionGap, permissionGapOf } from './pg-error';
+import { WRITE_ROLE_TABLES } from './access-matrix';
 
 declare global {
   var __mantleSql: ReturnType<typeof postgres> | undefined;
@@ -421,17 +425,17 @@ const SET_TRANSACTION_SQL = /^\s*set\s+transaction\b/i;
  * actor-client.test.ts only (not in index.ts).
  */
 export function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
-  return settingsFirst(t, setActorSql(params));
+  return settingsFirst(t, () => setActorSql(params));
 }
 
 /**
- * A transaction's client that sends `setSql` (a statement with no
+ * A transaction's client that sends `setSql()` (a statement with no
  * parameters that only sets transaction-local settings) unawaited, right
  * before its first statement: actorInTransaction's actor, and the write
  * role's scope and actor (the login write gateway, A2b2b). See
  * actorInTransaction.
  */
-function settingsFirst(t: PgSql, setSql: string): PgSql {
+function settingsFirst(t: PgSql, setSql: () => string): PgSql {
   /** The SET's outcome once sent: null, or its error. Never rejects. */
   let set: Promise<unknown> | null = null;
   /** The SET answered without an error: later statements run plain. Until
@@ -440,7 +444,7 @@ function settingsFirst(t: PgSql, setSql: string): PgSql {
    *  "current transaction is aborted" (A2b, the A2a audit's LOW). */
   let setOk = false;
   const sendSet = (): Promise<unknown> =>
-    (set ??= t.unsafe(setSql).then(
+    (set ??= t.unsafe(setSql()).then(
       () => {
         setOk = true;
         return null;
@@ -731,6 +735,43 @@ const WRITE_ROLE_ACTORS: ReadonlySet<Actor['kind']> = new Set([
   'contact',
 ]);
 
+/** The tables the write role writes, as `schema.table` (WRITE_ROLE_TABLES). */
+const WRITE_ROLE_TABLE_SET: ReadonlySet<string> = new Set(WRITE_ROLE_TABLES);
+
+/** Whether a drizzle table is one the write role writes: a typed write to
+ *  any other table goes to the system pool, decided before it is sent
+ *  (no failed attempt). */
+function isWriteRoleTable(table: unknown): boolean {
+  if (!is(table, PgTable)) return false;
+  return WRITE_ROLE_TABLE_SET.has(`${getTableConfig(table).schema ?? 'public'}.${getTableName(table)}`);
+}
+
+/** The table a single INSERT, UPDATE or DELETE writes, as `schema.table`
+ *  (an unqualified name is public's), or null: another statement, a WITH,
+ *  more than one statement, a name it cannot read. Exported for
+ *  actor-client.test.ts only (not in index.ts). */
+export function rawWriteTarget(query: string): string | null {
+  const body = statementBody(query, false);
+  if (MORE_STATEMENTS.test(body)) return null;
+  const m =
+    /^(?:insert\s+into|update(?:\s+only)?|delete\s+from(?:\s+only)?)\s+(?:"?([a-z_][a-z0-9_]*)"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?(?=[\s(;]|$)/i.exec(
+      body,
+    );
+  if (!m) return null;
+  return `${(m[1] ?? 'public').toLowerCase()}.${m[2]!.toLowerCase()}`;
+}
+
+/** db.insert, update or delete of a scoped write (the db proxy): the
+ *  gateway's handle for a write-role table, the system pool's for any
+ *  other (arch A2b2b). */
+function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolean): unknown {
+  return (table: unknown, ...rest: unknown[]) => {
+    const handle = gateway && isWriteRoleTable(table) ? loginWriteDb() : getAdminDb();
+    const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
+    return fn.call(handle, table, ...rest);
+  };
+}
+
 /** Where a write runs on the write role: the one SET of its transaction
  *  (scope, actor, create home), and the actor, for a gap's log line. */
 type LoginWriteRoute = { setSql: string; actor: string };
@@ -832,14 +873,6 @@ function adminSql(): PgSql {
   return adminActorSql!;
 }
 
-/** Write-role gaps seen in tests (takeWriteRoleGaps). */
-const writeRoleGaps: string[] = [];
-
-/** Tests: the write-role gaps since the last call, cleared. */
-export function takeWriteRoleGaps(): string[] {
-  return writeRoleGaps.splice(0, writeRoleGaps.length);
-}
-
 /**
  * A write the write role has no right for (a table, column or function it
  * holds no grant on: a system-only table in a login's transaction). It
@@ -858,8 +891,7 @@ function noteWriteRoleGap(route: LoginWriteRoute, err: unknown): void {
   const caller = systemDbCallerOf(stack) ?? 'unknown caller';
   const detail = `${what} from ${caller}`;
   if (env('NODE_ENV') === 'test') {
-    writeRoleGaps.push(detail);
-    console.warn(`[db] write-role gap: ${detail}`);
+    noteTestWriteRoleGap(what);
     return;
   }
   noteActorMiss({ source: 'ts', check: 'write-role-gap', actor: route.actor, detail });
@@ -920,7 +952,7 @@ function writeRoleBegin(route: LoginWriteRoute, args: unknown[]): Promise<unknow
   const fn = args[args.length - 1] as (t: PgSql) => unknown;
   return (writePoolSql().begin as (...a: unknown[]) => Promise<unknown>)(
     ...args.slice(0, -1),
-    (t: PgSql) => fn(settingsFirst(t, route.setSql)),
+    (t: PgSql) => fn(settingsFirst(t, () => route.setSql)),
   );
 }
 
@@ -938,6 +970,10 @@ function loginWriteClient(): PgSql {
       return (mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q) as Promise<unknown>;
     };
     if (runsOutsideTransaction(query)) return system();
+    // A single write to a table the write role holds no right on goes to
+    // the system pool before it is sent (no failed attempt).
+    const target = rawWriteTarget(query);
+    if (target !== null && !WRITE_ROLE_TABLE_SET.has(target)) return system();
     return onLoginWritePool(system, (route) => writeRoleStatement(route, query, args, mode));
   };
   const client = {
@@ -2031,16 +2067,25 @@ export async function resolveCreateHome(
       select p.workspace_id::text as ws from private_workspaces p
         join workspaces w on w.id = p.workspace_id and w.archived_at is null
        where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
-    return { createWs, privateWs: own[0]?.ws ?? null };
+    return { createWs, privateWs: ownPrivate(loginId, own[0]?.ws ?? null) };
   }
   const rows = (await admin.execute(
     sqlTag`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
   )) as unknown as { ws: string | null }[];
-  const privateWs = rows[0]?.ws ?? null;
+  const privateWs = ownPrivate(loginId, rows[0]?.ws ?? null);
   if (!privateWs) {
     return { refused: 'no-workspace', message: 'You have no workspace to create in yet.' };
   }
   return { createWs, privateWs };
+}
+
+/** The login's private workspace as resolveCreateHome read it: with the
+ *  login write gateway on, the write scope is refreshed to hold it (arch
+ *  A2b2b: the scope was read before the workspace may have been made, and
+ *  the write role needs its Moderator seat in mantle.mod_ws). */
+function ownPrivate(loginId: string, ws: string | null): string | null {
+  if (ws && loginWritesMayRoute()) addPrivateToWriteScope(loginId, ws);
+  return ws;
 }
 
 let brainOnWorkspaces = false;
@@ -2182,6 +2227,7 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
         // block-id backfill failed with permission denied). The login write
         // gateway's handle when it may route (A2b2b): it sends a scoped
         // login write to the write role, anything else here as before.
+        if (write) return typedWrite(prop, loginWritesMayRoute());
         const handle = systemWriteDb();
         const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
         return fn.bind(handle);
@@ -2195,6 +2241,7 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
       // An Admin user's write request (no request scope, its write scope
       // noted by the guard): the gateway's handle too (A2b2b). With the
       // check off this branch is never taken.
+      if (write) return typedWrite(prop, true);
       const handle = loginWriteDb();
       const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
       return fn.bind(handle);

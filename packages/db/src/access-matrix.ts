@@ -465,6 +465,27 @@ export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
 ).map((t) => t.table);
 
 /**
+ * Tables a login's write transaction still writes that the write role holds
+ * no right on (arch A2b2b), each with where: the login write gateway finds
+ * such a transaction by its error (a write-role gap), runs it again whole on
+ * the system pool as before A2b2b, and logs it (client.ts). A typed or a
+ * single raw write to a table outside WRITE_ROLE_TABLES goes to the system
+ * pool up front and is no gap. The test suite fails on a gap that is not
+ * here (vitest.setup.ts). A3a gives these tables their checks and moves
+ * them; the list then shrinks to nothing.
+ */
+export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {
+  node_snapshots:
+    'an item’s history rows, in the transaction of an app publish, restore or delete, a table snapshot (A3a must)',
+  recall_maps: 'a Recall map, in the transaction of its Recall node (A3a must)',
+  recall_nodes: 'a Recall map’s nodes, with the map (A3a must)',
+  recall_revisions: 'a Recall map’s revision log, with the map',
+  shares: 'a public link, in the transaction that changes its item (A3a must)',
+  secrets: 'a secret’s sealed value, in the transaction of its node (secret_create)',
+  app_table_exports: 'an app table’s export row, with the Table it mirrors into',
+};
+
+/**
  * The functions the write role may run beyond the workspace role's (whose
  * rights it mirrors: its policies call them), each with its reason.
  * applyViewerGrants makes the role's rights exactly this, revoking the rest.
@@ -477,6 +498,12 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_lock_heads_nested(uuid[],text)': 'the nested heads lock (client.ts, withHeads)',
   'public.mantle_lock_subtree_heads(uuid,uuid[])':
     'a folder’s heads lock (client.ts, withSubtreeHeads): a move, a folder’s grant change',
+  'public.mantle_grant_change(text,uuid,uuid,boolean,uuid)':
+    'a grant row by the grants panel’s rules (0279): the role never writes the derived columns',
+  'public.mantle_grant_move_home(uuid,uuid,boolean,uuid)':
+    'a home move in one call (0279): manage of the old home, a Moderator of the new one',
+  'public.mantle_workspace_event(uuid,uuid,text,jsonb)':
+    'a grant’s audit row (0279): the role holds no right on workspace_events',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

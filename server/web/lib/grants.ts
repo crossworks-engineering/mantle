@@ -345,9 +345,26 @@ async function event(
   action: string,
   subject: Record<string, unknown>,
 ): Promise<void> {
+  // A definer (0279): a write-role caller holds no right on workspace_events.
   await q.execute(
-    sql`insert into workspace_events (workspace_id, actor_id, action, subject)
-        values (${ws}, ${actor}, ${action}, ${JSON.stringify(subject)}::jsonb)`,
+    sql`select mantle_workspace_event(${ws}::uuid, ${actor}::uuid, ${action},
+                                      ${JSON.stringify(subject)}::jsonb)`,
+  );
+}
+
+/** One grant row changed by the panel's rules (0279, mantle_grant_change):
+ *  a definer, so a write-role caller never writes the derived columns
+ *  (via_folder_id, granted_by, granted_at). */
+async function grantChange(
+  q: Exec,
+  op: 'add' | 'exclude' | 'hand' | 'write' | 'remove' | 'restore',
+  node: string,
+  ws: string,
+  write: boolean,
+  actor: string,
+): Promise<void> {
+  await q.execute(
+    sql`select mantle_grant_change(${op}, ${node}::uuid, ${ws}::uuid, ${write}, ${actor}::uuid)`,
   );
 }
 
@@ -732,24 +749,12 @@ export async function addGrant(
           'This kind of item lives in the Admin workspace only.',
         );
       }
-      return { t, row };
+      return t;
     },
     // @heads-held: change() runs this under the item's heads (a folder: its subtree).
-    async (tx, ctx, item, _grants, { t, row }) => {
+    async (tx, ctx, item, _grants, t) => {
       const write = body.write === true;
-      if (row) {
-        await tx.execute(
-          sql`update item_grants
-                 set excluded = false, via_folder_id = null, write = ${write},
-                     granted_by = ${ctx.caller.loginId}, granted_at = now()
-               where node_id = ${item.id} and workspace_id = ${t.wsId}`,
-        );
-      } else {
-        await tx.execute(
-          sql`insert into item_grants (node_id, workspace_id, write, granted_by)
-              values (${item.id}, ${t.wsId}, ${write}, ${ctx.caller.loginId})`,
-        );
-      }
+      await grantChange(tx, 'add', item.id, t.wsId, write, ctx.caller.loginId);
       await event(tx, t.wsId, ctx.caller.loginId, 'grant.add', { node: item.id, write });
     },
   );
@@ -809,10 +814,7 @@ export async function patchGrant(
     // @heads-held: change() runs this under the item's heads (a folder: its subtree).
     async (tx, ctx, item, _grants, row) => {
       if (row.write === body.write) return;
-      await tx.execute(
-        sql`update item_grants set write = ${body.write}
-             where node_id = ${item.id} and workspace_id = ${row.ws}`,
-      );
+      await grantChange(tx, 'write', item.id, row.ws, body.write, ctx.caller.loginId);
       await event(tx, row.ws, ctx.caller.loginId, 'grant.write', {
         node: item.id,
         write: body.write,
@@ -852,18 +854,14 @@ export async function removeGrant(
     // @heads-held: change() runs this under the item's heads (a folder: its subtree).
     async (tx, ctx, item, _grants, row) => {
       const exclude = row.via !== null || (await folderGrants(tx, item, row.ws));
-      if (exclude) {
-        await tx.execute(
-          sql`update item_grants
-               set excluded = true, write = false, via_folder_id = null,
-                   granted_by = ${ctx.caller.loginId}, granted_at = now()
-             where node_id = ${item.id} and workspace_id = ${row.ws}`,
-        );
-      } else {
-        await tx.execute(
-          sql`delete from item_grants where node_id = ${item.id} and workspace_id = ${row.ws}`,
-        );
-      }
+      await grantChange(
+        tx,
+        exclude ? 'exclude' : 'remove',
+        item.id,
+        row.ws,
+        false,
+        ctx.caller.loginId,
+      );
       await event(tx, row.ws, ctx.caller.loginId, 'grant.remove', {
         node: item.id,
         excluded: exclude,
@@ -902,9 +900,7 @@ export async function restoreGrant(
     // @heads-held: change() runs this under the item's heads (a folder: its subtree).
     async (tx, ctx, item, _grants, row) => {
       // The delete re-derives the item from its folder (0241 propagation).
-      await tx.execute(
-        sql`delete from item_grants where node_id = ${item.id} and workspace_id = ${row.ws}`,
-      );
+      await grantChange(tx, 'restore', item.id, row.ws, false, ctx.caller.loginId);
       await event(tx, row.ws, ctx.caller.loginId, 'grant.restore', { node: item.id });
     },
   );
@@ -940,12 +936,7 @@ export async function handGrant(
     },
     // @heads-held: change() runs this under the item's heads (a folder: its subtree).
     async (tx, ctx, item, _grants, row) => {
-      await tx.execute(
-        sql`update item_grants
-               set via_folder_id = null,
-                   granted_by = ${ctx.caller.loginId}, granted_at = now()
-             where node_id = ${item.id} and workspace_id = ${row.ws}`,
-      );
+      await grantChange(tx, 'hand', item.id, row.ws, row.write, ctx.caller.loginId);
       await event(tx, row.ws, ctx.caller.loginId, 'grant.hand', {
         node: item.id,
         folder: row.via,
@@ -1024,19 +1015,7 @@ export async function grantEmbeds(
                 skip('confirm_required');
                 continue;
               }
-              if (row) {
-                await tx.execute(
-                  sql`update item_grants
-                         set excluded = false, via_folder_id = null, write = false,
-                             granted_by = ${ctx.caller.loginId}, granted_at = now()
-                       where node_id = ${embed.id} and workspace_id = ${ws}`,
-                );
-              } else {
-                await tx.execute(
-                  sql`insert into item_grants (node_id, workspace_id, write, granted_by)
-                      values (${embed.id}, ${ws}, false, ${ctx.caller.loginId})`,
-                );
-              }
+              await grantChange(tx, 'add', embed.id, ws, false, ctx.caller.loginId);
               await event(tx, ws, ctx.caller.loginId, 'grant.add', {
                 node: embed.id,
                 write: false,
@@ -1449,35 +1428,14 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
     async (tx, ctx, item, grants, from) => {
       const keep = body.keepReadableIn !== undefined;
       const target = grants.get(to);
+      // One step (0279, mantle_grant_move_home): the old home row cleared,
+      // the new one set, the old one kept with Write off or gone (a folder
+      // that still gives it brings it back as its row). Never one UPDATE of
+      // both rows: the one-home index is not deferrable (23505 by row order).
       await tx.execute(
-        sql`update item_grants set is_home = false
-             where node_id = ${item.id} and workspace_id = ${from}`,
+        sql`select mantle_grant_move_home(${item.id}::uuid, ${to}::uuid, ${keep},
+                                          ${ctx.caller.loginId}::uuid)`,
       );
-      if (target) {
-        await tx.execute(
-          sql`update item_grants
-                 set is_home = true, via_folder_id = null, excluded = false,
-                     write = ${target.excluded ? false : target.write},
-                     granted_by = ${ctx.caller.loginId}, granted_at = now()
-               where node_id = ${item.id} and workspace_id = ${to}`,
-        );
-      } else {
-        await tx.execute(
-          sql`insert into item_grants (node_id, workspace_id, write, is_home, granted_by)
-              values (${item.id}, ${to}, false, true, ${ctx.caller.loginId})`,
-        );
-      }
-      if (keep) {
-        await tx.execute(
-          sql`update item_grants set write = false
-               where node_id = ${item.id} and workspace_id = ${from}`,
-        );
-      } else {
-        // A folder that still gives the old home brings it back as its row.
-        await tx.execute(
-          sql`delete from item_grants where node_id = ${item.id} and workspace_id = ${from}`,
-        );
-      }
       const viaFolder = target && !target.excluded ? target.via : null;
       await event(tx, to, ctx.caller.loginId, 'grant.move', {
         node: item.id,

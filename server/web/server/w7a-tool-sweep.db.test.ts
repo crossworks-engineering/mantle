@@ -105,9 +105,12 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
     /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured)|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection/i,
   ],
   ['wrong type', /is an? \w+, not an? \w+ . pass/],
+  // app_publish after an app_build that is offline here: no green build
+  // (A2b2b: on the write role the turn's scope is set, so the draft the
+  // turn may edit is read; on the system pool it read as none).
   [
     'offline',
-    /offline in the W7a|cannot resolve host|returned 503|failed: 503|not enabled on this box|no \w+ API key configured|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
+    /offline in the W7a|cannot resolve host|returned 503|failed: 503|not enabled on this box|no \w+ API key configured|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|draft has no successful build|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
   ],
   // (W7c fix round 2: telegram_pair is the anchor's own, until W7d; W7
   // integration fix 2: so is the rest of the Telegram inbox.)

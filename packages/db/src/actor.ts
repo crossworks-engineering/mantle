@@ -341,6 +341,21 @@ export function checkActorBound(what: string): Actor | null {
   return null;
 }
 
+/** Write-role gaps seen in tests (client.ts noteWriteRoleGap, arch
+ *  A2b2b): what was denied. vitest.setup.ts checks each against
+ *  WRITE_ROLE_GAP_TABLES. */
+const writeRoleGaps: string[] = [];
+
+/** Tests only (client.ts): note a write-role gap. */
+export function noteTestWriteRoleGap(what: string): void {
+  writeRoleGaps.push(what);
+}
+
+/** Tests: the write-role gaps noted since the last call, cleared. */
+export function takeWriteRoleGaps(): string[] {
+  return writeRoleGaps.splice(0, writeRoleGaps.length);
+}
+
 /** Tests: the misses noted since the last call, cleared. */
 export function takeActorMisses(): ActorMiss[] {
   return recorded.splice(0, recorded.length);
