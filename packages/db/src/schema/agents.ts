@@ -363,10 +363,9 @@ export const agents = pgTable(
     /** Higher = wins. Convention: 100 default. */
     priority: integer('priority').default(100).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
-    /** The agent's level (admin | team | client | public), member logins
-     *  Phase 0b: who may chat with it AND what it reads. A below-admin agent
-     *  runs inside its level (withAgentViewer). Default admin. */
-    audience: text('audience').notNull().default('admin'),
+    // The agent's old tier level stays in the database, frozen (0268,
+    // archived in archive_tool_levels), until W10; Drizzle no longer names it
+    // (W8c). An assistant reads its workspace (workspaceId).
     /** Workspaces W1 (0241): the one workspace this assistant answers in,
      *  written at its first attach and frozen once it has history. */
     workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'restrict' }),

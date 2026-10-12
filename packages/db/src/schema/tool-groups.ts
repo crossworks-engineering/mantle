@@ -229,9 +229,9 @@ export const toolGroups = pgTable(
     /** Service binding when this group IS an API integration; NULL otherwise. */
     integration: jsonb('integration').$type<ToolGroupIntegration>(),
     enabled: boolean('enabled').default(true).notNull(),
-    /** The group's level (admin | team | client | public): an agent may hold
-     *  only groups at or below its own level. Default admin. */
-    audience: text('audience').notNull().default('admin'),
+    // The group's old tier level stays in the database, frozen (0268,
+    // archived in archive_tool_levels), until W10; Drizzle no longer names it
+    // (W8c). A group is system-wide or adminOnly.
     /** Workspaces W4b (0254): the group runs only in a turn whose scope holds
      *  the Admin workspace (plan 5.4). Written from the manifest. */
     adminOnly: boolean('admin_only').notNull().default(false),

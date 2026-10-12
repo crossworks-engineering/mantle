@@ -4,8 +4,9 @@ import { nodes } from './nodes';
 /**
  * The embed edges (migration 0208): `from_id` (a page, drawing or note)
  * embeds `to_id`. Kept by triggers from pages.doc, draws.file_refs and a
- * note's markdown, never written by code; nodes.embedded_level is derived
- * from them. Admin pool only (docs/folder-tree.md, "Sharing a folder").
+ * note's markdown, never written by code; the old embed level of a node was
+ * derived from them. Admin pool only (docs/folder-tree.md, "Sharing a
+ * folder").
  */
 export const nodeEmbeds = pgTable(
   'node_embeds',

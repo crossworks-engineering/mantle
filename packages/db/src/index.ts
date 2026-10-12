@@ -12,7 +12,6 @@ export {
   db,
   systemDb,
   closeDb,
-  withSpace,
   withSystemTx,
   withViewer,
   viewerScopeFor,
@@ -47,11 +46,8 @@ export {
 } from './client';
 export {
   VIEWER_LEVELS,
-  currentViewerLevel,
   currentScope,
-  levelOfScope,
   isSystemScope,
-  inLevelScope,
   SCOPE_AREAS,
   type ScopeArea,
   currentWorkspaceScope,
@@ -64,7 +60,6 @@ export {
   isUnscoped,
   inTurnScope,
   inScopeTransaction,
-  ScopeLevelError,
   currentSpaceScope,
   readsDrafts,
   isViewerLevel,
@@ -72,9 +67,7 @@ export {
   lowerLevel,
   levelCovers,
   levelsMeet,
-  itemLevelAbove,
   ViewerLevelConflictError,
-  runInLevelRoleForTest,
   asSystem,
   AS_SYSTEM_TURN_REASONS,
   TurnScopeExitError,
@@ -84,7 +77,6 @@ export {
   afterCommit,
   afterRollback,
   viewerRoleName,
-  type LimitedLevel,
   type SpaceScope,
   type ViewerLevel,
   type ScopeKind,
@@ -115,7 +107,8 @@ export {
   type RequestScopeMode,
   type RequestOutcome,
 } from './viewer';
-export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
+export { ensureViewerRoles } from './viewer-roles';
+
 export { draftColumn, draftAllowed } from './draft-read';
 export {
   CONCURRENT_INDEXES,

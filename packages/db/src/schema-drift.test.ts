@@ -36,6 +36,12 @@ const RETIRING: Record<string, readonly string[]> = {
   // Workspaces W3 (0249): chunks and windows follow their node.
   'public.content_chunks': ['read_ws', 'login_id'],
   'public.content_chunk_windows': ['read_ws', 'login_id'],
+  // Workspaces W8c: the tier-level columns left Drizzle but stay in the
+  // database, frozen, until W10 drops them (owner decision Q1, 2026-10-12).
+  // Each has a default or is NULL, so an insert that does not name it works.
+  'public.nodes': ['audience', 'share_level', 'inherited_level', 'embedded_level'],
+  'public.agents': ['audience'],
+  'public.tool_groups': ['audience'],
 };
 
 describe.skipIf(!URL)('drizzle schema matches the migrated database', () => {

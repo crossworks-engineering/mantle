@@ -21,25 +21,24 @@ import {
   viewerRoleDatabase,
   viewerRoleName,
   viewerRolePassword,
-  type LimitedLevel,
   type PoolRole,
+  type RetiredPoolRole,
 } from './viewer';
 
-export const LIMITED_LEVELS: readonly LimitedLevel[] = ['team', 'client', 'public'];
+/** The LOGIN role: the workspace role (workspaces W1), which sees what the
+ *  workspaces of its transaction's scope hold. */
+export const POOL_ROLES: readonly PoolRole[] = ['user'];
 
-/** Every limited LOGIN role: the three levels and the workspace role
- *  (workspaces W1), which sees what the workspaces of its transaction's
- *  scope hold. */
-export const POOL_ROLES: readonly PoolRole[] = [...LIMITED_LEVELS, 'user'];
-
-/** Roles that no longer log in (workspaces W6b): the personal-space role,
- *  retired when the spaces were folded into the brain (0267). Each brain run
- *  makes the shared role NOLOGIN with no password, and creates it so on a
- *  fresh cluster (W6b fix round 1: migrations 0165 on grant to it, so a
- *  fresh install failed to migrate without it); a per-database login is
- *  never created, only retired where it exists. The role, its grants and
- *  its policies stay until W8 (the migrations still name it). */
-export const RETIRED_POOL_ROLES: readonly PoolRole[] = ['space'];
+/** Roles that no longer log in: the personal-space role (W6b, when the
+ *  spaces were folded into the brain, 0267) and the three level roles
+ *  (W8c: no read is decided by a level any more). Each brain run makes the
+ *  shared role NOLOGIN with no password, and creates it so on a fresh
+ *  cluster (W6b fix round 1: old migrations grant to them, so a fresh
+ *  install failed to migrate without them); a per-database login is never
+ *  created, only retired where it exists. Their grants and policies are
+ *  gone (0273, and applyViewerGrants revokes what an old migration grants
+ *  them again); the roles stay because the old migrations name them. */
+export const RETIRED_POOL_ROLES: readonly RetiredPoolRole[] = ['space', 'team', 'client', 'public'];
 
 /** The statement that retires `role`: no login, no password. */
 function retireStatement(role: string, exists = true): string {
@@ -111,8 +110,8 @@ export interface ClusterRoles {
  * The statements that bring this brain's viewer roles to their wanted state.
  * Pure, so a test can pin who may change what on a shared cluster.
  *
- * Shared names (the default, one brain per cluster): set the four roles and
- * note this database as their owner, as before the note existed. Refused,
+ * Shared names (the default, one brain per cluster): set the workspace role
+ * and note this database as its owner, as before the note existed. Refused,
  * before any change, when another database that still exists owns them:
  * resetting the passwords would lock that brain's member logins out.
  *
@@ -127,7 +126,7 @@ export interface ClusterRoles {
  * a login that could connect to another brain's database could SET ROLE there
  * and read that brain's rows. So the brain also closes its database: CONNECT
  * is taken from PUBLIC (every database grants it by default) and given only to
- * its own four logins and to the role migrating (the app's own role, the same
+ * its own login and to the role migrating (the app's own role, the same
  * DATABASE_URL); the database owner and superusers keep it anyway. Every
  * per-database brain does this, so no brain's login reaches another
  * per-database brain. A brain in shared mode on the same cluster stays open
@@ -205,7 +204,10 @@ export function viewerRolePlan(
 
 /** A per-database login role's level and database, or null for any other
  *  role (the shared ones included). */
-export function parseViewerLoginRole(role: string): { level: PoolRole; database: string } | null {
+export function parseViewerLoginRole(
+  role: string,
+): { level: PoolRole | RetiredPoolRole; database: string } | null {
+
   for (const level of [...POOL_ROLES, ...RETIRED_POOL_ROLES]) {
     const prefix = `${viewerRoleName(level)}_`;
     if (role.startsWith(prefix) && role.length > prefix.length) {

@@ -82,23 +82,11 @@ export const nodes = pgTable(
      *  hits with the successor so the model prefers it. See
      *  packages/content/src/supersede.ts. */
     supersededBy: uuid('superseded_by'),
-    /** Who may read this item: admin | team | client | public (member logins
-     *  Phase 0b). Default admin; only workspace kinds may go lower (CHECK
-     *  nodes_audience_kind_ck). Enforced by row level security for the
-     *  viewer roles; the admin pool ignores it. */
-    audience: text('audience').notNull().default('admin'),
-    /** A folder's share, 'team' or 'client' (folder plan phase 4): shares
-     *  everything below it, now and later. Null for everything else. */
-    shareLevel: text('share_level'),
-    /** The share of the nearest shared folder above this row (same owner),
-     *  kept by the database (migration 0204 triggers); never written by
-     *  code. Null when nothing above is shared. */
-    inheritedLevel: text('inherited_level'),
-    /** The most open share among the owner's rows that reach this row
-     *  through embeds (a shared note embeds this image), kept by the
-     *  database (migration 0208 triggers over node_embeds); never written by
-     *  code. Null when nothing that embeds it is shared. */
-    embeddedLevel: text('embedded_level'),
+    // The four tier-level columns of the old access model stay in the
+    // database, frozen (0261), until W10 drops them; Drizzle no longer names
+    // them (W8c), so no code reads or writes them and an insert takes the
+    // database's defaults. schema-drift.test.ts allowlists them.
+
     /** Why: 'version' (filename-family sibling), 'migrated' (page built from
      *  this source), 'corrected' (explicit mark — demotes harder). */
     /** Workspaces W1 (migration 0241): derived from item_grants by

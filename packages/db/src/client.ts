@@ -9,7 +9,6 @@ import {
   currentSpaceScope,
   currentScope,
   isSystemScope,
-  levelOfScope,
   SCOPE_AREAS,
   type ScopeArea,
   newTxHooks,
@@ -26,7 +25,6 @@ import {
   runInViewerScope,
   type ViewerFor,
   type AppRunFor,
-  type ViewerLevel,
   viewerDatabaseUrl,
   viewerRolePassword,
   type PoolRole,
@@ -43,7 +41,7 @@ declare global {
 
   var __mantleDb: PostgresJsDatabase<typeof schema> | undefined;
 
-  /** One small pool per limited level (see viewer.ts), opened on first use. */
+  /** The workspace role's small pool (see viewer.ts), opened on first use. */
   var __mantleViewerDbs:
     | Map<PoolRole, { sql: ReturnType<typeof postgres>; db: PostgresJsDatabase<typeof schema> }>
     | undefined;
@@ -52,8 +50,8 @@ declare global {
   var __mantleTurnDb: PostgresJsDatabase<typeof schema> | undefined;
 }
 
-/** Connections per limited pool. Small on purpose: max_connections is 200
- *  and every process of a box opens its own pools. */
+/** Connections of the limited pool. Small on purpose: max_connections is
+ *  200 and every process of a box opens its own pools. */
 const VIEWER_POOL_MAX = 3;
 
 /**
@@ -81,9 +79,9 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
 }
 
 /**
- * The limited pool for a viewer level: logs in as that level's LOGIN role,
- * so row level security filters every read. Fails loudly (never falls back to
- * the admin pool) when the master key is missing or the role cannot log in.
+ * The limited pool: logs in as the workspace LOGIN role, so row level
+ * security filters every read. Fails loudly (never falls back to the admin
+ * pool) when the master key is missing or the role cannot log in.
  */
 function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
   const pools = (globalThis.__mantleViewerDbs ??= new Map());
@@ -215,74 +213,16 @@ function getTurnScopedDb(): PostgresJsDatabase<typeof schema> {
   return client;
 }
 
-/** The handle for the current scope (viewer.ts): a scope's own transaction
- *  (a personal space), a turn scope's per-query handle, else
- *  the level's pool, else admin. */
+/** The handle for the current scope (viewer.ts): a scope's own transaction,
+ *  a turn scope's per-query handle, else admin (system work). */
 function getDb(): PostgresJsDatabase<typeof schema> {
   const tx = currentScopeTx();
   if (tx) return tx as PostgresJsDatabase<typeof schema>;
   if (inTurnScope()) return getTurnScopedDb();
-  const level = levelOfScope(currentScope());
-  return level === 'admin' ? getAdminDb() : getViewerDb(level);
+  return getAdminDb();
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * The level a login's personal space runs at (client logins C1): team for an
- * admin or a member, client for a client. A role this code does not know has
- * no space level: withSpace refuses it (fail closed). Read on the admin pool
- * on every call, never cached: the row is the truth.
- *
- * The one query also checks the pair (client logins audit A16): the space
- * must be this login's (`spaces.login_id`), and the login must be active
- * (`disabled_at IS NULL`). Every caller takes both ids from one session
- * today; this keeps a future caller that mixes them up from acting in
- * another login's space, or for a disabled login.
- */
-export async function spaceLevelForLogin(
-  loginId: string,
-  spaceId: string,
-): Promise<'team' | 'client'> {
-  const rows = (await getAdminDb().execute(
-    sqlTag`select u.role,
-                  u.disabled_at is null as active,
-                  exists (select 1 from spaces s
-                           where s.id = ${spaceId} and s.login_id = u.id) as owns_space
-             from auth.users u where u.id = ${loginId}`,
-  )) as unknown as { role: string; active: boolean; owns_space: boolean }[];
-  const row = rows[0];
-  if (!row) throw new Error('withSpace: no such login');
-  if (!row.owns_space) throw new Error('withSpace: the space is not this login’s');
-  if (!row.active) throw new Error('withSpace: the login is disabled');
-  switch (row.role) {
-    case 'admin':
-    case 'member':
-      return 'team';
-    case 'client':
-      return 'client';
-    default:
-      throw new Error('withSpace: this login has no personal space level');
-  }
-}
-
-/**
- * Ran `fn` for ONE personal space on the personal-space role (member logins
- * Phase 2). Retired in workspaces W6b: the spaces are folded into the brain
- * (0267), so it always refuses. W8 removes it with the rest of the space
- * code.
- */
-export async function withSpace<T>(
-  _scope: { spaceId: string; loginId: string },
-  _fn: () => Promise<T>,
-): Promise<T> {
-  // Workspaces W6b (0267): the personal spaces are folded into the brain and
-  // the space role is retired (NOLOGIN, viewer-roles.ts RETIRED_POOL_ROLES).
-  // Nothing runs in a space any more: fail closed, before any connection.
-  throw new Error(
-    'withSpace: the personal spaces were folded into the brain (workspaces W6b); a login works in its private workspace',
-  );
-}
 
 /**
  * Run `fn` in ONE admin-pool transaction, on its own connection: every `db`
@@ -422,8 +362,8 @@ export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>):
  * (`mantle_view_user`) in its own short transaction that sets the scope, so
  * no transaction is held across an LLM call. Fails closed: a query built
  * here that runs after the turn ended (or from a callback that lost it) is
- * refused (ScopeLostError), never sent on the system pool; a level question
- * (levelOfScope) throws. Nested in the same scope it just runs `fn`;
+ * refused (ScopeLostError), never sent on the system pool. Nested in the
+ * same scope it just runs `fn`;
  * inside any other scope it is refused. `modWs` must be a subset of `ws`.
  * Writes are not made here: they go through the system pool's own paths.
  */
@@ -478,7 +418,7 @@ const holdsAdmin = new WeakMap<WorkspaceScope, Promise<boolean>>();
 /**
  * Whether the current code may do Admin-workspace work (plan 5.4, adminOnly):
  * unscoped system work (the owner's paths, and the Admin assistant and the
- * Admin MCP surface under MANTLE_ADMIN_READS=system) yes; a level or personal-space scope no; a workspace scope when it holds
+ * Admin MCP surface under MANTLE_ADMIN_READS=system) yes; a workspace scope when it holds
  * the Admin workspace (asked of the database once per scope). Fails closed:
  * an error reads as no.
  */
@@ -508,8 +448,8 @@ export async function scopeHoldsAdmin(): Promise<boolean> {
  * its login is a user there and its limits leave the area on
  * (mantle_scope_has_area, the rule of areasFor); so may an assistant turn
  * that answers such a login (W7a: the Admin assistant, which answers the
- * owner when no login asks). A level scope, a link and an assistant turn
- * with no login never may. An unknown kind or area is refused (fails
+ * owner when no login asks). A link and an assistant turn with no login
+ * never may. An unknown kind or area is refused (fails
  * closed).
  */
 export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
@@ -840,7 +780,7 @@ export async function withDeadlockRetry<T>(run: () => Promise<T>, attempts = 3):
 
 /**
  * The R6 shim (plan R6, S2, T4): run `fn` for whoever `actsFor` names, in a
- * WORKSPACE scope, never on a level role. A login reads the union of its
+ * WORKSPACE scope. A login reads the union of its
  * live workspaces (a disabled login: none); an assistant reads its own
  * workspace (none when it sits on no workspace); a public link reads no
  * workspace and carries its served list. Every query inside, after any
@@ -848,17 +788,12 @@ export async function withDeadlockRetry<T>(run: () => Promise<T>, attempts = 3):
  * the scope (as a turn scope does), so a long request holds no transaction.
  * Fails closed: an empty scope reads nothing.
  *
- * `level` 'admin' is system work (the Admin assistant until W6a): `fn` runs
- * as is. Any lower level only says "not system"; the scope is the truth.
+ * System work never comes through here: a caller that may run as the
+ * system runs `fn` itself (the level argument that said so went in W8c).
  * Inside the same workspace scope it just runs `fn`; inside another one it
- * is refused.
+ * is refused, unless it narrows a request scope.
  */
-export async function withViewer<T>(
-  level: ViewerLevel,
-  actsFor: ViewerFor,
-  fn: () => Promise<T>,
-): Promise<T> {
-  if (level === 'admin') return fn();
+export async function withViewer<T>(actsFor: ViewerFor, fn: () => Promise<T>): Promise<T> {
   // Inside the request scope of this very login (W6a): that scope is the
   // one withViewer would build, read once by the session guard. No second
   // lookup per call (the W5b2 member search cost).
@@ -948,7 +883,7 @@ export function seedLoginScope(
 /**
  * The scope the session guard enters for a signed-in login (W6a): the
  * union of its live workspaces, Moderator where it is one (a disabled
- * login: none). The same scope `withViewer(…, { login }, …)` builds.
+ * login: none). The same scope `withViewer({ login }, …)` builds.
  */
 export async function loginScopeFor(loginId: string): Promise<WorkspaceScope> {
   return memoScopeFor({ login: loginId });
@@ -1070,8 +1005,9 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
 
 /**
  * Content handle. A Proxy that defers initialisation until the first property
- * access, and picks the pool per access: inside `withViewer(level, …)` it is
- * that level's limited pool, so row level security applies.
+ * access, and picks the pool per access: inside a workspace scope it is the
+ * workspace role's pool, so row level security applies.
+
  */
 export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {

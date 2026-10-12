@@ -1,47 +1,40 @@
 /**
- * The access adapter's viewer scope (member logins Phase 0b, plan section 2b).
+ * The access adapter's viewer scope (member logins Phase 0b, plan section 2b;
+ * workspaces from W1 on).
  *
- * One idea: no permission check per tool. A limited caller's queries run as a
- * limited Postgres LOGIN role, and row level security drops every row that
- * role may not see. `db` (client.ts) reads the viewer from this
- * AsyncLocalStorage on every property access, so everything inside
- * `withViewer(level, fn)` is filtered with no code change.
+ * One idea: no permission check per tool. A scoped caller's queries run as
+ * the workspace LOGIN role (`mantle_view_user`) with its workspaces set on
+ * the transaction, and row level security drops every row those workspaces
+ * do not hold. `db` (client.ts) reads the scope from this AsyncLocalStorage
+ * on every property access, so everything inside `withViewer(actsFor, fn)`
+ * is filtered with no code change.
  *
  * Rules:
- *  - No viewer = the admin pool, unchanged (today's behaviour everywhere).
- *  - The level only goes DOWN: a nested withViewer takes the lower of the
- *    current and the new level, so a team agent that invokes an admin agent
- *    still runs it at team level.
- *  - Real LOGIN roles, never a role switch on the superuser connection: a
+ *  - No scope = the admin pool (system work).
+ *  - A scope is never widened or swapped: a nested scope reads the same or
+ *    less (runInViewerScope, runInTurnScope).
+ *  - A real LOGIN role, never a role switch on the superuser connection: a
  *    `SET ROLE` there is not a lock (`SET ROLE NONE` escapes it).
- *  - The role passwords are derived from MANTLE_MASTER_KEY (HKDF, fixed
+ *  - The role password is derived from MANTLE_MASTER_KEY (HKDF, fixed
  *    label), so there is no new secret and no compose or .env change.
- *    `ensureViewerRoles` (viewer-roles.ts) sets them at every migrate.
- *  - A `db.transaction` opened OUTSIDE a viewer scope keeps its admin
- *    connection: a withViewer inside that callback does not change `tx`.
+ *    `ensureViewerRoles` (viewer-roles.ts) sets it at every migrate.
+ *  - A `db.transaction` opened OUTSIDE a scope keeps its admin connection: a
+ *    withViewer inside that callback does not change `tx`.
+ *
+ * The tier levels (admin, team, client, public) decide no read (workspaces
+ * W8c): the level roles are retired (viewer-roles.ts RETIRED_POOL_ROLES) and
+ * hold no grant and no policy (migration 0273). The level helpers below stay
+ * only for the code that still names a level in a value.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { hkdfSync } from 'node:crypto';
 import { env } from '@mantle/config';
 
-/** The four levels, lowest first (the ITEM rank: raising and lowering an
- *  item). Who reads what is not a chain at the bottom: since client logins
- *  C1 (decision 3) the client role reads client items only and the public
- *  role public items only, so client and public are siblings under team.
- *  `levelCovers` is that rule; `lowerLevel` builds on it. */
+/** The four tier levels, lowest first. Since client logins C1 (decision 3)
+ *  client and public are siblings under team: `levelCovers` is that rule,
+ *  `lowerLevel` builds on it. No read is decided by them (W8c). */
 export const VIEWER_LEVELS = ['public', 'client', 'team', 'admin'] as const;
 export type ViewerLevel = (typeof VIEWER_LEVELS)[number];
-/** The levels that run on a limited role (admin runs on the admin pool). */
-export type LimitedLevel = Exclude<ViewerLevel, 'admin'>;
-
-const RANK: Record<ViewerLevel, number> = { public: 0, client: 1, team: 2, admin: 3 };
-
-/** The item rank: whether an item at `a` sits above an item at `b`
- *  (admin > team > client > public). For raising and lowering ITEMS only;
- *  never to decide what a viewer scope reads (use `levelCovers`). */
-export function itemLevelAbove(a: ViewerLevel, b: ViewerLevel): boolean {
-  return RANK[a] > RANK[b];
-}
 
 /**
  * Whether a caller at `viewer` reads what sits at `level`: admin reads all,
@@ -162,30 +155,15 @@ export type ViewerFor =
  */
 export type AppRunFor = { id: string } | { team: true };
 
-/** What the current code runs as: system work (no scope), a level scope
- *  (the tier model, until it is retired), or a workspace scope. */
-export type CurrentScope =
-  | { kind: 'system' }
-  | { kind: 'level'; level: LimitedLevel }
-  | ({ kind: ScopeKind } & WorkspaceScope);
-
-/**
- * Asked for a viewer LEVEL inside a workspace scope (plan S2): levels have no
- * meaning there, and the old answer ('admin' when unset) would widen a
- * workspace scope to everything. Callers move to `currentScope()`.
- */
-export class ScopeLevelError extends Error {
-  readonly code = 'scope-level';
-  constructor(what: string) {
-    super(`${what}: a workspace scope has no viewer level; use currentScope()`);
-    this.name = 'ScopeLevelError';
-  }
-}
+/** What the current code runs as: system work (no scope) or a workspace
+ *  scope. (The level scope of the tier model went in W8c.) */
+export type CurrentScope = { kind: 'system' } | ({ kind: ScopeKind } & WorkspaceScope);
 
 /** `tx`: a scope that must run in one transaction (its settings are
- *  transaction-local) carries it here; `db` returns it for every query. */
+ *  transaction-local) carries it here; `db` returns it for every query.
+ *  `system`: a system transaction (runInSystemTx), or asSystem's mask. */
 type Scope = {
-  level: ViewerLevel;
+  system?: true;
   space?: SpaceScope;
   ws?: WorkspaceScope;
   tx?: unknown;
@@ -315,7 +293,7 @@ const store = new AsyncLocalStorage<Scope>();
 /** The store value of code that left every scope (`asSystem`): it masks a
  *  request scope around it, which `store.exit` could not (the request
  *  scope lives in its own slot). Never returned by `active()`. */
-const SYSTEM_EXIT: Scope = Object.freeze({ level: 'admin' as const });
+const SYSTEM_EXIT: Scope = Object.freeze({ system: true as const });
 
 /** One slot per HTTP request (workspaces W6a): the route loader opens it
  *  around each handler (runInRequestSlot); the session guard fills it
@@ -370,7 +348,6 @@ export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): b
     throw new Error('enterRequestScope: only outside any other scope');
   }
   slot.scope = Object.freeze({
-    level: 'public' as const,
     ws,
     perQuery: true as const,
     request: Object.freeze({ ...mode }),
@@ -512,55 +489,16 @@ export function adminReadsOnSystemPool(): boolean {
   return (env('MANTLE_ADMIN_READS') ?? '').trim().toLowerCase() === 'system';
 }
 
-/**
- * @deprecated Workspaces plan S2: no product code reads this (the
- * level-reads sweep fails on it; W8 deletes it). Use currentScope() and
- * handle every kind, or scopeHasArea() for an "Admin only" check.
- * 'admin' outside any viewer scope; throws ScopeLevelError inside a
- * workspace scope.
- */
-export function currentViewerLevel(): ViewerLevel {
-  return levelOfScope(currentScope());
-}
-
 /** What the current code runs as (see CurrentScope). Never 'system' inside
- *  a level scope or a workspace scope (plan T4). A personal-space scope
- *  runs at its login's level ('team' for an admin or a member, 'client' for
- *  a client), so everything that refuses a limited caller refuses it too. */
+ *  a workspace scope (plan T4). */
 export function currentScope(): CurrentScope {
   const scope = active();
-  if (!scope) return { kind: 'system' };
-  if (scope.ws) return { ...scope.ws };
-  if (scope.level === 'admin') return { kind: 'system' };
-  return { kind: 'level', level: scope.level as LimitedLevel };
+  if (scope?.ws) return { ...scope.ws };
+  return { kind: 'system' };
 }
 
-/**
- * The tier level a scope runs at, for the tier-model code that remains while
- * the bridge keeps grants equal to levels (W5b1): 'admin' for system work,
- * the level of a level scope. A workspace scope has no level (ScopeLevelError),
- * and an unknown kind is refused the same way (fails closed, plan S2).
- */
-export function levelOfScope(scope: CurrentScope): ViewerLevel {
-  switch (scope.kind) {
-    case 'system':
-      return 'admin';
-    case 'level':
-      return scope.level;
-    default:
-      throw new ScopeLevelError(`a '${String(scope.kind)}' scope`);
-  }
-}
-
-/** Whether the current code runs in a level scope at exactly `level` (a
- *  personal space counts, at its login's level). */
-export function inLevelScope(level: LimitedLevel): boolean {
-  const scope = currentScope();
-  return scope.kind === 'level' && scope.level === level;
-}
-
-/** Whether the current code is system work: outside every level, space and
- *  workspace scope (a system transaction counts, as it did as 'admin'). */
+/** Whether the current code is system work: outside every workspace scope
+ *  (a system transaction counts). */
 export function isSystemScope(): boolean {
   return currentScope().kind === 'system';
 }
@@ -582,9 +520,8 @@ export function currentSpaceScope(): SpaceScope | null {
 
 /**
  * Whether the current code may read draft columns: the admin pool, or a
- * personal-space scope (the member's own working copy). Every other limited
- * scope reads published columns only; the draft columns are never granted to
- * the level roles, so a read that forgets this fails loudly (42501).
+ * workspace scope whose request reads drafts (an Admin user's editor; the
+ * rule is in each query, draft-read.ts).
  */
 export function readsDrafts(): boolean {
   // A workspace scope reads published columns only (they are all the
@@ -596,14 +533,13 @@ export function readsDrafts(): boolean {
 
 /**
  * Whether the current code runs unlimited: the system pool, outside every
- * level, space and workspace scope. Never throws (unlike
- * levelOfScope inside a workspace scope): for the checks that only ask
- * "is this the owner's unlimited path?".
+ * workspace scope and every scope's own transaction. For the checks that
+ * only ask "is this the owner's unlimited path?".
  */
 export function isUnscoped(): boolean {
   const scope = active();
   if (!scope) return true;
-  return !scope.ws && !scope.space && !scope.tx && scope.level === 'admin';
+  return !scope.ws && !scope.space && !scope.tx;
 }
 
 /** Whether the current code runs in a turn scope (per-query transactions). */
@@ -627,8 +563,7 @@ export function inScopeTransaction(): boolean {
  * Enter the scope `withViewer` built (client.ts, plan R6): `fn` and what it
  * awaits read on the workspace role, each query in its own short
  * transaction that sets the scope, as a turn scope does. It replaces a
- * personal-space, level or system scope around it (as a level scope did
- * before W5b2: a member's space request reads the brain through it). Inside
+ * system scope around it (a system transaction keeps its own `tx`). Inside
  * a workspace scope it runs `fn` as is when the scope is the same and is
  * refused otherwise (a scope is never widened or swapped). Only client.ts
  * calls this, with a validated, frozen scope.
@@ -641,47 +576,14 @@ export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): P
     // an assistant of one of the login's workspaces): it reads less, never
     // more (workspaces W6a).
     if (open.request && narrowsWorkspaceScope(open.ws, ws)) {
-      return store.run({ level: 'public', ws, perQuery: true }, async () => await fn());
+      return store.run({ ws, perQuery: true }, async () => await fn());
     }
     return Promise.reject(new Error('withViewer: already inside another workspace scope'));
   }
   // Awaited INSIDE the scope: a callback that returns a query builder (a
   // thenable, run when awaited) runs it here, not in the caller's scope
   // after this one has ended (ScopeLostError there).
-  return store.run({ level: 'public', ws, perQuery: true }, async () => await fn());
-}
-
-/**
- * TESTS ONLY (exported by @mantle/db/test-support): run `fn` on a level
- * role, as withViewer did before W5b2, to prove that role's row security
- * (the level roles still serve personal spaces until W6b). Product code
- * never enters a level scope this way (the R6 sweep checks it).
- */
-export function runInLevelRoleForTest<T>(level: ViewerLevel, fn: () => Promise<T>): Promise<T> {
-  let next: ViewerLevel;
-  try {
-    next = lowerLevel(levelOfScope(currentScope()), level);
-  } catch (err) {
-    return Promise.reject(err);
-  }
-  if (level === 'admin' || next === 'admin') return fn();
-  return store.run({ level: next }, fn);
-}
-
-/** Enter a scope that runs in one transaction at `level` (or lower). Only
- *  client.ts calls this, with the transaction it opened on the right pool.
- *  Throws ViewerLevelConflictError for client with public (a client's space
- *  opened from a public scope). */
-export function runInTxScope<T>(
-  scope: { level: LimitedLevel; space?: SpaceScope; tx: unknown; hooks?: TxHooks },
-  fn: () => Promise<T>,
-): Promise<T> {
-  // A personal space opened inside a request scope (a member's own items
-  // until W6b) runs at its own level: the request scope has no level.
-  const level = (
-    active()?.request ? scope.level : lowerLevel(levelOfScope(currentScope()), scope.level)
-  ) as LimitedLevel;
-  return store.run({ ...scope, level }, fn);
+  return store.run({ ws, perQuery: true }, async () => await fn());
 }
 
 /** Enter a workspace scope that runs in one transaction on the workspace
@@ -694,9 +596,7 @@ export function runInWorkspaceTx<T>(
   if (active()) {
     return Promise.reject(new Error('runInWorkspaceTx: only outside any other scope'));
   }
-  // `level` is never read inside (levelOfScope throws); 'public' is the
-  // narrowest value, should anything read the field directly.
-  return store.run({ level: 'public', ws: scope.ws, tx: scope.tx, hooks: scope.hooks }, fn);
+  return store.run({ ws: scope.ws, tx: scope.tx, hooks: scope.hooks }, fn);
 }
 
 /**
@@ -704,8 +604,7 @@ export function runInWorkspaceTx<T>(
  * the workspace role, each query in its own short transaction that sets the
  * scope (client.ts). No transaction is held across the turn, so an LLM call
  * inside never holds one. Nested: the same scope runs `fn` as is; any other
- * scope (another workspace scope, a level scope, a personal space, a
- * transaction) is refused, so a scope is never widened or swapped. Only
+ * scope (another workspace scope, a transaction) is refused, so a scope is never widened or swapped. Only
  * client.ts calls this (`withTurnScope`), with a validated, frozen scope.
  */
 export function runInTurnScope<T>(
@@ -714,8 +613,8 @@ export function runInTurnScope<T>(
   writes?: RequestScopeMode,
 ): Promise<T> {
   const scope: Scope = writes
-    ? { level: 'public', ws, perQuery: true, request: Object.freeze({ ...writes }) }
-    : { level: 'public', ws, perQuery: true };
+    ? { ws, perQuery: true, request: Object.freeze({ ...writes }) }
+    : { ws, perQuery: true };
   const open = active();
   if (open) {
     if (open.perQuery && open.ws && sameWorkspaceScope(open.ws, ws)) return fn();
@@ -807,7 +706,7 @@ export function runInSystemTx<T>(
   if (open && !open.request) {
     return Promise.reject(new Error('runInSystemTx: only outside a viewer scope'));
   }
-  return store.run({ level: 'admin', tx: scope.tx, hooks: scope.hooks }, fn);
+  return store.run({ system: true, tx: scope.tx, hooks: scope.hooks }, fn);
 }
 
 /**
@@ -1143,39 +1042,32 @@ export function assertSystemDbCaller(stack?: string): void {
 }
 
 /**
- * Refuse to hand work to another process from inside a viewer scope. A job
- * runs later in a worker that does not inherit this scope, so it would run at
- * admin: "the level only goes down" breaks across the queue. No job type
- * carries a level yet, so every enqueue helper calls this first and a limited
- * turn cannot queue work at all (plan section 2b).
+ * Refuse to hand work to another process from inside a workspace scope. A
+ * job runs later in a worker that does not inherit this scope, so it would
+ * run unscoped. A workspace scope never hands work on without carrying it
+ * (plan 5.4, U5): a caller that carries it checks with assertScopeCarried
+ * instead.
  */
 export function assertNoViewer(what: string): void {
   if (active()?.ws) {
-    // A workspace scope never hands work on without carrying it (plan 5.4,
-    // U5): a caller that carries it checks with assertScopeCarried instead.
     throw new Error(
       `${what} leaves this process and would run unscoped, but the caller runs in a workspace scope. ` +
         'Work queued from a workspace scope must carry that scope.',
     );
   }
-  const scope = currentScope();
-  if (scope.kind !== 'system') {
-    const level = scope.kind === 'level' ? scope.level : scope.kind;
-    throw new Error(
-      `${what} leaves this process and would run at admin, but the caller runs at '${level}'. ` +
-        'A limited-level turn cannot queue work.',
-    );
-  }
 }
 
-/** A limited pool: one per level, the personal-space role, and the
- *  workspace role (workspaces W1). */
-export type PoolRole = LimitedLevel | 'space' | 'user';
+/** The limited pool: the workspace role (workspaces W1). */
+export type PoolRole = 'user';
 
-/** The Postgres LOGIN role for a limited pool. Not `mantle_team`: that name
- *  is already the team visitor cookie. `mantle_view_space` is the
- *  personal-space role: it sees only the space its transaction names. */
-export function viewerRoleName(level: PoolRole): string {
+/** The retired roles: the personal-space role (W6b) and the three level
+ *  roles (W8c). NOLOGIN, no grant and no policy (0273); they stay as roles
+ *  because the old migrations name them. */
+export type RetiredPoolRole = 'space' | 'team' | 'client' | 'public';
+
+/** The Postgres role of the pool, or of a retired one. Not `mantle_team`:
+ *  that name is already the team visitor cookie. */
+export function viewerRoleName(level: PoolRole | RetiredPoolRole): string {
   return `mantle_view_${level}`;
 }
 
@@ -1200,11 +1092,11 @@ export function viewerRolePassword(masterKey: string, level: PoolRole): string {
 /**
  * Per-database viewer logins (MANTLE_VIEWER_ROLES_PER_DATABASE=1), for a
  * brain on a Postgres cluster that other brains share (throwaway and e2e
- * brains on the workstation). The four shared roles are cluster objects with
- * ONE password each, derived from one brain's master key: a second brain that
- * reset them broke the first ("password authentication failed for user
- * mantle_view_space"). In this mode the brain logs in as its own role,
- * `mantle_view_<level>_<database>`, whose only power is to become the shared
+ * brains on the workstation). The shared role is a cluster object with ONE
+ * password, derived from one brain's master key: a second brain that reset
+ * it broke the first ("password authentication failed for user
+ * mantle_view_user"). In this mode the brain logs in as its own role,
+ * `mantle_view_user_<database>`, whose only power is to become the shared
  * role (`SET role` at login, viewer-roles.ts). So `current_user`, the grants
  * and the row policies are the shared role's, as on a box with one brain.
  * That power is cluster-wide; what keeps it to its own brain is CONNECT: a
@@ -1225,7 +1117,10 @@ export function viewerRoleDatabase(database: string): string {
 
 /** The role a limited pool logs in as: the shared role, or with `database`
  *  the brain's own per-database role (MANTLE_VIEWER_ROLES_PER_DATABASE). */
-export function viewerLoginRoleName(level: PoolRole, database: string | null): string {
+export function viewerLoginRoleName(
+  level: PoolRole | RetiredPoolRole,
+  database: string | null,
+): string {
   return database === null
     ? viewerRoleName(level)
     : `${viewerRoleName(level)}_${viewerRoleDatabase(database)}`;

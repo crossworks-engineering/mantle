@@ -1,29 +1,29 @@
 /**
  * The grant and write matrix (member logins Phase 0b, plan section 2b, review
- * fix M9). ONE list of every table: what the limited viewer roles may read,
- * which row rule filters it, and who writes it. The checklist the tests
- * enforce:
+ * fix M9; the workspace role from W1 on). ONE list of every table: what the
+ * workspace role (`mantle_view_user`) may read, and who writes it. The
+ * checklist the tests enforce:
  *
  *  - access-matrix.test.ts: every Drizzle table is listed exactly once, no
- *    draft column is ever granted, the private corpus is never granted.
+ *    login secret is ever granted, the private corpus is never granted.
  *  - access-matrix.db.test.ts: after migrate, the live grants equal this list,
- *    and every `rls` table has row level security on.
+ *    and every table the role reads has row level security on.
  *
  * `applyViewerGrants` turns it into GRANTs at every migrate, so a new table is
- * invisible to a limited role until it is added here: a missing grant fails a
- * query loudly (permission denied), it never leaks.
+ * invisible to the role until it is added here: a missing grant fails a query
+ * loudly (permission denied), it never leaks.
  *
- * The level roles never write. The personal-space role (`mantle_view_space`,
- * Phase 2) writes its own space only: `space` below lists its tables, and the
- * row rules in migration 0165 hold every read and write to the space its
- * transaction names (`mantle.space_id`).
+ * The level roles and the personal-space role are retired (W6b, W8c): they
+ * hold nothing, and applyViewerGrants revokes what an old migration grants
+ * them on a fresh install.
  */
 import type postgres from 'postgres';
-import { LIMITED_LEVELS, POOL_ROLES } from './viewer-roles';
-import { viewerRoleName, type LimitedLevel } from './viewer';
+import { POOL_ROLES, RETIRED_POOL_ROLES } from './viewer-roles';
+import { viewerRoleName } from './viewer';
 
-/** Node types that may go below admin. Mirrors mantle_workspace_kind() in
- *  migration 0159; access-matrix.db.test.ts pins the two together. */
+/** The node types that may be granted beyond the Admin workspace (shared
+ *  with a team, a contact, a link). A journal entry, a task, an email and
+ *  the other private kinds stay Admin. */
 export const WORKSPACE_NODE_TYPES = [
   'page',
   'note',
@@ -32,88 +32,46 @@ export const WORKSPACE_NODE_TYPES = [
   'file',
   'branch',
   'app',
-  // Formulas are authored workspace objects (Jason, 2026-09-26): a
-  // team-level agent can evaluate a formula shared with the team.
+  // Formulas are authored workspace objects (2026-09-26).
   'formula',
 ] as const;
 
-/** What the viewer roles may SELECT: nothing, the whole row, or named
- *  columns only (the draft columns stay admin, plan review fix M3). */
+/** What the workspace role may SELECT: nothing, the whole row, or named
+ *  columns only. */
 export type LimitedRead = 'none' | 'all' | readonly string[];
 
 /**
- * The row rule for a readable table:
- *  - brain-level: the nodes policy (brain owner, audience, workspace kind);
- *  - follows-node: visible when its node is (EXISTS on nodes);
- *  - source-node: facts, visible when their source node is; no source = admin;
- *  - all-rows: configuration the loop needs; no per-row secrecy.
- */
-export type RowRule =
-  | 'none'
-  | 'brain-level'
-  | 'follows-node'
-  | 'source-node'
-  | 'all-rows'
-  // Other members' team-shared personal items: the team role only, and only
-  // with mantle.human on (a member request, never an agent). Phase 2.
-  | 'team-drafts'
-  // The client thread on a client-level brain item (client logins C5,
-  // decision 8): comments with thread_scope 'client', read with mantle.human
-  // on while the item is a brain item at client level (0194).
-  | 'client-thread'
-  // Rows at or below the viewer's level by the row's own `audience` column
-  // (client logins C1: agents and tool groups for the client role, so a
-  // client-level turn never even loads an agent or a group above client).
-  | 'level-rows';
-
-/**
- * What the personal-space role may do on a table (Phase 2). `write` =
- * SELECT, INSERT, UPDATE, DELETE on every column (drafts included: they are
- * the member's own working copy). The row rules keep all of it inside the
- * space the transaction names.
- */
-export type SpaceAccess = 'none' | 'write';
-
-/**
- * Who writes it: `content` through `db` (so the viewer applies), `system`
- * through `systemDb` (infrastructure a limited turn still writes: traces,
- * spills, counters), `admin` only from owner paths.
+ * Who writes it: `content` through `db` (writes stay on the system pool with
+ * their rule in the statement), `system` through `systemDb` (infrastructure
+ * a scoped turn still writes: traces, spills, counters), `admin` only from
+ * owner paths.
  */
 export type Writer = 'content' | 'system' | 'admin';
 
 export type TableAccess = {
   table: string;
-  /** What the level roles read (each, unless `byRole` says otherwise). */
-  read: LimitedRead;
-  rule: RowRule;
   writer: Writer;
-  /** The personal-space role. Absent = none. */
-  space?: SpaceAccess;
-  /**
-   * Where ONE level role differs from `read` / `rule` (client logins C1,
-   * the per-role matrix). The team role keeps what it had: invoke_agent and
-   * the delegate roster load admin agents under a team viewer.
-   */
-  byRole?: Partial<Record<LimitedLevel, { read?: LimitedRead; rule?: RowRule }>>;
   /**
    * What the workspace role (`mantle_view_user`, workspaces W1) may SELECT.
    * Absent = none. Its row rules are the workspace policies of migration
-   * 0242 (the row's workspaces meet the scope), not the level rules.
-   * 'level': the same columns as `read`.
+   * 0242 and after (the row's workspaces meet the scope).
    */
-  user?: LimitedRead | 'level' | 'level+drafts';
+  user?: LimitedRead;
+  /** The item table's draft columns too (DRAFT_COLUMNS), next to the named
+   *  `user` columns (W6a). */
+  drafts?: true;
   /**
-   * The workspace role's row rule where it differs from `rule` (W6a fix
-   * round 2). 'own-login': the login's own row, the brain's row, or every
-   * row when the scope holds the Admin workspace (profiles, migration 0266).
+   * The workspace role's row rule where it differs (W6a fix round 2).
+   * 'own-login': the login's own row, the brain's row, or every row when the
+   * scope holds the Admin workspace (profiles, migration 0266).
    */
   userRule?: 'own-login';
 };
 
-/** The draft columns of the item tables. The level roles never read them;
- *  the workspace role does since W6a (plan 14): an Admin user's editor reads
- *  the draft, and every reader asks for it only for an item the user may
- *  edit (draftColumn, draft-read.ts: the rule is in the query). */
+/** The draft columns of the item tables. The workspace role reads them since
+ *  W6a (plan 14): an Admin user's editor reads the draft, and every reader
+ *  asks for it only for an item the user may edit (draftColumn,
+ *  draft-read.ts: the rule is in the query). */
 export const DRAFT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   'public.pages': ['draft_doc', 'draft_updated_at', 'draft_rev'],
   'public.draws': ['draft_scene', 'draft_updated_at', 'draft_rev'],
@@ -121,83 +79,49 @@ export const DRAFT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   'public.apps': ['draft_source', 'draft_updated_at', 'draft_build'],
 };
 
+/** Columns the workspace role may never read, whatever the matrix says. */
+export const NEVER_GRANTED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  'auth.users': ['password_hash', 'email'],
+};
+
 /** What the workspace role may SELECT on `t`. */
 export function userReadFor(t: TableAccess): LimitedRead {
-  if (t.user === 'level+drafts') {
-    if (!Array.isArray(t.read)) throw new Error(`${t.table}: level+drafts needs named columns`);
-    return [...(t.read as readonly string[]), ...(DRAFT_COLUMNS[t.table] ?? [])];
-  }
-  return t.user === 'level' ? t.read : (t.user ?? 'none');
+  const read = t.user ?? 'none';
+  if (!t.drafts) return read;
+  if (!Array.isArray(read)) throw new Error(`${t.table}: drafts needs named columns`);
+  return [...(read as readonly string[]), ...(DRAFT_COLUMNS[t.table] ?? [])];
 }
 
-/** What `level`'s role may SELECT on `t`. */
-export function readFor(t: TableAccess, level: LimitedLevel): LimitedRead {
-  return t.byRole?.[level]?.read ?? t.read;
-}
-
-/** The row rule that filters `t` for `level`'s role. */
-export function ruleFor(t: TableAccess, level: LimitedLevel): RowRule {
-  return t.byRole?.[level]?.rule ?? t.rule;
-}
-
-const none = (table: string, writer: Writer = 'admin'): TableAccess => ({
-  table,
-  read: 'none',
-  rule: 'none',
-  writer,
-});
+const none = (table: string, writer: Writer = 'admin'): TableAccess => ({ table, writer });
 
 /**
- * A table no level role reads, that the workspace role reads since W6a (an
- * Admin user's screens run in its scope, plan 2.4). Its row rule is in
- * migration 0265: rows that follow an item the scope reads, or (graph,
- * documentation collections) only a scope that holds the Admin workspace.
+ * A table the workspace role reads whole since W6a (an Admin user's screens
+ * run in its scope, plan 2.4). Its row rule is in migration 0265: rows that
+ * follow an item the scope reads, or (graph, documentation collections)
+ * only a scope that holds the Admin workspace.
  */
 const userOnly = (table: string, writer: Writer = 'admin'): TableAccess => ({
   table,
-  read: 'none',
-  rule: 'none',
   writer,
   user: 'all',
 });
 
 export const ACCESS_MATRIX: readonly TableAccess[] = [
-  // ── Brain content: readable at the viewer's level ─────────────────────────
-  {
-    table: 'public.nodes',
-    read: 'all',
-    user: 'all',
-    rule: 'brain-level',
-    writer: 'content',
-    space: 'write',
-  },
-  {
-    table: 'public.content_chunks',
-    read: 'all',
-    user: 'all',
-    rule: 'follows-node',
-    writer: 'content',
-  },
-  {
-    table: 'public.content_chunk_windows',
-    read: 'all',
-    user: 'all',
-    rule: 'follows-node',
-    writer: 'content',
-  },
-  { table: 'public.facts', read: 'all', user: 'all', rule: 'source-node', writer: 'content' },
+  // ── Brain content: what the scope's workspaces hold (0242) ────────────────
+  { table: 'public.nodes', user: 'all', writer: 'content' },
+  { table: 'public.content_chunks', user: 'all', writer: 'content' },
+  { table: 'public.content_chunk_windows', user: 'all', writer: 'content' },
+  { table: 'public.facts', user: 'all', writer: 'content' },
   {
     table: 'public.pages',
-    user: 'level+drafts',
-    read: ['node_id', 'doc', 'doc_text', 'version', 'created_at', 'updated_at'],
-    rule: 'follows-node',
+    user: ['node_id', 'doc', 'doc_text', 'version', 'created_at', 'updated_at'],
+    drafts: true,
     writer: 'content',
-    space: 'write',
   },
   {
     table: 'public.draws',
-    user: 'level+drafts',
-    read: [
+    drafts: true,
+    user: [
       'node_id',
       'scene',
       'scene_text',
@@ -208,14 +132,12 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       'created_at',
       'updated_at',
     ],
-    rule: 'follows-node',
     writer: 'content',
-    space: 'write',
   },
   {
     table: 'public.tables',
-    user: 'level+drafts',
-    read: [
+    drafts: true,
+    user: [
       'node_id',
       'data',
       'data_text',
@@ -228,158 +150,42 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       'created_at',
       'updated_at',
     ],
-    rule: 'follows-node',
-    writer: 'content',
-    space: 'write',
-  },
-  {
-    table: 'public.apps',
-    // Every column since W6a: an Admin user's app screens read them all;
-    // drafts only where the user may edit (draftColumn).
-    user: 'all',
-    read: [
-      'node_id',
-      'source',
-      'source_text',
-      'manifest',
-      'published_build',
-      'version',
-      // The informational flag (0198): the member and client app lookups
-      // read it on their roles.
-      'data_read_only',
-      // MCP access (0234): the member and client MCP app lookups read it on
-      // their roles.
-      'mcp_access',
-      'created_at',
-      'updated_at',
-    ],
-    rule: 'follows-node',
     writer: 'content',
   },
-  {
-    table: 'public.app_databases',
-    read: 'all',
-    user: 'all',
-    rule: 'follows-node',
-    writer: 'content',
-  },
+  // Every column since W6a: an Admin user's app screens read them all;
+  // drafts only where the user may edit (draftColumn).
+  { table: 'public.apps', user: 'all', writer: 'content' },
+  { table: 'public.app_databases', user: 'all', writer: 'content' },
 
-  // ── Personal spaces (Phase 2) ─────────────────────────────────────────────
-  // Sharing and review state of personal items. The team role reads the
-  // team-shared rows (team drafts, human requests only); the space role
-  // writes its own; the review side (return, accept) is admin.
-  {
-    table: 'public.space_items',
-    read: 'all',
-    rule: 'team-drafts',
-    writer: 'content',
-    space: 'write',
-  },
-  // The bundle a submitted item was submitted with (0180): the space role
-  // records its own at Submit and drops it on Recall; the level roles never
-  // see it (the ids of a member's private embeds are nobody else's business).
-  {
-    table: 'public.space_item_bundles',
-    read: 'none',
-    rule: 'none',
-    writer: 'content',
-    space: 'write',
-  },
+  // ── Personal spaces (Phase 2; folded into the brain in W6b, 0267) ────────
+  // Frozen until W10: read and written on the admin pool only.
+  none('public.space_items', 'content'),
+  none('public.space_item_bundles', 'content'),
   // Read only through mantle_is_brain_space() (security definer).
   userOnly('public.spaces'),
   // The accepted snapshot a member author reads (0183): the admin pool
   // serves it with the author rule in the query (member-accepted.ts).
   none('public.accepted_snapshots'),
-  // The upload ledger (0169): the space role inserts and reads its own
-  // space's rows; the level roles never see it.
-  { table: 'public.space_uploads', read: 'none', rule: 'none', writer: 'content', space: 'write' },
-  // The submission ledger (0194): the client caps count it, Recall cannot
-  // reset it. The space role inserts and reads its own space's rows.
-  {
-    table: 'public.space_submissions',
-    read: 'none',
-    rule: 'none',
-    writer: 'content',
-    space: 'write',
-  },
-
-  // The client comment ledger (0195): the daily comment cap counts it,
-  // deleting a comment never refunds. The space role inserts and reads its
-  // own login's rows; the level roles never see it.
-  {
-    table: 'public.client_comment_ledger',
-    read: 'none',
-    rule: 'none',
-    writer: 'content',
-    space: 'write',
-  },
-  // Client quota refusals (0195): what Team admin > Clients lists. Admin only.
+  none('public.space_uploads', 'content'),
+  none('public.space_submissions', 'content'),
+  none('public.client_comment_ledger', 'content'),
   none('public.client_quota_refusals'),
 
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
-  // The client role reads agents and tool groups at client level only
-  // (migration 0187, narrowed by 0189: client and public are siblings, not
-  // a chain): the team role keeps every row, because a team-level agent may
-  // still delegate to an admin agent.
   // The workspace role (W4b, 0254): an assistant of a workspace in the scope
   // or a helper; tool groups never adminOnly outside Admin, connectors only
   // as a resource of a workspace in the scope.
-  {
-    table: 'public.agents',
-    read: 'all',
-    user: 'all',
-    rule: 'all-rows',
-    writer: 'admin',
-    byRole: { client: { rule: 'level-rows' } },
-  },
-  { table: 'public.tools', read: 'all', user: 'all', rule: 'all-rows', writer: 'admin' },
-  {
-    table: 'public.tool_groups',
-    read: 'all',
-    user: 'all',
-    rule: 'all-rows',
-    writer: 'admin',
-    byRole: { client: { rule: 'level-rows' } },
-  },
-  { table: 'public.skills', read: 'all', user: 'all', rule: 'all-rows', writer: 'admin' },
-  // The client role reads none of it: resolveEmbeddingConfig reads on the
-  // admin pool (systemDb), so no client path needs the row with its base
-  // URLs (audit A27).
-  {
-    table: 'public.embedding_config',
-    read: 'all',
-    user: 'all',
-    rule: 'all-rows',
-    writer: 'admin',
-    byRole: { client: { read: 'none', rule: 'none' } },
-  },
-  // Every column for the client role too: the worker resolver
-  // (ai-workers-resolve.ts) selects whole rows on the viewer's pool, so a
-  // column list would fail a client-level turn (C4). Narrow it there.
-  { table: 'public.ai_workers', read: 'all', user: 'all', rule: 'all-rows', writer: 'admin' },
-  // The client role reads the preferences only (loadProfilePreferences), not
-  // the owner's display name (audit A27). The workspace role reads its own
-  // login's row and the brain's, every row only in an Admin scope (0266).
-  {
-    table: 'public.profiles',
-    read: 'all',
-    user: 'all',
-    rule: 'all-rows',
-    userRule: 'own-login',
-    writer: 'admin',
-    byRole: { client: { read: ['user_id', 'preferences'] } },
-  },
-  // mantle_brain_id() reads the anchor row; nothing else of a login. The
-  // client role holds no grant here: mantle_brain_id() is SECURITY DEFINER
-  // since migration 0187, so it needs none.
-  {
-    table: 'auth.users',
-    read: ['id', 'is_owner', 'created_at'],
-    user: 'level',
-    rule: 'all-rows',
-    writer: 'admin',
-    byRole: { client: { read: 'none', rule: 'none' } },
-  },
+  { table: 'public.agents', user: 'all', writer: 'admin' },
+  { table: 'public.tools', user: 'all', writer: 'admin' },
+  { table: 'public.tool_groups', user: 'all', writer: 'admin' },
+  { table: 'public.skills', user: 'all', writer: 'admin' },
+  { table: 'public.embedding_config', user: 'all', writer: 'admin' },
+  { table: 'public.ai_workers', user: 'all', writer: 'admin' },
+  // Its own login's row and the brain's, every row only in an Admin scope
+  // (0266).
+  { table: 'public.profiles', user: 'all', userRule: 'own-login', writer: 'admin' },
+  // mantle_brain_id() reads the anchor row; nothing else of a login.
+  { table: 'auth.users', user: ['id', 'is_owner', 'created_at'], writer: 'admin' },
 
   // ── Infrastructure: written through systemDb, never read by a viewer ─────
   userOnly('public.traces', 'system'),
@@ -388,7 +194,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.provider_alerts', 'system'),
   none('public.trace_steps', 'system'),
   // The per-login stores (R3, W4b 0254): the workspace role reads its own
-  // login's rows of the workspaces in its scope; the level roles none.
+  // login's rows of the workspaces in its scope.
   { ...none('public.tool_results', 'system'), user: 'all' },
   none('public.tool_result_chunks', 'system'),
   { ...none('public.pending_tool_calls', 'system'), user: 'all' },
@@ -447,8 +253,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.oauth_auth_codes'),
   none('public.oauth_access_tokens'),
   none('public.mobile_tokens'),
-  // MCP as a login (0227): the per-login switch (frozen since 0268).
-  none('public.mcp_login_access'),
   // Inbound API keys (0232): hashes of live secrets, admin pool only.
   none('public.access_keys'),
   none('public.pairing_codes'),
@@ -469,8 +273,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   userOnly('public.entities', 'content'),
   userOnly('public.entity_edges', 'content'),
   userOnly('public.entity_merge_dismissals', 'admin'),
-  // The embed edges (0208): written by triggers, read by the refresh and
-  // the admin pool; the viewer roles read embedded_level on the row.
+  // The embed edges (0208): written by triggers, read on the admin pool.
   none('public.node_embeds', 'content'),
   // Old summaries made before always fold (W2, 0247): admin pool only.
   none('public.node_mixed_summaries', 'content'),
@@ -480,19 +283,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // reader filter for a team agent (R6) runs in the tools against the map's
   // node under the viewer, never by opening these tables to a viewer role.
   userOnly('public.recall_revisions', 'admin'),
-  // Comments on personal items (Phase 2): the space role reads and writes its
-  // own login's comments on its own items; the team role reads the comments on
-  // teammates' team-shared items (human flag on). Brain threads stay admin.
-  {
-    table: 'public.node_comments',
-    read: 'all',
-    rule: 'team-drafts',
-    writer: 'content',
-    space: 'write',
-    // The team role reads the client thread too (same policy); the client
-    // role reads ONLY that thread (0194).
-    byRole: { client: { rule: 'client-thread' } },
-  },
+  // Comments (Phase 2): the admin pool only since W8c.
+  none('public.node_comments', 'content'),
   none('public.agent_groups'),
   none('public.channels'),
   none('public.curated_models'),
@@ -506,28 +298,14 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.app_table_exports'),
 
   // ── Workspaces (W1, migrations 0241 and 0242) ────────────────────────────
-  // The model: the workspace role reads the rows of the workspaces in its
-  // scope (and the grants of the items it reads); the level roles never do.
-  {
-    table: 'public.workspaces',
-    read: 'none',
-    rule: 'none',
-    writer: 'admin',
-    // Every column since W6a (an Admin user's lists read the workspace
-    // chips); the row rule (0242) keeps it to the login's workspaces.
-    user: 'all',
-  },
-  {
-    table: 'public.workspace_users',
-    read: 'none',
-    rule: 'none',
-    writer: 'admin',
-    user: 'all',
-  },
+  // The workspace role reads the rows of the workspaces in its scope (and
+  // the grants of the items it reads).
+  // Every column since W6a (an Admin user's lists read the workspace chips);
+  // the row rule (0242) keeps it to the login's workspaces.
+  { table: 'public.workspaces', user: 'all', writer: 'admin' },
+  { table: 'public.workspace_users', user: 'all', writer: 'admin' },
   {
     table: 'public.workspace_resources',
-    read: 'none',
-    rule: 'none',
     writer: 'admin',
     // Never `settings`: a resource's settings may carry configuration the
     // users of the workspace have no business reading (audit L11).
@@ -535,8 +313,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.item_grants',
-    read: 'none',
-    rule: 'none',
     writer: 'content',
     user: ['node_id', 'workspace_id', 'write', 'is_home', 'via_folder_id', 'excluded'],
   },
@@ -568,9 +344,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // A team-portal contact's chat rows (no login) as they were when
   // team_messages folded into assistant_messages (0269, W7c).
   none('public.archive_team_messages', 'system'),
-  // The per-login MCP switch and the agent and tool-group levels as they
-  // were when every login got one MCP surface, and the credential cutoff
-  // for a login with no switch row (0268, W7b).
+  // The per-login MCP switch (its table dropped in 0273, W8c) and the agent
+  // and tool-group levels as they were when every login got one MCP
+  // surface, and the credential cutoff for a login with no switch row
+  // (0268, W7b).
   none('public.archive_mcp_login_access', 'system'),
   none('public.archive_tool_levels', 'system'),
   none('public.archive_mcp_cutoff', 'system'),
@@ -588,43 +365,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.archive_peer_roles', 'system'),
 ];
 
-/** Columns no LEVEL role may ever read, whatever the matrix says (the
- *  workspace role reads the draft columns since W6a: DRAFT_COLUMNS). */
-export const NEVER_GRANTED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
-  'public.pages': ['draft_doc', 'draft_updated_at', 'draft_rev'],
-  'public.draws': ['draft_scene', 'draft_updated_at', 'draft_rev'],
-  'public.tables': ['draft_data', 'draft_updated_at', 'draft_rev'],
-  'public.apps': ['draft_source', 'draft_updated_at', 'draft_build'],
-  'auth.users': ['password_hash', 'email'],
-};
-
 function quoteTable(table: string): string {
   const [schema, name] = table.split('.');
   return `"${schema}"."${name}"`;
 }
 
-/** The GRANT statements the matrix means, for one level role. Pure. */
-export function viewerGrantStatements(level: LimitedLevel): string[] {
-  const role = viewerRoleName(level);
-  const out: string[] = [];
-  for (const t of ACCESS_MATRIX) {
-    const read = readFor(t, level);
-    if (read === 'none') continue;
-    const cols = read === 'all' ? '' : ` (${read.map((c) => `"${c}"`).join(', ')})`;
-    out.push(`GRANT SELECT${cols} ON ${quoteTable(t.table)} TO "${role}"`);
-  }
-  return out;
-}
-
-/** The GRANT statements for the personal-space role. Pure. */
-export function spaceGrantStatements(role: string = viewerRoleName('space')): string[] {
-  const out: string[] = [];
-  for (const t of ACCESS_MATRIX) {
-    if ((t.space ?? 'none') === 'none') continue;
-    out.push(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${quoteTable(t.table)} TO "${role}"`);
-  }
-  return out;
-}
 
 /** The GRANT statements for the workspace role (`mantle_view_user`). Pure. */
 export function userGrantStatements(role: string = viewerRoleName('user')): string[] {
@@ -639,20 +384,24 @@ export function userGrantStatements(role: string = viewerRoleName('user')): stri
 }
 
 /**
- * Make the live grants equal the matrix: revoke everything the limited roles
- * hold on every table in the matrix, then grant what it lists. One
- * transaction, idempotent; migrate runs it after the migrations.
+ * Make the live grants equal the matrix: revoke everything the workspace
+ * role holds on every table, then grant what the matrix lists. The retired
+ * roles (RETIRED_POOL_ROLES) lose every table, sequence and function right
+ * and their schema usage, so an old migration run on a fresh install (its
+ * grants to the level roles) leaves them nothing. One transaction,
+ * idempotent; migrate runs it after the migrations.
  */
 export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promise<void> {
-  const roleList = POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
+  const live = POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
+  const retired = RETIRED_POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
   await sql.begin(async (tx) => {
-    await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${roleList}`);
-    await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM ${roleList}`);
-    await tx.unsafe(`GRANT USAGE ON SCHEMA public, auth TO ${roleList}`);
-    for (const level of LIMITED_LEVELS) {
-      for (const stmt of viewerGrantStatements(level)) await tx.unsafe(stmt);
-    }
-    for (const stmt of spaceGrantStatements()) await tx.unsafe(stmt);
+    await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${live}, ${retired}`);
+    await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM ${live}, ${retired}`);
+    await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, auth FROM ${retired}`);
+    await tx.unsafe(`REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public, auth FROM ${retired}`);
+    await tx.unsafe(`REVOKE ALL ON SCHEMA public, auth FROM ${retired}`);
+    await tx.unsafe(`GRANT USAGE ON SCHEMA public, auth TO ${live}`);
     for (const stmt of userGrantStatements()) await tx.unsafe(stmt);
   });
 }
+

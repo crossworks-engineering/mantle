@@ -45,7 +45,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { POOL_ROLES, ensureViewerRoles, withRoleRetry } from './viewer-roles';
+import { POOL_ROLES, RETIRED_POOL_ROLES, ensureViewerRoles, withRoleRetry } from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
 import { viewerRoleName } from './viewer';
 
@@ -320,7 +320,8 @@ async function prepareScratch(sql: Sql): Promise<void> {
       >`select rolname from pg_roles where rolname like 'mantle_view_%'`
     ).map((r) => r.rolname),
   );
-  for (const level of POOL_ROLES) {
+  // The retired roles too: the old migrations still grant to them.
+  for (const level of [...POOL_ROLES, ...RETIRED_POOL_ROLES]) {
     const role = viewerRoleName(level);
     if (roles.has(role)) continue;
     await sql
@@ -464,6 +465,3 @@ export function findPgTools(url: string, containerName?: string): PgTools | null
   return null;
 }
 
-/** Run `fn` on a level role (tests of that role's row security only): the
- *  pre-W5b2 withViewer. */
-export { runInLevelRoleForTest } from './viewer';
