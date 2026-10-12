@@ -3,11 +3,12 @@
 Every statement the brain sends to Postgres carries its **actor**: who the
 work is done as. A process entry (an HTTP request, a worker job, a turn, a
 timer) names its actor once, where it starts. Everything it awaits carries
-it. This is the workspaces architecture plan v2, section 4, phase A2a.
+it. This is the workspaces architecture plan v2, section 4, phases A2a and
+A2b.
 
-In this release the check **only logs**. A statement with no actor is a
-"miss": it is written to `actor_check_misses` and runs as before. Nothing is
-refused. Refusing comes in the next phase (A2b).
+A statement with no actor is a "miss". In `warn` it is written to
+`actor_check_misses` and runs as before. In `on` it is refused (A2b). Every
+box runs `off` or `warn`: `on` waits for the scaling task (2d96f472).
 
 ## The actor kinds
 
@@ -55,6 +56,39 @@ From `@mantle/db`:
 
 An inner binding replaces an outer one.
 
+`asSystem` inside a read-only caller stays read only (`systemUnder`): under
+`login(ro)`, a `link` and a `contact` without `can_write`. An `assistant`
+and a `peer(share)` keep their own system work read-write (their traces,
+their audit rows).
+
+## Nested system transactions (A2b, plan 20.2)
+
+`withSystemTx` inside an open system transaction reuses it. It never opens
+a second one:
+
+- `fn` gets the outer `tx`. Its `afterCommit` and `afterRollback` hooks
+  join the outer ones. An error goes to the outermost call.
+- `withHeads` there takes more heads with `mantle_lock_heads_more` (FOR
+  UPDATE NOWAIT), never a second `mantle_lock_heads`. A transaction that
+  holds no heads yet takes them as its first lock. `withSubtreeHeads` where
+  heads are held is refused: lock the subtree in the outer call.
+- `withDeadlockRetry` inside runs once. Only the outermost call retries.
+- A nested call with another actor, write scope or create home is refused
+  (`NestedSystemTxError`). There is no set-and-restore helper yet.
+
+`packages/db/src/a2b-nested-tx.db.test.ts` runs each shape, and `withHeads`
+under every actor kind, with `mantle.heads_check = on`.
+
+## No transaction across a model call (A2b)
+
+The lint `mantle-tx/no-model-in-transaction`
+(`eslint-rules/no-model-in-transaction.mjs`) refuses an awaited model call,
+an awaited `fetch` and a `for await` stream read inside a transaction's
+callback. A model call is a promise method of a model dispatcher (read from
+the `AdapterMeta` interfaces in
+`packages/voice-client/src/adapters/types.ts`) or a function of the model
+packages. It sees direct calls only.
+
 ## How the actor reaches Postgres
 
 Only `packages/db` sets the settings (the lint
@@ -97,8 +131,10 @@ round trip.
 
 With the check off, or no actor bound, every statement runs exactly as
 before. The box's mode is read when the pool opens and then each minute on
-a timer, never in a statement's path; until the first read lands a process
-uses `MANTLE_ACTOR_CHECK` alone. The client sets the settings with plain
+a timer, never in a statement's path. `MANTLE_ACTOR_CHECK` is a floor. Until
+the first read lands, a write or a transaction that has an actor waits for
+it (A2b), so a process's first writes never go out as `off` on a `warn` or
+`on` box. Reads never wait, and after the first answer nothing waits again. The client sets the settings with plain
 `set_config` (it works on every role and on a database before 0275);
 `mantle_set_actor` is the checked form for psql and tests. The workspace
 role (`mantle_view_user`) cannot run the setter functions.
@@ -114,18 +150,31 @@ the database. A session can only make it stricter (the rule of
 `mantle.heads_check`). `MANTLE_ACTOR_CHECK` raises it for one process.
 
 - **TypeScript**: every statement through `db` or `systemDb`, and every
-  `withSystemTx`, with no actor bound is a miss.
+  `withSystemTx`, with no actor bound is a miss. In `on` it is also refused
+  (`ActorMissingError`). Until the first mode read lands this side uses
+  `MANTLE_ACTOR_CHECK` alone; the SQL side reads the box itself.
 - **SQL**: a write on an item table (nodes, pages, draws, tables, apps,
   app_databases, the recall tables, node_embeds, app_table_exports, shares,
   node_snapshots, item_grants, peer_shares, contact_share_codes,
-  node_comments) with no `mantle.actor` raises a NOTICE. It writes nothing
-  in that transaction, so it never takes a transaction id before
+  node_comments) with no `mantle.actor` raises a NOTICE in `warn`. It writes
+  nothing in that transaction, so it never takes a transaction id before
   `mantle_lock_heads`. The app reads the notice and logs the miss later, on
-  another connection.
+  another connection. In `on` it is refused: 42501, detail `no_actor`
+  (migration 0277).
 
-Misses are capped at 100 rows an hour per check. `on` still only logs in
-A2a. An operator's psql names itself with `mantle_operator_actor('reason')`
-(docs/update-prod.md).
+Misses are capped at 100 rows an hour per check. An operator's psql names
+itself with `mantle_operator_actor('reason')` (docs/update-prod.md).
+
+### The 0266 checks on the write role (migration 0277)
+
+The 0266 create and delete checks (a new item needs edit of its folder, a
+delete needs manage of the item's home) run when a write carries a scope.
+Today only an Admin user's write request and an Admin turn carry one. When
+A2b2 scopes every login write on the write role (`mantle_write_user`), a
+refusal there follows the check: `off` runs the write, `warn` reports it as
+a miss, `on` refuses it. Every other session refuses as before. The gate
+(`mantle_scoped_write_refuses`) keys on the session's role, never on a
+`mantle.*` setting, and runs only on the refusing path.
 
 The test suite runs in `warn`. `vitest.setup.ts` fails a test on any miss.
 A statement a test sends itself runs as `system(test)`: the test is its
@@ -259,12 +308,14 @@ job binds its actor.
 ## Known limits
 
 - **The trigger's mode read.** The item-table trigger takes a fast path
-  when the check reads off in `current_setting` (no catalog read).
-  Otherwise a write with no actor reads the box setting through a SECURITY
-  DEFINER catalog lookup (`mantle_actor_check_mode`), on each such write and
-  also on a box whose check is off: a small cost, noted for A3a. A session
-  that sets its own value to off skips a warn in A2a, so A2b's refusal must
-  read the catalog first.
+  when the check reads off in `current_setting` (no catalog read), so a box
+  that is off pays nothing more per write. Otherwise a write with no actor
+  reads the box setting through a SECURITY DEFINER catalog lookup
+  (`mantle_actor_check_mode`). A session that sets its own value to off
+  skips the check, `on` included. That is accepted: the check finds code
+  that forgot its actor; it is not a credential (any role can set
+  `mantle.actor` too). The refusals that decide access (0277's gate, A3a)
+  read the catalog or the role.
 - **An approved pending call** runs as the login that asked, on the owner
   surface, with the approver named in the audit. Open for A2b: whether it
   should run as the approver instead.
@@ -275,21 +326,28 @@ job binds its actor.
   later must never decide access from `mantle.actor` or `mantle.write_mode`
   on a role that can run caller-shaped SQL.
 
-## A2b must
+## Closed in A2b1
 
-Found in the A2a audits; A2a changes no behaviour for them, A2b must close
-them before it refuses anything.
+Found in the A2a audits:
 
-- **The first statements of a process.** Until the pool's first mode read
-  lands, a process uses `MANTLE_ACTOR_CHECK` alone, so its first statements
-  go out as off. A2b must wait for the first read before it refuses, or
-  use the environment value as a floor.
-- **Narrowing to read only.** `systemUnder` narrows the write mode to `ro`
-  under every actor whose write mode is `ro`, the `assistant` kind
-  included. Before A2b refuses a write on `mantle.write_mode`, it must
-  narrow only for `login(ro)`, `link` and `contact` without write.
-- **The Recall slug with no scope.** When no workspace scope surrounds a
-  Recall write, `scopeLacksAdmin` reads `currentActor()`, so the slug
-  answer depends on the check's mode and on the entry: a `login(rw)` turn
-  gets a random slug, where stdio (`login(owner)`) and main counted up. A2b
-  makes it one answer.
+- **The first statements of a process.** A write or a transaction with an
+  actor waits for the pool's first mode read (see above).
+- **Narrowing to read only.** `systemUnder` narrows only under `login(ro)`,
+  `link` and `contact` without `can_write`.
+- **The Recall slug with no scope.** With no scope anywhere the slug counts
+  up for every actor and every mode: the caller reads every item on the
+  system pool, so the number tells it nothing it cannot read.
+- **The actor SET's values** are checked before they are inlined (actor
+  `/^[a-z0-9:._/@-]{1,200}$/i`, write mode `rw|ro`, check mode
+  `off|warn|on`), and a statement sent in parallel with a transaction's
+  first one reports the SET's own error.
+
+## Open for A2b2 and the scaling task
+
+- **The write role.** Login, assistant, link and contact writes move to
+  `mantle_write_user` (no BYPASSRLS) with the pipelined scope pattern (plan
+  20.1). 0277's gate is ready for it.
+- **A write outside a transaction in warn** costs one more round trip than
+  off: postgres.js (prepare off) sends a statement with parameters in two
+  steps and holds the wrapper's COMMIT until it ends. Measured and proposed
+  in task 7524eb3d (A2b report); no change yet.

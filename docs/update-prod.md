@@ -703,7 +703,9 @@ select mantle_operator_actor('fix-slug');   -- a short reason, lower case
 The session then runs as `system:operator:fix-slug` until it ends. Without
 it, a write on an item table (nodes, pages, tables, grants, shares and the
 other item tables) is an actor miss: psql prints `NOTICE: mantle actor miss:
-UPDATE on nodes`. In this release a miss only logs; nothing is refused.
+UPDATE on nodes`. In `warn` a miss only logs. In `on` (A2b, migration
+0277) the write is refused: `ERROR: mantle actor check: UPDATE on nodes
+with no actor`. Name the session first.
 
 The check has three steps, set per box in the database (the box setting
 wins; a session can only make it stricter):
@@ -737,8 +739,9 @@ the brain waiting on `ClientRead` versus active, and the app's slow-request
 log) for the same load, before and after. With the check off nothing
 changes: no new query and no new round trip.
 
-`on` still only logs in this release (A2a); refusing is the next phase.
-Going back is `alter database postgres reset mantle.actor_check`.
+`on` refuses a statement with no actor, in the app and in the database
+(A2b). Do not set it on any box until the scaling task says so (task
+2d96f472). Going back is `alter database postgres reset mantle.actor_check`.
 
 ## Rollback
 
