@@ -159,6 +159,18 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
     const dropTrigger = 'DROP TRIGGER IF EXISTS "nodes_share_refresh_after" ON "public"."nodes"';
     // The ledger of a brain that has not run 0212.
     const before0212 = `DELETE FROM drizzle.__drizzle_migrations WHERE created_at >= ${WHEN_0212}`;
+    // A brain that old still has the level roles' rules (0273, W8c, dropped
+    // them from the migrated base): the restore checks them for its ledger.
+    const oldPolicies = [
+      ['nodes_viewer_read', 'nodes', 'mantle_view_team'],
+      ['agents_viewer_read', 'agents', 'mantle_view_team'],
+      ['agents_client_read', 'agents', 'mantle_view_client'],
+      ['tool_groups_viewer_read', 'tool_groups', 'mantle_view_team'],
+      ['tool_groups_client_read', 'tool_groups', 'mantle_view_client'],
+    ].map(
+      ([name, table, role]) =>
+        `CREATE POLICY "${name}" ON "public"."${table}" FOR SELECT TO "${role}" USING (false)`,
+    );
     const steps: Array<[Variant, string[]]> = [
       ['new', []],
       [
@@ -171,7 +183,13 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
       ],
       [
         'old',
-        ['DROP TRIGGER "zz_other_lost" ON "public"."nodes"', dropTrigger, TRIGGER_0204, before0212],
+        [
+          'DROP TRIGGER "zz_other_lost" ON "public"."nodes"',
+          dropTrigger,
+          TRIGGER_0204,
+          before0212,
+          ...oldPolicies,
+        ],
       ],
       [
         'mixed',
