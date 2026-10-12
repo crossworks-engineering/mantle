@@ -147,7 +147,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     await m.closeDb();
   });
 
-  it("a former client login is client-sourced: a turn that reads its old chat thread is marked (M2)", async () => {
+  it('a former client login is client-sourced: a turn that reads its old chat thread is marked (M2)', async () => {
     expect(await cs.namesClientSourced(owner, [ids.formerClient])).toBe(true);
     expect(await cs.namesClientSourced(owner, [ids.memberLogin, ids.formerClient])).toBe(true);
     // A login deleted since: still in the archive, still a client's id.
