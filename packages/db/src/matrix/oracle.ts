@@ -196,8 +196,7 @@ const FOLDER_COUNT_CONTENTS: Readonly<
  *  - the folder count is the folders the caller reads; the pick does not
  *    narrow it;
  *  - a folder the caller reads shows, even with nothing in it to read;
- *  - "An Admin user may pick a workspace they are not in"; anyone else
- *    picks only their own.
+ *  - "You pick only a workspace you are in, Admin users too".
  */
 export function expectedFolderCount(
   c: FolderCountCase,
@@ -205,7 +204,7 @@ export function expectedFolderCount(
   scope: FolderCountScope,
 ): FolderCountAnswer {
   const mine = FOLDER_COUNT_CALLERS[caller];
-  if (scope !== 'all' && !mine.includes('Admin') && !mine.includes(scope)) {
+  if (scope !== 'all' && !mine.includes(scope)) {
     return { refused: 'not a workspace of the caller' };
   }
   const reads = (ws: readonly string[]) => ws.some((w) => mine.includes(w));

@@ -213,8 +213,8 @@ A folder is an item with a home and grants like any other.
   the switcher, or all your workspaces. Its folder count counts the folders
   in it that you read. The picked workspace does not narrow the folders:
   the tree keeps every folder you read, so a folder can show a folder
-  count and no item count. An Admin user may pick a workspace they are not
-  in: the item count is then what they read that the workspace reads too.
+  count and no item count. You pick only a workspace you are in, Admin
+  users too.
 - A folder you read still shows when nothing in it is yours to read: an
   Admin user may share empty folders to give a workspace its structure.
 

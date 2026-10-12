@@ -100,13 +100,12 @@ describe('the folder-count oracle', () => {
     expect(expectedFolderCount('noneShared', 'adminUserInHome', 'S')).toEqual(shows(0, 1));
   });
 
-  it('"An Admin user may pick a workspace they are not in"', () => {
-    // What it reads (through S) that H reads too.
-    expect(expectedFolderCount('oneOfThree', 'adminUser', 'H')).toEqual(shows(1, 0));
-    expect(expectedFolderCount('noneShared', 'adminUser', 'H')).toEqual(shows(0, 0));
+  it('"You pick only a workspace you are in, Admin users too"', () => {
     expect(expectedFolderCount('noneShared', 'adminUserInHome', 'H')).toEqual(shows(3, 1));
-    expect(expectedFolderCount('oneOfThree', 'member', 'H')).toMatchObject({
-      refused: expect.any(String),
-    });
+    for (const caller of ['member', 'adminUser'] as const) {
+      expect(expectedFolderCount('oneOfThree', caller, 'H')).toMatchObject({
+        refused: expect.any(String),
+      });
+    }
   });
 });
