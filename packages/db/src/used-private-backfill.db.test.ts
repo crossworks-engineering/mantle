@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createScratchDatabaseBefore } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -33,6 +34,9 @@ function backfillSql(): string {
 
 describe.skipIf(!URL)('0182 used_private backfill', () => {
   let m: typeof import('./index');
+  // A database of its own, migrated up to 0274 (W8d), which drops
+  // team_messages: the historical backfill runs on the table it had.
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let admin: ((strings: TemplateStringsArray, ...v: unknown[]) => Promise<Row[]>) & {
     unsafe: (q: string) => Promise<Row[]>;
   };
@@ -83,7 +87,8 @@ describe.skipIf(!URL)('0182 used_private backfill', () => {
   }
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    scratch = await createScratchDatabaseBefore(URL!, '0274_workspaces_frozen_tables_out');
+    process.env.DATABASE_URL = scratch.url;
     m = await import('./index');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     await admin`insert into auth.users (id, email, password_hash, role) values
@@ -113,10 +118,13 @@ describe.skipIf(!URL)('0182 used_private backfill', () => {
     await turn('portal1', { contactId: contact }, { traceId: traceId.portal });
     await turn('portal2', { contactId: contact });
     await pastFreeze((tx) => tx.unsafe(backfillSql()));
-  }, 60_000);
+  }, 240_000);
 
   afterAll(async () => {
-    if (!admin) return;
+    if (!admin) {
+      await scratch?.drop();
+      return;
+    }
     await admin`delete from team_messages where owner_id = ${anchor}`;
     await admin`delete from traces where owner_id = ${anchor}`;
     await admin`delete from agents where owner_id = ${anchor}`;
@@ -124,6 +132,7 @@ describe.skipIf(!URL)('0182 used_private backfill', () => {
     await admin`delete from spaces where login_id = ${anchor}`;
     await admin`delete from auth.users where id in (${pat}, ${sam}, ${lee}, ${anchor})`;
     await m.closeDb();
+    await scratch?.drop();
   });
 
   const marked = async (key: string) =>
