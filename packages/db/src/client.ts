@@ -37,10 +37,10 @@ import {
   currentCreateHome,
   currentSystemTx,
   requestScopeMemo,
+  loginWriteScope,
   type CreateHome,
   type SystemTxNest,
   systemDbCallerOf,
-  addPrivateToWriteScope,
 } from './viewer';
 import {
   actorCheckMode,
@@ -786,10 +786,11 @@ type LoginWriteRoute = { setSql: string; actor: string };
  *    one process). Off is the rollout switch: today's path, no statement
  *    and no round trip added;
  *  - the actor is a login, an assistant, a link or a contact;
- *  - the write carries a scope (requestWriteScope: a login's mutating
- *    request, an Admin user's write request, an Admin turn). asSystem masks
- *    it, and a named repair or an Admin area route binds a system actor:
- *    both stay on the system pool.
+ *  - the write carries a scope its reads use too (loginWriteScope: a
+ *    login's mutating request scope, an Admin turn; not an Admin user's
+ *    write request, whose reads are unscoped). asSystem masks it, and a
+ *    named repair or an Admin area route binds a system actor: both stay
+ *    on the system pool.
  */
 function loginWriteRoute(): LoginWriteRoute | null {
   if (!loginWritePoolOpen()) return null;
@@ -797,9 +798,13 @@ function loginWriteRoute(): LoginWriteRoute | null {
   if (!params) return null;
   const actor = currentActor();
   if (!actor || !WRITE_ROLE_ACTORS.has(actor.kind)) return null;
-  const scope = requestWriteScope();
+  const scope = loginWriteScope();
   if (!scope) return null;
-  return { setSql: writeRoleSettingsSql(scope, params, currentCreateHome()), actor: params[0] };
+  const home = currentCreateHome();
+  return {
+    setSql: writeRoleSettingsSql(writeScopeWithPrivate(scope, home), params, home),
+    actor: params[0],
+  };
 }
 
 /** loginWriteRoute, after the pool's first mode read when it is still out
@@ -2079,13 +2084,40 @@ export async function resolveCreateHome(
   return { createWs, privateWs };
 }
 
-/** The login's private workspace as resolveCreateHome read it: with the
- *  login write gateway on, the write scope is refreshed to hold it (arch
- *  A2b2b: the scope was read before the workspace may have been made, and
- *  the write role needs its Moderator seat in mantle.mod_ws). */
+/**
+ * Each login's private workspace as resolveCreateHome last read it on the
+ * system pool (arch A2b2b): the login write gateway adds it to a write
+ * scope that does not hold it yet (writeScopeWithPrivate). A login's scope
+ * is read once per request or turn, often before its first create made the
+ * private workspace, and the write role needs its Moderator seat in
+ * mantle.mod_ws. Only a pair read here counts, never a create home's word
+ * alone.
+ */
+const privateWorkspaces = new Map<string, string>();
+
+/** Note the login's private workspace as read (see privateWorkspaces). */
 function ownPrivate(loginId: string, ws: string | null): string | null {
-  if (ws && loginWritesMayRoute()) addPrivateToWriteScope(loginId, ws);
+  if (ws) privateWorkspaces.set(loginId.toLowerCase(), ws.toLowerCase());
   return ws;
+}
+
+/**
+ * The scope a write runs in on the write role: `scope`, with the login's
+ * own private workspace added (as a workspace and a Moderator one: it is
+ * the login's alone, and it moderates it) when the write's create home
+ * lands there and resolveCreateHome read that pair. The scope refreshed
+ * after the private workspace was made, with no query on the write's path.
+ */
+function writeScopeWithPrivate(scope: WorkspaceScope, home: CreateHome | null): WorkspaceScope {
+  const priv = home?.privateWs?.toLowerCase();
+  if (!priv || !scope.loginId) return scope;
+  if (privateWorkspaces.get(scope.loginId.toLowerCase()) !== priv) return scope;
+  if (scope.modWs.includes(priv) && scope.ws.includes(priv)) return scope;
+  return {
+    ...scope,
+    ws: [...new Set([...scope.ws, priv])],
+    modWs: [...new Set([...scope.modWs, priv])],
+  };
 }
 
 let brainOnWorkspaces = false;
@@ -2232,19 +2264,6 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
         const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
         return fn.bind(handle);
       }
-    } else if (
-      (write || prop === 'transaction') &&
-      !currentScopeTx() &&
-      loginWritesMayRoute() &&
-      requestWriteScope() !== null
-    ) {
-      // An Admin user's write request (no request scope, its write scope
-      // noted by the guard): the gateway's handle too (A2b2b). With the
-      // check off this branch is never taken.
-      if (write) return typedWrite(prop, true);
-      const handle = loginWriteDb();
-      const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
-      return fn.bind(handle);
     }
     if (prop === 'select' || prop === 'selectDistinct' || prop === 'execute' || prop === 'query') {
       noteOwnRuleSystemRead(String(prop));
@@ -2310,10 +2329,6 @@ export function executeWrite(
   if (currentRequestMode() && !currentScopeTx()) {
     noteRequestSystemWrite('executeWrite');
     return systemWriteDb().execute(query);
-  }
-  // An Admin user's write request: the login write gateway (A2b2b).
-  if (!currentScopeTx() && loginWritesMayRoute() && requestWriteScope() !== null) {
-    return loginWriteDb().execute(query);
   }
   return getDb().execute(query);
 }

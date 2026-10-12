@@ -483,6 +483,7 @@ export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {
   shares: 'a public link, in the transaction that changes its item (A3a must)',
   secrets: 'a secret’s sealed value, in the transaction of its node (secret_create)',
   app_table_exports: 'an app table’s export row, with the Table it mirrors into',
+  profiles: 'a login’s own profile row, made on its first read in a savepoint (profile-preferences.ts)',
 };
 
 /**

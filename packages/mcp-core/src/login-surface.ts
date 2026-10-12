@@ -25,7 +25,6 @@
  * runs on, never from model arguments.
  */
 import type { McpServer } from '@modelcontextprotocol/server';
-import { sql } from 'drizzle-orm';
 import {
   SCOPE_AREAS,
   asSystem,
@@ -33,6 +32,7 @@ import {
   brainOnWorkspacesNow,
   db,
   loginScopeFor,
+  resolveCreateHome,
   scopeHasArea,
   scopeHoldsAdmin,
   withTurnScope,
@@ -273,15 +273,6 @@ async function gateViewFor(loginId: string): Promise<AdminGateView> {
   });
 }
 
-/** The login's private workspace, made now when it has none (plan 21.8
- *  row 8: it comes with the login). System pool. */
-async function privateWorkspaceOf(loginId: string): Promise<string | null> {
-  const rows = (await db.execute(
-    sql`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
-  )) as unknown as { ws: string | null }[];
-  return rows[0]?.ws ?? null;
-}
-
 export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCallerTools> {
   const admin = caller.role === 'admin';
   const onWorkspaces = await brainOnWorkspacesNow();
@@ -298,7 +289,11 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
     // The create rule's fallback for a user outside Admin (the W6b route
     // rule): made with the login, so only once it is in a workspace.
     if (!view.holdsAdmin && (await loginScopeFor(caller.loginId)).ws.length > 0) {
-      privateWs = await privateWorkspaceOf(caller.loginId);
+      // The route rule's own read (@mantle/db resolveCreateHome): it makes
+      // the private workspace when there is none, and the login write
+      // gateway knows the pair from it (arch A2b2b).
+      const home = await resolveCreateHome(caller.loginId, { ownWork: true, makePrivate: true });
+      privateWs = 'refused' in home ? null : home.privateWs;
     }
   }
   // Connector tools (team apps Phase 2; W5b2): the connector a resource of

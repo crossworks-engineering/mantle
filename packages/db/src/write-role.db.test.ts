@@ -949,7 +949,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(title.value!.length).toBe(1);
   });
 
-  it('the move check is staged on the role like create and delete; the system pool refuses as before (fix round 2, L3)', async () => {
+  it('the move check refuses on the role in warn too, as on the system pool (A2b2b, 0279; was staged in A2b2a)', async () => {
     const move = async (tx: postgres.TransactionSql) => {
       await tx`select mantle_lock_heads(array[${n.n1}, ${n.f}]::uuid[], 'update')`;
       return tx`update nodes set path = ${`notes.${tag}f`}::ltree where id = ${n.n1} returning id`;
@@ -958,33 +958,31 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     const on = await asKind(member(), move);
     expect(on.code, on.message).toBe('42501');
     expect(on.message).toMatch(/not allowed to move this item/);
+    // In warn the role refuses it as well: the app holds no move check of
+    // its own for every case (W6a M1), so the database's stays.
     const notices: string[] = [];
     const wn = postgres(
       viewerDatabaseUrl(scratch!.url, 'write', viewerRolePassword(testKey, 'write')),
       { max: 1, prepare: false, onnotice: (m) => notices.push(String(m.message ?? '')) },
     );
     try {
-      await wn
-        .begin(async (tx) => {
+      await expect(
+        wn.begin(async (tx) => {
           await tx`select set_config('mantle.actor', ${`login:rw:${L.mem}`}, true),
                           set_config('mantle.actor_check', 'warn', true),
                           set_config('mantle.ws', ${`{${ws.H},${ws.E}}`}, true),
                           set_config('mantle.mod_ws', '{}', true),
                           set_config('mantle.login_id', ${L.mem}, true)`;
-          expect((await move(tx)).length).toBe(1);
-          throw new Rollback();
-        })
-        .catch((err: unknown) => {
-          if (!(err instanceof Rollback)) throw err;
-        });
+          return move(tx);
+        }),
+      ).rejects.toMatchObject({ code: '42501', message: 'not allowed to move this item' });
     } finally {
       await wn.end();
     }
-    expect(notices).toContain(
-      'mantle actor miss: UPDATE on nodes: a move, no manage of the home (refused when the check is on)',
+    expect(notices.filter((m) => m.startsWith('mantle actor miss: UPDATE on nodes: a move'))).toEqual(
+      [],
     );
-    // The system pool with a scope (an Admin user's request today), the
-    // check off: refused, as before 0278.
+    // The system pool with a scope (an Admin user's request): refused.
     await expect(
       sql.begin(async (tx) => {
         await tx`select set_config('mantle.actor', 'system:test', true),

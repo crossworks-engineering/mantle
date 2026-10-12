@@ -448,52 +448,30 @@ export function noteRequestWriteScope(ws: WorkspaceScope): void {
  *  runs in its scope (W6b). Masked by asSystem and by any other scope
  *  (their transactions are not this request's writes). */
 export function requestWriteScope(): WorkspaceScope | null {
-  const base = baseWriteScope();
-  return base ? (widenedWriteScopes.get(base) ?? base) : null;
-}
-
-/** A write scope with the login's private workspace added
- *  (addPrivateToWriteScope), by the scope it was read as. */
-const widenedWriteScopes = new WeakMap<WorkspaceScope, WorkspaceScope>();
-
-/**
- * The login's own private workspace, made or found by resolveCreateHome
- * after this request's or turn's scope was read (arch A2b2b): its writes
- * may land there, so the write scope holds it from now on, as the
- * workspace and a Moderator one (the login is the only user of its private
- * workspace, and its Moderator: mantle_ws_private_workspace). Without it
- * the write role refuses the create (no Moderator of the home, and a row
- * its scope cannot read). Only the write scope grows, and only by this one
- * workspace, for this login: reads keep the scope the request entered. A
- * no-op when the scope already holds it, or when the write scope is not
- * this login's. Only client.ts calls it, with a private workspace it read
- * for this login on the system pool.
- */
-export function addPrivateToWriteScope(loginId: string, privateWs: string): void {
-  const base = baseWriteScope();
-  if (!base || !UUID_RE.test(privateWs) || base.loginId !== loginId.toLowerCase()) return;
-  const ws = privateWs.toLowerCase();
-  const now = widenedWriteScopes.get(base) ?? base;
-  if (now.modWs.includes(ws) && now.ws.includes(ws)) return;
-  widenedWriteScopes.set(
-    base,
-    Object.freeze({
-      ...now,
-      ws: Object.freeze([...new Set([...now.ws, ws])].sort()),
-      modWs: Object.freeze([...new Set([...now.modWs, ws])].sort()),
-    }),
-  );
-}
-
-/** The scope a write is checked in as read (requestWriteScope, before
- *  addPrivateToWriteScope). */
-function baseWriteScope(): WorkspaceScope | null {
   const s = store.getStore();
   // An Admin turn (W7a): its writes are checked in its own scope.
   if (s) return s !== SYSTEM_EXIT && s.perQuery && s.ws && s.request?.writes ? s.ws : null;
   const slot = requestSlots.getStore();
   if (!slot) return null;
   if (slot.writeScope) return slot.writeScope;
+  return slot.scope?.ws && slot.scope.request?.writes ? slot.scope.ws : null;
+}
+
+/**
+ * The scope a login's write runs in on the write role (arch A2b2b): the
+ * write scope of a scope whose reads are scoped too, a login's mutating
+ * request scope (W6b) or an Admin turn (W7a), else null. Never an Admin
+ * user's write request (noteRequestWriteScope): its reads run on the system
+ * pool, unscoped (W6a M1), so a row it read could match no row on the write
+ * role and its write would do nothing, silently; it stays on the system
+ * pool with its scope on the transaction (the database's create, move and
+ * delete checks), as before, until its reads move into the scope.
+ */
+export function loginWriteScope(): WorkspaceScope | null {
+  const s = store.getStore();
+  if (s) return s !== SYSTEM_EXIT && s.perQuery && s.ws && s.request?.writes ? s.ws : null;
+  const slot = requestSlots.getStore();
+  if (!slot || slot.writeScope) return null;
   return slot.scope?.ws && slot.scope.request?.writes ? slot.scope.ws : null;
 }
 
