@@ -54,6 +54,16 @@ describe('no-model-in-transaction', () => {
           code: 'const embed = async () => 1; await withSystemTx(async () => { await embed(); });',
           filename: file,
         },
+        // A postgres.js cursor reads the transaction's own rows.
+        {
+          code: 'await sql.begin(async (t) => { for await (const rows of t`select 1`.cursor(10)) use(rows); });',
+          filename: file,
+        },
+        // A model call after the transaction, from a name bound outside it.
+        {
+          code: 'const p = adapter.chat(o); await withSystemTx(async () => { await tx2(); }); await p;',
+          filename: file,
+        },
         // Tests are out of scope.
         {
           code: 'await db.transaction(async () => { await adapter.chat(o); });',
@@ -88,6 +98,34 @@ describe('no-model-in-transaction', () => {
         },
         {
           code: 'await readTransaction(async (tx) => { for await (const c of stream) use(c); });',
+          filename: file,
+          errors: [{ messageId: 'held' }],
+        },
+        // Returned from the callback: the transaction waits for it.
+        {
+          code: 'await db.transaction(async (tx) => { return adapter.chat(o); });',
+          filename: file,
+          errors: [{ messageId: 'held' }],
+        },
+        {
+          code: 'await withSystemTx(async (tx) => adapter.chatStream(o, d));',
+          filename: file,
+          errors: [{ messageId: 'held' }],
+        },
+        // Stored, then awaited.
+        {
+          code: 'await withSystemTx(async (tx) => { const p = adapter.chat(o); await tx.insert(t); await p; });',
+          filename: file,
+          errors: [{ messageId: 'held' }],
+        },
+        // Inside Promise.all, and at the root of a .then chain.
+        {
+          code: "import { embed } from '@mantle/embeddings'; await withSystemTx(async () => { await Promise.all([embed(a), embed(b)]); });",
+          filename: file,
+          errors: [{ messageId: 'held' }],
+        },
+        {
+          code: 'await db.transaction(async () => { await adapter.chat(o).then((r) => r.text); });',
           filename: file,
           errors: [{ messageId: 'held' }],
         },

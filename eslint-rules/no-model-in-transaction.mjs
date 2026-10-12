@@ -17,8 +17,13 @@
  *    (MODEL_MODULES);
  *  - `await fetch(...)`: a network call;
  *  - `for await (...)`: a stream read to its end.
- * It sees direct calls only; a helper that calls a model inside is not
- * followed. Tests and migrations are out of scope.
+ * It also sees a model call returned from the callback, one stored in a
+ * name and awaited later, one inside Promise.all (allSettled, race, any)
+ * and one at the root of a .then chain. A for-await over a postgres.js
+ * `.cursor()` reads the transaction's own rows and is allowed. No type
+ * information: a dispatcher method is matched by its name on any receiver
+ * (a false match only asks for a look), and a helper that calls a model
+ * inside is not followed. Tests and migrations are out of scope.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -113,6 +118,57 @@ function modelCall(context, call) {
   return null;
 }
 
+/** Promise combinators whose array argument the transaction then waits for. */
+const COMBINATORS = new Set(['all', 'allSettled', 'race', 'any']);
+
+/**
+ * What model call `expr` waits on, or null: a model call itself, one at
+ * the root of a `.then`/`.catch`/`.finally` chain, one inside the array of
+ * Promise.all (allSettled, race, any), or a name bound to one earlier in
+ * the transaction (`pending`). Cheap shapes only: no data flow beyond that.
+ */
+function heldCall(context, expr, pending) {
+  let e = expr;
+  while (e?.type === 'ChainExpression') e = e.expression;
+  if (!e) return null;
+  if (e.type === 'Identifier') return pending.get(e.name) ?? null;
+  if (e.type !== 'CallExpression') return null;
+  const direct = modelCall(context, e);
+  if (direct) return direct;
+  const c = e.callee;
+  if (c.type === 'MemberExpression' && !c.computed && c.property.type === 'Identifier') {
+    if (['then', 'catch', 'finally'].includes(c.property.name)) {
+      return heldCall(context, c.object, pending);
+    }
+    if (
+      c.object.type === 'Identifier' &&
+      c.object.name === 'Promise' &&
+      COMBINATORS.has(c.property.name) &&
+      e.arguments[0]?.type === 'ArrayExpression'
+    ) {
+      for (const el of e.arguments[0].elements) {
+        const w = heldCall(context, el, pending);
+        if (w) return w;
+      }
+    }
+  }
+  return null;
+}
+
+/** A for-await over a postgres.js cursor reads rows of the transaction
+ *  itself, not a stream from outside. */
+function isCursorLoop(node) {
+  let r = node.right;
+  while (r?.type === 'ChainExpression') r = r.expression;
+  return (
+    r?.type === 'CallExpression' &&
+    r.callee.type === 'MemberExpression' &&
+    !r.callee.computed &&
+    r.callee.property.type === 'Identifier' &&
+    r.callee.property.name === 'cursor'
+  );
+}
+
 export const rule = {
   meta: {
     type: 'problem',
@@ -124,8 +180,12 @@ export const rule = {
   },
   create(context) {
     if (isExempt(context.filename)) return {};
-    /** The open transaction callbacks around the current node. */
+    /** The open transaction callbacks around the current node, each with
+     *  the names bound to a model call inside it. */
     const open = [];
+    const report = (node, what) =>
+      context.report({ node, messageId: 'held', data: { what, tx: open.at(-1).tx } });
+    const pending = () => open.at(-1).pending;
     const enter = (node) => {
       const call = node.parent;
       if (
@@ -133,7 +193,12 @@ export const rule = {
         call.arguments.at(-1) === node &&
         opensTransaction(call)
       ) {
-        open.push({ fn: node, tx: calleeName(call) ?? 'a transaction' });
+        open.push({ fn: node, tx: calleeName(call) ?? 'a transaction', pending: new Map() });
+        // `async (tx) => adapter.chat(o)`: the transaction returns the call.
+        if (node.body.type !== 'BlockStatement') {
+          const what = heldCall(context, node.body, pending());
+          if (what) report(node.body, what);
+        }
       }
     };
     const leave = (node) => {
@@ -144,21 +209,29 @@ export const rule = {
       FunctionExpression: enter,
       'ArrowFunctionExpression:exit': leave,
       'FunctionExpression:exit': leave,
+      VariableDeclarator(node) {
+        if (!open.length || node.id.type !== 'Identifier' || !node.init) return;
+        const what = heldCall(context, node.init, pending());
+        if (what) pending().set(node.id.name, what);
+      },
       AwaitExpression(node) {
         if (!open.length) return;
-        let arg = node.argument;
-        while (arg?.type === 'ChainExpression') arg = arg.expression;
-        if (arg?.type !== 'CallExpression') return;
-        const what = modelCall(context, arg);
-        if (what) context.report({ node, messageId: 'held', data: { what, tx: open.at(-1).tx } });
+        const what = heldCall(context, node.argument, pending());
+        if (what) report(node, what);
+      },
+      ReturnStatement(node) {
+        if (!open.length || !node.argument) return;
+        // Only the transaction callback's own return: it hands the promise
+        // to the transaction, which waits for it.
+        let fn = node.parent;
+        while (fn && !/Function/.test(fn.type)) fn = fn.parent;
+        if (fn !== open.at(-1).fn) return;
+        const what = heldCall(context, node.argument, pending());
+        if (what) report(node, what);
       },
       ForOfStatement(node) {
-        if (!open.length || !node.await) return;
-        context.report({
-          node,
-          messageId: 'held',
-          data: { what: 'a stream (for await)', tx: open.at(-1).tx },
-        });
+        if (!open.length || !node.await || isCursorLoop(node)) return;
+        report(node, 'a stream (for await)');
       },
     };
   },

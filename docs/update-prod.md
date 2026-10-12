@@ -729,9 +729,11 @@ select source, check_name, count(*) from actor_check_misses
 ```
 
 In warn the app sends each write of the system pool outside a transaction
-in a short pipelined transaction that sets the actor (a reserved
-connection; its COMMIT is one more round trip), and sets the actor in each
-transaction with its first statement (no extra round trip). A read runs
+on a reserved connection with a session SET of the actor in the same send,
+then a RESET after the write has answered (the caller does not wait for
+it; the connection goes back to the pool after the RESET). It sets the
+actor in each transaction with its first statement (no extra round
+trip). A read runs
 plain. Measure the cost on the box before and after you turn warn on:
 record the p95 latency of the hot routes (tree, item open, search, chat turn
 start, MCP call, page save) and the pool wait (`pg_stat_activity` rows of

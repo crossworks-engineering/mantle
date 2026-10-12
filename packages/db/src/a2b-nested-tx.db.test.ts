@@ -1,10 +1,13 @@
 /**
  * Nested system transactions and the heads (workspaces arch A2b, plan 20.2),
  * on a real, migrated Postgres with mantle.heads_check = 'on' for the box:
- *  - a nested withSystemTx reuses the outer transaction, and its commit and
- *    rollback hooks join the outer ones;
- *  - a nested withHeads takes more heads (mantle_lock_heads_more), never a
- *    second first lock; a nested subtree lock is refused;
+ *  - a nested withSystemTx is a savepoint of the outer transaction: an
+ *    inner error rolls back the inner writes only and runs the inner
+ *    rollback hooks; on success the inner hooks follow the outer outcome;
+ *    a second nested call at the same time, or one after the outer ended,
+ *    is refused (A2b1 audit, M2);
+ *  - a nested withHeads takes more heads (mantle_lock_heads_nested), never
+ *    a second first lock; the database refuses a nested subtree lock;
  *  - withDeadlockRetry inside an open transaction runs once: the outermost
  *    call retries;
  *  - a nested call with another actor or create home is refused;
@@ -77,7 +80,7 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
     expect(r.m).toBe('on');
   });
 
-  it('withSystemTx in withSystemTx: the same transaction; inner hooks join the outer', async () => {
+  it('withSystemTx in withSystemTx: a savepoint of the same transaction; hooks follow it', async () => {
     const seen: string[] = [];
     const ids = await m.withSystemTx(async (outer) => {
       const o = await one<{ p: number; t: string }>(
@@ -87,7 +90,6 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
       const i = await m.withSystemTx(async (inner) => {
         await m.afterCommit(() => seen.push('inner commit'));
         m.afterRollback(() => seen.push('inner rollback'));
-        expect(inner).toBe(outer);
         return one<{ p: number; t: string }>(
           inner,
           sqlTag`select pg_backend_pid() as p, now()::text as t`,
@@ -113,11 +115,53 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
     expect(seen).toEqual(['inner rollback']);
   });
 
+  it('a caught inner error rolls back the inner writes only; the outer commits its own', async () => {
+    const seen: string[] = [];
+    const title = async () =>
+      (await sql<{ t: string }[]>`select title as t from nodes where id = ${a}`)[0]!.t;
+    await m.withSystemTx(async (outer) => {
+      await outer.execute(sqlTag`update nodes set title = 'outer 1' where id = ${a}`);
+      await m
+        .withSystemTx(async (inner) => {
+          await m.afterCommit(() => seen.push('inner commit'));
+          m.afterRollback(() => seen.push('inner rollback'));
+          await inner.execute(sqlTag`update nodes set title = 'inner' where id = ${a}`);
+          // An SQL error inside: only the savepoint is aborted.
+          await inner.execute(sqlTag`select 1 / 0`);
+        })
+        .catch(() => undefined);
+      expect(seen).toEqual(['inner rollback']);
+      // The outer transaction still works and keeps its own write.
+      await outer.execute(sqlTag`update nodes set title = 'outer 2' where id = ${a}`);
+    });
+    expect(await title()).toBe('outer 2');
+    expect(seen).toEqual(['inner rollback']);
+  });
+
+  it('a second nested call at the same time, or one after the outer ended, is refused', async () => {
+    await expect(
+      m.withSystemTx(() =>
+        Promise.all([
+          m.withSystemTx(async () => new Promise((r) => setTimeout(r, 30))),
+          m.withSystemTx(async () => undefined),
+        ]),
+      ),
+    ).rejects.toThrow(/another nested call/);
+    let detached: Promise<unknown> | null = null;
+    await m.withSystemTx(async () => {
+      detached = (async () => {
+        await new Promise((r) => setTimeout(r, 50));
+        return m.withSystemTx(async () => 'late');
+      })();
+      detached.catch(() => undefined);
+    });
+    await expect(detached).rejects.toThrow(/after its transaction ended/);
+  });
+
   it('withHeads in withHeads takes more heads, never a second first lock', async () => {
     const before = await misses();
-    await m.withHeads([a], 'update', async (tx) => {
+    await m.withHeads([a], 'update', async () => {
       await m.withHeads([b], 'update', async (inner) => {
-        expect(inner).toBe(tx);
         expect(await held(inner)).toEqual([a, b].sort());
         await inner.execute(sqlTag`update nodes set title = title where id = ${b}`);
       });
@@ -156,10 +200,18 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
     });
   });
 
-  it('a nested subtree lock is refused where heads are held, allowed where none are', async () => {
+  it('heads taken for no rows are no heads: a nested withHeads takes the first lock', async () => {
+    await m.withHeads([], 'update', async () => {
+      await m.withHeads([b], 'update', async (tx) => {
+        expect(await held(tx)).toEqual([b]);
+      });
+    });
+  });
+
+  it('the database refuses a nested subtree lock where heads are held, allows it where none are', async () => {
     await expect(
       m.withHeads([a], 'update', () => m.withSubtreeHeads(sub, [], async () => undefined)),
-    ).rejects.toBeInstanceOf(m.NestedSystemTxError);
+    ).rejects.toMatchObject({ code: '55000' });
     await m.withSystemTx(() =>
       m.withSubtreeHeads(sub, [], async (tx) => {
         expect(await held(tx)).toEqual(expect.arrayContaining([sub, b]));

@@ -30,16 +30,33 @@ CREATE OR REPLACE FUNCTION "public"."mantle_scoped_write_refuses"(what text)
   SET search_path = "public", pg_temp AS $$
 DECLARE
   mode text;
+  writer boolean := session_user = 'mantle_write_user';
 BEGIN
-  -- Direct membership only: pg_has_role says yes to a superuser for every
-  -- role, and the system pool is one today.
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_roles r
-     WHERE r.rolname = 'mantle_write_user'
-       AND (r.rolname = session_user
-            OR EXISTS (SELECT 1 FROM pg_auth_members m
-                         JOIN pg_roles u ON u.oid = m.member
-                        WHERE m.roleid = r.oid AND u.rolname = session_user))) THEN
+  -- The write role itself, or a login that may act as it (a per-database
+  -- login: a direct membership with SET or INHERIT). Never pg_has_role: it
+  -- says yes to a superuser for every role, and the system pool is one
+  -- today. Never any membership row: from Postgres 16 a CREATEROLE role
+  -- gets an ADMIN-only membership in each role it creates, and that one
+  -- must not count (A2b1 audit, M1). Before 16 there is no such grant and
+  -- no SET or INHERIT option: a direct membership counts.
+  IF NOT writer THEN
+    IF current_setting('server_version_num')::int >= 160000 THEN
+      EXECUTE 'SELECT EXISTS (SELECT 1 FROM pg_auth_members m
+                                JOIN pg_roles r ON r.oid = m.roleid
+                                JOIN pg_roles u ON u.oid = m.member
+                               WHERE r.rolname = ''mantle_write_user''
+                                 AND u.rolname = session_user
+                                 AND (m.set_option OR m.inherit_option))'
+        INTO writer;
+    ELSE
+      SELECT EXISTS (SELECT 1 FROM pg_auth_members m
+                       JOIN pg_roles r ON r.oid = m.roleid
+                       JOIN pg_roles u ON u.oid = m.member
+                      WHERE r.rolname = 'mantle_write_user' AND u.rolname = session_user)
+        INTO writer;
+    END IF;
+  END IF;
+  IF NOT writer THEN
     RETURN true;
   END IF;
   mode := "public"."mantle_actor_check_mode"();
@@ -101,12 +118,12 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_nodes_scope_delete_trg"() FROM PUBLI
 
 -- The SQL actor check refuses in 'on' (A2b; A2a only logged). A write on an
 -- item table with no mantle.actor: off runs it, warn reports it (a NOTICE
--- the app logs later, as in 0275), on refuses it (42501). The fast path
--- stays: a statement with an actor, or a session whose mantle.actor_check
--- reads off, pays one setting read and no catalog read, so a box that is
--- off pays nothing more per write. A session that sets its own value to off
--- skips the check: the check finds code that forgot its actor, it is not a
--- credential (any role can set mantle.actor too; docs/actors.md).
+-- the app logs later, as in 0275), on refuses it (42501). A statement with
+-- an actor pays one setting read. One with no actor reads the box mode from
+-- the catalog first (mantle_actor_check_mode: a session may only make it
+-- stricter), so a session that sets its own value to off cannot skip the
+-- refusal (A2b1 audit, L4). Statement level: once per statement, not per
+-- row.
 CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_stmt"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$
@@ -115,9 +132,6 @@ DECLARE
   mode text;
 BEGIN
   IF coalesce(current_setting('mantle.actor', true), '') <> '' OR pg_trigger_depth() > 1 THEN
-    RETURN NULL;
-  END IF;
-  IF coalesce(current_setting('mantle.actor_check', true), '') NOT IN ('warn', 'on') THEN
     RETURN NULL;
   END IF;
   mode := "public"."mantle_actor_check_mode"();
@@ -130,5 +144,27 @@ BEGIN
   PERFORM set_config(seen_key, TG_OP, true);
   RAISE NOTICE 'mantle actor miss: % on %', TG_OP, TG_TABLE_NAME;
   RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+
+-- A heads lock nested in a transaction that may hold heads already (A2b,
+-- plan 20.2; A2b1 audit L2): the database decides, not a flag in the app.
+-- Heads held: take more (mantle_lock_heads_more, FOR UPDATE NOWAIT). None
+-- held, or heads taken for no rows: this is the transaction's first lock,
+-- with every rule of mantle_lock_heads (first lock, heads check). Open to
+-- the same roles as mantle_lock_heads.
+CREATE OR REPLACE FUNCTION "public"."mantle_lock_heads_nested"(ids uuid[], lock_mode text)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF cardinality("public"."mantle_heads_held"()) > 0 THEN
+    PERFORM "public"."mantle_lock_heads_more"(ids);
+    RETURN;
+  END IF;
+  PERFORM set_config('mantle.heads_held', '', true);
+  PERFORM set_config('mantle.heads_held_upd', '', true);
+  PERFORM set_config('mantle.heads_sig', '', true);
+  PERFORM "public"."mantle_lock_heads"(ids, lock_mode);
 END
 $$;

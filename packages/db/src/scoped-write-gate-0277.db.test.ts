@@ -16,7 +16,13 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let sql: ReturnType<typeof postgres>;
   const notices: string[] = [];
-  const member = `mantle_a2b_gate_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
+  const suffix = randomUUID().replace(/-/g, '').slice(0, 10);
+  const member = `mantle_a2b_gate_${suffix}`;
+  /** A login that only administers the write role (the ADMIN-only grant a
+   *  CREATEROLE creator gets from Postgres 16): not a writer (audit M1). */
+  const adminOnly = `mantle_a2b_gate_admin_${suffix}`;
+  /** A per-database login's shape: SET only, no INHERIT. A writer. */
+  const setOnly = `mantle_a2b_gate_set_${suffix}`;
   let madeWriteRole = false;
   const owner = randomUUID();
   const folder = randomUUID();
@@ -39,7 +45,15 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
     }
     await sql.unsafe(`create role ${member} nologin`);
     await sql.unsafe(`grant mantle_write_user to ${member}`);
-    await sql.unsafe(`grant execute on function mantle_scoped_write_refuses(text) to ${member}`);
+    await sql.unsafe(`create role ${adminOnly} nologin`);
+    await sql.unsafe(
+      `grant mantle_write_user to ${adminOnly} with admin option, inherit false, set false`,
+    );
+    await sql.unsafe(`create role ${setOnly} nologin`);
+    await sql.unsafe(`grant mantle_write_user to ${setOnly} with inherit false, set true`);
+    for (const r of [member, adminOnly, setOnly]) {
+      await sql.unsafe(`grant execute on function mantle_scoped_write_refuses(text) to ${r}`);
+    }
     await sql`insert into auth.users (id, email, password_hash, is_owner, role)
       values (${owner}, ${`${owner}@example.invalid`}, 'x', true, 'admin')`;
     await sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
@@ -53,9 +67,25 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
 
   afterAll(async () => {
     if (sql) {
-      await sql.unsafe(`drop owned by ${member}`).catch(() => {});
-      await sql.unsafe(`drop role if exists ${member}`).catch(() => {});
-      if (madeWriteRole) await sql.unsafe('drop role if exists mantle_write_user').catch(() => {});
+      // The test's own roles first; the write role only when this test made
+      // it and no role is a member of it any more (a cluster object: another
+      // run, or A2b2's migration, may hold it).
+      for (const r of [member, adminOnly, setOnly]) {
+        await sql.unsafe(`drop owned by ${r}`).catch(() => {});
+        await sql.unsafe(`drop role if exists ${r}`).catch(() => {});
+      }
+      if (madeWriteRole) {
+        await sql
+          .unsafe(
+            `do $$ begin
+               if not exists (select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid
+                               where r.rolname = 'mantle_write_user') then
+                 drop role if exists mantle_write_user;
+               end if;
+             end $$`,
+          )
+          .catch(() => {});
+      }
       await sql.end();
     }
     await scratch?.drop();
@@ -89,6 +119,12 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
     expect(await asRole(member, 'warn', refuses)).toBe(false);
     expect(notices).toEqual(['mantle actor miss: a test (refused when the check is on)']);
     expect(await asRole(member, 'on', refuses)).toBe(true);
+  });
+
+  it('only a SET or INHERIT membership counts, never an ADMIN-only one (audit M1)', async () => {
+    expect(await asRole(adminOnly, 'off', refuses)).toBe(true);
+    expect(await asRole(setOnly, 'off', refuses)).toBe(false);
+    expect(await asRole(setOnly, 'on', refuses)).toBe(true);
   });
 
   it('a session cannot lower the box mode to skip the refusal', async () => {

@@ -116,13 +116,23 @@ let actorModePool: PgSql | null = null;
 
 /**
  * The pool's first mode read while it is out, else null (A2b, the startup
- * race of docs/actors.md "A2b must"). Until it answers, a write or a
- * transaction that has an actor waits for it, so a process's first writes
- * never go out as off on a box that is warn or on. Reads never wait, and
- * once it answered (or failed) nothing waits again: a one-time cost at a
- * process's start, no statement of its own.
+ * race). Until it answers, a write or a transaction that has an actor waits
+ * for it, so a process's first writes never go out as off on a box that is
+ * warn or on. Reads never wait. A failed read is tried again after 1 s,
+ * then 2 s, 4 s ... (A2b1 audit, L5), but nothing waits longer than
+ * FIRST_MODE_WAIT_MS: then the process goes on with MANTLE_ACTOR_CHECK as
+ * the floor. A one-time cost at a process's start, no statement of its own.
  */
 let firstModeRead: Promise<void> | null = null;
+
+/** The longest a write waits for the pool's first mode read. */
+const FIRST_MODE_WAIT_MS = 3_000;
+
+/** An unref'd sleep: it never keeps a process alive. */
+const quietSleep = (ms: number) =>
+  new Promise<void>((r) => {
+    setTimeout(r, ms).unref();
+  });
 
 /**
  * Read the box's actor check mode when the pool opens, then each minute on
@@ -136,15 +146,17 @@ let firstModeRead: Promise<void> | null = null;
 export function refreshActorCheckMode(base: PgSql): void {
   if (actorModePool === base) return;
   actorModePool = base;
-  const read = (): Promise<void> => {
-    if (actorModePool !== base) return Promise.resolve();
+  /** One read; true when the mode is known after it. */
+  const read = (): Promise<boolean> => {
+    if (actorModePool !== base) return Promise.resolve(true);
     return base
       .unsafe(`${ACTOR_SQL_TAG} select "public"."mantle_actor_check_mode"() as m`)
       .then((rows) => {
         // A pool closed (closeDb) while the read was out: its answer is
         // not the next pool's (fix round 2, L8).
-        if (actorModePool !== base) return;
+        if (actorModePool !== base) return true;
         noteBoxActorCheckMode((rows[0] as { m?: string } | undefined)?.m ?? null);
+        return true;
       })
       .catch((err: unknown) => {
         // A database without 0275 yet (the function is missing): off. Any
@@ -152,12 +164,22 @@ export function refreshActorCheckMode(base: PgSql): void {
         // mode read (fix round 2, L2).
         if (actorModePool === base && (err as { code?: string } | null)?.code === '42883') {
           noteBoxActorCheckMode(null);
+          return true;
         }
+        return false;
       });
   };
-  const first = read().finally(() => {
-    if (firstModeRead === first) firstModeRead = null;
-  });
+  /** The first read, tried again with backoff until it lands (L5). */
+  const warm = async () => {
+    for (let delay = 1_000; !(await read()) && actorModePool === base; delay *= 2) {
+      await quietSleep(Math.min(delay, 30_000));
+    }
+  };
+  const first: Promise<void> = Promise.race([warm(), quietSleep(FIRST_MODE_WAIT_MS)]).finally(
+    () => {
+      if (firstModeRead === first) firstModeRead = null;
+    },
+  );
   firstModeRead = first;
   const timer = setInterval(() => {
     if (actorModePool !== base) clearInterval(timer);
@@ -221,7 +243,10 @@ const STATEMENT_PROPS: ReadonlySet<PropertyKey> = new Set([
  *  (A2b, defence in depth for the inlined literals): actor.ts builds them,
  *  so a refusal here is a bug, never a caller's input. Exported for
  *  actor-client.test.ts only (not in index.ts). */
-export function setActorSql([actor, writeMode, mode]: [string, string, string]): string {
+export function setActorSql(
+  [actor, writeMode, mode]: [string, string, string],
+  local = true,
+): string {
   if (!ACTOR_VALUE_RE.test(actor)) throw new Error('actor setting: not an actor');
   if (writeMode !== 'rw' && writeMode !== 'ro') throw new Error('actor setting: write mode');
   if (mode !== 'off' && mode !== 'warn' && mode !== 'on') {
@@ -235,11 +260,17 @@ export function setActorSql([actor, writeMode, mode]: [string, string, string]):
     return `'${v.replace(/'/g, "''")}'`;
   };
   return (
-    `select set_config('mantle.actor', ${lit(actor)}, true), ` +
-    `set_config('mantle.write_mode', ${lit(writeMode)}, true), ` +
-    `set_config('mantle.actor_check', ${lit(mode)}, true)`
+    `select set_config('mantle.actor', ${lit(actor)}, ${local}), ` +
+    `set_config('mantle.write_mode', ${lit(writeMode)}, ${local}), ` +
+    `set_config('mantle.actor_check', ${lit(mode)}, ${local})`
   );
 }
+
+/** Takes back a session-level setActorSql(…, false): a real RESET, so each
+ *  setting is the database's default again (the box mode for
+ *  mantle.actor_check). Sent with the simple protocol (three statements). */
+export const RESET_ACTOR_SQL =
+  '/* mantle:actor */ reset mantle.actor; reset mantle.write_mode; reset mantle.actor_check';
 
 /** The shape of a mantle.actor value (actorSetting's output): no quote, no
  *  space, no NUL. Wider than mantle_set_actor's own pattern on purpose:
@@ -285,7 +316,7 @@ const WITH_WRITES = /\b(insert|update|delete|merge)\b/i;
 const MORE_STATEMENTS = /;\s*\S/;
 
 /** The tag on the actor's own statements (the mode read, a login read now,
- *  the write wrapper's BEGIN and COMMIT): the round-trip test
+ *  the write wrapper's RESET): the round-trip test
  *  (a2a-round-trips.db.test.ts) proves the check off sends none, and counts
  *  their round trips as the actor's cost in warn. */
 const ACTOR_SQL_TAG = '/* mantle:actor */';
@@ -417,55 +448,71 @@ export function actorInTransaction(t: PgSql, params: [string, string, string]): 
  * The system pool's postgres.js client with the actor (arch A2a, plan 4.2):
  * while the check is not off and an actor is bound, a transaction (`begin`)
  * sets the actor with its first statement (no round trip of its own), and a
- * write outside one (needsActorWrap) runs pipelined in its own short
- * transaction that sets it (BEGIN, the actor and the statement in one send;
- * the COMMIT, behind a statement with parameters, is one more round trip).
+ * write outside one (needsActorWrap) runs pipelined with a session-level
+ * SET and a RESET on one reserved connection (pipelined, below): the SET in
+ * the same send as the write, the RESET after the caller has its answer.
  * A read runs plain. With the check off, or no actor
  * bound, every statement runs exactly as before. Statements Postgres refuses in a
  * transaction block (runsOutsideTransaction) always run as they are.
  * Exported for actor-client.test.ts only (not in index.ts).
  */
 export function actorClient(base: PgSql): PgSql {
+  /**
+   * A write outside a transaction, as the actor (A2b1 audit, Q1): on one
+   * reserved connection, a session-level SET, the write and a RESET, all
+   * pipelined. The SET goes in the same send as the write, and the write
+   * commits by itself (no BEGIN, no COMMIT), so the caller waits exactly as
+   * long as with the check off; it gets the write's own result. The RESET
+   * runs behind the write, off the caller's path: the connection goes back
+   * to the pool only once the RESET has answered, so no other statement
+   * ever sees this actor. A RESET that fails ends the connection instead
+   * (pg_terminate_backend on itself), never handing it back with the
+   * settings on.
+   */
   const pipelined = (
     params: [string, string, string],
     query: string,
     args: unknown[] | undefined,
     mode: 'rows' | 'values' | 'simple',
   ): Promise<unknown> => {
-    // Kept until done: closeDb waits for these first (postgres.js never
-    // finishes ending a pool whose reserved connection comes back late).
-    const p = pipelinedNow(params, query, args, mode);
-    actorPipelines.add(p);
-    const done = () => actorPipelines.delete(p);
-    p.then(done, done);
-    return p;
-  };
-  const pipelinedNow = async (
-    params: [string, string, string],
-    query: string,
-    args: unknown[] | undefined,
-    mode: 'rows' | 'values' | 'simple',
-  ) => {
-    const conn = await base.reserve();
-    try {
-      // BEGIN, the SET and the write go out in one send. A write with
-      // parameters goes in two steps (setActorSql), and postgres.js sends
-      // the COMMIT queued behind it only once it is done: the COMMIT is the
-      // wrapper's own round trip, tagged as the actor's (ACTOR_SQL_TAG).
-      const begin = conn.unsafe(`${ACTOR_SQL_TAG} begin`);
-      const set = conn.unsafe(setActorSql(params));
+    let answer!: (v: Promise<unknown>) => void;
+    const result = new Promise<unknown>((r) => (answer = r));
+    // Kept until the connection is back: closeDb waits for these first
+    // (postgres.js never finishes ending a pool whose reserved connection
+    // comes back late).
+    const life = (async () => {
+      let conn: Awaited<ReturnType<PgSql['reserve']>>;
+      try {
+        conn = await base.reserve();
+      } catch (err) {
+        answer(Promise.reject(err));
+        return;
+      }
+      const set = conn.unsafe(setActorSql(params, false));
       const q = conn.unsafe(query, (args ?? []) as never[]);
       const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
-      const commit = conn.unsafe(`${ACTOR_SQL_TAG} commit`);
-      const out = await Promise.allSettled([begin, set, main, commit]);
-      const failed = out.find((r) => r.status === 'rejected');
-      // A failed statement aborted the transaction; the COMMIT then rolled
-      // it back, and the first error is thrown.
-      if (failed) throw (failed as PromiseRejectedResult).reason;
-      return (out[2] as PromiseFulfilledResult<unknown>).value;
-    } finally {
-      conn.release();
-    }
+      const reset = conn.unsafe(RESET_ACTOR_SQL).simple();
+      answer(
+        Promise.allSettled([set, main]).then(([s, m]) => {
+          // The write's own result. A SET that failed is reported when the
+          // write failed too (it is the cause); a write that ran without
+          // its actor meets the SQL check (a miss in warn, refused in on).
+          if (m.status === 'fulfilled') return m.value;
+          throw s.status === 'rejected' ? s.reason : m.reason;
+        }),
+      );
+      try {
+        await reset;
+      } catch {
+        await conn.unsafe('select pg_terminate_backend(pg_backend_pid())').catch(() => {});
+      } finally {
+        conn.release();
+      }
+    })();
+    actorPipelines.add(life);
+    const done = () => actorPipelines.delete(life);
+    life.then(done, done);
+    return result;
   };
   /** Run `query` as the actor bound now (decided when it runs). */
   const run = (
@@ -682,33 +729,81 @@ function getDb(): PostgresJsDatabase<typeof schema> {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A nested system transaction asked for another actor, write scope or
- *  create home than the open one (arch A2b, plan 20.2). */
+/** A nested system transaction that cannot reuse the open one (arch A2b,
+ *  plan 20.2): another actor or create home, a second nested call while one
+ *  runs, or a call after the open transaction ended. */
 export class NestedSystemTxError extends Error {
   readonly code = 'nested-system-tx';
-  constructor(what: 'actor' | 'write scope' | 'create home' | 'subtree heads') {
+  constructor(what: 'actor' | 'create home' | 'parallel' | 'ended') {
     super(
-      what === 'subtree heads'
-        ? 'withSubtreeHeads: not inside a transaction that already holds heads; lock the subtree in the outermost call'
-        : `withSystemTx: a nested call with a different ${what} than the open transaction is refused`,
+      what === 'parallel'
+        ? 'withSystemTx: a nested call while another nested call runs on the same transaction is refused'
+        : what === 'ended'
+          ? 'withSystemTx: a nested call after its transaction ended is refused (a detached call?)'
+          : `withSystemTx: a nested call with a different ${what} than the open transaction is refused`,
     );
     this.name = 'NestedSystemTxError';
   }
 }
 
-/** What a system transaction opened now would set: its actor, write scope
- *  and create home, as keys a nested call compares (SystemTxNest). */
-function systemTxKeys(): Omit<SystemTxNest, 'heads'> {
+/** What a system transaction opened now would run as: its actor and create
+ *  home, as keys a nested call compares (SystemTxNest). The write scope is
+ *  not one: inside a system transaction it reads as none (the transaction
+ *  masks the request's), so the open one's applies. */
+function systemTxKeys(): Pick<SystemTxNest, 'actor' | 'home'> {
   const actor = currentActor();
-  const scope = requestWriteScope();
   const home = currentCreateHome();
   return {
     actor: actor ? `${actorSetting(actor)}|${writeModeOf(actor)}` : '',
-    scope: scope ? `${[...scope.ws].sort().join(',')}|${[...scope.modWs].sort().join(',')}` : '',
     home: home
       ? JSON.stringify([home.createWs, home.privateWs, !!home.quiet, home.stamp ?? null])
       : '',
   };
+}
+
+/**
+ * withSystemTx nested in an open system transaction (arch A2b, plan 20.2;
+ * A2b1 audit M2): a SAVEPOINT of that transaction, never a second one. An
+ * inner error rolls back the inner writes only, and runs the inner
+ * rollback hooks; on success the inner hooks join the outer ones and
+ * follow its outcome. One nested call at a time per level, and none after
+ * the level ended (a detached call).
+ */
+async function nestedSystemTx<T>(
+  outer: NonNullable<ReturnType<typeof currentSystemTx>>,
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  if (outer.nest.done) throw new NestedSystemTxError('ended');
+  if (outer.nest.busy) throw new NestedSystemTxError('parallel');
+  const want = systemTxKeys();
+  if (want.actor !== outer.nest.actor) throw new NestedSystemTxError('actor');
+  if (want.home && want.home !== outer.nest.home) throw new NestedSystemTxError('create home');
+  const hooks = newTxHooks();
+  const nest: SystemTxNest = {
+    actor: outer.nest.actor,
+    home: outer.nest.home,
+    busy: false,
+    done: false,
+  };
+  outer.nest.busy = true;
+  let result: T;
+  try {
+    result = await (outer.tx as PostgresJsDatabase<typeof schema>).transaction((sp) =>
+      runInSystemTx({ tx: sp, hooks, nest }, () =>
+        fn(sp as unknown as PostgresJsDatabase<typeof schema>),
+      ),
+    );
+  } catch (err) {
+    nest.done = true;
+    outer.nest.busy = false;
+    await runTxHooks(hooks.rollback, 'rollback');
+    throw err;
+  }
+  nest.done = true;
+  outer.nest.busy = false;
+  outer.hooks.commit.push(...hooks.commit);
+  outer.hooks.rollback.push(...hooks.rollback);
+  return result;
 }
 
 /**
@@ -717,28 +812,14 @@ function systemTxKeys(): Omit<SystemTxNest, 'heads'> {
  * inside runs once it commits, `afterRollback` work once it rolls back:
  * file side effects follow the rows they belong to (team apps follow-up).
  * Only from outside any viewer scope and outside another transaction scope,
- * or nested in a system transaction (below).
- *
- * Nested in an open system transaction (arch A2b, plan 20.2) it reuses that
- * transaction, never a second one: `fn` gets the outer `tx`, its commit
- * and rollback hooks join the outer ones, and an error goes to the
- * outermost call (which alone retries: withDeadlockRetry runs once inside).
- * Only for the same actor, write scope and create home: a nested call that
- * names another one is refused (NestedSystemTxError). Inside the outer
- * transaction a request's write scope reads as none (the transaction
- * masks it); none means "the open one".
+ * or nested in a system transaction: then it is a savepoint of that one
+ * (nestedSystemTx), for the same actor and create home only.
  */
 export async function withSystemTx<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
   const outer = currentSystemTx();
-  if (outer) {
-    const want = systemTxKeys();
-    if (want.actor !== outer.nest.actor) throw new NestedSystemTxError('actor');
-    if (want.scope && want.scope !== outer.nest.scope) throw new NestedSystemTxError('write scope');
-    if (want.home && want.home !== outer.nest.home) throw new NestedSystemTxError('create home');
-    return fn(outer.tx as PostgresJsDatabase<typeof schema>);
-  }
+  if (outer) return nestedSystemTx(outer, fn);
   // A request scope (W6a) writes through here: writes stay on the system
   // pool with their rule in the statement (plan 2.3), in a read request too
   // (a lazy backfill, a root folder made on first open).
@@ -775,7 +856,7 @@ export async function withSystemTx<T>(
       ]
     : null;
   const hooks = newTxHooks();
-  const nest: SystemTxNest = { ...systemTxKeys(), heads: false };
+  const nest: SystemTxNest = { ...systemTxKeys(), busy: false, done: false };
   let result: T;
   try {
     result = await getAdminDb().transaction(async (tx) => {
@@ -796,9 +877,11 @@ export async function withSystemTx<T>(
       return runInSystemTx({ tx, hooks, nest }, () => fn(tx));
     });
   } catch (err) {
+    nest.done = true;
     await runTxHooks(hooks.rollback, 'rollback');
     throw err;
   }
+  nest.done = true;
   await runTxHooks(hooks.commit, 'commit');
   return result;
 }
@@ -1087,14 +1170,15 @@ export async function withHeads<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
   const list = uuidArrayLiteral(ids, 'withHeads');
+  // Nested in a system transaction (arch A2b, plan 20.2): the database
+  // decides (mantle_lock_heads_nested, 0277): more heads where it holds
+  // some (FOR UPDATE NOWAIT; a busy one fails with 55P03 and the outermost
+  // call retries), else the first lock with its rules. Never a second
+  // first lock.
+  const nested = currentSystemTx() !== null;
   return withSystemTx(async (tx) => {
-    // Nested in a transaction that holds heads (arch A2b, plan 20.2): take
-    // more of them (FOR UPDATE NOWAIT; a busy one fails with 55P03 and the
-    // outermost call retries), never a second first lock.
-    const nest = currentSystemTx()!.nest;
-    if (nest.heads) await tx.execute(sqlTag`select mantle_lock_heads_more(${list}::uuid[])`);
+    if (nested) await tx.execute(sqlTag`select mantle_lock_heads_nested(${list}::uuid[], ${mode})`);
     else await tx.execute(sqlTag`select mantle_lock_heads(${list}::uuid[], ${mode})`);
-    nest.heads = true;
     return fn(tx);
   });
 }
@@ -1114,12 +1198,10 @@ export async function withSubtreeHeads<T>(
   if (!UUID_RE.test(root)) throw new Error('withSubtreeHeads: root must be a uuid');
   const list = uuidArrayLiteral(extra, 'withSubtreeHeads');
   return withSystemTx(async (tx) => {
-    // The subtree lock is a first lock: nested in a transaction that holds
-    // heads it is refused (arch A2b, plan 20.2); lock it in the outer call.
-    const nest = currentSystemTx()!.nest;
-    if (nest.heads) throw new NestedSystemTxError('subtree heads');
+    // A first lock: nested in a transaction that holds heads, the database
+    // refuses it (55000, mantle_lock_heads); lock the subtree in the
+    // outermost call (arch A2b, plan 20.2).
     await tx.execute(sqlTag`select mantle_lock_subtree_heads(${root}::uuid, ${list}::uuid[])`);
-    nest.heads = true;
     return fn(tx);
   });
 }

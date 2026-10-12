@@ -214,6 +214,61 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
     expect(m.takeActorMisses()).toEqual([]);
   });
 
+  it('a write outside a transaction leaves no setting on the pooled connection (A2b1, Q1)', async () => {
+    const write = (t: string) =>
+      m.runAsActor(m.loginActor(owner, 'rw'), () =>
+        m.db.execute(
+          sqlTag`update nodes set title = title where owner_id = ${owner} and title = ${t}`,
+        ),
+      );
+    for (let i = 0; i < 25; i += 1) await write(`x${i}`);
+    // A failed write: its RESET still runs.
+    await expect(
+      m.runAsActor(m.loginActor(owner, 'rw'), () =>
+        m.db.execute(sqlTag`insert into nodes (id) values (${randomUUID()})`),
+      ),
+    ).rejects.toThrow();
+    // Every pooled connection at once (the pool holds 10): each is back at
+    // the database's defaults.
+    const rows = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        m.runAsSystem('worker:test', () =>
+          m.db.execute(sqlTag`select current_setting('mantle.actor', true) as a,
+                                     current_setting('mantle.write_mode', true) as w,
+                                     current_setting('mantle.actor_check', true) as c,
+                                     pg_sleep(0.05)`),
+        ),
+      ),
+    );
+    for (const r of rows as unknown as {
+      a: string | null;
+      w: string | null;
+      c: string | null;
+    }[][]) {
+      expect([r[0]!.a ?? '', r[0]!.w ?? '', r[0]!.c ?? '']).toEqual(['', '', '']);
+    }
+    expect(m.takeActorMisses()).toEqual([]);
+  });
+
+  it('on: a session that lowers its own check cannot skip the refusal (A2b1 audit, L4)', async () => {
+    await sql.unsafe(`alter database "${scratch.name}" set mantle.actor_check = 'on'`);
+    try {
+      const fresh = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+      try {
+        await expect(
+          fresh.begin(async (tx) => {
+            await tx`select set_config('mantle.actor_check', 'off', true)`;
+            await touch(tx);
+          }),
+        ).rejects.toMatchObject({ code: '42501', detail: 'no_actor' });
+      } finally {
+        await fresh.end();
+      }
+    } finally {
+      await sql.unsafe(`alter database "${scratch.name}" reset mantle.actor_check`);
+    }
+  });
+
   it('a statement with no actor is a miss; one a test sends itself is not', async () => {
     // The test is the process entry here: system(test).
     await m.db.execute(sqlTag`select 1`);

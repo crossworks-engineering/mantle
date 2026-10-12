@@ -361,3 +361,103 @@ describe('the first mode read (A2b, the startup race)', () => {
     }
   });
 });
+
+describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', () => {
+  /** A pool whose reserved connection holds the RESET's answer until
+   *  `answerReset`, and records what is sent and when it is released. */
+  function resetPool(o: { failReset?: boolean; failWrite?: boolean } = {}) {
+    const sent: string[] = [];
+    let released = false;
+    let answerReset: () => void = () => {};
+    const stmt = (q: string) => {
+      sent.push(q);
+      let p: Promise<unknown>;
+      if (q.startsWith('/* mantle:actor */ reset')) {
+        p = new Promise((ok, bad) => {
+          answerReset = () => (o.failReset ? bad(new Error('reset failed')) : ok([]));
+        });
+      } else if (o.failWrite && q.startsWith('insert')) {
+        p = Promise.reject(new Error('write failed'));
+      } else {
+        p = Promise.resolve([{ q }]);
+      }
+      p.catch(() => {});
+      return Object.assign(p, { values: () => p, simple: () => p });
+    };
+    const conn = { unsafe: (q: string) => stmt(q), release: () => (released = true) };
+    const base = {
+      unsafe: (q: string) =>
+        q.includes('mantle_actor_check_mode')
+          ? Promise.resolve([{ m: 'warn' }])
+          : stmt(`pool: ${q}`),
+      reserve: async () => conn,
+      end: async () => {},
+    } as unknown as PgSql;
+    return { base, sent, released: () => released, answerReset: () => answerReset() };
+  }
+
+  const inWarn = async (base: PgSql, fn: () => Promise<void>) => {
+    const own = process.env.MANTLE_ACTOR_CHECK;
+    process.env.MANTLE_ACTOR_CHECK = 'warn';
+    globalThis.__mantleSql = base;
+    try {
+      await fn();
+    } finally {
+      await closeDb();
+      if (own === undefined) delete process.env.MANTLE_ACTOR_CHECK;
+      else process.env.MANTLE_ACTOR_CHECK = own;
+    }
+  };
+
+  it('the caller has the write’s answer before the RESET answers; the connection waits for it', () => {
+    const f = resetPool();
+    return inWarn(f.base, async () => {
+      const client = actorClient(f.base);
+      const r = await runAsSystem('worker:test', () =>
+        Promise.resolve(client.unsafe('insert into t values (1)')),
+      );
+      expect(r).toEqual([{ q: 'insert into t values (1)' }]);
+      expect(f.sent[0]).toMatch(/set_config\('mantle\.actor', 'system:worker:test', false\)/);
+      expect(f.sent[1]).toBe('insert into t values (1)');
+      expect(f.sent[2]).toMatch(
+        /reset mantle\.actor; reset mantle\.write_mode; reset mantle\.actor_check/,
+      );
+      expect(f.sent.some((q) => /\b(begin|commit)\b/i.test(q))).toBe(false);
+      expect(f.released()).toBe(false);
+      f.answerReset();
+      await tick();
+      expect(f.released()).toBe(true);
+    });
+  });
+
+  it('a failed write is reported, and the RESET still runs', () => {
+    const f = resetPool({ failWrite: true });
+    return inWarn(f.base, async () => {
+      const client = actorClient(f.base);
+      await expect(
+        runAsSystem('worker:test', () =>
+          Promise.resolve(client.unsafe('insert into t values (1)')),
+        ),
+      ).rejects.toThrow('write failed');
+      expect(f.sent.at(-1)).toMatch(/^\/\* mantle:actor \*\/ reset/);
+      f.answerReset();
+      await tick();
+      expect(f.released()).toBe(true);
+    });
+  });
+
+  it('a failed RESET ends the connection before it goes back', () => {
+    const f = resetPool({ failReset: true });
+    return inWarn(f.base, async () => {
+      const client = actorClient(f.base);
+      await runAsSystem('worker:test', () =>
+        Promise.resolve(client.unsafe('insert into t values (1)')),
+      );
+      f.answerReset();
+      await tick();
+      await tick();
+      expect(f.sent).toContain('select pg_terminate_backend(pg_backend_pid())');
+      expect(f.released()).toBe(true);
+    });
+  });
+});

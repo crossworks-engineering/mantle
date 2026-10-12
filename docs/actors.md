@@ -63,18 +63,22 @@ their audit rows).
 
 ## Nested system transactions (A2b, plan 20.2)
 
-`withSystemTx` inside an open system transaction reuses it. It never opens
-a second one:
+`withSystemTx` inside an open system transaction is a SAVEPOINT of it. It
+never opens a second transaction:
 
-- `fn` gets the outer `tx`. Its `afterCommit` and `afterRollback` hooks
-  join the outer ones. An error goes to the outermost call.
-- `withHeads` there takes more heads with `mantle_lock_heads_more` (FOR
-  UPDATE NOWAIT), never a second `mantle_lock_heads`. A transaction that
-  holds no heads yet takes them as its first lock. `withSubtreeHeads` where
-  heads are held is refused: lock the subtree in the outer call.
+- An inner error rolls back the inner writes only and runs the inner
+  `afterRollback` hooks. The outer transaction goes on. On success the
+  inner hooks join the outer ones and follow its outcome.
+- One nested call at a time on one level, and none after the level ended
+  (a detached call): both are refused (`NestedSystemTxError`).
+- `withHeads` there calls `mantle_lock_heads_nested` (0277): the database
+  takes more heads (`mantle_lock_heads_more`, FOR UPDATE NOWAIT) where it
+  holds some, else the first lock with its rules. Never a second
+  `mantle_lock_heads`. The database also refuses `withSubtreeHeads` where
+  heads are held (55000): lock the subtree in the outer call.
 - `withDeadlockRetry` inside runs once. Only the outermost call retries.
-- A nested call with another actor, write scope or create home is refused
-  (`NestedSystemTxError`). There is no set-and-restore helper yet.
+- A nested call with another actor or create home is refused. There is no
+  set-and-restore helper yet.
 
 `packages/db/src/a2b-nested-tx.db.test.ts` runs each shape, and `withHeads`
 under every actor kind, with `mantle.heads_check = on`.
@@ -104,19 +108,24 @@ off and an actor is bound, `client.ts` (`needsActorWrap`):
   what is queued behind it. A SET that fails is the error reported;
 - sends a write outside a transaction (INSERT, UPDATE, DELETE, MERGE,
   TRUNCATE, COPY, a WITH that names a write verb anywhere, more than one
-  statement, and any verb it cannot name) in its own short pipelined
-  transaction: BEGIN, the SET and the write in one send. The COMMIT waits
-  until a write with parameters is done, so it is one more round trip per
-  such write;
+  statement, and any verb it cannot name) on one reserved connection: a
+  session-level SET in the same send as the write (no BEGIN, no COMMIT:
+  the write commits by itself), then a real `RESET` of the three
+  settings. The caller gets the write's own answer and waits no longer
+  than with the check off. The connection goes back to the pool only once
+  the RESET has answered; a RESET that fails ends the connection
+  (A2b1 audit, Q1). No pooled connection keeps an actor;
 - sends a read (SELECT, WITH ... SELECT, VALUES, SHOW, EXPLAIN without
   ANALYZE or ANALYSE) plain, exactly as with the check off.
 
 `server/web/server/a2a-round-trips.db.test.ts` pins the cost on six hot
 paths: with the check off no statement sets or reads the actor (the actor's
 own statements carry a `/* mantle:actor */` tag: its lookups and the
-wrapper's BEGIN and COMMIT), and warn sends the same statements as off plus
-the actor's own, in the same number of round trips apart from the round
-trips that send only the actor's own statements.
+wrapper's RESET), and warn sends the same statements as off plus the
+actor's own, in the same number of round trips apart from the round trips
+that send only the actor's own statements. No round trip carries the SET
+alone, and page save takes off's round trips apart from the RESET after
+its answer.
 
 The wrapper of a write in warn is a promise with `values()` and
 `simple()` only: no `cursor`, `forEach`, `describe`, `readable` or
@@ -334,20 +343,33 @@ Found in the A2a audits:
   actor waits for the pool's first mode read (see above).
 - **Narrowing to read only.** `systemUnder` narrows only under `login(ro)`,
   `link` and `contact` without `can_write`.
-- **The Recall slug with no scope.** With no scope anywhere the slug counts
-  up for every actor and every mode: the caller reads every item on the
-  system pool, so the number tells it nothing it cannot read.
+- **The Recall slug with no scope seen.** It counts up only for a system
+  actor and `login(owner)`; every other actor, and none, takes the random
+  suffix (A2b1 audit M3: inside a system transaction a member's scope is
+  masked). A2b2 revisits it when every scoped write carries its scope.
 - **The actor SET's values** are checked before they are inlined (actor
   `/^[a-z0-9:._/@-]{1,200}$/i`, write mode `rw|ro`, check mode
   `off|warn|on`), and a statement sent in parallel with a transaction's
   first one reports the SET's own error.
 
-## Open for A2b2 and the scaling task
+## A2b2 must
 
 - **The write role.** Login, assistant, link and contact writes move to
   `mantle_write_user` (no BYPASSRLS) with the pipelined scope pattern (plan
   20.1). 0277's gate is ready for it.
-- **A write outside a transaction in warn** costs one more round trip than
-  off: postgres.js (prepare off) sends a statement with parameters in two
-  steps and holds the wrapper's COMMIT until it ends. Measured and proposed
-  in task 7524eb3d (A2b report); no change yet.
+- **SET LOCAL on the write pool.** Its writes set the scope and the actor
+  with `SET LOCAL` in their own short transaction, never a session-level
+  SET: a scope left on a pooled connection would be a stale access right.
+- **The rollout switch is the box mode.** The write pool is used only when
+  `mantle.actor_check` is warn or on; off runs today's path. The mode is
+  read from the catalog (`mantle_actor_check_mode`), where a session can
+  only make it stricter, so the security note above holds.
+
+## A3a must
+
+- **The ro refusal.** An assistant with no user and a public link write
+  nothing (plan 4.1); a write with `mantle.write_mode = ro` is refused in
+  A3a, not before.
+- **Tables that stay on the system pool until A3a:** `recall_maps`,
+  `recall_nodes`, `shares` and `node_snapshots`. They are not `content`
+  tables in `ACCESS_MATRIX`; A3a adds their checks and then moves them.

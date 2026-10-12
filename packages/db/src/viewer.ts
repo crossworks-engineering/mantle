@@ -260,17 +260,17 @@ export type CreateHome = {
 };
 
 /**
- * What an open system transaction was opened with (arch A2b, plan 20.2): a
- * nested withSystemTx reuses that transaction only for the same actor,
- * write scope and create home. `heads`: whether it holds heads, so a nested
- * withHeads takes more of them (mantle_lock_heads_more) instead of a second
- * first lock. Set and read by client.ts only.
+ * What an open system transaction (or a nested savepoint of one) was opened
+ * with (arch A2b, plan 20.2): a nested withSystemTx reuses it only for the
+ * same actor and create home. `busy`: a nested call runs on it now (a
+ * second one at the same time is refused). `done`: it ended (a nested call
+ * after that is refused). Set and read by client.ts only.
  */
 export type SystemTxNest = {
   readonly actor: string;
-  readonly scope: string;
   readonly home: string;
-  heads: boolean;
+  busy: boolean;
+  done: boolean;
 };
 
 /** Work a scope's transaction owes the world outside the database, run once
@@ -805,10 +805,10 @@ export function runInSystemTx<T>(
 
 /** The system transaction the current code runs in (runInSystemTx), or
  *  null: inside asSystem, a workspace scope or a space it is none. */
-export function currentSystemTx(): { tx: unknown; nest: SystemTxNest } | null {
+export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTxNest } | null {
   const s = active();
-  if (!s?.system || !s.tx || !s.nest) return null;
-  return { tx: s.tx, nest: s.nest };
+  if (!s?.system || !s.tx || !s.nest || !s.hooks) return null;
+  return { tx: s.tx, hooks: s.hooks, nest: s.nest };
 }
 
 /**

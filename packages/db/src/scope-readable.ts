@@ -16,6 +16,7 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { nodes } from './schema/nodes';
 import { currentGateScope, currentWorkspaceScope, requestWriteScope } from './viewer';
+import { currentActor } from './actor';
 
 type Exec = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
 
@@ -70,11 +71,14 @@ export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {
  *  - A scope surrounds the call (the request's write scope, the current
  *    workspace scope, the gate scope of the rollback switch, or one set on
  *    the transaction): yes unless that scope holds the Admin workspace.
- *  - No scope anywhere: the next free number. Code with no scope reads on
- *    the system pool, every item, so the number tells it nothing it cannot
- *    read. One answer for every entry and every check mode (arch A2b): the
- *    actor is not asked, because some entries bind a different actor when
- *    the check is off (docs/actors.md, "A2b must").
+ *  - No scope seen: the next free number only for a system actor and for
+ *    login(owner), which reads every item; any other actor, and none, takes
+ *    the random suffix. A scope can be hidden here: inside a system
+ *    transaction (withNodeInsertHeads, asSystem) the request's and the
+ *    turn's scopes are masked, so a member's assistant that makes a map
+ *    reaches this branch (A2b1 audit, M3). The actor rule does not depend
+ *    on the check's mode for an entry that binds one actor in every mode.
+ *    A2b2 revisits it once every scoped write carries its scope.
  */
 export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
   const scope = requestWriteScope() ?? currentWorkspaceScope() ?? currentGateScope();
@@ -96,5 +100,8 @@ export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
     active: boolean;
     narrow: boolean;
   }[];
-  return rows[0]?.active === true && rows[0].narrow === true;
+  if (rows[0]?.active === true) return rows[0].narrow === true;
+  const actor = currentActor();
+  if (actor?.kind === 'system') return false;
+  return !(actor?.kind === 'login' && actor.mode === 'owner');
 }

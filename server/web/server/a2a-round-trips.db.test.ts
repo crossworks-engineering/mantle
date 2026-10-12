@@ -15,14 +15,17 @@
  *  - with the check off, no statement sets or reads the actor: the setting,
  *    and the actor's own statements, tagged `/* mantle:actor *\/` (the mode
  *    read, loginActorNow, the Telegram and heartbeat lookups, the write
- *    wrapper's BEGIN and COMMIT);
+ *    wrapper's RESET);
  *  - in warn, the only added statements are the actor's own;
  *  - in warn, the same number of round trips as off, apart from the round
  *    trips that send only the actor's own statements (a lookup, the
- *    wrapper's COMMIT): the SET goes in the same send as a transaction's
- *    first statement, and the wrapper's BEGIN and SET with its write;
+ *    wrapper's RESET): the SET goes in the same send as a transaction's
+ *    first statement, and the wrapper's session SET with its write;
  *  - in warn, no round trip carries the SET without a statement of the
- *    path's own: counted apart (setRoundTrips), always 0 (A2b).
+ *    path's own: counted apart (setRoundTrips), always 0 (A2b);
+ *  - a write outside a transaction ends with a RESET sent after the caller
+ *    has its answer (resetRoundTrips): page save, which looks nothing up,
+ *    takes off's round trips apart from those (A2b1 audit, Q1).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a2a-round-trips.db.test.ts
  * MANTLE_RT_REPORT=1 prints the table. MANTLE_RT_BASELINE=1 also compares
@@ -76,6 +79,9 @@ const NOISE_SQL = /mantle_actor_check_mode|from pg_catalog\.pg_type/;
 
 /** The actor SET itself (client.ts setActorSql). */
 const SET_SQL = /set_config\('mantle\.actor'/;
+/** The RESET behind a write outside a transaction (client.ts
+ *  RESET_ACTOR_SQL): sent after the caller has the write's answer. */
+const RESET_SQL = /reset mantle\.actor;/;
 
 type Kind = 'noise' | 'actor' | 'other';
 const kindOf = (s: string): Kind =>
@@ -90,6 +96,9 @@ class WireCounter {
   /** Of those, the ones that carried the actor SET (A2b: must be 0, the SET
    *  always goes out with a statement of the path's own). */
   setRoundTrips = 0;
+  /** Of those, the ones that only carried the RESET: off the caller's path
+   *  (A2b1 audit, Q1). */
+  resetRoundTrips = 0;
   lastAt = 0;
   private server: net.Server | null = null;
   private sockets = new Set<net.Socket>();
@@ -108,6 +117,8 @@ class WireCounter {
       let open: Kind = 'other';
       /** Whether that round trip, while the actor's own, carried the SET. */
       let openSet = false;
+      /** Whether that round trip, while the actor's own, carried a RESET. */
+      let openReset = false;
       upstream.on('data', (d) => {
         serverSpoke = true;
         client.write(d);
@@ -118,6 +129,7 @@ class WireCounter {
         const kinds: Kind[] = [];
         let messages = 0;
         let sentSet = false;
+        let sentReset = false;
         for (;;) {
           if (startup) {
             if (buf.length < 8) break;
@@ -140,6 +152,7 @@ class WireCounter {
           if (text !== null) {
             last = kindOf(text);
             if (SET_SQL.test(text)) sentSet = true;
+            if (RESET_SQL.test(text)) sentReset = true;
             kinds.push(last);
             if (last !== 'noise') this.statements.push(text);
           }
@@ -158,14 +171,18 @@ class WireCounter {
           this.roundTrips += 1;
           open = kind;
           openSet = kind === 'actor' && sentSet;
+          openReset = kind === 'actor' && sentReset;
           if (kind === 'actor') this.actorRoundTrips += 1;
           if (openSet) this.setRoundTrips += 1;
+          if (openReset) this.resetRoundTrips += 1;
         } else if (open === 'actor' && kind === 'other') {
           // The same round trip sent more than the actor's own after all.
           open = 'other';
           this.actorRoundTrips -= 1;
           if (openSet) this.setRoundTrips -= 1;
+          if (openReset) this.resetRoundTrips -= 1;
           openSet = false;
+          openReset = false;
         } else if (open === 'actor' && sentSet && !openSet) {
           openSet = true;
           this.setRoundTrips += 1;
@@ -189,6 +206,7 @@ class WireCounter {
     this.roundTrips = 0;
     this.actorRoundTrips = 0;
     this.setRoundTrips = 0;
+    this.resetRoundTrips = 0;
   }
 
   async stop(): Promise<void> {
@@ -328,6 +346,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       roundTrips: wire.roundTrips,
       actorRoundTrips: wire.actorRoundTrips,
       setRoundTrips: wire.setRoundTrips,
+      resetRoundTrips: wire.resetRoundTrips,
     };
   };
 
@@ -423,7 +442,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
         }
       }
       // (3) warn: no round trip of its own, apart from those that send only
-      // the actor's own statements (a lookup, the wrapper's COMMIT).
+      // the actor's own statements (a lookup, the wrapper's RESET).
       if (warn.roundTrips - warn.actorRoundTrips !== off.roundTrips) {
         failures.push(
           `${p}: warn takes ${warn.roundTrips} round trips (${warn.actorRoundTrips} of the actor), ` +
@@ -431,9 +450,17 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
         );
       }
       // (3b) the SET never takes a round trip of its own (A2b, the A2a
-      // audit's LOW): counted apart from the lookups and the COMMIT.
+      // audit's LOW): counted apart from the lookups and the RESET.
       if (warn.setRoundTrips !== 0) {
         failures.push(`${p}: warn sends the actor SET alone in ${warn.setRoundTrips} round trips`);
+      }
+      // (3c) a write outside a transaction costs the caller nothing (A2b1
+      // audit, Q1): page save has no actor lookup, so apart from the RESET
+      // that runs after its answer it takes exactly off's round trips.
+      if (p === 'page save' && warn.roundTrips - warn.resetRoundTrips !== off.roundTrips) {
+        failures.push(
+          `${p}: warn takes ${warn.roundTrips} round trips (${warn.resetRoundTrips} RESET), off ${off.roundTrips}`,
+        );
       }
       // The A2a merge gate only: off against the counts before A2a.
       const base = OFF_BASELINE[p];
@@ -450,7 +477,8 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
         `| ${p} | ${off.statements.length} / ${off.roundTrips} | ` +
           `${warn.statements.length} / ${warn.roundTrips} | ` +
           `+${warn.statements.length - off.statements.length} / ` +
-          `+${warn.roundTrips - off.roundTrips} (actor ${warn.actorRoundTrips}, SET ${warn.setRoundTrips}) |`,
+          `+${warn.roundTrips - off.roundTrips} (actor ${warn.actorRoundTrips}, SET ${warn.setRoundTrips}, ` +
+          `RESET after the answer ${warn.resetRoundTrips}) |`,
       );
     }
     if (process.env.MANTLE_RT_REPORT) {
