@@ -84,7 +84,17 @@ describe.skipIf(!URL)('the tree confirm on grants', () => {
     const diff = await refusal(pages.createPage(owner, { title: 'Pitch', folderId: f.id }));
     expect(diff).toEqual({
       total: 1,
-      changes: [{ id: '', title: 'Pitch', alsoVisibleTo: sales(), removedFrom: [] }],
+      changes: [
+        {
+          id: '',
+          title: 'Pitch',
+          alsoVisibleTo: sales(),
+          removedFrom: [],
+          // Where it is homed, and who reads it without edit (A0, L-c).
+          home: expect.objectContaining({ wsId: admin }),
+          readOnly: sales(),
+        },
+      ],
     });
     expect((await tree.loadTreeFolder(owner, 'pages', { folderId: f.id }))!.items).toEqual([]);
     // A confirm for another count asks again; the right one goes ahead.

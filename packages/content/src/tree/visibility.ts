@@ -18,7 +18,7 @@
  * Embeds do not follow (0261): nothing is ever granted for you.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { currentCreateHome, db } from '@mantle/db';
+import { currentCreateHome, db, itemWriteRefusal } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -347,19 +347,30 @@ async function newItemHome(
   ownerId: string,
   nodeType: string,
   destPath: string,
-): Promise<{ home?: TreeWorkspaceChange['home']; readOnly: NonNullable<TreeWorkspaceChange['readOnly']> }> {
+): Promise<{
+  home?: TreeWorkspaceChange['home'];
+  readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
+}> {
   const type = sql`${nodeType}::node_type`;
   const folder = sql`mantle_parent_folder(${ownerId}::uuid, ${type}, ${destPath}::ltree)`;
   const created = currentCreateHome();
   const live = (ws: SQL) =>
     sql`(select w.id from workspaces w
           where w.id = ${ws} and w.archived_at is null and mantle_grant_kind_ok(${type}, w.id))`;
-  const folderHome = live(sql`(select f.home_ws from nodes f where f.id = ${folder})`);
-  const mayEditFolder = sql`coalesce((select "public"."mantle_may_edit"(f.home_ws, f.write_ws)
-                                        from nodes f where f.id = ${folder}), false)`;
-  const fallback = created?.privateWs
-    ? sql`case when ${mayEditFolder} then ${folderHome} else ${live(sql`${created.privateWs}::uuid`)} end`
-    : folderHome;
+  // The folder's home through its home grant row (not the raw columns).
+  const folderHome = live(
+    sql`(select g.workspace_id from item_grants g where g.node_id = ${folder} and g.is_home)`,
+  );
+  let fallback: SQL = folderHome;
+  if (created?.privateWs) {
+    // A login outside Admin: the folder's home only when it may edit the
+    // folder (the scope's own check), else its private workspace.
+    const [f] = (await via.execute(
+      sql`select ${folder}::text as id`,
+    )) as unknown as Array<{ id: string | null }>;
+    const mayEdit = f?.id ? (await itemWriteRefusal([f.id], 'edit')) === null : false;
+    fallback = mayEdit ? folderHome : live(sql`${created.privateWs}::uuid`);
+  }
   const home = sql`coalesce(
     ${created?.createWs ? live(sql`${created.createWs}::uuid`) : sql`null::uuid`},
     ${fallback},

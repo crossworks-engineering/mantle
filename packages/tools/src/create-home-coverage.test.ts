@@ -11,7 +11,12 @@ import { CREATE_TOOL_SLUGS } from './create-tools';
 import { getBuiltin, listBuiltins } from './registry';
 
 /** Slugs that make an item by name. */
-const MAKES = /_(create|from_[a-z_]+|copy|duplicate|import|export|upload|save|split|extract_section|build)$/;
+const MAKES =
+  /_(create|from_[a-z_]+|copy|duplicate|import|export|upload|save|split|extract_section|build)$/;
+
+/** Named like a create but makes nothing: it reads an image and returns
+ *  its text. */
+const MAKES_NOTHING = new Set(['extract_from_image']);
 
 /** Builtins known to make a node without a create name. */
 const ALSO_MAKES = ['export_node', 'sandbox_export', 'generate_image', 'sheet_build'];
@@ -19,7 +24,9 @@ const ALSO_MAKES = ['export_node', 'sandbox_export', 'generate_image', 'sheet_bu
 describe('a tool that makes an item is not readOnly', () => {
   it('covers every listed create and every builtin named as one', () => {
     const slugs = new Set<string>([...CREATE_TOOL_SLUGS, ...ALSO_MAKES]);
-    for (const def of listBuiltins()) if (MAKES.test(def.slug)) slugs.add(def.slug);
+    for (const def of listBuiltins()) {
+      if (MAKES.test(def.slug) && !MAKES_NOTHING.has(def.slug)) slugs.add(def.slug);
+    }
     const flagged: string[] = [];
     const missing: string[] = [];
     for (const slug of slugs) {

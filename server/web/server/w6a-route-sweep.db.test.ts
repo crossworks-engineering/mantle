@@ -680,7 +680,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         { title: name, startsAt: '2026-11-01T10:00:00Z' },
         (j) => (j.event as Json).id,
       );
-      const map = await made('/api/recall/maps', { title: name, enterWhen: 'a test' }, (j) => j.mapId);
+      const map = await made(
+        '/api/recall/maps',
+        { title: name, enterWhen: 'a test' },
+        (j) => j.mapId,
+      );
       const note = await memberItem('note');
       const share = await made('/api/shares', { nodeId: note }, (j) => (j.share as Json).id);
       return { task, event, map, note, share };
@@ -700,7 +704,8 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     for (const [method, path] of writes(writeOnly)) {
       // The member: refused (these routes are not open to members at all).
       const r = await call(path, mem, method);
-      if (r.status !== 403 && r.status !== 404) failures.push(`member ${method} ${path} ${r.status}`);
+      if (r.status !== 403 && r.status !== 404)
+        failures.push(`member ${method} ${path} ${r.status}`);
     }
     for (const [method, path] of writes(writeOnly).slice(0, 3)) {
       // An Admin user with the users area may close any link (the guide),

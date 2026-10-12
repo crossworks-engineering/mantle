@@ -224,7 +224,9 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       ) => Promise<{ ids: string[]; need: string }[]>;
       const admin = { surface: { kind: 'owner' as const, via: 'mcp' as const, loginId: 'l' } };
       area.users = false;
-      expect(await resolve({ id: 'n1' }, 'o', admin), slug).toEqual([{ ids: ['n1'], need: 'edit' }]);
+      expect(await resolve({ id: 'n1' }, 'o', admin), slug).toEqual([
+        { ids: ['n1'], need: 'edit' },
+      ]);
       area.users = true;
       expect(await resolve({ id: 'n1' }, 'o', admin), slug).toEqual([]);
       // A key or a linked brain never skips the check (L-e); nor a call
@@ -236,7 +238,9 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       expect(await resolve({ id: 'n1' }, 'o'), slug).toEqual([{ ids: ['n1'], need: 'edit' }]);
       // Outside a scope the area check says yes by default: not enough (L-4).
       area.scope = false;
-      expect(await resolve({ id: 'n1' }, 'o', admin), slug).toEqual([{ ids: ['n1'], need: 'edit' }]);
+      expect(await resolve({ id: 'n1' }, 'o', admin), slug).toEqual([
+        { ids: ['n1'], need: 'edit' },
+      ]);
       area.scope = true;
     }
   });
