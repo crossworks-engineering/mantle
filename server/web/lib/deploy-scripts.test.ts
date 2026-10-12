@@ -17,26 +17,49 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '..', '..', '..');
+
 // /bin/bash, not the first bash on PATH: on a Mac that is 3.2, the oldest bash
-// these scripts must run under (see shell-portability.test.ts).
-const BASH = existsSync('/bin/bash') ? '/bin/bash' : 'bash';
+// these scripts must run under (see shell-portability.test.ts). No bash at all
+// (an Alpine box): skip with a note rather than fail on ENOENT.
+function findBash(): string | null {
+  for (const b of ['/bin/bash', 'bash']) {
+    if (b.startsWith('/') && !existsSync(b)) continue;
+    try {
+      execFileSync(b, ['-c', 'true'], { stdio: 'ignore' });
+      return b;
+    } catch {
+      // not runnable here: try the next one
+    }
+  }
+  return null;
+}
+const BASH = findBash();
+if (!BASH) console.warn('deploy-scripts: no bash found, the harness is skipped');
 
 describe('deploy scripts harness', () => {
-  it('passes every check (installer baselines, env ownership, compose env gate, caddy ordering, pre-roll backup, image prune, roll.sh guards)', () => {
-    let out: string;
-    try {
-      out = execFileSync(BASH, [join(ROOT, 'scripts', 'test-deploy-scripts.sh')], {
-        cwd: ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 120_000,
-      });
-    } catch (err) {
-      const e = err as { stdout?: string; stderr?: string; message: string };
-      throw new Error(`harness failed:\n${e.stdout ?? ''}\n${e.stderr ?? ''}\n${e.message}`, {
-        cause: err,
-      });
-    }
-    expect(out).toMatch(/\n\d+ passed, 0 failed/);
-  }, 150_000);
+  (BASH ? it : it.skip)(
+    'passes every check (installer baselines, env ownership, compose env gate, caddy ordering, pre-roll backup, image prune, roll.sh guards)',
+    () => {
+      let out: string;
+      try {
+        out = execFileSync(BASH ?? 'bash', [join(ROOT, 'scripts', 'test-deploy-scripts.sh')], {
+          cwd: ROOT,
+          encoding: 'utf8',
+          // Without GIT_*: pre-push runs this with GIT_DIR set to the real repo.
+          env: Object.fromEntries(
+            Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')),
+          ),
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 120_000,
+        });
+      } catch (err) {
+        const e = err as { stdout?: string; stderr?: string; message: string };
+        throw new Error(`harness failed:\n${e.stdout ?? ''}\n${e.stderr ?? ''}\n${e.message}`, {
+          cause: err,
+        });
+      }
+      expect(out).toMatch(/\n\d+ passed, 0 failed/);
+    },
+    150_000,
+  );
 });

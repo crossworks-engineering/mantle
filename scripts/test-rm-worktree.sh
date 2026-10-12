@@ -12,6 +12,10 @@
 # only on request (--drop-viewer-logins), and only for a database that is not
 # the integrator's.
 set -uo pipefail
+# Drop every GIT_* variable first. Run from a git hook (pre-push runs pnpm
+# verify, which runs this), git exports GIT_DIR and friends for the REAL repo,
+# and any git command in here would then write to it, not to a temp repo.
+while IFS= read -r gv; do unset "$gv"; done < <(compgen -e | grep '^GIT_')
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/rm-worktree.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -53,7 +57,7 @@ check() {
   } >.claude/worktrees/t/server/web/.env.local
   local out
   # ${a[@]+"${a[@]}"}: bash before 4.4 calls an empty array unbound under set -u.
-  out="$(bash "$SCRIPT" t ${args[@]+"${args[@]}"} 2>&1)"
+  out="$("$BASH" "$SCRIPT" t ${args[@]+"${args[@]}"} 2>&1)"
   local got=none
   [ -f "$PNPM_LOG" ] && got="$(cat "$PNPM_LOG")"
   local want=none
@@ -75,6 +79,7 @@ check "no drop when the integrator's env is unreadable" - tw_a 1 -f --drop-viewe
 check "no drop when the worktree is not per-database" mantle tw_a 0 -f --drop-viewer-logins -- none
 check "a plain worktree (no env flag) is removed as before" mantle mantle 0 -- none
 
+printf '(bash %s)\n' "$BASH_VERSION"
 [ "$fails" = 0 ] && echo "all passed" || {
   echo "$fails failed"
   exit 1

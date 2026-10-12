@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runs-on: box. A Linux box only: bash 4 features need a BASH_VERSINFO guard first.
+# runs-on: both. Linux boxes, and dev machines (the Mac included) through pnpm db:restore: keep it bash 3.2 and BSD-tool safe.
 # Restore a Mantle dump (from scripts/db-dump.sh) into a freshly-initialized
 # Postgres: the standard way to MOVE the brain to a new machine, and the way
 # back from a roll (the updater's pre-roll dumps).

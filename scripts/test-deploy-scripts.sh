@@ -56,6 +56,10 @@
 # shellcheck disable=SC2010,SC2012,SC2016
 
 set -euo pipefail
+# Drop every GIT_* variable first. Run from a git hook (pre-push runs pnpm
+# verify, which runs this), git exports GIT_DIR and friends for the REAL repo,
+# and any git command in here would then write to it, not to a temp repo.
+while IFS= read -r gv; do unset "$gv"; done < <(compgen -e | grep '^GIT_')
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SH=${TEST_SH:-sh}
@@ -170,7 +174,7 @@ if command -v sha256sum >/dev/null 2>&1; then (cd "$REL" && sha256sum "mantle-de
 else (cd "$REL" && shasum -a 256 "mantle-deploy-$TAG.tar.gz" > SHA256SUMS); fi
 if PATH="$WORK/bin:$PATH" MANTLE_REPO_RELEASES="file://$WORK/releases" MANTLE_CHANNEL="$TAG" \
    MANTLE_HOME="$WORK/home-bundle" MANTLE_YES=1 MANTLE_SKIP_START=1 \
-   bash "$ROOT/install.sh" > "$WORK/install-bundle.log" 2>&1; then
+   "$BASH" "$ROOT/install.sh" > "$WORK/install-bundle.log" 2>&1; then
   ok "bundle install ran to completion"
 else
   fail "bundle install exited non-zero (see below)"; sed 's/^/    /' "$WORK/install-bundle.log"
@@ -183,7 +187,7 @@ RAW="$WORK/raw/main"; mkdir -p "$RAW"
 cp -R "$TREE/." "$RAW/"
 if PATH="$WORK/bin:$PATH" MANTLE_REPO_RAW="file://$WORK/raw" MANTLE_CHANNEL=main \
    MANTLE_HOME="$WORK/home-raw" MANTLE_YES=1 MANTLE_SKIP_START=1 \
-   bash "$ROOT/install.sh" > "$WORK/install-raw.log" 2>&1; then
+   "$BASH" "$ROOT/install.sh" > "$WORK/install-raw.log" 2>&1; then
   ok "raw fetch install ran to completion (shapes dir existed before curl -o)"
 else
   fail "raw fetch install exited non-zero (see below)"; sed 's/^/    /' "$WORK/install-raw.log"
@@ -364,7 +368,7 @@ PULL_LIB="$(lift pull_with_retry)"
 check "pull_with_retry found in install.sh" test -n "$PULL_LIB"
 pull_run() { # <failures before success>: run pull_with_retry against a flaky fake
   rm -f "$T/calls" "$T/sleeps"
-  FAILS="$1" T="$T" MANTLE_PULL_ATTEMPTS=3 MANTLE_PULL_BACKOFF=10 bash -c '
+  FAILS="$1" T="$T" MANTLE_PULL_ATTEMPTS=3 MANTLE_PULL_BACKOFF=10 "$BASH" -c '
 warn() { echo "warn: $*"; }
 sleep() { echo "$1" >> "$T/sleeps"; }
 fake_compose() {
@@ -404,7 +408,7 @@ echo "install.sh: the client step checks the server network first"
 NET_LIB="$(lift client_network_ready)"
 check "client_network_ready found in install.sh" test -n "$NET_LIB"
 net_run() { # <stack dir> <network docker knows about>
-  STACK_DIR="$1" HAVE_NET="$2" bash -c '
+  STACK_DIR="$1" HAVE_NET="$2" "$BASH" -c '
 docker() { [ "$1 $2" = "network inspect" ] && [ "$3" = "$HAVE_NET" ]; }
 '"$NET_LIB"'
 if client_network_ready; then echo "ready $CLIENT_NET"; else echo "missing $CLIENT_NET"; fi'
@@ -444,7 +448,7 @@ printf '#!/bin/sh\necho "Filesystem 1024-blocks Used Available Capacity Mounted"
 printf '#!/bin/sh\nexit 1\n' > "$T/bin/lsof"
 chmod +x "$T/bin/"*
 install_run() { # <args...>: run the configurator in the fake stack
-  PATH="$T/bin:$PATH" NO_COLOR=1 bash "$T/stack/scripts/install.sh" "$@" < /dev/null > "$T/out" 2>&1
+  PATH="$T/bin:$PATH" NO_COLOR=1 "$BASH" "$T/stack/scripts/install.sh" "$@" < /dev/null > "$T/out" 2>&1
 }
 code_line() { grep -E '^MANTLE_SETUP_CODE=' "$T/stack/.env" | cut -d= -f2-; }
 
@@ -458,7 +462,7 @@ install_run --localhost -y --skip-up --data-dir "$T/stack/data" || true
 check "a re-run keeps the same code" test "$(code_line)" = "$first"
 check "and writes it once" test "$(grep -c '^MANTLE_SETUP_CODE=' "$T/stack/.env")" = 1
 check "a re-run says it was kept" grep -q 'MANTLE_SETUP_CODE kept' "$T/out"
-check "two installs do not share a code" sh -c "test \"\$(env PATH='$T/bin':\"\$PATH\" bash -c \"\$(awk 'index(\$0, \"gen_setup_code() {\") == 1 { p = 1 } p { print } p && /^}\$/ { exit }' '$ROOT/scripts/install.sh'); gen_setup_code\")\" != '$first'"
+check "two installs do not share a code" sh -c "test \"\$(env PATH='$T/bin':\"\$PATH\" '$BASH' -c \"\$(awk 'index(\$0, \"gen_setup_code() {\") == 1 { p = 1 } p { print } p && /^}\$/ { exit }' '$ROOT/scripts/install.sh'); gen_setup_code\")\" != '$first'"
 
 CURL_BOOT='{"firstRun":true,"setupCodeRequired":true}' install_run --setup-code || true
 check "--setup-code prints the code while the brain is unclaimed" grep -q "Setup code: $first" "$T/out"
@@ -485,7 +489,7 @@ for c in getent dig host; do printf '#!/bin/sh\nexit 0\n' > "$T/bin/$c"; done
 printf '#!/bin/sh\necho 10.0.0.5\n' > "$T/bin/hostname"
 chmod +x "$T/bin/"*
 acc_run() { # <args...>
-  PATH="$T/bin:$PATH" NO_COLOR=1 bash "$T/stack/scripts/install.sh" -y --skip-up --data-dir "$T/stack/data" "$@" < /dev/null > "$T/out" 2>&1
+  PATH="$T/bin:$PATH" NO_COLOR=1 "$BASH" "$T/stack/scripts/install.sh" -y --skip-up --data-dir "$T/stack/data" "$@" < /dev/null > "$T/out" 2>&1
 }
 acc_env() { grep -E "^$1=" "$T/stack/.env" | head -1 | cut -d= -f2-; }
 acc_seed() { # <site> <bind> <origin>: a box an earlier install configured
@@ -583,7 +587,7 @@ exit 0
 STUB
 chmod +x "$T/bin/docker"
 printf 'pw-%s\n' "s3cret-value" > "$T/pw"; printf 'sk-or-v1-%s\n' "keyvalue" > "$T/key"
-onboard_run() { rm -f "$T/calls" "$T/stdin"; T="$T" PATH="$T/bin:$PATH" bash "$T/stack/scripts/onboard.sh" "$@" < /dev/null > "$T/out" 2>&1; }
+onboard_run() { rm -f "$T/calls" "$T/stdin"; T="$T" PATH="$T/bin:$PATH" "$BASH" "$T/stack/scripts/onboard.sh" "$@" < /dev/null > "$T/out" 2>&1; }
 onboard_run --yes --email o@example.invalid --password-file "$T/pw" --key-file "$T/key"
 check "the wizard runs in the web container with --secrets-stdin" grep -q 'exec -T web pnpm -C server/web exec tsx scripts/onboard.ts --secrets-stdin --yes --email o@example.invalid' "$T/calls"
 check "stdin carries both secrets as key=value lines" sh -c "grep -qx 'password=pw-s3cret-value' '$T/stdin' && grep -qx 'openrouter_key=sk-or-v1-keyvalue' '$T/stdin'"
@@ -598,7 +602,7 @@ check "without a terminal or files it still uses exec -T (no -it)" sh -c "grep -
 # stack dir the script cd's into; --flag=path works too.
 mkdir -p "$T/elsewhere"; printf 'rel-pass\n' > "$T/elsewhere/pw"; printf 'rel-key\n' > "$T/elsewhere/key"
 rm -f "$T/calls" "$T/stdin"
-(cd "$T/elsewhere" && T="$T" PATH="$T/bin:$PATH" bash "$T/stack/scripts/onboard.sh" --yes --password-file=pw --key-file ./key < /dev/null > "$T/out" 2>&1) || true
+(cd "$T/elsewhere" && T="$T" PATH="$T/bin:$PATH" "$BASH" "$T/stack/scripts/onboard.sh" --yes --password-file=pw --key-file ./key < /dev/null > "$T/out" 2>&1) || true
 check "relative paths resolve from the caller's directory, --flag=path form included" sh -c "grep -qx 'password=rel-pass' '$T/stdin' && grep -qx 'openrouter_key=rel-key' '$T/stdin'"
 onboard_run --yes --key-file || true
 check "a path flag given last is a clear error, and nothing is exec'd" sh -c "grep -q -- '--key-file needs a path' '$T/out' && ! grep -q 'exec' '$T/calls' 2>/dev/null"
@@ -643,7 +647,7 @@ chmod +x "$T/bin/docker" "$T/bin/curl"
 sanity_run() { # <https> <http> → output, then "rc=N"
   PATH="$T/bin:$PATH" CURL_HTTPS="$1" CURL_HTTP="$2" CURL_DEBUG=down NO_COLOR=1 \
     MANTLE_STACK_DIR="$T/stack" MANTLE_ENV_FILE="$T/stack/.env" MANTLE_COMPOSE_PROJECT=mantle \
-    bash "$ROOT/scripts/sanity.sh" 2>&1; echo "rc=$?"
+    "$BASH" "$ROOT/scripts/sanity.sh" 2>&1; echo "rc=$?"
 }
 out=$(sanity_run down '308 https://brain.example.com/api/auth/bootstrap-state -')
 check "the stack's container is listed and judged (the listing runs on bash 3.2)" sh -c "printf '%s' \"\$1\" | grep -q 'web (healthy)'" _ "$out"
@@ -1122,7 +1126,7 @@ DUMP
 roll_sh() { # <args...>: run roll.sh against $RS; exit code in $rc, output in $RS/out
   rc=0
   PATH="$RB:$PATH" RS="$RS" ROLL_POLL_SECS=0 ROLL_TIMEOUT_SECS=5 ROLL_HEALTH_TIMEOUT_SECS=5 \
-    bash "$ROOT/scripts/roll.sh" "$@" > "$RS/out" 2>&1 || rc=$?
+    "$BASH" "$ROOT/scripts/roll.sh" "$@" > "$RS/out" 2>&1 || rc=$?
 }
 
 roll_box happy
@@ -1277,7 +1281,7 @@ bm_box() { # <name>: a fresh fake box
 bm_sh() { # <args...>: run box-maintain.sh on the fake box; exit code in $rc, output in $BM/out
   rc=0
   PATH="$BB:$RB:$PATH" HOME="$BM/home" BM="$BM" RS="$BM" \
-    bash "$ROOT/scripts/box-maintain.sh" "$@" > "$BM/out" 2>&1 || rc=$?
+    "$BASH" "$ROOT/scripts/box-maintain.sh" "$@" > "$BM/out" 2>&1 || rc=$?
 }
 
 bm_box happy
@@ -1637,6 +1641,8 @@ check "the updater advertises the service verb" grep -q '"verbs":\["roll","servi
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo
-printf '(bash %s)\n' "$BASH_VERSION"
+# Inner runs use "$BASH" (this same bash), not the first bash on PATH, so a
+# Mac with a newer bash on PATH still tests the scripts under /bin/bash.
+printf '(bash %s; inner runs: %s)\n' "$BASH_VERSION" "$("$BASH" -c 'printf %s "$BASH_VERSION"')"
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
