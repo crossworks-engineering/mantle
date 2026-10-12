@@ -58,8 +58,9 @@ describe.skipIf(!URL)('mantle_brain_id() after the audit fixes', () => {
     expect(await can(probeRole), 'a role with no grant').toBe(false);
     // And it still resolves in a workspace scope.
     const scope = { kind: 'assistant' as const, loginId: null, ws: [randomUUID()], modWs: [] };
-    const [brain] = (await m.withTurnScope(scope, () =>
-      m.db.execute(sqlTag`select mantle_brain_id() as id`),
+    const [brain] = (await m.withTurnScope(
+      scope,
+      async () => await m.db.execute(sqlTag`select mantle_brain_id() as id`),
     )) as unknown as { id: string }[];
     expect(brain!.id).toBe(anchor);
   });

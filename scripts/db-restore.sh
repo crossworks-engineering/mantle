@@ -139,7 +139,10 @@ WHEN_0187=1790017500000   # 0187_client_level: agents and tool_groups rules
 WHEN_0188=1790017560000   # 0188_client_signin_codes: client sign-in links and codes
 WHEN_0204=1790018520000   # 0204_folder_sharing: nodes_share_refresh_after, in a form no dump can carry
 WHEN_0212=1790019000000   # 0212_restorable_share_refresh_trigger: the same trigger, in a form a dump can carry
+WHEN_0242=1790193480000   # 0242_workspaces_user_role: nodes_user_read
+WHEN_0254=1790194320000   # 0254_workspaces_turns: agents and tool_groups rules of the workspace role
 WHEN_0261=1790194740000   # 0261_workspaces_bridge_off: the trigger is dropped (grants are the truth)
+WHEN_0273=1790195640000   # 0273_workspaces_level_roles_off: the level roles' rules are dropped
 FAILED=""
 fail() { FAILED="${FAILED}  - $1"$'\n'; }
 
@@ -159,8 +162,15 @@ if [ "$LEDGER" -ge "$WHEN_0162" ] && ! has_constraint users_role_ck auth.users; 
   fail "the login role CHECK (users_role_ck on auth.users) is missing"
 fi
 REQUIRED_POLICIES=""
-[ "$LEDGER" -ge "$WHEN_0159" ] && REQUIRED_POLICIES="nodes_viewer_read:nodes"
-[ "$LEDGER" -ge "$WHEN_0187" ] && REQUIRED_POLICIES="$REQUIRED_POLICIES agents_viewer_read:agents agents_client_read:agents tool_groups_viewer_read:tool_groups tool_groups_client_read:tool_groups"
+# The level roles' rules, until 0273 drops them (workspaces W8c).
+if [ "$LEDGER" -lt "$WHEN_0273" ]; then
+  [ "$LEDGER" -ge "$WHEN_0159" ] && REQUIRED_POLICIES="nodes_viewer_read:nodes"
+  [ "$LEDGER" -ge "$WHEN_0187" ] && REQUIRED_POLICIES="$REQUIRED_POLICIES agents_viewer_read:agents agents_client_read:agents tool_groups_viewer_read:tool_groups tool_groups_client_read:tool_groups"
+fi
+# The workspace role's rules.
+[ "$LEDGER" -ge "$WHEN_0242" ] && REQUIRED_POLICIES="$REQUIRED_POLICIES nodes_user_read:nodes"
+[ "$LEDGER" -ge "$WHEN_0254" ] && REQUIRED_POLICIES="$REQUIRED_POLICIES agents_user_read:agents tool_groups_user_read:tool_groups"
+
 for pt in $REQUIRED_POLICIES; do
   has_policy "${pt%%:*}" "${pt#*:}" || fail "the row policy ${pt%%:*} on ${pt#*:} is missing"
 done

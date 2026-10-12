@@ -819,8 +819,12 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     expect(files.length).toBeGreaterThanOrEqual(5);
     for (const f of files) {
       const text = readFileSync(join(__dirname, '..', 'migrations', f), 'utf8');
-      for (const mm of text.matchAll(/CREATE OR REPLACE FUNCTION "public"\."(\w+)"\([^]*?\$\$/g)) {
-        if (/SECURITY DEFINER/.test(mm[0])) names.add(mm[1]!);
+      // In file order: a later statement may drop one (0273, W8c).
+      for (const mm of text.matchAll(
+        /CREATE OR REPLACE FUNCTION "public"\."(\w+)"\([^]*?\$\$|DROP FUNCTION IF EXISTS "public"\."(\w+)"/g,
+      )) {
+        if (mm[2]) names.delete(mm[2]);
+        else if (/SECURITY DEFINER/.test(mm[0])) names.add(mm[1]!);
       }
     }
     expect(names.size).toBeGreaterThan(20);

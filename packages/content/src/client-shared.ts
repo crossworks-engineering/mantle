@@ -16,7 +16,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  *  "readable" answer would be someone else's. */
 function assertClient(): void {
   if (currentScope().kind !== 'user') {
-    throw new Error('client read outside withViewer({ login })');
+    throw new Error('client read outside a login scope: run it in the login scope');
   }
 }
 

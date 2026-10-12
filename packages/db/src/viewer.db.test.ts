@@ -37,7 +37,7 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
 
   /** A turn scope reading `ws` (no lookup: the probe needs no workspace rows). */
   const inScope = <T>(ws: string[], fn: () => Promise<T>) =>
-    m.withTurnScope({ kind: 'assistant', loginId: null, ws, modWs: [] }, fn);
+    m.withTurnScope({ kind: 'assistant', loginId: null, ws, modWs: [] }, async () => await fn());
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;

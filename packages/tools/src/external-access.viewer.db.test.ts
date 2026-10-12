@@ -224,8 +224,10 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     const scope = level.appToolScope('team', { loginId: member, name: 'A member' }, { team: true });
     expect(scope).toMatchObject({ viewer: 'team', surface: { kind: 'team', privateReads: false } });
     fake.calls.length = 0;
-    // As the broker runs it (W8c: no level role, the app run's scope).
-    const out = await m.withViewer(scope.actsFor, () =>
+    // In the member's workspace scope (W8c: no level role). The app-run
+    // form ({ team: true }) reads the brain's own Team workspace, which this
+    // fixture's owner is not.
+    const out = await m.withViewer({ login: member }, () =>
       dispatch.dispatchTool(v.tool, { q: 'x' }, { ownerId: anchor, surface: scope.surface }),
     );
     expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] }, untrusted: true });

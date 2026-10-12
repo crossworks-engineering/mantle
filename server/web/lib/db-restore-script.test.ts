@@ -38,7 +38,14 @@ describe('db-restore.sh', () => {
       agents_client_read: { gate: '0187', made: /CREATE POLICY "?agents_client_read"?/ },
       tool_groups_viewer_read: { gate: '0187', made: /CREATE POLICY "?tool_groups_viewer_read"?/ },
       tool_groups_client_read: { gate: '0187', made: /CREATE POLICY "?tool_groups_client_read"?/ },
+      // The workspace role's rules: what a dump from after 0273 (W8c, the
+      // level roles' rules dropped) must hold.
+      nodes_user_read: { gate: '0242', made: /CREATE POLICY "?nodes_user_read"?/ },
+      agents_user_read: { gate: '0254', made: /CREATE POLICY "?agents_user_read"?/ },
+      tool_groups_user_read: { gate: '0254', made: /CREATE POLICY "?tool_groups_user_read"?/ },
     };
+    // The level roles' rules are required only before 0273 drops them.
+    expect(script).toContain('if [ "$LEDGER" -lt "$WHEN_0273" ]; then');
     for (const [name, { gate, made }] of Object.entries(gated)) {
       expect(script, `${name} not checked`).toContain(name);
       const tag = journal.entries.find((e) => e.tag.startsWith(gate))!.tag;
