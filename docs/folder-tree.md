@@ -234,7 +234,7 @@ contacts, secrets) cannot be shared.
 - **Restores** (migration 0212). A brain restored from a dump taken at
   migration 0204 up to 0210 came back without the refresh trigger; 0212
   repairs the stale levels and puts it back (docs/access-levels.md,
-  section 6).
+  "Operations").
 - **Who reads it.** `nodes_viewer_read` reads a brain row at its own level
   OR its inherited share OR its embedded level (below); still a same-row
   check. Chunks, facts, pages and the rest follow their node as before.
