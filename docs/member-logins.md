@@ -1160,7 +1160,7 @@ still names its author (`takenFrom`, with `canGiveBack` always false).
 
 **Deactivation.** Nothing is purged since workspaces W6b (migration
 0267): the private items are brain items in the login's private workspace,
-and `space-purge` is retired.
+and `space-purge` was removed in W8d.
 
 **Tests.** The space-role suites went with the role in W6b;
 `server/web/server/middleware/gate.test.ts` (the asset path) and the auth

@@ -45,7 +45,6 @@ import {
   appDbSchema,
   appDbTableDetails,
   appViewerFor,
-  markAppClientWritten,
 } from '@mantle/content/app-broker';
 import { createAppSnapshot } from '@mantle/content/app-snapshots';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
@@ -60,7 +59,7 @@ import type {
 import { str } from './coerce';
 
 const NO_LOGIN =
-  "No one to act for: the app_data tools work on a team member's or client's own MCP connection only.";
+  "No one to act for: the app_data tools work on a team member's own MCP connection only.";
 
 const NOT_FOUND =
   'No such app on your MCP connection: it may not exist, it may not be shared with you, or its MCP access is off. List the apps you can reach with app_data_list.';
@@ -511,15 +510,9 @@ export const app_data_write: BuiltinToolDef = {
           me: await personId(ctx.ownerId, app.id, who),
         },
       });
-      // As the browser brokers: a write may feed a linked table export, and
-      // a client's write marks the app client-written.
+      // As the browser brokers: a write may feed a linked table export.
       await asSystem(async () => {
         scheduleAppTableExportSync(ctx.ownerId, app.id);
-        if (who.role === 'client') {
-          await markAppClientWritten(ctx.ownerId, app.id).catch((err: unknown) =>
-            console.error('[app-data] client-written mark failed:', errorMessage(err)),
-          );
-        }
       }, 'app-data');
       ctx.step?.setOutput({ changes: res.changes });
       return {

@@ -352,14 +352,14 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     expect(String(logs[0]?.detail.me)).toMatch(/^u_/);
   });
 
-  it('the lookup runs on the team and client roles (its columns are granted)', async () => {
+  it('the lookup runs on the team role (its columns are granted)', async () => {
     // A column the role may not read fails the query (42501), so getting an
     // answer at all is the proof.
     await expect(
       m.runInLevelRoleForTest('team', () => content.listMcpDataApps(anchor, 'member')),
     ).resolves.toBeInstanceOf(Array);
-    const one = await m.runInLevelRoleForTest('client', () =>
-      content.getMcpDataApp(anchor, 'client', ids['e client']!),
+    const one = await m.runInLevelRoleForTest('team', () =>
+      content.getMcpDataApp(anchor, 'member', ids['e client']!),
     );
     expect(one === null || one.id === ids['e client']).toBe(true);
   });

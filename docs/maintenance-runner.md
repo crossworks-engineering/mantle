@@ -229,10 +229,7 @@ took four tries):
   concurrently, a contender fails fast with a clear message. Dry-runs skip
   the lock.
 - The schedule contains ten tasks: `entities-dedupe` (auto tier),
-  `traces-reap` and `turns-reap` (all owners), `space-purge` (a deactivated
-  login's private personal items after 30 days, see
-  [member-logins.md](./member-logins.md) section 6; the worker mounts
-  /data/spaces and /data/table-dbs for it), `device-tokens-reap` (device
+  `traces-reap` and `turns-reap` (all owners), `device-tokens-reap` (device
   token rows 30 days after they were revoked or expired; plain SQL; by hand `pnpm -C server/web device-tokens:reap`, dry
   run unless `--apply`),
   `app-access-log-reap` (app access log rows older than 90 days, and the

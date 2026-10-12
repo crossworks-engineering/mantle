@@ -20,7 +20,8 @@
  * reader's (what it would see inside), never the brain's.
  *
  * Call it on the admin pool, outside any viewer scope: it scopes its own item
- * reads. A member's own folders and drafts are merged in by ./member-tree.
+ * reads. (A member's own folders and drafts were merged in by ./member-tree,
+ * removed in workspaces W8d with the personal spaces.)
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { currentSpaceScope, db, withViewer, isSystemScope } from '@mantle/db';

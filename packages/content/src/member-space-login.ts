@@ -14,12 +14,13 @@
  * space from then on (`mantle_member_space`, 0180), and the purge takes its
  * private items 30 days after `spaces.orphaned_at`.
  *
- * Row writes and change events only, on the caller's admin-pool transaction.
+ * Since workspaces W6b (0267) a personal space holds no item on a brain on
+ * workspaces, so this finds nothing there; it still settles a brain not yet
+ * switched. Row writes only, on the caller's admin-pool transaction: the
+ * personal-space change event went in W8d (nothing listened to it).
  */
 import { and, eq, inArray, or } from 'drizzle-orm';
-import { db, nodes, spaceItems, spaces } from '@mantle/db';
-import { clearBundles } from './member-bundle';
-import { notifySpaceItemChanged } from './member-space-events';
+import { db, nodes, spaceItemBundles, spaceItems, spaces } from '@mantle/db';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -30,7 +31,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  */
 export async function settleSpaceOnPromotion(tx: Tx, loginId: string): Promise<number> {
   const rows = await tx
-    .select({ id: spaceItems.nodeId, spaceId: nodes.ownerId, sharing: spaceItems.sharing })
+    .select({ id: spaceItems.nodeId })
     .from(spaceItems)
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
     .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
@@ -53,15 +54,7 @@ export async function settleSpaceOnPromotion(tx: Tx, loginId: string): Promise<n
     .update(spaceItems)
     .set({ reviewState: 'draft', submittedAt: null, updatedAt: now })
     .where(and(inArray(spaceItems.nodeId, ids), eq(spaceItems.reviewState, 'submitted')));
-  await clearBundles(tx, ids);
-  // Teammates' views drop what was shared; nothing else listens.
-  for (const r of rows) {
-    await notifySpaceItemChanged(
-      r.id,
-      'state',
-      { spaceId: r.spaceId, team: r.sharing === 'team' },
-      tx,
-    );
-  }
+  // The recorded bundles of what was shared or submitted go with it.
+  await tx.delete(spaceItemBundles).where(inArray(spaceItemBundles.rootId, ids));
   return rows.length;
 }

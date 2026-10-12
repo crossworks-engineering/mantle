@@ -113,22 +113,16 @@ describe('draw_get picture', () => {
     expect(r.error).toMatch(/fractions of the scene/);
   });
 
-  it('reads for the login the surface names, never a model argument', async () => {
+  it('reads in the call scope, whatever the surface or a model argument names', async () => {
     await draw_get.handler(
       { id: ID, image: true, loginId: 'someone-else' },
       { ownerId: 'anchor', surface: { kind: 'team', loginId: 'member-1' } },
     );
-    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, {
-      kind: 'member',
-      loginId: 'member-1',
-    });
-    // The text is read for the same reader (its image words follow it).
-    expect(h.readableDrawText).toHaveBeenLastCalledWith('anchor', ID, {
-      kind: 'member',
-      loginId: 'member-1',
-    });
+    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID);
+    // The text is read in the same scope (its image words follow it).
+    expect(h.readableDrawText).toHaveBeenLastCalledWith('anchor', ID);
     await draw_get.handler({ id: ID, image: true }, owner);
-    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, { kind: 'scope' });
+    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID);
   });
 
   it('a drawing out of reach is not found, for the picture as for the text', async () => {

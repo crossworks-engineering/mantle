@@ -108,15 +108,9 @@ export {
   appendThreadMessage,
   updateThreadMessageOutcome,
   recentThreadMessages,
-  threadMessageById,
-  listTeamThread,
-  PRIVATE_REPLY_PLACEHOLDER,
-  redactPrivateReply,
-  listTeamMemberActivity,
   type ThreadMessage,
   type AppendThreadMessageInput,
   type UpdateThreadMessageOutcomeInput,
-  type TeamMemberActivity,
 } from './team-messages';
 
 export {
@@ -128,18 +122,7 @@ export {
   type ClaimMemberTurnResult,
 } from './member-turn-ledger';
 
-export {
-  countOpenTeamRequests,
-  countTeamRequestsFiled,
-  countClientRequestFilings,
-  recordClientRequestFiling,
-  TEAM_REQUEST_TAG,
-  TEAM_REQUESTS_PER_TURN,
-  TEAM_REQUESTS_PER_DAY,
-  CLIENT_REQUEST_TAG,
-  CLIENT_REQUESTS_PER_TURN,
-  CLIENT_REQUESTS_PER_DAY,
-} from './team-requests';
+export { countOpenTeamRequests, TEAM_REQUEST_TAG } from './team-requests';
 
 // Provider outages (0230) and the live event that still carries them.
 export {
@@ -209,112 +192,10 @@ export {
   type LibraryKind,
   type LibraryRow,
 } from './member-library';
-export {
-  SPACE_ITEM_KINDS,
-  SPACE_ITEM_LIMIT,
-  SpaceItemStateError,
-  assertEditable,
-  createMineItem,
-  deleteMineItem,
-  getMineItem,
-  getMineRow,
-  isWithAdmin,
-  listWithAdmin,
-  withAdminError,
-  isSpaceItemKind,
-  listMine,
-  recallItem,
-  setSharing,
-  submitItem,
-  updateMineItem,
-  saveMineTable,
-  saveMinePage,
-  saveMineDraft,
-  saveMineDraw,
-  disallowedPageRefs,
-  disallowedRefs,
-  type CreateSpaceItemInput,
-  type ListSpaceOpts,
-  type SpaceListSort,
-  type SpaceItemBody,
-  type SpaceItemKind,
-  type SpaceItemRow,
-  type SpaceWriter,
-  type UpdateSpaceItemInput,
-} from './member-space';
-export {
-  SPACE_DAILY_UPLOAD_BYTES,
-  SPACE_FILES_PATH,
-  SPACE_FILE_MAX_BYTES,
-  SPACE_STORAGE_LIMIT_BYTES,
-  cleanSpaceFilename,
-  createMineFile,
-  openMineFile,
-  spaceStorageUsed,
-  spaceUploadHeadroom,
-  assertSpaceStorage,
-  clientSpacesUsed,
-  withClientTextRoom,
-  type OpenedSpaceFile,
-  type SpaceFile,
-} from './member-space-files';
-export {
-  acceptedAuthors,
-  acceptedByLogin,
-  acceptedDrawSnapshot,
-  acceptedDrawSvg,
-  acceptedFileMeta,
-  acceptedFileReadable,
-  acceptedRow,
-  getAcceptedItem,
-  acceptedItemForCopy,
-  getClientAcceptedItem,
-  isAuthorOfAcceptedFile,
-  listAccepted,
-  type AcceptedAuthor,
-  type AcceptedItem,
-  type AcceptedReader,
-  type AcceptedRow,
-} from './member-accepted';
-export {
-  acceptedItemRow,
-  clientAcceptedItemRow,
-  clientItemsPlan,
-  clientOwnItemRow,
-  itemsPlan,
-  libraryItemRow,
-  mergeNewestFirst,
-  mergeSorted,
-  listSortCompare,
-  pillOf,
-  spaceItemRow,
-  MEMBER_ITEMS_MAX_PAGE,
-  type ClientItemsPlan,
-  type ItemsPlan,
-  type PagedSource,
-} from './member-items';
-export {
-  CLIENT_DOC_MAX_BYTES,
-  CLIENT_NOTE_MAX_CHARS,
-  CLIENT_SPACES_TOTAL_BYTES,
-  CLIENT_SPACE_LIMITS,
-  clientSpacesTotalBytes,
-  MEMBER_SPACE_LIMITS,
-  inClientSpace,
-  spaceLimits,
-  type SpaceLimits,
-} from './space-limits';
-// A deleted client login's old comments go with it (the login delete).
-export { deleteClientComments } from './client-comments';
-export {
-  CLIENT_QUOTA_REFUSAL_DAYS,
-  listClientQuotaRefusals,
-  recordClientQuotaRefusal,
-  type ClientQuotaReason,
-  type ClientQuotaRefusal,
-} from './client-quota-log';
-export { memberDrawSvg, memberVisibleDrawFileIds, scopedDrawSvg } from './member-draw-images';
 export { takenFromOf } from './admin-space-taken';
+export { acceptedItemForCopy, type AcceptedItem, type AcceptedRow } from './member-accepted';
+// Paging one list merged from several sources (moved out of member-items, W8d).
+export { listSortCompare, mergeSorted, type ListSort, type PagedSource } from './list-merge';
 export {
   SNAPSHOT_TABLE_OWNER,
   acceptedFileUnchanged,
@@ -323,22 +204,8 @@ export {
   type AcceptedSnapshot,
 } from './member-snapshots';
 export { settleSpaceOnPromotion } from './member-space-login';
-export {
-  SPACE_PURGE_GRACE_DAYS,
-  findSpacePurge,
-  purgeDeactivatedSpaces,
-  type SpacePurgeCandidate,
-  type SpacePurgeResult,
-} from './member-space-purge';
-export {
-  SPACE_ITEM_CHANGED_CHANNEL,
-  parseSpaceItemChange,
-  type SpaceItemChange,
-  type SpaceItemChangeKind,
-} from './member-space-events';
 export { readThroughEmbeds, sharedViaFolder } from './shared-via';
 export { docRefIds, noteRefIds, redactClientDoc, redactClientNote } from './client-redact';
-export { clientDrawSvg, clientVisibleDrawFileIds } from './client-draw-images';
 // Client logins (C6): pictures in a member's or a client's own chat thread
 // point at the reader's own routes, and only at items the reader may read.
 export {

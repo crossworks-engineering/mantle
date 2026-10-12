@@ -4,8 +4,8 @@
  * browser or a shared cache must not keep what a login read once and may
  * not read now:
  *
- *  - raw bytes (GET /api/files/files/:id?raw=1, and the deprecated member
- *    route GET /api/member/files/:id): `private, no-store`;
+ *  - raw bytes (GET /api/files/files/:id?raw=1; the member route is gone
+ *    since W8d): `private, no-store`;
  *  - a thumbnail (?thumb=1, its 200 and its 304): `private, no-cache`, so
  *    the browser revalidates every use and the scoped lookup runs first.
  *
@@ -24,7 +24,6 @@ const memberCaller = {
   role: 'member',
   loginId: '33333333-3333-4333-8333-333333333333',
   anchorId: '11111111-1111-4111-8111-111111111111',
-  spaceId: '44444444-4444-4444-8444-444444444444',
   email: 'm@example.invalid',
   displayName: 'M',
   contactId: null,
@@ -104,20 +103,4 @@ describe('the cache headers of file bytes (W7e fix round 1, L2)', () => {
       expect(again.headers.get('cache-control')).toBe('private, no-cache');
     },
   );
-
-  it('the deprecated member route: raw bytes no-store, a thumbnail no-cache', async () => {
-    const { GET } = await import('../member/files/[id]/route');
-    const raw = await GET(req(`/api/member/files/${FILE}`), ctx());
-    expect(raw.status).toBe(200);
-    expect(raw.headers.get('cache-control')).toBe('private, no-store');
-    const thumb = await GET(req(`/api/member/files/${FILE}?thumb=1`), ctx());
-    expect(thumb.status).toBe(200);
-    expect(thumb.headers.get('cache-control')).toBe('private, no-cache');
-    const again = await GET(
-      req(`/api/member/files/${FILE}?thumb=1`, { 'if-none-match': `"${SHA}.thumb"` }),
-      ctx(),
-    );
-    expect(again.status).toBe(304);
-    expect(again.headers.get('cache-control')).toBe('private, no-cache');
-  });
 });

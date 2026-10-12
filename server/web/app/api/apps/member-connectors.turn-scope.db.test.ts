@@ -3,9 +3,10 @@
  * MCP listing (workspaces W4b fix round 2), on a scratch brain the
  * workspaces migration made live:
  *
- *  - an app the Team holds, run by a member (the member tool broker, the real
- *    route; since W7e every app a member runs is a brain item, checked
- *    against its holders): a member removed from the workspace that holds
+ *  - an app the Team holds, run by a member (the shared tool broker,
+ *    /api/apps/:id, the real route; since W7e every app a member runs is a
+ *    brain item, checked against its holders, and the member's own route
+ *    410s since W8d): a member removed from the workspace that holds
  *    the connector is refused a read tool, a member who is not a Moderator
  *    there is refused a write tool;
  *  - the MCP listing (resolveLoginToolRows' connector half,
@@ -17,7 +18,7 @@
  *
  * Only the sign-in, the app lookup, the app logs and the remote dispatch are
  * stood in; every rule is the real one on Postgres.
- *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/app/api/member/apps/member-connectors.turn-scope.db.test.ts
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/app/api/apps/member-connectors.turn-scope.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
@@ -28,6 +29,8 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({
   owner: '',
   login: '',
+  // Who the shared runner's guard answers: a member login or the owner.
+  as: 'member' as 'member' | 'admin',
   toolSlugs: [] as string[],
   dispatched: [] as string[],
 }));
@@ -41,22 +44,24 @@ const ownerSession = () => ({
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => ownerSession()),
-  // The owner runner routes take every login since W7e: here the owner.
-  getOwnerOr401WithLogin: vi.fn(async () => ({
-    kind: 'admin',
-    user: ownerSession(),
-    source: 'web',
-    member: null,
-  })),
-  getMemberOr401: vi.fn(async () => ({
-    role: 'member',
-    loginId: h.login,
-    anchorId: h.owner,
-    spaceId: h.login,
-    email: 'm@example.invalid',
-    displayName: 'M',
-    contactId: null,
-  })),
+  // The runner routes take every login since W7e: the owner or a member.
+  getOwnerOr401WithLogin: vi.fn(async () =>
+    h.as === 'admin'
+      ? { kind: 'admin', user: ownerSession(), source: 'web', member: null }
+      : {
+          kind: 'member',
+          user: ownerSession(),
+          source: 'web',
+          member: {
+            role: 'member',
+            loginId: h.login,
+            anchorId: h.owner,
+            email: 'm@example.invalid',
+            displayName: 'M',
+            contactId: null,
+          },
+        },
+  ),
 }));
 // An app the Team holds (APP below, a real node): team rules for a member.
 vi.mock('@/lib/member-apps', async (importOriginal) => ({
@@ -112,8 +117,9 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
     (await m.systemDb.execute(q)) as unknown as T[];
   const call = async (login: string, slug: string) => {
     h.login = login;
+    h.as = 'member';
     const res = await broker(
-      new Request('http://brain.invalid/api/member/apps/x/tool-broker', {
+      new Request('http://brain.invalid/api/apps/x/tool-broker', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ slug, input: {} }),
@@ -132,7 +138,7 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
     tools = await import('@mantle/tools');
     mcp = await import('@mantle/mcp-core');
     broker = (await import('./[id]/tool-broker/route')).POST;
-    ownerBroker = (await import('../../apps/[id]/tool-broker/route')).POST;
+    ownerBroker = broker;
     h.owner = owner;
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${`co-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin'),
@@ -257,6 +263,7 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
 
   describe('a member-built app an admin opens (the owner tool broker)', () => {
     const ownerCall = async (slug: string) => {
+      h.as = 'admin';
       const res = await ownerBroker(
         new Request('http://brain.invalid/api/apps/x/tool-broker', {
           method: 'POST',

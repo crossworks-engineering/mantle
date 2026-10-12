@@ -1,10 +1,10 @@
 /**
  * Folder-held items in the member Library and at the client level (folder
  * plan phase 4; workspaces W5b2: a folder's grant, not its share level): an
- * item in a folder a workspace holds is listed, opened and named in the
- * client-level redaction for that workspace's users, through the folder's
- * grant. (The client portal's own lists went in workspaces W5c, the client
- * login in W8a.) Reads run inside withViewer with a real login, in the
+ * item in a folder a workspace holds is listed and opened for that
+ * workspace's users, through the folder's grant. (The client portal's own
+ * lists went in workspaces W5c, the client login in W8a, the client reader
+ * in W8d.) Reads run inside withViewer with a real login, in the
  * shim's workspace scope: a member who is a user of Team, and a second
  * member who is a user of a Clients workspace only, read at the client
  * level.
@@ -28,7 +28,6 @@ describe.skipIf(!URL)('folder-shared items in the Library and at the client leve
   let m: Db;
   let tree: typeof import('./tree/index');
   let library: typeof import('./member-library');
-  let shared: typeof import('./client-shared');
   let memberApps: typeof import('./member-apps');
   let chat: typeof import('./chat-images');
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -117,7 +116,6 @@ describe.skipIf(!URL)('folder-shared items in the Library and at the client leve
     m = await import('@mantle/db');
     tree = await import('./tree/index');
     library = await import('./member-library');
-    shared = await import('./client-shared');
     memberApps = await import('./member-apps');
     chat = await import('./chat-images');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -226,21 +224,6 @@ describe.skipIf(!URL)('folder-shared items in the Library and at the client leve
     expect(await opens('client', ids.teamInClient)).toBe(true);
     expect(await opens('client', ids.adminInTeam)).toBe(false);
     expect(await opens('client', ids.publicInTeam)).toBe(false);
-  });
-
-  it('keeps a folder-shared item named in the client-level redaction, and hides the rest', async () => {
-    const readable = await as('client', () =>
-      shared.clientReadable(brain, [
-        ids.adminInClient,
-        ids.teamInClient,
-        ids.adminInTeam,
-        ids.adminPlain,
-      ]),
-    );
-    expect([...readable.keys()].sort()).toEqual(
-      [ids.adminInClient, ids.teamInClient].map((i) => i.toLowerCase()).sort(),
-    );
-    expect(readable.get(ids.adminInClient)).toBe(title(ids.adminInClient));
   });
 
   it('drops them again when the workspaces no longer hold the folder', async () => {

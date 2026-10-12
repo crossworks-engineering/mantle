@@ -1,17 +1,9 @@
-import { getMemberOr401 } from '@/lib/auth';
-import { memberToolBroker } from '@/lib/app-runner';
+import { MEMBER_ROUTES_GONE_MESSAGE, gone } from '@/lib/gone';
 
 /**
- * POST /api/member/apps/:id/tool-broker: a member's run of an app calls
- * host.tools.call() (member logins Phase 4b; the team rules are in
- * lib/app-runner.ts).
- *
- * @deprecated Workspaces W7e: POST /api/apps/:id/tool-broker serves every
- * login. Kept this release for an older UI.
+ * POST /api/member/apps/:id/tool-broker
+ * Removed in workspaces W8d (deprecated since W7e): every login runs an app
+ * through POST /api/apps/:id/tool-broker (lib/app-runner.ts, the same
+ * rules). The member guard runs first, then 410 `{ error, code: 'gone' }`.
  */
-export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
-  const { id } = await ctx.params;
-  return memberToolBroker(req, member, id);
-}
+export const POST = gone('member', MEMBER_ROUTES_GONE_MESSAGE);

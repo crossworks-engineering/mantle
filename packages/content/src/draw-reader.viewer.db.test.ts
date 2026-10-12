@@ -8,13 +8,12 @@
  *    member whose workspace holds only the client items neither;
  *  - the draft flag is only asked where drafts are readable (the workspace
  *    role holds no draft columns, so asking there would fail the whole read);
- *  - the snapshot's inlined images follow each reader's own image rule: the
- *    owner keeps all, a member and a reader on its scope's rule keep the team
- *    file and lose the admin one, a reader on the client rule (the second
- *    member) keeps only the client file its workspace holds.
+ *  - the snapshot's inlined images follow the scope's image rule: the owner
+ *    keeps all, a member keeps the team file and loses the admin one, the
+ *    second member keeps only the client file its workspace holds.
  *
- * There is no client login since W8a; the client LEVEL and the draw
- * reader's client rule stay, read here by a member login.
+ * There is no client login since W8a, and the draw reader reads in the
+ * current scope only since W8d (no member or client reader of its own).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/draw-reader.viewer.db.test.ts
  */
@@ -158,7 +157,7 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   it('owner: every drawing, the draft flag, and the snapshot with every image', async () => {
     const meta = await dr.readableDraw(anchor, d.admin);
     expect(meta).toMatchObject({ id: d.admin, hasDraft: true, hasSvg: true });
-    const out = await dr.readableDrawSvg(anchor, d.admin, { kind: 'scope' });
+    const out = await dr.readableDrawSvg(anchor, d.admin);
     expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([true, true, true]);
     expect(out?.visibleFileIds).toBeNull();
   });
@@ -166,63 +165,52 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   it('member: the team drawing without its admin image, never the admin drawing', async () => {
     await asMember(async () => {
       expect(await dr.readableDraw(anchor, d.admin)).toBeNull();
-      expect(
-        await dr.readableDrawSvg(anchor, d.admin, { kind: 'member', loginId: member }),
-      ).toBeNull();
+      expect(await dr.readableDrawSvg(anchor, d.admin)).toBeNull();
       // The draft columns are not readable in a workspace scope: the flag says false
       // instead of failing the read.
       expect(await dr.readableDraw(anchor, d.team)).toMatchObject({
         hasDraft: false,
         hasSvg: true,
       });
-      const out = await dr.readableDrawSvg(anchor, d.team, { kind: 'member', loginId: member });
+      const out = await dr.readableDrawSvg(anchor, d.team);
       expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([true, false, true]);
       expect([...(out?.visibleFileIds ?? [])].sort()).toEqual(['sceneClient', 'sceneTeam']);
     });
   });
 
-  it('a reader on its scope’s rule (an agent): the files its scope reads', async () => {
-    await asMember(async () => {
-      const out = await dr.readableDrawSvg(anchor, d.team, { kind: 'scope' });
-      expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([true, false, true]);
-    });
-  });
-
-  it('the client rule, read by the second member: only the client drawing, with only the client image', async () => {
-    const reader = { kind: 'client', loginId: second } as const;
+  it('the second member: only the client drawing, with only the client image', async () => {
     await asSecond(async () => {
       expect(await dr.readableDraw(anchor, d.team)).toBeNull();
-      expect(await dr.readableDrawSvg(anchor, d.team, reader)).toBeNull();
+      expect(await dr.readableDrawSvg(anchor, d.team)).toBeNull();
       expect(await dr.readableDraw(anchor, d.client)).toMatchObject({ hasDraft: false });
-      const out = await dr.readableDrawSvg(anchor, d.client, reader);
+      const out = await dr.readableDrawSvg(anchor, d.client);
       expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([false, false, true]);
     });
   });
 
-  it('a reader that is not the scope still gets its own rule (fail closed)', async () => {
-    // A reader on the client rule, on an owner path: that rule, not everything.
-    const out = await dr.readableDrawSvg(anchor, d.client, { kind: 'client', loginId: second });
-    expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([false, false, true]);
+  it('the byte routes’ SVG (scopedDrawSvg) keeps the same images as the reader', async () => {
+    await asMember(async () => {
+      const out = await dr.scopedDrawSvg(anchor, d.team, svg);
+      expect([out.includes(TEAM), out.includes(ADMIN), out.includes(CLIENT)]).toEqual([
+        true,
+        false,
+        true,
+      ]);
+    });
   });
 
   it('audit M3: the text carries only the words of images the reader may see', async () => {
     // The owner reads the stored text, every image's words in it.
-    expect(await dr.readableDrawText(anchor, d.admin, { kind: 'scope' })).toBe(storedText);
+    expect(await dr.readableDrawText(anchor, d.admin)).toBe(storedText);
     await asMember(async () => {
-      const text = await dr.readableDrawText(anchor, d.team, { kind: 'member', loginId: member });
+      const text = await dr.readableDrawText(anchor, d.team);
       expect(text).toContain('Ingest');
       expect(text).toContain('TEAMWORDS');
       expect(text).toContain('CLIENTWORDS');
       expect(text).not.toContain('ADMINWORDS');
-      const agent = await dr.readableDrawText(anchor, d.team, { kind: 'scope' });
-      expect(agent).toContain('TEAMWORDS');
-      expect(agent).not.toContain('ADMINWORDS');
     });
     await asSecond(async () => {
-      const text = await dr.readableDrawText(anchor, d.client, {
-        kind: 'client',
-        loginId: second,
-      });
+      const text = await dr.readableDrawText(anchor, d.client);
       expect(text).toContain('CLIENTWORDS');
       expect(text).not.toMatch(/TEAMWORDS|ADMINWORDS/);
     });

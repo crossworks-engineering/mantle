@@ -1,8 +1,8 @@
 /**
  * The realtime bridge turns a `needs_you_changed` NOTIFY (migration 0186)
  * into an owner change typed `needs_you`, for the owner live stream only:
- * the member stream's subscribers (subscribeSpaceItems) never receive it,
- * and /api/realtime passes it only to a session of the same owner. The
+ * /api/realtime passes it only to a session of the same owner (the member
+ * stream carries no events since W8d). The
  * Postgres LISTEN is faked; the bridge and the route filter are the real code.
  */
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -35,12 +35,10 @@ describe('needs_you_changed on the realtime bridge', () => {
     await stop?.();
   });
 
-  it('reaches owner subscribers as `needs_you`, never the member stream', async () => {
+  it('reaches owner subscribers as `needs_you`', async () => {
     const rt = await import('./realtime');
     const owner: unknown[] = [];
-    const member: unknown[] = [];
     const offOwner = await rt.subscribeRealtime((c) => owner.push(c));
-    const offMember = await rt.subscribeSpaceItems((c) => member.push(c));
     stop = globalThis.__mantleRealtime?.stop ?? null;
 
     const fire = h.handlers.get('needs_you_changed');
@@ -48,9 +46,7 @@ describe('needs_you_changed on the realtime bridge', () => {
     fire!(OWNER);
     fire!(''); // a payload with no owner is dropped
     expect(owner).toEqual([{ ownerId: OWNER, type: 'needs_you', id: '' }]);
-    expect(member).toEqual([]);
     offOwner();
-    offMember();
   });
 
   it('/api/realtime sends it to the same owner only', async () => {

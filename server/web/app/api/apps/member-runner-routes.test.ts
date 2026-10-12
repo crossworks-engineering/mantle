@@ -1,12 +1,15 @@
 /**
- * The member app routes (member logins Phase 4b, plan v3.1 section 4a),
- * without a database: the lookups and the tool rules are stood in, so these
- * pin what the ROUTES must do with them. The tool broker dispatches on the
- * team role and a team surface that names the login; the db broker checks the
- * app before it touches SQLite; the frame opens only for a member ticket and
- * only the published build; the owner frame (drafts) refuses a member ticket.
- * The rules themselves are proven on Postgres in
- * packages/{content,tools}/src/member-app*.viewer.db.test.ts.
+ * A member's run of an app on the shared runner, /api/apps/:id (member logins
+ * Phase 4b, plan v3.1 section 4a; every login since workspaces W7e, the
+ * member's own /api/member/apps routes 410 since W8d), without a database:
+ * the lookups and the tool rules are stood in, so these pin what the ROUTES
+ * must do with them. The tool broker dispatches on the team role and a team
+ * surface that names the login; the db broker checks the app before it
+ * touches SQLite; the frame opens a member ticket only on the published
+ * build. The rules themselves are proven on Postgres in
+ * packages/{content,tools}/src/member-app*.viewer.db.test.ts. Also: the
+ * removed member app, file and drawing routes answer 410, and the member
+ * home (kept) reads on the team role.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,8 +18,6 @@ const LOGIN = '22222222-2222-4222-8222-222222222222';
 const APP = '77777777-7777-4777-8777-777777777777';
 const OTHER_APP = '88888888-8888-4888-8888-888888888888';
 const PUBLISHED = { storageKey: 'apps/published.js', ok: true };
-// The author's personal space a member-built app lives in (team apps Phase 3).
-const SPACE = '44444444-4444-4444-8444-444444444444';
 
 const h = vi.hoisted(() => ({
   runnable: true,
@@ -43,9 +44,6 @@ const h = vi.hoisted(() => ({
   synced: 0,
   rendered: [] as string[],
   frameViewers: [] as unknown[],
-  // A member-built app the member may run (theirs, or shared with the team);
-  // null = none. `frozen` = under review.
-  spaceApp: null as null | { frozen: boolean },
   // Who each withViewer call acted for.
   viewers: [] as unknown[],
 }));
@@ -67,19 +65,29 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
 });
 
-vi.mock('@/lib/auth', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getMemberOr401: vi.fn(async () => ({
+vi.mock('@/lib/auth', async (importOriginal) => {
+  const member = () => ({
     role: 'member',
     loginId: LOGIN,
     anchorId: ANCHOR,
-    spaceId: '66666666-6666-4666-8666-666666666666',
     email: 'pat@example.invalid',
     displayName: h.displayName,
     contactId: null,
-  })),
-  memberLoginActive: vi.fn(async () => h.loginActive),
-}));
+  });
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    // The shared runner's guard: this caller is a member login.
+    getOwnerOr401WithLogin: vi.fn(async () => ({
+      kind: 'member',
+      user: { id: ANCHOR, email: 'pat@example.invalid', actor: { id: LOGIN } },
+      source: 'web',
+      member: member(),
+    })),
+    getMemberOr401: vi.fn(async () => member()),
+    getMemberForAsset: vi.fn(async () => member()),
+    memberLoginActive: vi.fn(async () => h.loginActive),
+  };
+});
 vi.mock('@mantle/content', async (importOriginal) => {
   const { currentViewerLevel } = await import('@mantle/db');
   const read = <T>(fn: string, value: T) => {
@@ -112,22 +120,6 @@ vi.mock('@mantle/content', async (importOriginal) => {
           }
         : null;
     }),
-    getRunnableSpaceApp: vi.fn(async (_login: string, id: string) =>
-      h.spaceApp
-        ? {
-            id,
-            title: 'Mine',
-            icon: null,
-            color: null,
-            ownerId: SPACE,
-            manifest: { toolSlugs: h.toolSlugs },
-            publishedBuild: PUBLISHED,
-            dataReadOnly: h.spaceApp.frozen,
-            mine: true,
-            reviewState: h.spaceApp.frozen ? 'submitted' : 'draft',
-          }
-        : null,
-    ),
     loadProfilePreferences: vi.fn(async () => ({ siteName: 'Brain', teamHubAppId: h.homeAppId })),
     resolveMemberHomeApp: vi.fn(async (_anchor: string, id: string | undefined) =>
       read(
@@ -241,7 +233,6 @@ let dbBroker: Handler;
 let ticketRoute: Handler;
 let frame: Handler;
 let ownerFrame: Handler;
-let listRoute: () => Promise<Response>;
 let homeRoute: () => Promise<Response>;
 let verdictMock: ReturnType<typeof vi.fn>;
 let tokens: typeof import('@/lib/auth/tokens');
@@ -256,9 +247,8 @@ beforeAll(async () => {
   dbBroker = (await import('./[id]/db-broker/route')).POST;
   ticketRoute = (await import('./[id]/frame-ticket/route')).POST;
   frame = (await import('./[id]/frame/route')).GET;
-  ownerFrame = (await import('../../apps/[id]/frame/route')).GET;
-  listRoute = (await import('./route')).GET;
-  homeRoute = (await import('../home/route')).GET;
+  ownerFrame = frame;
+  homeRoute = (await import('../member/home/route')).GET;
   verdictMock = vi.mocked((await import('@mantle/tools')).appToolVerdict) as never;
   tokens = await import('@/lib/auth/tokens');
 }, 60_000);
@@ -286,7 +276,6 @@ beforeEach(() => {
   h.synced = 0;
   h.rendered.length = 0;
   h.frameViewers.length = 0;
-  h.spaceApp = null;
   h.viewers.length = 0;
 });
 
@@ -399,10 +388,9 @@ describe('member tool broker', () => {
 describe('a member-built app (team apps Phase 3)', () => {
   // Since W6b such an app is a brain item in its author's private workspace,
   // found by the one lookup in the login's scope; the space-app lookup on the
-  // system pool went with W7e.
-  it('is not looked up on the system pool any more: what the scope misses is a 404', async () => {
+  // system pool went with W7e, its code in W8d.
+  it('is not looked up on the system pool: what the scope misses is a 404', async () => {
     h.runnable = false;
-    h.spaceApp = { frozen: false };
     const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
     expect(res.status).toBe(404);
     expect(h.dbCalls).toEqual([]);
@@ -476,7 +464,7 @@ describe('member db broker', () => {
 
 describe('member frame', () => {
   const frameReq = (ticket: string, id = APP) =>
-    new Request(`http://x/api/member/apps/${id}/frame?t=${encodeURIComponent(ticket)}`);
+    new Request(`http://x/api/apps/${id}/frame?t=${encodeURIComponent(ticket)}`);
 
   it('mints a ticket that names the login', async () => {
     const res = await ticketRoute(post({}), params());
@@ -595,35 +583,38 @@ describe('member frame', () => {
   });
 });
 
-describe('member app list and home', () => {
-  it('lists the apps on the team role, with the home app id only while runnable', async () => {
-    h.homeAppId = APP;
-    const body = (await (await listRoute()).json()) as { apps: unknown[]; homeAppId: string };
-    expect(body.apps).toHaveLength(2);
-    expect(body.homeAppId).toBe(APP);
-    expect(h.reads.every((r) => r.level === 'team')).toBe(true);
-    expect(h.viewers.length).toBeGreaterThan(0);
-    expect(h.viewers.every((v) => JSON.stringify(v) === JSON.stringify({ login: LOGIN }))).toBe(
-      true,
-    );
-    h.runnable = false;
-    expect(((await (await listRoute()).json()) as { homeAppId: unknown }).homeAppId).toBeNull();
+describe('the removed member routes (W8d)', () => {
+  it('the member app, file and drawing routes answer 410 gone to a member', async () => {
+    const gone = [
+      await (await import('../member/apps/route')).GET(),
+      await (await import('../member/apps/[id]/tool-broker/route')).POST(),
+      await (await import('../member/apps/[id]/db-broker/route')).POST(),
+      await (await import('../member/apps/[id]/frame-ticket/route')).POST(),
+      await (await import('../member/files/[id]/route')).GET(new Request('http://x/f')),
+      await (await import('../member/draws/[id]/svg/route')).GET(new Request('http://x/d')),
+    ];
+    for (const res of gone) {
+      expect(res.status).toBe(410);
+      expect(await res.json()).toMatchObject({ code: 'gone' });
+    }
+    // Nothing ran: no lookup, no tool, no SQLite.
+    expect(h.lookups).toEqual([]);
+    expect(h.dispatched).toEqual([]);
+    expect(h.dbCalls).toEqual([]);
   });
 
-  it('adds the folders of those apps, from the launcher read as a member', async () => {
-    const body = (await (await listRoute()).json()) as Record<string, unknown>;
-    // The fields an older client reads are still there, unchanged.
-    expect(Object.keys(body).sort()).toEqual(['apps', 'folders', 'homeAppId']);
-    expect(body.apps).toHaveLength(2);
-    expect(body.folders).toEqual([
-      { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
-    ]);
-    // The route hands no path to anything: the launcher is asked for the
-    // team reader, on the admin pool (it scopes its own reads; the rule is
-    // proven on Postgres in packages/content/src/app-folders.viewer.db.test.ts).
-    expect(h.launcherReads).toEqual([{ level: 'admin', reader: 'team', loginId: LOGIN }]);
+  it('the member frame keeps its ticket guard, then answers 410 and renders nothing', async () => {
+    const memberFrame = (await import('../member/apps/[id]/frame/route')).GET;
+    const req = (t: string) =>
+      new Request(`http://x/api/member/apps/${APP}/frame?t=${encodeURIComponent(t)}`);
+    expect((await memberFrame(new Request('http://x/f'), params())).status).toBe(401);
+    const t = tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: APP, loginId: LOGIN });
+    expect((await memberFrame(req(t), params())).status).toBe(410);
+    expect(h.rendered).toEqual([]);
   });
+});
 
+describe('member home', () => {
   it('gives no hub data when nothing is pinned, and skips the hub reads', async () => {
     const body = await (await homeRoute()).json();
     expect(body).toEqual({ homeApp: null, hub: null });

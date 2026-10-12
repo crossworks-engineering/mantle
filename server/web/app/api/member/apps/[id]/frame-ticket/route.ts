@@ -1,17 +1,9 @@
-import { getMemberOr401 } from '@/lib/auth';
-import { memberFrameTicket } from '@/lib/app-runner';
+import { MEMBER_ROUTES_GONE_MESSAGE, gone } from '@/lib/gone';
 
 /**
- * POST /api/member/apps/:id/frame-ticket: the seconds-lived ticket the
- * sandbox iframe presents to the frame route (member logins Phase 4b).
- *
- * @deprecated Workspaces W7e: every login runs an app through POST
- * /api/apps/:id/frame-ticket (lib/app-runner.ts, the same rules). Kept this
- * release for an older UI; it answers 410 once the UI pair has moved.
+ * POST /api/member/apps/:id/frame-ticket
+ * Removed in workspaces W8d (deprecated since W7e): every login runs an app
+ * through POST /api/apps/:id/frame-ticket (lib/app-runner.ts, the same
+ * rules). The member guard runs first, then 410 `{ error, code: 'gone' }`.
  */
-export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
-  const { id } = await ctx.params;
-  return memberFrameTicket(member, id);
-}
+export const POST = gone('member', MEMBER_ROUTES_GONE_MESSAGE);

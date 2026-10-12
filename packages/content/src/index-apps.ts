@@ -52,7 +52,7 @@ export {
   readableDraw,
   readableDrawText,
   readableDrawSvg,
-  type DrawReader,
+  scopedDrawSvg,
   type ReadableDraw,
 } from './draw-reader';
 export {
@@ -155,29 +155,6 @@ export {
   type LoginAppCard,
   type MemberAppState,
 } from './member-brain-apps';
-
-export {
-  SpaceAppError,
-  authorSpaceApp,
-  createSpaceApp,
-  deleteSpaceApp,
-  getRunnableSpaceApp,
-  listDeletedSpaceApps,
-  listSpaceApps,
-  recallSpaceApp,
-  undeleteSpaceApp,
-  setSpaceAppSharing,
-  spaceAppDataReadOnly,
-  submitSpaceApp,
-  withAuthorWrite,
-  type RunnableSpaceApp,
-  type SpaceAppAuthor,
-  type SpaceAppCard,
-  type DeletedSpaceApp,
-  type SpaceAppDeleted,
-  type SpaceAppErrorCode,
-  type SpaceAppState,
-} from './member-space-apps';
 
 export {
   APP_NAV_CHANGED_CHANNEL,

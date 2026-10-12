@@ -11,7 +11,7 @@
  * login (there is no client login since workspaces W8a).
  */
 import { NextResponse } from '@/server/http-compat';
-import { getLoginOr401, getMemberOr401, getOwnerOr401 } from '@/lib/auth';
+import { getLoginOr401, getMemberForAsset, getMemberOr401, getOwnerOr401 } from '@/lib/auth';
 
 /** Who the removed route served. */
 export type GoneGuard = 'owner' | 'member' | 'any';
@@ -40,6 +40,13 @@ export const MCP_LOGINS_GONE_MESSAGE =
 export const LEVELS_GONE_MESSAGE =
   'Agents and tool groups have no level any more: an assistant reads its workspace. Update the app.';
 
+/** A member's own byte and app routes (/api/member/files/:id,
+ *  /api/member/draws/:id/svg, /api/member/apps*), deprecated in workspaces
+ *  W7e and removed in W8d: every login reads bytes on /api/files/files/:id
+ *  and /api/draws/:id/svg, and runs an app on /api/apps/:id, in its scope. */
+export const MEMBER_ROUTES_GONE_MESSAGE =
+  'This route moved: files, drawings and apps open from the normal routes. Update the app.';
+
 /** The 410 body every removed route answers. */
 export function goneResponse(error: string = GONE_MESSAGE): NextResponse {
   return NextResponse.json({ error, code: 'gone' }, { status: 410 });
@@ -63,4 +70,15 @@ async function guard(kind: GoneGuard): Promise<Response | null> {
  */
 export function gone(kind: GoneGuard, error?: string): () => Promise<Response> {
   return async () => (await guard(kind)) ?? goneResponse(error);
+}
+
+/**
+ * A handler for a removed member BYTE route: its old guard (a member session,
+ * or a member `?at=` asset token an <img> src carries) first, then 410.
+ */
+export function goneForMemberAsset(error?: string): (req: Request) => Promise<Response> {
+  return async (req) => {
+    const member = await getMemberForAsset(req);
+    return member instanceof Response ? member : goneResponse(error);
+  };
 }
