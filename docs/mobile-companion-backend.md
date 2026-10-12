@@ -650,7 +650,9 @@ and nothing else.
 | `review`  | `Accepted`, `Returned`, or `With an admin`                                      | the item's title; for `Accepted`, the title it was accepted under                                               | `/portal/items/<id>`, or `/portal/items` when taken                            | `itemId`, `state`: `accepted`, `returned`, `taken` |
 
 The `comment` kind is no longer sent (the brain has no comments since
-2026-10-09). Owner pushes keep their links (`/chat/<slug>`, `/pending`,
+2026-10-09), and no `review` push is sent now either: review went in
+workspaces W5c (no Accept, Return or Take over since), though the kind and
+its trigger stay. Owner pushes keep their links (`/chat/<slug>`, `/pending`,
 `/team-admin?...`) and carry no `kind`.
 
 An event reminder delivered on the mobile channel is an owner assistant turn,
@@ -907,8 +909,9 @@ dropped).
   author's own item, by the title it had when taken; comments: none, the
   brain has no comments and the client logins are gone). An event older than 30 minutes
   tells nobody (a backfill must never page people).
-- A bundle (Accept and Take over change every item in one transaction) is
-  one push: the worker gathers a login's review events for 750 ms.
+- A bundle (Accept and Take over changed every item in one transaction,
+  until review went in W5c) is one push: the worker gathers a login's
+  review events for 750 ms.
 - The 30-minute freshness check runs on the database's clock, not the
   worker's.
 - Bounds on one send: every relay call times out after 10 seconds, one send

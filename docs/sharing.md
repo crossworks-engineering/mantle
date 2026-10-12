@@ -130,8 +130,9 @@ them through without a session cookie.
   share serves the file. An embed added after the link was made is not
   served until someone ticks it. `GET /s/[token]/draw/[drawId]` (a drawing embedded in a shared
   page) and `GET /s/[token]/draw` (a shared drawing) apply the same rule to
-  the drawing and to every image its snapshot places: one image above the
-  link's levels keeps the snapshot off the link, as the snapshot carries it.
+  the drawing and to every image its snapshot places: one image that is not
+  on the link's served list keeps the snapshot off the link, as the snapshot
+  carries it.
   Streams via
   `readFileById` with content-type + range support (video/audio seeking) +
   cache headers. Anything outside the set → 404.
@@ -314,11 +315,12 @@ that message gets in. Send them apart. Revoke and regenerate are one click.
 | `DELETE /api/contacts/:id/shares`                                 | Revoke all: no level change, sharing stays on                                        |
 | `POST /api/shares/contacts` `{ nodeId, contactIds[], canWrite? }` | One share per contact (idempotent per item and contact)                              |
 | `PATCH /api/shares/:id` `{ canWrite }`                            | "Can write" on a contact share of an app                                             |
-| `DELETE /api/shares/:id`                                          | Revoke one (no level change for a contact share)                                     |
+| `DELETE /api/shares/:id`                                          | Revoke one (no grant changes for a contact share)                                    |
 
-`GET /api/access/nodes/:id` lists `contactShares`; Shared links
-(`/api/shares/all`, `/api/team-admin/shares`) name each share's contact;
-`access_get` shows them read only. No agent tool makes a contact share
+`access_get` lists an item's contact shares, read only, next to its
+grants (`GET /api/access/nodes/:id`, which listed `contactShares`, answers
+410 since W5b2); Shared links (`/api/shares/all`,
+`/api/team-admin/shares`) name each share's contact. No agent tool makes a contact share
 (v1). The contract types are in `@mantle/client-types`
 (`dto/contact-shares.ts`). Not built in v1: folder contact shares, a "send
 link by email" button.

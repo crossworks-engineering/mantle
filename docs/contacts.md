@@ -171,8 +171,8 @@ team (docs/sharing.md section 4b has the full rules).
 - **The contact DTO** carries `sharing: { enabledAt, lastUsedAt, locked,
   shareCount } | null` (null: sharing off).
 - **Deleting a contact** removes its code row and every share made for it
-  (`ON DELETE CASCADE`), so its links stop at once. No item's level
-  changes. Its trail rows in `share_access_log` stay, with the share and
+  (`ON DELETE CASCADE`), so its links stop at once. No item's grants
+  change. Its trail rows in `share_access_log` stay, with the share and
   contact ids set NULL.
 
 Items are shared from the item: Share, "Share with contact", a searchable

@@ -71,12 +71,11 @@ each with the crumbs of where it lives, so a result can be opened in place.
 An empty `q` is the A to Z view: every item of the kind by name, paged the
 same way, and no folders.
 
-The tree's filter menu narrows the same search: `level=` (admin, team, client,
-public) and `tag=` keep only the items read at that level or carrying that
-tag, together with any `q`. A filtered search lists items only; it is a
-question about items, not about where they sit. The level filter uses the
-level an item is read at (its own level or a folder's share, the more
-open).
+The tree's filter menu narrows the same search: `ws=` (a workspace id) and
+`tag=` keep only the items that workspace reads or that carry that tag,
+together with any `q`. A filtered search lists items only; it is a
+question about items, not about where they sit. (The `level=` filter went
+with the levels in W5b2.)
 `GET /api/tree/:kind/tags` lists the tags on the kind's items, most used
 first (at most 40), leaving out the tag every item of the kind carries by
 default (every file is tagged `file`).
