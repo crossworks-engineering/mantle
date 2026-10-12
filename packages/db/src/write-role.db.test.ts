@@ -878,10 +878,11 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
   });
 
   it('a home moves only to a workspace the caller moderates (fix round 2, M-b)', async () => {
-    // The audit's case: a Moderator of H makes E's read row the home in one
-    // statement. Refused whichever row the update meets first (E's first:
-    // the check; H's first: the check on E's row after it).
-    const swap = await asKind(moderator(), async (tx) => {
+    // The audit's case: a Moderator of H who sits in E (so it reads E's
+    // row: a grant row is read through its workspace) makes E's row the
+    // home in one statement. Refused whichever row the update meets first.
+    const inE: Kind = { ...moderator(), ws: () => [ws.H, ws.E, ws.M] };
+    const swap = await asKind(inE, async (tx) => {
       await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
       return tx`update item_grants set is_home = (workspace_id = ${ws.E})
                  where node_id = ${n.n1} and workspace_id in (${ws.H}, ${ws.E})`;
@@ -889,9 +890,10 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(swap.code, swap.message).toBe('42501');
     expect(swap.message).toMatch(/not allowed to grant to that workspace/);
     // The flip alone, in an Admin scope (so the item with no home between
-    // the two statements may still be managed): a Moderator of E only.
+    // the two statements may still be managed) that reads E's row: refused
+    // without a Moderator seat in E, allowed with one.
     const flip = (mod: () => string[]) =>
-      asKind({ ...moderator(), ws: () => [ws.admin, ws.H], mod }, async (tx) => {
+      asKind({ ...moderator(), ws: () => [ws.admin, ws.H, ws.E], mod }, async (tx) => {
         await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
         await tx`update item_grants set is_home = false
                     where node_id = ${n.n1} and workspace_id = ${ws.H}`;
