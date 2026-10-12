@@ -945,7 +945,11 @@ async function itemWriteGate(
       // An Admin user with the users area may close any link of the brain
       // (docs/workspaces.md: closing only narrows). The handler asks the
       // area again (requireArea) before it revokes.
-      if (opts.admin && method.toUpperCase() === 'DELETE' && (await loginHoldsArea(loginId, 'users'))) {
+      if (
+        opts.admin &&
+        method.toUpperCase() === 'DELETE' &&
+        (await loginHoldsArea(loginId, 'users'))
+      ) {
         return null;
       }
       const r = (await db.execute(

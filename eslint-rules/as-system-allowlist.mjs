@@ -28,7 +28,10 @@ export const AS_SYSTEM_PINS = {
   'packages/runs/src/boss.ts': { count: 1, why: ['runs-scope-check'] },
   'packages/runtime/src/agent/agent-viewer.ts': { count: 6, why: ['agent-workspace'] },
   'packages/runtime/src/heartbeats/tick.ts': { count: 1, why: ['heartbeat-context'] },
-  'packages/runtime/src/heartbeats/tools.ts': { count: 2, why: ['admin-area', 'heartbeat-own-row'] },
+  'packages/runtime/src/heartbeats/tools.ts': {
+    count: 2,
+    why: ['admin-area', 'heartbeat-own-row'],
+  },
   'packages/search/src/index.ts': { count: 1, why: ['keyword-candidates'] },
   'packages/search/src/keyword-query.ts': { count: 1, why: ['lexeme-stats'] },
   'packages/telegram/src/chat-login.ts': { count: 4, why: ['login-telegram'] },
@@ -43,11 +46,20 @@ export const AS_SYSTEM_PINS = {
   'packages/tools/src/client-sourced-rules.ts': { count: 1, why: ['client-sourced-check'] },
   'packages/tools/src/client-sourced.ts': { count: 5, why: ['client-sourced-check'] },
   'packages/tools/src/dispatch.ts': { count: 3, why: ['connector-binding', 'connector-call'] },
-  'packages/tools/src/external-access.ts': { count: 8, why: ['connector-binding', 'mcp', 'workspace-resources'] },
+  'packages/tools/src/external-access.ts': {
+    count: 8,
+    why: ['connector-binding', 'mcp', 'workspace-resources'],
+  },
   'packages/tools/src/pending-notify.ts': { count: 2, why: ['login-telegram'] },
   'server/web/app/api/assistant/thread/route.ts': { count: 2, why: ['rule-in-query'] },
-  'server/web/app/api/assistant/threads/[id]/continue/route.ts': { count: 1, why: ['rule-in-query'] },
-  'server/web/app/api/assistant/threads/[id]/summarize/route.ts': { count: 1, why: ['rule-in-query'] },
+  'server/web/app/api/assistant/threads/[id]/continue/route.ts': {
+    count: 1,
+    why: ['rule-in-query'],
+  },
+  'server/web/app/api/assistant/threads/[id]/summarize/route.ts': {
+    count: 1,
+    why: ['rule-in-query'],
+  },
   'server/web/app/api/assistant/transcribe/route.ts': { count: 2, why: ['rule-in-query'] },
   'server/web/app/api/member/home/route.ts': { count: 1, why: ['owner-preferences'] },
   'server/web/lib/agent-telegram.ts': { count: 3, why: ['login-telegram'] },
@@ -66,7 +78,7 @@ export const AS_SYSTEM_PINS = {
 export const rule = pinnedRule({
   description: 'asSystem only in pinned files (plan v2, section 11).',
   message:
-    'asSystem leaves the workspace scope: run in the caller\'s scope, or pin the site with its reason in eslint-rules/as-system-allowlist.mjs (review).',
+    "asSystem leaves the workspace scope: run in the caller's scope, or pin the site with its reason in eslint-rules/as-system-allowlist.mjs (review).",
   pins: Object.fromEntries(Object.entries(AS_SYSTEM_PINS).map(([f, v]) => [f, v.count])),
   swept: (path) => isCounted(path),
   count: (text) => asSystemSites(text).count,

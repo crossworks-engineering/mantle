@@ -332,13 +332,16 @@ describe('email_page', () => {
     expect(res.ok && (res.output as { warning?: string }).warning).toBeUndefined();
   });
 
-  it("opens the link as the CALLING login, and refuses a missing surface before sending (L5)", async () => {
+  it('opens the link as the CALLING login, and refuses a missing surface before sending (L5)', async () => {
     vi.mocked(createShare).mockResolvedValue({ id: 's1', token: 'tok', mode: 'public' } as never);
     const mcp: ToolHandlerContext = {
       ownerId: 'o1',
       surface: { kind: 'owner', via: 'mcp', loginId: 'login-2' },
     };
-    const res = await page.handler({ pageId: 'p1', to: 'friend@example.com', includeLink: true }, mcp);
+    const res = await page.handler(
+      { pageId: 'p1', to: 'friend@example.com', includeLink: true },
+      mcp,
+    );
     expect(res.ok).toBe(true);
     expect(assertMayLink).toHaveBeenCalledWith('o1', 'login-2', 'p1');
     vi.mocked(sendEmail).mockClear();

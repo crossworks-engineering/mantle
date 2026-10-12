@@ -921,7 +921,8 @@ export async function resolveCreateHome(
 ): Promise<CreateHome | CreateHomeRefusal> {
   let createWs: string | null = null;
   if (o.askedWs !== undefined && o.askedWs !== null && o.askedWs !== '') {
-    if (!UUID_RE.test(o.askedWs)) return { refused: 'invalid', message: 'ws must be a workspace id.' };
+    if (!UUID_RE.test(o.askedWs))
+      return { refused: 'invalid', message: 'ws must be a workspace id.' };
     const scope = await loginScopeFor(loginId);
     const ws = o.askedWs.toLowerCase();
     if (!scope.ws.includes(ws)) {

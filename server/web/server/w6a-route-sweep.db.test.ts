@@ -135,7 +135,9 @@ type Json = Record<string, unknown>;
 const APP_RUNTIME_BUILT =
   (process.env.MANTLE_APP_RUNTIME_MANIFEST !== undefined &&
     existsSync(process.env.MANTLE_APP_RUNTIME_MANIFEST)) ||
-  existsSync(fileURLToPath(new globalThis.URL('../public/app-runtime/manifest.json', import.meta.url)));
+  existsSync(
+    fileURLToPath(new globalThis.URL('../public/app-runtime/manifest.json', import.meta.url)),
+  );
 
 /** Streams that never end, and routes that reach outside this box. Their
  *  gate is the same function as their siblings'; they are skipped here. */
@@ -277,7 +279,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         draw: ['/api/draws', { title: name }, 'draw'],
         table: ['/api/tables', { title: name }, 'table'],
         app: ['/api/apps', { name }, 'app'],
-        file: ['/api/files/files', { parentPath: 'files', filename: `${name}.txt`, content: 'x' }, 'file'],
+        file: [
+          '/api/files/files',
+          { parentPath: 'files', filename: `${name}.txt`, content: 'x' },
+          'file',
+        ],
         'files-folder': ['/api/files/folders', { parentPath: 'files', slug: name }, 'folder'],
         'tree-folder': ['/api/tree/notes/folders', { parentId: null, name }, 'folder'],
       } as Record<string, [string, Json, string]>
@@ -570,8 +576,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
             .join('/');
           const r = await call(path, mem, method);
           checked += 1;
-          if (r.status !== 404 || r.text !== '{"ok":false,"error":"not found"}' || r.outcome?.kind === 'user') {
-            failures.push(`${method} ${e.pattern} (${id === sideNote ? 'unread' : 'no row'}) ${r.status} ${r.text.slice(0, 120)}`);
+          if (
+            r.status !== 404 ||
+            r.text !== '{"ok":false,"error":"not found"}' ||
+            r.outcome?.kind === 'user'
+          ) {
+            failures.push(
+              `${method} ${e.pattern} (${id === sideNote ? 'unread' : 'no row'}) ${r.status} ${r.text.slice(0, 120)}`,
+            );
           }
         }
       }

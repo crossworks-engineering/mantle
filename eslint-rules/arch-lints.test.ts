@@ -102,7 +102,7 @@ describe('the architecture ratchets (pinned counts)', () => {
 
 describe('the counters', () => {
   it('blank comments and keep strings', () => {
-    const t = "a // x read_ws\n/* home_ws\n write_ws */ b 'http://x' \"//y\"";
+    const t = 'a // x read_ws\n/* home_ws\n write_ws */ b \'http://x\' "//y"';
     const s = stripComments(t);
     expect(s.split('\n')).toHaveLength(3);
     expect(s).not.toMatch(/read_ws|home_ws|write_ws/);
@@ -128,14 +128,19 @@ describe('the counters', () => {
     expect(listLiterals(src)).toEqual(["['a', 'b']", "[['x', 1], ['y', 2]]"]);
     const slugs = new Set(['note_create', 'page_create', 'task_create']);
     expect(
-      toolPolicyLists("const S = new Set(['note_create', 'page_create', 'task_create', 'x']);", slugs),
+      toolPolicyLists(
+        "const S = new Set(['note_create', 'page_create', 'task_create', 'x']);",
+        slugs,
+      ),
     ).toEqual([3]);
     expect(routePolicyLists("const R = ['GET /api/a', 'POST /api/b', '/api/c'];")).toEqual([3]);
     expect(routePolicyLists("const R = ['GET /api/a', 'x'];")).toEqual([]);
   });
 
   it('count guard calls and know a route file', () => {
-    expect(guardCalls('const u = await getOwnerOr401();\n// getMemberOr401()\ngetLoginOr401();')).toBe(2);
+    expect(
+      guardCalls('const u = await getOwnerOr401();\n// getMemberOr401()\ngetLoginOr401();'),
+    ).toBe(2);
     expect(isRouteFile('server/web/app/api/pages/route.ts')).toBe(true);
     expect(isRouteFile('server/web/lib/pages.ts')).toBe(false);
   });
@@ -172,15 +177,17 @@ describe('the editor rules', () => {
   });
 
   it('flag asSystem in an unpinned file, and allow a pinned file up to its pin', () => {
-    const [pinned, pin] = Object.entries(
-      AS_SYSTEM_PINS as Record<string, { count: number }>,
-    )[0]!;
+    const [pinned, pin] = Object.entries(AS_SYSTEM_PINS as Record<string, { count: number }>)[0]!;
     const calls = (n: number) =>
       Array.from({ length: n }, () => "asSystem(() => 1, 'x');").join('\n');
     tester.run('as-system-allowlist', asSystemRule, {
       valid: [{ code: calls(pin.count), filename: `/r/${pinned}` }],
       invalid: [
-        { code: calls(1), filename: '/r/packages/search/src/new.ts', errors: [{ messageId: 'over' }] },
+        {
+          code: calls(1),
+          filename: '/r/packages/search/src/new.ts',
+          errors: [{ messageId: 'over' }],
+        },
         {
           code: calls(pin.count + 1),
           filename: `/r/${pinned}`,

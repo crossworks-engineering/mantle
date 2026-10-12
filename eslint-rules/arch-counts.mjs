@@ -255,11 +255,7 @@ export function routePolicyLists(text) {
 /** Whether route policy lists are looked for in `path`: the HTTP tier's
  *  own code, not its route handlers. */
 export function routePolicySwept(path) {
-  return (
-    isCounted(path) &&
-    /^server\/web\/(lib|server)\//.test(path) &&
-    !/\/route\.ts$/.test(path)
-  );
+  return isCounted(path) && /^server\/web\/(lib|server)\//.test(path) && !/\/route\.ts$/.test(path);
 }
 
 // ── kinds ───────────────────────────────────────────────────────────────────

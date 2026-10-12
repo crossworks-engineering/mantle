@@ -291,7 +291,10 @@ describe('which login a link is opened as (A0 fix round, M1 M2 L5)', () => {
   });
 
   it('a chat that names no login is refused, never read as the owner', async () => {
-    for (const surface of [{ kind: 'web' as const }, { kind: 'telegram' as const, telegramChatId: '1' }]) {
+    for (const surface of [
+      { kind: 'web' as const },
+      { kind: 'telegram' as const, telegramChatId: '1' },
+    ]) {
       expect(errorOf(await share.handler({ id: NODE_ID }, { ownerId: 'o1', surface }))).toMatch(
         refused,
       );
