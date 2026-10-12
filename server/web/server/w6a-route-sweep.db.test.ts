@@ -28,7 +28,6 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RequestOutcome } from '@mantle/db';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
-import { isClientRoute } from '../lib/auth/client-routes';
 import { isMemberRoute } from '../lib/auth/member-routes';
 import {
   isReadRequest,
@@ -313,7 +312,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     pattern.startsWith('/api/') &&
     !isPublic(pattern) &&
     !isMemberRoute(method, pattern) &&
-    !isClientRoute(method, pattern) &&
+    !pattern.startsWith('/api/client/') &&
     !isAnyLoginRoute(method, pattern) &&
     routeClass(pattern) !== null;
 
@@ -325,7 +324,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       const cls = routeClass(e.pattern);
       const anyLogin = isAnyLoginRoute('GET', e.pattern);
       if (!anyLogin && cls?.kind !== 'content') continue;
-      if (isMemberRoute('GET', e.pattern) || isClientRoute('GET', e.pattern)) continue;
+      if (isMemberRoute('GET', e.pattern) || e.pattern.startsWith('/api/client/')) continue;
       const r = await call(concrete(e.pattern, true), owner);
       const key = `GET ${e.pattern}`;
       noteWrites('admin', key, r.writes);
@@ -386,7 +385,13 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         if (r.outcome?.kind === 'system' && r.outcome.why !== 'login-self') {
           failures.push(`${key} ran on the system pool (${r.outcome.why})`);
         }
-        if (r.outcome?.kind === 'system' && !e.pattern.startsWith('/api/auth/')) {
+        // The client portal stubs (410 to any login since W8a) run the
+        // any-login gate first, which notes the request as login-self.
+        if (
+          r.outcome?.kind === 'system' &&
+          !e.pattern.startsWith('/api/auth/') &&
+          !e.pattern.startsWith('/api/client/')
+        ) {
           failures.push(`${key} ran as login-self outside /api/auth`);
         }
         // A member route holds its own rule (withViewer per read, W5b2).

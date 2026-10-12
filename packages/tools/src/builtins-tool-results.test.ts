@@ -12,20 +12,17 @@ vi.mock('@mantle/tracing', async (importOriginal) => ({
 }));
 
 describe('resultBindingFor', () => {
-  it('binds a client and a team turn to the current trace', async () => {
+  it('binds a team turn to the current trace', async () => {
     const { resultBindingFor } = await import('./builtins-tool-results');
-    expect(resultBindingFor({ ownerId: 'o', surface: { kind: 'client', loginId: 'l' } })).toEqual({
-      traceId: 'trace-1',
-    });
     expect(resultBindingFor({ ownerId: 'o', surface: { kind: 'team', loginId: 'l' } })).toEqual({
       traceId: 'trace-1',
     });
   });
 
-  it('a client turn with no trace is bound to nothing (reads no spill)', async () => {
+  it('a team turn with no trace is bound to nothing (reads no spill)', async () => {
     const { resultBindingFor } = await import('./builtins-tool-results');
     h.trace = null;
-    expect(resultBindingFor({ ownerId: 'o', surface: { kind: 'client', loginId: 'l' } })).toEqual({
+    expect(resultBindingFor({ ownerId: 'o', surface: { kind: 'team', loginId: 'l' } })).toEqual({
       traceId: null,
     });
     h.trace = { id: 'trace-1' };

@@ -1,5 +1,5 @@
 /**
- * Login CSRF on the public /api/auth POSTs (client logins audit B15). A
+ * Login CSRF on the public /api/auth POSTs (audit B15). A
  * cross-site page must not be able to sign a victim's browser into a login
  * of the attacker's choosing (a `text/plain` form carrying a JSON body), nor
  * drive the cookie-setting routes from another site. Every JSON auth POST
@@ -9,15 +9,15 @@
  * a non-browser client that sends no Origin at all (the mobile app).
  *
  * No database: the guard runs first, so a refused request never reaches one.
- * (client-link is gone since workspaces W5c: it answers 410 to everyone.)
+ * (client-link is gone since workspaces W5c, and the email-code sign-in
+ * (client-code, client-code/verify) since W8a: each answers 410 to everyone,
+ * before any guard or work.)
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const BRAIN = 'https://brain.example.invalid';
 
 const ROUTES = [
-  ['client-code', () => import('./client-code/route')],
-  ['client-code/verify', () => import('./client-code/verify/route')],
   ['login', () => import('./login/route')],
   ['signup', () => import('./signup/route')],
   ['invite/accept', () => import('./invite/accept/route')],
@@ -87,6 +87,29 @@ describe('JSON auth POSTs refuse a cross-site form (audit B15)', () => {
       const res = await POST(post(path, headers));
       expect(res.status, JSON.stringify(headers)).toBe(403);
       expect(((await res.json()) as { reason?: string }).reason).toBe('cross-site');
+      expect(res.headers.get('set-cookie')).toBeNull();
+    }
+  });
+});
+
+describe('the email-code sign-in is gone (W8a)', () => {
+  const GONE = [
+    ['client-code', () => import('./client-code/route')],
+    ['client-code/verify', () => import('./client-code/verify/route')],
+  ] as const;
+
+  it.each(GONE)('%s: 410 code gone to every caller, no cookie', async (path, load) => {
+    const POST = (await load()).POST as Post;
+    const variants: Record<string, string>[] = [
+      { 'content-type': 'application/json' },
+      { 'content-type': 'text/plain' },
+      { 'content-type': 'application/json', origin: 'https://evil.example.invalid' },
+      { 'content-type': 'application/json', origin: BRAIN, 'sec-fetch-site': 'same-origin' },
+    ];
+    for (const headers of variants) {
+      const res = await POST(post(path, headers));
+      expect(res.status, JSON.stringify(headers)).toBe(410);
+      expect(await res.json()).toMatchObject({ code: 'gone' });
       expect(res.headers.get('set-cookie')).toBeNull();
     }
   });

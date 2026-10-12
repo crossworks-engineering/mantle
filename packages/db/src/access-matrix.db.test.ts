@@ -88,7 +88,6 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
       'public.trace_steps',
       'public.team_messages',
       'public.client_report_acks',
-      'public.client_signin_codes',
       'public.member_invites',
       'public.mobile_tokens',
       'public.oauth_access_tokens',

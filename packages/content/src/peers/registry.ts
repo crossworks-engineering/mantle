@@ -37,10 +37,9 @@ export type PeerRow = {
   hasOutboundToken: boolean;
   lastContactedAt: string | null;
   lastSeenAt: string | null;
-  /** The login this peer's token acts as on /api/mcp (0227); null = a
-   *  share-only peer. */
+  /** The login this peer's token acts as on /api/mcp (0227), in that
+   *  login's workspaces; null = a share-only peer. */
   actsAsLoginId: string | null;
-  actsAsRole: 'admin' | 'member' | 'client' | null;
   /** Whether the peer may call its login's write tools. */
   writeEnabled: boolean;
   /** Risky owner tools allowed for this peer by name. */
@@ -61,10 +60,6 @@ function rowOf(p: MantlePeer): PeerRow {
     lastContactedAt: p.lastContactedAt ? p.lastContactedAt.toISOString() : null,
     lastSeenAt: p.lastSeenAt ? p.lastSeenAt.toISOString() : null,
     actsAsLoginId: p.actsAsLoginId ?? null,
-    actsAsRole:
-      p.actsAsRole === 'admin' || p.actsAsRole === 'member' || p.actsAsRole === 'client'
-        ? p.actsAsRole
-        : null,
     // An unbound peer writes nothing, whatever it kept for a rebind (0238).
     writeEnabled: p.actsAsLoginId ? p.writeEnabled : false,
     allowedRiskyTools: p.allowedRiskyTools ?? [],
@@ -299,7 +294,7 @@ export async function setPeerAccess(
   ownerId: string,
   id: string,
   access: {
-    actsAs?: { loginId: string; role: 'admin' | 'member' | 'client' } | null;
+    actsAs?: { loginId: string } | null;
     writeEnabled?: boolean;
     allowedRiskyTools?: string[];
     /** The owner binding the peer to itself: recorded as its maker (W6b fix
@@ -325,13 +320,11 @@ export async function setPeerAccess(
   const risky = access.allowedRiskyTools ? [...new Set(access.allowedRiskyTools)] : undefined;
   if (access.actsAs !== undefined) {
     set.actsAsLoginId = access.actsAs?.loginId ?? null;
-    set.actsAsRole = access.actsAs?.role ?? null;
     // Binding it again to the login whose session end unbound it (0238,
     // lib/peer-unbind.ts) restores the Write switch and risky tools it kept;
     // any other binding starts closed, as before.
     const same = access.actsAs
-      ? sql`(${mantlePeers.endedActsAsLoginId} = ${access.actsAs.loginId}::uuid
-             and ${mantlePeers.endedActsAsRole} = ${access.actsAs.role})`
+      ? sql`(${mantlePeers.endedActsAsLoginId} = ${access.actsAs.loginId}::uuid)`
       : null;
     set.writeEnabled = !access.actsAs
       ? false
@@ -342,7 +335,6 @@ export async function setPeerAccess(
       : (risky ??
         (sql`(case when ${same} then ${mantlePeers.allowedRiskyTools} else '{}'::text[] end)` as unknown as string[]));
     set.endedActsAsLoginId = null;
-    set.endedActsAsRole = null;
   } else {
     if (access.writeEnabled !== undefined) {
       // Never on for a peer bound to nobody.

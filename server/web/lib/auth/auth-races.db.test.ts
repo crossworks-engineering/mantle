@@ -41,8 +41,7 @@ describe.skipIf(!URL)('credential races', () => {
   const third = randomUUID();
   const brain = randomUUID(); // owns the contact node
   const member = randomUUID();
-  const clientLogin = randomUUID(); // a client login (audit A15)
-  const logins = [admin, second, third, brain, member, clientLogin];
+  const logins = [admin, second, third, brain, member];
   const contact = randomUUID();
   const client = randomUUID();
 
@@ -53,7 +52,7 @@ describe.skipIf(!URL)('credential races', () => {
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     for (const id of logins) {
-      const role = id === member ? 'member' : id === clientLogin ? 'client' : 'admin';
+      const role = id === member ? 'member' : 'admin';
       await sql`insert into auth.users (id, email, password_hash, role)
                 values (${id}, ${`${tag}-${id.slice(0, 8)}@example.com`}, 'x', ${role})`;
     }
@@ -164,11 +163,9 @@ describe.skipIf(!URL)('credential races', () => {
   });
 
   // Audit A15: a bearer as the password logins mint it (no session epoch)
-  // is never a client's. A client row that somehow carries one is refused
-  // and left as it was, never rotated into a fresh 30-day token. The phone
-  // app's client token carries the epoch and does rotate
-  // (device-tokens.db.test.ts).
-  it('rotates an admin or member bearer, never a client bearer without the epoch', async () => {
+  // rotates for an admin and a member alike (there is no client login since
+  // W8a).
+  it('rotates an admin or member bearer', async () => {
     const { buildMobileToken } = await import('./tokens');
     const { POST } = await import('../../app/api/auth/token/refresh/route');
     let n = 0;
@@ -191,8 +188,8 @@ describe.skipIf(!URL)('credential races', () => {
         where user_id = ${login} and label = ${`${tag}-a15`} and revoked_at is null`;
       return { status: res.status, oldRevoked: old!.revoked_at !== null, live: live.length };
     };
+    expect(await refreshAs(admin)).toEqual({ status: 200, oldRevoked: true, live: 1 });
     expect(await refreshAs(member)).toEqual({ status: 200, oldRevoked: true, live: 1 });
-    expect(await refreshAs(clientLogin)).toEqual({ status: 401, oldRevoked: false, live: 1 });
   });
 
   it('refuses a second login on one contact', async () => {

@@ -10,7 +10,7 @@ import type { TreeKind } from '../tree';
 import type { ShellWorkspace, WorkspaceArea } from './workspaces';
 
 /** Who is signed in, by role. */
-export type ShellRole = 'admin' | 'member' | 'client';
+export type ShellRole = 'admin' | 'member';
 
 /** What this brain can do, so a client branches on capability, not version. */
 export type ShellFeatures = { recallV2: boolean };

@@ -5,9 +5,9 @@
  *    and no longer for any other role (EXECUTE revoked from PUBLIC); the
  *    client role reads no embedding config and no profile name, only the
  *    preferences.
- *  - A17: a client's personal item can never be shared with the team (a
- *    trigger refuses it, whoever writes); a member's still can.
- * Seeds its own logins and items and removes them.
+ * The client LEVEL stays (the viewer role mantle_view_client); there is no
+ * client login role since 0272, so nothing here makes a client login.
+ * Seeds its own login and item and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/client-level-fixes.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -24,9 +24,8 @@ describe.skipIf(!URL)('the client level after the audit fixes', () => {
   let anchor = '';
   const tag = `clfix${randomUUID().slice(0, 8)}`;
   const probeRole = `mantle_probe_${tag}`;
-  const client = randomUUID();
   const member = randomUUID();
-  const item = { client: randomUUID(), member: randomUUID() };
+  const item = { member: randomUUID() };
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -39,7 +38,6 @@ describe.skipIf(!URL)('the client level after the audit fixes', () => {
     anchor = await ensureTestAnchor(admin);
     await admin.unsafe(`create role "${probeRole}" nologin`);
     await admin`insert into auth.users (id, email, password_hash, role) values
-      (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client'),
       (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`;
     const space = async (login: string) =>
       (
@@ -47,17 +45,16 @@ describe.skipIf(!URL)('the client level after the audit fixes', () => {
           select id from spaces where kind = 'personal' and login_id = ${login}`
       )[0]!.id;
     await admin`insert into nodes (id, owner_id, type, title, path) values
-      (${item.client}, ${await space(client)}, 'page', ${`${tag} client draft`}, 'pages'),
       (${item.member}, ${await space(member)}, 'page', ${`${tag} member draft`}, 'pages')`;
     await admin`insert into space_items (node_id, author_login_id) values
-      (${item.client}, ${client}), (${item.member}, ${member})`;
+      (${item.member}, ${member})`;
   }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
-    await admin`delete from nodes where id in (${item.client}, ${item.member})`;
-    await admin`delete from spaces where login_id in (${client}, ${member})`;
-    await admin`delete from auth.users where id in (${client}, ${member})`;
+    await admin`delete from nodes where id = ${item.member}`;
+    await admin`delete from spaces where login_id = ${member}`;
+    await admin`delete from auth.users where id = ${member}`;
     await admin.unsafe(`drop role if exists "${probeRole}"`);
     await m?.closeDb();
   });

@@ -122,7 +122,7 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
       [admin3, 'admin'],
       [goneAdmin, 'admin'],
       [member, 'member'],
-      [client, 'client'],
+      [client, 'member'], // a second member (until W8a a client login)
     ] as const) {
       await sql`insert into auth.users (id, email, password_hash, role)
                 values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x', ${role})`;
@@ -258,7 +258,7 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
     h.sent = [];
     await loginNotify.pushToLogin({
       loginId: client,
-      role: 'client',
+      role: 'member',
       ownerId: brain,
       kind: 'review',
       title: 'Returned',
@@ -282,7 +282,7 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
     };
     expect((await loginNotify.pushToLogin({ ...chat, loginId: member })).skipped).toBe('disabled');
     expect(
-      (await loginNotify.pushToLogin({ ...chat, loginId: client, role: 'client' })).delivered,
+      (await loginNotify.pushToLogin({ ...chat, loginId: client, role: 'member' })).delivered,
     ).toBe(1);
     expect(await store.getLoginPushPrefs(member)).toEqual({
       chatReplies: false,
@@ -429,7 +429,7 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
       h.sealed = [];
       await loginNotify.pushToLogin({
         loginId: client,
-        role: 'client',
+        role: 'member',
         ownerId: brain,
         kind: 'review',
         title: 'Returned',

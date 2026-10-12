@@ -11,17 +11,16 @@ import {
 } from 'drizzle-orm/pg-core';
 
 /**
- * Inbound API keys (migration 0232, plan page 1e62e204). An admin makes a
- * named key that acts as ONE login (an admin, a member or a client) and can
- * only narrow that login's rights: `access` (read or read_write) and
+ * Inbound API keys (migration 0232, plan page 1e62e204). A login makes a
+ * named key that acts as itself, and it can only narrow that login's rights: `access` (read or read_write) and
  * `areas` (null = all). A key works as a Bearer on /api/v1/* and /api/mcp,
  * nowhere else.
  *
  * Only the SHA-256 of the secret is kept. `key_prefix` is the public part of
  * the secret (`mtlk_<prefix>_<secret>`): the lookup key and what the UI
- * shows. `login_role` is the login's role at mint: a role change or a
- * disable ends the key. A plain sign-out leaves an admin's or member's key
- * (a client's key ends with the session it was made in: `session_epoch`); a
+ * shows. A key acts as its login as it is now: it carries no role of its
+ * own (the role it was made under went in workspaces W8a, migration 0272,
+ * archive_key_roles). A disable ends it; a plain sign-out leaves it; a
  * password change, "sign out everywhere" and an admin's End sessions revoke
  * every key of the login. The FKs into `auth.users` are declared in the SQL
  * migration (Drizzle manages public.* only; see schema/auth-users.ts).
@@ -34,11 +33,9 @@ export const accessKeys = pgTable(
       .default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
     loginId: uuid('login_id').notNull(),
-    loginRole: text('login_role').notNull(),
     keyPrefix: text('key_prefix').notNull(),
     keyHash: text('key_hash').notNull(),
-    /** A client key's session epoch at mint (null for admin and member
-     *  keys): a client key ends when the client signs out. */
+    /** Unused since workspaces W8a (only a client key carried one). */
     sessionEpoch: integer('session_epoch'),
     access: text('access').notNull(),
     areas: text('areas').array(),
@@ -54,7 +51,7 @@ export const accessKeys = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: uuid('revoked_by'),
     /** The key works on /api/v1 only, never on /api/mcp (migration 0268,
-     *  W7b fix round 2): set on a member's or client's key made before the
+     *  W7b fix round 2): set on a member's key made before the
      *  per-login MCP switch went, when that login never had MCP. A new key
      *  is made without it. */
     apiOnly: boolean('api_only').notNull().default(false),

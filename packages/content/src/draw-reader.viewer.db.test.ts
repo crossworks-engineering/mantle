@@ -4,14 +4,17 @@
  * with { login }, workspaces W5b2):
  *
  *  - the drawing itself follows the reader's scope: a member reaches the
- *    drawing a workspace of theirs holds and not an admin one, a client
- *    neither;
+ *    drawing a workspace of theirs holds and not an admin one, a second
+ *    member whose workspace holds only the client items neither;
  *  - the draft flag is only asked where drafts are readable (the workspace
  *    role holds no draft columns, so asking there would fail the whole read);
  *  - the snapshot's inlined images follow each reader's own image rule: the
  *    owner keeps all, a member and a reader on its scope's rule keep the team
- *    file and lose the admin one, a client keeps only the client file its
- *    workspace holds.
+ *    file and lose the admin one, a reader on the client rule (the second
+ *    member) keeps only the client file its workspace holds.
+ *
+ * There is no client login since W8a; the client LEVEL and the draw
+ * reader's client rule stay, read here by a member login.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/draw-reader.viewer.db.test.ts
  */
@@ -35,12 +38,12 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   // see the brain's own rows. Never deleted by a test.
   let anchor = '';
   const member = randomUUID();
-  const client = randomUUID();
-  // The member's workspace holds the team and client items; the client's
-  // the client ones. Nobody but the owner holds the admin ones.
-  const ws = { members: randomUUID(), clients: randomUUID() };
+  const second = randomUUID();
+  // The member's workspace holds the team and client items; the second
+  // member's the client ones. Nobody but the owner holds the admin ones.
+  const ws = { members: randomUUID(), second: randomUUID() };
   const asMember = <T>(fn: () => Promise<T>) => m.withViewer('team', { login: member }, fn);
-  const asClient = <T>(fn: () => Promise<T>) => m.withViewer('client', { login: client }, fn);
+  const asSecond = <T>(fn: () => Promise<T>) => m.withViewer('client', { login: second }, fn);
   const d = { team: randomUUID(), admin: randomUUID(), client: randomUUID() };
   const f = { team: randomUUID(), admin: randomUUID(), client: randomUUID() };
   const fileRefs = { sceneTeam: f.team, sceneAdmin: f.admin, sceneClient: f.client };
@@ -97,14 +100,14 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${member}, ${`${tag}-pat@example.invalid`}, 'x', 'member', 'Pat'),
-        (${client}, ${`${tag}-cy@example.invalid`}, 'x', 'client', 'Cy')`);
+        (${second}, ${`${tag}-second@example.invalid`}, 'x', 'member', 'Second')`);
     await m.systemDb.execute(sqlTag`
       insert into workspaces (id, owner_id, name) values
         (${ws.members}, ${anchor}, ${`${tag} members`}),
-        (${ws.clients}, ${anchor}, ${`${tag} clients`})`);
+        (${ws.second}, ${anchor}, ${`${tag} second`})`);
     await m.systemDb.execute(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
-        (${ws.members}, ${member}), (${ws.clients}, ${client})`);
+        (${ws.members}, ${member}), (${ws.second}, ${second})`);
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${f.team}, ${anchor}, 'file', ${`${tag} team file`}, 'files', 'team'),
@@ -129,8 +132,8 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
       [ws.members, d.client],
       [ws.members, f.team],
       [ws.members, f.client],
-      [ws.clients, d.client],
-      [ws.clients, f.client],
+      [ws.second, d.client],
+      [ws.second, f.client],
     ];
     for (const [wsId, id] of holds) {
       await m.withSubtreeHeads(id, [], (tx) =>
@@ -144,10 +147,10 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
     }
     await m.systemDb.execute(
-      sqlTag`delete from workspaces where id in (${ws.members}, ${ws.clients})`,
+      sqlTag`delete from workspaces where id in (${ws.members}, ${ws.second})`,
     );
-    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${member}, ${client})`);
-    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${client})`);
+    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${member}, ${second})`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${second})`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
   }, 60_000);
@@ -185,9 +188,9 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
     });
   });
 
-  it('client: only the client drawing, with only the client image', async () => {
-    const reader = { kind: 'client', loginId: client } as const;
-    await asClient(async () => {
+  it('the client rule, read by the second member: only the client drawing, with only the client image', async () => {
+    const reader = { kind: 'client', loginId: second } as const;
+    await asSecond(async () => {
       expect(await dr.readableDraw(anchor, d.team)).toBeNull();
       expect(await dr.readableDrawSvg(anchor, d.team, reader)).toBeNull();
       expect(await dr.readableDraw(anchor, d.client)).toMatchObject({ hasDraft: false });
@@ -197,8 +200,8 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   });
 
   it('a reader that is not the scope still gets its own rule (fail closed)', async () => {
-    // A client reader on an owner path: the client rule, not everything.
-    const out = await dr.readableDrawSvg(anchor, d.client, { kind: 'client', loginId: client });
+    // A reader on the client rule, on an owner path: that rule, not everything.
+    const out = await dr.readableDrawSvg(anchor, d.client, { kind: 'client', loginId: second });
     expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([false, false, true]);
   });
 
@@ -215,10 +218,10 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
       expect(agent).toContain('TEAMWORDS');
       expect(agent).not.toContain('ADMINWORDS');
     });
-    await asClient(async () => {
+    await asSecond(async () => {
       const text = await dr.readableDrawText(anchor, d.client, {
         kind: 'client',
-        loginId: client,
+        loginId: second,
       });
       expect(text).toContain('CLIENTWORDS');
       expect(text).not.toMatch(/TEAMWORDS|ADMINWORDS/);

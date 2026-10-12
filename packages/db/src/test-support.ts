@@ -15,9 +15,10 @@
  *    sends its own sentinel on the channel and waits (with a deadline) until
  *    it arrives: Postgres delivers notifications in commit order, so by then
  *    every notification committed before it has arrived too.
- *  - setLoginRoleUnguarded: a login's role never changes to or from client
- *    (0200). A test that pins what the code does for a login that is no
- *    longer a client (or turned client) makes that state around the guard.
+ *  - setLoginRoleUnguarded: a test that pins what the code does after a
+ *    login's role changes sets the role directly. The client role guard
+ *    (0200) is gone since 0272, so this is a plain UPDATE now; the name
+ *    stays so callers need no change.
  *  - createReadOnlyRole: a read path must be served by a database that
  *    refuses writes (a read-only replica, the public demo's reader role). A
  *    test proves it by running the read as a login that can SELECT
@@ -71,21 +72,16 @@ export async function ensureTestAnchor(sql: Sql): Promise<string> {
 }
 
 /**
- * Set a login's role with the client role guard (0200) off for that one
- * UPDATE. The trigger is disabled and enabled again in one transaction, so
- * no other session ever sees it off (their writes to auth.users wait for
- * the lock meanwhile).
+ * Set a login's role. The client role guard trigger (0200) was dropped by
+ * 0272 and the role CHECK admits only 'admin' and 'member', so this is a
+ * plain UPDATE.
  */
 export async function setLoginRoleUnguarded(
   sql: Sql,
   loginId: string,
-  role: 'admin' | 'member' | 'client',
+  role: 'admin' | 'member',
 ): Promise<void> {
-  await sql.begin(async (tx) => {
-    await tx`alter table auth.users disable trigger users_client_role_guard`;
-    await tx`update auth.users set role = ${role} where id = ${loginId}`;
-    await tx`alter table auth.users enable trigger users_client_role_guard`;
-  });
+  await sql`update auth.users set role = ${role} where id = ${loginId}`;
 }
 
 /**

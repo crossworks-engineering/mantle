@@ -56,9 +56,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .where(eq(authUsers.id, targetId))
     .limit(1);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
-  // Admins and members sign in with a password; a client never does (a link
-  // or a code, client logins C2), so no password is set on one. Named roles
-  // only: an unknown role is refused too. A member's reset stays (decision
+  // Admins and members sign in with a password (the only roles since
+  // workspaces W8a). Named roles only: an unknown role is refused. A member's reset stays (decision
   // (a), 2026-09-29): it is a member's only way back in.
   if (target.role !== 'admin' && target.role !== 'member') {
     const body: PasswordResetRefused = {

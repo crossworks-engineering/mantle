@@ -48,8 +48,14 @@ describe('db-restore.sh', () => {
   });
 
   it('revokes open client sign-in links and codes and lists the client logins, once the dump has 0188 (audit B22)', () => {
-    // Gated on the dump's own ledger: an older dump has no such table.
-    const gate = script.indexOf('if [ "$LEDGER" -ge "$WHEN_0188" ]; then');
+    // Gated on the dump's own ledger (an older dump has no such table) and
+    // on the table itself (a dump from after 0272, workspaces W8a, has none).
+    expect(script).toContain(
+      `HAS_CLIENT_CODES=$(q "SELECT to_regclass('public.client_signin_codes') IS NOT NULL" || echo "")`,
+    );
+    const gate = script.indexOf(
+      'if [ "$LEDGER" -ge "$WHEN_0188" ] && [ "$HAS_CLIENT_CODES" = "t" ]; then',
+    );
     expect(gate).toBeGreaterThan(0);
     const block = script.slice(gate, script.indexOf('\nfi\n', gate));
     // Every open code, links and emailed codes alike (no kind filter).

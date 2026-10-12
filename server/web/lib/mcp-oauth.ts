@@ -151,7 +151,7 @@ export async function mintAuthCode(input: {
   ownerId: string;
   /** The consenting login (`SessionUser.actor.id`), not the anchor. */
   actorId: string;
-  /** A member's or client's session epoch at consent (0227); null for an
+  /** A member's session epoch at consent (0227); null for an
    *  admin. The grant dies when the login's epoch moves on. */
   sessionEpoch?: number | null;
   /** The login's session epoch when its session was checked for this
@@ -228,9 +228,8 @@ type GrantResult =
  * that made it.
  *
  *  - An ADMIN grant (no epoch on it): the login is still an admin.
- *  - A MEMBER's or CLIENT's grant (0227, MCP as a login): the login still has
- *    that kind of role and its session epoch is the one the grant was made
- *    under (sign out everywhere, a password change, a disable or a role
+ *  - A MEMBER's grant (0227, MCP as a login): the login is still a member
+ *    and its session epoch is the one the grant was made under (sign out everywhere, a password change, a disable or a role
  *    change ends it). The per-login MCP switch went in workspaces W7b.
  */
 export async function actorMayConnect(
@@ -264,7 +263,7 @@ async function connectingLogin(
   const may =
     sessionEpoch === null
       ? row.role === 'admin'
-      : (row.role === 'member' || row.role === 'client') && row.sessionEpoch === sessionEpoch;
+      : row.role === 'member' && row.sessionEpoch === sessionEpoch;
   return may ? { id: actorId, email: row.email } : null;
 }
 

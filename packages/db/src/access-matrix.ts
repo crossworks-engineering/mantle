@@ -447,20 +447,14 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.oauth_auth_codes'),
   none('public.oauth_access_tokens'),
   none('public.mobile_tokens'),
-  // MCP as a login (0227): the per-login switch and static token hashes.
+  // MCP as a login (0227): the per-login switch (frozen since 0268).
   none('public.mcp_login_access'),
-  none('public.mcp_login_tokens'),
   // Inbound API keys (0232): hashes of live secrets, admin pool only.
   none('public.access_keys'),
   none('public.pairing_codes'),
   none('public.member_invites'),
   // "What clients see" acknowledgements (0187): an admin's record.
   none('public.client_report_acks'),
-  // Client sign-in codes and links (0188): hashes of live secrets.
-  none('public.client_signin_codes'),
-  // Skipped code requests and the sign-in sender's held folders (0193).
-  none('public.client_signin_code_skips'),
-  none('public.client_signin_sender_folders'),
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),
@@ -580,6 +574,16 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.archive_mcp_login_access', 'system'),
   none('public.archive_tool_levels', 'system'),
   none('public.archive_mcp_cutoff', 'system'),
+  // The client logins, the email-code sign-in, the static login tokens and
+  // the role a key or a peer was made under, as they were when logins
+  // stopped carrying anything (0272, W8a). Metadata only.
+  none('public.archive_client_logins', 'system'),
+  none('public.archive_client_signin_codes', 'system'),
+  none('public.archive_client_signin_code_skips', 'system'),
+  none('public.archive_client_signin_sender_folders', 'system'),
+  none('public.archive_mcp_login_tokens', 'system'),
+  none('public.archive_key_roles', 'system'),
+  none('public.archive_peer_roles', 'system'),
 ];
 
 /** Columns no LEVEL role may ever read, whatever the matrix says (the

@@ -27,8 +27,8 @@ describe.skipIf(!URL)('workspaces dry run and reach diff (0243)', () => {
   const memberB = randomUUID();
   const gone = randomUUID();
 
-  const run = async () =>
-    (await sql<Row[]>`select * from mantle_ws_dry_run()`).map((r) => ({ ...r, n: Number(r.n) }));
+  const numbered = (rows: Row[]) => rows.map((r) => ({ ...r, n: Number(r.n) }));
+  const run = async () => numbered(await sql<Row[]>`select * from mantle_ws_dry_run()`);
   const pick = (
     rows: Awaited<ReturnType<typeof run>>,
     section: string,
@@ -138,14 +138,23 @@ describe.skipIf(!URL)('workspaces dry run and reach diff (0243)', () => {
   });
 
   it('stops when a client login exists', async () => {
-    const client = randomUUID();
-    await sql`insert into auth.users (id, email, password_hash, role) values
-      (${client}, 'c@example.invalid', 'x', 'client')`;
-    try {
-      const rows = await run();
-      expect(pick(rows, 'stop', 'client logins')[0]?.n).toBe(1);
-    } finally {
-      await sql`delete from auth.users where id = ${client}`;
-    }
+    // Since 0272 the role CHECK admits admin and member only; a brain from
+    // before it could hold a client login. The CHECK is lifted for this one
+    // transaction, which is rolled back: the brain is as it was after.
+    const rollback = new Error('rollback');
+    let rows: Awaited<ReturnType<typeof run>> = [];
+    await sql
+      .begin(async (tx) => {
+        await tx`alter table auth.users drop constraint users_role_ck`;
+        await tx`insert into auth.users (id, email, password_hash, role) values
+          (${randomUUID()}, 'c@example.invalid', 'x', 'client')`;
+        rows = numbered(await tx<Row[]>`select * from mantle_ws_dry_run()`);
+        throw rollback;
+      })
+      .catch((err: unknown) => {
+        if (err !== rollback) throw err;
+      });
+    expect(pick(rows, 'stop', 'client logins')[0]?.n).toBe(1);
+    expect(pick(await run(), 'stop')).toEqual([]);
   });
 });

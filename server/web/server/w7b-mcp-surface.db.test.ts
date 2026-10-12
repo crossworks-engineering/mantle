@@ -7,7 +7,6 @@
  *    adminOnly or of an Admin area is listed, and every listed tool, called
  *    as /api/mcp calls it, reads only the member's union (no reply names an
  *    Admin-only item or another member's private item);
- *  - a client login stays refused (plan 21.9);
  *  - an Admin user who is not the owner gets an Admin area only through the
  *    area check (its limits), listed and called;
  *  - a create without `workspace` lands by the route rule (the private
@@ -141,7 +140,6 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
   const admin2 = randomUUID(); // an Admin user who is not the owner
   const mem = randomUUID();
   const mem2 = randomUUID();
-  const cli = randomUUID();
   const tag = `w7b${randomUUID().slice(0, 6)}`;
   const MARK = {
     admin: `${tag}ADMINONLY`,
@@ -318,9 +316,6 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
-    // A client login, made after the migration (a brain with one is skipped).
-    await x(sql`insert into auth.users (id, email, password_hash, role, display_name)
-      values (${cli}, ${email('cli')}, 'x', 'client', 'Client')`);
     const ws = await x<{ id: string; admin: boolean; key: string | null }>(sql`
       select id::text, is_admin as admin, bridge_key as key from workspaces
        where owner_id = ${owner} and archived_at is null`);
@@ -473,13 +468,11 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     const minted = await keys.mintAccessKey({
       name: `${tag} key`,
       loginId: mem,
-      loginRole: 'member',
       access: 'read_write',
       areas: null,
       riskyTools: [],
       expiresAt: null,
       createdBy: mem,
-      sessionEpoch: null,
       maxLive: 50,
     });
     const keyCaller = await auth.resolveMcpCaller(
@@ -502,9 +495,9 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       values (${peerNode}, ${owner}, 'mantle_peer', ${`${tag} peer`}, 'peers')`);
     await x(sql`insert into mantle_peers
         (id, owner_id, node_id, display_name, base_url, inbound_token_hash, status, enabled,
-         acts_as_login_id, acts_as_role, write_enabled)
+         acts_as_login_id, write_enabled)
       values (${peerId}, ${owner}, ${peerNode}, ${`${tag} peer`}, 'https://peer.example.invalid',
-              ${hashToken(peerToken)}, 'active', true, ${mem}, 'member', false)`);
+              ${hashToken(peerToken)}, 'active', true, ${mem}, false)`);
     const peerCaller = await auth.resolveMcpCaller(
       new Request('http://localhost/api/mcp', {
         method: 'POST',
@@ -516,18 +509,6 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     // Write off: read-only tools only.
     for (const slug of peerListed) expect(ls.isMcpToolReadOnly(slug), slug).toBe(true);
   }, 1_800_000);
-
-  it('a client login stays refused', async () => {
-    const prepared = await ls.prepareCallerTools({
-      role: 'client',
-      anchorId: owner,
-      loginId: cli,
-      via: 'oauth',
-      write: true,
-    });
-    expect(prepared).toMatchObject({ kind: 'refused', message: ls.CLIENT_LOGIN_REFUSED });
-    expect(ls.preparedAllows(prepared, 'search')).toBe(false);
-  });
 
   it('an Admin user who is not the owner: an Admin area only through the area check', async () => {
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)

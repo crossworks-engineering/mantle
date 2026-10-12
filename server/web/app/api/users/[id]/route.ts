@@ -1,7 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq } from '@mantle/db';
-import { deleteClientComments } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
@@ -17,8 +16,8 @@ const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z
   .object({
     displayName: z.string().trim().max(120).nullable().optional(),
-    /** Never 'member' on the anchor or yourself. Never 'client': a client
-     *  login is made as one and stays one (client logins, decision 11). */
+    /** Never 'member' on the anchor or yourself (there is no client role
+     *  since workspaces W8a). */
     role: z.enum(['admin', 'member']).optional(),
     /** true = the login cannot sign in or use a session it holds. */
     disabled: z.boolean().optional(),
@@ -114,20 +113,15 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   // and its push devices (login_id, 0173) cascade (FKs); the stateless
   // session cookie dies on its next request, since getSessionUser re-checks
   // auth.users per request. The push devices are deleted first, by hand, so
-  // the relay can be told: a cascade would drop them silently.
-  //
-  // A client login (audit I5): its chat thread cascades with it, and its
-  // comments go in the same transaction (the admin's bulk comment delete),
-  // since a comment whose login is gone could no longer be found by it.
-  // Disable is how an admin ends a client and keeps that history.
-  const isClient = target.role === 'client';
-  let ended: { pushTokens: string[]; commentsDeleted: number };
+  // the relay can be told: a cascade would drop them silently. A comment
+  // keeps its author's name (the FK goes SET NULL): the role grants nothing
+  // and takes nothing (W8a).
+  let ended: { pushTokens: string[] };
   try {
     ended = await db.transaction(async (tx) => {
       const tokens = await deleteLoginSubscriptions(targetId, tx);
-      const comments = isClient ? await deleteClientComments(user.id, targetId, tx) : 0;
       await tx.delete(authUsers).where(eq(authUsers.id, targetId));
-      return { pushTokens: tokens, commentsDeleted: comments };
+      return { pushTokens: tokens };
     });
   } catch (err) {
     if (isLastAdminRefusal(err)) {
@@ -135,7 +129,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     }
     throw err;
   }
-  const { pushTokens, commentsDeleted } = ended;
+  const { pushTokens } = ended;
   await forgetRelayDevices(pushTokens);
 
   auditFireAndForget({
@@ -144,9 +138,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     action: 'user.delete',
     method: 'DELETE',
     path: `/api/users/${targetId}`,
-    detail: { targetId, targetEmail: target.email, ...(isClient ? { commentsDeleted } : {}) },
+    detail: { targetId, targetEmail: target.email },
     ...requestMetaFrom(req),
   });
 
-  return NextResponse.json(isClient ? { ok: true, commentsDeleted } : { ok: true });
+  return NextResponse.json({ ok: true });
 }

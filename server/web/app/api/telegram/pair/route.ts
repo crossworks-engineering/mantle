@@ -51,12 +51,6 @@ const Body = z
 export async function POST(req: Request) {
   const login = await getChatLoginOr401();
   if (login instanceof NextResponse) return login;
-  if (login.kind === 'client') {
-    return NextResponse.json(
-      { error: 'this login cannot pair a Telegram chat.', code: 'not_allowed' },
-      { status: 403 },
-    );
-  }
   const gate = rateLimit(`telegram-pair:${login.loginId}`, { max: 10, windowMs: 60_000 });
   if (!gate.ok) {
     return NextResponse.json(

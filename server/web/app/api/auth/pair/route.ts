@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { auditLoginMutation, getLoginOr401, loginRefused } from '@/lib/auth';
+import { auditLoginMutation, getLoginOr401 } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { publicBaseUrl } from '@mantle/content';
 import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-code';
@@ -22,7 +22,6 @@ import { issuePairCode, pairPayloadUrl, PAIR_CODE_TTL_SEC } from '@/lib/pair-cod
 export async function POST() {
   const login = await getLoginOr401();
   if (login instanceof NextResponse) return login;
-  if (login.kind === 'client') return loginRefused('client');
   await auditLoginMutation(login);
 
   const limit = rateLimit(`auth:pair-issue:${login.loginId}`, { max: 10, windowMs: 60_000 });

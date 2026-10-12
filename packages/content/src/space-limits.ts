@@ -8,7 +8,6 @@
  * from the login's row (team for an admin or a member, client for a client),
  * and these limits read that level.
  */
-import { envInt } from '@mantle/config';
 import { currentSpaceScope, inLevelScope } from '@mantle/db';
 
 export type SpaceLimits = {
@@ -50,17 +49,14 @@ export const CLIENT_SPACE_LIMITS: SpaceLimits = {
   openSubmissions: 50,
 };
 
-/** What ALL client spaces of the brain may hold together (N12), unless the
- *  box sets MANTLE_CLIENT_SPACES_TOTAL_BYTES. Code that enforces the total
- *  reads `clientSpacesTotalBytes()`, never this. */
+/** What ALL client spaces of the brain may hold together (N12). Its env
+ *  override went with the client login in workspaces W8a (no client space
+ *  takes a write since W6b). */
 export const CLIENT_SPACES_TOTAL_BYTES = 5 * 1024 * MB;
 
-/** The brain-wide client total now: MANTLE_CLIENT_SPACES_TOTAL_BYTES when it
- *  is a positive number of bytes, else 5 GB. Read on every call, so an
- *  operator raises it with an env change and a restart, no release. */
+/** The brain-wide client total: 5 GB. */
 export function clientSpacesTotalBytes(): number {
-  const n = envInt('MANTLE_CLIENT_SPACES_TOTAL_BYTES', CLIENT_SPACES_TOTAL_BYTES, 0);
-  return n > 0 ? n : CLIENT_SPACES_TOTAL_BYTES;
+  return CLIENT_SPACES_TOTAL_BYTES;
 }
 
 /** A client's page document, serialized, at most (draft and Save version;

@@ -14,7 +14,7 @@ import {
   pairingCodes,
   sql,
 } from '@mantle/db';
-import { revokeOpenClientSignins, settleSpaceOnPromotion } from '@mantle/content';
+import { settleSpaceOnPromotion } from '@mantle/content';
 import { auditKeysEnded, endLoginSessions, type SessionUser } from '@/lib/auth';
 import { auditPeersUnbound } from '@/lib/peer-unbind';
 import { releaseAssignedAgent } from '@/lib/agents';
@@ -30,7 +30,7 @@ import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
 
 export type LoginChange = {
   displayName?: string | null;
-  /** Never 'member' on the anchor or yourself. Never 'client'. */
+  /** Never 'member' on the anchor or yourself. */
   role?: 'admin' | 'member';
   disabled?: boolean;
   contactId?: string | null;
@@ -90,12 +90,12 @@ export async function applyLoginChange(
   firstInTx?: (tx: LoginTx) => Promise<void>,
 ): Promise<LoginChangeDone | LoginChangeRefusal> {
   const targetId = target.id;
-  // Any role but admin locks the login out of admin sessions (client logins
-  // C0: named, not "is it member", so a new role can never skip this).
+  // Any role but admin locks the login out of admin sessions (named, not
+  // "is it member", so a new role can never skip this).
   const lockingOut =
     (change.role !== undefined && change.role !== 'admin') || change.disabled === true;
-  // A role change touches admins and members only: to or from any other role
-  // (a client) is refused; disable the login and make a new one (decision 11).
+  // A role change touches admins and members only: a row with a role this
+  // code does not know is refused (fail closed); disable it instead.
   if (
     change.role !== undefined &&
     change.role !== target.role &&
@@ -196,11 +196,6 @@ export async function applyLoginChange(
           revokedKeyIds: endedKeyIds,
           unboundPeerIds,
         });
-        // A client's open sign-in links and emailed codes die with its
-        // sessions (audit B14): a link issued before a disable must not
-        // work after the enable, and "End sessions" must leave no way back
-        // in. Other roles hold none, so this is a no-op for them.
-        await revokeOpenClientSignins(tx, targetId);
       }
       // A member made admin: what they shared or submitted as a member goes
       // back to private drafts (audit F21). An admin's items are never team

@@ -407,13 +407,13 @@ export function ownerSurfaceLogin(surface: unknown): string | null {
   return null;
 }
 
-/** The login a tool surface names (a member's or a client's turn, and a
+/** The login a tool surface names (a member's turn, and a
  *  Telegram chat's paired login since W7d, which any workspace's assistant
  *  answers), if any. */
 export function surfaceLoginId(surface: unknown): string | null {
   const s = surface as { kind?: string; loginId?: unknown } | null | undefined;
   if (
-    (s?.kind === 'team' || s?.kind === 'client' || s?.kind === 'telegram') &&
+    (s?.kind === 'team' || s?.kind === 'telegram') &&
     typeof s.loginId === 'string' &&
     s.loginId !== ''
   ) {

@@ -284,7 +284,11 @@ fi
 # taken, and each client login's session epoch as it was then, so a session
 # an admin ended since works again. Every open link and code is revoked (an
 # admin issues new links), and the client logins are listed for review.
-if [ "$LEDGER" -ge "$WHEN_0188" ]; then
+# A dump from after 0272 (workspaces W8a) has no client login and no code
+# table: nothing to do (the migrate that runs next archives and ends the
+# client logins of an older dump).
+HAS_CLIENT_CODES=$(q "SELECT to_regclass('public.client_signin_codes') IS NOT NULL" || echo "")
+if [ "$LEDGER" -ge "$WHEN_0188" ] && [ "$HAS_CLIENT_CODES" = "t" ]; then
   REVOKED=$(q "WITH r AS (UPDATE public.client_signin_codes SET revoked_at = now()
                           WHERE used_at IS NULL AND revoked_at IS NULL RETURNING 1)
                SELECT count(*) FROM r" || echo "")

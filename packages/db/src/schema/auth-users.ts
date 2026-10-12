@@ -24,10 +24,10 @@ export const authUsers = authSchema.table('users', {
   isOwner: boolean('is_owner').notNull().default(false),
   displayName: text('display_name'),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-  /** 'admin' | 'member' (0162) | 'client' (client logins). Read from this
-   *  row on every request, never from a token. The anchor is always admin
-   *  (CHECK). Code that branches on it names every role and treats an
-   *  unknown value as no login (client logins C0: fail closed). No default
+  /** 'admin' | 'member' (0162; the client role went in W8a, 0272). Read
+   *  from this row on every request, never from a token. The anchor is
+   *  always admin (CHECK). Code that branches on it names every role and
+   *  treats an unknown value as no login (fail closed). No default
    *  (0190): an insert names the role, so a forgotten one fails instead of
    *  making an admin. */
   role: text('role').$type<LoginRole>().notNull(),
@@ -42,10 +42,10 @@ export const authUsers = authSchema.table('users', {
   sessionEpoch: integer('session_epoch').notNull().default(0),
 });
 
-/** Every role a login can hold. 'client' is typed from Phase C0 so each
- *  branch names it; the database CHECK admits it from Phase C1, and no route
- *  creates one before Phase C2. */
-export const LOGIN_ROLES = ['admin', 'member', 'client'] as const;
+/** Every role a login can hold (workspaces W8a, migration 0272: the client
+ *  role is gone). A role grants nothing: what a login reads and may do
+ *  comes from its workspaces. */
+export const LOGIN_ROLES = ['admin', 'member'] as const;
 export type LoginRole = (typeof LOGIN_ROLES)[number];
 
 export type AuthUser = typeof authUsers.$inferSelect;

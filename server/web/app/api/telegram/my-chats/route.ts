@@ -10,7 +10,6 @@ import { listMyTelegramChats } from '@/lib/agent-telegram';
 export async function GET() {
   const login = await getChatLoginOr401();
   if (login instanceof NextResponse) return login;
-  if (login.kind === 'client') return NextResponse.json({ chats: [] });
   const chats = await listMyTelegramChats(login.ownerId, login.loginId);
   return NextResponse.json({ chats });
 }

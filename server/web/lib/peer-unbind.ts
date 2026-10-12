@@ -13,7 +13,7 @@
  * restores them in one step (setPeerAccess). Nothing reads those to grant:
  * a peer acts only through acts_as_login_id.
  */
-import { eq, isNotNull, and, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db, mantlePeers } from '@mantle/db';
 import { auditFireAndForget } from './audit';
 
@@ -30,12 +30,10 @@ export async function unbindPeersActingAs(
     .update(mantlePeers)
     .set({
       endedActsAsLoginId: sql`${mantlePeers.actsAsLoginId}`,
-      endedActsAsRole: sql`${mantlePeers.actsAsRole}`,
       actsAsLoginId: null,
-      actsAsRole: null,
       updatedAt: new Date(),
     })
-    .where(and(eq(mantlePeers.actsAsLoginId, loginId), isNotNull(mantlePeers.actsAsRole)))
+    .where(eq(mantlePeers.actsAsLoginId, loginId))
     .returning({ id: mantlePeers.id });
   return rows.map((r) => r.id);
 }

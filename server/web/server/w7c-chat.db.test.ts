@@ -11,8 +11,8 @@
  *  - M1: responder_turn_record over a second Admin user's MCP lands in that
  *    user's thread.
  *  - M3: a member's thread comes back with a picture it may not see escaped.
- *  - M4: a client has no chat: no agent, a 404 turn, a 404 transcription,
- *    and the workspace engine refuses it before writing.
+ *  - M4 (a client had no chat) went with the client login in W8a: the
+ *    role check admits admin and member only, so no such row is made.
  *  - A member asking for the Admin assistant by slug gets 404.
  *  - L1: a second login reusing an Idempotency-Key gets its own turn.
  *  - L2: a member's New chat counts against its daily cap.
@@ -78,7 +78,6 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
   let threadRoute: typeof import('../app/api/assistant/thread/route');
   let threadsRoute: typeof import('../app/api/assistant/threads/route');
   let turnRoute: typeof import('../app/api/assistant/turn/route');
-  let transcribeRoute: typeof import('../app/api/assistant/transcribe/route');
   let dir = '';
   const tag = `w7cc${randomUUID().slice(0, 6)}`;
   const owner = randomUUID();
@@ -86,7 +85,6 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
   const member = randomUUID();
   const member2 = randomUUID();
   const member3 = randomUUID();
-  const client = randomUUID();
   const adminSlug = `${tag}-admin`;
   const teamSlug = `${tag}-team`;
   let adminWs = '';
@@ -103,7 +101,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   const req = (p: string, init?: RequestInit) => new Request(`http://brain.test${p}`, init);
-  const chatLogin = (kind: 'admin' | 'member' | 'client', loginId: string) => ({
+  const chatLogin = (kind: 'admin' | 'member', loginId: string) => ({
     kind,
     ownerId: owner,
     loginId,
@@ -194,7 +192,6 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     threadRoute = await import('../app/api/assistant/thread/route');
     threadsRoute = await import('../app/api/assistant/threads/route');
     turnRoute = await import('../app/api/assistant/turn/route');
-    transcribeRoute = await import('../app/api/assistant/transcribe/route');
 
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
@@ -210,10 +207,6 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       sql`select id::text, is_admin, bridge_key from workspaces where owner_id = ${owner}`,
     );
     expect(wsRows.length, JSON.stringify({ migrated, wsRows })).toBeGreaterThan(0);
-    // A client login: made after the switch (the switch skips a brain that
-    // has client logins).
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
-      values (${client}, ${`${tag}-c@example.invalid`}, 'x', false, 'client', 'Client')`);
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)
@@ -635,37 +628,6 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     );
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({ reason: 'no-chat-agent' });
-  });
-
-  it('M4: a client has no chat: no agent, 404 turn, 404 transcription, engine refuses', async () => {
-    h.login = chatLogin('client', client);
-    const bundle = (await (await threadRoute.GET(req('/api/assistant/thread'))).json()) as {
-      agent: unknown;
-      agents: unknown[];
-      messages: unknown[];
-    };
-    expect(bundle).toMatchObject({ agent: null, agents: [], messages: [] });
-    const turn = await turnRoute.POST(
-      req('/api/assistant/turn', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: 'hello', agentSlug: teamSlug }),
-      }),
-    );
-    expect(turn.status).toBe(404);
-    const form = new FormData();
-    form.set('audio', new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }));
-    const stt = await transcribeRoute.POST(
-      req('/api/assistant/transcribe', { method: 'POST', body: form }),
-    );
-    expect(stt.status).toBe(404);
-    const ra = await import('@mantle/runtime/assistant');
-    await expect(
-      ra.runTeamTurn(owner, 'hello', { loginId: client, channel: 'web' }),
-    ).rejects.toThrow(/client login has no chat/);
-    expect(await x(sql`select 1 from assistant_messages where login_id = ${client}`)).toHaveLength(
-      0,
-    );
   });
 
   it('L1: a second login reusing an Idempotency-Key gets its own turn', async () => {

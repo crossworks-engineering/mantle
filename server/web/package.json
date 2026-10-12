@@ -61,7 +61,6 @@
     "traces:reap": "tsx --env-file-if-exists=./.env.local scripts/traces-reap.ts",
     "turns:reap": "tsx --env-file-if-exists=./.env.local scripts/turns-reap.ts",
     "space:purge": "tsx --env-file-if-exists=./.env.local scripts/space-purge.ts",
-    "client-codes:reap": "tsx --env-file-if-exists=./.env.local scripts/client-codes-reap.ts",
     "extract:skip-stamp": "tsx --env-file-if-exists=./.env.local scripts/extract-skip-stamp.ts",
     "ocr:rescan": "tsx --env-file-if-exists=./.env.local scripts/ocr-rescan.ts",
     "doc:reindex": "tsx --env-file-if-exists=./.env.local scripts/doc-reindex.ts",

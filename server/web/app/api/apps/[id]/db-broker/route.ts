@@ -18,7 +18,7 @@
  * client-login), never the admin path below.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401WithLogin, loginRefused } from '@/lib/auth';
+import { getOwnerOr401WithLogin } from '@/lib/auth';
 import { memberDbBroker } from '@/lib/app-runner';
 import { getAppRuntime } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
@@ -28,7 +28,6 @@ import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-brok
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const got = await getOwnerOr401WithLogin();
   if (got instanceof Response) return got;
-  if (got.kind === 'client') return loginRefused('client');
   const { id } = await ctx.params;
   // A member's run (W7e): the app's holders decide, its data rules apply.
   if (got.kind === 'member') return memberDbBroker(req, got.member, id);

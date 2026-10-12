@@ -317,8 +317,10 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
     expect(r.out).toMatch(/pg_restore reported 2 error\(s\) this script cannot explain/);
     expect(r.out).not.toMatch(/Restore complete/);
     expect(r.out).not.toMatch(/Restore FAILED/);
-    // The steps after the checks still ran.
-    expect(r.out).toMatch(/Client sign-in: revoked \d+ open sign-in link/);
+    // The steps after the checks still ran (the client sign-in step has
+    // nothing to do on a dump from after 0272: no code table, no warning).
+    expect(r.out).not.toMatch(/could not revoke the open client sign-in/);
+    expect(r.out).toMatch(/Brain id [0-9a-f-]{36} kept/);
     expect(r.out).not.toMatch(/Next: {2}docker compose up/);
     expect(r.status, r.out).toBe(3);
     expect(shareTrigger()).not.toBe('none');

@@ -35,7 +35,6 @@ import { memberToolBroker } from '@/lib/app-runner';
 import {
   buildAppToolConfirmToken,
   getOwnerOr401WithLogin,
-  loginRefused,
   verifyAppToolConfirmToken,
   type AppToolConfirmClaims,
 } from '@/lib/auth';
@@ -58,7 +57,6 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const got = await getOwnerOr401WithLogin();
   if (got instanceof Response) return got;
-  if (got.kind === 'client') return loginRefused('client');
   const { id } = await ctx.params;
   // A member's run (W7e): the team rules, never a confirmation.
   if (got.kind === 'member') return memberToolBroker(req, got.member, id);

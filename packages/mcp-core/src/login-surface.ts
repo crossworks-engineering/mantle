@@ -9,16 +9,16 @@
  *  - LISTED by the scope: an adminOnly (or ownerOnly, outside
  *    OWNER_ONLY_IN_SCOPE) tool only where the scope holds the Admin
  *    workspace, an Admin-area tool only where that area is on;
- *  - an API key, a peer, or an old static login token is narrowed further
- *    by its write switch and the risky-tool rule (`ownerPeerAllows`), a key
- *    by its areas too (plan 7.5 and 7.6: a key or a peer acts as its login
- *    and only narrows it). The login's own OAuth consent is not;
+ *  - an API key or a peer is narrowed further by its write switch and the
+ *    risky-tool rule (`ownerPeerAllows`), a key by its areas too (plan 7.5
+ *    and 7.6: a key or a peer acts as its login and only narrows it). The
+ *    login's own OAuth consent is not;
  *  - a create takes an optional `workspace` and names where it landed
- *    (create-home.ts);
- *  - a CLIENT login stays refused (no client exists yet, plan 21.9).
+ *    (create-home.ts).
  *
  * The member and client tool sets, the per-login MCP switch and the
- * my_app_* tools went (W7b): a login carries no permission of its own.
+ * my_app_* tools went (W7b), the client login and the static login tokens
+ * in W8a: a login carries no permission of its own.
  *
  * `McpCaller` is the one context every MCP auth path resolves to, so a tool
  * that must act for the calling login reads it from the surface the call
@@ -66,7 +66,7 @@ import { keyAreasAllowTool, keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 
-export type McpLoginRole = 'admin' | 'member' | 'client';
+export type McpLoginRole = 'admin' | 'member';
 
 /** Who is on the other end of an /api/mcp request, resolved once from its
  *  bearer by the route (server/web/lib/mcp-auth.ts). */
@@ -79,7 +79,7 @@ export type McpCaller = {
   loginId: string;
   displayName?: string | null;
   /** How the bearer was issued. */
-  via: 'oauth' | 'token' | 'peer' | 'key';
+  via: 'oauth' | 'peer' | 'key';
   /** Whether write tools are offered (admin OAuth: always). */
   write: boolean;
   /** A peer or an API key bound to the owner: the risky tools the owner
@@ -233,8 +233,8 @@ function narrowed(caller: McpCaller): boolean {
 
 /**
  * What the route prepares before the server registers (the MCP adapter
- * registers synchronously): refused (a client login, plan 21.9; a login
- * that is not an Admin user on a brain not on workspaces), or the one
+ * registers synchronously): refused (a login that is not an Admin user on
+ * a brain not on workspaces), or the one
  * surface with what its scope may LIST, the login's private workspace (the
  * create rule's fallback) and the connector tools of its workspaces.
  */
@@ -252,10 +252,6 @@ export type PreparedCallerTools =
        *  narrowed like any tool. */
       connectors: Tool[];
     };
-
-/** The refusal for a client login (no client exists yet, plan 21.9). */
-export const CLIENT_LOGIN_REFUSED =
-  'A client login has no MCP tools on this brain. Ask an admin of this brain.';
 
 /** The refusal for a non-Admin login on a brain not on workspaces. */
 export const NOT_ON_WORKSPACES_REFUSED =
@@ -286,7 +282,6 @@ async function privateWorkspaceOf(loginId: string): Promise<string | null> {
 }
 
 export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCallerTools> {
-  if (caller.role === 'client') return { kind: 'refused', caller, message: CLIENT_LOGIN_REFUSED };
   const admin = caller.role === 'admin';
   const onWorkspaces = await brainOnWorkspacesNow();
   if (!onWorkspaces && !admin) {
@@ -601,10 +596,8 @@ export function registerPreparedTools(
   }
 }
 
-/** The server instructions: Recall's hook, plus where creates land. A
- *  client login is refused before it gets here. */
-export function mcpInstructionsFor(caller: McpCaller): string {
-  if (caller.role === 'client') return CLIENT_LOGIN_REFUSED;
+/** The server instructions: Recall's hook, plus where creates land. */
+export function mcpInstructionsFor(_caller: McpCaller): string {
   return `${MANTLE_MCP_INSTRUCTIONS} ${MCP_WORKSPACE_INSTRUCTIONS}`;
 }
 

@@ -13,7 +13,6 @@ import { listModeratedTelegramChats } from '@/lib/agent-telegram';
 export async function GET() {
   const login = await getChatLoginOr401();
   if (login instanceof NextResponse) return login;
-  if (login.kind === 'client') return NextResponse.json({ chats: [] });
   const chats = await listModeratedTelegramChats(login.ownerId, login.loginId);
   return NextResponse.json({ chats });
 }

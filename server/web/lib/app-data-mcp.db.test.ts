@@ -207,9 +207,9 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
       values (${peerNode}, ${anchor}, 'mantle_peer', ${`${tag} peer`}, 'peers')`;
     await sql`insert into mantle_peers
         (id, owner_id, node_id, display_name, base_url, inbound_token_hash, status, enabled,
-         acts_as_login_id, acts_as_role, write_enabled)
+         acts_as_login_id, write_enabled)
       values (${peerId}, ${anchor}, ${peerNode}, ${`${tag} peer`}, 'https://peer.example.invalid',
-              ${hashToken(peerToken)}, 'active', true, ${member}, 'member', true)`;
+              ${hashToken(peerToken)}, 'active', true, ${member}, true)`;
     const resolve = () =>
       auth.resolveMcpCaller(
         new Request('http://localhost/api/mcp', {

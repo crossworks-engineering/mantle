@@ -20,8 +20,9 @@
  * The brain is the box's brain of a scratch database of its own, migrated to
  * workspaces. The readers are real logins in the shim's workspace scope
  * (withViewer with { login }): a member who is a user of Team runs the apps
- * Team holds (its grants). The client fixture stays (a workspace of its own
- * holds some of the folders), but no client launcher reads it. The levels
+ * Team holds (its grants). A second workspace holds the client-level
+ * folder and apps, with a second member as its user; no launcher test reads
+ * it (there is no client login since W8a). The levels
  * are frozen: the fixture writes them when
  * it inserts a row. Every folder is inserted in one statement with what it
  * holds, so it never sits empty.
@@ -32,7 +33,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('the Apps launcher folders for members and clients', () => {
+describe.skipIf(!URL)('the Apps launcher folders for members', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let tree: typeof import('./tree/index');
@@ -41,10 +42,10 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   let scratch: { url: string; drop: () => Promise<void> } | null = null;
   const brain = randomUUID();
   let team = '';
-  /** A client workspace (clients are not migrated: the fixture makes one). */
-  const clients = randomUUID();
-  /** The client login, a user of `clients`. */
-  const clientLogin = randomUUID();
+  /** A second workspace, for the client-level folder and apps. */
+  const second = randomUUID();
+  /** A second member login, a user of `second`. */
+  const secondMember = randomUUID();
   const label = `apf${randomUUID().slice(0, 8)}`;
   const path = {
     shared: `apps.${label}_shared`,
@@ -97,7 +98,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     teamDeep: randomUUID(),
     /** Admin, published, in a side folder of the deep one. */
     adminSide: randomUUID(),
-    /** Admin, published, in the folder shared with clients. */
+    /** Admin, published, in the folder the second workspace holds. */
     adminInClient: randomUUID(),
     /** Team, published, at the top level. */
     teamTop: randomUUID(),
@@ -307,14 +308,14 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     ]);
 
     // Team holds these folders (and what they hold) and these apps; the
-    // client workspace holds the client folder and the two client apps.
+    // second workspace holds the client folder and the two client apps.
     for (const id of [f.shared, f.drafts, f.parent]) await holdTeam(id, true);
     for (const id of [a.teamInPlain, a.clientInPlain, a.teamDeep, a.teamTop]) {
       await holdTeam(id, true);
     }
     await m.systemDb.execute(sqlTag`
-      insert into workspaces (id, owner_id, name) values (${clients}, ${brain}, ${`${label} Clients`})`);
-    for (const id of [f.client, a.clientInPlain, a.clientInParent]) await hold(clients, id, true);
+      insert into workspaces (id, owner_id, name) values (${second}, ${brain}, ${`${label} Second`})`);
+    for (const id of [f.client, a.clientInPlain, a.clientInParent]) await hold(second, id, true);
 
     // A note in a notes folder Team holds embeds the app: an embed gives no
     // grant, so the app never runs. The folder and its note in one
@@ -344,10 +345,10 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${other}, ${`${label}-other@example.invalid`}, 'x', 'admin', null),
         (${member}, ${`${label}-pat@example.invalid`}, 'x', 'member', 'Pat Member'),
-        (${clientLogin}, ${`${label}-cy@example.invalid`}, 'x', 'client', 'Cy Client')`);
+        (${secondMember}, ${`${label}-second@example.invalid`}, 'x', 'member', 'Second Member')`);
     await m.systemDb.execute(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
-        (${team}, ${member}), (${clients}, ${clientLogin})`);
+        (${team}, ${member}), (${second}, ${secondMember})`);
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${other}, 'brain', ${other})`);
     memberSpace = (

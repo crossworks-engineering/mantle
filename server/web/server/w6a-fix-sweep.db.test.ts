@@ -27,7 +27,6 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { isReadRequest, routeClass } from '../lib/auth/route-scope';
 import { isMemberRoute } from '../lib/auth/member-routes';
-import { isClientRoute } from '../lib/auth/client-routes';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -450,7 +449,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     for (const e of manifest) {
       if (!e.methods.includes('GET') || SKIP.some((re) => re.test(e.pattern))) continue;
       if (routeClass(e.pattern)?.kind !== 'content' || !isReadRequest('GET', e.pattern)) continue;
-      if (isMemberRoute('GET', e.pattern) || isClientRoute('GET', e.pattern)) continue;
+      if (isMemberRoute('GET', e.pattern) || e.pattern.startsWith('/api/client/')) continue;
       const segs = e.pattern.split('/');
       const paths = segs.includes(':id')
         ? ids.map((id) =>

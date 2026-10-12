@@ -124,7 +124,6 @@ export {
   releaseMemberTurn,
   memberTokensSince,
   memberDailyLimits,
-  clientChatUsageSince,
   type MemberTurnLimits,
   type ClaimMemberTurnResult,
 } from './member-turn-ledger';
@@ -330,9 +329,6 @@ export {
   type SpaceItemChangeKind,
 } from './member-space-events';
 export { readThroughEmbeds, sharedViaFolder } from './shared-via';
-// Client logins: what the kept email code sign-in and the login lifecycle
-// need (the client portal and sign-in links went in workspaces W5c).
-export { clientTurnMayRun, revokeOpenClientSignins } from './client-logins';
 export { docRefIds, noteRefIds, redactClientDoc, redactClientNote } from './client-redact';
 export { clientDrawSvg, clientVisibleDrawFileIds } from './client-draw-images';
 // Client logins (C6): pictures in a member's or a client's own chat thread
@@ -357,33 +353,3 @@ export {
   type LoginNoticeMessage,
   type LoginNoticeRole,
 } from './login-notices';
-// Client logins (C2b): email sign-in codes.
-export {
-  CLIENT_CODE_CAP_REASONS,
-  CLIENT_CODE_DAILY_CAP,
-  CLIENT_CODE_IP_RETENTION_DAYS,
-  CLIENT_CODE_MAX_ATTEMPTS,
-  CLIENT_CODE_PER_EMAIL_HOURLY,
-  CLIENT_CODE_PER_EMAIL_IP_DAILY,
-  CLIENT_CODE_PER_EMAIL_IP_HOURLY,
-  CLIENT_CODE_PER_LOGIN_DAILY,
-  CLIENT_CODE_REQUEST_MAX_AGE_MS,
-  CLIENT_CODE_ROW_RETENTION_DAYS,
-  CLIENT_CODE_TTL_MS,
-  clientCodeFailureReason,
-  clientCodeStats,
-  clientCodesSentLast24h,
-  createClientEmailCode,
-  generateClientCode,
-  hashClientCode,
-  markClientEmailCodeSent,
-  reapClientSigninCodes,
-  redeemClientEmailCode,
-  revokeClientEmailCode,
-  type ClientCodeCapReason,
-  type ClientCodeDecision,
-  type ClientCodeRequest,
-  type ClientCodeSkipReason,
-  type ClientCodeStats,
-  type RedeemedClientEmailCode,
-} from './client-codes';

@@ -505,7 +505,6 @@ export async function moderateTelegramChatResponse(
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId)) {
     return { status: 400, body: { error: 'Invalid id.' } };
   }
-  if (login.kind === 'client') return { status: 404, body: { error: 'Not found.' } };
   const refused = await moderateTelegramChat({
     ownerId: login.ownerId,
     actorLoginId: login.loginId,

@@ -1,13 +1,13 @@
 /**
  * Workspaces W7d, Telegram per paired user, on a migrated scratch database:
  * the anchor, a second Admin user (A2), Team members (M a user, D a
- * Moderator), a login outside Team (X) and a client (K); the Admin
- * assistant's bot and the Team assistant's bot.
+ * Moderator) and a login outside Team (X); the Admin assistant's bot and
+ * the Team assistant's bot. (There is no client login since W8a.)
  *
  *  - Pairing: only the user pairs their own chat, with its code, for a bot
  *    whose assistant's workspace they are a user of (the web route and the
- *    telegram_pair tool); a client never pairs; the owner's Settings route
- *    no longer pairs (403).
+ *    telegram_pair tool); the owner's Settings route no longer pairs
+ *    (403).
  *  - Block and unpair: the chat's own user, a Moderator of its bot's
  *    workspace, or an Admin user with the users area; anyone else reads
  *    404 and changes nothing.
@@ -69,7 +69,6 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
   const member = randomUUID(); // M: a user of Team
   const mod = randomUUID(); // D: a Moderator of Team
   const outsider = randomUUID(); // X: in no workspace of these bots
-  const client = randomUUID(); // K
   const tag = `w7d${randomUUID().slice(0, 6)}`;
   let adminWs = '';
   let teamWs = '';
@@ -82,20 +81,17 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     memberOnAdminBot: randomUUID(),
     admin2: randomUUID(),
     anchor: randomUUID(),
-    client: randomUUID(),
   };
   const code = {
     member: 'aa0001',
     outsider: 'aa0002',
     memberOnAdminBot: 'aa0003',
     admin2: 'aa0004',
-    client: 'aa0006',
   };
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
-  const role = (login: string) =>
-    login === owner || login === admin2 ? 'admin' : login === client ? 'client' : 'member';
+  const role = (login: string) => (login === owner || login === admin2 ? 'admin' : 'member');
   const as = (login: string) => {
     const user = {
       id: owner,
@@ -186,9 +182,6 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
-    // The client after the migration: it brings no workspace of its own here.
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
-      values (${client}, ${`${tag}-k@example.invalid`}, 'x', false, 'client', 'Client')`);
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)
@@ -222,8 +215,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
         (${chat.outsider}, ${account.team}, ${owner}, '8002', 'private', 'Xan', 'pending'),
         (${chat.memberOnAdminBot}, ${account.admin}, ${owner}, '8003', 'private', 'Mia', 'pending'),
         (${chat.admin2}, ${account.admin}, ${owner}, '8004', 'private', 'Abe', 'pending'),
-        (${chat.anchor}, ${account.admin}, ${owner}, '8005', 'private', 'Own', 'allowed'),
-        (${chat.client}, ${account.team}, ${owner}, '8006', 'private', 'Kay', 'pending')`);
+        (${chat.anchor}, ${account.admin}, ${owner}, '8005', 'private', 'Own', 'allowed')`);
     await allow(chat.anchor, owner);
   }, 240_000);
 
@@ -239,7 +231,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     h.cards = [];
     const { resetPairingAttempts } = await import('@mantle/telegram');
     resetPairingAttempts();
-    for (const k of ['member', 'outsider', 'memberOnAdminBot', 'admin2', 'client'] as const) {
+    for (const k of ['member', 'outsider', 'memberOnAdminBot', 'admin2'] as const) {
       await resetChat(chat[k], code[k]);
     }
   });
@@ -283,12 +275,6 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     const admin = await pairRoute(member, code.memberOnAdminBot);
     expect(admin.status).toBe(403);
     expect((await chatRow(chat.memberOnAdminBot)).s).toBe('pending');
-  });
-
-  it('a client cannot pair', async () => {
-    const res = await pairRoute(client, code.client);
-    expect(res.status).toBe(403);
-    expect((await chatRow(chat.client)).s).toBe('pending');
   });
 
   it('telegram_pair pairs to the calling login, never the anchor', async () => {

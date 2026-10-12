@@ -7,8 +7,9 @@
  * in change-password and the MCP consent page were tested nowhere.
  *
  * Each such route is listed here with an explicit answer per role, and the
- * sweeps drive each one (role-sweep: client and unknown role; member-sweep:
- * member). A completeness test reads the source of every OTHER public route
+ * sweeps drive each one (role-sweep: an unknown role, and a row still marked
+ * client, which is no login since workspaces W8a; member-sweep: member).
+ * A completeness test reads the source of every OTHER public route
  * and fails if it calls a session reader: a new public route that reads the
  * session must be added here, with its answers.
  *
@@ -19,7 +20,7 @@
  */
 import type { Hono } from 'hono';
 
-export type SweepRole = 'member' | 'client' | 'unknown';
+export type SweepRole = 'member' | 'unknown';
 
 /** What a route must answer one role. */
 export type Expected = {
@@ -67,7 +68,6 @@ const consentParams = new URLSearchParams({
   state: 'sweep',
 });
 
-const refused = (reason: string): Expected => ({ status: 403, reason });
 const stranger: Expected = { status: 401 };
 const toLogin: Expected = { status: 307, location: /^(https?:\/\/[^/]+)?\/login/ };
 const json = (body: unknown): RequestInit => ({
@@ -78,39 +78,35 @@ const json = (body: unknown): RequestInit => ({
 
 export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
   {
-    // An admin or a member changes their own password; a client has none.
-    // The empty body is a 400 only once past the role check.
+    // Every login changes its own password. The empty body is a 400 once
+    // past the session check.
     key: 'POST /api/auth/change-password',
     path: '/api/auth/change-password',
     init: json({}),
-    expect: { member: { status: 400 }, client: refused('client-login'), unknown: stranger },
+    expect: { member: { status: 400 }, unknown: stranger },
   },
   {
     // Who am I, for any credential: the role and the routes that differ per
-    // role (the phone app, three roles). About the login only.
+    // role (the phone app). About the login only.
     key: 'GET /api/auth/whoami',
     path: '/api/auth/whoami',
-    expect: { member: { status: 200 }, client: { status: 200 }, unknown: stranger },
+    expect: { member: { status: 200 }, unknown: stranger },
   },
   {
-    // Every role signs out; a client's sign-out also ends its sessions (audit
-    // B23; the sweeps stand the epoch bump in). A stranger just gets a
-    // cleared cookie.
+    // Every login signs out. A stranger just gets a cleared cookie.
     key: 'POST /api/auth/logout',
     path: '/api/auth/logout',
     init: json({}),
-    expect: { member: { status: 200 }, client: { status: 200 }, unknown: { status: 200 } },
+    expect: { member: { status: 200 }, unknown: { status: 200 } },
   },
   {
     // "Sign in on your phone": an admin or, since workspaces W7e, a member
-    // pairs its own phone (the member sweep stands the code store in). A
-    // client signs in on its phone with its emailed code.
+    // pairs its own phone (the member sweep stands the code store in).
     key: 'POST /api/auth/pair',
     path: '/api/auth/pair',
     init: { method: 'POST' },
     expect: {
       member: { status: 200 },
-      client: refused('client-login'),
       unknown: stranger,
     },
   },
@@ -119,31 +115,29 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     path: `/api/auth/pair/${UUID}`,
     expect: {
       member: { status: 200 },
-      client: refused('client-login'),
       unknown: stranger,
     },
   },
   {
     // The bearer to cookie upgrade: an admin's or a member's (the member's
-    // cookie carries it to the MCP consent page). A client signs in to a
-    // cookie already. A cookie alone is no credential here: it would renew
-    // itself with no device to revoke (access matrix T2).
+    // cookie carries it to the MCP consent page). A cookie alone is no
+    // credential here: it would renew itself with no device to revoke
+    // (access matrix T2).
     key: 'POST /api/auth/sso',
     path: '/api/auth/sso',
     init: { method: 'POST' },
     expect: {
       member: { status: 204 },
-      client: refused('client-login'),
       unknown: stranger,
     },
-    withCookie: { member: stranger, client: stranger },
+    withCookie: { member: stranger },
   },
   {
-    // The MCP consent page: an HTML refusal to a member or a client, the
-    // sign-in redirect to a stranger.
+    // The MCP consent page: an HTML refusal to a member whose MCP is off (the
+    // sweeps stand that in), the sign-in redirect to a stranger.
     key: 'GET /api/oauth/authorize',
     path: `/api/oauth/authorize?${consentParams}`,
-    expect: { member: { status: 403 }, client: { status: 403 }, unknown: toLogin },
+    expect: { member: { status: 403 }, unknown: toLogin },
   },
   {
     // Allow/Deny: the same refusals; a stranger's session "expired".
@@ -161,7 +155,7 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
         decision: 'allow',
       }).toString(),
     },
-    expect: { member: { status: 403 }, client: { status: 403 }, unknown: { status: 401 } },
+    expect: { member: { status: 403 }, unknown: { status: 401 } },
   },
   {
     // Client sign-in with a link (C2), removed in workspaces W5c: the same
@@ -169,28 +163,26 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     key: 'POST /api/auth/client-link',
     path: '/api/auth/client-link',
     init: json({}),
-    expect: { member: { status: 410 }, client: { status: 410 }, unknown: { status: 410 } },
+    expect: { member: { status: 410 }, unknown: { status: 410 } },
   },
   {
-    // Email sign-in codes (C2b). None reads a session, so a cookie of any role
-    // buys nothing: whether codes are on, the same 200 for every request
-    // (queued, never an answer about the email), and the same 401 for a bad
-    // verify.
+    // Email sign-in codes (C2b), removed in workspaces W8a: the same 410
+    // code gone for everyone, before any work.
     key: 'GET /api/auth/client-code',
     path: '/api/auth/client-code',
-    expect: { member: { status: 200 }, client: { status: 200 }, unknown: { status: 200 } },
+    expect: { member: { status: 410 }, unknown: { status: 410 } },
   },
   {
     key: 'POST /api/auth/client-code',
     path: '/api/auth/client-code',
     init: json({ email: 'someone@example.invalid' }),
-    expect: { member: { status: 200 }, client: { status: 200 }, unknown: { status: 200 } },
+    expect: { member: { status: 410 }, unknown: { status: 410 } },
   },
   {
     key: 'POST /api/auth/client-code/verify',
     path: '/api/auth/client-code/verify',
     init: json({}),
-    expect: { member: { status: 401 }, client: { status: 401 }, unknown: { status: 401 } },
+    expect: { member: { status: 410 }, unknown: { status: 410 } },
   },
   {
     // Bearer rotation: authenticates by the Authorization header only, so a
@@ -198,7 +190,7 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     key: 'POST /api/auth/token/refresh',
     path: '/api/auth/token/refresh',
     init: { method: 'POST' },
-    expect: { member: { status: 401 }, client: { status: 401 }, unknown: { status: 401 } },
+    expect: { member: { status: 401 }, unknown: { status: 401 } },
     cookieOnly: true,
   },
   {
@@ -207,7 +199,7 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     key: 'POST /api/auth/mobile-logout',
     path: '/api/auth/mobile-logout',
     init: { method: 'POST' },
-    expect: { member: { status: 200 }, client: { status: 200 }, unknown: { status: 200 } },
+    expect: { member: { status: 200 }, unknown: { status: 200 } },
     cookieOnly: true,
   },
   // The password token logins read no session: a cookie or a bearer of any
@@ -216,7 +208,7 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     key: `POST /api/auth/${name}`,
     path: `/api/auth/${name}`,
     init: json({}),
-    expect: { member: { status: 401 }, client: { status: 401 }, unknown: { status: 401 } },
+    expect: { member: { status: 401 }, unknown: { status: 401 } },
   })),
 ];
 
@@ -229,13 +221,13 @@ export const RENDER_PAGES: PublicSessionRoute[] = [
 ].map((pattern) => ({
   key: `GET ${pattern}`,
   path: pattern.replace(':id', UUID),
-  expect: { member: toLogin, client: toLogin, unknown: toLogin },
+  expect: { member: toLogin, unknown: toLogin },
 }));
 
 /** A call in a route's source that reads the caller's session or login. A
  *  public route whose source matches must be in PUBLIC_SESSION_ROUTES. */
 export const SESSION_READER_RE =
-  /\b(getLoginOr401|getOwnerOr401\w*|getSessionUser\w*|getMemberOr401|getClientOr401|resolveLogin|requireOwner\w*|handleOwnerSso|getOwnerForAsset|getMemberForAsset|getClientForAsset|renderCaller|verifyMobileToken|mobileTokenJti|handleTokenLogin)\b/;
+  /\b(getLoginOr401|getOwnerOr401\w*|getSessionUser\w*|getMemberOr401|resolveLogin|requireOwner\w*|handleOwnerSso|getOwnerForAsset|getMemberForAsset|renderCaller|verifyMobileToken|mobileTokenJti|handleTokenLogin)\b/;
 
 let driven = 0;
 

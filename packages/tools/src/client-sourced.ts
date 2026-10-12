@@ -164,7 +164,8 @@ export async function namesClientSourced(
       const [login] = await db
         .select({ id: authUsers.id })
         .from(authUsers)
-        .where(and(inArray(authUsers.id, list), eq(authUsers.role, 'client')))
+        // Raw SQL: the role type names admin and member only since W8a.
+        .where(and(inArray(authUsers.id, list), sql`${authUsers.role} = 'client'`))
         .limit(1);
       if (login) return true;
       const [written] = await db

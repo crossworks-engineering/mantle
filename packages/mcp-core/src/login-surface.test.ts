@@ -19,7 +19,6 @@ import {
   mcpInstructionsFor,
   ownerPeerAllows,
   preparedAllows,
-  CLIENT_LOGIN_REFUSED,
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
@@ -193,10 +192,9 @@ describe('one surface for every login (W7b): what a scope lists', () => {
     expect(preparedAllows(peerRw, 'replay_window')).toBe(false);
   });
 
-  it('a refused caller lists nothing; a client login is told it has no tools', () => {
+  it('a refused caller lists nothing', () => {
     const refused: PreparedCallerTools = { kind: 'refused', caller: member, message: 'x' };
     expect(preparedAllows(refused, 'search')).toBe(false);
-    expect(mcpInstructionsFor({ ...member, role: 'client' })).toBe(CLIENT_LOGIN_REFUSED);
   });
 
   it('every login is told about its workspaces and where a create lands', () => {

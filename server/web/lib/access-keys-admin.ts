@@ -52,6 +52,7 @@ export async function listAccessKeys(loginId: string | null): Promise<AccessKeyV
           id: authUsers.id,
           email: authUsers.email,
           displayName: authUsers.displayName,
+          role: authUsers.role,
         })
         .from(authUsers)
         .where(inArray(authUsers.id, ids))
@@ -62,7 +63,7 @@ export async function listAccessKeys(loginId: string | null): Promise<AccessKeyV
 
 export function accessKeyView(
   r: AccessKey,
-  logins: Map<string, { email: string | null; displayName: string | null }>,
+  logins: Map<string, { email: string | null; displayName: string | null; role?: string }>,
   now = Date.now(),
 ): AccessKeyView {
   const login = logins.get(r.loginId);
@@ -75,7 +76,8 @@ export function accessKeyView(
       id: r.loginId,
       email: login?.email ?? null,
       displayName: login?.displayName ?? null,
-      role: r.loginRole as AccessKeyRole,
+      // The login as it is now (W8a: a key keeps no role of its own).
+      role: login?.role === 'admin' ? 'admin' : ('member' as AccessKeyRole),
     },
     access: r.access as AccessKeyAccess,
     areas: (r.areas as AccessKeyArea[] | null) ?? null,

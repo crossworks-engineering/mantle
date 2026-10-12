@@ -17,11 +17,11 @@
  *    otherwise, and the code stays unused); device-login is unchanged;
  *  - onboarding's profile step by a login other than the anchor saves to
  *    that login, never the anchor's row;
- *  - fix round 1: a client login is refused on every route W7e opened to
- *    members (the runner routes, the frame, bytes, a drawing's SVG,
- *    pairing) as it was before W7e; the member home runs in the member's
- *    scope; raw bytes are never cached; a member writes an app's rows when
- *    its workspace's grant has Write on.
+ *  - fix round 1: the owner frame opens only for a ticket naming an active
+ *    Admin user, and a session naming no login is refused on the runner
+ *    routes (a row still marked client is no login since W8a); the member
+ *    home runs in the member's scope; raw bytes are never cached; a member
+ *    writes an app's rows when its workspace's grant has Write on.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w7e-member-scope.db.test.ts
  */
@@ -66,7 +66,7 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
   const admin2 = randomUUID(); // a second Admin user
   const mem = randomUUID(); // a member (Team)
   const mem2 = randomUUID(); // a member alone in "Side"
-  const cli = randomUUID(); // a client login (clients do not run apps yet)
+  const nobody = randomUUID(); // no login row at all
   const tag = `w7e${randomUUID().slice(0, 6)}`;
   const PASSWORD = 'a long enough password';
   const teamApp = randomUUID();
@@ -169,9 +169,6 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
-    // A client login, made once the brain is on workspaces.
-    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
-      values (${cli}, ${email('cli')}, ${hash}, false, 'client', 'Cleo Client')`);
     const ws = await x<{ id: string; key: string | null }>(sql`
       select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
@@ -242,14 +239,14 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     // An <img> src: the member's own asset token (the shell mints it).
     const at = (await call('/api/shell', mem)).json.assetToken as string;
     expect(at).toBeTruthy();
-    // A member's token is the short one, a client's TTL (W7e fix round 1, L3).
+    // A member's token is the short one (W7e fix round 1, L3).
     expect(tokens.verifyAssetToken(at)).toMatchObject({ uid: owner, act: mem });
     const payload = JSON.parse(Buffer.from(at.split('.')[0]!, 'base64url').toString('utf8')) as {
       exp: number;
     };
     const exp = payload.exp;
     expect(exp - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(
-      tokens.CLIENT_ASSET_TOKEN_TTL_SECONDS,
+      tokens.SHORT_ASSET_TOKEN_TTL_SECONDS,
     );
     const byToken = await call(
       `/api/files/files/${teamFile}?raw=1&at=${encodeURIComponent(at)}`,
@@ -514,45 +511,42 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     }
   });
 
-  it('a client login is refused on every route W7e opened to members (fix round 1, M1)', async () => {
+  it('a session naming no login, and a frame ticket naming no active Admin user, are refused (fix round 1, M1)', async () => {
     const days30 = 30 * 24 * 60 * 60;
-    const session = tokens.buildSessionCookie(cli, { ttlSeconds: days30 }).value;
-    const clientCookie = `mantle_session=${session}`;
-    const asClient = (url: string, method = 'GET', body?: unknown) =>
-      call(url, null, method, body, { cookie: clientCookie });
-    // The cookie is a live client session (the one shell answers it).
-    const shell = await asClient('/api/shell');
-    expect(shell.status, shell.text.slice(0, 200)).toBe(200);
-    expect(shell.json).toMatchObject({ role: 'client', loginId: cli, areas: [] });
-
-    // Running an app: 403 client-login, never the Admin path (no owner
-    // ticket, no SQL, no tool), for an app the Team reads and one it does not.
+    const session = tokens.buildSessionCookie(nobody, { ttlSeconds: days30 }).value;
+    const asNobody = (url: string, method = 'GET', body?: unknown) =>
+      call(url, null, method, body, { cookie: `mantle_session=${session}` });
+    // A signed cookie whose login has no row is no login (a row still
+    // marked client resolves the same way since W8a).
+    expect((await asNobody('/api/shell')).status).toBe(401);
+    expect((await asNobody('/api/auth/whoami')).status).toBe(401);
+    // Running an app: never the Admin path (no owner ticket, no SQL, no
+    // tool), for an app the Team reads and one it does not.
     for (const id of [teamApp, sideApp]) {
       for (const route of ['frame-ticket', 'db-broker', 'tool-broker']) {
         const body =
           route === 'db-broker' ? { op: 'query', sql: 'select 1 as one' } : { slug: 'x' };
-        const r = await asClient(`/api/apps/${id}/${route}`, 'POST', body);
-        expect(r.status, `${route} ${id} ${r.text.slice(0, 160)}`).toBe(403);
-        expect(r.json.reason, route).toBe('client-login');
+        const r = await asNobody(`/api/apps/${id}/${route}`, 'POST', body);
+        expect(r.status, `${route} ${id} ${r.text.slice(0, 160)}`).toBe(401);
         expect(r.json).not.toHaveProperty('ticket');
         expect(r.json).not.toHaveProperty('output');
       }
     }
-    // The deprecated member runner refuses it too.
-    const oldRunner = await asClient(`/api/member/apps/${teamApp}/frame-ticket`, 'POST', {});
-    expect(oldRunner.status).toBe(403);
-    expect(oldRunner.json.reason).toBe('client-login');
 
-    // The frame: no ticket a client could hold opens it. What the owner
-    // ticket route minted for a client before this fix (an owner ticket
-    // naming the client), a client's own ticket, a member-shaped one naming
-    // the client, and an owner ticket naming a member.
+    // The frame: an owner ticket naming no login, a ticket of the old client
+    // shape, a member-shaped one naming no login, and an owner ticket naming
+    // a member are all refused.
     const frame = (t: string) =>
       call(`/api/apps/${teamApp}/frame?t=${encodeURIComponent(t)}`, null);
     for (const t of [
-      tokens.buildAppFrameTicket({ ownerId: owner, appId: teamApp, actorId: cli }),
-      tokens.buildAppFrameTicket({ ownerId: owner, appId: teamApp, loginId: cli, clientEpoch: 0 }),
-      tokens.buildAppFrameTicket({ ownerId: owner, appId: teamApp, loginId: cli }),
+      tokens.buildAppFrameTicket({ ownerId: owner, appId: teamApp, actorId: nobody }),
+      tokens.buildAppFrameTicket({
+        ownerId: owner,
+        appId: teamApp,
+        loginId: nobody,
+        clientEpoch: 0,
+      }),
+      tokens.buildAppFrameTicket({ ownerId: owner, appId: teamApp, loginId: nobody }),
       tokens.buildAppFrameTicket({ ownerId: owner, appId: teamApp, actorId: mem }),
     ]) {
       const r = await frame(t);
@@ -562,46 +556,5 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     const own = await call(`/api/apps/${teamApp}/frame-ticket`, owner, 'POST', {});
     expect(own.status).toBe(200);
     expect((await frame(own.json.ticket as string)).status).not.toBe(401);
-
-    // Bytes and a drawing's SVG: a plain 401, by session or by asset token.
-    const at = encodeURIComponent(tokens.buildAssetToken(owner, cli));
-    for (const url of [
-      `/api/files/files/${teamFile}?raw=1`,
-      `/api/files/files/${teamFile}?thumb=1`,
-      `/api/draws/${teamDraw}/svg`,
-      `/api/draws/${teamDraw}/svg?raw=1`,
-      `/api/member/files/${teamFile}`,
-      `/api/member/draws/${teamDraw}/svg`,
-    ]) {
-      const bySession = await asClient(url);
-      expect(bySession.status, url).toBe(401);
-      expect(bySession.text).not.toContain('TEAM BYTES');
-      expect(bySession.text).not.toContain('VEVBTQ==');
-      const byToken = await call(`${url}${url.includes('?') ? '&' : '?'}at=${at}`, null);
-      expect(byToken.status, `${url} at`).toBe(401);
-    }
-
-    // Pairing a phone: a client signs in with its emailed code instead.
-    const pair = await asClient('/api/auth/pair', 'POST', {});
-    expect(pair.status).toBe(403);
-    expect(pair.json.reason).toBe('client-login');
-    const poll = await asClient(`/api/auth/pair/${randomUUID()}`);
-    expect(poll.status).toBe(403);
-    expect(poll.json.reason).toBe('client-login');
-
-    // whoami is about the login itself (open to a client before W7e): no
-    // Admin areas, not the owner.
-    const me = await asClient('/api/auth/whoami');
-    expect(me.status).toBe(200);
-    expect(me.json).toMatchObject({ role: 'client', loginId: cli, areas: [], isOwner: false });
-
-    // The old phone app's sign-in: a client never hears "Update the app".
-    const mobile = await call('/api/auth/mobile-login', null, 'POST', {
-      email: email('cli'),
-      password: PASSWORD,
-    });
-    expect(mobile.status).not.toBe(426);
-    expect(mobile.json).not.toHaveProperty('token');
-    expect(mobile.json.reason).not.toBe('update-app');
   });
 });

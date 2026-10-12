@@ -105,7 +105,7 @@ describe.skipIf(!URL)('W6b fix round 4', () => {
     let pending: Promise<T> | undefined;
     await m.systemDb.transaction(async (tx) => {
       await tx.execute(sql`update mantle_peers
-                              set acts_as_login_id = ${owner}::uuid, acts_as_role = 'admin',
+                              set acts_as_login_id = ${owner}::uuid,
                                   write_enabled = false, allowed_risky_tools = '{}'
                             where id = ${peerId}`);
       pending = during();
@@ -296,7 +296,7 @@ describe.skipIf(!URL)('W6b fix round 4', () => {
     expect(await peerRow(peer)).toMatchObject({ acts: owner, write: false });
 
     // Its risky tools, the same.
-    await x(sql`update mantle_peers set acts_as_login_id = ${mem}::uuid, acts_as_role = 'member'
+    await x(sql`update mantle_peers set acts_as_login_id = ${mem}::uuid
                  where id = ${peer}`);
     r = await ownerBindsDuring(peer, () =>
       call(`/api/peers/${peer}`, admin2, 'PATCH', { allowedRiskyTools: [] }),
@@ -304,7 +304,7 @@ describe.skipIf(!URL)('W6b fix round 4', () => {
     expect(r.status, r.text.slice(0, 200)).toBe(403);
 
     // A new token while the owner binds it: refused, the token unchanged.
-    await x(sql`update mantle_peers set acts_as_login_id = ${mem}::uuid, acts_as_role = 'member'
+    await x(sql`update mantle_peers set acts_as_login_id = ${mem}::uuid
                  where id = ${peer}`);
     r = await call(`/api/peers/${peer}/rotate`, admin2, 'POST'); // a member peer: it may re-key that
     expect(r.status, r.text.slice(0, 200)).toBe(200);

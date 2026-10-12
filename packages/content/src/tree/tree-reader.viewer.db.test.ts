@@ -1,15 +1,16 @@
 /**
- * The member and client trees (folder plan phase 4): what a member (team) or
- * a client login sees of a kind's folders. Items are read as that reader
- * (withViewer with its login, workspaces W5b2: what a workspace of theirs
- * holds); a folder shows when a workspace of the reader holds it or when it
+ * The member and client trees (folder plan phase 4): what a reader at the
+ * team or the client level sees of a kind's folders. Items are read as
+ * that reader (withViewer with its login, workspaces W5b2: what a
+ * workspace of theirs holds); a folder shows when a workspace of the reader holds it or when it
  * is on the way to something the reader reads. Counts are the reader's. A
- * folder the reader cannot see is not found, by id or by search. A client's
- * shape carries no level.
+ * folder the reader cannot see is not found, by id or by search. The
+ * client-level shape carries no level.
  *
- * The member is a user of a workspace that holds the team folder, the client
- * folder and two team items; the client a user of a workspace that holds the
- * client folder only.
+ * Both readers are member logins (there is no client login since W8a): the
+ * member is a user of a workspace that holds the team folder, the client
+ * folder and two team items; the second member, read at the client level, a
+ * user of a workspace that holds the client folder only.
  *
  * Rows belong to the shared test anchor, under folders of this run's own
  * (other files use the anchor in parallel, so lists are narrowed to them).
@@ -73,9 +74,10 @@ describe.skipIf(!URL)('the member and client trees', () => {
               ${type === 'note' ? JSON.stringify({ content: 'x' }) : '{}'}::jsonb, '{}')`);
   };
   const member = randomUUID();
-  const client = randomUUID();
+  /** A member whose only workspace is `ws.clients`, read at the client level. */
+  const clientsMember = randomUUID();
   const ws = { members: randomUUID(), clients: randomUUID() };
-  const loginOf = { team: member, client } as const;
+  const loginOf = { team: member, client: clientsMember } as const;
   /** `wsId` holds `id` (a folder passes it to what it holds), or no longer. */
   const hold = (wsId: string, id: string, on = true) =>
     m.withSubtreeHeads(id, [], (tx) =>
@@ -120,14 +122,14 @@ describe.skipIf(!URL)('the member and client trees', () => {
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${member}, ${`${label}-m@example.invalid`}, 'x', 'member'),
-        (${client}, ${`${label}-c@example.invalid`}, 'x', 'client')`);
+        (${clientsMember}, ${`${label}-c@example.invalid`}, 'x', 'member')`);
     await m.systemDb.execute(sqlTag`
       insert into workspaces (id, owner_id, name) values
         (${ws.members}, ${brain}, ${`${label} members`}),
         (${ws.clients}, ${brain}, ${`${label} clients`})`);
     await m.systemDb.execute(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
-        (${ws.members}, ${member}), (${ws.clients}, ${client})`);
+        (${ws.members}, ${member}), (${ws.clients}, ${clientsMember})`);
     for (const id of [f.team, f.client, i.teamOwn, i.rootTeam]) await hold(ws.members, id);
     await hold(ws.clients, f.client);
   }, 60_000);
@@ -140,8 +142,12 @@ describe.skipIf(!URL)('the member and client trees', () => {
     await m.systemDb.execute(
       sqlTag`delete from workspaces where id in (${ws.members}, ${ws.clients})`,
     );
-    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${member}, ${client})`);
-    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${client})`);
+    await m.systemDb.execute(
+      sqlTag`delete from spaces where login_id in (${member}, ${clientsMember})`,
+    );
+    await m.systemDb.execute(
+      sqlTag`delete from auth.users where id in (${member}, ${clientsMember})`,
+    );
   });
 
   it('shows a member the folders on the way to what they read, with their counts', async () => {
@@ -173,7 +179,7 @@ describe.skipIf(!URL)('the member and client trees', () => {
     expect(await open('team', randomUUID())).toBeNull();
   });
 
-  it('shows a client only the way to what is shared with clients', async () => {
+  it('shows the client level only the way to what is shared with clients', async () => {
     const root = (await open('client', null))!;
     expect(ids(root.folders)).toEqual([f.top]);
     expect(ids(root.items)).toEqual([]);
@@ -187,7 +193,7 @@ describe.skipIf(!URL)('the member and client trees', () => {
     }
   });
 
-  it('gives a client no level, share or system field', async () => {
+  it('gives the client-level shape no level, share or system field', async () => {
     const page = tree.clientTreeFolderPage((await open('client', f.client))!);
     const item = page.items.find((x) => x.id === i.inClient)!;
     for (const k of ['level', 'inherited', 'state']) expect(item).not.toHaveProperty(k);
@@ -207,7 +213,7 @@ describe.skipIf(!URL)('the member and client trees', () => {
     const hit = asMember.items.find((x) => x.id === i.inTeam)!;
     expect(hit.crumbs.map((c) => c.id)).toEqual([f.top, f.team]);
 
-    const asClient = await tree.searchReaderTree(brain, 'client', client, 'notes', label);
+    const asClient = await tree.searchReaderTree(brain, 'client', clientsMember, 'notes', label);
     expect(ids(asClient.folders).sort()).toEqual([f.top, f.client].sort());
     expect(ids(asClient.items)).toEqual([i.inClient]);
   });
@@ -217,7 +223,7 @@ describe.skipIf(!URL)('the member and client trees', () => {
     try {
       expect(await open('client', f.client)).toBeNull();
       expect(ids((await open('client', null))!.folders)).toEqual([]);
-      const search = await tree.searchReaderTree(brain, 'client', client, 'notes', label);
+      const search = await tree.searchReaderTree(brain, 'client', clientsMember, 'notes', label);
       expect(ids(search.items)).toEqual([]);
     } finally {
       await hold(ws.clients, f.client);

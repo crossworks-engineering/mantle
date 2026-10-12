@@ -3,7 +3,6 @@ import { z } from 'zod';
 import {
   endLoginSessions,
   getLoginOr401,
-  loginRefused,
   setSessionCookie,
   updatePassword,
   verifyPassword,
@@ -28,13 +27,11 @@ const ChangePasswordBody = z
 export async function POST(req: Request) {
   const refused = refuseCrossSiteAuthPost(req);
   if (refused) return refused;
-  // Admin or member: a login changes its own password. A client has no
-  // password (it signs in with a link or a code, client logins C2).
+  // Every login changes its own password.
   const login = await getLoginOr401();
   if (login instanceof NextResponse) {
     return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
   }
-  if (login.kind !== 'admin' && login.kind !== 'member') return loginRefused(login.kind);
   // The LOGIN's own credential — always the login, never the anchor
   // (a co-admin changing "their" password must not rewrite the anchor's).
   const actorId = login.loginId;

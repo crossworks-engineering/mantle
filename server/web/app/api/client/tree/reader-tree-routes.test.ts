@@ -3,7 +3,9 @@
  * reads are stood in, the gate is the real one. These pin what the ROUTES
  * do: a member reads through its space and workspaces, and a kind the
  * Library does not hold is a 404 before any read. The client tree routes
- * were removed in workspaces W5c: they answer 410 code gone. The rules themselves are proven on Postgres in
+ * were removed in workspaces W5c: they answer 410 code gone to any login,
+ * and a row still marked client is no login at all since W8a (401). The
+ * rules themselves are proven on Postgres in
  * packages/content/src/tree/tree-reader.viewer.db.test.ts.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -152,18 +154,24 @@ describe('the member tree routes, and the retired client tree', () => {
     expect(h.calls).toEqual([]);
   });
 
-  it('the client tree is gone (W5c): 410 to a client, 403 to an admin, no read', async () => {
+  it('the client tree is gone (W5c): 410 to any login, 401 to a row still marked client, no read', async () => {
     const client = (await import('./[kind]/route')).GET as unknown as Handler;
     const search = (await import('./[kind]/search/route')).GET as unknown as Handler;
-    const res = await call(CLIENT, `/api/client/tree/notes?folder=${FOLDER}`, client, 'notes');
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ code: 'gone' });
+    for (const login of [ADMIN, MEMBER]) {
+      const res = await call(login, `/api/client/tree/notes?folder=${FOLDER}`, client, 'notes');
+      expect(res.status).toBe(410);
+      expect(await res.json()).toMatchObject({ code: 'gone' });
+      expect((await call(login, '/api/client/tree/notes/search?q=a', search, 'notes')).status).toBe(
+        410,
+      );
+    }
+    // A login row still marked client resolves to no login (W8a).
+    expect((await call(CLIENT, '/api/client/tree/notes', client, 'notes')).status).toBe(401);
     expect((await call(CLIENT, '/api/client/tree/notes/search?q=a', search, 'notes')).status).toBe(
-      410,
+      401,
     );
-    expect((await call(ADMIN, '/api/client/tree/notes', client, 'notes')).status).toBe(403);
-    expect(h.calls).toEqual([]);
     const member = (await import('../../member/tree/[kind]/route')).GET;
-    expect((await call(CLIENT, '/api/member/tree/notes', member, 'notes')).status).toBe(403);
+    expect((await call(CLIENT, '/api/member/tree/notes', member, 'notes')).status).toBe(401);
+    expect(h.calls).toEqual([]);
   });
 });

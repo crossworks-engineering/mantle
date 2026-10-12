@@ -89,7 +89,6 @@ beforeEach(() => h.runToolLoop.mockClear());
 describe('invokeAgent passes the surface to the child loop', () => {
   it.each([
     ['team', { kind: 'team', loginId: '00000000-0000-4000-8000-000000000002' }],
-    ['client', { kind: 'client', loginId: '00000000-0000-4000-8000-000000000001' }],
     ['owner/delegate', { kind: 'owner', via: 'delegate' }],
   ] as const)('%s', async (_n, surface) => {
     const res = await invokeAgent({ ...BASE, surface });

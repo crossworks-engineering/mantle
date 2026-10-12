@@ -35,11 +35,7 @@ async function handleGET() {
   const login = await getLoginOr401();
   if (login instanceof NextResponse) return login;
   const displayName =
-    login.kind === 'admin'
-      ? login.user.actor.displayName
-      : login.kind === 'member'
-        ? login.member.displayName
-        : login.client.displayName;
+    login.kind === 'admin' ? login.user.actor.displayName : login.member.displayName;
   const body: AuthWhoami = {
     role: login.kind,
     loginId: login.loginId,

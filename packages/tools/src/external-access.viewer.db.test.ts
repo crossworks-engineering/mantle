@@ -58,11 +58,12 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
   const tag = `tapps-${randomUUID().slice(0, 8)}`;
   const anchor = randomUUID();
   const appId = randomUUID();
-  // A member (a Moderator of Team) and a client (a user of Clients), and
-  // the brain's workspaces: Team holds the connector with Write on, Clients
-  // with Write off (W5b2: the workspaces decide, not the connector's level).
+  // A member (a Moderator of Team) and a second member (a user of Clients),
+  // and the brain's workspaces: Team holds the connector with Write on,
+  // Clients with Write off (W5b2: the workspaces decide, not the connector's
+  // level).
   const member = randomUUID();
-  const client = randomUUID();
+  const clientsMember = randomUUID();
   const ws = { admin: randomUUID(), team: randomUUID(), clients: randomUUID() };
   const ids: Record<string, string> = {};
   const ADMIN = { via: 'web' as const, actorId: anchor, actorEmail: `${tag}@example.invalid` };
@@ -153,7 +154,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await exec(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
-        (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client')`);
+        (${clientsMember}, ${`${tag}-c@example.invalid`}, 'x', 'member')`);
     await exec(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, 'Admin', true, 'admin'),
@@ -161,7 +162,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
         (${ws.clients}, ${anchor}, ${`${tag} Clients`}, false, null)`);
     await exec(sqlTag`
       insert into workspace_users (workspace_id, login_id, moderator) values
-        (${ws.team}, ${member}, true), (${ws.clients}, ${client}, false)`);
+        (${ws.team}, ${member}, true), (${ws.clients}, ${clientsMember}, false)`);
     await exec(sqlTag`
       insert into workspace_resources (workspace_id, type, ref_id, write) values
         (${ws.admin}, 'connector', 'mcp-site', true),
@@ -178,7 +179,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await exec(sqlTag`delete from nodes where owner_id = ${anchor}`);
     await exec(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     await exec(sqlTag`delete from spaces where login_id = ${anchor}`);
-    await exec(sqlTag`delete from auth.users where id in (${anchor}, ${member}, ${client})`);
+    await exec(sqlTag`delete from auth.users where id in (${anchor}, ${member}, ${clientsMember})`);
     await m.closeDb();
   }, 60_000);
 

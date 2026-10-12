@@ -3,7 +3,7 @@
  * session that makes a key must not go unseen. Never the secret, never the
  * prefix: only the key's name, its access and its expiry.
  *
- *  - A member or a client: one message in their own thread with the Team
+ *  - A member: one message in their own thread with the Team
  *    workspace's assistant (their in-app notices; per login since 0269),
  *    which the push worker also sends to their phone as a chat push (the
  *    login_notice trigger, 0269), sealed to each device. A brain whose Team
@@ -42,10 +42,7 @@ export function keyMadeText(
 ): string {
   const access = n.access === 'read_write' ? 'read and write' : 'read only';
   const expires = n.expiresAt ? n.expiresAt.toISOString().slice(0, 10) : 'never';
-  const fix =
-    n.role === 'client'
-      ? 'revoke it in API keys and sign out'
-      : 'revoke it in API access and change your password';
+  const fix = 'revoke it in API access and change your password';
   const what = opts.withName ? `${n.name.slice(0, 100)}, ${access}` : access;
   return `A new API key was made on your login: ${what}, expires ${expires}. If this was not you, ${fix}.`;
 }

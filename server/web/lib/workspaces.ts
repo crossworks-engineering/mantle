@@ -83,9 +83,9 @@ export class WsError extends Error {
 const NOT_FOUND = () => new WsError(404, 'not_found', 'Workspace not found.');
 
 /** Who calls: any login. `user` is the admin session (anchor id + actor),
- *  needed for a role change; null for a member or a client. */
+ *  needed for a role change; null for a member. */
 export type WsCaller = {
-  kind: 'admin' | 'member' | 'client';
+  kind: 'admin' | 'member';
   loginId: string;
   anchorId: string;
   user: SessionUser | null;
@@ -94,7 +94,7 @@ export type WsCaller = {
 export async function workspaceCaller(): Promise<WsCaller | Response> {
   const res = await getLoginOr401();
   if (res instanceof Response) return res;
-  // The generic api.write row, as the sibling admin, member and client gates
+  // The generic api.write row, as the sibling admin and member gates
   // write it (an admin's write; any login's write with an API key).
   await auditLoginMutation(res);
   switch (res.kind) {
@@ -102,8 +102,6 @@ export async function workspaceCaller(): Promise<WsCaller | Response> {
       return { kind: 'admin', loginId: res.loginId, anchorId: res.user.id, user: res.user };
     case 'member':
       return { kind: 'member', loginId: res.loginId, anchorId: res.member.anchorId, user: null };
-    case 'client':
-      return { kind: 'client', loginId: res.loginId, anchorId: res.client.anchorId, user: null };
   }
 }
 
@@ -481,9 +479,6 @@ export async function createWorkspace(
   caller: WsCaller,
   body: { name: string; description?: string },
 ): Promise<Workspace> {
-  if (caller.kind === 'client') {
-    throw new WsError(403, 'client_login', 'Client logins are set up by hand, not here.');
-  }
   const info = await adminInfo(caller);
   if (!info.migrated) {
     throw new WsError(409, 'not_migrated', 'Workspaces are not set up on this brain yet.');
@@ -901,7 +896,7 @@ async function adminRoleChange(
     case 'last-admin':
       throw LAST_MOD();
     case 'role-fixed':
-      throw new WsError(409, 'client_login', 'Client logins are set up by hand, not here.');
+      throw new WsError(409, 'invalid', 'This login cannot change role.');
     default:
       throw new WsError(409, 'invalid', done.error);
   }
@@ -924,9 +919,6 @@ export async function addUser(
   const wid = pre.row.id;
   const target = await loginOf(db, body.loginId);
   if (!target) throw new WsError(404, 'not_found', 'User not found.');
-  if (target.role === 'client') {
-    throw new WsError(409, 'client_login', 'Client logins are set up by hand, not here.');
-  }
   const self = target.id === caller.loginId;
   const checks = async (q: Exec): Promise<Seen> => {
     const seen = await seeWorkspace(caller, wid, q, true);
@@ -1106,7 +1098,7 @@ export const USER_SEARCH_PAGE = 50;
  *  name, for a Moderator of any workspace or an Admin user. A non-Admin
  *  Moderator needs 3 characters and gets 10 at most, no paging; an Admin
  *  user any query, in pages of 50 (`offset`), so they can list everyone.
- *  Disabled and client logins are left out (they cannot be added here). */
+ *  Disabled logins are left out. */
 export async function searchUsers(
   caller: WsCaller,
   q: string,
@@ -1143,7 +1135,7 @@ export async function searchUsers(
   const hits = await rows<{ id: string; name: string | null; email: string }>(
     db,
     sql`select id, display_name as name, email from auth.users
-         where disabled_at is null and role <> 'client'
+         where disabled_at is null
            and (${term} = '' or email ilike ${like} or coalesce(display_name, '') ilike ${like})
          order by lower(coalesce(display_name, email)), id
          limit ${admin ? USER_SEARCH_PAGE : 10} offset ${offset}`,

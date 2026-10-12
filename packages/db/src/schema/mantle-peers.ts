@@ -64,18 +64,15 @@ export const mantlePeers = pgTable(
     /** When the peer last successfully called us. */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     /**
-     * The login this peer's token acts as on /api/mcp (0227): the owner, a
-     * member or a client. Null = a share-only peer (the federation read
+     * The login this peer's token acts as on /api/mcp (0227), in that
+     * login's workspaces as they are now. Null = a share-only peer (the federation read
      * routes only), as before 0227.
      */
     actsAsLoginId: uuid('acts_as_login_id'),
-    /** That login's role when it was bound; a role change fails closed. */
-    actsAsRole: text('acts_as_role'),
     /** The binding a session end or the MCP switch ended (0238): binding the
      *  peer to the same login again restores its Write switch and risky
      *  tools (lib/peer-unbind.ts). Never read to grant anything. */
     endedActsAsLoginId: uuid('ended_acts_as_login_id'),
-    endedActsAsRole: text('ended_acts_as_role'),
     /** Whether the peer may call the write tools of its login (default off). */
     writeEnabled: boolean('write_enabled').notNull().default(false),
     /** Risky owner tools the owner allowed for this peer by name (0227). */

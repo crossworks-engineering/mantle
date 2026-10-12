@@ -13,8 +13,8 @@
  * valid bearer resolves to a LOGIN (lib/mcp-auth.ts, MCP as a login): every
  * login gets the one owner surface, each call in that login's workspaces
  * (W7a, W7b; @mantle/mcp-core owner-scope.ts and login-surface.ts); a key
- * or a peer token acts as the login it is bound to and only narrows it; a
- * client login is refused. A second rate limit holds each login to its own
+ * or a peer token acts as the login it is bound to and only narrows it. A
+ * second rate limit holds each login to its own
  * budget.
  *
  * `runtime = 'nodejs'`: the tool handlers use node-only deps (pg, drizzle,
@@ -31,7 +31,6 @@ import {
 } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { auditMcpKeyCall, resolveMcpCaller } from '@/lib/mcp-auth';
-import { JSON_BODY_CEILING_BYTES, readBodyCapped } from '@/lib/body-limit';
 import { isSubscriptionListen, mcpHttpHandler } from '@/lib/mcp-http';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { rateLimitAccessKey } from '@/lib/access-keys';
@@ -96,30 +95,6 @@ async function handler(req: Request): Promise<Response> {
       },
     });
   }
-  // A client login never sends a whole owner document: its body is held to
-  // the plain JSON ceiling (every other login has the one surface, with
-  // file_upload's 128 MB, W7b).
-  if (caller.role === 'client') {
-    const declared = Number(req.headers.get('content-length')) || 0;
-    if (declared > JSON_BODY_CEILING_BYTES) {
-      return new Response(
-        JSON.stringify({ error: 'request body too large', reason: 'body-too-large' }),
-        { status: 413, headers: { 'content-type': 'application/json' } },
-      );
-    }
-    // A chunked body declares no length (verification audit N4): read it
-    // under the same ceiling (413 over it), and hand the transport that copy.
-    if (req.method === 'POST' && req.body) {
-      const body = await readBodyCapped(req, JSON_BODY_CEILING_BYTES);
-      req = new Request(req.url, {
-        method: req.method,
-        headers: req.headers,
-        body,
-        // A client that goes away still stops the tool calls (last check F4).
-        signal: req.signal,
-      });
-    }
-  }
   // What the login's scope may list, its private workspace and its
   // connector tools, resolved here, so the server factory below registers
   // synchronously.
@@ -127,8 +102,7 @@ async function handler(req: Request): Promise<Response> {
   // A write tool an API key calls leaves an audit row (lib/mcp-auth.ts),
   // once the call is one this caller was given.
   if (caller.keyId) await auditMcpKeyCall(req, caller, (slug) => preparedAllows(prepared, slug));
-  // A refused login (a client, plan 21.9; a member on a brain not on
-  // workspaces): say so, rather than serve an MCP server with nothing on it.
+  // A refused login (a member on a brain not on workspaces): say so, rather than serve an MCP server with nothing on it.
   if (prepared.kind === 'refused') {
     return new Response(JSON.stringify({ error: 'no_tools', message: prepared.message }), {
       status: 403,

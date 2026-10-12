@@ -48,12 +48,6 @@ export {
   explainImapError,
   listAccountFolders,
   setIncludedFolders,
-  excludeSentFolders,
-  planSentFolders,
-  restoreSentFolders,
-  heldSentFolders,
-  type FolderLister,
-  type SentFolderRefusal,
   type SaveImapAccountInput,
   type SaveImapAccountResult,
   type ConnectImapInput,
@@ -81,12 +75,4 @@ export {
   type AddSenderResult,
   type PeekProviderResolver,
 } from './discover';
-export {
-  CLIENT_CODE_HEADER,
-  clientCodeMessageId,
-  isClientCodeMail,
-  pickSentFolders,
-  redactSigninCodes,
-  sentFolderNames,
-  touchesClientCodeMail,
-} from './client-code-mail';
+export { isClientCodeMail, redactSigninCodes, touchesClientCodeMail } from './client-code-mail';

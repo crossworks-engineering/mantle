@@ -239,13 +239,16 @@ export async function runClientTurn(
   throw new Error('client turn dropped: client chat was removed');
 }
 
-/** Whether `loginId` is a client login (auth.users.role). */
-async function isClientLogin(loginId: string): Promise<boolean> {
+/** Whether `loginId` is a row with a role this code does not name (one
+ *  still marked client: none is left after migration 0272, workspaces W8a).
+ *  Such a row is no login, and has no chat. */
+async function hasUnknownRole(loginId: string): Promise<boolean> {
   const rows = (await db
     .select({ role: authUsers.role })
     .from(authUsers)
     .where(eq(authUsers.id, loginId))) as unknown;
-  return Array.isArray(rows) && (rows[0] as { role?: unknown } | undefined)?.role === 'client';
+  const role = Array.isArray(rows) ? (rows[0] as { role?: unknown } | undefined)?.role : undefined;
+  return typeof role === 'string' && role !== 'admin' && role !== 'member';
 }
 
 export async function runTeamTurn(
@@ -260,10 +263,11 @@ export async function runTeamTurn(
   if (!options.loginId) {
     throw new Error('runTeamTurn: loginId required (the team-code portal chat is retired)');
   }
-  // A client has no chat (W7c fix round 1, M4): the route refuses it, and
-  // so does the engine, before anything is written or a model is called.
-  if (await isClientLogin(options.loginId)) {
-    throw new Error('runTeamTurn: a client login has no chat');
+  // A login this code does not name has no chat (W7c fix round 1, M4; W8a):
+  // the route refuses it, and so does the engine, before anything is
+  // written or a model is called.
+  if (await hasUnknownRole(options.loginId)) {
+    throw new Error('runTeamTurn: this login has no chat');
   }
   const displayText = options.displayText?.trim() || trimmed;
   const channel: TeamChannel = options.channel ?? 'web';
@@ -483,7 +487,6 @@ async function runTeamTurnSteps(
             agentId: agent.id,
             data: {
               surface: 'team',
-              login_role: 'member',
               contact_id: null,
               login_id: loginId,
               channel,

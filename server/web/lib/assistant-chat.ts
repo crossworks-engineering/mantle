@@ -72,7 +72,6 @@ export async function resolveChatAgent(
   login: ChatLogin,
   slug?: string | null,
 ): Promise<ChatAgent | null> {
-  if (login.kind === 'client') return null;
   if (login.kind === 'admin') {
     const agent = await resolveAgentForActor(login.user, slug ?? undefined);
     if (!agent) return null;
@@ -95,7 +94,6 @@ export async function resolveChatAgentById(
   login: ChatLogin,
   agentId: string,
 ): Promise<ChatAgent | null> {
-  if (login.kind === 'client') return null;
   const agent = await agentById(login.ownerId, agentId);
   if (!agent) return null;
   if (login.kind === 'admin') {
@@ -109,7 +107,6 @@ export async function resolveChatAgentById(
 
 /** The agents this login may chat with, for the /assistant selector. */
 export async function listChatAgents(login: ChatLogin): Promise<AssistantAgentOption[]> {
-  if (login.kind === 'client') return [];
   if (login.kind === 'admin') {
     const [all, mine, others] = await Promise.all([
       listAssistantAgents(login.ownerId),

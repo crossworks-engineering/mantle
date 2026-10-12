@@ -23,6 +23,12 @@
  * the switch). A brain with no switch row and no agent records its cutoff
  * on the first run: a second run leaves a key and a peer made after the
  * first run as they are (it used to read now() then).
+ *
+ * W8a (0272) archives and drops what this test plants (the client role, the
+ * static login tokens, the role kept on a key and a peer), and a rerun of
+ * 0268 reads them: each scratch brain stops before 0272. The app code runs
+ * as it is now, so a static token is no credential at all and a client
+ * login's key is refused on /api/v1 too.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/mcp-revived-credentials.db.test.ts
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -33,6 +39,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const TAG = '0268_workspaces_mcp_one_surface';
+/** 0272 drops the tables and columns 0268 reads: the test stops before it. */
+const UNTIL = '0272_workspaces_logins_carry_nothing';
 
 type Ts = typeof import('@mantle/db/test-support');
 const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
@@ -212,7 +220,7 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
                 'https://client.example.invalid/cb', now() + interval '5 minutes', 0)`;
       await insertPeer(label, login, 'admin');
     }
-    await scratch.migrateRest();
+    await scratch.migrateRest(UNTIL);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET ??= 'mcp-revived-credentials-secret-32-chars!!';
@@ -229,6 +237,7 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
     const live =
       await sql`select count(*)::int as n from mcp_login_tokens where revoked_at is null`;
     expect(live[0]!.n).toBe(0);
+    // Since W8a a static token is no credential at all: no caller either way.
     const auth = await import('./mcp-auth');
     for (const label of ['off', 'ro', 'rw']) {
       const caller = await auth.resolveMcpCaller(
@@ -332,13 +341,20 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
       const [k] = await sql`select access, api_only, revoked_at from access_keys
                              where id = ${keyIds[label]!}`;
       expect(k, label).toEqual({ access: 'read_write', api_only: true, revoked_at: null });
-      // /api/v1 checks the key with verifyAccessKey: it still passes.
-      const check = await verifyAccessKey(keys[label]!);
-      expect(check.ok, label).toBe(true);
-      expect(check.ok && check.grant.apiOnly, label).toBe(true);
       // /api/mcp refuses it.
       expect(await mcp(keys[label]!), label).toBeNull();
     }
+    // /api/v1 checks the key with verifyAccessKey: the member's still passes.
+    const check = await verifyAccessKey(keys.none!);
+    expect(check.ok).toBe(true);
+    expect(check.ok && check.grant.apiOnly).toBe(true);
+    // The client's is refused there too since W8a: no login is a client any
+    // more (0272 revokes such a key outright).
+    expect(await verifyAccessKey(keys.cli!)).toEqual({
+      ok: false,
+      reason: 'login',
+      keyId: keyIds.cli,
+    });
   });
 
   it('no switch row: a peer bound to a member or a client is disabled', async () => {
@@ -464,7 +480,7 @@ describe.skipIf(!URL)('0268: the cutoff is recorded once (W7b fix round 3)', () 
     await sql`select * from mantle_ws_migrate()`;
     beforeKey = await insertKey('before');
     beforePeer = await insertPeer('before');
-    await scratch.migrateRest();
+    await scratch.migrateRest(UNTIL);
   }, 300_000);
 
   afterAll(async () => {

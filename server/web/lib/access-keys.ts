@@ -1,9 +1,8 @@
 /**
  * Inbound API keys (migration 0232, plan page 1e62e204).
  *
- * A key acts as the ONE login that made it (an admin, a member or a
- * client; nobody makes a key for another login) and can only narrow what
- * that login may do: `access` is read or read_write, `areas`
+ * A key acts as the ONE login that made it (nobody makes a key for another
+ * login), as that login is now, and can only narrow what that login may do: `access` is read or read_write, `areas`
  * names the parts of the brain it may touch (null = all). It is accepted as
  * a Bearer on /api/v1/* (the gate, server/middleware/gate.ts) and on
  * /api/mcp (lib/mcp-auth.ts), and nowhere else.
@@ -14,13 +13,19 @@
  * bcrypt) is enough because the secret part is 32 random bytes.
  *
  * Every rule is read from the rows on every request: the key row (revoked,
- * expired) and the login row (disabled, role, and for a client key the
- * session epoch). A disable or a role change ends every key of the login.
- * An admin's or member's key outlives a plain sign-out (audit item 9); a
- * password change, "sign out everywhere", an admin's End sessions and a
- * reused device token revoke every key of the login (endLoginSessions
- * `endKeys`). A client has no password to re-type, so a client key ends
- * with the session it was made in (M2 audit N5).
+ * expired) and the login row (disabled). A key keeps no role of its own
+ * (workspaces W8a, migration 0272): a login carries no permission, and the
+ * key reads what the login's workspaces read now. A disable or a role
+ * change ends every key of the login (endLoginSessions). A key outlives a
+ * plain sign-out (audit item 9); a password change, "sign out everywhere",
+ * an admin's End sessions and a reused device token revoke every key of
+ * the login (endLoginSessions `endKeys`).
+ *
+ * What a login may make (W8a): a key that never expires, or lasts more
+ * than 90 days (up to 3650), and a key that names risky tools, only for a
+ * login that holds the Admin workspace with its keys area; everyone else's
+ * key ends within 90 days and names no risky tool. The admin gate still
+ * decides each risky call.
  *
  * The secret is never logged and never returned after create.
  */
@@ -43,25 +48,21 @@ export type AccessKeyArea = KeyArea;
 export const ACCESS_KEY_ACCESS = ['read', 'read_write'] as const;
 export type AccessKeyAccess = (typeof ACCESS_KEY_ACCESS)[number];
 
-export type AccessKeyRole = 'admin' | 'member' | 'client';
+export type AccessKeyRole = 'admin' | 'member';
 
 /** The expiry a new key gets when the caller names none. */
 export const DEFAULT_ACCESS_KEY_EXPIRY_DAYS = 90;
 /** The longest expiry a caller may name (in days). "Never" is null. */
 export const MAX_ACCESS_KEY_EXPIRY_DAYS = 3650;
-/** The longest a member's or client's key may live, in days (M2 audit F4).
- *  An admin re-types their password to make a key and may pick "never". A
- *  member re-types theirs too, but a member key ends within 90 days. A
- *  client signs in with a link or a code and has no password to re-type, so
- *  a client key ends within 30 days, as a client session does. */
-export const MAX_KEY_DAYS_BY_ROLE: Record<AccessKeyRole, number | null> = {
-  admin: null,
-  member: 90,
-  client: 30,
-};
-/** Whether a role re-types its password to make a key (a client has none). */
-export function keyNeedsPassword(role: AccessKeyRole): boolean {
-  return role !== 'client';
+/** The longest a key may live, in days, for a login that does not hold the
+ *  Admin workspace with its keys area (M2 audit F4; W8a: by the area, not
+ *  the role). */
+export const SHORT_KEY_MAX_DAYS = 90;
+/** The longest expiry the caller may pick, in days; null = any, "never"
+ *  included. `keysArea`: the login holds the Admin workspace with its keys
+ *  area (lib/workspaces.ts requireArea). */
+export function maxKeyDays(keysArea: boolean): number | null {
+  return keysArea ? null : SHORT_KEY_MAX_DAYS;
 }
 /** Live (not revoked, not expired) keys one login may hold. */
 export const MAX_LIVE_KEYS_PER_LOGIN = 50;
@@ -157,7 +158,7 @@ function isArea(v: string): v is AccessKeyArea {
 }
 
 function isRole(v: string): v is AccessKeyRole {
-  return v === 'admin' || v === 'member' || v === 'client';
+  return v === 'admin' || v === 'member';
 }
 
 /** A login row may use a key only while it may hold a session. */
@@ -167,8 +168,8 @@ function loginUsable(row: LoginRow): boolean {
 
 /**
  * Check a presented key: its shape, the row its prefix names, the hash (in
- * constant time), revoke and expiry, and the login it acts as (usable, the
- * same role). No side effects: the caller touches,
+ * constant time), revoke and expiry, and the login it acts as (usable, a
+ * role this code knows). No side effects: the caller touches,
  * rate-limits and audits.
  */
 export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
@@ -186,14 +187,8 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
     return { ok: false, reason: 'expired', keyId: row.id };
   }
   const login = await loadLoginRow(row.loginId);
-  if (
-    !login ||
-    !loginUsable(login) ||
-    !isRole(row.loginRole) ||
-    login.role !== row.loginRole ||
-    // A client key lives as long as the session it was made in (N5).
-    (row.loginRole === 'client' && row.sessionEpoch !== login.sessionEpoch)
-  ) {
+  // The login as it is now: no role is kept on the key (W8a).
+  if (!login || !loginUsable(login) || !isRole(login.role)) {
     return { ok: false, reason: 'login', keyId: row.id };
   }
   return {
@@ -203,10 +198,12 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
       prefix: row.keyPrefix,
       name: row.name,
       loginId: row.loginId,
-      role: row.loginRole,
+      role: login.role,
       access: row.access === 'read_write' ? 'read_write' : 'read',
       areas: row.areas ? row.areas.filter(isArea) : null,
-      riskyTools: row.loginRole === 'admin' ? row.riskyTools : [],
+      // Named at mint only by a login that held Admin with the keys area;
+      // the admin gate decides each call.
+      riskyTools: row.riskyTools,
       createdBy: row.createdBy,
       login,
       ...(row.apiOnly ? { apiOnly: true as const } : {}),
@@ -313,14 +310,13 @@ export function auditKeyRefusal(input: {
 export type MintAccessKeyInput = {
   name: string;
   loginId: string;
-  loginRole: AccessKeyRole;
   access: AccessKeyAccess;
   areas: readonly AccessKeyArea[] | null;
+  /** Only for a login that holds Admin with the keys area (the route
+   *  checks it). */
   riskyTools: readonly string[];
   expiresAt: Date | null;
   createdBy: string;
-  /** A client's session epoch now; null for an admin or member key. */
-  sessionEpoch: number | null;
   /** Refuse (null) when the login already holds this many live keys. */
   maxLive: number;
 };
@@ -350,7 +346,7 @@ export async function mintAccessKey(
   input: MintAccessKeyInput,
 ): Promise<{ id: string; prefix: string; key: string } | null> {
   const areas = input.areas ? [...new Set(input.areas)].sort() : null;
-  const riskyTools = input.loginRole === 'admin' ? [...new Set(input.riskyTools)].sort() : [];
+  const riskyTools = [...new Set(input.riskyTools)].sort();
   // A prefix clash is about 1 in 10^14; try again rather than fail.
   for (let attempt = 0; ; attempt++) {
     const prefix = randomPrefix();
@@ -374,7 +370,6 @@ export async function mintAccessKey(
           .values({
             name: input.name,
             loginId: input.loginId,
-            loginRole: input.loginRole,
             keyPrefix: prefix,
             keyHash: sha256(key).toString('hex'),
             access: input.access,
@@ -382,7 +377,6 @@ export async function mintAccessKey(
             riskyTools,
             expiresAt: input.expiresAt,
             createdBy: input.createdBy,
-            sessionEpoch: input.loginRole === 'client' ? input.sessionEpoch : null,
           })
           .returning({ id: accessKeys.id });
         return inserted!;

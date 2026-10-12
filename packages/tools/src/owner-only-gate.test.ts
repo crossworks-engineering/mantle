@@ -117,7 +117,6 @@ const OWNER_VIAS: OwnerSurfaceVia[] = [
 ];
 
 const NOT_OWNER: Array<[string, Surface]> = [
-  ['client', { kind: 'client', loginId: '00000000-0000-4000-8000-000000000001' }],
   ['team (member login)', { kind: 'team', loginId: '00000000-0000-4000-8000-000000000002' }],
   ['team (contact)', { kind: 'team', contactId: 'c1', privateReads: true }],
   ['missing', undefined],
@@ -257,13 +256,13 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // surface, only with the MCP connection stamped.
   'builtins-app-data.ts': ["if (s?.kind === 'team' && s.loginId && s.mcp) {"],
   // A connector call below the owner runs at the level its surface names;
-  // a member's or client's call by the login's workspace rule (W5b2).
+  // a member's call by the login's workspace rule (W5b2).
   'dispatch.ts': [
-    "s?.kind === 'team'",
-    "if ((s?.kind === 'team' || s?.kind === 'client') && s.loginId) {",
+    "s?.kind === 'team' ? 'team' : s?.kind === 'contact' ? 'public' : null;",
+    "if (s?.kind === 'team' && s.loginId) {",
   ],
-  // read_result binds a client's or member's turn to its own spills.
-  'builtins-tool-results.ts': ["if (kind !== 'client' && kind !== 'team') return undefined;"],
+  // read_result binds a member's turn to its own spills.
+  'builtins-tool-results.ts': ["if (kind !== 'team') return undefined;"],
   // run_plan's origin channel: a workspace assistant's Telegram turn carries
   // its chat on the team surface (W7d+e).
   'builtins-runs.ts': ["if (surface?.kind === 'team') return surface.originTelegramChatId;"],

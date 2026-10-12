@@ -166,7 +166,7 @@ export type ShellWorkspaces = { workspaces: ShellWorkspace[]; areas: WorkspaceAr
  * `brainId` is left out only while the database is behind the code.
  */
 export type AuthWhoami = {
-  role: 'admin' | 'member' | 'client';
+  role: 'admin' | 'member';
   loginId: string;
   email: string;
   displayName: string | null;

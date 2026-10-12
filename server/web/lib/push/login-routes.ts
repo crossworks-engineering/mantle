@@ -1,8 +1,8 @@
-// The push routes of a MEMBER or a CLIENT login (migration mobile_roles_push,
+// The push routes of a MEMBER login (migration mobile_roles_push,
 // docs/mobile-companion-backend.md "Three roles on the phone"): the same
 // steps as the admin's /api/push/*, for the caller's OWN devices and its own
-// toggles. The route files under /api/member/push and /api/client/push gate
-// the role (getMemberOr401, getClientOr401) and call these.
+// toggles. The route files under /api/member/push gate the login
+// (getMemberOr401) and call these. (The client login went in W8a.)
 //
 // A device is enrolled by the phone app, which signs in with a device token:
 // the enrol step needs that bearer, records its token, and the send path
@@ -26,7 +26,7 @@ import {
 } from './store';
 
 export type LoginPushCaller = {
-  role: 'member' | 'client';
+  role: 'member';
   loginId: string;
   anchorId: string;
   email: string;
@@ -68,8 +68,8 @@ export async function loginPushConnect(req: Request, caller: LoginPushCaller): P
   if (limited) return limited;
   const body = parseConnectBody(await readJsonNoNul(req));
   if (!body) return invalidBody();
-  // A member may switch the brain's push link on; a client may not.
-  const res = await connectDevice(body.osPushToken, { mayRegister: caller.role === 'member' });
+  // A member may switch the brain's push link on.
+  const res = await connectDevice(body.osPushToken, { mayRegister: true });
   if (res.ok) {
     // A member's Connect was the brain's first: the admins can see who
     // registered the brain with the relay, and when.

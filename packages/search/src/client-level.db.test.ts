@@ -41,7 +41,6 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
   };
   const member = randomUUID();
   const adminLogin = randomUUID();
-  const clientLogin = randomUUID();
   const notBrain = {
     memberItem: randomUUID(),
     teamDraft: randomUUID(),
@@ -87,8 +86,7 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     // personal spaces come from the login trigger (0165).
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
-      (${adminLogin}, ${`${tag}-a@example.invalid`}, 'x', 'admin'),
-      (${clientLogin}, ${`${tag}-c@example.invalid`}, 'x', 'client')`;
+      (${adminLogin}, ${`${tag}-a@example.invalid`}, 'x', 'admin')`;
     const space = async (login: string) =>
       (
         await admin<{ id: string }[]>`
@@ -113,8 +111,8 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     await admin`delete from tool_groups where slug like ${`${tag}-%`}`;
     await admin`delete from facts where content like ${`${tag}%`}`;
     await admin`delete from nodes where title like ${`${tag}%`}`;
-    await admin`delete from spaces where login_id in (${member}, ${adminLogin}, ${clientLogin})`;
-    await admin`delete from auth.users where id in (${member}, ${adminLogin}, ${clientLogin})`;
+    await admin`delete from spaces where login_id in (${member}, ${adminLogin})`;
+    await admin`delete from auth.users where id in (${member}, ${adminLogin})`;
     await m?.closeDb();
   });
 
@@ -265,10 +263,11 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     }
   });
 
-  it('a client login is never a member: its space is no member space (Team drafts)', async () => {
-    const [r] = await admin<{ member: boolean; client: boolean }[]>`
-      select mantle_member_space((select id from spaces where kind = 'personal' and login_id = ${member})) as member,
-             mantle_member_space((select id from spaces where kind = 'personal' and login_id = ${clientLogin})) as client`;
-    expect(r).toEqual({ member: true, client: false });
+  // There is no client login since W8a: only the member half of the old
+  // "a client login is never a member" case is left.
+  it("a member login's space is a member space (Team drafts)", async () => {
+    const [r] = await admin<{ member: boolean }[]>`
+      select mantle_member_space((select id from spaces where kind = 'personal' and login_id = ${member})) as member`;
+    expect(r).toEqual({ member: true });
   });
 });

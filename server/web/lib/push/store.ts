@@ -2,7 +2,7 @@
 // @mantle/crypto (AES-256-GCM under the master key); subscriptions hold the
 // relay's routing token + the device's public key.
 
-import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
   authUsers,
   db,
@@ -151,7 +151,7 @@ export async function listLoginSubscriptions(
       and(
         eq(pushSubscriptions.ownerId, ownerId),
         eq(pushSubscriptions.loginId, loginId),
-        inArray(authUsers.role, ['member', 'client']),
+        eq(authUsers.role, 'member'),
         isNull(authUsers.disabledAt),
         eq(mobileTokens.userId, loginId),
         tokenLive(),

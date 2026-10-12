@@ -180,8 +180,8 @@ export function isReadRequest(method: string, pattern: string | null): boolean {
  * The owner routes a non-Admin login may call since W6a: reads of brain
  * items in the login's scope (the row rules decide what it sees; drafts are
  * read only where the login may edit the item, W6b). Writes are
- * MEMBER_OPEN_WRITES; every other owner route still refuses a member or a
- * client (403 member-login / client-login).
+ * MEMBER_OPEN_WRITES; every other owner route still refuses a member
+ * (403 member-login).
  */
 export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/pages',
@@ -292,32 +292,6 @@ export const MEMBER_OPEN_WRITES: readonly string[] = [
 ];
 
 const MEMBER_WRITE: ReadonlySet<string> = new Set(MEMBER_OPEN_WRITES);
-
-/**
- * The owner routes W7e opened to a non-Admin login that a CLIENT login still
- * may not call (W7e fix round 1, M1): running an app and a drawing's SVG.
- * Clients do not run brain apps yet; before W7e every one of these refused
- * a client, and it still does (403 client-login on the session guard, 401
- * on the byte guard, as before). MEMBER_OPEN_READS and MEMBER_OPEN_WRITES
- * are shared by members and clients; this list takes these back from the
- * client.
- */
-export const CLIENT_CLOSED_ROUTES: readonly string[] = [
-  'POST /api/apps/:id/frame-ticket',
-  'POST /api/apps/:id/db-broker',
-  'POST /api/apps/:id/tool-broker',
-  'GET /api/draws/:id/svg',
-];
-
-const CLIENT_CLOSED: ReadonlySet<string> = new Set(CLIENT_CLOSED_ROUTES);
-
-/** Whether `method pattern` is closed to a client login though it is open
- *  to a member (CLIENT_CLOSED_ROUTES; HEAD as GET). */
-export function clientClosed(method: string, pattern: string | null): boolean {
-  if (pattern === null) return false;
-  const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
-  return CLIENT_CLOSED.has(`${m} ${pattern}`);
-}
 
 /** Whether a non-Admin login may write through `method pattern` (W6b). */
 export function memberMayWrite(method: string, pattern: string | null): boolean {

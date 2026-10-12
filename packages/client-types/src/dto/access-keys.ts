@@ -2,8 +2,8 @@
  * Inbound API keys on the wire (migration 0232, plan page 1e62e204): the
  * Settings > API access screen, and the public API v1 answers about keys.
  *
- * A key acts as the ONE login that made it (admin, member or client) and
- * can only narrow it: `access` (read or read_write) and `areas` (null = every area). It is
+ * A key acts as the ONE login that made it, as that login is now, and can
+ * only narrow it: `access` (read or read_write) and `areas` (null = every area). It is
  * a Bearer on /api/v1/* and /api/mcp, nowhere else. The secret is in the
  * create answer once; no other answer carries it or its hash.
  *
@@ -31,7 +31,7 @@ export type AccessKeyArea = (typeof ACCESS_KEY_AREAS)[number];
 
 export type AccessKeyAccess = 'read' | 'read_write';
 
-export type AccessKeyRole = 'admin' | 'member' | 'client';
+export type AccessKeyRole = 'admin' | 'member';
 
 export type AccessKeyStatus = 'active' | 'expired' | 'revoked';
 
@@ -46,7 +46,8 @@ export type AccessKeyView = {
   access: AccessKeyAccess;
   /** null = every area. */
   areas: AccessKeyArea[] | null;
-  /** An admin key on /api/mcp: risky tools allowed by name. */
+  /** A key of a login in Admin with the keys area, on /api/mcp: risky
+   *  tools allowed by name (the admin gate still decides each call). */
   riskyTools: string[];
   status: AccessKeyStatus;
   /** ISO time; null = never expires. */
@@ -58,21 +59,20 @@ export type AccessKeyView = {
   revokedAt: string | null;
 };
 
-/** GET /api/access-keys. A member or client gets their own keys; an
- *  admin gets every key on the brain. */
+/** GET /api/access-keys. A member gets their own keys; an admin gets every
+ *  key on the brain. */
 export type AccessKeyList = {
   keys: AccessKeyView[];
-  /** The caller's role: an admin may name risky tools, and sees every key. */
+  /** The caller's kind: an admin sees every key. */
   role: AccessKeyRole;
   areas: AccessKeyArea[];
   /** The expiry a key gets when the create names none. */
   defaultExpiryDays: number;
   /** The longest expiry the caller may pick, in days; null = any, "never"
-   *  included (an admin). A member's keys last at most 90 days, a client's
-   *  30. */
+   *  included: a login in the Admin workspace with its keys area (W8a, never
+   *  the role). Everyone else's keys last at most 90 days. */
   maxExpiryDays: number | null;
-  /** Whether the create needs the caller's password (an admin or member;
-   *  a client has none). */
+  /** Whether the create needs the caller's password: always since W8a. */
   needsPassword: boolean;
 };
 
@@ -85,7 +85,7 @@ export type AccessKeyCreateInput = {
   areas: AccessKeyArea[] | null;
   /** Omitted = the default (90); null = never; else 1 to 3650 days. */
   expiresInDays?: number | null;
-  /** Only for an admin's own key. */
+  /** Only for a login in the Admin workspace with its keys area (W8a). */
   riskyTools?: string[];
   /** The caller's password, when `needsPassword` (never stored, never
    *  logged). */

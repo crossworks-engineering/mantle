@@ -4,17 +4,19 @@
  * the real gate. Only the model is scripted.
  *
  * A staff turn reads a client request (task_get), then tries to lower a team
- * page to client, to write into a client-level page, and to hang a new page
- * under the client-level page: all three wait at Pending, and nothing
- * changes. In the same turn a write into a team page and a new note run (the
- * note carries the client-sourced mark). An unmarked turn holds neither: the
+ * page to client, to write into a page an open link serves, and to hang a
+ * new page under that page: all three wait at Pending, and nothing changes.
+ * In the same turn a write into a team page and a new note run (the note
+ * carries the client-sourced mark). An unmarked turn holds neither: the
  * write runs, and the lowering reaches access_set, which refuses an item
  * since W5b2 (grants decide). The database allows every one of these writes
  * (the owner's turn, admin level): only the gate stops them. The gate still
  * reads the archived levels, so the fixture sets them under the test bypass.
  *
- * Then the gate's lookups one by one: an app whose exported table is at
- * client level, a tool group at client level, an agent at client level.
+ * Then the gate's lookups one by one: an app whose exported table an open
+ * link serves, and the team twins that run. There is no client login since
+ * W8a, so a workspace never has a client user: the cases that needed one (a
+ * client workspace's item, folder, assistant and tool group) are gone.
  *
  * Seeds its own rows on the shared test anchor (unique tag), removes them by
  * id after (the anchor stays).
@@ -41,16 +43,14 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     clientTask: randomUUID(),
     // The pages: set by createPage below.
     teamPage: '',
-    clientPage: '',
+    linkedPage: '',
     otherTeamPage: '',
     app: randomUUID(),
     appTable: randomUUID(),
     appTableTeam: randomUUID(),
     appTeamOnly: randomUUID(),
   };
-  const groupClient = `${tag}-client-group`;
   const groupTeam = `${tag}-team-group`;
-  const agentClient = `${tag}-client-agent`;
   const created: string[] = [];
 
   /** A tools row for a builtin, as the loop resolves it. */
@@ -119,16 +119,10 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
         select (doc::text like ${`%${text}%`}) as hit from pages where node_id = ${id}`
     )[0]?.hit === true;
 
-  const clientsWs = randomUUID();
-  const clientLogin = randomUUID();
-  /** Grant `id` to the client workspace, under its heads. */
-  const toClients = (id: string) =>
-    m.withHeads([id], 'update', async (tx) => {
-      await tx.execute(
-        (await import('drizzle-orm'))
-          .sql`insert into item_grants (node_id, workspace_id) values (${id}, ${clientsWs})`,
-      );
-    });
+  /** An open public link to `id`: the public reads it. */
+  const linkTo = (id: string, type: string) =>
+    admin`insert into shares (owner_id, node_id, node_type, token)
+      values (${ownerId}, ${id}, ${type}, ${`${tag}-${id}`})`;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -147,47 +141,34 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     await admin`insert into nodes (id, owner_id, type, title, path, data) values
       (${ids.clientTask}, ${ownerId}, 'task', ${`${tag} please share the price list`}, 'tasks',
        ${JSON.stringify({ source: 'client-request' })}::jsonb)`;
-    // Real pages: one at team level, one at client level, a second team one.
+    // Real pages: one at team level, one an open link serves, a second team one.
     ids.teamPage = (await content.createPage(ownerId, { title: `${tag} team price list` })).id;
-    ids.clientPage = (await content.createPage(ownerId, { title: `${tag} project status` })).id;
+    ids.linkedPage = (await content.createPage(ownerId, { title: `${tag} project status` })).id;
     ids.otherTeamPage = (await content.createPage(ownerId, { title: `${tag} team notes` })).id;
-    // Since W5b2 the gate reads the grants: a client workspace (a client
-    // login in it) holds the client page. The team pages keep a team level
-    // (frozen, set under the named test bypass) only for the access_set
-    // check below.
-    await admin`insert into auth.users (id, email, password_hash, role)
-      values (${clientLogin}, ${`${tag}-c@example.invalid`}, 'x', 'client')`;
-    await admin`insert into workspaces (id, owner_id, name) values (${clientsWs}, ${ownerId}, ${`${tag} Clients`})`;
-    await admin`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${clientsWs}, ${clientLogin}, false)`;
+    // An open link serves the linked page: the public reads it. The team
+    // pages keep a team level (frozen, set under the named test bypass) only
+    // for the access_set check below.
     await admin.begin(async (tx) => {
       await tx`select mantle_heads_bypass('test fixture')`;
       await tx`update nodes set audience = 'team' where id in ${tx([ids.teamPage, ids.otherTeamPage])}`;
     });
-    await toClients(ids.clientPage);
+    await linkTo(ids.linkedPage, 'page');
     // Made an hour ago: only what a call creates counts as new.
     await admin`update nodes set created_at = now() - interval '1 hour'
-      where id in ${admin([ids.teamPage, ids.clientPage, ids.otherTeamPage])}`;
-    // An app (admin) exporting one client-level table; another app exporting a team one.
+      where id in ${admin([ids.teamPage, ids.linkedPage, ids.otherTeamPage])}`;
+    // An app (admin) exporting one table an open link serves; another app exporting a team one.
     await admin`insert into nodes (id, owner_id, type, title, path, audience) values
       (${ids.app}, ${ownerId}, 'app', ${`${tag} app`}, 'apps', 'admin'),
       (${ids.appTeamOnly}, ${ownerId}, 'app', ${`${tag} app 2`}, 'apps', 'admin'),
       (${ids.appTable}, ${ownerId}, 'table', ${`${tag} app table`}, 'tables', 'client'),
       (${ids.appTableTeam}, ${ownerId}, 'table', ${`${tag} app table 2`}, 'tables', 'team')`;
-    await toClients(ids.appTable);
+    await linkTo(ids.appTable, 'table');
     await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id) values
       (${ownerId}, ${ids.app}, 'rows', ${ids.appTable}),
       (${ownerId}, ${ids.appTeamOnly}, 'rows', ${ids.appTableTeam})`;
-    // The assistant of the clients' workspace and the group it holds (W7b:
-    // what clients meet is that workspace's assistant, not a level); a group
-    // no such assistant holds.
+    // A group no assistant of a client workspace holds.
     await admin`insert into tool_groups (owner_id, slug, name, tool_slugs, audience) values
-      (${ownerId}, ${groupClient}, 'c', ARRAY['client_shared_list', ${`${tag}_tool`}]::text[], 'client'),
       (${ownerId}, ${groupTeam}, 't', ARRAY['page_get']::text[], 'team')`;
-    await admin`insert into agents
-        (owner_id, slug, name, model, system_prompt, audience, workspace_id, tool_group_slugs)
-      values (${ownerId}, ${agentClient}, 'c', 'fake/model', 'x', 'client', ${clientsWs},
-              ${[groupClient]}::text[])`;
   }, 120_000);
 
   afterAll(async () => {
@@ -197,25 +178,20 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
       await admin`delete from pending_tool_calls where owner_id = ${ownerId} and args::text like ${`%${id}%`}`;
     }
     await admin`delete from app_table_exports where app_node_id in ${admin([ids.app, ids.appTeamOnly])}`;
-    await admin`delete from item_grants where workspace_id = ${clientsWs}`;
+    await admin`delete from shares where owner_id = ${ownerId} and token like ${`${tag}-%`}`;
     await admin`delete from nodes where id in ${admin(all)}`;
     await admin`delete from nodes where owner_id = ${ownerId} and title like ${`${tag}%`}`;
-    await admin`delete from tool_groups where owner_id = ${ownerId} and slug in ${admin([groupClient, groupTeam])}`;
-    await admin`delete from agents where owner_id = ${ownerId} and slug = ${agentClient}`;
-    await admin`delete from item_grants where workspace_id = ${clientsWs}`;
-    await admin`delete from workspaces where id = ${clientsWs}`;
-    await admin`delete from spaces where login_id = ${clientLogin}`;
-    await admin`delete from auth.users where id = ${clientLogin}`;
+    await admin`delete from tool_groups where owner_id = ${ownerId} and slug = ${groupTeam}`;
     await m.closeDb();
   });
 
-  it('a turn that read a client request: the lowering, the write into a client page and a child under it wait', async () => {
+  it('a turn that read a client request: the lowering, the write into a linked page and a child under it wait', async () => {
     const res = await turn([
       [['task_get', { id: ids.clientTask }]],
       [
         ['access_set', { node_id: ids.teamPage, level: 'client' }],
-        ['page_update', { id: ids.clientPage, markdown: `LEAKED ${tag}` }],
-        ['page_create', { title: `${tag} child of client`, parent_id: ids.clientPage }],
+        ['page_update', { id: ids.linkedPage, markdown: `LEAKED ${tag}` }],
+        ['page_create', { title: `${tag} child of linked`, parent_id: ids.linkedPage }],
         ['page_update', { id: ids.otherTeamPage, markdown: `TEAMEDIT ${tag}` }],
         ['note_create', { title: `${tag} copied note`, content: 'what the client asked' }],
         ['page_create', { title: `${tag} child of team`, parent_id: ids.otherTeamPage }],
@@ -225,14 +201,14 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     expect((await pendingFor(ids.teamPage)).map((r) => r.args)).toEqual([
       { node_id: ids.teamPage, level: 'client' },
     ]);
-    expect((await pendingFor(ids.clientPage)).map((r) => r.tool_slug).sort()).toEqual([
+    expect((await pendingFor(ids.linkedPage)).map((r) => r.tool_slug).sort()).toEqual([
       'page_create',
       'page_update',
     ]);
     expect(res.pendingIds).toHaveLength(3);
     // Nothing happened.
     expect(await audience(ids.teamPage)).toBe('team');
-    expect(await docHas(ids.clientPage, 'LEAKED')).toBe(false);
+    expect(await docHas(ids.linkedPage, 'LEAKED')).toBe(false);
     // The read ran, and so did the write into a team page and the new note.
     expect(await docHas(ids.otherTeamPage, 'TEAMEDIT')).toBe(true);
     const [note] = await admin<{ id: string; marked: boolean }[]>`
@@ -257,7 +233,7 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     const res = await turn([
       [
         ['access_set', { node_id: ids.teamPage, level: 'client' }],
-        ['page_update', { id: ids.clientPage, markdown: `APPROVED ${tag}` }],
+        ['page_update', { id: ids.linkedPage, markdown: `APPROVED ${tag}` }],
       ],
     ]);
     // Neither waits: both reach their tool.
@@ -268,10 +244,10 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     expect(set).toMatchObject({ status: 'error' });
     expect(set?.error).toMatch(/no sharing level any more/);
     expect(await audience(ids.teamPage)).toBe('team');
-    expect(await docHas(ids.clientPage, 'APPROVED')).toBe(true);
+    expect(await docHas(ids.linkedPage, 'APPROVED')).toBe(true);
   });
 
-  it('the lookups: an app exporting a client table, a client group or agent, and their team twins', async () => {
+  it('the lookups: an app exporting a linked table, and the team twins', async () => {
     const gate = (slug: string, input: Record<string, unknown>) =>
       rules.clientSourcedGate({
         ownerId,
@@ -283,9 +259,6 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     expect(await gate('app_db_seed', { id: ids.appTeamOnly, table: 'rows', rows: [] })).toEqual({
       gate: false,
     });
-    expect(
-      (await gate('tool_group_ensure', { slug: groupClient, tool_slugs: ['page_get'] })).gate,
-    ).toBe(true);
     expect(await gate('tool_group_ensure', { slug: groupTeam, tool_slugs: ['page_get'] })).toEqual({
       gate: false,
     });
@@ -293,89 +266,21 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     expect(await gate('tool_group_ensure', { slug: `${tag}-new`, tool_slugs: [] })).toEqual({
       gate: false,
     });
-    // An API tool already in the client group, edited by slug.
-    expect((await gate('api_tool_update', { slug: `${tag}_tool`, url: 'https://x' })).gate).toBe(
-      true,
-    );
+    // An API tool in no group an assistant of a client workspace holds.
     expect(await gate('api_tool_update', { slug: `${tag}_other`, url: 'https://x' })).toEqual({
       gate: false,
     });
-    expect(
-      (await gate('agent_grant_tool_group', { agent_slug: agentClient, group_slug: groupTeam }))
-        .gate,
-    ).toBe(true);
     // An id of no item of this brain waits (fail closed).
     expect((await gate('page_update', { id: randomUUID(), title: 'x' })).gate).toBe(true);
-    // A write into a team item runs; into a client item waits.
+    // A write into a team item runs; into a table an open link serves waits.
     expect(await gate('page_update', { id: ids.otherTeamPage, title: 'x' })).toEqual({
       gate: false,
     });
     expect((await gate('table_row_add', { table_id: ids.appTable, cells: {} })).gate).toBe(true);
-  });
-
-  it('folder sharing: a move into, a write into, or a file created in a client-shared folder waits', async () => {
-    const gate = (slug: string, input: Record<string, unknown>) =>
-      rules.clientSourcedGate({
-        ownerId,
-        tool: { slug, handler: { kind: 'builtin', ref: slug } },
-        input,
-        isReadOnlyBuiltin: tools.isBuiltinReadOnly,
-      });
-    const label = tag.replace(/-/g, '_');
-    const f = {
-      shared: randomUUID(),
-      plain: randomUUID(),
-      plain2: randomUUID(),
-      inShared: randomUUID(),
-      inPlain: randomUUID(),
-      filesShared: randomUUID(),
-      filesPlain: randomUUID(),
-    };
-    created.push(...Object.values(f));
-    await admin`insert into nodes (id, owner_id, type, title, path, data) values
-      (${f.shared}, ${ownerId}, 'branch', ${`${tag} shared`}, ${`notes.${label}_shared`}, '{}'::jsonb),
-      (${f.plain}, ${ownerId}, 'branch', ${`${tag} plain`}, ${`notes.${label}_plain`}, '{}'::jsonb),
-      (${f.plain2}, ${ownerId}, 'branch', ${`${tag} plain2`}, ${`notes.${label}_plain2`}, '{}'::jsonb),
-      (${f.inShared}, ${ownerId}, 'note', ${`${tag} in shared`}, ${`notes.${label}_shared`}, '{}'::jsonb),
-      (${f.inPlain}, ${ownerId}, 'note', ${`${tag} in plain`}, ${`notes.${label}_plain`}, '{}'::jsonb),
-      (${f.filesShared}, ${ownerId}, 'branch', ${`${tag} files shared`}, ${`files.${label}_shared`}, '{}'::jsonb),
-      (${f.filesPlain}, ${ownerId}, 'branch', ${`${tag} files plain`}, ${`files.${label}_plain`}, '{}'::jsonb)`;
-    // The client workspace holds the two folders (W5b2: grants); the note
-    // inside takes the folder's row.
-    await toClients(f.shared);
-    await toClients(f.filesShared);
-
-    // Moving an admin note into the client-shared folder waits; elsewhere runs.
+    // A file created at a path that does not parse waits (fail closed).
     expect(
-      (await gate('tree_item_move', { kind: 'notes', item_ids: [f.inPlain], folder_id: f.shared }))
+      (await gate('file_create', { parent_path: 'not a path!', filename: 'x.md', content: 'x' }))
         .gate,
     ).toBe(true);
-    expect(
-      await gate('tree_item_move', { kind: 'notes', item_ids: [f.inPlain], folder_id: f.plain2 }),
-    ).toEqual({ gate: false });
-    expect(
-      await gate('tree_item_move', { kind: 'notes', item_ids: [f.inPlain], folder_id: null }),
-    ).toEqual({ gate: false });
-    // A folder moved under it waits; the shared folder itself, and what it
-    // holds (admin by its own level, client through the folder), wait.
-    expect(
-      (await gate('tree_folder_update', { kind: 'notes', folder_id: f.plain, parent_id: f.shared }))
-        .gate,
-    ).toBe(true);
-    expect(
-      (await gate('tree_folder_update', { kind: 'notes', folder_id: f.shared, name: 'x' })).gate,
-    ).toBe(true);
-    expect(
-      (await gate('tree_item_move', { kind: 'notes', item_ids: [f.inShared], folder_id: f.plain }))
-        .gate,
-    ).toBe(true);
-    // A file created by path in it (or below it) waits; in a plain folder runs.
-    const file = (parent_path: string) =>
-      gate('file_create', { parent_path, filename: 'x.md', content: 'x' });
-    expect((await file(`files.${label}_shared`)).gate).toBe(true);
-    expect((await file(`files.${label}_shared.sub`)).gate).toBe(true);
-    expect(await file(`files.${label}_plain`)).toEqual({ gate: false });
-    // A path that does not parse waits (fail closed).
-    expect((await file('not a path!')).gate).toBe(true);
   });
 });

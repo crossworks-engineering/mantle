@@ -217,13 +217,15 @@ async function pairingTarget(args: {
     noteFailure(loginId, now);
     return NO_SUCH_CODE;
   }
-  // Client logins have no Telegram (no client chat exists yet).
+  // A login that no longer exists pairs nothing (no login carries a role
+  // that grants or refuses this since workspaces W8a: chatLoginRefusal
+  // below asks its workspaces).
   const [who] = await db
-    .select({ role: authUsers.role })
+    .select({ id: authUsers.id })
     .from(authUsers)
     .where(eq(authUsers.id, loginId))
     .limit(1);
-  if (!who || who.role === 'client') {
+  if (!who) {
     return {
       ok: false as const,
       error: 'this login cannot pair a Telegram chat.',

@@ -82,9 +82,9 @@ describe('access matrix', () => {
       'public.oauth_access_tokens',
       'public.mobile_tokens',
       'public.member_invites',
-      'public.client_signin_codes',
-      'public.client_signin_code_skips',
-      'public.client_signin_sender_folders',
+      'public.archive_client_logins',
+      'public.archive_client_signin_codes',
+      'public.archive_mcp_login_tokens',
     ];
     for (const table of adminForever) {
       expect(ACCESS_MATRIX.find((t) => t.table === table)?.read, table).toBe('none');

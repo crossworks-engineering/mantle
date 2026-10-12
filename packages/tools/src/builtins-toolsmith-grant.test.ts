@@ -554,7 +554,7 @@ describe('tool_group_ensure on a group an assistant of another workspace holds (
     h.selectQueue.push([CLIENT_READ], HELD);
     const res = await ensure.handler(
       { slug: 'client-read', tool_slugs: ['note_to_page'] },
-      { ownerId: 'o1', surface: { kind: 'client', loginId: 'c1' } },
+      { ownerId: 'o1', surface: { kind: 'team', loginId: 'c1' } },
     );
     expect(errorOf(res)).toMatch(/only the owner changes its tools/);
     expect(h.update).not.toHaveBeenCalled();

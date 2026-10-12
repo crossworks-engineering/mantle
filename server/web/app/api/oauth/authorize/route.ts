@@ -3,10 +3,9 @@
  *
  * GET renders the consent page ("Allow Claude to access your Mantle brain") once
  * the owner is signed in; if they're not, it bounces to /login?next=… and comes
- * back. A member or client login connects too (MCP as a login, plan page
- * e5b854dd) once an admin has turned MCP on for that login; until then it
- * gets a plain refusal page (403). Their grant carries the login's session
- * epoch, and runs only their own role's tools. POST is the Allow/Deny
+ * back. A member login connects too (MCP as a login, plan page e5b854dd);
+ * a member that may not connect gets a plain refusal page (403). Its grant
+ * carries the login's session epoch, and reads only its own workspaces. POST is the Allow/Deny
  * decision: Allow mints a single-use PKCE-bound code and 302s back to the
  * client's registered redirect_uri with code+state.
  *
@@ -17,9 +16,7 @@
  * An admin or member re-types their password to Allow (M2 audit N4): a
  * stolen session cookie alone must not approve a connector, whose refresh
  * tokens outlive the session. 10 tries a minute per login, counted before
- * the check. A client signs in by link or code and has no password; its
- * grant is bound to its session epoch and ends when it signs out. A
- * password change, "sign out everywhere" and an admin's End sessions end
+ * the check. A password change, "sign out everywhere" and an admin's End sessions end
  * every grant of the login (endLoginSessions `endKeys`).
  *
  * Security: if client_id or redirect_uri is invalid we render an error and do
@@ -89,35 +86,33 @@ function htmlError(message: string, status = 400): Response {
 }
 
 /** Who consents: the brain (anchor) the grant is for, the login, and for a
- *  member or client the session epoch the grant is bound to. */
+ *  member the session epoch the grant is bound to. */
 type Consenter = {
   ownerId: string;
   loginId: string;
   email: string;
-  role: 'admin' | 'member' | 'client';
+  role: 'admin' | 'member';
   sessionEpoch: number | null;
   /** The epoch the session check verified (any role): the code is minted
    *  only if it is still the login's then (mintAuthCode). */
   consentEpoch: number;
 };
 
-/** Who is signed in: a login that may connect, a member or client whose MCP
- *  access is off (refused with a page, not sent to /login: they are signed
- *  in, and a bounce would loop), or nobody. */
-async function signedIn(): Promise<Consenter | 'member' | 'client' | null> {
+/** Who is signed in: a login that may connect, a member that may not
+ *  (refused with a page, not sent to /login: it is signed in, and a bounce
+ *  would loop), or nobody. */
+async function signedIn(): Promise<Consenter | 'member' | null> {
   const login = await getLoginOr401();
   if (login instanceof Response) return null;
   switch (login.kind) {
     case 'admin':
       return adminConsenter(login.user, login.sessionEpoch);
-    case 'member':
-    case 'client': {
+    case 'member': {
       if (!(await mcpLoginEnabled(login.loginId))) return login.kind;
       const target = await mcpTargetLogin(login.loginId);
       if (!target) return login.kind;
-      const anchorId = login.kind === 'member' ? login.member.anchorId : login.client.anchorId;
       return {
-        ownerId: anchorId,
+        ownerId: login.member.anchorId,
         loginId: login.loginId,
         email: login.email,
         role: login.kind,
@@ -141,7 +136,6 @@ function adminConsenter(user: SessionUser, consentEpoch: number): Consenter {
 
 const MEMBER_REFUSED =
   'MCP is not turned on for your login. Ask an admin of this brain to turn it on in Settings, MCP.';
-const CLIENT_REFUSED = MEMBER_REFUSED;
 
 /** Bind the consent form to (user, client, redirect, challenge) so only a POST
  *  originating from the page we rendered to THIS signed-in user is honoured. */
@@ -183,7 +177,6 @@ export async function GET(req: Request) {
 
   const user = await signedIn();
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
-  if (user === 'client') return htmlError(CLIENT_REFUSED, 403);
   if (!user) {
     // Bounce through login, then return to this exact authorize request.
     const next = encodeURIComponent(url.pathname + url.search);
@@ -221,7 +214,6 @@ export async function POST(req: Request) {
 
   const user = await signedIn();
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
-  if (user === 'client') return htmlError(CLIENT_REFUSED, 403);
   if (!user) return htmlError('your session expired — start the connection again', 401);
 
   if (!consentTokenValid(get('consent_token'), consentToken(user.loginId, p))) {
@@ -236,37 +228,35 @@ export async function POST(req: Request) {
     return NextResponse.redirect(dest, { status: 302 });
   }
 
-  // An admin or member re-types their password to Allow (see the header).
-  if (user.role !== 'client') {
-    const bucket = `oauth-consent-pw:${user.loginId}`;
-    const tries = rateLimitLogin(bucket, CONSENT_PASSWORD_RATE);
-    const again = (message: string, status: number, reason: 'password' | 'rate-limited') => {
-      auditConsent(req, 'oauth.consent_failed', user, p, { reason });
-      return htmlPage(
-        consentPage(
-          validated.clientName,
-          p,
-          consentToken(user.loginId, p),
-          user.email,
-          user.role,
-          message,
-        ),
-        status,
-      );
-    };
-    if (!tries.ok) {
-      return again('Too many tries. Wait a minute, then try again.', 429, 'rate-limited');
-    }
-    const password = get('password');
-    if (!password || !(await verifyPassword(user.loginId, password))) {
-      return again(
-        'That password is not right. Type your Mantle password to allow.',
-        403,
-        'password',
-      );
-    }
-    rateLimitLoginRefund(bucket);
+  // Every login re-types its password to Allow (see the header).
+  const bucket = `oauth-consent-pw:${user.loginId}`;
+  const tries = rateLimitLogin(bucket, CONSENT_PASSWORD_RATE);
+  const again = (message: string, status: number, reason: 'password' | 'rate-limited') => {
+    auditConsent(req, 'oauth.consent_failed', user, p, { reason });
+    return htmlPage(
+      consentPage(
+        validated.clientName,
+        p,
+        consentToken(user.loginId, p),
+        user.email,
+        user.role,
+        message,
+      ),
+      status,
+    );
+  };
+  if (!tries.ok) {
+    return again('Too many tries. Wait a minute, then try again.', 429, 'rate-limited');
   }
+  const password = get('password');
+  if (!password || !(await verifyPassword(user.loginId, password))) {
+    return again(
+      'That password is not right. Type your Mantle password to allow.',
+      403,
+      'password',
+    );
+  }
+  rateLimitLoginRefund(bucket);
 
   const code = await mintAuthCode({
     clientId: p.clientId,
@@ -411,14 +401,10 @@ function consentPage(
     <input type="hidden" name="code_challenge_method" value="${h(p.codeChallengeMethod)}" />
     <input type="hidden" name="scope" value="${h(p.scope)}" />
     <input type="hidden" name="consent_token" value="${h(token)}" />
-    ${
-      role === 'client'
-        ? ''
-        : `<input type="text" name="username" value="${h(email)}" autocomplete="username" hidden />
+    <input type="text" name="username" value="${h(email)}" autocomplete="username" hidden />
     <label class="muted" for="consent-password" style="display:block;margin-bottom:6px;">Type your Mantle password to allow</label>
     <input id="consent-password" class="pw" type="password" name="password" autocomplete="current-password" />
-    ${error ? `<p class="err" role="alert">${h(error)}</p>` : ''}`
-    }
+    ${error ? `<p class="err" role="alert">${h(error)}</p>` : ''}
     <div class="row">
       <button class="deny" type="submit" name="decision" value="deny">Deny</button>
       <button class="allow" type="submit" name="decision" value="allow">Allow</button>

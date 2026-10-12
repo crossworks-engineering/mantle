@@ -3,13 +3,12 @@
  * a real, migrated Postgres and real SQLite files:
  *
  *  - reach: only apps with MCP access on, published, of this brain: for a
- *    member one the Team workspace holds (its grant; workspaces W5b2), for
- *    a client none (the client portal and its apps went in W5c); never an app
+ *    member one the Team workspace holds (its grant; workspaces W5b2); never
+ *    an app
  *    only Admin holds, one with only a public link, a draft, or MCP access
  *    off;
  *  - read or write: the login's Write switch and the browser's rule (for a
- *    member the grant's Write switch, Informational being Write off; for a
- *    client the informational flag);
+ *    member the grant's Write switch, Informational being Write off);
  *  - query: read-only, `:host_me_*` filled for the caller;
  *  - write: rows only (no DDL), an hourly `pre_mcp_write` snapshot first,
  *    the SQL and the changes in the access log;
@@ -63,10 +62,6 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
   const asMember = (write = true): ToolHandlerContext => ({
     ownerId: anchor,
     surface: { kind: 'team', loginId: member, contactName: 'Pat Member', mcp: mcp(write) },
-  });
-  const asClient = (write = true): ToolHandlerContext => ({
-    ownerId: anchor,
-    surface: { kind: 'client', loginId: client, contactName: 'Cam Client', mcp: mcp(write) },
   });
   const call = (slug: string, input: Record<string, unknown>, ctx: ToolHandlerContext) =>
     tools.LOGIN_APP_DATA_TOOLS.find((t) => t.slug === slug)!.handler(input, ctx);
@@ -135,8 +130,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     await admin`insert into auth.users (id, email, password_hash, role, display_name) values
       (${anchor}, ${`ad-${tag}-o@example.invalid`}, 'x', 'admin', null),
       (${other}, ${`ad-${tag}-x@example.invalid`}, 'x', 'admin', null),
-      (${member}, ${`ad-${tag}-m@example.invalid`}, 'x', 'member', 'Pat Member'),
-      (${client}, ${`ad-${tag}-c@example.invalid`}, 'x', 'client', 'Cam Client')`;
+      (${member}, ${`ad-${tag}-m@example.invalid`}, 'x', 'member', 'Pat Member')`;
     await admin`insert into spaces (id, kind, login_id) values
       (${anchor}, 'brain', ${anchor}), (${other}, 'brain', ${other})`;
     await admin`insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
@@ -191,15 +185,6 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     // Write off: everything reads only.
     const ro = out<ListOut>(await call('app_data_list', {}, asMember(false)));
     expect(new Set(ro.apps.map((a) => a.access))).toEqual(new Set(['read']));
-  });
-
-  it('a client reaches no app (W5c), a client-level one included', async () => {
-    const list = out<ListOut>(await call('app_data_list', {}, asClient()));
-    expect(list.apps).toEqual([]);
-    for (const key of ['a team', 'e client', 'f public link']) {
-      const r = await call('app_data_query', { app_id: ids[key], sql: 'SELECT 1' }, asClient());
-      expect(r.ok, key).toBe(false);
-    }
   });
 
   it('every unreachable app answers the same not found', async () => {
@@ -365,19 +350,6 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     });
     expect(String(logs[0]?.detail.sql)).toContain('INSERT INTO items');
     expect(String(logs[0]?.detail.me)).toMatch(/^u_/);
-  });
-
-  it('a client writes no app (W5c): a client-level app stays unwritten', async () => {
-    const id = ids['e client']!;
-    const r = await call(
-      'app_data_write',
-      { app_id: id, sql: "DELETE FROM items WHERE name = 'seed'" },
-      asClient(),
-    );
-    expect(r.ok).toBe(false);
-    const [reg] =
-      await admin`select client_written_at from app_databases where app_node_id = ${id}`;
-    expect(reg?.client_written_at ?? null).toBeNull();
   });
 
   it('the lookup runs on the team and client roles (its columns are granted)', async () => {

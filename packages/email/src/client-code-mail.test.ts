@@ -1,18 +1,16 @@
 /**
- * The client sign-in code mail marker (client logins C2b): every code mail's
- * Message-ID carries it, the sync skips any message that has it, and no
- * other Message-ID matches. And the sent-folder names a sender's sync
- * leaves out.
+ * The old client sign-in code mail marker (client logins C2b; email-code
+ * sign-in went in workspaces W8a, the detector stays): every code mail's
+ * Message-ID carried it, the sync skips any message that has it, and no
+ * other Message-ID matches.
  */
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import {
-  clientCodeMessageId,
-  isClientCodeMail,
-  pickSentFolders,
-  redactSigninCodes,
-  sentFolderNames,
-  touchesClientCodeMail,
-} from './client-code-mail';
+import { isClientCodeMail, redactSigninCodes, touchesClientCodeMail } from './client-code-mail';
+
+/** A Message-ID as the code mails carried it (the sender is gone). */
+const clientCodeMessageId = (sender: string) =>
+  `<mantle-client-code.${randomUUID()}@${sender.split('@')[1]}>`;
 
 describe('client code mail marker', () => {
   it('marks every code mail, with or without angle brackets, any case', () => {
@@ -36,23 +34,6 @@ describe('client code mail marker', () => {
     ]) {
       expect(isClientCodeMail({ rfcMessageId: other }), String(other)).toBe(false);
     }
-  });
-
-  it('finds the sent-mail folders by their usual names', () => {
-    expect(
-      sentFolderNames([
-        'INBOX',
-        'INBOX.Sent',
-        'Sent',
-        'Sent Items',
-        '[Gmail]/Sent Mail',
-        'Sent Messages',
-        'Archive',
-        'Resent',
-        'INBOX.Sentences',
-        'Drafts',
-      ]),
-    ).toEqual(['INBOX.Sent', 'Sent', 'Sent Items', '[Gmail]/Sent Mail', 'Sent Messages']);
   });
 });
 
@@ -112,20 +93,5 @@ describe('redactSigninCodes (audit K6)', () => {
     expect(redactSigninCodes(undefined)).toBeUndefined();
     expect(redactSigninCodes(null)).toBeNull();
     expect(redactSigninCodes('')).toBe('');
-  });
-});
-
-describe('pickSentFolders (audit B19)', () => {
-  it('takes the \\Sent-flagged folders first, in any language', () => {
-    expect(pickSentFolders(['INBOX', 'Gesendet', 'Sent'], ['Gesendet'])).toEqual(['Gesendet']);
-  });
-
-  it('falls back to the usual names when nothing is flagged', () => {
-    expect(pickSentFolders(['INBOX', 'INBOX.Sent', 'Archive'], [])).toEqual(['INBOX.Sent']);
-    expect(pickSentFolders(['INBOX', 'Gesendet'])).toEqual([]);
-  });
-
-  it('ignores a flagged folder the listing does not hold', () => {
-    expect(pickSentFolders(['INBOX', 'Sent Items'], ['Ghost'])).toEqual(['Sent Items']);
   });
 });

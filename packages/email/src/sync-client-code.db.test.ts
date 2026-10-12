@@ -16,6 +16,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { EmailAccount } from '@mantle/db';
 import type { EmailProvider, RawMessage } from './types';
 
+/** A Message-ID as the old code mails carried it (email-code sign-in went
+ *  in workspaces W8a; the sync still skips every copy). */
+const clientCodeMessageId = (sender: string) =>
+  `<mantle-client-code.${randomUUID()}@${sender.split('@')[1]}>`;
+
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 type Row = Record<string, unknown>;
@@ -24,7 +29,6 @@ describe.skipIf(!URL)('mail sync skips client sign-in code mails', () => {
   let m: typeof import('@mantle/db');
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   let sync: typeof import('./sync');
-  let marker: typeof import('./client-code-mail');
   const owner = randomUUID();
   const accountId = randomUUID();
   const tag = `ccsync-${owner.slice(0, 8)}`;
@@ -76,7 +80,6 @@ describe.skipIf(!URL)('mail sync skips client sign-in code mails', () => {
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     sync = await import('./sync');
-    marker = await import('./client-code-mail');
     await sql`insert into auth.users (id, email, password_hash, role)
               values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`;
     await sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
@@ -101,7 +104,7 @@ describe.skipIf(!URL)('mail sync skips client sign-in code mails', () => {
   });
 
   it('skips the code mail in every folder and ingests the normal one', async () => {
-    const codeId = marker.clientCodeMessageId(address).slice(1, -1);
+    const codeId = clientCodeMessageId(address).slice(1, -1);
     const { provider, fetchFull } = providerOf([
       message('1', codeId, 'Sent'),
       message('2', codeId, '[Gmail]/All Mail'),
@@ -116,7 +119,7 @@ describe.skipIf(!URL)('mail sync skips client sign-in code mails', () => {
   });
 
   it('skips it on the backfill path too', async () => {
-    const codeId = marker.clientCodeMessageId(address).slice(1, -1);
+    const codeId = clientCodeMessageId(address).slice(1, -1);
     const { provider, fetchFull } = providerOf([message('4', codeId, 'INBOX')]);
     await sync.backfillMatch(account, provider, address);
     expect(fetchFull).not.toHaveBeenCalled();
@@ -124,7 +127,7 @@ describe.skipIf(!URL)('mail sync skips client sign-in code mails', () => {
   });
 
   it('skips a reply or forward of a code mail, and a mail with the code header (B19)', async () => {
-    const codeId = marker.clientCodeMessageId(address);
+    const codeId = clientCodeMessageId(address);
     const { provider, fetchFull } = providerOf([
       { ...message('5', `reply-${tag}@example.invalid`, 'INBOX'), inReplyTo: codeId },
       {

@@ -1,8 +1,10 @@
 /**
  * What a peer's token may do on /api/mcp (plan page e5b854dd): the body
  * fields the peer routes take, and the check that the login it is to act as
- * exists. `actsAs` is 'owner' (the anchor login), a member or client login
- * id, or null (a share-only peer, as before).
+ * exists. `actsAs` is 'owner' (the anchor login), a member login id, or
+ * null (a share-only peer, as before). A bound peer acts as its login as
+ * that login is now, in its workspaces (workspaces W8a: no role is kept on
+ * the peer).
  */
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
@@ -58,11 +60,11 @@ export async function peerBoundToOwner(anchorId: string, id: string): Promise<bo
   return !!row && row.login === anchorId;
 }
 
-/** The login a peer is to act as, with its current role, or an error. */
+/** The login a peer is to act as, or an error. */
 export async function resolvePeerActsAs(
   anchorId: string,
   actsAs: 'owner' | string | null,
-): Promise<{ loginId: string; role: 'admin' | 'member' | 'client' } | null | { error: string }> {
+): Promise<{ loginId: string } | null | { error: string }> {
   if (actsAs === null) return null;
   const loginId = actsAs === 'owner' ? anchorId : actsAs;
   const [row] = await db
@@ -72,11 +74,10 @@ export async function resolvePeerActsAs(
     .limit(1);
   if (!row) return { error: 'No such login.' };
   if (row.disabledAt) return { error: 'That login is disabled.' };
-  if (actsAs !== 'owner' && row.role !== 'member' && row.role !== 'client') {
-    return { error: "Pick 'owner', a member or a client." };
+  // Another Admin login is not offered: a peer acts as the owner or as a
+  // member (as before W8a). What the bound login reads is its workspaces'.
+  if (actsAs !== 'owner' && row.role !== 'member') {
+    return { error: "Pick 'owner' or a member." };
   }
-  if (row.role !== 'admin' && row.role !== 'member' && row.role !== 'client') {
-    return { error: 'That login has no role a peer can act as.' };
-  }
-  return { loginId: row.id, role: row.role };
+  return { loginId: row.id };
 }

@@ -2,10 +2,11 @@
  * Inbound API keys after the M2 audit, on a real migrated Postgres through
  * the real app (createApp):
  *
- *  - F4: an admin or member re-types their password to make a key (a client
- *    has none); a member's key lasts at most 90 days, a client's 30, and
- *    neither may be "never"; a password change and "sign out everywhere"
- *    revoke the login's keys, a client's plain sign-out does not;
+ *  - F4: every login re-types its password to make a key; a login without
+ *    the Admin workspace's keys area makes keys of at most 90 days, never
+ *    "never" (W8a: the area decides, not the role); a password change and
+ *    "sign out everywhere" revoke the login's keys, a plain sign-out does
+ *    not;
  *  - F3: one address meets a cap of failed keys across every prefix, before
  *    the database is asked;
  *  - F7: the 50 live keys cap holds under concurrent creates, and one
@@ -32,13 +33,12 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
   const PASSWORD = 'a long enough password';
   const admin = randomUUID();
   const member = randomUUID();
-  const client = randomUUID();
   const capped = randomUUID();
   const busy = randomUUID();
   const guesser = randomUUID();
   const noted = randomUUID();
   const maker = randomUUID();
-  const all = [admin, member, client, capped, busy, guesser, noted, maker];
+  const all = [admin, member, capped, busy, guesser, noted, maker];
   const oauthClientsMade: string[] = [];
   let anchor = '';
   const emailOf = (s: string) => `${tag}-${s}@example.com`;
@@ -77,7 +77,7 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
       body: { name: 'Hardening', access: 'read', areas: null, ...body },
     });
   const makeKey = async (as: string, body: Json = {}) => {
-    const res = await make(as, as === client ? body : { password: PASSWORD, ...body });
+    const res = await make(as, { password: PASSWORD, ...body });
     expect(res.status).toBe(201);
     return (await json(res)) as { id: string; prefix: string; secret: string; expiresAt: string };
   };
@@ -99,7 +99,6 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member'),
-      (${client}, ${emailOf('client')}, ${hash}, 'client', 'Cal Client'),
       (${capped}, ${emailOf('capped')}, ${hash}, 'member', 'Cap Member'),
       (${busy}, ${emailOf('busy')}, ${hash}, 'admin', 'Bea Busy'),
       (${guesser}, ${emailOf('guesser')}, ${hash}, 'member', 'Gus Guesser'),
@@ -123,6 +122,14 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
       await sql`insert into workspace_resources (workspace_id, type, ref_id, write)
         values (${teamWs}, 'assistant', ${madeAgent}, true)`;
     }
+    // A long key needs the Admin workspace's keys area (W8a). On a brain
+    // the workspaces migration ran on, the admins become users of its Admin
+    // workspace; on one it skipped, an admin login holds every area.
+    await sql`insert into workspace_users (workspace_id, login_id, moderator)
+      select w.id, l.id, false
+        from workspaces w, unnest(${sql.array([admin, busy])}::uuid[]) as l(id)
+       where w.owner_id = ${anchor} and w.is_admin
+      on conflict do nothing`;
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
@@ -146,37 +153,35 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     if (oauthClientsMade.length) {
       await sql`delete from oauth_clients where id in ${sql(oauthClientsMade)}`;
     }
+    await sql`delete from workspace_users where login_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
   });
 
   // ── F4 ────────────────────────────────────────────────────────────────────
 
-  it('an admin or member re-types the password; a client has none to type', async () => {
+  it('an admin or member re-types the password', async () => {
     for (const who of [admin, member]) {
       expect((await make(who)).status).toBe(403);
       expect((await make(who, { password: 'wrong password' })).status).toBe(403);
       expect((await make(who, { password: PASSWORD })).status).toBe(201);
     }
-    expect((await make(client)).status).toBe(201);
   });
 
-  it('caps a member key at 90 days and a client key at 30, never "never"', async () => {
+  it('caps a key without the keys area at 90 days, never "never"', async () => {
     const list = (await json(
       await call('/api/access-keys', { cookie: await cookieOf(member) }),
     )) as Json;
     expect(list).toMatchObject({ maxExpiryDays: 90, needsPassword: true });
     expect(
-      (await json(await call('/api/access-keys', { cookie: await cookieOf(client) }))) as Json,
-    ).toMatchObject({ maxExpiryDays: 30, needsPassword: false, defaultExpiryDays: 30 });
+      (await json(await call('/api/access-keys', { cookie: await cookieOf(admin) }))) as Json,
+    ).toMatchObject({ maxExpiryDays: null, needsPassword: true });
 
     expect((await make(member, { password: PASSWORD, expiresInDays: null })).status).toBe(400);
     expect((await make(member, { password: PASSWORD, expiresInDays: 365 })).status).toBe(400);
-    expect((await make(client, { expiresInDays: 90 })).status).toBe(400);
-    expect((await make(client, { expiresInDays: null })).status).toBe(400);
 
-    const clientKey = await makeKey(client);
-    expect(days(clientKey.expiresAt)).toBeLessThanOrEqual(30);
+    const memberKey = await makeKey(member, { expiresInDays: 90 });
+    expect(days(memberKey.expiresAt)).toBeLessThanOrEqual(90);
     const adminKey = await makeKey(admin, { expiresInDays: null });
     expect(adminKey.expiresAt).toBeNull();
   });
@@ -202,12 +207,13 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     expect((await whoami(again.secret)).status).toBe(401);
   });
 
-  it("a client's key ends with the session it was made in (N5)", async () => {
-    const key = await makeKey(client);
+  // The member's password changed above, so the admin signs out here.
+  it("a plain sign-out leaves the login's keys live (W8a: the same for every login)", async () => {
+    const key = await makeKey(admin);
     expect((await whoami(key.secret)).status).toBe(200);
-    const out = await call('/api/auth/logout', { method: 'POST', cookie: await cookieOf(client) });
+    const out = await call('/api/auth/logout', { method: 'POST', cookie: await cookieOf(admin) });
     expect([200, 204]).toContain(out.status);
-    expect((await whoami(key.secret)).status).toBe(401);
+    expect((await whoami(key.secret)).status).toBe(200);
   });
 
   it('sign out everywhere also ends OAuth grants, and audits the revoked keys (N4, N7)', async () => {
@@ -310,7 +316,6 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     const rows = Array.from({ length: 49 }, (_, i) => ({
       name: `filler ${i}`,
       login_id: capped,
-      login_role: 'member',
       key_prefix: randomUUID().replace(/-/g, '').slice(0, 8),
       key_hash: createHash('sha256').update(randomUUID()).digest('hex'),
       access: 'read',

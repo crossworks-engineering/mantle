@@ -1,13 +1,12 @@
 /**
- * GET /api/shell answers 200 when a chrome read throws (client logins audit
- * A13): a failed preferences read, pending count, onboarding check or asset
+ * GET /api/shell answers 200 when a chrome read throws (audit A13): a failed preferences read, pending count, onboarding check or asset
  * token used to fail the whole route and lock the login out of the app. Each
  * part now answers empty on its own; the login gate in front is never caught.
  *
  * Since workspaces W5c the one shell serves every login (plan 7.1): an
- * admin, a member and a client get the same shape, `role` says which, and
- * the admin-only parts answer empty for the others. The old member and
- * client shells answer 410 code gone.
+ * admin and a member get the same shape, `role` says which, and the
+ * admin-only parts answer empty for a member (there is no client login since
+ * W8a). The old member and client shells answer 410 code gone.
  *
  * No database: the gates and every read are stood in.
  */
@@ -18,7 +17,7 @@ const LOGIN = '22222222-2222-4222-8222-222222222222';
 const h = vi.hoisted(() => ({
   fail: new Set<string>(),
   gate: 'pass' as 'pass' | 'refuse',
-  role: 'admin' as 'admin' | 'member' | 'client',
+  role: 'admin' as 'admin' | 'member',
   minted: [] as Array<{ anchorId: string; loginId: string; ttlSeconds?: number }>,
 }));
 
@@ -47,31 +46,18 @@ vi.mock('@/lib/auth', async () => {
     displayName: 'Member',
     contactId: null,
   };
-  const client = {
-    role: 'client',
-    loginId: LOGIN,
-    anchorId: ANCHOR,
-    spaceId: '66666666-6666-4666-8666-666666666666',
-    email: 'client@example.invalid',
-    displayName: 'Client',
-    sessionEpoch: 0,
-  };
   const base = { source: 'web', sessionEpoch: 0 };
   return {
     getLoginOr401: async () => {
       if (h.gate === 'refuse') return refused();
       if (h.role === 'member')
         return { kind: 'member', loginId: LOGIN, email: member.email, member, ...base };
-      if (h.role === 'client')
-        return { kind: 'client', loginId: LOGIN, email: client.email, client, ...base };
       return { kind: 'admin', loginId: ACTOR, email: admin.actor.email, user: admin, ...base };
     },
     getOwnerOr401: async () =>
       h.gate === 'refuse' ? refused() : h.role === 'admin' ? admin : wrongRole(),
     getMemberOr401: async () =>
       h.gate === 'refuse' ? refused() : h.role === 'member' ? member : wrongRole(),
-    getClientOr401: async () =>
-      h.gate === 'refuse' ? refused() : h.role === 'client' ? client : wrongRole(),
     mintAssetToken: async (anchorId: string, loginId: string, opts?: { ttlSeconds?: number }) => {
       boom('asset token');
       h.minted.push({ anchorId, loginId, ttlSeconds: opts?.ttlSeconds });
@@ -203,7 +189,7 @@ describe('shell chrome reads never fail the shell', () => {
     });
   });
 
-  describe.each(['member', 'client'] as const)('/api/shell (%s)', (role) => {
+  describe.each(['member'] as const)('/api/shell (%s)', (role) => {
     const shell = () => get(import('./route'));
     beforeEach(() => {
       h.role = role;
@@ -216,7 +202,7 @@ describe('shell chrome reads never fail the shell', () => {
         role,
         loginId: LOGIN,
         email: `${role}@example.invalid`,
-        displayName: role === 'member' ? 'Member' : 'Client',
+        displayName: 'Member',
         siteName: 'Brand',
         avatar: { seed: 'seed' },
         assetToken: 'asset-token',
@@ -232,7 +218,7 @@ describe('shell chrome reads never fail the shell', () => {
       const { READER_TREE_KINDS } = await import('@mantle/content/tree');
       expect(body.treeKinds).toEqual([...READER_TREE_KINDS]);
       // A non-Admin login's asset token is the short one (10 minutes): a
-      // client's (audit B23), a member's too (W7e fix round 1, L3).
+      // member's (W7e fix round 1, L3).
       expect(h.minted).toEqual([{ anchorId: ANCHOR, loginId: LOGIN, ttlSeconds: 600 }]);
     });
 
@@ -257,20 +243,31 @@ describe('shell chrome reads never fail the shell', () => {
   });
 
   describe('the old member and client shells are gone (W5c)', () => {
-    const shells = {
-      member: () => import('../member/shell/route'),
-      client: () => import('../client/shell/route'),
-    };
-    it.each(['member', 'client'] as const)(
-      '/api/%s/shell answers its own role 410 code gone',
+    const memberShell = () => import('../member/shell/route');
+    const clientShell = () => import('../client/shell/route');
+
+    it('/api/member/shell answers a member 410 code gone, an admin 403', async () => {
+      h.role = 'member';
+      const { status, body } = await get(memberShell());
+      expect(status).toBe(410);
+      expect(body).toMatchObject({ code: 'gone' });
+      h.role = 'admin';
+      expect((await get(memberShell())).status).toBe(403);
+    });
+
+    it.each(['admin', 'member'] as const)(
+      '/api/client/shell answers any login 410 code gone (W8a): an %s',
       async (role) => {
         h.role = role;
-        const { status, body } = await get(shells[role]());
+        const { status, body } = await get(clientShell());
         expect(status).toBe(410);
         expect(body).toMatchObject({ code: 'gone' });
-        h.role = 'admin';
-        expect((await get(shells[role]())).status).toBe(403);
       },
     );
+
+    it('/api/client/shell still refuses without a login', async () => {
+      h.gate = 'refuse';
+      expect((await get(clientShell())).status).toBe(401);
+    });
   });
 });

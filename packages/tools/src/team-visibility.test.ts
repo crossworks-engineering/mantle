@@ -102,14 +102,11 @@ describe('surfaceHiddenNodeTypes', () => {
     expect(surfaceHiddenNodeTypes({ kind: 'owner', via: 'run' })).toBeNull();
   });
 
-  // Client logins C4: the check is an allowlist. A client, and a caller that
-  // forgot its surface, get the full hidden list (private corpus included).
-  it('fails closed for a client and for a missing surface', () => {
+  // Client logins C4: the check is an allowlist. A caller that forgot its
+  // surface gets the full hidden list (private corpus included).
+  it('fails closed for a missing surface', () => {
     const full = surfaceHiddenNodeTypes({ kind: 'team', contactId: 'c1' });
-    for (const surface of [
-      undefined,
-      { kind: 'client' as const, loginId: '00000000-0000-4000-8000-000000000001' },
-    ]) {
+    for (const surface of [undefined]) {
       const hidden = surfaceHiddenNodeTypes(surface);
       expect(hidden).toEqual(full);
       expect(hidden).toEqual(
@@ -209,15 +206,11 @@ describe('read tools on a team surface', () => {
     expect(h.appQuery).toHaveBeenCalledOnce();
   });
 
-  // Client logins C4: no client app level exists, so a client (and a caller
-  // that forgot its surface) reaches no app, not even a team-level one.
-  it('app_db_query reads no app for a client or a missing surface', async () => {
+  // Client logins C4: a caller that forgot its surface reaches no app, not
+  // even a team-level one.
+  it('app_db_query reads no app for a missing surface', async () => {
     h.teamApps = new Set(['app-team']);
-    const client: ToolHandlerContext = {
-      ownerId: OWNER,
-      surface: { kind: 'client', loginId: '00000000-0000-4000-8000-000000000001' },
-    };
-    for (const ctx of [client, { ownerId: OWNER }]) {
+    for (const ctx of [{ ownerId: OWNER } as ToolHandlerContext]) {
       const res = await tool('app_db_query').handler({ app_id: 'app-team', sql: 'select 1' }, ctx);
       expect(res.ok && (res.output as { rows: unknown[] }).rows).toEqual([]);
     }

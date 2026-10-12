@@ -1,6 +1,6 @@
 /**
- * What a member or a client is told about on its phone (migration mobile_roles_push), on
- * a real, migrated Postgres:
+ * What a member is told about on its phone (migration mobile_roles_push), on
+ * a real, migrated Postgres (there is no client login since W8a):
  *
  *  - the `login_notice` event fires for a finished reply in a login's own
  *    chat thread and for a review result (accepted, returned, taken), and
@@ -11,7 +11,7 @@
  *  - the message built from an event is for the ONE login it concerns, with
  *    words that login could read by opening the app: never an admin, never a
  *    disabled login, never a stale row, never a thread the reader may not
- *    read (an item raised above client level tells no client);
+ *    read;
  *  - since 0269 (W7c) a reply is a row of the login's own thread in
  *    assistant_messages; the anchor's own replies never fire it (they reach
  *    the owner's devices by conversation_changed). The unread count moved to
@@ -47,8 +47,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
   const adminA = randomUUID();
   const member = randomUUID();
   const member2 = randomUUID();
-  const client = randomUUID();
-  const client2 = randomUUID();
   const agent = randomUUID();
   const spaceOf: Record<string, string> = {};
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-login-notices-'));
@@ -117,15 +115,13 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', 'Ada Admin'),
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', 'Mia Member'),
-        (${member2}, ${`${tag}-n@example.invalid`}, 'x', 'member', 'Noah'),
-        (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client', 'Cleo Client'),
-        (${client2}, ${`${tag}-d@example.invalid`}, 'x', 'client', 'Dan Client')`);
+        (${member2}, ${`${tag}-n@example.invalid`}, 'x', 'member', 'Noah')`);
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
       on conflict (id) do nothing`);
     const rows = await exec<{ id: string; login_id: string }>(sqlTag`
       select id, login_id from spaces where kind = 'personal'
-        and login_id in (${adminA}, ${member}, ${member2}, ${client}, ${client2})`);
+        and login_id in (${adminA}, ${member}, ${member2})`);
     for (const r of rows) spaceOf[r.login_id] = r.id;
     await m.systemDb.execute(sqlTag`
       insert into agents (id, owner_id, slug, name, model, system_prompt, audience)
@@ -222,17 +218,13 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     const c = await ln.chatReplyNotice({ loginId: member, id: note.id });
     expect(c).toMatchObject({ loginId: member, role: 'member', title: 'Tess' });
     expect(JSON.stringify(c)).not.toContain('Ada');
-    // A client has no chat since W5c: a row in its old thread tells nobody.
-    const old = await reply(client, 'for the client');
-    expect(await ln.chatReplyNotice({ loginId: client, id: old.id })).toBeNull();
   });
 
   it('tells nobody for another login, an admin, a disabled login or an old row', async () => {
     const row = await reply(member, 'for Mia only');
     // The event names a login the row is not for.
     expect(await ln.chatReplyNotice({ loginId: member2, id: row.id })).toBeNull();
-    expect(await ln.chatReplyNotice({ loginId: client, id: row.id })).toBeNull();
-    // An admin's own thread with the team agent: not a member or a client.
+    // An admin's own thread with the team agent: not a member.
     const own = await reply(adminA, 'admin thread');
     expect(await ln.chatReplyNotice({ loginId: adminA, id: own.id })).toBeNull();
     // Old: a backfill that touches old rows pages nobody. Judged on the

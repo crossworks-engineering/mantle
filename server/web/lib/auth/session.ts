@@ -65,7 +65,6 @@ import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
   CREATE_ROUTES,
-  clientClosed,
   isReadRequest,
   itemWriteTarget,
   memberMayRead,
@@ -147,37 +146,6 @@ export type MemberCaller = {
   contactId: string | null;
 };
 
-/**
- * A CLIENT login (client logins): a person at the brain's one client
- * company. It reaches only the routes in CLIENT_ROUTES (lib/auth/
- * client-routes.ts), through getClientOr401, and reads at the client level;
- * every admin and member gate refuses it with reason `client-login`. Like
- * MemberCaller it has no `.id`, so no anchor-scoped call site can take it by
- * mistake.
- */
-export type ClientCaller = {
-  role: 'client';
-  loginId: string;
-  anchorId: string;
-  /** The login's personal space (every login has one, 0165). Client drafts
-   *  come in Phase C5; nothing writes here before then. */
-  spaceId: string;
-  email: string;
-  displayName: string | null;
-  /** The login's session epoch, from the row the session was checked
-   *  against: work that outlives the request (a queued client chat turn, C4)
-   *  runs only while it is still the login's epoch (clientTurnMayRun). */
-  sessionEpoch: number;
-};
-/** How long a client session lasts (plan section 4): 30 days, not a year.
- *  The cookie is minted with it, and a client cookie that claims to last
- *  longer is refused, whoever signed it. */
-export const CLIENT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
-/** How long a client's DEVICE token may be kept alive by refresh, counted
- *  from the emailed code that signed the phone in: 90 days. After it the
- *  person asks for a new code. (A browser session does not refresh: it ends
- *  at 30 days.) */
-export const CLIENT_DEVICE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
 /** POST /api/auth/token/refresh rotates a token only when less than this is
  *  left (23 of a 30-day token's days); before that it answers the same
  *  token, so a caller that loops on refresh writes no rows. */
@@ -191,12 +159,12 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
 }
 
 /** Who is calling, resolved from the login row: an admin (today's
- *  SessionUser), a member or a client. `epoch`: the login's session epoch
- *  on the row the credential was just checked against. */
+ *  SessionUser) or a member. `epoch`: the login's session epoch on the row
+ *  the credential was just checked against. A login carries no permission
+ *  of its own (workspaces W8a): what it reads and may do is its workspaces'. */
 type Resolved =
   | { kind: 'admin'; user: SessionUser; source: AuthSource; epoch: number }
-  | { kind: 'member'; member: MemberCaller; source: AuthSource; epoch: number }
-  | { kind: 'client'; client: ClientCaller; source: AuthSource; epoch: number };
+  | { kind: 'member'; member: MemberCaller; source: AuthSource; epoch: number };
 
 /**
  * Owner gate for the byte-serving asset routes only. Resolves the session
@@ -290,7 +258,7 @@ export async function getMemberForAsset(req: Request): Promise<MemberCaller | Ne
  * null); a member by its session or a member `?at=` token (an <img> src
  * carries no bearer), on a route open to it (memberMayRead), in its own
  * request scope (`member` set). An item the login does not read is the
- * route's own 404. A client: 401 (clients read no brain items yet).
+ * route's own 404.
  */
 export async function getReaderForAsset(
   req: Request,
@@ -357,12 +325,9 @@ async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse
  * verify the signature, confirm the row is present/unrevoked/unexpired and
  * names the same login, bump last_used_at. Returns null on any failure.
  *
- * A token that carries a session epoch (`ep`: a CLIENT's device token always
- * does) is also held to it: once the login's epoch moves on (sign out, End
- * sessions, disable, a role change) the token is dead, as the client's
- * cookie is. A client token WITHOUT an epoch, or one that claims to last
- * longer than a client session, was not minted by the client sign-in and is
- * refused.
+ * A token that carries a session epoch (`ep`) is also held to it: once the
+ * login's epoch moves on (sign out, End sessions, disable, a role change)
+ * the token is dead, as a cookie is.
  */
 async function getBearerLogin(): Promise<Resolved | null> {
   return (await bearerLogin())?.resolved ?? null;
@@ -400,11 +365,6 @@ async function bearerLogin(): Promise<{ resolved: Resolved; jti: string } | null
   const row = await loadLoginRow(claims.uid);
   if (!row || !loginUsable(row)) return null;
   if (claims.ep !== undefined && claims.ep !== row.sessionEpoch) return null;
-  if (row.role === 'client') {
-    const latest = Date.now() + (CLIENT_SESSION_TTL_SECONDS + 60) * 1000;
-    if (claims.ep === undefined) return null;
-    if (claims.exp * 1000 > latest || tok.expiresAt.getTime() > latest) return null;
-  }
 
   await touchBearerToken(claims.jti);
 
@@ -501,9 +461,10 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
 
 /**
  * An admin row becomes a SessionUser (id = the anchor), a member row a
- * MemberCaller, a client row a ClientCaller. Every role is named: a role this
- * code does not know is NO login (null), never an admin (client logins C0:
- * before it, every role that was not member resolved as an admin). Null too
+ * MemberCaller. Every role is named: a role this code does not know is NO
+ * login (null), never an admin (client logins C0: before it, every role that
+ * was not member resolved as an admin). A row still marked client (none is
+ * left after migration 0272, workspaces W8a) is no login either. Null too
  * when the brain has no anchor (a corrupt state).
  */
 async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved | null> {
@@ -533,29 +494,6 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
         },
       };
     }
-    case 'client': {
-      // A browser session, or the phone app's device token (minted only by
-      // the emailed code in device mode; getBearerLogin holds it to the
-      // login's session epoch and to the 30 days).
-      const anchorId = await getAnchorId();
-      if (!anchorId) return null;
-      const spaceId = await loadPersonalSpaceId(row.id);
-      if (!spaceId) return null;
-      return {
-        kind: 'client',
-        source,
-        epoch: row.sessionEpoch,
-        client: {
-          role: 'client',
-          loginId: row.id,
-          anchorId,
-          spaceId,
-          email: row.email,
-          displayName: row.displayName,
-          sessionEpoch: row.sessionEpoch,
-        },
-      };
-    }
     default:
       return null;
   }
@@ -575,7 +513,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
  * The scope guard runs again here (audit item 1), so a `source: 'api'`
  * login exists only for a /api/v1 route the key may call: the route's
  * area, and a write only for a read_write key. Every gate below
- * (getOwnerOr401, getMemberOr401, getClientOr401, getLoginOr401) resolves
+ * (getOwnerOr401, getMemberOr401, getLoginOr401) resolves
  * through this, so none can hand a read key a write route.
  */
 async function accessKeyLogin(): Promise<Resolved | null | undefined> {
@@ -610,14 +548,9 @@ async function resolveLogin(): Promise<Resolved | null> {
       const row = await loadLoginRow(data.uid);
       // The epoch check is what ends a cookie: a password change, a disable,
       // a role change or "sign out everywhere" bumps the row (F06).
-      // A client session lasts 30 days: a client cookie that claims a later
-      // expiry was not minted by the client sign-in, and is refused.
-      const tooLong =
-        row?.role === 'client' &&
-        data.exp > Math.floor(Date.now() / 1000) + CLIENT_SESSION_TTL_SECONDS + 60;
       // A cookie the bearer upgrade minted lives only while its device does.
       const deviceOk = !data.dj || (await cookieDeviceAlive(data.dj, data.uid));
-      if (row && loginUsable(row) && row.sessionEpoch === data.ep && !tooLong && deviceOk) {
+      if (row && loginUsable(row) && row.sessionEpoch === data.ep && deviceOk) {
         const resolved = await resolvedFor(row, 'web');
         if (resolved) return resolved;
       }
@@ -725,7 +658,7 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
     path,
     // The proxy-appended address, not the caller's leftmost (audit B16).
     ...(await requestMeta()),
-    // The key's maker too: a key that acts as a member or client logs its
+    // The key's maker too: a key that acts as a member logs its
     // writes under that login, and the maker is who to ask (audit item 8).
     ...(key
       ? { detail: { keyId: key.id, keyPrefix: key.prefix, keyCreatedBy: key.createdBy } }
@@ -751,36 +684,28 @@ export async function getOwnerOr401WithSource(): Promise<
 }
 
 /** What getOwnerOr401WithLogin answers: the login's kind, and `member` set
- *  exactly when it is a member (a client's is null, as an Admin user's). */
+ *  exactly when it is a member. */
 export type OwnerRouteLogin =
   | { kind: 'admin'; user: SessionUser; source: AuthSource; member: null }
-  | { kind: 'member'; user: SessionUser; source: AuthSource; member: MemberCaller }
-  | { kind: 'client'; user: SessionUser; source: AuthSource; member: null };
+  | { kind: 'member'; user: SessionUser; source: AuthSource; member: MemberCaller };
 
 /**
  * getOwnerOr401WithSource, plus WHO the login is: its `kind`, and `member`
  * set for a member on an owner route open to it (W7e: the app runner routes
- * run a member at the team rules, an Admin user at the app's). A client is
- * refused on every owner route but the open ones, as before, and on the
- * routes W7e opened to members only (CLIENT_CLOSED_ROUTES: 403
- * client-login). A caller that branches on `member` must refuse a `kind`
- * 'client' itself before it takes an Admin path.
+ * run a member at the team rules, an Admin user at the app's).
  */
 export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextResponse> {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (res.kind !== 'admin') {
-    // A member or a client reaches an owner route to read brain items in its
+    // A member reaches an owner route to read brain items in its
     // own scope (W6a, MEMBER_OPEN_READS; drafts where it may edit, W6b), or
     // to create, edit and delete them there (W6b, MEMBER_OPEN_WRITES); every
     // other owner route refuses it (member routes use getMemberOr401; the
     // sweeps check both).
     const { method, pattern } = routeOfRequest();
     if (!hasRequestSlot()) return loginRefused(res.kind);
-    // W7e opened app runs (and a drawing's SVG) to members; a client still
-    // may not call them (W7e fix round 1, M1).
-    if (res.kind === 'client' && clientClosed(method, pattern)) return loginRefused('client');
-    const login = res.kind === 'member' ? res.member : res.client;
+    const login = res.member;
     const user: SessionUser = {
       id: login.anchorId,
       email: login.email,
@@ -791,10 +716,7 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
         isOwner: false,
       },
     };
-    const who: OwnerRouteLogin =
-      res.kind === 'member'
-        ? { kind: 'member', user, source: res.source, member: res.member }
-        : { kind: 'client', user, source: res.source, member: null };
+    const who: OwnerRouteLogin = { kind: 'member', user, source: res.source, member: res.member };
     if (memberMayRead(method, pattern)) {
       await enterLoginScope(login.loginId, requestMode(true));
       return who;
@@ -833,7 +755,7 @@ function routeOfRequest(): { method: string; pattern: string | null } {
  * reads back on the system pool (as before W6a), and since W7a the Admin
  * assistant's turns and the Admin MCP surface too (@mantle/db). Default:
  * scoped. Plan 14 and R9: it stays on every box until B2 has run clean
- * there two weeks. Members and clients are scoped whatever it says (plan T4).
+ * there two weeks. Members are scoped whatever it says (plan T4).
  */
 export function adminReadsOnSystemPool(): boolean {
   return dbAdminReadsOnSystemPool();
@@ -954,7 +876,7 @@ const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * itself to that workspace first. The rule is the database's, asked in the
  * login's scope; the write itself then runs on the system pool as before.
  * Off on a brain not on workspaces, and for an Admin login where Admin
- * reads are off (the rollback switch); a member's or client's write is
+ * reads are off (the rollback switch); a member's write is
  * always checked (W6b fix round 1, M1). An id no row has goes on to the
  * handler (its own 404). A read-only snapshot copy (data.snapshot_of) is
  * never edited, by anyone; its author may still delete it (W6b fix round 1,
@@ -1155,55 +1077,14 @@ async function createHomeFor(
   return { createWs, privateWs };
 }
 
-/**
- * The client gate (client logins C2): a CLIENT login, or 401 (no session) /
- * 403 (an admin or a member: client routes are client-specific, never a
- * shared route). Only for routes in CLIENT_ROUTES (lib/auth/client-routes.ts);
- * run the handler's reads under `withViewer('client', …)`. A client write is
- * audited like an admin's (`api.write`).
- */
-export async function getClientOr401(): Promise<ClientCaller | NextResponse> {
-  const res = await resolveLogin();
-  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (res.kind !== 'client') {
-    return NextResponse.json(
-      {
-        error: 'forbidden',
-        reason: res.kind === 'admin' ? 'admin-login' : 'member-login',
-        message: 'This route is for client logins.',
-      },
-      { status: 403 },
-    );
-  }
-  await auditClientMutation(res.client);
-  // No request scope: every client route answers 410 since W5c (the client
-  // portal went; clients read owner routes in their scope, MEMBER_OPEN_READS).
-  return res.client;
-}
-
-async function auditClientMutation(client: ClientCaller): Promise<void> {
-  await auditMutation({
-    id: client.anchorId,
-    email: client.email,
-    actor: {
-      id: client.loginId,
-      email: client.email,
-      displayName: client.displayName,
-      isOwner: false,
-    },
-  });
-}
-
-/** The 403 a gate answers a login of the wrong role with. The reason names
- *  the CALLER's role: `member-login`, `client-login`, or `admin-login` from
- *  a member route. */
+/** The 403 a gate answers a login of the wrong kind with. The reason names
+ *  the CALLER's kind: `member-login`, or `admin-login` from a member
+ *  route. */
 export function loginRefused(kind: Resolved['kind']): NextResponse {
   const body =
     kind === 'member'
       ? { reason: 'member-login', message: 'Not available to member logins.' }
-      : kind === 'client'
-        ? { reason: 'client-login', message: 'Not available to client logins.' }
-        : { reason: 'admin-login', message: 'This route is for member logins.' };
+      : { reason: 'admin-login', message: 'This route is for member logins.' };
   return NextResponse.json({ error: 'forbidden', ...body }, { status: 403 });
 }
 
@@ -1217,8 +1098,7 @@ export function loginRefused(kind: Resolved['kind']): NextResponse {
 export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  // A member and nothing else: an admin gets admin-login, a client
-  // client-login (client routes are their own list, never a member route).
+  // A member and nothing else: an admin gets admin-login.
   if (res.kind !== 'member') return loginRefused(res.kind);
   // A write made with an API key is always on the trail, whoever the key
   // acts as (audit item 5); a member's own session writes are not audited
@@ -1274,8 +1154,7 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
 /**
  * The generic `api.write` row for a route any login may call (getLoginOr401;
  * the workspace routes, lib/auth/any-login-routes.ts), by the rule each role's
- * own gate follows: an admin's write always, a client's write always, a
- * member's write when it was made with an API key. Reads are not logged, and
+ * own gate follows: an admin's write always, a member's write when it was made with an API key. Reads are not logged, and
  * a path that logs its own richer event is skipped (auditMutation).
  */
 export async function auditLoginMutation(
@@ -1284,8 +1163,6 @@ export async function auditLoginMutation(
   switch (login.kind) {
     case 'admin':
       return auditMutation(login.user);
-    case 'client':
-      return auditClientMutation(login.client);
     case 'member': {
       if (login.source !== 'api') return;
       const m = login.member;
@@ -1300,7 +1177,7 @@ export async function auditLoginMutation(
 
 /** The calling login's own row, whatever its role: for the few routes about
  *  the login itself (change its password, sign out, who am I). Never for
- *  brain data. Each caller decides per role; a client is its own kind.
+ *  brain data. Each caller decides per kind.
  *  `sessionEpoch` is the epoch the credential was verified at, for work that
  *  must still be that session's when it lands (OAuth consent). */
 export async function getLoginOr401(): Promise<
@@ -1319,14 +1196,6 @@ export async function getLoginOr401(): Promise<
       source: AuthSource;
       sessionEpoch: number;
       member: MemberCaller;
-    }
-  | {
-      kind: 'client';
-      loginId: string;
-      email: string;
-      source: AuthSource;
-      sessionEpoch: number;
-      client: ClientCaller;
     }
   | NextResponse
 > {
@@ -1352,15 +1221,6 @@ export async function getLoginOr401(): Promise<
         sessionEpoch: res.epoch,
         member: res.member,
       };
-    case 'client':
-      return {
-        kind: 'client',
-        loginId: res.client.loginId,
-        email: res.client.email,
-        source: res.source,
-        sessionEpoch: res.epoch,
-        client: res.client,
-      };
   }
 }
 
@@ -1370,7 +1230,7 @@ export async function getLoginOr401(): Promise<
  * brain's anchor, `actor` the login), so the chat helpers take one shape.
  */
 export type ChatLogin = {
-  kind: 'admin' | 'member' | 'client';
+  kind: 'admin' | 'member';
   /** The brain (the anchor login's id). */
   ownerId: string;
   /** The login whose threads this request reads and writes. */
@@ -1386,8 +1246,8 @@ export type ChatLogin = {
  * with the assistants of its workspaces, each in its own thread, and reads
  * only its own threads. The chat routes are any-login routes
  * (CHAT_LOGIN_ROUTES): a read runs in the login's scope, where row security
- * holds the messages and threads to its own login (0269); a member's or a
- * client's write runs there too, an Admin user's write on the system pool
+ * holds the messages and threads to its own login (0269); a member's write
+ * runs there too, an Admin user's write on the system pool
  * (anyLoginScope). Every chat helper also names the login (lib/assistant.ts,
  * lib/assistant-chat.ts), and the few writes and bookkeeping reads the
  * workspace role has no grant for leave the scope by name (asSystem
@@ -1409,7 +1269,7 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
       email: res.user.actor.email,
     };
   }
-  const login = res.kind === 'member' ? res.member : res.client;
+  const login = res.member;
   const user: SessionUser = {
     id: login.anchorId,
     email: login.email,
@@ -1420,8 +1280,7 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
       isOwner: false,
     },
   };
-  if (res.kind === 'client') await auditClientMutation(res.client);
-  else if (res.source === 'api') await auditMutation(user);
+  if (res.source === 'api') await auditMutation(user);
   return {
     kind: res.kind,
     ownerId: login.anchorId,
@@ -1449,12 +1308,7 @@ async function anyLoginScope(res: Resolved): Promise<void> {
     noteRequestSystem('login-self');
     return;
   }
-  const loginId =
-    res.kind === 'admin'
-      ? res.user.actor.id
-      : res.kind === 'member'
-        ? res.member.loginId
-        : res.client.loginId;
+  const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
   if (res.kind === 'admin') {
     if (!isReadRequest(method, pattern)) return noteRequestSystem('admin-write');
     if (await adminReadsOnSystemPoolFor(loginId)) return noteRequestSystem('admin-reads-flag');
@@ -1467,9 +1321,7 @@ async function anyLoginScope(res: Resolved): Promise<void> {
  * The login POST /api/auth/sso turns into a session cookie (lib/owner-sso.ts):
  * an admin, audited as every admin call is, or a MEMBER. A member needs the
  * cookie for one thing a bearer cannot do: a top-level navigation to the MCP
- * consent page (GET /api/oauth/authorize) carries cookies only. A client is
- * refused: in a browser it signs in to a cookie already (client-link), and
- * its device token stays on its device. `epoch` is the epoch the credential
+ * consent page (GET /api/oauth/authorize) carries cookies only. `epoch` is the epoch the credential
  * was just verified at, so the cookie is signed with that very session's.
  *
  * The DEVICE TOKEN only, never the cookie (access matrix T2): an upgrade
@@ -1502,8 +1354,6 @@ export async function getCookieUpgradeLoginOr401(): Promise<
         epoch: res.epoch,
         deviceJti,
       };
-    case 'client':
-      return loginRefused(res.kind);
   }
 }
 
@@ -1545,9 +1395,9 @@ export async function authenticatePassword(
   if (!row?.hash) return null;
   // Check the password first, so a disabled login answers like a wrong one
   // (no account-state oracle), then refuse it.
-  // Password sign-in is for admins and members only: a client signs in with a
-  // link or a code (client logins C2), and a role this code does not know
-  // never signs in. Refused like a wrong password (no role oracle).
+  // Password sign-in is for admins and members (the only roles since
+  // workspaces W8a): a role this code does not know never signs in.
+  // Refused like a wrong password (no role oracle).
   const role: string = row.role;
   const passwordRole = role === 'admin' || role === 'member';
   return ok && passwordRole && loginUsable(row)
@@ -1583,28 +1433,6 @@ export function setSessionCookie(
     epoch,
     ttlSeconds: opts.ttlSeconds,
     deviceJti: opts.deviceJti,
-  });
-  res.cookies.set(SESSION_COOKIE_NAME, value, {
-    httpOnly: true,
-    secure: secureCookies(req),
-    sameSite: 'lax',
-    path: '/',
-    maxAge: maxAgeSec,
-  });
-}
-
-/** Set the CLIENT session cookie for `loginId` on `res`: 30 days (plan
- *  section 4), signed with the login's session epoch now. Only the client
- *  sign-in routes call this. */
-export function setClientSessionCookie(
-  res: NextResponse,
-  req: Request,
-  loginId: string,
-  epoch: number,
-): void {
-  const { value, maxAgeSec } = buildSessionCookie(loginId, {
-    epoch,
-    ttlSeconds: CLIENT_SESSION_TTL_SECONDS,
   });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,
@@ -1658,8 +1486,8 @@ export async function endLoginSessions(
      *  included: M2 audit N4). For the deliberate security actions: a
      *  password change or reset, "sign out everywhere", an admin's End
      *  sessions, disable or role change (M2 audit F4), and a stolen device
-     *  token presented again (N5). NOT a client's plain sign-out, which ends
-     *  its sessions every time (M1 audit item 9). */
+     *  token presented again (N5). NOT a plain sign-out (M1 audit item
+     *  9). */
     endKeys?: boolean;
     /** Who ended them, for the keys' revoked_by (default: the login). */
     actorId?: string;
@@ -1886,7 +1714,7 @@ export async function loginSessionEpoch(loginId: string): Promise<number> {
 
 /** An `?at=` asset token for the anchor's bytes, minted for the login
  *  `loginId` and signed with that login's current session epoch. `ttlSeconds`
- *  shortens it (the client shell's: CLIENT_ASSET_TOKEN_TTL_SECONDS). */
+ *  shortens it (a member's: SHORT_ASSET_TOKEN_TTL_SECONDS). */
 export async function mintAssetToken(
   anchorId: string,
   loginId: string,

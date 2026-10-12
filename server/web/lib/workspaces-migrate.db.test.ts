@@ -1,7 +1,8 @@
 /**
  * Workspaces W5b1 fix round 1 (audit M1): a fresh install is put on
  * workspaces when its first owner signs up, and at boot; a box with client
- * logins is still skipped (owner rule 21.9), and the integrity row says why.
+ * logins (one from before 0272, which ends the client role) is still skipped
+ * (owner rule 21.9), and the integrity row says why.
  * Since W5b2 (0261) the migration ends with plain grants (no bridge) and the
  * boot step repairs nothing: an item left without a home is what
  * workspaces:check counts. Own scratch databases (the migration writes
@@ -30,9 +31,13 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     // under a full suite.
   }, 120_000);
 
-  async function brain() {
+  /** A scratch brain, fully migrated, or stopped before the migration
+   *  `before` names. */
+  async function brain(before?: string) {
     const ts: Ts = await import('@mantle/db/test-support');
-    const scratch = await ts.createMigratedScratchDatabase(URL!);
+    const scratch = before
+      ? await ts.createScratchDatabaseBefore(URL!, before)
+      : await ts.createMigratedScratchDatabase(URL!);
     made.push(scratch);
     urls.push(scratch.url);
     const sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
@@ -206,7 +211,9 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
   });
 
   it('a box with a client login is skipped, and the integrity row says clients are present', async () => {
-    const { sql } = await brain();
+    // A box before W8a: 0272 turns every client login into a member and the
+    // role CHECK admits none after it.
+    const { sql } = await brain('0272_workspaces_logins_carry_nothing');
     const owner = randomUUID();
     await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
       (${owner}, 'o2@example.invalid', 'x', 'admin', true),

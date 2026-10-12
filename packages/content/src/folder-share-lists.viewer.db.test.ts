@@ -1,11 +1,13 @@
 /**
- * Folder-held items in the member Library and for a client login (folder
+ * Folder-held items in the member Library and at the client level (folder
  * plan phase 4; workspaces W5b2: a folder's grant, not its share level): an
- * item in a folder a workspace holds is listed, opened and named in a
- * client's redaction for that workspace's users, through the folder's grant.
- * (The client portal's own lists went in workspaces W5c.) Reads run inside withViewer with a real login, in the shim's
- * workspace scope: a member who is a user of Team, a client who is a user of
- * a client workspace.
+ * item in a folder a workspace holds is listed, opened and named in the
+ * client-level redaction for that workspace's users, through the folder's
+ * grant. (The client portal's own lists went in workspaces W5c, the client
+ * login in W8a.) Reads run inside withViewer with a real login, in the
+ * shim's workspace scope: a member who is a user of Team, and a second
+ * member who is a user of a Clients workspace only, read at the client
+ * level.
  *
  * The levels are frozen: the fixture writes them when it inserts a row, as
  * the migration left them next to the grants (an item in a folder clients
@@ -21,7 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('folder-shared items in the Library and for clients', () => {
+describe.skipIf(!URL)('folder-shared items in the Library and at the client level', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let tree: typeof import('./tree/index');
@@ -33,7 +35,8 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
   let scratch: { url: string; drop: () => Promise<void> } | null = null;
   const brain = randomUUID();
   const member = randomUUID();
-  const client = randomUUID();
+  /** A member whose only workspace is `clients`, read at the client level. */
+  const clientsMember = randomUUID();
   let team = '';
   const clients = randomUUID();
   const label = `fsl${randomUUID().slice(0, 8)}`;
@@ -94,7 +97,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
           : sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${ws}`,
       ),
     );
-  const loginOf = { team: member, client } as const;
+  const loginOf = { team: member, client: clientsMember } as const;
   const as = <T>(reader: 'team' | 'client', fn: () => Promise<T>) =>
     m.withViewer(reader, { login: loginOf[reader] }, fn);
 
@@ -135,10 +138,10 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${member}, ${`${label}-m@example.invalid`}, 'x', 'member'),
-        (${client}, ${`${label}-c@example.invalid`}, 'x', 'client')`);
+        (${clientsMember}, ${`${label}-c@example.invalid`}, 'x', 'member')`);
     await m.systemDb.execute(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
-        (${team}, ${member}), (${clients}, ${client})`);
+        (${team}, ${member}), (${clients}, ${clientsMember})`);
     await tree.ensureKindRoot(brain, 'notes');
     await tree.ensureKindRoot(brain, 'apps');
     await tree.ensureKindRoot(brain, 'files');
@@ -218,14 +221,14 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     expect(await opens('team', ids.adminPlain)).toBe(false);
   });
 
-  it('opens for a client only what a folder its workspace holds holds', async () => {
+  it('opens at the client level only what a folder its workspace holds holds', async () => {
     expect(await opens('client', ids.adminInClient)).toBe(true);
     expect(await opens('client', ids.teamInClient)).toBe(true);
     expect(await opens('client', ids.adminInTeam)).toBe(false);
     expect(await opens('client', ids.publicInTeam)).toBe(false);
   });
 
-  it('keeps a folder-shared item named in a client’s redaction, and hides the rest', async () => {
+  it('keeps a folder-shared item named in the client-level redaction, and hides the rest', async () => {
     const readable = await as('client', () =>
       shared.clientReadable(brain, [
         ids.adminInClient,

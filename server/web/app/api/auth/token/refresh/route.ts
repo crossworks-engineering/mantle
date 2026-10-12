@@ -2,8 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { db, authUsers, mobileTokens, pushSubscriptions, and, eq, isNull, sql } from '@mantle/db';
 import {
-  CLIENT_DEVICE_MAX_AGE_SECONDS,
-  CLIENT_SESSION_TTL_SECONDS,
   ROTATE_WHEN_UNDER_SECONDS,
   buildMobileToken,
   loginUsable,
@@ -38,15 +36,9 @@ import { brainIdField } from '@/lib/brain-identity';
  *    is answered with ITSELF and its own expiry: nothing rotates, no row is
  *    written. A caller that loops on refresh makes no rows.
  *  - The epoch. A token that carries a session epoch is refused once the
- *    login's epoch has moved on; a client's token must carry one. The login
- *    row is locked for the rotation, so a refresh racing End sessions or a
- *    password change cannot mint a token that outlives it.
- *  - A client's cap. A client's device token is kept alive by refresh for at
- *    most {@link CLIENT_DEVICE_MAX_AGE_SECONDS} from the emailed code that
- *    signed the phone in (`signed_in_at`, copied through every rotation):
- *    after it, 401 with `reason: 'sign-in-expired'` and the person asks for
- *    a new code. Each token lasts at most a client session and never past
- *    the cap.
+ *    login's epoch has moved on. The login row is locked for the rotation,
+ *    so a refresh racing End sessions or a password change cannot mint a
+ *    token that outlives it.
  *  - A lost answer. A token that was rotated away and is presented AGAIN
  *    while its successor has never been used is a retry: the answer is the
  *    SAME successor (its jti, re-signed to its own expiry). So a refresh is
@@ -62,8 +54,9 @@ import { brainIdField } from '@/lib/brain-identity';
  * The push devices the old token enrolled follow the new one.
  */
 /** The roles whose bearer rotates here, named: a role this code does not
- *  know is no login. */
-const BEARER_ROLES: ReadonlySet<string> = new Set(['admin', 'member', 'client']);
+ *  know is no login (a row still marked client too: none is left after
+ *  migration 0272, workspaces W8a). */
+const BEARER_ROLES: ReadonlySet<string> = new Set(['admin', 'member']);
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
@@ -81,8 +74,8 @@ const unauthorized = (reason?: string) =>
 
 /**
  * A refresh whose answer was lost, retried with the old token: answer the
- * successor again (the same jti, signed to its own expiry, a client's at the
- * login's epoch). Null when the login may not hold a token now.
+ * successor again (the same jti, signed to its own expiry). Null when the
+ * login may not hold a token now.
  */
 async function answerSuccessorAgain(
   next: UnusedSuccessor,
@@ -97,10 +90,7 @@ async function answerSuccessorAgain(
   if (!BEARER_ROLES.has(row.role)) return null;
   const leftSec = Math.floor((next.expiresAt.getTime() - Date.now()) / 1000);
   if (leftSec <= 0) return null;
-  const minted =
-    row.role === 'client'
-      ? buildMobileToken(next.userId, next.id, leftSec, row.sessionEpoch)
-      : buildMobileToken(next.userId, next.id, leftSec);
+  const minted = buildMobileToken(next.userId, next.id, leftSec);
   return NextResponse.json(
     {
       token: minted.value,
@@ -181,7 +171,6 @@ export async function POST(req: Request) {
 
   // A disabled login cannot keep a session alive by refreshing it. Only the
   // roles that hold a bearer rotate one, named (client logins audit A15).
-  const isClient = row.role === 'client';
   const why = row.revokedAt
     ? 'revoked'
     : row.userId !== claims.uid
@@ -192,8 +181,7 @@ export async function POST(req: Request) {
           ? 'login-disabled'
           : !BEARER_ROLES.has(row.role)
             ? 'role'
-            : (claims.ep !== undefined && claims.ep !== row.sessionEpoch) ||
-                (isClient && claims.ep === undefined)
+            : claims.ep !== undefined && claims.ep !== row.sessionEpoch
               ? 'session-ended'
               : null;
   if (why) {
@@ -219,24 +207,12 @@ export async function POST(req: Request) {
     );
   }
 
-  // A client's device: at most 90 days from the code that signed it in.
+  // When the device was signed in, copied through every rotation.
   const signedInAt = row.signedInAt ?? row.createdAt;
-  let ttlSeconds = WEB_TOKEN_TTL_SECONDS;
-  if (isClient) {
-    const capLeft = Math.floor(
-      (signedInAt.getTime() + CLIENT_DEVICE_MAX_AGE_SECONDS * 1000 - Date.now()) / 1000,
-    );
-    if (capLeft <= 60) {
-      refused('sign-in-expired');
-      return unauthorized('sign-in-expired');
-    }
-    ttlSeconds = Math.min(WEB_TOKEN_TTL_SECONDS, CLIENT_SESSION_TTL_SECONDS, capLeft);
-  }
+  const ttlSeconds = WEB_TOKEN_TTL_SECONDS;
 
   const newJti = randomUUID();
-  const minted = isClient
-    ? buildMobileToken(row.userId, newJti, ttlSeconds, row.sessionEpoch)
-    : buildMobileToken(row.userId, newJti, ttlSeconds);
+  const minted = buildMobileToken(row.userId, newJti, ttlSeconds);
   const rotated = await db.transaction(async (tx) => {
     // The login row, locked: End sessions, a password change and a disable
     // all update it first (endLoginSessions), so one of the two waits. If

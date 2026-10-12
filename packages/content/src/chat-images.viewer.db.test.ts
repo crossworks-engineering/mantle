@@ -2,13 +2,13 @@
  * Pictures in a member's chat thread (client logins C6), on a real, migrated
  * Postgres: an image is pointed at the reader's own route only for a file or
  * drawing of this brain the reader may read (workspaces W5b2: what a
- * workspace of the login holds). The client chat went in workspaces W5c; the
- * client fixture stays as a login whose items a member also reads.
+ * workspace of the login holds). The client chat went in workspaces W5c and
+ * the client login in W8a; the second reader is a member too.
  * The fixture: every item is a real file or drawing of this brain, named by
  * the same image form, so only the lookup as the reader tells them apart.
  * The member is a user of a workspace that holds the team, client and public
- * items; the client a user of one that holds the client items, and not a
- * client-level file nobody gave it.
+ * items; the other member a user of one that holds the client items only,
+ * and not a client-level file nobody gave it.
  *
  * Brain items belong to the shared test anchor (mantle_brain_id()). Removes
  * its rows after (the anchor stays).
@@ -34,12 +34,12 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
     clientDraw: randomUUID(),
     teamDraw: randomUUID(),
     clientNote: randomUUID(),
-    /** At client level, but no workspace of the client holds it. */
+    /** At client level, but no workspace of the other member holds it. */
     clientUnheld: randomUUID(),
   };
   const member = randomUUID();
-  const client = randomUUID();
-  const ws = { members: randomUUID(), clients: randomUUID() };
+  const other = randomUUID();
+  const ws = { members: randomUUID(), others: randomUUID() };
   const img = (id: string) => `![pic](/api/files/files/${id}?raw=1)`;
 
   beforeAll(async () => {
@@ -72,14 +72,14 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
-        (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client')`);
+        (${other}, ${`${tag}-o@example.invalid`}, 'x', 'member')`);
     await m.systemDb.execute(sqlTag`
       insert into workspaces (id, owner_id, name) values
         (${ws.members}, ${anchor}, ${`${tag} members`}),
-        (${ws.clients}, ${anchor}, ${`${tag} clients`})`);
+        (${ws.others}, ${anchor}, ${`${tag} others`})`);
     await m.systemDb.execute(sqlTag`
       insert into workspace_users (workspace_id, login_id) values
-        (${ws.members}, ${member}), (${ws.clients}, ${client})`);
+        (${ws.members}, ${member}), (${ws.others}, ${other})`);
     const holds: Array<[string, string]> = [
       [ws.members, items.teamFile],
       [ws.members, items.clientFile],
@@ -87,9 +87,9 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
       [ws.members, items.clientDraw],
       [ws.members, items.teamDraw],
       [ws.members, items.clientNote],
-      [ws.clients, items.clientFile],
-      [ws.clients, items.clientDraw],
-      [ws.clients, items.clientNote],
+      [ws.others, items.clientFile],
+      [ws.others, items.clientDraw],
+      [ws.others, items.clientNote],
     ];
     for (const [wsId, id] of holds) {
       await m.withSubtreeHeads(id, [], (tx) =>
@@ -104,9 +104,9 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
     }
     await m.systemDb.execute(
-      sqlTag`delete from workspaces where id in (${ws.members}, ${ws.clients})`,
+      sqlTag`delete from workspaces where id in (${ws.members}, ${ws.others})`,
     );
-    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${client})`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${other})`);
     await m.closeDb();
   });
 
@@ -118,6 +118,14 @@ describe.skipIf(!URL)('chat pictures at the reader’s level', () => {
       [items.publicFile]: 'file',
       [items.clientDraw]: 'draw',
       [items.teamDraw]: 'draw',
+    });
+  });
+
+  it('another member: only what its own workspace holds, not an item nobody gave it', async () => {
+    const got = await ci.chatImagesFor(anchor, 'team', other, Object.values(items));
+    expect(Object.fromEntries(got)).toEqual({
+      [items.clientFile]: 'file',
+      [items.clientDraw]: 'draw',
     });
   });
 

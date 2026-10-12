@@ -60,11 +60,14 @@ describe('token login: adminsOnly', () => {
     expect(state.inserts).toBe(0);
   });
 
-  it('refuses a client 403 client-login, never "Update the app" (W7e fix round 1)', async () => {
+  it('refuses any other role 401 with the one failure message, never "Update the app" (W8a)', async () => {
+    // A row still marked client (there is no client login since W8a).
     state.role = 'client';
     const res = await login(true);
-    expect(res.status).toBe(403);
-    expect(((await res.json()) as { reason: string }).reason).toBe('client-login');
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string; reason?: string };
+    expect(body.error).toBe('Invalid email or password.');
+    expect(body.reason).toBeUndefined();
     expect(state.inserts).toBe(0);
   });
 

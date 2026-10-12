@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getLoginOr401, loginRefused } from '@/lib/auth';
+import { getLoginOr401 } from '@/lib/auth';
 import { pairCodeStatus } from '@/lib/pair-code';
 
 const Params = z.object({ id: z.string().uuid() });
@@ -13,7 +13,6 @@ const Params = z.object({ id: z.string().uuid() });
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const login = await getLoginOr401();
   if (login instanceof NextResponse) return login;
-  if (login.kind === 'client') return loginRefused('client');
   const parsed = Params.safeParse(await ctx.params);
   if (!parsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const status = await pairCodeStatus(parsed.data.id, login.loginId);

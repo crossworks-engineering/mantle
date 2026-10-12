@@ -25,21 +25,18 @@ export async function POST(req: Request) {
   const everywhere = body?.everywhere === true;
   // Attribute the logout while the cookie is still readable; no valid session
   // (already logged out, expired) → nothing to record.
-  // Every role signs out this way; a client's sign-out also ends its other
-  // sessions and asset tokens (audit B23).
+  // Every login signs out this way; "everywhere" also ends its other
+  // sessions, asset tokens and API keys.
   const login = await getLoginOr401();
   if (!(login instanceof NextResponse)) {
-    const ending = everywhere || login.kind === 'client';
-    // Only "everywhere" ends the login's API keys too: a client's plain
-    // sign-out ends its sessions every time, and keys outlive that.
-    if (ending) await endLoginSessions(login.loginId, { endKeys: everywhere });
+    if (everywhere) await endLoginSessions(login.loginId, { endKeys: true });
     auditFireAndForget({
       actorId: login.loginId,
       actorEmail: login.email,
       action: 'auth.logout',
       method: 'POST',
       path: '/api/auth/logout',
-      ...(ending ? { detail: { everywhere: true } } : {}),
+      ...(everywhere ? { detail: { everywhere: true } } : {}),
       ...requestMetaFrom(req),
     });
   }

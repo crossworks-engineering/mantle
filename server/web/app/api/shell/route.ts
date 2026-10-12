@@ -4,7 +4,7 @@ import { countPending } from '@mantle/tools';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { Shell } from '@mantle/client-types';
 import { getLoginOr401, mintAssetToken } from '@/lib/auth';
-import { CLIENT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
+import { SHORT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
 import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
@@ -77,7 +77,7 @@ async function handleGET() {
   // Short-lived asset-access token so a detached client's <img>/<iframe>/
   // download srcs (which can't carry a bearer) can load bytes. `act` = this
   // login: each byte route re-checks the login's role. Every non-Admin
-  // login's lasts 10 minutes: a client's (audit B23), and a member's since
+  // login's lasts 10 minutes: a member's, since
   // its token opens the brain's byte routes in its scope (W7e fix round 1,
   // L3). An Admin user's keeps the two hours.
   const assetToken = await shellPart(
@@ -87,22 +87,13 @@ async function handleGET() {
       mintAssetToken(
         anchorId,
         loginId,
-        login.kind === 'admin' ? {} : { ttlSeconds: CLIENT_ASSET_TOKEN_TTL_SECONDS },
+        login.kind === 'admin' ? {} : { ttlSeconds: SHORT_ASSET_TOKEN_TTL_SECONDS },
       ),
     undefined,
   );
   const displayName =
-    login.kind === 'admin'
-      ? login.user.actor.displayName
-      : login.kind === 'member'
-        ? login.member.displayName
-        : login.client.displayName;
-  const email =
-    login.kind === 'admin'
-      ? login.user.actor.email
-      : login.kind === 'member'
-        ? login.member.email
-        : login.client.email;
+    login.kind === 'admin' ? login.user.actor.displayName : login.member.displayName;
+  const email = login.kind === 'admin' ? login.user.actor.email : login.member.email;
   const body: Shell = {
     role: login.kind,
     loginId,

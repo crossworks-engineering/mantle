@@ -2,17 +2,22 @@
  * Inbound API keys end to end on a real migrated Postgres, through the real
  * app (createApp): make, list, use, refuse, revoke.
  *
- *  - every login (admin, member, client) makes keys for its OWN login only,
- *    never for another login; a member or client lists and revokes only its
- *    own keys; an admin sees and may revoke every key; a login holds at most
- *    50 live keys; a member or client whose MCP an admin turned off makes
- *    none (T16), one no admin ever switched still does;
+ *  - every login (admin, member) makes keys for its OWN login only, never
+ *    for another login; a member lists and revokes only its own keys; an
+ *    admin sees and may revoke every key; a login holds at most 50 live
+ *    keys;
+ *  - what a key may be is decided by the login's workspaces, never its role
+ *    (W8a): "never", more than 90 days, and risky tools only for a login
+ *    that holds the Admin workspace with its keys area (an admin without it
+ *    is held to 90 days and no risky tool, a member with it is not);
  *  - the secret is answered once; the row keeps only its SHA-256 and the
  *    list never shows either;
  *  - a key works on /api/v1/* and nowhere else under /api, even with a
  *    cookie riding along, and not on the public /api/auth prefix;
  *  - a wrong secret, a revoked key, an expired key, and a key whose login
- *    was disabled or changed role are all a 401; a sign out does not end it;
+ *    was disabled are all a 401; a sign out does not end it, nor does the
+ *    login's role on its own (a key keeps no role, W8a): the role change an
+ *    admin makes ends it, as End sessions does;
  *  - any admin may revoke any key; a member may not;
  *  - an image-shaped /api/v1 path gets the same checks;
  *  - the key's rate budget (120 a minute) and the failed-try budget per
@@ -24,10 +29,21 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+/** The logins that hold the Admin workspace with its keys area, stood in
+ *  (lib/workspaces.ts requireArea; the rule itself is proved in the
+ *  workspaces tests): whether a key may be long-lived or name risky tools
+ *  follows this, never the login's role (W8a). */
+const keysArea = vi.hoisted(() => ({ holders: new Set<string>() }));
+vi.mock('./workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./workspaces')>()),
+  requireArea: async (caller: { loginId: string }, area: string) =>
+    area === 'keys' ? keysArea.holders.has(caller.loginId) : true,
+}));
 
 type Row = Record<string, unknown>;
 type Json = Record<string, unknown>;
@@ -73,7 +89,6 @@ describe.skipIf(!URL)('inbound API keys', () => {
     });
   };
   const json = async (res: Response) => (await res.json()) as Json;
-  // 29 days: a client cookie may not claim more than the client session's 30.
   const cookieOf = (id: string, epoch = 0) =>
     `mantle_session=${tokens.buildSessionCookie(id, { epoch, ttlSeconds: 29 * 24 * 3600 }).value}`;
   const epochOf = async (id: string) =>
@@ -81,13 +96,13 @@ describe.skipIf(!URL)('inbound API keys', () => {
       (await sql<Row[]>`select session_epoch from auth.users where id = ${id}`)[0]!.session_epoch,
     );
 
-  // Admins and members re-type their password to make a key; a body that
-  // names its own `password` (or a client's, which needs none) is sent as is.
+  // Every login re-types its password to make a key; a body that names its
+  // own `password` is sent as is.
   const make = async (body: Json, as = admin) =>
     call('/api/access-keys', {
       method: 'POST',
       cookie: cookieOf(as, await epochOf(as)),
-      body: 'password' in body || as === client ? body : { ...body, password: PASSWORD },
+      body: 'password' in body ? body : { ...body, password: PASSWORD },
     });
   const makeKey = async (body: Partial<Json> = {}, as = admin) => {
     const res = await make(
@@ -129,8 +144,11 @@ describe.skipIf(!URL)('inbound API keys', () => {
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${admin2}, ${emailOf('admin2')}, ${hash}, 'admin', 'Abe Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member'),
-      (${client}, ${emailOf('client')}, ${hash}, 'client', 'Cal Client'),
+      (${client}, ${emailOf('client')}, ${hash}, 'member', 'Cal Member'),
       (${member2}, ${emailOf('member2')}, ${hash}, 'member', 'Max Member')`;
+    // The two admins hold the Admin workspace's keys area; the members not.
+    keysArea.holders.add(admin);
+    keysArea.holders.add(admin2);
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
@@ -166,7 +184,8 @@ describe.skipIf(!URL)('inbound API keys', () => {
     const [row] = await sql<Row[]>`select * from access_keys where id = ${made.id}`;
     expect(row!.key_hash).toBe(createHash('sha256').update(made.secret).digest('hex'));
     expect(JSON.stringify(row)).not.toContain(made.secret.slice(14));
-    expect(row!.login_role).toBe('admin');
+    // No role is kept on the key (W8a): it acts as its login as it is now.
+    expect(row).not.toHaveProperty('login_role');
     expect(row!.access).toBe('read_write');
     expect(row!.areas).toEqual(['pages', 'tables']);
 
@@ -202,12 +221,50 @@ describe.skipIf(!URL)('inbound API keys', () => {
     }
   });
 
-  it('keeps risky tools for admin keys, and checks the body', async () => {
-    const risky = await make(
-      { name: 'x', access: 'read', areas: null, riskyTools: ['email_send'] },
-      member,
-    );
-    expect(risky.status).toBe(400);
+  it('keeps risky tools and long keys for the keys area, never the role, and checks the body', async () => {
+    const risky = { name: 'x', access: 'read', areas: null, riskyTools: ['email_send'] };
+    // A member without the keys area: no risky tool, at most 90 days.
+    const refused = await make(risky, member);
+    expect(refused.status).toBe(400);
+    expect(await json(refused)).toMatchObject({ reason: 'risky-tools' });
+    for (const expiresInDays of [null, 91, 3650]) {
+      const long = await make({ name: 'x', access: 'read', areas: null, expiresInDays }, member);
+      expect(long.status, String(expiresInDays)).toBe(400);
+      expect(await json(long)).toMatchObject({ reason: 'expiry-too-long' });
+    }
+    expect(
+      (await make({ name: 'x', access: 'read', areas: null, expiresInDays: 90 }, member)).status,
+    ).toBe(201);
+    // An admin with the keys area: risky tools, "never" and up to 3650 days.
+    const adminRisky = await make({ ...risky, expiresInDays: null });
+    expect(adminRisky.status).toBe(201);
+    const made = (await json(adminRisky)) as { id: string };
+    const [row] = await sql<
+      Row[]
+    >`select risky_tools, expires_at from access_keys where id = ${made.id}`;
+    expect(row).toEqual({ risky_tools: ['email_send'], expires_at: null });
+    expect(
+      (await make({ name: 'x', access: 'read', areas: null, expiresInDays: 3650 })).status,
+    ).toBe(201);
+    // The area decides, not the role: an admin without it is held as a
+    // member is, and a member with it is not.
+    keysArea.holders.delete(admin2);
+    keysArea.holders.add(member);
+    try {
+      expect((await make(risky, admin2)).status).toBe(400);
+      expect(
+        (await make({ name: 'x', access: 'read', areas: null, expiresInDays: null }, admin2))
+          .status,
+      ).toBe(400);
+      const list = await json(await call('/api/access-keys', { cookie: cookieOf(admin2) }));
+      expect(list).toMatchObject({ role: 'admin', maxExpiryDays: 90, defaultExpiryDays: 90 });
+      expect((await make(risky, member)).status).toBe(201);
+      const mine = await json(await call('/api/access-keys', { cookie: cookieOf(member) }));
+      expect(mine).toMatchObject({ role: 'member', maxExpiryDays: null, needsPassword: true });
+    } finally {
+      keysArea.holders.add(admin2);
+      keysArea.holders.delete(member);
+    }
     for (const bad of [
       { name: '', access: 'read', areas: null },
       { name: 'x', access: 'write', areas: null },
@@ -219,14 +276,14 @@ describe.skipIf(!URL)('inbound API keys', () => {
     }
   });
 
-  it('a member and a client make, list and revoke their own keys only', async () => {
+  it('two members make, list and revoke their own keys only', async () => {
     const adminKey = await makeKey();
     for (const who of [member, client]) {
       const own = await makeKey({}, who);
       const res = await call('/api/access-keys', { cookie: cookieOf(who, await epochOf(who)) });
       expect(res.status).toBe(200);
       const body = (await json(res)) as { keys: Json[]; role: string };
-      expect(body.role).toBe(who === member ? 'member' : 'client');
+      expect(body.role).toBe('member');
       expect(body.keys.length).toBeGreaterThan(0);
       for (const k of body.keys) expect((k.login as Json).id).toBe(who);
       // Another login's key is not theirs to revoke: as if it did not exist.
@@ -247,7 +304,6 @@ describe.skipIf(!URL)('inbound API keys', () => {
     const rows = Array.from({ length: 50 }, (_, i) => ({
       name: `filler ${i}`,
       login_id: member2,
-      login_role: 'member',
       key_prefix: randomUUID().replace(/-/g, '').slice(0, 8),
       key_hash: createHash('sha256').update(randomUUID()).digest('hex'),
       access: 'read',
@@ -283,17 +339,11 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect(row!.last_used_at).not.toBeNull();
   });
 
-  it('acts as a member or a client login at that role', async () => {
-    const forMember = await makeKey({}, member);
-    expect(await json(await whoami(forMember.secret))).toMatchObject({
-      role: 'member',
-      loginId: member,
-    });
-    const forClient = await makeKey({}, client);
-    expect(await json(await whoami(forClient.secret))).toMatchObject({
-      role: 'client',
-      loginId: client,
-    });
+  it('a member key works and acts as its member login', async () => {
+    for (const who of [member, client]) {
+      const made = await makeKey({}, who);
+      expect(await json(await whoami(made.secret))).toMatchObject({ role: 'member', loginId: who });
+    }
   });
 
   it('is no credential anywhere but /api/v1, cookie or not', async () => {
@@ -415,16 +465,11 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect((await whoami(theirs.secret)).status).toBe(401);
   });
 
-  it('a member key outlives a plain sign-out; a client key does not; both end with a disable or role change', async () => {
-    // A plain sign-out moves no key of a member's: a key is its own
-    // credential. A client's key is bound to the session it was made in
-    // (M2 audit N5): the client's sign-out moves the epoch and ends it.
+  it("a key outlives a plain sign-out and keeps no role; a disable or an admin's role change ends it", async () => {
+    // A plain sign-out moves no key: a key is its own credential.
     const memberKey = await makeKey({}, member);
     await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${member}`;
     expect((await whoami(memberKey.secret)).status).toBe(200);
-    const clientKey = await makeKey({}, client);
-    await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${client}`;
-    expect((await whoami(clientKey.secret)).status).toBe(401);
 
     const disabled = await makeKey({}, client);
     await sql`update auth.users set disabled_at = now() where id = ${client}`;
@@ -432,11 +477,29 @@ describe.skipIf(!URL)('inbound API keys', () => {
     await sql`update auth.users set disabled_at = null where id = ${client}`;
     expect((await whoami(disabled.secret)).status).toBe(200);
 
-    // A role change ends the key. A client's role never changes (a database
-    // rule), so a member's here.
-    const promoted = await makeKey({}, member2);
+    // No role-equality check (W8a): the key acts as its login as it is now,
+    // whatever role it was made under.
+    const kept = await makeKey({}, member2);
     await sql`update auth.users set role = 'admin' where id = ${member2}`;
+    expect(await json(await whoami(kept.secret))).toMatchObject({
+      role: 'admin',
+      loginId: member2,
+    });
+    await sql`update auth.users set role = 'member' where id = ${member2}`;
+    expect(await json(await whoami(kept.secret))).toMatchObject({
+      role: 'member',
+      loginId: member2,
+    });
+    // A role change an admin makes ends the login's sessions and its keys.
+    const promoted = await makeKey({}, member2);
+    const res = await call(`/api/users/${member2}`, {
+      method: 'PATCH',
+      cookie: cookieOf(admin),
+      body: { role: 'admin' },
+    });
+    expect(res.status).toBe(200);
     expect((await whoami(promoted.secret)).status).toBe(401);
+    expect((await whoami(kept.secret)).status).toBe(401);
   });
 
   // ── Budgets ───────────────────────────────────────────────────────────────

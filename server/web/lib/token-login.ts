@@ -102,15 +102,11 @@ export async function handleTokenLogin(
   // After the password check, so this cannot tell anyone whether an email
   // exists. No token is minted. A member on the old companion's route: the
   // app is older than the workspaces contract (W7e, plan 7.3), 426 "Update
-  // the app". Any other login (a client) gets the client refusal it always
-  // got: no phone build serves clients yet, so an update would not help it
-  // (W7e fix round 1).
+  // the app". A login that is gone by now is refused like a wrong
+  // password (only admins and members sign in with one since W8a).
   if (opts.adminsOnly && login?.role !== 'admin') {
     if (login?.role === 'member') return updateTheAppResponse();
-    return NextResponse.json(
-      { error: 'This login cannot use this app.', reason: 'client-login' },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
   const label = deviceLabel(parsed.data.deviceName, opts.defaultLabel);

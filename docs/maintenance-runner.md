@@ -228,17 +228,12 @@ took four tries):
   key, so CLI, UI, and cron (three different processes) can never merge
   concurrently, a contender fails fast with a clear message. Dry-runs skip
   the lock.
-- The schedule contains eleven tasks: `entities-dedupe` (auto tier),
+- The schedule contains ten tasks: `entities-dedupe` (auto tier),
   `traces-reap` and `turns-reap` (all owners), `space-purge` (a deactivated
   login's private personal items after 30 days, see
   [member-logins.md](./member-logins.md) section 6; the worker mounts
-  /data/spaces and /data/table-dbs for it), `client-codes-reap` (old client
-  sign-in code rows: finished rows and cap skips after 30 days, request
-  addresses blanked after 7; plain SQL, see
-  [client-logins.md](./client-logins.md) section 3; by hand
-  `pnpm -C server/web client-codes:reap`, dry run unless `--apply`),
-  `device-tokens-reap` (device token rows 30 days after they were revoked or
-  expired; plain SQL; by hand `pnpm -C server/web device-tokens:reap`, dry
+  /data/spaces and /data/table-dbs for it), `device-tokens-reap` (device
+  token rows 30 days after they were revoked or expired; plain SQL; by hand `pnpm -C server/web device-tokens:reap`, dry
   run unless `--apply`),
   `app-access-log-reap` (app access log rows older than 90 days, and the
   contact share trail `share_access_log` by the same 90 days since

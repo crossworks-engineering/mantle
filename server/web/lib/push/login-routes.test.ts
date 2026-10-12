@@ -1,7 +1,6 @@
-// The push routes of a member or a client login (login-routes.ts), without a
-// database: the enrol step needs the caller's OWN live device token, a
-// client never registers the brain with the relay, and a login lists and
-// removes only its own devices. The store and the relay are mocked.
+// The push routes of a member login (login-routes.ts), without a database:
+// the enrol step needs the caller's OWN live device token, and a login lists
+// and removes only its own devices. The store and the relay are mocked.
 
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -77,8 +76,9 @@ const member: LoginPushCaller = {
   anchorId: ANCHOR,
   email: 'member@example.invalid',
 };
+/** A second member (until W8a a client login). */
 const client: LoginPushCaller = {
-  role: 'client',
+  role: 'member',
   loginId: CLIENT,
   anchorId: ANCHOR,
   email: 'client@example.invalid',
@@ -162,17 +162,6 @@ describe('connect', () => {
     await loginPushConnect(req('POST', body), member);
     expect(h.registered).toBe(1);
     expect(h.audits).toHaveLength(1);
-  });
-
-  it('a client never registers it: 409 until push is set up, then a ticket', async () => {
-    const off = await loginPushConnect(req('POST', body), client);
-    expect(off.status).toBe(409);
-    expect(await off.json()).toEqual({ error: 'push_not_set_up' });
-    expect(h.registered).toBe(0);
-    h.instance = { instanceToken: 't', relayInstanceId: 'iid', relayUrl: 'https://relay.example' };
-    const on = await loginPushConnect(req('POST', body), client);
-    expect(on.status).toBe(200);
-    expect(h.registered).toBe(0);
   });
 
   it('refuses a body that is not a connect request', async () => {

@@ -40,7 +40,6 @@ vi.mock('../lib/workspaces', async (importOriginal) => ({
   requireArea: async () => true,
 }));
 
-const CLIENT_ID = '12121212-1212-4212-8212-121212121212';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';
 const SPACE_ID = '66666666-6666-4666-8666-666666666666';
@@ -58,12 +57,7 @@ const row = (id: string, role: string) => ({
 });
 
 vi.mock('../lib/auth/login-row', () => ({
-  loadLoginRow: async (id: string) =>
-    id === CLIENT_ID
-      ? row(CLIENT_ID, 'client')
-      : id === MEMBER_ID
-        ? row(MEMBER_ID, 'member')
-        : null,
+  loadLoginRow: async (id: string) => (id === MEMBER_ID ? row(MEMBER_ID, 'member') : null),
   loadAnchorId: async () => ANCHOR_ID,
   loadPersonalSpaceId: async () => SPACE_ID,
 }));
@@ -162,14 +156,8 @@ describe.skipIf(!hasManifest)('the body ceiling: through the app', () => {
     process.env.SESSION_SECRET = 'body-ceiling-secret-that-is-at-least-32-chars';
     const tokens = await import('../lib/auth/tokens');
     const { SESSION_COOKIE_NAME } = await import('../lib/auth-constants');
-    const { CLIENT_SESSION_TTL_SECONDS } = await import('../lib/auth/session');
-    // A client's session has its own, shorter lifetime.
     cookie = (id) =>
-      `${SESSION_COOKIE_NAME}=${
-        tokens.buildSessionCookie(id, {
-          ttlSeconds: id === CLIENT_ID ? CLIENT_SESSION_TTL_SECONDS : 3600,
-        }).value
-      }`;
+      `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(id, { ttlSeconds: 3600 }).value}`;
     const { createApp } = await import('./app');
     app = await createApp();
   }, 60_000);

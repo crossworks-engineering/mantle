@@ -83,8 +83,8 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
       await tx`set local role mantle_view_user`;
       return fn(tx);
     }) as Promise<T>;
-  const migrate = async () =>
-    (await sql<Row[]>`select * from mantle_ws_migrate()`).map((r) => ({ ...r, n: Number(r.n) }));
+  const numbered = (rows: Row[]) => rows.map((r) => ({ ...r, n: Number(r.n) }));
+  const migrate = async () => numbered(await sql<Row[]>`select * from mantle_ws_migrate()`);
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
@@ -142,17 +142,32 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
   });
 
   it('skips a brain with a client login and writes nothing; migrates once it is gone; runs once', async () => {
-    const client = randomUUID();
-    await sql`insert into auth.users (id, email, password_hash, role) values
-      (${client}, 'c@example.invalid', 'x', 'client')`;
-    const skipped = await migrate();
+    // Since 0272 the role CHECK admits admin and member only; a brain from
+    // before it could hold a client login. The CHECK is lifted for this one
+    // transaction, which is rolled back: the client is gone after it.
+    const rollback = new Error('rollback');
+    let skipped: Awaited<ReturnType<typeof migrate>> = [];
+    let written = { workspaces: -1, grants: -1 };
+    await sql
+      .begin(async (tx) => {
+        await tx`alter table auth.users drop constraint users_role_ck`;
+        await tx`insert into auth.users (id, email, password_hash, role) values
+          (${randomUUID()}, 'c@example.invalid', 'x', 'client')`;
+        skipped = numbered(await tx<Row[]>`select * from mantle_ws_migrate()`);
+        written = {
+          workspaces: Number((await tx`select count(*) as n from workspaces`)[0]!.n),
+          grants: Number((await tx`select count(*) as n from item_grants`)[0]!.n),
+        };
+        throw rollback;
+      })
+      .catch((err: unknown) => {
+        if (err !== rollback) throw err;
+      });
     expect(skipped.filter((r) => r.section === 'skip').map((r) => [r.subject, r.n])).toEqual([
       ['client logins', 1],
       ['client-level items', 0],
     ]);
-    expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(0);
-    expect(Number((await sql`select count(*) as n from item_grants`)[0]!.n)).toBe(0);
-    await sql`delete from auth.users where id = ${client}`;
+    expect(written).toEqual({ workspaces: 0, grants: 0 });
 
     const done = await migrate();
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);

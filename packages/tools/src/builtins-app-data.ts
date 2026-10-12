@@ -85,17 +85,14 @@ type Who = {
 };
 
 /** The login this call acts for, from the server-stamped surface; null on
- *  every path that is not a member's or client's own MCP connection. */
+ *  every path that is not a login's own MCP connection. */
 export function appDataCaller(ctx: ToolHandlerContext): Who | null {
   const s = ctx.surface;
   if (s?.kind === 'team' && s.loginId && s.mcp) {
     return { role: 'member', loginId: s.loginId, name: s.contactName ?? null, mcp: s.mcp };
   }
-  if (s?.kind === 'client' && s.loginId && s.mcp) {
-    return { role: 'client', loginId: s.loginId, name: s.contactName ?? null, mcp: s.mcp };
-  }
   // The one MCP surface (W7b): any login's own connection, as a user of its
-  // workspaces (a client login never connects).
+  // workspaces.
   if (s?.kind === 'owner' && s.loginId && s.mcp) {
     return { role: 'member', loginId: s.loginId, name: null, mcp: s.mcp };
   }

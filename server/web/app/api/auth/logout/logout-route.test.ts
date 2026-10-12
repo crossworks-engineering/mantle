@@ -1,17 +1,16 @@
 /**
  * POST /api/auth/logout without a database: the login and the epoch bump are
  * stood in. A plain sign-out clears this browser's cookie and ends nothing
- * else for an admin or a member; for a CLIENT it ends every session and
- * asset token the login holds (client logins audit B23: a download URL left
- * in a shared browser's history must stop when the client signs out).
- * `{ everywhere: true }` ends them for every role. Proven on Postgres in
- * lib/auth/session-epoch.db.test.ts and client-session.db.test.ts.
+ * else, for every login (there is no client login since workspaces W8a).
+ * `{ everywhere: true }` ends every session, asset token and API key the
+ * login holds. Proven on Postgres in lib/auth/session-epoch.db.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   login: null as null | { kind: string; loginId: string; email: string },
   ended: [] as string[],
+  endOpts: [] as unknown[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -20,8 +19,9 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     const { NextResponse } = await import('@/server/http-compat');
     return h.login ?? NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }),
-  endLoginSessions: vi.fn(async (id: string) => {
+  endLoginSessions: vi.fn(async (id: string, opts?: unknown) => {
     h.ended.push(id);
+    h.endOpts.push(opts);
     return 1;
   }),
 }));
@@ -34,6 +34,7 @@ vi.mock('@/lib/audit', () => ({
 beforeEach(() => {
   h.login = null;
   h.ended = [];
+  h.endOpts = [];
 });
 
 const logout = async (body?: unknown) => {
@@ -56,18 +57,11 @@ describe('POST /api/auth/logout', () => {
     expect(h.ended).toEqual([]);
   });
 
-  it("a client's plain sign-out ends every session and asset token it holds", async () => {
-    h.login = { kind: 'client', loginId: 'client-id', email: 'c@example.invalid' };
-    const res = await logout();
-    expect(res.status).toBe(200);
-    expect(res.headers.get('set-cookie')).toMatch(/mantle_session=;/);
-    expect(h.ended).toEqual(['client-id']);
-  });
-
-  it.each(['admin', 'member', 'client'])('everywhere ends them for an %s', async (kind) => {
+  it.each(['admin', 'member'])('everywhere ends them for an %s, keys too', async (kind) => {
     h.login = { kind, loginId: `${kind}-id`, email: `${kind}@example.invalid` };
     expect((await logout({ everywhere: true })).status).toBe(200);
     expect(h.ended).toEqual([`${kind}-id`]);
+    expect(h.endOpts).toEqual([{ endKeys: true }]);
   });
 
   it('with no session it still clears the cookie and ends nothing', async () => {

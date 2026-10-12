@@ -21,7 +21,6 @@ export {
   withWorkspaceArg,
 } from './create-home';
 export {
-  CLIENT_LOGIN_REFUSED,
   MCP_HANDWRITTEN_READ_ONLY,
   MCP_WORKSPACE_INSTRUCTIONS,
   NOT_ON_WORKSPACES_REFUSED,

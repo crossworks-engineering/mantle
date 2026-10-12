@@ -10,7 +10,9 @@
  *  - at 0232 (a v0.239.35 box): a client login refuses, a client-level item
  *    refuses, a brain with members only goes ahead, a brain with no anchor
  *    goes ahead;
- *  - fully migrated: a client box left unswitched by 0261 refuses; the same
+ *  - at 0271 (the switch release before W8a; 0272 turns every client login
+ *    into a member and admits none after, so a client login is planted
+ *    before it): a client box left unswitched by 0261 refuses; the same
  *    brain once set up (its Admin workspace made by the migration) goes
  *    ahead, a client login added later included;
  *  - the two copies (roll.sh, updater.sh) are the same text.
@@ -23,7 +25,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createMigratedScratchDatabase, createScratchDatabaseBefore } from './test-support';
+import { createScratchDatabaseBefore } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -100,14 +102,14 @@ describe.skipIf(!URL)('on a v0.239.35 box (schema at 0232)', () => {
   });
 });
 
-describe.skipIf(!URL)('on a box with this release', () => {
-  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
+describe.skipIf(!URL)('on a box with the switch release (schema at 0271)', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
   let sql: postgres.Sql;
   const owner = randomUUID();
   const client = randomUUID();
 
   beforeAll(async () => {
-    scratch = await createMigratedScratchDatabase(URL!);
+    scratch = await createScratchDatabaseBefore(URL!, '0272_workspaces_logins_carry_nothing');
     sql = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
     await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
       (${owner}, 'pf2-o@example.invalid', 'x', 'admin', true),

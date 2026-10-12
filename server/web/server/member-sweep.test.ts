@@ -169,9 +169,13 @@ if (!hasManifest && process.env.CI) {
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 
 /** Routes that authenticate with their own short-lived ticket instead of the
- *  session, minted only by an admin- or client-gated route (so a member never
- *  holds one). They answer a plain-text 401 without it. */
-const TICKET_GATED = new Set(['GET /api/apps/:id/frame', 'GET /api/client/apps/:id/frame']);
+ *  session, minted only by an admin-gated route (so a member never holds
+ *  one). They answer a plain-text 401 without it. */
+const TICKET_GATED = new Set(['GET /api/apps/:id/frame']);
+
+/** The client portal's stubs (removed in W5c; the client login went in
+ *  W8a): every login gets 410 code gone. */
+const isClientPortalStub = (pattern: string) => pattern.startsWith('/api/client/');
 
 function isPublic(path: string): boolean {
   return PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
@@ -281,7 +285,10 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
             const refused =
               (res.status === 403 && body?.reason === 'member-login') ||
               (res.status === 401 && body?.error === 'unauthorized') ||
-              (res.status === 401 && TICKET_GATED.has(`${method} ${entry.pattern}`));
+              (res.status === 401 && TICKET_GATED.has(`${method} ${entry.pattern}`)) ||
+              (res.status === 410 &&
+                (body as { code?: string } | null)?.code === 'gone' &&
+                isClientPortalStub(entry.pattern));
             if (!refused) failures.push(`${method} ${entry.pattern} → ${res.status}`);
           } else {
             const to = res.headers.get('location') ?? '';
@@ -324,7 +331,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     ).toBe(401);
   });
 
-  it('a member device token is refused by the admin and the client gates', async () => {
+  it('a member device token is refused by the admin gate; the client portal is gone', async () => {
     const headers = bearerFor(MEMBER_ID);
     // The one shell (W5c) answers a member as a member.
     const shell = await app.request('/api/shell', { headers });
@@ -335,16 +342,14 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
       areas: [],
       pendingApprovals: 0,
     });
-    for (const path of [
-      '/api/client/shell',
-      '/api/push/subscriptions',
-      // The client byte routes are 410 stubs behind the client gate (W5c).
-      '/api/client/files/not-a-uuid',
-    ]) {
+    const refused = await app.request('/api/push/subscriptions', { headers });
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { reason?: string }).reason).toBe('member-login');
+    // The client portal's stubs answer every login 410 (W5c, W8a).
+    for (const path of ['/api/client/shell', '/api/client/files/not-a-uuid']) {
       const res = await app.request(path, { headers });
-      const body = (await res.json().catch(() => null)) as { reason?: string } | null;
-      expect(res.status, path).toBe(403);
-      expect(body?.reason, path).toBe('member-login');
+      expect(res.status, path).toBe(410);
+      expect(((await res.json()) as { code?: string }).code, path).toBe('gone');
     }
     // The brain's byte route serves every login in its scope since W7e: a
     // member device token gets past the gate (the handler's 400 here).

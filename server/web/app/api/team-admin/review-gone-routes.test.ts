@@ -19,7 +19,6 @@ vi.mock('@/lib/auth', () => {
   return {
     getOwnerOr401: vi.fn(owner),
     getMemberOr401: vi.fn(owner),
-    getClientOr401: vi.fn(owner),
     getLoginOr401: vi.fn(owner),
   };
 });
@@ -61,6 +60,17 @@ const GONE: Array<[string, string[], () => Promise<RouteModule>]> = [
     '/api/team-admin/submissions/:id/take-over',
     ['POST'],
     () => import('./submissions/[id]/take-over/route'),
+  ],
+  // The email-code sign-in sender (workspaces W8a).
+  [
+    '/api/team-admin/clients/signin-sender',
+    ['GET', 'PUT'],
+    () => import('./clients/signin-sender/route'),
+  ],
+  [
+    '/api/team-admin/clients/signin-sender/preview',
+    ['GET'],
+    () => import('./clients/signin-sender/preview/route'),
   ],
   ['/api/team-admin/member-items', ['GET'], () => import('./member-items/route')],
   ['/api/team-admin/member-items/:id', ['GET'], () => import('./member-items/[id]/route')],

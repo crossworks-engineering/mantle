@@ -88,7 +88,7 @@ export async function dispatchTool(
     }
     const def = getBuiltin(h.ref);
     // Owner-only tools refuse anyone but the owner before any other work
-    // (client logins C4): a team, client or MISSING surface is not the owner.
+    // (client logins C4): a team or MISSING surface is not the owner.
     if (def?.ownerOnly && !isOwnerSurface(ctx.surface)) {
       return { ok: false, error: OWNER_ONLY_ERROR };
     }
@@ -142,13 +142,7 @@ const MCP_RESULT_TEXT_CAP = 80_000;
 function nonOwnerRunLevel(ctx: ToolHandlerContext): ViewerLevel | null {
   const s = ctx.surface;
   const bySurface: ViewerLevel | null =
-    s?.kind === 'team'
-      ? 'team'
-      : s?.kind === 'client'
-        ? 'client'
-        : s?.kind === 'contact'
-          ? 'public'
-          : null;
+    s?.kind === 'team' ? 'team' : s?.kind === 'contact' ? 'public' : null;
   // Outside a workspace scope (its callers return first inside one): system
   // work, or a personal space at its login's level (until W6b).
   const outer = currentScope();
@@ -236,7 +230,7 @@ async function connectorScopeRefused(
  * Why a connector call is refused for a non-owner run outside a workspace
  * scope, or null (W5b2). The connector's level decides nothing (it only
  * says which agents may hold the group): the workspaces that hold the
- * connector do. A call on a login's surface (a member's or a client's)
+ * connector do. A call on a login's surface (a member's)
  * takes the login's workspace rule (loginConnectorRefused); a contact link
  * holds no workspace, so it reaches no connector; any other non-owner run
  * names no login to check, so it is refused too (fails closed).
@@ -266,7 +260,7 @@ async function connectorCallRefused(
   }
   const s = ctx.surface;
   if (s?.kind === 'contact') return LINK_NO_CONNECTORS;
-  if ((s?.kind === 'team' || s?.kind === 'client') && s.loginId) {
+  if (s?.kind === 'team' && s.loginId) {
     return loginConnectorRefused(ctx.ownerId, s.loginId, groupSlug, mark === 'write');
   }
   return 'This connector tool runs below the owner only for a signed-in user of a workspace that holds the connector.';

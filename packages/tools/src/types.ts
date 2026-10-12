@@ -140,20 +140,6 @@ export type ToolHandlerContext = {
         shareId: string;
       }
     | {
-        /** A CLIENT login is on the other end (client logins C4): a client's
-         *  chat turn with the client-responder (POST /api/client/chat).
-         *  Never the owner and never a team member. `client_request_create`
-         *  reads its provenance from here; owner-only tools refuse. */
-        kind: 'client';
-        /** The client login the turn works for (server-stamped). */
-        loginId: string;
-        contactName?: string;
-        /** The inbound team_messages row that started this turn. */
-        inboundMessageId?: string;
-        /** The client's own MCP connection (team apps Phase 1). */
-        mcp?: LoginMcpChannel;
-      }
-    | {
         /** The OWNER, on a path that is not a chat channel (client logins
          *  C4, plan section 8): MCP, a run, a delegated child, an approved
          *  pending call, the dev tool console, an owner app. Since C4 a
@@ -183,7 +169,7 @@ export type ToolHandlerContext = {
  */
 export type LoginMcpChannel = {
   /** How the bearer was issued. */
-  via: 'oauth' | 'token' | 'peer' | 'key';
+  via: 'oauth' | 'peer' | 'key';
   /** The login's Write switch (and for a key or a peer, theirs too). */
   write: boolean;
   /** The API key, the peer, or the OAuth client of this connection: the

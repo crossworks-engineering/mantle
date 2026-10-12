@@ -88,7 +88,7 @@ describe.skipIf(!URL)('W6b fix round 5', () => {
     let pending: Promise<T> | undefined;
     await m.systemDb.transaction(async (tx) => {
       await tx.execute(sql`update mantle_peers
-                              set acts_as_login_id = ${owner}::uuid, acts_as_role = 'admin',
+                              set acts_as_login_id = ${owner}::uuid,
                                   write_enabled = false, allowed_risky_tools = '{}'
                             where id = ${peerId}`);
       pending = during();

@@ -2,10 +2,10 @@
  * The email gates and the brain's logins on a real, migrated Postgres: an
  * active STAFF login's address (admin or member) is allowed like a contact
  * (users are contacts in user form, 2026-09-26); a disabled login's is not.
- * A CLIENT login's address counts only when the client is also a contact
- * (client logins C2, decision 10), inbound (the contact gate) and outbound
- * (loginEmails and contactEmails, the email_send allowlist). Seeds a brain
- * and logins of its own, removes them.
+ * A contact's address passes too, inbound (the contact gate) and outbound
+ * (contactEmails, the email_send allowlist), while loginEmails names only
+ * the active logins. There is no client login since 0272. Seeds a brain and
+ * logins of its own, removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/contact-gate.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -21,14 +21,11 @@ describe.skipIf(!URL)('email gates and the brain logins', () => {
   const owner = randomUUID();
   const active = randomUUID();
   const disabled = randomUUID();
-  const client = randomUUID();
-  const contactClient = randomUUID();
   const contactNode = randomUUID();
   const activeEmail = `active-${tag}@example.invalid`;
   const disabledEmail = `gone-${tag}@example.invalid`;
-  const clientEmail = `client-${tag}@example.invalid`;
-  const contactClientEmail = `known-client-${tag}@example.invalid`;
-  const logins = [active, disabled, client, contactClient];
+  const contactEmail = `known-${tag}@example.invalid`;
+  const logins = [active, disabled];
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -38,17 +35,15 @@ describe.skipIf(!URL)('email gates and the brain logins', () => {
       insert into auth.users (id, email, password_hash, role, disabled_at) values
         (${owner}, ${`owner-${tag}@example.invalid`}, 'x', 'admin', null),
         (${active}, ${activeEmail}, 'x', 'member', null),
-        (${disabled}, ${disabledEmail}, 'x', 'member', now()),
-        (${client}, ${clientEmail}, 'x', 'client', null),
-        (${contactClient}, ${contactClientEmail}, 'x', 'client', null)`);
+        (${disabled}, ${disabledEmail}, 'x', 'member', now())`);
     await m.systemDb.execute(
       sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`,
     );
-    // The second client is also a contact of the brain.
+    // A contact of the brain that is no login.
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, data) values
-        (${contactNode}, ${owner}, 'contact', 'Known client', 'contacts',
-         ${JSON.stringify({ emails: [contactClientEmail] })}::jsonb)`);
+        (${contactNode}, ${owner}, 'contact', 'Known contact', 'contacts',
+         ${JSON.stringify({ emails: [contactEmail] })}::jsonb)`);
   }, 60_000);
 
   afterAll(async () => {
@@ -68,21 +63,19 @@ describe.skipIf(!URL)('email gates and the brain logins', () => {
     expect(gate.allows(`stranger-${tag}@example.invalid`)).toBe(false);
   });
 
-  it('inbound: a client login passes only when it is also a contact', async () => {
+  it('inbound: a contact passes the gate', async () => {
     const { loadContactGate } = await import('./contact-gate');
     const gate = await loadContactGate(owner);
-    expect(gate.allows(clientEmail)).toBe(false);
-    expect(gate.allows(contactClientEmail)).toBe(true);
+    expect(gate.allows(contactEmail)).toBe(true);
   });
 
-  it('outbound: loginEmails leaves every client out; contactEmails has the contact one', async () => {
+  it('outbound: loginEmails names the active logins only; contactEmails has the contact', async () => {
     const { loginEmails, contactEmails } = await import('./contacts');
     const staff = await loginEmails();
     expect(staff).toContain(activeEmail);
-    expect(staff).not.toContain(clientEmail);
-    expect(staff).not.toContain(contactClientEmail);
+    expect(staff).not.toContain(disabledEmail);
+    expect(staff).not.toContain(contactEmail);
     const contacts = await contactEmails(owner);
-    expect(contacts).toContain(contactClientEmail);
-    expect(contacts).not.toContain(clientEmail);
+    expect(contacts).toContain(contactEmail);
   });
 });

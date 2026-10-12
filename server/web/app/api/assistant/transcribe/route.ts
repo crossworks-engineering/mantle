@@ -31,13 +31,6 @@ import { errorMessage } from '@mantle/std';
 export async function POST(req: Request) {
   const login = await getChatLoginOr401();
   if (login instanceof Response) return login;
-  // A client has no chat (W7c fix round 1, M4).
-  if (login.kind === 'client') {
-    return NextResponse.json(
-      { error: 'no assistant to chat with here', reason: 'no-chat-agent' },
-      { status: 404 },
-    );
-  }
   if (login.kind !== 'admin') {
     const gate = rateLimit(`chat-transcribe:${login.loginId}`, { max: 6, windowMs: 60_000 });
     if (!gate.ok) {

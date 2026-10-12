@@ -53,7 +53,7 @@ export const LOGIN_NOTICE_FRESH_MS = 30 * 60 * 1000;
 const freshSql = (column: unknown) =>
   sql<boolean>`(now() - ${column} <= make_interval(secs => ${LOGIN_NOTICE_FRESH_MS / 1000}))`;
 
-export type LoginNoticeRole = 'member' | 'client';
+export type LoginNoticeRole = 'member';
 type ReviewNoticeState = 'accepted' | 'returned' | 'taken';
 
 export type LoginNotice =
@@ -114,7 +114,7 @@ async function noticeLogin(loginId: string): Promise<{ id: string; role: LoginNo
     .where(eq(authUsers.id, loginId))
     .limit(1);
   const role: string | undefined = row?.role;
-  if (!row || row.disabledAt || (role !== 'member' && role !== 'client')) return null;
+  if (!row || row.disabledAt || role !== 'member') return null;
   return { id: row.id, role };
 }
 
@@ -170,9 +170,6 @@ export function chatReplyNotice(n: {
     const login = await noticeLogin(n.loginId);
     if (!login) return null;
 
-    // A client has no chat since workspaces W5c (the client portal went):
-    // no reply to tell it about.
-    if (login.role === 'client') return null;
     // The text exactly as the reader's chat route returns it.
     const [text] = await chatTextsForReader(msg.ownerId, 'team', n.loginId, [msg.text]);
     let title: string | null = null;

@@ -34,17 +34,9 @@ describe('key-made notice text', () => {
     );
   });
 
-  it('says never for a key that does not expire, and tells a client what it can do', () => {
+  it('says never for a key that does not expire', () => {
     expect(keyMadeText({ role: 'admin', name: 'k', access: 'read', expiresAt: null })).toContain(
       'read only, expires never.',
     );
-    const client = keyMadeText({
-      role: 'client',
-      name: 'k',
-      access: 'read',
-      expiresAt: new Date('2026-11-01T00:00:00Z'),
-    });
-    expect(client).toContain('revoke it in API keys and sign out');
-    expect(client).not.toContain('password');
   });
 });

@@ -1,24 +1,19 @@
 /**
- * The phone app's device tokens for all three roles, end to end on a real
- * migrated Postgres, through the real app (createApp):
+ * The phone app's device tokens for an admin and a member, end to end on a
+ * real migrated Postgres, through the real app (createApp):
  *
  *  - POST /api/auth/device-login signs an admin or a member in and names the
  *    role; the frozen /api/auth/mobile-login is unchanged (admins only, no
- *    role in the answer); a client email never opens with a password;
- *  - the emailed client code in device mode answers a device token: 30 days,
- *    held to the login's session epoch, listed under the login's devices;
- *  - a member token reaches member routes only, a client token the one shell
- *    (the client portal went in W5c), and GET /api/auth/whoami tells each
- *    its shell (GET /api/shell for every role since W5c);
- *  - every way a client token ends: the device is revoked, an admin ends the
- *    sessions, the login is disabled, the client signs out in the browser,
- *    the client signs out on the phone (which ends its browser session too);
- *  - refresh rotates a token of each role; a client's keeps the epoch and
- *    the 30 days, and the push devices follow the new token;
+ *    role in the answer); a wrong password mints nothing;
+ *  - a member token reaches member routes only, and GET /api/auth/whoami
+ *    tells each its shell (GET /api/shell for every login since W5c); the
+ *    client portal's stubs answer every login 410 (W5c; the client login
+ *    and its email-code sign-in went in W8a);
+ *  - every way a token ends: the device is revoked, an admin ends the
+ *    sessions, the login is disabled, the session epoch moves on;
+ *  - refresh rotates a token, and the push devices follow the new token;
  *  - a member enrols, lists and removes only its own push devices, and a
- *    sign-out removes them; the client push routes answer 410 (W5c);
- *  - the unread count and the read cursor of the member's own chat thread
- *    (the client chat went in W5c);
+ *    sign-out removes them;
  *  - a password change or an admin's own reset in the web client (cookie
  *    and bearer together) keeps the tab's own bearer, and gives back the
  *    upgrade's short cookie bound to it (T14, T15).
@@ -45,13 +40,11 @@ vi.mock('../push/relay-client', () => ({
 type Row = Record<string, unknown>;
 type Json = Record<string, unknown>;
 
-describe.skipIf(!URL)('device tokens for an admin, a member and a client', () => {
+describe.skipIf(!URL)('device tokens for an admin and a member', () => {
   let m: typeof import('@mantle/db');
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   let app: import('hono').Hono;
   let tokens: typeof import('./tokens');
-  let content: typeof import('@mantle/content');
-  let logins: typeof import('../client-logins');
   const tag = `dtok-${randomUUID().slice(0, 8)}`;
   const admin = randomUUID();
   const member = randomUUID();
@@ -82,65 +75,45 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   };
   const json = async (res: Response) => (await res.json()) as Json;
   const asAdmin = () => `mantle_session=${tokens.buildSessionCookie(admin).value}`;
-  /** A client session is alive: the one shell answers it (200), no session
-   *  is 401. The client portal routes are 410 stubs since W5c. */
-  const clientProbe = (auth: { cookie?: string; bearer?: string }) =>
+  /** A session is alive: the one shell answers it (200), no session is
+   *  401. */
+  const alive = (auth: { cookie?: string; bearer?: string }) =>
     call('/api/shell', auth).then((r) => r.status);
   const memberProbe = (auth: { cookie?: string; bearer?: string }) =>
     call('/api/member/files/not-a-uuid', auth).then((r) => r.status);
   const deviceLogin = (email: string, password = PASSWORD, deviceName?: string) =>
     call('/api/auth/device-login', { method: 'POST', body: { email, password, deviceName } });
 
-  /** A client login (made directly: adding one through the admin routes is
-   *  client-session.db.test.ts's subject). */
-  const addClient = async (name: string): Promise<string> => {
-    const id = randomUUID();
-    await sql`insert into auth.users (id, email, password_hash, role, display_name)
-              values (${id}, ${emailOf(name)}, 'x', 'client', ${name})`;
-    made.push(id);
-    return id;
-  };
-  /** An open emailed code for the client, written as the worker stores it.
-   *  Not through createClientEmailCode: its brain-wide daily cap is shared
-   *  with every test file on this database (client-codes.db.test.ts fills
-   *  it on purpose), and what this file tests is the redeem. A device-mode
-   *  code is stored under the id DERIVED from the app's (deviceRequestId),
-   *  a browser's under the cookie's id itself. */
-  const mailedCode = async (name: string, mode: 'device' | 'browser' = 'device') => {
-    const requestId = randomUUID();
-    const stored = mode === 'device' ? logins.deviceRequestId(requestId) : requestId;
-    const code = content.generateClientCode();
-    const [login] = await sql<Row[]>`select id from auth.users where email = ${emailOf(name)}`;
-    await sql`insert into client_signin_codes
-                (owner_id, login_id, kind, code_hash, request_id, request_ip, expires_at)
-              values (${anchor}, ${login!.id as string}, 'email',
-                      ${content.hashClientCode(stored, code)}, ${stored},
-                      ${`198.51.100.${(ip += 1) % 250}`}, now() + interval '10 minutes')`;
-    return { requestId, code };
-  };
-  /** Sign a client in on a phone: the device token and its device id. */
-  const clientPhone = async (name: string, deviceName = 'Client phone') => {
-    const { requestId, code } = await mailedCode(name);
-    const res = await call('/api/auth/client-code/verify', {
-      method: 'POST',
-      body: { email: emailOf(name), code, requestId, deviceName },
-    });
+  /** A member login made for one test (until W8a these were client
+   *  logins: there is no client role and no email-code sign-in now). */
+  const addUser = (name: string): Promise<string> => addLogin(name, 'member');
+  /** Sign a login in on a phone: the device token and its device id. */
+  const phoneOf = async (name: string, deviceName = 'Phone') => {
+    const res = await deviceLogin(emailOf(name), PASSWORD, deviceName);
     expect(res.status).toBe(200);
     expect(res.headers.get('set-cookie')).toBeNull();
     const body = await json(res);
     return { token: body.token as string, deviceId: body.deviceId as string, body };
   };
-  /** Sign a client in in a browser (the cookie flow of the same code). */
-  const clientBrowser = async (name: string) => {
-    const { requestId, code } = await mailedCode(name, 'browser');
-    const res = await call('/api/auth/client-code/verify', {
+  /** Sign a login in in a browser: the password sign-in's cookie. */
+  const browserOf = async (name: string) => {
+    const res = await call('/api/auth/login', {
       method: 'POST',
-      cookie: `mantle_code_req=${requestId}`,
-      body: { email: emailOf(name), code },
+      body: { email: emailOf(name), password: PASSWORD },
     });
     expect(res.status).toBe(200);
     const set = /mantle_session=([^;]*)/.exec(res.headers.get('set-cookie') ?? '');
     return `mantle_session=${set![1]}`;
+  };
+  /** A device token that carries the login's session epoch now, with its
+   *  row (the session layer holds such a token to the epoch). */
+  const epochToken = async (id: string) => {
+    const [row] = await sql<Row[]>`select session_epoch from auth.users where id = ${id}`;
+    const jti = randomUUID();
+    const t = tokens.buildMobileToken(id, jti, 3600, Number(row!.session_epoch));
+    await sql`insert into mobile_tokens (id, user_id, label, expires_at)
+              values (${jti}, ${id}, ${tag}, ${t.expiresAt.toISOString()})`;
+    return { token: t.value, deviceId: jti };
   };
   const enrol = (base: string, bearer: string, routingToken: string) =>
     call(`${base}/subscriptions`, {
@@ -192,8 +165,6 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     tokens = await import('./tokens');
-    content = await import('@mantle/content');
-    logins = await import('../client-logins');
     anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(PASSWORD, 4);
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
@@ -208,7 +179,6 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     const all = [...made, admin, member];
     await sql`delete from push_subscriptions where login_id in ${sql(all)}`;
     await sql`delete from audit_log where actor_email like ${`${tag}%`}`;
-    await sql`delete from client_signin_codes where login_id in ${sql(all)}`;
     await sql`delete from assistant_messages where login_id in ${sql(all)}`;
     await sql`delete from mobile_tokens where user_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
@@ -231,11 +201,11 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(shell.status).toBe(200);
     const shellBody = await json(shell);
     expect(shellBody).toMatchObject({ role: 'member', loginId: member, areas: [] });
-    for (const path of ['/api/client/shell', '/api/push/subscriptions']) {
-      const refused = await call(path, { bearer });
-      expect(refused.status, path).toBe(403);
-      expect((await json(refused)).reason, path).toBe('member-login');
-    }
+    const refused = await call('/api/push/subscriptions', { bearer });
+    expect(refused.status).toBe(403);
+    expect((await json(refused)).reason).toBe('member-login');
+    // The client portal's stubs answer every login 410 (W8a).
+    expect((await call('/api/client/shell', { bearer })).status).toBe(410);
     expect(await json(await call('/api/auth/whoami', { bearer }))).toEqual({
       role: 'member',
       loginId: member,
@@ -396,7 +366,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(setCookie(alone).claims?.dj).toBeUndefined();
   });
 
-  it('device-login signs an admin in; a wrong password and a client email are the same 401', async () => {
+  it('device-login signs an admin in; a wrong password is a 401 and mints nothing', async () => {
     const res = await deviceLogin(emailOf('admin'));
     const body = await json(res);
     expect(body).toMatchObject({ role: 'admin', loginId: admin });
@@ -409,14 +379,9 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       400,
     );
 
-    const wrong = await deviceLogin(emailOf('member'), 'not the password');
+    const id = await addUser('pw');
+    const wrong = await deviceLogin(emailOf('pw'), 'not the password');
     expect(wrong.status).toBe(401);
-    // A client has no password; even one set by hand never opens it.
-    const id = await addClient('pw');
-    await sql`update auth.users set password_hash = ${bcrypt.hashSync(PASSWORD, 4)} where id = ${id}`;
-    const client = await deviceLogin(emailOf('pw'));
-    expect(client.status).toBe(401);
-    expect(await json(client)).toEqual(await json(wrong));
     const none = await sql<Row[]>`select id from mobile_tokens where user_id = ${id}`;
     expect(none).toHaveLength(0);
   });
@@ -438,162 +403,44 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect((await json(memberRes)).reason).toBe('update-app');
   });
 
-  // ── Client: the emailed code in device mode ─────────────────────────────
-
-  it('the emailed code in device mode gives a 30-day device token for client routes only', async () => {
-    const id = await addClient('ada');
-    const before = Math.floor(Date.now() / 1000);
-    const phone = await clientPhone('ada', 'Ada phone');
-    expect(phone.body).toMatchObject({ ok: true, role: 'client', loginId: id });
-    expect(phone.body.brainId).toBe(await brainId());
-    expect(phone.body.expiresIn).toBe(30 * DAY);
-    const claims = tokens.verifyMobileToken(phone.token)!;
-    expect(claims.ep).toBe(0);
-    expect(claims.exp).toBeLessThanOrEqual(before + 30 * DAY + 60);
-    const bearer = phone.token;
-
-    expect(await clientProbe({ bearer })).toBe(200); // the one shell answers it
-    const shell = await call('/api/shell', { bearer });
-    expect(shell.status).toBe(200);
-    expect(await json(await call('/api/auth/whoami', { bearer }))).toEqual({
-      role: 'client',
-      loginId: id,
-      email: emailOf('ada'),
-      displayName: 'ada',
-      shell: '/api/shell',
-      pushBase: '/api/client/push',
-      brainId: await brainId(),
-      // W7e: the shell's workspaces, areas and owner flag.
-      workspaces: [],
-      areas: [],
-      isOwner: false,
-    });
-    for (const path of ['/api/push/subscriptions', '/api/member/shell', '/api/member/chat']) {
-      const refused = await call(path, { bearer });
-      expect(refused.status, path).toBe(403);
-      expect((await json(refused)).reason, path).toBe('client-login');
-    }
-
-    // Pictures: the client byte routes are 410 stubs (W5c), and no asset
-    // token opens them; a member's byte route takes neither credential.
-    const at = encodeURIComponent((await json(shell)).assetToken as string);
-    expect((await call('/api/client/files/not-a-uuid', { bearer })).status).toBe(410);
-    expect((await call(`/api/client/files/not-a-uuid?at=${at}`)).status).toBe(401);
-    expect((await call('/api/member/files/not-a-uuid', { bearer })).status).toBe(401);
-    expect((await call(`/api/member/files/not-a-uuid?at=${at}`)).status).toBe(401);
-
-    // The code was one use, and the device is listed under the login.
-    const devices = await json(await call(`/api/users/${id}/devices`, { cookie: asAdmin() }));
-    expect((devices.devices as Array<{ id: string }>).map((d) => d.id)).toEqual([phone.deviceId]);
-  });
-
-  it('a device-mode verify needs the request id the app was given', async () => {
-    await addClient('ben');
-    const { requestId, code } = await mailedCode('ben');
-    const verify = (body: Json, cookie?: string) =>
-      call('/api/auth/client-code/verify', { method: 'POST', body, cookie });
-    // Another request id, or a malformed one with the right cookie: refused.
-    const other = await verify({ email: emailOf('ben'), code, requestId: randomUUID() });
-    expect(other.status).toBe(401);
-    const bad = await verify(
-      { email: emailOf('ben'), code, requestId: 'nope' },
-      `mantle_code_req=${requestId}`,
-    );
-    expect(bad.status).toBe(401);
-    // The device's id in a browser cookie opens nothing either.
-    const asCookie = await verify({ email: emailOf('ben'), code }, `mantle_code_req=${requestId}`);
-    expect(asCookie.status).toBe(401);
-    const ok = await verify({ email: emailOf('ben'), code, requestId });
-    expect(ok.status).toBe(200);
-    // One use.
-    expect((await verify({ email: emailOf('ben'), code, requestId })).status).toBe(401);
-  });
-
-  it("a browser's code cannot be turned into a device token, and a page cannot use device mode", async () => {
-    const id = await addClient('web');
-    const verify = (body: Json, headers: Record<string, string> = {}) => {
-      ip += 1;
-      return app.request('/api/auth/client-code/verify', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-forwarded-for': `203.0.113.${ip % 250}`,
-          ...headers,
-        },
-        body: JSON.stringify(body),
-      });
-    };
-    // A code asked for by a browser (its id is the cookie's), sent in the
-    // BODY: the device lookup uses a derived id, so it finds no code.
-    const web = await mailedCode('web', 'browser');
-    const crossed = await verify({
-      email: emailOf('web'),
-      code: web.code,
-      requestId: web.requestId,
-    });
-    expect(crossed.status).toBe(401);
-    // Device mode from a page (an Origin or a Sec-Fetch header): refused.
-    const dev = await mailedCode('web');
-    const pages: Array<Record<string, string>> = [
-      { origin: 'http://localhost' },
-      { 'sec-fetch-site': 'same-origin' },
-    ];
-    for (const headers of pages) {
-      const res = await verify(
-        { email: emailOf('web'), code: dev.code, requestId: dev.requestId },
-        headers,
-      );
-      expect(res.status).toBe(403);
-      expect((await json(res)).reason).toBe('device-only');
-    }
-    expect(await liveTokens(id)).toBe(0);
-    // The same code from the app still works (the refusals burned nothing).
-    const ok = await verify({ email: emailOf('web'), code: dev.code, requestId: dev.requestId });
-    expect(ok.status).toBe(200);
-    // The token row was written with the redeem: one live device, signed in now.
-    const [tok] = await sql<Row[]>`
-      select signed_in_at, label from mobile_tokens where user_id = ${id} and revoked_at is null`;
-    expect(tok!.signed_in_at).not.toBeNull();
-    expect(tok!.label).toBe('Mobile device');
-  });
-
   it('an admin revoking the device, ending the sessions or disabling the login ends the token', async () => {
-    const id = await addClient('cy');
-    const first = await clientPhone('cy');
-    expect(await clientProbe({ bearer: first.token })).toBe(200);
+    const id = await addUser('cy');
+    const first = await phoneOf('cy');
+    expect(await alive({ bearer: first.token })).toBe(200);
     const revoke = await call(`/api/users/${id}/devices/${first.deviceId}`, {
       method: 'DELETE',
       cookie: asAdmin(),
     });
     expect(revoke.status).toBe(200);
-    expect(await clientProbe({ bearer: first.token })).toBe(401);
+    expect(await alive({ bearer: first.token })).toBe(401);
 
-    const second = await clientPhone('cy');
+    const second = await phoneOf('cy');
     const end = await call(`/api/users/${id}`, {
       method: 'PATCH',
       cookie: asAdmin(),
       body: { signOut: true },
     });
     expect(end.status).toBe(200);
-    expect(await clientProbe({ bearer: second.token })).toBe(401);
+    expect(await alive({ bearer: second.token })).toBe(401);
     // It cannot refresh its way back in.
     expect(
       (await call('/api/auth/token/refresh', { method: 'POST', bearer: second.token })).status,
     ).toBe(401);
 
-    const third = await clientPhone('cy');
+    const third = await phoneOf('cy');
     const off = await call(`/api/users/${id}`, {
       method: 'PATCH',
       cookie: asAdmin(),
       body: { disabled: true },
     });
     expect(off.status).toBe(200);
-    expect(await clientProbe({ bearer: third.token })).toBe(401);
+    expect(await alive({ bearer: third.token })).toBe(401);
   });
 
   it('a token is held to the session epoch even when its row is live', async () => {
-    const id = await addClient('eve');
-    const phone = await clientPhone('eve');
+    const id = await addUser('eve');
+    const phone = await epochToken(id);
+    expect(await alive({ bearer: phone.token })).toBe(200);
     // The epoch moves on with no token revoked (no path does this today; the
     // session layer must not depend on that).
     await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${id}`;
@@ -601,42 +448,10 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       Row[]
     >`select revoked_at from mobile_tokens where id = ${phone.deviceId}`;
     expect(row!.revoked_at).toBeNull();
-    expect(await clientProbe({ bearer: phone.token })).toBe(401);
+    expect(await alive({ bearer: phone.token })).toBe(401);
     expect(
       (await call('/api/auth/token/refresh', { method: 'POST', bearer: phone.token })).status,
     ).toBe(401);
-    // A client token minted without the epoch (never by the sign-in) is no token.
-    const jti = randomUUID();
-    const bare = tokens.buildMobileToken(id, jti, 3600);
-    await sql`insert into mobile_tokens (id, user_id, label, expires_at)
-              values (${jti}, ${id}, ${tag}, ${bare.expiresAt.toISOString()})`;
-    expect(await clientProbe({ bearer: bare.value })).toBe(401);
-  });
-
-  it("the client's sign-out in the browser ends its phone, and the phone's ends its browser", async () => {
-    await addClient('di');
-    const phone = await clientPhone('di');
-    const browser = await clientBrowser('di');
-    expect(await clientProbe({ bearer: phone.token })).toBe(200);
-    expect(await clientProbe({ cookie: browser })).toBe(200);
-    // The browser signs out (a plain sign-out: a client's ends everything).
-    expect((await call('/api/auth/logout', { method: 'POST', cookie: browser })).status).toBe(200);
-    expect(await clientProbe({ bearer: phone.token })).toBe(401);
-
-    const phone2 = await clientPhone('di');
-    const tablet = await clientPhone('di', 'Tablet');
-    const browser2 = await clientBrowser('di');
-    const out = await call('/api/auth/mobile-logout', { method: 'POST', bearer: phone2.token });
-    expect(out.status).toBe(200);
-    expect(await clientProbe({ bearer: phone2.token })).toBe(401);
-    expect(await clientProbe({ bearer: tablet.token })).toBe(401);
-    expect(await clientProbe({ cookie: browser2 })).toBe(401);
-    // A dead token signs nobody out: the answer is the same 200, nothing ends.
-    const phone3 = await clientPhone('di');
-    expect(
-      (await call('/api/auth/mobile-logout', { method: 'POST', bearer: phone2.token })).status,
-    ).toBe(200);
-    expect(await clientProbe({ bearer: phone3.token })).toBe(200);
   });
 
   it("a member's phone sign-out ends that device only", async () => {
@@ -654,67 +469,20 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   // ── Refresh ─────────────────────────────────────────────────────────────
 
   it('refresh answers a token with plenty of life left with itself: nothing rotates', async () => {
-    const id = await addClient('zed');
-    const phone = await clientPhone('zed');
+    const id = await addUser('zed');
+    const phone = await phoneOf('zed');
     for (let i = 0; i < 3; i += 1) {
       const res = await refresh(phone.token);
       expect(res.status).toBe(200);
       expect(res.headers.get('cache-control')).toBe('no-store');
       const body = await json(res);
-      expect(body).toMatchObject({ token: phone.token, deviceId: phone.deviceId, role: 'client' });
+      expect(body).toMatchObject({ token: phone.token, deviceId: phone.deviceId, role: 'member' });
       expect(body).toMatchObject({ loginId: id, brainId: await brainId() });
       expect(body.expiresIn as number).toBeGreaterThan(29 * DAY);
     }
     const rows = await sql<Row[]>`select id from mobile_tokens where user_id = ${id}`;
     expect(rows).toHaveLength(1);
-    expect(await clientProbe({ bearer: phone.token })).toBe(200);
-  });
-
-  it('refresh rotates a client token: same epoch, at most 30 days, the old one dead', async () => {
-    const id = await addClient('fay');
-    const phone = await clientPhone('fay');
-    await nearExpiry(phone.deviceId);
-    const before = Math.floor(Date.now() / 1000);
-    const res = await refresh(phone.token);
-    expect(res.status).toBe(200);
-    const body = await json(res);
-    expect(body).toMatchObject({ role: 'client', expiresIn: 30 * DAY });
-    expect(body).toMatchObject({ loginId: id, brainId: await brainId() });
-    expect(body.deviceId).not.toBe(phone.deviceId);
-    const claims = tokens.verifyMobileToken(body.token as string)!;
-    expect(claims).toMatchObject({ uid: id, ep: 0 });
-    expect(claims.exp).toBeLessThanOrEqual(before + 30 * DAY + 60);
-    // The sign-in time travels with the rotation; the old row says where it
-    // went; the new row is unused until its first real use.
-    const [oldRow] = await sql<Row[]>`
-      select signed_in_at, rotated_to from mobile_tokens where id = ${phone.deviceId}`;
-    const [newRow] = await sql<Row[]>`
-      select signed_in_at, last_used_at from mobile_tokens where id = ${body.deviceId as string}`;
-    expect(oldRow!.rotated_to).toBe(body.deviceId);
-    expect(newRow!.last_used_at).toBeNull();
-    expect(new Date(newRow!.signed_in_at as string).getTime()).toBe(
-      new Date(oldRow!.signed_in_at as string).getTime(),
-    );
-    // The answer was lost: the old token again, before the new one was
-    // used, gets the SAME new token (its jti, its expiry, the epoch). As
-    // often as it takes; no row is written and nothing ends.
-    for (let i = 0; i < 2; i += 1) {
-      const retry = await refresh(phone.token);
-      expect(retry.status).toBe(200);
-      expect(retry.headers.get('cache-control')).toBe('no-store');
-      const again = await json(retry);
-      expect(again).toMatchObject({ deviceId: body.deviceId, role: 'client', loginId: id });
-      expect(again.brainId).toBe(await brainId());
-      const c2 = tokens.verifyMobileToken(again.token as string)!;
-      expect(c2).toMatchObject({ uid: id, jti: body.deviceId, ep: 0 });
-      expect(Math.abs(c2.exp - claims.exp)).toBeLessThanOrEqual(2);
-    }
-    expect(await liveTokens(id)).toBe(1);
-    // The new token is used: it works, and it is stamped.
-    expect(await clientProbe({ bearer: body.token as string })).toBe(200);
-    const [used] = await sql<Row[]>`
-      select last_used_at from mobile_tokens where id = ${body.deviceId as string}`;
-    expect(used!.last_used_at).not.toBeNull();
+    expect(await alive({ bearer: phone.token })).toBe(200);
   });
 
   it('a lost refresh answer of the web client is answered again, too', async () => {
@@ -737,34 +505,6 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(whoami.status).toBe(200);
   });
 
-  it("a client's device is refreshed for at most 90 days from the code that signed it in", async () => {
-    const id = await addClient('cap');
-    const phone = await clientPhone('cap');
-    // 85 days in: it rotates, but the new token ends at the cap, not 30 days on.
-    await nearExpiry(phone.deviceId);
-    await sql`update mobile_tokens set signed_in_at = now() - interval '85 days'
-              where id = ${phone.deviceId}`;
-    const late = await json(await refresh(phone.token));
-    expect(late.expiresIn as number).toBeLessThanOrEqual(5 * DAY);
-    expect(late.expiresIn as number).toBeGreaterThan(4 * DAY);
-    const claims = tokens.verifyMobileToken(late.token as string)!;
-    expect(claims.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 5 * DAY + 60);
-    expect(await clientProbe({ bearer: late.token as string })).toBe(200);
-    // Past 90 days: no refresh, and the app is told to sign in again.
-    await sql`update mobile_tokens set signed_in_at = now() - interval '91 days'
-              where id = ${late.deviceId as string}`;
-    const over = await refresh(late.token as string);
-    expect(over.status).toBe(401);
-    expect(await json(over)).toEqual({ error: 'unauthorized', reason: 'sign-in-expired' });
-    expect((await audited('auth.token_refresh_failed', id)).length).toBeGreaterThan(0);
-    // A member has no such cap.
-    const m1 = await json(await deviceLogin(emailOf('member')));
-    await nearExpiry(m1.deviceId as string);
-    await sql`update mobile_tokens set signed_in_at = now() - interval '400 days'
-              where id = ${m1.deviceId as string}`;
-    expect((await refresh(m1.token as string)).status).toBe(200);
-  });
-
   /** The audit rows of one action for a login, after a short settle (the
    *  writes are fire and forget): for "exactly this many, no more". */
   const auditedSettled = async (action: string, actorId: string) => {
@@ -776,19 +516,19 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   };
 
   it('a rotated token presented after its successor was used is reuse: everything ends, once', async () => {
-    const id = await addClient('thf');
-    const phone = await clientPhone('thf');
-    const browser = await clientBrowser('thf');
+    const id = await addUser('thf');
+    const phone = await phoneOf('thf');
+    const browser = await browserOf('thf');
     await nearExpiry(phone.deviceId);
     // A thief holding a copy refreshes first, and uses the new token.
     const stolen = await json(await refresh(phone.token));
-    expect(await clientProbe({ bearer: stolen.token as string })).toBe(200);
+    expect(await alive({ bearer: stolen.token as string })).toBe(200);
     // Later the real phone presents the token it still holds.
     const again = await refresh(phone.token);
     expect(again.status).toBe(401);
     // Everything of the login ended: the thief's token and the browser too.
-    expect(await clientProbe({ bearer: stolen.token as string })).toBe(401);
-    expect(await clientProbe({ cookie: browser })).toBe(401);
+    expect(await alive({ bearer: stolen.token as string })).toBe(401);
+    expect(await alive({ cookie: browser })).toBe(401);
     expect(await liveTokens(id)).toBe(0);
     const rows = await auditedSettled('auth.token_reuse', id);
     expect(rows).toHaveLength(1);
@@ -800,10 +540,10 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     // Handled: the same stale token again, on refresh or on any route, is
     // a plain 401. It cannot end the login's next sessions, and logs no
     // second reuse.
-    const back = await clientPhone('thf');
+    const back = await phoneOf('thf');
     expect((await refresh(phone.token)).status).toBe(401);
-    expect(await clientProbe({ bearer: phone.token })).toBe(401);
-    expect(await clientProbe({ bearer: back.token })).toBe(200);
+    expect(await alive({ bearer: phone.token })).toBe(401);
+    expect(await alive({ bearer: back.token })).toBe(200);
     expect(await auditedSettled('auth.token_reuse', id)).toHaveLength(1);
 
     // A token revoked by a sign-out (not by rotation) is no reuse: nothing ends.
@@ -948,12 +688,12 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   // ── Dead tokens, limits, labels ─────────────────────────────────────────
 
   it('a token that is dead signs nobody out, and tells nobody who it is', async () => {
-    const id = await addClient('old');
-    const stale = await clientPhone('old');
-    // The epoch moved on with the row still live (a verify racing End sessions).
+    const id = await addUser('old');
+    const stale = await epochToken(id);
+    // The epoch moved on with the row still live (a sign-in racing End sessions).
     await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${id}`;
-    const fresh = await clientPhone('old');
-    expect(await clientProbe({ bearer: fresh.token })).toBe(200);
+    const fresh = await phoneOf('old');
+    expect(await alive({ bearer: fresh.token })).toBe(200);
     expect(
       (await call('/api/auth/mobile-logout', { method: 'POST', bearer: stale.token })).status,
     ).toBe(200);
@@ -962,17 +702,17 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       Row[]
     >`select revoked_at from mobile_tokens where id = ${stale.deviceId}`;
     expect(row!.revoked_at).toBeNull();
-    expect(await clientProbe({ bearer: fresh.token })).toBe(200);
+    expect(await alive({ bearer: fresh.token })).toBe(200);
 
     // An expired token (not revoked): the same, and whoami answers 401.
-    const other = await clientPhone('old');
+    const other = await phoneOf('old');
     await sql`update mobile_tokens set expires_at = now() - interval '1 minute'
               where id = ${other.deviceId}`;
     expect((await call('/api/auth/whoami', { bearer: other.token })).status).toBe(401);
     expect(
       (await call('/api/auth/mobile-logout', { method: 'POST', bearer: other.token })).status,
     ).toBe(200);
-    expect(await clientProbe({ bearer: fresh.token })).toBe(200);
+    expect(await alive({ bearer: fresh.token })).toBe(200);
   });
 
   it('device-login refuses a disabled login like a wrong password, and clamps the device name', async () => {
@@ -1023,18 +763,16 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect((await v6('ff')).status).toBe(429);
   });
 
-  // ── Push devices of a member and a client ───────────────────────────────
+  // ── Push devices of a member ────────────────────────────────────────────
 
   it('a member enrols, lists and removes only its own devices; the client push routes are gone', async () => {
-    await addClient('gus');
     const mPhone = await json(await deviceLogin(emailOf('member'), PASSWORD, 'Push phone'));
-    const cPhone = await clientPhone('gus');
     const mBearer = mPhone.token as string;
 
     const mine = await enrol('/api/member/push', mBearer, `${tag}-m1`);
     expect(mine.status).toBe(200);
-    // The client push routes answer a client 410 since W5c.
-    expect((await enrol('/api/client/push', cPhone.token, `${tag}-c1`)).status).toBe(410);
+    // The client push routes answer every login 410 (W5c, W8a).
+    expect((await enrol('/api/client/push', mBearer, `${tag}-c1`)).status).toBe(410);
     const [mRow] = await pushRows(member);
     expect(mRow).toMatchObject({ token_id: mPhone.deviceId, routing_token: `${tag}-m1` });
     const [owner] = await sql<
@@ -1048,11 +786,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       devices: [{ id: mRow!.id, platform: 'ios', label: `${tag}-m1`, current: true }],
     });
 
-    // A role's routes are its own: the other role is refused at the gate.
-    expect((await call('/api/client/push/subscriptions', { bearer: mBearer })).status).toBe(403);
-    expect((await call('/api/member/push/subscriptions', { bearer: cPhone.token })).status).toBe(
-      403,
-    );
+    expect((await call('/api/client/push/subscriptions', { bearer: mBearer })).status).toBe(410);
 
     // Its own toggles. The retired comments toggle is ignored like any
     // unknown field (comments are gone: access matrix T23).
@@ -1290,12 +1024,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       expect(res.status, path).toBe(410);
       expect((await json(res)).code, path).toBe('gone');
     }
-    // The client chat went in W5c: its routes answer a client 410, and a
-    // member is refused at the client gate.
-    await addClient('ivy');
-    const phone = await clientPhone('ivy');
-    expect((await call('/api/client/chat/unread', { bearer: phone.token })).status).toBe(410);
-    expect((await call('/api/member/chat/unread', { bearer: phone.token })).status).toBe(403);
-    expect((await call('/api/client/chat/unread', { bearer })).status).toBe(403);
+    // The client chat went in W5c (and the client login in W8a): its routes
+    // answer every login 410.
+    expect((await call('/api/client/chat/unread', { bearer })).status).toBe(410);
   });
 });

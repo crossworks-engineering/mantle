@@ -18,9 +18,7 @@ type Login = Exclude<Awaited<ReturnType<typeof getLoginOr401>>, NextResponse>;
 export function wsCallerOf(login: Login): WsCaller {
   return login.kind === 'admin'
     ? { kind: 'admin', loginId: login.loginId, anchorId: login.user.id, user: login.user }
-    : login.kind === 'member'
-      ? { kind: 'member', loginId: login.loginId, anchorId: login.member.anchorId, user: null }
-      : { kind: 'client', loginId: login.loginId, anchorId: login.client.anchorId, user: null };
+    : { kind: 'member', loginId: login.loginId, anchorId: login.member.anchorId, user: null };
 }
 
 export async function loginWorkspaces(

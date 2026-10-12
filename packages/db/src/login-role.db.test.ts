@@ -7,8 +7,9 @@
  *    the level: the space must be the login's own, and the login active. A
  *    mixed-up pair (a real space, another real login) or a disabled login
  *    throws before anything runs.
- *  - I8 (0200): a login's role never changes to or from client, by any
- *    UPDATE; admin and member still change into each other.
+ *  - 0272: there is no client login role. The role CHECK admits only admin
+ *    and member, so an insert or an update to client is refused; admin and
+ *    member still change into each other.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/login-role.db.test.ts
  */
@@ -26,8 +27,7 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
   const tag = `login-role-${randomUUID().slice(0, 8)}`;
   const member = randomUUID();
   const other = randomUUID();
-  const client = randomUUID();
-  const logins = [member, other, client];
+  const logins = [member, other];
   const spaceOf: Record<string, string> = {};
 
   beforeAll(async () => {
@@ -38,8 +38,7 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
     await m.ensureViewerRoles(sql, process.env.MANTLE_MASTER_KEY);
     await sql`insert into auth.users (id, email, password_hash, role) values
       (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
-      (${other}, ${`${tag}-o@example.invalid`}, 'x', 'member'),
-      (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client')`;
+      (${other}, ${`${tag}-o@example.invalid`}, 'x', 'member')`;
     const rows = await sql<{ id: string; login_id: string }[]>`
       select id, login_id from spaces where kind = 'personal' and login_id in ${sql(logins)}`;
     for (const r of rows) spaceOf[r.login_id] = r.id;
@@ -68,24 +67,25 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
     expect(await sql`select 1 from auth.users where id = ${id}`).toHaveLength(0);
   });
 
-  it('a role never changes to or from client; admin and member still swap (I8)', async () => {
-    const roleOf = async (id: string) =>
-      (await sql<{ role: string }[]>`select role from auth.users where id = ${id}`)[0]?.role;
-    for (const role of ['member', 'admin']) {
-      await expect(
-        sql`update auth.users set role = ${role} where id = ${client}`,
-        role,
-      ).rejects.toMatchObject({ code: CHECK_VIOLATION });
-    }
+  it('the role CHECK refuses client on insert and on update (0272)', async () => {
+    const id = randomUUID();
+    await expect(
+      sql`insert into auth.users (id, email, password_hash, role)
+          values (${id}, ${`${tag}-c@example.invalid`}, 'x', 'client')`,
+    ).rejects.toMatchObject({ code: CHECK_VIOLATION });
+    expect(await sql`select 1 from auth.users where id = ${id}`).toHaveLength(0);
     await expect(
       sql`update auth.users set role = 'client' where id = ${member}`,
     ).rejects.toMatchObject({ code: CHECK_VIOLATION });
-    expect(await roleOf(client)).toBe('client');
-    expect(await roleOf(member)).toBe('member');
-    // Not a role change: other columns of a client, and client to client.
-    await sql`update auth.users set display_name = 'C', role = 'client' where id = ${client}`;
-    // Staff roles change as before.
+    const [row] = await sql<{ role: string }[]>`select role from auth.users where id = ${member}`;
+    expect(row?.role).toBe('member');
+  });
+
+  it('admin and member still change into each other', async () => {
+    const roleOf = async (id: string) =>
+      (await sql<{ role: string }[]>`select role from auth.users where id = ${id}`)[0]?.role;
     await sql`update auth.users set role = 'admin' where id = ${other}`;
+    expect(await roleOf(other)).toBe('admin');
     await sql`update auth.users set role = 'member' where id = ${other}`;
     expect(await roleOf(other)).toBe('member');
   });

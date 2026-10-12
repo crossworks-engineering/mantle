@@ -9,7 +9,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { isAnyLoginRoute } from './any-login-routes';
-import { isClientRoute } from './client-routes';
 import { isMemberRoute } from './member-routes';
 import {
   CREATE_ROUTES,
@@ -38,7 +37,7 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
       const owner = e.methods.filter(
         (m) =>
           !isMemberRoute(m, e.pattern) &&
-          !isClientRoute(m, e.pattern) &&
+          !e.pattern.startsWith('/api/client/') &&
           !isAnyLoginRoute(m, e.pattern),
       );
       if (owner.length && !routeClass(e.pattern)) missing.push(e.pattern);

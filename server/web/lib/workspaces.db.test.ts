@@ -7,8 +7,7 @@
  *    resources, archive, a bad id);
  *  - who may add whom: a Moderator adds anyone, a plain user nobody (asked
  *    before the login is looked up), an Admin user anyone, itself included,
- *    private workspaces too (S1), logged and shown as "Added by"; a client
- *    login never;
+ *    private workspaces too (S1), logged and shown as "Added by";
  *  - names: only Admin and Team are reserved; a name clash with a workspace
  *    the caller cannot see is allowed (audit M3);
  *  - the last Moderator can be neither removed nor demoted;
@@ -71,7 +70,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
   const mem2 = randomUUID(); // a member
   const mem3 = randomUUID(); // a member
   const off = randomUUID(); // a disabled member
-  const cli = randomUUID(); // a client login
   let admin = '';
   let team = '';
   const agentA = randomUUID();
@@ -93,13 +91,11 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       email: r!.email,
       actor: { id, email: r!.email, displayName: null, isOwner: id === owner },
     };
-    if (r!.role === 'admin') {
-      h.res = { kind: 'admin', loginId: id, email: r!.email, user };
-    } else if (r!.role === 'member') {
-      h.res = { kind: 'member', loginId: id, email: r!.email, member: { anchorId: owner } };
-    } else {
-      h.res = { kind: 'client', loginId: id, email: r!.email, client: { anchorId: owner } };
-    }
+    // Admin and member are the only roles (W8a).
+    h.res =
+      r!.role === 'admin'
+        ? { kind: 'admin', loginId: id, email: r!.email, user }
+        : { kind: 'member', loginId: id, email: r!.email, member: { anchorId: owner } };
   };
   const req = (method: string, body?: unknown, q = '') =>
     new Request(`http://x/api/workspaces${q}`, {
@@ -182,10 +178,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     await x(sql`insert into agents (id, owner_id, slug, name, model, system_prompt, role) values
       (${agentA}, ${owner}, 'w5a-a', 'Assistant A', 'm', 'p', 'responder'),
       (${agentB}, ${owner}, 'w5a-b', 'Assistant B', 'm', 'p', 'responder')`);
-    // A client login made after the migration (the migration skips a brain
-    // that has one).
-    await x(sql`insert into auth.users (id, email, password_hash, role)
-      values (${cli}, ${email(cli, 'cli')}, 'x', 'client')`);
     const ws = await x<{ id: string; key: string }>(sql`
       select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
@@ -198,7 +190,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     await scratch?.drop();
   });
 
-  it('lists: an Admin user every workspace, a member its own, a client none', async () => {
+  it('lists: an Admin user every workspace, a member its own', async () => {
     const mine = await create(mem3, 'Moe private');
     await as(owner);
     const all = await call(r.root.GET());
@@ -223,9 +215,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(memList[0]!.builtIn).toBe(true);
     expect(memList[0]!.me).toEqual({ member: true, moderator: true });
     expect(memList[0]!.adminModerated).toBe(true);
-    await as(cli);
-    expect((await call(r.root.GET())).body).toEqual({ workspaces: [] });
-    expect((await call(r.root.POST(req('POST', { name: 'Nope' })))).body.code).toBe('client_login');
     await as(mem3);
     const own = (await call(r.one.GET(req('GET'), p({ id: mine })))).body;
     expect((own.workspace as Json).adminModerated).toBe(false);
@@ -264,15 +253,14 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     // A Moderator adds a user (not a Moderator by default).
     expect((await addUser(ws, mem2)).status).toBe(200);
     expect(await userRow(ws, mem2)).toEqual({ moderator: false });
-    // Twice is refused; a client login and a missing one too.
+    // Twice is refused; a missing login too.
     expect((await addUser(ws, mem2)).body.code).toBe('already_user');
-    expect((await addUser(ws, cli)).body.code).toBe('client_login');
     expect((await addUser(ws, randomUUID())).status).toBe(404);
     // A plain user of the workspace adds nobody (it sees the workspace:
     // 403), and is told so before the login it names is looked up (audit
-    // L1): a missing login and a client login answer the same 403.
+    // L1): a missing login answers the same 403 as a real one.
     await as(mem2);
-    for (const target of [mem3, randomUUID(), cli]) {
+    for (const target of [mem3, randomUUID()]) {
       const plain = await addUser(ws, target);
       expect(plain.status, target).toBe(403);
       expect(plain.body.code, target).toBe('forbidden');
@@ -750,7 +738,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(n!.n).toBe(0);
   });
 
-  it('user search (Q3): Moderators and Admin users, 3 characters, no disabled or client logins', async () => {
+  it('user search (Q3): Moderators and Admin users, 3 characters, no disabled logins', async () => {
     const q = (v: string) =>
       call(r.search.GET(req('GET', undefined, `/user-search?q=${encodeURIComponent(v)}`)));
     await as(mem);
@@ -759,7 +747,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const ids = hits.map((h2) => h2.loginId);
     expect(ids).toEqual(expect.arrayContaining([mem, mem2, mem3]));
     expect(ids).not.toContain(off);
-    expect(ids).not.toContain(cli);
     expect(hits.length).toBeLessThanOrEqual(10);
     expect(((await q('Olive')).body as unknown as Json[]).map((h2) => h2.loginId)).toEqual([owner]);
     // A login that moderates nothing may not search.

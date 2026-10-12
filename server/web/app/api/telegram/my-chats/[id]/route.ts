@@ -16,7 +16,6 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   if (login instanceof NextResponse) return login;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  if (login.kind === 'client') return NextResponse.json({ error: 'Not found.' }, { status: 404 });
   const ok = await unpairMyTelegramChat(login.ownerId, login.loginId, idParsed.data.id);
   if (!ok) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
   return NextResponse.json({ ok: true });

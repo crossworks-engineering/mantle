@@ -1,27 +1,22 @@
 /**
- * Role sweep (client logins, Phase C0: three roles, fail closed). Drives
- * EVERY manifest route, every method, member routes included, with a signed
- * session cookie for:
+ * Role sweep (fail closed). Drives EVERY manifest route, every method,
+ * member routes included, with a signed session cookie, and with the phone
+ * app's device token, for:
  *
- *  - a CLIENT login: every route outside CLIENT_ROUTES refuses it (403
- *    with reason client-login from the admin and member gates, 401 from the
- *    admin-only session reads and the byte routes, or the /login redirect
- *    for pages). Before C0 every role that was not member resolved as an
- *    ADMIN, so this is the test that would have caught it. The client
- *    routes themselves (C2) answer a client: server/client-sweep.test.ts.
- *    A client route answers the unknown role as a stranger here too.
  *  - a login whose role this code does not know: it is no login at all, so
  *    every route answers as to a stranger (401, or the /login redirect).
+ *    Before client logins C0 every role that was not member resolved as an
+ *    ADMIN, so this is the test that would have caught it;
+ *  - a login row still marked client: there is no client role since
+ *    workspaces W8a (migration 0272 converted every such row and the role
+ *    CHECK admits admin and member only), and a row that says client anyway
+ *    is no login either: it signs in by no path and reaches nothing.
  *
  * The public routes (PUBLIC_PATHS: no gate in front) are skipped by the
  * sweep; the ones that read a session themselves (/api/auth, /api/oauth, and
  * the print and render pages) are driven one by one with an explicit answer
  * per role (server/public-session-routes.ts, audit A4), and a completeness
  * test fails when another public route starts reading the session.
- *
- * The CLIENT sweep runs twice: with the session cookie, and with the phone
- * app's device token (a bearer at the login's session epoch, the three-role
- * phone app). A client bearer reaches the client routes and nothing else.
  *
  * No database: the login row, the anchor and the device token rows come from
  * a stand-in (lib/auth/login-row is mocked), as in the member sweep. A handler that
@@ -74,8 +69,8 @@ vi.mock('../lib/auth/login-row', () => ({
   touchBearerToken: async () => undefined,
 }));
 
-// MCP as a login: a member's or client's MCP access is off here (the
-// default), so the consent page refuses them as it always did.
+// MCP as a login: a member's MCP access is off here (the default), so the
+// consent page refuses it as it always did.
 vi.mock('../lib/mcp-auth', () => ({
   mcpLoginEnabled: async () => false,
   mcpTargetLogin: async () => null,
@@ -96,9 +91,8 @@ vi.mock('../lib/mcp-oauth', async (importOriginal) => {
   };
 });
 
-// A client's plain sign-out ends its sessions (audit B23): the epoch bump is
-// a database write, stood in here (proven on Postgres in
-// lib/auth/client-session.db.test.ts).
+// Ending sessions is a database write, stood in here (proven on Postgres in
+// lib/auth/device-tokens.db.test.ts).
 vi.mock('../lib/auth/session', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   endLoginSessions: async () => 1,
@@ -118,14 +112,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 }));
 
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
-import { CLIENT_ROUTES, isClientRoute } from '../lib/auth/client-routes';
-import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
-import {
-  CLIENT_CLOSED_ROUTES,
-  clientClosed,
-  memberMayRead,
-  memberMayWrite,
-} from '../lib/auth/route-scope';
 import {
   PUBLIC_SESSION_ROUTES,
   RENDER_PAGES,
@@ -156,14 +142,8 @@ if (!hasManifest && process.env.CI) {
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 
 /** Routes that authenticate with their own short-lived ticket, minted only
- *  by an admin-, member- or client-gated route; a plain-text 401 without it.
- *  The client frame is a client route: only the unknown-role sweep drives it
- *  here (client-sweep.test.ts drives it with client tickets). */
-const TICKET_GATED = new Set([
-  'GET /api/apps/:id/frame',
-  'GET /api/member/apps/:id/frame',
-  'GET /api/client/apps/:id/frame',
-]);
+ *  by an admin- or member-gated route; a plain-text 401 without it. */
+const TICKET_GATED = new Set(['GET /api/apps/:id/frame', 'GET /api/member/apps/:id/frame']);
 
 // Sign out (every role) and the MCP consent page (an HTML refusal) used to
 // be allow-lists here, but both live under PUBLIC_PATHS, which the sweep
@@ -180,7 +160,7 @@ function concretePath(pattern: string): string {
     .replace(/\*$/, 'a/b');
 }
 
-describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
+describe.skipIf(!hasManifest)('role sweep: no login for a role this code does not name', () => {
   const saved = {
     secret: process.env.SESSION_SECRET,
     cors: process.env.MANTLE_API_CORS_ORIGINS,
@@ -189,8 +169,7 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   let app: import('hono').Hono;
   let manifest: Array<{ pattern: string; methods: string[] }>;
   let cookieFor: (id: string) => string;
-  /** A live device token for `id`, as the client's code sign-in mints it:
-   *  30 days, at the login's session epoch. */
+  /** A live device token for `id`: 30 days, at the login's session epoch. */
   let bearerFor: (id: string) => string;
 
   beforeAll(async () => {
@@ -198,8 +177,6 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     delete process.env.MANTLE_API_CORS_ORIGINS;
     delete process.env.MANTLE_DETACHED_DEV;
     const { buildSessionCookie, buildMobileToken } = await import('../lib/auth/tokens');
-    // 30 days, as the client sign-in mints it: a longer client cookie is
-    // refused outright (a 401 everywhere would hide the gates' answers).
     const ttlSeconds = 30 * 24 * 60 * 60;
     cookieFor = (id) => `${SESSION_COOKIE_NAME}=${buildSessionCookie(id, { ttlSeconds }).value}`;
     bearerFor = (id) => {
@@ -281,10 +258,12 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   // Fast first (audit A4): the full sweeps take minutes, and a regression in
   // resolvedFor (an unknown role read as an admin) was once caught only by
   // their timeout. Each shell answers a login it cannot name with 401.
-  it('answers an UNKNOWN role 401 on every shell (fast)', async () => {
+  it('answers an UNKNOWN role and a row still marked client 401 on every shell (fast)', async () => {
     for (const auth of [
       { cookie: cookieFor(UNKNOWN_ID) },
       { authorization: bearerFor(UNKNOWN_ID) },
+      { cookie: cookieFor(CLIENT_ID) },
+      { authorization: bearerFor(CLIENT_ID) },
     ] as Array<Record<string, string>>) {
       for (const path of ['/api/shell', '/api/member/shell', '/api/client/shell']) {
         const res = await app.request(path, { headers: auth });
@@ -295,47 +274,40 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     }
   });
 
-  it('tells a client bearer who it is, and an unknown role nothing', async () => {
-    const who = await app.request('/api/auth/whoami', {
-      headers: { authorization: bearerFor(CLIENT_ID) },
-    });
-    expect(who.status).toBe(200);
-    expect(await who.json()).toMatchObject({
-      role: 'client',
-      loginId: CLIENT_ID,
-      // One shell for every login since W5c.
-      shell: '/api/shell',
-      pushBase: '/api/client/push',
-      // The pair a device files this session under, and every push names.
-      brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
-    });
-    const none = await app.request('/api/auth/whoami', {
-      headers: { authorization: bearerFor(UNKNOWN_ID) },
-    });
-    expect(none.status).toBe(401);
+  it('tells a row still marked client nothing, as an unknown role (W8a)', async () => {
+    for (const id of [CLIENT_ID, UNKNOWN_ID]) {
+      for (const headers of [{ authorization: bearerFor(id) }, { cookie: cookieFor(id) }] as Array<
+        Record<string, string>
+      >) {
+        const who = await app.request('/api/auth/whoami', { headers });
+        expect(who.status).toBe(401);
+      }
+    }
   });
 
   describe('public routes that read a session (audit A4)', () => {
     const table = [...PUBLIC_SESSION_ROUTES, ...RENDER_PAGES];
 
-    it.each(['client', 'unknown'] as const)(
-      'each answers a %s cookie, and a %s device token, as listed',
-      async (role) => {
-        const id = role === 'client' ? CLIENT_ID : UNKNOWN_ID;
-        const failures: string[] = [];
-        for (const route of table) {
-          const failure = await drivePublic(app, route, role, cookieFor(id));
-          if (failure) failures.push(failure);
-          if (route.cookieOnly) continue;
-          // The same login with its bearer (the bearer to cookie upgrade,
-          // pairing, password change and MCP consent among them): the same
-          // answer, never more.
-          const asBearer = await drivePublic(app, route, role, { authorization: bearerFor(id) });
-          if (asBearer) failures.push(asBearer);
-        }
-        expect(failures).toEqual([]);
-      },
-    );
+    // A row still marked client answers exactly as an unknown role (W8a).
+    it.each([
+      ['an unknown role', UNKNOWN_ID],
+      ['a row still marked client', CLIENT_ID],
+    ] as const)('each answers %s (cookie and device token) as a stranger', async (_n, id) => {
+      const failures: string[] = [];
+      for (const route of table) {
+        const failure = await drivePublic(app, route, 'unknown', cookieFor(id));
+        if (failure) failures.push(failure);
+        if (route.cookieOnly) continue;
+        // The same login with its bearer (the bearer to cookie upgrade,
+        // pairing, password change and MCP consent among them): the same
+        // answer, never more.
+        const asBearer = await drivePublic(app, route, 'unknown', {
+          authorization: bearerFor(id),
+        });
+        if (asBearer) failures.push(asBearer);
+      }
+      expect(failures).toEqual([]);
+    });
 
     it('lists only public manifest routes, each once', () => {
       const known = new Set(
@@ -349,13 +321,13 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     });
 
     // The scan below reads only the route files themselves; a session read
-    // deeper in (an import) would slip past it. So the pages a client is
-    // most likely to land on are also DRIVEN (audit B24): a client cookie
-    // must buy nothing. The share page and /login are public: the client
-    // gets exactly a stranger's answer. /n/<id> is behind the gate, which
-    // checks only the cookie's signature, so any signed cookie reaches its
-    // static "lives in the app" card: the client gets exactly what a cookie
-    // of an unknown role (no login at all) gets, and none of it is data.
+    // deeper in (an import) would slip past it. So the pages an old client
+    // login is most likely to land on are also DRIVEN (audit B24): its
+    // cookie must buy nothing. The share page and /login are public: it gets
+    // exactly a stranger's answer. /n/<id> is behind the gate, which checks
+    // only the cookie's signature, so any signed cookie reaches its static
+    // "lives in the app" card: it gets exactly what a cookie of an unknown
+    // role (no login at all) gets, and none of it is data.
     it('the share page, /login and a node link answer a client cookie as they answer no login', async () => {
       const client = cookieFor(CLIENT_ID);
       const noLogin = cookieFor(UNKNOWN_ID);
@@ -396,60 +368,16 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     });
   });
 
-  it.each(['cookie', 'bearer'] as const)(
-    'refuses a CLIENT login (%s) on every route but its own, member routes included',
-    async (how) => {
+  it.each([
+    ['an UNKNOWN role', 'cookie', UNKNOWN_ID],
+    ['an UNKNOWN role', 'bearer', UNKNOWN_ID],
+    ['a row still marked client (W8a)', 'cookie', CLIENT_ID],
+    ['a row still marked client (W8a)', 'bearer', CLIENT_ID],
+  ] as const)(
+    'treats a login with %s (%s) as no login at all',
+    async (_n, how, id) => {
       const auth: Record<string, string> =
-        how === 'cookie'
-          ? { cookie: cookieFor(CLIENT_ID) }
-          : { authorization: bearerFor(CLIENT_ID) };
-      const { checked, failures, visited } = await sweep(auth, ({ key, status, body }) => {
-        // The client routes answer a client (client-sweep.test.ts proves it).
-        const [method, pattern] = key.split(' ') as [string, string];
-        if (isClientRoute(method, pattern)) return true;
-        // About the login itself, any role (lib/auth/any-login-routes.ts):
-        // proved per role against a database (access-keys.db.test.ts), as
-        // the client routes are in client-sweep.test.ts.
-        if (isAnyLoginRoute(method, pattern)) return true;
-        // The routes W7e opened to members only (running an app, a
-        // drawing's SVG) refuse a client as before (W7e fix round 1, M1):
-        // 403 client-login from the session guard, 401 from the byte guard.
-        if (clientClosed(method, pattern)) {
-          return (
-            (status === 403 && body?.reason === 'client-login') ||
-            (status === 401 && body?.error === 'unauthorized')
-          );
-        }
-        // The owner reads open to every login in its scope since W6a
-        // (MEMBER_OPEN_READS): proved against a database in
-        // w6a-route-sweep.db.test.ts.
-        if (memberMayRead(method, pattern)) return true;
-        // The owner writes open to every login in its scope since W6b
-        // (MEMBER_OPEN_WRITES): proved in w6b-member-writes.db.test.ts.
-        if (memberMayWrite(method, pattern)) return true;
-        return (
-          (status === 403 && body?.reason === 'client-login') ||
-          (status === 401 && body?.error === 'unauthorized') ||
-          (status === 401 && TICKET_GATED.has(key))
-        );
-      });
-      expect(checked).toBeGreaterThan(300);
-      expect(failures).toEqual([]);
-      // Every allow-list the callback consults was reached (none is dead).
-      expect(
-        [...TICKET_GATED, ...CLIENT_ROUTES, ...CLIENT_CLOSED_ROUTES].filter((k) => !visited.has(k)),
-      ).toEqual([]);
-    },
-    300_000,
-  );
-
-  it.each(['cookie', 'bearer'] as const)(
-    'treats a login with an UNKNOWN role (%s) as no login at all',
-    async (how) => {
-      const auth: Record<string, string> =
-        how === 'cookie'
-          ? { cookie: cookieFor(UNKNOWN_ID) }
-          : { authorization: bearerFor(UNKNOWN_ID) };
+        how === 'cookie' ? { cookie: cookieFor(id) } : { authorization: bearerFor(id) };
       const { checked, failures, visited } = await sweep(
         auth,
         ({ key, status, body }) =>
@@ -465,39 +393,10 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     300_000,
   );
 
-  it('never answers a client with an admin or member answer on the gates', async () => {
-    // An admin read and a member read, each past its gate for its own role.
-    // The one shell (W5c) answers a client as a client.
-    for (const headers of [
-      { cookie: cookieFor(CLIENT_ID) },
-      { authorization: bearerFor(CLIENT_ID) },
-    ] as Array<Record<string, string>>) {
-      const shell = await app.request('/api/shell', { headers });
-      expect(shell.status).toBe(200);
-      expect(await shell.json()).toMatchObject({
-        role: 'client',
-        loginId: CLIENT_ID,
-        areas: [],
-        pendingApprovals: 0,
-      });
-      for (const path of [
-        '/api/push/subscriptions',
-        '/api/member/shell',
-        '/api/member/space/not-a-uuid',
-      ]) {
-        const res = await app.request(path, { headers });
-        const body = (await res.json().catch(() => null)) as { reason?: string } | null;
-        expect(res.status, path).toBe(403);
-        expect(body?.reason, path).toBe('client-login');
-      }
-    }
-  });
-
   describe('asset tokens (?at=) minted for a client login', () => {
     // The REAL byte routes with a well-formed id (audit B8): the gate lets
-    // the token through, so the route's own asset check answers. The
-    // positive control (an admin-act token gets past it) is in
-    // client-sweep.test.ts, which stands in an admin login.
+    // the token through, so the route's own asset check answers: a row
+    // still marked client is no login (W8a).
     it('open no admin bytes and no member bytes', async () => {
       const { buildAssetToken } = await import('../lib/auth/tokens');
       const at = encodeURIComponent(buildAssetToken(ANCHOR_ID, CLIENT_ID));

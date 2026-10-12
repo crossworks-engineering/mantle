@@ -30,7 +30,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 
 type Peer = {
   acts_as_login_id: string | null;
-  acts_as_role: string | null;
   write_enabled: boolean;
   ended_acts_as_login_id: string | null;
 };
@@ -40,6 +39,7 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   const tag = `peer-unbind-${randomUUID().slice(0, 8)}`;
   const member = randomUUID();
+  // A second member (until W8a a client login: there is no client role).
   const client = randomUUID();
   const peers = { member: randomUUID(), client: randomUUID(), other: randomUUID() };
   const nodesOf = { member: randomUUID(), client: randomUUID(), other: randomUUID() };
@@ -47,7 +47,7 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
 
   const peer = async (id: string) =>
     (
-      (await sql`select acts_as_login_id, acts_as_role, write_enabled, ended_acts_as_login_id
+      (await sql`select acts_as_login_id, write_enabled, ended_acts_as_login_id
                    from mantle_peers where id = ${id}`) as unknown as Peer[]
     )[0]!;
 
@@ -61,27 +61,24 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     who.admin = who.anchor;
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
       (${member}, ${`${tag}-member@example.com`}, 'x', 'member', 'A member'),
-      (${client}, ${`${tag}-client@example.com`}, 'x', 'client', 'A client')`;
+      (${client}, ${`${tag}-client@example.com`}, 'x', 'member', 'Another member')`;
     for (const k of ['member', 'client', 'other'] as const) {
       await sql`insert into nodes (id, owner_id, type, title, path)
                 values (${nodesOf[k]}, ${who.anchor}, 'mantle_peer', ${`${tag} ${k}`}, 'peers')`;
     }
-    const bound = (k: 'member' | 'client' | 'other', login: string, role: string) => sql`
+    const bound = (k: 'member' | 'client' | 'other', login: string) => sql`
       insert into mantle_peers
         (id, owner_id, node_id, display_name, base_url, inbound_token_hash,
-         acts_as_login_id, acts_as_role, write_enabled)
+         acts_as_login_id, write_enabled)
       values (${peers[k]}, ${who.anchor}, ${nodesOf[k]}, ${`${tag} ${k}`},
-              'https://peer.example.invalid', ${`${tag}-${k}`}, ${login}, ${role}, true)`;
-    await bound('member', member, 'member');
-    await bound('client', client, 'client');
-    await bound('other', who.anchor, 'admin');
-    // A client key carries the session epoch it was made in.
+              'https://peer.example.invalid', ${`${tag}-${k}`}, ${login}, true)`;
+    await bound('member', member);
+    await bound('client', client);
+    await bound('other', who.anchor);
     await sql`insert into access_keys
-                (id, name, login_id, login_role, key_prefix, key_hash, access, session_epoch)
-              select ${key}, 'script', ${client}, 'client', ${key.replace(/-/g, '').slice(0, 8)},
-                     ${createHash('sha256').update(tag).digest('hex')}, 'read',
-                     session_epoch
-                from auth.users where id = ${client}`;
+                (id, name, login_id, key_prefix, key_hash, access)
+              values (${key}, 'script', ${client}, ${key.replace(/-/g, '').slice(0, 8)},
+                      ${createHash('sha256').update(tag).digest('hex')}, 'read')`;
   }, 120_000);
 
   afterAll(async () => {
@@ -107,7 +104,6 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     // Unbound; Write kept and the binding remembered, for a one-step rebind.
     expect(await peer(peers.member)).toEqual({
       acts_as_login_id: null,
-      acts_as_role: null,
       write_enabled: true,
       ended_acts_as_login_id: member,
     });
@@ -135,14 +131,14 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
   it('binding a peer again to the same login restores Write; another login starts closed', async () => {
     const { setPeerAccess } = await import('@mantle/content');
     const back = await setPeerAccess(who.anchor, peers.member, {
-      actsAs: { loginId: member, role: 'member' },
+      actsAs: { loginId: member },
     });
     expect(back?.peer).toMatchObject({ actsAsLoginId: member, writeEnabled: true });
     expect((await peer(peers.member)).ended_acts_as_login_id).toBeNull();
     // The client peer was unbound by MCP off; bound to a different login,
     // it starts closed as before.
     const moved = await setPeerAccess(who.anchor, peers.client, {
-      actsAs: { loginId: member, role: 'member' },
+      actsAs: { loginId: member },
     });
     expect(moved?.peer).toMatchObject({ actsAsLoginId: member, writeEnabled: false });
   });

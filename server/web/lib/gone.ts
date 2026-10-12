@@ -1,19 +1,20 @@
 /**
  * Routes removed in workspaces W5c (review, team drafts, Team admin, the
- * client portal). Each one stays as a stub that answers 410
+ * client portal) and after. Each one stays as a stub that answers 410
  * `{ error, code: 'gone' }`, so an old UI or an old phone app can tell the
  * person to update instead of showing a vague error.
  *
  * A stub still runs the guard its route had: without a session the gate and
- * the guard answer 401 as before, a login of another role is refused as
+ * the guard answer 401 as before, a login of another kind is refused as
  * before, and the role sweeps keep proving who reaches what. Only a caller
- * the old route served gets the 410.
+ * the old route served gets the 410. The client portal's stubs answer any
+ * login (there is no client login since workspaces W8a).
  */
 import { NextResponse } from '@/server/http-compat';
-import { getClientOr401, getLoginOr401, getMemberOr401, getOwnerOr401 } from '@/lib/auth';
+import { getLoginOr401, getMemberOr401, getOwnerOr401 } from '@/lib/auth';
 
 /** Who the removed route served. */
-export type GoneGuard = 'owner' | 'member' | 'client' | 'any';
+export type GoneGuard = 'owner' | 'member' | 'any';
 
 export const GONE_MESSAGE = 'This feature was removed. Update the app.';
 
@@ -50,9 +51,7 @@ async function guard(kind: GoneGuard): Promise<Response | null> {
       ? await getOwnerOr401()
       : kind === 'member'
         ? await getMemberOr401()
-        : kind === 'client'
-          ? await getClientOr401()
-          : await getLoginOr401();
+        : await getLoginOr401();
   return got instanceof Response ? got : null;
 }
 
