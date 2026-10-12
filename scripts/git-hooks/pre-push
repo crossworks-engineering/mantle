@@ -54,6 +54,11 @@ done
 
 echo "── pre-push: typecheck + tests ──────────────────────────────────────"
 
+# git exports GIT_DIR (and friends) to this hook, naming the real repo. A test
+# that runs git in a temp repo would then write to this one instead. The test
+# harnesses drop them too; this is the second layer.
+while IFS= read -r gv; do unset "$gv"; done < <(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p')
+
 if ! pnpm verify; then
   echo
   echo "✘ pre-push: pnpm verify failed — fix above before pushing."

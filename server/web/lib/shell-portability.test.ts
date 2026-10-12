@@ -23,8 +23,9 @@ import { describe, expect, it } from 'vitest';
  * A static scan cannot see everything, so this also runs the worktree harness
  * under /bin/bash (3.2 on a Mac). That harness runs git, and pre-push runs this
  * file with GIT_DIR pointing at the real repo: the harness drops every GIT_*
- * variable itself, the spawn here drops them too, and a sentinel case proves a
- * GIT_DIR left set cannot reach the repo it names.
+ * variable itself (and refuses to run if one is left), the spawn here drops
+ * them too, and the sentinel cases prove a GIT_DIR left set (alone, as a hook
+ * sets it, or with GIT_WORK_TREE and GIT_INDEX_FILE) cannot reach its repo.
  */
 const ROOT = join(__dirname, '..', '..', '..');
 
@@ -113,37 +114,102 @@ const GNU: [string, RegExp][] = [
   ['xargs -r', /\bxargs\s+(-[a-zA-Z0-9]+\s+)*-[a-zA-Z0-9]*r/],
 ];
 
+/**
+ * `# portability: box-side` waives the GNU-tool checks on a line that runs a
+ * command on a box (an ssh or docker exec on the same line): the tool runs
+ * there, not on the Mac. The bash 4 and empty-array checks still apply: the
+ * line itself is parsed by the Mac's bash.
+ */
 const WAIVER = /#\s*portability:\s*box-side\b/;
+const BOX_MARKER = /\bssh\b|\bdocker\s+(compose\s+)?exec\b/;
 
 const runsOn = (src: string) =>
   /^# runs-on: (mac|both|box)\./m.exec(src.split('\n', 4).join('\n'))?.[1];
 const hasGuard = (src: string) => /BASH_VERSINFO\[0\]/.test(src.split('\n', 30).join('\n'));
 
-/** A line without its comment: a # outside quotes, at the start or after a space. */
-function stripComment(line: string): string {
-  let quote = '';
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '\\' && quote !== "'") {
-      i++;
-      continue;
+type Frame = { kind: 'single' | 'ansi' | 'double' | 'subst'; parens: number };
+
+/**
+ * Every line with its comment cut off, for the scan. A small tokenizer, not a
+ * shell parser: it tracks '...', $'...', "..." and $( ) (nested, across lines)
+ * so a # inside any of them is kept, and a # at the top or inside $( ) after a
+ * space starts a comment. Heredoc bodies are kept whole (their # is data, or a
+ * comment in a script for another shell; either way it is scanned).
+ * Known gaps, accepted: backticks, `case` patterns inside $( ), and a
+ * heredoc whose opener sits inside a quoted string are not modelled; each
+ * makes the scan see more text, never less.
+ */
+function scanLines(src: string): { raw: string; text: string; line: number }[] {
+  const out: { raw: string; text: string; line: number }[] = [];
+  const stack: Frame[] = [];
+  const heredocs: { delim: string; tabs: boolean }[] = [];
+  let body: { delim: string; tabs: boolean } | undefined;
+  src.split('\n').forEach((raw, n) => {
+    if (body) {
+      out.push({ raw, text: raw, line: n + 1 });
+      if ((body.tabs ? raw.replace(/^\t+/, '') : raw) === body.delim) body = heredocs.shift();
+      return;
     }
-    if (quote) {
-      if (c === quote) quote = '';
-      continue;
+    let text = raw;
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      const top = stack[stack.length - 1];
+      if (top?.kind === 'single') {
+        if (c === "'") stack.pop();
+        continue;
+      }
+      if (c === '\\') {
+        i++;
+        continue;
+      }
+      if (top?.kind === 'ansi') {
+        if (c === "'") stack.pop();
+        continue;
+      }
+      if (top?.kind === 'double') {
+        if (c === '"') stack.pop();
+        else if (c === '$' && raw[i + 1] === '(') {
+          stack.push({ kind: 'subst', parens: 0 });
+          i++;
+        }
+        continue;
+      }
+      // The top level, or inside $( ).
+      if (c === "'") stack.push({ kind: raw[i - 1] === '$' ? 'ansi' : 'single', parens: 0 });
+      else if (c === '"') stack.push({ kind: 'double', parens: 0 });
+      else if (c === '$' && raw[i + 1] === '(') {
+        stack.push({ kind: 'subst', parens: 0 });
+        i++;
+      } else if (c === '(' && top) top.parens++;
+      else if (c === ')' && top) {
+        if (top.parens === 0) stack.pop();
+        else top.parens--;
+      } else if (c === '#' && (i === 0 || /\s/.test(raw[i - 1] ?? ''))) {
+        text = raw.slice(0, i);
+        break;
+      } else if (c === '<' && raw[i + 1] === '<' && raw[i + 2] !== '<' && raw[i - 1] !== '<') {
+        const m = /^<<(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/.exec(raw.slice(i));
+        if (m?.[3]) {
+          heredocs.push({ delim: m[3], tabs: m[1] === '-' });
+          i += m[0].length - 1;
+        }
+      }
     }
-    if (c === "'" || c === '"') quote = c;
-    else if (c === '#' && (i === 0 || /\s/.test(line[i - 1] ?? ''))) return line.slice(0, i);
-  }
-  return line;
+    out.push({ raw, text, line: n + 1 });
+    if (!body) body = heredocs.shift();
+  });
+  return out;
 }
 
-/** The lines to scan, comments stripped, waived lines dropped, numbers kept. */
+/** The lines to scan: comments cut, blank ones dropped, numbers kept. */
 const code = (src: string) =>
-  src
-    .split('\n')
-    .map((raw, i) => ({ raw, text: stripComment(raw), line: i + 1 }))
-    .filter(({ raw, text }) => text.trim() !== '' && !WAIVER.test(raw));
+  scanLines(src)
+    .filter(({ text }) => text.trim() !== '')
+    .map(({ raw, text, line }) => ({
+      text,
+      line,
+      waived: WAIVER.test(raw) && BOX_MARKER.test(text),
+    }));
 
 /** Every hit of the bash 4 and GNU lists in one line of code. */
 const lineHits = (text: string, list: [string, RegExp][]) =>
@@ -215,12 +281,13 @@ describe('shell scripts run on the Mac (bash 3.2, BSD tools)', () => {
       const where = runsOn(src);
       // A box-only script may use bash 4 behind its guard; its tools are GNU.
       const bash4Ok = where === 'box' && hasGuard(src);
-      for (const { text, line } of code(src)) {
+      for (const { text, line, waived } of code(src)) {
+        const gnu = where !== 'box' && !waived;
         const found = [
           ...(bash4Ok ? [] : lineHits(text, BASH4)),
-          ...(where === 'box' ? [] : lineHits(text, GNU)),
+          ...(gnu ? lineHits(text, GNU) : []),
         ];
-        if (where !== 'box' && /\bstat\s+-c\b/.test(text) && !/\bstat\s+-f\b/.test(text)) {
+        if (gnu && /\bstat\s+-c\b/.test(text) && !/\bstat\s+-f\b/.test(text)) {
           found.push('stat -c with no BSD stat -f fallback');
         }
         for (const what of found) hits.push(`${f}:${line}: ${what}`);
@@ -285,14 +352,35 @@ describe('shell scripts run on the Mac (bash 3.2, BSD tools)', () => {
     ];
     for (const g of good) expect(lineHits(g, [...BASH4, ...GNU]), g).toEqual([]);
 
-    // Trailing comments are not code; a # inside quotes or ${x#p} is.
-    expect(stripComment('echo hi # mapfile here')).toBe('echo hi ');
-    expect(stripComment('echo "a # b" ${x#p}')).toBe('echo "a # b" ${x#p}');
-    expect(code('echo hi # uses ${v,,} in a note\n')[0]?.text).toBe('echo hi ');
-    // The waiver drops the line; without it the same line is a hit.
-    const boxSide = 'ssh box "mapfile -t A < f"';
-    expect(code(`${boxSide} # portability: box-side\n`)).toEqual([]);
-    expect(lineHits(code(`${boxSide}\n`)[0]?.text ?? '', BASH4)).not.toEqual([]);
+    // Comments are not code; a # inside quotes, $( ) or ${x#p} is.
+    const text = (src: string) => code(src).map((l) => l.text);
+    expect(text('echo hi # mapfile here\n')).toEqual(['echo hi ']);
+    expect(text('echo "a # b" ${x#p} $#\n')).toEqual(['echo "a # b" ${x#p} $#']);
+    expect(text('x="$(printf "%s" "a # b" | tr a b)" # ${v,,}\n')).toEqual([
+      'x="$(printf "%s" "a # b" | tr a b)" ',
+    ]);
+    expect(text("x=$'it\\'s # not a comment'\n")).toEqual(["x=$'it\\'s # not a comment'"]);
+    expect(text('x="line one\n# still in the string ${v,,}"\n')).toEqual([
+      'x="line one',
+      '# still in the string ${v,,}"',
+    ]);
+    // A heredoc body is kept whole, and the code after it is parsed again.
+    expect(text("cat <<'EOF'\nsee # ${v,,}\nEOF\necho x # y\n")).toEqual([
+      "cat <<'EOF'",
+      'see # ${v,,}',
+      'EOF',
+      'echo x ',
+    ]);
+
+    // The waiver: GNU checks only, and only on a line that runs on a box.
+    const [onBox] = code('ssh box "timeout 5 x; mapfile -t A < f" # portability: box-side\n');
+    expect(onBox?.waived).toBe(true);
+    expect(lineHits(onBox?.text ?? '', BASH4)).not.toEqual([]);
+    const [local] = code('timeout 5 curl x # portability: box-side\n');
+    expect(local?.waived).toBe(false);
+    expect(
+      emptyArrayHits('set -u\nA=()\nssh box "x ${A[@]}" # portability: box-side\n'),
+    ).toHaveLength(1);
 
     expect(emptyArrayHits('set -u\nA=()\nfor x in "${A[@]}"; do :; done\n')).toHaveLength(1);
     expect(emptyArrayHits('set -u\nA=()\nfor x in ${A[@]+"${A[@]}"}; do :; done\n')).toHaveLength(
@@ -300,16 +388,19 @@ describe('shell scripts run on the Mac (bash 3.2, BSD tools)', () => {
     );
   });
 
-  it('both harnesses drop GIT_* before their first command', () => {
+  it('both harnesses drop GIT_* (and refuse to run if any is left) before their first command', () => {
     for (const f of ['test-rm-worktree.sh', 'test-deploy-scripts.sh']) {
       const lines = code(readFileSync(join(ROOT, 'scripts', f), 'utf8')).map((l) => l.text);
-      const drop = lines.findIndex((l) => /compgen -e \| grep '\^GIT_'/.test(l));
+      const drop = lines.findIndex((l) => /unset "\$gv".*\^\\\(GIT_/.test(l));
       expect(drop, `${f} does not drop GIT_*`).toBeGreaterThanOrEqual(0);
       // Only `set` may come before it.
       expect(
         lines.slice(0, drop).every((l) => /^set\s/.test(l)),
         f,
       ).toBe(true);
+      expect(lines[drop + 1], `${f} does not refuse a GIT_* left set`).toMatch(
+        /if env \| grep -q '\^GIT_'/,
+      );
     }
   });
 
@@ -322,38 +413,60 @@ describe('shell scripts run on the Mac (bash 3.2, BSD tools)', () => {
     90_000,
   );
 
-  itBash(
-    'a GIT_DIR left set (as in a git hook) cannot reach the repo it names',
-    () => {
-      const dir = mkdtempSync(join(tmpdir(), 'shell-portability-sentinel-'));
-      try {
-        const repo = join(dir, 'repo');
-        const git = (...args: string[]) =>
-          execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', env: cleanEnv() }).trim();
-        execFileSync('git', ['init', '-q', repo], { env: cleanEnv() });
-        writeFileSync(join(repo, 'sentinel'), 'x\n');
-        git('add', 'sentinel');
-        git('-c', 'user.email=t@example.invalid', '-c', 'user.name=t', 'commit', '-q', '-m', 's');
-        const state = () => ({
-          config: readFileSync(join(repo, '.git', 'config'), 'utf8'),
-          refs: git('for-each-ref', '--format=%(refname) %(objectname)'),
-          head: git('rev-parse', 'HEAD'),
-          worktrees: git('worktree', 'list', '--porcelain'),
-          status: git('status', '--porcelain'),
-        });
-        const before = state();
-        const out = runHarness('test-rm-worktree.sh', {
-          ...cleanEnv(),
-          GIT_DIR: join(repo, '.git'),
-          GIT_WORK_TREE: repo,
-          GIT_INDEX_FILE: join(repo, '.git', 'index'),
-        });
-        expect(out).toMatch(/all passed/);
-        expect(state()).toEqual(before);
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    },
-    90_000,
-  );
+  // What a git hook exports is GIT_DIR alone; the full set is checked too.
+  const sentinelEnvs: [string, (repo: string) => NodeJS.ProcessEnv][] = [
+    ['GIT_DIR alone, as a git hook sets it', (repo) => ({ GIT_DIR: join(repo, '.git') })],
+    [
+      'GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE',
+      (repo) => ({
+        GIT_DIR: join(repo, '.git'),
+        GIT_WORK_TREE: repo,
+        GIT_INDEX_FILE: join(repo, '.git', 'index'),
+      }),
+    ],
+  ];
+  for (const [shape, gitEnv] of sentinelEnvs) {
+    itBash(
+      `a repo named by ${shape} is untouched by the worktree harness`,
+      () => {
+        const dir = mkdtempSync(join(tmpdir(), 'shell-portability-sentinel-'));
+        try {
+          const repo = join(dir, 'repo');
+          const git = (...args: string[]) =>
+            execFileSync('git', ['-C', repo, ...args], {
+              encoding: 'utf8',
+              env: cleanEnv(),
+            }).trim();
+          execFileSync('git', ['init', '-q', repo], { env: cleanEnv() });
+          writeFileSync(join(repo, 'sentinel'), 'x\n');
+          git('add', 'sentinel');
+          git('-c', 'user.email=t@example.invalid', '-c', 'user.name=t', 'commit', '-q', '-m', 's');
+          const state = () => ({
+            config: readFileSync(join(repo, '.git', 'config'), 'utf8'),
+            refs: git('for-each-ref', '--format=%(refname) %(objectname)'),
+            head: git('rev-parse', 'HEAD'),
+            commits: git('rev-list', '--all', '--count'),
+            worktrees: git('worktree', 'list', '--porcelain'),
+            status: git('status', '--porcelain'),
+          });
+          const before = state();
+          let out = '';
+          let failed: unknown;
+          try {
+            out = runHarness('test-rm-worktree.sh', { ...cleanEnv(), ...gitEnv(repo) });
+          } catch (err) {
+            failed = err;
+          }
+          // The repo first: this must fail on its own when the guard is gone,
+          // not only because the harness happened to fail too.
+          expect(state(), 'the harness wrote to the repo GIT_DIR names').toEqual(before);
+          if (failed) throw failed;
+          expect(out).toMatch(/all passed/);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      },
+      90_000,
+    );
+  }
 });

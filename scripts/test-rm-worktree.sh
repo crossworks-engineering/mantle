@@ -15,7 +15,11 @@ set -uo pipefail
 # Drop every GIT_* variable first. Run from a git hook (pre-push runs pnpm
 # verify, which runs this), git exports GIT_DIR and friends for the REAL repo,
 # and any git command in here would then write to it, not to a temp repo.
-while IFS= read -r gv; do unset "$gv"; done < <(compgen -e | grep '^GIT_')
+while IFS= read -r gv; do unset "$gv"; done < <(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p')
+if env | grep -q '^GIT_'; then
+  echo "refusing to run: a GIT_* variable is still set, and git here would act on the real repo" >&2
+  exit 1
+fi
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/rm-worktree.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
