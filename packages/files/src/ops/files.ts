@@ -1091,7 +1091,7 @@ export async function fileNameTaken(
 async function inCallerScope<T>(fn: () => Promise<T>): Promise<T | undefined> {
   if (!isSystemScope()) return fn();
   const loginId = requestWriteScope()?.loginId;
-  return loginId ? withViewer('team', { login: loginId }, fn) : undefined;
+  return loginId ? withViewer({ login: loginId }, fn) : undefined;
 }
 
 /** Whether the caller reads item `id` (in its scope; null for the system). */

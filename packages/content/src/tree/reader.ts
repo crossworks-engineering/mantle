@@ -85,7 +85,7 @@ export async function visibleFolders(
   kind: TreeKind,
 ): Promise<Visible> {
   const spec = TREE_KIND_SPECS[kind];
-  const [itemRows, sharedRows] = await withViewer(reader, { login: loginId }, () =>
+  const [itemRows, sharedRows] = await withViewer({ login: loginId }, () =>
     Promise.all([
       db.execute(sql`
         select n.path::text as path, count(*)::int as n
@@ -157,7 +157,7 @@ export async function loadReaderTreeFolder(
           (m) => m.get(treeParentPath(found.path)) ?? [],
         )
       : Promise.resolve([]),
-    withViewer(reader, { login: loginId }, () =>
+    withViewer({ login: loginId }, () =>
       itemPage(
         anchorId,
         kind,
@@ -214,7 +214,7 @@ export async function searchReaderTree(
           .filter((f) => vis.paths.has(f.path))
           .slice(0, limit)
           .map((f) => recount(f, vis));
-  const { page, more } = await withViewer(reader, { login: loginId }, () =>
+  const { page, more } = await withViewer({ login: loginId }, () =>
     searchItemRows(anchorId, kind, term, opts.cursor, limit, readerItems('n')),
   );
   const crumbs = await treeCrumbsFor(anchorId, [

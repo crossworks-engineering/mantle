@@ -144,10 +144,9 @@ function nonOwnerRunLevel(ctx: ToolHandlerContext): ViewerLevel | null {
   const bySurface: ViewerLevel | null =
     s?.kind === 'team' ? 'team' : s?.kind === 'contact' ? 'public' : null;
   // Outside a workspace scope (its callers return first inside one): system
-  // work, or a personal space at its login's level (until W6b).
-  const outer = currentScope();
-  const viewer: ViewerLevel =
-    outer.kind === 'level' ? outer.level : outer.kind === 'system' ? 'admin' : 'public';
+  // work (the level scope went in W8c).
+  const viewer: ViewerLevel = currentScope().kind === 'system' ? 'admin' : 'public';
+
   if (!bySurface) return viewer === 'admin' ? null : viewer;
   try {
     return lowerLevel(viewer, bySurface);

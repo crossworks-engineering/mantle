@@ -75,11 +75,6 @@ export type TreeKindSpec = {
   shareable: boolean;
   /** The item orders offered, the first being the default. */
   sorts: readonly TreeSort[];
-  /** Which levels a folder of this kind may be shared at. Absent means both
-   *  of TREE_SHARE_LEVELS. Recall is team-only: a client agent matching the
-   *  owner's prompts is the case the Recall v1 plan deferred. Enforced where
-   *  folders are shared (phase 4). */
-  shareLevels?: readonly TreeShareLevel[];
 };
 
 export const TREE_KIND_SPECS: Readonly<Record<TreeKind, TreeKindSpec>> = {
@@ -162,17 +157,17 @@ export const TREE_KIND_SPECS: Readonly<Record<TreeKind, TreeKindSpec>> = {
   },
   // The tree lists maps only; a map's cards are recall_nodes rows, never
   // nodes, so they never appear as items.
-  // Not shareable YET: team sharing is Recall R6, which adds the recall root
-  // to nodes_share_level_ck and the type to mantle_workspace_kind(). Until
-  // then the database refuses the share, so the tree must not offer it.
+  // Not shareable YET: a map is granted beyond Admin only once Recall R6
+  // lets a workspace's assistant read maps. Until then the tree must not
+  // offer it.
   recall: {
     kind: 'recall',
     root: 'recall',
     nodeType: 'recall',
     shareable: false,
-    shareLevels: ['team'],
     sorts: ['name', 'updated'],
   },
+
 };
 
 /** One folder as the tree shows it. Counts are what THIS reader can see. */

@@ -28,7 +28,7 @@ async function handleGET() {
   const prefs = await loadProfilePreferences(member.anchorId);
   const [{ apps, folders }, home] = await Promise.all([
     appLauncher(member.anchorId, 'team', member.loginId),
-    withViewer('team', { login: member.loginId }, () =>
+    withViewer({ login: member.loginId }, () =>
       resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId),
     ),
   ]);

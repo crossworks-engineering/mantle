@@ -71,7 +71,6 @@ export {
 export { invokeAgent } from './invoke-agent';
 export {
   AgentWorkspaceError,
-  agentLevel,
   agentTurnScoped,
   agentWorkspaceKind,
   ownerSurfaceLogin,

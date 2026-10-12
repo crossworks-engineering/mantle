@@ -110,7 +110,7 @@ export async function readerVisibleFileIds(
       return await asSystem(() => memberVisibleDrawFileIds(ownerId, reader.loginId, id));
     }
     if (reader.kind === 'client') {
-      return await withViewer('client', { login: reader.loginId }, () =>
+      return await withViewer({ login: reader.loginId }, () =>
         clientVisibleDrawFileIds(ownerId, id),
       );
     }

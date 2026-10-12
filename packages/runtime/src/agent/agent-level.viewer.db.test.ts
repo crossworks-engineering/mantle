@@ -94,7 +94,7 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
       withAgentViewer({ audience: 'public' }, async () => await readPages()),
     );
     expect(fromLevel).toEqual([]);
-    const inScope = await m.withViewer('client', { agent: null }, async () => ({
+    const inScope = await m.withViewer({ agent: null }, async () => ({
       outer: m.currentScope(),
       inner: await withAgentViewer({ audience: 'public' }, async () => ({
         scope: m.currentScope(),

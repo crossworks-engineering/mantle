@@ -99,7 +99,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and at the client leve
     );
   const loginOf = { team: member, client: clientsMember } as const;
   const as = <T>(reader: 'team' | 'client', fn: () => Promise<T>) =>
-    m.withViewer(reader, { login: loginOf[reader] }, fn);
+    m.withViewer({ login: loginOf[reader] }, fn);
 
   const listed = async (reader: 'team' | 'client') =>
     as(reader, async () => {

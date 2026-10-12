@@ -55,7 +55,7 @@ export async function memberApp(
   appId: string,
   opts: { write?: boolean; manage?: boolean; edit?: boolean } = {},
 ): Promise<MemberAppState> {
-  const rows = (await withViewer('team', { login: author.loginId }, () =>
+  const rows = (await withViewer({ login: author.loginId }, () =>
     db.execute(sql`
       select n.id::text as id, n.title, n.home_ws::text as home,
              coalesce("public"."mantle_may_edit"(n.home_ws, n.write_ws), false) as edit,
@@ -125,7 +125,7 @@ export type LoginAppCard = {
 
 /** The apps the login's scope reads, newest first: its own first. */
 export async function listLoginApps(author: MemberAppAuthor): Promise<LoginAppCard[]> {
-  const rows = (await withViewer('team', { login: author.loginId }, () =>
+  const rows = (await withViewer({ login: author.loginId }, () =>
     db.execute(sql`
       select n.id::text as id, n.title, n.updated_at,
              coalesce((n.data->>'trashedBeforeFold')::boolean, false) as trashed,
@@ -241,7 +241,7 @@ async function deletedHomes(author: MemberAppAuthor): Promise<Map<string, string
      where s.owner_id = ${author.brainId} and s.node_kind = 'app' and s.trigger = 'pre_delete'
        and not exists (select 1 from nodes n where n.id = s.node_id)
      order by s.node_id, s.seq desc`)) as unknown as { id: string; home: string | null }[];
-  const mod = (await withViewer('team', { login: author.loginId }, () =>
+  const mod = (await withViewer({ login: author.loginId }, () =>
     db.execute(sql`select unnest("public"."mantle_scope_mod_ws"())::text as ws`),
   )) as unknown as { ws: string }[];
   const moderated = new Set(mod.map((r) => r.ws));

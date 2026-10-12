@@ -1,7 +1,7 @@
 /**
  * The member Library (member logins, Phase 1): the brain items a member login
  * may read. There is no ACCESS filter here on purpose. The routes read as the
- * login (`withViewer(level, { login }, …)`, workspaces W5b2): row security on
+ * login (`withViewer({ login }, …)`, workspaces W5b2): row security on
  * the workspace role shows the items the login's workspaces hold (their
  * grants), published content only (draft columns are never granted). A row
  * this code cannot see is simply absent, so a member can never reach an
@@ -43,12 +43,12 @@ export type LibraryRow = {
   updatedAt: string;
 };
 
-/** Refuse to run at admin: this module exists to be read as a member or a
- *  client (a login's workspace scope, or a level role in a test), and at
- *  admin it would list the whole brain. */
+/** Refuse to run at admin: this module exists to be read as a member (a
+ *  login's workspace scope), and at admin it would list the whole brain. */
 function assertLimited(): void {
   const kind = currentScope().kind;
-  if (kind !== 'level' && kind !== 'user') {
+  if (kind !== 'user') {
+
     throw new Error('member Library read outside a viewer scope: wrap it in withViewer');
   }
 }

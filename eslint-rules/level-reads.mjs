@@ -12,153 +12,27 @@
  * Swept: packages/, server/, scripts/ (.ts, .tsx, .mjs, .js, .sql). Not swept:
  * tests, packages/db/migrations/ and any archive/ folder.
  *
- * The allowlist below is what is LEFT, file by file, with the number of
- * matching lines pinned (eslint-rules/level-reads.test.ts fails on any other
- * count, so a new read in a listed file fails too) and the phase that removes
- * it. W5b2 (bridge off, the Grant Access panel, links on the served list)
- * empties its section; W5c, W6b, W7 and W8 theirs. A file listed under 'keep'
- * uses the word for something else (an OAuth audience).
+ * A permanent guard since W8c, which took the last level read out of the
+ * code (the columns stay in the database, frozen, until W10 drops them).
+ * The allowlist below holds only files where the word means something else
+ * (an OAuth audience, plain English), with the number of matching lines
+ * pinned: eslint-rules/level-reads.test.ts fails on any other count, so a
+ * new read in a listed file fails too, and on any `audience` line outside
+ * the list.
  *
  * Adding a file or raising a count is a review decision: say why in the PR.
  */
 export const LEVEL_READ_PATTERN =
   /\baudience\b|share_level|shareLevel|inherited_level|inheritedLevel|embedded_level|embeddedLevel|currentViewerLevel|\breadAtSql\b|\breadAtAliasSql\b|\bisReadAt\b|\bitemLevel\b|\beffectiveLevelSql\b|\beffectiveLevel\b|mantle_team_reads|mantle_inherited_level|\blevelOfScope\b/;
 
-/** @type {Record<string, { lines: number, phase: 'W5b2' | 'W5c' | 'W6b' | 'W7' | 'W8' | 'keep', why: string }>} */
+/** @type {Record<string, { lines: number, phase: 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
-  // ── W7: empty (W7b took the MCP levels, W7d the Telegram level rule) ──
-  // ── W8 (schema columns, DTO fields, comments, the deprecated function) ──
-  'packages/db/src/client.ts': {
-    lines: 3,
-    phase: 'W8',
-    why: 'levelOfScope picks the level pool (db internals)',
-  },
-  'packages/client-types/src/dto/access.ts': {
-    lines: 3,
-    phase: 'W8',
-    why: 'DTO: old Access panel level fields',
-  },
-  'packages/client-types/src/dto/agent-graph.ts': {
-    lines: 2,
-    phase: 'W8',
-    why: 'DTO: connector level field',
-  },
-  'packages/client-types/src/dto/rows.ts': {
-    lines: 2,
-    phase: 'W8',
-    why: 'DTO: owner row level badge',
-  },
-  'packages/client-types/src/tree.ts': {
-    lines: 3,
-    phase: 'W8',
-    why: 'DTO: tree share levels',
-  },
-  'packages/content-core/src/table-model.ts': {
-    lines: 2,
-    phase: 'W8',
-    why: 'DTO: table row level badge',
-  },
-  'packages/content-core/src/tree.ts': {
-    lines: 1,
-    phase: 'W8',
-    why: 'effectiveLevel, the level combiner',
-  },
-  'packages/content/src/formulas.ts': {
-    lines: 5,
-    phase: 'W8',
-    why: 'display: formula row level',
-  },
-  'packages/content/src/pages/shared.ts': {
-    lines: 1,
-    phase: 'W8',
-    why: 'display: page row level',
-  },
-  'packages/content/src/tables/shared.ts': {
-    lines: 3,
-    phase: 'W8',
-    why: 'display: table row level',
-  },
-  'packages/content/src/tree/marks.ts': {
-    lines: 1,
-    phase: 'W8',
-    why: 'display: pinned rows level',
-  },
-  'packages/db/src/access-matrix.ts': {
-    lines: 3,
-    phase: 'W8',
-    why: 'comments',
-  },
-  'packages/db/src/index.ts': {
-    lines: 2,
-    phase: 'W8',
-    why: 'export of the deprecated currentViewerLevel',
-  },
-  'packages/db/src/schema/agents.ts': {
-    lines: 1,
-    phase: 'W8',
-    why: 'schema: agents.audience',
-  },
-  'packages/db/src/schema/node-embeds.ts': {
-    lines: 1,
-    phase: 'W8',
-    why: 'schema comment',
-  },
-  'packages/db/src/schema/nodes.ts': {
-    lines: 4,
-    phase: 'W8',
-    why: 'schema: the level columns',
-  },
-  'packages/db/src/schema/tool-groups.ts': {
-    lines: 2,
-    phase: 'W8',
-    why: 'schema: tool_groups.audience (+ an OAuth audience field)',
-  },
-  'packages/db/src/viewer.ts': {
-    lines: 7,
-    phase: 'W8',
-    why: 'the deprecated currentViewerLevel itself',
-  },
-  'packages/files/src/ops/shared.ts': {
-    lines: 13,
-    phase: 'W8',
-    why: 'display: Files row level badges',
-  },
-  'packages/runtime/src/agent/agent-viewer.ts': {
-    lines: 4,
-    phase: 'W8',
-    why: 'agent level (agentLevel)',
-  },
-  'packages/runtime/src/agent/tool-loop.ts': {
-    lines: 2,
-    phase: 'W8',
-    why: 'agent level passed to the scope',
-  },
-  'server/web/lib/mcp-connectors.ts': {
-    lines: 1,
-    phase: 'W8',
-    why: 'connector DTO level',
-  },
-  'server/web/lib/system-manifest/manifest.ts': {
-    lines: 2,
-    phase: 'W8',
-    why: 'comments',
-  },
-  'server/web/lib/system-manifest/reconcile.ts': {
-    lines: 6,
-    phase: 'W8',
-    why: 'agent vs group level',
-  },
-  'server/web/lib/system-manifest/seed.ts': {
-    lines: 4,
-    phase: 'W8',
-    why: 'seeded agent and group levels',
-  },
-  'server/web/lib/tool-groups.ts': {
-    lines: 1,
-    phase: 'W8',
-    why: 'connector DTO level',
-  },
   // ── keep (the word means something else: OAuth audience, plain English) ──
+  'packages/db/src/schema/tool-groups.ts': {
+    lines: 1,
+    phase: 'keep',
+    why: 'unrelated: the OAuth2 audience field of an integration group',
+  },
   'packages/tools/src/integration-meta.ts': {
     lines: 7,
     phase: 'keep',

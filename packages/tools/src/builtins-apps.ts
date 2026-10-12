@@ -905,12 +905,10 @@ async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) 
       .where(andWhere(eqWhere(nodesTable.ownerId, ctx.ownerId), eqWhere(nodesTable.type, 'app')));
     return new Set(rows.map((r) => r.id));
   }
-  const scope = currentScope();
-  const level = scope.kind === 'level' ? scope.level : scope.kind === 'system' ? 'admin' : null;
-  // A team scope: the apps the member's workspaces hold (their grants). A
-  // client scope reaches no app (clients run no apps since workspaces W5c).
-  if (level === 'team') return listTeamLevelAppIds(ctx.ownerId);
-  if (level !== 'admin') return new Set<string>();
+  // Outside a workspace scope it is system work (the level scope went in
+  // W8c); anything else reaches no app.
+  if (currentScope().kind !== 'system') return new Set<string>();
+
   // An admin-level agent serving a non-owner surface.
   if (isOwnerSurface(ctx.surface)) return null;
   if (ctx.surface?.kind === 'team') return listTeamLevelAppIds(ctx.ownerId);

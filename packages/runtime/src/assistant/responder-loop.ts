@@ -44,7 +44,6 @@ import {
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
 import {
-  agentLevel,
   ownerSurfaceLogin,
   surfaceLoginId,
   withAgentViewer,
@@ -278,7 +277,6 @@ async function runResponderLoopAtLevel(
     ownerId: opts.ownerId,
     agentId: agent.id,
     agentSlug: agent.slug,
-    agentLevel: agentLevel(agent),
     agentWorkspaceId: agent.workspaceId ?? null,
     agentDepth: 1,
     delegateTo: assembled.delegateTo,

@@ -11,7 +11,6 @@
  */
 
 import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
-import type { AccessLevel } from './access';
 import type { ListChips, ListWorkspace } from './grants';
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
@@ -138,8 +137,6 @@ export type PageRow = {
   summary: string | null;
   visibility: PageVisibility;
   width: PageWidth;
-  /** Access level (admin > team > client > public); the owner UI's badge. */
-  audience: AccessLevel;
   /** A read-only snapshot copy of an accepted item (data.snapshot_of,
    *  workspaces W6b fix round 1): nobody edits it, moves it out of its
    *  private workspace or shares it; its author may delete it. Absent on
@@ -189,14 +186,7 @@ export type AppRow = {
   shareMode: ShareMode | null;
   /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
   isHub: boolean;
-  /** The old access level badge. Not sent since workspaces W5b2 (grants
-   *  decide who reads an app: the list's `workspaces` chips and `hasLink`);
-   *  the field goes in W8. */
-  audience?: AccessLevel;
-  /** Not sent since W5b2 (with the level badge). */
-  inherited?: 'team' | 'client' | null;
-  /** Not sent since W5b2 (with the level badge). */
-  embedded?: 'team' | 'client' | null;
+
   /** A live open public link exists (not revoked, not expired): the
    *  "Public" pill. Absent from a brain before W5b2. */
   hasLink?: boolean;

@@ -82,7 +82,7 @@ import { loadToolGroupsForCatalog } from './skills';
 import { env } from '@mantle/config';
 import { publicToolError, UUID_RE } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
-import { isUnscoped, type ViewerLevel } from '@mantle/db/viewer';
+import { isUnscoped } from '@mantle/db/viewer';
 import { ownerSurfaceLogin, surfaceLoginId, withAgentScope } from './agent-viewer';
 
 export const DEFAULT_MAX_ITERATIONS = 6;
@@ -412,12 +412,9 @@ export type ToolLoopArgs = {
    *  /pending UI can show which agent proposed each call. Optional —
    *  callers without an agent context (manual scripts) can skip it. */
   agentId?: string;
-  /** The agent's level (agents.audience): required with `agentId`. The loop
-   *  runs every query at this level (member logins Phase 0b). */
-  agentLevel?: ViewerLevel;
-  /** agents.workspace_id (workspaces W4b): an assistant of a workspace other
-   *  than Admin runs the loop in a turn scope of that workspace
-   *  (withAgentScope). Unset or null: the level, as before. */
+  /** agents.workspace_id (workspaces W4b): an assistant of a workspace runs
+   *  the loop in a turn scope of that workspace (withAgentScope). Unset or
+   *  null: a helper, in its caller's scope. */
   agentWorkspaceId?: string | null;
   /** The agent row's slug. Passed to handlers (specifically
    *  `invoke_agent`) so they can refuse self-calls + reason about who
@@ -507,7 +504,7 @@ export async function resolveAgentTools(ownerId: string, slugs: string[]): Promi
 }
 
 /** The loop's tool rows: the agent's allowlist plus `read_result`, which is
- *  always offered when the agent has any tools (see runToolLoopAtLevel). Shared
+ *  always offered when the agent has any tools (see runToolLoopInScope). Shared
  *  with `describeResponderTurnInput`, so the tool list it reports is the list
  *  the model is sent. */
 export async function withReadResultTool(ownerId: string, tools: Tool[]): Promise<Tool[]> {
@@ -597,17 +594,10 @@ function ownerSurface(surface: ToolLoopArgs['surface']): boolean {
 }
 
 /**
- * The tool loop, at the agent's level (member logins Phase 0b). A loop run for
- * an agent MUST say the agent's level: a missing one throws rather than
- * silently running at admin. The level only ever goes down.
+ * The tool loop, in the agent's scope (withAgentScope): its workspace, or
+ * its caller's scope for a helper.
  */
 export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
-  if (args.agentId && !args.agentLevel) {
-    throw new Error(
-      `runToolLoop: agent '${args.agentSlug ?? args.agentId}' needs agentLevel (agentLevel(agent)): ` +
-        'the loop runs at the agent level.',
-    );
-  }
   // The agent's id and brain too (W7 integration fix): a helper answering a
   // login looks up that login's Admin user row in THIS brain, and a brain
   // not on workspaces must read as one ('no-workspaces'), not refuse.
@@ -615,15 +605,15 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     {
       id: args.agentId ?? null,
       ownerId: args.ownerId,
-      audience: args.agentLevel ?? 'admin',
       workspaceId: args.agentWorkspaceId ?? null,
     },
-    () => runToolLoopAtLevel(args),
+    () => runToolLoopInScope(args),
     { loginId: surfaceLoginId(args.surface), ownerLoginId: ownerSurfaceLogin(args.surface) },
   );
 }
 
-async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
+async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
+
   const maxIters = args.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const taint = args.taint ?? newTurnTaint();
   const handling = resolveResultHandling(args.resultHandling);

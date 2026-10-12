@@ -123,7 +123,7 @@ export async function appLauncher(
   if (!isSystemScope() || currentSpaceScope()) {
     throw new Error('app launcher called inside a viewer scope: call it on the admin pool');
   }
-  const { apps, places } = await withViewer(reader, { login: loginId }, () =>
+  const { apps, places } = await withViewer({ login: loginId }, () =>
     listMemberAppsPlaced(anchorId),
   );
   let folders: AppLauncherFolder[] = [];

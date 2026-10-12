@@ -147,7 +147,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
 
   it("an admin's run of a Team-held app never reads an Admin-only note", async () => {
     // The admin's own login reads it (Admin and Team).
-    expect(await m.withViewer('team', { login: owner }, async () => scopeWs().length)).toBe(2);
+    expect(await m.withViewer({ login: owner }, async () => scopeWs().length)).toBe(2);
     const out = await run(owner, { id: ids.teamApp! });
     expect(out.ws).toMatchObject({ kind: 'user', loginId: owner, ws: [team], modWs: [team] });
     expect(out.admin).toBe(false);
@@ -156,7 +156,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
   });
 
   it("a member's run of a Team app never reads the member's other workspaces", async () => {
-    const own = await m.withViewer('team', { login: member }, async () => [...scopeWs()].sort());
+    const own = await m.withViewer({ login: member }, async () => [...scopeWs()].sort());
     expect(own).toEqual([team, other].sort());
     const out = await run(member, { id: ids.teamApp! });
     expect(out.ws).toMatchObject({ ws: [team] });

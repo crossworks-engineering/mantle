@@ -100,7 +100,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   // A link reads no workspace, only what it serves (plan 8.1, R6), never a
   // snapshot copy (W6b fix round 3, L-1).
   const served = [...(await liveServedIds(share))];
-  const result = await withViewer('public', { link: { served } }, () =>
+  const result = await withViewer({ link: { served } }, () =>
     dispatchTool(verdict.tool, input, {
       ownerId: share.ownerId,
       surface: { kind: 'contact', contactId, shareId: share.id },

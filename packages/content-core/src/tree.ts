@@ -5,39 +5,8 @@
  * deepest a folder may sit. Pure, so the brain and every client agree on
  * depth, parents and crumbs without a round trip.
  */
-import {
-  TREE_KIND_SPECS,
-  TREE_KINDS,
-  TREE_MAX_DEPTH,
-  type TreeKind,
-  type TreeShareLevel,
-} from '@mantle/client-types/tree';
-import type { AccessLevel } from '@mantle/client-types';
+import { TREE_KIND_SPECS, TREE_KINDS, TREE_MAX_DEPTH, type TreeKind } from '@mantle/client-types/tree';
 
-const LEVEL_RANK: Record<AccessLevel, number> = { public: 0, client: 1, team: 2, admin: 3 };
-
-/**
- * The level an item is read at: the most open of its own level, the share it
- * inherits from a folder, and the share of something that embeds it
- * (public < client < team < admin). This is the level its pill shows and its
- * indexed page text is folded for. Folding for the more open reader is safe
- * for every reader of the row: what a public or client reader may see, every
- * reader above may too. (Which ROLES read the row is the database's union of
- * the three: nodes_viewer_read, migrations 0204 and 0208.)
- */
-export function effectiveLevel(
-  own: AccessLevel,
-  inherited: TreeShareLevel | null | undefined,
-  /** The share of something that embeds the item (a shared note's image),
-   *  when the brain sends it. */
-  embedded?: TreeShareLevel | null,
-): AccessLevel {
-  let level = own;
-  for (const share of [inherited, embedded]) {
-    if (share && LEVEL_RANK[share] < LEVEL_RANK[level]) level = share;
-  }
-  return level;
-}
 
 function labels(path: string): string[] {
   return path ? path.split('.') : [];

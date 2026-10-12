@@ -9,12 +9,10 @@ import { and, eq, sql } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
 import {
   asSystem,
-  asViewerLevel,
   db,
   isWriteRefused,
   type Node,
   nodes,
-  type ViewerLevel,
   withDeadlockRetry,
   withNodeInsertHeads,
   isSnapshotCopy,
@@ -37,18 +35,6 @@ export type FolderRow = {
   color: string | null;
   childFolderCount: number;
   fileCount: number;
-  /** Access level (admin > team > client > public); the owner UI's badge. */
-  audience: ViewerLevel;
-  /** The folder's own share (team or client), or null. Everything below it
-   *  is read at least at this level. */
-  share: 'team' | 'client' | null;
-  /** The share it inherits from a folder above it (team or client), or
-   *  null. It is read at the more open of this and `audience`. */
-  inherited: 'team' | 'client' | null;
-  /** The share it is read at through something that embeds it (migration
-   *  0208), or null. It is read at the most open of this, `inherited` and
-   *  `audience`. */
-  embedded: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -70,15 +56,6 @@ export type FileRow = {
   /** Which mode the extractor LAST ran for this file ('metadata' spine vs full
    *  content). Null until first extraction. What a listing should badge. */
   indexingApplied: 'full' | 'metadata' | null;
-  /** Access level (admin > team > client > public); the owner UI's badge. */
-  audience: ViewerLevel;
-  /** The share it inherits from a folder above it (team or client), or
-   *  null. It is read at the more open of this and `audience`. */
-  inherited: 'team' | 'client' | null;
-  /** The share it is read at through something that embeds it (migration
-   *  0208), or null. It is read at the most open of this, `inherited` and
-   *  `audience`. */
-  embedded: 'team' | 'client' | null;
   /** A read-only snapshot copy of an accepted item (data.snapshot_of,
    *  workspaces W6b fix round 1): nobody edits it, moves it out of its
    *  private workspace or shares it; its author may delete it. Absent on
@@ -213,12 +190,6 @@ export function folderRowFromNode(
     color: typeof data.color === 'string' && data.color ? data.color : null,
     childFolderCount,
     fileCount,
-    audience: asViewerLevel(row.audience),
-    share: row.shareLevel === 'team' || row.shareLevel === 'client' ? row.shareLevel : null,
-    inherited:
-      row.inheritedLevel === 'team' || row.inheritedLevel === 'client' ? row.inheritedLevel : null,
-    embedded:
-      row.embeddedLevel === 'team' || row.embeddedLevel === 'client' ? row.embeddedLevel : null,
     ...(isSnapshotCopy(row) ? { readOnly: true as const } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -249,12 +220,8 @@ export function fileRowFromNode(row: Node): FileRow {
         : data.indexing_applied === 'full'
           ? 'full'
           : null,
-    audience: asViewerLevel(row.audience),
-    inherited:
-      row.inheritedLevel === 'team' || row.inheritedLevel === 'client' ? row.inheritedLevel : null,
-    embedded:
-      row.embeddedLevel === 'team' || row.embeddedLevel === 'client' ? row.embeddedLevel : null,
-    createdAt: row.createdAt.toISOString(),
+    createdAt:
+ row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }

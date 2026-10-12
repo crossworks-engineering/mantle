@@ -280,13 +280,13 @@ export async function memberToolBroker(
       id: app.id,
     },
   );
+  const run = () =>
+    dispatchTool(verdict.tool, input, { ownerId: member.anchorId, surface: scope.surface });
   const result = await asSystem(
-    () =>
-      withViewer(scope.viewer, scope.actsFor, () =>
-        dispatchTool(verdict.tool, input, { ownerId: member.anchorId, surface: scope.surface }),
-      ),
+    () => (scope.viewer === 'admin' ? run() : withViewer(scope.actsFor, run)),
     'app-data',
   );
+
   if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);
 }

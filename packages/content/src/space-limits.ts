@@ -8,7 +8,7 @@
  * from the login's row (team for an admin or a member, client for a client),
  * and these limits read that level.
  */
-import { currentSpaceScope, inLevelScope } from '@mantle/db';
+import { currentSpaceScope } from '@mantle/db';
 
 export type SpaceLimits = {
   /** One upload's ceiling. */
@@ -65,11 +65,13 @@ export const CLIENT_DOC_MAX_BYTES = 500_000;
 /** A client's note, in characters (UTF-16 units) at most. */
 export const CLIENT_NOTE_MAX_CHARS = 50_000;
 
-/** Whether the current personal-space scope is a client's. Outside a space
- *  scope this is false (the callers all run inside one). */
+/** Whether the current personal-space scope is a client's: never since
+ *  workspaces W8 (no space scope is entered since W6b, no client login
+ *  exists since W8a, and the level scope that said so went in W8c). */
 export function inClientSpace(): boolean {
-  return currentSpaceScope() !== null && inLevelScope('client');
+  return false;
 }
+
 
 /** The limits of the current personal-space scope, by its login's role. */
 export function spaceLimits(): SpaceLimits {

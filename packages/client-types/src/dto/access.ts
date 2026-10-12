@@ -13,12 +13,12 @@ import type { AccessContactShare } from './contact-shares';
 export const ACCESS_LEVELS = ['admin', 'team', 'client', 'public'] as const;
 export type AccessLevel = (typeof ACCESS_LEVELS)[number];
 
-/** One item as the Access control lists it (the item itself or its closure). */
+/** One item as the old Access control listed it (gone since W5b2: the
+ *  routes answer 410). Its level went from the wire in W8c. */
 export type AccessItemView = {
   id: string;
   type: string;
   title: string;
-  audience: AccessLevel;
 };
 
 /** The item's link. `path` is server-relative (`/s/<token>`). */
@@ -129,9 +129,8 @@ export type AccessLoweredView = {
   to: AccessLevel;
 };
 
-/** PATCH /api/access/nodes/:id { audience, withClosure?, raiseClosure? }.
- *  `withClosure` only matters for a folder (its contents); a page's,
- *  drawing's or note's embeds always follow it down. */
+/** The old PATCH /api/access/nodes/:id (gone since W5b2: 410).
+ *  `withClosure` only mattered for a folder (its contents). */
 export type AccessNodeUpdate = {
   item: AccessItemView;
   /** Everything lowered with it, at its new level: the embeds that followed
@@ -177,10 +176,8 @@ export type ClientReportRef = {
    *  is not the brain's (a personal item), whose title is never shown. */
   type: string | null;
   title: string | null;
-  /** The item's level; null when it is not a brain item (a personal item,
-   *  or gone). */
-  audience: AccessLevel | null;
 };
+
 
 /** One item at client level, as the report lists it. */
 export type ClientReportItem = {

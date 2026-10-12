@@ -35,7 +35,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const scope = { ownerId: member.anchorId, fileId: idParsed.data.id };
   // The member's own scope: the request's (the guard entered it), or built
   // here when the handler runs outside the route loader.
-  const inScope = <T>(fn: () => Promise<T>) => withViewer('team', { login: member.loginId }, fn);
+  const inScope = <T>(fn: () => Promise<T>) => withViewer({ login: member.loginId }, fn);
 
   if (new URL(req.url).searchParams.get('thumb') === '1') {
     const meta = await inScope(() => fileById(scope));

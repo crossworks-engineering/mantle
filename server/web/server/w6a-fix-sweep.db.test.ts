@@ -208,12 +208,12 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     }
     // The package reads ask the row too (getTable, the tools' window file).
     const content = await import('@mantle/content');
-    await m.withViewer('team', { login: owner }, async () => {
+    await m.withViewer({ login: owner }, async () => {
       const t = await content.getTable(owner, tableId);
       expect(JSON.stringify(t)).not.toContain(DRAFT);
     });
     const storage = await import('@mantle/content/table-storage');
-    await m.withViewer('team', { login: owner }, async () => {
+    await m.withViewer({ login: owner }, async () => {
       // windowFile (the tools) reads the draft file only when draftOk.
       const surface = await storage.tableSqlSurface(owner, tableId);
       expect(surface?.draftOk).toBe(false);
@@ -384,7 +384,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await x(sql`insert into item_marks (actor_id, node_id, open_count, opened_at) values
                 (${mem}, ${shared}, 1, now()), (${mem2}, ${shared}, 1, now())`);
     const marksOf = (login: string) =>
-      m.withViewer('team', { login }, async () =>
+      m.withViewer({ login }, async () =>
         (
           (await m.db.execute(
             sql`select actor_id::text as a from item_marks where node_id = ${shared}`,
@@ -402,7 +402,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
                 (${t2}, ${owner}, 'responder_turn', ${side}, ${mem}),
                 (${t3}, ${owner}, 'responder_turn', null, null)`);
     const tracesOf = (login: string) =>
-      m.withViewer('team', { login }, async () =>
+      m.withViewer({ login }, async () =>
         (
           (await m.db.execute(
             sql`select id::text as id from traces where id in (${t1}, ${t2}, ${t3}) order by id`,
@@ -570,7 +570,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await x(sql`insert into profiles (user_id) values (${owner}), (${mem}), (${mem2})
                 on conflict (user_id) do nothing`);
     const rowsFor = (login: string) =>
-      m.withViewer('team', { login }, async () =>
+      m.withViewer({ login }, async () =>
         (
           (await m.db.execute(
             sql`select user_id::text as u from profiles

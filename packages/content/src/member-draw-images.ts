@@ -65,7 +65,7 @@ export async function memberVisibleDrawFileIds(
   if (byNode.size === 0) return visible;
   // The files the member reads: their own workspace scope, row security on
   // the grants decides (the member files route reads the same way).
-  const readable = await withViewer('team', { login: loginId }, () =>
+  const readable = await withViewer({ login: loginId }, () =>
     db
       .select({ id: nodes.id })
       .from(nodes)

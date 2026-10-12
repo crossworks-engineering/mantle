@@ -42,8 +42,8 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   // The member's workspace holds the team and client items; the second
   // member's the client ones. Nobody but the owner holds the admin ones.
   const ws = { members: randomUUID(), second: randomUUID() };
-  const asMember = <T>(fn: () => Promise<T>) => m.withViewer('team', { login: member }, fn);
-  const asSecond = <T>(fn: () => Promise<T>) => m.withViewer('client', { login: second }, fn);
+  const asMember = <T>(fn: () => Promise<T>) => m.withViewer({ login: member }, fn);
+  const asSecond = <T>(fn: () => Promise<T>) => m.withViewer({ login: second }, fn);
   const d = { team: randomUUID(), admin: randomUUID(), client: randomUUID() };
   const f = { team: randomUUID(), admin: randomUUID(), client: randomUUID() };
   const fileRefs = { sceneTeam: f.team, sceneAdmin: f.admin, sceneClient: f.client };

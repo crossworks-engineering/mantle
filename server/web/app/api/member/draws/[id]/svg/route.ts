@@ -25,7 +25,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const id = idParsed.data.id;
   // The member's own scope: the request's (the guard entered it), or built
   // here when the handler runs outside the route loader.
-  const out = await withViewer('team', { login: member.loginId }, async () => {
+  const out = await withViewer({ login: member.loginId }, async () => {
     const svg = await getDrawSvg(member.anchorId, id);
     return svg ? scopedDrawSvg(member.anchorId, id, svg) : null;
   });

@@ -22,12 +22,10 @@
  */
 import { and, eq, ilike, or, sql } from 'drizzle-orm';
 import {
-  asViewerLevel,
   db,
   nodes,
   notifyNodeIngested,
   type Node,
-  type ViewerLevel,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
@@ -42,14 +40,6 @@ export type FormulaRow = {
   spec: FormulaSpec;
   tags: string[];
   summary: string | null;
-  /** Access level (admin > team > client > public); the owner UI's badge. */
-  audience: ViewerLevel;
-  /** The share it inherits from a folder above it (team or client), or
-   *  null; it is read at the more open of this and `audience`. Optional:
-   *  absent from brains before the folder audit fixes. */
-  inherited?: 'team' | 'client' | null;
-  /** The share it is read at through something that embeds it (0208). */
-  embedded?: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -65,11 +55,8 @@ function rowOf(n: Node): FormulaRow {
     spec: d.spec as FormulaSpec,
     tags: n.tags ?? [],
     summary,
-    audience: asViewerLevel(n.audience),
-    inherited:
-      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
-    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
-    createdAt: (n.createdAt as unknown as Date)?.toISOString?.() ?? String(n.createdAt),
+    createdAt:
+ (n.createdAt as unknown as Date)?.toISOString?.() ?? String(n.createdAt),
     updatedAt: (n.updatedAt as unknown as Date)?.toISOString?.() ?? String(n.updatedAt),
   };
 }

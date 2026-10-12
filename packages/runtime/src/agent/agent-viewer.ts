@@ -1,6 +1,6 @@
 /**
- * An agent runs inside its workspace (workspaces W4b, plan 5.1), or, for an
- * agent with none, inside its level (member logins Phase 0b, plan section 2b).
+ * An agent runs inside its workspace (workspaces W4b, plan 5.1); an agent
+ * with none is a system-wide helper that runs in its caller's scope.
  *
  * The four functions that read the brain for an agent wrap THEMSELVES here
  * (loadConversationContext, assembleResponderTurn, runResponderLoop,
@@ -27,14 +27,16 @@
  *  - an agent with no workspace (a specialist, a worker) runs INSIDE a turn
  *    scope in the caller's scope: a helper never widens it (plan 5.1).
  *    Run straight from a chat (an Admin user talking to the replay agent),
- *    an admin-level helper runs in the asking login's turn scope of the
+ *    the helper runs in the asking login's turn scope of the
  *    Admin workspace, as the Admin assistant does (W7c fix round 2, H1):
  *    row security keeps each login's digests and archived chat summaries
  *    (nodes.login_id, 0269) to that login, in every memory tool. A login
  *    that is not a user of Admin is refused. With no login asked (system
- *    work: a heartbeat, a run, a worker) it runs at its level, as before; a
- *    chat turn always names its login (runAssistantTurn refuses a helper
- *    without one). A brain not on workspaces runs at the level, as before.
+ *    work: a heartbeat, a run, a worker) it is system work; a chat turn
+ *    always names its login (runAssistantTurn refuses a helper without
+ *    one). On a brain not on workspaces it answers an admin login on the
+ *    system pool, as that login's requests run there, and reads nothing for
+ *    any other login (W8c: the agent's old level no longer decides).
  *    MANTLE_ADMIN_READS=system is the emergency rollback: the helper is back
  *    on the system pool, as before W7, and the memory tools there read
  *    every login's digests (replay_window and find_window still filter by
@@ -55,6 +57,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
   agents,
   asSystem,
+  authUsers,
   db,
   withGateScope,
   withTurnScope,
@@ -67,27 +70,17 @@ import {
   currentRequestMode,
   currentTurnStamp,
   currentWorkspaceScope,
-  isViewerLevel,
   scopeLeftForSystem,
   withTurnStamp,
-  type ViewerLevel,
 } from '@mantle/db/viewer';
-
-/** The agent's level. A row always carries a valid one (CHECK + default);
- *  a value-less stand-in (tests, synthetic agents) counts as admin. */
-export function agentLevel(agent: { audience?: string | null }): ViewerLevel {
-  return isViewerLevel(agent.audience) ? agent.audience : 'admin';
-}
 
 /** What a scope wrapper needs of an agent. */
 export type ScopedAgent = {
-  /** agents.id: whom a level scope acts for (R6); absent reads as an
-   *  assistant on no workspace (nothing). */
+  /** agents.id. */
   id?: string | null;
   /** agents.owner_id: the brain the agent belongs to (read by id when
    *  absent). */
   ownerId?: string | null;
-  audience?: string | null;
   /** agents.workspace_id: the workspace this assistant answers in, if any. */
   workspaceId?: string | null;
 };
@@ -150,6 +143,22 @@ async function agentBrain(agent: ScopedAgent): Promise<string | null> {
   return row?.ownerId ?? null;
 }
 
+/** Whether `loginId` is an enabled admin login (system pool): on a brain not
+ *  on workspaces, the role is what puts a login's requests on the system
+ *  pool (the session guard's 'not-on-workspaces' outcome). */
+async function enabledAdminLogin(loginId: string): Promise<boolean> {
+  const [row] = await asSystem(
+    () =>
+      db
+        .select({ role: authUsers.role })
+        .from(authUsers)
+        .where(and(eq(authUsers.id, loginId), isNull(authUsers.disabledAt)))
+        .limit(1),
+    'agent-workspace',
+  );
+  return row?.role === 'admin';
+}
+
 /**
  * `loginId`'s user row in the live Admin workspace of brain `ownerId`
  * (system pool): its workspace and whether it moderates there. Null when
@@ -189,7 +198,7 @@ async function adminUserOf(
  * Admin assistant (a turn scope of Admin, or the system pool under
  * MANTLE_ADMIN_READS=system), 'workspace' for an assistant of any other
  * workspace (a turn scope of it), 'none' for an agent with no workspace (a
- * helper, at its level). A workspace that is gone or archived throws
+ * helper, in its caller's scope). A workspace that is gone or archived throws
  * AgentWorkspaceError (never read as no workspace).
  */
 export async function agentWorkspaceKind(
@@ -231,16 +240,16 @@ export async function withAgentScope<T>(
     // A helper: inside a turn it runs in the caller's scope, never wider.
     if (open) return fn();
     // Run straight from a chat (an Admin user talking to the replay agent),
-    // it answers that login (W7c fix rounds 1 and 2, H1): an admin-level
-    // helper runs in the login's turn scope of Admin, so row security keeps
-    // every other login's chats, digests and archived summaries out of its
-    // memory tools. No login (system work): at its level, no stamp, and a
-    // per-login tool (replay_window, find_window) refuses.
+    // it answers that login (W7c fix rounds 1 and 2, H1): the helper runs in
+    // the login's turn scope of Admin, so row security keeps every other
+    // login's chats, digests and archived summaries out of its memory tools.
+    // No login (system work): the system pool, no stamp, and a per-login
+    // tool (replay_window, find_window) refuses.
     //
     // Started on the system pool from inside a scope (a tool's work under
     // asSystem), it answers the login of the scope it left, as a workspace
-    // assistant does (W7a fix round 2, N1; W7 integration fix): never at
-    // its level, which would read every login's chats. A named login other
+    // assistant does (W7a fix round 2, N1; W7 integration fix): never as
+    // system work, which would read every login's chats. A named login other
     // than that one is refused, and so is a left scope with no login.
     const left = scopeLeftForSystem();
     const named = opts.loginId ?? opts.ownerLoginId ?? null;
@@ -257,14 +266,19 @@ export async function withAgentScope<T>(
       }
     }
     const asked = left ? left.loginId : named;
-    const run = () => withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn);
-    if (!asked) return run();
+    if (!asked) return fn();
     const stamped = (wsId: string | null) =>
-      withTurnStamp({ workspaceId: wsId, loginId: asked }, run);
-    // A helper below admin already reads only its own (empty) scope.
-    if (agentLevel(agent) !== 'admin') return stamped(null);
+      withTurnStamp({ workspaceId: wsId, loginId: asked }, fn);
     const admin = await adminUserOf(asked, await agentBrain(agent));
-    if (admin === 'no-workspaces') return stamped(null);
+    if (admin === 'no-workspaces') {
+      // A brain not on workspaces (W8c): an admin login's helper runs on
+      // the system pool, as that login's requests do there; any other
+      // login's reads nothing (an assistant on no workspace).
+      if (await enabledAdminLogin(asked)) return stamped(null);
+      return withTurnStamp({ workspaceId: null, loginId: asked }, () =>
+        withViewer({ agent: null }, fn),
+      );
+    }
     if (!admin) {
       throw new AgentWorkspaceError(
         'The login this turn answers is not a user of the Admin workspace.',
@@ -340,9 +354,7 @@ export async function withAgentScope<T>(
     // answers (W7 integration fix 2, M6).
     if (adminReadsOnSystemPool()) {
       return withTurnStamp(stamp, () =>
-        withGateScope({ kind: 'assistant', loginId: actsFor, ws: [wsId], modWs }, () =>
-          withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn),
-        ),
+        withGateScope({ kind: 'assistant', loginId: actsFor, ws: [wsId], modWs }, fn),
       );
     }
     return withTurnStamp(stamp, () =>
@@ -384,7 +396,8 @@ export function turnInAnchorThread(ownerId: string, named?: string | null): bool
   return login.toLowerCase() === ownerId.toLowerCase();
 }
 
-/** Run `fn` at the agent's level or in its workspace (withAgentScope). */
+/** Run `fn` in the agent's workspace, or in its caller's scope for a helper
+ *  (withAgentScope). */
 export function withAgentViewer<T>(
   agent: ScopedAgent,
   fn: () => Promise<T>,
@@ -443,7 +456,8 @@ export async function withRunScope<T>(
     wsId = await adminWorkspaceOf(run.ownerId);
     if (!wsId) return fn();
   }
-  return withAgentScope({ audience: 'admin', workspaceId: wsId }, fn, {
+  return withAgentScope({ workspaceId: wsId }, fn, {
+
     loginId: run.loginId ?? null,
   });
 }

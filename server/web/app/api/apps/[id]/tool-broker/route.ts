@@ -163,9 +163,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     },
     { id },
   );
-  const result = await withViewer(scope.viewer, scope.actsFor, () =>
-    dispatchTool(verdict.tool, parsed.data.input, { ownerId: user.id, surface: scope.surface }),
-  );
+  // An app the Admin workspace alone holds runs as the owner's web surface
+  // (system work); any other in the app's scope (AppRunFor).
+  const run = () =>
+    dispatchTool(verdict.tool, parsed.data.input, { ownerId: user.id, surface: scope.surface });
+  const result = await (scope.viewer === 'admin' ? run() : withViewer(scope.actsFor, run));
+
   if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);
 }

@@ -12,7 +12,6 @@ import {
   db,
   toolGroups,
   agents,
-  asViewerLevel,
   type ToolGroup,
   type ToolGroupIntegration,
 } from '@mantle/db';
@@ -32,7 +31,6 @@ function toSummary(g: ToolGroup): ToolGroupSummary {
     toolSlugs: g.toolSlugs ?? [],
     integration: g.integration ?? null,
     enabled: g.enabled,
-    audience: asViewerLevel(g.audience),
     createdAt: g.createdAt.toISOString(),
     updatedAt: g.updatedAt.toISOString(),
   };

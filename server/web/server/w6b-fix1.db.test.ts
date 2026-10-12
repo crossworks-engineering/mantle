@@ -111,7 +111,7 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
   const idOf = (r: { json: Json }, key: string) =>
     ((r.json[key] as Json | undefined)?.id ?? r.json.id) as string;
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
-  const asLogin = <T>(login: string, fn: () => Promise<T>) => m.withViewer('team', { login }, fn);
+  const asLogin = <T>(login: string, fn: () => Promise<T>) => m.withViewer({ login }, fn);
   const bytesOf = async (id: string) =>
     (await sys(() => f.readFileById({ ownerId: owner, fileId: id })))?.bytes.toString('utf8');
   const sha = (s: string) => createHash('sha256').update(s).digest('hex');

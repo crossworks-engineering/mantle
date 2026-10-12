@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   OWNER_PARAM_KEYS,
   convergeManifestSkills,
-  groupsWithinLevel,
+  groupsForAgent,
   missingPersonaGroups,
   sameTopLevel,
   shippedPromptUpgrade,
@@ -106,27 +106,29 @@ describe('convergeManifestSkills', () => {
   });
 });
 
-describe('groupsWithinLevel', () => {
-  const levels = new Map([
-    ['team-read', 'team'],
-    ['team-read-admin', 'admin'],
-  ]);
-  it('never re-adds an admin group to a team-level agent', () => {
-    expect(groupsWithinLevel(['team-read', 'team-read-admin'], 'team', levels)).toEqual([
+describe('groupsForAgent (W8c: the workspace, not the level)', () => {
+  const adminOnly = new Set(['team-read-admin']);
+  const both = ['team-read', 'team-read-admin'];
+  it('never re-adds an adminOnly group to an assistant of another workspace', () => {
+    expect(groupsForAgent(both, { workspace: 'other', role: 'responder' }, adminOnly)).toEqual([
       'team-read',
     ]);
   });
-  it('keeps everything for an admin agent (and a missing level means admin)', () => {
-    expect(groupsWithinLevel(['team-read', 'team-read-admin'], 'admin', levels)).toEqual([
+  it('nor to a responder on no workspace (a brain not yet switched)', () => {
+    expect(groupsForAgent(both, { workspace: 'none', role: 'responder' }, adminOnly)).toEqual([
       'team-read',
-      'team-read-admin',
     ]);
-    expect(groupsWithinLevel(['team-read-admin'], null, levels)).toEqual(['team-read-admin']);
   });
-  it('treats a group with no known level as admin', () => {
-    expect(groupsWithinLevel(['mystery'], 'team', levels)).toEqual([]);
+  it('keeps everything for the Admin assistant and for a helper', () => {
+    expect(groupsForAgent(both, { workspace: 'admin', role: 'responder' }, adminOnly)).toEqual(
+      both,
+    );
+    expect(groupsForAgent(both, { workspace: 'none', role: 'specialist' }, adminOnly)).toEqual(
+      both,
+    );
   });
 });
+
 
 describe('shippedPromptUpgrade', () => {
   const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');

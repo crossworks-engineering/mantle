@@ -38,7 +38,6 @@ import {
   currentSpaceScope,
   db,
   spaceFilesPath,
-  withSpace,
   withViewer,
   isSystemScope,
 } from '@mantle/db';
@@ -173,7 +172,17 @@ function ownFolder(r: {
 const draftColumns = sql`n.id, n.path::text as path, n.title, n.data,
   n.updated_at, lower(n.title) as sort_key, si.sharing, si.review_state`;
 
+/** The personal spaces were folded into the brain (workspaces W6b): nothing
+ *  runs in one. @mantle/db's withSpace, which refused the same way, went in
+ *  W8c; this keeps the refusal until the space code goes (W8d). */
+async function withSpace<T>(_space: unknown, _fn: () => Promise<T>): Promise<T> {
+  throw new Error(
+    'withSpace: the personal spaces were folded into the brain (workspaces W6b); a login works in its private workspace',
+  );
+}
+
 /** Read everything a member's tree of `kind` needs, once per call. */
+
 export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promise<MemberView> {
   assertAdminScope();
   const spec = TREE_KIND_SPECS[kind];
@@ -330,7 +339,7 @@ export async function loadMemberTreeFolder(
   const page =
     draftsLeft || room === 0
       ? { items: [], nextCursor: null }
-      : await withViewer('team', { login: scope.loginId }, () =>
+      : await withViewer({ login: scope.loginId }, () =>
           itemPage(
             scope.anchorId,
             kind,
@@ -419,7 +428,7 @@ export async function searchMemberTree(
   // The brain's next `limit` rows after the cursor. Any row it holds beyond
   // them sorts after all of these, so the first `limit` of these and the
   // drafts together are the true next page.
-  const { page, more } = await withViewer('team', { login: scope.loginId }, () =>
+  const { page, more } = await withViewer({ login: scope.loginId }, () =>
     searchItemRows(scope.anchorId, kind, term, opts.cursor, limit, readerItems('n')),
   );
   const found = new Map<string, { item: TreeItem; path: string; key: string }>();

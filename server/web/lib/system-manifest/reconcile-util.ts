@@ -36,25 +36,26 @@ export function missingPersonaGroups(
   return manifestPersonaGroups.filter((g) => !have.has(g));
 }
 
-const LEVEL_RANK: Record<string, number> = { public: 0, client: 1, team: 2, admin: 3 };
-
 /**
- * Of the groups reconcile would add, keep only those at or below the agent's
- * level (member logins Phase 0b: an agent holds only groups at or below its
- * level). Without this, every image update re-added `team-read-admin` to a
- * team-responder an admin had lowered to team (seen on two boxes of the
- * fleet, v0.232.265): harmless at run time (the level cap drops it) but it
- * broke the rule and showed up in the shadow report. A group whose level is unknown
- * counts as admin, so only an admin agent gets it.
+ * Of the groups reconcile would add, keep only those the agent may use
+ * (workspaces W8c; it was the agent's level until then): an adminOnly group
+ * (0254) is never added to the assistant of a workspace other than Admin,
+ * nor to a responder on no workspace (the Team assistant of a brain not yet
+ * switched), whose turns never hold the Admin workspace. Without this, every
+ * image update re-added `team-read-admin` to the team responder (seen on two
+ * boxes of the fleet, v0.232.265). Every other agent gets them all.
  */
-export function groupsWithinLevel(
+export function groupsForAgent(
   groups: readonly string[],
-  agentLevel: string | null | undefined,
-  groupLevels: ReadonlyMap<string, string>,
+  agent: { workspace: 'admin' | 'other' | 'none'; role?: string | null },
+  adminOnlyGroups: ReadonlySet<string>,
 ): string[] {
-  const cap = LEVEL_RANK[agentLevel ?? 'admin'] ?? 3;
-  return groups.filter((g) => (LEVEL_RANK[groupLevels.get(g) ?? 'admin'] ?? 3) <= cap);
+  const outsideAdmin =
+    agent.workspace === 'other' ||
+    (agent.workspace === 'none' && (agent.role === 'responder' || agent.role === 'assistant'));
+  return outsideAdmin ? groups.filter((g) => !adminOnlyGroups.has(g)) : [...groups];
 }
+
 
 /**
  * Converge an agent's skill links toward the manifest — the remove-capable

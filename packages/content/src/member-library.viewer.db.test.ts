@@ -167,7 +167,7 @@ describe.skipIf(!URL)('member Library at the team level', () => {
       );
     }
     try {
-      const as = <T>(fn: () => Promise<T>) => m.withViewer('team', { login }, fn);
+      const as = <T>(fn: () => Promise<T>) => m.withViewer({ login }, fn);
       const { items, total } = await as(() => lib.listLibrary(anchor, { q: tag }));
       expect(items.map((i) => i.id).sort()).toEqual([ids.teamPage, ids.adminPage].sort());
       expect(total).toBe(2);

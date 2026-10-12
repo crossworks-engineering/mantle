@@ -48,7 +48,7 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { db, agents, skills, toolGroups, tools, type AgentParams } from '@mantle/db';
+import { db, agents, skills, toolGroups, tools, workspaces, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { APP_VERSION } from '@mantle/client-types/version';
 import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
@@ -62,7 +62,7 @@ import {
 } from './manifest';
 import {
   convergeManifestSkills,
-  groupsWithinLevel,
+  groupsForAgent,
   missingPersonaGroups,
   shippedPromptUpgrade,
   sameTopLevel,
@@ -110,33 +110,59 @@ async function resolveOwnerId(): Promise<string | null> {
  * change land on an operator-persona box WITHOUT a manual SQL detach. Returns the
  * `slug:+added -removed` strings changed.
  */
-/** Every tool group's level, for the level check on reconcile grants. */
-async function toolGroupLevels(ownerId: string): Promise<Map<string, string>> {
+/** The adminOnly tool groups (0254), for the workspace check on reconcile
+ *  grants (groupsForAgent). */
+async function adminOnlyGroups(ownerId: string): Promise<Set<string>> {
   const rows = await db
-    .select({ slug: toolGroups.slug, audience: toolGroups.audience })
+    .select({ slug: toolGroups.slug })
     .from(toolGroups)
-    .where(eq(toolGroups.ownerId, ownerId));
-  return new Map(rows.map((r) => [r.slug, r.audience]));
+    .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.adminOnly, true)));
+  return new Set(rows.map((r) => r.slug));
 }
 
-async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<string[]> {
-  const levels = await toolGroupLevels(ownerId);
-  const responders = await db
+/** The manifest's own agents other than the persona (team-responder and
+ *  the specialists): the persona reconcile never reaches them, their own
+ *  manifest entry does (grantSpecialistCapabilities). */
+const MANIFEST_NON_PERSONA_SLUGS: ReadonlySet<string> = new Set(
+  MANIFEST_AGENTS.filter((a) => !a.isPersona).map((a) => a.slug),
+);
+
+/** The agents of `ownerId` with their workspace's kind: 'admin', 'other'
+ *  (a live or archived workspace other than Admin), or 'none'. */
+async function agentRows(ownerId: string, roles?: ('responder' | 'assistant')[]) {
+  const rows = await db
     .select({
       id: agents.id,
       slug: agents.slug,
-      audience: agents.audience,
+      role: agents.role,
       groups: agents.toolGroupSlugs,
       skills: agents.skillSlugs,
+      wsIsAdmin: workspaces.isAdmin,
+      workspaceId: agents.workspaceId,
     })
     .from(agents)
+    .leftJoin(workspaces, eq(workspaces.id, agents.workspaceId))
     .where(
       and(
         eq(agents.ownerId, ownerId),
         eq(agents.enabled, true),
-        inArray(agents.role, ['responder', 'assistant']),
+        ...(roles ? [inArray(agents.role, roles)] : []),
       ),
     );
+  return rows.map((r) => ({
+    ...r,
+    workspace: !r.workspaceId ? ('none' as const) : r.wsIsAdmin ? ('admin' as const) : ('other' as const),
+  }));
+}
+
+async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<string[]> {
+  const adminOnly = await adminOnlyGroups(ownerId);
+  // The persona and the operator's own personas: never the assistant of a
+  // workspace other than Admin, nor a manifest agent with its own entry
+  // (W8c: this used to be the agent's level).
+  const responders = (await agentRows(ownerId, ['responder', 'assistant'])).filter(
+    (a) => a.workspace !== 'other' && !MANIFEST_NON_PERSONA_SLUGS.has(a.slug),
+  );
   // Persona skills safe to ATTACH: manifest persona skills whose row exists + is
   // enabled. (The DROP side needs no existence check.)
   const wantSkills = PERSONA_MANIFEST.skillSlugs;
@@ -155,10 +181,10 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
   const addable = present.map((p) => p.slug);
   const changes: string[] = [];
   for (const a of responders) {
-    const missingGroups = groupsWithinLevel(
+    const missingGroups = groupsForAgent(
       missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS),
-      a.audience,
-      levels,
+      a,
+      adminOnly,
     );
     const curSkills = a.skills ?? [];
     const nextSkills = convergeManifestSkills(curSkills, wantSkills, MANIFEST_SKILL_SLUGS, addable);
@@ -192,28 +218,20 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
  * `slug:+added -removed` strings changed.
  */
 async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
-  const levels = await toolGroupLevels(ownerId);
-  const rows = await db
-    .select({
-      id: agents.id,
-      slug: agents.slug,
-      audience: agents.audience,
-      groups: agents.toolGroupSlugs,
-      skills: agents.skillSlugs,
-    })
-    .from(agents)
-    .where(and(eq(agents.ownerId, ownerId), eq(agents.enabled, true)));
+  const adminOnly = await adminOnlyGroups(ownerId);
+  const rows = await agentRows(ownerId);
   const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
   const changes: string[] = [];
   for (const a of MANIFEST_AGENTS) {
     if (a.isPersona) continue;
     const row = bySlug.get(a.slug);
     if (!row) continue; // absent (or disabled) → provisionMissingSpecialists owns it
-    const missingGroups = groupsWithinLevel(
+    const missingGroups = groupsForAgent(
       missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []),
-      row.audience,
-      levels,
+      row,
+      adminOnly,
     );
+
     const curSkills = row.skills ?? [];
     const nextSkills = convergeManifestSkills(curSkills, a.skillSlugs, MANIFEST_SKILL_SLUGS);
     const skillsChanged =

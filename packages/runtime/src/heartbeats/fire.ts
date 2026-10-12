@@ -59,7 +59,6 @@ import { runWithInflightLock } from './inflight';
 import { errorMessage } from '@mantle/std';
 import {
   AgentWorkspaceError,
-  agentLevel,
   agentTurnScoped,
   agentWorkspaceKind,
   withAgentScope,
@@ -445,7 +444,6 @@ async function fireInner(
                 ownerId: hb.ownerId,
                 agentId: agent.id,
                 agentSlug: agent.slug,
-                agentLevel: agentLevel(agent),
                 // The loop re-enters the agent's workspace (withAgentScope).
                 ...(scoped ? { agentWorkspaceId: agent.workspaceId } : {}),
                 agentDepth: 1,

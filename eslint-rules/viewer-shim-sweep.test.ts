@@ -190,8 +190,9 @@ function problems(f: string, raw: string, keys: readonly string[]): string[] {
   if (HOME.has(f)) return bad;
   // An object literal naming a ViewerFor key, or the `actsFor` an app
   // tool scope built for its runner (appToolScope, H1).
+  // The first argument since W8c (the level argument before it is gone).
   const actsFor = new RegExp(
-    `^withViewer\\(\\s*[^,]+,\\s*(?:\\{\\s*(${keys.join('|')})\\s*:|[\\w$]+\\.actsFor\\s*,)`,
+    `^withViewer\\(\\s*(?:\\{\\s*(${keys.join('|')})\\s*:|[\\w$]+\\.actsFor\\s*,)`,
   );
   for (const name of GUARDED) {
     for (const local of localNames(src, name)) {
@@ -226,7 +227,7 @@ describe('the withViewer shim sweep (R6)', () => {
   it('every withViewer call names whom it acts for', () => {
     expect(
       all.filter((p) => /: withViewer\(/.test(p)),
-      `pass { ${keys.join(' | ')} } as the second argument`,
+      `pass { ${keys.join(' | ')} } as the first argument`,
     ).toEqual([]);
   });
 
@@ -254,21 +255,22 @@ describe('the withViewer shim sweep (R6)', () => {
     expect(all).toEqual([]);
   });
 
-  it('in client.ts a level pool is opened only by getDb (withSpace is retired, W6b)', () => {
+  it('in client.ts only the workspace pool is opened (the level pools went in W8c)', () => {
     const text = blanked(code(load(CLIENT)!));
-    const levelPools = calls(text, 'getViewerDb').filter((c) => !/getViewerDb\('user'\)/.test(c));
-    expect(levelPools.map((c) => c.replace(/\s+/g, ' '))).toEqual(['getViewerDb(level)']);
+    const otherPools = calls(text, 'getViewerDb').filter((c) => !/getViewerDb\('user'\)/.test(c));
+    expect(otherPools).toEqual([]);
     expect(calls(text, 'runInTxScope')).toEqual([]);
+    expect(/\bfunction withSpace\b/.test(text)).toBe(false);
+    expect(calls(text, 'withSpace')).toEqual([]);
   });
 
-  it('in viewer.ts only the test runner enters a bare level scope', () => {
+  it('in viewer.ts no scope carries a level (W8c)', () => {
     const text = blanked(code(load(VIEWER)!));
-    const bare = calls(text, 'store.run').filter((c) =>
-      /^store\.run\(\{\s*level: next\s*\}/.test(c),
-    );
-    expect(bare).toHaveLength(1);
-    const fn = text.slice(text.indexOf('export function runInLevelRoleForTest'));
-    expect(fn.indexOf('store.run({ level: next }')).toBeGreaterThan(0);
+    expect(calls(text, 'store.run').filter((c) => /\blevel\s*:/.test(c))).toEqual([]);
+    for (const name of LEVEL_ENTRIES) {
+      if (name === 'getViewerDb') continue;
+      expect(new RegExp(`export function ${name}\\b`).test(text), name).toBe(false);
+    }
   });
 });
 
@@ -281,27 +283,31 @@ describe('the sweep itself (fixtures)', () => {
     expect(
       run(`import { withViewer, withViewer as wv } from '@mantle/db';
         import * as dbm from '@mantle/db';
-        await withViewer('team', { login: id }, fn);
-        await wv('team', { agent: a.id }, fn);
-        await dbm.withViewer<number>('client', { link: { served } }, fn);`),
+        await withViewer({ login: id }, fn);
+        await wv({ agent: a.id }, fn);
+        await dbm.withViewer<number>({ link: { served } }, fn);
+        await withViewer(scope.actsFor, fn);`),
     ).toEqual([]);
   });
 
   it('catches a level-only call made directly, renamed, on a namespace or destructured', () => {
     const cases = [
-      `import { withViewer } from '@mantle/db'; withViewer('team', fn);`,
-      `import { withViewer as wv } from '@mantle/db'; wv('team', fn);`,
-      `import * as db from '@mantle/db'; db.withViewer('team', fn);`,
-      `const m = await import('@mantle/db'); await m.withViewer?.('team', fn);`,
-      `const { withViewer: wv } = await import('@mantle/db'); wv('team', fn);`,
-      `const { withViewer: wv } = dbmod; wv<T>('team', fn);`,
-      `import { withViewer } from '@mantle/db'; withViewer('team', { ws: [] }, fn);`,
+      `import { withViewer } from '@mantle/db'; withViewer(scope, fn);`,
+      `import { withViewer as wv } from '@mantle/db'; wv(scope, fn);`,
+      `import * as db from '@mantle/db'; db.withViewer(scope, fn);`,
+      `const m = await import('@mantle/db'); await m.withViewer?.(scope, fn);`,
+      `const { withViewer: wv } = await import('@mantle/db'); wv(scope, fn);`,
+      `const { withViewer: wv } = dbmod; wv<T>(scope, fn);`,
+      `import { withViewer } from '@mantle/db'; withViewer({ ws: [] }, fn);`,
+      // The old level argument first: refused too (W8c).
+      `import { withViewer } from '@mantle/db'; withViewer('team', { login: id }, fn);`,
     ];
     for (const src of cases) expect(run(src), src).toHaveLength(1);
   });
 
   it('accepts a new ViewerFor key once the type has it', () => {
-    const src = `withViewer('team', { app: run }, fn);`;
+    const src = `withViewer({ app: run }, fn);`;
+
     expect(run(src)).toHaveLength(1);
     expect(problems(F, src, [...KEYS, 'app'])).toEqual([]);
   });

@@ -44,14 +44,13 @@ import { envDynamic } from '@mantle/config';
 
 /** Resolved byte thresholds for one tool-loop. */
 
-/** Outside a workspace scope the code is system work ('admin') or a
- *  personal space at its login's level (until W6b); a workspace scope has
- *  no level and reads as the narrowest (fails closed). */
+/** Outside a workspace scope the code is system work ('admin'); a
+ *  workspace scope has no level and reads as the narrowest (fails closed).
+ *  The level scope went in W8c. */
 function spaceOrSystemLevel(): ViewerLevel {
-  const scope = currentScope();
-  if (scope.kind === 'system') return 'admin';
-  return scope.kind === 'level' ? scope.level : 'public';
+  return currentScope().kind === 'system' ? 'admin' : 'public';
 }
+
 
 export type ResultHandling = {
   /** Results at or under this go inline, untouched (the common case). */

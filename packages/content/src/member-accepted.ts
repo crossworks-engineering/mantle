@@ -303,8 +303,8 @@ async function authorReadable(
   if (!wanted.length) return out;
   const brain =
     reader === 'client'
-      ? await withViewer('client', { login: loginId }, () => clientReadable(anchorId, wanted))
-      : await withViewer('team', { login: loginId }, async () => {
+      ? await withViewer({ login: loginId }, () => clientReadable(anchorId, wanted))
+      : await withViewer({ login: loginId }, async () => {
           const rows = await db
             .select({ id: nodes.id, title: nodes.title })
             .from(nodes)

@@ -49,13 +49,12 @@ import {
 } from './skills';
 import type { ChatMessage } from './messages';
 import {
-  agentLevel,
   agentTurnScoped,
   ownerSurfaceLogin,
   surfaceLoginId,
   withAgentScope,
 } from './agent-viewer';
-import { currentWorkspaceScope, levelsMeet, currentScope } from '@mantle/db/viewer';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
 
 /** A delegated child's thinking loop args. Inherit = the forwarded budget
  *  alone (no effort), which is also what the child hands on to its own
@@ -106,26 +105,8 @@ export const invokeAgent: AgentInvoker = async ({
     };
   }
 
-  // Client and public read different items (client logins C1, decision 3):
-  // a client-level caller never runs a public agent and a public-level
-  // caller never a client one. Refused here, before any trace or LLM work
-  // (runToolLoop would refuse too, with ViewerLevelConflictError).
-  // In a workspace turn scope there is no level (W4b): the scope decides.
+  // The scope decides what the child reads (W4b; no level since W8c).
   const openScope = currentWorkspaceScope();
-  if (!openScope) {
-    // System work, or a personal space at its login's level (until W6b).
-    const outer = currentScope();
-    const callerLevel = outer.kind === 'level' ? outer.level : 'admin';
-    const targetLevel = agentLevel(target);
-    if (!levelsMeet(callerLevel, targetLevel)) {
-      return {
-        ok: false,
-        error:
-          `agent '${agentSlug}' is ${targetLevel}-level and this turn runs at ${callerLevel}: ` +
-          'client and public read different items, so it cannot run here',
-      };
-    }
-  }
 
   // The child runs in ITS workspace (W4b fix round 1, M2): an assistant of a
   // workspace other than Admin (the Team assistant) in a turn scope of it; a
@@ -294,7 +275,7 @@ export const invokeAgent: AgentInvoker = async ({
         ownerId,
         agentId: target.id,
         agentSlug: target.slug,
-        agentLevel: agentLevel(target),
+
         // The loop re-enters the child's workspace (withAgentScope).
         ...(childWorkspaceId ? { agentWorkspaceId: childWorkspaceId } : {}),
         agentDepth: depth,

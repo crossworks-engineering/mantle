@@ -129,7 +129,7 @@ export type AuthSource = 'web' | 'mobile' | 'api';
  * A MEMBER login (member logins, Phase 1). Deliberately has no `id`: the 280+
  * call sites that scope by `user.id` cannot take a member by mistake, because
  * the type checker refuses it. A member reaches only the member routes, which
- * read at the team level through RLS (`withViewer('team', …)`).
+ * read at the team level through RLS (`withViewer(…)`).
  */
 export type MemberCaller = {
   role: 'member';
@@ -931,7 +931,7 @@ async function itemWriteGate(
     if (home === null) {
       if (loginId === (await getAnchorId())) return null;
     } else {
-      const manage = (await withViewer('team', { login: loginId }, () =>
+      const manage = (await withViewer({ login: loginId }, () =>
         db.execute(sql`select "public"."mantle_may_manage"(${home}::uuid) as manage`),
       )) as unknown as { manage: boolean | null }[];
       if (manage[0]?.manage === true) return null;
@@ -954,7 +954,7 @@ async function itemWriteGate(
       nodeId = r[0]?.id ?? null;
     }
     if (!nodeId) return null;
-    const rows = (await withViewer('team', { login: loginId }, () =>
+    const rows = (await withViewer({ login: loginId }, () =>
       db.execute(sql`
         select "public"."mantle_may_edit"(home_ws, write_ws) as edit,
                "public"."mantle_may_manage"(home_ws) as manage,
@@ -1093,7 +1093,7 @@ export function loginRefused(kind: Resolved['kind']): NextResponse {
  * session) / 403 (an admin: member routes are member-specific, never a
  * shared owner route). Only for routes in MEMBER_ROUTES
  * (lib/auth/member-routes.ts); run the handler's reads under
- * `withViewer('team', …)`.
+ * `withViewer(…)`.
  */
 export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   const res = await resolveLogin();

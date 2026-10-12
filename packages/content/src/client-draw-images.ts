@@ -8,7 +8,7 @@
  * taken out and its frame shows empty. There is no author rule here: a
  * client writes nothing into the brain.
  *
- * Read in the client's scope, withViewer('client', { login }): the
+ * Read in the client's scope, withViewer({ login }): the
  * drawing's image refs and the files both follow row security (the grants
  * of the login's workspaces, W5b2).
  *
@@ -33,7 +33,7 @@ export async function clientVisibleDrawFileIds(
 ): Promise<Set<string>> {
   if (currentScope().kind !== 'user') {
     throw new Error(
-      "clientVisibleDrawFileIds reads in a client's scope: wrap it in withViewer('client', { login })",
+      "clientVisibleDrawFileIds reads in a client's scope: wrap it in withViewer({ login })",
     );
   }
   const [row] = await db

@@ -36,7 +36,8 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | Manifest change                                                                              | Reaches existing brains automatically?                                                                                   | How                                   |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
 | Tool-group membership                                                                        | ✅ overwrite                                                                                                             | `seedToolCapabilities`                |
-| Tool-group **level** (`level` on the group: `team-read`, `formulas-eval`, `client-read`)     | ❌ frozen since 0268 (workspaces W7b): an update of `tool_groups.audience` keeps the old value, so the seeder's write is a no-op. The frozen value is still read (`groupsWithinLevel`) | `seedToolCapabilities`                |
+| Tool-group **level**                                                                         | ❌ gone from the manifest and the code (workspaces W8c): a group is system-wide or Admin only (`adminOnly`)                | `seedToolCapabilities`                |
+
 | Skill **body** (`SKILL_INSTRUCTIONS`)                                                        | ✅ overwrite                                                                                                             | `applyManifest` `skillMode`           |
 | **Persona** skill links (by ROLE, reaches operator personas too)                             | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept                 | `reconcilePersonaCapabilitiesByRole`  |
 | Persona default tool groups (by ROLE)                                                        | ✅ union (add-only)                                                                                                      | `reconcilePersonaCapabilitiesByRole`  |
@@ -70,14 +71,14 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   group/agent **row** entirely (the row lives on, disable to opt out, delete by
   operator action), and a default group an operator deliberately dropped (it
   reappears).
-- An **agent's level** (`agents.audience`): frozen since 0268 (workspaces
-  W7b, `archive_tool_levels` keeps each as it was). An update keeps the old
-  value; a new row still takes what it is given. An assistant reads its
-  workspace, not a level; the frozen value is still read by `agentLevel`
-  and `groupsWithinLevel` (Telegram no longer reads it since W7d). The reconcile also adds
-  a manifest group to an agent only when the agent's level reads it
-  (`groupsWithinLevel`), so a team-level responder never gets `team-read-admin`
-  back.
+- An **agent's or a tool group's level**: gone from the code since workspaces
+  W8c (the columns stay in the database, frozen, until W10;
+  `archive_tool_levels` keeps each as it was). An assistant reads its
+  workspace; a group is system-wide or `adminOnly`. The reconcile never adds
+  an `adminOnly` group to the assistant of a workspace other than Admin, nor
+  to a responder on no workspace (`groupsForAgent`), so the team responder
+  never gets `team-read-admin` back; the persona reconcile never reaches a
+  manifest agent with its own entry or another workspace's assistant.
 - **Operator-authored** skills/agents (not in the manifest), never seen, never
   clobbered. (Named operator personas like `telegram-default`/Saskia are NOT
   manifest slugs.)
@@ -100,11 +101,8 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   fresh installs and new provisions, existing brains keep the operator's
   prompt/route (Studio reset-to-default is the manual pull).
 - **Tool group:** edit `MANIFEST_TOOL_GROUPS` (membership overwrite-syncs). Grant
-  it by adding the slug to an agent's `toolGroupSlugs`.
-  Levels are frozen since 0268 (W7b): a new `level` on an existing group
-  does not reach a brain that ran it. On a fresh brain a `level` still lets
-  every agent at that level hold its tools: add one only on purpose, and update the pin in `manifest.test.ts` ("only the
-  member-facing and client-facing groups sit below admin").
+  it by adding the slug to an agent's `toolGroupSlugs`. A group has no
+  level (W8c): it is system-wide, or Admin only (`MANIFEST_ADMIN_ONLY_GROUPS`).
 - **Worker:** edit `MANIFEST_WORKERS` (provider / model / params / optional xAI
   alt route). Worker models live **only** here.
 - **Persona:** structural fields (model/params/`memoryConfig`/tool groups) go in

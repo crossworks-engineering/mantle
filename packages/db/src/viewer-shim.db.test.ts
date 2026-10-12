@@ -87,7 +87,7 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
   });
 
   it('a login reads its workspaces on the workspace role, never a level role', async () => {
-    const out = await m.withViewer('team', { login: member }, async () => {
+    const out = await m.withViewer({ login: member }, async () => {
       const [r] = (await m.db.execute(sql`select current_user as u`)) as unknown as {
         u: string;
       }[];
@@ -98,33 +98,31 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
     expect(out.titles).toEqual(['teamPage']);
     // The level is only "not system": a client call for the same login
     // reads the same.
-    expect(await m.withViewer('client', { login: member }, titles)).toEqual(['teamPage']);
+    expect(await m.withViewer({ login: member }, titles)).toEqual(['teamPage']);
     // The owner (Admin and Team) reads both.
-    expect(await m.withViewer('team', { login: owner }, titles)).toEqual(['adminPage', 'teamPage']);
+    expect(await m.withViewer({ login: owner }, titles)).toEqual(['adminPage', 'teamPage']);
   });
 
   it('a login out of Team, or disabled, reads nothing (the frozen level does not count)', async () => {
-    expect(await m.withViewer('team', { login: gone }, titles)).toEqual([]);
-    expect(await m.withViewer('team', { login: disabled }, titles)).toEqual([]);
+    expect(await m.withViewer({ login: gone }, titles)).toEqual([]);
+    expect(await m.withViewer({ login: disabled }, titles)).toEqual([]);
     const s = await m.viewerScopeFor({ login: gone });
     expect(s.ws).toEqual([]);
   });
 
   it('an assistant reads its workspace; one on no workspace reads nothing', async () => {
-    const out = await m.withViewer('team', { agent: ids.agent! }, async () => ({
+    const out = await m.withViewer({ agent: ids.agent! }, async () => ({
       scope: m.currentScope(),
       titles: await titles(),
     }));
     expect(out.scope).toMatchObject({ kind: 'assistant', loginId: null, ws: [team], modWs: [] });
     expect(out.titles).toEqual(['teamPage']);
-    expect(await m.withViewer('team', { agent: ids.helper! }, titles)).toEqual([]);
-    expect(await m.withViewer('team', { agent: null }, titles)).toEqual([]);
+    expect(await m.withViewer({ agent: ids.helper! }, titles)).toEqual([]);
+    expect(await m.withViewer({ agent: null }, titles)).toEqual([]);
   });
 
   it('a public link reads no workspace and carries its served list', async () => {
-    const out = await m.withViewer(
-      'public',
-      { link: { served: [ids.teamPage!.toUpperCase(), 'not-a-uuid'] } },
+    const out = await m.withViewer({ link: { served: [ids.teamPage!.toUpperCase(), 'not-a-uuid'] } },
       async () => ({ scope: m.currentScope(), titles: await titles() }),
     );
     expect(out.scope).toMatchObject({ kind: 'link', ws: [], served: [ids.teamPage] });
@@ -137,21 +135,21 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
       titles: await titles(),
     }));
     expect(sysTitles).toEqual({ kind: 'system', titles: ['adminPage', 'teamPage'] });
-    const nested = await m.withViewer('team', { login: member }, () =>
-      m.withViewer('team', { login: member }, titles),
+    const nested = await m.withViewer({ login: member }, () =>
+      m.withViewer({ login: member }, titles),
     );
     expect(nested).toEqual(['teamPage']);
     await expect(
-      m.withViewer('team', { login: member }, () => m.withViewer('team', { login: owner }, titles)),
+      m.withViewer({ login: member }, () => m.withViewer({ login: owner }, titles)),
     ).rejects.toThrow(/another workspace scope/);
-    await m.withViewer('team', { login: member }, async () => {
+    await m.withViewer({ login: member }, async () => {
       expect(m.currentScope().kind).not.toBe('system');
       expect(() => m.levelOfScope(m.currentScope())).toThrow(m.ScopeLevelError);
     });
     // From a personal-space-like level scope (the test runner), withViewer
     // replaces it with the login's workspace scope.
     const fromLevel = await m.runInLevelRoleForTest('team', () =>
-      m.withViewer('team', { login: gone }, titles),
+      m.withViewer({ login: gone }, titles),
     );
     expect(fromLevel).toEqual([]);
   });
@@ -166,7 +164,7 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
     const flagIn = async () => ((await m.db.execute(human)) as unknown as { h: string }[])[0]!.h;
     // A member's request reads in its workspace scope, never as a human on
     // the team role; nor does an assistant's.
-    expect(await m.withViewer('team', { login: member }, flagIn)).not.toBe('on');
-    expect(await m.withViewer('team', { agent: ids.agent! }, flagIn)).not.toBe('on');
+    expect(await m.withViewer({ login: member }, flagIn)).not.toBe('on');
+    expect(await m.withViewer({ agent: ids.agent! }, flagIn)).not.toBe('on');
   });
 });

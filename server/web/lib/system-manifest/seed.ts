@@ -245,10 +245,6 @@ async function upsertToolGroup(
           name: def.name,
           description: def.description,
           toolSlugs: def.toolSlugs,
-          // A product-owned level converges with the membership (the level is
-          // what a group like client-read is for); a group without one keeps
-          // the level its owner set.
-          ...(def.level ? { audience: def.level } : {}),
           enabled: true,
           updatedAt: new Date(),
         })
@@ -262,7 +258,6 @@ async function upsertToolGroup(
     name: def.name,
     description: def.description,
     toolSlugs: def.toolSlugs,
-    ...(def.level ? { audience: def.level } : {}),
     adminOnly,
     enabled: true,
   });
@@ -344,9 +339,6 @@ async function upsertAgent(
       params: def.params as AgentParams,
       memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
       priority: def.priority,
-      // A manifest level ships the agent at it; without one the column
-      // default (admin) applies.
-      ...(def.level ? { audience: def.level } : {}),
       enabled: true,
     });
     return;
@@ -372,8 +364,8 @@ async function upsertAgent(
         toolGroupSlugs: groupSlugs,
         params: def.params as AgentParams,
         memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
-        ...(def.level ? { audience: def.level } : {}),
         enabled: true,
+
         updatedAt: new Date(),
       })
       .where(eq(agents.id, existing.id));

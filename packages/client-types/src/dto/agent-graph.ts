@@ -9,7 +9,6 @@
  * public surface is byte-identical — only the file a symbol lives in moved.
  */
 
-import type { AccessLevel } from './access';
 
 // ── Skills ────────────────────────────────────────────────────────────────────
 
@@ -197,16 +196,8 @@ export interface ToolGroupDTO {
   /** Set when the group is an API integration; null for capability-only bundles. */
   integration: ToolGroupIntegrationDTO | null;
   enabled: boolean;
-  /** The group's level: an agent or a team app may hold it only at or above
-   *  it, and team apps call only built-in tools in an enabled group at team
-   *  level or below. A CONNECTOR group's level also decides who may use its
-   *  tools in apps and over their own MCP (team apps Phase 2): members at
-   *  team level or lower, clients at client level, contact links at
-   *  public; single http tools follow External access. Absent from servers
-   *  before it shipped. Set it with
-   *  `PATCH /api/access/tool-groups/:slug { audience }`. */
-  audience?: AccessLevel;
   createdAt: string;
+
   updatedAt: string;
 }
 

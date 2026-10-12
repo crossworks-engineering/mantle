@@ -30,7 +30,7 @@
  * (widened 2026-10-02). Either counts only while the handler is the one the
  * admin confirmed and the tool needs no confirmation. Never for recipe or
  * shell tools.
- * The caller then dispatches inside `withViewer('team', …)` on a team surface
+ * The caller then dispatches inside `withViewer(…)` on a team surface
  * that carries the login, so row security still decides what the tool reads.
  *
  * These are a member's rules for a team or public app. The brokers pick the

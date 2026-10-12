@@ -65,23 +65,50 @@ describe('level-reads sweep', () => {
     expect(countLevelReads(glue("const c = 'inherited_' + 'level';"))).toBe(1);
   });
 
-  it('every entry names its phase and a reason', () => {
+  it('holds only the files where the word means something else (W8c: no level read is left)', () => {
     for (const [f, e] of Object.entries(ALLOW)) {
-      expect(['W5b2', 'W5c', 'W6b', 'W7', 'W8', 'keep'], f).toContain(e.phase);
-      expect(e.why.length, f).toBeGreaterThan(5);
+      expect(e.phase, f).toBe('keep');
+      expect(e.why, f).toMatch(/^unrelated: /);
       expect(e.lines, f).toBeGreaterThan(0);
     }
   });
 
-  it('currentViewerLevel has no product caller left (plan S2)', () => {
-    const callers = Object.keys(ALLOW).filter((f) => {
-      const text = readFileSync(join(ROOT, f), 'utf8');
-      return /currentViewerLevel\s*\(/.test(
-        text.replace(/export function currentViewerLevel\(/, ''),
-      );
-    });
-    expect(callers).toEqual([]);
+  it('no new audience read anywhere outside the archive (W8c)', () => {
+    // The level columns stay in the database, frozen, until W10: a read of
+    // `audience` (the word the old item, agent and tool-group levels went by)
+    // in product code fails here unless its file is a pinned `keep` entry,
+    // and a keep entry may not gain one. Archive folders, migrations and
+    // tests are not product code (isSwept).
+    const word = /\baudience\b/;
+    const extra: string[] = [];
+    for (const f of sweptFiles()) {
+      let text: string;
+      try {
+        text = readFileSync(join(ROOT, f), 'utf8');
+      } catch {
+        continue;
+      }
+      const n = text.split('\n').filter((l) => word.test(l)).length;
+      if (n === 0) continue;
+      const entry = ALLOW[f];
+      if (!entry || n > entry.lines) extra.push(`${f}: ${n} audience line(s)`);
+    }
+    expect(extra, 'an audience read outside the keep list').toEqual([]);
+    expect(isSwept('packages/db/src/archive/levels.ts')).toBe(false);
   });
+
+  it('nothing defines or calls the retired level helpers (plan S2, W8c)', () => {
+    const gone = /\b(currentViewerLevel|levelOfScope|inLevelScope|runInLevelRoleForTest|spaceLevelForLogin)\b/;
+    const users = sweptFiles().filter((f) => {
+      try {
+        return gone.test(readFileSync(join(ROOT, f), 'utf8'));
+      } catch {
+        return false;
+      }
+    });
+    expect(users).toEqual([]);
+  });
+
 
   it('sweeps product code only', () => {
     expect(repoPath('/home/u/mantle/packages/content/src/x.ts')).toBe('packages/content/src/x.ts');
@@ -99,7 +126,7 @@ describe('level-reads sweep', () => {
     tester.run('level-reads', rule, {
       valid: [
         { code: 'const x = currentScope();', filename: '/r/packages/search/src/index.ts' },
-        { code: 'const a = n.audience;', filename: '/r/packages/db/src/client.ts' },
+        { code: 'const a = c.audience;', filename: '/r/packages/tools/src/mcp-oauth.ts' },
         { code: 'const a = n.audience;', filename: '/r/packages/search/src/index.test.ts' },
       ],
       invalid: [

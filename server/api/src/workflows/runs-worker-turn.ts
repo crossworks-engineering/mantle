@@ -70,7 +70,7 @@ import { currentTrace, runDurableStep, startTrace, withDurableSteps } from '@man
 import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { applyAgentThinking, NO_THINKING } from '@mantle/content-core/profile-projections';
-import { agentLevel, withRunScope } from '@mantle/runtime/agent';
+import { withRunScope } from '@mantle/runtime/agent';
 
 const PROPOSAL_CAP_CHARS = 2_000;
 
@@ -362,7 +362,6 @@ export async function runsWorkerTurnImpl(
                 ownerId: run.ownerId,
                 agentId: worker.id,
                 agentSlug: worker.slug,
-                agentLevel: agentLevel(worker),
                 // Depth 2 + empty allowlist: run_* and invoke_agent refuse —
                 // propose-don't-mutate is enforced structurally, not by prompt.
                 agentDepth: 2,

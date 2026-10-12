@@ -1,6 +1,6 @@
 /**
  * Which items a CLIENT login may read, by id, in the client's own scope
- * (`withViewer('client', { login })`): row security shows the items the
+ * (`withViewer({ login })`): row security shows the items the
  * login's workspaces hold (W5b2: their grants; brain items have no level),
  * so there is no access filter here to get wrong. A client's drawing images
  * (client-draw-images.ts) and its accepted items (member-accepted.ts) ask
@@ -16,7 +16,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  *  "readable" answer would be someone else's. */
 function assertClient(): void {
   if (currentScope().kind !== 'user') {
-    throw new Error("client read outside withViewer('client', { login })");
+    throw new Error("client read outside withViewer({ login })");
   }
 }
 
