@@ -94,7 +94,7 @@ describe.skipIf(!URL)('W8 integration: agents with no workspace', () => {
 
   describe('a brain not on workspaces', () => {
     it('C-L2: a helper asked for by a non-admin login reads nothing; by an admin, the system pool', async () => {
-      const helper = await agent('helper', 'specialist', 'admin');
+      const helper = await agent('helper', 'custom', 'admin');
       expect(await rt.withAgentScope(helper, readPage, { loginId: mem })).toEqual([]);
       expect(await rt.withAgentScope(helper, readPage, { loginId: owner })).toEqual([page]);
     });
@@ -130,15 +130,11 @@ describe.skipIf(!URL)('W8 integration: agents with no workspace', () => {
         await expect(rt.withAgentScope(a, async () => 'ran')).rejects.toBeInstanceOf(
           rt.AgentWorkspaceError,
         );
-        // Known only by its id: its role is read.
-        await expect(
-          rt.withAgentScope({ id: a.id, workspaceId: null }, async () => 'ran'),
-        ).rejects.toBeInstanceOf(rt.AgentWorkspaceError);
       }
     });
 
-    it('C-M2: a specialist with no login still does system work', async () => {
-      const specialist = await agent('specialist', 'specialist', 'admin');
+    it('C-M2: a specialist (role custom) with no login still does system work', async () => {
+      const specialist = await agent('specialist', 'custom', 'admin');
       expect(await rt.withAgentScope(specialist, readPage)).toEqual([page]);
     });
 

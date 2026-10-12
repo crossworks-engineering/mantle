@@ -266,6 +266,9 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // run_plan's origin channel: a workspace assistant's Telegram turn carries
   // its chat on the team surface (W7d+e).
   'builtins-runs.ts': ["if (surface?.kind === 'team') return surface.originTelegramChatId;"],
+  // draw_get: a team surface that reaches the system pool gets no image,
+  // never every image of the owner's (W8 integration, D-L4).
+  'builtins-draws.ts': ["const readFor = { teamSurface: ctx.surface?.kind === 'team' };"],
 };
 
 function sourceFiles(dir: string): string[] {

@@ -118,11 +118,13 @@ describe('draw_get picture', () => {
       { id: ID, image: true, loginId: 'someone-else' },
       { ownerId: 'anchor', surface: { kind: 'team', loginId: 'member-1' } },
     );
-    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID);
+    // A team surface says so (on the system pool it gets no image, W8
+    // integration); a model argument names no one.
+    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, { teamSurface: true });
     // The text is read in the same scope (its image words follow it).
-    expect(h.readableDrawText).toHaveBeenLastCalledWith('anchor', ID);
+    expect(h.readableDrawText).toHaveBeenLastCalledWith('anchor', ID, { teamSurface: true });
     await draw_get.handler({ id: ID, image: true }, owner);
-    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID);
+    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, { teamSurface: false });
   });
 
   it('a drawing out of reach is not found, for the picture as for the text', async () => {

@@ -114,7 +114,7 @@ describe('draw_get picture on MCP', () => {
       '89504e47',
     );
     expect(JSON.parse(withImage.content[0]!.text!).image).toMatchObject({ format: 'png' });
-    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID);
+    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, { teamSurface: false });
   });
 
   it('API key: only an all-areas key has draw_get, so no area key gets the picture', () => {

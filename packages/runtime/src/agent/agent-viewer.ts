@@ -84,8 +84,10 @@ export type ScopedAgent = {
   ownerId?: string | null;
   /** agents.workspace_id: the workspace this assistant answers in, if any. */
   workspaceId?: string | null;
-  /** agents.role (read by id when absent): a responder or an assistant on
-   *  no workspace answers people, a specialist or a worker does not. */
+  /** agents.role: a responder or an assistant on no workspace answers
+   *  people, a specialist or a worker does not. Every entry point that holds
+   *  the agent's row passes it (the row itself); a call that names only the
+   *  id runs nested in one of those, which already decided. */
   role?: string | null;
 };
 
@@ -145,18 +147,6 @@ async function agentBrain(agent: ScopedAgent): Promise<string | null> {
     'agent-workspace',
   );
   return row?.ownerId ?? null;
-}
-
-/** The agent's role: the one given, else agents.role read by id; null for
- *  a synthetic agent with neither (system work, as a helper's). */
-async function agentRole(agent: ScopedAgent): Promise<string | null> {
-  if (agent.role !== undefined) return agent.role ?? null;
-  if (!agent.id) return null;
-  const [row] = await asSystem(
-    () => db.select({ role: agents.role }).from(agents).where(eq(agents.id, agent.id!)).limit(1),
-    'agent-workspace',
-  );
-  return row?.role ?? null;
 }
 
 /** Whether `loginId` is an enabled admin login (system pool): on a brain not
@@ -289,8 +279,7 @@ export async function withAgentScope<T>(
       // workspace holds none, so with no login it has nothing to run in and
       // is refused, never run as system work (W8 integration). A brain not
       // known is read as one on workspaces (fail closed).
-      const role = await agentRole(agent);
-      if (role === 'responder' || role === 'assistant') {
+      if (agent.role === 'responder' || agent.role === 'assistant') {
         const brain = await agentBrain(agent);
         if (!brain || (await adminWorkspaceOf(brain))) {
           throw new AgentWorkspaceError(
