@@ -378,18 +378,12 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     expect(ids).toEqual([mv.moved, mv.seen].sort());
     expect(res.body.total).toBe(2);
     expect(JSON.stringify(res.body)).not.toContain('hidden note');
-    // A user of H reads it: the same move would name it.
-    const diff = await m.withTurnScope(
-      await m.loginScopeFor(login.adminUserInHome),
-      async () => {
-        const tree = await import('@mantle/content/tree');
-        return tree.moveFolderDiff(
-          owner,
-          { id: mv.moved, path: `notes.${tag}_moved` },
-          `notes.${tag}_dest`,
-        );
-      },
-      { writes: true },
+    // The system's own work has no scope: the same move names all three.
+    const tree = await import('@mantle/content/tree');
+    const diff = await tree.moveFolderDiff(
+      owner,
+      { id: mv.moved, path: `notes.${tag}_moved` },
+      `notes.${tag}_dest`,
     );
     expect(diff.total).toBe(3);
   }, 60_000);
