@@ -298,6 +298,8 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
     const failures: string[] = [];
     let cells = 0;
     let na = 0;
+    let allowed = 0;
+    let denied = 0;
     for (const role of ORACLE_ROLES) {
       for (const kind of kinds) {
         for (const placement of ['root', 'folder'] as const) {
@@ -306,6 +308,11 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
             const r = await cell(role, kind, placement, action);
             if (r === 'na') na++;
             else if (r) failures.push(`${role} ${action} ${kind} @${placement}: ${r}`);
+            else {
+              const want = expectedAccess({ surface: 'sql', placement }, role, kind, action);
+              if ('allow' in want && want.allow) allowed++;
+              else denied++;
+            }
           }
         }
       }
@@ -314,5 +321,9 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
     // 6 logins × 11 kinds × 2 placements × 2 actions.
     expect(cells).toBe(6 * kinds.length * 2 * 2);
     expect(na, 'not-applicable cells').toBe(0);
+    // Both answers are exercised: per kind and placement, read allows 3 of
+    // 6 logins; a create at the root allows all 6, in a folder 2.
+    expect(allowed).toBe(kinds.length * (3 * 2 + 6 + 2));
+    expect(denied).toBe(kinds.length * (3 * 2 + 4));
   }, 240_000);
 });

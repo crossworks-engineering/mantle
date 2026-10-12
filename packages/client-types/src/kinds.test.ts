@@ -5,7 +5,7 @@
  * reviewed edit of the pin below, never a side effect of a registry field.
  *
  * A list whose order is a contract (the tree's) is pinned in order; a list
- * the code only asks membership of is pinned as a set (it is now in enum
+ * the code only asks membership of is pinned as a set (it is now in schema
  * order). The parity with SQL (the enum, mantle_kind_class) is a db test:
  * packages/db/src/kind-registry.db.test.ts.
  */
@@ -18,7 +18,7 @@ import { CLIENT_ITEM_KINDS, MEMBER_ITEM_KINDS } from './member-kinds';
 const set = (xs: readonly string[]) => [...xs].sort();
 
 describe('the kind registry', () => {
-  it('names every node_type value once, in enum order', () => {
+  it('names every node_type value once, in the schema's order', () => {
     // The enum (packages/db/src/schema/nodes.ts); the db test checks the
     // live enum_range too.
     expect(ITEM_KIND_NAMES).toEqual([

@@ -1,7 +1,8 @@
 /**
  * The kind registry (@mantle/client-types/kinds, workspaces arch A1) against
  * the migrated database: the `node_type` enum and the registry keys are the
- * same set (in the same order), and for every kind mantle_kind_class(t)
+ * same set (the live enum's order differs from the schema's: ALTER TYPE ADD
+ * VALUE placed some values), and for every kind mantle_kind_class(t)
  * (migration 0241) equals the registry's class. A new enum value without a
  * registry entry, or a class changed on one side only, fails here.
  *
@@ -33,7 +34,7 @@ describe.skipIf(!URL)('the kind registry on the migrated database', () => {
   it('enum_range(null::node_type) equals the registry keys', async () => {
     const rows = await sql<{ t: string }[]>`
       select t::text as t from unnest(enum_range(null::node_type)) as t`;
-    expect(rows.map((r) => r.t)).toEqual([...ITEM_KIND_NAMES]);
+    expect(rows.map((r) => r.t).sort()).toEqual([...ITEM_KIND_NAMES].sort());
   });
 
   it('mantle_kind_class(t) equals ITEM_KINDS[t].class for every kind', async () => {

@@ -22,8 +22,9 @@
  *
  * `class` must equal mantle_kind_class(t) in SQL (migration 0241); a db test
  * checks it, and that the enum and these keys are the same set. The keys are
- * in enum order; a list derived here keeps that order unless it says
- * otherwise (the tree lists keep the tree's own orders).
+ * in the order of the Drizzle enum (schema/nodes.ts); a list derived here
+ * keeps that order unless it says otherwise (the tree lists and the old
+ * Library lists keep their own).
  *
  * Pure and dependency free: the `@mantle/client-types/kinds` subpath, so
  * jackdaw reads the same registry.
@@ -415,13 +416,13 @@ type Kinds = typeof ITEM_KINDS;
 /** Every node type, as the registry names it (the `node_type` enum). */
 export type ItemKind = keyof Kinds;
 
-/** The registry keys, in enum order. */
+/** The registry keys, in the Drizzle enum's order. */
 export const ITEM_KIND_NAMES = Object.keys(ITEM_KINDS) as ItemKind[];
 
 /** The node types whose spec matches `P` (a type-level filter). */
 export type KindsWhere<P> = { [K in ItemKind]: Kinds[K] extends P ? K : never }[ItemKind];
 
-/** The node types whose spec passes `pick`, in enum order. Never empty for
+/** The node types whose spec passes `pick`, in registry order. Never empty for
  *  the lists derived here (their snapshot tests say so). */
 export function kindsWhere<K extends ItemKind = ItemKind>(
   pick: (spec: KindSpec, type: ItemKind) => boolean,
