@@ -667,6 +667,10 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
     // rows paid about 13 ms of compiling on a large brain copy (5 ms without,
     // 3 ms on the system pool). Scoped reads are small; JIT never pays here.
     connection: { jit: 'off' },
+    // A write check's refusal the box mode lets through (off and warn on
+    // the write role, 0278) arrives as a NOTICE: a miss, as on the system
+    // pool. Every other notice prints as postgres.js's default does.
+    onnotice: onPgNotice,
   });
   const client = drizzle(sql, { schema });
   pools.set(level, { sql, db: client });

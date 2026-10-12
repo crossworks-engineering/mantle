@@ -36,8 +36,11 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
     });
     // The write role is one of the pool roles (A2b2a): the scratch database
     // set-up made it.
+    // SET only, as the pool's per-database login: no committed role holds an
+    // INHERIT membership in the write role (write-role.db.test.ts pins it,
+    // cluster wide); the INHERIT case is its own cell, never committed.
     await sql.unsafe(`create role ${member} nologin`);
-    await sql.unsafe(`grant mantle_write_user to ${member}`);
+    await sql.unsafe(`grant mantle_write_user to ${member} with inherit false, set true`);
     await sql.unsafe(`create role ${adminOnly} nologin`);
     await sql.unsafe(
       `grant mantle_write_user to ${adminOnly} with admin option, inherit false, set false`,
@@ -93,12 +96,35 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
     }
   });
 
-  it('the write role: off lets it run, warn reports it, on refuses', async () => {
-    expect(await asRole(member, 'off', refuses)).toBe(false);
+  it('the write role: off and warn let it run and report it (0278, L1), on refuses', async () => {
+    for (const mode of ['off', 'warn'] as const) {
+      notices.length = 0;
+      expect(await asRole(member, mode, refuses), mode).toBe(false);
+      expect(notices, mode).toEqual(['mantle actor miss: a test (refused when the check is on)']);
+    }
     notices.length = 0;
-    expect(await asRole(member, 'warn', refuses)).toBe(false);
-    expect(notices).toEqual(['mantle actor miss: a test (refused when the check is on)']);
     expect(await asRole(member, 'on', refuses)).toBe(true);
+    expect(notices).toEqual([]);
+  });
+
+  it('an INHERIT membership counts as a writer too (made and rolled back in one transaction)', async () => {
+    const inherit = `mantle_a2b_gate_inh_${suffix}`;
+    let r: boolean | undefined;
+    await sql
+      .begin(async (tx) => {
+        await tx.unsafe(`create role ${inherit} nologin`);
+        await tx.unsafe(`grant mantle_write_user to ${inherit} with inherit true, set false`);
+        await tx.unsafe(
+          `grant execute on function mantle_scoped_write_refuses(text) to ${inherit}`,
+        );
+        await tx.unsafe(`set local session authorization ${inherit}`);
+        r = (await tx<{ r: boolean }[]>`select mantle_scoped_write_refuses('x') as r`)[0]!.r;
+        throw new Error('rollback');
+      })
+      .catch((err: unknown) => {
+        if (!(err instanceof Error) || err.message !== 'rollback') throw err;
+      });
+    expect(r).toBe(false);
   });
 
   it('only a SET or INHERIT membership counts, never an ADMIN-only one (audit M1)', async () => {

@@ -13,6 +13,7 @@ import {
   WRITE_ROLE_TABLES,
   applyViewerGrants,
   userReadFor,
+  writeColumnsFor,
 } from './access-matrix';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -94,29 +95,31 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
        where grantee = ${WRITE_ROLE} and privilege_type <> 'SELECT'
          and table_schema in ('public', 'auth') order by 1, 2`;
     // DELETE on every write table; INSERT and UPDATE on the whole table
-    // where the role reads it whole, else on exactly the columns it reads.
+    // where the role reads it whole and derives nothing, else on exactly the
+    // columns it reads less the derived ones (writeColumnsFor).
     expect(privs.map((r) => `${r.t} ${r.p}`)).toEqual(
       ACCESS_MATRIX.filter((t) => WRITE_ROLE_TABLES.includes(t.table))
         .map((t) => t.table)
         .sort()
         .flatMap((t) => {
-          const whole = userReadFor(ACCESS_MATRIX.find((x) => x.table === t)!) === 'all';
+          const whole = writeColumnsFor(ACCESS_MATRIX.find((x) => x.table === t)!) === 'all';
           return whole ? [`${t} DELETE`, `${t} INSERT`, `${t} UPDATE`] : [`${t} DELETE`];
         }),
     );
     for (const t of ACCESS_MATRIX.filter((x) => WRITE_ROLE_TABLES.includes(x.table))) {
-      const read = userReadFor(t);
-      if (!Array.isArray(read)) continue;
+      const write = writeColumnsFor(t);
+      if (!Array.isArray(write)) continue;
       for (const priv of ['INSERT', 'UPDATE']) {
         const cols = await sql<{ c: string }[]>`
           select column_name as c from information_schema.column_privileges
            where grantee = ${WRITE_ROLE} and privilege_type = ${priv}
              and table_schema || '.' || table_name = ${t.table} order by 1`;
-        expect(cols.map((c) => c.c).sort(), `${t.table} ${priv}`).toEqual([...read].sort());
+        expect(cols.map((c) => c.c).sort(), `${t.table} ${priv}`).toEqual([...write].sort());
       }
     }
-    // A grant's attribution and bridge mark are never the role's to write.
-    for (const c of ['granted_by', 'granted_at', 'bridge']) {
+    // A grant's attribution, bridge mark and folder are never the role's to
+    // write (via_folder_id: the propagation triggers make the folder rows).
+    for (const c of ['granted_by', 'granted_at', 'bridge', 'via_folder_id']) {
       const [r] = await sql<{ ok: boolean }[]>`
         select has_column_privilege(${WRITE_ROLE}, 'public.item_grants', ${c}, 'INSERT, UPDATE') as ok`;
       expect(r!.ok, `item_grants.${c}`).toBe(false);

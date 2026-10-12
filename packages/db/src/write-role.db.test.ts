@@ -122,7 +122,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
   const testKey = process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key';
   const tag = `wr${randomUUID().slice(0, 6)}`;
   const L = { owner: randomUUID(), mod: randomUUID(), mem: randomUUID(), out: randomUUID() };
-  const ws = { admin: '', H: '', E: '', O: '', M: '' };
+  const ws = { admin: '', H: '', E: '', O: '', M: '', P: '' };
   const n = { root: '', n1: '', n2: '', n3: '', f: '', n5: '' };
 
   const contentTables = ACCESS_MATRIX.filter((t) => t.writer === 'content').map((t) => t.table);
@@ -151,7 +151,8 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
         select id::text as id from workspaces where owner_id = ${L.owner} and is_admin`
     )[0]!.id;
     // H: the home (mod moderates it, mem sits in it); E: mem, with Write on
-    // the items; O: the outsider's.
+    // the items; O: the outsider's; P: mem's own (a private workspace: its
+    // login moderates it).
     for (const [key, seats] of [
       [
         'H',
@@ -163,6 +164,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       ['E', [[L.mem, false]]],
       ['O', [[L.out, true]]],
       ['M', [[L.mod, true]]],
+      ['P', [[L.mem, true]]],
     ] as const) {
       const [row] = await sql<{ id: string }[]>`
         insert into workspaces (owner_id, name) values (${L.owner}, ${`${tag} ${key}`})
@@ -499,6 +501,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     k: Kind,
     fn: (tx: postgres.TransactionSql) => Promise<T>,
     createWs = '',
+    privateWs = '',
   ): Promise<{ value?: T; code?: string; message?: string }> {
     let out: { value?: T; code?: string; message?: string } = {};
     try {
@@ -510,7 +513,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
                         set_config('mantle.mod_ws', ${`{${k.mod().join(',')}}`}, true),
                         set_config('mantle.login_id', ${k.login}, true),
                         set_config('mantle.create_ws', ${createWs}, true),
-                        set_config('mantle.private_ws', '', true)`;
+                        set_config('mantle.private_ws', ${privateWs}, true)`;
         try {
           out = { value: await fn(tx) };
         } catch (err) {
@@ -537,6 +540,24 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       select session_user as s, current_user as c,
              (select rolbypassrls from pg_roles where rolname = session_user) as bypass`;
     expect(who).toEqual({ s: WRITER, c: WRITER, bypass: false });
+  });
+
+  it('no role holds an INHERIT membership in the write role (fix round 2, L4)', async () => {
+    // The write check fires WHEN current_user is the write role: a role that
+    // inherited its rights would write as itself, past the check. The pool's
+    // per-database login is SET only (viewer-roles.ts). Cluster wide: roles
+    // are cluster objects.
+    const [v] = await sql<{ n: number }[]>`
+      select current_setting('server_version_num')::int as n`;
+    const rows =
+      v!.n >= 160000
+        ? await sql<{ r: string }[]>`
+            select u.rolname as r from pg_auth_members m join pg_roles u on u.oid = m.member
+             where m.roleid = ${WRITER}::regrole and m.inherit_option order by 1`
+        : await sql<{ r: string }[]>`
+            select u.rolname as r from pg_auth_members m join pg_roles u on u.oid = m.member
+             where m.roleid = ${WRITER}::regrole and u.rolinherit order by 1`;
+    expect(rows.map((r) => r.r)).toEqual([]);
   });
 
   it.each(kinds.map((k) => [k.name, k] as const))(
@@ -620,25 +641,72 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(r.code, r.message).toBe('42501');
   });
 
+  /** A new note in `path` (its folder's head shared first). */
+  const newNote =
+    (path: string, folder: () => string) =>
+    async (tx: postgres.TransactionSql): Promise<{ home: string }[]> => {
+      await tx`select mantle_lock_heads(array[${folder()}]::uuid[], 'share')`;
+      return tx<{ home: string }[]>`
+        insert into nodes (owner_id, type, title, path)
+        values (${L.owner}, 'note', ${`${tag} new`}, ${path}::ltree)
+        returning home_ws::text as home`;
+    };
+
   it.each(kinds.filter((k) => k.ws().length > 0).map((k) => [k.name, k] as const))(
-    '%s: a new item lands in a workspace of its scope; never in one outside it',
+    '%s: a new item lands in a workspace it moderates; one it only reads, or one outside its scope, is refused (fix round 2, M-a)',
     async (_name, k) => {
-      const insert = async (tx: postgres.TransactionSql) => {
-        await tx`select mantle_lock_heads(array[${n.root}]::uuid[], 'share')`;
-        return tx<{ home: string }[]>`
-          insert into nodes (owner_id, type, title, path)
-          values (${L.owner}, 'note', ${`${tag} new`}, 'notes'::ltree)
-          returning home_ws::text as home`;
-      };
+      const insert = newNote('notes', () => n.root);
       const home = k.ws()[0]!;
-      const inScope = await asKind(k, insert, home);
-      expect(inScope.code, `${k.name}: ${inScope.message}`).toBeUndefined();
-      expect(inScope.value![0]!.home).toBe(home);
+      const r = await asKind(k, insert, home);
+      if (k.mod().includes(home)) {
+        expect(r.code, `${k.name}: ${r.message}`).toBeUndefined();
+        expect(r.value![0]!.home).toBe(home);
+      } else {
+        expect([r.code, k.name]).toEqual(['42501', k.name]);
+        expect(r.message).toMatch(/not allowed to create an item in that workspace/);
+      }
       const outside = k.ws().includes(ws.O) ? ws.H : ws.O;
       const out = await asKind(k, insert, outside);
       expect([out.code, k.name]).toEqual(['42501', k.name]);
     },
   );
+
+  it("a new item in a folder the scope may edit takes the folder's home; a reader of the folder is refused", async () => {
+    const insert = newNote(`notes.${tag}f`, () => n.f);
+    // E has Write on F (home H): the item lands in H, no Moderator seat.
+    const editor = await asKind(member(), insert);
+    expect(editor.code, editor.message).toBeUndefined();
+    expect(editor.value![0]!.home).toBe(ws.H);
+    // Naming F's home as the create home is the same.
+    const named = await asKind(member(), insert, ws.H);
+    expect(named.code, named.message).toBeUndefined();
+    expect(named.value![0]!.home).toBe(ws.H);
+    // H only reads F.
+    const reader = await asKind({ ...member(), name: 'H only', ws: () => [ws.H] }, insert);
+    expect(reader.code, reader.message).toBe('42501');
+  });
+
+  it("a login's own private workspace takes its creates (it moderates it)", async () => {
+    // The root folder's home is Admin, which the member may not edit: the
+    // item lands in its private workspace.
+    const own: Kind = { ...member(), ws: () => [ws.H, ws.E, ws.P], mod: () => [ws.P] };
+    const r = await asKind(
+      own,
+      newNote('notes', () => n.root),
+      '',
+      ws.P,
+    );
+    expect(r.code, r.message).toBeUndefined();
+    expect(r.value![0]!.home).toBe(ws.P);
+    // Another login's private workspace as its own: no Moderator seat.
+    const other = await asKind(
+      member(),
+      newNote('notes', () => n.root),
+      '',
+      ws.P,
+    );
+    expect(other.code, other.message).toBe('42501');
+  });
 
   // ── The guards, on the write role ─────────────────────────────────────────
 
@@ -809,6 +877,114 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(toM.value!.length).toBe(1);
   });
 
+  it('a home moves only to a workspace the caller moderates (fix round 2, M-b)', async () => {
+    // The audit's case: a Moderator of H makes E's read row the home in one
+    // statement. Refused whichever row the update meets first (E's first:
+    // the check; H's first: the check on E's row after it).
+    const swap = await asKind(moderator(), async (tx) => {
+      await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
+      return tx`update item_grants set is_home = (workspace_id = ${ws.E})
+                 where node_id = ${n.n1} and workspace_id in (${ws.H}, ${ws.E})`;
+    });
+    expect(swap.code, swap.message).toBe('42501');
+    expect(swap.message).toMatch(/not allowed to grant to that workspace/);
+    // The flip alone, in an Admin scope (so the item with no home between
+    // the two statements may still be managed): a Moderator of E only.
+    const flip = (mod: () => string[]) =>
+      asKind({ ...moderator(), ws: () => [ws.admin, ws.H], mod }, async (tx) => {
+        await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
+        await tx`update item_grants set is_home = false
+                    where node_id = ${n.n1} and workspace_id = ${ws.H}`;
+        return tx`update item_grants set is_home = true
+                     where node_id = ${n.n1} and workspace_id = ${ws.E} returning node_id`;
+      });
+    const notE = await flip(() => [ws.H]);
+    expect(notE.code, notE.message).toBe('42501');
+    expect(notE.message).toMatch(/not allowed to grant to that workspace/);
+    const modE = await flip(() => [ws.H, ws.E]);
+    expect(modE.code, modE.message).toBeUndefined();
+    expect(modE.value!.length).toBe(1);
+  });
+
+  it("a grant's folder (via_folder_id) is not the role's to write (fix round 2, M-b)", async () => {
+    const upd = await asKind(moderator(), async (tx) => {
+      await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
+      return tx`update item_grants set via_folder_id = ${n.f}
+                 where node_id = ${n.n1} and workspace_id = ${ws.E}`;
+    });
+    expect(upd.code, upd.message).toBe('42501');
+    expect(upd.message).toMatch(/permission denied/);
+    const ins = await asKind(moderator(), async (tx) => {
+      await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
+      return tx`insert into item_grants (node_id, workspace_id, is_home, write, via_folder_id)
+                values (${n.n1}, ${ws.M}, false, false, ${n.f})`;
+    });
+    expect(ins.code, ins.message).toBe('42501');
+    expect(ins.message).toMatch(/permission denied/);
+  });
+
+  it('the kind of an item does not change on the role, even with edit (fix round 2, L2)', async () => {
+    const r = await asKind(member(), async (tx) => {
+      await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
+      return tx`update nodes set type = 'page' where id = ${n.n1}`;
+    });
+    expect(r.code, r.message).toBe('42501');
+    expect(r.message).toMatch(/not allowed to change the kind of this item/);
+    // The same member edits n1 otherwise.
+    const title = await asKind(member(), async (tx) => {
+      await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
+      return tx`update nodes set title = title where id = ${n.n1} returning id`;
+    });
+    expect(title.code, title.message).toBeUndefined();
+    expect(title.value!.length).toBe(1);
+  });
+
+  it('the move check is staged on the role like create and delete; the system pool refuses as before (fix round 2, L3)', async () => {
+    const move = async (tx: postgres.TransactionSql) => {
+      await tx`select mantle_lock_heads(array[${n.n1}, ${n.f}]::uuid[], 'update')`;
+      return tx`update nodes set path = ${`notes.${tag}f`}::ltree where id = ${n.n1} returning id`;
+    };
+    // The member edits n1 (Write through E) and F, but does not manage n1.
+    const on = await asKind(member(), move);
+    expect(on.code, on.message).toBe('42501');
+    expect(on.message).toMatch(/not allowed to move this item/);
+    const notices: string[] = [];
+    const wn = postgres(
+      viewerDatabaseUrl(scratch!.url, 'write', viewerRolePassword(testKey, 'write')),
+      { max: 1, prepare: false, onnotice: (m) => notices.push(String(m.message ?? '')) },
+    );
+    try {
+      await wn
+        .begin(async (tx) => {
+          await tx`select set_config('mantle.actor', ${`login:rw:${L.mem}`}, true),
+                          set_config('mantle.actor_check', 'warn', true),
+                          set_config('mantle.ws', ${`{${ws.H},${ws.E}}`}, true),
+                          set_config('mantle.mod_ws', '{}', true),
+                          set_config('mantle.login_id', ${L.mem}, true)`;
+          expect((await move(tx)).length).toBe(1);
+          throw new Rollback();
+        })
+        .catch((err: unknown) => {
+          if (!(err instanceof Rollback)) throw err;
+        });
+    } finally {
+      await wn.end();
+    }
+    expect(notices).toContain(
+      'mantle actor miss: UPDATE on nodes: a move, no manage of the home (refused when the check is on)',
+    );
+    // The system pool with a scope (an Admin user's request today), the
+    // check off: refused, as before 0278.
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true),
+                        set_config('mantle.ws', ${`{${ws.H},${ws.E}}`}, true),
+                        set_config('mantle.mod_ws', '{}', true)`;
+        return move(tx);
+      }),
+    ).rejects.toMatchObject({ code: '42501', message: 'not allowed to move this item' });
+  });
+
   it('the home grant: a member cannot delete it; with no home, only an Admin scope deletes the item (H1 C)', async () => {
     const dropHome = (tx: postgres.TransactionSql) =>
       tx`delete from item_grants where node_id = ${n.n1} and is_home returning node_id`;
@@ -835,7 +1011,7 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(mod.message).toMatch(/not allowed to delete this item/);
   });
 
-  it("a fact with no item stays inside the scope and is nobody else's (M1)", async () => {
+  it("a fact with no item stays inside the scope and is the caller's own (M1; fix round 2, L5)", async () => {
     const add = (read: () => string[], login: string | null) =>
       asKind(
         member(),
@@ -844,8 +1020,9 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
            values (${L.owner}, 'factual', ${`${tag} free`}, ${`{${read().join(',')}}`}::uuid[], ${login})
            returning id`,
       );
-    const inside = await add(() => [ws.H], null);
-    expect(inside.code, inside.message).toBeUndefined();
+    // No login: the system's (the extractor writes those on the system pool).
+    const noLogin = await add(() => [ws.H], null);
+    expect(noLogin.code, noLogin.message).toBe('42501');
     const own = await add(() => [ws.H], L.mem);
     expect(own.code, own.message).toBeUndefined();
     const planted = await add(() => [ws.H, ws.O], null);
@@ -854,37 +1031,45 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(someoneElse.code, someoneElse.message).toBe('42501');
   });
 
-  it('warn reports a refusal and lets the write run; the system pool is never checked', async () => {
-    const notices: string[] = [];
-    const wn = postgres(
-      viewerDatabaseUrl(scratch!.url, 'write', viewerRolePassword(testKey, 'write')),
-      {
-        max: 1,
-        prepare: false,
-        onnotice: (m) => notices.push(String(m.message ?? '')),
-      },
-    );
-    try {
-      await wn
-        .begin(async (tx) => {
-          await tx`select set_config('mantle.actor', 'assistant:none', true),
-                          set_config('mantle.actor_check', 'warn', true),
-                          set_config('mantle.ws', ${`{${ws.H}}`}, true),
-                          set_config('mantle.mod_ws', '{}', true)`;
-          await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
-          const done = await tx`update nodes set title = title where id = ${n.n1} returning id`;
-          expect(done.length).toBe(1);
-          throw new Rollback();
-        })
-        .catch((err: unknown) => {
-          if (!(err instanceof Rollback)) throw err;
-        });
-    } finally {
-      await wn.end();
+  it('off and warn report a refusal and let the write run; the system pool is never checked (fix round 2, L1)', async () => {
+    // Off: no write runs on the role while the box is off (the write pool is
+    // A2b2b's, used only in warn and on), so one that does is stray and
+    // shows as a miss. The scratch database's box mode is off.
+    for (const mode of ['off', 'warn'] as const) {
+      const notices: string[] = [];
+      const wn = postgres(
+        viewerDatabaseUrl(scratch!.url, 'write', viewerRolePassword(testKey, 'write')),
+        {
+          max: 1,
+          prepare: false,
+          onnotice: (m) => notices.push(String(m.message ?? '')),
+        },
+      );
+      try {
+        await wn
+          .begin(async (tx) => {
+            await tx`select set_config('mantle.actor', 'assistant:none', true),
+                            set_config('mantle.actor_check', ${mode}, true),
+                            set_config('mantle.ws', ${`{${ws.H}}`}, true),
+                            set_config('mantle.mod_ws', '{}', true)`;
+            const [m] = await tx<{ m: string }[]>`select mantle_actor_check_mode() as m`;
+            expect(m!.m).toBe(mode);
+            await tx`select mantle_lock_heads(array[${n.n1}]::uuid[], 'update')`;
+            const done = await tx`update nodes set title = title where id = ${n.n1} returning id`;
+            expect(done.length).toBe(1);
+            throw new Rollback();
+          })
+          .catch((err: unknown) => {
+            if (!(err instanceof Rollback)) throw err;
+          });
+      } finally {
+        await wn.end();
+      }
+      expect(
+        notices.some((m) => /mantle actor miss: UPDATE on nodes: no edit of the item/.test(m)),
+        mode,
+      ).toBe(true);
     }
-    expect(
-      notices.some((m) => /mantle actor miss: UPDATE on nodes: no edit of the item/.test(m)),
-    ).toBe(true);
     // The system pool with the same scope: no check, no notice.
     await sql
       .begin(async (tx) => {

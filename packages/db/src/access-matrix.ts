@@ -69,6 +69,12 @@ export type TableAccess = {
    * pin it).
    */
   writeCheck?: { kind: 'self' } | { kind: 'edit' | 'manage'; item: string };
+  /**
+   * Columns the database derives (a definer trigger writes them): the write
+   * role reads them and never writes them (writeColumnsFor). Needs named
+   * `user` columns.
+   */
+  derived?: readonly string[];
 };
 
 /** The draft columns of the item tables. The workspace role reads them since
@@ -93,6 +99,20 @@ export function userReadFor(t: TableAccess): LimitedRead {
   if (!t.drafts) return read;
   if (!Array.isArray(read)) throw new Error(`${t.table}: drafts needs named columns`);
   return [...(read as readonly string[]), ...(DRAFT_COLUMNS[t.table] ?? [])];
+}
+
+/** What the write role may INSERT and UPDATE on `t` (a write table): what
+ *  the workspace role reads, less the `derived` columns. */
+export function writeColumnsFor(t: TableAccess): LimitedRead {
+  const read = userReadFor(t);
+  if (!t.derived?.length) return read;
+  if (!Array.isArray(read)) throw new Error(`${t.table}: derived needs named columns`);
+  const cols = read as readonly string[];
+  const derived = new Set(t.derived);
+  for (const c of derived) {
+    if (!cols.includes(c)) throw new Error(`${t.table}: derived column ${c} is not read`);
+  }
+  return cols.filter((c) => !derived.has(c));
 }
 
 const none = (table: string, writer: Writer = 'admin'): TableAccess => ({ table, writer });
@@ -338,6 +358,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     writeCheck: { kind: 'manage', item: 'node_id' },
     writer: 'content',
     user: ['node_id', 'workspace_id', 'write', 'is_home', 'via_folder_id', 'excluded'],
+    // A folder's rows on its items: made by the propagation triggers
+    // (definers), never by a login's write (A2b2a fix round 2, M-b).
+    derived: ['via_folder_id'],
   },
   // Audit of workspace changes, the heads rows and the heads-check log:
   // admin pool only (the lock functions are security definer).
@@ -456,14 +479,15 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the
  *  workspace role reads (its policies name both roles, 0278), and writes the
- *  WRITE_ROLE_TABLES: INSERT and UPDATE on the columns it reads, DELETE.
- *  Sequences: see applyViewerGrants. */
+ *  WRITE_ROLE_TABLES: INSERT and UPDATE on the columns it reads less the
+ *  derived ones (writeColumnsFor), DELETE. Sequences: see
+ *  applyViewerGrants. */
 export function writeGrantStatements(role: string = viewerRoleName('write')): string[] {
   const out = userGrantStatements(role);
   for (const t of ACCESS_MATRIX.filter(writeRoleWrites)) {
-    const read = userReadFor(t);
-    if (read === 'none') continue;
-    const cols = read === 'all' ? '' : ` (${read.map((c) => `"${c}"`).join(', ')})`;
+    const write = writeColumnsFor(t);
+    if (write === 'none') continue;
+    const cols = write === 'all' ? '' : ` (${write.map((c) => `"${c}"`).join(', ')})`;
     out.push(`GRANT INSERT${cols}, UPDATE${cols}, DELETE ON ${quoteTable(t.table)} TO "${role}"`);
   }
   return out;

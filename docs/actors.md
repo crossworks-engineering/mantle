@@ -203,10 +203,14 @@ The 0266 create and delete checks (a new item needs edit of its folder, a
 delete needs manage of the item's home) run when a write carries a scope.
 Today only an Admin user's write request and an Admin turn carry one. When
 A2b2 scopes every login write on the write role (`mantle_write_user`), a
-refusal there follows the check: `off` runs the write, `warn` reports it as
-a miss, `on` refuses it. Every other session refuses as before. The gate
+refusal there follows the check: `warn` runs the write and reports it as a
+miss, `on` refuses it. `off` runs it and reports it too (0278): no write
+runs on the write role while the box is `off`, so one that does is stray
+and must show. Every other session refuses as before. The gate
 (`mantle_scoped_write_refuses`) keys on the session's role, never on a
-`mantle.*` setting, and runs only on the refusing path.
+`mantle.*` setting, and runs only on the refusing path. 0278 puts the move
+check (0245, `mantle_nodes_acl_path_trg`) and the write role's own checks
+behind the same gate.
 
 The test suite runs in `warn`. `vitest.setup.ts` fails a test on any miss.
 A statement a test sends itself runs as `system(test)`: the test is its
@@ -403,8 +407,11 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
 - **Grants, from `ACCESS_MATRIX`.** SELECT exactly as the workspace role.
   On `WRITE_ROLE_TABLES` (the `content` tables the workspace role reads,
   `writeRoleWrites`): DELETE, and INSERT and UPDATE on the columns it reads
-  (the whole table where it reads all; never `item_grants.granted_by`,
-  `granted_at` or `bridge`). The other `content` tables
+  less the ones the database derives (`writeColumnsFor`, the matrix's
+  `derived`): the whole table where it reads all; never
+  `item_grants.granted_by`, `granted_at` or `bridge`, and never
+  `item_grants.via_folder_id` (the folder rows are made by the propagation
+  triggers, which run as their owner). The other `content` tables
   (`WRITE_ROLE_SYSTEM_ONLY`) have no read rule, so the role gets no right
   on them.
 - **Function rights.** Exactly the workspace role's plus
@@ -423,12 +430,25 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
   each write table with a `writeCheck` in the matrix, fires for the write
   role only (`WHEN current_user = 'mantle_write_user'`) and refuses
   through `mantle_scoped_write_refuses` (so off, warn and on stage it):
-  an item needs edit (a board rank change alone: edit of the item or its
-  folder); a row of an item (a page, a chunk, a fact) needs edit of that
-  item; a grant needs manage of the item's home, and a new or moved grant
-  a Moderator of its workspace; an item with no home needs an Admin scope
-  to delete or to manage; a fact with no item stays inside the scope and
-  belongs to nobody else.
+  a new item needs a Moderator of its home (the home
+  `mantle_default_home` gives it: a login's own private workspace is one
+  it moderates), or its home is its folder's and the scope may edit that
+  folder; a session can name any workspace as its create home
+  (`mantle.create_ws`), so this is what holds a create to a workspace the
+  caller moderates (plan v2). An item needs edit (a board rank change
+  alone: edit of the item or its folder), and its kind (`type`) never
+  changes on the role. A row of an item (a page, a chunk, a fact) needs
+  edit of that item; a grant needs manage of the item's home, and a new
+  grant, a moved one or one made the home (`is_home` false to true) a
+  Moderator of its workspace; an item with no home needs an Admin scope
+  to create, delete or manage; a fact with no item stays inside the scope
+  and is the caller's own (its login the caller's: one with no login is
+  the system's, written on the system pool by the extractor).
+- **The move check is staged too.** 0278 sends the three refusals of the
+  move check (0245: manage of the home, edit of the new folder, an app
+  placed where it adds a workspace the caller does not moderate) through
+  the same gate: on the write role `off` and `warn` report and run, `on`
+  refuses; every other session refuses as before.
 - **Trigger functions.** Every trigger function on a `content` table runs
   as its owner (SECURITY DEFINER, with a search_path), or is on the
   reviewed list in `write-role.db.test.ts` with its reason. 0278 made the
@@ -437,14 +457,54 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
   `mantle_follow_guard_trg`, `mantle_nodes_login_guard_trg`) stay with the
   caller's rights: they ask `mantle_owner_role()`, which reads
   `current_user`, so as definers they would always pass. No definer
-  trigger function is open to PUBLIC, and `mantle_page_folder_id` is open
-  to the workspace role only.
+  trigger function is open to PUBLIC. `mantle_page_folder_id` is open to
+  the workspace role and so to the write role (whose function rights
+  mirror the workspace role's), never to PUBLIC.
+- **No INHERIT membership.** The write check fires `WHEN current_user` is
+  the write role, so a role that inherited the write role's rights would
+  write as itself, past the check. The pool's per-database login is SET
+  only; `write-role.db.test.ts` pins that no role on the cluster holds an
+  INHERIT membership in it.
 
 ## A2b2b must
 
 - **Route the writes.** Login, assistant, link and contact writes move to
   `mantle_write_user` with the pipelined scope pattern (plan 20.1). 0277's
   gate and A2b2a's grants and row rules are ready for it.
+- **Keep every app-side permission check until the box is `on`.** In
+  `warn` (and in `off`, for stray traffic) the database only logs an edit,
+  manage, create or move refusal on the write role and lets the write
+  run: the app's own checks (grants.ts, the create home, the tree's
+  move rules) are what refuse until then. Remove one only after the box
+  has run `on` with no miss for it.
+- **The create home's Moderator seat is in the scope.** A login's create
+  lands in its private workspace only when the scope's `mantle.mod_ws`
+  holds that workspace. `resolveCreateHome` can make the private
+  workspace on the first create, after the scope was memoized
+  (`loginScopeFor`): refresh the scope first, or the database refuses the
+  create (no Moderator of the home).
+- **The creates that are the brain's.** A kind's root folder
+  (`mantle_default_home`: a `branch` at the top) is homed in Admin, and an
+  Admin-only kind always is: on the write role their create needs a
+  Moderator of Admin. Make a missing root folder on the system pool (the
+  `repair:kind-root` read-path write already does), and decide whether an
+  Admin-workspace user who is not its Moderator may create an Admin-only
+  kind (today the database says no).
+- **A home move is one step on the role.** `moveHome`
+  (`server/web/lib/grants.ts`) clears the old home row and then sets the new one: between
+  the two statements the item has no home, so the second needs an Admin
+  scope there. Do it in one statement or through a definer function that
+  checks manage of the old home and a Moderator of the new one.
+- **grants.ts writes columns the role may not.** Its updates set
+  `via_folder_id = null`, `granted_by` and `granted_at`, which the write
+  role has no right to write (permission denied, loudly). Leave them out on
+  the write role, or move those writes into a definer function.
+- **The refusal messages.** `isScopeWriteRefusal`
+  (`packages/db/src/pg-error.ts`) knows the 0241 to 0267 messages; add the
+  write check's (`not allowed to edit this item`, `not allowed to create an
+  item in that workspace`, `not allowed to grant to that workspace`, `not
+  allowed to change the kind of this item`) so a refusal is a 403, not a
+  500.
 - **SET LOCAL on the write pool.** Its writes set the scope and the actor
   with `SET LOCAL` in their own short transaction, never a session-level
   SET: a scope left on a pooled connection would be a stale access right.
@@ -482,10 +542,15 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
   rule (A3a or later) moves it: the matrix then puts it in
   `WRITE_ROLE_TABLES`.
 - **A2b2b may open the write pool once the raised max_connections (task
-  29008b01) is on the box.** The worst case of the code's pool limits is
+  29008b01) is on the box.** The worst case of the code's pool limits was
   over max_connections 200 already, before the write pool. The owner chose
-  (2026-10-12) to raise max_connections and keep the pools as they
-  are. Counted in A2b2a (2026-10-12):
+  (2026-10-12) to raise max_connections and keep the pools as they are:
+  v0.300.12 sets 450 (200 to 400 to 450, docker-compose.yml and the dev
+  stack), and `packages/db/src/connection-ceiling.test.ts` sums every pool
+  per box shape against 90% of it (405), the write role's 20 included:
+  359 on the full shape, 319 with `MANTLE_RUNS` off, 193 on the core shape
+  (2026-10-13). A box takes 450 when it rolls to v0.300.12 or later
+  (docs/update-prod.md). The first count, in A2b2a (2026-10-12):
   - 12 Node processes hold connections: web, api and 10 workers. media is
     Python with no `DATABASE_URL` (docker-compose.yml, media service).
   - System pool: `max: 10` per process (`packages/db/src/client.ts`,
