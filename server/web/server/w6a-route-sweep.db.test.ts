@@ -710,30 +710,20 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     for (const [method, path] of writes(writeOnly).slice(0, 3)) {
       // An Admin user with the users area may close any link (the guide),
       // so the link is checked on the others only. The item gate: 403.
-      const r = await call(path, noArea, method);
+      const r = await call(path, owner, method);
       if (r.status !== 403 || !r.text.includes('item-workspace')) {
         failures.push(`admin ${method} ${path} ${r.status} ${r.text.slice(0, 120)}`);
       }
     }
     expect(failures).toEqual([]);
     // The control: the same writes on items homed in Admin, which the Admin
-    // user manages, pass the gate. Without the gate's manage check the
+    // user (a Moderator of Admin) manages, pass the gate. Without the gate's manage check the
     // write-only items above would pass the same way.
     const managed = await seed();
-    const [was] = await x<{ moderator: boolean }>(sql`
-      select moderator from workspace_users
-       where workspace_id = ${adminWs} and login_id = ${noArea}`);
-    await x(sql`update workspace_users set moderator = true
-                 where workspace_id = ${adminWs} and login_id = ${noArea}`);
-    try {
-      for (const [method, path] of writes(managed).slice(0, 3)) {
-        const r = await call(path, noArea, method);
-        expect(r.text, `control ${method} ${path}`).not.toContain('item-workspace');
-        expect(r.status, `control ${method} ${path} ${r.text.slice(0, 120)}`).toBeLessThan(300);
-      }
-    } finally {
-      await x(sql`update workspace_users set moderator = ${was!.moderator}
-                   where workspace_id = ${adminWs} and login_id = ${noArea}`);
+    for (const [method, path] of writes(managed).slice(0, 3)) {
+      const r = await call(path, owner, method);
+      expect(r.text, `control ${method} ${path}`).not.toContain('item-workspace');
+      expect(r.status, `control ${method} ${path} ${r.text.slice(0, 120)}`).toBeLessThan(300);
     }
   }, 600_000);
 
