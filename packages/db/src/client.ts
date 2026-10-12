@@ -250,7 +250,10 @@ function actorClient(base: PgSql): PgSql {
     opts: unknown,
     mode: 'rows' | 'values' | 'simple',
   ): Promise<unknown> => {
-    const params = NO_TX_SQL.test(query) ? null : actorParams();
+    // A pool being closed (closeDb) takes no new reserved connection: one
+    // that comes back after its end began keeps postgres.js from ending.
+    const open = globalThis.__mantleSql === base;
+    const params = NO_TX_SQL.test(query) || !open ? null : actorParams();
     if (params) return pipelined(params, query, args, mode);
     const q = base.unsafe(query, args as never[], opts as never);
     return mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
@@ -1471,8 +1474,9 @@ export async function closeDb(): Promise<void> {
   actorModeFirst = null;
   actorModeKnown = false;
   noteBoxActorCheckMode(null);
-  // A detached write still on its reserved connection finishes first.
-  await Promise.allSettled([...actorPipelines]);
+  // A detached write still on its reserved connection finishes first (the
+  // pool is no longer globalThis.__mantleSql, so none starts now).
+  while (actorPipelines.size > 0) await Promise.allSettled([...actorPipelines]);
   if (sql) await sql.end();
   if (viewers) await Promise.all([...viewers.values()].map((v) => v.sql.end()));
 }
