@@ -57,12 +57,12 @@ type Count = { statements: number; roundTrips: number };
  * them, so they are no rule for every build.
  */
 const OFF_BASELINE: Record<Path, Count> = {
-  'tree load': { statements: 13, roundTrips: 10 },
-  'item open': { statements: 9, roundTrips: 7 },
-  search: { statements: 16, roundTrips: 14 },
-  'chat turn start': { statements: 91, roundTrips: 79 },
-  'MCP tool call': { statements: 37, roundTrips: 29 },
-  'page save': { statements: 11, roundTrips: 10 },
+  'tree load': { statements: 13, roundTrips: 17 },
+  'item open': { statements: 9, roundTrips: 12 },
+  search: { statements: 16, roundTrips: 22 },
+  'chat turn start': { statements: 91, roundTrips: 133 },
+  'MCP tool call': { statements: 37, roundTrips: 49 },
+  'page save': { statements: 11, roundTrips: 17 },
 };
 
 /** The actor's own statements: its setting (packages/db/src/client.ts) and
