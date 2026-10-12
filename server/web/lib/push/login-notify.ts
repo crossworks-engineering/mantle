@@ -1,5 +1,5 @@
-// The send path for a MEMBER's or a CLIENT's own pushes (migration mobile_roles_push,
-// docs/mobile-companion-backend.md "Three roles on the phone"): a reply in
+// The send path for a MEMBER's own pushes (migration mobile_roles_push,
+// docs/mobile-companion-backend.md "Every login on the phone"): a reply in
 // its chat thread, a review result on its item (no comment pushes: the brain
 // has no comments since 2026-10-09). Each message
 // is for ONE login (@mantle/content login-notices.ts decides who and with

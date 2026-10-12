@@ -92,7 +92,7 @@ Surfaces:
 
 | Surface                   | What                                                                                                                                                                                                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `recall-write` tool group | `recall_map_create`, `recall_card_put`, `recall_card_delete`, `recall_map_update`. In no default grant inside the app. ALWAYS on the MCP surface (an MCP client holds the owner's token; decided 2026-09-30), where they still run as an agent.                            |
+| `recall-write` tool group | `recall_map_create`, `recall_card_put`, `recall_card_delete`, `recall_map_update`. In no default grant inside the app. ALWAYS on the MCP surface (decided 2026-09-30), where they still run as an agent, for the login the connection acts for.                            |
 | Owner HTTP                | `POST /api/recall/maps`, `PATCH`/`DELETE /api/recall/maps/:id`, `POST /api/recall/maps/:id/cards`, `GET`/`PUT`/`DELETE /api/recall/maps/:id/cards/:card`, `POST …/cards/reorder`, `POST …/cards/:card/prompt`, `GET …/revisions`, `POST /api/recall/revisions/:id/restore` |
 | Owner HTTP reads          | `GET /api/recall/maps` (the catalog, drafts and empty maps included), `GET /api/recall/maps/:id` (cards without bodies, in rank order)                                                                                                                                     |
 | Client contract           | `@mantle/client-types` `types/recall.ts` (R5 removed `lastCompileOk`, the map `report`, `RecallLintIssueDTO` and `RecallPageStateDTO`; `nodeId` is never null)                                                                                                             |
@@ -100,21 +100,26 @@ Surfaces:
 
 ### Over MCP
 
-Every Recall act has an MCP tool, so the owner can do from an MCP client
-what the editor does. An MCP client holds the owner's token.
+Every Recall act has an MCP tool, so an Admin user can do from an MCP
+client what the editor does. One MCP surface serves every login since
+workspaces W7b, and each connection acts for its own login. The reader and
+agent tools run for any login there, in its scope: it reads and edits only
+the maps its workspaces hold. The owner tools are `ownerOnly`, so only an
+Admin user's connection runs them (`isAdminOnlyTool` in
+`packages/tools/src/admin-gate.ts`).
 
 | Tool                                                                              | What                                          | Actor                                        |
 | --------------------------------------------------------------------------------- | --------------------------------------------- | -------------------------------------------- |
 | `recall_index`, `recall_open`, `recall_go`, `recall_match`                        | read published maps                           | reader                                       |
 | `recall_map_create`, `recall_card_put`, `recall_card_delete`, `recall_map_update` | draft maps, edit cards, retitle               | agent (also the in-app `recall-write` group) |
-| `recall_pending`                                                                  | what waits: unpublished maps, prompt requests | owner (MCP only)                             |
-| `recall_map_get`                                                                  | one map whole, published or not               | owner (MCP only)                             |
-| `recall_prompt_confirm`                                                           | confirm, drop or demote a prompt              | owner (MCP only)                             |
-| `recall_map_publish`                                                              | publish or unpublish a map                    | owner (MCP only)                             |
-| `recall_map_delete`                                                               | delete a map (needs `confirm: true`)          | owner (MCP only)                             |
-| `recall_cards_reorder`                                                            | order a map's cards                           | owner (MCP only)                             |
-| `recall_revisions`, `recall_revision_restore`                                     | the log, and undo                             | owner (MCP only)                             |
-| `recall_map_set_slug`, `recall_card_set_slug`                                     | explicit slug changes                         | owner (MCP only)                             |
+| `recall_pending`                                                                  | what waits: unpublished maps, prompt requests | Admin user (MCP only)                        |
+| `recall_map_get`                                                                  | one map whole, published or not               | Admin user (MCP only)                        |
+| `recall_prompt_confirm`                                                           | confirm, drop or demote a prompt              | Admin user (MCP only)                        |
+| `recall_map_publish`                                                              | publish or unpublish a map                    | Admin user (MCP only)                        |
+| `recall_map_delete`                                                               | delete a map (needs `confirm: true`)          | Admin user (MCP only)                        |
+| `recall_cards_reorder`                                                            | order a map's cards                           | Admin user (MCP only)                        |
+| `recall_revisions`, `recall_revision_restore`                                     | the log, and undo                             | Admin user (MCP only)                        |
+| `recall_map_set_slug`, `recall_card_set_slug`                                     | explicit slug changes                         | Admin user (MCP only)                        |
 
 The owner tools are `mcpOnly`: never in a tool group, so no in-app agent can
 hold them. Their descriptions tell the model to call them only when the user
@@ -122,9 +127,18 @@ asked for that act in the conversation, and the confirm, publish, reorder and
 slug tools take the map `version` the user was shown, so nobody approves text
 that changed after it was shown. Their revisions read "owner (mcp)".
 
-The owner UI (jackdaw, behind `features.recallV2`) is the editor. Read tools
-and write tools run on owner surfaces only. Still to come: team-level sharing
-(R6; until then a Recall folder cannot be shared at all).
+The owner UI (jackdaw, behind `features.recallV2`) is the editor. Read
+tools and write tools run on owner surfaces only (the web chat, Telegram, a
+login's MCP connection), never in the turn of an assistant of a workspace
+other than Admin (a team surface).
+
+A Recall map is a workspace kind (`mantle_kind_class`, migration 0241), so
+a grant can give it to a workspace other than Admin. Migration 0265 gives
+logins outside Admin their read rules: a login reads a map its scope reads
+as an item, and the map's cards and revisions follow it. The tree offers no
+Grant Access panel on a Recall folder yet (`shareable: false` in
+`TREE_KIND_SPECS`): that waits for a workspace's assistant to read maps
+(R6).
 
 **Moving a remembered slug onto a map.** A map's slug and former slugs are
 taken for every other map. To give a native map a slug another map answers

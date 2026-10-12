@@ -1,5 +1,5 @@
 // The push routes of a MEMBER login (migration mobile_roles_push,
-// docs/mobile-companion-backend.md "Three roles on the phone"): the same
+// docs/mobile-companion-backend.md "Every login on the phone"): the same
 // steps as the admin's /api/push/*, for the caller's OWN devices and its own
 // toggles. The route files under /api/member/push gate the login
 // (getMemberOr401) and call these. (The client login went in W8a.)

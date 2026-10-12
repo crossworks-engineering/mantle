@@ -3,7 +3,7 @@ import { handleTokenLogin } from '@/lib/token-login';
 
 /**
  * Phone app login for an ADMIN or a MEMBER (docs/mobile-companion-backend.md,
- * "Three roles on the phone"): email and password for a per-device bearer,
+ * "Every login on the phone"): email and password for a per-device bearer,
  * and the answer names the login (`role`, `loginId`) so the app knows which
  * shell to call. 30 days, rotated through /api/auth/token/refresh; listed and
  * revoked per device like every bearer (Settings > Logins > Devices).

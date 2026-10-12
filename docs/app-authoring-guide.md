@@ -436,10 +436,13 @@ has them; grant them with `app_tools_set` or the Tools tab after reading the
 code) and `droppedToolSlugs` (this brain does not have them). The cap is the app
 database cap (`APP_SQL_MAX_DB_MB`) plus the code.
 
-Agents and MCP clients do the same with tools (owner only, group `apps`):
+Agents and MCP clients do the same with tools (group `apps`):
 `app_duplicate`, `app_export` (saves the file under /files, folder
 exports, and returns its id) and `app_import` (a `file_id`, `name`,
-`with_data`).
+`with_data`). They run for any login, in its own workspaces: the scope and
+the database's checks decide which apps (`OWNER_ONLY_IN_SCOPE` in
+`packages/tools/src/admin-gate.ts`). The turn of an assistant of a
+workspace other than Admin (a team surface) does not get them.
 
 None of the three carries the original's grants, public link or contact
 shares, history or table exports (an export has one master): the new app
@@ -464,10 +467,11 @@ Direction of authority: **the app is the master.** After an app write
 re-materializes the Table from the SQLite rows — debounced, hash-gated (an
 unchanged table never re-commits), pure SQL, no LLM. The Table of an app
 written from outside the team is indexed at retrieval depth only (no facts
-or entities from that text): a Contact share with Can write marks the app
-as written from outside on its first write, and so did a client login
-before workspaces W8a. The mark is never cleared. A sync a restart interrupted is not lost: the write marks the export
-dirty in Postgres, and the server resumes it at boot. Typed columns derive
+or entities from that text). A Contact share with Can write marks the app
+as written from outside on its first write; so did a client login before
+workspaces W8a. The mark is never cleared. A sync a restart interrupted is
+not lost: the write marks the export dirty in Postgres, and the server
+resumes it at boot. Typed columns derive
 from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
 DATE/DATETIME → date/datetime, else text).
 
@@ -510,12 +514,13 @@ boundary, so there's no per-app "make readable" switch.
 
 A user can reach an app's data from their own MCP client (Claude Code,
 Claude Desktop) with `app_data_list`, `app_data_schema`, `app_data_query`
-and `app_data_write`, but only on an app whose **MCP access** switch is on
-(beside **Informational**; off by default, an admin sets it). They reach it
-exactly as they run it in the browser: an app a workspace of theirs holds,
-the same published build, the same read or write rule (the grant's Write
-switch, never on an Informational app), and their connection's write on
-top (a read-only grant, or a key or peer without write, only reads).
+and `app_data_write`. Only an app whose **MCP access** switch is on is
+reached (beside **Informational**; off by default, an admin sets it). They
+reach it exactly as they run it in the browser: an app a workspace of
+theirs holds, the same published build and the same read or write rule
+(the grant's Write switch, never on an Informational app). Their
+connection's write applies on top: a read-only grant, or a key or peer
+without write, only reads.
 `:host_me_*` is filled for them, so a row they write records who wrote it
 the same way the app does. The details:
 [mcp-as-a-login.md](./mcp-as-a-login.md).

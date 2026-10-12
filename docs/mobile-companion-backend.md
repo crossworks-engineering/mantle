@@ -41,7 +41,9 @@ url, expiresAt, ttlSeconds}` and shows `url` (`<brain>/pair#v=1&code=…`,
   the code in the fragment so no log sees it) as a QR. The phone scans it and
   calls `POST /api/auth/pair/claim` `{code, deviceName?}` (public, 10/min per
   IP) → the `mobile-login` shape plus `email` (and, since contract v1.1,
-  `loginId` and `brainId`; see "Three roles on the phone"). Codes are 192 random bits
+  `loginId` and `brainId`; see
+  [Every login on the phone](#every-login-on-the-phone-admins-and-members-contract-v11)).
+  Codes are 192 random bits
   stored as SHA-256, live 90 s, and are single-use (one conditional UPDATE);
   every claim failure is one 401 line. `GET /api/auth/pair/[id]` (owner) →
   `{status: pending|claimed|expired, deviceLabel}` for the page's poll.
@@ -341,12 +343,13 @@ and the payload's `v` stays `1`.
 
 **Workspaces W5c (2026-10-11): one shell for every login.** `GET /api/shell`
 now answers every login with the SAME shape (`Shell` in
-`@mantle/client-types`): `role` (`admin` or `member`), `loginId`, the
-login's own face (`displayName`, `email`, `avatar`, `avatarPhotoVersion`,
-`navFavorites`), the brain's brand, `features`, `assetToken`,
-`maxUploadBytes`, `workspaces`, `areas` (always `[]` outside the Admin
-workspace), `onboarded` (always true for a member), `pendingApprovals`
-(always 0 for a member) and `treeKinds`. `GET /api/member/shell` answers
+`@mantle/client-types`). It names the login: `role` (`admin` or
+`member`), `loginId` and `isOwner`. It carries the login's own face
+(`displayName`, `email`, `avatar`, `avatarPhotoVersion`, `navFavorites`)
+and the brain's brand. Then `features`, `assetToken`, `maxUploadBytes`,
+`workspaces` and `treeKinds`. `areas` is always `[]` outside the Admin
+workspace; for a member `onboarded` is always true and `pendingApprovals`
+always 0. `GET /api/member/shell` answers
 410 `{ error, code: "gone" }`, and whoami names `/api/shell` as every
 login's shell. The old `/api/client/*` routes (shell, chat, unread, push,
 bytes) answer every signed-in login 410 code gone.

@@ -207,18 +207,22 @@ workspaces W5c) (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
 ## Sharing a folder (workspaces)
 
 A folder is an item with a home and grants like any other
-([workspaces.md](./workspaces.md), "Folders"). Folders of every kind that
-can be granted (files, notes, pages, draw, tables, formulas, apps) are
-shared from the folder's Grant Access panel. System folders (Auto-filed)
-and the Admin-only kinds (tasks, events, contacts, secrets) are not.
+([workspaces.md](./workspaces.md), "Folders"). The tree offers the
+folder's Grant Access panel on folders of files, notes, pages, draw,
+tables, formulas and apps (the kinds `TREE_KIND_SPECS` marks `shareable`),
+never on a system folder (Auto-filed). Tasks, events and Recall maps are
+workspace kinds too (`mantle_kind_class`, migration 0241): the grants
+routes take them, but the tree offers no folder panel for them yet. Only
+contacts, secrets and the other Admin-class kinds live in the Admin
+workspace alone.
 
 - **Placing an item in a folder** (by create or by move) gives the item the
   folder's grants: the one automatic grant. Inside a moved folder a change
   passes down to what is inside, unless a folder on the way stops it (its
   own grant keeps a workspace; its "Removed here" blocks one). A grant set
   on the item, its home and its exclusions stay. Embeds do not follow:
-  nothing is granted for you. The database derives it (migration 0244,
-  `mantle_rederive_nodes`).
+  nothing is granted for you. The database derives it
+  (`mantle_rederive_nodes`, migration 0241, replaced by 0251).
 - **Confirm first.** A write that places items under another folder (a
   folder or items moved, a folder deleted with its contents lifted, a file
   or page made or copied into a folder, the Files screen's move and copy,

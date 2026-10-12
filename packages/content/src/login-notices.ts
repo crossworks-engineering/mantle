@@ -1,7 +1,9 @@
 /**
- * What a member or a client login is told about on its phone (migration
- * mobile_roles_push, docs/mobile-companion-backend.md "Three roles on the phone"): a reply
- * in its own chat thread, a review result on its own item, a new comment.
+ * What a member login is told about on its phone (migration
+ * mobile_roles_push, docs/mobile-companion-backend.md "Every login on the
+ * phone"): a reply in its own chat thread, a review result on its own item.
+ * The client login went in W8a, and the brain has no comments since
+ * 2026-10-09.
  *
  * The `login_notice` NOTIFY (raised by triggers) carries ids only. This
  * module turns one into the message for the ONE login it concerns: who is
@@ -15,10 +17,8 @@
  *    (0269, W7c), with the assistant's name as the title.
  *  - review: the author's own item. Its title while an admin holds it is
  *    the title it had when it was taken, never the admin's working title.
- *  - comment: on a personal item, its author (the item is in the author's
- *    own space, where the author reads every comment on it). On a brain
- *    item's client thread, every active client login, and only while the
- *    item is at client level (the rule the thread's own reads hold).
+ *  - comment: no longer raised to anyone (a 'comment' payload parses to
+ *    nothing).
  *
  * Nothing here sends: the push worker applies the login's toggles, finds its
  * live devices and seals the message (server/web/lib/push/login-notify.ts).
