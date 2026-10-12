@@ -205,6 +205,20 @@ export async function getRecallCardDetail(
   };
 }
 
+/** Whether `id` names a native map the caller reads: in a login's scope the
+ *  row rule of recall_maps follows the map's item (0265), so a map outside
+ *  the scope is not found, like an id no row has. */
+export async function recallMapReadable(ownerId: string, id: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: recallMaps.id })
+    .from(recallMaps)
+    .where(
+      and(eq(recallMaps.id, id), eq(recallMaps.ownerId, ownerId), isNotNull(recallMaps.nodeId)),
+    )
+    .limit(1);
+  return !!row;
+}
+
 /** The revisions panel. `actorName` is the name stored with the revision (the
  *  agent's slug, 'mcp', or the admin's display name); null on rows written
  *  before migration 0206. */

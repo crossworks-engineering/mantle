@@ -20,6 +20,7 @@ import {
   memberMayWrite,
   routeClass,
   itemWriteTarget,
+  WORKSPACE_ITEM_PREFIXES,
 } from './route-scope';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,15 +46,17 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
     expect(missing).toEqual([]);
   });
 
-  it('opens to every login only GET reads of brain items the manifest serves', async () => {
+  it('opens to every login only reads of brain items the manifest serves', async () => {
     const { routeManifest } = await import('../../server/route-manifest.gen');
     const served = new Set(routeManifest.flatMap((e) => e.methods.map((m) => `${m} ${e.pattern}`)));
     for (const key of MEMBER_OPEN_READS) {
       const [method, pattern] = key.split(' ') as [string, string];
-      expect(method, key).toBe('GET');
+      // A GET, or a POST that only reads (READ_POSTS: a formula's calculator).
+      expect(method === 'GET' || READ_POSTS.has(key), key).toBe(true);
+      expect(isReadRequest(method, pattern), key).toBe(true);
       expect(served.has(key), key).toBe(true);
       expect(routeClass(pattern), key).toEqual({ kind: 'content' });
-      expect(memberMayRead('HEAD', pattern), key).toBe(true);
+      expect(memberMayRead(method === 'GET' ? 'HEAD' : method, pattern), key).toBe(true);
     }
     expect(memberMayRead('POST', '/api/pages')).toBe(false);
     expect(memberMayRead('GET', '/api/settings')).toBe(false);
@@ -189,5 +192,186 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
   it('fix round 1 (M2): the Apps sidebar reads in the login scope', () => {
     expect(routeClass('/api/app-nav')).toEqual({ kind: 'content' });
     expect(routeClass('/api/app-nav/pins')).toEqual({ kind: 'content' });
+  });
+});
+
+/**
+ * The member route lists are generated from the kind registry since A1
+ * (workspaces arch plan v2, section 9): pinned here as sets, so a registry
+ * change that opens a route to non-Admin logins is a reviewed edit of this
+ * test. The D1 rows (tasks, events, formulas, Recall maps) are marked.
+ */
+describe('member route lists (A1: generated from the kind registry)', () => {
+  const set = (xs: Iterable<string>) => [...xs].sort();
+
+  it('the workspace kinds with an item route', () => {
+    expect(set(WORKSPACE_ITEM_PREFIXES)).toEqual(
+      set([
+        '/api/files/folders',
+        '/api/files/files',
+        '/api/notes',
+        '/api/pages',
+        '/api/tables',
+        '/api/apps',
+        '/api/formulas',
+        '/api/draws',
+        // D1
+        '/api/tasks',
+        '/api/events',
+        '/api/recall/maps',
+      ]),
+    );
+  });
+
+  it('MEMBER_OPEN_READS', () => {
+    expect(set(MEMBER_OPEN_READS)).toEqual(
+      set([
+        'GET /api/pages',
+        'GET /api/pages/:id',
+        'GET /api/pages/:id/backlinks',
+        'GET /api/pages/:id/descendant-count',
+        'GET /api/notes',
+        'GET /api/notes/:id',
+        'GET /api/draws',
+        'GET /api/draws/:id',
+        'GET /api/tables',
+        'GET /api/tables/:id',
+        'GET /api/tables/:id/rows',
+        'GET /api/tree/:kind',
+        'GET /api/tree/:kind/search',
+        'GET /api/tree/:kind/tags',
+        'GET /api/apps',
+        'GET /api/apps/:id',
+        'GET /api/nodes/:id',
+        'GET /api/search',
+        'GET /api/mentions/search',
+        'GET /api/formulas',
+        'GET /api/formulas/:id',
+        'GET /api/files/files',
+        'GET /api/files/files/:id',
+        'GET /api/files/folders',
+        'GET /api/files/folders/:id',
+        'GET /api/tree/:kind/marks',
+        'GET /api/draws/:id/svg',
+        // D1
+        'GET /api/tasks',
+        'GET /api/tasks/:id',
+        'GET /api/events',
+        'GET /api/events/:id',
+        'GET /api/recall/maps',
+        'GET /api/recall/maps/:id',
+        'GET /api/recall/maps/:id/cards/:card',
+        'GET /api/recall/maps/:id/revisions',
+        'POST /api/formulas/:id/evaluate',
+      ]),
+    );
+  });
+
+  it('MEMBER_OPEN_WRITES', () => {
+    expect(set(MEMBER_OPEN_WRITES)).toEqual(
+      set([
+        'POST /api/pages',
+        'PATCH /api/pages/:id',
+        'DELETE /api/pages/:id',
+        'PUT /api/pages/:id/draft',
+        'POST /api/pages/:id/commit',
+        'POST /api/pages/:id/discard-draft',
+        'POST /api/pages/:id/move',
+        'POST /api/notes',
+        'PATCH /api/notes/:id',
+        'DELETE /api/notes/:id',
+        'POST /api/draws',
+        'PATCH /api/draws/:id',
+        'DELETE /api/draws/:id',
+        'PUT /api/draws/:id/draft',
+        'POST /api/draws/:id/commit',
+        'POST /api/draws/:id/discard-draft',
+        'POST /api/tables',
+        'PATCH /api/tables/:id',
+        'DELETE /api/tables/:id',
+        'PUT /api/tables/:id/draft',
+        'POST /api/tables/:id/draft-ops',
+        'POST /api/tables/:id/commit',
+        'POST /api/tables/:id/discard-draft',
+        'POST /api/files/files',
+        'PATCH /api/files/files/:id',
+        'DELETE /api/files/files/:id',
+        'POST /api/files/folders',
+        'PATCH /api/files/folders/:id',
+        'DELETE /api/files/folders/:id',
+        'POST /api/apps',
+        'PATCH /api/apps/:id',
+        'DELETE /api/apps/:id',
+        'PUT /api/apps/:id/draft',
+        'DELETE /api/apps/:id/draft',
+        'POST /api/apps/:id/build',
+        'POST /api/apps/:id/format',
+        'POST /api/apps/:id/publish',
+        'POST /api/tree/:kind/folders',
+        'PATCH /api/tree/:kind/folders/:id',
+        'DELETE /api/tree/:kind/folders/:id',
+        'POST /api/tree/:kind/move',
+        'POST /api/tree/items/:id/opened',
+        'PUT /api/tree/items/:id/pin',
+        'POST /api/apps/:id/frame-ticket',
+        'POST /api/apps/:id/db-broker',
+        'POST /api/apps/:id/tool-broker',
+        // D1
+        'POST /api/tasks',
+        'PATCH /api/tasks/:id',
+        'DELETE /api/tasks/:id',
+        'POST /api/events',
+        'PATCH /api/events/:id',
+        'DELETE /api/events/:id',
+        'POST /api/formulas',
+        'PATCH /api/formulas/:id',
+        'DELETE /api/formulas/:id',
+        'POST /api/recall/maps',
+        'PATCH /api/recall/maps/:id',
+        'DELETE /api/recall/maps/:id',
+        'POST /api/recall/maps/:id/cards',
+        'PUT /api/recall/maps/:id/cards/:card',
+        'DELETE /api/recall/maps/:id/cards/:card',
+        'POST /api/recall/maps/:id/cards/reorder',
+        'POST /api/recall/maps/:id/cards/:card/prompt',
+        'POST /api/recall/revisions/:id/restore',
+      ]),
+    );
+  });
+
+  it('CREATE_ROUTES', () => {
+    expect(set(CREATE_ROUTES)).toEqual(
+      set([
+        'POST /api/pages',
+        'POST /api/notes',
+        'POST /api/draws',
+        'POST /api/tables',
+        'POST /api/files/files',
+        'POST /api/files/folders',
+        'POST /api/apps',
+        'POST /api/tree/:kind/folders',
+        // D1
+        'POST /api/tasks',
+        'POST /api/events',
+        'POST /api/formulas',
+        'POST /api/recall/maps',
+      ]),
+    );
+  });
+
+  it('every D1 item write names its item, with edit, or manage for a delete', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    const at = (p: string) => p.replace(':id', id).replace(':card', 'c1');
+    for (const key of MEMBER_OPEN_WRITES) {
+      const [method, pattern] = key.split(' ') as [string, string];
+      if (!/^\/api\/(tasks|events|formulas|recall)\//.test(pattern)) continue;
+      if (CREATE_ROUTES.has(key)) continue;
+      const t = itemWriteTarget(method, pattern, at(pattern));
+      expect(t, key).not.toBeNull();
+      expect(t!.id, key).toBe(id);
+      const head = pattern.split('/').slice(0, 5).join('/');
+      const isDeleteOfItem = method === 'DELETE' && /\/:id$/.test(pattern) && head === pattern;
+      expect(t!.need, key).toBe(isDeleteOfItem ? 'manage' : 'edit');
+    }
   });
 });

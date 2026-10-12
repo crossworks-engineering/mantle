@@ -23,6 +23,7 @@
  * refuses it.
  */
 import type { WorkspaceArea } from '@mantle/client-types';
+import { ITEM_KINDS, ITEM_KIND_NAMES } from '@mantle/client-types/kinds';
 
 export type RouteClass =
   { kind: 'content' } | { kind: 'self' } | { kind: 'area'; area: WorkspaceArea };
@@ -177,100 +178,89 @@ export function isReadRequest(method: string, pattern: string | null): boolean {
 }
 
 /**
+ * The content prefixes of the workspace kinds (the kind registry,
+ * @mantle/client-types/kinds, workspaces arch A1): a kind of the workspace
+ * class with an item route. Each has the same five item routes: list, read,
+ * create, edit (PATCH) and delete. Tasks, events, formulas and Recall maps
+ * joined with the registry (owner decision D1): before A1 a member reached
+ * them on MCP only (formulas: reads only).
+ */
+export const WORKSPACE_ITEM_PREFIXES: readonly string[] = ITEM_KIND_NAMES.flatMap((t) => {
+  const spec = ITEM_KINDS[t];
+  return spec.class === 'workspace' && spec.route.content ? [spec.route.content] : [];
+});
+
+const itemReads = (p: string) => [`GET ${p}`, `GET ${p}/:id`];
+const itemWrites = (p: string) => [`POST ${p}`, `PATCH ${p}/:id`, `DELETE ${p}/:id`];
+
+/**
  * The owner routes a non-Admin login may call since W6a: reads of brain
  * items in the login's scope (the row rules decide what it sees; drafts are
  * read only where the login may edit the item, W6b). Writes are
  * MEMBER_OPEN_WRITES; every other owner route still refuses a member
- * (403 member-login).
+ * (403 member-login). The list and read routes of every workspace kind come
+ * from the registry; the rest are named here.
  */
 export const MEMBER_OPEN_READS: readonly string[] = [
-  'GET /api/pages',
-  'GET /api/pages/:id',
+  ...WORKSPACE_ITEM_PREFIXES.flatMap(itemReads),
   'GET /api/pages/:id/backlinks',
   'GET /api/pages/:id/descendant-count',
-  'GET /api/notes',
-  'GET /api/notes/:id',
-  'GET /api/draws',
-  'GET /api/draws/:id',
-  'GET /api/tables',
-  'GET /api/tables/:id',
   'GET /api/tables/:id/rows',
   'GET /api/tree/:kind',
   'GET /api/tree/:kind/search',
   'GET /api/tree/:kind/tags',
-  'GET /api/apps',
-  'GET /api/apps/:id',
   'GET /api/nodes/:id',
   'GET /api/search',
   'GET /api/mentions/search',
-  'GET /api/formulas',
-  'GET /api/formulas/:id',
   // W6b: a member's own files are brain items now (their bytes and a
   // drawing's SVG through /api/member/files/:id and /api/member/draws/:id/svg).
-  'GET /api/files/files',
   // W6b fix round 1: a file's detail (its text too), so a member opens it
   // and a /n link finds its folder. Its bytes and thumbnail stay on
   // /api/member/files/:id (?raw and ?thumb answer a plain 401 here).
-  'GET /api/files/files/:id',
-  'GET /api/files/folders',
-  'GET /api/files/folders/:id',
   'GET /api/tree/:kind/marks',
   // W7e: a drawing's committed SVG (JSON, or ?raw=1 as an image), in the
   // login's scope: an image whose file the login does not read is taken
   // out. Never a render for a non-Admin login (the cache only).
   'GET /api/draws/:id/svg',
+  // A1 (D1): a formula's calculator (a READ_POSTS entry), a Recall card and
+  // a map's revision log, in the login's scope.
+  'POST /api/formulas/:id/evaluate',
+  'GET /api/recall/maps/:id/cards/:card',
+  'GET /api/recall/maps/:id/revisions',
 ];
 
 const MEMBER_OPEN: ReadonlySet<string> = new Set(MEMBER_OPEN_READS);
 
 /**
  * The owner routes a non-Admin login may WRITE through since W6b (plan 15,
- * 21.8 row 7): create, edit and delete pages, notes, drawings, tables, files
- * and apps, their drafts and folders, in its own scope. The request runs in
- * the login's scope (writes on the system pool); an item the route names is
- * checked first (itemWriteTarget: mantle_may_edit, or mantle_may_manage for
- * a delete or a move), and the database checks the rest on the request's
- * system transactions (a create into a folder, a move, a delete: 0241,
- * 0245, 0266). A create lands in the request's workspace (?ws=) when the
- * login moderates it, else in the folder it is made in when the login may
- * edit that, else in the login's private workspace (mantle_default_home).
+ * 21.8 row 7): create, edit and delete the workspace kinds (the create,
+ * PATCH and DELETE routes of WORKSPACE_ITEM_PREFIXES), their drafts and
+ * folders, in its own scope. The request runs in the login's scope (writes
+ * on the system pool); an item the route names is checked first
+ * (itemWriteTarget: mantle_may_edit, or mantle_may_manage for a delete or a
+ * move), and the database checks the rest on the request's system
+ * transactions (a create into a folder, a move, a delete: 0241, 0245,
+ * 0266). A create lands in the request's workspace (?ws=) when the login
+ * moderates it, else in the folder it is made in when the login may edit
+ * that, else in the login's private workspace (mantle_default_home).
  * Not here: Admin-only kinds, app review and purge, bulk deletes, imports,
- * history and snapshot restores. The app runner routes are here since W7e
- * (the /api/member/apps runner routes are deprecated, kept this release).
+ * history and snapshot restores, the formula library seed. The app runner
+ * routes are here since W7e (the /api/member/apps runner routes are
+ * deprecated, kept this release).
  */
 export const MEMBER_OPEN_WRITES: readonly string[] = [
-  'POST /api/pages',
-  'PATCH /api/pages/:id',
-  'DELETE /api/pages/:id',
+  ...WORKSPACE_ITEM_PREFIXES.flatMap(itemWrites),
   'PUT /api/pages/:id/draft',
   'POST /api/pages/:id/commit',
   'POST /api/pages/:id/discard-draft',
   'POST /api/pages/:id/move',
-  'POST /api/notes',
-  'PATCH /api/notes/:id',
-  'DELETE /api/notes/:id',
-  'POST /api/draws',
-  'PATCH /api/draws/:id',
-  'DELETE /api/draws/:id',
   'PUT /api/draws/:id/draft',
   'POST /api/draws/:id/commit',
   'POST /api/draws/:id/discard-draft',
-  'POST /api/tables',
-  'PATCH /api/tables/:id',
-  'DELETE /api/tables/:id',
   'PUT /api/tables/:id/draft',
   'POST /api/tables/:id/draft-ops',
   'POST /api/tables/:id/commit',
   'POST /api/tables/:id/discard-draft',
-  'POST /api/files/files',
-  'PATCH /api/files/files/:id',
-  'DELETE /api/files/files/:id',
-  'POST /api/files/folders',
-  'PATCH /api/files/folders/:id',
-  'DELETE /api/files/folders/:id',
-  'POST /api/apps',
-  'PATCH /api/apps/:id',
-  'DELETE /api/apps/:id',
   'PUT /api/apps/:id/draft',
   'DELETE /api/apps/:id/draft',
   'POST /api/apps/:id/build',
@@ -289,6 +279,15 @@ export const MEMBER_OPEN_WRITES: readonly string[] = [
   'POST /api/apps/:id/frame-ticket',
   'POST /api/apps/:id/db-broker',
   'POST /api/apps/:id/tool-broker',
+  // A1 (D1): a Recall map's cards, its prompt confirm and a revision
+  // restore, where the login may edit the map (itemWriteTarget), the same
+  // rule as the recall_* tools on MCP (item-write-gate.ts).
+  'POST /api/recall/maps/:id/cards',
+  'PUT /api/recall/maps/:id/cards/:card',
+  'DELETE /api/recall/maps/:id/cards/:card',
+  'POST /api/recall/maps/:id/cards/reorder',
+  'POST /api/recall/maps/:id/cards/:card/prompt',
+  'POST /api/recall/revisions/:id/restore',
 ];
 
 const MEMBER_WRITE: ReadonlySet<string> = new Set(MEMBER_OPEN_WRITES);
@@ -299,15 +298,11 @@ export function memberMayWrite(method: string, pattern: string | null): boolean 
   return MEMBER_WRITE.has(`${method.toUpperCase()} ${pattern}`);
 }
 
-/** The routes that create an item (W6b): ?ws= names where it lands. */
+/** The routes that create an item (W6b): ?ws= names where it lands. The
+ *  create route of every workspace kind (the registry, A1), and a folder of
+ *  any tree kind. */
 export const CREATE_ROUTES: ReadonlySet<string> = new Set([
-  'POST /api/pages',
-  'POST /api/notes',
-  'POST /api/draws',
-  'POST /api/tables',
-  'POST /api/files/files',
-  'POST /api/files/folders',
-  'POST /api/apps',
+  ...WORKSPACE_ITEM_PREFIXES.map((p) => `POST ${p}`),
   'POST /api/tree/:kind/folders',
 ]);
 

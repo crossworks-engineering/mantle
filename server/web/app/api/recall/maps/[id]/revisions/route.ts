@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { getRecallRevisions } from '@/lib/recall';
+import { getRecallRevisions, recallMapReadable } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
 
 /** The revisions panel, newest first. Also the audit of AGENT edits, which
@@ -10,5 +10,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // A map the caller does not read is not found (docs/workspaces.md), never
+  // an empty log.
+  if (!(await recallMapReadable(user.id, id))) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   return NextResponse.json({ revisions: await getRecallRevisions(user.id, id) });
 }
