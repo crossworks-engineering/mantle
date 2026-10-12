@@ -22,8 +22,12 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
   let m: typeof import('./index');
   const notices: string[] = [];
   const owner = randomUUID();
+  // The app pool's tests below are about warn: the file sets it, so it runs
+  // the same under `pnpm test:actor-off` (whose suite env is off).
+  const suiteMode = process.env.MANTLE_ACTOR_CHECK;
 
   beforeAll(async () => {
+    process.env.MANTLE_ACTOR_CHECK = 'warn';
     scratch = await createMigratedScratchDatabase(URL!);
     sql = postgres(scratch.url, {
       max: 1,
@@ -36,6 +40,8 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
   }, 120_000);
 
   afterAll(async () => {
+    if (suiteMode === undefined) delete process.env.MANTLE_ACTOR_CHECK;
+    else process.env.MANTLE_ACTOR_CHECK = suiteMode;
     await m?.closeDb();
     await sql?.end();
     await scratch?.drop();
