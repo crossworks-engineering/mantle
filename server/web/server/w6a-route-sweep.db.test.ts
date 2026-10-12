@@ -68,6 +68,18 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
 });
 
+// The object store (RustFS) is outside this box's test: an app build puts
+// its bundle there. Content-addressed keys, nothing kept (A0 fix round 2,
+// M-3: the member sweep runs the build route on a real app).
+vi.mock('@mantle/storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/storage')>()),
+  putContent: async (body: Buffer) => {
+    const { createHash } = await import('node:crypto');
+    const sha256 = createHash('sha256').update(body).digest('hex');
+    return { key: `test/${sha256}`, sha256, size: body.length, deduped: false };
+  },
+}));
+
 /**
  * The writes a request scope sends to the system pool (W6a fix round 1,
  * L2), by login kind, route and calling file (the first outside
