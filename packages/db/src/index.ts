@@ -19,6 +19,7 @@ export {
   currentActor,
   actorCheckMode,
   takeActorMisses,
+  takeWriteRoleGaps,
   ActorMissingError,
   SYSTEM_REASON_RE,
 } from './actor';

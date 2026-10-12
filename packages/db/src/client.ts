@@ -937,11 +937,13 @@ async function writeRoleStatement(
 ): Promise<unknown> {
   const conn = await writePoolSql().reserve();
   try {
-    const begin = conn.unsafe('begin');
+    // BEGIN and COMMIT are the gateway's own, tagged as the actor's
+    // (a2a-round-trips.db.test.ts counts them apart).
+    const begin = conn.unsafe(`${ACTOR_SQL_TAG} begin`);
     const set = conn.unsafe(route.setSql);
     const q = conn.unsafe(query, (args ?? []) as never[]);
     const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
-    const commit = conn.unsafe('commit');
+    const commit = conn.unsafe(`${ACTOR_SQL_TAG} commit`);
     const out = await Promise.allSettled([begin, set, main, commit]);
     const failed = out.find((r) => r.status === 'rejected');
     if (failed) throw (failed as PromiseRejectedResult).reason;

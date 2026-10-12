@@ -357,6 +357,22 @@ const clientCalls = CALLS.filter((c) => c.file === CLIENT_TS && c.kind === 'post
 const viewerCall = clientCalls.find((c) => /viewerDatabaseUrl\(/.test(c.args));
 const systemCall = clientCalls.find((c) => !/viewerDatabaseUrl\(/.test(c.args));
 
+/**
+ * The processes that open the write role's pool (arch A2b2b): the entry
+ * files that call openLoginWritePool, by the compose service they run.
+ * Only web and api (docs/actors.md): any other caller fails the test below
+ * until it is counted here.
+ */
+const WRITE_POOL_ENTRIES: Record<string, string> = {
+  'server/web/server/main.ts': 'web',
+  'server/api/src/main.ts': 'api',
+};
+const WRITE_POOL_OPENERS = runtimeRoots.flatMap((root) =>
+  sourceFiles(join(repoRoot, root))
+    .map((path) => relative(repoRoot, path))
+    .filter((file) => file !== CLIENT_TS && /\bopenLoginWritePool\(/.test(code(read(file)))),
+);
+
 /** Each LOGIN role's CONNECTION LIMIT, read from the statement migrate runs. */
 const ROLE_LIMITS = POOL_ROLES.map((role) => {
   const stmt = viewerRoleStatements(role, 'ceiling-test-key', false).join(' ');
@@ -404,8 +420,11 @@ function ceiling(shape: Shape): { total: number; lines: Record<string, number> }
   if (systemCall) lines['system pool'] = sizeOf(systemCall) * shape.processes.length;
   if (viewerCall) {
     const perProcess = sizeOf(viewerCall);
+    // The write pool only in the processes that open it (A2b2b).
+    const writers = Object.values(WRITE_POOL_ENTRIES).filter((p) => shape.processes.includes(p));
     for (const { role, limit } of ROLE_LIMITS) {
-      lines[`role ${role}`] = Math.min(limit, perProcess * shape.processes.length);
+      const procs = role === 'write' ? writers.length : shape.processes.length;
+      lines[`role ${role}`] = Math.min(limit, perProcess * procs);
     }
   }
   const workers = queueWorkers(shape.processes);
@@ -461,6 +480,17 @@ describe('Postgres connection ceiling', () => {
     }
     expect(systemCall).toBeDefined();
     expect(viewerCall).toBeDefined();
+  });
+
+  it('only web and api open the write pool (A2b2b)', () => {
+    expect([...WRITE_POOL_OPENERS].sort()).toEqual(Object.keys(WRITE_POOL_ENTRIES).sort());
+    for (const p of Object.values(WRITE_POOL_ENTRIES)) expect(DB_PROCESSES).toContain(p);
+    // Each process opens VIEWER_POOL_MAX of it, under the role's limit.
+    const write = ROLE_LIMITS.find((r) => r.role === 'write');
+    expect(write).toBeDefined();
+    expect(viewerCall && sizeOf(viewerCall) * Object.keys(WRITE_POOL_ENTRIES).length).toBeLessThanOrEqual(
+      write!.limit,
+    );
   });
 
   it('the runs worker opens its boss only with MANTLE_RUNS on', () => {
