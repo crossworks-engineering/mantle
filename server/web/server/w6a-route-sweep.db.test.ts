@@ -25,6 +25,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RequestOutcome } from '@mantle/db';
@@ -134,7 +135,7 @@ type Json = Record<string, unknown>;
 const APP_RUNTIME_BUILT =
   (process.env.MANTLE_APP_RUNTIME_MANIFEST !== undefined &&
     existsSync(process.env.MANTLE_APP_RUNTIME_MANIFEST)) ||
-  existsSync(new URL('../public/app-runtime/manifest.json', import.meta.url));
+  existsSync(fileURLToPath(new globalThis.URL('../public/app-runtime/manifest.json', import.meta.url)));
 
 /** Streams that never end, and routes that reach outside this box. Their
  *  gate is the same function as their siblings'; they are skipped here. */
