@@ -43,7 +43,7 @@ Review is gone: members no longer submit items for you to approve, and there is 
 ## Other tabs
 
 - **Shared links**: every open link to your items, newest first.
-- **Settings**: member chat, the read posture and the member home app.
+- **Settings**: member chat and the read posture. The home app moved to each workspace's screen: see [Workspace home apps](../07-api/07-member-home-apps.md).
 
 Client logins are gone. To work with people outside your company, make a workspace for them in **Settings > Workspaces**. See [Add logins](../05-admin/07-logins.md).
 

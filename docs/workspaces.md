@@ -36,7 +36,7 @@ the phone app, MCP and the HTTP API.
 
 Open **Settings > Workspaces**. One screen per workspace holds its name,
 description and contact, its users with their Moderator ticks, its
-assistant and its connectors.
+assistant, its connectors and its landing page.
 
 The workspaces a brain has:
 
@@ -56,9 +56,9 @@ The workspaces a brain has:
 Who may change a workspace:
 
 - **A Moderator** adds users (by a search on name or email), sets or clears
-  the Moderator tick, removes users, and edits the name and description. A
-  Moderator outside Admin types at least 3 letters and sees at most 10
-  matches.
+  the Moderator tick, removes users, edits the name and description, and
+  sets the landing page. A Moderator outside Admin types at least 3 letters
+  and sees at most 10 matches.
 - **An Admin user** (with the users area) sees every workspace and may add
   anyone to any workspace, themselves included. The add is logged and the
   screen shows "Added by NAME on DATE".
@@ -76,6 +76,35 @@ Who may change a workspace:
 Every change of users, Moderator ticks, grants and resources writes a
 `workspace_events` row. A workspace or a login the caller may not see
 answers 404, never 403.
+
+## The landing page
+
+Every workspace has a landing page. It is what a user sees at the root of
+the app (**Home**) while that workspace is their current workspace. When
+they switch, the landing page changes with it.
+
+- **The Built-in home** is the default, for every workspace, Admin
+  included. It shows that workspace's data: its newest pages, how many
+  items of each kind it reads, and the apps it holds that the user may run.
+- **A home app** replaces the Built-in home. A Moderator of the workspace
+  sets it on the workspace screen, under **Landing page**. Only an app the
+  workspace holds (share it with the workspace in Grant Access first) with
+  a working published build can be picked. Picking makes no grant.
+- If the workspace stops holding the app, or its build breaks, the landing
+  page shows the Built-in home again. The screen then names the app only
+  while the workspace still holds it.
+- **All my workspaces** in the switcher shows the Built-in home over every
+  workspace of the user. It never shows a home app.
+- An Admin area does not set another workspace's landing page: only its
+  Moderators do. Admin users moderate Team, so they set Team's.
+- The brain health **Dashboard** is no landing page. Admin users with the
+  settings area open it from the menu.
+
+A home app reads the same data through `host.hub.get()`, kept to the
+workspace: [Workspace home apps](./guide/07-api/07-member-home-apps.md).
+On the wire: `GET /api/home?ws=<id>` answers the landing page (no `ws`:
+all my workspaces), and `PATCH /api/workspaces/:id` with `landingAppId`
+sets it (`null`: the Built-in home).
 
 ## Items and grants
 
@@ -357,6 +386,9 @@ The users of the Admin workspace manage the brain through five areas:
   and comment threads (2026-10-09).
 - **The team portal, team codes and the forum** (earlier, member logins
   Phase 6).
+- **The one member home app** for the whole brain (Team admin >
+  Settings). Since migration 0275 each workspace has its own landing page;
+  the old pick became the Team workspace's home app.
 - **Automatic Admin grants.** Nothing adds a grant to Admin. To put an item
   in Admin, an Admin user shares it with Admin by hand.
 

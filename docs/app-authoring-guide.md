@@ -607,7 +607,7 @@ view over data it already holds (or data baked into its bundle).
 > workspace (its Grant Access panel) and they run it from their own login.
 
 An open link adds no grant: the app shows in a member's launcher and on
-the member home only when a workspace of theirs holds it. Anyone who has
+a landing page only when a workspace of theirs holds it. Anyone who has
 the link, a member too, runs it there read only.
 
 ### Shared with a contact (one outsider)
@@ -678,10 +678,11 @@ run the green PUBLISHED build only and never edit it from there.
   record which member wrote a row, fill its columns with `:host_me_id` and
   `:host_me_name` in the SQL (see "Who is running the app"); `host.me()`
   shows the member their own name.
-- **Home app:** the app pinned as the member home app (Team > Settings)
-  must already be shared with the Team workspace (else 409
-  `not_in_team`). It is the members' home page while a workspace of the
-  member holds it with a green published build. `host.hub.get()` answers
+- **Home app:** a workspace's landing page (its screen, **Landing page**,
+  set by a Moderator of it) must already be shared with that workspace
+  (else 409 `landing_app_not_held`). It is the workspace's landing page
+  while the workspace holds it with a green published build.
+  `host.hub.get()` answers
   there too: sections are the newest pages in the member's Library, and a
   section's `token` is the page id.
 
@@ -728,13 +729,16 @@ the member-only `my_app_*` tools were retired). Read `app_authoring_guide`
 - **Keys and peers** never change an app's code (the risky-tool rule): a
   member builds over its own OAuth connection.
 
-## Team Hub apps (a designated app as the members' home)
+## Home apps (an app as a workspace's landing page)
 
-A brain can designate one published app as its **home app**: member logins
-get it full-screen on their home page (`GET /api/member/home`; who runs an
-app: [workspaces.md](workspaces.md), "Apps") while a workspace of the
-member holds it with a green published build. Picking it needs the Team
-workspace to hold it already.
+Each workspace may name one published app as its **home app**: its users
+get it full-screen at **Home** while the workspace is their current one
+(`GET /api/home?ws=<id>`; who runs an app: [workspaces.md](workspaces.md),
+"Apps" and "The landing page") while the workspace holds it with a green
+published build. A Moderator of the workspace sets it on the workspace
+screen; the workspace must hold the app already. (Until task d78e7bde one
+app was the home of every member, set in Team admin > Settings; migration
+0275 made it the Team workspace's home app.)
 Until member logins Phase 6 the same app was the team-code **Team Hub** at
 `/hub`, beside the `/team` workspace and the Forum; those are retired and
 redirect to `/login`. Home apps get one extra namespace, `host.hub.get()`

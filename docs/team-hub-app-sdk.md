@@ -2,14 +2,18 @@
 
 > **The `/hub` host is retired (member logins Phase 6, 2026-09-28).** The
 > team-code `/hub` (and `/team`, and `/api/team/hub`) went with the team
-> portal; `/hub` now redirects to `/login`. The one host left is the **member
-> home**: a member login's home page runs the pinned app, and `hub.get`
-> answers from `GET /api/member/home` in the same `HubData` shape (section 3,
-> "The member home is a second host", now the only one; who runs an app:
-> [workspaces.md](workspaces.md), "Apps"). Designation is unchanged
-> (`PUT /api/team-admin/hub-app`, pref `teamHubAppId`). Where this guide says
-> `/hub`, the team token gate, the Forum link or the signed team bearer, read
-> it as history.
+> portal; `/hub` now redirects to `/login`. The one host left is a
+> **workspace's landing page** (task d78e7bde): every login's Home runs the
+> home app of its current workspace, and `hub.get` answers from
+> `GET /api/home?ws=<id>` in the same `HubData` shape, kept to what that
+> workspace reads (who runs an app: [workspaces.md](workspaces.md), "Apps"
+> and "The landing page"). Designation moved too: a Moderator of the
+> workspace sets it on the workspace screen (`PATCH /api/workspaces/:id`
+> `landingAppId`); `PUT /api/team-admin/hub-app` answers 410, and the old
+> `teamHubAppId` pick became the Team workspace's home app (migration
+> 0275). Where this guide says `/hub`, the team token gate, the Forum link,
+> the signed team bearer, the pref or the Team-admin picker, read it as
+> history.
 
 How to build, structure, and maintain a **team hub app**: the mini-app a brain
 designates to render as its Team Hub (served at `/hub` since the Team Workspace took over `/team`) for external team members. This is the
