@@ -19,9 +19,11 @@ older screen for the rest.
 
 - **One tree per kind.** Each kind has a root label (`files`, `notes`, `pages`,
   `draw`, `tables`, `formulas`, `apps`, `tasks`, `events`, `contacts`,
-  `secrets`). The kinds, their roots, node types, sort orders and whether a
-  folder may be shared are one table: `TREE_KIND_SPECS` in
-  `packages/client-types/src/tree.ts`.
+  `secrets`, `recall`). The kinds, their roots, node types, sort orders and
+  whether a folder may be shared come from the kind registry, `ITEM_KINDS`
+  in `packages/client-types/src/kinds.ts` (each kind's `tree` entry);
+  `TREE_KIND_SPECS` in `packages/client-types/src/tree.ts` is derived from
+  it.
 - **Folders are rows.** A folder is a `branch` node under its kind's root, and
   an item's location is its folder's path (`files.clients.acme` holds the files
   whose `path` is exactly that). An item at the root is unsorted. Items are

@@ -135,10 +135,15 @@ other than Admin (a team surface).
 A Recall map is a workspace kind (`mantle_kind_class`, migration 0241), so
 a grant can give it to a workspace other than Admin. Migration 0265 gives
 logins outside Admin their read rules: a login reads a map its scope reads
-as an item, and the map's cards and revisions follow it. The tree offers no
-Grant Access panel on a Recall folder yet (`shareable: false` in
-`TREE_KIND_SPECS`): that waits for a workspace's assistant to read maps
-(R6).
+as an item, and the map's cards and revisions follow it. Since workspaces
+arch A1 (owner decision D1) the HTTP routes under `/api/recall` follow the
+same rule for every login: a login reads a map its scope reads, and changes
+it (its cards, a prompt confirm, a revision restore) where it may edit the
+map, as the `recall_*` tools on MCP do; deleting a map needs a Moderator of
+its home. The tree offers no Grant Access panel on a Recall folder yet
+(`shareable: false` in the kind registry, `ITEM_KINDS` in
+`packages/client-types/src/kinds.ts`): that waits for a workspace's
+assistant to read maps (R6).
 
 **Moving a remembered slug onto a map.** A map's slug and former slugs are
 taken for every other map. To give a native map a slug another map answers
