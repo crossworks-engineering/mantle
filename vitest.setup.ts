@@ -35,7 +35,10 @@ afterEach(() => {
   if (gaps.length > 0) {
     throw new Error(
       `${gaps.length} login write(s) met a right the write role does not hold (arch A2b2b):\n` +
-        gaps.slice(0, 10).map((g) => `  ${g}`).join('\n'),
+        gaps
+          .slice(0, 10)
+          .map((g) => `  ${g}`)
+          .join('\n'),
     );
   }
   const misses = takeActorMisses();

@@ -101,7 +101,9 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     )[0]?.ws;
   /** Who sent the writes to nodes that `fn` caused (session_user each). */
   const writersOf = async (fn: () => Promise<unknown>): Promise<string[]> => {
-    const [top] = await x<{ n: number }>(sql`select coalesce(max(id), 0)::int as n from a2b2b_seen`);
+    const [top] = await x<{ n: number }>(
+      sql`select coalesce(max(id), 0)::int as n from a2b2b_seen`,
+    );
     await fn();
     const rows = await x<{ who: string }>(
       sql`select who from a2b2b_seen where id > ${top!.n} order by id`,
@@ -151,9 +153,11 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     adminWs = ws.find((w) => w.key === 'admin')!.id;
     // Which role sent each write to nodes (this scratch database only).
     await x(sql`create table a2b2b_seen (id bigserial primary key, who text not null, op text)`);
-    await x(sql.raw(`create function a2b2b_seen_trg() returns trigger language plpgsql
+    await x(
+      sql.raw(`create function a2b2b_seen_trg() returns trigger language plpgsql
       security definer set search_path = public as $$
-      begin insert into a2b2b_seen (who, op) values (session_user, tg_op); return null; end $$`));
+      begin insert into a2b2b_seen (who, op) values (session_user, tg_op); return null; end $$`),
+    );
     await x(sql`create trigger zz_a2b2b_seen after insert or update or delete on nodes
       for each statement execute function a2b2b_seen_trg()`);
     const tokens = await import('../lib/auth/tokens');
@@ -204,7 +208,10 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       expect(res!.status, res!.text.slice(0, 200)).toBe(201);
       // The note's own insert is the write role's (a missing kind root is
       // the system's, repair:kind-root).
-      expect(who.some((w) => WRITER.test(w)), `${mode}: ${who.join(',')}`).toBe(true);
+      expect(
+        who.some((w) => WRITER.test(w)),
+        `${mode}: ${who.join(',')}`,
+      ).toBe(true);
       const id = ((res!.json.note as Json | undefined)?.id ?? res!.json.id) as string;
       const [row] = await x<{ home: string }>(
         sql`select home_ws::text as home from nodes where id = ${id}`,
@@ -216,7 +223,10 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         expect(r.status, r.text.slice(0, 200)).toBe(200);
       });
       expect(edits.length).toBeGreaterThan(0);
-      expect(edits.every((w) => WRITER.test(w)), edits.join(',')).toBe(true);
+      expect(
+        edits.every((w) => WRITER.test(w)),
+        edits.join(','),
+      ).toBe(true);
     }
   });
 
@@ -245,7 +255,11 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     // this edit; called past it, only the write check stands.
     const edit = (title: string) =>
       inRequest(mem, () =>
-        m.db.update(m.nodes).set({ title }).where(eq(m.nodes.id, roNote)).returning({ id: m.nodes.id }),
+        m.db
+          .update(m.nodes)
+          .set({ title })
+          .where(eq(m.nodes.id, roNote))
+          .returning({ id: m.nodes.id }),
       );
     setMode('warn');
     expect(await edit(`${tag} warn edit`)).toHaveLength(1);
@@ -297,7 +311,10 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         );
         expect(made[0]?.home, name).toBe(team);
         expect(who.length, name).toBeGreaterThan(0);
-        expect(who.every((w) => WRITER.test(w)), `${name}: ${who.join(',')}`).toBe(true);
+        expect(
+          who.every((w) => WRITER.test(w)),
+          `${name}: ${who.join(',')}`,
+        ).toBe(true);
         // No Moderator of its home (Admin, the default): refused, by the
         // write check or the row rule (the scope reads no Admin row).
         const refused = await m
@@ -337,15 +354,14 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     // A transaction that writes a table the role holds no right on.
     await inRequest(mem, () =>
       m.db.transaction(async (tx) => {
-        await tx
-          .insert(m.profiles)
-          .values({ userId: mem, preferences: {} })
-          .onConflictDoNothing();
+        await tx.insert(m.profiles).values({ userId: mem, preferences: {} }).onConflictDoNothing();
       }),
     );
     expect(m.takeWriteRoleGaps()).toEqual(['permission denied for table profiles']);
     expect(
-      (await x<{ n: number }>(sql`select count(*)::int as n from profiles where user_id = ${mem}`))[0]!.n,
+      (
+        await x<{ n: number }>(sql`select count(*)::int as n from profiles where user_id = ${mem}`)
+      )[0]!.n,
     ).toBe(1);
     // A typed and a raw single write: decided by their table, no gap.
     await inRequest(mem, async () => {
@@ -353,7 +369,9 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         .update(m.profiles)
         .set({ preferences: { timezone: 'UTC' } })
         .where(eq(m.profiles.userId, mem));
-      await m.executeWrite(sql`update profiles set preferences = preferences where user_id = ${mem}`);
+      await m.executeWrite(
+        sql`update profiles set preferences = preferences where user_id = ${mem}`,
+      );
     });
     expect(m.takeWriteRoleGaps()).toEqual([]);
   });
@@ -431,8 +449,11 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     await x(sql`insert into nodes (id, owner_id, type, title, path)
                 values (${inRo}, ${owner}, 'note', ${`${tag} in ro`}, 'notes')`);
     await homeIn(inRo, ro);
-    const notManager = await asWriter(mem, 'on', [inRo], (tx) =>
-      tx`select mantle_grant_move_home(${inRo}::uuid, ${priv!}::uuid, false, ${mem}::uuid)`,
+    const notManager = await asWriter(
+      mem,
+      'on',
+      [inRo],
+      (tx) => tx`select mantle_grant_move_home(${inRo}::uuid, ${priv!}::uuid, false, ${mem}::uuid)`,
     );
     expect(notManager.code).toBe('42501');
     expect(notManager.message).toBe('not allowed to move this item');
@@ -450,8 +471,11 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     await x(sql`insert into nodes (id, owner_id, type, title, path)
                 values (${item}, ${owner}, 'note', ${`${tag} granted`}, 'notes')`);
     await homeIn(item, team);
-    const direct = await asWriter(mem, 'on', [item], (tx) =>
-      tx`update item_grants set granted_by = ${mem}::uuid where node_id = ${item}`,
+    const direct = await asWriter(
+      mem,
+      'on',
+      [item],
+      (tx) => tx`update item_grants set granted_by = ${mem}::uuid where node_id = ${item}`,
     );
     expect(direct.code).toBe('42501');
     expect(direct.message).toMatch(/^permission denied for table item_grants/);
@@ -460,15 +484,20 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       mem,
       'on',
       [item],
-      (tx) => tx`select mantle_grant_change('add', ${item}::uuid, ${priv}::uuid, true, ${mem}::uuid)`,
+      (tx) =>
+        tx`select mantle_grant_change('add', ${item}::uuid, ${priv}::uuid, true, ${mem}::uuid)`,
       true,
     );
     expect(add.code, add.message).toBeUndefined();
     const row = (await homesOf(item)).find((g) => g.ws === priv);
     expect(row?.by).toBe(mem);
     // A grant to a workspace it does not moderate: refused in on.
-    const toRo = await asWriter(mem, 'on', [item], (tx) =>
-      tx`select mantle_grant_change('add', ${item}::uuid, ${ro}::uuid, false, ${mem}::uuid)`,
+    const toRo = await asWriter(
+      mem,
+      'on',
+      [item],
+      (tx) =>
+        tx`select mantle_grant_change('add', ${item}::uuid, ${ro}::uuid, false, ${mem}::uuid)`,
     );
     expect(toRo.code).toBe('42501');
     expect(toRo.message).toBe('not allowed to grant to that workspace');

@@ -979,9 +979,9 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     } finally {
       await wn.end();
     }
-    expect(notices.filter((m) => m.startsWith('mantle actor miss: UPDATE on nodes: a move'))).toEqual(
-      [],
-    );
+    expect(
+      notices.filter((m) => m.startsWith('mantle actor miss: UPDATE on nodes: a move')),
+    ).toEqual([]);
     // The system pool with a scope (an Admin user's request): refused.
     await expect(
       sql.begin(async (tx) => {

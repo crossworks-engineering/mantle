@@ -3,6 +3,8 @@ import {
   BusyError,
   isBusy,
   isHeadsCheckError,
+  isPermissionGap,
+  isScopeWriteRefusal,
   isUniqueViolation,
   pgConstraint,
   pgErrorCode,
@@ -138,5 +140,65 @@ describe('isHeadsCheckError', () => {
     expect(isHeadsCheckError(wrapped('40001', 'could not serialize access'))).toBe(false);
     expect(isHeadsCheckError(wrapped('23505', 'heads not held'))).toBe(false);
     expect(isHeadsCheckError(new Error('heads not held'))).toBe(false);
+  });
+});
+
+describe('isScopeWriteRefusal (arch A2b2b: every refusal of the write role is a 403)', () => {
+  const refusal = (message: string, code = '42501') =>
+    drizzleQueryError(Object.assign(new Error(message), { code }));
+  it('matches each message the checks raise', () => {
+    for (const m of [
+      'not allowed to move this item',
+      'not allowed to add items to that folder',
+      'not allowed to delete this item',
+      'not allowed to change this item',
+      'not allowed to change this item: it is a read-only snapshot copy',
+      'not allowed to share this item: it is a read-only snapshot copy in its private workspace',
+      'placing this app adds a workspace you do not moderate',
+      // 0278 / 0279, the write role's own checks
+      'not allowed to edit this item',
+      'not allowed to create an item in that workspace',
+      'not allowed to grant to that workspace',
+      'not allowed to change the kind of this item',
+      // the row rule
+      'new row violates row-level security policy for table "nodes"',
+      // mantle_default_home (0267)
+      'this kind of item lives in the Admin workspace only',
+      'no workspace to create this item in',
+    ]) {
+      expect(isScopeWriteRefusal(refusal(m)), m).toBe(true);
+    }
+  });
+  it('never a missing grant (a gap), another code, or another message', () => {
+    expect(isScopeWriteRefusal(refusal('permission denied for table node_snapshots'))).toBe(false);
+    expect(isScopeWriteRefusal(refusal('not allowed to edit this item', '23514'))).toBe(false);
+    expect(isScopeWriteRefusal(refusal('something else'))).toBe(false);
+  });
+});
+
+describe('isPermissionGap (arch A2b2b: a right the write role does not hold)', () => {
+  it('a missing grant on a table, a column or a function', () => {
+    for (const m of [
+      'permission denied for table node_snapshots',
+      'permission denied for function mantle_lock_subtree_heads',
+      'permission denied for sequence x_id_seq',
+    ]) {
+      expect(
+        isPermissionGap(drizzleQueryError(Object.assign(new Error(m), { code: '42501' }))),
+        m,
+      ).toBe(true);
+    }
+  });
+  it('never a refusal the database decided', () => {
+    expect(
+      isPermissionGap(Object.assign(new Error('not allowed to edit this item'), { code: '42501' })),
+    ).toBe(false);
+    expect(
+      isPermissionGap(
+        Object.assign(new Error('new row violates row-level security policy for table "nodes"'), {
+          code: '42501',
+        }),
+      ),
+    ).toBe(false);
   });
 });

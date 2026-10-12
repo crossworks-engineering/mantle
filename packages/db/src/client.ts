@@ -708,7 +708,6 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
 
 // ── The login write gateway (workspaces arch A2b2b, plan 20.1) ─────────────
 
-
 /**
  * Open the login write gateway in this process (arch A2b2b): web and api
  * only (server/web/server/main.ts, server/api/src/main.ts). The role's
@@ -743,7 +742,9 @@ const WRITE_ROLE_TABLE_SET: ReadonlySet<string> = new Set(WRITE_ROLE_TABLES);
  *  (no failed attempt). */
 function isWriteRoleTable(table: unknown): boolean {
   if (!is(table, PgTable)) return false;
-  return WRITE_ROLE_TABLE_SET.has(`${getTableConfig(table).schema ?? 'public'}.${getTableName(table)}`);
+  return WRITE_ROLE_TABLE_SET.has(
+    `${getTableConfig(table).schema ?? 'public'}.${getTableName(table)}`,
+  );
 }
 
 /** The table a single INSERT, UPDATE or DELETE writes, as `schema.table`
@@ -994,7 +995,9 @@ function loginWriteClient(): PgSql {
   const run = (query: string, args: unknown[] | undefined, mode: 'rows' | 'values' | 'simple') => {
     const system = () => {
       const q = adminSql().unsafe(query, args as never[]);
-      return (mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q) as Promise<unknown>;
+      return (
+        mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q
+      ) as Promise<unknown>;
     };
     if (runsOutsideTransaction(query)) return system();
     // A single write to a table the write role holds no right on goes to
@@ -1385,8 +1388,9 @@ async function openSystemTx<T>(
   let result: T;
   try {
     result = await open((tx) =>
-      runInSystemTx(writeRoleScope ? { tx, hooks, nest, writeRoleScope } : { tx, hooks, nest }, () =>
-        fn(tx),
+      runInSystemTx(
+        writeRoleScope ? { tx, hooks, nest, writeRoleScope } : { tx, hooks, nest },
+        () => fn(tx),
       ),
     );
   } catch (err) {

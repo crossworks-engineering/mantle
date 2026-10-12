@@ -10,9 +10,11 @@ import {
   actorInTransaction,
   closeDb,
   needsActorWrap,
+  rawWriteTarget,
   refreshActorCheckMode,
   runsOutsideTransaction,
   setActorSql,
+  writeRoleSettingsSql,
 } from './client';
 
 type PgSql = Parameters<typeof actorInTransaction>[0];
@@ -524,5 +526,64 @@ describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', ()
       expect(f.sent).toContain(END_SESSION_SQL);
       expect(f.released()).toBe(false);
     });
+  });
+});
+
+describe('the write role SET (arch A2b2b): one statement, transaction-local, checked literals', () => {
+  const login = '0f0e0d0c-0b0a-4908-8706-050403020100';
+  const ws = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const scope = { kind: 'user' as const, loginId: login, ws: [ws], modWs: [ws] };
+  it('sets the scope, the login, the actor and the create home, every one local', () => {
+    const text = writeRoleSettingsSql(scope, [`login:rw:${login}`, 'rw', 'warn'], {
+      createWs: ws,
+      privateWs: null,
+      stamp: { snapshot_of: "it's" },
+    });
+    expect(text.startsWith('/* mantle:actor */ select set_config(')).toBe(true);
+    for (const name of [
+      'mantle.actor',
+      'mantle.write_mode',
+      'mantle.actor_check',
+      'mantle.ws',
+      'mantle.mod_ws',
+      'mantle.login_id',
+      'mantle.create_ws',
+      'mantle.private_ws',
+      'mantle.ingest_notify',
+      'mantle.create_stamp',
+    ]) {
+      expect(text).toContain(`set_config('${name}', `);
+    }
+    expect(text).not.toMatch(/, false\)/);
+    expect(text).toContain(`'{${ws}}'`);
+    expect(text).toContain(`"snapshot_of":"it''s"`);
+    expect(text).not.toContain('$1');
+  });
+  it('refuses a value it cannot inline', () => {
+    expect(() =>
+      writeRoleSettingsSql(
+        { ...scope, ws: ["x'); drop table nodes; --"] },
+        ['link', 'ro', 'on'],
+        null,
+      ),
+    ).toThrow(/not a uuid/);
+    expect(() =>
+      writeRoleSettingsSql({ ...scope, loginId: 'nope' }, ['link', 'ro', 'on'], null),
+    ).toThrow(/login/);
+    expect(() => writeRoleSettingsSql(scope, ["x'y", 'rw', 'on'], null)).toThrow(/not an actor/);
+  });
+});
+
+describe('rawWriteTarget (arch A2b2b: a raw single write routes by its table)', () => {
+  it('reads the table of an INSERT, UPDATE or DELETE', () => {
+    expect(rawWriteTarget('insert into item_marks (a) values (1)')).toBe('public.item_marks');
+    expect(rawWriteTarget('/* x */ update "public"."nodes" set a = 1')).toBe('public.nodes');
+    expect(rawWriteTarget('delete from only auth.users where id = $1')).toBe('auth.users');
+    expect(rawWriteTarget('UPDATE profiles AS p SET x = 1')).toBe('public.profiles');
+  });
+  it('null for anything else: a WITH, more than one statement, a read', () => {
+    expect(rawWriteTarget('with x as (select 1) update nodes set a = 1')).toBeNull();
+    expect(rawWriteTarget('update nodes set a = 1; delete from shares')).toBeNull();
+    expect(rawWriteTarget('select 1')).toBeNull();
   });
 });

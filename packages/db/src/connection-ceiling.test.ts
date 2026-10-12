@@ -488,9 +488,9 @@ describe('Postgres connection ceiling', () => {
     // Each process opens VIEWER_POOL_MAX of it, under the role's limit.
     const write = ROLE_LIMITS.find((r) => r.role === 'write');
     expect(write).toBeDefined();
-    expect(viewerCall && sizeOf(viewerCall) * Object.keys(WRITE_POOL_ENTRIES).length).toBeLessThanOrEqual(
-      write!.limit,
-    );
+    expect(
+      viewerCall && sizeOf(viewerCall) * Object.keys(WRITE_POOL_ENTRIES).length,
+    ).toBeLessThanOrEqual(write!.limit);
   });
 
   it('the runs worker opens its boss only with MANTLE_RUNS on', () => {
