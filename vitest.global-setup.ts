@@ -37,19 +37,10 @@ export default async function setup(): Promise<void> {
   // failures (folder audit T2).
   const url = process.env.MANTLE_TEST_DATABASE_URL;
   if (url) {
-    const { ensureTestViewerRoles, setTestActorCheck } = await import(
-      './packages/db/src/test-support'
-    );
+    const { ensureTestViewerRoles, setTestActorCheckAt } =
+      await import('./packages/db/src/test-support');
     await ensureTestViewerRoles(url, process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key');
-    // The actor check in warn on the test database (arch A2a), when it is
-    // migrated (the check's functions come with 0275).
-    const { default: postgres } = await import('postgres');
-    const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
-    try {
-      const [has] = await sql`select to_regproc('public.mantle_actor_check_mode') is not null as ok`;
-      if (has?.ok) await setTestActorCheck(sql);
-    } finally {
-      await sql.end();
-    }
+    // The actor check in warn on the test database (arch A2a).
+    await setTestActorCheckAt(url);
   }
 }

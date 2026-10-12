@@ -246,7 +246,22 @@ export async function createEmptyScratchDatabase(
  */
 export async function setTestActorCheck(sql: Sql): Promise<void> {
   const [row] = await sql<{ db: string }[]>`select current_database() as db`;
-  await sql.unsafe(`alter database "${row!.db.replace(/"/g, '""')}" set mantle.actor_check = 'warn'`);
+  await sql.unsafe(
+    `alter database "${row!.db.replace(/"/g, '""')}" set mantle.actor_check = 'warn'`,
+  );
+}
+
+/** setTestActorCheck on the database at `url`, when it is migrated (the
+ *  check's functions come with 0275). For vitest.global-setup.ts. */
+export async function setTestActorCheckAt(url: string): Promise<void> {
+  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+  try {
+    const [has] = await sql<{ ok: boolean }[]>`
+      select to_regproc('public.mantle_actor_check_mode') is not null as ok`;
+    if (has?.ok) await setTestActorCheck(sql);
+  } finally {
+    await sql.end();
+  }
 }
 
 export async function createMigratedScratchDatabase(
