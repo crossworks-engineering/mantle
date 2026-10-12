@@ -24,6 +24,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w6a-route-sweep.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RequestOutcome } from '@mantle/db';
@@ -125,6 +126,15 @@ const OWN_RULE_SYSTEM_READS: ReadonlySet<string> = new Set([
 ]);
 
 type Json = Record<string, unknown>;
+
+/** Whether this box has the app runtime built (the app build reads its
+ *  manifest). Without it an app build answers 500 for want of the runtime,
+ *  not of the gate: the member sweep, which since the A0 fix round (M3)
+ *  runs the build route on a real app, lets that one pass then. */
+const APP_RUNTIME_BUILT =
+  (process.env.MANTLE_APP_RUNTIME_MANIFEST !== undefined &&
+    existsSync(process.env.MANTLE_APP_RUNTIME_MANIFEST)) ||
+  existsSync(new URL('../public/app-runtime/manifest.json', import.meta.url));
 
 /** Streams that never end, and routes that reach outside this box. Their
  *  gate is the same function as their siblings'; they are skipped here. */
@@ -447,7 +457,9 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         const key = `${method} ${e.pattern}`;
         noteWrites('member', key, r.writes);
         if (r.status >= 500 || r.status === 0) {
-          failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
+          if (!(key === 'POST /api/apps/:id/build' && !APP_RUNTIME_BUILT && r.status === 500)) {
+            failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
+          }
           continue;
         }
         if (r.outcome?.kind === 'system' && r.outcome.why !== 'login-self') {
