@@ -146,7 +146,6 @@ function nonOwnerRunLevel(ctx: ToolHandlerContext): ViewerLevel | null {
   // Outside a workspace scope (its callers return first inside one): system
   // work (the level scope went in W8c).
   const viewer: ViewerLevel = currentScope().kind === 'system' ? 'admin' : 'public';
-
   if (!bySurface) return viewer === 'admin' ? null : viewer;
   try {
     return lowerLevel(viewer, bySurface);

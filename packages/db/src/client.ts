@@ -1007,7 +1007,6 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
  * Content handle. A Proxy that defers initialisation until the first property
  * access, and picks the pool per access: inside a workspace scope it is the
  * workspace role's pool, so row level security applies.
-
  */
 export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {

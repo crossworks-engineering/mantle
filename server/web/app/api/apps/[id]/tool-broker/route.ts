@@ -168,7 +168,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const run = () =>
     dispatchTool(verdict.tool, parsed.data.input, { ownerId: user.id, surface: scope.surface });
   const result = await (scope.viewer === 'admin' ? run() : withViewer(scope.actsFor, run));
-
   if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);
 }

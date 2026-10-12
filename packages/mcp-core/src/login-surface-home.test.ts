@@ -107,7 +107,12 @@ describe('connector tools share the builtins’ server (L-a)', () => {
     const r = await call!({ q: 'acme' }, {});
     expect(r.isError).toBeFalsy();
     expect(seen?.home).toEqual({ createWs: null, privateWs: 'ws-private-1' });
-    expect(seen?.mcp).toMatchObject({ via: 'oauth', write: true, ownerKeysOff: true });
+    expect(seen?.mcp).toMatchObject({
+      via: 'oauth',
+      write: true,
+      ownerKeysOff: true,
+      role: 'member',
+    });
   });
 
   it('an Admin’s connector call: no private home, keys on', async () => {
@@ -118,6 +123,8 @@ describe('connector tools share the builtins’ server (L-a)', () => {
     await cbs.get(CONNECTOR.slug)!({ q: 'acme' }, {});
     expect(seen?.home).toBeNull();
     expect((seen?.mcp as { ownerKeysOff?: boolean }).ownerKeysOff).toBeUndefined();
+    // The app data tools fill :host_me_kind from it (W8 integration).
+    expect((seen?.mcp as { role?: string }).role).toBe('admin');
   });
 });
 

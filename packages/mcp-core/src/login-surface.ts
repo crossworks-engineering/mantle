@@ -217,6 +217,7 @@ function mcpChannel(caller: McpCaller, keysOff: boolean): LoginMcpChannel {
   return {
     via: caller.via,
     write: caller.write,
+    role: caller.role,
     ...(keysOff ? { ownerKeysOff: true } : {}),
     ...(caller.keyId ? { keyId: caller.keyId } : {}),
     ...(caller.peerId ? { peerId: caller.peerId } : {}),

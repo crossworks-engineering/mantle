@@ -10,9 +10,9 @@ import { loginWorkspaces } from '@/lib/login-workspaces';
  * (docs/mobile-companion-backend.md). The phone app holds one bearer and
  * learns here which login it is: the role, the login, its name, its shell
  * and its push prefix. Since workspaces W5c every role's shell is GET
- * /api/shell (the old member and client shells answer 410), and a client's
- * push routes answer 410 (the client portal is gone). A stranger, a dead
- * token or a role this code does not know gets 401.
+ * /api/shell (the old member shell answers 410). The roles are admin and
+ * member: client logins are gone since W8a. A stranger, a dead token or a
+ * role this code does not know gets 401.
  *
  * Since W7e it also answers the login's workspaces, its Admin areas (empty
  * outside the Admin workspace) and whether it is the brain's anchor login
@@ -28,7 +28,6 @@ import { loginWorkspaces } from '@/lib/login-workspaces';
 const ROUTES = {
   admin: { shell: '/api/shell', pushBase: '/api/push' },
   member: { shell: '/api/shell', pushBase: '/api/member/push' },
-  client: { shell: '/api/shell', pushBase: '/api/client/push' },
 } as const;
 
 async function handleGET() {

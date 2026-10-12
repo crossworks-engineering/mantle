@@ -1,6 +1,6 @@
 /**
- * App data over a member's or client's own MCP connection (team apps Phase 1,
- * plan page b6dd688e, section B): `app_data_list`, `app_data_schema`,
+ * App data over a login's own MCP connection (team apps Phase 1, plan page
+ * b6dd688e, section B): `app_data_list`, `app_data_schema`,
  * `app_data_query` and `app_data_write`.
  *
  * The rule: MCP gives a login exactly what the app's own broker gives them in
@@ -16,7 +16,7 @@
  *
  * The app lookup runs on the login's viewer role (the surface calls these
  * inside withViewer), so row security holds as a second lock. The SQLite
- * work runs as the system (`asSystem`), like the member and client brokers:
+ * work runs as the system (`asSystem`), like the app's own broker:
  * it writes the app's database registry rows, which a viewer role cannot.
  * The login's scope is a workspace scope since W5b2, so each of those exits
  * names its door ('app-data', AS_SYSTEM_TURN_REASONS), always after the
@@ -91,15 +91,16 @@ export function appDataCaller(ctx: ToolHandlerContext): Who | null {
     return { role: 'member', loginId: s.loginId, name: s.contactName ?? null, mcp: s.mcp };
   }
   // The one MCP surface (W7b): any login's own connection, as a user of its
-  // workspaces.
+  // workspaces. The app sees the login's real role in `:host_me_kind` (W8
+  // integration): an admin is an admin there, as in the browser.
   if (s?.kind === 'owner' && s.loginId && s.mcp) {
-    return { role: 'member', loginId: s.loginId, name: null, mcp: s.mcp };
+    return { role: s.mcp.role ?? 'member', loginId: s.loginId, name: null, mcp: s.mcp };
   }
   return null;
 }
 
 /** One statement at a time per login, shared with the login's browser
- *  broker (client tier audit I1). */
+ *  broker (tier audit I1). */
 function callerKey(who: Who): string {
   return `${who.role}:${who.loginId}`;
 }

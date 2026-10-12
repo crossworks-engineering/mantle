@@ -254,6 +254,23 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     expect(n?.n).toBe(0);
   });
 
+  it("W8 integration: on the one MCP surface :host_me_kind is the login's real role", async () => {
+    const onMcp = (loginId: string, role: 'admin' | 'member'): ToolHandlerContext => ({
+      ownerId: anchor,
+      surface: { kind: 'owner', via: 'mcp', loginId, mcp: { ...mcp(true), role } },
+    });
+    const kindOf = async (ctx: ToolHandlerContext) =>
+      out<{ rows: { kind: string }[] }>(
+        await call(
+          'app_data_query',
+          { app_id: ids['a team'], sql: 'SELECT :host_me_kind AS kind' },
+          ctx,
+        ),
+      ).rows[0]?.kind;
+    expect(await kindOf(onMcp(anchor, 'admin'))).toBe('admin');
+    expect(await kindOf(onMcp(member, 'member'))).toBe('member');
+  });
+
   it("write: refused without the login's or the grant's Write switch, and for DDL", async () => {
     const insert = "INSERT INTO items (name) VALUES ('nope')";
     const off = await call(

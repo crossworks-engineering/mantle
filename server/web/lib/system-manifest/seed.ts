@@ -365,7 +365,6 @@ async function upsertAgent(
         params: def.params as AgentParams,
         memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
         enabled: true,
-
         updatedAt: new Date(),
       })
       .where(eq(agents.id, existing.id));

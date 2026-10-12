@@ -12,8 +12,8 @@ import { handleTokenLogin } from '@/lib/token-login';
  * Admins only: the companion calls admin routes only, so a non-Admin login
  * is refused here instead of getting a broken app: a member gets 426
  * `update-app` "Update the app" since workspaces W7e (the build that serves
- * every login signs in through /api/auth/device-login or QR pairing); a
- * client gets 403 `client-login`, as before (no phone build serves it yet).
+ * every login signs in through /api/auth/device-login or QR pairing). There
+ * is no client login since W8a.
  */
 export async function POST(req: Request) {
   return handleTokenLogin(req, {

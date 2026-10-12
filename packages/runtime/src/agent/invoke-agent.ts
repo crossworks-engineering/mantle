@@ -270,7 +270,6 @@ export const invokeAgent: AgentInvoker = async ({
         ownerId,
         agentId: target.id,
         agentSlug: target.slug,
-
         // The loop re-enters the child's workspace (withAgentScope).
         ...(childWorkspaceId ? { agentWorkspaceId: childWorkspaceId } : {}),
         agentDepth: depth,

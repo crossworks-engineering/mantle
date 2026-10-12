@@ -1,14 +1,11 @@
 /**
- * Which apps a member's MCP connection may reach (team apps
- * Phase 1, plan page b6dd688e, section B; workspaces W5b2). The rule: MCP
- * gives a login exactly what the app's own broker gives them in the browser,
- * and only on an app whose MCP access switch is on.
- *
- *  - Member: an app a workspace of theirs holds (member-apps.ts), with a
- *    green PUBLISHED build (never a draft) and `apps.mcp_access` on. Write:
- *    the grant's Write switch, and never while the app is informational.
- *  - Client: there is no client login since workspaces W8a, and the client
- *    branch went in W8d.
+ * Which apps a login's MCP connection may reach (team apps Phase 1, plan
+ * page b6dd688e, section B; workspaces W5b2). The rule: MCP gives a login
+ * exactly what the app's own broker gives them in the browser, and only on
+ * an app whose MCP access switch is on: an app a workspace of theirs holds
+ * (member-apps.ts), with a green PUBLISHED build (never a draft) and
+ * `apps.mcp_access` on. Write: the grant's Write switch, and never while the
+ * app is informational.
  *
  * The login's Write switch is the MCP surface's part: without it the write
  * tool is never offered. The rule is written in the query, and the callers
@@ -19,8 +16,10 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { apps, db, nodes, type AppManifest } from '@mantle/db';
 import { memberReachSql, memberWritesSql } from './member-apps';
 
-/** Who the connection acts for: a member login (the only role left). */
-export type McpDataRole = 'member';
+/** Who the connection acts for: an admin or a member login. The reach rule
+ *  is the same for both (their workspaces); the role is what the app sees
+ *  in `:host_me_kind`. */
+export type McpDataRole = 'admin' | 'member';
 
 /** One app a login's MCP may reach. */
 export type McpDataApp = {

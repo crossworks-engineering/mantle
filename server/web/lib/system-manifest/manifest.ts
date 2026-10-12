@@ -1257,7 +1257,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       "The team responder's reads that touch what a workspace other than Admin may never read: the knowledge graph (entity names are learned from every source, email included), events, tasks, contacts, and the private corpus (email_* / journal_*, still gated by `teamPrivateReads`). Admin only (adminOnly): an assistant holds it only in a turn whose scope holds the Admin workspace; in any other workspace the run drops it.",
     toolSlugs: [
       // A folder-description WRITE: the Team assistant never writes.
-
       'folder_describe',
       'entity_search',
       'entity_neighbors',

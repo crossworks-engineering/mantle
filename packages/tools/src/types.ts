@@ -161,15 +161,19 @@ export type ToolHandlerContext = {
 };
 
 /**
- * A member's or client's own MCP connection (team apps Phase 1): stamped by
- * the login MCP surface (packages/mcp-core/src/login-surface.ts) from the
- * caller the route resolved, never from model arguments. Absent on every
- * other path (a chat turn, an app run), so a tool that needs it (the
- * app_data_* tools) runs only on MCP.
+ * A login's own MCP connection (team apps Phase 1; every login since
+ * workspaces W7b): stamped by the login MCP surface
+ * (packages/mcp-core/src/login-surface.ts) from the caller the route
+ * resolved, never from model arguments. Absent on every other path (a chat
+ * turn, an app run), so a tool that needs it (the app_data_* tools) runs
+ * only on MCP.
  */
 export type LoginMcpChannel = {
   /** How the bearer was issued. */
   via: 'oauth' | 'peer' | 'key';
+  /** The login's role (W8 integration): what `:host_me_kind` says it is in
+   *  an app, as the app's own broker does in the browser. Absent = member. */
+  role?: 'admin' | 'member';
   /** The login's Write switch (and for a key or a peer, theirs too). */
   write: boolean;
   /** The API key, the peer, or the OAuth client of this connection: the
