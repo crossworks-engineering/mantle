@@ -170,7 +170,6 @@ export {
 
 // The plain unshare (agent and tool-group levels went in workspaces W7b).
 export { AccessError, isWorkspaceKind, unshareItem, type UnshareItemResult } from './access';
-export { teamReadsItem } from './team-grant';
 export {
   teamAssistant,
   workspaceAssistantFor,

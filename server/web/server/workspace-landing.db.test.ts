@@ -249,6 +249,17 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     const [none] = await x<{ landing: string | null }>(sql`
       select landing_app_id::text as landing from workspaces where id = ${team}`);
     expect(none?.landing).toBeNull();
+    // Nor an app Team does not hold (audit M2): a later share would make
+    // it the landing page by itself.
+    await x(
+      sql`update profiles set preferences = preferences || ${JSON.stringify({
+        teamHubAppId: sideApp,
+      })}::jsonb where user_id = ${owner}`,
+    );
+    await run();
+    const [unheld] = await x<{ landing: string | null }>(sql`
+      select landing_app_id::text as landing from workspaces where id = ${team}`);
+    expect(unheld?.landing).toBeNull();
   });
 
   it('only a Moderator of the workspace sets its landing page, to an app it holds with a green build', async () => {
@@ -280,6 +291,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     expect(ok.status, ok.text.slice(0, 200)).toBe(200);
     const detail = await call(`/api/workspaces/${team}`, mem);
     expect(detail.json.landingApp).toEqual({
+      held: true,
       appId: teamApp,
       title: `${tag} Team home`,
       ready: true,
@@ -294,6 +306,11 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     expect((await setLanding(mem2, side, null)).status).toBe(200);
     expect((await call(`/api/workspaces/${side}`, mem2)).json.landingApp).toBeNull();
     expect((await setLanding(mem2, side, sideApp)).status).toBe(200);
+    // An Admin user outside Side sees the screen, but not which app (audit L1).
+    const outside = await call(`/api/workspaces/${side}`, owner);
+    expect(outside.status).toBe(200);
+    expect(outside.json.landingApp).toEqual({ held: true, appId: null, title: null, ready: true });
+    expect(outside.text).not.toContain('Side home');
   });
 
   it("the landing page follows the workspace, in the login's scope, kept to that workspace", async () => {
@@ -352,26 +369,67 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     expect(tokens((await home(owner)).json.hub)).not.toContain(sidePage);
   });
 
-  it('a home app the workspace lost is the Built-in home, and the screen stops naming it', async () => {
+  const landingOf = async (ws: string) =>
+    (
+      await x<{ landing: string | null }>(sql`
+        select landing_app_id::text as landing from workspaces where id = ${ws}`)
+    )[0]?.landing ?? null;
+
+  it('a workspace that stops holding its home app forgets it; a new share does not bring it back', async () => {
+    expect(await landingOf(team)).toBe(teamApp);
     await outOf(teamApp, team);
+    // Cleared at commit by the item_grants trigger (0275, audit M2).
+    expect(await landingOf(team)).toBeNull();
+    const t = await home(mem, team);
+    expect(t.json.homeApp).toBeNull();
+    expect(t.text).not.toContain('Team home');
+    expect((await call(`/api/workspaces/${team}`, mem)).json.landingApp).toBeNull();
+    expect((await call('/api/member/home', mem)).json).toEqual({ homeApp: null, hub: null });
+    // Shared again: held, but no landing page until a Moderator picks it.
+    await alsoIn(teamApp, team);
+    expect(await landingOf(team)).toBeNull();
+    expect((await home(mem, team)).json.homeApp).toBeNull();
+
+    // A path that takes the grant away and gives it back in one transaction
+    // keeps the landing page: the check runs at commit.
+    expect((await setLanding(owner, team, teamApp)).status).toBe(200);
+    await m.withHeads([teamApp], 'update', async (tx) => {
+      await tx.execute(
+        sql`delete from item_grants where node_id = ${teamApp} and workspace_id = ${team}`,
+      );
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id)
+                           values (${teamApp}, ${team})`);
+    });
+    expect(await landingOf(team)).toBe(teamApp);
+  });
+
+  it('a pointer left from before names nothing, and a Moderator clears it', async () => {
+    // As a brain could hold it before 0275's trigger: Team points at an app
+    // it does not hold.
+    await x(sql`update workspaces set landing_app_id = ${sideApp} where id = ${team}`);
     try {
-      const t = await home(mem, team);
-      expect(t.json.homeApp).toBeNull();
-      expect(t.text).not.toContain('Team home');
-      expect((await call(`/api/workspaces/${team}`, mem)).json.landingApp).toBeNull();
-      expect((await call('/api/member/home', mem)).json).toEqual({ homeApp: null, hub: null });
+      const d = await call(`/api/workspaces/${team}`, mem);
+      expect(d.json.landingApp).toEqual({ held: false, appId: null, title: null, ready: false });
+      expect(d.text).not.toContain('Side home');
+      expect((await home(mem, team)).json.homeApp).toBeNull();
+      const cleared = await setLanding(owner, team, null);
+      expect(cleared.status).toBe(200);
+      expect(await landingOf(team)).toBeNull();
     } finally {
-      await alsoIn(teamApp, team);
+      await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
     }
-    // A build that went red: named on the screen as not ready, the Built-in
-    // home on the landing page.
+  });
+
+  it('a home app whose build went red is the Built-in home, named on the screen as not ready', async () => {
     await x(
       sql`update apps set published_build = '{"ok":false}'::jsonb where node_id = ${teamApp}`,
     );
     try {
       expect((await home(mem, team)).json.homeApp).toBeNull();
-      expect((await call(`/api/workspaces/${team}`, mem)).json.landingApp).toMatchObject({
+      expect((await call(`/api/workspaces/${team}`, mem)).json.landingApp).toEqual({
+        held: true,
         appId: teamApp,
+        title: `${tag} Team home`,
         ready: false,
       });
     } finally {
@@ -381,6 +439,24 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
           storageKey: `apps/${tag}.js`,
         })}::jsonb where node_id = ${teamApp}`,
       );
+    }
+  });
+
+  it("under the rollback switch an Admin user's landing page still reads in its own workspaces", async () => {
+    // MANTLE_ADMIN_READS=system puts an Admin user's requests on the system
+    // pool; the landing page reads through withViewer all the same.
+    expect((await setLanding(owner, adminWs, teamApp2)).status).toBe(200);
+    process.env.MANTLE_ADMIN_READS = 'system';
+    try {
+      const a = await home(owner, adminWs);
+      expect(a.status, a.text.slice(0, 200)).toBe(200);
+      expect(a.json.homeApp?.appId).toBe(teamApp2);
+      expect(tokens(a.json.hub)).toContain(adminPage);
+      expect(tokens(a.json.hub)).not.toContain(teamPage);
+      expect(tokens((await home(owner)).json.hub)).not.toContain(sidePage);
+    } finally {
+      delete process.env.MANTLE_ADMIN_READS;
+      expect((await setLanding(owner, adminWs, null)).status).toBe(200);
     }
   });
 

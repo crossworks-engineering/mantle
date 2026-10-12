@@ -93,17 +93,22 @@ export type WorkspaceDetailResponse = {
    *  or removed, only cloned to use elsewhere. */
   hasHistory: boolean;
   /** The workspace's landing page (task d78e7bde): its home app, or null
-   *  for the Built-in home. Only an app the workspace still holds is named;
-   *  `ready` is false while its published build is not green (the landing
-   *  page then shows the Built-in home). Absent from an older brain. */
+   *  for the Built-in home. Absent from an older brain. */
   landingApp?: WorkspaceLandingApp | null;
 };
 
-/** A workspace's home app, as its screen shows it. */
+/**
+ * A workspace's home app, as its screen shows it. `held`: the workspace
+ * still holds the app; false is a pointer left from before (the landing
+ * page shows the Built-in home), with no id or title: only a clear
+ * (`landingAppId: null`) makes sense then. `appId` and `title` are named
+ * only to a user of the workspace (an Admin user outside it gets null for
+ * both). `ready`: a green published build, so the landing page shows it.
+ */
 export type WorkspaceLandingApp = {
-  appId: string;
-  title: string;
-  /** It has a green published build: the landing page shows it. */
+  held: boolean;
+  appId: string | null;
+  title: string | null;
   ready: boolean;
 };
 

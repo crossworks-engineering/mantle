@@ -60,6 +60,7 @@ import type {
   WorkspaceResourceKind,
   WorkspaceUser,
   WorkspaceUserSearchHit,
+  WorkspaceLandingApp,
 } from '@mantle/client-types';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 import { workspaceHeldApp } from '@mantle/content';
@@ -159,6 +160,8 @@ export function wsId(id: string): string {
 }
 
 type Exec = { execute: (typeof db)['execute'] };
+/** A transaction that also builds queries (the landing check reads with it). */
+type QueryTx = Exec & Pick<typeof db, 'select'>;
 
 async function rows<T>(q: Exec, query: ReturnType<typeof sql>): Promise<T[]> {
   return (await q.execute(query)) as unknown as T[];
@@ -410,11 +413,7 @@ async function detail(
     write: r.write,
   }));
   const hasHistory = seen.row.agent_id ? await agentHasHistory(q, seen.row.agent_id) : false;
-  // The home app is named only while this workspace holds it: a user of the
-  // workspace may open it then, and no title of an app it lost leaks.
-  const landingApp = seen.row.landing_app_id
-    ? await workspaceHeldApp(caller.anchorId, id, seen.row.landing_app_id)
-    : null;
+  const landingApp = await landingAppOf(caller, seen);
   return {
     workspace: toWorkspace(seen.row),
     users: outUsers,
@@ -422,6 +421,24 @@ async function detail(
     hasHistory,
     landingApp,
   };
+}
+
+/**
+ * The screen's landing page (task d78e7bde). The home app is named (id and
+ * title) only to a user of the workspace and only while the workspace holds
+ * it: an Admin user outside the workspace learns only that one is set
+ * (audit L1), and a pointer to an app the workspace lost names nothing, so
+ * the screen can offer the clear (audit M2; the item_grants trigger of 0275
+ * clears such a pointer at commit, this covers one left from before).
+ */
+async function landingAppOf(caller: WsCaller, seen: Seen): Promise<WorkspaceLandingApp | null> {
+  const appId = seen.row.landing_app_id;
+  if (!appId) return null;
+  const held = await workspaceHeldApp(caller.anchorId, seen.row.id, appId);
+  if (!held) return { held: false, appId: null, title: null, ready: false };
+  return seen.row.me_member
+    ? { held: true, appId: held.appId, title: held.title, ready: held.ready }
+    : { held: true, appId: null, title: null, ready: held.ready };
 }
 
 /** GET /api/workspaces/:id. */
@@ -603,7 +620,7 @@ export async function patchWorkspace(
  */
 async function setLandingApp(
   caller: WsCaller,
-  tx: Exec,
+  tx: QueryTx,
   seen: Seen,
   appId: string | null,
 ): Promise<void> {
@@ -616,7 +633,8 @@ async function setLandingApp(
     );
   }
   if (appId !== null) {
-    const held = await workspaceHeldApp(caller.anchorId, w.id, wsIdOrInvalid(appId));
+    // In the transaction that holds the workspace row (audit L4).
+    const held = await workspaceHeldApp(caller.anchorId, w.id, wsIdOrInvalid(appId), tx);
     if (!held) {
       throw new WsError(
         409,

@@ -22,7 +22,6 @@ export const RAW_ACL_PINS = {
   'packages/content/src/notes.ts': 1,
   'packages/content/src/pages/level-text.ts': 3,
   'packages/content/src/pages/read.ts': 1,
-  'packages/content/src/team-grant.ts': 1,
   'packages/content/src/tree/read.ts': 1,
   'packages/content/src/tree/visibility.ts': 9,
   'packages/files/src/ops/files.ts': 4,

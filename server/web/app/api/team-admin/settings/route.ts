@@ -33,6 +33,11 @@ export async function GET() {
   return NextResponse.json({
     badges,
     privateReads: isTeamPrivateReadsEnabled(prefs),
+    // An older client's Team settings still render a member home app picker
+    // from these two (audit M3): empty, so it shows the Built-in home and
+    // offers nothing. Remove both after the next client pair.
+    hubAppId: null,
+    hubCandidates: [],
     teamAssistant: assistant
       ? { slug: assistant.slug, name: assistant.name, workspaceId: assistant.workspaceId }
       : null,

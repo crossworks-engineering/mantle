@@ -243,14 +243,16 @@ export async function resolveMemberHomeApp(
  * it. Only the workspace's own grant counts, never the reader's other
  * workspaces: the workspace's users must all be able to open it. Runs where
  * the caller runs (the workspace routes read on the system pool, with the
- * rule in the query).
+ * rule in the query), on `q` when given: the setter's transaction, which
+ * holds the workspace row.
  */
 export async function workspaceHeldApp(
   anchorId: string,
   ws: string,
   appId: string,
+  q: Pick<typeof db, 'select'> = db,
 ): Promise<{ appId: string; title: string; ready: boolean } | null> {
-  const [row] = await db
+  const [row] = await q
     .select({ id: nodes.id, title: nodes.title, ready: publishedGreen })
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))

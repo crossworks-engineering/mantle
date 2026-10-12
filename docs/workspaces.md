@@ -90,15 +90,22 @@ they switch, the landing page changes with it.
   sets it on the workspace screen, under **Landing page**. Only an app the
   workspace holds (share it with the workspace in Grant Access first) with
   a working published build can be picked. Picking makes no grant.
-- If the workspace stops holding the app, or its build breaks, the landing
-  page shows the Built-in home again. The screen then names the app only
-  while the workspace still holds it.
+- If the workspace stops holding the app (its grant is removed, by any
+  path), the brain forgets the pick: the landing page is the Built-in home
+  again, and sharing the app again does not bring it back. Only a Moderator
+  picks it again. If the app's build breaks, the pick stays and the landing
+  page shows the Built-in home until the build is green.
+- The screen names the home app only to the users of the workspace. An
+  Admin user outside it sees that one is set, not which.
 - **All my workspaces** in the switcher shows the Built-in home over every
   workspace of the user. It never shows a home app.
 - An Admin area does not set another workspace's landing page: only its
   Moderators do. Admin users moderate Team, so they set Team's.
 - The brain health **Dashboard** is no landing page. Admin users with the
   settings area open it from the menu.
+- The landing page always reads in the user's own workspaces, also under
+  the emergency switch (`MANTLE_ADMIN_READS=system`): an Admin user's Home
+  never shows the whole brain.
 
 A home app reads the same data through `host.hub.get()`, kept to the
 workspace: [Workspace home apps](./guide/07-api/07-member-home-apps.md).
