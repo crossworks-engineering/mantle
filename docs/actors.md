@@ -155,6 +155,10 @@ in warn the 0275 trigger logs it as a miss. That is wanted: it shows the
 case. The TypeScript check below still covers reads, in process, with no
 round trip.
 
+A scoped login write runs on the write role instead (A2b2b, "The login
+write gateway" below): there the actor goes in the same SET LOCAL as the
+scope, with the transaction's first statement.
+
 With the check off, or no actor bound, every statement runs exactly as
 before. The box's mode is read when the pool opens and then each minute on
 a timer, never in a statement's path. `MANTLE_ACTOR_CHECK` is a floor. Until
@@ -213,6 +217,15 @@ and must show. Every other session refuses as before. The gate
 `mantle.*` setting, and runs only on the refusing path. 0278 puts the move
 check (0245, `mantle_nodes_acl_path_trg`) and the write role's own checks
 behind the same gate.
+
+**Changed in A2b2b (migration 0279):** the 0266 create-in-a-folder and
+delete checks and the 0245 move check refuse on the write role in every
+mode again, as they do on the system pool. The app holds no check of its
+own for some of what they refuse (an Admin user's create, move or delete in
+a workspace it is not in: W6a M1), so staging them would let in `warn` what
+the system pool refuses today. Only the write role's own checks (0278's
+write check: edit, a Moderator of the create home, a grant, a kind change,
+an item with no home) are staged by the gate.
 
 The test suite runs in `warn`. `vitest.setup.ts` fails a test on any miss.
 A statement a test sends itself runs as `system(test)`: the test is its
@@ -396,8 +409,9 @@ Found in the A2a audits:
 
 ## The write role (A2b2a, migration 0278)
 
-`mantle_write_user` exists on every box from A2b2a on. No write runs on it
-yet: A2b2b routes the login writes. What A2b2a gives it:
+`mantle_write_user` exists on every box from A2b2a on. Since A2b2b the
+login write gateway sends the scoped login writes to it (next section).
+What A2b2a gives it:
 
 - **The role.** The same code path as the workspace role
   (`POOL_ROLES` in `packages/db/src/viewer-roles.ts`): no superuser, no
@@ -469,80 +483,101 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
   only; `write-role.db.test.ts` pins that no role on the cluster holds an
   INHERIT membership in it.
 
+## The login write gateway (A2b2b, migration 0279)
+
+One place sends a login's write to the write role: `onLoginWritePool` in
+`packages/db/src/client.ts`, behind the three doors a scoped write already
+took to the system pool: the `db` proxy's `insert`, `update`, `delete` and a
+mutating request's `transaction`, `executeWrite`, and `withSystemTx` (every
+heads helper goes through it). One decision, `loginWriteRoute`, when the
+write runs:
+
+- the process opened the pool (`openLoginWritePool`): web
+  (`server/web/server/main.ts`) and api (`server/api/src/main.ts`) only.
+  Workers, the stdio MCP server and scripts keep every write on the system
+  pool. `connection-ceiling.test.ts` counts the pool for those two and fails
+  on any other caller;
+- the actor check is not off (`actorCheckMode`: the box mode read from the
+  catalog, `MANTLE_ACTOR_CHECK` raises it for one process). Off is the
+  rollout switch: the system pool as before, no statement and no round trip
+  added (`a2a-round-trips.db.test.ts`, also against the pre-A2a counts);
+- the actor is a login, an assistant, a link or a contact (system work, a
+  named repair, an Admin area route and a peer(share) stay on the system
+  pool);
+- the write carries a scope its reads use too (`loginWriteScope` in
+  `viewer.ts`): a login's mutating request scope, or an Admin turn (the Admin
+  assistant, the Admin MCP surface). Not an Admin user's write request: its
+  reads run on the system pool, unscoped (W6a M1), so a row it read could
+  match no row on the role and its write would do nothing, silently. It stays
+  on the system pool with its scope on the transaction, as before, until A4
+  puts its reads in the scope. A login's write with no scope at all (a run
+  item in a worker) stays on the system pool too.
+
+On the role a transaction sets the scope (`mantle.ws`, `mod_ws`,
+`login_id`), the actor and the create home with one `SET LOCAL`
+(`set_config(..., true)`, `writeRoleSettingsSql`) sent with its first
+statement: no round trip of its own, never a session SET. A write outside a
+transaction runs in its own short transaction: BEGIN, the SET, the write and
+COMMIT pipelined on one connection, the caller waiting as long as with the
+check off. Both are tagged as the actor's own for the round-trip test.
+
+- **The create home's Moderator seat.** A login's scope is read once per
+  request or turn, often before its first create made its private
+  workspace. `resolveCreateHome` notes each login's private workspace as it
+  reads it on the system pool; the gateway adds it to the write scope (as a
+  workspace and a Moderator one) when the write's create home lands there.
+  No query on the write's path.
+- **Tables the role has no right on.** A typed write (`db.insert(table)`)
+  or a single raw write to a table outside `WRITE_ROLE_TABLES` goes to the
+  system pool before it is sent. A transaction that writes one (a "gap":
+  `permission denied for ...`) rolled back whole; it runs again on the
+  system pool, as `withDeadlockRetry` runs a transaction again, and is
+  logged as an actor miss (`write-role-gap`). `WRITE_ROLE_GAP_TABLES`
+  (`access-matrix.ts`) lists the tables that may: `node_snapshots`, the
+  Recall tables, `shares`, `secrets`, `app_table_exports`, `profiles`. The
+  suite fails on any other (`vitest.setup.ts`). A refusal the database
+  decided (a check, a row rule) never runs again.
+- **A write's guard that reads past the scope.** The visibility confirm
+  (`packages/content/src/tree/visibility.ts`) names every workspace a change
+  reaches. On the role the transaction reads only the scope, so the guard's
+  read goes to the system pool (`guardRead`), held to the write's scope
+  (`scope-readable.ts`, `writeRoleTxScope`).
+- **A kind's root folder** is the brain's: every kind's `ensureRoot` makes it
+  as `system(repair:kind-root)` (`packages/content/src/kind-root.ts`).
+- **Grants** go through definers (0279): `mantle_grant_change` (add,
+  exclude, hand, write, remove, restore, by the grants panel's rules),
+  `mantle_grant_move_home` (one call: manage of the old home and a Moderator
+  of the new one; the old home row cleared first, never one UPDATE of both
+  rows, which `item_grants_one_home_uq` would refuse by row order) and
+  `mantle_workspace_event`. The role never writes `via_folder_id`,
+  `granted_by`, `granted_at` or `workspace_events`. Each checks only while a
+  scope is set, staged on the role. `server/web/lib/grants.ts` itself still
+  runs as `system(rule-in-query)`: its panel reads workspaces past the scope.
+
+`server/web/server/a2b2b-write-gateway.db.test.ts` runs each actor kind, off,
+warn and on, the gaps and the two grant definers. `pnpm test:actor-on` runs
+the write-path cells (the member writes, the workspaces cells, the write
+role's, the grants) with the check on.
+
 ## A2b2b must
 
-- **Route the writes.** Login, assistant, link and contact writes move to
-  `mantle_write_user` with the pipelined scope pattern (plan 20.1). 0277's
-  gate and A2b2a's grants and row rules are ready for it.
-- **Keep every app-side permission check until the box is `on`.** In
-  `warn` (and in `off`, for stray traffic) the database only logs an edit,
-  manage, create or move refusal on the write role and lets the write
-  run: the app's own checks (grants.ts, the create home, the tree's
-  move rules) are what refuse until then. Remove one only after the box
-  has run `on` with no miss for it.
-- **The create home's Moderator seat is in the scope.** A login's create
-  lands in its private workspace only when the scope's `mantle.mod_ws`
-  holds that workspace. `resolveCreateHome` can make the private
-  workspace on the first create, after the scope was memoized
-  (`loginScopeFor`): refresh the scope first, or the database refuses the
-  create (no Moderator of the home).
-- **The creates that are the brain's.** A kind's root folder
-  (`mantle_default_home`: a `branch` at the top) is homed in Admin, and an
-  Admin-only kind always is: on the write role their create needs a
-  Moderator of Admin. Make a missing root folder on the system pool (the
-  `repair:kind-root` read-path write already does), and decide whether an
-  Admin-workspace user who is not its Moderator may create an Admin-only
-  kind (today the database says no).
-- **A home move is one step on the role.** `moveHome`
-  (`server/web/lib/grants.ts`) clears the old home row and then sets the new one: between
-  the two statements the item has no home, so the second needs an Admin
-  scope there. Do it through a definer function that checks manage of the
-  old home and a Moderator of the new one. One `UPDATE ... SET is_home =
-  (workspace_id = new)` is not safe: `item_grants_one_home_uq` cannot be
-  deferred and is checked row by row, so it can fail with 23505 by row
-  order.
-- **grants.ts writes columns the role may not.** Its updates set
-  `via_folder_id = null`, `granted_by` and `granted_at`, which the write
-  role has no right to write (permission denied, loudly). Leave them out on
-  the write role, or move those writes into a definer function.
-- **The refusal messages.** `isScopeWriteRefusal`
-  (`packages/db/src/pg-error.ts`) knows the 0241 to 0267 messages; add the
-  write check's (`not allowed to edit this item`, `not allowed to create an
-  item in that workspace`, `not allowed to grant to that workspace`, `not
-  allowed to change the kind of this item`), the row rule's own failure
-  (`new row violates row-level security policy`, also 42501) and
-  `mantle_default_home`'s refusals, so a refusal is a 403, not a 500.
-- **Assistant, link and contact creates.** Their scopes have an empty
-  `mantle.mod_ws`, so on the write role their create is refused unless it
-  lands in a folder they may edit whose home is the default home. Decide
-  where an assistant's create goes before its writes move.
-- **An app's placement on create.** Plan 18.8 (an app needs a Moderator of
-  every new holder) is enforced on a move (0278's move check, grants.ts)
-  but not on a create: a user with Write on a folder can create an app in
-  it, and the app takes the folder's workspaces as holders. Add the move
-  check's app rule to the write check's INSERT branch for `type = 'app'`,
-  or decide that a folder's Write is enough.
-- **One helper for the manage rule.** "Manage of the home, or Admin when
-  there is no home" is written inline twice in 0278, and "may the scope
-  create in this folder" is worked out in 0277's create check,
-  `mantle_default_home` and 0278. Fold them into `mantle_may_manage_home`
-  and one create helper. Derived columns are kept by two ways: column
-  grants (`derived` in the matrix, `item_grants.via_folder_id` only) and
-  the guard triggers (`nodes.home_ws`, `read_ws`, `write_ws`, the chunk and
-  fact copies). The guard triggers are the canonical way; `derived` is
-  for a table whose columns are not all readable.
-- **SET LOCAL on the write pool.** Its writes set the scope and the actor
-  with `SET LOCAL` in their own short transaction, never a session-level
-  SET: a scope left on a pooled connection would be a stale access right.
-- **The rollout switch is the box mode.** The write pool is used only when
-  `mantle.actor_check` is warn or on; off runs today's path. The mode is
-  read from the catalog (`mantle_actor_check_mode`), where a session can
-  only make it stricter, so the security note above holds.
-- **Heads functions.** The write role runs `mantle_lock_heads`,
-  `mantle_lock_heads_more` and `mantle_lock_heads_nested`
-  (`WRITE_ROLE_FUNCTIONS`, granted by A2b2a); never `mantle_heads_taken`
-  (only the definers call it), a signer (`mantle_heads_set`, `_sig`,
-  `_mac`) or a bypass.
+Open, each an owner question (A2b2b keeps today's working behaviour):
+
+- **(open, owner question) An Admin-only kind made by an Admin user who is
+  not a Moderator of Admin.** On the write role (an Admin turn) the create
+  needs a Moderator of its home, Admin: refused in `on`, reported in `warn`.
+  Kept: the database says no. An Admin user's HTTP write stays on the system
+  pool, where this rule does not run.
+- **(open, owner question) Assistant, link and contact creates.** No flow
+  sends one with a write scope today (a workspace assistant's turn with no
+  user writes nothing, a link and a contact write through named system
+  work). Kept the write check's rule: a Moderator of the home, or a folder
+  they may edit whose home is the create's. A create there with an empty
+  `mantle.mod_ws` is refused in `on`.
+- **(open, owner question) An app's placement on create.** Decided for now:
+  a folder's Write is enough (as before). The move check refuses an app
+  placed where it adds a workspace the caller does not moderate; a create
+  does not. Adding it means an app-side refusal and its UI message too.
 - **`mantle_actor_check_mode` stays open to PUBLIC** until the view and
   write roles have an explicit grant: callers that are not definers need it.
   Grant first, then revoke PUBLIC.
@@ -552,50 +587,58 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
   as the role and sets its own scope. Its password is as sensitive as the
   system pool's.
 - **Lock only what the scope reads.** The heads lock functions are definers
-  and lock any id they get. Take heads only for ids a scoped SELECT
-  returned, so a lock never tells the caller that an unreadable item
-  exists.
-- **No `RETURNING *` and no other columns on the column-limited tables**
-  (`pages`, `draws`, `tables`, `item_grants`): the role reads, inserts and
-  updates only the columns `userReadFor` names there. Name the columns.
-- **Open the write pool only in web and api** (3 connections each), or at
-  most 1 per process elsewhere: the role's limit is 20, and 12 processes
-  with 3 each would hit it (FATAL 53300, too many connections for role).
-- **The system-only content tables.** Login writes to the tables in
-  `WRITE_ROLE_SYSTEM_ONLY` (`packages/db/src/access-matrix.ts`) stay on
-  the system pool. They have no read rule for the workspace role, so the
-  write role has no right on them. A phase that gives one of them a read
-  rule (A3a or later) moves it: the matrix then puts it in
-  `WRITE_ROLE_TABLES`.
-- **A2b2b may open the write pool once the raised max_connections (task
-  29008b01) is on the box.** The worst case of the code's pool limits was
-  over max_connections 200 already, before the write pool. The owner chose
-  (2026-10-12) to raise max_connections and keep the pools as they are:
-  v0.300.12 sets 450 (200 to 400 to 450, docker-compose.yml and the dev
-  stack), and `packages/db/src/connection-ceiling.test.ts` sums every pool
-  per box shape against 90% of it (405), the write role's 20 included:
-  359 on the full shape, 319 with `MANTLE_RUNS` off, 193 on the core shape
-  (2026-10-13). A box takes 450 when it rolls to v0.300.12 or later
-  (docs/update-prod.md). The first count, in A2b2a (2026-10-12):
-  - 12 Node processes hold connections: web, api and 10 workers. media is
-    Python with no `DATABASE_URL` (docker-compose.yml, media service).
-  - System pool: `max: 10` per process (`packages/db/src/client.ts`,
-    getAdminDb); postgres.js never closes an idle connection. 120.
-  - Workspace role pool: 3 per process, capped by its role limit: 30.
-  - pg-boss 12.37: 10 per instance (the default; no caller passes `max`).
-    Instances: `server/web/workers/_runner.ts` createBoss,
-    `packages/runs/src/boss.ts`, `packages/email/src/backfill-queue.ts`,
-    `packages/email/src/accounts.ts`,
-    `server/api/src/agent/extract-queue.ts`. web, api and the runs worker
-    can each hold 3; the telegram worker 2; the email, microsoft, calendar
-    and maintenance workers 1. About 140.
-  - DBOS 5.2.11: the api system pool 10, and a `DBOSClient` of 10 in web
-    (`server/web/lib/dbos-client.ts`) and in the runs worker
-    (`server/web/lib/runs/dbos-enqueue.ts`): 30. None sets a pool size.
-  - LISTEN clients: api 2, web 1, push worker 2: 5.
-  - Sum: about 335 on the full shape, 295 with `MANTLE_RUNS` off, 171 on
-    the core shape (`docker-compose.core.yml`). With the write role's
-    limit (20): about 355. The measured dev peak was 77.
+  and lock any id they get (the write role now runs
+  `mantle_lock_subtree_heads` too). The app reads the ids it locks on the
+  system pool and never returns them; the lock functions filter by the scope
+  in A3a (below).
+- **Derived columns** are kept by two ways: column grants (`derived` in the
+  matrix, `item_grants.via_folder_id` only) and the guard triggers
+  (`nodes.home_ws`, `read_ws`, `write_ws`, the chunk and fact copies). The
+  guard triggers are the canonical way; `derived` is for a table whose
+  columns are not all readable.
+
+## Closed in A2b2b
+
+- **Route the writes.** The login write gateway, above: one decision, one
+  runner, behind the three doors a scoped write took to the system pool.
+- **SET LOCAL on the write pool**, never a session SET: one statement with
+  the transaction's first.
+- **The rollout switch is the box mode.** Off: the system pool, byte for byte
+  (`a2a-round-trips.db.test.ts` with `MANTLE_RT_BASELINE=1`).
+- **Keep every app-side permission check.** None removed. And the checks
+  that refused before A2b2b refuse on the role in every mode (0279, "The
+  0266 checks on the write role" above): only the role's own new checks are
+  staged.
+- **The create home's Moderator seat is in the scope**: the gateway adds the
+  login's private workspace, read by `resolveCreateHome` (above).
+- **The creates that are the brain's.** Every kind's root folder is made as
+  `system(repair:kind-root)` through `kind-root.ts` (the Admin-only kind
+  rule: open above).
+- **A home move is one step on the role**: `mantle_grant_move_home` (0279).
+- **grants.ts writes no derived column**: `mantle_grant_change` and
+  `mantle_workspace_event` (0279).
+- **The refusal messages.** `isScopeWriteRefusal` knows 0278's and 0279's
+  write check messages, the row rule's own (`new row violates row-level
+  security policy`) and `mantle_default_home`'s, so each is a 403
+  (`pg-error.test.ts`). A missing grant (`isPermissionGap`) is not.
+- **One helper for the manage rule** (0279): `mantle_may_manage_home`
+  (manage of the home, or Admin when there is none), `mantle_may_add_to_folder`
+  (the 0266 folder rule) and `mantle_may_create_item` (the write check's
+  create rule). `mantle_default_home` (0267, released) keeps its own folder
+  test: it picks a home, it refuses nothing there.
+- **Heads functions.** The write role runs `mantle_lock_heads`,
+  `mantle_lock_heads_more`, `mantle_lock_heads_nested` and now
+  `mantle_lock_subtree_heads` (a folder's move or grant change); never
+  `mantle_heads_taken`, a signer or a bypass.
+- **No `RETURNING *` and no other columns on the column-limited tables.**
+  A write that names one is a gap the suite fails on (`vitest.setup.ts`).
+- **Open the write pool only in web and api**: 3 each, 6 of the role's 20.
+- **The system-only content tables** stay on the system pool: by table up
+  front for a single write, by a logged gap for a transaction
+  (`WRITE_ROLE_GAP_TABLES`).
+- **The raised max_connections.** `connection-ceiling.test.ts` (2026-10-13,
+  A2b2b): 345 of 405 on the full shape (the write role 6), 305 with
+  `MANTLE_RUNS` off, 181 on the core shape.
 
 ## A3a must
 

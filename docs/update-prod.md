@@ -786,6 +786,28 @@ table still cannot be locked, migrate stops with a lock timeout (55P03):
 run it again. A later migrate that changes nothing takes no table lock.
 No app process uses the role yet, so nothing else changes.
 
+## Login writes on the write role (arch A2b2b, migration 0279)
+
+From A2b2b on, web and api send a login's scoped writes (a member's write
+request, an Admin turn) to the write role while the box is `warn` or `on`.
+A box that is `off` runs every write as before: nothing changes there. On a
+`warn` or `on` box each of the two processes opens up to 3 connections as
+`mantle_write_user` (6 of its limit of 20) after the roll. 0279 changes only
+functions: no table lock.
+
+In `warn`, a write the role refuses on its own checks is logged and runs
+(`actor_check_misses`, as above). A write to a table the role holds no
+right on runs again on the system pool and is logged as `write-role-gap`;
+read them with numbers only:
+
+```sql
+select check_name, count(*) from actor_check_misses
+ where check_name = 'write-role-gap' and at > now() - interval '1 day' group by 1;
+```
+
+Going back is `select mantle_set_actor_check('off');` and a restart of the
+app processes: every write is on the system pool again.
+
 ## Rollback
 
 ```bash

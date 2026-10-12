@@ -398,7 +398,7 @@ export const READ_PATH_WRITES = {
   'backfill:app-marks':
     'GET /api/app-nav: copy a login’s app pins and opens into item_marks, once (content tree/apps-nav.ts)',
   'repair:kind-root':
-    'GET /api/tree/:kind, /api/app-nav: make a kind’s missing root folder row (content tree/node-ops.ts)',
+    'GET /api/tree/:kind, /api/app-nav, and every kind’s create (A2b2b): make a kind’s missing root folder row (content kind-root.ts)',
   'backfill:doc-collections':
     'GET /api/docs/reader: register the default documentation collections (files docs.ts)',
   'repair:files-root':
