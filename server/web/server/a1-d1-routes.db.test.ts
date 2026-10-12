@@ -60,6 +60,8 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
   const reader = randomUUID(); // a member: in Team, no Moderator tick
   const outsider = randomUUID(); // a member: not in Team (its own Side)
   const writer = randomUUID(); // a member: in WG, which holds Write grants
+  const admin2 = randomUUID(); // an Admin user who is not the brain owner
+  const exAdmin = randomUUID(); // an admin-role login taken out of Admin
   let wg = '';
   let adminWs = '';
   let adminMapSlug = '';
@@ -185,7 +187,9 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
       (${mod}, ${email('mod')}, 'x', false, 'member', 'Mo Moderator'),
       (${reader}, ${email('reader')}, 'x', false, 'member', 'Rae Reader'),
       (${outsider}, ${email('out')}, 'x', false, 'member', 'Otto Outsider'),
-      (${writer}, ${email('writer')}, 'x', false, 'member', 'Wren Writer')`);
+      (${writer}, ${email('writer')}, 'x', false, 'member', 'Wren Writer'),
+      (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Ada Admin'),
+      (${exAdmin}, ${email('exadmin')}, 'x', false, 'admin', 'Ex Admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
@@ -204,6 +208,22 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
     await x(
       sql`delete from workspace_users where workspace_id = ${team} and login_id = ${outsider}`,
     );
+    // Both admin-role logins moderate Team; only Ada stays in Admin.
+    for (const id of [admin2, exAdmin]) {
+      await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+                  values (${team}, ${id}, true)
+                  on conflict (workspace_id, login_id) do update set moderator = true`);
+    }
+    await x(
+      sql`delete from workspace_users where workspace_id = ${adminWs} and login_id = ${exAdmin}`,
+    );
+    expect(
+      (
+        await x(sql`select 1 from workspace_users where workspace_id = ${adminWs}
+                     and login_id = ${admin2}`)
+      ).length,
+      'Ada sits in Admin',
+    ).toBe(1);
     // The writer is in WG only, without the Moderator tick.
     wg = (
       await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
@@ -362,6 +382,14 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
     const due = (await listDueReminders(owner, 50)).map((e) => e.id);
     expect(due).toContain(adminItem.event);
     expect(due).not.toContain(readerOwn.event);
+    // An owner with no live workspace (here: disabled) reads nothing, never
+    // everything (re-audit, M1 fails open).
+    await x(sql`update auth.users set disabled_at = now() where id = ${owner}`);
+    try {
+      expect(await listDueReminders(owner, 50)).toEqual([]);
+    } finally {
+      await x(sql`update auth.users set disabled_at = null where id = ${owner}`);
+    }
   });
 
   it('formulas: the calculator reads in the scope', async () => {
@@ -500,6 +528,78 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
     });
     expect(next.status, next.text.slice(0, 200)).toBe(201);
     expect(gone(next)).toBe(1);
+  });
+
+  it('an Admin user keeps the owner acts; an admin-role login out of Admin does not', async () => {
+    const map = teamItem.recall!;
+    const add = await call(`/api/recall/maps/${map}/cards`, exAdmin, 'POST', {
+      title: `${tag} ex card`,
+      bodyMd: 'Asked by a login out of Admin.',
+      useWhen: 'When the test asks for the ex card.',
+      prompt: true,
+      version: await versionOf(map),
+    });
+    expect(add.status, add.text.slice(0, 200)).toBe(201);
+    const slug = add.json.cardSlug as string;
+    const cardRow = async () =>
+      (
+        await x<{ kind: string; pending: boolean }>(sql`
+          select kind, prompt_pending as pending from recall_nodes
+           where map_id = ${map} and slug = ${slug}`)
+      )[0];
+    // Out of Admin, it writes as an editor: a request, and refused the acts.
+    expect(await cardRow()).toEqual({ kind: 'knowledge', pending: true });
+    const prompt = `/api/recall/maps/${map}/cards/${slug}/prompt`;
+    const no = await call(prompt, exAdmin, 'POST', {
+      confirm: true,
+      version: await versionOf(map),
+    });
+    expect(no.status, no.text.slice(0, 200)).toBe(403);
+    expect(no.json.code).toBe('confirm_is_owners');
+    const pubNo = await call(`/api/recall/maps/${map}`, exAdmin, 'PATCH', {
+      published: true,
+      version: await versionOf(map),
+    });
+    expect(pubNo.status, pubNo.text.slice(0, 200)).toBe(403);
+    expect(pubNo.json.code).toBe('publish_is_owners');
+    // An Admin user who is not the brain owner confirms and publishes.
+    const ok = await call(prompt, admin2, 'POST', { confirm: true, version: await versionOf(map) });
+    expect(ok.status, ok.text.slice(0, 200)).toBe(200);
+    expect(await cardRow()).toEqual({ kind: 'prompt', pending: false });
+    const pub = await call(`/api/recall/maps/${map}`, admin2, 'PATCH', {
+      published: true,
+      version: await versionOf(map),
+    });
+    expect(pub.status, pub.text.slice(0, 200)).toBe(200);
+    const [m1] = await x<{ p: boolean }>(
+      sql`select published as p from recall_maps where id = ${map}`,
+    );
+    expect(m1!.p).toBe(true);
+    // The log: the editor as 'agent', the Admin user as 'owner', each by id.
+    const log = await x<{ id: string; kind: string }>(sql`
+      select actor_id::text as id, actor_kind as kind from recall_revisions
+       where map_id = ${map} and actor_id in (${exAdmin}, ${admin2})`);
+    expect(new Set(log.filter((r) => r.id === exAdmin).map((r) => r.kind))).toEqual(
+      new Set(['agent']),
+    );
+    expect(new Set(log.filter((r) => r.id === admin2).map((r) => r.kind))).toEqual(
+      new Set(['owner']),
+    );
+  });
+
+  it('a map slug made outside Admin says nothing about maps the caller cannot read', async () => {
+    const recall = KINDS.find((k) => k.name === 'recall')!;
+    // adminMapSlug is held by a map in Admin the reader does not read.
+    const hidden = await create(recall, reader, `${tag} admin recall`);
+    expect(hidden.status, hidden.text.slice(0, 200)).toBe(201);
+    const free = await create(recall, reader, `${tag} unheld title`);
+    expect(free.status, free.text.slice(0, 200)).toBe(201);
+    // The same shape either way: the base and a random suffix, never a count.
+    expect(hidden.json.slug).toMatch(new RegExp(`^${adminMapSlug}-[0-9a-f]{6}$`));
+    expect(free.json.slug).toMatch(new RegExp(`^${tag}-unheld-title-[0-9a-f]{6}$`));
+    // An Admin user counts up, as before.
+    const byOwner = await create(recall, owner, `${tag} admin recall`);
+    expect(byOwner.json.slug).toBe(`${adminMapSlug}-2`);
   });
 
   it('the Team Moderator edits and deletes it; a map is deleted by an Admin user', async () => {

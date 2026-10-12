@@ -15,10 +15,13 @@
   "guardCallFiles": 334,
   "liveRoutesWithoutGuard": 65,
   "kindLists": 6,
-  "brainOnWorkspacesCalls": 11,
-  "brainOnWorkspacesFiles": 6,
+  "brainOnWorkspacesCalls": 12,
+  "brainOnWorkspacesFiles": 7,
   "adminReadsFiles": 2,
   "store_tabledb_files": 29,
   "store_objectstore_files": 17,
-  "store_appdb_files": 3
+  "store_appdb_files": 3,
+  "_notes": {
+    "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code."
+  }
 }

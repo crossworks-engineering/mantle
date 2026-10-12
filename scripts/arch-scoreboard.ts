@@ -67,10 +67,18 @@ for (const [key, label] of Object.entries(LABELS)) {
 }
 
 if (mode === '--pin') {
-  writeFileSync(PINS, `${JSON.stringify(numbers, null, 2)}\n`);
+  // `_notes` says why a pin went up (a reviewed raise); a re-pin keeps it.
+  let notes: unknown;
+  try {
+    notes = (JSON.parse(readFileSync(PINS, 'utf8')) as { _notes?: unknown })._notes;
+  } catch {
+    notes = undefined;
+  }
+  const out = notes === undefined ? numbers : { ...numbers, _notes: notes };
+  writeFileSync(PINS, `${JSON.stringify(out, null, 2)}\n`);
   console.log(`\npinned in ${PINS}`);
 } else if (mode === '--check') {
-  const pins = JSON.parse(readFileSync(PINS, 'utf8')) as Record<string, number>;
+  const pins = JSON.parse(readFileSync(PINS, 'utf8')) as Record<string, number | undefined>;
   const up: string[] = [];
   const down: string[] = [];
   for (const key of Object.keys(LABELS)) {

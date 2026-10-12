@@ -250,7 +250,13 @@ export {
 } from 'drizzle-orm';
 export { carrySpaceRows, spaceFilesPath, SPACE_FILES_ROOT } from './space-carry';
 export { takeShareReadLock, takeShareWriteLock } from './share-lock';
-export { itemReadByWorkspace, nodeReadByWorkspace, scopeReadsNodes } from './scope-readable';
+export {
+  itemReadByWorkspace,
+  nodeReadByWorkspace,
+  scopeLacksAdmin,
+  scopeReadsItem,
+  scopeReadsNodes,
+} from './scope-readable';
 export {
   itemWriteRefusal,
   itemNotInScopeError,

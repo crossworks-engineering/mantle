@@ -15,23 +15,33 @@
  */
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { nodes } from './schema/nodes';
-import { requestWriteScope } from './viewer';
+import { currentWorkspaceScope, requestWriteScope } from './viewer';
 
 type Exec = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The read rule on a nodes row aliased `n` (see scopeReadsNodes). */
+function scopeReads(): SQL {
+  const scope = requestWriteScope();
+  const ws = scope ? scope.ws.filter((id) => UUID.test(id)) : null;
+  return ws
+    ? sql`n.read_ws && ${`{${ws.join(',')}}`}::uuid[]`
+    : sql`(not "public"."mantle_scope_active"() or n.read_ws && "public"."mantle_scope_ws"())`;
+}
+
+/** The same rule as a condition on a table whose rows follow an item
+ *  (`nodeId`, such as recall_maps.node_id), to fold into a query. */
+export function scopeReadsItem(nodeId: SQLWrapper): SQL {
+  return sql`exists (select 1 from "public"."nodes" n where n.id = ${nodeId} and ${scopeReads()})`;
+}
+
 export async function scopeReadsNodes(tx: Exec, ids: readonly string[]): Promise<Set<string>> {
   const list = [...new Set(ids)].filter((id) => UUID.test(id));
   if (list.length === 0) return new Set();
-  const scope = requestWriteScope();
-  const ws = scope ? scope.ws.filter((id) => UUID.test(id)) : null;
-  const reads = ws
-    ? sql`n.read_ws && ${`{${ws.join(',')}}`}::uuid[]`
-    : sql`(not "public"."mantle_scope_active"() or n.read_ws && "public"."mantle_scope_ws"())`;
   const rows = (await tx.execute(sql`
     select n.id::text as id from "public"."nodes" n
-     where n.id = any(${`{${list.join(',')}}`}::uuid[]) and ${reads}`)) as unknown as {
+     where n.id = any(${`{${list.join(',')}}`}::uuid[]) and ${scopeReads()}`)) as unknown as {
     id: string;
   }[];
   return new Set(rows.map((r) => r.id));
@@ -49,4 +59,34 @@ export function nodeReadByWorkspace(ws: string): SQL {
 export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {
   return sql`exists (select 1 from "public"."nodes" n
                       where n.id = ${nodeId} and ${ws}::uuid = any(n.read_ws))`;
+}
+
+/**
+ * Whether the caller writes in a scope without the Admin workspace (a login
+ * outside Admin, or a workspace assistant). Such a caller must not learn
+ * from a write's answer which items exist outside its scope; a brain-wide
+ * unique name (a Recall map's slug) then takes a random suffix instead of
+ * the next free number. False with no scope (the system's own work) and for
+ * a scope that holds Admin. The answer depends on the caller only, never on
+ * the items it cannot read.
+ */
+export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
+  const scope = requestWriteScope() ?? currentWorkspaceScope();
+  if (scope) {
+    const ws = scope.ws.filter((id) => UUID.test(id));
+    if (ws.length === 0) return true;
+    const rows = (await tx.execute(sql`
+      select exists (select 1 from "public"."workspaces" w
+                      where w.is_admin and w.id = any(${`{${ws.join(',')}}`}::uuid[])) as a`)) as unknown as {
+      a: boolean;
+    }[];
+    return rows[0]?.a !== true;
+  }
+  const rows = (await tx.execute(sql`
+    select ("public"."mantle_scope_active"()
+            and not exists (select 1 from "public"."workspaces" w
+                             where w.is_admin and w.id = any("public"."mantle_scope_ws"()))) as narrow`)) as unknown as {
+    narrow: boolean;
+  }[];
+  return rows[0]?.narrow === true;
 }

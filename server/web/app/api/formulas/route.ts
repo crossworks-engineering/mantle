@@ -43,6 +43,8 @@ export async function GET(req: Request) {
     countFormulas(user.id, opts),
     // Unfiltered, so the filter control keeps every option regardless of what
     // is currently selected.
+    // The standards facet is brain-wide by design (names only, from what the
+    // caller reads), so ?ws= does not narrow it.
     listFormulaStandards(user.id),
   ]);
   return NextResponse.json({ formulas, total, page, pageSize: PAGE_SIZE, standards, ...inWs });

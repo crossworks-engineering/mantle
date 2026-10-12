@@ -165,15 +165,6 @@ export async function getRecallMapDetail(
 // ── v2: the write side ───────────────────────────────────────────────────────
 
 /**
- * A refused write is a 400 with the module's own message, which is written to
- * be actionable ("split it: keep the overview here…"). Anything that is not a
- * RecallWriteError is a bug, not a refusal, and is rethrown so `app.onError`
- * answers an opaque 500 rather than this layer inventing a reason.
- */
-/** The refusals that mean the THING addressed is missing. A bad reference
- *  inside a body (an option to a missing map, a folder that does not exist)
- *  is a 400: the request was wrong, not the address. */
-/**
  * Who writes a map through the HTTP routes (workspaces arch A1 fix round,
  * H1). The owner's acts on a map (publish it, confirm or drop a prompt,
  * restore a revision, change a slug, reorder or delete it) stay with the
@@ -205,8 +196,19 @@ const RECALL_OWNER_ACT_CODES = new Set([
   'delete_is_owners',
 ]);
 
+/** The refusals that mean the THING addressed is missing. A bad reference
+ *  inside a body (an option to a missing map, a folder that does not exist)
+ *  is a 400: the request was wrong, not the address. */
 const RECALL_NOT_FOUND_CODES = new Set(['map_not_found', 'card_not_found', 'revision_not_found']);
 
+/**
+ * A refused write is a 400 with the module's own message, which is written to
+ * be actionable ("split it: keep the overview here…"); a missing address is a
+ * 404, an owner's act asked by an editor a 403, a stale version a 409.
+ * Anything that is not a RecallWriteError is a bug, not a refusal, and is
+ * rethrown so `app.onError` answers an opaque 500 rather than this layer
+ * inventing a reason.
+ */
 export function recallWriteFailure(err: unknown): Response {
   if (err instanceof RecallWriteError) {
     const status = RECALL_NOT_FOUND_CODES.has(err.code)

@@ -34,6 +34,8 @@ import {
   recallNodes,
   recallRevisions,
   RECALL_REVISIONS_PER_MAP,
+  scopeLacksAdmin,
+  scopeReadsItem,
   scopeReadsNodes,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -171,6 +173,19 @@ function uniqueSlug(base: string, taken: Set<string>): string {
   );
 }
 
+/** `base` with a random suffix, free among `taken`: the answer does not
+ *  depend on which slugs are taken (a collision is a retry, never a count). */
+function randomSlug(base: string, taken: Set<string>): string {
+  for (let i = 0; i < 20; i += 1) {
+    const candidate = `${base}-${randomUUID().replace(/-/g, '').slice(0, 6)}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  throw new RecallWriteError(
+    'slug_exhausted',
+    `Cannot make a unique slug from '${base}'. Give the map a more distinctive title.`,
+  );
+}
+
 /** Every slug a set of cards answers to, current and former: a new card must
  *  not take a slug an agent still remembers for another card. The reserved
  *  route words are taken too. */
@@ -281,18 +296,19 @@ async function resolveOptions(
     if (o.targetMap) {
       // A slug the map had before a rename still lands, and is stored as the
       // map's slug NOW, so the option does not depend on the old one.
-      const [found] = await tx
-        .select({
-          slug: recallMaps.slug,
-          published: recallMaps.published,
-          nodeId: recallMaps.nodeId,
-        })
+      // A map outside the caller's scope does not exist for it: the same
+      // answer as no such map, so an option neither leads to it nor tells
+      // the caller it is there (A1 fix round, L1). In the query, so the
+      // limit picks among the maps the caller reads.
+      const [target] = await tx
+        .select({ slug: recallMaps.slug, published: recallMaps.published })
         .from(recallMaps)
         .where(
           and(
             eq(recallMaps.ownerId, ownerId),
             // A leftover page-built (v1) row is not a map an option can lead to.
             isNotNull(recallMaps.nodeId),
+            scopeReadsItem(recallMaps.nodeId),
             or(
               eq(recallMaps.slug, o.targetMap),
               arrayContains(recallMaps.formerSlugs, [o.targetMap]),
@@ -301,11 +317,6 @@ async function resolveOptions(
         )
         .orderBy(sql`${recallMaps.slug} = ${o.targetMap} desc`)
         .limit(1);
-      // A map outside the caller's scope does not exist for it: the same
-      // answer as no such map, so an option neither leads to it nor tells
-      // the caller it is there (A1 fix round, L1).
-      const target =
-        found && (await scopeReadsNodes(tx, [found.nodeId!])).has(found.nodeId!) ? found : null;
       if (!target) {
         throw new RecallWriteError(
           'cross_map_not_found',
@@ -536,7 +547,15 @@ export async function createRecallMap(
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`recall-map-create:${ownerId}`}))`,
       );
-      const slug = uniqueSlug(recallNativeSlug(title), await mapSlugsTaken(tx, ownerId));
+      // Slugs are unique across the brain, maps the caller cannot read
+      // included. A caller whose scope lacks Admin always gets a random
+      // suffix, so its slug never tells it that a map it cannot read holds
+      // the plain one or a numbered one (A1 fix round); an Admin scope and
+      // the system count up as before.
+      const taken = await mapSlugsTaken(tx, ownerId);
+      const slug = (await scopeLacksAdmin(tx))
+        ? randomSlug(recallNativeSlug(title), taken)
+        : uniqueSlug(recallNativeSlug(title), taken);
       const published = actor.kind === 'owner';
       const [item] = await tx
         .insert(nodes)

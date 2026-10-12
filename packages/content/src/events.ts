@@ -21,8 +21,8 @@
  */
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import {
+  brainOnWorkspacesNow,
   db,
-  loginScopeFor,
   nodes,
   notifyNodeIngested,
   withDeadlockRetry,
@@ -362,9 +362,11 @@ export async function deleteEvent(ownerId: string, id: string): Promise<boolean>
  * Only the events the owner's own scope reads (workspaces arch A1 fix
  * round, M1): a reminder goes to the owner's chats, so an event in a
  * workspace the owner is not in (a user's private workspace) is never
- * delivered there; its title and place stay in its workspace. Delivery to
- * each event's own users comes later. An owner in no workspace (a brain not
- * on workspaces) keeps the rule from before (every event).
+ * delivered there; its title and place stay in its workspace. On a brain
+ * on workspaces this ALWAYS reads in the owner's scope: an owner with no
+ * live workspace (disabled, out of Admin) reads nothing, never everything.
+ * Only a brain not on workspaces keeps the rule from before (every event);
+ * A7 removes that branch. Delivery to each event's own users comes later.
  */
 export async function listDueReminders(ownerId: string, limit = 50): Promise<EventRow[]> {
   const due = () =>
@@ -381,8 +383,9 @@ export async function listDueReminders(ownerId: string, limit = 50): Promise<Eve
       )
       .orderBy(asc(sql`mantle_iso_to_ts(${nodes.data}->>'remind_at')`))
       .limit(limit);
-  const scoped = (await loginScopeFor(ownerId)).ws.length > 0;
-  const rows = scoped ? await withViewer({ login: ownerId }, due) : await due();
+  const rows = (await brainOnWorkspacesNow())
+    ? await withViewer({ login: ownerId }, due)
+    : await due();
   return rows.map(rowOf);
 }
 
