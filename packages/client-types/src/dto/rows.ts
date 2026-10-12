@@ -186,7 +186,6 @@ export type AppRow = {
   shareMode: ShareMode | null;
   /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
   isHub: boolean;
-
   /** A live open public link exists (not revoked, not expired): the
    *  "Public" pill. Absent from a brain before W5b2. */
   hasLink?: boolean;

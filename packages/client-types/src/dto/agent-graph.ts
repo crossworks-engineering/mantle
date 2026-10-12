@@ -196,7 +196,6 @@ export interface ToolGroupDTO {
   integration: ToolGroupIntegrationDTO | null;
   enabled: boolean;
   createdAt: string;
-
   updatedAt: string;
 }
 
