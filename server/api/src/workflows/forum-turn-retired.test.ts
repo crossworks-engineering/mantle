@@ -30,9 +30,10 @@ vi.mock('@mantle/runtime/assistant', async () => ({
 import { retiredForumTurn } from './forum-turn-retired';
 
 describe('the retired forum turn workflow', () => {
-  it("is registered under the old forum turn's exact name", () => {
+  it("is registered under the old forum turn's exact name", async () => {
     expect(h.registered.map((r) => r.name)).toEqual(['forumTurnWorkflow']);
-    expect(h.registered[0]!.fn).toBe(retiredForumTurn);
+    // Through registerActorWorkflow (arch A2a): the run ends the same way.
+    expect(await h.registered[0]!.fn({})).toEqual({ retired: true });
   });
 
   it('the runner imports it (registration is an import side effect)', () => {

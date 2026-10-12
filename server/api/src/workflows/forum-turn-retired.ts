@@ -14,6 +14,7 @@
  * 0177) after every topic was exported into the Forum archive pages.
  */
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { registerActorWorkflow, systemEntry } from './actor-workflow';
 import { RETIRED_FORUM_TURN_WORKFLOW } from '@mantle/runtime/assistant';
 
 /** The old input, as the forum routes enqueued it. Read defensively: it comes
@@ -30,6 +31,9 @@ export async function retiredForumTurn(input: unknown): Promise<RetiredForumTurn
   return { retired: true };
 }
 
-export const retiredForumTurnWorkflow = DBOS.registerWorkflow(retiredForumTurn, {
-  name: RETIRED_FORUM_TURN_WORKFLOW,
-});
+// Arch A2a: every workflow names its actor; this one sends no statement.
+export const retiredForumTurnWorkflow = registerActorWorkflow(
+  RETIRED_FORUM_TURN_WORKFLOW,
+  systemEntry('workflow:forum-turn-retired'),
+  retiredForumTurn,
+);

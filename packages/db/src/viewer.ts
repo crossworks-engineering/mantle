@@ -32,6 +32,7 @@ import {
   currentActor,
   loginActor,
   systemActor,
+  systemUnder,
   runInActorSlot,
   setSlotActor,
   slotActor,
@@ -402,8 +403,8 @@ export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' 
   // Arch A2a (plan 4.1): an Admin area route and the login's own things run
   // as system(reason); an Admin user's write or read on the system pool
   // stays its login (named by the guard).
-  if (why === 'area') setSlotActor(systemActor('http:admin-area'));
-  else if (why === 'login-self') setSlotActor(systemActor('http:login-self'));
+  if (why === 'area') setSlotActor(systemUnder('http:admin-area', slotActor()));
+  else if (why === 'login-self') setSlotActor(systemUnder('http:login-self', slotActor()));
 }
 
 /**
@@ -631,7 +632,7 @@ function scopeActor(ws: WorkspaceScope): Actor {
 /** store.run for a workspace scope, with the scope's actor bound. */
 function inScope<T>(scope: Scope, fn: () => T): T {
   return scope.ws
-    ? runAsActor(scopeActor(scope.ws), () => store.run(scope, fn))
+    ? (runAsActor(scopeActor(scope.ws), () => store.run(scope, fn)) as T)
     : store.run(scope, fn);
 }
 
@@ -882,6 +883,9 @@ export function runInSystemTx<T>(
  *  - `audit-log`: the audit row of a connector call made over a login's
  *    MCP (mcp-core login-surface.ts): an admin table, written after the
  *    call, never read back in the scope (arch A2a named it).
+ *  - `client-sourced-mark`: the client-sourced mark on a Table an app's
+ *    export writes once a client wrote the app (app-table-exports.ts): an
+ *    insert into client_sourced_nodes, nothing read back (A2a fix round).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -910,6 +914,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'login-telegram',
   'heartbeat-context',
   'audit-log',
+  'client-sourced-mark',
 ] as const;
 
 /**
@@ -920,12 +925,20 @@ export const AS_SYSTEM_TURN_REASONS = [
  *  - `login-notice`: the push worker builds a login's notice (a finished
  *    chat reply, a review result) from rows of that login only
  *    (login-notices.ts).
+ *  - `space-taken-authors`: who wrote the items an Admin user took from a
+ *    personal space (admin-space-taken.ts), for that admin's own review
+ *    list; the spaces family goes in W10.
  *  - `snapshot-copies`: the boot step that makes the read-only copies of
  *    snapshots (snapshot-copies.ts), under its advisory lock.
  *  - `test`: a test's own setup, in test files only (eslint-rules/
  *    arch-lints.test.ts keeps it out of every counted file).
  */
-export const AS_SYSTEM_OTHER_REASONS = ['login-notice', 'snapshot-copies', 'test'] as const;
+export const AS_SYSTEM_OTHER_REASONS = [
+  'login-notice',
+  'space-taken-authors',
+  'snapshot-copies',
+  'test',
+] as const;
 
 export type AsSystemReason =
   (typeof AS_SYSTEM_TURN_REASONS)[number] | (typeof AS_SYSTEM_OTHER_REASONS)[number];
@@ -990,7 +1003,11 @@ export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promi
   // anchor (scopeLeftForSystem, agent-viewer.ts withAgentScope).
   const left = active()?.ws;
   // A plain-JS caller that passed none still runs (A2a changes no behaviour).
-  const actor = systemActor(typeof reason === 'string' && reason ? reason : 'unnamed');
+  // A read-only caller stays read only on the system pool (fix round, M1).
+  const actor = systemUnder(
+    typeof reason === 'string' && reason ? reason : 'unnamed',
+    currentActor(),
+  );
   if (left) return leftStore.run(left, () => runAsActor(actor, () => store.run(SYSTEM_EXIT, fn)));
   return runAsActor(actor, () => store.run(SYSTEM_EXIT, fn));
 }

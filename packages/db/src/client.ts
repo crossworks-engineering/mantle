@@ -44,6 +44,7 @@ import {
   noteBoxActorCheckMode,
   onPgNotice,
   runAsSystem,
+  runWithoutActor,
   loginActor,
   systemActor,
   setActorMissLogger,
@@ -97,6 +98,8 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
   const client = drizzle(actorClient(sql), { schema });
   globalThis.__mantleDb = client;
   setActorMissLogger(logActorMiss);
+  // Out of the caller's context: the timer must not keep its actor.
+  runWithoutActor(() => refreshActorCheckMode(sql));
   return client;
 }
 
@@ -105,32 +108,33 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
 /** The pipelined statements in flight (actorClient), for closeDb. */
 const actorPipelines = new Set<Promise<unknown>>();
 
-/** When the box's mode was last read (mantle_actor_check_mode), and the
- *  first read, which the first statements wait for. */
-let actorModeReadAt = 0;
-let actorModeFirst: Promise<void> | null = null;
-let actorModeKnown = false;
+/** The pool whose box mode a timer reads (refreshActorCheckMode). */
+let actorModePool: PgSql | null = null;
 
 /**
- * Read the box's actor check mode (again when a minute has passed). The
- * first read is awaited by the first statements, so a box in warn checks
- * from its first statement; later reads never wait.
+ * Read the box's actor check mode when the pool opens, then each minute on
+ * an unref'd timer: never inside a statement's path, so a request runs no
+ * new query for it (fix round; the owner's no-new-query rule). Until the
+ * first read lands the process uses MANTLE_ACTOR_CHECK alone (off unless
+ * set), and a process's first statements run as before.
  */
-function refreshActorCheckMode(base: PgSql): Promise<void> | null {
-  const now = Date.now();
-  if (now - actorModeReadAt >= 60_000) {
-    actorModeReadAt = now;
-    const read = base
+function refreshActorCheckMode(base: PgSql): void {
+  if (actorModePool === base) return;
+  actorModePool = base;
+  const read = () => {
+    if (actorModePool !== base) return;
+    base
       .unsafe('select "public"."mantle_actor_check_mode"() as m')
       .then((rows) => noteBoxActorCheckMode((rows[0] as { m?: string } | undefined)?.m ?? null))
       // A database without 0275 yet: off.
-      .catch(() => noteBoxActorCheckMode(null))
-      .finally(() => {
-        actorModeKnown = true;
-      });
-    actorModeFirst ??= read;
-  }
-  return actorModeKnown ? null : actorModeFirst;
+      .catch(() => noteBoxActorCheckMode(null));
+  };
+  read();
+  const timer = setInterval(() => {
+    if (actorModePool !== base) clearInterval(timer);
+    else read();
+  }, 60_000);
+  timer.unref();
 }
 
 /** Write a miss row later, on another connection (20.3 item 7): never in
@@ -183,7 +187,53 @@ const SET_ACTOR_SQL =
 /** Statements Postgres refuses inside a transaction block: they run as they
  *  are, with no actor set (DDL and maintenance; no item trigger fires). */
 const NO_TX_SQL =
-  /^\s*(vacuum|cluster|reindex\b[^;]*\bconcurrently|(create|drop)\s+(unique\s+)?index\s+concurrently|create\s+database|drop\s+database|alter\s+system|checkpoint)\b/i;
+  /^(vacuum|cluster|checkpoint|discard\s+all|call|reindex\s+(\([^)]*\)\s*)?(database|schema|system)\b|reindex\b[^;]*\bconcurrently|(create|drop)\s+(unique\s+)?index\s+concurrently|(create|drop)\s+(database|tablespace)|alter\s+system)\b/i;
+
+/** `query` without its leading comments and whitespace, and with
+ *  `setsToo`, its leading SET statements. */
+function statementBody(query: string, setsToo: boolean): string {
+  let body = query;
+  for (;;) {
+    let next = body
+      .replace(/^\s+/, '')
+      .replace(/^--[^\n]*\n?/, '')
+      .replace(/^\/\*[\s\S]*?\*\//, '');
+    if (setsToo) next = next.replace(/^set\s+(?!transaction\b)[^;]*;/i, '');
+    if (next === body) return body;
+    body = next;
+  }
+}
+
+/**
+ * Whether `query` must run outside a transaction block (fix round, M3b):
+ * matched after its leading comments, whitespace and SET statements.
+ */
+export function runsOutsideTransaction(query: string): boolean {
+  return NO_TX_SQL.test(statementBody(query, true));
+}
+
+/** A statement that only reads: SELECT, VALUES, TABLE, SHOW, an EXPLAIN
+ *  without ANALYZE, and a WITH whose body writes nothing. */
+const READ_VERB = /^(select|values|table|show)\b/i;
+const EXPLAIN_NO_ANALYZE = /^explain\b(?![^;]*\banalyze\b)/i;
+const WITH_WRITES =
+  /\b(insert\s+into|update\s+[\w".]+\s+(as\s+\w+\s+)?set|delete\s+from|merge\s+into)\b/i;
+
+/**
+ * Whether the system pool sends `query` with the actor set (owner decision,
+ * A2a fix round): writes only. INSERT, UPDATE, DELETE, MERGE, TRUNCATE,
+ * COPY, a WITH whose body writes, and any verb not named here (the safe
+ * side) are wrapped; a read runs plain, exactly as with the check off. A
+ * SELECT that calls a function that writes an item table runs plain too, and
+ * the 0275 trigger then logs a miss in warn: that shows the case
+ * (docs/actors.md).
+ */
+export function needsActorWrap(query: string): boolean {
+  const body = statementBody(query, false);
+  if (READ_VERB.test(body) || EXPLAIN_NO_ANALYZE.test(body)) return false;
+  if (/^with\b/i.test(body)) return WITH_WRITES.test(body);
+  return true;
+}
 
 /** The mantle_set_actor parameters for the current actor, or null: no actor
  *  bound, or the check is off (then nothing changes). */
@@ -195,15 +245,73 @@ function actorParams(): [string, string, string] | null {
   return [actorSetting(actor), writeModeOf(actor), mode];
 }
 
+/** SET TRANSACTION (drizzle's transaction config): Postgres takes it only
+ *  as the transaction's first statement, so the actor follows it. */
+const SET_TRANSACTION_SQL = /^\s*set\s+transaction\b/i;
+
+/**
+ * A transaction's client that sets the actor right before its first
+ * statement (fix round, M3a): after a SET TRANSACTION (drizzle's isolation
+ * level, access mode, deferrable), which Postgres refuses after any query.
+ * Covers drizzle's path (`unsafe`), a savepoint opened first, and a
+ * tagged-template statement (which then returns a plain promise).
+ */
+function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
+  let set: Promise<unknown> | null = null;
+  const ensure = () => (set ??= t.unsafe(SET_ACTOR_SQL, params).then(() => undefined));
+  const lazy = (start: () => PromiseLike<unknown>) => {
+    let pending: Promise<unknown> | null = null;
+    const once = () => (pending ??= ensure().then(start));
+    return {
+      then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
+      catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
+      finally: (f?: () => void) => once().finally(f),
+    };
+  };
+  return new Proxy(t, {
+    apply(target, thisArg, args: unknown[]) {
+      const first = args[0] as { raw?: unknown } | undefined;
+      if (set || !Array.isArray(first) || !('raw' in first)) {
+        return Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args);
+      }
+      return ensure().then(() =>
+        Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args),
+      );
+    },
+    get(target, prop, receiver) {
+      if (prop === 'unsafe') {
+        return (query: string, args?: unknown[], opts?: unknown) => {
+          if (set) return target.unsafe(query, args as never[], opts as never);
+          if (SET_TRANSACTION_SQL.test(query)) {
+            return target.unsafe(query, args as never[], opts as never);
+          }
+          const q = () => target.unsafe(query, args as never[], opts as never);
+          return Object.assign(lazy(q), {
+            values: () => ensure().then(() => q().values()),
+            simple: () => ensure().then(() => q().simple()),
+          });
+        };
+      }
+      if (prop === 'savepoint') {
+        return (...a: unknown[]) =>
+          ensure().then(() =>
+            (target as unknown as { savepoint: (...x: unknown[]) => unknown }).savepoint(...a),
+          );
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
 /**
  * The system pool's postgres.js client with the actor (arch A2a, plan 4.2):
  * while the check is not off and an actor is bound, a transaction (`begin`)
- * sets the actor first, and any other statement runs pipelined in its own
- * short transaction that sets it (BEGIN, the actor, the statement, COMMIT:
- * one round trip, as turnScopedClient), so a write a function makes inside
- * a SELECT carries it too. With the check off, or no actor bound, every
- * statement runs exactly as before. Statements Postgres refuses in a
- * transaction block (NO_TX_SQL) always run as they are.
+ * sets the actor before its first statement, and a write outside one
+ * (needsActorWrap) runs pipelined in its own short transaction that sets it
+ * (BEGIN, the actor, the statement, COMMIT: one round trip, as
+ * turnScopedClient). A read runs plain. With the check off, or no actor
+ * bound, every statement runs exactly as before. Statements Postgres refuses in a
+ * transaction block (runsOutsideTransaction) always run as they are.
  */
 function actorClient(base: PgSql): PgSql {
   const pipelined = (
@@ -253,7 +361,8 @@ function actorClient(base: PgSql): PgSql {
     // A pool being closed (closeDb) takes no new reserved connection: one
     // that comes back after its end began keeps postgres.js from ending.
     const open = globalThis.__mantleSql === base;
-    const params = NO_TX_SQL.test(query) || !open ? null : actorParams();
+    const params =
+      runsOutsideTransaction(query) || !needsActorWrap(query) || !open ? null : actorParams();
     if (params) return pipelined(params, query, args, mode);
     const q = base.unsafe(query, args as never[], opts as never);
     return mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
@@ -262,13 +371,11 @@ function actorClient(base: PgSql): PgSql {
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
-          const ready = refreshActorCheckMode(target);
-          // Mode known and nothing to set: the plain query, every method of it.
-          if (!ready && (NO_TX_SQL.test(query) || !actorParams())) {
+          // Nothing to set: the plain query, every method of it (M3c).
+          if (runsOutsideTransaction(query) || !needsActorWrap(query) || !actorParams()) {
             return target.unsafe(query, args as never[], opts as never);
           }
-          const go = (mode: 'rows' | 'values' | 'simple') =>
-            ready ? ready.then(() => run(query, args, opts, mode)) : run(query, args, opts, mode);
+          const go = (mode: 'rows' | 'values' | 'simple') => run(query, args, opts, mode);
           let pending: Promise<unknown> | null = null;
           const once = () => (pending ??= go('rows'));
           return {
@@ -283,16 +390,13 @@ function actorClient(base: PgSql): PgSql {
       }
       if (prop === 'begin') {
         return (...args: unknown[]) => {
-          const ready = refreshActorCheckMode(target);
           const fn = args[args.length - 1] as (t: PgSql) => unknown;
           if (typeof fn !== 'function') {
             return (target.begin as (...a: unknown[]) => unknown)(...args);
           }
           const wrapped = async (t: PgSql) => {
-            if (ready) await ready;
             const params = actorParams();
-            if (params) await t.unsafe(SET_ACTOR_SQL, params);
-            return fn(t);
+            return fn(params ? actorInTransaction(t, params) : t);
           };
           return (target.begin as (...a: unknown[]) => unknown)(...args.slice(0, -1), wrapped);
         };
@@ -540,6 +644,9 @@ export async function loginActorNow(
   } catch {
     return systemActor(entry);
   }
+  // With the check off nothing reads the actor: no query (fix round, L1;
+  // the owner's rule, no new query on a hot path while off).
+  if (actorCheckMode() === 'off') return actor;
   try {
     const rows = (await runAsSystem(entry, () =>
       getAdminDb().execute(
@@ -1470,9 +1577,7 @@ export async function closeDb(): Promise<void> {
   globalThis.__mantleViewerDbs = undefined;
   globalThis.__mantleTurnDb = undefined;
   // The next pool reads its database's actor check mode afresh.
-  actorModeReadAt = 0;
-  actorModeFirst = null;
-  actorModeKnown = false;
+  actorModePool = null;
   noteBoxActorCheckMode(null);
   // A detached write still on its reserved connection finishes first (the
   // pool is no longer globalThis.__mantleSql, so none starts now).

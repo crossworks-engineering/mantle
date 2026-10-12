@@ -7,8 +7,9 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { db, runAsSystem } from '@mantle/db';
+import { db } from '@mantle/db';
 import { sql } from 'drizzle-orm';
+import { registerActorWorkflow, systemEntry } from './actor-workflow';
 
 async function pingImpl(note: string): Promise<{ ok: true; note: string; dbNow: string }> {
   // Standard runner span tags — mirror these in every runner so execution
@@ -33,7 +34,8 @@ async function pingImpl(note: string): Promise<{ ok: true; note: string; dbNow: 
 }
 
 // Arch A2a: the runner's own work.
-export const pingWorkflow = DBOS.registerWorkflow(
-  (note: string) => runAsSystem('workflow:ping', () => pingImpl(note)),
-  { name: 'pingWorkflow' },
+export const pingWorkflow = registerActorWorkflow(
+  'pingWorkflow',
+  systemEntry('workflow:ping'),
+  pingImpl,
 );

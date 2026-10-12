@@ -32,7 +32,7 @@ import {
 } from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
 import { assertNoViewer } from '@mantle/db/viewer';
-import { runAsActor } from '@mantle/db';
+import { registerActorWorkflow } from './actor-workflow';
 import { loginActorNow, ownerActor } from './login-actor';
 
 export type { AssistantTurnInput, AssistantTurnRunResult };
@@ -105,16 +105,17 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
 
 /** Arch A2a: the turn runs as the login it answers, as that login is now;
  *  with no login, as the owner. */
-async function assistantTurnAs(input: AssistantTurnInput): Promise<AssistantTurnRunResult> {
+async function assistantTurnActor(input: AssistantTurnInput) {
   const entry = 'workflow:assistant-turn';
   const loginId = input.options?.loginId;
-  const actor = loginId ? await loginActorNow(loginId, entry) : ownerActor(input.ownerId, entry);
-  return runAsActor(actor, () => assistantTurnImpl(input));
+  return loginId ? loginActorNow(loginId, entry) : ownerActor(input.ownerId, entry);
 }
 
-export const assistantTurnWorkflow = DBOS.registerWorkflow(assistantTurnAs, {
-  name: ASSISTANT_TURN_WORKFLOW,
-});
+export const assistantTurnWorkflow = registerActorWorkflow(
+  ASSISTANT_TURN_WORKFLOW,
+  assistantTurnActor,
+  assistantTurnImpl,
+);
 
 /** Enqueue a turn from WITHIN the runner process (runner-side / tests). The web
  *  route enqueues cross-process via DBOSClient instead — Step 5. `workflowID`,

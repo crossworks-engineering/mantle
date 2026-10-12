@@ -130,9 +130,14 @@ $$;
 --> statement-breakpoint
 
 -- The SQL check: a write on an item table with no actor. Statement level and
--- the cheap test first, so a statement with an actor pays one setting read.
--- A cascade's inner statements are skipped (their source is checked).
--- Writes nothing: a NOTICE, once per transaction and table.
+-- the cheap tests first: a statement with an actor pays one setting read,
+-- and so does one with the check off (a box setting shows in
+-- current_setting, so off there needs no catalog read). Only a statement
+-- with no actor and a check that reads warn or on asks the catalog, so a
+-- session cannot lower the box. A2a only logs, so a session that sets its
+-- own value to off skips a warn here; A2b's refusal must read the catalog
+-- first. A cascade's inner statements are skipped (their source is
+-- checked). Writes nothing: a NOTICE, once per transaction and table.
 CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_stmt"()
   RETURNS trigger LANGUAGE plpgsql
   SET search_path = "public", pg_temp AS $$
@@ -140,6 +145,9 @@ DECLARE
   seen_key text := 'mantle.actor_missed_' || TG_TABLE_NAME;
 BEGIN
   IF coalesce(current_setting('mantle.actor', true), '') <> '' OR pg_trigger_depth() > 1 THEN
+    RETURN NULL;
+  END IF;
+  IF coalesce(current_setting('mantle.actor_check', true), '') NOT IN ('warn', 'on') THEN
     RETURN NULL;
   END IF;
   IF "public"."mantle_actor_check_mode"() = 'off' THEN RETURN NULL; END IF;
@@ -157,7 +165,12 @@ BEGIN
   FOREACH t IN ARRAY ARRAY[
     'nodes', 'pages', 'draws', 'tables', 'apps', 'app_databases', 'recall_maps',
     'recall_nodes', 'recall_revisions', 'node_embeds', 'app_table_exports', 'shares',
-    'node_snapshots', 'item_grants', 'peer_shares', 'contact_share_codes', 'node_comments'
+    'node_snapshots', 'item_grants', 'peer_shares', 'contact_share_codes', 'node_comments',
+    -- The rest of the access matrix's content tables (fix round, L3; pinned
+    -- by actor-trigger-coverage.db.test.ts).
+    'content_chunks', 'content_chunk_windows', 'facts', 'entities', 'entity_edges',
+    'node_mixed_summaries', 'node_acl_head', 'client_comment_ledger', 'space_items',
+    'space_item_bundles', 'space_uploads', 'space_submissions'
   ] LOOP
     IF to_regclass('public.' || t) IS NOT NULL THEN
       EXECUTE format('DROP TRIGGER IF EXISTS mantle_actor_check ON public.%I', t);

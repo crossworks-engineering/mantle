@@ -178,7 +178,7 @@ async function markExportClientSourced(ownerId: string, tableNodeId: string): Pr
           .insert(clientSourcedNodes)
           .values({ nodeId: tableNodeId, ownerId, via: 'app_table_export' })
           .onConflictDoNothing(),
-      'client-sourced-check',
+      'client-sourced-mark',
     );
   } catch (err) {
     console.warn('[app-table-exports] could not mark the export table:', errorMessage(err));

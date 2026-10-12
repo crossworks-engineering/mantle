@@ -11,16 +11,16 @@ refused. Refusing comes in the next phase (A2b).
 
 ## The actor kinds
 
-| Kind | Who | Writes |
-|---|---|---|
-| `login(rw)` | a signed-in user, a read-write key, a peer acting as a login with Write on | what the login may change |
-| `login(ro)` | a read-only key, a peer with Write off | nothing |
-| `login(owner)` | the owner cases of the guide: the Admin assistant with no user, a run with no login, the owner's Telegram bot | what the owner may change |
-| `assistant` | a workspace assistant with no user asking (a heartbeat, a schedule) | nothing |
-| `link` | an open public link | nothing |
-| `contact` | a contact share | its app's data, when the share allows it |
-| `system(reason)` | a process, an Admin area route, a login's own things, a named repair | what the reason needs |
-| `peer(share)` | a peer without "Acts as", reading what it is shared | nothing |
+| Kind             | Who                                                                                                           | Writes                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `login(rw)`      | a signed-in user, a read-write key, a peer acting as a login with Write on                                    | what the login may change                |
+| `login(ro)`      | a read-only key, a peer with Write off                                                                        | nothing                                  |
+| `login(owner)`   | the owner cases of the guide: the Admin assistant with no user, a run with no login, the owner's Telegram bot | what the owner may change                |
+| `assistant`      | a workspace assistant with no user asking (a heartbeat, a schedule)                                           | nothing                                  |
+| `link`           | an open public link                                                                                           | nothing                                  |
+| `contact`        | a contact share                                                                                               | its app's data, when the share allows it |
+| `system(reason)` | a process, an Admin area route, a login's own things, a named repair                                          | what the reason needs                    |
+| `peer(share)`    | a peer without "Acts as", reading what it is shared                                                           | nothing                                  |
 
 An assistant turn for a user runs as that user's login. Work done later for
 a login (a run, a heartbeat with a maker, a pending tool call, a Telegram
@@ -36,6 +36,11 @@ From `@mantle/db`:
 - `runAsSystem('worker:extract', fn)`: a process's own work.
 - `runAsActor(loginActor(id, 'rw'), fn)`: work for a login (`'ro'`,
   `'owner'` for the other login kinds).
+- `registerActorWorkflow(name, actorOf, impl)`
+  (`server/api/src/workflows/actor-workflow.ts`): the one way a DBOS
+  workflow registers. Each run asks `actorOf` with its own arguments who it
+  runs as, then runs `impl` as that actor (`systemEntry(reason)` for the
+  runner's own work).
 - `runInActorSlot(initial, fn)`: an entry whose caller is known only later.
   The route loader starts each request as `system(http:no-login)`. The
   session guard names the login (a read key: `login(ro)`), the share gate
@@ -54,24 +59,33 @@ An inner binding replaces an outer one.
 
 Only `packages/db` sets the settings (the lint
 `actor-setters-in-db-only`). On the system pool, while the check is not
-off, `client.ts`:
+off and an actor is bound, `client.ts` (`needsActorWrap`):
 
-- sets `mantle.actor` and `mantle.write_mode` first in every transaction
-  (`withSystemTx`, the heads helpers, `db.transaction`);
-- sends every other statement in its own short pipelined transaction that
-  sets them first (one round trip), so a write a function makes inside a
-  SELECT carries the actor too.
+- sets `mantle.actor` and `mantle.write_mode` in every transaction
+  (`withSystemTx`, the heads helpers, `db.transaction`), before its first
+  statement (after a `SET TRANSACTION`, which Postgres takes only first);
+- sends a write outside a transaction (INSERT, UPDATE, DELETE, MERGE,
+  TRUNCATE, COPY, a WITH whose body writes, and any verb it cannot name) in
+  its own short pipelined transaction that sets them first (one round trip);
+- sends a read (SELECT, WITH ... SELECT, VALUES, SHOW, EXPLAIN without
+  ANALYZE) plain, exactly as with the check off.
+
+A SELECT that calls a function that writes an item table runs plain too, so
+in warn the 0275 trigger logs it as a miss. That is wanted: it shows the
+case. The TypeScript check below still covers reads, in process, with no
+round trip.
 
 With the check off, or no actor bound, every statement runs exactly as
-before. The first statements of a process wait for the first read of the
-box's mode, so a box in warn checks from its first statement. The client
-sets the settings with plain `set_config` (it works on every role and on a
-database before 0275); `mantle_set_actor` is the checked form for psql and
-tests. The workspace role (`mantle_view_user`) cannot run the setter
-functions.
+before. The box's mode is read when the pool opens and then each minute on
+a timer, never in a statement's path; until the first read lands a process
+uses `MANTLE_ACTOR_CHECK` alone. The client sets the settings with plain
+`set_config` (it works on every role and on a database before 0275);
+`mantle_set_actor` is the checked form for psql and tests. The workspace
+role (`mantle_view_user`) cannot run the setter functions.
 
-This is not a secret: any role can set a `mantle.*` setting. The protection
-is the lint, the runtime role (A9) and the read rule on the write role.
+This is not a secret: any role can set a `mantle.*` setting (see Known
+limits). The protection is the lint, the runtime role (A9) and the read rule
+on the write role.
 
 ## The check
 
@@ -112,20 +126,32 @@ default documentation collections, and a page's missing block ids.
 
 Every file that starts work on its own, by kind, with the actor it binds.
 `eslint-rules/process-entries.test.ts` fails when a file starts work and is
-not listed here, or is listed and no longer does.
+not listed here, or is listed and no longer does. Its header says how each
+kind is found. `timeout-loop` is every file that calls `setTimeout(` and
+reaches the database (a value import from `@mantle/db`, or a file of
+`packages/db/src`): text cannot tell a re-arming timer from a sleep or a
+deadline, so each is listed and named here. A timer carries the actor of
+the code that set it. `packages/db/src` is scanned too.
+
+Every binder call (`runAsActor`, `runAsSystem`, `runReadPathWrite`,
+`runInActorSlot`, `actorStore.run`, `actorStore.enterWith`) is pinned per
+file with its count in `eslint-rules/actor-binders.mjs`, so a binder only
+appears, moves or goes with a reviewed pin change.
 
 ```entries
 # kind file actor
-dbos-workflow server/api/src/crash-test.ts none: a dev script run by hand, never on a box
+dbos-workflow server/api/src/crash-test.ts none: a dev script run by hand on scratch databases, never imported by the runner nor run on a box (exempt from registerActorWorkflow)
+dbos-workflow server/api/src/workflows/actor-workflow.ts defines the helper: registerActorWorkflow binds actorOf(...args) around each run
 dbos-workflow server/api/src/workflows/assistant-turn.ts the turn's login as it is now, else login(owner)
-dbos-workflow server/api/src/workflows/client-turn-retired.ts none: a retired no-op that reads and writes nothing
-dbos-workflow server/api/src/workflows/forum-turn-retired.ts none: a retired no-op that reads and writes nothing
+dbos-workflow server/api/src/workflows/client-turn-retired.ts system(workflow:client-turn-retired): a retired no-op that sends no statement
+dbos-workflow server/api/src/workflows/forum-turn-retired.ts system(workflow:forum-turn-retired): a retired no-op that sends no statement
 dbos-workflow server/api/src/workflows/ping.ts system(workflow:ping)
-dbos-workflow server/api/src/workflows/runs-resume-turn.ts the run's login as it is now, else login(owner)
-dbos-workflow server/api/src/workflows/runs-worker-turn.ts the run's login as it is now, else login(owner)
+dbos-workflow server/api/src/workflows/runs-resume-turn.ts system(workflow:runs-resume-turn); the turn itself the run's login as it is now, else login(owner)
+dbos-workflow server/api/src/workflows/runs-worker-turn.ts system(workflow:runs-worker-turn); the turn itself the run's login as it is now, else login(owner)
 dbos-workflow server/api/src/workflows/team-turn.ts the member's login as it is now
-dbos-workflow server/api/src/workflows/telegram-turn.ts the paired chat's login as it is now (login(owner) for the owner's), else system(workflow:telegram-turn)
+dbos-workflow server/api/src/workflows/telegram-turn.ts the paired chat's login as it is now (login(owner) for the owner's), else system(workflow:telegram-turn); system(workflow:telegram-turn) with the check off or when the lookup fails
 interval packages/content/src/process-heartbeat.ts none: touches a file, no database
+interval packages/db/src/client.ts none: the box mode read, on the raw pool outside the actor client (started in runWithoutActor)
 interval packages/share-ui/src/event-presenter.tsx none: browser code
 interval server/api/src/agent/extract-queue.ts system(tick:extract-reconcile); each job system(queue:extract)
 interval server/api/src/agent/telegram/helpers.ts none: a typing indicator, no database
@@ -138,22 +164,42 @@ interval server/web/workers/_runner.ts none: keeps the process open
 interval server/web/workers/docs-sync.ts system(worker:docs-sync)
 interval server/web/workers/events-reminders.ts system(worker:events-reminders)
 interval server/web/workers/telegram-poll.ts system(worker:channel-poll)
-listen server/api/src/agent/runtime.ts system(listen:<channel>) per channel; the turn it starts binds its own
+listen server/api/src/agent/runtime.ts system(listen:<channel>) per channel (listenAs); the turn it starts binds its own
 listen server/api/src/turn-cancel.ts none: aborts a turn in memory, no database
 listen server/sandboxd/src/egress.ts none: a network listener, no brain database
 listen server/sandboxd/src/main.ts none: a network listener, no brain database
 listen server/web/lib/realtime.ts system(listen:realtime)
 listen server/web/workers/push-notify.ts system(worker:push-notify)
+process-on packages/content/src/app-sql-runner.ts none: the SQLite child's message handler, no brain database
+process-on server/api/src/main.ts none: the signal handlers stop DBOS and the runtime, no statement of their own
+process-on server/web/server/main.ts none: signal and error handlers that close the server and log
+process-on server/web/workers/_runner.ts none: signal handlers run the worker's teardown; a rejection handler that logs
+queue-work server/api/src/agent/extract-queue.ts system(queue:extract) per job
 queue-work server/web/workers/calendar-sync.ts system(worker:calendar-sync)
 queue-work server/web/workers/email-sync.ts system(worker:email-sync)
 queue-work server/web/workers/maintenance.ts system(worker:maintenance)
 queue-work server/web/workers/microsoft-sync.ts system(worker:microsoft-sync)
 queue-work server/web/workers/runs.ts the run's login as it is now, else login(owner)
+request-slot packages/db/src/viewer.ts defines the helper: runInRequestSlot starts a request as system(http:no-login)
 request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate's own lookups (an API key, a token)
 request-slot server/web/server/pages/print.ts system(http:render), then the render cookie's login
 request-slot server/web/server/pages/share.tsx system(http:share-page), then the link or the contact
 request-slot server/web/server/route-loader.ts system(http:no-login), then what the guard names
-worker-shell server/web/workers/_runner.ts system(worker:<name>) around each worker's setup
+timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain sleep inside an app database restore
+timeout-loop packages/content/src/app-table-exports.ts the scheduling caller's actor, which the debounce timer carries to the export sync
+timeout-loop packages/db/src/client.ts the caller's actor: a retry sleep
+timeout-loop packages/db/src/resolve-owner.ts the caller's actor: the wait for the first signup
+timeout-loop packages/db/src/test-support.ts none: test helpers' poll and retry sleeps
+timeout-loop packages/db/src/viewer-roles.ts the caller's actor: a retry sleep
+timeout-loop server/api/src/agent/runtime.ts system(timer:summarize) for the summarize debounce
+timeout-loop server/web/lib/maintenance/sweeps.ts the caller's actor: a sweep's deadline, system(worker:maintenance)
+timeout-loop server/web/lib/onboarding-steps.ts the request's actor: a fetch deadline
+timeout-loop server/web/lib/push/login-notice-handler.ts system(worker:push-notify), carried by the batching timer
+timeout-loop server/web/lib/sanity/checks.ts the caller's actor: a check's deadline
+timeout-loop server/web/lib/system-health.ts the caller's actor: a probe's deadline
+timeout-loop server/web/workers/_runner.ts none: the shutdown deadline, it only exits
+timeout-loop server/web/workers/telegram-poll.ts system(worker:channel-poll): a settle sleep at shutdown
+worker-shell server/web/workers/_runner.ts system(worker:<name>) around each worker's setup (startWorkerAs)
 worker-shell server/web/workers/calendar-sync.ts system(worker:calendar-sync)
 worker-shell server/web/workers/docs-sync.ts system(worker:docs-sync)
 worker-shell server/web/workers/email-sync.ts system(worker:email-sync)
@@ -168,24 +214,43 @@ worker-shell server/web/workers/telegram-poll.ts system(worker:channel-poll)
 
 ### Entries the grep does not see
 
-| Entry | Where | Actor |
-|---|---|---|
-| The API process boot | `server/api/src/main.ts` | `system(boot:api)`; each DBOS workflow binds its own (a workflow that forgot would show as `boot:api`, not as a miss) |
-| The DBOS system database setup | `server/api/src/provision.ts` | none: a raw client on the `postgres` database, no brain table |
-| The agent runtime boot (seed tools, drain pending, drain unextracted) | `server/api/src/agent/runtime.ts` | `system(boot:agent-runtime)` |
-| The extract queue consumer | `server/api/src/agent/extract-queue.ts` | `system(queue:extract)` |
-| The LISTEN handlers of the agent runtime | `server/api/src/agent/runtime.ts` | `system(listen:telegram-message)`, `listen:summarize-due`, `listen:provider-recover`, `listen:node-ingested`, `listen:heartbeat-due`; the summarize debounce `system(timer:summarize)` |
-| A heartbeat fire | `packages/runtime/src/heartbeats/fire.ts` | a workspace assistant: `assistant`; else its maker as it is now; else `login(owner)`. A forced fire keeps its caller's actor |
-| A pending tool call, approved | `packages/tools/src/pending.ts` (the route, the tool, the Telegram button) | the call's login as it is now; a call with no login keeps the caller's |
-| A run item | `server/web/lib/runs/execute-item.ts` | the run's login as it is now, else `login(owner)` |
-| The stdio MCP server | `server/mcp/src/server.ts` | `system(boot:mcp-stdio)` to find the owner, then `login(rw)` for that owner login on every message, never system |
-| The web boot tasks (manifest reconcile, snapshot copies, app table exports) | `server/web/server/main.ts` | `system(boot:…)` |
-| A page's block-id backfill (a detached promise) | `packages/content/src/pages/read.ts` | `system(backfill:page-block-ids)` |
-| The audit row of a connector call on a login's MCP (a detached promise) | `packages/mcp-core/src/login-surface.ts` | `system(audit-log)` |
-| Operator scripts | `server/web/scripts/*`, `maintain`, any `scripts/` file run as the process | `system(script:<file name>)`, from the process's main file (`scriptActor` in `packages/db/src/actor.ts`) |
-| Hand psql | the box | `mantle_operator_actor('reason')` first |
-| Migrations | `packages/db/src/migrate.ts` | `system(migration)`, set on each migration's transaction |
+| Entry                                                                       | Where                                                                      | Actor                                                                                                                                                                                              |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The API process boot                                                        | `server/api/src/main.ts`                                                   | none around the boot or the DBOS dispatch loop: each workflow binds its own through `registerActorWorkflow`, and one that forgot is a miss; the agent runtime boot is `system(boot:agent-runtime)` |
+| The DBOS system database setup                                              | `server/api/src/provision.ts`                                              | none: a raw client on the `postgres` database, no brain table                                                                                                                                      |
+| The agent runtime boot (seed tools, drain pending, drain unextracted)       | `server/api/src/agent/runtime.ts`                                          | `system(boot:agent-runtime)`                                                                                                                                                                       |
+| The extract queue consumer                                                  | `server/api/src/agent/extract-queue.ts`                                    | `system(queue:extract)`                                                                                                                                                                            |
+| The LISTEN handlers of the agent runtime                                    | `server/api/src/agent/runtime.ts` (`listenAs`)                             | `system(listen:telegram-message)`, `listen:summarize-due`, `listen:provider-recover`, `listen:node-ingested`, `listen:heartbeat-due`; the summarize debounce `system(timer:summarize)`             |
+| A heartbeat fire                                                            | `packages/runtime/src/heartbeats/fire.ts`                                  | a workspace assistant: `assistant`; else its maker as it is now; else `login(owner)`. A forced fire keeps its caller's actor. With the check off `system(heartbeat:fire)`, decided with no query   |
+| A pending tool call, approved                                               | `packages/tools/src/pending.ts` (the route, the tool, the Telegram button) | the call's login as it is now; a call with no login keeps the caller's                                                                                                                             |
+| A run item                                                                  | `server/web/lib/runs/execute-item.ts`                                      | the run's login as it is now, else `login(owner)`                                                                                                                                                  |
+| The stdio MCP server                                                        | `server/mcp/src/server.ts`, `stdio-actor.ts`                               | `system(boot:mcp-stdio)` to find the owner, then `login(owner)` for that owner login on the connect and every message, never system                                                                |
+| The web boot tasks (manifest reconcile, snapshot copies, app table exports) | `server/web/server/main.ts`                                                | `system(boot:…)`                                                                                                                                                                                   |
+| A page's block-id backfill (a detached promise)                             | `packages/content/src/pages/read.ts`                                       | `system(backfill:page-block-ids)`                                                                                                                                                                  |
+| The audit row of a connector call on a login's MCP (a detached promise)     | `packages/mcp-core/src/login-surface.ts`                                   | `system(audit-log)`                                                                                                                                                                                |
+| Operator scripts                                                            | `server/web/scripts/*`, `maintain`, any `scripts/` file run as the process | `system(script:<file name>)`, from the process's main file (`scriptActor` in `packages/db/src/actor.ts`)                                                                                           |
+| Hand psql                                                                   | the box                                                                    | `mantle_operator_actor('reason')` first                                                                                                                                                            |
+| Migrations                                                                  | `packages/db/src/migrate.ts`                                               | `system(migration)`, set on each migration's transaction                                                                                                                                           |
 
 The pg-boss senders (`packages/email/src/backfill-queue.ts`,
 `packages/runs/src/boss.ts`) only queue jobs; the consumer that runs each
 job binds its actor.
+
+## Known limits
+
+- **The trigger's mode read.** The item-table trigger takes a fast path
+  when the check reads off in `current_setting` (no catalog read).
+  Otherwise a write with no actor reads the box setting through a SECURITY
+  DEFINER catalog lookup (`mantle_actor_check_mode`), on each such write and
+  also on a box whose check is off: a small cost, noted for A3a. A session
+  that sets its own value to off skips a warn in A2a, so A2b's refusal must
+  read the catalog first.
+- **An approved pending call** runs as the login that asked, on the owner
+  surface, with the approver named in the audit. Open for A2b: whether it
+  should run as the approver instead.
+- **The settings are not a credential.** `set_config('mantle.actor', …)`
+  and `set_config('mantle.write_mode', …)` are callable by any role,
+  `mantle_view_user` included, so revoking `mantle_set_actor` is cosmetic.
+  No untrusted SQL reaches Postgres today, so that is fine for A2a. A2b and
+  later must never decide access from `mantle.actor` or `mantle.write_mode`
+  on a role that can run caller-shaped SQL.

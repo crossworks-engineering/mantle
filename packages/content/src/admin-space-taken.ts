@@ -42,7 +42,7 @@ export async function takenFromOf(
             eq(spaceItems.reviewState, 'taken'),
           ),
         ),
-    'login-names',
+    'space-taken-authors',
   );
   for (const r of rows) {
     out.set(r.id, {

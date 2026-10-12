@@ -46,6 +46,15 @@ function databaseUrl(): string {
 }
 
 /**
+ * Arch A2a (plan 4.3): the worker runs as system(worker:<name>), bound once
+ * here; what setup starts (its queue handlers, timers, watchers) carries it.
+ * A job done for a login binds that login itself. Exported for its test.
+ */
+export function startWorkerAs(name: string, start: () => Promise<void>): Promise<void> {
+  return runAsSystem(`worker:${name}`, start);
+}
+
+/**
  * Boot `start`, then hold the process open until a signal arrives.
  *
  * Signal handlers are installed BEFORE booting, so a SIGTERM during a slow
@@ -92,10 +101,7 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
     console.error(`[${name}] unhandledRejection (kept alive):`, reason);
   });
 
-  // Arch A2a (plan 4.3): the worker runs as system(worker:<name>), bound
-  // once here; what setup starts (its queue handlers, timers, watchers)
-  // carries it. A job done for a login binds that login itself.
-  runAsSystem(`worker:${name}`, start)
+  startWorkerAs(name, start)
     .then(() => console.log(`[${name}] worker up.`))
     .catch((err) => {
       clearInterval(keepAlive);

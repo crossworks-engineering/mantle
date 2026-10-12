@@ -2,57 +2,94 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ACTOR_BINDER_PINS, binderSites } from './actor-binders.mjs';
 
 /**
  * The process inventory is pinned (workspaces arch plan v2, section 4.3;
  * A2a): every file that starts work on its own (a queue consumer, a worker
- * shell, a DBOS workflow, a LISTEN, an interval timer) is listed in the
- * `entries` block of docs/actors.md, kind by kind, with the actor it binds.
- * A new one fails here until the doc names it and its actor.
+ * shell, a DBOS workflow, a LISTEN, an interval timer, a timeout loop, a
+ * process event handler) is listed in the `entries` block of docs/actors.md,
+ * kind by kind, with the actor it binds. A new one fails here until the doc
+ * names it and its actor. packages/db/src is scanned too: a file there that
+ * only defines a helper says so.
+ *
+ * The kinds are text heuristics over code with comments removed:
+ *
+ *  - queue-work: a pg-boss consumer (`boss.work(`, `.work(QUEUE`,
+ *    `.work<T>(`).
+ *  - worker-shell: runQueueWorker / runWorker.
+ *  - dbos-workflow: DBOS.registerWorkflow / DBOS.workflow, and
+ *    registerActorWorkflow (the one way a workflow registers, below).
+ *  - listen: `.listen(`. interval: `setInterval(`.
+ *  - request-slot: runInRequestSlot / runInActorSlot.
+ *  - timeout-loop: `setTimeout(` in a file that also reaches the database
+ *    (a value import from @mantle/db, or a file of packages/db/src). A
+ *    timer that re-arms itself is a loop with no entry around it, and text
+ *    cannot tell a re-arming timer from a sleep or a deadline, so every such
+ *    file is pinned and the doc says which it is.
+ *  - process-on: `process.on(` (signal and rejection handlers).
+ *
+ * A file nobody tracks yet (new, not yet committed) is scanned too, so a new
+ * entry is caught before its first commit.
  */
 const ROOT = join(__dirname, '..');
 
+const DB_IMPORT = /\bimport\s+(?!type\b)[^;]*?\bfrom\s+['"]@mantle\/db['"]/;
+
 /** The kinds of entry, and the code that starts each. */
-const KINDS: Record<string, RegExp> = {
-  'queue-work': /\bboss\.work\(|\.work\(\s*(QUEUE|[A-Z_]+_QUEUE|queue)\b/,
-  'worker-shell': /\brunQueueWorker\(|\brunWorker\(/,
-  'dbos-workflow': /\bDBOS\.(registerWorkflow|workflow)\b/,
-  listen: /\.listen\(/,
-  interval: /\bsetInterval\(/,
-  'request-slot': /\brunInRequestSlot\(|\brunInActorSlot\(/,
+const KINDS: Record<string, (code: string, file: string) => boolean> = {
+  'queue-work': (c) =>
+    /\bboss\.work\(|\.work\(\s*(QUEUE|[A-Z_]+_QUEUE|queue)\b|\.work<[^>]*>\(/.test(c),
+  'worker-shell': (c) => /\brunQueueWorker\(|\brunWorker\(/.test(c),
+  'dbos-workflow': (c) => /\bDBOS\.(registerWorkflow|workflow)\b|\bregisterActorWorkflow\(/.test(c),
+  listen: (c) => /\.listen\(/.test(c),
+  interval: (c) => /\bsetInterval\(/.test(c),
+  'request-slot': (c) => /\brunInRequestSlot\(|\brunInActorSlot\(/.test(c),
+  'timeout-loop': (c, f) =>
+    /\bsetTimeout\(/.test(c) && (f.startsWith('packages/db/src/') || DB_IMPORT.test(c)),
+  'process-on': (c) => /\bprocess\.on\(/.test(c),
 };
 
+/** Product files: tracked, or new and not ignored. */
 function productFiles(): string[] {
-  const out = execFileSync('git', ['ls-files', 'packages', 'server'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return (
-    out
-      .split('\n')
-      .filter((f) => /\.(ts|tsx)$/.test(f))
-      .filter((f) => !/\.test\.tsx?$|\.d\.ts$|\/scripts\/|\.gen\.ts$/.test(f))
-      // packages/db defines the entry helpers (runInActorSlot, the request
-      // slot); it starts nothing on its own.
-      .filter((f) => !f.startsWith('packages/db/src/'))
+  const out = execFileSync(
+    'git',
+    ['ls-files', '--cached', '--others', '--exclude-standard', 'packages', 'server'],
+    { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   );
+  return [
+    ...new Set(
+      out
+        .split('\n')
+        .filter((f) => /\.(ts|tsx)$/.test(f))
+        .filter((f) => !/\.test\.tsx?$|\.d\.ts$|\/scripts\/|\.gen\.ts$/.test(f)),
+    ),
+  ].sort();
+}
+
+/** A product file's text, or null when git lists it but the tree has none. */
+function read(f: string): string | null {
+  try {
+    return readFileSync(join(ROOT, f), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/** Code with comments removed: comments do not start work. */
+function codeOf(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
 /** `<kind> <file>` for every file holding an entry of that kind. */
 function found(): string[] {
   const rows: string[] = [];
   for (const f of productFiles()) {
-    let text: string;
-    try {
-      text = readFileSync(join(ROOT, f), 'utf8');
-    } catch {
-      continue;
-    }
-    // Comments do not start work.
-    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-    for (const [kind, re] of Object.entries(KINDS)) {
-      if (re.test(code)) rows.push(`${kind} ${f}`);
+    const text = read(f);
+    if (text === null) continue;
+    const code = codeOf(text);
+    for (const [kind, holds] of Object.entries(KINDS)) {
+      if (holds(code, f)) rows.push(`${kind} ${f}`);
     }
   }
   return rows.sort();
@@ -87,5 +124,49 @@ describe('the process inventory (docs/actors.md)', () => {
       if (!line || line.startsWith('#')) continue;
       expect(line.split(/\s+/).length, line).toBeGreaterThanOrEqual(3);
     }
+  });
+
+  it('every DBOS workflow registers through registerActorWorkflow', () => {
+    // The API boot binds no actor, so a workflow registered straight on DBOS
+    // would run with none. Only the helper itself registers directly, and
+    // crash-test.ts: a manual harness run by hand on scratch databases,
+    // never imported by the runner (main.ts) nor run on a box.
+    const direct = productFiles().filter((f) => {
+      const text = read(f);
+      return text !== null && /\bDBOS\.(registerWorkflow|workflow)\b/.test(codeOf(text));
+    });
+    expect(direct).toEqual([
+      'server/api/src/crash-test.ts',
+      'server/api/src/workflows/actor-workflow.ts',
+    ]);
+    const main = readFileSync(join(ROOT, 'server/api/src/main.ts'), 'utf8');
+    expect(main).not.toMatch(/crash-test/);
+  });
+});
+
+describe('the actor binders (eslint-rules/actor-binders.mjs)', () => {
+  it('pins every binder call, per file, exactly', () => {
+    const have: Record<string, number> = {};
+    for (const f of productFiles()) {
+      const text = read(f);
+      if (text === null) continue;
+      const n = binderSites(text);
+      if (n > 0) have[f] = n;
+    }
+    expect(have).toEqual(ACTOR_BINDER_PINS);
+  });
+
+  it('counts calls only: not comments, not the helpers themselves', () => {
+    const text = [
+      'export function runAsActor<T>(actor: Actor, fn: () => T): T {',
+      '  return actorStore.run(actor, () => startedInside(fn()));',
+      '}',
+      "// runAsSystem('x', f)",
+      '/* runAsActor(a, f) */',
+      "runAsSystem('worker:x', start);",
+      'runInActorSlot<Foo>(initial, fn);',
+      'actorStore.enterWith(TEST_ACTOR);',
+    ].join('\n');
+    expect(binderSites(text)).toBe(4);
   });
 });

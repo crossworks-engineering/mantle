@@ -39,6 +39,8 @@ import {
   noExtractSinceWriteSql,
   waitForOwner,
   loginHoldsAdmin,
+  actorCheckMode,
+  runAsActor,
   runAsSystem,
   systemActor,
   type Actor,
@@ -165,19 +167,33 @@ async function resolveResponderAgent(
 /**
  * Arch A2a: who the Telegram turn for `messageId` runs as. The login its chat
  * is paired to, as it is now (the owner's own chat as login(owner)); a chat
- * with no login is refused by the turn, which runs as system until then.
+ * with no login is refused by the turn, which runs as system until then. A
+ * lookup that fails runs the turn as system too, so the turn's own handling
+ * meets the error as it did before the lookup existed. With the check off
+ * there is no lookup: system(workflow:telegram-turn).
  */
 export async function telegramTurnActor(messageId: string): Promise<Actor> {
   const entry = 'workflow:telegram-turn';
-  const [row] = await runAsSystem(entry, () =>
-    db
-      .select({ loginId: telegramChats.loginId })
-      .from(telegramMessages)
-      .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-      .where(eq(telegramMessages.id, messageId))
-      .limit(1),
-  );
-  const loginId = row?.loginId ?? null;
+  // The check off: nothing is checked or set, so no query decides the actor
+  // (the owner's rule: no new query on a hot path with the check off).
+  if (actorCheckMode() === 'off') return systemActor(entry);
+  let loginId: string | null;
+  try {
+    const [row] = await runAsSystem(entry, () =>
+      db
+        .select({ loginId: telegramChats.loginId })
+        .from(telegramMessages)
+        .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+        .where(eq(telegramMessages.id, messageId))
+        .limit(1),
+    );
+    loginId = row?.loginId ?? null;
+  } catch (err) {
+    console.warn(
+      `[${entry}] actor lookup for ${messageId} failed, running as system: ${errorMessage(err)}`,
+    );
+    return systemActor(entry);
+  }
   if (!loginId) return systemActor(entry);
   const owner = !!runtimeOwner && loginId.toLowerCase() === runtimeOwner.toLowerCase();
   return loginActorNow(loginId, entry, owner ? 'owner' : 'rw');
@@ -738,6 +754,21 @@ export interface AgentRuntimeOptions {
   enqueueTelegramTurn: (messageId: string) => Promise<unknown>;
 }
 
+/**
+ * Arch A2a: a LISTEN handler for `reason`. A notification arrives on the
+ * listen connection's own socket, with no actor, so each one runs `handler`
+ * as system(reason) (listen:telegram-message …); what it starts carries it.
+ */
+export function listenAs(
+  reason: string,
+  handler: (payload: string) => unknown,
+): (payload: string) => void {
+  const actor = systemActor(reason);
+  return (payload) => {
+    runAsActor(actor, () => handler(payload));
+  };
+}
+
 /** Arch A2a: the boot runs as system(boot:agent-runtime); each listener and
  *  tick binds its own reason. */
 export function startAgentRuntime(opts: AgentRuntimeOptions) {
@@ -776,29 +807,32 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
     logger.error('core tool grant failed:', err instanceof Error ? err.message : err);
   }
 
-  await pg.listen('telegram_message_inserted', (payload: string) => {
-    if (!payload) return;
-    // Enqueue a durable DBOS workflow (workflowID = message id → idempotent: a
-    // duplicate notify dedups to the same run) instead of running the turn
-    // inline, so it survives a process restart via DBOS auto-recovery.
-    runAsSystem('listen:telegram-message', () =>
-      opts
+  await pg.listen(
+    'telegram_message_inserted',
+    listenAs('listen:telegram-message', (payload) => {
+      if (!payload) return;
+      // Enqueue a durable DBOS workflow (workflowID = message id → idempotent: a
+      // duplicate notify dedups to the same run) instead of running the turn
+      // inline, so it survives a process restart via DBOS auto-recovery.
+      return opts
         .enqueueTelegramTurn(payload)
         .catch((err) =>
           logger.error('enqueue telegram turn error:', err instanceof Error ? err.message : err),
-        ),
-    );
-  });
+        );
+    }),
+  );
   logger.info('LISTENing on telegram_message_inserted');
 
   // summarize_due now carries an AGENT id (migration 0072: AFTER INSERT on
   // assistant_messages, every channel), so one handler drives summarization
   // for web + Telegram + any future channel. The retired summarize_web_due
   // channel is no longer listened on.
-  await pg.listen('summarize_due', (payload: string) => {
-    if (!payload) return;
-    runAsSystem('listen:summarize-due', () => scheduleSummarize(owner, payload));
-  });
+  await pg.listen(
+    'summarize_due',
+    listenAs('listen:summarize-due', (payload) => {
+      if (payload) scheduleSummarize(owner, payload);
+    }),
+  );
   logger.info('LISTENing on summarize_due (per-agent)');
 
   // Durable, concurrency-capped extractor queue. Must start BEFORE the
@@ -811,20 +845,23 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   // provider_recover with the owner id): probe and recover now, no restart.
   // Bounded by the circuit (provider-circuit.ts): one tiny probe call, and a
   // recovery at most once per 2 min on these.
-  await pg.listen('provider_recover', (payload: string) => {
-    if (payload !== owner) return;
-    runAsSystem('listen:provider-recover', () => requestProviderRecovery('admin'));
-  });
+  await pg.listen(
+    'provider_recover',
+    listenAs('listen:provider-recover', (payload) => {
+      if (payload === owner) requestProviderRecovery('admin');
+    }),
+  );
   logger.info('LISTENing on provider_recover');
 
-  await pg.listen('node_ingested', (payload: string) => {
-    if (!payload) return;
-    runAsSystem('listen:node-ingested', () =>
-      enqueueExtract(payload).catch((err) =>
+  await pg.listen(
+    'node_ingested',
+    listenAs('listen:node-ingested', (payload) => {
+      if (!payload) return;
+      return enqueueExtract(payload).catch((err) =>
         logger.error('enqueue extract error:', err instanceof Error ? err.message : err),
-      ),
-    );
-  });
+      );
+    }),
+  );
   logger.info('LISTENing on node_ingested');
 
   // NEW-7: low-latency heartbeat wake. createHeartbeat + force-fire
@@ -837,16 +874,17 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   // side too): worst case is a missed wake, which the next regular
   // tick recovers from within 60s. Same soft-fail discipline as the
   // reflector tick.
-  await pg.listen(HEARTBEAT_DUE_CHANNEL, (payload: string) => {
-    if (!payload) return;
-    // The payload is the owner id. In single-user mode that's
-    // always the owner; we still pass it through for cleanliness.
-    runAsSystem('listen:heartbeat-due', () =>
-      tickHeartbeats(payload).catch((err) =>
+  await pg.listen(
+    HEARTBEAT_DUE_CHANNEL,
+    listenAs('listen:heartbeat-due', (payload) => {
+      if (!payload) return;
+      // The payload is the owner id. In single-user mode that's
+      // always the owner; we still pass it through for cleanliness.
+      return tickHeartbeats(payload).catch((err) =>
         logger.error(`heartbeat_due wake error:`, err instanceof Error ? err.message : err),
-      ),
-    );
-  });
+      );
+    }),
+  );
   logger.info(`LISTENing on ${HEARTBEAT_DUE_CHANNEL}`);
 
   // Reflector: slow background pass every REFLECTOR_INTERVAL_MS that

@@ -483,9 +483,11 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // names its reason, and the audit row of a connector call on a login's
     // MCP ('audit-log') was the one call made in a turn with none (it was
     // logged and allowed in production, refused and so never written in
-    // tests and development).
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(23);
-    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(23);
+    // tests and development). 24 in its fix round: the client-sourced mark
+    // an app's table export writes ('client-sourced-mark') had borrowed
+    // 'client-sourced-check', a reason for reads.
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(24);
+    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(24);
     expect(AS_SYSTEM_TURN_REASONS).toContain('heartbeat-context');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('owner-telegram');

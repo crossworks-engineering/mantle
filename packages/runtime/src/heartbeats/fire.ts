@@ -24,10 +24,12 @@ import {
   db,
   withoutLeftScope,
   agents,
+  actorCheckMode,
   currentActor,
   loginActor,
   runAsActor,
   runAsSystem,
+  systemActor,
   type Actor,
   skills,
   heartbeats,
@@ -183,7 +185,8 @@ function loginCaller(
  * Arch A2a: who a fire runs as, decided as loginCaller decides the scope. An
  * assistant of a workspace other than Admin fires as itself; otherwise the
  * login the fire answers (its maker), as that login is now; none, the brain
- * owner as login(owner). A forced fire keeps its caller's actor.
+ * owner as login(owner). A forced fire keeps its caller's actor. With the
+ * check off, system(heartbeat:fire), decided without a query.
  */
 async function fireInner(
   hb: Heartbeat,
@@ -197,6 +200,10 @@ async function fireInner(
 
 async function fireActor(hb: Heartbeat, login: string | null | undefined): Promise<Actor> {
   const reason = 'heartbeat:fire';
+  // The check off: nothing is checked or set, so no query decides the actor
+  // (the owner's rule: no new query on a hot path with the check off).
+  // system keeps the answer of a write with no scope as it was before A2a.
+  if (actorCheckMode() === 'off') return systemActor(reason);
   const owner = (): Actor => loginActor(hb.ownerId, 'owner');
   try {
     const kind = await runAsSystem(reason, async () => {

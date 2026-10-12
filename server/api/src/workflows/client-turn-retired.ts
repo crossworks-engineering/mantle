@@ -13,6 +13,7 @@
  * It reads and writes nothing, and starts no LLM work.
  */
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { registerActorWorkflow, systemEntry } from './actor-workflow';
 import { RETIRED_CLIENT_TURN_WORKFLOW } from '@mantle/runtime/assistant';
 
 /** The old input, as the client chat route enqueued it. Read defensively: it
@@ -29,6 +30,9 @@ export async function retiredClientTurn(input: unknown): Promise<RetiredClientTu
   return { retired: true };
 }
 
-export const retiredClientTurnWorkflow = DBOS.registerWorkflow(retiredClientTurn, {
-  name: RETIRED_CLIENT_TURN_WORKFLOW,
-});
+// Arch A2a: every workflow names its actor; this one sends no statement.
+export const retiredClientTurnWorkflow = registerActorWorkflow(
+  RETIRED_CLIENT_TURN_WORKFLOW,
+  systemEntry('workflow:client-turn-retired'),
+  retiredClientTurn,
+);

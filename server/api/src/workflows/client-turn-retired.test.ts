@@ -32,9 +32,10 @@ vi.mock('@mantle/runtime/assistant', async () => ({
 import { retiredClientTurn } from './client-turn-retired';
 
 describe('the retired client turn workflow', () => {
-  it("is registered under the old client turn's exact name", () => {
+  it("is registered under the old client turn's exact name", async () => {
     expect(h.registered.map((r) => r.name)).toEqual(['clientTurnWorkflow']);
-    expect(h.registered[0]!.fn).toBe(retiredClientTurn);
+    // Through registerActorWorkflow (arch A2a): the run ends the same way.
+    expect(await h.registered[0]!.fn({})).toEqual({ retired: true });
   });
 
   it('the runner imports it, and no longer registers the client queue', () => {

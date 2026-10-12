@@ -193,11 +193,11 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
       ),
     );
     expect((tx as unknown as { a: string }[])[0]!.a).toBe('system:worker:test');
-    // A read carries it too (a function it calls may write).
+    // A read runs plain: one statement, no transaction, no setting.
     const read = (await m.runAsSystem('worker:test', () =>
       m.db.execute(sqlTag`select current_setting('mantle.actor', true) as a`),
     )) as unknown as { a: string | null }[];
-    expect(read[0]!.a).toBe('system:worker:test');
+    expect(read[0]!.a ?? '').toBe('');
     expect(m.takeActorMisses()).toEqual([]);
   });
 
@@ -210,5 +210,31 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
     const misses = m.takeActorMisses();
     expect(misses).toHaveLength(1);
     expect(misses[0]).toMatchObject({ source: 'ts', check: 'db.execute' });
+  });
+
+  it('a transaction with a config sets the actor after its SET TRANSACTION (fix round, M3a)', async () => {
+    const rows = (await m.runAsSystem('worker:test', () =>
+      m.db.transaction(
+        async (tx) =>
+          tx.execute(
+            sqlTag`select current_setting('mantle.actor', true) as a,
+                          current_setting('transaction_read_only') as ro`,
+          ),
+        { accessMode: 'read only' },
+      ),
+    )) as unknown as { a: string; ro: string }[];
+    expect(rows[0]).toEqual({ a: 'system:worker:test', ro: 'on' });
+    expect(m.takeActorMisses()).toEqual([]);
+  });
+
+  it('with nothing to set, the raw client hands back the plain query (fix round, M3c)', () => {
+    const client = (
+      m.systemDb as unknown as { $client: { unsafe: (q: string) => Record<string, unknown> } }
+    ).$client;
+    const q = m.runWithoutActor(() => client.unsafe('select 1'));
+    for (const method of ['cursor', 'describe', 'cancel', 'forEach', 'raw']) {
+      expect(typeof q[method], method).toBe('function');
+    }
+    m.takeActorMisses();
   });
 });

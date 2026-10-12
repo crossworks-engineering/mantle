@@ -39,6 +39,7 @@ import { purgeExpiredDeletedApps, sweepAppFileLeftovers } from '@mantle/content/
 import { purgeOrphanTableHistory } from '@mantle/content/table-snapshots';
 import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { runFilesStagedReap, summariseFilesStagedReap } from './files-staged-reap';
+import { reapActorMisses, summariseActorMissesReap } from './actor-misses-reap';
 import { errorMessage } from '@mantle/std';
 
 export interface EntitiesDedupeResult {
@@ -164,6 +165,8 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   },
   // W8b fix round 1: the staging files a crash left beside a file create.
   'files-staged-reap': async () => summariseFilesStagedReap(await runFilesStagedReap()),
+  // Arch A2a: actor check miss rows older than 14 days.
+  'actor-misses-reap': async () => summariseActorMissesReap(await reapActorMisses()),
 };
 
 /** Double-fire guard: skip a sweep whose last cron run (any state — a failed

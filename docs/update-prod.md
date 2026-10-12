@@ -723,6 +723,15 @@ select source, check_name, count(*) from actor_check_misses
  where at > now() - interval '1 day' group by 1, 2 order by 3 desc;
 ```
 
+In warn the app sends each statement of the system pool in a short
+pipelined transaction that sets the actor (same round trip, a reserved
+connection). Measure the cost on the box before and after you turn warn on:
+record the p95 latency of the hot routes (tree, item open, search, chat turn
+start, MCP call, page save) and the pool wait (`pg_stat_activity` rows of
+the brain waiting on `ClientRead` versus active, and the app's slow-request
+log) for the same load, before and after. With the check off nothing
+changes: no new query and no new round trip.
+
 `on` still only logs in this release (A2a); refusing is the next phase.
 Going back is `alter database postgres reset mantle.actor_check`.
 

@@ -31,7 +31,9 @@ export type Actor =
   | { kind: 'assistant'; agentId: string | null }
   | { kind: 'link' }
   | { kind: 'contact'; canWrite: boolean }
-  | { kind: 'system'; reason: string }
+  /** `mode: 'ro'`: system work done inside a read-only caller (a read key's
+   *  area route, an asSystem in its request) stays read only (systemUnder). */
+  | { kind: 'system'; reason: string; mode?: 'ro' }
   | { kind: 'peer'; peerId: string | null };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,6 +56,19 @@ export function systemActor(reason: string): Actor {
   return Object.freeze({ kind: 'system', reason });
 }
 
+/**
+ * system(reason) for work done on behalf of `outer` (the caller's actor):
+ * read only when the caller is (a read key, a link, an assistant), so
+ * leaving the caller's scope never turns a read-only caller into a writer
+ * (arch A2a fix round, M1). A named repair or backfill does not use this:
+ * it writes for any caller (runReadPathWrite, plan 20.3 item 8).
+ */
+export function systemUnder(reason: string, outer: Actor | null): Actor {
+  const actor = systemActor(reason);
+  if (outer && writeModeOf(outer) === 'ro') return Object.freeze({ ...actor, mode: 'ro' as const });
+  return actor;
+}
+
 /** What the actor may write: login(ro), assistant, link, peer and a contact
  *  share without can_write read only (plan 4.1). */
 export function writeModeOf(actor: Actor): WriteMode {
@@ -63,7 +78,7 @@ export function writeModeOf(actor: Actor): WriteMode {
     case 'contact':
       return actor.canWrite ? 'rw' : 'ro';
     case 'system':
-      return 'rw';
+      return actor.mode === 'ro' ? 'ro' : 'rw';
     default:
       return 'ro';
   }
@@ -86,6 +101,11 @@ export function actorSetting(actor: Actor): string {
       return `peer:${actor.peerId ?? 'none'}`;
   }
 }
+
+/** What a binding returns: a thenable `fn` result comes back as the
+ *  promise started inside the binding (startedInside), anything else as
+ *  it is (fix round, L5). */
+export type Bound<T> = T extends PromiseLike<infer U> ? Promise<U> : T;
 
 const actorStore = new AsyncLocalStorage<Actor>();
 
@@ -119,12 +139,12 @@ export function slotActor(): Actor | null {
  * a heartbeat, a pending call, a Telegram turn) binds the login it runs for,
  * as that login is NOW. An inner binding replaces an outer one.
  */
-export function runAsActor<T>(actor: Actor, fn: () => T): T {
+export function runAsActor<T>(actor: Actor, fn: () => T): Bound<T> {
   return actorStore.run(actor, () => startedInside(fn()));
 }
 
 /** runAsActor(system(reason), fn): a process's own work. */
-export function runAsSystem<T>(reason: string, fn: () => T): T {
+export function runAsSystem<T>(reason: string, fn: () => T): Bound<T> {
   return runAsActor(systemActor(reason), fn);
 }
 
@@ -133,12 +153,12 @@ export function runAsSystem<T>(reason: string, fn: () => T): T {
  * read when it runs. One returned from a binding would run after the binding
  * ended, as the caller. So a thenable result is started here, inside it.
  */
-function startedInside<T>(value: T): T {
+function startedInside<T>(value: T): Bound<T> {
   const then = (value as { then?: unknown } | null)?.then;
-  if (typeof then !== 'function') return value;
+  if (typeof then !== 'function') return value as Bound<T>;
   return new Promise((resolve, reject) => {
     (value as PromiseLike<unknown>).then(resolve, reject);
-  }) as T;
+  }) as Bound<T>;
 }
 
 /**
@@ -331,6 +351,6 @@ export const READ_PATH_WRITES = {
 export type ReadPathWrite = keyof typeof READ_PATH_WRITES;
 
 /** Run a pinned read-path write (READ_PATH_WRITES) as system(<name>). */
-export function runReadPathWrite<T>(name: ReadPathWrite, fn: () => T): T {
+export function runReadPathWrite<T>(name: ReadPathWrite, fn: () => T): Bound<T> {
   return runAsActor(systemActor(name), fn);
 }

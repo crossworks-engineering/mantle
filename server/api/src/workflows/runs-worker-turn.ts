@@ -36,7 +36,6 @@ import {
   bumpAgentUsage,
   db,
   runAsActor,
-  runAsSystem,
   runItems,
   runs as runsTable,
   type Agent,
@@ -73,6 +72,7 @@ import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { applyAgentThinking, NO_THINKING } from '@mantle/content-core/profile-projections';
 import { withRunScope } from '@mantle/runtime/agent';
+import { registerActorWorkflow, systemEntry } from './actor-workflow';
 import { loginActorNow, ownerActor } from './login-actor';
 
 const PROPOSAL_CAP_CHARS = 2_000;
@@ -474,10 +474,10 @@ export async function runsWorkerTurnImpl(
 
 // Arch A2a: the workflow's bookkeeping is the runner's own work; the turn
 // itself binds the run's login.
-export const runsWorkerTurnWorkflow = DBOS.registerWorkflow(
-  (input: RunsWorkerTurnInput) =>
-    runAsSystem('workflow:runs-worker-turn', () => runsWorkerTurnImpl(input)),
-  { name: RUNS_WORKER_TURN_WORKFLOW },
+export const runsWorkerTurnWorkflow = registerActorWorkflow(
+  RUNS_WORKER_TURN_WORKFLOW,
+  systemEntry('workflow:runs-worker-turn'),
+  runsWorkerTurnImpl,
 );
 
 /** A run worker's thinking loop args: its own effort, else none. */

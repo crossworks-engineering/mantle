@@ -201,6 +201,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'File removal only, no database, no model; idempotent, a no-op once clean. The rule lives in @mantle/files (sweepStagedLeftovers), the stores it skips in lib/maintenance/files-staged-reap.ts, shared by the cron and the script.',
   },
   {
+    slug: 'actor-misses-reap',
+    title: 'Trim the actor check miss log',
+    description:
+      'Deletes actor check miss rows (actor_check_misses) older than 14 days (workspaces arch A2a). A statement that ran with no actor lands a row, at most 100 an hour per check, and nothing else removes them; the misses worth reading are the recent ones.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/actor-misses-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in lib/maintenance/actor-misses-reap.ts (reapActorMisses), shared by the cron and the script.',
+  },
+  {
     slug: 'app-export-catch-up',
     title: 'Sync app table exports a restart left behind',
     description:

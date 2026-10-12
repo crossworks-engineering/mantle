@@ -19,7 +19,14 @@ import {
   TEST_ACTOR,
   type Actor,
 } from './actor';
-import { asSystem, runInViewerScope, type WorkspaceScope } from './viewer';
+import {
+  asSystem,
+  noteRequestSystem,
+  runInRequestSlot,
+  runInViewerScope,
+  setRequestActor,
+  type WorkspaceScope,
+} from './viewer';
 
 const L = '11111111-1111-4111-8111-111111111111';
 const W = '22222222-2222-4222-8222-222222222222';
@@ -139,5 +146,28 @@ describe('binding the actor', () => {
     };
     await expect(runAsSystem('lazy', () => lazy)).resolves.toBe('done');
     expect(seen).toEqual(systemActor('lazy'));
+  });
+
+  it('a read key stays read only on an area route and inside asSystem (fix round, M1)', async () => {
+    await runInRequestSlot(async () => {
+      setRequestActor(loginActor(L, 'ro'));
+      noteRequestSystem('area');
+      expect(currentActor()).toMatchObject({ kind: 'system', reason: 'http:admin-area' });
+      expect(writeModeOf(currentActor()!)).toBe('ro');
+    });
+    await runAsActor(loginActor(L, 'ro'), () =>
+      asSystem(async () => {
+        expect(writeModeOf(currentActor()!)).toBe('ro');
+      }, 'login-notice'),
+    );
+    // A read-write caller's system work writes; a named repair always does.
+    await runAsActor(loginActor(L, 'rw'), () =>
+      asSystem(async () => expect(writeModeOf(currentActor()!)).toBe('rw'), 'login-notice'),
+    );
+    await runAsActor(loginActor(L, 'ro'), () =>
+      runReadPathWrite('repair:kind-root', async () =>
+        expect(writeModeOf(currentActor()!)).toBe('rw'),
+      ),
+    );
   });
 });

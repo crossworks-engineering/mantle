@@ -15,7 +15,7 @@ import {
   type TeamTurnRunResult,
 } from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
-import { runAsActor } from '@mantle/db';
+import { registerActorWorkflow } from './actor-workflow';
 import { loginActorNow } from './login-actor';
 
 export type { TeamTurnInput, TeamTurnRunResult };
@@ -67,11 +67,8 @@ async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
 }
 
 /** Arch A2a: the turn runs as the member login it answers, as it is now. */
-async function teamTurnAs(input: TeamTurnInput): Promise<TeamTurnRunResult> {
-  const actor = await loginActorNow(input.options.loginId, 'workflow:team-turn');
-  return runAsActor(actor, () => teamTurnImpl(input));
-}
-
-export const teamTurnWorkflow = DBOS.registerWorkflow(teamTurnAs, {
-  name: TEAM_TURN_WORKFLOW,
-});
+export const teamTurnWorkflow = registerActorWorkflow(
+  TEAM_TURN_WORKFLOW,
+  (input: TeamTurnInput) => loginActorNow(input.options.loginId, 'workflow:team-turn'),
+  teamTurnImpl,
+);

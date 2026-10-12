@@ -51,7 +51,6 @@ import {
   bumpAgentUsage,
   db,
   runAsActor,
-  runAsSystem,
   runItems,
   runs,
   telegramAccounts,
@@ -86,6 +85,7 @@ import {
 } from '@mantle/content';
 import { runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
+import { registerActorWorkflow, systemEntry } from './actor-workflow';
 import { loginActorNow, ownerActor } from './login-actor';
 
 /** The responder that answers a resume: the run's creating agent when it
@@ -456,8 +456,8 @@ export async function resumeSurface(
 
 // Arch A2a: the workflow's bookkeeping is the runner's own work; the turn
 // itself binds the run's login.
-export const runsResumeTurnWorkflow = DBOS.registerWorkflow(
-  (input: RunsResumeTurnInput) =>
-    runAsSystem('workflow:runs-resume-turn', () => runsResumeTurnImpl(input)),
-  { name: RUNS_RESUME_TURN_WORKFLOW },
+export const runsResumeTurnWorkflow = registerActorWorkflow(
+  RUNS_RESUME_TURN_WORKFLOW,
+  systemEntry('workflow:runs-resume-turn'),
+  runsResumeTurnImpl,
 );

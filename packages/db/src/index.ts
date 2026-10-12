@@ -6,6 +6,7 @@ export {
   type WriteMode,
   loginActor,
   systemActor,
+  systemUnder,
   writeModeOf,
   actorSetting,
   runAsActor,

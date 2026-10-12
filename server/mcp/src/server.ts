@@ -21,18 +21,12 @@
  * package script; this entry just trusts `process.env`.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
-import {
-  authUsers,
-  db,
-  loginActor,
-  resolveSingleOwnerId,
-  runAsActor,
-  runAsSystem,
-} from '@mantle/db';
+import { authUsers, db, resolveSingleOwnerId, runAsSystem } from '@mantle/db';
 import { buildMantleMcpServer } from '@mantle/mcp-core';
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { eq } from 'drizzle-orm';
+import { connectStdioAs, stdioOwnerActor } from './stdio-actor';
 
 // Recall's embedder. @mantle/content is storage and does not depend on the
 // adapter layer, so each process injects one at boot (see
@@ -74,11 +68,8 @@ if (!OWNER_ID) {
 }
 
 // Arch A2a: every message runs as the owner login this process is started
-// for, login(rw), never system.
-const actor = loginActor(OWNER_ID, 'rw');
+// for, login(owner), never system.
 const server = buildMantleMcpServer(OWNER_ID);
 const transport = new StdioServerTransport();
-await runAsActor(actor, () => server.connect(transport));
-const onMessage = transport.onmessage;
-transport.onmessage = (message) => runAsActor(actor, () => onMessage?.(message));
+await connectStdioAs(stdioOwnerActor(OWNER_ID), server, transport);
 console.error('[mantle-mcp] listening on stdio. Owner:', OWNER_ID);

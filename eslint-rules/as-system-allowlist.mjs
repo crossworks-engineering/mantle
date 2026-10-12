@@ -17,9 +17,9 @@ import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.
 
 /** @type {Record<string, { count: number, why: string[] }>} A0 baseline */
 export const AS_SYSTEM_PINS = {
-  'packages/content/src/admin-space-taken.ts': { count: 1, why: ['login-names'] },
+  'packages/content/src/admin-space-taken.ts': { count: 1, why: ['space-taken-authors'] },
   'packages/content/src/app-access-log.ts': { count: 1, why: ['login-names'] },
-  'packages/content/src/app-table-exports.ts': { count: 1, why: ['client-sourced-check'] },
+  'packages/content/src/app-table-exports.ts': { count: 1, why: ['client-sourced-mark'] },
   'packages/content/src/contact-share-codes.ts': { count: 1, why: ['contact-sharing'] },
   'packages/content/src/login-notices.ts': { count: 2, why: ['login-notice'] },
   'packages/content/src/profile-preferences.ts': { count: 1, why: ['owner-preferences'] },
