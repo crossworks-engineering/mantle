@@ -505,11 +505,6 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a home move in one call (0279): manage of the old home, a Moderator of the new one',
   'public.mantle_workspace_event(uuid,uuid,text,jsonb)':
     'a grant’s audit row (0279): the role holds no right on workspace_events',
-  'public.mantle_ws_admin_id(uuid)': 'the brain’s Admin workspace id, for a write’s visibility confirm (0279)',
-  'public.mantle_ws_live(uuid)':
-    'a workspace is live, only one the scope may see named (0279, the visibility confirm)',
-  'public.mantle_ws_names(uuid[])':
-    'workspace names, only those the scope may see named (0279, the visibility confirm)',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

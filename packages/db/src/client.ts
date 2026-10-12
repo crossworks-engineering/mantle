@@ -774,7 +774,7 @@ function typedWrite(prop: 'insert' | 'update' | 'delete', gateway: boolean): unk
 
 /** Where a write runs on the write role: the one SET of its transaction
  *  (scope, actor, create home), and the actor, for a gap's log line. */
-type LoginWriteRoute = { setSql: string; actor: string };
+type LoginWriteRoute = { setSql: string; actor: string; scope: WorkspaceScope };
 
 /**
  * The login write gateway's one decision (arch A2b2b): the settings a write
@@ -801,9 +801,11 @@ function loginWriteRoute(): LoginWriteRoute | null {
   const scope = loginWriteScope();
   if (!scope) return null;
   const home = currentCreateHome();
+  const writeScope = writeScopeWithPrivate(scope, home);
   return {
-    setSql: writeRoleSettingsSql(writeScopeWithPrivate(scope, home), params, home),
+    setSql: writeRoleSettingsSql(writeScope, params, home),
     actor: params[0],
+    scope: writeScope,
   };
 }
 
@@ -954,13 +956,31 @@ async function writeRoleStatement(
 }
 
 /** A transaction on the write role: its settings go with its first
- *  statement (settingsFirst), so they cost no round trip. */
+ *  statement (settingsFirst), so they cost no round trip. Its work runs
+ *  with writeTxRoute set (guardRead). */
 function writeRoleBegin(route: LoginWriteRoute, args: unknown[]): Promise<unknown> {
   const fn = args[args.length - 1] as (t: PgSql) => unknown;
-  return (writePoolSql().begin as (...a: unknown[]) => Promise<unknown>)(
-    ...args.slice(0, -1),
-    (t: PgSql) => fn(settingsFirst(t, () => route.setSql)),
+  return writeTxRoute.run(route, () =>
+    (writePoolSql().begin as (...a: unknown[]) => Promise<unknown>)(
+      ...args.slice(0, -1),
+      (t: PgSql) => fn(settingsFirst(t, () => route.setSql)),
+    ),
   );
+}
+
+/**
+ * The handle for a read that a write's own guard makes past the caller's
+ * scope: the visibility confirm (packages/content/src/tree/visibility.ts)
+ * names every workspace a change reaches, those the caller is not in too,
+ * and reads the grants of the folder it lands in. It ran in the write's
+ * transaction on the system pool. Inside a transaction on the write role
+ * (arch A2b2b) that transaction reads only the scope, so the guard's read
+ * goes to the system pool instead: committed rows, read under the heads the
+ * write holds, before the write's own changes. Anywhere else: `via`, as
+ * before. For those guards only: it is a read past the scope.
+ */
+export function guardRead<Q>(via: Q): Q {
+  return writeTxRoute.getStore() ? (getAdminDb() as unknown as Q) : via;
 }
 
 /**
@@ -1243,8 +1263,11 @@ async function nestedSystemTx<T>(
   let result: T;
   try {
     result = await (outer.tx as PostgresJsDatabase<typeof schema>).transaction((sp) =>
-      runInSystemTx({ tx: sp, hooks, nest }, () =>
-        fn(sp as unknown as PostgresJsDatabase<typeof schema>),
+      runInSystemTx(
+        outer.writeRoleScope
+          ? { tx: sp, hooks, nest, writeRoleScope: outer.writeRoleScope }
+          : { tx: sp, hooks, nest },
+        () => fn(sp as unknown as PostgresJsDatabase<typeof schema>),
       ),
     );
   } catch (err) {
@@ -1294,7 +1317,12 @@ export async function withSystemTx<T>(
   // statement. Else the system pool, as before.
   return onLoginWritePool(
     () => systemPoolTx(fn),
-    (route) => openSystemTx((run) => writeTxRoute.run(route, () => writeTxDb().transaction(run)), fn),
+    (route) =>
+      openSystemTx(
+        (run) => writeTxRoute.run(route, () => writeTxDb().transaction(run)),
+        fn,
+        route.scope,
+      ),
   );
 }
 
@@ -1350,12 +1378,17 @@ function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<
 async function openSystemTx<T>(
   open: (run: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>) => Promise<T>,
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+  writeRoleScope?: WorkspaceScope,
 ): Promise<T> {
   const hooks = newTxHooks();
   const nest: SystemTxNest = { ...systemTxKeys(), busy: false, done: false, saves: { n: 0 } };
   let result: T;
   try {
-    result = await open((tx) => runInSystemTx({ tx, hooks, nest }, () => fn(tx)));
+    result = await open((tx) =>
+      runInSystemTx(writeRoleScope ? { tx, hooks, nest, writeRoleScope } : { tx, hooks, nest }, () =>
+        fn(tx),
+      ),
+    );
   } catch (err) {
     nest.done = true;
     await runTxHooks(hooks.rollback, 'rollback');

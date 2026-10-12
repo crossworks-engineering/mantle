@@ -71,6 +71,7 @@ export {
   readTransaction,
   loginActorNow,
   openLoginWritePool,
+  guardRead,
   ACTOR_CHECK_DRIFT_SQL,
   type Db,
 } from './client';

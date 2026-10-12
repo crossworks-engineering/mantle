@@ -9,13 +9,19 @@
  * The rule is the workspace role's read rule on nodes (0242): the item's
  * read workspaces meet the scope. The scope is the request's write scope
  * when there is one (a plain db.transaction in a request sets nothing on
- * the transaction), else the one set on the transaction (withSystemTx, a
- * turn). With neither (the system's own work, an Admin user on a brain not
+ * the transaction), else the scope of a system transaction on the write
+ * role (A2b2b, guardRead reads it on the system pool), else the one set on
+ * the transaction (withSystemTx, a turn). With neither (the system's own work, an Admin user on a brain not
  * on workspaces) every item counts as read, as before.
  */
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { nodes } from './schema/nodes';
-import { currentGateScope, currentWorkspaceScope, requestWriteScope } from './viewer';
+import {
+  currentGateScope,
+  currentWorkspaceScope,
+  requestWriteScope,
+  writeRoleTxScope,
+} from './viewer';
 import { currentActor } from './actor';
 
 type Exec = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
@@ -28,7 +34,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function scopeReads(alias = 'n'): SQL {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
   const a = sql.raw(alias);
-  const scope = requestWriteScope();
+  // Inside a system transaction on the write role (A2b2b) its own scope: a
+  // guard's read of it leaves for the system pool (guardRead), where no
+  // scope is set.
+  const scope = requestWriteScope() ?? writeRoleTxScope();
   const ws = scope ? scope.ws.filter((id) => UUID.test(id)) : null;
   return ws
     ? sql`${a}.read_ws && ${`{${ws.join(',')}}`}::uuid[]`

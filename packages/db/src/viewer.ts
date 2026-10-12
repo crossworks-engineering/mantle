@@ -182,6 +182,9 @@ type Scope = {
   /** A system transaction's own (withSystemTx): what a nested call must
    *  match to reuse it (arch A2b, plan 20.2). */
   nest?: SystemTxNest;
+  /** A system transaction on the write role (arch A2b2b): the scope its
+   *  SET carries (writeRoleTxScope). */
+  writeRoleScope?: WorkspaceScope;
   /** A turn scope (workspaces W4b): no transaction of its own; every query
    *  opens a short one on the workspace role (client.ts). */
   perQuery?: true;
@@ -812,7 +815,7 @@ export function currentTurnStamp(): TurnStamp | null {
  * low 1), never run early. Only client.ts calls this (`withSystemTx`).
  */
 export function runInSystemTx<T>(
-  scope: { tx: unknown; hooks: TxHooks; nest: SystemTxNest },
+  scope: { tx: unknown; hooks: TxHooks; nest: SystemTxNest; writeRoleScope?: WorkspaceScope },
   fn: () => Promise<T>,
 ): Promise<T> {
   // A request scope around it is fine: a system transaction is the write
@@ -823,15 +826,40 @@ export function runInSystemTx<T>(
   if (open && !open.request && !(open.system && open.tx && open.nest)) {
     return Promise.reject(new Error('runInSystemTx: only outside a viewer scope'));
   }
-  return store.run({ system: true, tx: scope.tx, hooks: scope.hooks, nest: scope.nest }, fn);
+  return store.run(
+    scope.writeRoleScope
+      ? {
+          system: true,
+          tx: scope.tx,
+          hooks: scope.hooks,
+          nest: scope.nest,
+          writeRoleScope: scope.writeRoleScope,
+        }
+      : { system: true, tx: scope.tx, hooks: scope.hooks, nest: scope.nest },
+    fn,
+  );
+}
+
+/** The scope of the open system transaction when it runs on the write role
+ *  (arch A2b2b), else null: a read that leaves it for the system pool
+ *  (guardRead) holds its rule to this scope (scope-readable.ts). */
+export function writeRoleTxScope(): WorkspaceScope | null {
+  return active()?.writeRoleScope ?? null;
 }
 
 /** The system transaction the current code runs in (runInSystemTx), or
  *  null: inside asSystem, a workspace scope or a space it is none. */
-export function currentSystemTx(): { tx: unknown; hooks: TxHooks; nest: SystemTxNest } | null {
+export function currentSystemTx(): {
+  tx: unknown;
+  hooks: TxHooks;
+  nest: SystemTxNest;
+  writeRoleScope?: WorkspaceScope;
+} | null {
   const s = active();
   if (!s?.system || !s.tx || !s.nest || !s.hooks) return null;
-  return { tx: s.tx, hooks: s.hooks, nest: s.nest };
+  return s.writeRoleScope
+    ? { tx: s.tx, hooks: s.hooks, nest: s.nest, writeRoleScope: s.writeRoleScope }
+    : { tx: s.tx, hooks: s.hooks, nest: s.nest };
 }
 
 /**
