@@ -1,10 +1,8 @@
-# Add member and client logins
+# Add logins
 
-Give other people their own login to the brain, each limited to what its role may see. You need an admin login.
+Give other people their own login to the brain. You need to be a user of the Admin workspace.
 
-There are three login roles: **Admin** (a co-owner), **Member** (your team) and **Client** (people at your client company). What each one sees is on [Who can use a brain](../04-concepts/05-access-tiers.md).
-
-Each item has a level. A login sees an item only when the item's level allows it, so set levels before you let anyone in. See [Team and members](../03-using-jackdaw/12-team.md).
+A login gives no rights by itself. What a person reads and changes comes from the workspaces they are in. See [Who can use a brain](../04-concepts/05-access-tiers.md).
 
 ## Invite a member
 
@@ -15,25 +13,28 @@ Each item has a level. A login sees an item only when the item's level allows it
 
 The person opens the link, sets a password and is signed in. The link works once, for 72 hours. A new invite for the same person replaces the old link. Open invites stay at the top of the list until they are used: select one to **Revoke** it or make a **New link**.
 
-You can also make a member directly: **Settings > Logins > Add login**, set **Role** to Member, and give them the email and starting password yourself.
+You can also make a login directly: **Settings > Logins > Add login**. Give the person the email and starting password yourself.
 
-Members can chat only after you click **Let members chat** once, in **Team > Settings**. See [Team and members](../03-using-jackdaw/12-team.md).
-
-## Client logins
-
-New client logins can no longer be added, and sign-in links are gone. A client login that already exists signs in with an emailed code and uses the same app as a member.
-
-To let a client sign in, select **Client settings** under **Clients** and pick a mail account under **Send codes from**. The account must be able to send mail. A small core box has no email worker, so codes do not work there.
+A new login joins the Team workspace as a Moderator. To give it more, add it to other workspaces in **Settings > Workspaces**.
 
 ## Add another admin
 
-Open **Settings > Logins**, click **Add login**, set **Role** to Admin, and enter the email and a starting password.
+An admin is a user of the Admin workspace. Either:
+
+- open **Settings > Workspaces > Admin** and add the user, or
+- open **Settings > Logins**, click **Add login** and set **Role** to Admin.
+
+Admins manage the brain. They read what is granted to the workspaces they are in, like anyone. They do not read another user's private workspace or chats.
+
+## Client logins
+
+Client logins and emailed sign-in codes are gone. Every former client login was disabled, and it cannot be enabled again. An invite or a new login on a former client's email is refused. To work with people outside your company, make a workspace for them and add their logins.
 
 ## End someone's access
 
-- **Settings > Logins**: select the login and switch on **Disabled**. Every session it holds ends at once.
-- **Sign out everywhere** on the same screen ends all sessions but keeps the login.
-- For a client, **Sign out everywhere** or **Disabled** also cancels its open sign-in codes. **Delete** removes the login, and any comments the client wrote before comments were removed.
+- Remove them from a workspace on **Settings > Workspaces**. They lose its items at once.
+- **Settings > Logins**: select the login and switch on **Disabled**. Every session and API key it holds ends at once.
+- **Sign out everywhere** on the same screen ends all sessions and API keys but keeps the login.
 
 ## Check it worked
 

@@ -12,7 +12,7 @@ A Mantle box exposes one front door, and its secrets live in `.env`. This page l
 ## What leaves the box
 
 - Prompts and retrieved context, to the model providers you configure. Nothing, if you use only local models.
-- Email you send, and sign-in codes mailed to client logins.
+- Email you send.
 - Telegram messages on a paired bot.
 - Calls to MCP or OpenAPI connectors you connect.
 - Update checks (version numbers only).
@@ -36,9 +36,9 @@ The installer generates these, and re-running it never replaces an existing key.
 
 ## Logins and access
 
-- Every item has a level: admin, team, client or public. The database itself enforces it: a member reads items at team level or below, a client only client-level items. Admins read everything.
+- A login gives no rights by itself. Each user reads what is granted to the workspaces they are in, and the database itself enforces it. Admins manage the brain, but read only what their workspaces hold. See [Who can use a brain](../04-concepts/05-access-tiers.md).
 - Use a separate brain for groups that must not share admins.
-- End a login's access in **Settings > Logins** with **Disabled** or **Sign out everywhere**. It takes effect on the next request. See [Add member and client logins](07-logins.md).
+- End a login's access in **Settings > Logins** with **Disabled** or **Sign out everywhere**. It takes effect on the next request. See [Add logins](07-logins.md).
 - Check **Settings > Audit log** when something appears that nobody remembers creating.
 
 ## The updater

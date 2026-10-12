@@ -42,7 +42,7 @@ the next Claude Code session can pick up without re-deriving context.
 >   else's code cannot quietly pair their chat to you. The chat is paired to the
 >   CALLER's login, never anyone else's, and only when that login is a user of
 >   the workspace of every assistant the chat runs as (the bot's, and the
->   chat's responder override). A client login never pairs. The owner's
+>   chat's responder override). The owner's
 >   Settings route no longer pairs (`POST /api/agents/:id/telegram/chats` with
 >   `status: 'allowed'` answers 403, `code: 'pair_with_code'`).
 > - **Block and unpair**: the chat's own user, a Moderator of its bot's

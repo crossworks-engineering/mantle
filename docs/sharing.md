@@ -9,6 +9,19 @@
 > **Deferred (schema-ready):** per-link expiry UI and per-link indexability
 > opt-in (`expires_at` / `settings` columns exist; no UI yet).
 >
+> **Workspaces (W5b2 on).** A link is not a grant and no level drives it.
+> Who reads an item inside the brain is its grants to workspaces
+> ([workspaces.md](./workspaces.md)). A public link serves its item and its
+> served list (`shares.settings.served`, migration 0262): a picture, file,
+> drawing or mention shows on the link only when it is on that list, else it
+> is left out or reads "Private item". Anyone who may edit the item opens
+> or closes its link (for an app, a Moderator of its home). An Admin user
+> with the users area may also close any link of the brain (closing only
+> narrows); opening one still needs the edit right. Sharing it with
+> a contact is for Admin users only; the item's home is not checked. Where
+> the text below says "level", read the served list; client links and
+> client items are gone (W8a).
+>
 > Share any **page, note, task, event, file, app, table, or folder** with
 > anyone who has the URL.
 > The link opens a clean, auth-free page tailored to the content, files in a
@@ -37,17 +50,12 @@ Two of these carry extra semantics:
   passthrough, no draft switch, no distinct endpoint); legacy JSONB tables ship
   their whole doc in the share view. Formula columns aren't stored per-row, so
   they don't appear on the public surface.
-- **Folder** (`branch`): shares **the files under the folder, subfolders
-  included, that sit at the link's level, evaluated per request**. The link
-  shows public items (`linkLevels`, lib/shares.ts; no client link is made
-  since client logins C1, and the old ones retired in C3). A file added
-  later lands at admin like every new item (levels are never inherited), so
-  it is neither listed nor served until someone lowers it (the Access
-  control's "Lower them too" does that for a folder's contents: a folder's
-  contents never follow it on their own); a subfolder
-  above the level is hidden with everything under it, and a subfolder's file
-  count leaves hidden files out. A file moved out is denied on its next
-  fetch. Only folders strictly
+- **Folder** (`branch`): shares **the files and subfolders under the
+  folder that are on the link's served list, evaluated per request**. A
+  file added later is neither listed nor served until someone ticks it; a
+  subfolder not on the list is hidden with everything under it, and a
+  subfolder's file count leaves hidden files out. A file moved out is
+  denied on its next fetch. Only folders strictly
   under the `files` root qualify (`isShareableFolderPath`); the root itself is
   deliberately not shareable, so "share my entire filesystem" can never be one
   accidental toggle. Visitors get a read-only listing with downloads; subfolder
@@ -113,21 +121,18 @@ them through without a session cookie.
 - **`GET /s/[token]/a/[fileId]`**: public **asset** bytes (P2). The
   security-critical route: serves a file only if `fileId` is in the share's
   **allowed set**: for a `file` share, the file itself; for a `page` share, the
-  file ids referenced in its doc (walk `image`/`fileEmbed` nodeIds) that sit
-  at the link's levels; for a
+  file ids referenced in its doc (walk `image`/`fileEmbed` nodeIds) that are
+  on the link's served list; for a
   `branch` (folder) share, any file whose ltree path is under the folder
-  (`path <@ folder.path`, re-derived per request) that sits at the link's
-  levels with no folder above those levels between it and the shared folder
-  (the same rule as the listing). The shared item itself is not filtered by
-  level: a `file` share serves the file. Lowering an item is an admin's
-  decision for the item AND what it embeds, so a page's embeds go down with
-  the page when an admin lowers it or links it (embedding means sharing,
-  access-levels.md section 1), and a page link serves them all in normal use;
-  an embed an admin later raises above the page on purpose stops being
-  served. `GET /s/[token]/draw/[drawId]` (a drawing embedded in a shared
+  (`path <@ folder.path`, re-derived per request) that is on the served
+  list with no unlisted folder between it and the shared folder (the same
+  rule as the listing). The shared item itself is always served: a `file`
+  share serves the file. An embed added after the link was made is not
+  served until someone ticks it. `GET /s/[token]/draw/[drawId]` (a drawing embedded in a shared
   page) and `GET /s/[token]/draw` (a shared drawing) apply the same rule to
-  the drawing and to every image its snapshot places: one image above the
-  link's levels keeps the snapshot off the link, as the snapshot carries it.
+  the drawing and to every image its snapshot places: one image that is not
+  on the link's served list keeps the snapshot off the link, as the snapshot
+  carries it.
   Streams via
   `readFileById` with content-type + range support (video/audio seeking) +
   cache headers. Anything outside the set → 404.
@@ -155,8 +160,8 @@ them through without a session cookie.
 - **Team mode is retired** (member logins Phase 6 stage 6). A team link
   (`settings.mode = 'team'`) used to require a team code holder's visitor
   cookie, minted at the link's own token prompt. Members now sign in with
-  their own logins and list team-level items in their Library
-  ([member-logins.md](./member-logins.md) section 9): migration 0176 revoked
+  their own logins and read what their workspaces hold
+  ([workspaces.md](./workspaces.md)): migration 0176 revoked
   every team link (no item's level changed), nothing makes one (the share API
   and tools answer `team-links-retired`), and the read path never serves a
   team row. An old team link on `/s/<token>` shows a "Sign in as a member"
@@ -165,45 +170,28 @@ them through without a session cookie.
   queries only). A CONTACT share (section 4b) is not open: it needs the
   contact's code as well.
 
-## 4a. Clients: they sign in, never a link
+## 4a. Clients: gone, and never a link
 
-A client of the brain's one client company reads with its own client login
-([client-logins.md](./client-logins.md)), never through a link. So a link
-is only ever public (the level model: [access-levels.md](./access-levels.md)
-section 7):
+Client logins are gone (workspaces W8a, [client-logins.md](./client-logins.md)).
+A person outside the team who needs to read an item is a user of a
+workspace the item is granted to ([workspaces.md](./workspaces.md)), or
+gets a contact share of that one item (section 4b). A link is only ever
+public.
 
-- **An item at client has no link.** Setting an item to client revokes its
-  open link; `createShare` refuses an item at client with
-  `client-links-retired`, so `node_share`, `page_share`, `POST /api/shares`
-  and the email link all meet it, and `email_page` with a link on a client page is refused
-  before anything is sent. The signed-in clients read the item in their
-  portal instead, with every reference to an item above client hidden.
-- **Old client links are retired** (client logins C3, migration 0192).
-  Links made when client meant "anyone with the link" were revoked and
-  marked `settings.retired = 'client'`; the item kept its level. `/s/`
-  answers such a token, and never serves a link on a client item, with a
-  410 "Sign in as a client" page (no item title) pointing at
-  `/client-signin`. Shared links lists the retired ones, without a token.
-- **Public is not client.** The client role reads client items only, never
-  public ones: a public item is reached by its own link, and an item that
-  goes public (set by hand, or embedded in something that goes public)
-  leaves the client logins' view. The tools say so when it happens
-  (`clientLeftWarning`).
-- **Before the first client.** An admin acknowledges "What clients see":
-  every item at client, its old links, the addresses a page was emailed to,
-  the team or admin items it names, and old links above it
-  (`GET /api/access/client-report`; access-levels.md section 7).
-- **Talking with clients about an item** is not a link. The client thread
-  on client-level items was removed on 2026-10-09 with every other comment
-  surface; user-to-user talk moves to the forum (dev-brain plan Forum v2).
+- **Old client links stay retired** (client logins C3, migration 0192, and
+  0262 for links on items that were at client). `/s/` answers such a token
+  with a 410 page that names no item, and Shared links lists the retired
+  ones without a token.
+- **Talking with outsiders about an item** is not a link. The comment
+  threads were removed on 2026-10-09.
 
 ---
 
 ## 4b. Contact shares: one item, one contact (migration 0214)
 
 An admin shares ONE item with ONE outsider without showing it to the team:
-a contact share. The item's level never changes, so an admin item stays
-admin and no member or client lists it. No login, no role, no email, no
+a contact share. No grant changes, so no workspace's users list the item
+because of it. No login, no role, no email, no
 brain tools (only an outside tool with External access, below).
 
 **The contact's code.** On the contact, "Enable sharing" makes an
@@ -232,11 +220,10 @@ owner, a node that is not a contact, an item that is not a workspace kind,
 and a folder (not in v1). `can_write` is allowed only on a contact share of
 an app (a CHECK).
 
-**Levels never move.** Every level path reads open links only: a level
-change (admin, team, client or public) leaves contact shares alone, and
-removing a contact share (`DELETE /api/shares/:id`, the item's share dialog
-and the contact's "Shared" tab) is a revoke only. An item at client may
-carry contact shares (they are not an open link) and stays at client.
+**Grants never move.** A contact share is no grant: adding or removing one
+changes no workspace's access, and a grant change leaves contact shares
+alone. Removing a contact share (`DELETE /api/shares/:id`, the item's share
+dialog and the contact's "Shared" tab) is a revoke only.
 `node_share`, `page_share`, the email link and `POST /api/shares` make and
 revoke only the open link.
 
@@ -279,7 +266,7 @@ the share has "Can write" (the db broker's `exec`; the write schedules the
 app-table export sync and marks `app_databases.client_written_at`, so an
 export of those rows counts as written from outside). On an app an admin
 marked Informational every write answers 403 `read-only`, Can write or not,
-as for members and clients. Never brain tools.
+as for users outside Admin. Never brain tools.
 One kind of tool runs: an outside (MCP or http) tool the app declares that
 an admin switched "External access" on for (docs/member-logins.md,
 "External access: outside tools in shared apps"). It runs on the public
@@ -328,11 +315,12 @@ that message gets in. Send them apart. Revoke and regenerate are one click.
 | `DELETE /api/contacts/:id/shares`                                 | Revoke all: no level change, sharing stays on                                        |
 | `POST /api/shares/contacts` `{ nodeId, contactIds[], canWrite? }` | One share per contact (idempotent per item and contact)                              |
 | `PATCH /api/shares/:id` `{ canWrite }`                            | "Can write" on a contact share of an app                                             |
-| `DELETE /api/shares/:id`                                          | Revoke one (no level change for a contact share)                                     |
+| `DELETE /api/shares/:id`                                          | Revoke one (no grant changes for a contact share)                                    |
 
-`GET /api/access/nodes/:id` lists `contactShares`; Shared links
-(`/api/shares/all`, `/api/team-admin/shares`) name each share's contact;
-`access_get` shows them read only. No agent tool makes a contact share
+`access_get` lists an item's contact shares, read only, next to its
+grants (`GET /api/access/nodes/:id`, which listed `contactShares`, answers
+410 since W5b2); Shared links (`/api/shares/all`,
+`/api/team-admin/shares`) name each share's contact. No agent tool makes a contact share
 (v1). The contract types are in `@mantle/client-types`
 (`dto/contact-shares.ts`). Not built in v1: folder contact shares, a "send
 link by email" button.
@@ -366,12 +354,11 @@ NodeViews), then post-processes:
 4. **Images**: rewrite `src` → `/s/[token]/a/[fileId]`.
 5. **Sanitize**: escape text/attrs; restrict link protocols.
 
-Before rendering, an **open link** reads the page as the public does
-(`loadShareView` → `levelFilteredDoc(owner, 'public', doc)`, the rule a
-client page and the indexed text use): a mention, a link or a child page
-card of an item the public may not read says "Private item", and an embed of
-one is left out, since its bytes are refused anyway. A shared note's
-markdown goes through the same rule (`levelFilteredNote`). A contact share
+Before rendering, an **open link** reads the page through its served list
+(`loadShareView`): a mention, a link or a child page card of an item not on
+the list says "Private item", and an embed of one is left out, since its
+bytes are refused anyway. A shared note's markdown goes through the same
+rule. A contact share
 reads the item as it is. (Access matrix M7: the titles and file names of
 hidden items showed on public links.)
 
@@ -403,29 +390,22 @@ media presenters are net-new here.)_
 
 ## 7. Owner-side UX
 
-> **Levels drive links (2026-09-26).** The owner UI no longer sets a link's
-> mode directly. The Access control sets the item's **level**
-> (`PATCH /api/access/nodes/:id`) and the link follows it: none at admin, at
-> team (members list a team item in their Library) and at client (signed-in
-> clients, client logins C1: a link on a client item is refused with
-> `client-links-retired`), an open link at public. Every share path below
-> re-derives the level from the link it leaves (a client item never moves
-> because of its own link; a client item embedded in something that goes
-> public goes public with it, access-levels.md §7), so they stay in step. See
-> [access-levels.md §7](./access-levels.md). The share API stays for the
-> agent tools and older clients. The text below describes the share model the
-> level now drives.
+> **Workspaces (W5b2 on).** The Access control no longer sets a level. It
+> opens the item's Grant Access panel (`/api/grants/:nodeId`): the home,
+> the workspaces the item is granted to with their Write switches, and the
+> open link with its served list ([workspaces.md](./workspaces.md)). The
+> share API stays for the agent tools and older clients.
 
-The owner app (jackdaw) shows the **Access control**
-(`components/share/access-control.tsx`, which replaced the old
-`<ShareControl>`) on every detail screen (pages, notes, tasks, events,
-files, apps, tables, folders): one level, Admin / Team / Client / Public,
-applied explicitly. Only at Public does a link show, with **Copy**; taking
-the item back above public revokes it. There is no admission toggle any
-more: every link is open (`public` is the only mode), team links are
-retired (member logins Phase 6) and client items have no link (client
-logins C1). The owner's Shared links list (`/team-admin?view=shares`) shows
-each live link with its level and marks the old client links.
+The owner app (jackdaw) shows the **Access** button on every detail screen
+(pages, notes, tasks, events, files, apps, tables, folders). Anyone who may
+edit the item opens or closes its link (for an app, a Moderator of its
+home). An Admin user with the users area may also close any link of the
+brain (`DELETE /api/shares/:id`), since closing only narrows; opening one
+still needs the edit right. Every link is open (`public` is the only mode); team links are
+retired (member logins Phase 6) and client links are retired (client
+logins C3, then W8a). The owner's Shared links list
+(`/team-admin?view=shares`) shows each live link and marks the retired
+ones.
 
 Pages and Draw carry it on their **list preview** as well as in the editor, so
 an item can be shared without opening it. The preview's control deliberately
@@ -453,9 +433,9 @@ the page's descendant pages with its link (`settings.cascade`,
 `setShareCascade`, `POST /api/shares/cascade`, `page_share`'s `children`).
 Pages do not nest any more ([folder-tree.md](./folder-tree.md), "Pages"), so
 there is no subtree to share: the whole of it went on 2026-09-30. A set of
-pages is shared by sharing their **folder** with the team or clients
-(`PATCH /api/tree/pages/folders/:id { share }`, `tree_folder_update`); an
-open link stays per item. `revokeShareTree` and `applyShareMode` are plain
+pages is shared by granting their **folder** to a workspace in its Grant
+Access panel (folder shares by level answer 410 since W5b2); an open link
+stays per item. `revokeShareTree` and `applyShareMode` are plain
 revoke and mode-set now (the names stay as the drop-ins the unshare paths
 call); `AccessNodeView.childCount` (0) and a link's `cascade` (false) stay
 on the wire for clients from before the pages tree.
@@ -474,12 +454,11 @@ owns the rules). Pages keep their dedicated pair
 so _"share that page and send me the link"_ works end to end:
 
 - **`page_share { id, mode? }`** → `createShare` (idempotent, one
-  active link per node) → returns `{ url, token, mode }`, and `alsoLowered`
-  when the page's embeds went down with it (a client item among them goes
-  to public). `mode` may only be `'public'`: `'team'` is refused
-  (`team-links-retired`), and a page at client is refused
-  (`client-links-retired`: clients sign in to read it); `node_share` answers
-  the same. The URL is built with `shareUrlForToken`. (The `children` option
+  active link per node) → returns `{ url, token, mode }`; its `serve`
+  input sets the served list. `mode` may only be `'public'`: `'team'` is
+  refused (`team-links-retired`); `node_share` answers the same. A link is
+  no grant: to show a page to users, grant it (or its folder) to their
+  workspace. The URL is built with `shareUrlForToken`. (The `children` option
   went with folder phase 7, §7b: share the folder instead.)
 - **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShareTree`.
   No-op if unshared.

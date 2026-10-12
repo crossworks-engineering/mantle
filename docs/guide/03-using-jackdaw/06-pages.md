@@ -30,16 +30,12 @@ From any screen you can also ask: "Write this up as a page called Site Handover.
 
 ## Choose who can read it
 
-Click **Access** in the page header and pick a level:
+Click **Access** in the page header. Under **Who can see this**, the panel lists the page's home workspace and every workspace it is shared with.
 
-| Level | Who can read it |
-|---|---|
-| **Admin** | Only admins. |
-| **Team** | Team members, signed in with their own logins. |
-| **Client** | Signed-in clients, and the team. |
-| **Public** | Anyone with the link. |
+- **Share with** a workspace to let its users read the page. Turn its **Write** switch on to let them edit it too.
+- **Open link** makes a link anyone can open without a login.
 
-Only **Public** makes a link. See [Team and members](12-team.md).
+See [Who can use a brain](../04-concepts/05-access-tiers.md).
 
 ## Download
 

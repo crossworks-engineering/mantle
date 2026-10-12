@@ -30,7 +30,7 @@ Both register the same tools from `@mantle/mcp-core`, so they cannot drift.
 | Entry          | `https://<your host>/api/mcp` ([`route.ts`](../server/web/app/api/mcp/route.ts))                                                                                       | [`server/mcp`](../server/mcp/src/server.ts), spawned by the client    |
 | Turned on by   | **Settings > MCP > Remote MCP connector**. Off by default; while off the endpoint answers 404.                                                                         | Nothing. The client spawns the process.                               |
 | Auth           | OAuth sign-in and consent. A missing or bad token gets a 401 that points the client at the authorization server.                                                       | None. Whoever can spawn the process has the owner's full data access. |
-| Who it acts as | The login that signed in. An admin gets the owner's tools; a member or client gets their own role's tools at their level ([`mcp-as-a-login.md`](./mcp-as-a-login.md)). | The owner.                                                            |
+| Who it acts as | The login that signed in, each call in that login's workspaces; Admin tools only where it is in the Admin workspace ([`mcp-as-a-login.md`](./mcp-as-a-login.md)).      | The owner.                                                            |
 | Reach          | claude.ai, Claude Desktop, Claude Code, phones                                                                                                                         | Claude Desktop and Claude Code, local or over SSH                     |
 | Limits         | Rate limited per IP and per login. `run_terminal` off unless `MANTLE_MCP_TERMINAL=1`.                                                                                  | `run_terminal` on unless `MANTLE_MCP_TERMINAL=0`.                     |
 
@@ -169,9 +169,10 @@ If instead you see `No account yet`, sign up in the web app first. If
 **Full parity with the in-brain agents.** Every tool a Mantle agent can be
 granted is on this surface. An admin client IS the owner, authenticated,
 driving their own brain, so it is not given a smaller catalog than an agent
-running inside the box. Two exceptions, both named below. (A member or client
-login over the remote connector gets its role's tools instead; see
-[`mcp-as-a-login.md`](./mcp-as-a-login.md).)
+running inside the box. Two exceptions, both named below. (Since
+workspaces W7b every login gets this one surface over the remote connector,
+each call in its own workspaces, with the Admin tools listed only where it
+is in the Admin workspace; see [`mcp-as-a-login.md`](./mcp-as-a-login.md).)
 
 | Area                   | Tools                                                                                                                                                                                                                                                                                  |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -337,8 +338,9 @@ What still differs, and why it cannot be closed from the brain side:
   and the digests and history recall come from the stored conversation.
 
 Who can call it: the owner's connector only. A peer bound to the owner gets it
-only when the owner names it (it is in the peer risky list). Member and client
-logins do not get it, and the team and client responders are refused: their
+only when the owner names it (it is in the peer risky list). A login outside
+the Admin workspace does not get it, and the team and client responders are
+refused: their
 turn is assembled differently (no owner identity, no thinking, the
 private-reads gate), so this tool would describe a turn that never runs.
 

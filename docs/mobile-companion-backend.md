@@ -321,14 +321,17 @@ companion uses it at launch for the two rules it must not re-implement:
   holds no such cookie, so the resolved agent is simply its default — and a
   turn that omits `agentSlug` resolves the same way server-side.
 
-## Three roles on the phone: members and clients (contract v1.1)
+## Every login on the phone: admins and members (contract v1.1)
 
-The Jackdaw mobile app serves all three roles: admin, member and client. This
+The Jackdaw mobile app serves every login: an admin or a member. (It served a
+third role, the client, until workspaces W8a removed the client logins and
+the email-code sign-in: [client-logins.md](./client-logins.md).) This
 section is the contract the app mirrors by hand (no OpenAPI exists). Paths,
 bodies, error bodies, deep links and token lifetimes below are stable; a change
 is announced to the app session before it lands.
 
-**Versions.** v1 (2026-10-01): the three roles. v1.1 (2026-10-02, migration
+**Versions.** v1 (2026-10-01): the three roles of the time (admin, member,
+client). v1.1 (2026-10-02, migration
 0226): `whoami` and every sign-in answer carry `brainId` (and `loginId`
 where they did not), and every push payload carries `brainId` and
 `loginId`, so a device holding several logins (on one brain or on several)
@@ -337,18 +340,16 @@ several logins"). Additive only: an app built for v1 ignores the new fields,
 and the payload's `v` stays `1`.
 
 **Workspaces W5c (2026-10-11): one shell for every login.** `GET /api/shell`
-now answers an admin, a member and a client with the SAME shape (`Shell` in
-`@mantle/client-types`): `role` (`admin`, `member` or `client`), `loginId`,
-the login's own face (`displayName`, `email`, `avatar`,
-`avatarPhotoVersion`, `navFavorites`), the brain's brand, `features`,
-`assetToken` (a client's lasts 10 minutes), `maxUploadBytes`, `workspaces`,
-`areas` (always `[]` for a member or a client), `onboarded` (always true for
-them), `pendingApprovals` (always 0 for them) and `treeKinds`.
-`GET /api/member/shell` and `GET /api/client/shell` answer their own role
-410 `{ error, code: "gone" }`, and whoami names `/api/shell` as every role's
-shell. The client portal is gone too: every `/api/client/*` route (chat,
-unread, push, bytes) answers a client 410. A client still signs in with an
-emailed code (device mode below) and refreshes its token as before.
+now answers every login with the SAME shape (`Shell` in
+`@mantle/client-types`): `role` (`admin` or `member`), `loginId`, the
+login's own face (`displayName`, `email`, `avatar`, `avatarPhotoVersion`,
+`navFavorites`), the brain's brand, `features`, `assetToken`,
+`maxUploadBytes`, `workspaces`, `areas` (always `[]` outside the Admin
+workspace), `onboarded` (always true for a member), `pendingApprovals`
+(always 0 for a member) and `treeKinds`. `GET /api/member/shell` answers
+410 `{ error, code: "gone" }`, and whoami names `/api/shell` as every
+login's shell. The old `/api/client/*` routes (shell, chat, unread, push,
+bytes) answer every signed-in login 410 code gone.
 
 **Workspaces W7e (2026-10-11): the brain side of the workspace phone.**
 
@@ -362,14 +363,12 @@ emailed code (device mode below) and refreshes its token as before.
   `POST /api/auth/mobile-login` with a member's right password (it was 403
   `member-login`; still no token, still the one 401 for a wrong password),
   and `POST /api/auth/pair/claim` of a member's code without the header at or
-  above the minimum build. A client never gets 426 (no phone build serves it
-  yet): `mobile-login` answers it 403 `client-login` as before, and a claim
-  of a client's code is the one 401. A refused claim does NOT
+  above the minimum build. A refused claim does NOT
   use the code up: the person scans it again with the new app (within its 90
   seconds). `POST /api/auth/device-login` is unchanged (any admin or member).
 - **QR pairing for a member.** `POST /api/auth/pair` and
-  `GET /api/auth/pair/:id` take any signed-in admin or member (a client is
-  403 `client-login`): only the person pairs their own phone. A member's
+  `GET /api/auth/pair/:id` take any signed-in admin or member: only the
+  person pairs their own phone. A member's
   claim (with the header) mints the device-login bearer (30 days, rotated by
   `/api/auth/token/refresh`); an admin's claim is the `mobile-login` bearer
   as before, from any build. The answer's shape is unchanged.
@@ -396,10 +395,8 @@ emailed code (device mode below) and refreshes its token as before.
   hold: the PUBLISHED build, the team rules for tools, the data written only
   when a workspace of its holds the app with Write on and the app is not
   informational. An app it does not read is a 404. `/api/member/apps/*`
-  still answers (deprecated). A client login is refused on all four (403
-  `client-login` on the POSTs; the frame opens only on a member's ticket or
-  an owner ticket whose login is still an active Admin user), and on the
-  byte routes (401), as before W7e.
+  still answers (deprecated). The frame opens only on a member's ticket or
+  an owner ticket whose login is still an active Admin user.
 - **Gone.** `/api/member/library`, `/api/member/library/:id`,
   `/api/member/accepted` and `/api/member/accepted/:id` answer 410
   `{ error, code: "gone" }` (unused since W6b).
@@ -420,12 +417,11 @@ address, one bucket shared with the other token logins: `mobile-login` and
     429    { error }  + Retry-After
 
 `role` is `admin` or `member`. The token lasts 30 days and rotates through
-`POST /api/auth/token/refresh` (below). A client email always answers 401: a
-client has no password. The answer is sent with `Cache-Control: no-store`.
+`POST /api/auth/token/refresh` (below). The answer is sent with `Cache-Control: no-store`.
 
 `deviceName` is a label, not a credential. The brain trims it and cuts it to
 80 characters. A missing, empty or wrong-type name gets a default label. It
-never fails a sign-in (here and on the client verify).
+never fails a sign-in.
 
 Why a new route and not `/api/auth/token`: the answer names the role (the app
 must know which shell to call before it calls one), the audit line says
@@ -433,56 +429,23 @@ must know which shell to call before it calls one), the audit line says
 with the same 30-day rotating token. `mobile-login` cannot change, because
 shipped builds read its 403 for a member.
 
-**Client: the emailed code, device mode.** A client has no password. The app
-asks for a code, the person reads it from their email, the app trades it for a
-token. No cookie is set or read in device mode.
-
-    GET  /api/auth/client-code
-    200    { enabled }            codes are on for this brain, or not
-
-    POST /api/auth/client-code
-    body   { email, device: true }
-    200    { ok: true, requestId }   always, whatever the email
-    429    { error } + Retry-After
-
-    POST /api/auth/client-code/verify
-    body   { email, code, requestId, deviceName? }
-    200    { ok: true, token, expiresIn, expiresAt, deviceId, role: "client", loginId, brainId }
-    401    { error: "That code did not work. Ask for a new one." }
-    429    { error } + Retry-After
-
-`requestId` ties the code to the app that asked for it, as the request cookie
-does for a browser. The app keeps it in memory until the verify. A body with
-`requestId` is device mode: the answer carries a token and sets no cookie
-(a cookie on the request is not read at all). A body without it is the
-browser flow, unchanged. When the person asks for the code again, send the
-`requestId` you hold (`{ email, device: true, requestId }`): the code already
-mailed keeps working, and no second mail goes out while it is open.
-
-Device mode is for the app only. A device-mode request that carries an
-`Origin` header or any `Sec-Fetch-*` header came from a web page, and both
-routes answer it before any work:
-
-    403    { error: "Device sign-in is for the phone app.", reason: "device-only" }
-
-A native HTTP client sends none of these headers. Do not add them. The brain
-stores a device code under an id derived from the app's `requestId`, never
-under that id itself. So a browser's request cookie cannot redeem a device
-code, and a device `requestId` put in a cookie finds no code. The verify
-answer is sent with `Cache-Control: no-store`.
+**Client email codes: gone (W8a).** The email-code sign-in and its device
+mode went with the client logins. `GET`/`POST /api/auth/client-code` and
+`POST /api/auth/client-code/verify` answer 410 `{ error, code: "gone" }`
+before any work ([client-logins.md](./client-logins.md)). Every login
+signs in with `device-login` or QR pairing.
 
 **Token rotation: `POST /api/auth/token/refresh`** (Authorization: Bearer).
-All three roles. When it rotates, the old token dies in the same transaction.
+Every login. When it rotates, the old token dies in the same transaction.
 
     200    { token, expiresIn, expiresAt, deviceId, role, loginId, brainId }
     401    { error: "unauthorized" }
-    401    { error: "unauthorized", reason: "sign-in-expired" }   client only
     429    { error } + Retry-After
 
 Every answer carries `Cache-Control: no-store`. `loginId` and `brainId` are
 v1.1, on all three 200 answers (too early, a rotation, a lost answer
-retried). `brainId` in a sign-in answer (here, `device-login`, the client
-verify and `pair/claim`) is the same value whoami answers; like there, it is
+retried). `brainId` in a sign-in answer (here, `device-login` and
+`pair/claim`) is the same value whoami answers; like there, it is
 left out only while the database is behind the code. The frozen
 `mobile-login` and the web client's `/api/auth/token` answer as before.
 Rules:
@@ -491,11 +454,6 @@ Rules:
   SAME token with its own `expiresAt` and `deviceId`. Nothing rotates and no
   row is written. So the app may call it at every launch. A new token comes
   back only in the last 23 days. Always store the `token` of the answer.
-- **A client's 90-day cap.** Refresh keeps a client's device token alive for
-  at most 90 days from the emailed code that signed the phone in. After that,
-  refresh answers 401 with `reason: "sign-in-expired"`. The app shows the
-  sign-in screen and the person asks for a new code. Each new client token
-  lasts at most 30 days and never past the cap.
 - **A lost answer is safe to retry.** If the answer to a rotating refresh is
   lost, the app retries with the token it still holds. Until the new token
   is used for the first time, that retry gets the SAME new token again (the
@@ -516,18 +474,14 @@ Rules:
 
 Lifetimes:
 
-| Role   | Minted by                        | Lifetime | Rotation                                                       |
-| ------ | -------------------------------- | -------- | -------------------------------------------------------------- |
-| admin  | `mobile-login` (old builds)      | 1 year   | none                                                           |
-| admin  | `device-login`                   | 30 days  | refresh                                                        |
-| member | `device-login`                   | 30 days  | refresh                                                        |
-| client | `client-code/verify` device mode | 30 days  | refresh, each new token at most 30 days, 90 days from the code |
+| Role   | Minted by                   | Lifetime | Rotation |
+| ------ | --------------------------- | -------- | -------- |
+| admin  | `mobile-login` (old builds) | 1 year   | none     |
+| admin  | `device-login`              | 30 days  | refresh  |
+| member | `device-login`              | 30 days  | refresh  |
 
-A client token also carries the login's session epoch. It ends at once when
-the client signs out anywhere (web or phone), when an admin ends the client's
-sessions, disables the login or changes its role. A client token never lasts
-longer than `CLIENT_SESSION_TTL_SECONDS` (30 days); one that claims more is
-refused.
+The client row (email code, 30 days, a 90-day cap) went with the client
+logins in W8a.
 
 **Who am I: `GET /api/auth/whoami`** (any bearer or session).
 
@@ -562,30 +516,30 @@ older than v1.1: treat that session as having no `brainId` (below).
 | ------ | ------------ | ------------------ |
 | admin  | `/api/shell` | `/api/push`        |
 | member | `/api/shell` | `/api/member/push` |
-| client | `/api/shell` | `/api/client/push` |
 
 Before W5c a member's shell was `/api/member/shell` and a client's
-`/api/client/shell`; both now answer 410. A client's `pushBase` routes
-answer 410 as well (the client portal went in W5c).
+`/api/client/shell`; both now answer 410, and so do the old
+`/api/client/push` routes. A role whoami does not know (a row still marked
+client) is no login: 401.
 
 **Sign-out: `POST /api/auth/mobile-logout`** (Authorization: Bearer). Always
 200 `{ ok: true }`. It revokes this device's token and removes the push
 devices that token enrolled, and only those (the web and desktop client
-signs out here too; it must not take a phone's pushes). For a client it ends every session of the login,
-the browser ones too (a client sign-out always did). A token that is already
-dead ends nothing, and neither does a client token whose session epoch has
-moved on (those sessions are already over).
+signs out here too; it must not take a phone's pushes). A token that is
+already dead ends nothing.
 
 **Devices.** Every device token is a `mobile_tokens` row under its login. An
 admin sees and revokes it in Settings > Logins > Devices
 (`GET /api/users/:id/devices`, `DELETE /api/users/:id/devices/:jti`).
 
-**What a token reaches.** A member token reaches only `MEMBER_ROUTES`, a
-client token only `CLIENT_ROUTES` (`server/web/lib/auth/*-routes.ts`). Every
-other route answers 403 with `reason` = `member-login` or `client-login`, or 401. A wrong-role call on a member or client route answers 403 with the
-caller's role in `reason` (`admin-login`, `member-login`, `client-login`).
+**What a token reaches.** A member token reaches `MEMBER_ROUTES`,
+`ANY_LOGIN_ROUTES` (`server/web/lib/auth/*-routes.ts`) and the owner routes
+`server/web/lib/auth/route-scope.ts` opens to a non-Admin login, each in its
+own workspaces. Every other route answers 403 with `reason` =
+`member-login`, or 401. An admin's call on a member-only route answers 403
+`admin-login`.
 
-### 2. Push for members and clients
+### 2. Push for members
 
 **Who gets what (the targeting rule).** A push goes only to devices of the
 login it concerns, and only while the token that enrolled the device is live.
@@ -595,11 +549,11 @@ login it concerns, and only while the token that enrolled the device is live.
 | Owner assistant message                  | Devices of active ADMIN logins. If the agent is assigned to one login, only that login's devices.                                              |
 | Approval waiting                         | Devices of active admin logins.                                                                                                                |
 | "Needs you" (provider outage, parked)    | Devices of active admin logins.                                                                                                                |
-| Reply in a member or client chat         | Devices of that ONE login.                                                                                                                     |
+| Reply in a member's chat                 | Devices of that ONE login.                                                                                                                     |
 | Review result on an item                 | Devices of the item's author.                                                                                                                  |
-| Comment on an item                       | Devices of the item's author (not when the author wrote it). On a client-level item's client thread: every active client login but the writer. |
+| Comment on an item                       | Nobody: the brain has no comments since 2026-10-09, so no comment push is sent.                                                                |
 
-A member or client device never gets an owner teaser. A device whose token was
+A member device never gets an owner teaser. A device whose token was
 revoked, expired or rotated away without the app gets nothing.
 
 **Routes.** Same shapes as the admin routes, under the role's `pushBase`.
@@ -608,8 +562,6 @@ enrol step).
 
     POST   {pushBase}/connect         { platform: "ios"|"android", osPushToken }
            200 { ticket, relayUrl }
-           409 { error: "push_not_set_up" }   client only: no admin or member
-                                              has switched push on yet
            502 { error: "relay_unreachable" }
            429 { error: "too_many_requests" } + Retry-After
     POST   {pushBase}/subscriptions   { routingToken, publicKey, platform, label?, deviceId? }
@@ -621,7 +573,7 @@ enrol step).
     GET    {pushBase}/preferences     200 { chatReplies, reviewResults }
     PUT    {pushBase}/preferences     partial patch, same answer
 
-A member or client lists and removes only its own devices. Enrolling a routing
+A member lists and removes only its own devices. Enrolling a routing
 token again replaces the old row (one row per routing token), so one routing
 token belongs to one login. The relay mints a new routing token on every
 enrol, so each Connect of each login is its own row (see "Push routing on a
@@ -696,10 +648,12 @@ and nothing else.
 | --------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
 | `chat`    | the agent's name; for an admin's note the brain's site name, else `New message` | the reply, pictures removed, 140 chars (`New message` when it is a picture only)                                | `/portal/chat`                                                                 |                                                    |
 | `review`  | `Accepted`, `Returned`, or `With an admin`                                      | the item's title; for `Accepted`, the title it was accepted under                                               | `/portal/items/<id>`, or `/portal/items` when taken                            | `itemId`, `state`: `accepted`, `returned`, `taken` |
-| `comment` | `New comment`                                                                   | on the author's own item: `<name> on "<title>": <comment>`; on a client thread: `<name> commented on "<title>"` | `/portal/items/<id>` (own item) or `/portal/shared/<id>` (a client-level item) | `itemId`                                           |
 
-Owner pushes keep their links (`/chat/<slug>`, `/pending`, `/team-admin?...`)
-and carry no `kind`.
+The `comment` kind is no longer sent (the brain has no comments since
+2026-10-09), and no `review` push is sent now either: review went in
+workspaces W5c (no Accept, Return or Take over since), though the kind and
+its trigger stay. Owner pushes keep their links (`/chat/<slug>`, `/pending`,
+`/team-admin?...`) and carry no `kind`.
 
 An event reminder delivered on the mobile channel is an owner assistant turn,
 so its push is an owner reply (`deepLink: "/chat/<slug>"`) that also names the
@@ -707,11 +661,10 @@ event: `itemLink: "/events/<id>"`. An app that knows the route opens the
 event; an older app ignores the field and opens the chat as before. Only the
 reminders worker sets it (it marks its turn `data.reminder = { kind, id }`);
 `/tasks/<id>` is reserved for a task reminder, which no brain sends yet. A teaser never holds text its reader cannot open: the
-chat text is the reader's own thread as their chat route returns it, an item
-title is the author's own item, a client-thread comment goes out only while
-the item is at client level. A client-thread comment push carries no comment
-text: every client of the brain gets it, and a lock screen is not the place
-for another person's words. Open the item to read it.
+chat text is the reader's own thread as their chat route returns it, and an
+item title is the author's own item. No comment push is sent: the brain has
+no comments (2026-10-09), and client logins and their threads are gone
+(W8a).
 
 **Push routing on a device with several logins (v1.1).** A phone or a
 desktop may hold several sessions (a session is a brain origin, a login and
@@ -731,7 +684,7 @@ which session it is for; `brainId` and `loginId` do. On a tap the app:
    say so when a sign-in's `brainId` is already held under another origin.
 3. Found: makes that session the active one, if it is not already, and then
    follows `deepLink` in it. The deep link is a path on THAT brain, under
-   that session's role (`/portal/...` for a member or a client, `/chat/...`,
+   that session's role (`/portal/...` for a member, `/chat/...`,
    `/pending`, `/team-admin?...` for an admin).
 4. Not found (the login signed out on this device, or the session was
    removed): opens that brain's sign-in screen when the app still knows the
@@ -753,19 +706,19 @@ holds exactly one session on that brain.
 **Several logins of ONE brain on one phone each get their own pushes.** The
 relay mints a new routing token on every `/enroll` (32 random bytes; it does
 not look the device up by its OS push token), and the app runs the whole
-Connect (connect, enroll, subscriptions) per login. So an admin, a test
-member and a test client signed in on one phone are three device rows, with
+Connect (connect, enroll, subscriptions) per login. So an admin and two
+test members signed in on one phone are three device rows, with
 one OS push token and one device key between them: each gets its own
 pushes, each payload names its own `loginId`, and a sign-out of one takes
-only its own row. A member's or a client's row never gets an owner teaser
+only its own row. A member's row never gets an owner teaser
 (the send lists name logins, not phones). The phone shows one notification
 per login an event concerns. Logins on DIFFERENT brains each enrol with that
 brain, and each brain pushes its own. App side: keep the push subscription
 id per session, and do not clear the shared device key when ONE session
 disconnects while others still use it.
 
-`collapseKey`: the brain names a member's or client's push by `chat`,
-`review:<id>` or `comment:<id>`, but sends it to the relay as a keyed hash
+`collapseKey`: the brain names a member's push by `chat` or
+`review:<id>`, but sends it to the relay as a keyed hash
 (32 hex characters) of the login id and that name. The key of the hash is
 derived from the brain's `SESSION_SECRET` and never leaves the brain. The
 relay and the push provider see neither the kind of event nor an item id,
@@ -775,13 +728,13 @@ and `itemId` from the sealed payload. Owner pushes keep their plain keys.
 
 **Teasers are plain text.** Every body (`b`) that comes from markdown is sent
 as plain words: an owner assistant reply, a run's question in an approval, a
-member or client chat reply. Headings, bold and
+member's chat reply. Headings, bold and
 italic, list markers, block quotes and code fences lose their marks; a link
 and a reference chip (`page:`, `media:`, `mention:`, `folder:`, `draw:`)
 keep the label and drop the target; a table keeps its cell text; code keeps
 its text (a short command is the useful part); math keeps its source without
-the `$`. An image keeps its alt text in an owner teaser; in a member or
-client chat teaser pictures go whole. The cut to length happens after the
+the `$`. An image keeps its alt text in an owner teaser; in a member's
+chat teaser pictures go whole. The cut to length happens after the
 marks are gone. A teaser is never empty: a reply with no words reads
 `New message`. Item titles and people's names are names, not markdown: they
 are sent as they are (the "needs you" notice holds only those). The helper is
@@ -793,10 +746,10 @@ the app keeps its own strip as a fallback for older brains.
 member's thread, `GET /api/assistant/thread` (since W7c a member's chat is an
 ordinary per-user thread with the Team workspace's assistant; the member chat
 routes `GET` and `POST /api/member/chat` answer 410 `{ error, code: 'gone' }`).
-(The client chat, `GET /api/client/chat`, answers 410 since W5c, and a client
-gets no chat push.)
+(The old client chat, `GET /api/client/chat`, answers 410 since W5c; the
+client logins themselves went in W8a.)
 
-### 3. Unread for the member and client chat
+### 3. Unread for the member chat
 
     GET  /api/assistant/conversations          unread per thread (since W7c)
     POST /api/assistant/read   { agentSlug?, at? }   mark a thread read
@@ -819,26 +772,29 @@ you showed, or nothing. An `at` with millisecond precision covers that whole
 millisecond: the database keeps microseconds, so the message you name is
 marked read even when it was written later in the same millisecond.
 
-### 4. Pictures in a member or client thread
+### 4. Pictures in a member's thread
 
 A reply is markdown. Image links are relative paths to the reader's own
-routes: `/api/member/files/<id>`, `/api/member/draws/<id>/svg`. (The client
-byte routes answer 410 since W5c.) Images the reader may not read are
+routes: `/api/member/files/<id>`, `/api/member/draws/<id>/svg` (deprecated
+since W7e: every login also reads `/api/files/files/<id>?raw=1` and
+`/api/draws/<id>/svg`, above). The old client byte routes answer 410.
+Images the reader may not read are
 already removed. Two ways to load one:
 
 1. Send the bearer: `Authorization: Bearer <token>` on the image request.
    Preferred in a native app.
 2. Append `?at=<assetToken>` (the shell's `assetToken`) when the renderer
-   cannot set headers. A member's asset token lasts 2 hours, a client's 10
-   minutes: call the shell again for a fresh one. It opens byte routes only.
+   cannot set headers. It lasts 10 minutes for a non-Admin login and 2
+   hours for an Admin user: call the shell again for a fresh one. It opens byte routes only.
 
 ### 5. Not in version 1 (deferred)
 
-- A live token stream for member and client chat. Version 1 is push plus
+- A live token stream for the member chat. Version 1 is push plus
   refetch.
-- QR pairing from a signed-in member or client web session. Design note: a
-  payload version 2 (`/pair#v=2&code=`) so shipped builds, which accept only
-  version 1, never claim a code that would hand them a non-admin token.
+- QR pairing from a signed-in member web session shipped in W7e (above,
+  "QR pairing for a member"): a claim of a member's code needs the build
+  header at or above the minimum build, so shipped admin-only builds never
+  get a member's token.
 - A push when a reply fails.
 - The forum (retired) and apps on the phone.
 
@@ -849,7 +805,8 @@ device token that enrolled the device), a unique index on
 `push_subscriptions.routing_token` (enrol is an upsert), `push_login_prefs`
 (per-login toggles), `login_chat_read_cursors` (per-login read cursor),
 `mobile_tokens.signed_in_at` (when the emailed code signed a client's phone
-in; copied through every rotation) and `mobile_tokens.rotated_to` (the token
+in, copied through every rotation; unused since the client logins went in
+W8a) and `mobile_tokens.rotated_to` (the token
 a rotated row was replaced by; reuse detection), and the `login_notice`
 NOTIFY channel with three notify-only triggers: a finished outbound row in a
 login's thread (since 0269, W7c, a finished reply in a non-anchor login's
@@ -893,12 +850,11 @@ dropped).
 
 - `getBearerLogin` checks the token row (present, not revoked, not expired,
   the same login as the token names). A token that carries an epoch is
-  refused once the login's `session_epoch` differs. A client token must carry
-  one and may not claim more than `CLIENT_SESSION_TTL_SECONDS`.
-- `resolvedFor` accepts a client from a bearer. The gates are unchanged: a
-  client reaches `getClientOr401` routes only, a member `getMemberOr401`
-  routes only. The three sweeps (`role-sweep`, `client-sweep`, `member-sweep`)
-  run each role's pass with a cookie AND with a bearer.
+  refused once the login's `session_epoch` differs.
+- A login row whose role is neither admin nor member (a row still marked
+  client) signs in by no path, a bearer included, and every gate answers it
+  as a stranger. The sweeps (`role-sweep`, `member-sweep`) run each role's
+  pass with a cookie AND with a bearer.
 - `endLoginSessions` also deletes the push devices the revoked tokens
   enrolled; `token/refresh` moves them to the new token. A revoke of one
   device, End sessions, a password change and a disable also delete that
@@ -923,9 +879,6 @@ dropped).
   needs ordinary write rights (it has them on every brain); on a read-only
   database the lock is a refused write, so a refresh and an enrol fail there
   and write nothing (`lib/push/enrol-lock-roles.db.test.ts`).
-- Device mode writes the token row inside the same transaction that redeems
-  the emailed code, and writes the audit row after the insert, with the
-  device id.
 - The nightly maintenance sweep `device-tokens-reap`
   (`lib/auth/device-token-reap.ts`, plain SQL, no model) deletes a
   `mobile_tokens` row 30 days after it was revoked or expired. The push
@@ -940,23 +893,25 @@ dropped).
 
 - The store has NO list of every device of the brain for the send path.
   `listAdminSubscriptions` (active admin logins; an optional single login)
-  serves the owner pushes. `listLoginSubscriptions` (one active member or
-  client, live token of that same login) serves a login's own pushes.
+  serves the owner pushes. `listLoginSubscriptions` (one active member,
+  live token of that same login) serves a login's own pushes.
 - Decision: an agent assigned to one login (`agents.assigned_user_id`) pushes
   its replies to that login's devices only. An agent assigned to nobody
   pushes to every active admin. Approvals and "needs you" go to every active
   admin.
-- Decision: a member may be the first to register the brain with the push
-  relay (the first Connect). A client may not: it gets 409 `push_not_set_up`
-  until an admin or a member has connected once.
+- Decision: any login (an admin or a member) may be the first to register
+  the brain with the push relay (the first Connect). A client could not (409
+  `push_not_set_up` until an admin or a member had connected once); since
+  the client logins went in W8a no caller gets that answer, though
+  `connectDevice` keeps the branch.
 - Who is told and with which words is `packages/content/src/login-notices.ts`
   (chat: the text as the reader's own chat route returns it; review: the
-  author's own item, by the title it had when taken; comment: the author of
-  a personal item in its own space, or every active client but the writer
-  for a client-level item's client thread). An event older than 30 minutes
+  author's own item, by the title it had when taken; comments: none, the
+  brain has no comments and the client logins are gone). An event older than 30 minutes
   tells nobody (a backfill must never page people).
-- A bundle (Accept and Take over change every item in one transaction) is
-  one push: the worker gathers a login's review events for 750 ms.
+- A bundle (Accept and Take over changed every item in one transaction,
+  until review went in W5c) is one push: the worker gathers a login's
+  review events for 750 ms.
 - The 30-minute freshness check runs on the database's clock, not the
   worker's.
 - Bounds on one send: every relay call times out after 10 seconds, one send
@@ -972,18 +927,18 @@ dropped).
   the ticket format. The per-login limit on connect (10 a minute) covers the
   abuse it would stop.
 
-**Tests.** `server/web/lib/push/push-targeting.db.test.ts` is the gate: a
-member device and a client device, enrolled and live, never receive an owner
+**Tests.** `server/web/lib/push/push-targeting.db.test.ts` is the gate: the
+devices of two members, enrolled and live, never receive an owner
 teaser, an approval or a "needs you" notice; each device's payload names this
 brain and its own login. `packages/db/src/brain-identity-migration.db.test.ts`
 proves the one row and that a second run of 0226 keeps the id;
 `packages/db/src/db-restore-run.db.test.ts` that a plain restore keeps it
 and `--new-brain` gives a new one; the targeting test also enrols one phone
-(one key) as an admin, a member and a client and checks each gets only its
-own pushes, naming its own login;
+(one key) as an admin and two members (until W8a the second was a client)
+and checks each gets only its own pushes, naming its own login;
 `server/web/lib/brain-identity.test.ts`, `notify.test.ts`,
 `login-notify.test.ts` and `needs-you.test.ts` pin the payload fields. `device-tokens.db.test.ts`
-drives the three sign-ins, every way a token ends, refresh, the push device
+drives the sign-ins, every way a token ends, refresh, the push device
 routes and the unread routes through the real app.
 `packages/content/src/login-notices.viewer.db.test.ts` proves the triggers
 and who is told.

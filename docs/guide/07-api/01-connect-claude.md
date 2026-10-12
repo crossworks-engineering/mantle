@@ -85,5 +85,5 @@ To cut a client off, press **Disconnect** next to it under **Connected clients**
 
 ## Next
 
-- [MCP as a login](02-mcp-login.md): let members and clients connect with their own rights.
+- [MCP as a login](02-mcp-login.md): every login connects with its own rights.
 - [Toolsmith](05-toolsmith.md): build new tools from Claude Code.

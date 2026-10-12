@@ -13,7 +13,7 @@ Open your brain's address, create the owner login, then let the setup wizard get
 2. Enter your email, a password and the setup code.
 3. Click **Create login**.
 
-Only the first account signs up this way. After that the same screen is the normal sign-in. To add people later, see [Member and client logins](../05-admin/07-logins.md).
+Only the first account signs up this way. After that the same screen is the normal sign-in. To add people later, see [Add logins](../05-admin/07-logins.md).
 
 ## Walk the setup wizard
 

@@ -15,9 +15,9 @@ agent can answer questions about your data all day and never change a cell.
 
 - **New** creates a group: a **Name**, a **Slug** (fixed once created) and the
   **Tools in this group**.
-- Each group has a level (Admin, Team, Client or Public). An agent may hold a
-  group only at a level it can read. Setting a group to Client or Public lets
-  every tool in it run for clients or the public, so the screen asks first.
+- A group has no level. An agent uses the groups granted to it, and only on
+  what the workspace it works in reads. A connector's tools reach the users
+  of the workspaces the connector is attached to (Settings > Workspaces).
 - An integration group stands for one outside API. It holds the base URL and
   the credential reference, and every tool added to it uses them.
 
@@ -36,7 +36,7 @@ the Toolsmith specialist.
 Groups are flat: a list of tool slugs, never groups inside groups. Skills carry
 no tools, so attaching a skill changes how an agent works, never what it can
 reach. The default groups come from the system manifest; your own groups sit
-beside them. When an agent changes the tools of a group below Admin level, the
-change waits for your approval in [Pending approvals](pending.md). The Toolsmith uses
+beside them. When an agent changes the tools of a group an assistant of a
+workspace other than Admin holds, the change waits for your approval in [Pending approvals](pending.md). The Toolsmith uses
 `tool_group_list`, `tool_group_ensure`, `agent_list` and
 `agent_grant_tool_group`; an agent cannot grant a group to itself.

@@ -47,7 +47,7 @@ switch off still pays for no reasoning on those agents.
 | Path                                                      | Inherit                                                           | Own effort                                               |
 | --------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------- |
 | Web, Telegram, MCP sim, resumed runs (`assemble-turn.ts`) | profile budget + effort                                           | applies                                                  |
-| Team and client turns (`withThinking: false`)             | none (the profile is the owner's, not the caller's)               | applies (set on the team or client responder on purpose) |
+| Team turns (`withThinking: false`)                        | none (the profile is the owner's, not the caller's)               | applies (set on the team responder on purpose)           |
 | Delegated agent (`invoke-agent.ts`)                       | the profile budget the caller forwards, no effort (the old shape) | applies                                                  |
 | Heartbeat fire (`heartbeats/fire.ts`)                     | profile budget, no effort (the old shape)                         | applies                                                  |
 | Run worker (`runs-worker-turn.ts`)                        | none (never had thinking)                                         | applies                                                  |

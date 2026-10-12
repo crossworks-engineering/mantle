@@ -136,7 +136,7 @@ and for one release a code could still redeem a member invite once.
 Team codes are gone now (migration 0178 dropped the table, and
 `ContactRow` no longer carries `team`). Users are the team: an admin
 invites a person, from their contact or by email, and they sign in as a
-member login ([member-logins.md](./member-logins.md) section 9). A
+member login ([member-logins.md](./member-logins.md), "Invites"). A
 contact's old portal chat stays readable as its Chat archive on
 `/team-admin`.
 
@@ -171,8 +171,8 @@ team (docs/sharing.md section 4b has the full rules).
 - **The contact DTO** carries `sharing: { enabledAt, lastUsedAt, locked,
   shareCount } | null` (null: sharing off).
 - **Deleting a contact** removes its code row and every share made for it
-  (`ON DELETE CASCADE`), so its links stop at once. No item's level
-  changes. Its trail rows in `share_access_log` stay, with the share and
+  (`ON DELETE CASCADE`), so its links stop at once. No item's grants
+  change. Its trail rows in `share_access_log` stay, with the share and
   contact ids set NULL.
 
 Items are shared from the item: Share, "Share with contact", a searchable

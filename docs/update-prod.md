@@ -321,193 +321,14 @@ tree, and refuses a second run on the same box. The log stays on the box in
 `~/maint-logs/` after the container removes itself. Why and how:
 [maintenance-runner.md](./maintenance-runner.md), "Long runs on a box".
 
-## Rolling a box from v0.232.315 to the client logins releases
+## Rolling across the client logins releases (history)
 
-The first roll past v0.232.315 brings client logins (v0.232.318 on). It is
-an ordinary roll through the updater (`scripts/roll.sh`): migrations 0186
-(needs-you notices), 0187 (the client level) and 0188 (client sign-in
-links), and any later ones, land together in the one migrate, each in its
-own transaction. **No manual step.** 0186 and 0187 take short exclusive
-locks on `nodes`, `auth.users`, `agents`, `tool_groups` and `space_items`
-with a 30 s lock timeout: on a busy box a timeout fails the migrate and the
-roll reports an error. Each migration is all or nothing (one that ran stays,
-and the code before it runs on it); roll again when it is quieter.
-
-Before the roll, and again after, read the box's counts (read-only: one
-READ ONLY transaction, rolled back):
-
-```bash
-ssh <box> "docker exec -i mantle_pg psql -U postgres -d postgres -X -q" < scripts/client-level-counts.sql
-```
-
-It lists the logins by role, the client-level items, the links on them (and
-on folders above them), the public items and where their level came from,
-and the agents and tool groups at client or public. Look at section 4 first:
-an agent or tool group at client reads **client items only** after 0187
-(decision 3), not public ones any more.
-
-What admins see change:
-
-- **Access popover.** Client means "signed-in clients (and the team)", with
-  no link box; Public is the only level with an open link. Setting an item
-  to client removes its open link. Lowering a page, drawing or note lists
-  the embedded items that go down with it; a client item embedded in
-  something set to public goes to public with it.
-- **Shared links** (Team admin) show each link's level. The old client
-  links retired in client logins C3 (v0.232.328): they answer "Sign in as
-  a client" now, and Shared links lists them under Retired client links.
-- **What clients see** (Team admin): every client-level item, its old link,
-  the addresses a page was emailed to and the team or admin items it names.
-  Acknowledge it before the first client login: Add client and Issue sign-in
-  link (Team admin > Clients, v0.232.320 on) stay disabled until then, and
-  again once a new item goes to client.
-- **Needs-you notices**: a live "N waiting" notice for submissions, left
-  behind items and team requests (0186).
-- **The share tools refuse client items**: `node_share`, `page_share`,
-  `POST /api/shares` and the email link answer `client-links-retired`
-  (the email tool sends the page without a link and says why).
-- The member Library lists client items too, with a Client badge.
-
-After this roll the box has the rollback floor below: never below
-v0.232.318 once a client login exists.
-
-## Rolling to v0.232.333 (client logins C2/C2b audit fixes)
-
-An ordinary roll through the updater (`scripts/roll.sh`). What to know:
-
-- **Migration 0193 is cheap.** Two nullable columns on
-  `client_signin_codes` (`sent_at`, `send_error`) and two small new tables
-  (`client_signin_code_skips`, `client_signin_sender_folders`). Nothing is
-  rewritten; it keeps the 30 s lock timeout of the migrations before it.
-- **Emailed codes open at the deploy stop working.** A code is stored as an
-  HMAC now (keyed from `SESSION_SECRET`), and a code stored before is not,
-  so it no longer matches. A client who asked just before the roll asks
-  again. An old open code still holds back a new one for the same email and
-  address until it expires, 10 minutes at most. Sign-in links are not
-  affected.
-- **New sign-in links and invites carry `#code=`.** The owner UI must be
-  the paired jackdaw release that reads the code from the fragment: the
-  release's `client-pair.tag` must name it (v0.6.174 reads only `?code=`
-  and opens a `#code=` link with no code). The updater rolls the client to
-  the pair; a manual roll must too (step 3b). Links issued before carry
-  `?code=` and keep working.
-- **The Caddyfile changed**: the access log redacts sign-in codes and drops
-  the Referer header, and `/client-signin` and `/invite` are served with
-  `Referrer-Policy: no-referrer`. The shapes did not change. The updater
-  refreshes the Caddyfile and recreates caddy with the roll, unless the
-  box's Caddyfile has local edits or no baseline (drift: `update.log` says
-  `CADDYFILE NOT REFRESHED`, and `pnpm status` shows it). Then replace it by
-  hand: move the box's own routes into `infra/caddy/conf.d/`, copy the
-  release's `infra/caddy/Caddyfile` over it (or run
-  `sudo sh scripts/compose-adopt.sh --apply` in the stack dir), and
-  `docker compose up -d --no-deps --force-recreate caddy`.
-
-- **A sign-in sender chosen before keeps working**, and is not checked
-  again for a Sent folder. The folders that choice left out of mail sync
-  were not recorded (the record starts with 0193), so choosing None or
-  another sender later does not put them back: take them off the account's
-  excluded folders by hand if they should sync again.
-
-The operator guide: [client-logins.md](./client-logins.md).
-
-## Rolling to v0.232.342 (client logins C5) and its audit fixes
-
-Ordinary rolls through the updater (`scripts/roll.sh`). The C5 release pairs
-with the jackdaw C5 client (the release's `client-pair.tag`): members on an
-older client see client requests they cannot open. What to know:
-
-- **Migration 0194 takes short exclusive locks** on `space_items`,
-  `node_comments` and `nodes` (a new column and two triggers on
-  `space_items`, policies on all three, and the `node_comments` scope
-  CHECK dropped and added again, which reads the whole table once). It
-  keeps the 30 s lock timeout: on a busy box a timeout fails the migrate
-  and the roll reports an error; roll again when it is quieter. The
-  `author_role` backfill is one UPDATE over `space_items`.
-- **Rolling back to v0.232.341** after 0194 leaves behind: comments with
-  author kind `client` and scope `client` in `node_comments` (an admin
-  still sees them on the item), `space_submissions` rows, and
-  `space_items.author_role`. 341 reads none of them and has no client
-  space route. The floor below still holds.
-- **Migration 0195 (the C5 audit fixes) is cheap.** Two small new tables
-  (`client_comment_ledger`, `client_quota_refusals`), new versions of the
-  client total functions, and one partial index on `node_comments` (its
-  build blocks comment writes for as long as it takes, seconds on any box
-  we run). Nothing is rewritten; 30 s lock timeout.
-- **Page and note text now count** toward each client's 200 MB and the
-  brain-wide client total, and so does a deleted client's space until its
-  purge. A box whose clients were near 5 GB of files may refuse client
-  uploads right after the roll: read Team admin > Clients (or
-  `GET /api/team-admin/clients/storage`) and raise
-  `MANTLE_CLIENT_SPACES_TOTAL_BYTES` in `.env` if the disk has room
-  ([client-logins.md](./client-logins.md) section 9).
-- **Request bodies have a ceiling.** A JSON body over 8 MB (64 KB on
-  `/api/auth/*`, 128 MB on the owner's document routes and MCP) is refused
-  with 413 before it is read. Uploads keep their own caps and Caddy's 1 GB.
-- **Comment threads answer the newest 100** with `hasMore`; a client older
-  than the paired release shows those only, with no way to read further
-  back.
-- **Migration 0188 has no lock timeout** (client sign-in links, v0.232.318):
-  its foreign keys take SHARE ROW EXCLUSIVE on `auth.users` and wait for as
-  long as any open transaction holds that table. It ran on every box long
-  ago and is never edited (migrations are forward-only). A box rolling from
-  before v0.232.318 should roll with no long transaction open: a stuck
-  migrate there is a lock wait, not an error.
-
-## Rolling to v0.232.350 (client logins C6 and the whole-tier audit fixes)
-
-Boxes on v0.232.338 get C6 (v0.232.346 to 348) and these fixes in one roll,
-through the updater (`scripts/roll.sh`). The release pairs with the jackdaw
-client in `client-pair.tag`. What changes for a box:
-
-- **Who writes apps (C6, migration 0198).** Only admins create, change,
-  build, publish, share or delete apps. A team-level or client-level app is
-  a shared workspace: members write team AND client apps (before C6 they
-  wrote team apps only), and client logins write client apps. An app whose
-  data should stay read only for them needs the **Informational** switch on
-  its app page (`apps.data_read_only`, default off for every existing app).
-  Before the roll, list the apps this affects and decide per app:
-
-  ```sql
-  select n.id, n.title, n.audience from nodes n
-   where n.type = 'app' and n.audience in ('team', 'client') order by 2;
-  ```
-
-- **Client-level apps run the client tool rules for every runner**, an
-  admin's and a member's run included (only `client_shared_list`,
-  `client_shared_search`, `client_shared_open`). A client-level app that
-  declared other tools now gets an error for them; the author warnings on
-  `app_tools_set`, `app_publish` and `access_set` name each one. Team,
-  admin and public apps keep their runner's rules.
-- **App databases are bounded**: one file grows to at most 256 MB
-  (`APP_SQL_MAX_DB_MB` in `.env`; `docker-compose.yml` passes it, so the
-  roll refreshes compose), a reply to at most 8 MB, and one caller runs one
-  statement at a time. A write past the cap fails with "database or disk is
-  full" and rolls back. Check the largest app database before the roll
-  (`du -sh <stack>/data/app-dbs/*/*`) and raise the setting if one is near.
-- **Exports of client apps** (a brain Table mirrored from a client-level
-  app, or one a client wrote) index at retrieval depth only and commit at
-  most once per 10 minutes. Facts extracted from such a Table before the
-  roll stay until it is re-extracted.
-- **The app access log** keeps 90 days (`app-access-log-reap` in the
-  maintenance runner), logs a caller's reads at most once a minute per app,
-  and client broker calls no longer write an `api.write` audit row.
-- **App write tools are owner only**: `app_create`, `app_build`,
-  `app_db_seed` and the other app write tools refuse a team or client
-  surface and MCP callers that are not the owner.
-- **Deleting a client login** also deletes that client's comments; its chat
-  thread goes with the login as before. Disable keeps both.
-- **Migrations**, all re-runnable with a 30 s lock timeout:
-  - 0196 adds `space_items.taken_title` and fills it for taken items (one
-    UPDATE).
-  - 0197 adds three small admin-level tables (`client_sourced_nodes`,
-    `conversation_taints`, `client_request_filings`).
-  - 0198 adds `apps.data_read_only` (a metadata-only default).
-  - 0199 adds `app_databases.client_written_at` (metadata only).
-  - 0200 adds a trigger on `auth.users` that refuses any role change to or
-    from `client` (a short lock on `auth.users`).
-- **Rolling back** to v0.232.338 leaves the new columns, tables and the
-  trigger in place; 338 reads none of them and never changes a client's
-  role. Its members lose write access to client apps again.
+The client logins releases (v0.232.318 to v0.232.350, migrations 0186 to
+0200) are behind every box we run. Their roll notes (the client level, the
+sign-in links and codes, the client space quotas, client apps) are in the
+repository history before workspaces W8f. Client logins themselves are
+gone since W8a (below, and [client-logins.md](./client-logins.md)); the
+rollback floor they set still stands (Rollback, below).
 
 ## Rolling to the Recall R5 release (page-built maps retired, migration 0209)
 
@@ -598,7 +419,10 @@ it fills each link's served list from the levels.
 **A box with clients.** A brain that is not on workspaces because it has
 client logins or client-level items (plan 21.9) is not switched by 0261 and
 keeps its levels, but the code of this release reads no level: its members,
-clients and assistants would read nothing. `scripts/roll.sh` (step 2a) and
+clients and assistants would read nothing. (Since W8a such a box has only
+former clients: its manual switch also needs
+`SET LOCAL mantle.ws_former_clients = 'reviewed'` in the same transaction,
+below.) `scripts/roll.sh` (step 2a) and
 the updater refuse a roll to v0.239.90 or later on such a box (above). Set
 its workspaces up by hand first (plan 21.9), then roll; once it has its
 Admin workspace the check passes. The SQL is plain and reads the
@@ -830,6 +654,42 @@ a delete or a move needs that login's rights on the item), the sandbox maker
 rule (a login works only in the sandboxes it made) and the vault pairing
 rule still ask the login acting. A login that is not a user of the Admin
 workspace is refused on the Admin assistant and its helpers.
+
+## Rolling to logins carry nothing (W8a, migration 0272)
+
+An ordinary roll through the updater (`scripts/roll.sh`). Migration 0272
+archives every client login (`archive_client_logins`), disables it, ends
+its sessions, revokes its device tokens, API keys and OAuth grants, unbinds
+its peers, and keeps it as a disabled member row. The email-code tables and
+the retired static login tokens are archived as metadata and dropped. Every
+archive is counted (a mismatch rolls the migration back), every drop is
+RESTRICT, and a second run changes nothing. The whole model:
+[workspaces.md](./workspaces.md); the operator detail:
+[client-logins.md](./client-logins.md).
+
+A brain not on workspaces yet that ever had a client login reports
+"clients present" and is never switched at boot. `scripts/roll.sh` and the
+updater refuse to roll such a box to v0.239.90 or later ("Rolling to the
+workspaces switch", above), so this path is only for a box that did not
+come through that gate. Set its workspaces up by hand, then run the switch
+by hand in one transaction, as the database superuser (EXECUTE on
+`mantle_ws_migrate_locked()` is revoked from PUBLIC):
+
+```sql
+BEGIN;
+SET LOCAL mantle.ws_former_clients = 'reviewed';
+-- a large brain: SET LOCAL mantle.ws_switch_budget = '10 minutes';
+SELECT * FROM mantle_ws_migrate_locked();
+-- a row with section 'skip' means nothing was switched: ROLLBACK
+COMMIT;
+```
+
+The setting covers former client logins only. Client level items (on
+`nodes`, an `audience`, `inherited_level` or `embedded_level` of `client`)
+still block the switch: clear them first. Before COMMIT, check that the
+result has no `skip` row; one names why the brain was not switched. Time
+the switch on a copy first and give a large brain a budget, as "The switch
+at a later start" above says.
 
 ## Rollback
 

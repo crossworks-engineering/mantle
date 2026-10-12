@@ -326,9 +326,11 @@ an agent to one login. Moving parts:
   a co-admin already chatting to the shared agent would keep landing there. The
   thread payload carries `assigned: {slug, assignedAt}`; the client adopts a
   newer `assignedAt` once against a `localStorage` watermark.
-- **Not privacy.** Content stays keyed to the anchor, every login sees every
-  agent in the picker, and `replay_window` replays any thread. The brain is
-  still the trust boundary; this is thread separation only, and the UI says so.
+- **Not privacy, then.** Before workspaces, content stayed keyed to the
+  anchor, every login saw every agent in the picker, and `replay_window`
+  replayed any thread: thread separation only. Since W7c each user reads
+  only their own threads (section 6d), and replay reads only the asking
+  login's own (docs/workspaces.md).
 - **Releasing never deletes.** `DELETE /api/users/[id]/agent` only clears the
   binding; the agent and its archive stay, per the reasoning in migration 0127.
 
@@ -429,9 +431,7 @@ archived thread is read-only: there is no route that writes into it.
 **Deleting an agent** with `conversation=delete` also removes its archive
 summary notes; `chat_threads` rows CASCADE with the agent.
 
-**Not yet** (later phases): member and client chats (`team_messages`, per
-login: their summary stays on the thread row, never a brain node, because
-private chats are never indexed), the mobile app, auto New chat after idle
+**Not yet** (later phases): the mobile app, auto New chat after idle
 time (Jason: off), and the Forum v2 thread list (section 10a of the forum plan:
 archived threads list under "your agent").
 
@@ -463,7 +463,7 @@ owner's history with the Admin assistant).
   `assistant_messages` rows of the Team workspace's assistant now (same ids,
   `data.digest_skip`, `data.trace_id`, `data.used_private`); team-portal
   contact rows are history in `archive_team_messages`; `team_messages` is
-  frozen until W8. The copy raised no `summarize_due` or `conversation_changed`
+  frozen. The copy raised no `summarize_due` or `conversation_changed`
   (both stay quiet where `mantle.conversation_notify = off`). A member's
   finished reply raises `login_notice` from `assistant_messages`.
 - **Routes.** `/api/assistant/*` (turn, stream, messages, thread, threads,
@@ -472,8 +472,9 @@ owner's history with the Admin assistant).
   workspace other than Admin runs on the workspace turn engine
   (`server/web/lib/workspace-turn.ts`: no Journal, no "About the user", the
   member limits for a login that is not an Admin user). `/api/member/chat*`
-  and `/api/team-admin/member-chats` answer 410; `team_chat_list` and
-  `team_chat_read` read only the old portal threads.
+  and `/api/team-admin/member-chats` answer 410; the team chat tools
+  (`team_chat_list`, `team_chat_read`) are retired (W7b), and the old portal
+  threads are history in `archive_team_messages`.
 
 ## 7. Risks & call-outs
 

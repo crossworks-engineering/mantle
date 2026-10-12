@@ -5,14 +5,14 @@ Make one of your mini-apps the home page every member login sees, and feed it th
 ## Before you start
 
 - A published app ([Build apps from an MCP client](06-mcp-apps.md)).
-- At least one member login ([Member and client logins](../05-admin/07-logins.md)).
+- At least one member login ([Add logins](../05-admin/07-logins.md)).
 
 ## Pin the app
 
 1. Open **Team** in the menu (under Review), then the **Settings** tab.
 2. Under **Member home app**, pick the app in **Home app**.
 
-Picking an app sets it to Team level, so every member can run it. Members always get the published build. If the app breaks (unpublished, a failed build, deleted), members get the **Built-in home** instead. Pick **Built-in home** to go back by hand.
+The app must already be shared with the **Team** workspace (Grant Access on the app). Picking an app that Team does not hold is refused with "Share the app with Team in Grant Access first." Picking changes no grant. Members always get the published build. If the app breaks (unpublished, a failed build, deleted), members get the **Built-in home** instead. Pick **Built-in home** to go back by hand.
 
 ## Read the member's data
 
@@ -28,7 +28,7 @@ const hub = await host.hub.get();
 | --- | --- |
 | `siteName` | Your brain's site name |
 | `memberName` | The signed-in member's name |
-| `sections` | The newest team-level pages: `token`, `title`, `icon`, `summary`, `updatedAt` |
+| `sections` | The newest pages in the member's Library: `token`, `title`, `icon`, `summary`, `updatedAt` |
 | `counts` | How many items of each kind the member's Library holds (`page`, `note`, `draw`, `table`, `file`) |
 | `apps` | The other apps members may run: `token`, `title`, `description` |
 

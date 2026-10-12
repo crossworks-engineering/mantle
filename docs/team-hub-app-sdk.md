@@ -5,8 +5,8 @@
 > portal; `/hub` now redirects to `/login`. The one host left is the **member
 > home**: a member login's home page runs the pinned app, and `hub.get`
 > answers from `GET /api/member/home` in the same `HubData` shape (section 3,
-> "The member home is a second host", now the only one;
-> [member-logins.md](member-logins.md) section 7). Designation is unchanged
+> "The member home is a second host", now the only one; who runs an app:
+> [workspaces.md](workspaces.md), "Apps"). Designation is unchanged
 > (`PUT /api/team-admin/hub-app`, pref `teamHubAppId`). Where this guide says
 > `/hub`, the team token gate, the Forum link or the signed team bearer, read
 > it as history.
@@ -41,7 +41,7 @@ sandbox is unchanged from ordinary mini-apps: opaque-origin iframe, no
 network, no cookies; the only egress is the postMessage bridge.
 
 **The built-in hub is the safety net.** If the designation chain breaks at any
-link, pref unset, app deleted, build red, share revoked, bundle fails to fetch
+link, pref unset, app deleted, build red, grant removed, bundle fails to fetch
 _or_ fetches but never boots, members get the built-in hub. Designation can
 never cost a team a working page.
 
@@ -50,19 +50,21 @@ never cost a team a working page.
 ```
 prefs.teamHubAppId  →  app exists under this owner
                     →  green PUBLISHED build
-                    →  app at a level members may run (team, client, public)
+                    →  a workspace of the member holds the app (a grant)
 ```
 
-The home app may be a public app (members may run one), but the OTHER apps
-that `host.hub.get()` answers are the launcher's list: team and client apps
-only, never a public one (contact shares plan P0, 2026-10-01). Public means
-"anyone with the link", so a public app is in no member list.
+The OTHER apps that `host.hub.get()` answers are the launcher's list: the
+apps a workspace of the member holds, with a green published build, less
+the home app. An open link adds no grant, so a linked app is in no member
+list unless a workspace of the member holds it.
 
-Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) puts an
-app still at admin at team level, then sets the pref, and answers
-`{ appId, levelChanged }`; it makes no share link (team links were retired in
-member logins Phase 6 stage 6). Undesignating
-clears the pref only. Members are always served the **published** build,
+Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) needs
+an app the Team workspace already holds: else it answers 409 `not_in_team`,
+and the admin shares the app with Team in its Grant Access panel first. It
+then sets the pref and answers `{ appId, levelChanged: false }`. It makes
+no grant and no share link (team links were retired in member logins
+Phase 6 stage 6). Undesignating clears the pref only; the app keeps its
+grants. Members are always served the **published** build,
 drafts never leave the owner editor.
 
 Brokered traffic (bundle, tool calls, SQLite) goes through the member app
@@ -123,11 +125,12 @@ Rules that bind the SDK (and any future addition to it):
   (`/api/member/home` now; the retired `/api/team/hub` before Phase 6):
   extending `HubData` means extending that route, where it is gated and
   audited.
-- **The member home is a second host** (member logins Phase 4b,
-  [member-logins.md](member-logins.md) section 7). The same app, pinned as
-  the hub and set to team level, is the members' home page. There `hub.get`
-  answers from `/api/member/home` in the same `HubData` shape, with these
-  differences: `sections` are the newest team-level pages (a section's
+- **The member home is a second host** (member logins Phase 4b; who runs
+  an app: [workspaces.md](workspaces.md), "Apps"). The same app, pinned as
+  the hub and shared with the Team workspace, is the members' home page.
+  There `hub.get` answers from `/api/member/home` in the same `HubData`
+  shape, with these differences: `sections` are the newest pages in the
+  member's Library (a section's
   `token` is the page id, and `openBriefing` opens it in the member Library),
   `counts` are Library counts per kind (`page`, `note`, `draw`, `table`,
   `file`), and `apps` are the other apps members may run (`token` is the app
@@ -280,7 +283,7 @@ reserved, not implemented. Propose additions there rather than overloading
 | Copy / tiles (Tier 1)  | edit `content.ts` → `app_build` → `app_publish` | next member page load     |
 | Tiles (Tier 2)         | edit table → `table_commit`                     | next hub load, no publish |
 | Layout / new section   | edit `components/` → build → publish            | next page load            |
-| Briefing set / order   | set pages to team level or back (newest first)  | next hub load             |
+| Briefing set / order   | grant pages to the members' workspace or remove | next hub load             |
 | Revert to built-in hub | Team admin → Hub app → "Built-in hub"           | immediately               |
 
 Members with `/hub` already open see updates on their next load; there is no
@@ -305,7 +308,8 @@ that must survive a reload goes in SQLite (Tier 3).
 
 - **Members see the built-in hub instead of the app**: the chain broke.
   Check, in order: pref set (Team-admin picker shows the app), published build
-  green (`app_get`), app at team level or lower. The picker labels a
+  green (`app_get`), a workspace of the member holds the app (its Grant
+  Access panel). The picker labels a
   designated app whose build went red.
 - **Members see "Loading…" then the built-in hub**: the bundle booted badly
   (module-level throw) or an import failed; the shell's ready-watchdog fired.

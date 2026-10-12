@@ -126,21 +126,22 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
   a terminal skip, no model). The extractor computes a page's or drawing's
   text from its doc or scene, never from the stored copy. The mark clears
   when the extractor next summarises the item after the re-fold.
-- **Client and public pages index only what their level reads** (client
-  logins, audit B1). A mention, a link or a page link card of an item the
-  level cannot read is written as "Private item"; a readable one carries its
-  item's current title. The filter is the client redactor
-  ([client-logins.md](./client-logins.md) section 5), with the page's level
-  deciding what is readable.
-- **A level change re-folds `doc_text` by SQL only.** When a level moves
-  (the page's own, an embed that follows it down, a link that makes it
-  public, an Accept), `refoldPageTexts` recomputes the text of that page and
-  of every client or public page that names the item. It writes `doc_text`
-  and nothing else: no extraction, no summary, no chunks, no embedding, no
-  version (cost safety: a level change never starts model work). Since
-  always fold no embed text is ever in `doc_text`, so a level change only
-  changes the "Private item" labels; the summary and chunks catch up at the
-  page's next commit.
+- **A page indexes another item's title only where its readers may see
+  it** (workspaces plan 5.3). A mention chip, a link or a page link card of
+  another item carries that item's current title only when every workspace
+  that holds the page also holds the item; otherwise it is written as
+  "Private item". An entity mention keeps its label (the author's own
+  words), and a page no workspace holds is not filtered
+  (`packages/content/src/pages/level-text.ts`). An open link renders by its
+  served list instead ([sharing.md](./sharing.md)).
+- **A grant change re-folds `doc_text` by SQL only.** When grants change
+  (the page's own, or those of an item it names), `refoldPageTexts`
+  recomputes the text of that page and of every page that names the item.
+  It writes `doc_text` and nothing else: no extraction, no summary, no
+  chunks, no embedding, no version (cost safety: a grant change never
+  starts model work). Since always fold no embed text is ever in
+  `doc_text`, so a grant change only changes the "Private item" labels;
+  the summary and chunks catch up at the page's next commit.
 
 ---
 

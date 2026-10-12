@@ -35,7 +35,7 @@ Pick a theme by contrast. Success, warning and error colours should be easy to t
 
 ## Password and sign-in
 
-Change your password, and see or end signed-in devices, on **Settings > Logins**. See [Member and client logins](../05-admin/07-logins.md).
+Change your password, and see or end signed-in devices, on **Settings > Logins**. See [Add logins](../05-admin/07-logins.md).
 
 ## Next
 

@@ -13,8 +13,10 @@ lists, callouts and diagrams.
 - Edits are saved as a **draft**. Readers keep seeing the last committed
   version until you press **Commit**.
 - **Revert** throws the whole draft away and goes back to the last commit.
-- **Access** sets who can see the page: Admin, Team, Client or Public. Public
-  gives a read-only link anyone can open.
+- **Access** lists the page's home workspace and every workspace it is
+  shared with. Share it with a workspace to let its users read it, with
+  **Write** on to let them edit it. An open link gives a read-only link
+  anyone can open.
 
 ## Assistant
 

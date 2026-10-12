@@ -19,7 +19,7 @@ Say which one you want when you ask Appsmith, for example "keep the entries in t
 Each app gets one private database. No other app can open it.
 
 - Appsmith creates the tables and can pre-load reference data, such as a price list from a spreadsheet you name.
-- Users of a shared app at **Team** or **Client** level can write to it, so one app can be a shared job log.
+- Users of a workspace the app is shared with can write to it when that grant has **Write** on, so one app can be a shared job log.
 - It is included in backups. **History > Take snapshot** keeps a copy you can restore.
 
 ## Live data through tools
@@ -29,7 +29,7 @@ Each app gets one private database. No other app can open it.
 3. If the service needs an API key you have not stored, Appsmith stops and says which key to add. Add it under **Settings > API keys**, then ask it to carry on. See [Models and API keys](../05-admin/05-models-and-keys.md).
 4. The tool is added to the app's list of allowed tools. The app calls it through Jackdaw. Your key never reaches the app.
 
-An app at **Team** level or lower may use a connector's tools when the connector's level (**Settings > Tool groups**) is at the app's level or lower: team for a team app, client for a client app. A connector tool you marked read-only only reads; one without the mark can change data. Any other outside tool needs **External access** on **Settings > Tools**. A public link gets no tools at all.
+An app shared beyond the Admin workspace may use a connector's tools when the connector is attached to every workspace that holds the app (**Settings > Workspaces**), with **Write** on in each for a tool that changes data. A connector tool you marked read-only only reads; one without the mark can change data. Any other outside tool needs **External access** on **Settings > Tools**. A public link gets no tools at all.
 
 For more on building tools, see [Toolsmith](../07-api/05-toolsmith.md).
 
@@ -49,7 +49,7 @@ To see an app's table in **Tables**, ask the assistant: "Export the jobs table o
 ## If it fails
 
 - **The app shows no data**: usually an API key is missing, or the tool is not on the app's allowed list. Ask the assistant to check and fix it with the app open.
-- **It works for you but not for a member**: the connector sits at admin level (raise its level), or an http tool needs **External access**.
+- **It works for you but not for a member**: the connector is not attached to every workspace that holds the app (attach it to each on **Settings > Workspaces**; a tool that changes data needs the connector's Write on in each), or an http tool needs **External access**.
 
 ## Next
 

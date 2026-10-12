@@ -235,7 +235,7 @@ took four tries):
   `app-access-log-reap` (app access log rows older than 90 days, and the
   contact share trail `share_access_log` by the same 90 days since
   migration 0214, [sharing.md](./sharing.md) section 4b; plain SQL
-  in batches, see [client-logins.md](./client-logins.md) section 10; by hand
+  in batches, see [mcp-as-a-login.md](./mcp-as-a-login.md), "App data"; by hand
   `pnpm -C server/web app-access-log:reap`, dry run unless `--apply`),
   `app-trash-purge` (deleted apps past their 30 days in Recently deleted:
   their history rows and snapshot files; by hand

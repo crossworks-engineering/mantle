@@ -9,12 +9,11 @@ The connector URL is the same one the owner uses, and every login gets the same 
 | An admin          | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces, held to their Admin areas   |
 | A member          | Signs in at the connector URL, or sends their own API key | The tools, in their workspaces                              |
 | A peer Mantle     | Its peer token, with **Acts as** set                      | The tools of the login it acts as, held to the peer's Write |
-| A client          | Refused                                                   | Nothing: a client login has no MCP                          |
 
 ## Before you start
 
 - The remote connector is on ([Connect Claude over MCP](01-connect-claude.md)).
-- The person has a login and is a user of the workspaces they should reach ([Member and client logins](../05-admin/07-logins.md)).
+- The person has a login and is a user of the workspaces they should reach ([Add logins](../05-admin/07-logins.md)).
 
 ## Let someone connect
 
@@ -68,16 +67,16 @@ Admins no longer make tokens for other logins. Tokens made before (`mtlmcpk_...`
 ## Let a peer act as a login
 
 1. Open **Settings > Peers** and pick the peer.
-2. Set **Acts as** to the owner or a member.
+2. Set **Acts as** to a login.
 3. Leave **Write** off unless the peer must change things.
-4. For a peer acting as the owner, list any extra tools under **Risky tools allowed**, for example `web_search`. Tools that spend, send or publish stay blocked until you name them.
+4. List any extra tools under **Risky tools allowed**, for example `web_search`. Tools that spend, send or publish stay blocked until you name them, and a tool the login itself may not use stays blocked anyway.
 
 Changing **Acts as** turns **Write** off again.
 
 ## What ends access
 
 - Removing the login from a workspace ends its reach there at once.
-- Disabling the login, a password change, a role change or "sign out everywhere" ends its sign-ins and API keys. A peer that acts as it goes back to acting as nobody. Its **Write** and risky tools are kept, so setting **Acts as** again restores it.
+- Disabling the login, a password change, a role change or **Sign out everywhere** ends its sign-ins and API keys. A peer that acts as it goes back to acting as nobody. Its **Write** and risky tools are kept, so setting **Acts as** again restores it.
 - The person disconnecting that client in their own **Settings > MCP**, or revoking a key.
 - Turning an app's **MCP access** off ends MCP on that app, for everyone.
 

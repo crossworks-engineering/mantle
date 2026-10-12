@@ -136,15 +136,19 @@ const me = await host.me();
 // { id: 'u_3qK…', name: 'Pat', kind: 'member' }
 ```
 
-| Field  | What it is                                                                                                                               |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`   | Stable for this person **in this app only**. `null` on an open link.                                                                     |
-| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link.                                           |
-| `kind` | `'admin'` (the owner or an admin login), `'member'`, `'client'`, `'contact'` (a Contact share), or `'public'` (an open /s link: nobody). |
+| Field  | What it is                                                                                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `id`   | Stable for this person **in this app only**. `null` on an open link.                                                         |
+| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link.                               |
+| `kind` | `'admin'` (the owner or an admin login), `'member'`, `'contact'` (a Contact share), or `'public'` (an open /s link: nobody). |
+
+A row an app wrote before workspaces W8a may hold `'client'`: the client
+logins are gone ([client-logins.md](./client-logins.md)), so no run gets
+that kind now.
 
 There is **no email**: an app is code the admin may not have written.
-`host.me()` works on every surface (the editor preview, the member and
-client shells, a Contact share, an open link) with no round trip: the
+`host.me()` works on every surface (the editor preview, the member
+shell, a Contact share, an open link) with no round trip: the
 server bakes the answer into the app's frame. Use it to greet, to show
 "you", or to filter a view. Do not build permission logic on it: the app
 can change its own copy.
@@ -243,31 +247,38 @@ So to show your data in an app, you give it a tool that returns that data:
 
 - **Declare a built-in tool** that returns what you need (`note_list`,
   `table_rows_list`, `table_query`, `search_nodes`, …). This is the kind
-  that works for **members**: members running a team app get read-only
-  built-in tools, plus an MCP connector's tools when the connector's level
-  is team or lower (a tool without the admin's read-only mark writes), and
-  an http tool only when an admin switched "External access" on for it
-  (docs/member-logins.md). An open share link gets no tools at all.
-- **Admin-only apps** may also use a purpose-built tool from the Toolsmith
-  MCP tools: `recipe_tool_create` composes existing tools into one tool that
-  returns exactly the shape the app needs; `api_tool_create` wraps an
-  external HTTP API. Members and share links are refused recipe and shell
-  tools always (they run under the brain), and an http tool unless an admin
-  switched "External access" on for it, so never give a recipe to an app you
-  set to team level or share.
+  that works for **members**: a member's run of an app gets read-only
+  built-in tools, plus a connector's tools when the connector is attached
+  to every workspace that holds the app (a tool without the admin's
+  read-only mark writes), and an http tool only when an admin switched
+  "External access" on for it (docs/member-logins.md). An open share link
+  gets no tools at all.
+- **Apps only the Admin workspace holds** (and that an Admin user built)
+  may also use a purpose-built tool from the Toolsmith MCP tools:
+  `recipe_tool_create` composes existing tools into one tool that returns
+  exactly the shape the app needs; `api_tool_create` wraps an external HTTP
+  API. Team rules and share links refuse recipe and shell tools always
+  (they run under the brain), and an http tool unless an admin switched
+  "External access" on for it, so never give a recipe to an app you share
+  with another workspace or by link.
 
-Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app at
-team level or lower the result carries `warnings`: one per declared tool the
-app's level refuses (see "Team apps" below).
+Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app
+that runs at team rules (below) the result carries `warnings`: one per
+declared tool those rules refuse (see "Team apps" below).
 
-**A client-level app's tools never read above client, whoever runs it.** A
-client-level app runs the client rules for every runner, yours included
-(only `client_shared_list`, `client_shared_search` and `client_shared_open`,
-on the client role): what a tool returns can end up in the app's shared
-database, which every client reads with any SQL. Any other app keeps the
-runner's rules: your run of an admin, team or public app runs any declared
-tool, and a member's run of a team or public app uses the member rules below. Only the owner authors apps: the app write
-tools refuse a team or client surface.
+**Which rules an app's tools run under.** Everyone who runs an app shares
+its database, and whatever a tool returns can end up there. So an app reads
+only what every workspace that holds it reads (`appToolLevel`). An Admin
+user's run of an app that only the Admin workspace holds keeps that user's
+own rules and runs any declared tool. Every other run uses the team rules:
+any run of an app another workspace holds (an Admin user's run included),
+and every member's run. The author ceiling (see "Members build apps") puts
+an app a user outside the Admin workspace built at team rules for every
+runner too. A run at team rules reads through the app: what its holding
+workspaces read, met with the runner's own workspaces, never the runner's
+other workspaces. There are no client rules and no `client_shared_*`
+tools: the client logins are gone (workspaces W8a). Any user may author apps in a
+workspace they moderate (see "Members build apps").
 
 **Recommended flow (this is the synergy):** first _explore the data yourself_
 with your own MCP read tools (`search`, `table_list`, `note_list`, …) to learn
@@ -286,7 +297,7 @@ Each statement may run 5 seconds at most and return 50,000 rows and 8 MB at
 most (add a LIMIT, select fewer columns or aggregate), and no single string or
 blob may pass 16 MiB. The whole database file may hold 256 MB
 (`APP_SQL_MAX_DB_MB`): a write past it fails with "database or disk is full"
-and rolls back. Each login (the admin too), member login, client login or share link runs
+and rolls back. Each login (an admin or a member) and each share link runs
 one statement at a time, and the next waits its turn (a burst of more than 16
 at once answers 429 busy), so prefer one query that joins over many small
 ones. The declared schema runs under the same rules as one transaction (30
@@ -348,8 +359,8 @@ and through `app_snapshot_list`.
   toward that budget: the automatic ones (before a restore, a schema change,
   a delete, an import, an MCP write, and the nightly ones) never do, and
   neither do the ones a member took before an admin approved or deleted
-  their app. A member's own snapshots count toward the same budget in their
-  own space.
+  their app. A member's own snapshots count toward a budget of the same
+  size kept for that login (the snapshots it took).
 
 **Restore** (`app_snapshot_restore`, or the History tab) has three modes:
 
@@ -381,7 +392,8 @@ whose database file was already lost keeps a code-only snapshot.
 When a broker answers a running app with an error, it logs one row: a
 failed statement (the message the app got, the SQL), a tool call that was
 refused or failed (the slug and the message), who ran the app (owner,
-member, client, contact or public) and when. `app_errors` reads them for an
+member, contact or public; a row from before workspaces W8a may say
+client) and when. `app_errors` reads them for an
 agent (`since_hours` narrows it); `GET /api/apps/:id/access-log?kind=error`
 for the Activity tab. A server fault is logged with the generic text the app
 got, never the server's own. A busy wait (429) is not an error. The log is
@@ -429,8 +441,11 @@ Agents and MCP clients do the same with tools (owner only, group `apps`):
 exports, and returns its id) and `app_import` (a `file_id`, `name`,
 `with_data`).
 
-None of the three carries the original's sharing, level, history or table
-exports (an export has one master): the new app is admin-only in Unsorted.
+None of the three carries the original's grants, public link or contact
+shares, history or table exports (an export has one master): the new app
+is a new item, homed where it is made (the home rule in
+[workspaces.md](./workspaces.md)) with no other grant. Share it again by
+hand.
 `POST /api/apps/import` (JSON source tree, create or update) stays for
 authoring tools such as `apps:push`.
 
@@ -447,10 +462,11 @@ app_table_export_remove(id, table)        → dissolves the link
 Direction of authority: **the app is the master.** After an app write
 (`host.db.exec`, member or owner, and `app_db_seed`) the platform
 re-materializes the Table from the SQLite rows — debounced, hash-gated (an
-unchanged table never re-commits), pure SQL, no LLM. An app at client level
-re-commits at most once every 10 minutes, and the Table of an app clients
-write is indexed at retrieval depth only (no facts or entities from client
-text). A sync a restart interrupted is not lost: the write marks the export
+unchanged table never re-commits), pure SQL, no LLM. The Table of an app
+written from outside the team is indexed at retrieval depth only (no facts
+or entities from that text): a Contact share with Can write marks the app
+as written from outside on its first write, and so did a client login
+before workspaces W8a. The mark is never cleared. A sync a restart interrupted is not lost: the write marks the export
 dirty in Postgres, and the server resumes it at boot. Typed columns derive
 from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
 DATE/DATETIME → date/datetime, else text).
@@ -490,16 +506,19 @@ status, due_at)` is far more useful to it than `t(a, b, c)`.
 This is on by default for all the user's apps, the brain/team is the trust
 boundary, so there's no per-app "make readable" switch.
 
-## App data over a member's or client's own MCP
+## App data over a user's own MCP
 
-Members and clients can reach an app's data from their own MCP client
-(Claude Code, Claude Desktop) with `app_data_list`, `app_data_schema`,
-`app_data_query` and `app_data_write`, but only on an app whose **MCP
-access** switch is on (beside **Informational**; off by default, an admin
-sets it). They reach it exactly as they run it in the browser: the same
-levels, the same published build, the same read or write rule, and their
-login's **Write** switch on top. `:host_me_*` is filled for them, so a row
-they write records who wrote it the same way the app does.
+A user can reach an app's data from their own MCP client (Claude Code,
+Claude Desktop) with `app_data_list`, `app_data_schema`, `app_data_query`
+and `app_data_write`, but only on an app whose **MCP access** switch is on
+(beside **Informational**; off by default, an admin sets it). They reach it
+exactly as they run it in the browser: an app a workspace of theirs holds,
+the same published build, the same read or write rule (the grant's Write
+switch, never on an Informational app), and their connection's write on
+top (a read-only grant, or a key or peer without write, only reads).
+`:host_me_*` is filled for them, so a row they write records who wrote it
+the same way the app does. The details:
+[mcp-as-a-login.md](./mcp-as-a-login.md).
 
 What follows for your app:
 
@@ -579,28 +598,27 @@ view over data it already holds (or data baked into its bundle).
 
 > This changed: earlier, a public link could invoke an app's declared tools.
 > It can't anymore; declaring a data tool does nothing for a public share.
-> If your app needs brain data, it is for **members**: set the app to team
-> level and they run it from their own login.
+> If your app needs brain data, it is for **members**: share it with their
+> workspace (its Grant Access panel) and they run it from their own login.
 
-A public app is **not listed** for members (contact shares plan P0,
-2026-10-01): Public means "anyone with the link" for an app as for every
-other kind, so it is in no member launcher and not in the member home's
-app list. A member who has the link still runs it, read only.
+An open link adds no grant: the app shows in a member's launcher and on
+the member home only when a workspace of theirs holds it. Anyone who has
+the link, a member too, runs it there read only.
 
 ### Shared with a contact (one outsider)
 
 Share, "Share with contact": pick one or more contacts whose sharing is on
 (docs/contacts.md section 2b). Each gets their own link, opened with their
-own code; the app's level does not change, so an admin app stays admin and
-the team never sees it. The contact reads the app's SQLite
+own code. The share adds no grant: the workspaces that hold the app do not
+change, and nobody else gains it. The contact reads the app's SQLite
 (`host.db.query`). With **Can write** on (per contact, off by default) the
 contact also writes it (`host.db.exec`): the write schedules the app-table
 export sync like a member's. **Informational** wins over Can write: on an app
-an admin marked informational a contact only reads, as members and clients
-do. Never brain tools: `host.tools.call` is
-refused, except for an outside tool the app declares: a connector's tool at
-public level, or an http tool an admin switched "External access" on for
-(docs/member-logins.md). An open
+an admin marked informational a contact only reads, as members do. Never
+brain tools: `host.tools.call` is refused, except for an http tool the app
+declares that an admin switched "External access" on for
+(docs/member-logins.md). A contact share holds no workspace, so it never
+runs a connector tool (connectors are attached to workspaces). An open
 link never calls a tool. The app's Activity tab names the contact. See
 docs/sharing.md section 4b.
 
@@ -619,36 +637,48 @@ off.
 
 ## Team apps (members run them)
 
-Members (member logins, [member-logins.md](member-logins.md) section 7) run
-apps from their own shell. Set the app's level to **Team** (its Access
-control) and publish it; members then find it under Apps. They run the
-PUBLISHED build only and never edit it.
+Members (who runs an app: [workspaces.md](workspaces.md), "Apps") run
+apps from their own shell. An app is held by the workspaces its grants
+name: share it with a workspace in its Grant Access panel and publish it.
+The users of every workspace that holds it then find it under Apps. They
+run the green PUBLISHED build only and never edit it from there.
 
-- **Tools:** a declared **read-only built-in** tool that an enabled tool
-  group at team level or lower holds (usually `team-read`), with no
-  confirmation. It runs at the team level: it reads team-, client- and
-  public-level items, never admin ones. Recipe and shell tools are refused,
-  so are http tools unless an admin switched "External access" on for them,
-  and MCP connector tools unless the connector's level is team or lower,
-  so are built-ins that write, and so are `summarize_text`,
-  `search_chunks` and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
-  warning for each declared tool members would be refused.
-- **Data:** `host.db.query` and `host.db.exec` both work on a team- or
-  client-level app (unless an admin marked it informational); on a
-  public-level app members only read. Below admin a write changes ROWS only:
+- **Tools:** an app any workspace other than Admin holds runs its tools at
+  team rules, for every runner, an Admin user's run included; so does an
+  app under the author ceiling (see "Members build apps"). Team rules allow
+  a declared **read-only built-in** tool that an enabled system-wide (not
+  Admin-only) tool group holds, with no confirmation and no paid model
+  work. It reads through the app: what the workspaces that hold the app
+  read, met with the runner's own workspaces. Recipe and shell tools are
+  refused; so are http tools unless an admin switched "External access" on
+  for them; so are built-ins that write or spend, and `my_items_list`,
+  `my_item_open`, `summarize_text`, `extract_from_image`, `search_chunks`,
+  `team_request_create` and `read_result`. A connector tool runs only when
+  the connector is attached to every workspace that holds the app and to a
+  workspace of the runner. A connector tool without the admin's read-only
+  mark is a write: it needs the connector's **Write** tick on in every
+  workspace that holds the app, and in a workspace the runner moderates.
+  `app_tools_set`, `app_publish` and a grant change list a warning for each
+  declared tool these rules refuse.
+- **Data:** `host.db.query` works for every runner. A member's
+  `host.db.exec` works when a workspace of theirs holds the app with
+  **Write** on and an admin has not marked the app informational; else the
+  write answers 403 `read-only`. Below admin a write changes ROWS only:
   declare every table and index with `app_db_schema_set`. A
   `CREATE TABLE IF NOT EXISTS` (or `CREATE INDEX IF NOT EXISTS`) on an object
   that already exists is answered as a no-op, but a new table, `ALTER`,
-  `DROP`, `PRAGMA` or a transaction from a member, client or contact is
-  refused with an error the app can catch. The database is shared
-  by the whole team (not one per member): design for that. To record which
-  member wrote a row, fill its columns with `:host_me_id` and
+  `DROP`, `PRAGMA` or a transaction from a member or contact is
+  refused with an error the app can catch. The database is shared by
+  everyone who runs the app (not one per member): design for that. To
+  record which member wrote a row, fill its columns with `:host_me_id` and
   `:host_me_name` in the SQL (see "Who is running the app"); `host.me()`
   shows the member their own name.
-- **Home app:** the app pinned as the hub (Team admin > Settings) is also the
-  members' home page while it is at team level or lower with a green
-  published build. `host.hub.get()` answers there too: sections are the
-  newest team pages, and a section's `token` is the page id.
+- **Home app:** the app pinned as the member home app (Team > Settings)
+  must already be shared with the Team workspace (else 409
+  `not_in_team`). It is the members' home page while a workspace of the
+  member holds it with a green published build. `host.hub.get()` answers
+  there too: sections are the newest pages in the member's Library, and a
+  section's `token` is the page id.
 
 ## Members build apps (team apps Phase 3; one MCP surface since W7b)
 
@@ -696,8 +726,10 @@ the member-only `my_app_*` tools were retired). Read `app_authoring_guide`
 ## Team Hub apps (a designated app as the members' home)
 
 A brain can designate one published app as its **home app**: member logins
-get it full-screen on their home page (`GET /api/member/home`, member-logins.md
-section 7) while it is at team level or lower with a green published build.
+get it full-screen on their home page (`GET /api/member/home`; who runs an
+app: [workspaces.md](workspaces.md), "Apps") while a workspace of the
+member holds it with a green published build. Picking it needs the Team
+workspace to hold it already.
 Until member logins Phase 6 the same app was the team-code **Team Hub** at
 `/hub`, beside the `/team` workspace and the Forum; those are retired and
 redirect to `/login`. Home apps get one extra namespace, `host.hub.get()`

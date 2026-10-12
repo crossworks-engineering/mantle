@@ -35,7 +35,7 @@ Its row changes land in the draft like yours. Check them, then commit.
 
 ## Share and download
 
-- **Access** sets who can read the table. The levels are the same as for [pages](06-pages.md).
+- **Access** sets who can read the table: its workspaces and their **Write** switches, the same as for [pages](06-pages.md).
 - **Download** exports Excel, a Markdown table or CSV.
 
 ## Next

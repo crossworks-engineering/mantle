@@ -85,25 +85,31 @@ on a cron — cost-safety rule.
   queued tool call behind the dead request; timing it out degrades to
   "server doesn't push", which the spec allows.
 
-## Levels: who uses a connector's tools
+## Workspaces: who uses a connector's tools
 
-A connector's tool group LEVEL (Settings > Tool groups) decides who may use
-its tools, on their own MCP connection and in the apps they run (team apps
-Phase 2): admin (the default: admins only), team (members), client (clients
-and members) or public (members, plus contacts on an app's contact link and
-public agents, read-only tools only; never clients, who reach client-level
-connectors only). Granting the group to an agent never widens that. A tool's
-read-only mark decides read or write. The mark stops counting when a sync
+A connector is a resource of the workspaces it is attached to, each with
+its own **Write** tick: an Admin user with the connectors area attaches it
+on the workspace screen ([workspaces.md](./workspaces.md), "Connectors").
+That decides who may use its tools, on their own MCP connection and in the
+apps they run: a user of a workspace it is attached to uses its read tools,
+and a write tool needs the Write tick on in a workspace where the user is
+a Moderator. An app run also needs the connector attached to every
+workspace that holds the app, with Write on in each for a write. A contact
+link holds no workspace, so it uses no connector tool. The tool group's
+level decides nothing (frozen in W7b), and granting the group to an agent
+never widens who uses it. A tool's read-only mark decides read or write. The mark stops counting when a sync
 finds the tool's description or inputs changed, when it vanishes and
 returns, when the connector's server or sign-in changes (an OAuth reconnect
 as the same account keeps it; the account is a hash of the token's issuer
 and subject), and when the vault key it signs in with is rotated or saved
 over. Between syncs, below the owner a marked tool takes only the inputs
 its stored schema lists (one level deep), and a tool synced without its list
-of inputs cannot be marked. Below admin a new or returning tool arrives
-switched off; an agent turning one on, clearing its confirmation, or
-lowering the connector's level waits in Pending, and an API key or a linked
-brain is refused. Known gap: an http tool with External access whose
+of inputs cannot be marked. On a connector a workspace other than Admin
+holds, a new or returning tool arrives switched off; an agent turning one
+on or clearing its confirmation (`api_tool_update`) waits in Pending, and an
+API key or a linked brain doing it is refused. (Lowering the connector's
+level was the third such step; the group levels decide nothing since W7b.)
+Known gap: an http tool with External access whose
 template uses a rotated vault key keeps its mark. The full rules: docs/member-logins.md
 ("External access") and docs/mcp-as-a-login.md.
 
