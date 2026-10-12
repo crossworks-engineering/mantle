@@ -37,10 +37,7 @@ export default async function setup(): Promise<void> {
   // failures (folder audit T2).
   const url = process.env.MANTLE_TEST_DATABASE_URL;
   if (url) {
-    const { ensureTestViewerRoles, setTestActorCheckAt } =
-      await import('./packages/db/src/test-support');
+    const { ensureTestViewerRoles } = await import('./packages/db/src/test-support');
     await ensureTestViewerRoles(url, process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key');
-    // The actor check in warn on the test database (arch A2a).
-    await setTestActorCheckAt(url);
   }
 }

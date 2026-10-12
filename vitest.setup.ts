@@ -2,8 +2,9 @@
  * Runs in every test file (vitest.config.ts setupFiles).
  *
  * The actor check (workspaces arch A2a): the suite runs in warn
- * (MANTLE_ACTOR_CHECK, vitest.config.ts), and a test fails when any
- * statement it caused ran with no actor bound: a process entry that forgot
+ * (MANTLE_ACTOR_CHECK, vitest.config.ts: the TypeScript check, and the SQL
+ * check raised on every statement the app's pool sends), and a test fails
+ * when any statement it caused ran with no actor bound: a process entry that forgot
  * its actor, or work that does not descend from any entry. A test is the
  * process entry of what it runs, as system(test) (enterTestActor): what it
  * awaits, its timers and its detached promises carry that, as an entry's

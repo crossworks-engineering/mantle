@@ -25,11 +25,6 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
-    // A scratch database is made in warn for the suite (setTestActorCheck);
-    // this file starts from the box default.
-    const reset = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
-    await reset.unsafe(`alter database "${scratch.name}" reset mantle.actor_check`);
-    await reset.end();
     sql = postgres(scratch.url, {
       max: 1,
       prepare: false,
