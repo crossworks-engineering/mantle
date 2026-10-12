@@ -795,9 +795,11 @@ export function runInSystemTx<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   // A request scope around it is fine: a system transaction is the write
-  // path of a mutating request (plan 2.3, the rule in the statement).
+  // path of a mutating request (plan 2.3, the rule in the statement). So is
+  // an open system transaction: a nested one is its savepoint (arch A2b,
+  // client.ts nestedSystemTx).
   const open = active();
-  if (open && !open.request) {
+  if (open && !open.request && !(open.system && open.tx && open.nest)) {
     return Promise.reject(new Error('runInSystemTx: only outside a viewer scope'));
   }
   return store.run({ system: true, tx: scope.tx, hooks: scope.hooks, nest: scope.nest }, fn);
