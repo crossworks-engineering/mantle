@@ -79,9 +79,12 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/sandboxes', 'sandboxes'],
   ['/traces', 'traces'],
   ['/debug', 'debug'],
+  // The brain health Dashboard (task d78e7bde: no longer the home).
+  ['/dashboard', 'dashboard'],
 
-  // Dashboard. Matched exact-only by the '/' special case below.
-  ['/', 'dashboard'],
+  // Home: the current workspace's landing page. Matched exact-only by the
+  // '/' special case below.
+  ['/', 'home'],
 ];
 
 const SORTED = [...ROUTE_TOPICS].sort((a, b) => b[0].length - a[0].length);

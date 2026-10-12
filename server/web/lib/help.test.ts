@@ -71,9 +71,10 @@ describe('helpTopicForPath', () => {
     expect(helpTopicForPath('/nowhere')).toBeNull();
   });
 
-  it('matches the dashboard exactly and does not swallow every route', () => {
+  it('matches the home exactly and does not swallow every route', () => {
     // '/' is a prefix of everything, so its entry is special-cased in the scan.
-    expect(helpTopicForPath('/')).toBe('dashboard');
+    expect(helpTopicForPath('/')).toBe('home');
+    expect(helpTopicForPath('/dashboard')).toBe('dashboard');
     expect(helpTopicForPath('/nowhere')).toBeNull();
   });
 
