@@ -69,6 +69,7 @@ export {
   NotAWriteError,
   readTransaction,
   loginActorNow,
+  openLoginWritePool,
   ACTOR_CHECK_DRIFT_SQL,
   type Db,
 } from './client';

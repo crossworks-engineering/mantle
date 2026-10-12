@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql as sqlTag } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
@@ -37,6 +38,7 @@ import {
   requestScopeMemo,
   type CreateHome,
   type SystemTxNest,
+  systemDbCallerOf,
 } from './viewer';
 import {
   actorCheckMode,
@@ -49,6 +51,8 @@ import {
   runAsSystem,
   runWithoutActor,
   loginActor,
+  longStack,
+  noteActorMiss,
   systemActor,
   setActorMissLogger,
   writeModeOf,
@@ -57,6 +61,7 @@ import {
 } from './actor';
 import { reserveLease, withLease, type Lease } from './reserved';
 import { errorMessage } from '@mantle/std';
+import { isPermissionGap, permissionGapOf } from './pg-error';
 
 declare global {
   var __mantleSql: ReturnType<typeof postgres> | undefined;
@@ -70,6 +75,10 @@ declare global {
 
   /** The turn-scope handle (workspaces W4b), over the workspace role's pool. */
   var __mantleTurnDb: PostgresJsDatabase<typeof schema> | undefined;
+
+  /** This process sends scoped login writes to the write role
+   *  (openLoginWritePool, arch A2b2b). */
+  var __mantleLoginWritePool: boolean | undefined;
 }
 
 /** Connections of a limited pool, per process and role. Small on purpose:
@@ -102,7 +111,9 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
   const sql =
     globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false, onnotice: onPgNotice });
   globalThis.__mantleSql = sql;
-  const client = drizzle(actorClient(sql), { schema });
+  const withActor = actorClient(sql);
+  adminActorSql = withActor;
+  const client = drizzle(withActor, { schema });
   globalThis.__mantleDb = client;
   setActorMissLogger(logActorMiss);
   // Out of the caller's context: the timer must not keep its actor.
@@ -111,6 +122,10 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
 }
 
 // ── The actor on the system pool (workspaces arch A2a) ──────────────────────
+
+/** The system pool's client with the actor (actorClient over
+ *  globalThis.__mantleSql): the login write gateway's system path. */
+let adminActorSql: PgSql | null = null;
 
 /** The pipelined statements in flight (actorClient), for closeDb. */
 const actorPipelines = new Set<Promise<unknown>>();
@@ -406,6 +421,17 @@ const SET_TRANSACTION_SQL = /^\s*set\s+transaction\b/i;
  * actor-client.test.ts only (not in index.ts).
  */
 export function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
+  return settingsFirst(t, setActorSql(params));
+}
+
+/**
+ * A transaction's client that sends `setSql` (a statement with no
+ * parameters that only sets transaction-local settings) unawaited, right
+ * before its first statement: actorInTransaction's actor, and the write
+ * role's scope and actor (the login write gateway, A2b2b). See
+ * actorInTransaction.
+ */
+function settingsFirst(t: PgSql, setSql: string): PgSql {
   /** The SET's outcome once sent: null, or its error. Never rejects. */
   let set: Promise<unknown> | null = null;
   /** The SET answered without an error: later statements run plain. Until
@@ -414,7 +440,7 @@ export function actorInTransaction(t: PgSql, params: [string, string, string]): 
    *  "current transaction is aborted" (A2b, the A2a audit's LOW). */
   let setOk = false;
   const sendSet = (): Promise<unknown> =>
-    (set ??= t.unsafe(setActorSql(params)).then(
+    (set ??= t.unsafe(setSql).then(
       () => {
         setOk = true;
         return null;
@@ -676,6 +702,301 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
   return client;
 }
 
+// ── The login write gateway (workspaces arch A2b2b, plan 20.1) ─────────────
+
+
+/**
+ * Open the login write gateway in this process (arch A2b2b): web and api
+ * only (server/web/server/main.ts, server/api/src/main.ts). The role's
+ * connection limit is 20 and its pool takes VIEWER_POOL_MAX per process, so
+ * every other process keeps its login writes on the system pool
+ * (connection-ceiling.test.ts counts the pool for the processes that call
+ * this). Tests open it in vitest.setup.ts. `false` closes it again (tests).
+ */
+export function openLoginWritePool(open = true): void {
+  globalThis.__mantleLoginWritePool = open;
+}
+
+/** Whether this process sends login writes to the write role. */
+function loginWritePoolOpen(): boolean {
+  return globalThis.__mantleLoginWritePool === true;
+}
+
+/** The actors whose scoped writes go to the write role (plan 20.1):
+ *  everything but system work and a peer(share), which writes nothing. */
+const WRITE_ROLE_ACTORS: ReadonlySet<Actor['kind']> = new Set([
+  'login',
+  'assistant',
+  'link',
+  'contact',
+]);
+
+/** Where a write runs on the write role: the one SET of its transaction
+ *  (scope, actor, create home), and the actor, for a gap's log line. */
+type LoginWriteRoute = { setSql: string; actor: string };
+
+/**
+ * The login write gateway's one decision (arch A2b2b): the settings a write
+ * that runs now takes on the write role, or null for the system pool
+ * (today's path, unchanged). The write role when all hold:
+ *  - this process opened it (openLoginWritePool: web and api);
+ *  - the actor check is not off (the box mode read from the catalog, where
+ *    a session can only make it stricter; MANTLE_ACTOR_CHECK raises it for
+ *    one process). Off is the rollout switch: today's path, no statement
+ *    and no round trip added;
+ *  - the actor is a login, an assistant, a link or a contact;
+ *  - the write carries a scope (requestWriteScope: a login's mutating
+ *    request, an Admin user's write request, an Admin turn). asSystem masks
+ *    it, and a named repair or an Admin area route binds a system actor:
+ *    both stay on the system pool.
+ */
+function loginWriteRoute(): LoginWriteRoute | null {
+  if (!loginWritePoolOpen()) return null;
+  const params = actorParams();
+  if (!params) return null;
+  const actor = currentActor();
+  if (!actor || !WRITE_ROLE_ACTORS.has(actor.kind)) return null;
+  const scope = requestWriteScope();
+  if (!scope) return null;
+  return { setSql: writeRoleSettingsSql(scope, params, currentCreateHome()), actor: params[0] };
+}
+
+/** loginWriteRoute, after the pool's first mode read when it is still out
+ *  (the startup race: a first write never goes out as off on a warn box). */
+async function loginWriteRouteNow(): Promise<LoginWriteRoute | null> {
+  const waitFor = firstModeRead;
+  if (waitFor && loginWritePoolOpen() && currentActor() && !actorParams()) await waitFor;
+  return loginWriteRoute();
+}
+
+/** Whether a write handed out now may go to the write role (decided again
+ *  when it runs). False: the system handle as before, byte for byte. */
+function loginWritesMayRoute(): boolean {
+  return loginWritePoolOpen() && (actorCheckMode() !== 'off' || firstModeRead !== null);
+}
+
+/** A settings value as a quoted literal: the same rule as setActorSql's. */
+function settingLiteral(v: string): string {
+  if (v.includes('\0')) throw new Error('write role setting: NUL');
+  return `'${v.replace(/'/g, "''")}'`;
+}
+
+/**
+ * The one statement that sets a write-role transaction's scope, actor and
+ * create home, transaction-local (SET LOCAL as set_config(..., true)),
+ * sent pipelined with the transaction's first statement. Never a session
+ * SET: a scope left on a pooled connection would be a stale access right.
+ * Values inlined as checked literals (uuids, the actor's shapes, the stamp
+ * as JSON), so it goes out in one step (see setActorSql).
+ * `mantle.login_id` is the scope's login: the write role reads a login's
+ * own rows by it, and the write check holds a fact of no item to it.
+ * Exported for actor-client.test.ts only (not in index.ts).
+ */
+export function writeRoleSettingsSql(
+  scope: WorkspaceScope,
+  params: [string, string, string],
+  home: CreateHome | null,
+): string {
+  if (scope.loginId !== null && !UUID_RE.test(scope.loginId)) {
+    throw new Error('write role setting: login');
+  }
+  const set = (name: string, v: string) => `set_config('${name}', ${settingLiteral(v)}, true)`;
+  const parts = [
+    set('mantle.ws', uuidArrayLiteral(scope.ws, 'write role ws')),
+    set('mantle.mod_ws', uuidArrayLiteral(scope.modWs, 'write role modWs')),
+    set('mantle.login_id', scope.loginId?.toLowerCase() ?? ''),
+  ];
+  if (home) {
+    parts.push(
+      set('mantle.create_ws', checkedUuidOrEmpty(home.createWs)),
+      set('mantle.private_ws', checkedUuidOrEmpty(home.privateWs)),
+      set('mantle.ingest_notify', home.quiet ? 'off' : ''),
+      set(
+        'mantle.create_stamp',
+        home.stamp && Object.keys(home.stamp).length > 0 ? JSON.stringify(home.stamp) : '',
+      ),
+    );
+  }
+  return `${ACTOR_SQL_TAG} ${setActorSql(params)}, ${parts.join(', ')}`;
+}
+
+/** The write role's raw pool (getViewerDb('write')). */
+function writePoolSql(): PgSql {
+  getViewerDb('write');
+  return globalThis.__mantleViewerDbs!.get('write')!.sql;
+}
+
+/** The system pool's client with the actor: the gateway's system path. */
+function adminSql(): PgSql {
+  getAdminDb();
+  return adminActorSql!;
+}
+
+/** Write-role gaps seen in tests (takeWriteRoleGaps). */
+const writeRoleGaps: string[] = [];
+
+/** Tests: the write-role gaps since the last call, cleared. */
+export function takeWriteRoleGaps(): string[] {
+  return writeRoleGaps.splice(0, writeRoleGaps.length);
+}
+
+/**
+ * A write the write role has no right for (a table, column or function it
+ * holds no grant on: a system-only table in a login's transaction). It
+ * runs again on the system pool, as before A2b2b, and is logged: a miss
+ * row (check 'write-role-gap') with what was denied and the caller, so the
+ * gap shows until a phase moves that table (A3a). Never for a refusal the
+ * database decided (a write check, a row rule): those stay refused.
+ */
+function noteWriteRoleGap(route: LoginWriteRoute, err: unknown): void {
+  const what = permissionGapOf(err) ?? 'permission denied';
+  const caller = systemDbCallerOf(longStack()) ?? 'unknown caller';
+  const detail = `${what} from ${caller}`;
+  if (env('NODE_ENV') === 'test') {
+    writeRoleGaps.push(detail);
+    console.warn(`[db] write-role gap: ${detail}`);
+    return;
+  }
+  noteActorMiss({ source: 'ts', check: 'write-role-gap', actor: route.actor, detail });
+}
+
+/**
+ * Run a write through the gateway: `write` on the write role when
+ * loginWriteRoute says so, else `system` (today's path). A write-role
+ * attempt that meets a grant gap (noteWriteRoleGap) has rolled back whole;
+ * it runs again by `system`. Every other error is the caller's.
+ */
+async function onLoginWritePool<T>(
+  system: () => Promise<T>,
+  write: (route: LoginWriteRoute) => Promise<T>,
+): Promise<T> {
+  const route = await loginWriteRouteNow();
+  if (!route) return system();
+  try {
+    return await write(route);
+  } catch (err) {
+    if (!isPermissionGap(err)) throw err;
+    noteWriteRoleGap(route, err);
+    return system();
+  }
+}
+
+/**
+ * One write outside a transaction on the write role: BEGIN, the settings,
+ * the statement and COMMIT pipelined on one reserved connection (one round
+ * trip, as a turn scope's read). A failing statement aborts the
+ * transaction, the COMMIT then rolls back, and the first error is thrown.
+ */
+async function writeRoleStatement(
+  route: LoginWriteRoute,
+  query: string,
+  args: unknown[] | undefined,
+  mode: 'rows' | 'values' | 'simple',
+): Promise<unknown> {
+  const conn = await writePoolSql().reserve();
+  try {
+    const begin = conn.unsafe('begin');
+    const set = conn.unsafe(route.setSql);
+    const q = conn.unsafe(query, (args ?? []) as never[]);
+    const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
+    const commit = conn.unsafe('commit');
+    const out = await Promise.allSettled([begin, set, main, commit]);
+    const failed = out.find((r) => r.status === 'rejected');
+    if (failed) throw (failed as PromiseRejectedResult).reason;
+    return (out[2] as PromiseFulfilledResult<unknown>).value;
+  } finally {
+    conn.release();
+  }
+}
+
+/** A transaction on the write role: its settings go with its first
+ *  statement (settingsFirst), so they cost no round trip. */
+function writeRoleBegin(route: LoginWriteRoute, args: unknown[]): Promise<unknown> {
+  const fn = args[args.length - 1] as (t: PgSql) => unknown;
+  return (writePoolSql().begin as (...a: unknown[]) => Promise<unknown>)(
+    ...args.slice(0, -1),
+    (t: PgSql) => fn(settingsFirst(t, route.setSql)),
+  );
+}
+
+/**
+ * The client behind the gateway's drizzle handle (loginWriteDb): what a
+ * scoped write that `db` sends to the system pool (insert, update, delete,
+ * a mutating request's transaction, executeWrite) runs on. Each statement
+ * and each transaction asks the gateway when it runs; the system path is
+ * exactly the system pool's client.
+ */
+function loginWriteClient(): PgSql {
+  const run = (query: string, args: unknown[] | undefined, mode: 'rows' | 'values' | 'simple') => {
+    const system = () => {
+      const q = adminSql().unsafe(query, args as never[]);
+      return (mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q) as Promise<unknown>;
+    };
+    if (runsOutsideTransaction(query)) return system();
+    return onLoginWritePool(system, (route) => writeRoleStatement(route, query, args, mode));
+  };
+  const client = {
+    get options() {
+      return adminSql().options;
+    },
+    unsafe(query: string, args?: unknown[]) {
+      let pending: Promise<unknown> | null = null;
+      const once = () => (pending ??= run(query, args, 'rows'));
+      return {
+        values: () => run(query, args, 'values'),
+        simple: () => run(query, args, 'simple'),
+        then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
+        catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
+        finally: (fn?: () => void) => once().finally(fn),
+      };
+    },
+    begin(...args: unknown[]) {
+      return onLoginWritePool(
+        () => (adminSql().begin as (...a: unknown[]) => Promise<unknown>)(...args),
+        (route) => writeRoleBegin(route, args),
+      );
+    },
+  };
+  return client as unknown as PgSql;
+}
+
+let loginWriteDbCache: PostgresJsDatabase<typeof schema> | null = null;
+
+/** The gateway's drizzle handle (loginWriteClient), one per process. */
+function loginWriteDb(): PostgresJsDatabase<typeof schema> {
+  return (loginWriteDbCache ??= drizzle(loginWriteClient(), { schema }));
+}
+
+/** The handle a scoped write goes to: the gateway's when it may route,
+ *  else the system pool's, as before A2b2b. */
+function systemWriteDb(): PostgresJsDatabase<typeof schema> {
+  return loginWritesMayRoute() ? loginWriteDb() : getAdminDb();
+}
+
+/** The route of the write-role transaction being opened (withSystemTx):
+ *  read by writeTxClient's begin. */
+const writeTxRoute = new AsyncLocalStorage<LoginWriteRoute>();
+
+let writeTxDbCache: PostgresJsDatabase<typeof schema> | null = null;
+
+/** A drizzle handle whose transactions open on the write role with the
+ *  route of writeTxRoute (withSystemTx's write path). */
+function writeTxDb(): PostgresJsDatabase<typeof schema> {
+  return (writeTxDbCache ??= drizzle(
+    {
+      get options() {
+        return adminSql().options;
+      },
+      begin(...args: unknown[]) {
+        const route = writeTxRoute.getStore();
+        if (!route) return Promise.reject(new Error('writeTxDb: no write route'));
+        return writeRoleBegin(route, args);
+      },
+    } as unknown as PgSql,
+    { schema },
+  ));
+}
+
 /**
  * A turn's scope was looked for at query time and is gone (workspaces W4b):
  * a query built inside a turn scope ran after the turn ended, or from a
@@ -919,6 +1240,18 @@ export async function withSystemTx<T>(
   // Arch A2a: the transaction runs as the current actor (actorClient sets
   // it first); none bound is a miss, logged only.
   checkActorBound('withSystemTx');
+  // A scoped write (a login's, an Admin user's write request, an Admin
+  // turn) runs on the write role when the gateway says so (arch A2b2b):
+  // its scope, actor and create home set by one SET LOCAL with its first
+  // statement. Else the system pool, as before.
+  return onLoginWritePool(
+    () => systemPoolTx(fn),
+    (route) => openSystemTx((run) => writeTxRoute.run(route, () => writeTxDb().transaction(run)), fn),
+  );
+}
+
+/** A system transaction as before A2b2b, on the system pool. */
+function systemPoolTx<T>(fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>): Promise<T> {
   // An Admin user's write request (W6a fix round 1, M1): the login's scope
   // on the transaction, so the database checks moves (0241/0245), creates in
   // a folder and deletes (0266) against its workspaces. mantle.login_id is
@@ -940,27 +1273,41 @@ export async function withSystemTx<T>(
         home.stamp && Object.keys(home.stamp).length > 0 ? JSON.stringify(home.stamp) : '',
       ]
     : null;
+  return openSystemTx(
+    (run) =>
+      getAdminDb().transaction(async (tx) => {
+        if (settings) {
+          await tx.execute(
+            sqlTag`select set_config('mantle.ws', ${settings[0]}, true),
+                          set_config('mantle.mod_ws', ${settings[1]}, true)`,
+          );
+        }
+        if (homeSettings) {
+          await tx.execute(
+            sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
+                          set_config('mantle.private_ws', ${homeSettings[1]}, true),
+                          set_config('mantle.ingest_notify', ${home?.quiet ? 'off' : ''}, true),
+                          set_config('mantle.create_stamp', ${homeSettings[2]}, true)`,
+          );
+        }
+        return run(tx);
+      }),
+    fn,
+  );
+}
+
+/** Run `fn` as the outermost system transaction that `open` opens: its own
+ *  hooks and nest (withSystemTx's rules), its rollback hooks run when it
+ *  fails, its commit hooks once it commits. */
+async function openSystemTx<T>(
+  open: (run: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>) => Promise<T>,
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
   const hooks = newTxHooks();
   const nest: SystemTxNest = { ...systemTxKeys(), busy: false, done: false, saves: { n: 0 } };
   let result: T;
   try {
-    result = await getAdminDb().transaction(async (tx) => {
-      if (settings) {
-        await tx.execute(
-          sqlTag`select set_config('mantle.ws', ${settings[0]}, true),
-                        set_config('mantle.mod_ws', ${settings[1]}, true)`,
-        );
-      }
-      if (homeSettings) {
-        await tx.execute(
-          sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
-                        set_config('mantle.private_ws', ${homeSettings[1]}, true),
-                        set_config('mantle.ingest_notify', ${home?.quiet ? 'off' : ''}, true),
-                        set_config('mantle.create_stamp', ${homeSettings[2]}, true)`,
-        );
-      }
-      return runInSystemTx({ tx, hooks, nest }, () => fn(tx));
-    });
+    result = await open((tx) => runInSystemTx({ tx, hooks, nest }, () => fn(tx)));
   } catch (err) {
     nest.done = true;
     await runTxHooks(hooks.rollback, 'rollback');
@@ -1820,22 +2167,32 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
     // always runs in the scope (fix round 1, M3): a raw write says so with
     // executeWrite.
     const mode = currentRequestMode();
+    const write = prop === 'insert' || prop === 'update' || prop === 'delete';
     if (mode && !currentScopeTx()) {
-      if (
-        prop === 'insert' ||
-        prop === 'update' ||
-        prop === 'delete' ||
-        (prop === 'transaction' && mode.writes)
-      ) {
+      if (write || (prop === 'transaction' && mode.writes)) {
         noteRequestSystemWrite(String(prop));
         // Bound to the system handle (W6a fix round 2): drizzle's builders
         // read `this.session`, which on this proxy is the scope's session, so
         // an unbound method ran the write on the workspace role (a page's
-        // block-id backfill failed with permission denied).
-        const admin = getAdminDb();
-        const fn = Reflect.get(admin as object, prop) as (...args: unknown[]) => unknown;
-        return fn.bind(admin);
+        // block-id backfill failed with permission denied). The login write
+        // gateway's handle when it may route (A2b2b): it sends a scoped
+        // login write to the write role, anything else here as before.
+        const handle = systemWriteDb();
+        const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
+        return fn.bind(handle);
       }
+    } else if (
+      (write || prop === 'transaction') &&
+      !currentScopeTx() &&
+      loginWritesMayRoute() &&
+      requestWriteScope() !== null
+    ) {
+      // An Admin user's write request (no request scope, its write scope
+      // noted by the guard): the gateway's handle too (A2b2b). With the
+      // check off this branch is never taken.
+      const handle = loginWriteDb();
+      const fn = Reflect.get(handle as object, prop) as (...args: unknown[]) => unknown;
+      return fn.bind(handle);
     }
     if (prop === 'select' || prop === 'selectDistinct' || prop === 'execute' || prop === 'query') {
       noteOwnRuleSystemRead(String(prop));
@@ -1900,7 +2257,11 @@ export function executeWrite(
   if (!isWriteSql(sqlTextOf(query))) throw new NotAWriteError();
   if (currentRequestMode() && !currentScopeTx()) {
     noteRequestSystemWrite('executeWrite');
-    return getAdminDb().execute(query);
+    return systemWriteDb().execute(query);
+  }
+  // An Admin user's write request: the login write gateway (A2b2b).
+  if (!currentScopeTx() && loginWritesMayRoute() && requestWriteScope() !== null) {
+    return loginWriteDb().execute(query);
   }
   return getDb().execute(query);
 }
@@ -1942,6 +2303,9 @@ export async function closeDb(): Promise<void> {
   globalThis.__mantleDb = undefined;
   globalThis.__mantleViewerDbs = undefined;
   globalThis.__mantleTurnDb = undefined;
+  adminActorSql = null;
+  loginWriteDbCache = null;
+  writeTxDbCache = null;
   // The next pool reads its database's actor check mode afresh.
   actorModePool = null;
   firstModeRead = null;

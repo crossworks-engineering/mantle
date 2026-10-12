@@ -57,7 +57,10 @@ const { createApp } = await import('./app');
 // provisioned-only, once per version, best-effort).
 // (MANTLE_PUBLIC_URL / NEXT_PUBLIC_APP_URL fallback: @mantle/config warns once.)
 // Arch A2a: each boot task runs as system(boot:<task>).
-const { runAsSystem } = await import('@mantle/db');
+const { runAsSystem, openLoginWritePool } = await import('@mantle/db');
+// Arch A2b2b: this process sends scoped login writes to the write role
+// (docs/actors.md; the connection ceiling counts its pool for web and api).
+openLoginWritePool();
 void runAsSystem('boot:manifest-reconcile', () =>
   import('../lib/system-manifest/reconcile')
     .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())

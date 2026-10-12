@@ -73,6 +73,25 @@ export function isScopeWriteRefusal(err: unknown): boolean {
   );
 }
 
+/**
+ * A privilege the role lacks (42501 "permission denied for ..."): a table,
+ * a column, a function, a sequence or a schema it holds no grant on. Never
+ * a refusal a check or a row rule decided (those carry their own message).
+ * The login write gateway (client.ts, arch A2b2b) runs such a write again
+ * on the system pool and logs the gap.
+ */
+export function isPermissionGap(err: unknown): boolean {
+  return permissionGapOf(err) !== null;
+}
+
+/** The "permission denied for ..." message of a privilege gap, else null. */
+export function permissionGapOf(err: unknown): string | null {
+  const pg = findPgError(err) as (PgLike & { message?: unknown }) | null;
+  if (!pg || pg.code !== '42501') return null;
+  const message = typeof pg.message === 'string' ? pg.message : '';
+  return /^permission denied for /.test(message) ? message.slice(0, 200) : null;
+}
+
 /** 23505 unique_violation: the write hit a unique index or constraint. */
 export function isUniqueViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23505';

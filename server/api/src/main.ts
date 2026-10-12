@@ -26,6 +26,7 @@ import {
   runsTurnConcurrency,
 } from './config';
 import { assertEnvShape } from '@mantle/config';
+import { openLoginWritePool } from '@mantle/db';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
@@ -85,6 +86,10 @@ async function main(): Promise<void> {
   // covered by the restart policy. Measures event-loop liveness, not workflow
   // progress — an idle runner with no queued turns is still healthy.
   startProcessHeartbeat();
+  // Arch A2b2b: this process sends scoped login writes (an Admin turn's) to
+  // the write role (docs/actors.md; the connection ceiling counts its pool
+  // for web and api).
+  openLoginWritePool();
   // Boot sanity for sqlite-native table storage: node:sqlite is experimental
   // upstream, so the engine behaviors Tables v2 relies on are re-proven on
   // every boot (this is the same suite CI runs on the prod image). Loud but
