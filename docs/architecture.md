@@ -1599,11 +1599,12 @@ a `spill_result` trace step (`{handle, bytes}`); each `read_result` records
 `{mode, hits|count|page}`, so you watch it work in `/traces` exactly like
 tracing a node through the brain.
 
-**Level.** A spill carries the viewer level of the turn that wrote it
-(`tool_results.viewer_level`, migration 0189; null = admin). `read_result`
-answers "not found" to a reader whose level does not read that level: an
-admin turn's spill read from a team or client turn, a client spill read from
-a public one (docs/access-levels.md). The handle alone opens nothing.
+**Scope.** A spill carries the workspace and login of the turn that wrote
+it (`tool_results.workspace_id`, `login_id`; the old `viewer_level` column
+of migration 0189 stays beside them). `read_result` answers "not found" to
+a reader whose scope may not read the spill, and a workspace assistant's
+turn reads only the spills its own turn wrote (`resultBindingFor`). The
+handle alone opens nothing (docs/workspaces.md).
 
 **Lifecycle.** `tool_results` / `tool_result_chunks` are **ephemeral working
 state**, never `nodes` rows, never seen by the extractor or brain search.
