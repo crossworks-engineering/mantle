@@ -18,7 +18,7 @@ import { CLIENT_ITEM_KINDS, MEMBER_ITEM_KINDS } from './member-kinds';
 const set = (xs: readonly string[]) => [...xs].sort();
 
 describe('the kind registry', () => {
-  it('names every node_type value once, in the schema's order', () => {
+  it('names every node_type value once, in the schema order', () => {
     // The enum (packages/db/src/schema/nodes.ts); the db test checks the
     // live enum_range too.
     expect(ITEM_KIND_NAMES).toEqual([
