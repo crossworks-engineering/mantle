@@ -225,7 +225,8 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
-  });
+    // The scratch drop waits for the app's pools: slow under a full suite.
+  }, 60_000);
 
   it('the fixture: H is the home of all, S reads one note of F and nothing in G', async () => {
     const rows = await x<{ path: string; s: boolean; home: string }>(sql`
