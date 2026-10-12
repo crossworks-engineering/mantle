@@ -15,7 +15,9 @@
 > served list (`shares.settings.served`, migration 0262): a picture, file,
 > drawing or mention shows on the link only when it is on that list, else it
 > is left out or reads "Private item". Anyone who may edit the item opens
-> or closes its link (for an app, a Moderator of its home). Sharing it with
+> or closes its link (for an app, a Moderator of its home). An Admin user
+> with the users area may also close any link of the brain (closing only
+> narrows); opening one still needs the edit right. Sharing it with
 > a contact is for Admin users only; the item's home is not checked. Where
 > the text below says "level", read the served list; client links and
 > client items are gone (W8a).
@@ -395,7 +397,9 @@ media presenters are net-new here.)_
 The owner app (jackdaw) shows the **Access** button on every detail screen
 (pages, notes, tasks, events, files, apps, tables, folders). Anyone who may
 edit the item opens or closes its link (for an app, a Moderator of its
-home). Every link is open (`public` is the only mode); team links are
+home). An Admin user with the users area may also close any link of the
+brain (`DELETE /api/shares/:id`), since closing only narrows; opening one
+still needs the edit right. Every link is open (`public` is the only mode); team links are
 retired (member logins Phase 6) and client links are retired (client
 logins C3, then W8a). The owner's Shared links list
 (`/team-admin?view=shares`) shows each live link and marks the retired

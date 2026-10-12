@@ -91,6 +91,7 @@ every workspace it is granted to, each with a Write switch.
 | Switch Write on for T            | Moderator of its home and Moderator of T              |
 | Switch Write off for T           | Moderator of its home, or Moderator of T              |
 | Open or close its public link    | to be able to edit it (an app: Moderator of its home) |
+| Close any public link            | to be an Admin user with the users area               |
 | Share it with one contact        | to be an Admin user (its home is not checked)         |
 | Delete it                        | Moderator of its home                                 |
 | Move it to another home (H to T) | Moderator of H and Moderator of T                     |
