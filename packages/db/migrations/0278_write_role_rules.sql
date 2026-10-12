@@ -31,8 +31,9 @@
 --    pool are never checked); a refusal follows mantle_scoped_write_refuses
 --    (0277), so off, warn and on stage it as they stage the 0266 checks.
 --     - 'self' (nodes): an INSERT needs a Moderator of the new item's home
---       (mantle_default_home, the function that sets it: a login's own
---       private workspace is one it moderates), or the home is the home of
+--       (mantle_default_home, the function that sets it; a login's own
+--       private workspace counts only when the scope's mantle.mod_ws holds
+--       it), or the home is the home of
 --       the item's folder and the scope may edit that folder (a create in a
 --       folder; 0277 checks the folder edit too). An item with no home
 --       needs an Admin scope. A session can name any workspace of the brain

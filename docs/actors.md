@@ -431,8 +431,9 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
   role only (`WHEN current_user = 'mantle_write_user'`) and refuses
   through `mantle_scoped_write_refuses` (so off, warn and on stage it):
   a new item needs a Moderator of its home (the home
-  `mantle_default_home` gives it: a login's own private workspace is one
-  it moderates), or its home is its folder's and the scope may edit that
+  `mantle_default_home` gives it; a login's own private workspace counts
+  only when the scope's `mantle.mod_ws` holds it), or its home is its
+  folder's and the scope may edit that
   folder; a session can name any workspace as its create home
   (`mantle.create_ws`), so this is what holds a create to a workspace the
   caller moderates (plan v2). An item needs edit (a board rank change
@@ -493,8 +494,11 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
 - **A home move is one step on the role.** `moveHome`
   (`server/web/lib/grants.ts`) clears the old home row and then sets the new one: between
   the two statements the item has no home, so the second needs an Admin
-  scope there. Do it in one statement or through a definer function that
-  checks manage of the old home and a Moderator of the new one.
+  scope there. Do it through a definer function that checks manage of the
+  old home and a Moderator of the new one. One `UPDATE ... SET is_home =
+  (workspace_id = new)` is not safe: `item_grants_one_home_uq` cannot be
+  deferred and is checked row by row, so it can fail with 23505 by row
+  order.
 - **grants.ts writes columns the role may not.** Its updates set
   `via_folder_id = null`, `granted_by` and `granted_at`, which the write
   role has no right to write (permission denied, loudly). Leave them out on
@@ -503,8 +507,28 @@ yet: A2b2b routes the login writes. What A2b2a gives it:
   (`packages/db/src/pg-error.ts`) knows the 0241 to 0267 messages; add the
   write check's (`not allowed to edit this item`, `not allowed to create an
   item in that workspace`, `not allowed to grant to that workspace`, `not
-  allowed to change the kind of this item`) so a refusal is a 403, not a
-  500.
+  allowed to change the kind of this item`), the row rule's own failure
+  (`new row violates row-level security policy`, also 42501) and
+  `mantle_default_home`'s refusals, so a refusal is a 403, not a 500.
+- **Assistant, link and contact creates.** Their scopes have an empty
+  `mantle.mod_ws`, so on the write role their create is refused unless it
+  lands in a folder they may edit whose home is the default home. Decide
+  where an assistant's create goes before its writes move.
+- **An app's placement on create.** Plan 18.8 (an app needs a Moderator of
+  every new holder) is enforced on a move (0278's move check, grants.ts)
+  but not on a create: a user with Write on a folder can create an app in
+  it, and the app takes the folder's workspaces as holders. Add the move
+  check's app rule to the write check's INSERT branch for `type = 'app'`,
+  or decide that a folder's Write is enough.
+- **One helper for the manage rule.** "Manage of the home, or Admin when
+  there is no home" is written inline twice in 0278, and "may the scope
+  create in this folder" is worked out in 0277's create check,
+  `mantle_default_home` and 0278. Fold them into `mantle_may_manage_home`
+  and one create helper. Derived columns are kept by two ways: column
+  grants (`derived` in the matrix, `item_grants.via_folder_id` only) and
+  the guard triggers (`nodes.home_ws`, `read_ws`, `write_ws`, the chunk and
+  fact copies). The guard triggers are the canonical way; `derived` is
+  for a table whose columns are not all readable.
 - **SET LOCAL on the write pool.** Its writes set the scope and the actor
   with `SET LOCAL` in their own short transaction, never a session-level
   SET: a scope left on a pooled connection would be a stale access right.
