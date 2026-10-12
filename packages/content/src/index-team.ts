@@ -177,8 +177,10 @@ export {
   type RedeemedMemberInvite,
 } from './member-invites';
 export {
+  FORMER_CLIENT_CONTACT_MESSAGE,
   FORMER_CLIENT_EMAIL_MESSAGE,
   FORMER_CLIENT_ENABLE_MESSAGE,
+  isFormerClientContact,
   isFormerClientEmail,
   isFormerClientLogin,
 } from './former-clients';

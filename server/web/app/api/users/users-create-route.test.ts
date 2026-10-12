@@ -153,6 +153,21 @@ describe('POST /api/users, the insert refused', () => {
     expect(h.txCount).toBe(0);
   });
 
+  it('refuses a contact a former client login had, before any write (W8a fix round 2, L)', async () => {
+    // The contact exists; archive_client_logins names it.
+    h.selects = [[{ id: CONTACT }], [{ id: CONTACT }]];
+    const { POST } = await import('./route');
+    const res = await POST(post({ ...BODY, contactId: CONTACT }));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error:
+        'That contact belonged to a client login. A former client cannot be invited or given a new login.',
+      reason: 'contact-was-client',
+    });
+    expect(h.inserted).toBeNull();
+    expect(h.txCount).toBe(0);
+  });
+
   it('still answers 500 for any other database error', async () => {
     h.insertError = drizzleError('23503');
     const { POST } = await import('./route');

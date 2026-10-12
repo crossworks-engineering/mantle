@@ -104,6 +104,8 @@ describe('/api/team-admin/invites', () => {
       ['contact-has-login', 409],
       // A former client's email (W8a fix round 1, L6).
       ['email-was-client', 409],
+      // A former client's contact (W8a fix round 2).
+      ['contact-was-client', 409],
       ['contact-not-found', 400],
       ['no-email', 400],
     ];

@@ -31,7 +31,12 @@ import {
 } from '@mantle/db';
 import type { MemberInviteRow, MemberInviteState } from '@mantle/client-types';
 import { getContact } from './contacts';
-import { FORMER_CLIENT_EMAIL_MESSAGE, isFormerClientEmail } from './former-clients';
+import {
+  FORMER_CLIENT_CONTACT_MESSAGE,
+  FORMER_CLIENT_EMAIL_MESSAGE,
+  isFormerClientContact,
+  isFormerClientEmail,
+} from './former-clients';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Exec = Tx | typeof db;
@@ -49,7 +54,9 @@ export type MemberInviteErrorReason =
   | 'no-email'
   | 'email-has-login'
   /** The email was a client login's (archived by 0272, W8a fix round 1). */
-  | 'email-was-client';
+  | 'email-was-client'
+  /** The contact was a client login's (archived by 0272, W8a fix round 2). */
+  | 'contact-was-client';
 
 /** A create the admin can fix. The route maps `reason` to a status. */
 export class MemberInviteError extends Error {
@@ -163,8 +170,9 @@ export type CreateMemberInviteInput = {
 
 /**
  * Mint an invite. With a contact: it must be a contact of this brain with no
- * login linked; the email and name default to the contact's. Refused when a
- * login already has the email. Any open invite for the same contact or email
+ * login linked and never a client login's (archive_client_logins); the email
+ * and name default to the contact's. Refused when a login already has the
+ * email, or a client login had it. Any open invite for the same contact or email
  * is revoked in the same transaction, so a new invite replaces the old one
  * (an expired invite still holds the one-open-per-contact slot). Returns the
  * PLAINTEXT code, once.
@@ -180,6 +188,11 @@ export async function createMemberInvite(
   if (input.contactId) {
     const contact = await getContact(ownerId, input.contactId);
     if (!contact) throw new MemberInviteError('contact-not-found', 'Contact not found.');
+    // A former client's contact: its login may be gone, the archive of 0272
+    // still names the contact it was linked to (W8a fix round 2).
+    if (await isFormerClientContact(contact.id)) {
+      throw new MemberInviteError('contact-was-client', FORMER_CLIENT_CONTACT_MESSAGE);
+    }
     if (await loginOnContact(contact.id)) {
       throw new MemberInviteError('contact-has-login', 'That contact already has a login.');
     }
@@ -403,6 +416,7 @@ export async function redeemMemberInvite(
       if (await loginWithEmail(invite.email, tx)) return null;
       // An invite made before 0272 archived its email's client login.
       if (await isFormerClientEmail(invite.email, tx)) return null;
+      if (invite.contactId && (await isFormerClientContact(invite.contactId, tx))) return null;
       if (invite.contactId && (await loginOnContact(invite.contactId, tx))) return null;
 
       const loginId = randomUUID();

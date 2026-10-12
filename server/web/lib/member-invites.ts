@@ -69,7 +69,8 @@ export function inviteErrorResponse(err: unknown): Response {
     const status =
       err.reason === 'contact-has-login' ||
       err.reason === 'email-has-login' ||
-      err.reason === 'email-was-client'
+      err.reason === 'email-was-client' ||
+      err.reason === 'contact-was-client'
         ? 409
         : 400;
     return NextResponse.json({ error: err.message, reason: err.reason }, { status });

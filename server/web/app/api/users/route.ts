@@ -13,7 +13,12 @@ import {
   nodes,
   sql,
 } from '@mantle/db';
-import { FORMER_CLIENT_EMAIL_MESSAGE, isFormerClientEmail } from '@mantle/content';
+import {
+  FORMER_CLIENT_CONTACT_MESSAGE,
+  FORMER_CLIENT_EMAIL_MESSAGE,
+  isFormerClientContact,
+  isFormerClientEmail,
+} from '@mantle/content';
 import { getOwnerOr401, hashLoginPassword } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { insertLoginWithWorkspaces } from '@/lib/login-create';
@@ -133,6 +138,14 @@ export async function POST(req: Request) {
       )
       .limit(1);
     if (!contact) return NextResponse.json({ error: 'Contact not found.' }, { status: 400 });
+    // A former client's contact (archived by 0272, its login deleted or
+    // not): a new login on it would bring the client back (W8a fix round 2).
+    if (await isFormerClientContact(parsed.data.contactId)) {
+      return NextResponse.json(
+        { error: FORMER_CLIENT_CONTACT_MESSAGE, reason: 'contact-was-client' },
+        { status: 409 },
+      );
+    }
   }
 
   const email = parsed.data.email.trim().toLowerCase();

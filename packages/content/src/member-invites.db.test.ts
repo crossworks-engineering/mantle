@@ -154,6 +154,41 @@ describe.skipIf(!URL)('member invites', () => {
       ).toHaveLength(0);
     });
 
+    it("refuses a former client's contact, its login deleted (W8a fix round 2, L)", async () => {
+      // The contact's own address was never the client's: only the archive's
+      // contact_id ties them, as after a client changed its email.
+      const contact = randomUUID();
+      await admin`insert into nodes (id, owner_id, type, title, path, data) values
+        (${contact}, ${anchor}, 'contact', 'Former Client', 'contacts',
+         ${JSON.stringify({ emails: [email('fc-contact-now')] })}::jsonb)`;
+      await admin`insert into archive_client_logins (login_id, email, contact_id, created_at, session_epoch)
+        values (${randomUUID()}, ${email('fc-contact-then')}, ${contact}, now(), 0)`;
+      await expect(
+        inv.createMemberInvite(anchor, { contactId: contact, createdBy: adminLogin }),
+      ).rejects.toMatchObject({
+        name: 'MemberInviteError',
+        reason: 'contact-was-client',
+        message:
+          'That contact belonged to a client login. A former client cannot be invited or given a new login.',
+      });
+      expect(await admin`select 1 from member_invites where contact_id = ${contact}`).toHaveLength(0);
+    });
+
+    it('an invite on a contact archived as a client since redeems nothing (W8a fix round 2, L)', async () => {
+      const contact = randomUUID();
+      await admin`insert into nodes (id, owner_id, type, title, path, data) values
+        (${contact}, ${anchor}, 'contact', 'Late Client', 'contacts',
+         ${JSON.stringify({ emails: [email('fc-contact-late')] })}::jsonb)`;
+      const { code } = await inv.createMemberInvite(anchor, {
+        contactId: contact,
+        createdBy: adminLogin,
+      });
+      await admin`insert into archive_client_logins (login_id, email, contact_id, created_at, session_epoch)
+        values (${randomUUID()}, ${email('fc-contact-late-then')}, ${contact}, now(), 0)`;
+      expect(await inv.redeemMemberInvite({ code, passwordHash: HASH })).toBeNull();
+      expect(await loginByEmail(email('fc-contact-late'))).toBeNull();
+    });
+
     it('an invite made before its email was archived as a client redeems nothing (L6)', async () => {
       const { code } = await inv.createMemberInvite(anchor, {
         email: email('fc-late'),

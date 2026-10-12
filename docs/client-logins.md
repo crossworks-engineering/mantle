@@ -57,7 +57,8 @@ A former client stays one (`archive_client_logins` is the list):
 - An admin cannot enable a former client login again (`PATCH
   /api/users/:id` with `disabled: false` answers 409), and an invite or a
   new login on a former client's email is refused (409, `reason:
-  'email-was-client'`); an invite made before redeems nothing.
+  'email-was-client'`), or linked to its contact (409, `reason:
+  'contact-was-client'`); an invite made before redeems nothing.
 - What a former client wrote stays client-sourced: its login id (its old
   chat thread), an item it wrote, and a workspace it is a user of count for
   the client-sourced write hold (`packages/tools/src/client-sourced.ts`).
