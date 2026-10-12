@@ -4,7 +4,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  ActorMissingError,
   actorSetting,
+  checkActorBound,
   currentActor,
   loginActor,
   runAsActor,
@@ -13,6 +15,7 @@ import {
   runReadPathWrite,
   runWithoutActor,
   setSlotActor,
+  takeActorMisses,
   systemActor,
   systemUnder,
   writeModeOf,
@@ -185,5 +188,40 @@ describe('binding the actor', () => {
     expect(under(loginActor(L, 'rw'))).toBe('rw');
     expect(under(loginActor(L, 'owner'))).toBe('rw');
     expect(under(null)).toBe('rw');
+  });
+});
+
+describe('the TypeScript check follows the mode (A2b: fail closed in on)', () => {
+  const withMode = (mode: string, fn: () => void) => {
+    const own = process.env.MANTLE_ACTOR_CHECK;
+    process.env.MANTLE_ACTOR_CHECK = mode;
+    try {
+      fn();
+    } finally {
+      if (own === undefined) delete process.env.MANTLE_ACTOR_CHECK;
+      else process.env.MANTLE_ACTOR_CHECK = own;
+      takeActorMisses();
+    }
+  };
+
+  it('off: nothing; warn: a miss; on: a miss and refused', () => {
+    withMode('off', () => {
+      expect(runWithoutActor(() => checkActorBound('db.insert'))).toBeNull();
+      expect(takeActorMisses()).toEqual([]);
+    });
+    withMode('warn', () => {
+      expect(runWithoutActor(() => checkActorBound('db.insert'))).toBeNull();
+      expect(takeActorMisses().map((m) => m.check)).toEqual(['db.insert']);
+    });
+    withMode('on', () => {
+      expect(() => runWithoutActor(() => checkActorBound('withSystemTx'))).toThrow(
+        ActorMissingError,
+      );
+      expect(takeActorMisses().map((m) => m.check)).toEqual(['withSystemTx']);
+      // With an actor bound, on lets it through.
+      expect(runAsSystem('worker:test', () => checkActorBound('db.insert'))).toMatchObject({
+        kind: 'system',
+      });
+    });
   });
 });

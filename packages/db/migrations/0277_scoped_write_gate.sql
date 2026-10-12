@@ -14,11 +14,14 @@
 --  - on: refused, 42501, as today on the system pool.
 --
 -- Every other session (the system pool, an operator) refuses as before.
--- The gate keys on the session's ROLE, never on a mantle.* setting: any role
--- can set those (docs/actors.md, "The settings are not a credential"). The
--- mode is mantle_actor_check_mode(): the box setting, which a session can
--- only raise. The gate runs only on the refusing path, so an allowed write
--- pays nothing for it. Re-runnable.
+-- The gate keys on the session's ROLE, never on a mantle.* setting: any
+-- role can set those (docs/actors.md, "The settings are not a credential").
+-- The mode is mantle_actor_check_mode(): the box setting, which a session
+-- can only raise. The gate runs only on the refusing path, so an allowed
+-- write pays nothing for it.
+--
+-- Last in this file: the 0275 statement check now refuses a write with no
+-- actor when the check is on. Re-runnable.
 
 -- Whether a refusal of the 0266 checks stands for this session. `what`
 -- names it for the warn NOTICE.
@@ -94,3 +97,38 @@ END
 $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_nodes_scope_delete_trg"() FROM PUBLIC;
+--> statement-breakpoint
+
+-- The SQL actor check refuses in 'on' (A2b; A2a only logged). A write on an
+-- item table with no mantle.actor: off runs it, warn reports it (a NOTICE
+-- the app logs later, as in 0275), on refuses it (42501). The fast path
+-- stays: a statement with an actor, or a session whose mantle.actor_check
+-- reads off, pays one setting read and no catalog read, so a box that is
+-- off pays nothing more per write. A session that sets its own value to off
+-- skips the check: the check finds code that forgot its actor, it is not a
+-- credential (any role can set mantle.actor too; docs/actors.md).
+CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_stmt"()
+  RETURNS trigger LANGUAGE plpgsql
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  seen_key text := 'mantle.actor_missed_' || TG_TABLE_NAME;
+  mode text;
+BEGIN
+  IF coalesce(current_setting('mantle.actor', true), '') <> '' OR pg_trigger_depth() > 1 THEN
+    RETURN NULL;
+  END IF;
+  IF coalesce(current_setting('mantle.actor_check', true), '') NOT IN ('warn', 'on') THEN
+    RETURN NULL;
+  END IF;
+  mode := "public"."mantle_actor_check_mode"();
+  IF mode = 'off' THEN RETURN NULL; END IF;
+  IF mode = 'on' THEN
+    RAISE EXCEPTION 'mantle actor check: % on % with no actor', TG_OP, TG_TABLE_NAME
+      USING ERRCODE = '42501', DETAIL = 'no_actor';
+  END IF;
+  IF coalesce(current_setting(seen_key, true), '') = TG_OP THEN RETURN NULL; END IF;
+  PERFORM set_config(seen_key, TG_OP, true);
+  RAISE NOTICE 'mantle actor miss: % on %', TG_OP, TG_TABLE_NAME;
+  RETURN NULL;
+END
+$$;

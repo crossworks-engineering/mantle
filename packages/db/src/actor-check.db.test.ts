@@ -77,7 +77,7 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
     }
   });
 
-  it('warn: a write with no actor is one NOTICE per transaction and table, and runs', async () => {
+  it('warn: a write with no actor is one NOTICE per transaction and table, and runs; on refuses it', async () => {
     notices.length = 0;
     await sql.begin(async (tx) => {
       await tx`select set_config('mantle.actor_check', 'warn', true)`;
@@ -90,13 +90,20 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
     expect(notices.filter((n) => n.startsWith('mantle actor miss: '))).toEqual([
       'mantle actor miss: UPDATE on nodes',
     ]);
-    // 'on' still only logs in A2a.
+    // 'on' refuses it (A2b, migration 0277).
     notices.length = 0;
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`select set_config('mantle.actor_check', 'on', true)`;
+        await touch(tx);
+      }),
+    ).rejects.toMatchObject({ code: '42501', detail: 'no_actor' });
+    expect(notices).toEqual([]);
+    // With an actor, 'on' runs it.
     await sql.begin(async (tx) => {
-      await tx`select set_config('mantle.actor_check', 'on', true)`;
+      await tx`select mantle_set_actor('system:test', 'rw', 'on')`;
       await touch(tx);
     });
-    expect(notices).toEqual(['mantle actor miss: UPDATE on nodes']);
   });
 
   it('no NOTICE with an actor set, or with the check off', async () => {

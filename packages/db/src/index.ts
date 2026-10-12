@@ -19,6 +19,7 @@ export {
   currentActor,
   actorCheckMode,
   takeActorMisses,
+  ActorMissingError,
   SYSTEM_REASON_RE,
 } from './actor';
 export { teamReadsSql, teamReadsAliasSql, teamWritesSql } from './grant-reads';

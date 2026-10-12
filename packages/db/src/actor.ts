@@ -16,9 +16,10 @@
  *  - system(reason): a process, an Admin area route, a named repair.
  *  - peer(share): a peer without "Acts as", read-only.
  *
- * A2a only LOGS: a statement with no actor is a miss (actor_check_misses),
- * in TypeScript here and in SQL (the item tables' write triggers). Nothing
- * is refused, whatever mantle.actor_check says; refusing is A2b.
+ * A statement with no actor is a miss (actor_check_misses), in TypeScript
+ * here and in SQL (the item tables' write triggers). In warn it only logs;
+ * in on it is refused (A2b): ActorMissingError here, 42501 no_actor in SQL
+ * (migration 0277).
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { env } from '@mantle/config';
@@ -309,19 +310,34 @@ export function noteActorMiss(miss: ActorMiss): void {
   missLogger?.(miss);
 }
 
+/** A statement with no actor bound, refused because the check is on (A2b,
+ *  plan 4.2 "Fail closed"). */
+export class ActorMissingError extends Error {
+  readonly code = 'actor-missing';
+  constructor(what: string) {
+    super(`${what}: no actor is bound and the actor check is on; refused (docs/actors.md)`);
+    this.name = 'ActorMissingError';
+  }
+}
+
 /** The TypeScript check: a statement about to be sent with no actor bound
- *  is a miss (logged only in A2a). `what` names the handle (db.insert,
- *  withSystemTx…). Returns the actor, or null. */
+ *  is a miss. Off: nothing. Warn: logged. On: logged and refused
+ *  (ActorMissingError, A2b), the same three steps as the SQL check. Until
+ *  the pool's first mode read lands the mode is MANTLE_ACTOR_CHECK alone
+ *  (the startup race; the SQL check reads the box itself). `what` names
+ *  the handle (db.insert, withSystemTx…). Returns the actor, or null. */
 export function checkActorBound(what: string): Actor | null {
   const actor = currentActor();
   if (actor) return actor;
-  if (actorCheckMode() === 'off') return null;
+  const mode = actorCheckMode();
+  if (mode === 'off') return null;
   noteActorMiss({
     source: 'ts',
     check: what,
     actor: '',
     detail: systemDbCallerOf(longStack()) ?? 'unknown caller',
   });
+  if (mode === 'on') throw new ActorMissingError(what);
   return null;
 }
 
