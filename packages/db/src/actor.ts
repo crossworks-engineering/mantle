@@ -120,12 +120,25 @@ export function slotActor(): Actor | null {
  * as that login is NOW. An inner binding replaces an outer one.
  */
 export function runAsActor<T>(actor: Actor, fn: () => T): T {
-  return actorStore.run(actor, fn);
+  return actorStore.run(actor, () => startedInside(fn()));
 }
 
 /** runAsActor(system(reason), fn): a process's own work. */
 export function runAsSystem<T>(reason: string, fn: () => T): T {
-  return actorStore.run(systemActor(reason), fn);
+  return runAsActor(systemActor(reason), fn);
+}
+
+/**
+ * A drizzle query is a lazy thenable: it runs when awaited, and the actor is
+ * read when it runs. One returned from a binding would run after the binding
+ * ended, as the caller. So a thenable result is started here, inside it.
+ */
+function startedInside<T>(value: T): T {
+  const then = (value as { then?: unknown } | null)?.then;
+  if (typeof then !== 'function') return value;
+  return new Promise((resolve, reject) => {
+    (value as PromiseLike<unknown>).then(resolve, reject);
+  }) as T;
 }
 
 /**
@@ -319,5 +332,5 @@ export type ReadPathWrite = keyof typeof READ_PATH_WRITES;
 
 /** Run a pinned read-path write (READ_PATH_WRITES) as system(<name>). */
 export function runReadPathWrite<T>(name: ReadPathWrite, fn: () => T): T {
-  return actorStore.run(systemActor(name), fn);
+  return runAsActor(systemActor(name), fn);
 }

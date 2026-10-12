@@ -128,4 +128,16 @@ describe('binding the actor', () => {
       expect(currentActor()).toEqual({ kind: 'link' });
     });
   });
+
+  it('a lazy thenable returned from a binding starts inside it', async () => {
+    let seen: Actor | null = null;
+    const lazy = {
+      then(ok: (v: string) => unknown) {
+        seen = currentActor();
+        return Promise.resolve('done').then(ok);
+      },
+    };
+    await expect(runAsSystem('lazy', () => lazy)).resolves.toBe('done');
+    expect(seen).toEqual(systemActor('lazy'));
+  });
 });
