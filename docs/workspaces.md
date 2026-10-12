@@ -62,6 +62,10 @@ Who may change a workspace:
 - **An Admin user** (with the users area) sees every workspace and may add
   anyone to any workspace, themselves included. The add is logged and the
   screen shows "Added by NAME on DATE".
+- **A new login** (an invite, or **Add login**) joins the Team workspace
+  as a Moderator, and an admin login joins Admin too (plan Q1). That is the
+  only membership the brain gives by itself. Any other workspace needs a
+  Moderator or an Admin user to add the user.
 - **Any user** may leave a workspace. Nobody removes or demotes the last
   Moderator.
 - **Archiving** a workspace removes its grants from the items granted to
