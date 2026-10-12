@@ -12,6 +12,7 @@
  */
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db, mantlePeers, nodes, peerShares, peerShareScopes } from '@mantle/db';
+import { kindsWhere, type PeerShareKind } from '@mantle/client-types/kinds';
 
 export type PeerShareRow = {
   id: string;
@@ -131,22 +132,14 @@ export async function listPeerShares(ownerId: string, peerId: string): Promise<P
 }
 
 /**
- * The node types a peer may be granted BY CATEGORY. Server-enforced allowlist:
- * never secrets or mantle_peer, and — deliberately — never email or journal
- * (the owner's private corpus; even the team responder gates those behind
+ * The node types a peer may be granted BY CATEGORY: the kind registry's
+ * `peerShare` (@mantle/client-types/kinds). Server-enforced allowlist: never
+ * secrets or mantle_peer, and — deliberately — never email or journal (the
+ * owner's private corpus; even the team responder gates those behind
  * teamPrivateReads). Cherry-picking an individual email/journal node via
  * peer_shares stays possible; subscribing a peer to all of them does not.
  */
-export const PEER_SHAREABLE_TYPES = [
-  'page',
-  'note',
-  'file',
-  'contact',
-  'table',
-  'draw',
-  'event',
-  'task',
-] as const;
+export const PEER_SHAREABLE_TYPES = kindsWhere<PeerShareKind>((s) => s.peerShare);
 
 export type PeerShareableType = (typeof PEER_SHAREABLE_TYPES)[number];
 

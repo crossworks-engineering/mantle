@@ -3,8 +3,31 @@
  * what the Library lists. The ONE list, for the brain (member-space.ts,
  * member-library.ts) and the client alike (audit M2); a runtime constant, so
  * it is the `@mantle/client-types/member-kinds` subpath.
+ *
+ * DEPRECATED (workspaces arch A1): derived from the kind registry's `library`
+ * field (./kinds) and kept exported for one pair release, then removed. Use
+ * the registry.
  */
-export const MEMBER_ITEM_KINDS = ['page', 'note', 'draw', 'table', 'file'] as const;
+import {
+  ITEM_KINDS,
+  kindsWhere,
+  type ClientLibraryKind,
+  type ItemKind,
+  type MemberLibraryKind,
+} from './kinds';
+
+/** The registry's `library` kinds that pass `pick`, in the lists' own order. */
+function libraryKinds<K extends ItemKind>(pick: (client: boolean) => boolean): readonly K[] {
+  const order = (t: ItemKind) => {
+    const lib = ITEM_KINDS[t].library as { order: number } | false;
+    return lib ? lib.order : 0;
+  };
+  return kindsWhere<K>((s) => s.library !== false && pick(s.library.client))
+    .slice()
+    .sort((a, b) => order(a) - order(b));
+}
+
+export const MEMBER_ITEM_KINDS = libraryKinds<MemberLibraryKind>(() => true);
 export type MemberItemKind = (typeof MEMBER_ITEM_KINDS)[number];
 
 export function isMemberItemKind(v: unknown): v is MemberItemKind {
@@ -47,7 +70,7 @@ export function adminListStateOf(v: unknown): AdminListState {
 
 /** The kinds a CLIENT works with in their own space (client logins C5, plan
  *  section 6): pages and notes they write, files they upload. */
-export const CLIENT_ITEM_KINDS = ['page', 'note', 'file'] as const;
+export const CLIENT_ITEM_KINDS = libraryKinds<ClientLibraryKind>((client) => client);
 export type ClientItemKind = (typeof CLIENT_ITEM_KINDS)[number];
 
 export function isClientItemKind(v: unknown): v is ClientItemKind {

@@ -10,39 +10,28 @@ import {
   type TreeItemState,
   type TreeKind,
 } from '@mantle/client-types/tree';
-import { isMemberItemKind } from '@mantle/client-types/member-kinds';
+import { kindSpecOf, treeKindsBy } from '@mantle/client-types/kinds';
 import { statusBeforeDoneOf } from '../task-status';
 
-/** The kinds the tree serves on this brain. A client offers the tree for
- *  these and keeps its older screen for the rest (the shell lists them).
- *  Apps joined in phase 3, their old layout document moved in by
- *  tree/apps-nav.ts. Recall joined with Recall v2 R3: the tree lists maps,
- *  never cards (cards are rows, not nodes). Pages joined in phase 7: a page
- *  is never the parent of another page any more; migration 0210 filed the
- *  old sub-pages into folders. */
-export const TREE_LIVE_KINDS: readonly TreeKind[] = [
-  'files',
-  'notes',
-  'pages',
-  'draw',
-  'tables',
-  'formulas',
-  'tasks',
-  'events',
-  'contacts',
-  'secrets',
-  'apps',
-  'recall',
-];
+/** The kinds the tree serves on this brain, derived from the kind registry
+ *  (@mantle/client-types/kinds, each kind's `tree.liveOrder`). A client
+ *  offers the tree for these and keeps its older screen for the rest (the
+ *  shell lists them). Apps joined in phase 3, their old layout document
+ *  moved in by tree/apps-nav.ts. Recall joined with Recall v2 R3: the tree
+ *  lists maps, never cards (cards are rows, not nodes). Pages joined in
+ *  phase 7: a page is never the parent of another page any more; migration
+ *  0210 filed the old sub-pages into folders. */
+export const TREE_LIVE_KINDS: readonly TreeKind[] = treeKindsBy('liveOrder');
 
 export function isTreeLiveKind(kind: TreeKind): boolean {
   return TREE_LIVE_KINDS.includes(kind);
 }
 
 /** The kinds the member and client trees serve: the live kinds whose items a
- *  Library holds (files, notes, drawings, tables). */
-export const READER_TREE_KINDS: readonly TreeKind[] = TREE_LIVE_KINDS.filter((k) =>
-  isMemberItemKind(TREE_KIND_SPECS[k].nodeType),
+ *  Library holds (files, notes, pages, drawings, tables; the registry's
+ *  `library`). */
+export const READER_TREE_KINDS: readonly TreeKind[] = TREE_LIVE_KINDS.filter(
+  (k) => (kindSpecOf(TREE_KIND_SPECS[k].nodeType)?.library ?? false) !== false,
 );
 
 /** The short token an item shows in its row's status slot. */

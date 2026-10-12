@@ -20,6 +20,7 @@
     "drop-viewer-logins": "tsx --env-file-if-exists=../../server/web/.env.local src/drop-viewer-logins.ts"
   },
   "dependencies": {
+    "@mantle/client-types": "workspace:*",
     "@mantle/config": "workspace:*",
     "@mantle/std": "workspace:*",
     "drizzle-orm": "^0.45.3",

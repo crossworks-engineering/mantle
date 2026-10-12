@@ -15,25 +15,19 @@ import type { AccessLevel } from './dto/access';
 import type { GrantWorkspaceRef, ListWorkspace } from './dto/grants';
 import type { TaskStatus } from './dto/rows';
 import type { AppTint } from './app-nav';
+import {
+  ITEM_KINDS,
+  ITEM_KIND_NAMES,
+  treeKindsBy,
+  type KindTreeSpec,
+  type RegistryTreeKind,
+} from './kinds';
 
-/** The kinds the tree serves, in navigation order. */
-export const TREE_KINDS = [
-  'files',
-  'notes',
-  'pages',
-  'draw',
-  'tables',
-  'formulas',
-  'apps',
-  'tasks',
-  'events',
-  'contacts',
-  'secrets',
-  // Recall v2's maps (its own content type, not pages). Appended last so no
-  // earlier kind's index moves. Served since the Recall screen (R3).
-  'recall',
-] as const;
-export type TreeKind = (typeof TREE_KINDS)[number];
+/** The kinds the tree serves, in navigation order: derived from the kind
+ *  registry (./kinds, each kind's `tree.order`). A jackdaw contract: the
+ *  order never changes (Recall, appended last, kept every earlier index). */
+export const TREE_KINDS = treeKindsBy('order') as readonly RegistryTreeKind[];
+export type TreeKind = RegistryTreeKind;
 
 export function isTreeKind(v: unknown): v is TreeKind {
   return typeof v === 'string' && (TREE_KINDS as readonly string[]).includes(v);
@@ -77,97 +71,25 @@ export type TreeKindSpec = {
   sorts: readonly TreeSort[];
 };
 
-export const TREE_KIND_SPECS: Readonly<Record<TreeKind, TreeKindSpec>> = {
-  files: {
-    kind: 'files',
-    root: 'files',
-    nodeType: 'file',
-    shareable: true,
-    sorts: ['name', 'updated'],
-  },
-  notes: {
-    kind: 'notes',
-    root: 'notes',
-    nodeType: 'note',
-    shareable: true,
-    sorts: ['updated', 'name'],
-  },
-  pages: {
-    kind: 'pages',
-    root: 'pages',
-    nodeType: 'page',
-    shareable: true,
-    sorts: ['updated', 'name'],
-  },
-  draw: {
-    kind: 'draw',
-    root: 'draw',
-    nodeType: 'draw',
-    shareable: true,
-    sorts: ['updated', 'name'],
-  },
-  tables: {
-    kind: 'tables',
-    root: 'tables',
-    nodeType: 'table',
-    shareable: true,
-    sorts: ['updated', 'name'],
-  },
-  formulas: {
-    kind: 'formulas',
-    root: 'formulas',
-    nodeType: 'formula',
-    shareable: true,
-    sorts: ['name', 'updated'],
-  },
-  apps: {
-    kind: 'apps',
-    root: 'apps',
-    nodeType: 'app',
-    shareable: true,
-    sorts: ['name', 'updated'],
-  },
-  tasks: {
-    kind: 'tasks',
-    root: 'tasks',
-    nodeType: 'task',
-    shareable: false,
-    sorts: ['due', 'updated', 'name'],
-  },
-  events: {
-    kind: 'events',
-    root: 'events',
-    nodeType: 'event',
-    shareable: false,
-    sorts: ['start', 'name'],
-  },
-  contacts: {
-    kind: 'contacts',
-    root: 'contacts',
-    nodeType: 'contact',
-    shareable: false,
-    sorts: ['name', 'updated'],
-  },
-  secrets: {
-    kind: 'secrets',
-    root: 'secrets',
-    nodeType: 'secret',
-    shareable: false,
-    sorts: ['name', 'updated'],
-  },
-  // The tree lists maps only; a map's cards are recall_nodes rows, never
-  // nodes, so they never appear as items.
-  // Not shareable YET: a map is granted beyond Admin only once Recall R6
-  // lets a workspace's assistant read maps. Until then the tree must not
-  // offer it.
-  recall: {
-    kind: 'recall',
-    root: 'recall',
-    nodeType: 'recall',
-    shareable: false,
-    sorts: ['name', 'updated'],
-  },
-};
+/** Derived from the kind registry (./kinds): one spec per tree kind, keyed
+ *  in navigation order. */
+export const TREE_KIND_SPECS: Readonly<Record<TreeKind, TreeKindSpec>> = Object.fromEntries(
+  ITEM_KIND_NAMES.flatMap((nodeType) => {
+    const tree: KindTreeSpec | null = ITEM_KINDS[nodeType].tree;
+    return tree ? [{ tree, nodeType }] : [];
+  })
+    .sort((a, b) => a.tree.order - b.tree.order)
+    .map(({ tree, nodeType }): [string, TreeKindSpec] => [
+      tree.kind,
+      {
+        kind: tree.kind as TreeKind,
+        root: tree.root,
+        nodeType,
+        shareable: tree.shareable,
+        sorts: tree.sorts,
+      },
+    ]),
+) as Record<TreeKind, TreeKindSpec>;
 
 /** One folder as the tree shows it. Counts are what THIS reader can see. */
 export type TreeFolder = {

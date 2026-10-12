@@ -23,8 +23,8 @@ import {
   nodes,
   shares,
   SNAPSHOT_COPY_NO_SHARE,
-  WORKSPACE_NODE_TYPES,
 } from '@mantle/db';
+import { kindsWhere, type ContactShareKind } from '@mantle/client-types/kinds';
 import type {
   AccessContactShare,
   ContactShareRefusedReason,
@@ -43,9 +43,12 @@ export class ContactShareRefusedError extends Error {
   }
 }
 
-/** Kinds a contact share may name: the workspace kinds, never a folder. */
-export const CONTACT_SHAREABLE_TYPES: readonly string[] = WORKSPACE_NODE_TYPES.filter(
-  (t) => t !== 'branch',
+/** Kinds a contact share may name: the kind registry's `contactShare`
+ *  (@mantle/client-types/kinds), never a folder. Its own field since A1, not
+ *  the workspace class: tasks, events and Recall maps joined that class
+ *  (D1) and stay out of contact shares until a reviewed change says so. */
+export const CONTACT_SHAREABLE_TYPES: readonly string[] = kindsWhere<ContactShareKind>(
+  (s) => s.contactShare,
 );
 
 const live = () =>

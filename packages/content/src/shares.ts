@@ -23,6 +23,7 @@ import {
   type ViewerLevel,
 } from '@mantle/db';
 import type { ShareMode } from '@mantle/client-types';
+import { kindSpecOf, kindsWhere, type PublicLinkKind } from '@mantle/client-types/kinds';
 import { env } from '@mantle/config';
 
 export type { ShareMode };
@@ -34,29 +35,16 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *  row would wait on itself. */
 export type ShareDb = typeof db | Tx;
 
-/** Node types that may be shared publicly. Sensitive types are excluded.
- *  `branch` = a FILES FOLDER only: a folder link serves the files and
- *  subfolders under it that are on its served list (see
+/** Node types that may be shared publicly: the kind registry's
+ *  `publicLink` (@mantle/client-types/kinds). Sensitive types are excluded.
+ *  A formula's link is a live calculator; a drawing's serves its COMMITTED
+ *  SVG snapshot (validated by acceptSceneSvg at commit), never the scene or
+ *  the draft. `branch` ('files-folder') = a FILES FOLDER only: a folder link
+ *  serves the files and subfolders under it that are on its served list (see
  *  {@link isShareableFolderPath} and docs/sharing.md §folders). Branches
  *  outside the files tree (and the files root itself) are rejected at
  *  {@link createShare}. */
-export const SHAREABLE_TYPES = [
-  'page',
-  'note',
-  'task',
-  'event',
-  'file',
-  'app',
-  'table',
-  // A formula is a calculation model, and the shared surface is a live
-  // calculator — the point of sending someone a link is that they can put their
-  // own numbers in and see the derivation, not just read the equations.
-  'formula',
-  // A draw shares its COMMITTED SVG snapshot (validated by acceptSceneSvg at
-  // commit) — never the scene JSON, never the draft. Static pixels, no JS.
-  'draw',
-  'branch',
-] as const;
+export const SHAREABLE_TYPES = kindsWhere<PublicLinkKind>((s) => s.publicLink !== false);
 export type ShareableType = (typeof SHAREABLE_TYPES)[number];
 
 export function isShareable(type: string): type is ShareableType {
@@ -73,8 +61,8 @@ export function isShareableFolderPath(path: string | null | undefined): boolean 
 /** Whether this node can carry a link at all: a shareable type, and a folder
  *  only under `files`. The same checks {@link createShare} throws on. */
 export function canShareNode(node: { type: string; path: string | null }): boolean {
-  if (!isShareable(node.type)) return false;
-  return node.type !== 'branch' || isShareableFolderPath(node.path);
+  const link = kindSpecOf(node.type)?.publicLink ?? false;
+  return link === true || (link === 'files-folder' && isShareableFolderPath(node.path));
 }
 
 // ─── Links and levels ────────────────────────────────────────────────────────

@@ -20,21 +20,16 @@
 import type postgres from 'postgres';
 import { POOL_ROLES, RETIRED_POOL_ROLES } from './viewer-roles';
 import { viewerRoleName } from './viewer';
+import { kindsWhere, type WorkspaceKind } from '@mantle/client-types/kinds';
 
-/** The node types that may be granted beyond the Admin workspace (shared
- *  with a team, a contact, a link). A journal entry, a task, an email and
- *  the other private kinds stay Admin. */
-export const WORKSPACE_NODE_TYPES = [
-  'page',
-  'note',
-  'draw',
-  'table',
-  'file',
-  'branch',
-  'app',
-  // Formulas are authored workspace objects (2026-09-26).
-  'formula',
-] as const;
+/** The node types that may be granted beyond the Admin workspace: the
+ *  'workspace' class of the kind registry (@mantle/client-types/kinds), the
+ *  same set as mantle_kind_class in SQL (access-matrix.db.test.ts). Tasks,
+ *  events and Recall maps joined with the registry (workspaces arch A1,
+ *  owner decision D1); a journal entry, an email and the other Admin-only
+ *  kinds stay Admin. mantle_workspace_kind (0159) still holds the old list
+ *  for an unmigrated brain until A7 drops it. */
+export const WORKSPACE_NODE_TYPES = kindsWhere<WorkspaceKind>((s) => s.class === 'workspace');
 
 /** What the workspace role may SELECT: nothing, the whole row, or named
  *  columns only. */

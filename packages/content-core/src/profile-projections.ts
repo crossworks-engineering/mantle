@@ -23,6 +23,7 @@ import type {
   ReminderChannel,
   ThoughtTrailMode,
 } from '@mantle/client-types';
+import { kindsWhere } from '@mantle/client-types/kinds';
 
 import {
   parseAgentThinkingEffort,
@@ -93,17 +94,16 @@ export function isTeamPrivateReadsEnabled(
 }
 
 /** Node types that hold the owner's private corpus (email + journal). A team
- *  surface sees them only when the owner opted in (`teamPrivateReads`). */
-export const TEAM_PRIVATE_CORPUS_TYPES: readonly string[] = ['email', 'email_thread', 'journal'];
+ *  surface sees them only when the owner opted in (`teamPrivateReads`). The
+ *  kind registry's teamHidden 'private-corpus' (@mantle/client-types/kinds). */
+export const TEAM_PRIVATE_CORPUS_TYPES: readonly string[] = kindsWhere(
+  (s) => s.teamHidden === 'private-corpus',
+);
 
 /** Node types a team surface NEVER sees, opt-in or not: credentials, the
- *  owner's own Telegram chats, saved places ("home") and federation peers. */
-export const TEAM_NEVER_TYPES: readonly string[] = [
-  'secret',
-  'telegram_message',
-  'location',
-  'mantle_peer',
-];
+ *  owner's own Telegram chats, saved places ("home") and federation peers.
+ *  The kind registry's teamHidden 'never'. */
+export const TEAM_NEVER_TYPES: readonly string[] = kindsWhere((s) => s.teamHidden === 'never');
 
 /** Every node type hidden from a team-member surface (team chat, forum, a
  *  team-mode shared app). The ONE list the read tools and the context loader

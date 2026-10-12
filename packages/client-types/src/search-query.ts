@@ -3,26 +3,12 @@
  * the `search_nodes` / `search_chunks` MCP tools (mobile companion's search).
  * Pure so it can be unit-tested without the route runtime.
  */
+import { kindsWhere, type SearchableKind } from './kinds';
 
-/** Mirrors the `search_nodes` tool's `type` enum — the API's contract. */
-export const SEARCH_NODE_TYPES = [
-  'branch',
-  'email',
-  'email_thread',
-  'file',
-  'note',
-  'page',
-  'sermon',
-  'contact',
-  'task',
-  'event',
-  'printer_project',
-  'telegram_message',
-  'documentation',
-  'journal',
-  'formula',
-  'draw',
-] as const;
+/** The `type` filters of GET /api/search: the kind registry's `searchable`
+ *  (./kinds). Near the `search_nodes` tool's `type` enum, which also takes
+ *  `secret` (an Admin-only tool argument). */
+export const SEARCH_NODE_TYPES = kindsWhere<SearchableKind>((s) => s.searchable);
 
 export type SearchNodeType = (typeof SEARCH_NODE_TYPES)[number];
 

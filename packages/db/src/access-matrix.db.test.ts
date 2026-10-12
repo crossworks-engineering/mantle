@@ -230,9 +230,12 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
     }
   });
 
+  // Re-pinned in workspaces arch A1: the TS list is the registry's workspace
+  // class, so it follows mantle_kind_class (0241). mantle_workspace_kind
+  // (0159, the tier model's list) stays for unmigrated brains until A7.
   it('the workspace kinds agree between SQL and TS', async () => {
     const rows = await sql<{ t: string; ok: boolean }[]>`
-      select t::text as t, mantle_workspace_kind(t) as ok
+      select t::text as t, mantle_kind_class(t) = 'workspace' as ok
       from unnest(enum_range(null::node_type)) as t`;
     const sqlKinds = rows
       .filter((r) => r.ok)
