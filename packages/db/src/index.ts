@@ -35,6 +35,8 @@ export {
   lockMoreHeads,
   withDeadlockRetry,
   loginScopeFor,
+  resolveCreateHome,
+  type CreateHomeRefusal,
   loginScopeColumns,
   seedLoginScope,
   brainOnWorkspacesNow,

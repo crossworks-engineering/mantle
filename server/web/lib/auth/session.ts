@@ -28,6 +28,7 @@ import {
   enterRequestScope,
   hasRequestSlot,
   loginScopeFor,
+  resolveCreateHome,
   brainOnWorkspacesNow,
   withViewer,
   noteRequestSystem,
@@ -1025,33 +1026,11 @@ async function createHomeFor(
   pattern: string,
   ownWork: boolean,
 ): Promise<CreateHome | NextResponse> {
-  let createWs: string | null = null;
+  let askedWs: string | null = null;
   if (CREATE_ROUTES.has(`${method.toUpperCase()} ${pattern}`)) {
     const req = getRequestContext()?.req;
-    const asked = req ? new URL(req.url).searchParams.get('ws') : null;
-    if (asked !== null && asked !== '') {
-      if (!ITEM_ID_RE.test(asked)) {
-        return NextResponse.json(
-          { error: 'invalid', message: 'ws must be a workspace id.' },
-          { status: 400 },
-        );
-      }
-      const scope = await loginScopeFor(loginId);
-      const ws = asked.toLowerCase();
-      if (!scope.ws.includes(ws)) {
-        return NextResponse.json(
-          {
-            error: 'forbidden',
-            reason: 'workspace',
-            message: 'You are not in that workspace.',
-          },
-          { status: 403 },
-        );
-      }
-      if (scope.modWs.includes(ws)) createWs = ws;
-    }
+    askedWs = req ? new URL(req.url).searchParams.get('ws') : null;
   }
-  if (!ownWork) return { createWs, privateWs: null };
   // A write that makes no item (a delete, a pin, an opened mark) never
   // makes the private workspace (W6b fix round 1): its existing one, if
   // any, else none. Any other write may make it: a create, and also an
@@ -1061,28 +1040,18 @@ async function createHomeFor(
   // is not narrowed to the create routes).
   const reqPath = getRequestContext()?.path;
   const target = reqPath ? itemWriteTarget(method, pattern, reqPath) : null;
-  if (method.toUpperCase() === 'DELETE' || target?.need === 'read') {
-    const own = (await db.execute(sql`
-      select p.workspace_id::text as ws from private_workspaces p
-        join workspaces w on w.id = p.workspace_id and w.archived_at is null
-       where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
-    return { createWs, privateWs: own[0]?.ws ?? null };
+  const makePrivate = !(method.toUpperCase() === 'DELETE' || target?.need === 'read');
+  // The one rule, shared with assistant turns (A0): @mantle/db resolveCreateHome.
+  const home = await resolveCreateHome(loginId, { askedWs, ownWork, makePrivate });
+  if ('refused' in home) {
+    return home.refused === 'invalid'
+      ? NextResponse.json({ error: 'invalid', message: home.message }, { status: 400 })
+      : NextResponse.json(
+          { error: 'forbidden', reason: 'workspace', message: home.message },
+          { status: 403 },
+        );
   }
-  const rows = (await db.execute(
-    sql`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
-  )) as unknown as { ws: string | null }[];
-  const privateWs = rows[0]?.ws ?? null;
-  if (!privateWs) {
-    return NextResponse.json(
-      {
-        error: 'forbidden',
-        reason: 'workspace',
-        message: 'You have no workspace to create in yet.',
-      },
-      { status: 403 },
-    );
-  }
-  return { createWs, privateWs };
+  return home;
 }
 
 /** The 403 a gate answers a login of the wrong kind with. The reason names

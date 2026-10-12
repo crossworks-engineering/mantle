@@ -15,6 +15,7 @@ import {
   db,
   lowerLevel,
   toolGroups,
+  withCreateHome,
   type Tool,
   type ToolHandler,
   type ViewerLevel,
@@ -56,6 +57,7 @@ import { registerToolDispatcher } from './dispatch-bridge';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { adminToolGate, runGated } from './admin-gate';
 import { toolItemWriteRefusal } from './item-write-gate';
+import { turnCreateHome } from './turn-create-home';
 import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-ref-gate';
 
 // Same-package callers that must not import this module (it imports the
@@ -112,7 +114,11 @@ export async function dispatchTool(
       // M2): the item routes' rule, asked before any write.
       const refused = await toolItemWriteRefusal(tool.slug, input, ctx.ownerId, h.ref);
       if (refused) return { ok: false, error: refused };
-      return await runGated(gate, () => fn(input, ctx));
+      // What it makes lands by the home rule, as the same login's create
+      // from the web would (A0, turn-create-home.ts).
+      const home = await turnCreateHome();
+      const run = () => runGated(gate, () => fn(input, ctx));
+      return await (home ? withCreateHome(home, run) : run());
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

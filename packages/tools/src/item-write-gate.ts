@@ -8,7 +8,7 @@
  * the dispatcher (dispatch.ts) and the owner MCP bridge
  * (@mantle/mcp-core register/context.ts) ask the scope before the handler
  * runs: the same rule as the item routes since W6a (mantle_may_edit for a
- * content change, mantle_may_manage for a delete, a move or a link, a read
+ * content change or a link, mantle_may_manage for a delete or a move, a read
  * for a write that only needs to see the item; a read-only snapshot copy is
  * never edited). @mantle/db item-rights.ts holds the check.
  *

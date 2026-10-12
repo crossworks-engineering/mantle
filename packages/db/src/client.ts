@@ -34,6 +34,7 @@ import {
   requestWriteScope,
   currentCreateHome,
   requestScopeMemo,
+  type CreateHome,
 } from './viewer';
 
 declare global {
@@ -887,6 +888,73 @@ export function seedLoginScope(
  */
 export async function loginScopeFor(loginId: string): Promise<WorkspaceScope> {
   return memoScopeFor({ login: loginId });
+}
+
+/** Why a create home was refused: a workspace id that is not one, a
+ *  workspace the login is not in, or no workspace to make a private one in. */
+export type CreateHomeRefusal = {
+  refused: 'invalid' | 'not-member' | 'no-workspace';
+  message: string;
+};
+
+/**
+ * Where a login's creates land (docs/workspaces.md, "Where a new item
+ * lands"; W6b): one function for the web routes (session.ts createHomeFor)
+ * and assistant turns (A0: @mantle/tools turnCreateHome).
+ *
+ *  - `askedWs` (a request's ?ws=, a workspace assistant's own workspace): a
+ *    workspace the login is not in is refused; one it moderates is where
+ *    its creates land; one it only reads is as if none was named.
+ *  - `ownWork` (a login outside the Admin workspace; 'auto' asks the
+ *    database): its private workspace is the fallback (the folder it makes
+ *    the item in when it may edit that, else the private workspace), made
+ *    now when `makePrivate` and it has none. With no workspace to make one
+ *    in, refused. An Admin user has no private fallback: the folder's home,
+ *    else Admin.
+ *
+ * Admin pool: it names a place, it grants nothing (the database's create
+ * checks still run).
+ */
+export async function resolveCreateHome(
+  loginId: string,
+  o: { askedWs?: string | null; ownWork: boolean | 'auto'; makePrivate: boolean },
+): Promise<CreateHome | CreateHomeRefusal> {
+  let createWs: string | null = null;
+  if (o.askedWs !== undefined && o.askedWs !== null && o.askedWs !== '') {
+    if (!UUID_RE.test(o.askedWs)) return { refused: 'invalid', message: 'ws must be a workspace id.' };
+    const scope = await loginScopeFor(loginId);
+    const ws = o.askedWs.toLowerCase();
+    if (!scope.ws.includes(ws)) {
+      return { refused: 'not-member', message: 'You are not in that workspace.' };
+    }
+    if (scope.modWs.includes(ws)) createWs = ws;
+  }
+  const admin = getAdminDb();
+  const ownWork =
+    o.ownWork === 'auto'
+      ? !(
+          (await admin.execute(sqlTag`
+            select 1 from workspace_users u
+              join workspaces w on w.id = u.workspace_id and w.is_admin and w.archived_at is null
+             where u.login_id = ${loginId}::uuid limit 1`)) as unknown as unknown[]
+        ).length
+      : o.ownWork;
+  if (!ownWork) return { createWs, privateWs: null };
+  if (!o.makePrivate) {
+    const own = (await admin.execute(sqlTag`
+      select p.workspace_id::text as ws from private_workspaces p
+        join workspaces w on w.id = p.workspace_id and w.archived_at is null
+       where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
+    return { createWs, privateWs: own[0]?.ws ?? null };
+  }
+  const rows = (await admin.execute(
+    sqlTag`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
+  )) as unknown as { ws: string | null }[];
+  const privateWs = rows[0]?.ws ?? null;
+  if (!privateWs) {
+    return { refused: 'no-workspace', message: 'You have no workspace to create in yet.' };
+  }
+  return { createWs, privateWs };
 }
 
 let brainOnWorkspaces = false;

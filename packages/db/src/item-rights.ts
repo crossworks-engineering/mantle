@@ -2,8 +2,8 @@
  * What the current workspace scope may do to items (workspaces W7a fix
  * round 1, M2): the one edit check of a write to an item made from a tool,
  * in a turn or on MCP, as the item routes ask it since W6a (the session's
- * item write gate): mantle_may_edit for a content change, mantle_may_manage
- * for a delete, a move or a link, a read for a write that only needs to see
+ * item write gate): mantle_may_edit for a content change or a link,
+ * mantle_may_manage for a delete or a move (an app's link: assertMayLink), a read for a write that only needs to see
  * the item. A read-only snapshot copy (data.snapshot_of) is never edited.
  *
  * A typed write in a scope runs on the system pool with no scope on its
@@ -31,7 +31,7 @@ export function itemNotInScopeError(id: string): string {
 /** The refusal of a write the scope may read but not make. */
 export function itemNoRightError(id: string, need: ItemNeed): string {
   return need === 'manage'
-    ? `You cannot change this item in your workspaces (${id}): deleting, moving or linking it is for a Moderator of its workspace.`
+    ? `You cannot change this item in your workspaces (${id}): deleting or moving it is for a Moderator of its workspace.`
     : `You cannot change this item in your workspaces (${id}): ask for Write on it, or a Moderator of its workspace.`;
 }
 
