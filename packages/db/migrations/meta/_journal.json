@@ -1933,6 +1933,13 @@
       "when": 1790195820000,
       "tag": "0276_workspace_landing",
       "breakpoints": true
+    },
+    {
+      "idx": 277,
+      "version": "7",
+      "when": 1790195880000,
+      "tag": "0277_scoped_write_gate",
+      "breakpoints": true
     }
   ]
 }
