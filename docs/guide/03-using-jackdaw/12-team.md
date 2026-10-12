@@ -20,7 +20,7 @@ Members chat with the assistant of the Team workspace. Set one on the Team works
 
 An invite link works once and expires after 72 hours. A new invite for the same person replaces the old link. Open invites are listed at the top of **Settings > Logins**: select one to **Revoke** it or make a **New link**.
 
-To disable, change or remove a login later, use **Settings > Logins**. See [Member and client logins](../05-admin/07-logins.md).
+To disable, change or remove a login later, use **Settings > Logins**. See [Add logins](../05-admin/07-logins.md).
 
 ## Decide what members see
 
@@ -45,7 +45,7 @@ Review is gone: members no longer submit items for you to approve, and there is 
 - **Shared links**: every open link to your items, newest first.
 - **Settings**: member chat, the read posture and the member home app.
 
-Client logins are in **Settings > Logins**. See [Member and client logins](../05-admin/07-logins.md).
+Client logins are gone. To work with people outside your company, make a workspace for them in **Settings > Workspaces**. See [Add logins](../05-admin/07-logins.md).
 
 ## Next
 

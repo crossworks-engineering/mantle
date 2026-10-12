@@ -19,7 +19,7 @@ Say which one you want when you ask Appsmith, for example "keep the entries in t
 Each app gets one private database. No other app can open it.
 
 - Appsmith creates the tables and can pre-load reference data, such as a price list from a spreadsheet you name.
-- Users of a shared app at **Team** or **Client** level can write to it, so one app can be a shared job log.
+- Users of a workspace the app is shared with can write to it when that grant has **Write** on, so one app can be a shared job log.
 - It is included in backups. **History > Take snapshot** keeps a copy you can restore.
 
 ## Live data through tools
@@ -49,7 +49,7 @@ To see an app's table in **Tables**, ask the assistant: "Export the jobs table o
 ## If it fails
 
 - **The app shows no data**: usually an API key is missing, or the tool is not on the app's allowed list. Ask the assistant to check and fix it with the app open.
-- **It works for you but not for a member**: the connector sits at admin level (raise its level), or an http tool needs **External access**.
+- **It works for you but not for a member**: the connector is not attached to the member's workspace (attach it on **Settings > Workspaces**), or an http tool needs **External access**.
 
 ## Next
 

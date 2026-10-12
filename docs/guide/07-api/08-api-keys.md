@@ -11,18 +11,18 @@ Every other route refuses a key, so a key can never change settings, logins or o
 
 ## Make a key
 
-1. Open **Settings > API access** and press **Make key**. Members find it in their menu, clients under **API keys**.
+1. Open **Settings > API access** and press **Make key**. Members find it in their menu.
 2. Name it after what will use it, for example "Nightly backup".
 3. Pick the **Access**:
    - **Read only**: the key reads and never writes.
    - **Read and write**: the key also creates and changes items.
 4. Pick when it **Expires**: 30 days, 90 days (the default), 1 year or never.
 5. Leave **All areas** on, or turn it off and tick only the areas the key needs.
-6. Type your password (admins and members), press **Make key** and copy the key. It is shown once. Mantle keeps only a hash of it.
+6. Type your password, press **Make key** and copy the key. It is shown once. Mantle keeps only a hash of it.
 
-A member's key lasts at most 90 days and a client's at most 30. Only an admin's key may never expire.
+A key lasts at most 90 days. A key that never expires or lasts longer, and a key that names risky tools, need a login in the Admin workspace with the keys area.
 
-Each login makes keys for itself. An admin's key acts as that admin, a member's as that member, a client's as that client. Nobody can make a key that acts as another login.
+Each login makes keys for itself. A key acts as its login as the login is now: it reads what that login's workspaces hold, and its access and areas only take away from that. Nobody can make a key that acts as another login.
 
 ## Areas
 
@@ -34,7 +34,7 @@ Each login makes keys for itself. An admin's key acts as that admin, a member's 
 | Contacts | Contacts |
 | Journal | Journal entries |
 | Apps | Mini apps (MCP) |
-| App data | The data of the mini apps an admin opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`). A member's or client's key only |
+| App data | The data of the mini apps opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`) |
 
 Email reaches a key only through Search. The attachments of synced mail are files, but a key without Search does not see them in Files: they are left out of the lists, one by id answers `404`, and an upload into their folder is refused (on MCP the Files tools refuse them).
 
@@ -58,10 +58,10 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 
 ## Keys on MCP
 
-- An admin's key gets the owner tools, held to its access and areas. Tools that send, spend or publish stay blocked until you name them under **Risky MCP tools allowed** when you make the key.
-- A member's key gets the same tools as everyone, in that member's workspaces, held to its access and areas. There is no per-login **MCP** or **Write** switch any more: a key writes when its access is **Read and write**, and then only what the member may change there.
-- A client's key works on `/api/v1` only: a client login has no MCP.
-- **API only**: a member's or client's key made before every login had MCP was made for `/api/v1`, so it is marked API only. It keeps working there, and `/api/mcp` refuses it. Make a new key for MCP. A key made since is never API only.
+- Every key gets the same tools as everyone, in its login's workspaces, held to its access and areas. There is no per-login **MCP** or **Write** switch: a key writes when its access is **Read and write**, and then only what its login may change there.
+- Tools that manage the brain need a login in the Admin workspace with the matching area. Tools that spend on the owner's provider keys are not offered to a login outside the Admin workspace.
+- Tools that send, spend or publish stay blocked until you name them under **Risky MCP tools allowed** when you make the key. Only a login in the Admin workspace with the keys area can name them.
+- **API only**: a member's key made before every login had MCP was made for `/api/v1`, so the move to one MCP for every login marked it API only (`api_only`). It keeps working on `/api/v1`, and `/api/mcp` refuses it. Make a new key for MCP. A key made since is never API only.
 
 ## What ends a key
 
@@ -69,12 +69,11 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 - It reaches its expiry.
 - The login changes its password, or uses **Sign out everywhere**.
 - An admin ends the login's sessions, disables it, or changes its role.
-
-A plain sign-out does not end an admin's or member's key. A client's key ends when the client signs out, because a client has no password to type when making one.
+A plain sign-out does not end a key. When the login leaves a workspace, its keys lose that workspace's items at once.
 
 Each time a key is made on your login, you get a notice that names the key. If it was not you, revoke the key and change your password.
 
-An admin sees every key on the brain and may revoke any of them. Members and clients see and revoke their own.
+An admin sees every key on the brain and may revoke any of them. Every other login sees and revokes its own.
 
 ## Limits
 

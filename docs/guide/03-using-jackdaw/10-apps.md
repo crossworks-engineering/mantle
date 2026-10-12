@@ -33,13 +33,12 @@ Pick a view from the **View** menu in the app header:
 
 ## Share an app
 
-After the first commit, click **Access** and pick a level:
+After the first commit, click **Access**:
 
-- **Team**: members run it signed in with their own logins, with the tools you granted it. See [Team and members](12-team.md).
-- **Client**: signed-in clients run it.
-- **Public**: anyone with the link sees it full screen, read-only, with no access to your brain's tools.
+- **Share with** a workspace: its users run the app, signed in with their own logins. With **Write** on they also write its data. An app shared beyond Admin reads only what every workspace that holds it reads. See [Who can use a brain](../04-concepts/05-access-tiers.md).
+- **Open link**: anyone with the link sees it full screen, read-only, with no access to your brain's tools.
 
-Treat a public link as a secret. Set the level back to **Admin** to close it.
+Treat a public link as a secret. Close it in the same panel.
 
 ## Tips
 

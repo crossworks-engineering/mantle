@@ -5,7 +5,7 @@ Make one of your mini-apps the home page every member login sees, and feed it th
 ## Before you start
 
 - A published app ([Build apps from an MCP client](06-mcp-apps.md)).
-- At least one member login ([Member and client logins](../05-admin/07-logins.md)).
+- At least one member login ([Add logins](../05-admin/07-logins.md)).
 
 ## Pin the app
 

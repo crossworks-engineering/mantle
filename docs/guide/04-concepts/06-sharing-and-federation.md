@@ -2,9 +2,9 @@
 
 Nothing leaves your brain unless you send it out on purpose. Every item starts private, and each way out is scoped to what you chose and can be taken back.
 
-## Access levels
+## Workspaces
 
-Each item has a level: Admin, Team, Client or Public. Every new item starts at Admin, and only an admin lowers it. What each level lets a login see is on [Who can use a brain](05-access-tiers.md).
+Inside the brain, an item is shared by a grant to a workspace, in its **Grant Access** panel. Every new item starts in one home workspace and nowhere else. Who reads what is on [Who can use a brain](05-access-tiers.md).
 
 ## Public links
 
@@ -32,5 +32,5 @@ Your partner runs their own Mantle. You pair the two brains and grant them your 
 ## Next
 
 - [Who can use a brain](05-access-tiers.md)
-- [Member and client logins](../05-admin/07-logins.md)
-- Deep developer references: [access-levels.md](../../access-levels.md), [sharing.md](../../sharing.md), [federation.md](../../federation.md)
+- [Add logins](../05-admin/07-logins.md)
+- Deep developer references: [workspaces.md](../../workspaces.md), [sharing.md](../../sharing.md), [federation.md](../../federation.md)

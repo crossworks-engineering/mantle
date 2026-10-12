@@ -8,8 +8,8 @@ Mantle is a self-hosted AI brain. It keeps your email, files, notes, pages, tabl
 - **It remembers by itself.** Each item that arrives is summarised, indexed by meaning and turned into facts as it lands. There is no index button. See [How Mantle remembers](04-concepts/02-memory.md).
 - **Answers show where they came from.** The assistant cites the email, file or page it read.
 - **Agents you can shape.** The assistant hands work to specialist agents (pages, tables, research, code). You decide each agent's model and tools.
-- **Every door has the same rules.** Jackdaw, the phone app, Telegram, Claude over MCP and the HTTP API reach the same brain, and each login sees only what its level allows. See [Ways to control Mantle](04-concepts/01-ways-to-control.md).
-- **Built for a team.** Members and clients get their own logins, limited by the database itself. See [Who can use a brain](04-concepts/05-access-tiers.md).
+- **Every door has the same rules.** Jackdaw, the phone app, Telegram, Claude over MCP and the HTTP API reach the same brain, and each login sees only what its workspaces hold. See [Ways to control Mantle](04-concepts/01-ways-to-control.md).
+- **Built for a team.** Everyone gets their own login and reads what their workspaces hold, limited by the database itself. See [Who can use a brain](04-concepts/05-access-tiers.md).
 
 ## Mantle and Jackdaw
 

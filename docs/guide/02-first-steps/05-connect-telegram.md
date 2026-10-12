@@ -28,7 +28,7 @@ The section shows your bot's `@username`, the word **polling**, and your chat as
 A paired chat belongs to the user who paired it. Whatever it sends, the bot's assistant answers that user the way it answers them in Jackdaw: in their own chat with it, with what they may see in its workspace, and nothing more.
 
 - **Only you pair your own chat.** The code the bot sends goes to the person on Telegram; entering it while signed in pairs the chat to the login that entered it, never to anyone else.
-- **Any workspace's assistant can have a bot.** A user pairs a chat to it only when they are a user of that assistant's workspace. A client login cannot pair a chat.
+- **Any workspace's assistant can have a bot.** A user pairs a chat to it only when they are a user of that assistant's workspace.
 - **A user taken out of the workspace loses the bot at once.** Their chat gets one short reply that it is not paired, and no turn runs, until they pair it again.
 - **Moderators and Admin users block or unpair, never pair.** A Moderator of the bot's workspace, or an Admin user with the users area, can block or unpair any chat of that bot. Unpairing sends the chat back to pending, so its person can pair again with a new code.
 - **Approvals come to your own chat only.** A tool call waiting for approval sends its card to a chat of the user it waits for, and only when that user may decide approvals.
