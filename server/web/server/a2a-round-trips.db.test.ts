@@ -10,15 +10,20 @@
  * app or the real runtime: tree load, item open, search, chat turn start,
  * MCP tool call, page save.
  *
- * Pinned:
- *  - with the check off, no statement sets or reads the actor, and no path
- *    sends more statements or round trips than at fe884e7c2, the commit
- *    before A2a (OFF_BASELINE, measured with this file on that commit);
+ * Pinned, within the build (fix round 2: no hard-coded counts):
+ *  - with the check off, no statement sets or reads the actor: the setting,
+ *    and the actor's own lookups, tagged `/* mantle:actor *\/` (the mode
+ *    read, loginActorNow, the Telegram and heartbeat lookups);
  *  - in warn, the only added statements are the actor's own: its setting,
- *    and the BEGIN and COMMIT around a write sent outside a transaction.
+ *    its tagged lookups, and the BEGIN and COMMIT around a write sent
+ *    outside a transaction;
+ *  - in warn, the same number of round trips as off, apart from the round
+ *    trips of the tagged lookups (the SET goes with a transaction's first
+ *    statement, a write's BEGIN, SET, COMMIT go with the write).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a2a-round-trips.db.test.ts
- * MANTLE_RT_REPORT=1 prints the table.
+ * MANTLE_RT_REPORT=1 prints the table. MANTLE_RT_BASELINE=1 also compares
+ * off with the counts at fe884e7c2 (OFF_BASELINE): the A2a merge gate only.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -45,9 +50,10 @@ type Path =
 type Count = { statements: number; roundTrips: number };
 
 /**
- * The counts at fe884e7c2 (before A2a), check off. A path may send fewer;
- * a path that sends more on purpose updates its row here, with the reason
- * in the commit.
+ * The counts at fe884e7c2 (before A2a), check off, measured with this file
+ * on that commit. Checked only with MANTLE_RT_BASELINE=1 (the A2a merge
+ * gate): a later feature that adds a query to one of these paths changes
+ * them, so they are no rule for every build.
  */
 const OFF_BASELINE: Record<Path, Count> = {
   'tree load': { statements: 13, roundTrips: 10 },
@@ -58,8 +64,11 @@ const OFF_BASELINE: Record<Path, Count> = {
   'page save': { statements: 11, roundTrips: 10 },
 };
 
-/** The actor's own statements (packages/db/src/client.ts). */
-const ACTOR_SQL = /mantle\.actor|mantle_actor_/;
+/** The actor's own statements: its setting (packages/db/src/client.ts) and
+ *  its tagged lookups. */
+const ACTOR_SQL = /mantle\.actor|mantle_actor_|\/\* mantle:actor \*\//;
+/** The actor's tagged lookups alone. */
+const LOOKUP_SQL = /\/\* mantle:actor \*\//;
 /** Not a path's: the box mode timer and postgres.js's type fetch on a new
  *  connection. */
 const NOISE_SQL = /mantle_actor_check_mode|from pg_catalog\.pg_type/;
@@ -68,6 +77,8 @@ const NOISE_SQL = /mantle_actor_check_mode|from pg_catalog\.pg_type/;
 class WireCounter {
   statements: string[] = [];
   roundTrips = 0;
+  /** Round trips that sent only the actor's tagged lookups. */
+  lookupRoundTrips = 0;
   lastAt = 0;
   private server: net.Server | null = null;
   private sockets = new Set<net.Socket>();
@@ -79,6 +90,8 @@ class WireCounter {
       let buf = Buffer.alloc(0);
       let startup = true;
       let serverSpoke = true;
+      /** Whether this connection's open round trip sent only lookups. */
+      let lookupOnly = false;
       upstream.on('data', (d) => {
         serverSpoke = true;
         client.write(d);
@@ -109,7 +122,16 @@ class WireCounter {
         }
         const counted = sent.filter((s) => !NOISE_SQL.test(s));
         if (sent.length === 0) return;
-        if (counted.length > 0 && serverSpoke) this.roundTrips += 1;
+        const lookups = counted.length > 0 && counted.every((s) => LOOKUP_SQL.test(s));
+        if (counted.length > 0 && serverSpoke) {
+          this.roundTrips += 1;
+          lookupOnly = lookups;
+          if (lookups) this.lookupRoundTrips += 1;
+        } else if (counted.length > 0 && lookupOnly && !lookups) {
+          // The same round trip sent more than lookups after all.
+          lookupOnly = false;
+          this.lookupRoundTrips -= 1;
+        }
         serverSpoke = false;
         this.statements.push(...counted);
         this.lastAt = Date.now();
@@ -128,6 +150,7 @@ class WireCounter {
   reset(): void {
     this.statements = [];
     this.roundTrips = 0;
+    this.lookupRoundTrips = 0;
   }
 
   async stop(): Promise<void> {
@@ -183,10 +206,14 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     expect(res.status, `${method} ${p}: ${text.slice(0, 200)}`).toBeLessThan(300);
   };
 
-  /** The login's work, bound as its process entry binds it in production
-   *  (the DBOS workflow for a turn, the MCP route for a tool call). */
+  /** The login's work, bound as its process entry binds it in production:
+   *  the MCP route names the login it authenticated. */
   const asOwner = <T>(fn: () => Promise<T>): Promise<T> =>
     m.runAsActor(m.loginActor(owner, 'rw'), fn);
+  /** A turn's DBOS workflow reads its login as it is now (loginActorNow:
+   *  a tagged lookup in warn, nothing with the check off). */
+  const asTurnEntry = async <T>(fn: () => Promise<T>): Promise<T> =>
+    m.runAsActor(await m.loginActorNow(owner, 'workflow:assistant-turn'), fn);
 
   const mcpClient = async () => {
     const ls = await import('@mantle/mcp-core');
@@ -216,7 +243,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     'chat turn start': async () => {
       const ra = await import('@mantle/runtime/assistant');
       // The model answers 400 at once: the turn's work up to the model call.
-      await asOwner(() =>
+      await asTurnEntry(() =>
         ra.runAssistantTurn(owner, `${tag} kettle`, { agentSlug, loginId: owner }),
       ).catch(() => undefined);
     },
@@ -258,7 +285,11 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     wire.reset();
     await PATHS[p]();
     await settle();
-    return { statements: [...wire.statements], roundTrips: wire.roundTrips };
+    return {
+      statements: [...wire.statements],
+      roundTrips: wire.roundTrips,
+      lookupRoundTrips: wire.lookupRoundTrips,
+    };
   };
 
   beforeAll(async () => {
@@ -340,16 +371,10 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       const off2 = await measure(p, 'off');
       // A path whose count moved between two off runs is not settled.
       expect(off2.statements.length, `${p}: off is not stable`).toBe(off.statements.length);
+      // (1) off: no statement sets or reads the actor.
       const actorOff = off.statements.filter((s) => ACTOR_SQL.test(s));
       if (actorOff.length) failures.push(`${p}: off sent the actor: ${actorOff[0]}`);
-      const base = OFF_BASELINE[p];
-      if (off.statements.length > base.statements || off.roundTrips > base.roundTrips) {
-        failures.push(
-          `${p}: off sends ${off.statements.length} statements in ${off.roundTrips} round trips, ` +
-            `${base.statements} in ${base.roundTrips} before A2a`,
-        );
-      }
-      // warn: the same statements as off, plus the actor's own.
+      // (2) warn: the same statements as off, plus the actor's own.
       const own = (s: string) => ACTOR_SQL.test(s) || /^(begin|commit)$/i.test(s);
       const a = tally(off.statements.filter((s) => !own(s)).map(norm));
       const b = tally(warn.statements.filter((s) => !own(s)).map(norm));
@@ -358,10 +383,29 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
           failures.push(`${p}: warn differs from off on ${k.slice(0, 160)}`);
         }
       }
+      // (3) warn: no round trip of its own, apart from the tagged lookups.
+      if (warn.roundTrips - warn.lookupRoundTrips !== off.roundTrips) {
+        failures.push(
+          `${p}: warn takes ${warn.roundTrips} round trips (${warn.lookupRoundTrips} lookups), ` +
+            `off ${off.roundTrips}`,
+        );
+      }
+      // The A2a merge gate only: off against the counts before A2a.
+      const base = OFF_BASELINE[p];
+      if (
+        process.env.MANTLE_RT_BASELINE &&
+        (off.statements.length > base.statements || off.roundTrips > base.roundTrips)
+      ) {
+        failures.push(
+          `${p}: off sends ${off.statements.length} statements in ${off.roundTrips} round trips, ` +
+            `${base.statements} in ${base.roundTrips} at fe884e7c2`,
+        );
+      }
       rows.push(
         `| ${p} | ${off.statements.length} / ${off.roundTrips} | ` +
           `${warn.statements.length} / ${warn.roundTrips} | ` +
-          `+${warn.statements.length - off.statements.length} / +${warn.roundTrips - off.roundTrips} |`,
+          `+${warn.statements.length - off.statements.length} / ` +
+          `+${warn.roundTrips - off.roundTrips} (lookups ${warn.lookupRoundTrips}) |`,
       );
     }
     if (process.env.MANTLE_RT_REPORT) {

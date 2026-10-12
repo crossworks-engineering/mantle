@@ -107,6 +107,15 @@ jobs:
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test
 
+      # The db package and the route sweeps again with the actor check off
+      # (workspaces arch A2a): the plain production path of a box whose
+      # check is off. About 40 s.
+      - name: Test (actor check off)
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test:actor-off
+
       # The real edge/webpack gate. Runs without a DB, same as the image build.
       - name: Build (server/web)
         run: pnpm -C server/web build

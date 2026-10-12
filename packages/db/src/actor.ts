@@ -162,9 +162,11 @@ function startedInside<T>(value: T): Bound<T> {
 }
 
 /**
- * Run `fn` with no actor, as a process entry starts (tests of an entry:
- * the entry must bind its own; a test otherwise runs as system(test), see
- * enterTestActor). Nothing else calls it.
+ * Run `fn` with no actor, as a process entry starts. Two callers: tests of
+ * an entry (the entry must bind its own; a test otherwise runs as
+ * system(test), see enterTestActor), and client.ts's box mode timer, which
+ * must not keep the actor of the statement that opened the pool. Pinned by
+ * eslint-rules/actor-binders.mjs.
  */
 export function runWithoutActor<T>(fn: () => T): T {
   return actorStore.exit(() => actorSlots.exit(fn));

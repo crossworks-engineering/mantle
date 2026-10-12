@@ -179,15 +179,16 @@ export async function telegramTurnActor(messageId: string): Promise<Actor> {
   if (actorCheckMode() === 'off') return systemActor(entry);
   let loginId: string | null;
   try {
-    const [row] = await runAsSystem(entry, () =>
-      db
-        .select({ loginId: telegramChats.loginId })
-        .from(telegramMessages)
-        .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-        .where(eq(telegramMessages.id, messageId))
-        .limit(1),
-    );
-    loginId = row?.loginId ?? null;
+    // The actor's own lookup, tagged (/* mantle:actor */: the round-trip
+    // test proves the check off sends none).
+    const [row] = (await runAsSystem(entry, () =>
+      db.execute(sql`/* mantle:actor */
+        select c.login_id::text as login_id
+          from telegram_messages m join telegram_chats c on c.id = m.chat_id
+         where m.id = ${messageId}::uuid
+         limit 1`),
+    )) as unknown as { login_id: string | null }[];
+    loginId = row?.login_id ?? null;
   } catch (err) {
     console.warn(
       `[${entry}] actor lookup for ${messageId} failed, running as system: ${errorMessage(err)}`,

@@ -19,7 +19,7 @@
  * next tick can retry.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   db,
   withoutLeftScope,
@@ -206,16 +206,21 @@ async function fireActor(hb: Heartbeat, login: string | null | undefined): Promi
   if (actorCheckMode() === 'off') return systemActor(reason);
   const owner = (): Actor => loginActor(hb.ownerId, 'owner');
   try {
+    // The actor's own lookup, one tagged statement (/* mantle:actor */: the
+    // round-trip test proves the check off sends none). The kind as
+    // agentWorkspaceKind answers it: none with no workspace, admin for a
+    // live Admin workspace, and workspace otherwise (a workspace gone or
+    // archived included: only a workspace assistant has one).
     const kind = await runAsSystem(reason, async () => {
-      const [agent] = await db
-        .select()
-        .from(agents)
-        .where(and(eq(agents.ownerId, hb.ownerId), eq(agents.slug, hb.agentSlug)))
-        .limit(1);
-      if (!agent) return null;
-      // A workspace that is gone throws: only a workspace assistant has one.
-      const k = await agentWorkspaceKind(agent).catch(() => 'workspace' as const);
-      return { agentId: agent.id, k };
+      const [row] = (await db.execute(sql`/* mantle:actor */
+        select a.id::text as id, a.workspace_id is not null as has_ws,
+               coalesce(w.is_admin and w.archived_at is null, false) as admin
+          from agents a left join workspaces w on w.id = a.workspace_id
+         where a.owner_id = ${hb.ownerId}::uuid and a.slug = ${hb.agentSlug}
+         limit 1`)) as unknown as { id: string; has_ws: boolean; admin: boolean }[];
+      if (!row) return null;
+      const k = !row.has_ws ? 'none' : row.admin ? 'admin' : 'workspace';
+      return { agentId: row.id, k };
     });
     if (kind?.k === 'workspace') return { kind: 'assistant', agentId: kind.agentId };
     const answered = answerer(hb, login);

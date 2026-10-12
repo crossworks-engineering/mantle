@@ -62,13 +62,28 @@ Only `packages/db` sets the settings (the lint
 off and an actor is bound, `client.ts` (`needsActorWrap`):
 
 - sets `mantle.actor` and `mantle.write_mode` in every transaction
-  (`withSystemTx`, the heads helpers, `db.transaction`), before its first
-  statement (after a `SET TRANSACTION`, which Postgres takes only first);
+  (`withSystemTx`, the heads helpers, `db.transaction`), sent unawaited
+  right before its first statement, so both go in one round trip (after a
+  `SET TRANSACTION`, which Postgres takes only first). A SET that fails is
+  the error reported;
 - sends a write outside a transaction (INSERT, UPDATE, DELETE, MERGE,
-  TRUNCATE, COPY, a WITH whose body writes, and any verb it cannot name) in
-  its own short pipelined transaction that sets them first (one round trip);
+  TRUNCATE, COPY, a WITH that names a write verb anywhere, more than one
+  statement, and any verb it cannot name) in its own short pipelined
+  transaction that sets them first (one round trip);
 - sends a read (SELECT, WITH ... SELECT, VALUES, SHOW, EXPLAIN without
-  ANALYZE) plain, exactly as with the check off.
+  ANALYZE or ANALYSE) plain, exactly as with the check off.
+
+`server/web/server/a2a-round-trips.db.test.ts` pins the cost on six hot
+paths: with the check off no statement sets or reads the actor (the actor's
+own lookups carry a `/* mantle:actor */` tag), and warn sends the same
+statements as off plus the actor's own, in the same number of round trips
+apart from the tagged lookups.
+
+The wrapper of a write in warn is a promise with `values()` and
+`simple()` only: no `cursor`, `forEach`, `describe`, `readable` or
+`writable`. A `COPY ... FROM STDIN` through `.writable()` on the system pool
+breaks in warn. Nothing in the app does that today; send one inside a
+transaction instead.
 
 A SELECT that calls a function that writes an item table runs plain too, so
 in warn the 0275 trigger logs it as a miss. That is wanted: it shows the
@@ -254,3 +269,22 @@ job binds its actor.
   No untrusted SQL reaches Postgres today, so that is fine for A2a. A2b and
   later must never decide access from `mantle.actor` or `mantle.write_mode`
   on a role that can run caller-shaped SQL.
+
+## A2b must
+
+Found in the A2a audits; A2a changes no behaviour for them, A2b must close
+them before it refuses anything.
+
+- **The first statements of a process.** Until the pool's first mode read
+  lands, a process uses `MANTLE_ACTOR_CHECK` alone, so its first statements
+  go out as off. A2b must wait for the first read before it refuses, or
+  use the environment value as a floor.
+- **Narrowing to read only.** `systemUnder` narrows the write mode to `ro`
+  under every actor whose write mode is `ro`, the `assistant` kind
+  included. Before A2b refuses a write on `mantle.write_mode`, it must
+  narrow only for `login(ro)`, `link` and `contact` without write.
+- **The Recall slug with no scope.** When no workspace scope surrounds a
+  Recall write, `scopeLacksAdmin` reads `currentActor()`, so the slug
+  answer depends on the check's mode and on the entry: a `login(rw)` turn
+  gets a random slug, where stdio (`login(owner)`) and main counted up. A2b
+  makes it one answer.

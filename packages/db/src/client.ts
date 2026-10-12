@@ -116,18 +116,30 @@ let actorModePool: PgSql | null = null;
  * an unref'd timer: never inside a statement's path, so a request runs no
  * new query for it (fix round; the owner's no-new-query rule). Until the
  * first read lands the process uses MANTLE_ACTOR_CHECK alone (off unless
- * set), and a process's first statements run as before.
+ * set), and a process's first statements run as before. Exported for
+ * actor-client.test.ts only (not in index.ts).
  */
-function refreshActorCheckMode(base: PgSql): void {
+export function refreshActorCheckMode(base: PgSql): void {
   if (actorModePool === base) return;
   actorModePool = base;
   const read = () => {
     if (actorModePool !== base) return;
     base
-      .unsafe('select "public"."mantle_actor_check_mode"() as m')
-      .then((rows) => noteBoxActorCheckMode((rows[0] as { m?: string } | undefined)?.m ?? null))
-      // A database without 0275 yet: off.
-      .catch(() => noteBoxActorCheckMode(null));
+      .unsafe(`${ACTOR_SQL_TAG} select "public"."mantle_actor_check_mode"() as m`)
+      .then((rows) => {
+        // A pool closed (closeDb) while the read was out: its answer is
+        // not the next pool's (fix round 2, L8).
+        if (actorModePool !== base) return;
+        noteBoxActorCheckMode((rows[0] as { m?: string } | undefined)?.m ?? null);
+      })
+      .catch((err: unknown) => {
+        // A database without 0275 yet (the function is missing): off. Any
+        // other failure (a dropped connection, a busy pool) keeps the last
+        // mode read (fix round 2, L2).
+        if (actorModePool === base && (err as { code?: string } | null)?.code === '42883') {
+          noteBoxActorCheckMode(null);
+        }
+      });
   };
   read();
   const timer = setInterval(() => {
@@ -213,23 +225,32 @@ export function runsOutsideTransaction(query: string): boolean {
 }
 
 /** A statement that only reads: SELECT, VALUES, TABLE, SHOW, an EXPLAIN
- *  without ANALYZE, and a WITH whose body writes nothing. */
+ *  without ANALYZE (or ANALYSE), and a WITH that names no write verb. */
 const READ_VERB = /^(select|values|table|show)\b/i;
-const EXPLAIN_NO_ANALYZE = /^explain\b(?![^;]*\banalyze\b)/i;
-const WITH_WRITES =
-  /\b(insert\s+into|update\s+[\w".]+\s+(as\s+\w+\s+)?set|delete\s+from|merge\s+into)\b/i;
+const EXPLAIN_NO_ANALYZE = /^explain\b(?![^;]*\banaly[sz]e\b)/i;
+/** A write verb anywhere in a WITH (fix round 2, L4): a false match only
+ *  costs the wrap, a missed one would send a write with no actor. */
+const WITH_WRITES = /\b(insert|update|delete|merge)\b/i;
+/** A `;` with more text after it: more than one statement, unknown. */
+const MORE_STATEMENTS = /;\s*\S/;
+
+/** The tag on the actor's own lookups (the mode read, a login read now):
+ *  the round-trip test (a2a-round-trips.db.test.ts) proves the check off
+ *  sends none. */
+const ACTOR_SQL_TAG = '/* mantle:actor */';
 
 /**
  * Whether the system pool sends `query` with the actor set (owner decision,
  * A2a fix round): writes only. INSERT, UPDATE, DELETE, MERGE, TRUNCATE,
- * COPY, a WITH whose body writes, and any verb not named here (the safe
- * side) are wrapped; a read runs plain, exactly as with the check off. A
- * SELECT that calls a function that writes an item table runs plain too, and
- * the 0275 trigger then logs a miss in warn: that shows the case
- * (docs/actors.md).
+ * COPY, a WITH that names a write verb, more than one statement, and any
+ * verb not named here (the safe side) are wrapped; a read runs plain,
+ * exactly as with the check off. A SELECT that calls a function that writes
+ * an item table runs plain too, and the 0275 trigger then logs a miss in
+ * warn: that shows the case (docs/actors.md).
  */
 export function needsActorWrap(query: string): boolean {
   const body = statementBody(query, false);
+  if (MORE_STATEMENTS.test(body)) return true;
   if (READ_VERB.test(body) || EXPLAIN_NO_ANALYZE.test(body)) return false;
   if (/^with\b/i.test(body)) return WITH_WRITES.test(body);
   return true;
@@ -250,18 +271,44 @@ function actorParams(): [string, string, string] | null {
 const SET_TRANSACTION_SQL = /^\s*set\s+transaction\b/i;
 
 /**
- * A transaction's client that sets the actor right before its first
- * statement (fix round, M3a): after a SET TRANSACTION (drizzle's isolation
- * level, access mode, deferrable), which Postgres refuses after any query.
- * Covers drizzle's path (`unsafe`), a savepoint opened first, and a
- * tagged-template statement (which then returns a plain promise).
+ * A transaction's client that sets the actor with its first statement (fix
+ * round, M3a): after a SET TRANSACTION (drizzle's isolation level, access
+ * mode, deferrable), which Postgres refuses after any query. Covers
+ * drizzle's path (`unsafe`), a savepoint opened first, and a tagged-template
+ * statement (which then returns a plain promise).
+ *
+ * The SET is sent unawaited, right before that first statement, on the
+ * transaction's one connection: postgres.js sends both in one write, so
+ * warn adds no round trip to a transaction (fix round 2, the owner's
+ * scaling rule). A SET that fails is the error reported, not the
+ * statement's follow-on "current transaction is aborted". Exported for
+ * actor-client.test.ts only (not in index.ts).
  */
-function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
+export function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
+  /** The SET's outcome once sent: null, or its error. Never rejects. */
   let set: Promise<unknown> | null = null;
-  const ensure = () => (set ??= t.unsafe(SET_ACTOR_SQL, params).then(() => undefined));
+  const sendSet = (): Promise<unknown> =>
+    (set ??= t.unsafe(SET_ACTOR_SQL, params).then(
+      () => null,
+      (err: unknown) => err ?? new Error('the actor SET failed'),
+    ));
+  /** Start `start` right behind the SET. Both `.then` calls are direct, so
+   *  postgres.js queues the SET first. */
+  const afterSet = (start: () => PromiseLike<unknown>): Promise<unknown> => {
+    const setErr = sendSet();
+    const run = start().then(
+      (v) => ({ ok: true as const, v }),
+      (e: unknown) => ({ ok: false as const, e }),
+    );
+    return Promise.all([setErr, run]).then(([err, r]) => {
+      if (err) throw err;
+      if (!r.ok) throw r.e;
+      return r.v;
+    });
+  };
   const lazy = (start: () => PromiseLike<unknown>) => {
     let pending: Promise<unknown> | null = null;
-    const once = () => (pending ??= ensure().then(start));
+    const once = () => (pending ??= afterSet(start));
     return {
       then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
       catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
@@ -271,12 +318,14 @@ function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
   return new Proxy(t, {
     apply(target, thisArg, args: unknown[]) {
       const first = args[0] as { raw?: unknown } | undefined;
-      if (set || !Array.isArray(first) || !('raw' in first)) {
-        return Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args);
-      }
-      return ensure().then(() =>
-        Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args),
-      );
+      const call = () =>
+        Reflect.apply(
+          target as unknown as (...a: unknown[]) => unknown,
+          thisArg,
+          args,
+        ) as PromiseLike<unknown>;
+      if (set || !Array.isArray(first) || !('raw' in first)) return call();
+      return afterSet(call);
     },
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
@@ -287,15 +336,17 @@ function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
           }
           const q = () => target.unsafe(query, args as never[], opts as never);
           return Object.assign(lazy(q), {
-            values: () => ensure().then(() => q().values()),
-            simple: () => ensure().then(() => q().simple()),
+            values: () => afterSet(() => q().values()),
+            simple: () => afterSet(() => q().simple()),
           });
         };
       }
       if (prop === 'savepoint') {
         return (...a: unknown[]) =>
-          ensure().then(() =>
-            (target as unknown as { savepoint: (...x: unknown[]) => unknown }).savepoint(...a),
+          afterSet(() =>
+            (
+              target as unknown as { savepoint: (...x: unknown[]) => PromiseLike<unknown> }
+            ).savepoint(...a),
           );
       }
       return Reflect.get(target, prop, receiver);
@@ -361,9 +412,10 @@ function actorClient(base: PgSql): PgSql {
     // A pool being closed (closeDb) takes no new reserved connection: one
     // that comes back after its end began keeps postgres.js from ending.
     const open = globalThis.__mantleSql === base;
-    const params =
-      runsOutsideTransaction(query) || !needsActorWrap(query) || !open ? null : actorParams();
-    if (params) return pipelined(params, query, args, mode);
+    const params = open ? actorParams() : null;
+    if (params && !runsOutsideTransaction(query) && needsActorWrap(query)) {
+      return pipelined(params, query, args, mode);
+    }
     const q = base.unsafe(query, args as never[], opts as never);
     return mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
   };
@@ -371,8 +423,9 @@ function actorClient(base: PgSql): PgSql {
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
-          // Nothing to set: the plain query, every method of it (M3c).
-          if (runsOutsideTransaction(query) || !needsActorWrap(query) || !actorParams()) {
+          // Nothing to set: the plain query, every method of it (M3c). The
+          // mode first: with the check off no statement is classified.
+          if (!actorParams() || runsOutsideTransaction(query) || !needsActorWrap(query)) {
             return target.unsafe(query, args as never[], opts as never);
           }
           const go = (mode: 'rows' | 'values' | 'simple') => run(query, args, opts, mode);
@@ -650,7 +703,8 @@ export async function loginActorNow(
   try {
     const rows = (await runAsSystem(entry, () =>
       getAdminDb().execute(
-        sqlTag`select disabled_at is not null as off from auth.users where id = ${loginId}::uuid`,
+        // The actor's own lookup: tagged (ACTOR_SQL_TAG).
+        sqlTag`/* mantle:actor */ select disabled_at is not null as off from auth.users where id = ${loginId}::uuid`,
       ),
     )) as unknown as { off: boolean }[];
     if (!rows[0] || rows[0].off) {
