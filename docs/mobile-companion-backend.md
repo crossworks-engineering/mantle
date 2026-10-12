@@ -595,11 +595,11 @@ login it concerns, and only while the token that enrolled the device is live.
 | Owner assistant message                  | Devices of active ADMIN logins. If the agent is assigned to one login, only that login's devices.                                              |
 | Approval waiting                         | Devices of active admin logins.                                                                                                                |
 | "Needs you" (provider outage, parked)    | Devices of active admin logins.                                                                                                                |
-| Reply in a member or client chat         | Devices of that ONE login.                                                                                                                     |
+| Reply in a member's chat                 | Devices of that ONE login.                                                                                                                     |
 | Review result on an item                 | Devices of the item's author.                                                                                                                  |
-| Comment on an item                       | Devices of the item's author (not when the author wrote it). On a client-level item's client thread: every active client login but the writer. |
+| Comment on an item                       | Nobody: the brain has no comments since 2026-10-09, so no comment push is sent.                                                                |
 
-A member or client device never gets an owner teaser. A device whose token was
+A member device never gets an owner teaser. A device whose token was
 revoked, expired or rotated away without the app gets nothing.
 
 **Routes.** Same shapes as the admin routes, under the role's `pushBase`.
@@ -707,11 +707,10 @@ event: `itemLink: "/events/<id>"`. An app that knows the route opens the
 event; an older app ignores the field and opens the chat as before. Only the
 reminders worker sets it (it marks its turn `data.reminder = { kind, id }`);
 `/tasks/<id>` is reserved for a task reminder, which no brain sends yet. A teaser never holds text its reader cannot open: the
-chat text is the reader's own thread as their chat route returns it, an item
-title is the author's own item, a client-thread comment goes out only while
-the item is at client level. A client-thread comment push carries no comment
-text: every client of the brain gets it, and a lock screen is not the place
-for another person's words. Open the item to read it.
+chat text is the reader's own thread as their chat route returns it, and an
+item title is the author's own item. No comment push is sent: the brain has
+no comments (2026-10-09), and client logins and their threads are gone
+(W8a).
 
 **Push routing on a device with several logins (v1.1).** A phone or a
 desktop may hold several sessions (a session is a brain origin, a login and
@@ -951,9 +950,8 @@ dropped).
   until an admin or a member has connected once.
 - Who is told and with which words is `packages/content/src/login-notices.ts`
   (chat: the text as the reader's own chat route returns it; review: the
-  author's own item, by the title it had when taken; comment: the author of
-  a personal item in its own space, or every active client but the writer
-  for a client-level item's client thread). An event older than 30 minutes
+  author's own item, by the title it had when taken; comments: none, the
+  brain has no comments and clients are gone). An event older than 30 minutes
   tells nobody (a backfill must never page people).
 - A bundle (Accept and Take over change every item in one transaction) is
   one push: the worker gathers a login's review events for 750 ms.

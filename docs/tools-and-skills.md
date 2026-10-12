@@ -456,21 +456,20 @@ approval like any agent-initiated grant). Every result comes back
 give them to a no-write specialist (researcher pattern). Full detail:
 [`mcp-connectors.md`](./mcp-connectors.md).
 
-### Connector tools in shared apps and on logins' MCP (the connector's level)
+### Connector tools in shared apps and on logins' MCP (the workspaces that hold the connector)
 
 Below admin, an app's run may call only read-only built-ins, and a link
-none, besides outside tools. An MCP CONNECTOR tool follows its connector's
-level (team apps Phase 2, `connectorToolVerdict` in
-packages/tools/src/external-access.ts): a member's run and a member's own
-MCP reach a connector at team level or lower, a client app and a client's
-MCP one at client level, a contact link one at public level. The admin's
+none, besides outside tools. An MCP CONNECTOR tool follows the workspaces
+it is attached to (`connectorToolVerdict` and `loginConnectorRule` in
+packages/tools/src/external-access.ts): a login's own MCP and its app runs
+reach a connector attached to one of the login's workspaces, and an app
+run also needs it attached to every workspace that holds the app. The
+connector's tool group level decides nothing (frozen in W7b). The admin's
 read-only mark on the tool (the old "External access" confirm) makes a call
-a read; without it the call is a write, which an app may make and a
-login's MCP only with its Write switch. On a brain with workspaces, a
-member's or client's run and MCP also need the login's workspace rule
-(`loginConnectorRule`: the connector a resource of one of the login's
-workspaces, a write only where the login moderates one with Write on). A
-single http tool still needs
+a read; without it the call is a write, which needs the connector's Write
+tick on in a workspace the login moderates, and for an app run in every
+workspace that holds the app. A contact link holds no workspace, so it
+reaches no connector. A single http tool still needs
 "External access" on, with the read-only confirmation. Rules, surfaces and
 how the mark is voided: docs/member-logins.md, "External access: outside
 tools in shared apps".
