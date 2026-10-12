@@ -53,7 +53,7 @@ Add rows with `{ "rows": [{ "Name": "Alpha" }] }`: each row is cells keyed by co
 | `401` | No key, a wrong key, or a revoked or expired one |
 | `403` with `reason: "key-read-only"` | A read only key tried to write |
 | `403` with `reason: "key-area"` | The route is outside the key's areas |
-| `403` with `reason: "member-login"` or `"client-login"` | An admin route, and the key is not an admin's |
+| `403` with `reason: "member-login"` | An admin route, and the key is not an admin's |
 | `404` | Not a `/api/v1` route, or no such item |
 | `429` | Too many requests; wait for `Retry-After` seconds |
 

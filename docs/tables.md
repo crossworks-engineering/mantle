@@ -289,8 +289,9 @@ entries stay per table, and only as many as fit in `TABLE_HISTORY_MAX_MB`
 (default 512; the newest always stays); the owner's own
 (`manual`) are never pruned and count against `APP_SNAPSHOT_MAX_MB` (shared
 with the apps). Not kept: an app-bound table's sync (the app is the master),
-and commits in a personal space or under a limited viewer (the history is
-admin data). Tools (owner only, group `tables`, and on MCP):
+and commits under a limited viewer, a non-Admin user's included (the
+history is admin data; the personal spaces it also skipped were folded into
+private workspaces by migration 0267). Tools (owner only, group `tables`, and on MCP):
 `table_history`, `table_snapshot_create`, `table_snapshot_restore`
 (`requiresConfirm`; puts the version into the DRAFT, `commit: true`
 publishes it, `discard_draft` drops a draft in the way) and

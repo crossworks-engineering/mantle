@@ -9,8 +9,9 @@ that reader may see.
 Status: the tree serves **Files** (phase 1), the flat kinds **notes, draw,
 tables, formulas, tasks, events, contacts and secrets** (phase 2), **Apps**
 (phase 3), **Recall** maps and, since phase 7, **Pages** (they stopped
-nesting; see "Pages" below). Folders can be shared with the team or
-clients (phase 4), and members file drafts in place (phase 5). A client
+nesting; see "Pages" below). A folder is shared by its grants to
+workspaces, like any item (phase 4 shared folders by level until workspaces
+W5b2; phase 5 filed members' drafts in place until W6b). A client app
 offers the tree for the kinds the shell's `treeKinds` names and keeps its
 older screen for the rest.
 
@@ -40,7 +41,9 @@ older screen for the rest.
   the chosen sort: name or last updated for most kinds; tasks by due date
   (open tasks first, soonest due first, undated last, done tasks after);
   events by start.
-- **What a row carries.** A title, the item's level, a short `subtype` for the
+- **What a row carries.** A title, the workspaces that hold it
+  (`workspaces`) and whether it has a public link (`hasLink`; the item's
+  level is no longer sent since W5b2), a short `subtype` for the
   status slot (a file's extension, a secret's kind) and, for tasks and events,
   `meta` (a task's done box and due date, an event's start). Archived tasks are
   left out of the tree; the task screen's Archived view is where they live.
@@ -202,229 +205,58 @@ workspaces W5c) (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
   `folders`; an older brain sends none, and the launcher shows one flat
   list.
 
-## Sharing a folder (phase 4)
+## Sharing a folder (workspaces)
 
-A folder of a shareable kind (files, notes, pages, draw, tables, formulas,
-apps) can be shared with the team or with clients: `PATCH
-/api/tree/:kind/folders/:id { share: 'team' | 'client' | null }`. The share
-reaches everything below it, now and later. Public stays a per-item link.
-System folders (Auto-filed) and the admin-only kinds (tasks, events,
-contacts, secrets) cannot be shared.
+A folder is an item with a home and grants like any other
+([workspaces.md](./workspaces.md), "Folders"). Folders of every kind that
+can be granted (files, notes, pages, draw, tables, formulas, apps) are
+shared from the folder's Grant Access panel. System folders (Auto-filed)
+and the Admin-only kinds (tasks, events, contacts, secrets) are not.
 
-- **In the database** (migration 0204). `nodes.share_level` on the folder;
-  `nodes.inherited_level` on every row, kept true by triggers: a row takes
-  the share of the nearest shared folder holding it (same owner; an item
-  holds its folder's own share, a folder only what is above it), on insert
-  and on a path change, and a folder whose path or share changes refreshes
-  its subtree. Every writer that files an item (the UI, agents, uploads, the
-  disk watcher) gets it for free. Only workspace kinds ever inherit (the type
-  ceiling); a member's draft (another owner) never does.
-- **Races** (migration 0207). A share change and a write filing into the
-  folder wait for each other on the owner's share lock (the inherit trigger
-  takes it shared, a refresh takes it exclusive), so neither misses the
-  other's work. The order is always the lock first, then rows: a writer that
-  changes shares or folder paths takes it exclusive as the first statement
-  of its transaction, and one that moves existing rows (an item move,
-  Accept) takes it shared first. Both wait at most 10 seconds; a write that
-  meets another on the same rows answers "busy, try again" (409), never SQL.
-  Until migration 0261 a nightly `share-drift` sweep repaired anything that
-  slipped through. Since then (workspaces W5b2) the levels are frozen, the
-  workspace grants decide who reads an item, and
-  `pnpm -C server/web workspaces:check` counts grant drift.
-- **Restores** (migration 0212). A brain restored from a dump taken at
-  migration 0204 up to 0210 came back without the refresh trigger; 0212
-  repairs the stale levels and puts it back (docs/access-levels.md,
-  "Operations").
-- **Who reads it.** `nodes_viewer_read` reads a brain row at its own level
-  OR its inherited share OR its embedded level (below); still a same-row
-  check. Chunks, facts, pages and the rest follow their node as before.
-- **Embeds follow their embedder** (migration 0208, folder audit S5).
-  What a shared item embeds is readable with it, whatever kind it is, for
-  as long as the item is shared (Jason, 2026-09-30: a shared folder shares
-  everything in it; teams and clients are of the same admin owner). The
-  admin-only kinds (secrets, tasks, events, contacts, email, journal) never
-  open that way: the type ceiling holds. An embed opens READING only: an
-  app named by an embed is not run, its tools and data are not used, by
-  anyone it was not shared with (the app gates read own level and folder
-  share, `readAtSql(levels, { embeds: false })`). A drawing embeds what its
-  published scene places, so a picture pasted into a draft opens nothing
-  until "Save version". An unshare closes a loop of embeds (a note that
-  embeds a note that embeds it) at once. An
-  item that a page, drawing or note embeds is read through that embedder's
-  folder share, wherever the item lives, and only while the embedder is:
-  unshare the folder, move the embedder out, delete the folder, or take the
-  embed out, and that access goes. Nothing's own level changes. The
-  database keeps it, like the shares: `node_embeds (from_id, to_id)` holds
-  the edges, kept by triggers from `pages.doc`, `draws.file_refs` and a
-  note's markdown (a note's image counts wherever the note shows it, even
-  in a heading or a table cell; a parity test pins the SQL to the
-  TypeScript walkers, `packages/content/src/embed-edges.db.test.ts`), and
-  `nodes.embedded_level` is the most open share among the owner's rows that
-  reach the item through embeds, transitively (a note embeds a drawing that
-  embeds an image). Only the brain's own rows pass a share on, so a
-  member's draft never does. A refresh runs only where something can
-  change (an edge added from a shared or reached row, an edge removed to a
-  reached row, a share or owner change on a row that embeds something): a
-  brain with no shared folder pays an index probe per save. Opening only
-  raises levels forward (an image embedded by a thousand notes in a folder
-  being shared is set once); closing recomputes only the rows read at the
-  level that went. Measured on the workstation: sharing a folder of 1,000
-  notes that embed one image takes about 0.4 s and unsharing it 0.8 s; a
-  note that embeds 1,000 images, 0.6 s and 2 s; a save, about 1 ms. It
-  grows with the rows reached from one change: expect tens of seconds past
-  about 10,000. The client thread
-  is not carried: an item read only through an embed has no client thread
-  of its own (the client talks on the item that embeds it). Items lowered
-  by a folder share before 0208 keep that level: they cannot be told apart
-  from levels set on purpose, so nothing is raised.
-- **The level shown** is the effective level (`effectiveLevel`,
-  `@mantle/content-core/tree`): the most open of the item's own level, its
-  inherited share and its embedded level. Tree rows carry it in `level`,
-  with `inherited` naming the folder share and `embedded` the share it is
-  read at through an embedder. Since workspaces W5b2 a page's indexed text
-  is folded by the workspaces that hold it, and the level helpers
-  (`item-level.ts`) were removed in W5c.
-- **Confirm first.** A share change, an item or folder move, and a folder
-  delete that lifts its contents are computed dry first
-  (`packages/content/src/tree/visibility.ts`). If who can see anything would
-  change, the write is refused with 409 `{ error: 'visibility', changes,
-total }` and nothing is written; the same call with `confirm: true` goes
-  ahead (`?confirm=true` on DELETE). A delete compares every row at its
-  real landing place: what merges into a folder takes that folder's share,
-  a subfolder that moves up keeps its own and takes the shares above its
-  new place. A caller that sends `seen` (the
-  `total` it showed, plus `embedsTotal` when embeds are listed; `&seen=` on
-  DELETE) is refused again with the new list
-  when the change differs by then, so a confirm never covers items filed or
-  shared while the dialog was open. A rename never asks. The same check
-  guards every Files write outside the tree routes
-  (`packages/content/src/tree/files-guard.ts`): the Files screen's move and
-  copy (`PATCH /api/files/files/:id { move, confirm }`, `POST ... { copy_to,
-confirm }`, and the same on `/api/files/folders/:id`), a new file or an
-  upload into a shared folder (`POST /api/files/files`, `confirm` in the JSON
-  body or as a form field before the file), and the agent tools `file_move`,
-  `file_copy`, `folder_move`, `folder_copy`, `file_create` and
-  `file_upload`. A copy is judged by where its NEW rows land: copies take
-  the destination's share, never the shares inside the source. Every agent
-  tool that can change who sees something takes
-  `confirm` and tells the model to ask the user first; a test pins that each
-  such tool declares it (`packages/tools/src/confirm-schema.test.ts`).
-- **Shared via.** `GET /api/access/nodes/:id` names the shared folder an
-  item takes its share from (`sharedVia { folderId, trail, level }`,
-  `sharedViaFolder` in `packages/content/src/shared-via.ts`). Its level is
-  the Access control's floor: the item is read there whatever its own level
-  says, so the control offers nothing above it ("Move it out of the shared
-  folder to hide it"). The brain does not refuse such a raise (an unshared
-  link sets an item back to admin); `access_get` returns `sharedVia` and
-  `access_set` warns that the item is still read at the folder's share.
-  The same for an item read through what embeds it: `readThrough { level,
-via }` (`readThroughEmbeds`) names the nearest items that embed it and
-  carry a share, with title and kind, and is a floor too; the note, file,
-  folder, drawing, app, formula and table rows carry `embedded` next to
-  `inherited`, and badges count it.
-- **After a confirmed change**, what the pages, drawings and notes
-  concerned embed is read through them at their new level (the database
-  did it, above), and the text of the pages concerned, of the pages they
-  reach, and of the client and public pages that name what changed is
-  re-folded. Those embeds may live anywhere, so the refusal lists them too
-  (`alsoEmbeds`, from, to and the item's `type` each: "also readable through
-  them", or no longer), every kind, not only images, from EVERY row whose
-  share changes (not only the hundred listed), with `embedsTotal`. A write
-  that only opens embeds (a note already read at the folder's share moving
-  in) asks too. An Accept that lands in
-  a shared folder lists the same for what its bundle embeds, whoever wrote
-  it, in its 409 `visibility` (`alsoEmbeds`), before anything moves, also
-  when the item itself is read at the level chosen. A member's note save
-  checks every `media:` and `draw:` id in its text (`noteGateRefs`), a
-  superset of the edges the database records, so an image in a heading or
-  a table cannot carry an item the member could not share. The
-  agent tools that write a note's or a page's content say so
-  (`EMBEDS_SHARED`, `packages/tools/src/visibility-refusal.ts`). A page,
-  note or drawing save that meets another write on the same rows (a
-  deadlock the embed triggers can meet against an unshare) runs once more,
-  then answers 409 "try again", never SQL (`withBusyRetry`, `@mantle/db`).
-- **Members and clients** read a folder-shared item wherever they read
-  items, by the row policy's union rule: its own level, its inherited share
-  or its embedded level is one of the reader's levels (the level helpers,
-  removed in W5c: members read by workspace grants since W5b2). The member Library and the
-  client's "Shared with you" (list, open, the `client_shared_*` tools), a
-  client's redaction (which references keep their names), drawing and chat
-  images, and apps (an app runs at its effective level, so an admin app in
-  a team-shared folder is a team app). The client thread too: an item read
-  at client level through a folder carries it (migration 0205 widens the
-  0194 read policy to the union rule; `client-thread.ts`, `addNodeComment`
-  and the admin usage report check the same rule, without the embedded
-  level: `readAtSql(levels, { embeds: false })`). Unsharing the folder, or
-  moving the item out, hides the thread below admin again.
-- **The member tree.** `GET /api/member/tree/:kind` (with `/search`)
-  serves the kinds a Library holds (`READER_TREE_KINDS`: files, notes,
-  drawings, tables; `GET /api/shell` lists them in `treeKinds` for a member
-  or a client; the client tree answers 410 since workspaces W5c), read only (`packages/content/src/tree/reader.ts`). Items
-  are read AS the reader, at the Library's levels by the union rule, without
-  extracted image fragments. Folders are read as the brain (a shared folder's
-  own row is not the reader's: it inherits only from above itself) and show
-  when their share, or the share they inherit, covers the reader, or when
-  they lead to something the reader reads or to such a folder. Nothing is
-  stored; the visible set is computed per call. Counts are the reader's. A
-  folder the reader cannot see is a 404 like a missing one, by id and in
-  search. A member gets the owner's shapes (levels are staff information);
-  a client gets `ClientTreeFolderPage` / `ClientTreeSearchResult`, with no
-  level, share or system flag. No pins, Recent or Most used for these
-  readers yet (item marks are the owner's), and no tag or level filter.
-- **The owner's gates count it too.** "What clients see" lists what a
-  client-shared folder holds, and sharing a folder with clients asks for a
-  fresh acknowledgement before another client login can be added. A
-  client-sourced turn's write waits at Pending when it lands in a folder
-  shared with clients: a tree move into one (`tree_item_move`,
-  `tree_folder_update` with `parent_id`), a Files create, copy or move by
-  path into or below one, or any write into an item read by clients
-  through a folder.
+- **Placing an item in a folder** (by create or by move) gives the item the
+  folder's grants: the one automatic grant. Inside a moved folder a change
+  passes down to what is inside, unless a folder on the way stops it (its
+  own grant keeps a workspace; its "Removed here" blocks one). A grant set
+  on the item, its home and its exclusions stay. Embeds do not follow:
+  nothing is granted for you. The database derives it (migration 0244,
+  `mantle_rederive_nodes`).
+- **Confirm first.** A write that places items under another folder (a
+  folder or items moved, a folder deleted with its contents lifted, a file
+  or page made or copied into a folder, the Files screen's move and copy,
+  and the agent tools `file_move`, `file_copy`, `folder_move`,
+  `folder_copy`, `file_create`, `file_upload`, `tree_item_move` and
+  `tree_folder_update`) is computed first, dry, from the grants
+  (`packages/content/src/tree/visibility.ts`). When it changes which
+  workspaces read anything and the caller did not confirm, it is refused
+  with 409 `{ error: 'visibility', changes, total }` until it is repeated
+  with `confirm: true` (and `seen`, the count shown). Every agent tool that
+  can change who sees something takes `confirm` and tells the model to ask
+  the user first (`packages/tools/src/confirm-schema.test.ts`).
+- **The level share is gone.** `PATCH /api/tree/:kind/folders/:id` with
+  `share` answers 410 `{ error, code: 'gone' }` ("Use the folder's Grant
+  Access panel"). `nodes.share_level` and `inherited_level` were archived
+  and frozen by migration 0261 (W5b2), and the nightly `share-drift` sweep
+  went with them. `GET /api/access/nodes/:id` and its `sharedVia` are gone
+  ([access-levels.md](./access-levels.md)).
+- **Who reads the tree.** Every login reads `GET /api/tree/:kind` (with
+  `/search` and `/tags`) in its own workspaces
+  (`server/web/lib/auth/route-scope.ts`, `MEMBER_OPEN_READS`): an item shows
+  when a workspace of the reader holds it, and a folder when a workspace of
+  the reader holds it or it is on the way to something the reader reads
+  (names are organisational; `packages/content/src/tree/reader.ts`). Folder
+  writes and moves are open to a non-Admin login where it may edit
+  (`MEMBER_OPEN_WRITES`).
 
-## Members' folders and drafts in place (phase 5)
+## Members' folders and drafts (history)
 
-A member files its drafts in the brain's tree and keeps private folders there.
-
-- **Where a draft sits.** A draft (and a member's own folder) is a row the
-  member's space owns at a BRAIN folder path (`notes.clients.acme`), maybe
-  below the member's own folders (`notes.clients.acme.mine`). No new column:
-  the owner says whose it is. A member's files and file folders mirror the
-  brain's under `space_files` (`files.docs` is the member's
-  `space_files.docs`, `spaceFilesPath` in `@mantle/db`), so no brain file
-  helper, the disk watcher or the extractor ever resolves them; their bytes
-  stay keyed by id under `MANTLE_SPACES_ROOT`.
-- **The member's tree** (`packages/content/src/tree/member-tree.ts`,
-  `GET /api/member/tree/:kind`) merges per path: the brain's items the member
-  reads, its own folders (`own: true`) and drafts, and teammates' drafts
-  shared with the team (`source`, `state`, `author` on the item). A
-  teammate's draft shows at the deepest folder of its path the member sees,
-  never at the teammate's own folders. A brain folder shows only by the
-  reader rules (its share covers the member, or it leads to something the
-  member reads). Where the member's own folder sits at the path of a brain
-  folder it does not see, its own row shows (its name and id), never the
-  brain's; its rows below a folder it no longer sees show at the deepest
-  folder above them it does. A folder's pages run through its drafts first,
-  then the brain's items, at most `limit` per page. By name (a search and
-  the A to Z view, `GET /api/member/tree/:kind/search`) drafts and brain
-  items are one list in one order, paged together by one cursor, so every
-  draft is reached however many there are.
-- **The member's writes** (`member-tree-write.ts`, `POST /api/member/tree/:kind/folders`,
-  `PATCH|DELETE .../folders/:id`, `POST .../move`): create, rename, restyle,
-  move and delete its own folders, file its own drafts. A place must be a
-  folder its tree shows, or the top level. Only its own rows change; a draft
-  with an admin does not move on its own. New drafts (`POST /api/member/space`)
-  and uploads (`POST /api/member/space-files`) take a `folderId`.
-- **Brain folders carry them.** A brain folder rename, move or delete moves
-  every member's rows under it in the same transaction
-  (`carrySpaceRows`, `packages/db/src/space-carry.ts`): a member's folder
-  whose new path the member already has merges into it, a delete lifts the
-  drafts one level up with everything else (into the folder a subfolder
-  merged into, when it merged), and anything past three levels is cut to
-  fit, so a member's private folders never block the admin.
-- **Accept** (claiming a draft's folder in place, asking before a folder
-  share applies) was removed with review in workspaces W5c.
-- **A submitted draft stays put.** It never moves on its own, and a member's
-  folder holding one is not renamed, moved or deleted until the review is
-  done: Accept lands it where the admin reviewed it.
+Until workspaces W6b a member filed drafts and private folders in the
+brain's tree from its personal space (`/api/member/tree/:kind`, its
+folders, move and search). Migration 0267 folded every personal space into
+the brain: each personal item is a brain item in its login's private
+workspace, read and written through the normal routes. The
+`/api/member/tree/*` routes answer 410 `{ error, code: 'gone' }`. What this
+page said about the level share (phase 4) and drafts in place (phase 5) is
+in the repository history before workspaces W8f.
 
 ## For agents
 
@@ -442,9 +274,12 @@ included, shares one set, told apart by `kind`
 
 They sit in each kind's tool group (`tree_folders` alone in Draw's read-only
 group), so an agent that can work with a kind can organise it. The brain is
-the trust boundary, so they are not split per kind. They are owner only: a
-member's or client's turn is refused (members and clients organise through
-their own trees, not these tools). A write that would change who can see
+the trust boundary, so they are not split per kind. They run on the owner
+surface only: since workspaces W7b that is every login's own MCP connection
+and its own assistant turn, each call in the caller's workspaces (a move, a
+create in a folder and a delete are checked against the scope;
+`OWNER_ONLY_IN_SCOPE` in `packages/tools/src/admin-gate.ts`). A turn on a
+team surface is refused. A write that would change who can see
 items is refused with the list until the call repeats with `confirm: true`,
 which the model is told to send only once the user agreed. Every write
 notifies the tree like the screens do.
@@ -491,9 +326,10 @@ never by path.
 
 Pages live in folders exactly like notes do, and **a page is never the
 parent of another page** (Jason, 2026-09-30). A page's place is its
-folder's path under `pages`; the folder rows, the three levels, the shares
-and their inheritance (0204, 0207), the embed rule (0208) and the confirm
-diff all apply unchanged. The old sub-page model (`parent_id` on a page, a
+folder's path under `pages`; the folder rows, the three levels, the
+folder's grants passing down to what it holds and the confirm diff all
+apply unchanged (the level shares of 0204 and 0207 and the embed rule of
+0208 went with the levels in W5b2). The old sub-page model (`parent_id` on a page, a
 path of `pages.<id>.<id>`) is gone:
 
 - **Migration 0210** (`0210_pages_in_folders.sql`, idempotent) files the old
@@ -519,39 +355,14 @@ path of `pages.<id>.<id>`) is gone:
   its folder's pages uses the **Folder index** block
   (`[Folder index](folder:<folder-id>)`, or `folder:here` for the page's own
   folder): it lists the folder's pages live, title only, as the reader sees
-  them (the owner, member or client tree read), never stored. An open link
+  them (the reader's own tree read), never stored. An open link
   renders it as an inert label.
-- **A member's draft has the block too.** The member's own draft read
-  (`GET /api/member/space/:id`) carries `folderId` on the page body, as
-  every page detail does (`MemberSpaceItemBody`, pinned by
-  `member-space.viewer.db.test.ts`): the member's own folder, the brain
-  folder the draft was filed in, or null at the member's top level. The
-  member draft editor hands it to the block, so `folder:here` lists the
-  draft's own folder through `GET /api/member/tree/pages` (the member's
-  drafts first, then what it reads of the brain's); a draft at the top level
-  lists the member's top level, and a draft moved while its editor is open
-  lists the folder it is in now. The slash menu offers the block to a member
-  only when the member shell names `pages` in `treeKinds` and the folder is
-  known; a body with no `folderId` (an older brain) shows the block's label
-  alone, never the root; so does a brain that sends it while its member
-  tree does not serve pages. In the block a member's drafts come first
-  (newest first), then what it reads of the brain's, by name. A folder the
-  member cannot open says "This folder is not shared with you"; that
-  includes the member's own draft under a brain folder an admin has since
-  unshared (the body still names that folder).
-- **Before and after Accept.** A reviewer reads the submitted draft through
-  the owner tree: a draft in a brain folder lists that folder's brain pages
-  (not the draft itself, which is not in the brain yet), a draft at the
-  member's top level lists the brain's top level, and a draft in the
-  member's OWN folder shows the block's label alone, because the owner tree
-  does not hold that folder. A teammate reading a shared draft gets the same
-  label-alone face for the author's own folder. After Accept the page sits
-  in a brain folder (accept claims in place: the author's own folder becomes
-  a brain folder; a top-level draft lands at the top level), and
-  `folder:here` means that place for every reader. An admin's private item,
-  a client's own page and a client's submitted page are in no folder a tree
-  lists: the slash menu offers no block there, and a block that arrives
-  another way (a paste) shows its label alone.
+- **Member drafts and review (history).** The member draft's block, read
+  through `/api/member/space/:id` and `/api/member/tree/pages`, and the
+  reviewer's view before and after Accept went with review (W5c) and the
+  personal spaces (W6b, migration 0267). A member's page is now a brain
+  page in a workspace, and `folder:here` means its folder for every reader
+  who reads it.
 - **Where a page sits.** `PageDetail.folderId` names the folder (null at
   the top level); `PageRow.parentId` is always null and stays on the wire
   for older clients, as do `childCount` and `parentTitle` (absent),
@@ -569,5 +380,5 @@ path of `pages.<id>.<id>`) is gone:
 ## What comes next
 
 Still open from the plan, each waiting on a decision: the phone's
-read-only tree, pins and Recent / Most used for members and clients, and
+read-only tree, pins and Recent / Most used for non-Admin logins, and
 the task board filtered by folder.

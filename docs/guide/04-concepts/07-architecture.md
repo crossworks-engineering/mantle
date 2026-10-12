@@ -36,7 +36,7 @@ An email, a file, a note, a page, a table, a contact or an event is one row in o
 
 ## One brain, one owner
 
-Each server is one brain with one owner. Team members and clients get their own logins with limited rights; Postgres row rules decide what each one reads. Two brains talk only through federation ([Sharing and federation](06-sharing-and-federation.md)).
+Each server is one brain with one owner. Every person gets their own login, and their workspaces decide what they read and change; Postgres row rules enforce it ([Workspaces](05-access-tiers.md)). Two brains talk only through federation ([Sharing and federation](06-sharing-and-federation.md)).
 
 ## Example: one question
 

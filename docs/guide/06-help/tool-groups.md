@@ -36,7 +36,7 @@ the Toolsmith specialist.
 Groups are flat: a list of tool slugs, never groups inside groups. Skills carry
 no tools, so attaching a skill changes how an agent works, never what it can
 reach. The default groups come from the system manifest; your own groups sit
-beside them. When an agent changes the tools of a group below Admin level, the
-change waits for your approval in [Pending approvals](pending.md). The Toolsmith uses
+beside them. When an agent changes the tools of a group an assistant of a
+workspace other than Admin holds, the change waits for your approval in [Pending approvals](pending.md). The Toolsmith uses
 `tool_group_list`, `tool_group_ensure`, `agent_list` and
 `agent_grant_tool_group`; an agent cannot grant a group to itself.
