@@ -148,6 +148,7 @@ const call = (id: string, name: string, args: unknown): ChatToolCall => ({
 
 function run(adapter: ChatDispatcher, tool_loading?: 'full' | 'deferred') {
   return runToolLoop({
+    agentRole: null,
     adapter,
     apiKey: 'k',
     model: 'm',
@@ -181,6 +182,7 @@ describe('runToolLoop with deferred tool loading', () => {
     };
     const { adapter, calls } = adapterWith(['ok']);
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',

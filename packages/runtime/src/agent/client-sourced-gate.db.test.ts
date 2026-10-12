@@ -94,6 +94,7 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     };
     const slugs = [...new Set(steps.flat().map(([name]) => name))];
     return loop.runToolLoop({
+      agentRole: null,
       adapter: adapter as never,
       apiKey: 'k',
       model: 'scripted',

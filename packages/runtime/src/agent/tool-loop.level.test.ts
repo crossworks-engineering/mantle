@@ -127,6 +127,7 @@ function adapter(): ChatDispatcher {
 
 const run = (extra: Record<string, unknown>) =>
   runToolLoop({
+    agentRole: null,
     adapter: adapter(),
     apiKey: 'k',
     model: 'm',

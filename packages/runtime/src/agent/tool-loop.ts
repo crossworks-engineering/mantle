@@ -419,8 +419,9 @@ export type ToolLoopArgs = {
   /** agents.role (W8 final): withAgentScope refuses a responder or an
    *  assistant on no workspace that answers no login on a brain on
    *  workspaces. Every caller holding the agent row passes it, so a
-   *  delegated child is checked too. */
-  agentRole?: string | null;
+   *  delegated child is checked too. Required (W8 final round 2): a caller
+   *  that leaves it out cannot fail open; null only for no agent row. */
+  agentRole: string | null;
   /** The agent row's slug. Passed to handlers (specifically
    *  `invoke_agent`) so they can refuse self-calls + reason about who
    *  invoked them. Optional for scripts that aren't running an agent. */

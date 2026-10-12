@@ -171,6 +171,7 @@ const baseArgs = (adapter: ChatDispatcher) => ({
   model: 'fake-model',
   params: {},
   ownerId: 'owner-1',
+  agentRole: null,
   initialMessages: [{ role: 'user' as const, content: 'hi' }],
   tools: [fakeTool()],
 });
@@ -322,7 +323,10 @@ describe('runToolLoop — user Stop (turn abort)', () => {
     const { adapter } = makeFakeAdapter([
       { type: 'toolCalls', toolCalls: [call('c1')], text: 'partial' },
     ]);
-    const result = await runToolLoop({ ...baseArgs(adapter), tools: [confirmTool] });
+    const result = await runToolLoop({
+      ...baseArgs(adapter),
+      tools: [confirmTool],
+    });
     expect(result.reply).toBe('partial');
     expect(pendingInsertCount).toBe(0);
     expect(result.pendingIds).toEqual([]);

@@ -444,8 +444,11 @@ async function fireInner(
                 ownerId: hb.ownerId,
                 agentId: agent.id,
                 agentSlug: agent.slug,
-                // The loop re-enters the agent's workspace (withAgentScope).
-                ...(scoped ? { agentWorkspaceId: agent.workspaceId } : {}),
+                // The loop re-enters the agent's workspace (withAgentScope),
+                // under MANTLE_ADMIN_READS=system too (W8 final round 2): its
+                // workspace branch handles the switch, where a responder
+                // passed as on no workspace was refused with no login.
+                agentWorkspaceId: agent.workspaceId,
                 agentRole: agent.role,
                 agentDepth: 1,
                 delegateTo: [],

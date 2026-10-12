@@ -22,7 +22,7 @@
  *     came back.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 // ─── Module mocks ──────────────────────────────────────────────────────────
 //
@@ -146,6 +146,7 @@ import {
   clampThinkingBudget,
   resolveMaxTokens,
   resolveToolValidationMode,
+  type ToolLoopArgs,
 } from './tool-loop';
 import type {
   ChatDispatcher,
@@ -253,6 +254,16 @@ afterEach(() => {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
+describe('runToolLoop — args', () => {
+  it('agentRole is required (W8 final round 2): a caller that leaves it out does not compile', () => {
+    // Checked by the typecheck: optional, a caller could leave it out and
+    // withAgentScope would read a responder as a specialist (fail open).
+    expectTypeOf<Pick<ToolLoopArgs, 'agentRole'>>().toEqualTypeOf<{
+      agentRole: string | null;
+    }>();
+  });
+});
+
 describe('runToolLoop — failover', () => {
   beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -264,6 +275,7 @@ describe('runToolLoop — failover', () => {
       { type: 'text', text: 'backup answer' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter: primary,
       apiKey: 'k',
       model: 'p-model',
@@ -284,6 +296,7 @@ describe('runToolLoop — failover', () => {
     const { adapter: backup, calls: bCalls } = makeFakeAdapter([{ type: 'text', text: 'x' }]);
     await expect(
       runToolLoop({
+        agentRole: null,
         adapter: primary,
         apiKey: 'k',
         model: 'p',
@@ -309,6 +322,7 @@ describe('runToolLoop — failover', () => {
       { type: 'text', text: 'done on backup' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter: primary,
       apiKey: 'k',
       model: 'p-model',
@@ -330,6 +344,7 @@ describe('runToolLoop — happy paths', () => {
   it('returns the reply on a single LLM call with no tool requests', async () => {
     const { adapter, calls } = makeFakeAdapter([{ type: 'text', text: 'hello back' }]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -365,6 +380,7 @@ describe('runToolLoop — happy paths', () => {
       { type: 'text', text: 'final answer' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -380,6 +396,7 @@ describe('runToolLoop — happy paths', () => {
   it('does not send the tools field when args.tools is empty', async () => {
     const { adapter, calls } = makeFakeAdapter([{ type: 'text', text: 'ok' }]);
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -394,6 +411,7 @@ describe('runToolLoop — happy paths', () => {
   it('forwards temperature / max_tokens / top_p from params on every iteration', async () => {
     const { adapter, calls } = makeFakeAdapter([{ type: 'text', text: 'ok' }]);
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -427,6 +445,7 @@ describe('runToolLoop — cache markers', () => {
       { type: 'text', text: 'done' },
     ]);
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -464,6 +483,7 @@ describe('runToolLoop — single tool iteration', () => {
     dispatchToolImpl = () => ({ ok: true, output: { id: 'node_42' } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -528,6 +548,7 @@ describe('runToolLoop — untrusted-content fencing', () => {
     });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -568,6 +589,7 @@ describe('runToolLoop — untrusted-content fencing', () => {
     dispatchToolImpl = () => ({ ok: true, output: { id: 'node_42' } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -602,6 +624,7 @@ describe('runToolLoop — untrusted-content fencing', () => {
     });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -648,6 +671,7 @@ describe('runToolLoop — multi-iteration tool sequence', () => {
     ]);
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -691,6 +715,7 @@ describe('runToolLoop — multi-iteration tool sequence', () => {
       { type: 'text', text: 'both done' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -727,6 +752,7 @@ describe('runToolLoop — error surfaces', () => {
       { type: 'text', text: 'sorry, retried' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -765,6 +791,7 @@ describe('runToolLoop — error surfaces', () => {
       { type: 'text', text: 'recovered' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -801,6 +828,7 @@ describe('runToolLoop — error surfaces', () => {
       { type: 'text', text: 'will retry later' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -837,6 +865,7 @@ describe('runToolLoop — requires_confirm path', () => {
       { type: 'text', text: 'queued' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -883,6 +912,7 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
   const taskGet = fakeTool({ slug: 'task_get' });
   const run = (script: Parameters<typeof makeFakeAdapter>[0], taint?: { clientSourced: boolean }) =>
     runToolLoop({
+      agentRole: null,
       adapter: makeFakeAdapter(script).adapter,
       apiKey: 'k',
       model: 'm',
@@ -974,6 +1004,7 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
       fakeTool({ slug: 'task_get', handler: { kind: 'builtin', ref: 'task_get' } as never }),
     ];
     await runToolLoop({
+      agentRole: null,
       adapter: makeFakeAdapter([
         {
           type: 'toolCalls',
@@ -1013,6 +1044,7 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
       fakeTool({ slug: 'http_post', handler: { kind: 'http', url: 'x', method: 'POST' } as never }),
     ];
     await runToolLoop({
+      agentRole: null,
       adapter: makeFakeAdapter([
         {
           type: 'toolCalls',
@@ -1044,6 +1076,7 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
     });
     const once = (taint?: { clientSourced: boolean }) =>
       runToolLoop({
+        agentRole: null,
         adapter: makeFakeAdapter([
           { type: 'toolCalls', toolCalls: [call('c1', 'note_create', { title: 'copy' })] },
           { type: 'text', text: 'done' },
@@ -1108,6 +1141,7 @@ describe('runToolLoop — artifacts collection', () => {
       { type: 'text', text: 'spoken' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1146,6 +1180,7 @@ describe('runToolLoop — in-response duplicate suppression', () => {
     dispatchToolImpl = () => ({ ok: true, output: { id: 'page_42', title: 'Stand in Awe' } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1209,6 +1244,7 @@ describe('runToolLoop — in-response duplicate suppression', () => {
     ]);
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1249,6 +1285,7 @@ describe('runToolLoop — in-response duplicate suppression', () => {
     ]);
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1286,6 +1323,7 @@ describe('runToolLoop — max iterations + force_final', () => {
       { type: 'text', text: 'forced final answer' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1315,6 +1353,7 @@ describe('runToolLoop — empty-reply retry', () => {
       { type: 'text', text: 'recovered answer' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1352,6 +1391,7 @@ describe('runToolLoop — empty-reply retry', () => {
       { type: 'text', text: 'nudged final' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1371,6 +1411,7 @@ describe('runToolLoop — empty-reply retry', () => {
       { type: 'text', text: '   ' }, // whitespace-only still counts as empty upstream
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1396,6 +1437,7 @@ describe('runToolLoop — empty-reply retry', () => {
       { type: 'text', text: 'final on backup' }, // force_final
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter: primary,
       apiKey: 'k',
       model: 'p-model',
@@ -1460,6 +1502,7 @@ describe('runToolLoop — tool-volume guards', () => {
     dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1503,6 +1546,7 @@ describe('runToolLoop — tool-volume guards', () => {
     dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1546,6 +1590,7 @@ describe('runToolLoop — tool-volume guards', () => {
     dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1592,6 +1637,7 @@ describe('runToolLoop — tool-volume guards', () => {
     dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1632,6 +1678,7 @@ describe('runToolLoop — tool-volume guards', () => {
     dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1672,6 +1719,7 @@ describe('runToolLoop — tool-volume guards', () => {
     dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1728,6 +1776,7 @@ describe('summarizeToolOutcomes + force-final outcome ledger', () => {
       ++n === 2 ? { ok: false, error: 'disk full' } : { ok: true, output: { ok: n } };
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1775,6 +1824,7 @@ describe('runToolLoop — failure-aware guards', () => {
     dispatchToolImpl = () => ({ ok: false, error: 'boom' });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1808,6 +1858,7 @@ describe('runToolLoop — failure-aware guards', () => {
     dispatchToolImpl = () => ({ ok: true, output: { rows: [1, 2, 3] } }); // never changes
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1852,6 +1903,7 @@ describe('runToolLoop — failure-aware guards', () => {
     dispatchToolImpl = () => ({ ok: false, error: 'boom' });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1876,6 +1928,7 @@ describe('runToolLoop — failure-aware guards', () => {
     dispatchToolImpl = () => ({ ok: true, output: { version: ++n } }); // changes every time
 
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1936,6 +1989,7 @@ describe('runToolLoop — central arg validation', () => {
       { type: 'text', text: 'done' },
     ]);
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1956,6 +2010,7 @@ describe('runToolLoop — central arg validation', () => {
       { type: 'text', text: 'done' },
     ]);
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1976,6 +2031,7 @@ describe('runToolLoop — central arg validation', () => {
       { type: 'text', text: 'done' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -1996,6 +2052,7 @@ describe('runToolLoop — central arg validation', () => {
       { type: 'text', text: 'recovered' },
     ]);
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -2022,6 +2079,7 @@ describe('runToolLoop — central arg validation', () => {
       { type: 'text', text: 'done' },
     ]);
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -2041,6 +2099,7 @@ describe('runToolLoop — central arg validation', () => {
       { type: 'text', text: 'done' },
     ]);
     await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -2274,6 +2333,7 @@ describe('write-target capture through the loop', () => {
     });
 
     const result = await runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model: 'm',
@@ -2311,14 +2371,14 @@ describe('runToolLoop finishReason', () => {
     const { adapter } = makeFakeAdapter([
       { type: 'text', text: 'a long cut-off answer', finishReason: 'length' },
     ]);
-    const result = await runToolLoop({ adapter, ...base });
+    const result = await runToolLoop({ agentRole: null, adapter, ...base });
     expect(result.finishReason).toBe('length');
     expect(result.reply).toBe('a long cut-off answer');
   });
 
   it('leaves finishReason undefined when the adapter reports none', async () => {
     const { adapter } = makeFakeAdapter([{ type: 'text', text: 'plain' }]);
-    const result = await runToolLoop({ adapter, ...base });
+    const result = await runToolLoop({ agentRole: null, adapter, ...base });
     expect(result.finishReason).toBeUndefined();
   });
 
@@ -2330,7 +2390,7 @@ describe('runToolLoop finishReason', () => {
     const { adapter, calls } = makeFakeAdapter([
       { type: 'text', text: '', finishReason: 'content_filter' },
     ]);
-    const result = await runToolLoop({ adapter, ...base });
+    const result = await runToolLoop({ agentRole: null, adapter, ...base });
     expect(calls).toHaveLength(1);
     expect(result.reply).toBe('');
     expect(result.finishReason).toBe('content_filter');
@@ -2343,7 +2403,7 @@ describe('runToolLoop finishReason', () => {
       { type: 'text', text: '' },
       { type: 'text', text: 'second time lucky' },
     ]);
-    const result = await runToolLoop({ adapter, ...base });
+    const result = await runToolLoop({ agentRole: null, adapter, ...base });
     expect(calls).toHaveLength(2);
     expect(result.reply).toBe('second time lucky');
   });
@@ -2370,6 +2430,7 @@ describe('runToolLoop: pictures a tool returns for the model', () => {
   ];
   const run = (model: string, adapter: ChatDispatcher) =>
     runToolLoop({
+      agentRole: null,
       adapter,
       apiKey: 'k',
       model,
@@ -2431,6 +2492,7 @@ describe('runToolLoop: pictures a tool returns for the model', () => {
       }),
     };
     const result = await runToolLoop({
+      agentRole: null,
       adapter: primary,
       apiKey: 'k',
       model: 'anthropic/claude-sonnet-4',

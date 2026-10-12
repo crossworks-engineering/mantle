@@ -461,6 +461,7 @@ describe.skipIf(!URL)('W7 integration fix', () => {
       .returning();
     const voice = await import('@mantle/voice');
     const result = await rt.runToolLoop({
+      agentRole: null,
       adapter: voice.getChatAdapter('openrouter')!,
       apiKey: 'sk-fake',
       model: 'fake/model',

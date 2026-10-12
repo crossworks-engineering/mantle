@@ -68,6 +68,7 @@ import {
 } from '@mantle/db';
 import {
   adminReadsOnSystemPool,
+  currentGateScope,
   currentRequestMode,
   currentTurnStamp,
   currentWorkspaceScope,
@@ -320,6 +321,22 @@ export async function withAgentScope<T>(
         writes: true,
       }),
     );
+  }
+  // Under MANTLE_ADMIN_READS=system the Admin assistant's own scope is a gate
+  // scope with its stamp, not a turn scope: re-entered for the same
+  // workspace (a heartbeat's caller, then its tool loop; W8 final round 2) it
+  // keeps the login already chosen, as the open turn scope does below. Read
+  // afresh it would act for the anchor, and its gates would ask the anchor.
+  if (!open && adminReadsOnSystemPool()) {
+    const gate = currentGateScope();
+    if (
+      gate?.kind === 'assistant' &&
+      gate.ws.length === 1 &&
+      gate.ws[0] === wsId &&
+      currentTurnStamp()?.workspaceId === wsId
+    ) {
+      return fn();
+    }
   }
   if (open) {
     if (open.ws.length === 1 && open.ws[0] === wsId) return fn();
