@@ -1,0 +1,323 @@
+/**
+ * Who a statement runs as (workspaces arch plan v2, section 4 and 20.3;
+ * A2a). Every process entry binds its actor once, at its entry (docs/actors.md
+ * lists them); everything it awaits carries it. The database learns it as
+ * mantle.actor and mantle.write_mode, set by mantle_set_actor (migration
+ * 0275) on the app's system pool only, from client.ts.
+ *
+ * The kinds (plan 4.1, 20.3 item 15):
+ *  - login(rw): a signed-in user, a read-write key, a peer acting as a login
+ *    with Write on. login(ro): a read-only key, a peer with Write off.
+ *    login(owner): the owner cases the guide names (the Admin assistant with
+ *    no user, a run with no login, the owner's Telegram bot).
+ *  - assistant: a workspace assistant with no user asking. Writes nothing.
+ *  - link: an open public link. contact: a contact share (writes its app's
+ *    data when the share allows it).
+ *  - system(reason): a process, an Admin area route, a named repair.
+ *  - peer(share): a peer without "Acts as", read-only.
+ *
+ * A2a only LOGS: a statement with no actor is a miss (actor_check_misses),
+ * in TypeScript here and in SQL (the item tables' write triggers). Nothing
+ * is refused, whatever mantle.actor_check says; refusing is A2b.
+ */
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { env } from '@mantle/config';
+import { systemDbCallerOf } from './viewer';
+
+export type WriteMode = 'rw' | 'ro';
+
+export type Actor =
+  | { kind: 'login'; mode: 'rw' | 'ro' | 'owner'; loginId: string }
+  | { kind: 'assistant'; agentId: string | null }
+  | { kind: 'link' }
+  | { kind: 'contact'; canWrite: boolean }
+  | { kind: 'system'; reason: string }
+  | { kind: 'peer'; peerId: string | null };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A system reason: lower case, `:` between parts (worker:extract,
+ *  repair:page-block-ids). The same pattern as mantle_set_actor's. */
+export const SYSTEM_REASON_RE = /^[a-z][a-z0-9:._/@-]{0,119}$/;
+
+/** login(rw | ro | owner) for `loginId`. */
+export function loginActor(loginId: string, mode: 'rw' | 'ro' | 'owner' = 'rw'): Actor {
+  if (!UUID_RE.test(loginId)) throw new Error('loginActor: loginId must be a uuid');
+  return Object.freeze({ kind: 'login', mode, loginId: loginId.toLowerCase() });
+}
+
+/** system(reason). */
+export function systemActor(reason: string): Actor {
+  if (!SYSTEM_REASON_RE.test(reason)) {
+    throw new Error(`systemActor: not a reason: ${reason.slice(0, 40)}`);
+  }
+  return Object.freeze({ kind: 'system', reason });
+}
+
+/** What the actor may write: login(ro), assistant, link, peer and a contact
+ *  share without can_write read only (plan 4.1). */
+export function writeModeOf(actor: Actor): WriteMode {
+  switch (actor.kind) {
+    case 'login':
+      return actor.mode === 'ro' ? 'ro' : 'rw';
+    case 'contact':
+      return actor.canWrite ? 'rw' : 'ro';
+    case 'system':
+      return 'rw';
+    default:
+      return 'ro';
+  }
+}
+
+/** The mantle.actor value (migration 0275's format). */
+export function actorSetting(actor: Actor): string {
+  switch (actor.kind) {
+    case 'login':
+      return `login:${actor.mode}:${actor.loginId}`;
+    case 'assistant':
+      return `assistant:${actor.agentId ?? 'none'}`;
+    case 'link':
+      return 'link';
+    case 'contact':
+      return `contact:${actor.canWrite ? 'rw' : 'ro'}`;
+    case 'system':
+      return `system:${actor.reason}`;
+    case 'peer':
+      return `peer:${actor.peerId ?? 'none'}`;
+  }
+}
+
+const actorStore = new AsyncLocalStorage<Actor>();
+
+/** An entry whose caller is known only later (an HTTP request: the session
+ *  guard or a share gate names it): one mutable slot per entry. */
+const actorSlots = new AsyncLocalStorage<{ actor: Actor }>();
+
+/**
+ * Run an entry whose actor is named later (setSlotActor), starting as
+ * `initial`: the route loader with system(http:no-login), the /s page.
+ * An actor bound around it does not reach in: the entry names its own.
+ */
+export function runInActorSlot<T>(initial: Actor, fn: () => T): T {
+  return actorStore.exit(() => actorSlots.run({ actor: initial }, fn));
+}
+
+/** Name the current entry's actor (see runInActorSlot). No-op outside one. */
+export function setSlotActor(actor: Actor): void {
+  const slot = actorSlots.getStore();
+  if (slot) slot.actor = actor;
+}
+
+/** The current entry's slot actor, or null. */
+export function slotActor(): Actor | null {
+  return actorSlots.getStore()?.actor ?? null;
+}
+
+/**
+ * Run `fn` as `actor`: every statement it sends, after any await, carries
+ * it. A process entry calls this once, at its entry; deferred work (a run,
+ * a heartbeat, a pending call, a Telegram turn) binds the login it runs for,
+ * as that login is NOW. An inner binding replaces an outer one.
+ */
+export function runAsActor<T>(actor: Actor, fn: () => T): T {
+  return actorStore.run(actor, fn);
+}
+
+/** runAsActor(system(reason), fn): a process's own work. */
+export function runAsSystem<T>(reason: string, fn: () => T): T {
+  return actorStore.run(systemActor(reason), fn);
+}
+
+/**
+ * Run `fn` with no actor, as a process entry starts (tests of an entry:
+ * the entry must bind its own; a test otherwise runs as system(test), see
+ * enterTestActor). Nothing else calls it.
+ */
+export function runWithoutActor<T>(fn: () => T): T {
+  return actorStore.exit(() => actorSlots.exit(fn));
+}
+
+/** The actor the current code runs as: the nearest binding, else the
+ *  entry's slot (an HTTP request: the route loader, the session guard and
+ *  the share gate name it), else an operator script's own, else none. */
+export function currentActor(): Actor | null {
+  return actorStore.getStore() ?? actorSlots.getStore()?.actor ?? scriptActor();
+}
+
+let scriptActorMemo: Actor | null | undefined;
+
+/**
+ * An operator script (plan 4.3: server/web/scripts/*, maintain, the root
+ * scripts) runs as system(script:<file name>): the process's main file is
+ * a scripts/ file. Read once. Servers, workers and tests are none.
+ */
+export function scriptActor(): Actor | null {
+  if (scriptActorMemo !== undefined) return scriptActorMemo;
+  const main = (process.argv[1] ?? '').replace(/\\/g, '/');
+  const m = /\/scripts\/([a-z0-9][a-z0-9._-]*?)\.(ts|mts|mjs|js)$/i.exec(main);
+  const name = m ? `script:${m[1]!.toLowerCase()}` : null;
+  scriptActorMemo = name && SYSTEM_REASON_RE.test(name) ? systemActor(name) : null;
+  return scriptActorMemo;
+}
+
+// ── The check (warn only in A2a) ────────────────────────────────────────────
+
+export type ActorCheckMode = 'off' | 'warn' | 'on';
+
+const RANK: Record<ActorCheckMode, number> = { off: 0, warn: 1, on: 2 };
+
+function parseMode(v: string | null | undefined): ActorCheckMode {
+  const s = (v ?? '').trim().toLowerCase();
+  return s === 'warn' || s === 'on' ? s : 'off';
+}
+
+/** The box's mode, from mantle_actor_check_mode(); read by client.ts. */
+let boxMode: ActorCheckMode = 'off';
+
+/** Set by client.ts after it read the box's mode. */
+export function noteBoxActorCheckMode(mode: string | null): void {
+  boxMode = parseMode(mode);
+}
+
+/**
+ * The check's mode for this process: the box's (mantle.actor_check, read
+ * from the database), raised by MANTLE_ACTOR_CHECK (a test run sets warn),
+ * never lowered: the greatest(box, session) rule of the heads check.
+ */
+export function actorCheckMode(): ActorCheckMode {
+  const own = parseMode(env('MANTLE_ACTOR_CHECK'));
+  return RANK[own] > RANK[boxMode] ? own : boxMode;
+}
+
+/** A statement that found no actor. */
+export type ActorMiss = { source: 'ts' | 'sql'; check: string; actor: string; detail: string };
+
+/** The actor of a test's own work (see enterTestActor). */
+export const TEST_ACTOR: Actor = Object.freeze({ kind: 'system', reason: 'test' });
+
+/**
+ * Tests only (vitest.setup.ts, in its beforeAll and beforeEach): a test is
+ * the process entry of what it runs, as system(test). The binding reaches
+ * what the test starts as an entry's does (what it awaits, its timers, its
+ * detached promises); work that does not descend from the test (a pooled
+ * socket's events, a module's own timer) has none, as in production. No-op
+ * outside NODE_ENV=test.
+ */
+export function enterTestActor(): void {
+  if (env('NODE_ENV') === 'test') actorStore.enterWith(TEST_ACTOR);
+}
+
+/** A longer stack than the default ten frames, to find the caller. */
+export function longStack(): string {
+  const old = Error.stackTraceLimit;
+  Error.stackTraceLimit = 60;
+  try {
+    return new Error().stack ?? '';
+  } finally {
+    Error.stackTraceLimit = old;
+  }
+}
+
+const recorded: ActorMiss[] = [];
+const loggedKeys = new Map<string, number>();
+let missLogger: ((m: ActorMiss) => void) | null = null;
+
+/** client.ts hands the writer of miss rows here (another connection). */
+export function setActorMissLogger(fn: (m: ActorMiss) => void): void {
+  missLogger = fn;
+}
+
+/**
+ * Note a miss. Tests keep every one (takeActorMisses; vitest.setup.ts fails
+ * the test). Elsewhere: one console line and one row per check and caller
+ * an hour, the row written later on another connection (never in the
+ * transaction that missed: 20.3 item 7).
+ */
+export function noteActorMiss(miss: ActorMiss): void {
+  if (env('NODE_ENV') === 'test') {
+    recorded.push(miss);
+    return;
+  }
+  const key = `${miss.source}:${miss.check}:${miss.detail}`;
+  const now = Date.now();
+  const last = loggedKeys.get(key);
+  if (last !== undefined && now - last < 3_600_000) return;
+  if (loggedKeys.size > 5_000) loggedKeys.clear();
+  loggedKeys.set(key, now);
+  console.warn(`[db] actor miss (${miss.source}) ${miss.check}: ${miss.detail}`);
+  missLogger?.(miss);
+}
+
+/** The TypeScript check: a statement about to be sent with no actor bound
+ *  is a miss (logged only in A2a). `what` names the handle (db.insert,
+ *  withSystemTx…). Returns the actor, or null. */
+export function checkActorBound(what: string): Actor | null {
+  const actor = currentActor();
+  if (actor) return actor;
+  if (actorCheckMode() === 'off') return null;
+  noteActorMiss({
+    source: 'ts',
+    check: what,
+    actor: '',
+    detail: systemDbCallerOf(longStack()) ?? 'unknown caller',
+  });
+  return null;
+}
+
+/** Tests: the misses noted since the last call, cleared. */
+export function takeActorMisses(): ActorMiss[] {
+  return recorded.splice(0, recorded.length);
+}
+
+/** A NOTICE from an item table's write trigger (migration 0275). */
+export const SQL_MISS_PREFIX = 'mantle actor miss: ';
+
+/** client.ts's onnotice: a trigger's miss becomes a miss; anything else is
+ *  printed as postgres.js prints notices by default. */
+export function onPgNotice(notice: { message?: string; severity?: string }): void {
+  const msg = notice.message ?? '';
+  if (msg.startsWith(SQL_MISS_PREFIX)) {
+    noteActorMiss({
+      source: 'sql',
+      check: msg.slice(SQL_MISS_PREFIX.length),
+      actor: '',
+      detail: '',
+    });
+    return;
+  }
+  console.log(notice);
+}
+
+// ── Writes inside read paths (plan 4.4) ─────────────────────────────────────
+
+/**
+ * Every write that runs inside a read request or a read tool, named and
+ * pinned (arch A2a; the route sweep pins where each runs:
+ * REQUEST_SCOPE_SYSTEM_WRITES in server/web/server/w6a-route-sweep.db.test.ts).
+ * Each runs as system(<name>), so it writes (write mode rw) even for a
+ * read-only key (20.3 item 8). The goal is to move each to a worker; the
+ * scoreboard counts them (readPathWrites) and the count only goes down.
+ */
+export const READ_PATH_WRITES = {
+  'repair:abandoned-traces':
+    'GET /api/activity: close the caller’s running traces that never finished (server/web/lib/journey.ts)',
+  'backfill:app-nav':
+    'GET /api/app-nav: move the pre-tree sidebar layout into the tree, once (content tree/apps-nav.ts)',
+  'backfill:app-marks':
+    'GET /api/app-nav: copy a login’s app pins and opens into item_marks, once (content tree/apps-nav.ts)',
+  'repair:kind-root':
+    'GET /api/tree/:kind, /api/app-nav: make a kind’s missing root folder row (content tree/node-ops.ts)',
+  'backfill:doc-collections':
+    'GET /api/docs/reader: register the default documentation collections (files docs.ts)',
+  'repair:files-root':
+    'GET /api/files/files: make the missing files root row (files ops/shared.ts)',
+  'backfill:page-block-ids':
+    'GET /api/pages/:id: store missing block ids, for a reader who may edit the page (content pages/read.ts)',
+} as const;
+
+export type ReadPathWrite = keyof typeof READ_PATH_WRITES;
+
+/** Run a pinned read-path write (READ_PATH_WRITES) as system(<name>). */
+export function runReadPathWrite<T>(name: ReadPathWrite, fn: () => T): T {
+  return actorStore.run(systemActor(name), fn);
+}

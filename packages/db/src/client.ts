@@ -36,6 +36,22 @@ import {
   requestScopeMemo,
   type CreateHome,
 } from './viewer';
+import {
+  actorCheckMode,
+  actorSetting,
+  checkActorBound,
+  currentActor,
+  noteBoxActorCheckMode,
+  onPgNotice,
+  runAsSystem,
+  loginActor,
+  systemActor,
+  setActorMissLogger,
+  writeModeOf,
+  type Actor,
+  type ActorMiss,
+} from './actor';
+import { errorMessage } from '@mantle/std';
 
 declare global {
   var __mantleSql: ReturnType<typeof postgres> | undefined;
@@ -72,11 +88,162 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
   if (globalThis.__mantleDb) return globalThis.__mantleDb;
   const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
-  const sql = globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false });
+  // onnotice: an item table's write trigger reports a statement with no
+  // actor as a NOTICE (0275); every other notice prints as postgres.js's
+  // default does.
+  const sql =
+    globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false, onnotice: onPgNotice });
   globalThis.__mantleSql = sql;
-  const client = drizzle(sql, { schema });
+  const client = drizzle(actorClient(sql), { schema });
   globalThis.__mantleDb = client;
+  setActorMissLogger(logActorMiss);
   return client;
+}
+
+// ── The actor on the system pool (workspaces arch A2a) ──────────────────────
+
+/** When the box's mode was last read (mantle_actor_check_mode). */
+let actorModeReadAt = 0;
+
+/** Read the box's actor check mode again when a minute has passed. Never
+ *  waits: the statement that asked runs with the mode known so far. */
+function refreshActorCheckMode(base: PgSql): void {
+  const now = Date.now();
+  if (now - actorModeReadAt < 60_000) return;
+  actorModeReadAt = now;
+  base
+    .unsafe('select "public"."mantle_actor_check_mode"() as m')
+    .then((rows) => noteBoxActorCheckMode((rows[0] as { m?: string } | undefined)?.m ?? null))
+    // A database without 0275 yet: off.
+    .catch(() => noteBoxActorCheckMode(null));
+}
+
+/** Write a miss row later, on another connection (20.3 item 7): never in
+ *  the transaction that missed, so it assigns that one no transaction id. */
+function logActorMiss(miss: ActorMiss): void {
+  setImmediate(() => {
+    const sql = globalThis.__mantleSql;
+    if (!sql) return;
+    runAsSystem('actor-check', () =>
+      sql
+        .unsafe('select "public"."mantle_actor_miss_log"($1, $2, $3, $4)', [
+          miss.source,
+          miss.check,
+          miss.actor,
+          miss.detail,
+        ])
+        .catch(() => {}),
+    );
+  });
+}
+
+/** The handle properties that send a statement: the TypeScript actor check
+ *  (A2a) runs on each access. drizzle's own reads (session, dialect) do
+ *  not count. */
+const STATEMENT_PROPS: ReadonlySet<PropertyKey> = new Set([
+  'select',
+  'selectDistinct',
+  'selectDistinctOn',
+  'insert',
+  'update',
+  'delete',
+  'execute',
+  'query',
+  'transaction',
+  'with',
+  '$with',
+  '$count',
+  'refreshMaterializedView',
+]);
+
+const SET_ACTOR_SQL = 'select "public"."mantle_set_actor"($1, $2, $3)';
+
+/** Statements Postgres refuses inside a transaction block: they run as they
+ *  are, with no actor set (DDL and maintenance; no item trigger fires). */
+const NO_TX_SQL =
+  /^\s*(vacuum|cluster|reindex\b[^;]*\bconcurrently|(create|drop)\s+(unique\s+)?index\s+concurrently|create\s+database|drop\s+database|alter\s+system|checkpoint)\b/i;
+
+/** The mantle_set_actor parameters for the current actor, or null: no actor
+ *  bound, or the check is off (then nothing changes). */
+function actorParams(): [string, string, string] | null {
+  const mode = actorCheckMode();
+  if (mode === 'off') return null;
+  const actor = currentActor();
+  if (!actor) return null;
+  return [actorSetting(actor), writeModeOf(actor), mode];
+}
+
+/**
+ * The system pool's postgres.js client with the actor (arch A2a, plan 4.2):
+ * while the check is not off, a transaction (`begin`) sets the current
+ * actor first, and a statement that writes runs pipelined in its own short
+ * transaction that sets it (BEGIN, the actor, the statement, COMMIT: one
+ * round trip, as turnScopedClient). Reads, and everything while the check
+ * is off or no actor is bound, run exactly as before.
+ */
+function actorClient(base: PgSql): PgSql {
+  const pipelined = async (
+    params: [string, string, string],
+    query: string,
+    args: unknown[] | undefined,
+    mode: 'rows' | 'values' | 'simple',
+  ) => {
+    const conn = await base.reserve();
+    try {
+      const begin = conn.unsafe('begin');
+      const set = conn.unsafe(SET_ACTOR_SQL, params);
+      const q = conn.unsafe(query, (args ?? []) as never[]);
+      const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
+      const commit = conn.unsafe('commit');
+      const out = await Promise.allSettled([begin, set, main, commit]);
+      const failed = out.find((r) => r.status === 'rejected');
+      // A failed statement aborted the transaction; the COMMIT then rolled
+      // it back, and the first error is thrown.
+      if (failed) throw (failed as PromiseRejectedResult).reason;
+      return (out[2] as PromiseFulfilledResult<unknown>).value;
+    } finally {
+      conn.release();
+    }
+  };
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      if (prop === 'unsafe') {
+        return (query: string, args?: unknown[], opts?: unknown) => {
+          refreshActorCheckMode(target);
+          const params = actorParams();
+          if (!params || !isWriteSql(query) || NO_TX_SQL.test(query)) {
+            return target.unsafe(query, args as never[], opts as never);
+          }
+          let pending: Promise<unknown> | null = null;
+          const once = () => (pending ??= pipelined(params, query, args, 'rows'));
+          return {
+            values: () => pipelined(params, query, args, 'values'),
+            simple: () => pipelined(params, query, args, 'simple'),
+            then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) =>
+              once().then(ok, bad),
+            catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
+            finally: (fn?: () => void) => once().finally(fn),
+          };
+        };
+      }
+      if (prop === 'begin') {
+        return (...args: unknown[]) => {
+          refreshActorCheckMode(target);
+          const params = actorParams();
+          const fn = args[args.length - 1] as (t: PgSql) => unknown;
+          if (!params || typeof fn !== 'function') {
+            return (target.begin as (...a: unknown[]) => unknown)(...args);
+          }
+          const wrapped = async (t: PgSql) => {
+            await t.unsafe(SET_ACTOR_SQL, params);
+            return fn(t);
+          };
+          return (target.begin as (...a: unknown[]) => unknown)(...args.slice(0, -1), wrapped);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
 }
 
 /**
@@ -246,6 +413,9 @@ export async function withSystemTx<T>(
   // its writes (W6a fix round 2, L-c), pinned by the route sweep with the
   // file that opened it.
   if (inRequest) noteRequestSystemWrite('withSystemTx');
+  // Arch A2a: the transaction runs as the current actor (actorClient sets
+  // it first); none bound is a miss, logged only.
+  checkActorBound('withSystemTx');
   // An Admin user's write request (W6a fix round 1, M1): the login's scope
   // on the transaction, so the database checks moves (0241/0245), creates in
   // a folder and deletes (0266) against its workspaces. mantle.login_id is
@@ -293,6 +463,40 @@ export async function withSystemTx<T>(
   }
   await runTxHooks(hooks.commit, 'commit');
   return result;
+}
+
+/**
+ * login(rw | owner) for `loginId`, read as that login is NOW (arch A2a, plan
+ * 4.1): deferred work done for a login (a run, a heartbeat, a pending call,
+ * a turn) binds this when it runs, not what the login was when the work was
+ * queued. A2a refuses nothing: a login disabled since (or gone) is still
+ * bound and named in one warning. `entry` is the system reason of the entry
+ * asking (worker:runs); a bad id gives system(entry).
+ */
+export async function loginActorNow(
+  loginId: string,
+  entry: string,
+  mode: 'rw' | 'owner' = 'rw',
+): Promise<Actor> {
+  let actor: Actor;
+  try {
+    actor = loginActor(loginId, mode);
+  } catch {
+    return systemActor(entry);
+  }
+  try {
+    const rows = (await runAsSystem(entry, () =>
+      getAdminDb().execute(
+        sqlTag`select disabled_at is not null as off from auth.users where id = ${loginId}::uuid`,
+      ),
+    )) as unknown as { off: boolean }[];
+    if (!rows[0] || rows[0].off) {
+      console.warn(`[${entry}] login ${loginId} is disabled now; the work runs as it anyway (A2a)`);
+    }
+  } catch (err) {
+    console.warn(`[${entry}] could not read login ${loginId}: ${errorMessage(err)}`);
+  }
+  return actor;
 }
 
 /** A uuid, checked, or '' for none. */
@@ -1079,6 +1283,7 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
  */
 export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
+    if (STATEMENT_PROPS.has(prop)) checkActorBound(`db.${String(prop)}`);
     // A request scope (W6a, plan 2.3): writes stay on the system pool with
     // their rule in the statement; reads run in the scope. A transaction is
     // a write in a mutating request, and stays in the scope in a read
@@ -1181,6 +1386,7 @@ export function executeWrite(
  */
 export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
+    if (STATEMENT_PROPS.has(prop)) checkActorBound(`systemDb.${String(prop)}`);
     if (inTurnScope() && systemDbAccessChecked(prop)) assertSystemDbCaller();
     return Reflect.get(getAdminDb() as object, prop);
   },

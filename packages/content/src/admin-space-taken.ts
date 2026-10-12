@@ -22,25 +22,27 @@ export async function takenFromOf(
 ): Promise<Map<string, AdminTakenFrom>> {
   const out = new Map<string, AdminTakenFrom>();
   if (!ids.length) return out;
-  const rows = await asSystem(() =>
-    db
-      .select({
-        id: spaceItems.nodeId,
-        loginId: authUsers.id,
-        displayName: authUsers.displayName,
-        email: authUsers.email,
-        takenAt: spaceItems.takenAt,
-      })
-      .from(spaceItems)
-      .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
-      .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
-      .where(
-        and(
-          inArray(spaceItems.nodeId, [...ids]),
-          eq(nodes.ownerId, spaceId),
-          eq(spaceItems.reviewState, 'taken'),
+  const rows = await asSystem(
+    () =>
+      db
+        .select({
+          id: spaceItems.nodeId,
+          loginId: authUsers.id,
+          displayName: authUsers.displayName,
+          email: authUsers.email,
+          takenAt: spaceItems.takenAt,
+        })
+        .from(spaceItems)
+        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+        .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+        .where(
+          and(
+            inArray(spaceItems.nodeId, [...ids]),
+            eq(nodes.ownerId, spaceId),
+            eq(spaceItems.reviewState, 'taken'),
+          ),
         ),
-      ),
+    'login-names',
   );
   for (const r of rows) {
     out.set(r.id, {

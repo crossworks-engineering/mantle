@@ -18,7 +18,14 @@
  * needed and no migration.
  */
 import { sql } from 'drizzle-orm';
-import { takeShareReadLock, db, withDeadlockRetry, withHeads, executeWrite } from '@mantle/db';
+import {
+  takeShareReadLock,
+  db,
+  withDeadlockRetry,
+  withHeads,
+  executeWrite,
+  runReadPathWrite,
+} from '@mantle/db';
 import type { AppNavEntry, AppNavFolder } from '@mantle/client-types';
 import { EMPTY_APP_NAV } from '@mantle/client-types/app-nav';
 import { TREE_MAX_DEPTH } from '@mantle/client-types/tree';
@@ -190,14 +197,16 @@ async function moveEntries(
 export async function reconcileAppNav(ownerId: string): Promise<boolean | null> {
   if (!(await ensureKindRoot(ownerId, 'apps'))) return null;
   if ((await rootData(ownerId)).appNavMigratedAt) return false;
-  return unlessWriteRefused(async () => {
-    if (!(await claimAppNavMove(ownerId))) return false;
-    // The anchor's own row holds the layout (a brain-level preference).
-    const nav = (await loadProfilePreferences(ownerId)).appNav ?? EMPTY_APP_NAV;
-    await moveEntries(ownerId, nav.entries, APPS_ROOT, 0);
-    await markAppNavMoved(ownerId);
-    return true;
-  });
+  return unlessWriteRefused(() =>
+    runReadPathWrite('backfill:app-nav', async () => {
+      if (!(await claimAppNavMove(ownerId))) return false;
+      // The anchor's own row holds the layout (a brain-level preference).
+      const nav = (await loadProfilePreferences(ownerId)).appNav ?? EMPTY_APP_NAV;
+      await moveEntries(ownerId, nav.entries, APPS_ROOT, 0);
+      await markAppNavMoved(ownerId);
+      return true;
+    }),
+  );
 }
 
 /**
@@ -210,7 +219,9 @@ export async function reconcileAppNav(ownerId: string): Promise<boolean | null> 
 export async function reconcileAppMarks(ownerId: string, actorId: string): Promise<boolean | null> {
   if (!(await ensureKindRoot(ownerId, 'apps'))) return null;
   if ((await rootData(ownerId)).appMarksMigrated?.includes(actorId)) return false;
-  return unlessWriteRefused(() => copyAppMarks(ownerId, actorId));
+  return unlessWriteRefused(() =>
+    runReadPathWrite('backfill:app-marks', () => copyAppMarks(ownerId, actorId)),
+  );
 }
 
 async function copyAppMarks(ownerId: string, actorId: string): Promise<boolean> {

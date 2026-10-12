@@ -216,12 +216,14 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
     }
     // A linked brain, paired (its token sealed by the stub key).
     const c = await import('@mantle/content');
-    await m.asSystem(() =>
-      c.createPeer(owner, {
-        displayName: `${tag} peer`,
-        baseUrl: 'http://peer.invalid',
-        outboundToken: 'w7a-peer-token',
-      }),
+    await m.asSystem(
+      () =>
+        c.createPeer(owner, {
+          displayName: `${tag} peer`,
+          baseUrl: 'http://peer.invalid',
+          outboundToken: 'w7a-peer-token',
+        }),
+      'test',
     );
   }, 240_000);
 

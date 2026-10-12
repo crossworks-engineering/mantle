@@ -363,7 +363,36 @@ export function pinnedRule({ description, message, pins, swept, count, repoPath 
   };
 }
 
+// ── writes inside read paths (plan 4.4; A2a) ────────────────────────────────
+
+/** The named writes inside read paths: the keys of READ_PATH_WRITES in
+ *  packages/db/src/actor.ts (each runs as system(repair:…) or
+ *  system(backfill:…)). */
+export function readPathWrites(root) {
+  const text = readRepoFile(root, 'packages/db/src/actor.ts');
+  if (text === null) return [];
+  const m = /export const READ_PATH_WRITES = \{([\s\S]*?)\n\} as const;/.exec(text);
+  if (!m) return [];
+  return [...m[1].matchAll(/^\s*'((?:repair|backfill):[a-z0-9-]+)':/gm)].map((x) => x[1]).sort();
+}
+
 // ── the scoreboard ──────────────────────────────────────────────────────────
+
+/**
+ * The `_notes` a re-pin keeps (scripts/arch-scoreboard.ts --pin): a note
+ * says why a pin went up, so it stays while its number is at or above that
+ * pin and goes once the number came back down (A1 low, done in A2a).
+ */
+export function keptNotes(notes, oldPins, now) {
+  const out = {};
+  for (const [key, note] of Object.entries(notes ?? {})) {
+    const pin = oldPins[key];
+    const value = now[key];
+    if (typeof pin === 'number' && typeof value === 'number' && value < pin) continue;
+    out[key] = note;
+  }
+  return out;
+}
 
 /** Every repo number of plan section 3, plus the per-file maps the lints
  *  pin. */
@@ -444,6 +473,7 @@ export function measure(root) {
       brainOnWorkspacesCalls: bowCalls,
       brainOnWorkspacesFiles: bowFiles,
       adminReadsFiles,
+      readPathWrites: readPathWrites(root).length,
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
     perFile: { asSystem, rawAcl, toolLists, routeLists, kinds, stores },

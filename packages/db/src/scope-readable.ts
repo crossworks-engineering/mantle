@@ -15,7 +15,8 @@
  */
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { nodes } from './schema/nodes';
-import { currentWorkspaceScope, requestWriteScope } from './viewer';
+import { currentGateScope, currentWorkspaceScope, requestWriteScope } from './viewer';
+import { currentActor } from './actor';
 
 type Exec = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
 
@@ -62,16 +63,21 @@ export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {
 }
 
 /**
- * Whether the caller writes in a scope without the Admin workspace (a login
- * outside Admin, or a workspace assistant). Such a caller must not learn
- * from a write's answer which items exist outside its scope; a brain-wide
- * unique name (a Recall map's slug) then takes a random suffix instead of
- * the next free number. False with no scope (the system's own work) and for
- * a scope that holds Admin. The answer depends on the caller only, never on
- * the items it cannot read.
+ * Whether the caller must not learn from a write's answer which items exist
+ * outside what it reads: then a brain-wide unique name (a Recall map's slug)
+ * takes a random suffix instead of the next free number. The answer depends
+ * on the caller only, never on the items it cannot read.
+ *
+ *  - A scope surrounds the call (the request's write scope, the current
+ *    workspace scope, the gate scope of the rollback switch, or one set on
+ *    the transaction): yes unless that scope holds the Admin workspace.
+ *  - No scope: the next free number only for true system work (the actor is
+ *    system, or none is bound) and for login(owner), which reads every
+ *    item. Any other actor (a login, an assistant, a link) with no scope
+ *    around it takes the random suffix (arch A1 fix round low, done in A2a).
  */
 export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
-  const scope = requestWriteScope() ?? currentWorkspaceScope();
+  const scope = requestWriteScope() ?? currentWorkspaceScope() ?? currentGateScope();
   if (scope) {
     const ws = scope.ws.filter((id) => UUID.test(id));
     if (ws.length === 0) return true;
@@ -83,10 +89,15 @@ export async function scopeLacksAdmin(tx: Exec): Promise<boolean> {
     return rows[0]?.a !== true;
   }
   const rows = (await tx.execute(sql`
-    select ("public"."mantle_scope_active"()
+    select "public"."mantle_scope_active"() as active,
+           ("public"."mantle_scope_active"()
             and not exists (select 1 from "public"."workspaces" w
                              where w.is_admin and w.id = any("public"."mantle_scope_ws"()))) as narrow`)) as unknown as {
+    active: boolean;
     narrow: boolean;
   }[];
-  return rows[0]?.narrow === true;
+  if (rows[0]?.active === true) return rows[0].narrow === true;
+  const actor = currentActor();
+  if (actor === null || actor.kind === 'system') return false;
+  return !(actor.kind === 'login' && actor.mode === 'owner');
 }

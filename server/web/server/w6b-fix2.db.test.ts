@@ -87,7 +87,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
     )[0]!.ws;
   const idOf = (r: { json: Json }, key: string) =>
     ((r.json[key] as Json | undefined)?.id ?? r.json.id) as string;
-  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
+  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const sha = (s: string) => createHash('sha256').update(s).digest('hex');
   /** A snapshot copy's stamp (as snapshot-copies.ts makes it). */
   const stampOf = (of: string) => ({
@@ -156,7 +156,7 @@ describe.skipIf(!URL)('W6b fix round 2', () => {
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
     const { createApp } = await import('./app');
     app = await createApp();
-    await m.asSystem(() => f.ensureFilesRootBranch(owner));
+    await m.asSystem(() => f.ensureFilesRootBranch(owner), 'test');
   }, 240_000);
 
   afterAll(async () => {

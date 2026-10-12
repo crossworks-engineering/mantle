@@ -1,7 +1,7 @@
 {
   "asSystemSites": 93,
   "asSystemFiles": 46,
-  "asSystemReasons": 27,
+  "asSystemReasons": 25,
   "rawAclFiles": 27,
   "rawAclLines": 88,
   "toolPolicyLists": 29,
@@ -18,6 +18,7 @@
   "brainOnWorkspacesCalls": 12,
   "brainOnWorkspacesFiles": 7,
   "adminReadsFiles": 2,
+  "readPathWrites": 7,
   "store_tabledb_files": 29,
   "store_objectstore_files": 17,
   "store_appdb_files": 3,

@@ -691,6 +691,41 @@ result has no `skip` row; one names why the brain was not switched. Time
 the switch on a copy first and give a large brain a budget, as "The switch
 at a later start" above says.
 
+## Hand psql on a box: name the operator actor (arch A2a, migration 0275)
+
+Every statement carries who it runs as (docs/actors.md). The app sets it
+itself. An operator who writes with psql by hand names the session first:
+
+```sql
+select mantle_operator_actor('fix-slug');   -- a short reason, lower case
+```
+
+The session then runs as `system:operator:fix-slug` until it ends. Without
+it, a write on an item table (nodes, pages, tables, grants, shares and the
+other item tables) is an actor miss: psql prints `NOTICE: mantle actor miss:
+UPDATE on nodes`. In this release a miss only logs; nothing is refused.
+
+The check has three steps, set per box in the database (the box setting
+wins; a session can only make it stricter):
+
+```sql
+alter database postgres set mantle.actor_check = 'warn';  -- off (default), warn, on
+select mantle_actor_check_mode();
+```
+
+The app reads the setting about once a minute, so no restart is needed. In
+warn it logs each miss to `actor_check_misses` (at most 100 rows an hour per
+check) and one console line per miss and caller an hour. Read them with
+numbers only:
+
+```sql
+select source, check_name, count(*) from actor_check_misses
+ where at > now() - interval '1 day' group by 1, 2 order by 3 desc;
+```
+
+`on` still only logs in this release (A2a); refusing is the next phase.
+Going back is `alter database postgres reset mantle.actor_check`.
+
 ## Rollback
 
 ```bash

@@ -25,6 +25,10 @@ export default defineConfig({
     environment: 'node',
     // Writes the route manifest the security sweeps need (vitest.global-setup.ts).
     globalSetup: ['./vitest.global-setup.ts'],
+    // Fails a test on any actor miss (workspaces arch A2a): the suite runs
+    // the actor check in warn and proves zero misses.
+    setupFiles: ['./vitest.setup.ts'],
+    env: { MANTLE_ACTOR_CHECK: 'warn' },
     globals: false,
     // The 5s default assumes a test only times its own logic. Several tests
     // import modules INSIDE the test body — sometimes because the module reads

@@ -12,7 +12,18 @@
  * no-op; `completeItem`'s CAS makes racing the sweep harmless.
  */
 import { eq } from 'drizzle-orm';
-import { db, runItems, runs as runsTable, type RunItemFailure, type RunItemRow } from '@mantle/db';
+import {
+  db,
+  loginActor,
+  runAsActor,
+  runItems,
+  runs as runsTable,
+  systemActor,
+  type Actor,
+  type RunItemFailure,
+  type RunItemRow,
+  loginActorNow,
+} from '@mantle/db';
 import { claimItem, completeItem, requeueForRetry, type PostCommitAction } from '@mantle/runs';
 import {
   BANNED_ITEM_TOOLS,
@@ -207,6 +218,11 @@ async function runResolved(
   let costMicroUsd = 0;
   const usage = { input: 0, output: 0, cacheRead: 0 };
 
+  // Arch A2a: the tool runs as the run's login as it is now, else the owner.
+  const itemActor = await runItemActor(run.ownerId, run.loginId);
+  const asRunLogin = <T>(fn: () => Promise<T>) =>
+    runAsActor(itemActor, () => withRunScope(run, fn));
+
   let traceId: string | undefined;
   const result = await startTrace(
     {
@@ -226,7 +242,7 @@ async function runResolved(
           // refuses owner-only and adminOnly tools there. Admin or no
           // workspace: a turn scope of Admin since W7a (the run's login,
           // else the owner); MANTLE_ADMIN_READS=system: the system pool.
-          const res = await withRunScope(run, () =>
+          const res = await asRunLogin(() =>
             dispatchTool(tool, input, {
               ownerId: run.ownerId,
               step: {
@@ -296,4 +312,18 @@ async function runResolved(
     ...accounting,
   });
   return { claimed: true, actions };
+}
+
+/** Arch A2a: who a run item runs as. The run's login, read as it is now (a
+ *  login disabled since is bound anyway, A2a refuses nothing, and logged);
+ *  no login: the owner, login(owner). */
+async function runItemActor(ownerId: string, loginId: string | null): Promise<Actor> {
+  const entry = 'worker:runs';
+  try {
+    if (!loginId) return loginActor(ownerId, 'owner');
+    return await loginActorNow(loginId, entry);
+  } catch (err) {
+    console.warn(`[runs] could not read login ${loginId ?? ownerId}: ${errorMessage(err)}`);
+    return systemActor(entry);
+  }
 }

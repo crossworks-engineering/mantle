@@ -18,6 +18,7 @@ import mantleHeadsPlugin from './eslint-rules/heads-writers.mjs';
 import mantleLevelReadsPlugin from './eslint-rules/level-reads.mjs';
 import mantleRawAclPlugin from './eslint-rules/no-raw-acl-columns.mjs';
 import mantleAsSystemPlugin from './eslint-rules/as-system-allowlist.mjs';
+import mantleActorSettersPlugin from './eslint-rules/actor-setters.mjs';
 
 export default tseslint.config(
   {
@@ -202,6 +203,13 @@ export default tseslint.config(
       'mantle-acl/no-raw-acl-columns': 'error',
       'mantle-system/as-system-allowlist': 'error',
     },
+  },
+  {
+    // Only packages/db sets who a statement runs as (workspaces arch A2a):
+    // the actor settings and their setter functions, named anywhere else.
+    files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
+    plugins: { 'mantle-actor': mantleActorSettersPlugin },
+    rules: { 'mantle-actor/actor-setters-in-db-only': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

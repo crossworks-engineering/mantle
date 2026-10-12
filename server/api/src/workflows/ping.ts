@@ -7,7 +7,7 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { db } from '@mantle/db';
+import { db, runAsSystem } from '@mantle/db';
 import { sql } from 'drizzle-orm';
 
 async function pingImpl(note: string): Promise<{ ok: true; note: string; dbNow: string }> {
@@ -32,4 +32,8 @@ async function pingImpl(note: string): Promise<{ ok: true; note: string; dbNow: 
   return { ok: true, note, dbNow };
 }
 
-export const pingWorkflow = DBOS.registerWorkflow(pingImpl, { name: 'pingWorkflow' });
+// Arch A2a: the runner's own work.
+export const pingWorkflow = DBOS.registerWorkflow(
+  (note: string) => runAsSystem('workflow:ping', () => pingImpl(note)),
+  { name: 'pingWorkflow' },
+);

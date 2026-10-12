@@ -24,11 +24,17 @@ import {
   db,
   withoutLeftScope,
   agents,
+  currentActor,
+  loginActor,
+  runAsActor,
+  runAsSystem,
+  type Actor,
   skills,
   heartbeats,
   heartbeatFires,
   type Heartbeat,
   type AgentParams,
+  loginActorNow,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
@@ -173,10 +179,52 @@ function loginCaller(
   return (fn) => withAgentScope(agent, fn, { ownerLoginId: actsFor });
 }
 
+/**
+ * Arch A2a: who a fire runs as, decided as loginCaller decides the scope. An
+ * assistant of a workspace other than Admin fires as itself; otherwise the
+ * login the fire answers (its maker), as that login is now; none, the brain
+ * owner as login(owner). A forced fire keeps its caller's actor.
+ */
 async function fireInner(
   hb: Heartbeat,
   opts: FireOpts & { skipGates: boolean },
 ): Promise<FireResult> {
+  const forced = opts.answeredBy !== undefined;
+  if (forced && currentActor()) return fireAs(hb, opts);
+  const actor = await fireActor(hb, forced ? opts.answeredBy : hb.createdBy);
+  return runAsActor(actor, () => fireAs(hb, opts));
+}
+
+async function fireActor(hb: Heartbeat, login: string | null | undefined): Promise<Actor> {
+  const reason = 'heartbeat:fire';
+  const owner = (): Actor => loginActor(hb.ownerId, 'owner');
+  try {
+    const kind = await runAsSystem(reason, async () => {
+      const [agent] = await db
+        .select()
+        .from(agents)
+        .where(and(eq(agents.ownerId, hb.ownerId), eq(agents.slug, hb.agentSlug)))
+        .limit(1);
+      if (!agent) return null;
+      // A workspace that is gone throws: only a workspace assistant has one.
+      const k = await agentWorkspaceKind(agent).catch(() => 'workspace' as const);
+      return { agentId: agent.id, k };
+    });
+    if (kind?.k === 'workspace') return { kind: 'assistant', agentId: kind.agentId };
+    const answered = answerer(hb, login);
+    if (!answered) return owner();
+    return await loginActorNow(answered, reason);
+  } catch (err) {
+    console.warn(`[heartbeat:fire] actor for ${hb.id}: ${errorMessage(err)}`);
+    try {
+      return owner();
+    } catch {
+      return { kind: 'system', reason };
+    }
+  }
+}
+
+async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): Promise<FireResult> {
   const now = new Date();
   let inCaller = opts.inCaller ?? (<T>(fn: () => Promise<T>) => fn());
   // The login this fire answers (H1): its firer when forced by one, else

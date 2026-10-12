@@ -23,6 +23,7 @@
  */
 
 import { log } from '@mantle/tracing';
+import { runAsActor, systemActor } from '@mantle/db';
 
 export type Ticker = {
   /** Stop the timer. Idempotent. An in-flight `run` is not cancelled — it
@@ -71,13 +72,16 @@ export function startTicker<T>(opts: TickerOpts<T>): Ticker {
   const { name, everyMs, backoffCapMs, run, onSuccess } = opts;
   const logger = opts.logger ?? defaultLogger;
 
+  // Arch A2a: each tick runs as system(tick:<name>), e.g. tick:heartbeat-tick.
+  const actor = systemActor(`tick:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`);
+
   // Backoff state, previously a pair of `let`s per call site.
   let backoffMs = 0;
   let skipUntil = 0;
 
   const timer = setInterval(() => {
     if (Date.now() < skipUntil) return;
-    run()
+    runAsActor(actor, run)
       .then((result) => {
         if (backoffMs > 0) logger.log(`${name} recovered; clearing backoff`);
         backoffMs = 0;

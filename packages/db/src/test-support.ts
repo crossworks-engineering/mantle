@@ -238,6 +238,17 @@ export async function createEmptyScratchDatabase(
  * test database was migrated; a missing one is created without a login
  * (never altered: other test files hold live connections on them).
  */
+/**
+ * The actor check in warn for a test database (workspaces arch A2a): the
+ * item tables' write triggers report a write with no actor, and the app's
+ * pool turns the report into a miss (vitest.setup.ts fails the test). New
+ * connections only.
+ */
+export async function setTestActorCheck(sql: Sql): Promise<void> {
+  const [row] = await sql<{ db: string }[]>`select current_database() as db`;
+  await sql.unsafe(`alter database "${row!.db.replace(/"/g, '""')}" set mantle.actor_check = 'warn'`);
+}
+
 export async function createMigratedScratchDatabase(
   adminUrl: string,
 ): Promise<{ url: string; name: string; drop: () => Promise<void> }> {
@@ -249,6 +260,7 @@ export async function createMigratedScratchDatabase(
     // Grants are per database: migrate applies the access matrix after the
     // migrations, so a limited role (a member's space) can work here too.
     await applyViewerGrants(sql);
+    await setTestActorCheck(sql);
   } catch (err) {
     await sql.end();
     await drop();
@@ -340,6 +352,9 @@ async function applyMigrations(
 ): Promise<void> {
   for (const migration of migrations) {
     await sql.begin(async (tx) => {
+      // As migrate.ts: a migration's writes run as system(migration).
+      await tx`select set_config('mantle.actor', 'system:migration', true),
+                      set_config('mantle.write_mode', 'rw', true)`;
       for (const stmt of migration.sql) await tx.unsafe(stmt);
     });
   }

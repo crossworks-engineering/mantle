@@ -261,15 +261,17 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       [owner, `${tag} owner secret kettle`],
       [adminB, `${tag} second admin question`],
     ] as const) {
-      await m.asSystem(() =>
-        rt.recordTurn({
-          ownerId: owner,
-          agentId: adminAgent,
-          loginId: login,
-          direction: 'inbound',
-          text,
-          channel: 'web',
-        }),
+      await m.asSystem(
+        () =>
+          rt.recordTurn({
+            ownerId: owner,
+            agentId: adminAgent,
+            loginId: login,
+            direction: 'inbound',
+            text,
+            channel: 'web',
+          }),
+        'test',
       );
     }
     const vec = JSON.stringify(VEC);
@@ -572,16 +574,18 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       [`${tag} writer resume named`, adminB, adminB],
       [`${tag} writer resume none`, null, owner],
     ] as const) {
-      await m.asSystem(() =>
-        rt.recordTurn({
-          ownerId: owner,
-          agentId: adminAgent,
-          loginId,
-          direction: 'outbound',
-          text,
-          channel: 'web',
-          data: { run_resume: true },
-        }),
+      await m.asSystem(
+        () =>
+          rt.recordTurn({
+            ownerId: owner,
+            agentId: adminAgent,
+            loginId,
+            direction: 'outbound',
+            text,
+            channel: 'web',
+            data: { run_resume: true },
+          }),
+        'test',
       );
       expect(await loginOf(text)).toEqual([expected]);
     }

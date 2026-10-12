@@ -172,11 +172,13 @@ async function clientAppState(
  *  while the link exists). */
 async function markExportClientSourced(ownerId: string, tableNodeId: string): Promise<void> {
   try {
-    await asSystem(() =>
-      db
-        .insert(clientSourcedNodes)
-        .values({ nodeId: tableNodeId, ownerId, via: 'app_table_export' })
-        .onConflictDoNothing(),
+    await asSystem(
+      () =>
+        db
+          .insert(clientSourcedNodes)
+          .values({ nodeId: tableNodeId, ownerId, via: 'app_table_export' })
+          .onConflictDoNothing(),
+      'client-sourced-check',
     );
   } catch (err) {
     console.warn('[app-table-exports] could not mark the export table:', errorMessage(err));

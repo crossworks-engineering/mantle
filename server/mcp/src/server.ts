@@ -21,7 +21,14 @@
  * package script; this entry just trusts `process.env`.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
-import { authUsers, db, resolveSingleOwnerId } from '@mantle/db';
+import {
+  authUsers,
+  db,
+  loginActor,
+  resolveSingleOwnerId,
+  runAsActor,
+  runAsSystem,
+} from '@mantle/db';
 import { buildMantleMcpServer } from '@mantle/mcp-core';
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
@@ -40,7 +47,8 @@ registerRecallEmbedder(embedBatch);
 // needs no env var. The MCP server is started on demand by Claude Desktop /
 // Code, normally after the web-app account already exists; if it truly doesn't
 // yet, exit with a clear message rather than scope every query to nothing.
-const OWNER_ID = await resolveSingleOwnerId();
+// Arch A2a: the boot reads run as system(boot:mcp-stdio).
+const OWNER_ID = await runAsSystem('boot:mcp-stdio', () => resolveSingleOwnerId());
 if (!OWNER_ID) {
   console.error(
     '[mantle-mcp] No account yet — create your account in the web app (signup), then reconnect the MCP server.',
@@ -53,11 +61,9 @@ if (!OWNER_ID) {
 // results and accepting writes that no longer belong to any real owner. Cheap
 // to check once at boot.
 {
-  const [existing] = await db
-    .select({ id: authUsers.id })
-    .from(authUsers)
-    .where(eq(authUsers.id, OWNER_ID))
-    .limit(1);
+  const [existing] = await runAsSystem('boot:mcp-stdio', () =>
+    db.select({ id: authUsers.id }).from(authUsers).where(eq(authUsers.id, OWNER_ID)).limit(1),
+  );
   if (!existing) {
     console.error(
       `[mantle-mcp] ALLOWED_USER_ID ${OWNER_ID} does not match any auth.users row. ` +
@@ -67,7 +73,12 @@ if (!OWNER_ID) {
   }
 }
 
+// Arch A2a: every message runs as the owner login this process is started
+// for, login(rw), never system.
+const actor = loginActor(OWNER_ID, 'rw');
 const server = buildMantleMcpServer(OWNER_ID);
 const transport = new StdioServerTransport();
-await server.connect(transport);
+await runAsActor(actor, () => server.connect(transport));
+const onMessage = transport.onmessage;
+transport.onmessage = (message) => runAsActor(actor, () => onMessage?.(message));
 console.error('[mantle-mcp] listening on stdio. Owner:', OWNER_ID);

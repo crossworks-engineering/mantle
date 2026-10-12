@@ -201,6 +201,26 @@ export const headsCheckMisses = pgTable(
 );
 
 /**
+ * Statements that ran with no actor (workspaces arch A2a, migration 0275):
+ * 'ts' when the app sent one with no actor bound, 'sql' when an item
+ * table's write trigger found no mantle.actor. Written after the statement,
+ * on another connection, at most 100 rows an hour per check
+ * (mantle_actor_miss_log). No grant to any role.
+ */
+export const actorCheckMisses = pgTable(
+  'actor_check_misses',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
+    source: text('source').notNull(),
+    checkName: text('check_name').notNull(),
+    actor: text('actor').notNull().default(''),
+    detail: text('detail').notNull().default(''),
+  },
+  (t) => [index('actor_check_misses_check_at_idx').on(t.checkName, t.at)],
+);
+
+/**
  * The key the held-heads list is signed with (audit L6). One row, read only by
  * the security definer functions of 0241: no grant to any role, row security
  * on with no policy. The app never reads or writes it.

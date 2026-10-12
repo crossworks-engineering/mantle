@@ -8,7 +8,9 @@ import {
   guardCalls,
   isCounted,
   isRouteFile,
+  keptNotes,
   listLiterals,
+  readPathWrites,
   measure,
   rawAclLines,
   readRepoFile,
@@ -27,6 +29,15 @@ import { ROUTE_LIST_PINS, TOOL_LIST_PINS } from './no-policy-name-lists.mjs';
 import { STORE_PINS } from './store-brokers.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { GUARD_CALL_PIN } from './no-guard-calls.mjs';
+// @ts-expect-error: plain-JS module, no types shipped.
+import { ACTOR_SETTER_PATTERN, rule as actorSettersRule } from './actor-setters.mjs';
+import { AS_SYSTEM_OTHER_REASONS, AS_SYSTEM_TURN_REASONS } from '../packages/db/src/viewer';
+
+/** Every reason asSystem takes (arch A2a). */
+const KNOWN_AS_SYSTEM_REASONS: readonly string[] = [
+  ...AS_SYSTEM_TURN_REASONS,
+  ...AS_SYSTEM_OTHER_REASONS,
+];
 
 /**
  * The architecture ratchets (workspaces arch plan v2, section 11; A0), in
@@ -78,10 +89,23 @@ describe('the architecture ratchets (pinned counts)', () => {
       AS_SYSTEM_PINS as Record<string, { count: number; why: string[] }>,
     )) {
       const reasons = got.perFile.asSystem[f]?.reasons ?? [];
-      // Each site names its reason; a file whose calls pass none says why.
-      if (reasons.length === 0) expect(pin.why[0], f).toMatch(/^\(none passed\): /);
-      else expect(pin.why, f).toEqual(reasons);
+      // Each site names a real reason (arch A2a); 'test' never in product code.
+      expect(pin.why, f).toEqual(reasons);
+      expect(reasons.length, f).toBeGreaterThan(0);
+      for (const r of reasons) {
+        expect(KNOWN_AS_SYSTEM_REASONS, `${f}: ${r}`).toContain(r);
+        expect(r, f).not.toBe('test');
+      }
     }
+  });
+
+  it('actor-setters-in-db-only: no counted file outside packages/db names the actor settings', () => {
+    const outside = countedFiles(ROOT).filter((f: string) => {
+      if (f.startsWith('packages/db/src/')) return false;
+      const text = readRepoFile(ROOT, f);
+      return text !== null && ACTOR_SETTER_PATTERN.test(stripComments(text));
+    });
+    expect(outside).toEqual([]);
   });
 
   it('no-policy-name-lists: tool and route policy lists, file by file', () => {
@@ -158,6 +182,23 @@ describe('the counters', () => {
   });
 });
 
+describe('the scoreboard pins', () => {
+  it('a re-pin keeps a note while its pin holds and drops it once it came down', () => {
+    const notes = { a: 'raised 1 to 2', b: 'raised 3 to 4', gone: 'no number' };
+    expect(keptNotes(notes, { a: 2, b: 4 }, { a: 2, b: 3 })).toEqual({
+      a: 'raised 1 to 2',
+      gone: 'no number',
+    });
+    expect(keptNotes(undefined, {}, {})).toEqual({});
+  });
+
+  it('counts the named writes inside read paths', () => {
+    const names = readPathWrites(ROOT) as string[];
+    expect(names.length).toBe(got.numbers.readPathWrites);
+    for (const n of names) expect(n).toMatch(/^(repair|backfill):[a-z0-9-]+$/);
+  });
+});
+
 describe('the editor rules', () => {
   const tester = new RuleTester({ languageOptions: { ecmaVersion: 2022, sourceType: 'module' } });
   it('flag a raw ACL read in an unpinned file, and none in packages/db or a comment', () => {
@@ -193,6 +234,28 @@ describe('the editor rules', () => {
           code: calls(pin.count + 1),
           filename: `/r/${pinned}`,
           errors: [{ messageId: 'over' }],
+        },
+      ],
+    });
+  });
+
+  it('flag the actor settings outside packages/db, and none there, in a test or a comment', () => {
+    tester.run('actor-setters-in-db-only', actorSettersRule, {
+      valid: [
+        { code: "q('select mantle_set_actor($1, $2)');", filename: '/r/packages/db/src/client.ts' },
+        { code: "q(`set_config('mantle.actor', x)`);", filename: '/r/server/web/x.test.ts' },
+        { code: '// mantle.write_mode\nconst b = 1;', filename: '/r/packages/search/src/new.ts' },
+      ],
+      invalid: [
+        {
+          code: "q(`select set_config('mantle.actor', ${a}, true)`);",
+          filename: '/r/packages/search/src/new.ts',
+          errors: [{ messageId: 'notHere' }],
+        },
+        {
+          code: "q('select mantle_operator_actor($1)');",
+          filename: '/r/server/web/lib/x.ts',
+          errors: [{ messageId: 'notHere' }],
         },
       ],
     });

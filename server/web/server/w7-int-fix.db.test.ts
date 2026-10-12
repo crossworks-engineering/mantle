@@ -100,7 +100,7 @@ describe.skipIf(!URL)('W7 integration fix', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
-  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
+  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const as = (login: string) => {
     h.session = {
       id: owner,

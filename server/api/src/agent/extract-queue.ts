@@ -75,6 +75,7 @@ import {
   recordProviderFailure,
   recordProviderProbeFailure,
   resolveProviderAlert,
+  runAsSystem,
   setProviderAlertPaused,
 } from '@mantle/db';
 import { extractNode } from './extractor.js';
@@ -281,8 +282,9 @@ export async function startExtractQueue(
   // The worker count and the time budget are LIVE: the UI writes the config
   // row from another process, so poll it. Each tick drops the resolver cache
   // first, so a saved change lands within one interval with no restart.
+  // Arch A2a: each reconcile tick is the runner's own work.
   reconcileTimer = setInterval(() => {
-    void reconcileWithConfig();
+    void runAsSystem('tick:extract-reconcile', () => reconcileWithConfig());
   }, RECONCILE_INTERVAL_MS);
   reconcileTimer.unref?.();
 
@@ -352,7 +354,8 @@ async function setWorkerCount(target: number): Promise<void> {
     const id = await boss.work<ExtractJob>(
       EXTRACT_QUEUE,
       { batchSize: 1, pollingIntervalSeconds: 2 },
-      handleExtractJob,
+      // Arch A2a: an extraction is the runner's own work.
+      (jobs) => runAsSystem('queue:extract', () => handleExtractJob(jobs)),
     );
     workerIds.push(id);
   }

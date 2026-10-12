@@ -56,6 +56,8 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
   };
   const ws = { H: '', W: '', R: '', O: '', admin: '' };
   const scope = {} as Record<OracleRole, Scope>;
+  /** Actor misses the item tables' write triggers reported (arch A2a). */
+  const misses: string[] = [];
   /** Per kind: its root path, its folder F, the item at the root and the
    *  item in F (for branch: a top-level folder and a subfolder of F). */
   const fx: Record<
@@ -90,7 +92,14 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
-    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    sql = postgres(scratch.url, {
+      max: 2,
+      prepare: false,
+      onnotice: (n) => {
+        if (String(n.message ?? '').startsWith('mantle actor miss: '))
+          misses.push(String(n.message));
+      },
+    });
     const L = login;
     await sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${L.owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
@@ -249,6 +258,9 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
                 ? f.folderPath
                 : f.root;
           await tx`select mantle_lock_heads(array[${parent}]::uuid[], 'share')`;
+          // The login's actor, as the app's pool sets it (arch A2a), with the
+          // actor check in warn for this transaction.
+          await tx`select mantle_set_actor(${`login:rw:${s.login}`}, 'rw', 'warn')`;
           await tx`select set_config('mantle.ws', ${s.ws}, true),
                           set_config('mantle.mod_ws', ${s.mod}, true),
                           set_config('mantle.create_ws', '', true),
@@ -300,6 +312,9 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
     let na = 0;
     let allowed = 0;
     let denied = 0;
+    // The fixture's own writes (beforeAll, as an operator's psql would) are
+    // not cells; the cells start with no miss.
+    misses.length = 0;
     for (const role of ORACLE_ROLES) {
       for (const kind of kinds) {
         for (const placement of ['root', 'folder'] as const) {
@@ -318,6 +333,19 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
       }
     }
     expect(failures).toEqual([]);
+    // Every create ran with its actor, in warn: zero misses (arch A2a).
+    expect(misses).toEqual([]);
+    // The control: the same write with no actor is a miss the grid sees.
+    await sql
+      .begin(async (tx) => {
+        await tx`select set_config('mantle.actor_check', 'warn', true)`;
+        await tx`update nodes set title = title where id = ${login.owner}`;
+        throw new Rollback();
+      })
+      .catch((err: unknown) => {
+        if (!(err instanceof Rollback)) throw err;
+      });
+    expect(misses).toEqual(['mantle actor miss: UPDATE on nodes']);
     // 6 logins × 11 kinds × 2 placements × 2 actions.
     expect(cells).toBe(6 * kinds.length * 2 * 2);
     expect(na, 'not-applicable cells').toBe(0);

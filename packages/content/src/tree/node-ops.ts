@@ -19,6 +19,7 @@ import {
   withNodeInsertHeads,
   withNodeMoveHeads,
   withSubtreeHeads,
+  runReadPathWrite,
 } from '@mantle/db';
 import { dashToLtree, folderSlugOf, type MoveGuard } from '@mantle/files';
 import {
@@ -70,22 +71,24 @@ export async function ensureKindRoot(ownerId: string, kind: TreeKind): Promise<b
   // Heads first (plan U1): a root sits in no folder, so there are none to
   // wait on, but the insert runs in the heads transaction all the same.
   const made = await unlessWriteRefused(() =>
-    withNodeInsertHeads(ownerId, [{ type: 'branch', path: root }], (tx) =>
-      tx
-        .insert(nodes)
-        .values({
-          ownerId,
-          type: 'branch',
-          title: ROOT_TITLE[kind],
-          slug: root,
-          path: root,
-          data: {},
-          tags: [],
-        })
-        .onConflictDoNothing({
-          target: [nodes.ownerId, nodes.path],
-          where: sql`${nodes.type} = 'branch'`,
-        }),
+    runReadPathWrite('repair:kind-root', () =>
+      withNodeInsertHeads(ownerId, [{ type: 'branch', path: root }], (tx) =>
+        tx
+          .insert(nodes)
+          .values({
+            ownerId,
+            type: 'branch',
+            title: ROOT_TITLE[kind],
+            slug: root,
+            path: root,
+            data: {},
+            tags: [],
+          })
+          .onConflictDoNothing({
+            target: [nodes.ownerId, nodes.path],
+            where: sql`${nodes.type} = 'branch'`,
+          }),
+      ),
     ),
   );
   return made !== null;

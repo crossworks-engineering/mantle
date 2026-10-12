@@ -86,6 +86,16 @@ vi.mock('@mantle/db', () => ({
   telegramChats: { __table: 'telegram_chats' },
   workspaces: { __table: 'workspaces' },
   bumpAgentUsage: vi.fn(async () => {}),
+  // Arch A2a: the actor binding passes straight through here.
+  loginActor: (loginId: string, mode = 'rw') => ({ kind: 'login', mode, loginId }),
+  loginActorNow: async (loginId: string, _entry: string, mode = 'rw') => ({
+    kind: 'login',
+    mode,
+    loginId,
+  }),
+  systemActor: (reason: string) => ({ kind: 'system', reason }),
+  runAsActor: (_actor: unknown, fn: () => unknown) => fn(),
+  runAsSystem: (_reason: string, fn: () => unknown) => fn(),
 }));
 
 vi.mock('@mantle/runs', () => ({

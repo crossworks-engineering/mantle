@@ -402,8 +402,10 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     vi.restoreAllMocks();
   });
 
-  it('outside a turn: no reason needed, as before', async () => {
-    await expect(asSystem(async () => currentScope())).resolves.toEqual({ kind: 'system' });
+  it('outside a turn: any named reason runs, as before', async () => {
+    await expect(asSystem(async () => currentScope(), 'login-notice')).resolves.toEqual({
+      kind: 'system',
+    });
   });
 
   it('a listed reason leaves the scope for the system pool and is logged once', async () => {
@@ -425,24 +427,32 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
       inTurn(() =>
         asSystem(async () => {
           ran = true;
-        }),
+        }, undefined as never),
       ),
     ).rejects.toBeInstanceOf(TurnScopeExitError);
     await expect(inTurn(() => asSystem(async () => 1, 'just-because' as never))).rejects.toThrow(
       /allowlisted reason/,
     );
     process.env.NODE_ENV = 'development';
-    await expect(inTurn(() => asSystem(async () => 1))).rejects.toBeInstanceOf(TurnScopeExitError);
+    await expect(inTurn(() => asSystem(async () => 1, undefined as never))).rejects.toBeInstanceOf(
+      TurnScopeExitError,
+    );
+    // A reason for work outside turns is not a way out of one.
+    await expect(inTurn(() => asSystem(async () => 1, 'login-notice'))).rejects.toBeInstanceOf(
+      TurnScopeExitError,
+    );
     expect(ran).toBe(false);
   });
 
   it('in production an unnamed exit is logged (once) and allowed for now', async () => {
     process.env.NODE_ENV = 'production';
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(inTurn(() => asSystem(async () => currentScope()))).resolves.toEqual({
+    await expect(
+      inTurn(() => asSystem(async () => currentScope(), undefined as never)),
+    ).resolves.toEqual({
       kind: 'system',
     });
-    await inTurn(() => asSystem(async () => 2));
+    await inTurn(() => asSystem(async () => 2, undefined as never));
     expect(error).toHaveBeenCalledTimes(1);
     expect(String(error.mock.calls[0]![0])).toMatch(/allowlisted reason/);
   });
@@ -469,9 +479,13 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
     // integration fix 2: a turn's own open heartbeats ('heartbeat-context').
     // Still 22 with W7d and W7e joined: W7d renamed 'owner-telegram' to
     // 'login-telegram' and W7e reuses 'owner-preferences' for a member's
-    // home, so neither adds a reason.
-    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(22);
-    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(22);
+    // home, so neither adds a reason. 23 since arch A2a: every asSystem
+    // names its reason, and the audit row of a connector call on a login's
+    // MCP ('audit-log') was the one call made in a turn with none (it was
+    // logged and allowed in production, refused and so never written in
+    // tests and development).
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(23);
+    expect(AS_SYSTEM_TURN_REASONS).toHaveLength(23);
     expect(AS_SYSTEM_TURN_REASONS).toContain('heartbeat-context');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('member-request');
     expect(AS_SYSTEM_TURN_REASONS).not.toContain('owner-telegram');
@@ -651,7 +665,9 @@ describe('the request scope (workspaces W6a)', () => {
       await expect(v.asSystem(async () => v.currentScope(), 'rule-in-query')).resolves.toEqual({
         kind: 'system',
       });
-      await expect(v.asSystem(async () => 1)).rejects.toThrow(/allowlisted reason/);
+      await expect(v.asSystem(async () => 1, undefined as never)).rejects.toThrow(
+        /allowlisted reason/,
+      );
       const inner = await v.runInViewerScope(scopeOf([W2]), async () => v.currentScope());
       expect(inner).toMatchObject({ ws: [W2] });
       await expect(

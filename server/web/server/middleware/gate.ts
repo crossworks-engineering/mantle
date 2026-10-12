@@ -13,6 +13,7 @@ import { runWithRequestContext } from '../request-context';
 import { gateAccessKey } from './access-key-gate';
 import { tokenKind, verifySignedToken } from './token-verify';
 import { env } from '@mantle/config';
+import { runInActorSlot, systemActor } from '@mantle/db';
 
 /**
  * The session/CORS gate — a faithful port of the old Next Edge middleware.ts.
@@ -138,6 +139,13 @@ function bearerToken(req: Request): string | null {
 }
 
 export function gate(): MiddlewareHandler {
+  // Arch A2a: the gate's own lookups (an API key, a token) run as
+  // system(http:gate); the route loader starts each handler's own slot.
+  const inner = gateHandler();
+  return (c, next) => runInActorSlot(systemActor('http:gate'), () => inner(c, next));
+}
+
+function gateHandler(): MiddlewareHandler {
   return async (c, next) => {
     const req = c.req.raw;
     const url = new URL(req.url);

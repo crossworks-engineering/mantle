@@ -24,6 +24,7 @@
 import { PgBoss } from 'pg-boss';
 import { startProcessHeartbeat } from '@mantle/content';
 import { env } from '@mantle/config';
+import { runAsSystem } from '@mantle/db';
 
 /** How long pg-boss may take to finish in-flight jobs. */
 const BOSS_STOP_TIMEOUT_MS = 10_000;
@@ -91,7 +92,10 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
     console.error(`[${name}] unhandledRejection (kept alive):`, reason);
   });
 
-  start()
+  // Arch A2a (plan 4.3): the worker runs as system(worker:<name>), bound
+  // once here; what setup starts (its queue handlers, timers, watchers)
+  // carries it. A job done for a login binds that login itself.
+  runAsSystem(`worker:${name}`, start)
     .then(() => console.log(`[${name}] worker up.`))
     .catch((err) => {
       clearInterval(keepAlive);

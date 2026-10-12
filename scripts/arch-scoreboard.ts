@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-expect-error: plain-JS module, no types shipped.
-import { measure } from '../eslint-rules/arch-counts.mjs';
+import { keptNotes, measure } from '../eslint-rules/arch-counts.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PINS = join(ROOT, 'scripts/arch-scoreboard.pins.json');
@@ -42,6 +42,7 @@ const LABELS: Record<string, string> = {
   brainOnWorkspacesCalls: 'brainOnWorkspacesNow calls',
   brainOnWorkspacesFiles: 'files calling brainOnWorkspacesNow',
   adminReadsFiles: 'files naming MANTLE_ADMIN_READS',
+  readPathWrites: 'named writes inside read paths',
   store_tabledb_files: 'files importing @mantle/tabledb',
   store_objectstore_files: 'files importing @mantle/storage',
   store_appdb_files: 'files reaching APP_DB_DIR',
@@ -67,14 +68,16 @@ for (const [key, label] of Object.entries(LABELS)) {
 }
 
 if (mode === '--pin') {
-  // `_notes` says why a pin went up (a reviewed raise); a re-pin keeps it.
-  let notes: unknown;
+  // `_notes` says why a pin went up (a reviewed raise); a re-pin keeps it
+  // while the pin holds, and drops it once the pin comes back down.
+  let old: { _notes?: Record<string, string> } & Record<string, unknown> = {};
   try {
-    notes = (JSON.parse(readFileSync(PINS, 'utf8')) as { _notes?: unknown })._notes;
+    old = JSON.parse(readFileSync(PINS, 'utf8')) as typeof old;
   } catch {
-    notes = undefined;
+    old = {};
   }
-  const out = notes === undefined ? numbers : { ...numbers, _notes: notes };
+  const notes = keptNotes(old._notes, old, numbers) as Record<string, string>;
+  const out = Object.keys(notes).length === 0 ? numbers : { ...numbers, _notes: notes };
   writeFileSync(PINS, `${JSON.stringify(out, null, 2)}\n`);
   console.log(`\npinned in ${PINS}`);
 } else if (mode === '--check') {

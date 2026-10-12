@@ -32,6 +32,8 @@ import {
 } from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
 import { assertNoViewer } from '@mantle/db/viewer';
+import { runAsActor } from '@mantle/db';
+import { loginActorNow, ownerActor } from './login-actor';
 
 export type { AssistantTurnInput, AssistantTurnRunResult };
 
@@ -101,7 +103,16 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
   return dto;
 }
 
-export const assistantTurnWorkflow = DBOS.registerWorkflow(assistantTurnImpl, {
+/** Arch A2a: the turn runs as the login it answers, as that login is now;
+ *  with no login, as the owner. */
+async function assistantTurnAs(input: AssistantTurnInput): Promise<AssistantTurnRunResult> {
+  const entry = 'workflow:assistant-turn';
+  const loginId = input.options?.loginId;
+  const actor = loginId ? await loginActorNow(loginId, entry) : ownerActor(input.ownerId, entry);
+  return runAsActor(actor, () => assistantTurnImpl(input));
+}
+
+export const assistantTurnWorkflow = DBOS.registerWorkflow(assistantTurnAs, {
   name: ASSISTANT_TURN_WORKFLOW,
 });
 

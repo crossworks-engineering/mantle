@@ -16,6 +16,7 @@ import {
   withDeadlockRetry,
   withNodeInsertHeads,
   isSnapshotCopy,
+  runReadPathWrite,
 } from '@mantle/db';
 
 export type FolderRow = {
@@ -108,23 +109,25 @@ export async function ensureFilesRootBranch(ownerId: string): Promise<Node | nul
   try {
     // Heads first (workspaces plan U1); a root has no folder above it.
     [row] = await withDeadlockRetry(() =>
-      withNodeInsertHeads(ownerId, [{ type: 'branch', path: FILES_ROOT_LABEL }], (tx) =>
-        tx
-          .insert(nodes)
-          .values({
-            ownerId,
-            type: 'branch',
-            title: 'Files',
-            slug: FILES_ROOT_LABEL,
-            path: FILES_ROOT_LABEL,
-            data: {
-              description:
-                'Host-mirrored filesystem. Folders and files here live on disk under MANTLE_FILES_ROOT.',
-            },
-            tags: ['files-root'],
-          })
-          .onConflictDoNothing()
-          .returning(),
+      runReadPathWrite('repair:files-root', () =>
+        withNodeInsertHeads(ownerId, [{ type: 'branch', path: FILES_ROOT_LABEL }], (tx) =>
+          tx
+            .insert(nodes)
+            .values({
+              ownerId,
+              type: 'branch',
+              title: 'Files',
+              slug: FILES_ROOT_LABEL,
+              path: FILES_ROOT_LABEL,
+              data: {
+                description:
+                  'Host-mirrored filesystem. Folders and files here live on disk under MANTLE_FILES_ROOT.',
+              },
+              tags: ['files-root'],
+            })
+            .onConflictDoNothing()
+            .returning(),
+        ),
       ),
     );
   } catch (err) {

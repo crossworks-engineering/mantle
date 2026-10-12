@@ -84,7 +84,7 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
-  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
+  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   /** A tool call by `login` in the Admin workspace; `asAgent` false: the
    *  operator driving it (the MCP or an approval), not an agent's turn. */
   const dispatchAs = (

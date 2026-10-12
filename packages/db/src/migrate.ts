@@ -89,6 +89,9 @@ async function main() {
       if (migration.folderMillis <= lastWhen) continue;
       // Each migration in its OWN transaction (see file header).
       await sql.begin(async (tx) => {
+        // Arch A2a: a migration's writes run as system(migration).
+        await tx`select set_config('mantle.actor', 'system:migration', true),
+                        set_config('mantle.write_mode', 'rw', true)`;
         for (const stmt of migration.sql) {
           await tx.unsafe(stmt);
         }

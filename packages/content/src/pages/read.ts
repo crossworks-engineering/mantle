@@ -17,6 +17,7 @@ import {
   entityEdges,
   nodes,
   pages,
+  runReadPathWrite,
 } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { Backlink, PageRow, PageSort } from '@mantle/client-types';
@@ -169,11 +170,15 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
     row.doc !== null &&
     !inScopeTransaction()
   ) {
-    void persistBlockIdBackfill(
-      id,
-      { doc: row.doc as Record<string, unknown>, draft: rawDraft, draftRev: row.draftRev ?? 0 },
-      docChanged ? doc : null,
-      draftChanged ? draft : null,
+    // Arch A2a: a named system write (it never runs as the reader, so a
+    // read-only key's read still repairs), detached from the read.
+    void runReadPathWrite('backfill:page-block-ids', () =>
+      persistBlockIdBackfill(
+        id,
+        { doc: row.doc as Record<string, unknown>, draft: rawDraft, draftRev: row.draftRev ?? 0 },
+        docChanged ? doc : null,
+        draftChanged ? draft : null,
+      ),
     );
   }
 

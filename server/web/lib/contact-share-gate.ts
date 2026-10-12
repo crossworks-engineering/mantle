@@ -16,6 +16,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { contactShareGateRow, recordShareAccess, type ContactShareGateRow } from '@mantle/content';
+import { setRequestActor } from '@mantle/db';
 import { resolveActiveShareRowByToken } from '@/lib/shares';
 import type { Share } from '@mantle/db';
 import {
@@ -78,10 +79,16 @@ export async function gateShareCookie(
 ): Promise<ShareGate> {
   const share = await resolveActiveShareRowByToken(token);
   if (!share) return { kind: 'missing' };
-  if (!share.contactId) return { kind: 'ok', share, contact: null };
+  if (!share.contactId) {
+    // Arch A2a: an open link's request runs as the link.
+    setRequestActor({ kind: 'link' });
+    return { kind: 'ok', share, contact: null };
+  }
   const row = await contactShareGateRow(share.contactId);
   for (const value of contactVisitorValues(cookieHeader)) {
     if (claimsAdmit(verifyContactVisitorValue(value), share, row)) {
+      // Arch A2a: an admitted contact runs as the contact share.
+      setRequestActor({ kind: 'contact', canWrite: share.canWrite === true });
       return {
         kind: 'ok',
         share,

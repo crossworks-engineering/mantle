@@ -1,6 +1,6 @@
 import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { db, nodes, runAsSystem } from '@mantle/db';
 import {
   APP_NAV_CHANGED_CHANNEL,
   NEEDS_YOU_CHANGED_CHANNEL,
@@ -90,11 +90,13 @@ async function ensureListening(): Promise<void> {
     // appears) and `node_indexed` (the extractor finished — summary + embedding
     // landed). Both fan out the same typed change; the second is what makes a
     // freshly-summarised file repaint without a manual refresh.
+    // Arch A2a: the lookup is the bridge's own work, never the login of the
+    // request that happened to start the bridge.
     const subIngested = await sql.listen('node_ingested', (nodeId) => {
-      void fanout(nodeId);
+      void runAsSystem('listen:realtime', () => fanout(nodeId));
     });
     const subIndexed = await sql.listen('node_indexed', (nodeId) => {
-      void fanout(nodeId);
+      void runAsSystem('listen:realtime', () => fanout(nodeId));
     });
     // Approval queue changes (a tool call queued / approved / rejected).
     // Unlike node_* the payload IS the owner id, not a node id — so we

@@ -1,4 +1,5 @@
 import type { Hono } from 'hono';
+import { runInActorSlot, systemActor } from '@mantle/db';
 import { getPage, getDraw, getDrawSvg } from '@mantle/content';
 import { requireOwnerForRender } from '@/lib/auth';
 import { renderPageDoc } from '@/lib/render-page-doc';
@@ -53,6 +54,11 @@ export const RENDER_CSP = [
  * cookie naming the node in the URL (requireOwnerForRender).
  */
 export function mountPrint(app: Hono): void {
+  // Arch A2a: each render starts as system(http:render); the session or the
+  // render cookie names its login (requireOwnerForRender).
+  for (const path of ['/print/*', '/render/*']) {
+    app.use(path, (_c, next) => runInActorSlot(systemActor('http:render'), () => next()));
+  }
   // Draws: the committed SVG snapshot on a white sheet. No scripts at all —
   // the snapshot is already final pixels (fonts inlined by exportToSvg), so
   // there is no data-diagram-print marker and render-pdf doesn't wait.

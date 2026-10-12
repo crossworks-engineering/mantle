@@ -1,5 +1,6 @@
 import type { Context, Hono } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { runInActorSlot, systemActor } from '@mantle/db';
 import {
   CONTACT_MENU_LIMIT,
   isRetiredClientLinkToken,
@@ -280,5 +281,7 @@ async function renderShare(c: Context): Promise<Response> {
 }
 
 export function mountShare(app: Hono): void {
-  app.get('/s/:token', renderShare);
+  // Arch A2a: the page starts as system(http:share-page); the share gate
+  // names the link or the contact once it admits one.
+  app.get('/s/:token', (c) => runInActorSlot(systemActor('http:share-page'), () => renderShare(c)));
 }

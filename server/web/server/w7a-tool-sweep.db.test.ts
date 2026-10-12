@@ -284,7 +284,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     adminWs = ws.find((w) => w.admin)!.id;
     teamWs = ws.find((w) => w.key === 'team')!.id;
     const files = await import('@mantle/files');
-    await m.asSystem(() => files.ensureFilesRootBranch(owner));
+    await m.asSystem(() => files.ensureFilesRootBranch(owner), 'test');
 
     // Items of another user (the member's private workspace): one set shared
     // to Admin with Read only, one set private (W7a fix round 1).
@@ -296,49 +296,53 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     )[0]!.ws;
     const makeAll = async (label: string): Promise<Map<string, string>> => {
       const made = new Map<string, string>();
-      await m.asSystem(() =>
-        m.withCreateHome({ createWs: memWs, privateWs: null, quiet: true }, async () => {
-          made.set('page', (await c.createPage(owner, { title: `${tag} ${label} page` })).id);
-          made.set(
-            'note',
-            (await c.createNote(owner, { title: `${tag} ${label} note`, content: 'x' })).id,
-          );
-          made.set('task', (await c.createTask(owner, { title: `${tag} ${label} task` })).id);
-          made.set(
-            'event',
-            (
-              await c.createEvent(owner, {
-                title: `${tag} ${label} event`,
-                startsAt: new Date().toISOString(),
-              })
-            ).id,
-          );
-          made.set('table', (await c.createTable(owner, { title: `${tag} ${label} table` })).id);
-          const folder = await files.createFolder({
-            ownerId: owner,
-            parentPath: 'files',
-            slug: `${tag}-${label}-dir`,
-          });
-          made.set('branch', folder.id);
-          const file = await files.upsertFile({
-            ownerId: owner,
-            parentPath: 'files',
-            filename: `${tag}-${label}.txt`,
-            bytes: Buffer.from(`${label} secret bytes`),
-          });
-          made.set('file', file.id);
-        }),
+      await m.asSystem(
+        () =>
+          m.withCreateHome({ createWs: memWs, privateWs: null, quiet: true }, async () => {
+            made.set('page', (await c.createPage(owner, { title: `${tag} ${label} page` })).id);
+            made.set(
+              'note',
+              (await c.createNote(owner, { title: `${tag} ${label} note`, content: 'x' })).id,
+            );
+            made.set('task', (await c.createTask(owner, { title: `${tag} ${label} task` })).id);
+            made.set(
+              'event',
+              (
+                await c.createEvent(owner, {
+                  title: `${tag} ${label} event`,
+                  startsAt: new Date().toISOString(),
+                })
+              ).id,
+            );
+            made.set('table', (await c.createTable(owner, { title: `${tag} ${label} table` })).id);
+            const folder = await files.createFolder({
+              ownerId: owner,
+              parentPath: 'files',
+              slug: `${tag}-${label}-dir`,
+            });
+            made.set('branch', folder.id);
+            const file = await files.upsertFile({
+              ownerId: owner,
+              parentPath: 'files',
+              filename: `${tag}-${label}.txt`,
+              bytes: Buffer.from(`${label} secret bytes`),
+            });
+            made.set('file', file.id);
+          }),
+        'test',
       );
       return made;
     };
     for (const [k, v] of await makeAll('ro')) readOnly.set(k, v);
     for (const [k, v] of await makeAll('private')) privateItems.set(k, v);
     for (const id of readOnly.values()) {
-      await m.asSystem(() =>
-        m.withHeads([id], 'update', async (tx) => {
-          await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+      await m.asSystem(
+        () =>
+          m.withHeads([id], 'update', async (tx) => {
+            await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
                                values (${id}, ${adminWs}, false) on conflict do nothing`);
-        }),
+          }),
+        'test',
       );
     }
   }, 240_000);

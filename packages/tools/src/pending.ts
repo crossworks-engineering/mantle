@@ -5,7 +5,14 @@
  */
 
 import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
-import { db, pendingToolCalls, type PendingToolCall, tools as toolsTable } from '@mantle/db';
+import {
+  db,
+  pendingToolCalls,
+  runAsActor,
+  type PendingToolCall,
+  tools as toolsTable,
+  loginActorNow,
+} from '@mantle/db';
 import { currentWorkspaceScope, scopeLeftForSystem } from '@mantle/db/viewer';
 import {
   applyBudgetDecision,
@@ -416,6 +423,13 @@ export async function approvePendingCall(
     return errRow ? toSummary(errRow) : null;
   }
 
+  // Arch A2a: the call runs as the login whose turn asked for it, as that
+  // login is now; a row with no login keeps the caller's actor.
+  const callActor = claimed.loginId
+    ? await loginActorNow(claimed.loginId, 'pending:approve')
+    : null;
+  const asCallLogin = <T>(fn: () => Promise<T>) => (callActor ? runAsActor(callActor, fn) : fn());
+
   // Execute under a fresh `manual` trace so the operator can audit the
   // run in /traces. The originating turn's trace is long closed by now.
   let outputJson: Record<string, unknown> | null = null;
@@ -437,22 +451,24 @@ export async function approvePendingCall(
           input: { slug: claimed.toolSlug, args: claimed.args },
         },
         async (handle) => {
-          const res = await dispatchTool(tool, (claimed.args ?? {}) as Record<string, unknown>, {
-            ownerId,
-            // An Admin user approves a pending call, so it runs on the owner
-            // surface, naming the approver when the path names one.
-            surface: {
-              kind: 'owner',
-              via: 'pending',
-              ...(opts?.approverLoginId ? { loginId: opts.approverLoginId } : {}),
-            },
-            step: {
-              setMeta: (m) => handle.setMeta(m),
-              setOutput: (o) => handle.setOutput(o),
-              addTokens: (d) => handle.addTokens(d),
-              addCost: (mu) => handle.addCost(mu),
-            },
-          });
+          const res = await asCallLogin(() =>
+            dispatchTool(tool, (claimed.args ?? {}) as Record<string, unknown>, {
+              ownerId,
+              // An Admin user approves a pending call, so it runs on the owner
+              // surface, naming the approver when the path names one.
+              surface: {
+                kind: 'owner',
+                via: 'pending',
+                ...(opts?.approverLoginId ? { loginId: opts.approverLoginId } : {}),
+              },
+              step: {
+                setMeta: (m) => handle.setMeta(m),
+                setOutput: (o) => handle.setOutput(o),
+                addTokens: (d) => handle.addTokens(d),
+                addCost: (mu) => handle.addCost(mu),
+              },
+            }),
+          );
           if (res.ok) {
             outputJson =
               typeof res.output === 'object' && res.output !== null

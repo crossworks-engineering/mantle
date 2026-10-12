@@ -27,6 +27,7 @@ import {
 } from './config';
 import { assertEnvShape } from '@mantle/config';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
+import { runAsSystem } from '@mantle/db';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
 import { installTurnSuggestionHook } from './turn-suggestion';
@@ -179,7 +180,9 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-main().catch((err) => {
+// Arch A2a: the boot runs as system(boot:api); every listener, tick and
+// workflow it starts binds its own actor.
+runAsSystem('boot:api', main).catch((err) => {
   console.error('[api] fatal during boot:', err);
   process.exit(1);
 });

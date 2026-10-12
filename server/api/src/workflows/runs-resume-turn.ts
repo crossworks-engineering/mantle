@@ -50,6 +50,8 @@ import {
   agents,
   bumpAgentUsage,
   db,
+  runAsActor,
+  runAsSystem,
   runItems,
   runs,
   telegramAccounts,
@@ -84,6 +86,7 @@ import {
 } from '@mantle/content';
 import { runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
+import { loginActorNow, ownerActor } from './login-actor';
 
 /** The responder that answers a resume: the run's creating agent when it
  *  still exists and can chat, else the brain's default assistant. */
@@ -221,6 +224,15 @@ export async function runsResumeTurnImpl(
         .from(runs)
         .where(eq(runs.id, runId));
       const runLoginId = planned?.loginId ?? null;
+      // Arch A2a: the turn (its assembly and its loop) runs as that login as
+      // it is now, else the owner.
+      const turnActor = runLoginId
+        ? await loginActorNow(runLoginId, 'workflow:runs-resume-turn')
+        : ownerActor(run.ownerId, 'workflow:runs-resume-turn');
+      const assembleAs: typeof assembleResponderTurn = (o) =>
+        runAsActor(turnActor, () => assembleResponderTurn(o));
+      const runLoopAs: typeof runResponderLoop = (o) =>
+        runAsActor(turnActor, () => runResponderLoop(o));
 
       // The surface first: a run of a workspace other than Admin resumes as
       // its web chat runs (W7d fix round 1, M1), wherever it was planned.
@@ -232,7 +244,7 @@ export async function runsResumeTurnImpl(
       );
       const workspaceTurn = surface.kind === 'team';
       const prefs = await loadProfilePreferences(run.ownerId);
-      const assembled = await assembleResponderTurn({
+      const assembled = await assembleAs({
         ownerId: run.ownerId,
         agent,
         // Assembled for that login too (W7 integration fix): its scope, and
@@ -267,7 +279,7 @@ export async function runsResumeTurnImpl(
           data: { surface: 'runs', run_id: runId, agent_slug: agent.slug, model: agent.model },
         },
         () =>
-          runResponderLoop({
+          runLoopAs({
             ownerId: run.ownerId,
             agent,
             adapter,
@@ -442,6 +454,10 @@ export async function resumeSurface(
   return { kind: 'web', loginId };
 }
 
-export const runsResumeTurnWorkflow = DBOS.registerWorkflow(runsResumeTurnImpl, {
-  name: RUNS_RESUME_TURN_WORKFLOW,
-});
+// Arch A2a: the workflow's bookkeeping is the runner's own work; the turn
+// itself binds the run's login.
+export const runsResumeTurnWorkflow = DBOS.registerWorkflow(
+  (input: RunsResumeTurnInput) =>
+    runAsSystem('workflow:runs-resume-turn', () => runsResumeTurnImpl(input)),
+  { name: RUNS_RESUME_TURN_WORKFLOW },
+);

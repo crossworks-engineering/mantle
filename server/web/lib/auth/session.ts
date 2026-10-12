@@ -35,6 +35,8 @@ import {
   noteRequestWriteScope,
   noteRequestCreateHome,
   noteRequestOwnRule,
+  setRequestActor,
+  loginActor,
   adminReadsOnSystemPool as dbAdminReadsOnSystemPool,
   loginHoldsAdmin,
   type CreateHome,
@@ -232,6 +234,8 @@ async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | n
   if (!row || row.role !== 'admin' || !loginUsable(row)) return null;
   const user = await sessionUserFor(row);
   if (!user || user.id !== claims.uid) return null;
+  // Arch A2a: the render runs as the login the cookie names.
+  setRequestActor(loginActor(user.actor.id, 'rw'));
   return { user, nodeId: claims.n };
 }
 
@@ -518,7 +522,18 @@ async function accessKeyLogin(): Promise<Resolved | null | undefined> {
   if (!ctx || !grant) return null;
   if (!isApiV1Path(ctx.path)) return null;
   if (!keyMayCall(grant, matchApiV1Route(ctx.method, ctx.path)).ok) return null;
-  return resolvedFor(grant.login, 'api');
+  const resolved = await resolvedFor(grant.login, 'api');
+  // Arch A2a: a read key's request runs as login(ro).
+  if (resolved) nameRequestLogin(resolved, grant.access === 'read_write' ? 'rw' : 'ro');
+  return resolved;
+}
+
+/** Name the request's actor (arch A2a, plan 4.1): the login the guard
+ *  resolved, read-write unless a read key. The guard's later notes keep it
+ *  (an Admin write) or replace it (an area route: system). */
+function nameRequestLogin(res: Resolved, mode: 'rw' | 'ro'): void {
+  const id = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
+  setRequestActor(loginActor(id, mode));
 }
 
 /** Resolve the calling login, admin or member, cookie first then bearer. */
@@ -545,12 +560,17 @@ async function resolveLogin(): Promise<Resolved | null> {
       const deviceOk = !data.dj || (await cookieDeviceAlive(data.dj, data.uid));
       if (row && loginUsable(row) && row.sessionEpoch === data.ep && deviceOk) {
         const resolved = await resolvedFor(row, 'web');
-        if (resolved) return resolved;
+        if (resolved) {
+          nameRequestLogin(resolved, 'rw');
+          return resolved;
+        }
       }
     }
   }
   // Mobile companion: Authorization: Bearer <mobile-token>.
-  return getBearerLogin();
+  const bearer = await getBearerLogin();
+  if (bearer) nameRequestLogin(bearer, 'rw');
+  return bearer;
 }
 
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),

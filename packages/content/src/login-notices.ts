@@ -193,7 +193,7 @@ export function chatReplyNotice(n: {
       deepLink: '/portal/chat',
       collapseKey: 'chat',
     };
-  });
+  }, 'login-notice');
 }
 
 /** Which of a bundle's items names it: a page before a note, a table, a
@@ -285,5 +285,5 @@ export function reviewResultNotice(
       state,
       collapseKey: `review:${main.id}`,
     };
-  });
+  }, 'login-notice');
 }

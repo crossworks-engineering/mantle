@@ -9,6 +9,7 @@ import {
   isWriteRefused,
   nodes,
   traces,
+  runReadPathWrite,
 } from '@mantle/db';
 import { getTrace, traceListedFor } from './traces';
 import { deriveAction, type ActionCategory } from '@mantle/client-types/journey-format';
@@ -207,7 +208,7 @@ export async function reapAbandonedTraces(userId: string): Promise<number> {
 async function reapUnguarded(userId: string): Promise<number> {
   const cutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60_000);
   try {
-    return await reapOnce(userId, cutoff);
+    return await runReadPathWrite('repair:abandoned-traces', () => reapOnce(userId, cutoff));
   } catch (err) {
     // A self-heal is a convenience; the read it precedes is the point. Against a
     // read-only replica, a revoked grant, or a reader role, this UPDATE is

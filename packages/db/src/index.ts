@@ -1,4 +1,25 @@
 export * from './schema/index';
+export {
+  type Actor,
+  type ActorMiss,
+  type ActorCheckMode,
+  type WriteMode,
+  loginActor,
+  systemActor,
+  writeModeOf,
+  actorSetting,
+  runAsActor,
+  runAsSystem,
+  runWithoutActor,
+  runInActorSlot,
+  runReadPathWrite,
+  READ_PATH_WRITES,
+  type ReadPathWrite,
+  currentActor,
+  actorCheckMode,
+  takeActorMisses,
+  SYSTEM_REASON_RE,
+} from './actor';
 export { teamReadsSql, teamReadsAliasSql, teamWritesSql } from './grant-reads';
 export {
   GRANT_DRIFT_SQL,
@@ -44,6 +65,7 @@ export {
   executeWrite,
   NotAWriteError,
   readTransaction,
+  loginActorNow,
   type Db,
 } from './client';
 export {
@@ -72,6 +94,7 @@ export {
   ViewerLevelConflictError,
   asSystem,
   AS_SYSTEM_TURN_REASONS,
+  AS_SYSTEM_OTHER_REASONS,
   TurnScopeExitError,
   type AsSystemReason,
   SYSTEM_DB_MODULES,
@@ -91,6 +114,7 @@ export {
   hasRequestSlot,
   enterRequestScope,
   noteRequestSystem,
+  setRequestActor,
   noteRequestWriteScope,
   requestWriteScope,
   noteRequestCreateHome,

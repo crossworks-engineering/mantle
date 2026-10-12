@@ -35,6 +35,8 @@ import {
   agents,
   bumpAgentUsage,
   db,
+  runAsActor,
+  runAsSystem,
   runItems,
   runs as runsTable,
   type Agent,
@@ -71,6 +73,7 @@ import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { applyAgentThinking, NO_THINKING } from '@mantle/content-core/profile-projections';
 import { withRunScope } from '@mantle/runtime/agent';
+import { loginActorNow, ownerActor } from './login-actor';
 
 const PROPOSAL_CAP_CHARS = 2_000;
 
@@ -328,6 +331,14 @@ export async function runsWorkerTurnImpl(
         const groupTools = await resolveAgentToolGroups(run.ownerId, worker.toolGroupSlugs ?? []);
         const allowedTools = await resolveAgentTools(run.ownerId, effectiveToolSlugs(groupTools));
 
+        // Arch A2a: the turn runs as the run's login as it is now, else the
+        // owner (login(owner)).
+        const turnActor = run.loginId
+          ? await loginActorNow(run.loginId, 'workflow:runs-worker-turn')
+          : ownerActor(run.ownerId, 'workflow:runs-worker-turn');
+        const asRunLogin = <T>(fn: () => Promise<T>) =>
+          runAsActor(turnActor, () => withRunScope(run, fn));
+
         let traceId: string | undefined;
         let costMicroUsd = 0;
         let tokensIn = 0;
@@ -350,7 +361,7 @@ export async function runsWorkerTurnImpl(
           // The run's own scope (W4b): a run planned in a non-Admin
           // workspace is worked in that workspace, never wider.
           () =>
-            withRunScope(run, async () => {
+            asRunLogin(async () => {
               const result = await runToolLoop({
                 adapter,
                 apiKey: keyCheck.apiKey,
@@ -461,9 +472,13 @@ export async function runsWorkerTurnImpl(
   );
 }
 
-export const runsWorkerTurnWorkflow = DBOS.registerWorkflow(runsWorkerTurnImpl, {
-  name: RUNS_WORKER_TURN_WORKFLOW,
-});
+// Arch A2a: the workflow's bookkeeping is the runner's own work; the turn
+// itself binds the run's login.
+export const runsWorkerTurnWorkflow = DBOS.registerWorkflow(
+  (input: RunsWorkerTurnInput) =>
+    runAsSystem('workflow:runs-worker-turn', () => runsWorkerTurnImpl(input)),
+  { name: RUNS_WORKER_TURN_WORKFLOW },
+);
 
 /** A run worker's thinking loop args: its own effort, else none. */
 function workerThinking(worker: Pick<Agent, 'thinkingEffort'>) {

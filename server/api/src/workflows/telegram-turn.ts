@@ -25,9 +25,10 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { withDurableSteps } from '@mantle/tracing';
 import { RUNNER_QUEUE } from '@mantle/runtime/assistant';
-import { handleTelegramMessage } from '../agent/runtime';
+import { handleTelegramMessage, telegramTurnActor } from '../agent/runtime';
 import { errorMessage } from '@mantle/std';
 import { assertNoViewer } from '@mantle/db/viewer';
+import { runAsActor } from '@mantle/db';
 
 /** DBOS workflow name the runner registers under. Internal to server/api — the
  *  only enqueuer is this process's own LISTEN handler + boot drain, so unlike
@@ -62,7 +63,13 @@ async function telegramTurnImpl(input: TelegramTurnInput): Promise<void> {
   DBOS.logger.info(`[telegram_turn] done (message=${messageId})`);
 }
 
-export const telegramTurnWorkflow = DBOS.registerWorkflow(telegramTurnImpl, {
+/** Arch A2a: the turn runs as the login its chat is paired to, as it is now. */
+async function telegramTurnAs(input: TelegramTurnInput): Promise<void> {
+  const actor = await telegramTurnActor(input.messageId);
+  return runAsActor(actor, () => telegramTurnImpl(input));
+}
+
+export const telegramTurnWorkflow = DBOS.registerWorkflow(telegramTurnAs, {
   name: TELEGRAM_TURN_WORKFLOW,
 });
 

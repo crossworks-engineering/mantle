@@ -56,36 +56,44 @@ const { createApp } = await import('./app');
 // blocks request serving; the reconcile self-guards (production-only,
 // provisioned-only, once per version, best-effort).
 // (MANTLE_PUBLIC_URL / NEXT_PUBLIC_APP_URL fallback: @mantle/config warns once.)
-void import('../lib/system-manifest/reconcile')
-  .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())
-  .catch((err) => console.error('[boot] manifest reconcile failed:', err));
+// Arch A2a: each boot task runs as system(boot:<task>).
+const { runAsSystem } = await import('@mantle/db');
+void runAsSystem('boot:manifest-reconcile', () =>
+  import('../lib/system-manifest/reconcile')
+    .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())
+    .catch((err) => console.error('[boot] manifest reconcile failed:', err)),
+);
 
 // A brain with no workspaces yet (a fresh install whose owner signed up
 // before this release, W5b1 audit M1): migrate it once. Skips a migrated
 // brain and one with clients (21.9) without a lock; no LLM work.
 // Then the authors' copies of their accepted items (W6b, plan S3): only the
 // missing ones, no LLM work, no extractor notify.
-void import('../lib/workspaces-migrate')
-  .then(({ migrateWorkspacesQuietly }) => migrateWorkspacesQuietly('boot'))
-  .then(() => import('../lib/snapshot-copies'))
-  .then(({ makeSnapshotCopies }) => makeSnapshotCopies())
-  .then((r) => {
-    if (r.made > 0 || r.acceptedRowsCleared > 0) {
-      console.log(
-        `[boot] snapshot copies: made ${r.made}, accepted rows cleared ${r.acceptedRowsCleared}`,
-      );
-    }
-  })
-  .catch((err) => console.error('[boot] workspaces migration failed:', err));
+void runAsSystem('boot:migrate-workspaces', () =>
+  import('../lib/workspaces-migrate')
+    .then(({ migrateWorkspacesQuietly }) => migrateWorkspacesQuietly('boot'))
+    .then(() => import('../lib/snapshot-copies'))
+    .then(({ makeSnapshotCopies }) => makeSnapshotCopies())
+    .then((r) => {
+      if (r.made > 0 || r.acceptedRowsCleared > 0) {
+        console.log(
+          `[boot] snapshot copies: made ${r.made}, accepted rows cleared ${r.acceptedRowsCleared}`,
+        );
+      }
+    })
+    .catch((err) => console.error('[boot] workspaces migration failed:', err)),
+);
 
 // App table exports a restart left unsynced (apps plan D8): their debounce
 // timers died with the old process. The usual hash-gated sync, once.
-void import('@mantle/content/app-table-exports')
-  .then(({ resumeDirtyAppTableExports }) => resumeDirtyAppTableExports())
-  .then((n) => {
-    if (n > 0) console.log(`[boot] resumed the table export sync of ${n} app(s)`);
-  })
-  .catch((err) => console.error('[boot] app table export resume failed:', err));
+void runAsSystem('boot:app-table-exports', () =>
+  import('@mantle/content/app-table-exports')
+    .then(({ resumeDirtyAppTableExports }) => resumeDirtyAppTableExports())
+    .then((n) => {
+      if (n > 0) console.log(`[boot] resumed the table export sync of ${n} app(s)`);
+    })
+    .catch((err) => console.error('[boot] app table export resume failed:', err)),
+);
 
 const app = await createApp();
 const port = Number(process.env.PORT || 3000);

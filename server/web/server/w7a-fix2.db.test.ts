@@ -127,7 +127,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
-  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
+  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const makeIn = <T>(home: string, fn: () => Promise<T>) =>
     sys(() => m.withCreateHome({ createWs: home, privateWs: null, quiet: true }, fn));
   const privateFor = async (login: string) =>

@@ -27,6 +27,16 @@
  * only for the code that still names a level in a value.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import {
+  runAsActor,
+  currentActor,
+  loginActor,
+  systemActor,
+  runInActorSlot,
+  setSlotActor,
+  slotActor,
+  type Actor,
+} from './actor';
 import { hkdfSync } from 'node:crypto';
 import { env } from '@mantle/config';
 
@@ -288,6 +298,8 @@ export function afterRollback(fn: () => unknown): void {
   active()?.hooks?.rollback.push(fn);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const store = new AsyncLocalStorage<Scope>();
 
 /** The store value of code that left every scope (`asSystem`): it masks a
@@ -314,13 +326,37 @@ function active(): Scope | undefined {
  * loader calls this; the session guard fills the slot (enterRequestScope).
  */
 export function runInRequestSlot<T>(fn: () => T): T {
-  return requestSlots.run({ scope: null, outcome: null, memo: new Map() }, fn);
+  // Arch A2a: a request runs as system(http:no-login) until the session
+  // guard or a share broker names its caller (A4's route rows name it from
+  // the start).
+  return runInActorSlot(systemActor('http:no-login'), () =>
+    requestSlots.run({ scope: null, outcome: null, memo: new Map() }, fn),
+  );
 }
 
 /** The current request's memo of built scopes (withViewer), or null
  *  outside a request. */
 export function requestScopeMemo(): Map<string, Promise<WorkspaceScope>> | null {
   return requestSlots.getStore()?.memo ?? null;
+}
+
+/**
+ * Name who the current request runs as (arch A2a): the route loader starts
+ * it as system(http:no-login); the session guard or a share gate names the
+ * caller once it knows it. No-op outside a request (an actor slot).
+ */
+export function setRequestActor(actor: Actor): void {
+  setSlotActor(actor);
+}
+
+/** Name a login the guard let through as the request's actor, keeping the
+ *  mode the guard already named for that login (a read-only key). */
+function nameRequestLogin(loginId: string): void {
+  if (!UUID_RE.test(loginId)) return;
+  const id = loginId.toLowerCase();
+  const had = slotActor();
+  if (had?.kind === 'login' && had.loginId === id) return;
+  setSlotActor(loginActor(id, 'rw'));
 }
 
 /** Whether the current code runs inside a request slot (an HTTP handler). */
@@ -353,6 +389,7 @@ export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): b
     request: Object.freeze({ ...mode }),
   });
   slot.outcome = { kind: 'user', loginId: ws.loginId ?? '', writes: mode.writes };
+  if (ws.loginId) nameRequestLogin(ws.loginId);
   return true;
 }
 
@@ -360,7 +397,13 @@ export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): b
  *  route sweep asserts it is an Admin user's). No-op outside a slot. */
 export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' }>['why']): void {
   const slot = requestSlots.getStore();
-  if (slot && !slot.scope) slot.outcome = { kind: 'system', why };
+  if (!slot || slot.scope) return;
+  slot.outcome = { kind: 'system', why };
+  // Arch A2a (plan 4.1): an Admin area route and the login's own things run
+  // as system(reason); an Admin user's write or read on the system pool
+  // stays its login (named by the guard).
+  if (why === 'area') setSlotActor(systemActor('http:admin-area'));
+  else if (why === 'login-self') setSlotActor(systemActor('http:login-self'));
 }
 
 /**
@@ -376,6 +419,7 @@ export function noteRequestWriteScope(ws: WorkspaceScope): void {
   if (!slot || slot.scope) return;
   slot.writeScope = ws;
   slot.outcome = { kind: 'system', why: 'admin-write' };
+  if (ws.loginId) nameRequestLogin(ws.loginId);
 }
 
 /** The scope a write request is checked in, or null: an Admin user's (see
@@ -445,7 +489,9 @@ export function requestSystemWrites(): readonly string[] {
  *  (RequestOutcome 'own-rule'). No-op outside a slot. */
 export function noteRequestOwnRule(loginId: string): void {
   const slot = requestSlots.getStore();
-  if (slot && !slot.scope) slot.outcome = { kind: 'own-rule', loginId: loginId.toLowerCase() };
+  if (!slot || slot.scope) return;
+  slot.outcome = { kind: 'own-rule', loginId: loginId.toLowerCase() };
+  nameRequestLogin(loginId);
 }
 
 /**
@@ -560,6 +606,36 @@ export function inScopeTransaction(): boolean {
 }
 
 /**
+ * The actor a workspace scope runs as (arch A2a), from the scope and the
+ * actor around it: a user scope is its login (the mode the caller named for
+ * that login kept, so a read-only key stays read-only); an assistant turn
+ * that answers a login is that login; one that answers none is the
+ * assistant, or login(owner) when its entry named that (the Admin assistant
+ * with no user); a link scope is the link, or the contact share around it.
+ */
+function scopeActor(ws: WorkspaceScope): Actor {
+  const outer = currentActor();
+  if (ws.kind === 'link') {
+    return outer?.kind === 'contact' || outer?.kind === 'link' ? outer : { kind: 'link' };
+  }
+  if (ws.loginId && UUID_RE.test(ws.loginId)) {
+    const id = ws.loginId.toLowerCase();
+    return outer?.kind === 'login' && outer.loginId === id ? outer : loginActor(id, 'rw');
+  }
+  if (outer?.kind === 'assistant' || (outer?.kind === 'login' && outer.mode === 'owner')) {
+    return outer;
+  }
+  return { kind: 'assistant', agentId: null };
+}
+
+/** store.run for a workspace scope, with the scope's actor bound. */
+function inScope<T>(scope: Scope, fn: () => T): T {
+  return scope.ws
+    ? runAsActor(scopeActor(scope.ws), () => store.run(scope, fn))
+    : store.run(scope, fn);
+}
+
+/**
  * Enter the scope `withViewer` built (client.ts, plan R6): `fn` and what it
  * awaits read on the workspace role, each query in its own short
  * transaction that sets the scope, as a turn scope does. It replaces a
@@ -576,14 +652,14 @@ export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): P
     // an assistant of one of the login's workspaces): it reads less, never
     // more (workspaces W6a).
     if (open.request && narrowsWorkspaceScope(open.ws, ws)) {
-      return store.run({ ws, perQuery: true }, async () => await fn());
+      return inScope({ ws, perQuery: true }, async () => await fn());
     }
     return Promise.reject(new Error('withViewer: already inside another workspace scope'));
   }
   // Awaited INSIDE the scope: a callback that returns a query builder (a
   // thenable, run when awaited) runs it here, not in the caller's scope
   // after this one has ended (ScopeLostError there).
-  return store.run({ ws, perQuery: true }, async () => await fn());
+  return inScope({ ws, perQuery: true }, async () => await fn());
 }
 
 /** Enter a workspace scope that runs in one transaction on the workspace
@@ -596,7 +672,7 @@ export function runInWorkspaceTx<T>(
   if (active()) {
     return Promise.reject(new Error('runInWorkspaceTx: only outside any other scope'));
   }
-  return store.run({ ws: scope.ws, tx: scope.tx, hooks: scope.hooks }, fn);
+  return inScope({ ws: scope.ws, tx: scope.tx, hooks: scope.hooks }, fn);
 }
 
 /**
@@ -622,11 +698,11 @@ export function runInTurnScope<T>(
     // only one that reads within the login's own scope (its workspace is
     // one of the login's).
     if (open.request && open.ws && narrowsWorkspaceScope(open.ws, ws)) {
-      return store.run(scope, fn);
+      return inScope(scope, fn);
     }
     return Promise.reject(new Error('withTurnScope: already inside another scope'));
   }
-  return store.run(scope, fn);
+  return inScope(scope, fn);
 }
 
 /** Whether `inner` reads and edits no more than `outer`: its workspaces
@@ -803,6 +879,9 @@ export function runInSystemTx<T>(
  *    (heartbeats.created_by, null the anchor's), for the turn's awareness
  *    block and its continuity tools (@mantle/runtime heartbeats/tick.ts, W7
  *    integration fix 2): the heartbeats table is granted to no role.
+ *  - `audit-log`: the audit row of a connector call made over a login's
+ *    MCP (mcp-core login-surface.ts): an admin table, written after the
+ *    call, never read back in the scope (arch A2a named it).
  *
  * A request scope (W6a) is held to the same list: inside it, `asSystem`
  * names a reason and `systemDb` is for SYSTEM_DB_MODULES only.
@@ -830,8 +909,26 @@ export const AS_SYSTEM_TURN_REASONS = [
   'app-trash',
   'login-telegram',
   'heartbeat-context',
+  'audit-log',
 ] as const;
-export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
+
+/**
+ * Reasons of asSystem calls that never run inside a turn or request scope
+ * (arch A2a: every call names its reason). Inside a turn they count as
+ * unnamed (TurnScopeExitError in tests).
+ *
+ *  - `login-notice`: the push worker builds a login's notice (a finished
+ *    chat reply, a review result) from rows of that login only
+ *    (login-notices.ts).
+ *  - `snapshot-copies`: the boot step that makes the read-only copies of
+ *    snapshots (snapshot-copies.ts), under its advisory lock.
+ *  - `test`: a test's own setup, in test files only (eslint-rules/
+ *    arch-lints.test.ts keeps it out of every counted file).
+ */
+export const AS_SYSTEM_OTHER_REASONS = ['login-notice', 'snapshot-copies', 'test'] as const;
+
+export type AsSystemReason =
+  (typeof AS_SYSTEM_TURN_REASONS)[number] | (typeof AS_SYSTEM_OTHER_REASONS)[number];
 
 /** asSystem was called inside a turn scope without an allowlisted reason,
  *  or systemDb used there by a module off SYSTEM_DB_MODULES (`message`). */
@@ -864,12 +961,13 @@ function strictTurnExits(): boolean {
  * the firing heartbeat's own row). Never for reads. Few call sites,
  * each one audited; grep for `asSystem(` to list them.
  *
- * Inside a turn scope (W4b) the call must name its `reason` from
- * AS_SYSTEM_TURN_REASONS (logged once per reason). Without one it throws
- * TurnScopeExitError in tests and development, and is logged (once per
- * reason) in production.
+ * Every call names its `reason` (arch A2a: a type error without one), and
+ * `fn` runs as the actor system(reason). Inside a turn scope (W4b) the
+ * reason must be one of AS_SYSTEM_TURN_REASONS (logged once per reason);
+ * any other throws TurnScopeExitError in tests and development, and is
+ * logged (once per reason) in production.
  */
-export function asSystem<T>(fn: () => Promise<T>, reason?: AsSystemReason): Promise<T> {
+export function asSystem<T>(fn: () => Promise<T>, reason: AsSystemReason): Promise<T> {
   if (active()?.perQuery) {
     const listed =
       reason !== undefined && (AS_SYSTEM_TURN_REASONS as readonly string[]).includes(reason);
@@ -891,8 +989,10 @@ export function asSystem<T>(fn: () => Promise<T>, reason?: AsSystemReason): Prom
   // turn started on the system pool answers the caller it left, never the
   // anchor (scopeLeftForSystem, agent-viewer.ts withAgentScope).
   const left = active()?.ws;
-  if (left) return leftStore.run(left, () => store.run(SYSTEM_EXIT, fn));
-  return store.run(SYSTEM_EXIT, fn);
+  // A plain-JS caller that passed none still runs (A2a changes no behaviour).
+  const actor = systemActor(typeof reason === 'string' && reason ? reason : 'unnamed');
+  if (left) return leftStore.run(left, () => runAsActor(actor, () => store.run(SYSTEM_EXIT, fn)));
+  return runAsActor(actor, () => store.run(SYSTEM_EXIT, fn));
 }
 
 /** The workspace scope the nearest asSystem left (see scopeLeftForSystem). */

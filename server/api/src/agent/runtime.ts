@@ -39,6 +39,9 @@ import {
   noExtractSinceWriteSql,
   waitForOwner,
   loginHoldsAdmin,
+  runAsSystem,
+  systemActor,
+  type Actor,
   type Agent,
 } from '@mantle/db';
 import { claimMemberTurn, memberDailyLimits } from '@mantle/content';
@@ -94,6 +97,7 @@ import { ingestTelegramAttachment } from './telegram/ingest-attachment';
 import { isNewChatCommand, newChatReply, sendApology, startTyping } from './telegram/helpers';
 import type { AttachmentContext, FileAttachment, InboundRow } from './telegram/types';
 import { runTelegramTurn } from './telegram/turn';
+import { loginActorNow } from '../workflows/login-actor';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
@@ -156,6 +160,27 @@ async function resolveResponderAgent(
     .where(and(eq(agents.id, pinnedId), eq(agents.ownerId, ownerId), eq(agents.enabled, true)))
     .limit(1);
   return pinned ?? null;
+}
+
+/**
+ * Arch A2a: who the Telegram turn for `messageId` runs as. The login its chat
+ * is paired to, as it is now (the owner's own chat as login(owner)); a chat
+ * with no login is refused by the turn, which runs as system until then.
+ */
+export async function telegramTurnActor(messageId: string): Promise<Actor> {
+  const entry = 'workflow:telegram-turn';
+  const [row] = await runAsSystem(entry, () =>
+    db
+      .select({ loginId: telegramChats.loginId })
+      .from(telegramMessages)
+      .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+      .where(eq(telegramMessages.id, messageId))
+      .limit(1),
+  );
+  const loginId = row?.loginId ?? null;
+  if (!loginId) return systemActor(entry);
+  const owner = !!runtimeOwner && loginId.toLowerCase() === runtimeOwner.toLowerCase();
+  return loginActorNow(loginId, entry, owner ? 'owner' : 'rw');
 }
 
 /**
@@ -652,11 +677,14 @@ function runSummarize(ownerId: string, agentId: string): void {
 function scheduleSummarize(ownerId: string, agentId: string): void {
   summarizePending.add(agentId);
   if (summarizeTimer) return;
+  // Arch A2a: the summarizer is the runner's own work.
   summarizeTimer = setTimeout(() => {
     summarizeTimer = null;
     const batch = [...summarizePending];
     summarizePending.clear();
-    for (const id of batch) runSummarize(ownerId, id);
+    runAsSystem('timer:summarize', () => {
+      for (const id of batch) runSummarize(ownerId, id);
+    });
   }, SUMMARIZE_DEBOUNCE_MS);
 }
 
@@ -710,7 +738,13 @@ export interface AgentRuntimeOptions {
   enqueueTelegramTurn: (messageId: string) => Promise<unknown>;
 }
 
-export async function startAgentRuntime(opts: AgentRuntimeOptions) {
+/** Arch A2a: the boot runs as system(boot:agent-runtime); each listener and
+ *  tick binds its own reason. */
+export function startAgentRuntime(opts: AgentRuntimeOptions) {
+  return runAsSystem('boot:agent-runtime', () => bootAgentRuntime(opts));
+}
+
+async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   const pg = postgres(DATABASE_URL!, { max: 2 });
   logger.info('starting — config from agents table');
 
@@ -747,11 +781,13 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     // Enqueue a durable DBOS workflow (workflowID = message id → idempotent: a
     // duplicate notify dedups to the same run) instead of running the turn
     // inline, so it survives a process restart via DBOS auto-recovery.
-    opts
-      .enqueueTelegramTurn(payload)
-      .catch((err) =>
-        logger.error('enqueue telegram turn error:', err instanceof Error ? err.message : err),
-      );
+    runAsSystem('listen:telegram-message', () =>
+      opts
+        .enqueueTelegramTurn(payload)
+        .catch((err) =>
+          logger.error('enqueue telegram turn error:', err instanceof Error ? err.message : err),
+        ),
+    );
   });
   logger.info('LISTENing on telegram_message_inserted');
 
@@ -761,7 +797,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // channel is no longer listened on.
   await pg.listen('summarize_due', (payload: string) => {
     if (!payload) return;
-    scheduleSummarize(owner, payload);
+    runAsSystem('listen:summarize-due', () => scheduleSummarize(owner, payload));
   });
   logger.info('LISTENing on summarize_due (per-agent)');
 
@@ -777,14 +813,16 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // recovery at most once per 2 min on these.
   await pg.listen('provider_recover', (payload: string) => {
     if (payload !== owner) return;
-    requestProviderRecovery('admin');
+    runAsSystem('listen:provider-recover', () => requestProviderRecovery('admin'));
   });
   logger.info('LISTENing on provider_recover');
 
   await pg.listen('node_ingested', (payload: string) => {
     if (!payload) return;
-    enqueueExtract(payload).catch((err) =>
-      logger.error('enqueue extract error:', err instanceof Error ? err.message : err),
+    runAsSystem('listen:node-ingested', () =>
+      enqueueExtract(payload).catch((err) =>
+        logger.error('enqueue extract error:', err instanceof Error ? err.message : err),
+      ),
     );
   });
   logger.info('LISTENing on node_ingested');
@@ -803,8 +841,10 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     if (!payload) return;
     // The payload is the owner id. In single-user mode that's
     // always the owner; we still pass it through for cleanliness.
-    tickHeartbeats(payload).catch((err) =>
-      logger.error(`heartbeat_due wake error:`, err instanceof Error ? err.message : err),
+    runAsSystem('listen:heartbeat-due', () =>
+      tickHeartbeats(payload).catch((err) =>
+        logger.error(`heartbeat_due wake error:`, err instanceof Error ? err.message : err),
+      ),
     );
   });
   logger.info(`LISTENing on ${HEARTBEAT_DUE_CHANNEL}`);

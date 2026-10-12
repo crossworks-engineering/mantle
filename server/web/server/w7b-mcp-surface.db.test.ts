@@ -231,15 +231,17 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
 
   /** Make items homed in `ws`, as the system (the create home names it). */
   const makeIn = <T>(ws: string, fn: () => Promise<T>): Promise<T> =>
-    m.asSystem(() => m.withCreateHome({ createWs: ws, privateWs: null, quiet: true }, fn));
+    m.asSystem(() => m.withCreateHome({ createWs: ws, privateWs: null, quiet: true }, fn), 'test');
 
   /** Grant `id` to `ws` with Read only. */
   const grantRead = (id: string, ws: string) =>
-    m.asSystem(() =>
-      m.withHeads([id], 'update', async (tx) => {
-        await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+    m.asSystem(
+      () =>
+        m.withHeads([id], 'update', async (tx) => {
+          await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
                              values (${id}, ${ws}, false) on conflict do nothing`);
-      }),
+        }),
+      'test',
     );
 
   /** A note homed in `ws`, made as the system (the create home names it). */
@@ -337,7 +339,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
     memPrivate = await priv(mem);
     mem2Private = await priv(mem2);
     const files = await import('@mantle/files');
-    await m.asSystem(() => files.ensureFilesRootBranch(owner));
+    await m.asSystem(() => files.ensureFilesRootBranch(owner), 'test');
     const adminNote = await noteIn(adminWs, MARK.admin);
     other.set('note', await noteIn(mem2Private, MARK.other));
     other.set(

@@ -78,7 +78,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
-  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
+  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const dispatchAs = (login: string, slug: string, input: Record<string, unknown>) =>
     rt.withAgentScope(
       { id: agent.id, workspaceId: adminWs },

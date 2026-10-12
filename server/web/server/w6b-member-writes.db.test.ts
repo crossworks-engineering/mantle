@@ -259,45 +259,46 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
   it('member apps (the my_app_* tools): made in the private workspace at team rules, edited and deleted by the member, brought back home', async () => {
     const c = await import('@mantle/content');
     const author = { loginId: mem, brainId: owner };
-    const app = await m.asSystem(() => c.createMemberApp(author, { title: `${tag} app` }));
+    const app = await m.asSystem(() => c.createMemberApp(author, { title: `${tag} app` }), 'test');
     const priv = await privateOf(mem);
     expect(await homeOf(app.id)).toEqual({ home: priv, r: [priv] });
     const [a] = await x<{ level: string; author: string }>(sql`
       select author_level as level, author_login_id::text as author from apps where node_id = ${app.id}`);
     expect(a).toEqual({ level: 'team', author: mem });
-    const mine = await m.asSystem(() => c.listLoginApps(author));
+    const mine = await m.asSystem(() => c.listLoginApps(author), 'test');
     expect(mine.find((r) => r.id === app.id)).toMatchObject({ mine: true });
     await expect(
-      m.asSystem(() => c.memberApp(author, app.id, { write: true })),
+      m.asSystem(() => c.memberApp(author, app.id, { write: true }), 'test'),
     ).resolves.toMatchObject({
       mayEdit: true,
       mayManage: true,
     });
     // Another member does not see it; an app it only reads it may not change.
     await expect(
-      m.asSystem(() => c.memberApp({ loginId: mem2, brainId: owner }, app.id)),
+      m.asSystem(() => c.memberApp({ loginId: mem2, brainId: owner }, app.id), 'test'),
     ).rejects.toThrow(/No app/);
-    const roApp = await m.asSystem(() =>
-      c.createMemberApp({ loginId: mem2, brainId: owner }, { title: `${tag} ro app` }),
+    const roApp = await m.asSystem(
+      () => c.createMemberApp({ loginId: mem2, brainId: owner }, { title: `${tag} ro app` }),
+      'test',
     );
     await homeIn(roApp.id, ro);
-    await expect(m.asSystem(() => c.memberApp(author, roApp.id, { write: true }))).rejects.toThrow(
-      /not change it/,
-    );
-    await expect(m.asSystem(() => c.deleteMemberApp(author, roApp.id))).rejects.toThrow(
+    await expect(
+      m.asSystem(() => c.memberApp(author, roApp.id, { write: true }), 'test'),
+    ).rejects.toThrow(/not change it/);
+    await expect(m.asSystem(() => c.deleteMemberApp(author, roApp.id), 'test')).rejects.toThrow(
       /Moderator/,
     );
     // Its own delete: the brain's, then back into its home.
-    await m.asSystem(() => c.deleteMemberApp(author, app.id));
+    await m.asSystem(() => c.deleteMemberApp(author, app.id), 'test');
     expect(await homeOf(app.id)).toBeUndefined();
-    const trash = await m.asSystem(() => c.listDeletedMemberApps(author));
+    const trash = await m.asSystem(() => c.listDeletedMemberApps(author), 'test');
     expect(trash.map((t) => t.id)).toContain(app.id);
     expect(
-      (await m.asSystem(() => c.listDeletedMemberApps({ loginId: mem2, brainId: owner }))).map(
-        (t) => t.id,
-      ),
+      (
+        await m.asSystem(() => c.listDeletedMemberApps({ loginId: mem2, brainId: owner }), 'test')
+      ).map((t) => t.id),
     ).not.toContain(app.id);
-    await m.asSystem(() => c.undeleteMemberApp(author, app.id));
+    await m.asSystem(() => c.undeleteMemberApp(author, app.id), 'test');
     expect((await homeOf(app.id))!.home).toBe(priv);
   });
 

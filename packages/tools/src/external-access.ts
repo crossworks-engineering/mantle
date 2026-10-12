@@ -576,32 +576,34 @@ export async function listLoginConnectorTools(
   ownerId: string,
   loginId: string,
 ): Promise<{ tool: Tool; readOnly: boolean; groupId: string; groupName: string }[]> {
-  const rows = await asSystem(() =>
-    db
-      .select({
-        tool: tools,
-        groupId: toolGroups.id,
-        groupName: toolGroups.name,
-        groupSlug: toolGroups.slug,
-      })
-      .from(tools)
-      .innerJoin(
-        toolGroups,
-        and(
-          eq(toolGroups.ownerId, tools.ownerId),
-          sql`${toolGroups.slug} = ${tools.handler}->>'group'`,
+  const rows = await asSystem(
+    () =>
+      db
+        .select({
+          tool: tools,
+          groupId: toolGroups.id,
+          groupName: toolGroups.name,
+          groupSlug: toolGroups.slug,
+        })
+        .from(tools)
+        .innerJoin(
+          toolGroups,
+          and(
+            eq(toolGroups.ownerId, tools.ownerId),
+            sql`${toolGroups.slug} = ${tools.handler}->>'group'`,
+          ),
+        )
+        .where(
+          and(
+            eq(tools.ownerId, ownerId),
+            eq(tools.enabled, true),
+            eq(tools.requiresConfirm, false),
+            sql`${tools.handler}->>'kind' = 'mcp'`,
+            eq(toolGroups.enabled, true),
+            sql`${toolGroups.integration} ? 'mcp'`,
+          ),
         ),
-      )
-      .where(
-        and(
-          eq(tools.ownerId, ownerId),
-          eq(tools.enabled, true),
-          eq(tools.requiresConfirm, false),
-          sql`${tools.handler}->>'kind' = 'mcp'`,
-          eq(toolGroups.enabled, true),
-          sql`${toolGroups.integration} ? 'mcp'`,
-        ),
-      ),
+    'connector-binding',
   );
   const rule = await loginConnectorRule(ownerId, loginId);
   return rows.flatMap((r) => {

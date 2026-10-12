@@ -7,24 +7,26 @@
  * Pinned-count mode: the rule flags a file over its pin (an unlisted file:
  * 0); eslint-rules/arch-lints.test.ts fails on any other count or reason
  * set, so a pin only goes down. Raising one is a review decision.
+ *
+ * Since A2a every call names its reason (a type error without one), and
+ * each `why` here is the set of real reasons the file passes: names of
+ * AS_SYSTEM_TURN_REASONS or AS_SYSTEM_OTHER_REASONS (packages/db/src/
+ * viewer.ts says what each one allows). 'test' is for test files only.
  */
 import { asSystemSites, isCounted, repoPathOf, pinnedRule } from './arch-counts.mjs';
 
 /** @type {Record<string, { count: number, why: string[] }>} A0 baseline */
 export const AS_SYSTEM_PINS = {
-  'packages/content/src/admin-space-taken.ts': { count: 1, why: ['taken'] },
+  'packages/content/src/admin-space-taken.ts': { count: 1, why: ['login-names'] },
   'packages/content/src/app-access-log.ts': { count: 1, why: ['login-names'] },
-  'packages/content/src/app-table-exports.ts': { count: 1, why: ['app_table_export'] },
+  'packages/content/src/app-table-exports.ts': { count: 1, why: ['client-sourced-check'] },
   'packages/content/src/contact-share-codes.ts': { count: 1, why: ['contact-sharing'] },
-  'packages/content/src/login-notices.ts': { count: 2, why: ['chat'] },
+  'packages/content/src/login-notices.ts': { count: 2, why: ['login-notice'] },
   'packages/content/src/profile-preferences.ts': { count: 1, why: ['owner-preferences'] },
   'packages/content/src/tables/shared.ts': { count: 1, why: ['export-link'] },
   'packages/files/src/ops/files.ts': { count: 2, why: ['kind-root', 'name-taken'] },
   'packages/files/src/ops/shared.ts': { count: 1, why: ['kind-root'] },
-  'packages/mcp-core/src/login-surface.ts': {
-    count: 1,
-    why: ['(none passed): the audit row of an MCP call by a login'],
-  },
+  'packages/mcp-core/src/login-surface.ts': { count: 1, why: ['audit-log'] },
   'packages/runs/src/boss.ts': { count: 1, why: ['runs-scope-check'] },
   'packages/runtime/src/agent/agent-viewer.ts': { count: 6, why: ['agent-workspace'] },
   'packages/runtime/src/heartbeats/tick.ts': { count: 1, why: ['heartbeat-context'] },
@@ -48,7 +50,7 @@ export const AS_SYSTEM_PINS = {
   'packages/tools/src/dispatch.ts': { count: 3, why: ['connector-binding', 'connector-call'] },
   'packages/tools/src/external-access.ts': {
     count: 8,
-    why: ['connector-binding', 'mcp', 'workspace-resources'],
+    why: ['connector-binding', 'workspace-resources'],
   },
   'packages/tools/src/pending-notify.ts': { count: 2, why: ['login-telegram'] },
   'server/web/app/api/assistant/thread/route.ts': { count: 2, why: ['rule-in-query'] },
@@ -71,7 +73,7 @@ export const AS_SYSTEM_PINS = {
   'server/web/lib/chat-archive-http.ts': { count: 1, why: ['rule-in-query'] },
   'server/web/lib/debug.ts': { count: 1, why: ['login-telegram'] },
   'server/web/lib/grants.ts': { count: 1, why: ['rule-in-query'] },
-  'server/web/lib/snapshot-copies.ts': { count: 1, why: ['mantle_snapshot_copies'] },
+  'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
   'server/web/lib/workspaces.ts': { count: 1, why: ['rule-in-query'] },
 };
 

@@ -69,7 +69,7 @@ describe.skipIf(!URL)('W6b fix round 4', () => {
         sql`select "public"."mantle_ws_private_workspace"(${login}::uuid)::text as ws`,
       )
     )[0]!.ws;
-  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
+  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const sha = (s: string) => createHash('sha256').update(s).digest('hex');
   const makeCopy = <T>(home: string, of: string, fn: () => Promise<T>) =>
     sys(() =>
@@ -143,7 +143,7 @@ describe.skipIf(!URL)('W6b fix round 4', () => {
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
     const { createApp } = await import('./app');
     app = await createApp();
-    await m.asSystem(() => f.ensureFilesRootBranch(owner));
+    await m.asSystem(() => f.ensureFilesRootBranch(owner), 'test');
   }, 240_000);
 
   afterAll(async () => {

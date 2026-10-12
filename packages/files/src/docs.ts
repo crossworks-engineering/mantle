@@ -36,6 +36,7 @@ import {
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  runReadPathWrite,
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
@@ -543,6 +544,10 @@ const BUILTIN_COLLECTIONS: ReadonlyArray<{
  *  toggle. `onConflictDoNothing` never flips `enabled` (preserves the operator's
  *  choice — e.g. a collection already enabled stays enabled). */
 export async function ensureDefaultCollections(ownerId: string): Promise<void> {
+  return runReadPathWrite('backfill:doc-collections', () => ensureDefaultCollectionsNow(ownerId));
+}
+
+async function ensureDefaultCollectionsNow(ownerId: string): Promise<void> {
   for (const c of BUILTIN_COLLECTIONS) {
     try {
       await db

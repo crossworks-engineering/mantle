@@ -75,7 +75,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
       h.viewers.push(actsFor);
       return marked(actsFor, fn);
     }),
-    asSystem: vi.fn((fn: () => Promise<unknown>, reason?: never) =>
+    asSystem: vi.fn((fn: () => Promise<unknown>, reason: Parameters<typeof real.asSystem>[1]) =>
       real.asSystem(() => marked(null, fn), reason),
     ),
   };

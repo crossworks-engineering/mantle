@@ -410,24 +410,26 @@ function logConnectorCall(
   try {
     // As the system: the audit log is an admin table, and the caller runs
     // in its scope.
-    void asSystem(() =>
-      db.insert(auditLog).values({
-        actorId: caller.loginId,
-        actorEmail: `${caller.role} (mcp)`,
-        action: write ? 'mcp.connector.write' : 'mcp.connector.read',
-        method: 'MCP',
-        path: '/api/mcp',
-        detail: {
-          tool: row.slug,
-          group: handler.group,
-          role: caller.role,
-          connection: caller.via,
-          ...(caller.keyId ? { keyId: caller.keyId } : {}),
-          ...(caller.peerId ? { peerId: caller.peerId } : {}),
-          ...(caller.oauthClientId ? { oauthClientId: caller.oauthClientId } : {}),
-          ...(input !== undefined ? { input } : {}),
-        },
-      }),
+    void asSystem(
+      () =>
+        db.insert(auditLog).values({
+          actorId: caller.loginId,
+          actorEmail: `${caller.role} (mcp)`,
+          action: write ? 'mcp.connector.write' : 'mcp.connector.read',
+          method: 'MCP',
+          path: '/api/mcp',
+          detail: {
+            tool: row.slug,
+            group: handler.group,
+            role: caller.role,
+            connection: caller.via,
+            ...(caller.keyId ? { keyId: caller.keyId } : {}),
+            ...(caller.peerId ? { peerId: caller.peerId } : {}),
+            ...(caller.oauthClientId ? { oauthClientId: caller.oauthClientId } : {}),
+            ...(input !== undefined ? { input } : {}),
+          },
+        }),
+      'audit-log',
     ).catch(() => {
       /* best effort: never fail the call over its log */
     });

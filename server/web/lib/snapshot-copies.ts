@@ -66,11 +66,13 @@ type HomeRow = {
 export async function makeSnapshotCopies(
   opts: { dryRun?: boolean } = {},
 ): Promise<SnapshotCopyReport> {
-  return asSystem(() =>
-    db.transaction(async (lock) => {
-      await lock.execute(sql`select pg_advisory_xact_lock(hashtext('mantle_snapshot_copies'))`);
-      return makeSnapshotCopiesLocked(opts);
-    }),
+  return asSystem(
+    () =>
+      db.transaction(async (lock) => {
+        await lock.execute(sql`select pg_advisory_xact_lock(hashtext('mantle_snapshot_copies'))`);
+        return makeSnapshotCopiesLocked(opts);
+      }),
+    'snapshot-copies',
   );
 }
 

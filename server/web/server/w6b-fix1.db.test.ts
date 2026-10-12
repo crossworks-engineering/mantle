@@ -110,7 +110,7 @@ describe.skipIf(!URL)('W6b fix round 1', () => {
     )[0]!.ws;
   const idOf = (r: { json: Json }, key: string) =>
     ((r.json[key] as Json | undefined)?.id ?? r.json.id) as string;
-  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
+  const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
   const asLogin = <T>(login: string, fn: () => Promise<T>) => m.withViewer({ login }, fn);
   const bytesOf = async (id: string) =>
     (await sys(() => f.readFileById({ ownerId: owner, fileId: id })))?.bytes.toString('utf8');
