@@ -370,12 +370,13 @@ services:
     restart: unless-stopped
     logging: *default-logging
     # Deliberately NO mem_limit: an OOM-killed database is worse than a slow box.
-    # Headroom above the default 100: the full stack (web + agent + 4 workers,
-    # each a postgres-js pool, plus pg-boss + web SSE LISTEN conns) sits ~50 at
-    # idle and climbs under load. A crash-looping service can briefly double its
-    # connection churn and exhaust 100, wedging the DB (even psql locked out).
-    # 200 is cheap on an 11 GB box (~10 MB/conn worst case) and absorbs spikes.
-    command: ['postgres', '-c', 'max_connections=200']
+    # max_connections sits above the code's worst case: every pool of every
+    # process at its max (about 340 on the full shape, 175 on a core). Real use
+    # is far lower (about 50 at idle), so the extra slots cost nothing until a
+    # burst; an idle connection holds a few MB. connection-ceiling.test.ts
+    # (packages/db) keeps the sum of the pools at or under 90% of this number.
+    # A change here restarts Postgres on the next roll (a few seconds).
+    command: ['postgres', '-c', 'max_connections=400']
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env — scripts/install.sh writes one}

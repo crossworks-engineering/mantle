@@ -247,8 +247,9 @@ the `agent` service, the `api` service already exists.
 - **Loading/error states:** SSR currently hides "no data yet" and error paths.
   Client fetching surfaces them, budget UI work per screen.
 - **Connection pooling:** more processes (web + api + workers + DBOS system pool)
-  = more Postgres connections. `max_connections=200` today; watch it, consider
-  PgBouncer if the API scales out.
+  = more Postgres connections. `max_connections=400` today (deploy.md §0a);
+  `packages/db/src/connection-ceiling.test.ts` fails when the pools could
+  pass 90% of it. Consider PgBouncer if the API scales out.
 - **CORS + cookie SameSite:** once the client is a different origin (Electron
   custom scheme / different dev port), same-origin cookie assumptions break,
   bearer + CORS is the path.
