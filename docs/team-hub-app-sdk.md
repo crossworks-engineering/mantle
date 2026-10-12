@@ -5,8 +5,8 @@
 > portal; `/hub` now redirects to `/login`. The one host left is the **member
 > home**: a member login's home page runs the pinned app, and `hub.get`
 > answers from `GET /api/member/home` in the same `HubData` shape (section 3,
-> "The member home is a second host", now the only one;
-> [member-logins.md](member-logins.md) section 7). Designation is unchanged
+> "The member home is a second host", now the only one; who runs an app:
+> [workspaces.md](workspaces.md), "Apps"). Designation is unchanged
 > (`PUT /api/team-admin/hub-app`, pref `teamHubAppId`). Where this guide says
 > `/hub`, the team token gate, the Forum link or the signed team bearer, read
 > it as history.
@@ -123,8 +123,8 @@ Rules that bind the SDK (and any future addition to it):
   (`/api/member/home` now; the retired `/api/team/hub` before Phase 6):
   extending `HubData` means extending that route, where it is gated and
   audited.
-- **The member home is a second host** (member logins Phase 4b,
-  [member-logins.md](member-logins.md) section 7). The same app, pinned as
+- **The member home is a second host** (member logins Phase 4b; who runs
+  an app: [workspaces.md](workspaces.md), "Apps"). The same app, pinned as
   the hub and set to team level, is the members' home page. There `hub.get`
   answers from `/api/member/home` in the same `HubData` shape, with these
   differences: `sections` are the newest team-level pages (a section's

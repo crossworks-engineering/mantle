@@ -22,14 +22,21 @@ What is left of the old team chat:
 
 ## Email and journal stay private
 
-The Team workspace's assistant does not read the owner's mail or journal
-unless an Admin user switches on **Expose email & journal** (profile pref
-`teamPrivateReads`, default off) in Team admin > Settings. The switch is
-read at tool resolution and on every read path (`teamHiddenNodeTypes`):
-off, the `email_*` and `journal_*` tools are not resolved, and those node
-types are hidden from search, passages, node reads and the turn's
-retrieval. Secrets, Telegram messages, saved places and peers are hidden
-from such a turn always. A surface with no flag fails closed.
+The Team workspace's assistant never reads the owner's mail or journal.
+Mail and journal entries are Admin-only kinds, so no other workspace holds
+them, and the assistant reads only what its own workspace holds (row
+security in the turn scope). The `email_*` tools also need the connectors
+area, which only a scope that holds Admin has (the Admin tool gate).
+Secrets, Telegram messages, saved places and peers are hidden from such a
+turn always (`teamHiddenNodeTypes`).
+
+**Expose email & journal** (profile pref `teamPrivateReads`, default off,
+in Team admin > Settings) is still stored and still read when a workspace
+turn starts: on, the turn no longer strips the `email_*` and `journal_*`
+tools and no longer hides those node types from retrieval. It opens
+nothing since workspaces: row security and the Admin tool gate refuse
+those reads all the same. The switch is kept so the setting and its route
+(`/api/team-admin/settings`) stay valid.
 
 The record of how the portal chat worked is in the repository history
 before workspaces W8f.

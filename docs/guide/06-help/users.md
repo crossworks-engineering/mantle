@@ -32,8 +32,10 @@ Select a login to:
 - **Reset password**;
 - see its devices and **Revoke** one, or **Sign out everywhere**. A revoke
   also signs out the browser tab that signed in on that device;
-- give it its own assistant (**Create assistant**), so its chats run on
-  their own thread, or let it share the brain's default assistant;
+- on an admin login only, give it its own assistant (**Create assistant**,
+  a copy of an existing one). A member login cannot have one. Every user
+  already has their own thread with each assistant, so a shared assistant
+  never mixes chats;
 - on your own login, show a code to sign in on your phone.
 
 Client logins are gone. A former client login stays disabled and cannot be

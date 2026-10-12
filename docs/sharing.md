@@ -14,10 +14,11 @@
 > ([workspaces.md](./workspaces.md)). A public link serves its item and its
 > served list (`shares.settings.served`, migration 0262): a picture, file,
 > drawing or mention shows on the link only when it is on that list, else it
-> is left out or reads "Private item". Only a Moderator of the item's home
-> opens or closes its link or shares it with a contact. Where the text below
-> says "level", read the served list; client links and client items are
-> gone (W8a).
+> is left out or reads "Private item". Anyone who may edit the item opens
+> or closes its link (for an app, a Moderator of its home). Sharing it with
+> a contact is for Admin users only; the item's home is not checked. Where
+> the text below says "level", read the served list; client links and
+> client items are gone (W8a).
 >
 > Share any **page, note, task, event, file, app, table, or folder** with
 > anyone who has the URL.
@@ -392,12 +393,13 @@ media presenters are net-new here.)_
 > share API stays for the agent tools and older clients.
 
 The owner app (jackdaw) shows the **Access** button on every detail screen
-(pages, notes, tasks, events, files, apps, tables, folders). Only a
-Moderator of the item's home opens or closes its link. Every link is open
-(`public` is the only mode); team links are retired (member logins Phase
-6) and client links are retired (client logins C3, then W8a). The owner's
-Shared links list (`/team-admin?view=shares`) shows each live link and
-marks the retired ones.
+(pages, notes, tasks, events, files, apps, tables, folders). Anyone who may
+edit the item opens or closes its link (for an app, a Moderator of its
+home). Every link is open (`public` is the only mode); team links are
+retired (member logins Phase 6) and client links are retired (client
+logins C3, then W8a). The owner's Shared links list
+(`/team-admin?view=shares`) shows each live link and marks the retired
+ones.
 
 Pages and Draw carry it on their **list preview** as well as in the editor, so
 an item can be shared without opening it. The preview's control deliberately

@@ -619,7 +619,7 @@ off.
 
 ## Team apps (members run them)
 
-Members (member logins, [member-logins.md](member-logins.md) section 7) run
+Members (who runs an app: [workspaces.md](workspaces.md), "Apps") run
 apps from their own shell. Set the app's level to **Team** (its Access
 control) and publish it; members then find it under Apps. They run the
 PUBLISHED build only and never edit it.

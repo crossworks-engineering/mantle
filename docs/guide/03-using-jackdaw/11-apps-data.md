@@ -49,7 +49,7 @@ To see an app's table in **Tables**, ask the assistant: "Export the jobs table o
 ## If it fails
 
 - **The app shows no data**: usually an API key is missing, or the tool is not on the app's allowed list. Ask the assistant to check and fix it with the app open.
-- **It works for you but not for a member**: the connector is not attached to the member's workspace (attach it on **Settings > Workspaces**), or an http tool needs **External access**.
+- **It works for you but not for a member**: the connector is not attached to every workspace that holds the app (attach it to each on **Settings > Workspaces**; a tool that changes data needs the connector's Write on in each), or an http tool needs **External access**.
 
 ## Next
 

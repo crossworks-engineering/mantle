@@ -94,7 +94,7 @@ Notes that matter to a reviewer:
   expires (at most 2 hours), and a render cookie for at most 5 minutes;
   End sessions ends those at once.
   The device that changed its own password stays signed in. Details:
-  [member-logins.md](./member-logins.md) section 1.
+  [member-logins.md](./member-logins.md), "Logins and sessions".
 - **Credential races are single-use by construction.** An OAuth
   authorization code is claimed with one `DELETE ... RETURNING`, and a web
   bearer refresh claims the old row with one conditional `UPDATE`, so two

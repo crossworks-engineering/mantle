@@ -60,14 +60,14 @@ Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
 Your offsite sync should include, from `${MANTLE_DATA_DIR}` (default
 `./data` next to the compose file):
 
-| Path             | What it is                                                                                                                                                                                                                                                       |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `backups/`       | the rotated DB dumps (this feature's output)                                                                                                                                                                                                                     |
-| `files/`         | your host-mirrored files (`/files` surface)                                                                                                                                                                                                                      |
-| `rustfs/`        | attachment object bytes: the RustFS object store's data dir, not plain files (a restore needs the same RustFS version; see below)                                                                                                                                |
-| `minio/`         | only on boxes that ran MinIO before 2026-09: the pre-switch copy kept for rollback, removable once `objectstore:verify` has been green for a couple of weeks ([deploy.md §5c](./deploy.md#5c-object-store-rustfs))                                               |
-| `forum-uploads/` | only on boxes that ran the retired team forum: its old upload quarantine. Nothing reads it since the forum tables were dropped (migration 0177); the Forum archive export filed every upload whose bytes were there ([team-forum.md](./team-forum.md) section 8) |
-| `spaces/`        | members' personal-space file bytes (also archived by every backup as `mantle-spaces-<ts>.tgz`)                                                                                                                                                                   |
+| Path             | What it is                                                                                                                                                                                                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backups/`       | the rotated DB dumps (this feature's output)                                                                                                                                                                                                                                |
+| `files/`         | your host-mirrored files (`/files` surface)                                                                                                                                                                                                                                 |
+| `rustfs/`        | attachment object bytes: the RustFS object store's data dir, not plain files (a restore needs the same RustFS version; see below)                                                                                                                                           |
+| `minio/`         | only on boxes that ran MinIO before 2026-09: the pre-switch copy kept for rollback, removable once `objectstore:verify` has been green for a couple of weeks ([deploy.md §5c](./deploy.md#5c-object-store-rustfs))                                                          |
+| `forum-uploads/` | only on boxes that ran the retired team forum: its old upload quarantine. Nothing reads it since the forum tables were dropped (migration 0177); the Forum archive export filed every upload whose bytes were there ([team-forum.md](./team-forum.md), "The Forum archive") |
+| `spaces/`        | members' personal-space file bytes (also archived by every backup as `mantle-spaces-<ts>.tgz`)                                                                                                                                                                              |
 
 One `rsync -a` of the `data/` directory (minus `postgres/`, the live cluster
 files are useless mid-write; the dumps are the DB backup) covers everything.
@@ -101,14 +101,14 @@ find what did not restore before you start the app. On exit 2 and 3 the
 full `pg_restore` output is kept; the script prints where.
 
 A dump taken before migration 0212 always gives one `pg_restore` error (the
-folder share refresh trigger; docs/access-levels.md, section 6). The script
-makes that trigger itself and does not count the error. A dump of a brain
-that had already lost the trigger can carry stale folder share levels:
-migration 0212 repairs them at the next migrate, and under a release before
-0212 the nightly `share-drift` sweep does. From migration 0261 on the levels
-are frozen (archived in `archive_node_levels`) and the workspace grants decide
-access; a restored brain's grants are checked with
-`pnpm -C server/web workspaces:check`.
+folder share refresh trigger; [access-levels.md](./access-levels.md),
+"Operations"). The script makes that trigger itself and does not count the
+error. A dump of a brain that had already lost the trigger can carry stale
+folder share levels: migration 0212 repairs them at the next migrate, and
+under a release before 0212 the nightly `share-drift` sweep does. From
+migration 0261 on the levels are frozen (archived in
+`archive_node_levels`) and the workspace grants decide access; a restored
+brain's grants are checked with `pnpm -C server/web workspaces:check`.
 
 A restore drill brings back the SAME brain: the plain restore keeps its
 brain id (migration 0226). Restoring the dump as a second, separate brain

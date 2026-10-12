@@ -15,7 +15,9 @@ The tabs:
   revoke.
 - **Settings**: **Member chat** names the Team workspace's assistant (set
   it on the Team workspace's page; none set: no chat in Team), and
-  **Expose email & journal**, off by default.
+  **Expose email & journal**, off by default. It has no effect any more:
+  the Team assistant reads only what the Team workspace holds, and mail
+  and journal entries live in the Admin workspace only.
 
 Invites are in [Logins](users.md). Old links to those tabs open there.
 Review, requests and the chat archive are gone. Share items with
@@ -36,10 +38,10 @@ another user's chat, and your assistant cannot either.
 ## Technical
 
 The Team assistant runs in the Team workspace: it reads what that workspace
-holds and answers the user who asked, in that user's own thread. Email and
-journal reads stay off until you switch on **Expose email & journal**. The
-old member chat routes (`/api/member/chat`, `/api/team-admin/member-chats`)
-answer 410.
+holds and answers the user who asked, in that user's own thread. It never
+reads mail or journal entries, whatever **Expose email & journal** says:
+those kinds live in the Admin workspace only. The old member chat routes
+(`/api/member/chat`, `/api/team-admin/member-chats`) answer 410.
 
 Every request re-checks the login, so a disabled or deleted login loses
 access mid-session. The routes behind this screen need a user of the Admin
