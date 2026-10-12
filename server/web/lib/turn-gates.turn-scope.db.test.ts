@@ -263,12 +263,11 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
               '<svg xmlns="http://www.w3.org/2000/svg"/>', ${refs}::jsonb)`);
     const content = await import('@mantle/content');
     const drawGet = fakeTool('draw_get', { kind: 'builtin', ref: 'draw_get' });
-    const reader = { kind: 'member' as const, loginId: member };
     // NODE_ENV is 'test': an unnamed asSystem inside the turn throws
     // TurnScopeExitError, and the draw reader no longer swallows it.
     const [res, svg] = await m.withTurnScope(scope(), async () => [
       await tools.dispatchTool(drawGet, { id: draw }, ctx()),
-      await content.readableDrawSvg(owner, draw, reader),
+      await content.readableDrawSvg(owner, draw),
     ]);
     expect(res.ok).toBe(true);
     const text = String((res as { output: { content: string } }).output.content);

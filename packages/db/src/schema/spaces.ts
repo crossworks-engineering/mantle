@@ -171,26 +171,6 @@ export const clientCommentLedger = pgTable(
 );
 
 /**
- * One row per client quota refusal (migration 0195, audit I5): a full space,
- * the brain-wide client total, the day's upload or submit budget, the item
- * limit, the comment caps. The reason and the login only. Team admin >
- * Clients reads the last 7 days; the app trims it to 7 days and 500 rows on
- * every insert. Admin pool only.
- */
-export const clientQuotaRefusals = pgTable(
-  'client_quota_refusals',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    loginId: uuid('login_id').references(() => authUsers.id, { onDelete: 'set null' }),
-    reason: text('reason').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => [index('client_quota_refusals_created_idx').on(t.createdAt)],
-);
-
-/**
  * The bundle a submitted item was submitted with (migration 0180, audit F04):
  * the item itself and everything that renders inside it, recorded at Submit.
  * While the root is submitted every item here is frozen too (the row rules'

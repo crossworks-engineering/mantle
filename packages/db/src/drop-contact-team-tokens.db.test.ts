@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
-import { createMigratedScratchDatabase } from './test-support';
+import { createScratchDatabaseBefore } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MIGRATIONS = join(__dirname, '..', 'migrations');
@@ -37,7 +37,7 @@ const statementsOf = (file: string) =>
 type Row = Record<string, unknown>;
 
 describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
-  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>> | undefined;
   let sql: ReturnType<typeof postgres>;
   let goneAfterMigrate = false;
   const owner = randomUUID();
@@ -83,7 +83,9 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
     // dropping tables that reference nodes (ADD / DROP CONSTRAINT) locks
     // nodes, which deadlocks with any other test file deleting nodes on the
     // shared database (opposite lock order). Here nothing else runs.
-    scratch = await createMigratedScratchDatabase(URL!);
+    // Migrated up to 0274 (W8d), which drops team_messages: the row this
+    // test keeps is in the table it had.
+    scratch = await createScratchDatabaseBefore(URL!, '0274_workspaces_frozen_tables_out');
     sql = postgres(scratch.url, { max: 1, onnotice: () => {} });
     goneAfterMigrate = !(await tablePresent());
     // The table as the team codes had it.

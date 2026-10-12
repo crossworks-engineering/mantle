@@ -68,6 +68,8 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
   const logins = [anchor, otherBrain, bea, cal, dee, eve, raw, former];
   const ids = {
     contact: randomUUID(),
+    /** The contact a former client login was linked to (W8d). */
+    formerContact: randomUUID(),
     otherContact: randomUUID(),
     notContact: randomUUID(),
     foreignContact: randomUUID(),
@@ -137,6 +139,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     await admin`insert into nodes (id, owner_id, type, title, path) values
       (${ids.contact}, ${anchor}, 'contact', 'Pat', 'contacts'),
       (${ids.otherContact}, ${anchor}, 'contact', 'Sam', 'contacts'),
+      (${ids.formerContact}, ${anchor}, 'contact', 'Kim', 'contacts'),
       (${ids.notContact}, ${anchor}, 'note', 'a note', 'notes'),
       (${ids.foreignContact}, ${otherBrain}, 'contact', 'Lee', 'contacts')`;
     await admin`insert into agents (id, owner_id, slug, name, model, system_prompt)
@@ -337,6 +340,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     expect(await res.json()).toEqual({
       error:
         'This was a client login. A former client login stays disabled and cannot be enabled again.',
+      reason: 'former-client',
     });
     const [row] = await admin<Row[]>`
       select disabled_at is not null as disabled from auth.users where id = ${former}`;
@@ -345,6 +349,33 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     expect((await PATCH(json('PATCH', { signOut: true }), ctx(former))).status).toBe(200);
     // Control: a login that was never a client enables (bea, disabled above).
     expect((await PATCH(json('PATCH', { disabled: false }), ctx(bea))).status).toBe(200);
+  });
+
+  // W8a leftover, closed in W8d: another login is not linked to a former
+  // client's contact (an invite or a new login on it is refused already).
+  it("refuses to link another login to a former client's contact (409 contact-was-client)", async () => {
+    // Runs after the test above: `former` is archived as a client.
+    await admin`update archive_client_logins set contact_id = ${ids.formerContact}
+                 where login_id = ${former}`;
+    h.caller = as(anchor);
+    const { PATCH } = await import('./route');
+    const res = await PATCH(json('PATCH', { contactId: ids.formerContact }), ctx(eve));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error:
+        'That contact belonged to a client login. A former client cannot be invited or given a new login.',
+      reason: 'contact-was-client',
+    });
+    const [e] = await admin<Row[]>`select contact_id from auth.users where id = ${eve}`;
+    expect(e!.contact_id).not.toBe(ids.formerContact);
+    // The former client's own contact is its own: not refused for it.
+    expect((await PATCH(json('PATCH', { contactId: ids.formerContact }), ctx(former))).status).toBe(
+      200,
+    );
+    // Control: an ordinary contact still links to eve.
+    expect((await PATCH(json('PATCH', { contactId: ids.otherContact }), ctx(eve))).status).toBe(
+      200,
+    );
   });
 
   // W8a: there is no client login. The role check admits admin and member

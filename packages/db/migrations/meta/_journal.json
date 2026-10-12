@@ -1912,6 +1912,13 @@
       "when": 1790195640000,
       "tag": "0273_workspaces_level_roles_off",
       "breakpoints": true
+    },
+    {
+      "idx": 274,
+      "version": "7",
+      "when": 1790195700000,
+      "tag": "0274_workspaces_frozen_tables_out",
+      "breakpoints": true
     }
   ]
 }

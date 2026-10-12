@@ -169,7 +169,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.space_uploads', 'content'),
   none('public.space_submissions', 'content'),
   none('public.client_comment_ledger', 'content'),
-  none('public.client_quota_refusals'),
 
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
   // The workspace role (W4b, 0254): an assistant of a workspace in the scope
@@ -204,12 +203,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.team_access_log', 'system'),
   none('public.member_turn_ledger', 'system'),
   none('public.embedding_cache', 'system'),
-  none('public.team_messages', 'system'),
-  none('public.team_notifications', 'system'),
-  none('public.team_read_cursors', 'system'),
-  // A member's or a client's own chat read cursor (mobile_roles_push): its own routes
-  // read and write it on the admin pool, by the session's login.
-  none('public.login_chat_read_cursors', 'system'),
   none('public.assistant_read_cursors', 'system'),
   // Per-login pins and opens of the item tree (docs/folder-tree.md). Owner
   // paths only for now; members get their own when the tree reaches them.
@@ -257,8 +250,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.access_keys'),
   none('public.pairing_codes'),
   none('public.member_invites'),
-  // "What clients see" acknowledgements (0187): an admin's record.
-  none('public.client_report_acks'),
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),
@@ -357,12 +348,22 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // workspace rows on a brain already on workspaces (W8a fix round 1).
   none('public.archive_client_logins', 'system'),
   none('public.archive_client_workspace_users', 'system'),
+  none('public.archive_client_private_workspaces', 'system'),
   none('public.archive_client_signin_codes', 'system'),
   none('public.archive_client_signin_code_skips', 'system'),
   none('public.archive_client_signin_sender_folders', 'system'),
   none('public.archive_mcp_login_tokens', 'system'),
   none('public.archive_key_roles', 'system'),
   none('public.archive_peer_roles', 'system'),
+  // The frozen chat and client tables as they were when they were dropped
+  // (0274, W8d): the portal read cursors, the member notifications, a
+  // login's own chat read cursor, the client report acknowledgements and
+  // the client quota log.
+  none('public.archive_team_read_cursors', 'system'),
+  none('public.archive_team_notifications', 'system'),
+  none('public.archive_login_chat_read_cursors', 'system'),
+  none('public.archive_client_report_acks', 'system'),
+  none('public.archive_client_quota_refusals', 'system'),
 ];
 
 function quoteTable(table: string): string {

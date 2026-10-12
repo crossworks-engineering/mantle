@@ -4,7 +4,7 @@
  * every path reads the same columns: the role is taken from this row on every
  * request, never from a token.
  */
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   authUsers,
   db,
@@ -12,7 +12,6 @@ import {
   loginScopeColumns,
   mobileTokens,
   seedLoginScope,
-  spaces,
   type LoginRole,
 } from '@mantle/db';
 
@@ -61,34 +60,6 @@ export async function loadAnchorId(): Promise<string | null> {
     .where(eq(authUsers.isOwner, true))
     .limit(1);
   return row?.id ?? null;
-}
-
-/**
- * The login's personal space (member logins Phase 2): made with the login by
- * a trigger (migration 0165), so this only ever creates one for a row that
- * predates it on a box mid-upgrade.
- */
-export async function loadPersonalSpaceId(loginId: string): Promise<string | null> {
-  const find = async () =>
-    (
-      await db
-        .select({ id: spaces.id })
-        .from(spaces)
-        .where(and(eq(spaces.loginId, loginId), eq(spaces.kind, 'personal')))
-        .limit(1)
-    )[0]?.id ?? null;
-  const found = await find();
-  if (found) return found;
-  // On a brain that refuses writes (a read-only database, such as the public
-  // demo) the missing space cannot be made: answer without it, never fail
-  // the request on this write.
-  try {
-    await db.insert(spaces).values({ kind: 'personal', loginId }).onConflictDoNothing();
-  } catch (err) {
-    if (!isWriteRefused(err)) throw err;
-    return null;
-  }
-  return find();
 }
 
 /** A device token's row (mobile_tokens): what makes a bearer revocable. Read

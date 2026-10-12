@@ -5,8 +5,8 @@
  * the workspace role shows the items the login's workspaces hold (their
  * grants), published content only (draft columns are never granted). A row
  * this code cannot see is simply absent, so a member can never reach an
- * admin item by id. A client's "Shared with you" reads the same way
- * (client-shared.ts).
+ * admin item by id. (A client's "Shared with you" read the same way; the
+ * client reader went in workspaces W8d.)
  *
  * No level is read (workspaces W5c): a row carries no level badge, and no
  * level narrows the list. A level-role scope (a test) reads what that role's

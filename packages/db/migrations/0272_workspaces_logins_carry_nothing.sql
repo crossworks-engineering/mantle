@@ -22,6 +22,11 @@
 --    hand), and the login bridge treats an archived client login as having
 --    no role (mantle_bridge_login): no switch, manual or not, makes a
 --    former client a Moderator of Admin or Team.
+--    Its private workspace rows go too (W8a leftover, closed in W8d): each
+--    private_workspaces row of a former client is archived
+--    (archive_client_private_workspaces) and removed, so the next review
+--    homes run renames that workspace "Former user" and registers it, as
+--    it does for a deleted login's.
 --    Nor of a private workspace (W8a fix round 2): the review homes (0264),
 --    the spaces fold (0267) and the app's private workspace function treat
 --    an archived client login as a login that is gone. It never gets a
@@ -71,7 +76,7 @@ BEGIN
       LOCK TABLE "auth"."users", "public"."access_keys", "public"."mantle_peers",
                  "public"."mobile_tokens", "public"."push_subscriptions",
                  "public"."oauth_auth_codes", "public"."oauth_access_tokens",
-                 "public"."workspace_users"
+                 "public"."workspace_users", "public"."private_workspaces"
         IN ACCESS EXCLUSIVE MODE;
       FOREACH t IN ARRAY droppable LOOP
         IF to_regclass(t) IS NOT NULL THEN
@@ -117,6 +122,15 @@ CREATE TABLE IF NOT EXISTS "public"."archive_client_workspace_users" (
   "added_at"     timestamptz NOT NULL,
   "archived_at"  timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("workspace_id", "login_id")
+);
+--> statement-breakpoint
+-- A former client's private workspace row (W8d): which workspace was its
+-- "(only you)" workspace when the row was removed.
+CREATE TABLE IF NOT EXISTS "public"."archive_client_private_workspaces" (
+  "login_id"     uuid PRIMARY KEY,
+  "workspace_id" uuid NOT NULL,
+  "created_at"   timestamptz NOT NULL,
+  "archived_at"  timestamptz NOT NULL DEFAULT now()
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "public"."archive_client_signin_codes" (
@@ -180,6 +194,7 @@ DECLARE
   t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['archive_client_logins', 'archive_client_workspace_users',
+                           'archive_client_private_workspaces',
                            'archive_client_signin_codes',
                            'archive_client_signin_code_skips',
                            'archive_client_signin_sender_folders', 'archive_mcp_login_tokens',
@@ -343,6 +358,45 @@ BEGIN
     RAISE EXCEPTION '0272: removed % of % workspace rows of former clients', gone, src;
   END IF;
   RAISE NOTICE '0272: % workspace rows of former clients archived and removed', src;
+END
+$$;
+--> statement-breakpoint
+-- A former client's private workspace row (W8a leftover, closed in W8d): a
+-- private workspace whose row is gone is, to the review homes (0264 and
+-- below), a private workspace of a login that is gone, and its next run
+-- renames it "Former user" and registers it (former_user_workspaces), as
+-- for a deleted login. Archived first, counted: a mismatch raises and the
+-- whole migration rolls back. A second run finds none.
+DO $$
+DECLARE
+  src int;
+  kept int;
+  gone int;
+BEGIN
+  SELECT count(*) INTO src FROM "public"."private_workspaces" p
+   WHERE p."login_id" IN (SELECT a."login_id" FROM "public"."archive_client_logins" a);
+  IF src = 0 THEN
+    RETURN;
+  END IF;
+  INSERT INTO "public"."archive_client_private_workspaces" ("login_id", "workspace_id", "created_at")
+  SELECT p."login_id", p."workspace_id", p."created_at"
+    FROM "public"."private_workspaces" p
+   WHERE p."login_id" IN (SELECT a."login_id" FROM "public"."archive_client_logins" a)
+  ON CONFLICT ("login_id") DO NOTHING;
+  SELECT count(*) INTO kept FROM "public"."private_workspaces" p
+    JOIN "public"."archive_client_private_workspaces" a
+      ON a."login_id" = p."login_id" AND a."workspace_id" = p."workspace_id"
+   WHERE p."login_id" IN (SELECT c."login_id" FROM "public"."archive_client_logins" c);
+  IF kept <> src THEN
+    RAISE EXCEPTION '0272: archived % of % private workspace rows of former clients', kept, src;
+  END IF;
+  DELETE FROM "public"."private_workspaces" p
+   WHERE p."login_id" IN (SELECT a."login_id" FROM "public"."archive_client_logins" a);
+  GET DIAGNOSTICS gone = ROW_COUNT;
+  IF gone <> src THEN
+    RAISE EXCEPTION '0272: removed % of % private workspace rows of former clients', gone, src;
+  END IF;
+  RAISE NOTICE '0272: % private workspace rows of former clients archived and removed', src;
 END
 $$;
 --> statement-breakpoint

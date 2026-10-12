@@ -310,7 +310,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     const headers = bearerFor(MEMBER_ID);
     for (const path of PAST_THE_GATE) {
       const res = await app.request(path, { headers });
-      expect(res.status, path).toBe(400);
+      expect(res.status, path).toBe(410);
     }
     const who = await app.request('/api/auth/whoami', { headers });
     expect(who.status).toBe(200);
@@ -391,8 +391,8 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   });
 
   // The positive half: a member session gets PAST the gate on member routes.
-  // A malformed id is used so each handler answers its own 400 before any
-  // database read; the admin on the same path is stopped at the gate.
+  // These two answer a member 410 since W8d (their old guard first); the
+  // admin on the same path is stopped at the gate.
   const PAST_THE_GATE = ['/api/member/files/not-a-uuid', '/api/member/draws/not-a-uuid/svg'];
 
   // Removed in workspaces W5c (team drafts, client requests, member submit,
@@ -448,7 +448,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     for (const path of PAST_THE_GATE) {
       const res = await app.request(path, { headers: { cookie } });
       const body = (await res.json().catch(() => null)) as { reason?: string } | null;
-      expect(res.status, path).toBe(400);
+      expect(res.status, path).toBe(410);
       expect(body?.reason, path).not.toBe('member-login');
       const asAdmin = await app.request(path, { headers: { cookie: adminCookie } });
       expect([401, 403], `${path} as admin`).toContain(asAdmin.status);
@@ -463,7 +463,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     };
 
     it("is accepted for a live member of this brain's anchor", async () => {
-      expect((await fileWith(ANCHOR_ID, MEMBER_ID)).status).toBe(400);
+      expect((await fileWith(ANCHOR_ID, MEMBER_ID)).status).toBe(410);
     });
 
     it('is refused when minted under another anchor', async () => {
@@ -506,7 +506,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
         expect(res.status, `epoch ${epoch}`).toBe(401);
       }
       const now = `${SESSION_COOKIE_NAME}=${buildSessionCookie(BUMPED_MEMBER_ID, { epoch: 2 }).value}`;
-      expect((await app.request(PAST, { headers: { cookie: now } })).status).toBe(400);
+      expect((await app.request(PAST, { headers: { cookie: now } })).status).toBe(410);
     });
 
     it('reads a cookie without the claim (minted before 0181) as epoch 0', async () => {
@@ -520,7 +520,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
         const sig = createHmac('sha256', process.env.SESSION_SECRET!).update(payload).digest();
         return `${SESSION_COOKIE_NAME}=${payload}.${sig.toString('base64url')}`;
       };
-      expect((await app.request(PAST, { headers: { cookie: old(MEMBER_ID) } })).status).toBe(400);
+      expect((await app.request(PAST, { headers: { cookie: old(MEMBER_ID) } })).status).toBe(410);
       expect((await app.request(PAST, { headers: { cookie: old(BUMPED_MEMBER_ID) } })).status).toBe(
         401,
       );
@@ -533,7 +533,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
           `/api/member/files/not-a-uuid?at=${encodeURIComponent(buildAssetToken(ANCHOR_ID, BUMPED_MEMBER_ID, epoch))}`,
         );
       expect((await file(0)).status).toBe(401);
-      expect((await file(2)).status).toBe(400);
+      expect((await file(2)).status).toBe(410);
     });
   });
 });

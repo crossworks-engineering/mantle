@@ -1,5 +1,5 @@
 /**
- * Which apps a member's or client's MCP connection may reach (team apps
+ * Which apps a member's MCP connection may reach (team apps
  * Phase 1, plan page b6dd688e, section B; workspaces W5b2). The rule: MCP
  * gives a login exactly what the app's own broker gives them in the browser,
  * and only on an app whose MCP access switch is on.
@@ -7,8 +7,8 @@
  *  - Member: an app a workspace of theirs holds (member-apps.ts), with a
  *    green PUBLISHED build (never a draft) and `apps.mcp_access` on. Write:
  *    the grant's Write switch, and never while the app is informational.
- *  - Client: none. Clients run no apps since workspaces W5c (the client
- *    portal and its apps were removed; clients are not migrated, plan 21.9).
+ *  - Client: there is no client login since workspaces W8a, and the client
+ *    branch went in W8d.
  *
  * The login's Write switch is the MCP surface's part: without it the write
  * tool is never offered. The rule is written in the query, and the callers
@@ -19,7 +19,8 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { apps, db, nodes, type AppManifest } from '@mantle/db';
 import { memberReachSql, memberWritesSql } from './member-apps';
 
-export type McpDataRole = 'member' | 'client';
+/** Who the connection acts for: a member login (the only role left). */
+export type McpDataRole = 'member';
 
 /** One app a login's MCP may reach. */
 export type McpDataApp = {
@@ -66,9 +67,7 @@ function memberApp(r: MemberRow): McpDataApp {
 }
 
 /** The apps this login's MCP may reach, by title. */
-export async function listMcpDataApps(anchorId: string, role: McpDataRole): Promise<McpDataApp[]> {
-  // A client reaches no app (workspaces W5c).
-  if (role === 'client') return [];
+export async function listMcpDataApps(anchorId: string, _role: McpDataRole): Promise<McpDataApp[]> {
   const rows: MemberRow[] = await db
     .select(memberCols())
     .from(nodes)
@@ -84,10 +83,9 @@ export async function listMcpDataApps(anchorId: string, role: McpDataRole): Prom
  *  The same null for all of them. */
 export async function getMcpDataApp(
   anchorId: string,
-  role: McpDataRole,
+  _role: McpDataRole,
   appId: string,
 ): Promise<McpDataApp | null> {
-  if (role === 'client') return null;
   const [row]: MemberRow[] = await db
     .select(memberCols())
     .from(nodes)

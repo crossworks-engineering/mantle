@@ -3,8 +3,8 @@
  * a member reads a drawing in its own scope, which a Moderator may narrow at
  * any time, so a member's bytes are `private, no-cache` (the browser
  * revalidates before reuse, and the scoped lookup runs again), on the owner
- * route (?raw=1) and the deprecated member route. The owner's own bytes keep
- * their short private cache.
+ * route (?raw=1; the member route is gone since W8d). The owner's own bytes
+ * keep their short private cache.
  *
  * No database: the gates and the drawing reads are stood in.
  */
@@ -20,7 +20,6 @@ const memberCaller = {
   role: 'member',
   loginId: '33333333-3333-4333-8333-333333333333',
   anchorId: '11111111-1111-4111-8111-111111111111',
-  spaceId: '44444444-4444-4444-8444-444444444444',
   email: 'm@example.invalid',
   displayName: 'M',
   contactId: null,
@@ -32,7 +31,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     user: { id: OWNER, actor: { id: OWNER } },
     member: h.member ? memberCaller : null,
   })),
-  getMemberForAsset: vi.fn(async () => memberCaller),
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -48,7 +46,6 @@ vi.mock('@/lib/draw-snapshot', () => ({
 }));
 
 const ownerRoute = await import('./[id]/svg/route');
-const memberRoute = await import('../member/draws/[id]/svg/route');
 const params = { params: Promise.resolve({ id: DRAW }) };
 
 beforeEach(() => {
@@ -59,12 +56,6 @@ describe('drawing SVG bytes: cache headers', () => {
   it("a member's raw bytes on the owner route are private, no-cache", async () => {
     h.member = true;
     const res = await ownerRoute.GET(new Request(`http://x/api/draws/${DRAW}/svg?raw=1`), params);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('private, no-cache');
-  });
-
-  it('the deprecated member route is private, no-cache too', async () => {
-    const res = await memberRoute.GET(new Request(`http://x/api/member/draws/${DRAW}/svg`), params);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('private, no-cache');
   });

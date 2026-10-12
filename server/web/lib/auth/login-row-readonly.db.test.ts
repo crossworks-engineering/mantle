@@ -1,9 +1,10 @@
 /**
- * The two writes on the sign-in read path are best effort on a database that
+ * The write on the sign-in read path is best effort on a database that
  * refuses writes (a read-only brain, such as the public demo): stamping a
- * device token as used, and making a login's missing personal space. Run as
- * a role that may only SELECT, on a real migrated Postgres: neither fails
- * the request, and neither writes.
+ * device token as used. (Making a login's missing personal space went with
+ * the session's space in workspaces W8d.) Run as a role that may only
+ * SELECT, on a real migrated Postgres: it does not fail the request, and it
+ * does not write.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/login-row-readonly.db.test.ts
  */
@@ -99,15 +100,6 @@ describe.skipIf(!URL_ADMIN)('sign-in reads on a database that refuses writes', (
     await expect(rows.touchBearerToken(jti)).resolves.toBeUndefined();
     const [tok] = await admin`select last_used_at from mobile_tokens where id = ${jti}`;
     expect(tok!.last_used_at).toBeNull();
-  });
-
-  it('answers a login own space when it has one, and no space when it cannot be made', async () => {
-    const [space] = await admin`select id from spaces
-                                where login_id = ${withSpace} and kind = 'personal'`;
-    expect(await rows.loadPersonalSpaceId(withSpace)).toBe(space!.id);
-    await expect(rows.loadPersonalSpaceId(noSpace)).resolves.toBeNull();
-    const made = await admin`select id from spaces where login_id = ${noSpace}`;
-    expect(made).toHaveLength(0);
   });
 
   it('a reused rotated token is a plain 401 there: nothing ends, nothing throws', async () => {

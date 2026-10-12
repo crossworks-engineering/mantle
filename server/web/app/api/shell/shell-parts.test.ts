@@ -41,7 +41,6 @@ vi.mock('@/lib/auth', async () => {
     role: 'member',
     loginId: LOGIN,
     anchorId: ANCHOR,
-    spaceId: '66666666-6666-4666-8666-666666666666',
     email: 'member@example.invalid',
     displayName: 'Member',
     contactId: null,

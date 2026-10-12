@@ -392,8 +392,8 @@ A member files its drafts in the brain's tree and keeps private folders there.
   `space_files.docs`, `spaceFilesPath` in `@mantle/db`), so no brain file
   helper, the disk watcher or the extractor ever resolves them; their bytes
   stay keyed by id under `MANTLE_SPACES_ROOT`.
-- **The member's tree** (`packages/content/src/tree/member-tree.ts`,
-  `GET /api/member/tree/:kind`) merges per path: the brain's items the member
+- **The member's tree** (`tree/member-tree.ts`, removed in workspaces W8d;
+  `GET /api/member/tree/:kind` answers 410) merged per path: the brain's items the member
   reads, its own folders (`own: true`) and drafts, and teammates' drafts
   shared with the team (`source`, `state`, `author` on the item). A
   teammate's draft shows at the deepest folder of its path the member sees,

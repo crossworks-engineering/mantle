@@ -177,7 +177,8 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
     listener = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
     for (const ch of CHANNELS) await listener.listen(ch, (p) => heard.push(`${ch}:${p}`));
 
-    await scratch.migrateRest();
+    // Up to 0274 (W8d), which drops the frozen team_messages this checks.
+    await scratch.migrateRest('0274_workspaces_frozen_tables_out');
     // Everything committed so far reaches the listener before the checks.
     await sql`select pg_notify('summarize_due', 'barrier')`;
     for (let i = 0; i < 100 && !heard.includes('summarize_due:barrier'); i += 1) {

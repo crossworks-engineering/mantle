@@ -14,14 +14,12 @@
  * sub-page level lists none.
  */
 import type { AdminPrivateListRow } from '@mantle/client-types';
-import { adminListStateOf, type AdminListState } from '@mantle/client-types/member-kinds';
 import {
-  listSortCompare,
-  mergeSorted,
-  type PagedSource,
-  type SpaceItemKind,
-  type SpaceListSort,
-} from '@mantle/content';
+  adminListStateOf,
+  type AdminListState,
+  type MemberItemKind,
+} from '@mantle/client-types/member-kinds';
+import { listSortCompare, mergeSorted, type ListSort, type PagedSource } from '@mantle/content';
 import type { SessionUser } from '@/lib/auth';
 
 /** `?state=` of an admin brain list; anything unknown reads as `brain`. */
@@ -42,8 +40,8 @@ export function isPrivateRow(row: object): row is AdminPrivateListRow {
  *  list. No personal space is read. */
 export async function privateRowsSource(
   _user: SessionUser,
-  _kind: SpaceItemKind,
-  _opts: { q?: string; sort?: SpaceListSort } = {},
+  _kind: MemberItemKind,
+  _opts: { q?: string; sort?: ListSort } = {},
 ): Promise<PagedSource<AdminPrivateListRow> | null> {
   return null;
 }
@@ -58,10 +56,10 @@ type Sortable = { updatedAt: string; createdAt?: string | null; title?: string }
  */
 export async function pageWithPrivate<B extends Sortable>(opts: {
   user: SessionUser;
-  kind: SpaceItemKind;
+  kind: MemberItemKind;
   state: AdminListState;
   q?: string;
-  sort?: SpaceListSort;
+  sort?: ListSort;
   tagged?: boolean;
   page: number;
   pageSize: number;
@@ -89,8 +87,8 @@ export async function pageWithPrivate<B extends Sortable>(opts: {
  *  paged: the pages tree and the files root. */
 export async function allPrivateRows(
   user: SessionUser,
-  kind: SpaceItemKind,
-  opts: { sort?: SpaceListSort; cap?: number } = {},
+  kind: MemberItemKind,
+  opts: { sort?: ListSort; cap?: number } = {},
 ): Promise<AdminPrivateListRow[]> {
   const priv = await privateRowsSource(user, kind, { sort: opts.sort });
   return priv ? (await priv(Math.min(opts.cap ?? 200, 200), 0)).items : [];

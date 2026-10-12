@@ -1,7 +1,8 @@
 /**
  * Every reference a member's personal item carries, for the save-time embed
- * rule (member logins Phase 2, plan 2d; audit S2). Pure: the rule itself
- * (own items and Library items only) lives in member-space.ts.
+ * rule (member logins Phase 2, plan 2d; audit S2). Pure. The personal-space
+ * rule that used it went in workspaces W8d; the redactors (client-redact.ts)
+ * and the level text (pages/level-text.ts) still read it.
  *
  * What counts as a reference:
  *  - page documents: the id attributes (`nodeId`, `drawId`, `pageId`) on any

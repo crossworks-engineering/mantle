@@ -41,9 +41,9 @@ describe('readerVisibleFileIds in a turn scope', () => {
     h.systemCalls = 0;
   });
 
-  it('reads by the scope for a member reader, never on the system pool', async () => {
+  it('reads by the scope, never on the system pool', async () => {
     const { readerVisibleFileIds } = await import('./draw-reader');
-    const seen = await readerVisibleFileIds('o', 'd', { kind: 'member', loginId: 'l' });
+    const seen = await readerVisibleFileIds('o', 'd');
     expect([...(seen ?? [])]).toEqual(['f-1']);
     expect(h.systemCalls).toBe(0);
   });
@@ -52,11 +52,9 @@ describe('readerVisibleFileIds in a turn scope', () => {
     const { TurnScopeExitError } = await import('@mantle/db');
     const { readerVisibleFileIds } = await import('./draw-reader');
     h.fail = new TurnScopeExitError(undefined);
-    await expect(
-      readerVisibleFileIds('o', 'd', { kind: 'member', loginId: 'l' }),
-    ).rejects.toBeInstanceOf(TurnScopeExitError);
+    await expect(readerVisibleFileIds('o', 'd')).rejects.toBeInstanceOf(TurnScopeExitError);
     // Any other failure still fails closed: no images.
     h.fail = new Error('boom');
-    expect([...((await readerVisibleFileIds('o', 'd', { kind: 'scope' })) ?? ['all'])]).toEqual([]);
+    expect([...((await readerVisibleFileIds('o', 'd')) ?? ['all'])]).toEqual([]);
   });
 });

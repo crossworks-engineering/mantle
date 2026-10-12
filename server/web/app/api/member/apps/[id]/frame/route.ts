@@ -1,14 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { verifyAppFrameTicket } from '@/lib/auth';
-import { isMemberFrameTicket, memberFrame } from '@/lib/app-runner';
+import { isMemberFrameTicket } from '@/lib/app-runner';
+import { MEMBER_ROUTES_GONE_MESSAGE, goneResponse } from '@/lib/gone';
 
 /**
- * GET /api/member/apps/:id/frame: the sandbox frame document of a member's
- * run of an app (member logins Phase 4b). Auth is the `?t=` member ticket (a
- * sandboxed iframe sends no cookie); PUBLISHED build only.
- *
- * @deprecated Workspaces W7e: GET /api/apps/:id/frame takes a member ticket
- * too (lib/app-runner.ts). Kept this release for an older UI.
+ * GET /api/member/apps/:id/frame
+ * Removed in workspaces W8d (deprecated since W7e): GET /api/apps/:id/frame
+ * takes a member ticket (lib/app-runner.ts). The old guard runs first (the
+ * `?t=` member ticket: a sandboxed iframe sends no cookie, so no ticket is
+ * 401 as before), then 410 `{ error, code: 'gone' }`.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -17,5 +17,5 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!ticket || !isMemberFrameTicket(ticket, id)) {
     return new NextResponse('frame ticket required', { status: 401 });
   }
-  return memberFrame(req, id, ticket);
+  return goneResponse(MEMBER_ROUTES_GONE_MESSAGE);
 }

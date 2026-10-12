@@ -1295,9 +1295,9 @@ services:
     volumes:
       # Live optional-service state, read-only (see api).
       - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
-      # The nightly space-purge (member logins plan 6.4) deletes a deactivated
-      # login's private items after 30 days: the rows AND their bytes, so it
-      # writes both personal file bytes and personal table workbooks.
+      # The bytes of files and table workbooks personal spaces held (they
+      # stay where they were when spaces folded into the brain, W6b). The
+      # space-purge that deleted them is gone (W8d).
       - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
 

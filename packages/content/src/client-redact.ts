@@ -24,8 +24,8 @@
  * What counts as a reference is embed-refs.ts's reading (the one the member
  * save rule uses): `/n/<id>` and any relative path with an id, the app's own
  * schemes (`page:`, `media:`, `draw:`, `mention:node:`), the id attributes.
- * Pure: `readable` is the set of ids the client may read (client-shared.ts
- * asks the database, once, at the client level). External links stay as
+ * Pure: `readable` is the set of ids the reader may read (the caller asks
+ * the database, once, in the reader's scope). External links stay as
  * they are.
  *
  * Fail closed (audit B25): every reference embed-refs.ts REFUSES is hidden

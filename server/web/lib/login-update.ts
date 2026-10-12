@@ -15,7 +15,9 @@ import {
   sql,
 } from '@mantle/db';
 import {
+  FORMER_CLIENT_CONTACT_MESSAGE,
   FORMER_CLIENT_ENABLE_MESSAGE,
+  isFormerClientContact,
   isFormerClientLogin,
   settleSpaceOnPromotion,
 } from '@mantle/content';
@@ -55,7 +57,8 @@ export type LoginChangeRefusal = {
     | 'contact-missing'
     | 'contact-taken'
     | 'last-admin'
-    | 'former-client';
+    | 'former-client'
+    | 'contact-was-client';
 };
 
 export type LoginChangeDone = {
@@ -159,6 +162,17 @@ export async function applyLoginChange(
       .limit(1);
     if (!contact) {
       return { ok: false, status: 400, reason: 'contact-missing', error: 'Contact not found.' };
+    }
+    // The contact of a former client (archived by 0272) is not linked to
+    // another login: that would bring the client back as a member by itself,
+    // as an invite or a new login on it would (W8a leftover, closed in W8d).
+    if (await isFormerClientContact(change.contactId, db, targetId)) {
+      return {
+        ok: false,
+        status: 409,
+        reason: 'contact-was-client',
+        error: FORMER_CLIENT_CONTACT_MESSAGE,
+      };
     }
     const [taken] = await db
       .select({ id: authUsers.id })

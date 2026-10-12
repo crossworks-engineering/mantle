@@ -579,7 +579,7 @@ spawns. Full detail (including the nightly cron and the `/settings` UI tab) in
 [maintenance-runner.md](./maintenance-runner.md).
 
 Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
-`backup-table-dbs`, `traces-reap`, `turns-reap`, `space-purge`,
+`backup-table-dbs`, `traces-reap`, `turns-reap`,
 `device-tokens-reap`, `app-access-log-reap`, `app-trash-purge`,
 `app-export-catch-up`, and the hand-run `workspaces-check`) · **remedies** (`dedupe-edges`) · **ops**
 (`re-embed`, `extract-backfill`, `rotate-master-key`, `sync-now`,

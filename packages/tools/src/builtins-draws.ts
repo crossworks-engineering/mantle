@@ -29,11 +29,10 @@ import {
   cacheDrawPng,
   validRegion,
   DRAW_PNG_LONG_EDGE,
-  type DrawReader,
   type DrawRegion,
   type DrawPng,
 } from '@mantle/content';
-import type { BuiltinToolDef, ToolHandlerContext, ToolPrecondition } from './types';
+import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
@@ -49,14 +48,6 @@ const SMALLER_LONG_EDGE = 1400;
 /** Past this width-to-height ratio the whole scene's small print gets thin;
  *  the reply suggests `region`. */
 const WIDE_RATIO = 3.5;
-
-/** Who this call reads for, from the surface the server stamped (never from
- *  model arguments). */
-function drawReaderOf(ctx: ToolHandlerContext): DrawReader {
-  const s = ctx.surface;
-  if (s?.kind === 'team' && s.loginId) return { kind: 'member', loginId: s.loginId };
-  return { kind: 'scope' };
-}
 
 function regionOf(raw: unknown): DrawRegion | null | 'invalid' {
   if (raw === undefined || raw === null) return null;
@@ -206,8 +197,7 @@ const draw_get: BuiltinToolDef = {
       // (draw-reader.ts in @mantle/content).
       const draw = await readableDraw(ctx.ownerId, id);
       if (!draw) return notFound('drawing', id, 'draw_list / search_nodes');
-      const reader = drawReaderOf(ctx);
-      const content = (await readableDrawText(ctx.ownerId, id, reader)) ?? '';
+      const content = (await readableDrawText(ctx.ownerId, id)) ?? '';
       const output: Record<string, unknown> = {
         id: draw.id,
         title: draw.title,
@@ -219,7 +209,7 @@ const draw_get: BuiltinToolDef = {
       };
       if (!wantImage) return { ok: true, output };
 
-      const snap = draw.hasSvg ? await readableDrawSvg(ctx.ownerId, id, reader) : null;
+      const snap = draw.hasSvg ? await readableDrawSvg(ctx.ownerId, id) : null;
       if (!snap) {
         output.image = null;
         output.image_note =

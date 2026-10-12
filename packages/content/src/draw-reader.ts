@@ -11,18 +11,18 @@
  *    draft flag is only asked where the draft columns are readable at all);
  *  - a snapshot inlines its images' BYTES, and `scene_text` folds in their
  *    extracted TEXT, so a reader below the owner gets both with only the
- *    images whose file they may read, by the same rule as their own SVG
- *    route: a member's (member-draw-images.ts), a client's
- *    (client-draw-images.ts), else the files the current scope reads.
+ *    images whose file the current scope reads (row rules on the grants
+ *    decide), by the same rule as the SVG byte route (`scopedDrawSvg`).
  *
- * Kept in one place on purpose: when items move from levels to workspaces,
- * `readerVisibleFileIds` and `readableDraw` are the bodies to swap, and both
- * the text and the picture follow.
+ * Every read is the current scope's (workspaces W8d): the member and client
+ * readers, which read on other pools, are gone. Kept in one place on
+ * purpose: `readerVisibleFileIds` and `readableDraw` are the bodies the text
+ * and the picture both follow.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
-  asSystem,
   currentSpaceScope,
+  currentWorkspaceScope,
   db,
   draftAllowed,
   draws,
@@ -30,20 +30,13 @@ import {
   inTurnScope,
   readsDrafts,
   TurnScopeExitError,
-  withViewer,
   isSystemScope,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { EMPTY_SCENE, getDrawSceneText, getDrawSvg } from './draws';
-import { memberVisibleDrawFileIds } from './member-draw-images';
-import { clientVisibleDrawFileIds } from './client-draw-images';
+import { keepSvgImages, svgHasImages } from './scene-svg';
 import { sceneToText } from './scene-to-text';
 import { foldEmbeddedText } from './pages';
-
-/** Who the call reads for: a member login, a client login, or whoever the
- *  current viewer scope is (the owner's own paths, an agent at its level). */
-export type DrawReader =
-  { kind: 'scope' } | { kind: 'member'; loginId: string } | { kind: 'client'; loginId: string };
 
 export type ReadableDraw = {
   id: string;
@@ -90,30 +83,19 @@ export async function readableDraw(ownerId: string, id: string): Promise<Readabl
 }
 
 /**
- * The scene file ids of this drawing's images the reader may see, by the
- * same rule as their own SVG route; null means all of them (the owner).
- * Fail closed: a rule that cannot run leaves none.
+ * The scene file ids of this drawing's images the current scope may see, by
+ * the same rule as the SVG byte route; null means all of them (the owner's
+ * own paths on the admin pool). Fail closed: a rule that cannot run leaves
+ * none.
  */
 export async function readerVisibleFileIds(
   ownerId: string,
   id: string,
-  reader: DrawReader,
 ): Promise<ReadonlySet<string> | null> {
   try {
     // Inside a turn scope (workspaces W4b fix round 2) the scope's own row
-    // rules decide, for every reader: the member and client rules read on
-    // other pools, and a turn never leaves its scope unnamed.
+    // rules decide, and a turn never leaves its scope unnamed.
     if (inTurnScope()) return await scopeVisibleDrawFileIds(ownerId, id);
-    if (reader.kind === 'member') {
-      // The member rule reads on the admin pool (its author half needs it);
-      // the drawing itself is reached at the member's scope by the caller.
-      return await asSystem(() => memberVisibleDrawFileIds(ownerId, reader.loginId, id));
-    }
-    if (reader.kind === 'client') {
-      return await withViewer({ login: reader.loginId }, () =>
-        clientVisibleDrawFileIds(ownerId, id),
-      );
-    }
     if (isSystemScope() && !currentSpaceScope()) return null;
     return await scopeVisibleDrawFileIds(ownerId, id);
   } catch (err) {
@@ -134,12 +116,8 @@ export async function readerVisibleFileIds(
  * written once by the file extractor), so the fold is redone per reader from
  * the same source the commit used, with the same bounds.
  */
-export async function readableDrawText(
-  ownerId: string,
-  id: string,
-  reader: DrawReader,
-): Promise<string | null> {
-  const visible = await readerVisibleFileIds(ownerId, id, reader);
+export async function readableDrawText(ownerId: string, id: string): Promise<string | null> {
+  const visible = await readerVisibleFileIds(ownerId, id);
   if (visible === null) return getDrawSceneText(ownerId, id);
   const [row] = await db
     .select({ scene: draws.scene, fileRefs: draws.fileRefs })
@@ -155,15 +133,11 @@ export async function readableDrawText(
     if (!nodeIds.includes(nodeId)) nodeIds.push(nodeId);
   }
   if (nodeIds.length === 0) return base;
-  // Visibility is decided above; the texts are read on the admin pool so a
-  // member's own accepted image (the author rule) keeps its words too. In a
-  // turn scope the scope itself decided, so they are read there.
-  const readFiles = () =>
-    db
-      .select({ id: nodes.id, title: nodes.title, data: nodes.data })
-      .from(nodes)
-      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'file'), inArray(nodes.id, nodeIds)));
-  const files = inTurnScope() ? await readFiles() : await asSystem(readFiles);
+  // Visibility is decided above, in this scope; the texts are read here too.
+  const files = await db
+    .select({ id: nodes.id, title: nodes.title, data: nodes.data })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'file'), inArray(nodes.id, nodeIds)));
   const byId = new Map(files.map((f) => [f.id, f]));
   const fold = foldEmbeddedText(
     nodeIds.flatMap((n) => {
@@ -227,9 +201,28 @@ export type ReadableDrawSvg = {
 export async function readableDrawSvg(
   ownerId: string,
   id: string,
-  reader: DrawReader,
 ): Promise<ReadableDrawSvg | null> {
   const snapshot = await getDrawSvg(ownerId, id);
   if (!snapshot) return null;
-  return { snapshot, visibleFileIds: await readerVisibleFileIds(ownerId, id, reader) };
+  return { snapshot, visibleFileIds: await readerVisibleFileIds(ownerId, id) };
+}
+
+/**
+ * The drawing's saved SVG as a non-Admin login receives it on the byte
+ * routes (workspaces W7e): only the images whose file the CURRENT scope
+ * reads (the login's request scope, where row security on the grants
+ * decides). Call it inside that scope: every read here is the scope's (the
+ * drawing's image refs, then which of their files exist for the reader).
+ * Moved here from member-draw-images.ts (removed in W8d) unchanged.
+ */
+export async function scopedDrawSvg(
+  anchorId: string,
+  drawId: string,
+  svg: string,
+): Promise<string> {
+  if (!svgHasImages(svg)) return svg;
+  if (!currentWorkspaceScope()) {
+    throw new Error('scopedDrawSvg reads in the caller workspace scope: call it inside one');
+  }
+  return keepSvgImages(svg, await scopeVisibleDrawFileIds(anchorId, drawId));
 }

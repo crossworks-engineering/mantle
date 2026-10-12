@@ -43,7 +43,6 @@ import {
   loadAnchorId,
   loadBearerToken,
   loadLoginRow,
-  loadPersonalSpaceId,
   touchBearerToken,
   type LoginRow,
 } from './login-row';
@@ -137,10 +136,6 @@ export type MemberCaller = {
   loginId: string;
   /** The brain the member belongs to (the anchor's id). */
   anchorId: string;
-  /** The login's personal space (Phase 2), archived since W6b (0267): its
-   *  items are brain items in the login's private workspace now. Read by the
-   *  accepted-item path only (member-accepted.ts) until W8. */
-  spaceId: string;
   email: string;
   displayName: string | null;
   contactId: string | null;
@@ -477,8 +472,6 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
     case 'member': {
       const anchorId = await getAnchorId();
       if (!anchorId) return null;
-      const spaceId = await loadPersonalSpaceId(row.id);
-      if (!spaceId) return null;
       return {
         kind: 'member',
         source,
@@ -487,7 +480,6 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
           role: 'member',
           loginId: row.id,
           anchorId,
-          spaceId,
           email: row.email,
           displayName: row.displayName,
           contactId: row.contactId,

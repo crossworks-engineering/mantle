@@ -7,14 +7,15 @@
  *    left, so what it wrote keeps its author), and the login bridge gives
  *    one no workspace (0272);
  *  - an invite or a new login on the email or the contact of one is
- *    refused, so a former client never comes back as a member by itself.
+ *    refused, and so is linking another login to the contact of one (W8d),
+ *    so a former client never comes back as a member by itself.
  *    Clients are set up by hand (owner rule 21.9);
  *  - what one wrote stays client-sourced (packages/tools/src/client-sourced.ts).
  *
  * The admin pool reads the archive (management routes and the public
  * invite routes run there); no level or workspace role is granted it.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { archiveClientLogins, db } from '@mantle/db';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -58,12 +59,23 @@ export async function isFormerClientEmail(email: string, exec: Exec = db): Promi
 }
 
 /** Whether `contactId` was the contact of a client login (archived by 0272),
- *  whether or not that login still exists (W8a fix round 2). */
-export async function isFormerClientContact(contactId: string, exec: Exec = db): Promise<boolean> {
+ *  whether or not that login still exists (W8a fix round 2). `except`: a
+ *  login whose own contact it was does not count (the former client itself,
+ *  its contact unchanged; W8d). */
+export async function isFormerClientContact(
+  contactId: string,
+  exec: Exec = db,
+  except?: string,
+): Promise<boolean> {
   const [row] = await exec
     .select({ id: archiveClientLogins.loginId })
     .from(archiveClientLogins)
-    .where(eq(archiveClientLogins.contactId, contactId))
+    .where(
+      and(
+        eq(archiveClientLogins.contactId, contactId),
+        except ? ne(archiveClientLogins.loginId, except) : undefined,
+      ),
+    )
     .limit(1);
   return !!row;
 }

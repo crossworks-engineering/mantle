@@ -13,7 +13,10 @@
  *  - on a brain ALREADY on workspaces, every workspace row of a client
  *    login is archived (archive_client_workspace_users) and removed, with a
  *    workspace event each; a member's rows stay; a later role change (the
- *    login bridge) gives the former client nothing; a second run changes
+ *    login bridge) gives the former client nothing; its private workspace
+ *    row is archived (archive_client_private_workspaces) and removed, so the
+ *    next review homes run renames that workspace "Former user" and
+ *    registers it (W8a leftover, closed in W8d); a second run changes
  *    nothing.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/former-clients-0272.db.test.ts
  */
@@ -177,7 +180,7 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
   const owner = randomUUID();
   const member = randomUUID();
   const client = randomUUID();
-  const ws = { team: '', ops: '' };
+  const ws = { team: '', ops: '', own: '' };
 
   const rowsOf = async (login: string) =>
     (
@@ -190,6 +193,10 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
                       order by 1, 2`,
     archived: await sql`select workspace_id::text, login_id::text, moderator
                           from archive_client_workspace_users order by 1, 2`,
+    privateRows: await sql`select login_id::text, workspace_id::text from private_workspaces
+                            order by 1`,
+    privateArchived: await sql`select login_id::text, workspace_id::text
+                                 from archive_client_private_workspaces order by 1`,
     events: await sql`select count(*)::int as n from workspace_events`,
   });
 
@@ -220,6 +227,17 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
     await sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${ws.team}, ${client}, false), (${ws.ops}, ${client}, true), (${ws.ops}, ${member}, false)
       on conflict (workspace_id, login_id) do nothing`;
+    // The client's own private workspace, as the review homes make one (its
+    // row and the event that names its login).
+    ws.own = String(
+      (
+        await sql`insert into workspaces (owner_id, name) values (${owner}, 'fc2 (only you)')
+                  returning id::text as id`
+      )[0]!.id,
+    );
+    await sql`insert into private_workspaces (login_id, workspace_id) values (${client}, ${ws.own})`;
+    await sql`insert into workspace_events (workspace_id, actor_id, action, subject)
+      values (${ws.own}, null, 'review_off.private', ${sql.json({ login: client })})`;
     await run0272(sql);
   }, 240_000);
 
@@ -249,6 +267,25 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
     // The brain stays on workspaces.
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
   });
+
+  it("archives and removes the former client's private workspace row; the next review homes make it Former user", async () => {
+    expect(await sql`select 1 from private_workspaces where login_id = ${client}`).toHaveLength(0);
+    const [arch] = await sql<{ ws: string }[]>`
+      select workspace_id::text as ws from archive_client_private_workspaces
+       where login_id = ${client}`;
+    expect(arch?.ws).toBe(ws.own);
+    const memberOwn = await sql`select 1 from private_workspaces where login_id = ${member}`;
+    await sql`select * from mantle_ws_review_off()`;
+    const [w] = await sql<{ name: string }[]>`select name from workspaces where id = ${ws.own}`;
+    expect(w?.name).toBe('Former user');
+    const [f] = await sql<{ key: string }[]>`
+      select former_key::text as key from former_user_workspaces where workspace_id = ${ws.own}`;
+    expect(f?.key).toBe(client);
+    // The member's private workspace rows are untouched (control).
+    expect(await sql`select 1 from private_workspaces where login_id = ${member}`).toHaveLength(
+      memberOwn.length,
+    );
+  }, 120_000);
 
   it('the login bridge gives the former client nothing, whatever its role', async () => {
     await sql`update auth.users set role = 'admin' where id = ${client}`;

@@ -7,10 +7,10 @@
  *  - every login fetches bytes in its scope on the owner routes
  *    (/api/files/files/:id?raw, /api/draws/:id/svg?raw): an id it does not
  *    read is a 404 that names nothing; a drawing keeps only the images whose
- *    file the login reads; the deprecated member byte routes answer the same;
+ *    file the login reads; the member byte routes answer 410 since W8d;
  *  - every login runs an app its workspaces hold on the owner runner routes
  *    (frame ticket, db broker, tool broker) at the team rules; an app it
- *    does not read is a 404;
+ *    does not read is a 404; the member runner routes answer 410 since W8d;
  *  - the phone contract: whoami's workspaces, areas and isOwner;
  *    mobile-login answers 426 for a non-Admin login; a pairing claim of a
  *    member's code needs X-Jackdaw-Mobile at or above the minimum build (426
@@ -259,13 +259,12 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
       null,
     );
     expect(sideByToken.status).toBe(404);
-    // The deprecated member route answers the same, in the same scope.
-    const old = await call(`/api/member/files/${teamFile}`, mem);
-    expect(old.status).toBe(200);
-    expect(old.text).toBe('TEAM BYTES');
-    expect(old.headers.get('cache-control')).toBe('private, no-store');
-    expect(old.outcome).toMatchObject({ kind: 'user', loginId: mem });
-    expect((await call(`/api/member/files/${sideFile}`, mem)).status).toBe(404);
+    // The member route is gone (W8d): 410, the bytes of neither file.
+    for (const id of [teamFile, sideFile]) {
+      const old = await call(`/api/member/files/${id}`, mem);
+      expect(old.status).toBe(410);
+      expect(old.text).not.toContain('BYTES');
+    }
     // The other member reads the Side file (its workspace); an Admin user
     // who is not in Side does not.
     expect((await call(`/api/files/files/${sideFile}?raw=1`, mem2)).text).toBe('SIDE BYTES');
@@ -273,7 +272,7 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
   });
 
   it('a member reads a drawing in its scope with only the images it may read', async () => {
-    for (const url of [`/api/draws/${teamDraw}/svg?raw=1`, `/api/member/draws/${teamDraw}/svg`]) {
+    for (const url of [`/api/draws/${teamDraw}/svg?raw=1`]) {
       const r = await call(url, mem);
       expect(r.status, `${url} ${r.text.slice(0, 200)}`).toBe(200);
       expect(r.text).toContain('VEVBTQ==');
@@ -287,7 +286,6 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     expect(String(json.json.svg)).not.toContain('U0lERQ==');
     for (const url of [
       `/api/draws/${sideDraw}/svg?raw=1`,
-      `/api/member/draws/${sideDraw}/svg`,
       `/api/draws/${randomUUID()}/svg?raw=1`,
     ]) {
       const r = await call(url, mem);
@@ -295,6 +293,10 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
       expect(r.text).not.toContain('side drawing');
     }
     expect((await call(`/api/draws/${sideDraw}/svg`, mem)).json).toEqual({ svg: null });
+    // The member route is gone (W8d).
+    const old = await call(`/api/member/draws/${teamDraw}/svg`, mem);
+    expect(old.status).toBe(410);
+    expect(old.text).not.toContain('VEVBTQ==');
   });
 
   it('a member runs a Team app on the owner runner routes; an app it does not read is a 404', async () => {
@@ -327,13 +329,12 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
         expect(r.text).not.toContain('Side app');
       }
     }
-    // The deprecated member runner answers the same.
-    const old = await call(`/api/member/apps/${teamApp}/frame-ticket`, mem, 'POST', {});
-    expect(old.status).toBe(200);
-    expect(old.outcome).toMatchObject({ kind: 'user', loginId: mem });
-    expect((await call(`/api/member/apps/${sideApp}/frame-ticket`, mem, 'POST', {})).status).toBe(
-      404,
-    );
+    // The member runner is gone (W8d): 410, no ticket.
+    for (const route of ['frame-ticket', 'db-broker', 'tool-broker']) {
+      const old = await call(`/api/member/apps/${teamApp}/${route}`, mem, 'POST', {});
+      expect(old.status, route).toBe(410);
+      expect(old.json.ticket, route).toBeUndefined();
+    }
     // An Admin user still gets the owner ticket (draft allowed, no login claim).
     const own = await call(`/api/apps/${teamApp}/frame-ticket`, owner, 'POST', {});
     expect(own.status).toBe(200);
@@ -354,11 +355,10 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
       expect(r.json.code).toBe('gone');
       expect(r.outcome).toMatchObject({ kind: 'user', loginId: mem });
     }
+    // The member app list is gone (W8d).
     const apps = await call('/api/member/apps', mem);
-    expect(apps.status).toBe(200);
-    expect(apps.outcome).toMatchObject({ kind: 'user', loginId: mem });
-    expect(JSON.stringify(apps.json)).toContain(teamApp);
-    expect(JSON.stringify(apps.json)).not.toContain(sideApp);
+    expect(apps.status).toBe(410);
+    expect(apps.json.code).toBe('gone');
     // The member home reads team pages and apps: in its scope too (W7e fix
     // round 1, L1), the brain's home pin still read (the anchor's
     // preferences, by the named door). Its own things (its push devices)
