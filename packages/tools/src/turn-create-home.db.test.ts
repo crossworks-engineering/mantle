@@ -152,17 +152,14 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     expect(home).toBe(own[0]!.ws);
   });
 
-  /** Every create tool kind a workspace holds (A0 fix round 2, L-2): its
-   *  input, and the node type it makes. */
+  /** Every create tool kind a workspace holds that a workspace turn may
+   *  run (A0 fix round 2, L-2): its input, and the node type it makes. */
   const CREATES: Array<[string, (name: string) => Record<string, unknown>, string]> = [
     ['page_create', (n) => ({ title: n, markdown: 'x' }), 'page'],
     ['table_create', (n) => ({ title: n }), 'table'],
     ['file_create', (n) => ({ parent_path: 'files', filename: `${n}.md`, content: 'x' }), 'file'],
-    ['tree_folder_create', (n) => ({ kind: 'notes', name: n }), 'branch'],
-    ['app_create', (n) => ({ name: n }), 'app'],
     ['event_create', (n) => ({ title: n, startsAt: '2026-11-01T10:00:00Z' }), 'event'],
     ['task_create', (n) => ({ title: n }), 'task'],
-    ['recall_map_create', (n) => ({ title: n, enter_when: 'testing the home rule' }), 'recall'],
   ];
 
   it.each(CREATES)('%s from a workspace turn follows the home rule', async (slug, input, type) => {
@@ -185,7 +182,10 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
           }),
         { writes: true },
       );
-      expect(res.ok, `${slug} as ${login === mod ? 'mod' : 'reader'}: ${res.ok ? '' : res.error}`).toBe(true);
+      expect(
+        res.ok,
+        `${slug} as ${login === mod ? 'mod' : 'reader'}: ${res.ok ? '' : res.error}`,
+      ).toBe(true);
       const rows = await x<{ home: string | null }>(sql`
         select g.workspace_id::text as home from nodes n
           join item_grants g on g.node_id = n.id and g.is_home
@@ -196,6 +196,47 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       );
     }
   });
+
+  /** The owner-only create tools: refused in any turn outside the Admin
+   *  workspace, so their turn home is the Admin assistant's, Admin. */
+  const OWNER_ONLY_CREATES: Array<[string, (name: string) => Record<string, unknown>, string]> = [
+    ['tree_folder_create', (n) => ({ kind: 'notes', name: n }), 'branch'],
+    ['app_create', (n) => ({ name: n }), 'app'],
+    ['recall_map_create', (n) => ({ title: n, enter_when: 'testing the home rule' }), 'recall'],
+  ];
+
+  it.each(OWNER_ONLY_CREATES)(
+    '%s: refused in a workspace turn, Admin from the Admin turn',
+    async (slug, input, type) => {
+      const token = `${tag}${randomUUID().slice(0, 6)}`;
+      const refused = await m.withTurnScope(
+        { kind: 'assistant', loginId: mod, ws: [team], modWs: [team] },
+        () =>
+          tools.dispatchTool(builtin(slug), input(token), {
+            ownerId: owner,
+            surface: { kind: 'team', loginId: mod },
+          }),
+        { writes: true },
+      );
+      expect(refused.ok, slug).toBe(false);
+      const res = await m.withTurnScope(
+        { kind: 'assistant', loginId: owner, ws: [admin], modWs: [admin] },
+        () =>
+          tools.dispatchTool(builtin(slug), input(token), {
+            ownerId: owner,
+            surface: { kind: 'web', loginId: owner },
+          }),
+        { writes: true },
+      );
+      expect(res.ok, `${slug}: ${res.ok ? '' : res.error}`).toBe(true);
+      const rows = await x<{ home: string | null }>(sql`
+        select g.workspace_id::text as home from nodes n
+          join item_grants g on g.node_id = n.id and g.is_home
+         where n.type = ${type}::node_type and n.title ilike ${`%${token}%`}
+         order by n.created_at desc limit 1`);
+      expect(rows[0]?.home, slug).toBe(admin);
+    },
+  );
 
   it('a read in a turn does not make the private workspace; a create does (L-3)', async () => {
     const fresh = randomUUID();

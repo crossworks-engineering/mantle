@@ -12,7 +12,7 @@
 export const TOOL_LIST_PINS = {
   'packages/content-core/src/profile-projections.ts': { lists: 1, entries: 4 },
   'packages/mcp-core/src/build-server.ts': { lists: 1, entries: 9 },
-  'packages/mcp-core/src/create-home.ts': { lists: 2, entries: 31 },
+  'packages/mcp-core/src/create-home.ts': { lists: 1, entries: 3 },
   'packages/mcp-core/src/key-email-guard.ts': { lists: 1, entries: 5 },
   'packages/mcp-core/src/key-scope.ts': { lists: 2, entries: 19 },
   'packages/mcp-core/src/login-surface.ts': { lists: 3, entries: 32 },
@@ -26,6 +26,7 @@ export const TOOL_LIST_PINS = {
   'packages/tools/src/builtins-journal.ts': { lists: 1, entries: 5 },
   'packages/tools/src/builtins-runs.ts': { lists: 2, entries: 18 },
   'packages/tools/src/client-sourced.ts': { lists: 1, entries: 4 },
+  'packages/tools/src/create-tools.ts': { lists: 1, entries: 28 },
   'packages/tools/src/item-write-gate.ts': { lists: 1, entries: 98 },
   'packages/tools/src/member-app-tools.ts': { lists: 1, entries: 4 },
   'packages/tools/src/recipe.ts': { lists: 1, entries: 26 },
