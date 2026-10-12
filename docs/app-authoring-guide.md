@@ -136,15 +136,19 @@ const me = await host.me();
 // { id: 'u_3qK…', name: 'Pat', kind: 'member' }
 ```
 
-| Field  | What it is                                                                                                                               |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`   | Stable for this person **in this app only**. `null` on an open link.                                                                     |
-| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link.                                           |
-| `kind` | `'admin'` (the owner or an admin login), `'member'`, `'client'`, `'contact'` (a Contact share), or `'public'` (an open /s link: nobody). |
+| Field  | What it is                                                                                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `id`   | Stable for this person **in this app only**. `null` on an open link.                                                         |
+| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link.                               |
+| `kind` | `'admin'` (the owner or an admin login), `'member'`, `'contact'` (a Contact share), or `'public'` (an open /s link: nobody). |
+
+A row an app wrote before workspaces W8a may hold `'client'`: the client
+logins are gone ([client-logins.md](./client-logins.md)), so no run gets
+that kind now.
 
 There is **no email**: an app is code the admin may not have written.
-`host.me()` works on every surface (the editor preview, the member and
-client shells, a Contact share, an open link) with no round trip: the
+`host.me()` works on every surface (the editor preview, the member
+shell, a Contact share, an open link) with no round trip: the
 server bakes the answer into the app's frame. Use it to greet, to show
 "you", or to filter a view. Do not build permission logic on it: the app
 can change its own copy.
@@ -272,8 +276,8 @@ and every member's run. The author ceiling (see "Members build apps") puts
 an app a user outside the Admin workspace built at team rules for every
 runner too. A run at team rules reads through the app: what its holding
 workspaces read, met with the runner's own workspaces, never the runner's
-other workspaces. Clients run no apps (workspaces W5c), so there are no
-client rules and no `client_shared_*` tools. Any user may author apps in a
+other workspaces. There are no client rules and no `client_shared_*`
+tools: the client logins are gone (workspaces W8a). Any user may author apps in a
 workspace they moderate (see "Members build apps").
 
 **Recommended flow (this is the synergy):** first _explore the data yourself_
@@ -293,7 +297,7 @@ Each statement may run 5 seconds at most and return 50,000 rows and 8 MB at
 most (add a LIMIT, select fewer columns or aggregate), and no single string or
 blob may pass 16 MiB. The whole database file may hold 256 MB
 (`APP_SQL_MAX_DB_MB`): a write past it fails with "database or disk is full"
-and rolls back. Each login (the admin too), member login, client login or share link runs
+and rolls back. Each login (an admin or a member) and each share link runs
 one statement at a time, and the next waits its turn (a burst of more than 16
 at once answers 429 busy), so prefer one query that joins over many small
 ones. The declared schema runs under the same rules as one transaction (30
@@ -388,7 +392,8 @@ whose database file was already lost keeps a code-only snapshot.
 When a broker answers a running app with an error, it logs one row: a
 failed statement (the message the app got, the SQL), a tool call that was
 refused or failed (the slug and the message), who ran the app (owner,
-member, client, contact or public) and when. `app_errors` reads them for an
+member, contact or public; a row from before workspaces W8a may say
+client) and when. `app_errors` reads them for an
 agent (`since_hours` narrows it); `GET /api/apps/:id/access-log?kind=error`
 for the Activity tab. A server fault is logged with the generic text the app
 got, never the server's own. A busy wait (429) is not an error. The log is
@@ -436,8 +441,11 @@ Agents and MCP clients do the same with tools (owner only, group `apps`):
 exports, and returns its id) and `app_import` (a `file_id`, `name`,
 `with_data`).
 
-None of the three carries the original's sharing, level, history or table
-exports (an export has one master): the new app is admin-only in Unsorted.
+None of the three carries the original's grants, public link or contact
+shares, history or table exports (an export has one master): the new app
+is a new item, homed where it is made (the home rule in
+[workspaces.md](./workspaces.md)) with no other grant. Share it again by
+hand.
 `POST /api/apps/import` (JSON source tree, create or update) stays for
 authoring tools such as `apps:push`.
 
@@ -454,10 +462,11 @@ app_table_export_remove(id, table)        → dissolves the link
 Direction of authority: **the app is the master.** After an app write
 (`host.db.exec`, member or owner, and `app_db_seed`) the platform
 re-materializes the Table from the SQLite rows — debounced, hash-gated (an
-unchanged table never re-commits), pure SQL, no LLM. An app at client level
-re-commits at most once every 10 minutes, and the Table of an app clients
-write is indexed at retrieval depth only (no facts or entities from client
-text). A sync a restart interrupted is not lost: the write marks the export
+unchanged table never re-commits), pure SQL, no LLM. The Table of an app
+written from outside the team is indexed at retrieval depth only (no facts
+or entities from that text): a Contact share with Can write marks the app
+as written from outside on its first write, and so did a client login
+before workspaces W8a. The mark is never cleared. A sync a restart interrupted is not lost: the write marks the export
 dirty in Postgres, and the server resumes it at boot. Typed columns derive
 from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
 DATE/DATETIME → date/datetime, else text).
@@ -497,16 +506,19 @@ status, due_at)` is far more useful to it than `t(a, b, c)`.
 This is on by default for all the user's apps, the brain/team is the trust
 boundary, so there's no per-app "make readable" switch.
 
-## App data over a member's or client's own MCP
+## App data over a user's own MCP
 
-Members and clients can reach an app's data from their own MCP client
-(Claude Code, Claude Desktop) with `app_data_list`, `app_data_schema`,
-`app_data_query` and `app_data_write`, but only on an app whose **MCP
-access** switch is on (beside **Informational**; off by default, an admin
-sets it). They reach it exactly as they run it in the browser: the same
-levels, the same published build, the same read or write rule, and their
-login's **Write** switch on top. `:host_me_*` is filled for them, so a row
-they write records who wrote it the same way the app does.
+A user can reach an app's data from their own MCP client (Claude Code,
+Claude Desktop) with `app_data_list`, `app_data_schema`, `app_data_query`
+and `app_data_write`, but only on an app whose **MCP access** switch is on
+(beside **Informational**; off by default, an admin sets it). They reach it
+exactly as they run it in the browser: an app a workspace of theirs holds,
+the same published build, the same read or write rule (the grant's Write
+switch, never on an Informational app), and their connection's write on
+top (a read-only grant, or a key or peer without write, only reads).
+`:host_me_*` is filled for them, so a row they write records who wrote it
+the same way the app does. The details:
+[mcp-as-a-login.md](./mcp-as-a-login.md).
 
 What follows for your app:
 
