@@ -17,7 +17,14 @@
 --    grants, a move of the home, an archive. Checked at commit, so a path
 --    that deletes and adds the same grant back in one transaction keeps
 --    it. A later share makes the app held again, never the landing page:
---    only a Moderator picks that.
+--    only a Moderator picks that. The trigger first locks the workspace row
+--    (FOR NO KEY UPDATE), then clears in a fresh statement: a Moderator's
+--    pick that checked "held" before the removal committed holds that row
+--    until it commits, so the clear sees the pick and removes it (audit
+--    L-a). So the removals of app grants on one workspace serialize at
+--    commit, with each other and with a pick on that workspace. Grants of
+--    other kinds, and a change that is not a removal (the Write switch),
+--    skip the lock.
 -- 3. The brain-wide member home app (the anchor's `teamHubAppId`
 --    preference) becomes the Team workspace's home app, so nothing is lost.
 --    Only an app of the same brain that Team holds is taken (a pointer to
@@ -47,6 +54,22 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_landing_held_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
+  -- Only a removal can end the hold: a delete, a "Removed here", or a row
+  -- moved off this item or workspace.
+  IF TG_OP = 'UPDATE' AND NEW."node_id" = OLD."node_id"
+     AND NEW."workspace_id" = OLD."workspace_id"
+     AND (NEW."excluded" = OLD."excluded" OR NOT NEW."excluded") THEN
+    RETURN NULL;
+  END IF;
+  -- Only an app can be a home app (a deleted node: ON DELETE SET NULL).
+  IF NOT EXISTS (SELECT 1 FROM "public"."nodes" n
+                  WHERE n."id" = OLD."node_id" AND n."type" = 'app') THEN
+    RETURN NULL;
+  END IF;
+  -- Wait for a pick in flight on this workspace (audit L-a), then clear in
+  -- a fresh statement, which sees what that pick wrote.
+  PERFORM 1 FROM "public"."workspaces" w
+    WHERE w."id" = OLD."workspace_id" FOR NO KEY UPDATE;
   UPDATE "public"."workspaces" w
      SET "landing_app_id" = NULL, "updated_at" = now()
    WHERE w."id" = OLD."workspace_id"

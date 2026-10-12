@@ -113,8 +113,11 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
   const homeIn = async (id: string, ws: string) => {
     await m.withHeads([id], 'update', async (tx) => {
       await tx.execute(sql`delete from item_grants where node_id = ${id}`);
+      // The delete re-derives an item in a folder: take that row over.
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
-                           values (${id}, ${ws}, true)`);
+                           values (${id}, ${ws}, true)
+                           on conflict (node_id, workspace_id)
+                           do update set is_home = true, via_folder_id = null, excluded = false`);
     });
   };
   const alsoIn = async (id: string, ws: string) => {
@@ -439,6 +442,72 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
           storageKey: `apps/${tag}.js`,
         })}::jsonb where node_id = ${teamApp}`,
       );
+    }
+  });
+
+  it("a folder's grant: removing it clears a folder-held home app; a hand row removed under it keeps it", async () => {
+    // An app in a folder, both homed in Admin; Team gets a hand row on the
+    // app first, then the folder's grant (audit L-b).
+    const folder = randomUUID();
+    const app = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+                values (${folder}, ${owner}, 'branch', ${`${tag} landing folder`}, 'apps.lf')`);
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+                values (${app}, ${owner}, 'app', ${`${tag} Folder app`}, 'apps.lf')`);
+    await x(sql`insert into apps (node_id, manifest, published_build)
+                values (${app}, '{}'::jsonb, ${JSON.stringify({ ok: true, storageKey: 'x' })}::jsonb)`);
+    await homeIn(folder, adminWs);
+    await homeIn(app, adminWs);
+    await alsoIn(app, team);
+    const share = await call(`/api/grants/${folder}`, owner, 'POST', { wsId: team, confirm: true });
+    expect(share.status, share.text.slice(0, 200)).toBe(200);
+    expect((await setLanding(owner, team, app)).status).toBe(200);
+    try {
+      // The app's own row goes while the folder still grants: the folder's
+      // row comes back in the same transaction, so Team still holds the
+      // app and keeps its landing page (the check runs at commit).
+      await m.withHeads([app], 'update', async (tx) => {
+        await tx.execute(
+          sql`delete from item_grants where node_id = ${app} and workspace_id = ${team}`,
+        );
+      });
+      const derived = await x<{ via: string | null }>(sql`
+        select via_folder_id::text as via from item_grants
+         where node_id = ${app} and workspace_id = ${team}`);
+      expect(derived).toEqual([{ via: folder }]);
+      expect(await landingOf(team)).toBe(app);
+      expect((await home(mem, team)).json.homeApp?.appId).toBe(app);
+      // The folder's grant goes: Team no longer holds the app, so it forgets
+      // its landing page.
+      const unshare = await call(`/api/grants/${folder}/${team}?confirm=1`, owner, 'DELETE');
+      expect(unshare.status, unshare.text.slice(0, 200)).toBe(200);
+      expect(await landingOf(team)).toBeNull();
+      expect((await home(mem, team)).json.homeApp).toBeNull();
+    } finally {
+      await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
+    }
+  });
+
+  it('a removal that commits while a pick is open still clears that pick', async () => {
+    // Audit L-a: a pick checked "held" and holds the workspace row; the
+    // grant removal commits meanwhile. Its trigger waits for the row, then
+    // sees the pick and clears it.
+    const postgres = (await import('postgres')).default;
+    const raw = postgres(scratch!.url, { max: 1, onnotice: () => {} });
+    let removal: Promise<void> | null = null;
+    try {
+      await raw.begin(async (t1) => {
+        await t1`select 1 from workspaces where id = ${team} for update`;
+        await t1`update workspaces set landing_app_id = ${teamApp2} where id = ${team}`;
+        removal = outOf(teamApp2, team);
+        await new Promise((r) => setTimeout(r, 500));
+      });
+      await removal;
+      expect(await landingOf(team)).toBeNull();
+    } finally {
+      await raw.end();
+      await alsoIn(teamApp2, team);
+      await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
     }
   });
 
