@@ -3,7 +3,9 @@
  * workspace (workspaces W4b fix round 1, M2): tools resolved and the loop
  * run in a turn scope of Team (read only: neither answers a login), so an
  * adminOnly group drops out and reads see only what Team holds. The Admin
- * assistant cannot be invoked from inside a Team turn. Only the model, the
+ * assistant cannot be invoked from inside a Team turn. System work with no
+ * login that delegates to a responder on no workspace is refused (W8 final).
+ * Only the model, the
  * embedder and the API key are faked; the rest is the real fire and the real
  * delegation on a scratch brain the workspaces migration made live.
  *
@@ -224,6 +226,29 @@ describe.skipIf(!URL)('the Team assistant outside a chat turn runs in Team (M2)'
     // The workspace role does not even see the Admin assistant's row; were
     // it seen, the workspace check would refuse it.
     expect(res.ok ? '' : res.error).toMatch(/another workspace|not found/);
+    expect(h.calls).toBe(0);
+  });
+
+  it('W8 final: system work delegating to a responder on no workspace is refused', async () => {
+    // A responder on no workspace, made after the switch (the migration
+    // gave the existing ones a workspace).
+    await x(sqlTag`
+      insert into agents (owner_id, slug, name, role, model, provider, api_key_id, system_prompt,
+                          audience, workspace_id)
+      values (${ownerId}, 'lone-responder', 'Lone', 'responder', 'fake/model', 'openrouter',
+              ${apiKeyId}, 'You answer people.', 'admin', null)`);
+    const { invokeAgent } = await import('../agent/invoke-agent');
+    const { AgentWorkspaceError } = await import('../agent/agent-viewer');
+    // No open scope and no login: a run or a heartbeat's system work.
+    await expect(
+      invokeAgent({
+        ownerId,
+        agentSlug: 'lone-responder',
+        prompt: 'hello',
+        depth: 1,
+        parentTraceId: null,
+      } as never),
+    ).rejects.toBeInstanceOf(AgentWorkspaceError);
     expect(h.calls).toBe(0);
   });
 });

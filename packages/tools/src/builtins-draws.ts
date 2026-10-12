@@ -195,9 +195,10 @@ const draw_get: BuiltinToolDef = {
       // Metadata only: no scene, and above all no DRAFT. One helper decides
       // what this reader may get, for the text and the picture alike
       // (draw-reader.ts in @mantle/content).
-      const draw = await readableDraw(ctx.ownerId, id);
-      if (!draw) return notFound('drawing', id, 'draw_list / search_nodes');
+      // A team surface on the system pool reads no drawing (W8 final).
       const readFor = { teamSurface: ctx.surface?.kind === 'team' };
+      const draw = await readableDraw(ctx.ownerId, id, readFor);
+      if (!draw) return notFound('drawing', id, 'draw_list / search_nodes');
       const content = (await readableDrawText(ctx.ownerId, id, readFor)) ?? '';
       const output: Record<string, unknown> = {
         id: draw.id,

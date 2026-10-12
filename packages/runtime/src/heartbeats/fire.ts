@@ -446,6 +446,7 @@ async function fireInner(
                 agentSlug: agent.slug,
                 // The loop re-enters the agent's workspace (withAgentScope).
                 ...(scoped ? { agentWorkspaceId: agent.workspaceId } : {}),
+                agentRole: agent.role,
                 agentDepth: 1,
                 delegateTo: [],
                 // The agent's own thinking effort when set; on inherit, the

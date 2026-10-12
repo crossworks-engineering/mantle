@@ -183,6 +183,7 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
   const member = randomUUID();
   const client = randomUUID();
   const ws = { team: '', ops: '', own: '' };
+  let memberOwn: { ws: string; name: string }[] = [];
 
   const rowsOf = async (login: string) =>
     (
@@ -246,6 +247,17 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
       values (${ws.own}, null, 'review_off.private', ${sql.json({ login: client })}),
              (${ws.own}, ${client}, 'workspace.update',
               ${sql.json({ name: 'fc2 own name', description: 'fc2 own words', note: 'kept' })})`;
+    // The member's own private workspace (control): 0272 leaves it alone.
+    const [memberWs] = await sql<{ id: string }[]>`
+      insert into workspaces (owner_id, name) values (${owner}, 'fc2m (only you)')
+      returning id::text as id`;
+    await sql`insert into private_workspaces (login_id, workspace_id)
+      values (${member}, ${memberWs!.id}) on conflict (login_id) do nothing`;
+    memberOwn = await sql<{ ws: string; name: string }[]>`
+      select p.workspace_id::text as ws, w.name from private_workspaces p
+        join workspaces w on w.id = p.workspace_id
+       where p.login_id = ${member}`;
+    expect(memberOwn).toHaveLength(1);
     await run0272(sql);
   }, 240_000);
 
@@ -297,6 +309,20 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
       note: 'kept',
     });
     expect(subjects.filter((e) => e.action === 'review_off.former')).toHaveLength(1);
+    // The member's private workspace rows are untouched (control): the same
+    // row, the same name, live, and no Former user.
+    expect(
+      await sql<{ ws: string; name: string }[]>`
+        select p.workspace_id::text as ws, w.name from private_workspaces p
+          join workspaces w on w.id = p.workspace_id and w.archived_at is null
+         where p.login_id = ${member}`,
+    ).toEqual(memberOwn);
+    expect(
+      await sql`select 1 from former_user_workspaces where workspace_id = ${memberOwn[0]!.ws}`,
+    ).toHaveLength(0);
+    expect(
+      await sql`select 1 from archive_client_private_workspaces where login_id = ${member}`,
+    ).toHaveLength(0);
   }, 120_000);
 
   it('the login bridge gives the former client nothing, whatever its role', async () => {

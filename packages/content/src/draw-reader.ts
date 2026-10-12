@@ -51,8 +51,15 @@ export type ReadableDraw = {
 };
 
 /** A drawing's metadata, as the current scope may read it. Null when it is
- *  not a drawing this scope reaches. */
-export async function readableDraw(ownerId: string, id: string): Promise<ReadableDraw | null> {
+ *  not a drawing this scope reaches, and for a team surface that reaches
+ *  the system pool (W8 final): a member's read never gets the owner's
+ *  drawing, its text included. */
+export async function readableDraw(
+  ownerId: string,
+  id: string,
+  readFor: DrawReadFor = {},
+): Promise<ReadableDraw | null> {
+  if (teamReadOnSystemPool(readFor)) return null;
   const [row] = await db
     .select({
       id: nodes.id,
@@ -85,6 +92,12 @@ export async function readableDraw(ownerId: string, id: string): Promise<Readabl
 /** Who a drawing is read for, beyond the current scope: `teamSurface` when
  *  the call came from a team surface (a member's chat, a member's app). */
 export type DrawReadFor = { teamSurface?: boolean };
+
+/** A read for a team surface that reached the system pool, outside any turn
+ *  or space scope: it reads nothing (fail closed). */
+function teamReadOnSystemPool(readFor: DrawReadFor): boolean {
+  return !!readFor.teamSurface && !inTurnScope() && isSystemScope() && !currentSpaceScope();
+}
 
 /**
  * The scene file ids of this drawing's images the current scope may see, by
@@ -127,6 +140,7 @@ export async function readableDrawText(
   id: string,
   readFor: DrawReadFor = {},
 ): Promise<string | null> {
+  if (teamReadOnSystemPool(readFor)) return null;
   const visible = await readerVisibleFileIds(ownerId, id, readFor);
   if (visible === null) return getDrawSceneText(ownerId, id);
   const [row] = await db

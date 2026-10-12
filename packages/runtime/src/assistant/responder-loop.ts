@@ -274,6 +274,7 @@ async function runResponderLoopAtLevel(
     agentId: agent.id,
     agentSlug: agent.slug,
     agentWorkspaceId: agent.workspaceId ?? null,
+    agentRole: agent.role,
     agentDepth: 1,
     delegateTo: assembled.delegateTo,
     resultHandling: assembled.resultHandling,

@@ -86,8 +86,8 @@ export type ScopedAgent = {
   workspaceId?: string | null;
   /** agents.role: a responder or an assistant on no workspace answers
    *  people, a specialist or a worker does not. Every entry point that holds
-   *  the agent's row passes it (the row itself); a call that names only the
-   *  id runs nested in one of those, which already decided. */
+   *  the agent's row passes it (the row itself), and runToolLoop passes its
+   *  caller's agentRole, so a delegated child (invoke_agent) is checked too. */
   role?: string | null;
 };
 

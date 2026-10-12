@@ -121,6 +121,8 @@ describe('draw_get picture', () => {
     // A team surface says so (on the system pool it gets no image, W8
     // integration); a model argument names no one.
     expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, { teamSurface: true });
+    // The drawing itself too: on the system pool it is not found (W8 final).
+    expect(h.readableDraw).toHaveBeenLastCalledWith('anchor', ID, { teamSurface: true });
     // The text is read in the same scope (its image words follow it).
     expect(h.readableDrawText).toHaveBeenLastCalledWith('anchor', ID, { teamSurface: true });
     await draw_get.handler({ id: ID, image: true }, owner);

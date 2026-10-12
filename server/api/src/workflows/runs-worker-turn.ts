@@ -362,6 +362,7 @@ export async function runsWorkerTurnImpl(
                 ownerId: run.ownerId,
                 agentId: worker.id,
                 agentSlug: worker.slug,
+                agentRole: worker.role,
                 // Depth 2 + empty allowlist: run_* and invoke_agent refuse —
                 // propose-don't-mutate is enforced structurally, not by prompt.
                 agentDepth: 2,

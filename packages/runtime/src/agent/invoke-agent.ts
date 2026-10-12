@@ -272,6 +272,10 @@ export const invokeAgent: AgentInvoker = async ({
         agentSlug: target.slug,
         // The loop re-enters the child's workspace (withAgentScope).
         ...(childWorkspaceId ? { agentWorkspaceId: childWorkspaceId } : {}),
+        // The child's role (W8 final): a responder or an assistant on no
+        // workspace, delegated to from system work with no login, is
+        // refused there, as it is at every other entry point.
+        agentRole: target.role,
         agentDepth: depth,
         delegateTo: (mc?.delegate_to ?? []) as readonly string[],
         resultHandling: mc?.result_handling ?? null,
