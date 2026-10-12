@@ -32,6 +32,9 @@ vi.mock('@/lib/formulas', async (importOriginal) => ({
   createFormula: async () => {
     throw h.fail;
   },
+  updateFormula: async () => {
+    throw h.fail;
+  },
 }));
 
 vi.mock('@/lib/files', async (importOriginal) => ({
@@ -147,6 +150,15 @@ const cases: Case[] = [
     run: async () =>
       (await import('./contacts/[id]/route')).PATCH(
         patch(`/api/contacts/${ID}`, { company: 'x' }),
+        params,
+      ),
+  },
+  // A1 fix round (L4): a formula edit, open to every login since D1.
+  {
+    name: 'PATCH /api/formulas/:id',
+    run: async () =>
+      (await import('./formulas/[id]/route')).PATCH(
+        patch(`/api/formulas/${ID}`, { title: 'x' }),
         params,
       ),
   },

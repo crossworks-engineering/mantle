@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { isScopeWriteRefusal } from '@mantle/db';
 import {
   checkLookupCoverage,
   deleteFormula,
@@ -60,6 +61,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       dimensionIssues: checkDimensions(row.spec),
     });
   } catch (err) {
+    // A refusal by the database's scope checks is not bad input: re-thrown
+    // for the app's error mapping, as POST does (A1 fix round, L4).
+    if (isScopeWriteRefusal(err)) throw err;
     if (isFormulaSpecError(err)) {
       return NextResponse.json({ error: err.message, errors: err.errors }, { status: 400 });
     }
