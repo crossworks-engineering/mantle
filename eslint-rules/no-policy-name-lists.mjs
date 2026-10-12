@@ -40,7 +40,7 @@ export const ROUTE_LIST_PINS = {
   'server/web/lib/auth-constants.ts': 2,
   'server/web/lib/auth/any-login-routes.ts': 3,
   'server/web/lib/auth/member-routes.ts': 1,
-  'server/web/lib/auth/route-scope.ts': 7,
+  'server/web/lib/auth/route-scope.ts': 6,
   'server/web/lib/body-limit.ts': 1,
   'server/web/server/public-session-routes.ts': 1,
 };
