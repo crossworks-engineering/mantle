@@ -320,10 +320,10 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     // System work in the same scope: the system pool.
     setMode('warn');
     const sys = await writersOf(() =>
-      m.runAsSystem('test:a2b2b', () =>
+      m.runAsActor({ kind: 'assistant', agentId: null }, () =>
         m.withTurnScope(
           { kind: 'assistant', loginId: null, ws: [team], modWs: [] },
-          () => create(`${tag} system made`),
+          () => m.runAsSystem('test:a2b2b', () => create(`${tag} system made`)),
           { writes: true },
         ),
       ),
