@@ -119,6 +119,11 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
             return fn.call(target, query, ...rest);
           };
         }
+        // A reserved connection too: the system pool sends each statement
+        // with its actor on one (arch A2a, client.ts actorClient).
+        if (prop === 'reserve') {
+          return async (...args: unknown[]) => trapped((await fn.apply(target, args)) as object);
+        }
         if (prop === 'begin' || prop === 'savepoint') {
           return (...args: unknown[]) => {
             const last = args.length - 1;
