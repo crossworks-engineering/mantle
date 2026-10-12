@@ -365,9 +365,9 @@ async function newItemHome(
   if (created?.privateWs) {
     // A login outside Admin: the folder's home only when it may edit the
     // folder (the scope's own check), else its private workspace.
-    const [f] = (await via.execute(
-      sql`select ${folder}::text as id`,
-    )) as unknown as Array<{ id: string | null }>;
+    const [f] = (await via.execute(sql`select ${folder}::text as id`)) as unknown as Array<{
+      id: string | null;
+    }>;
     const mayEdit = f?.id ? (await itemWriteRefusal([f.id], 'edit')) === null : false;
     fallback = mayEdit ? folderHome : live(sql`${created.privateWs}::uuid`);
   }
