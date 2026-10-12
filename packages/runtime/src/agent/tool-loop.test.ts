@@ -254,7 +254,7 @@ afterEach(() => {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
-describe('runToolLoop — args', () => {
+describe('runToolLoop: args', () => {
   it('agentRole is required (W8 final round 2): a caller that leaves it out does not compile', () => {
     // Checked by the typecheck: optional, a caller could leave it out and
     // withAgentScope would read a responder as a specialist (fail open).

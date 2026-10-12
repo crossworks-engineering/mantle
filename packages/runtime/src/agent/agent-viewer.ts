@@ -327,7 +327,11 @@ export async function withAgentScope<T>(
   // workspace (a heartbeat's caller, then its tool loop; W8 final round 2) it
   // keeps the login already chosen, as the open turn scope does below. Read
   // afresh it would act for the anchor, and its gates would ask the anchor.
-  if (!open && adminReadsOnSystemPool()) {
+  // Not on an asSystem exit from a scope entered since (a narrower turn
+  // scope's tool work, W8 final round 3): the outer gate scope is still
+  // there, but the turn answers the login of the scope it left, or is
+  // refused, as below.
+  if (!open && adminReadsOnSystemPool() && scopeLeftForSystem() === null) {
     const gate = currentGateScope();
     if (
       gate?.kind === 'assistant' &&

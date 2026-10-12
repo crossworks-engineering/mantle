@@ -7,6 +7,12 @@
  * Admin user, not a Moderator), never the anchor. With the switch off the
  * fire is unchanged: a turn scope of Admin that answers the maker.
  *
+ * W8 final round 3: the Admin assistant's gate scope is reused only when no
+ * scope was entered since. On an asSystem exit from a narrower turn scope
+ * (a workspace assistant's tool work inside it) the outer Admin gate is still
+ * there, and a turn of the Admin assistant answers the login of the scope it
+ * left, or is refused, never the outer gate's login.
+ *
  * Only the model, its key and the outside hosts are faked.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w8-int3.db.test.ts
  */
@@ -48,12 +54,15 @@ describe.skipIf(!URL)('W8 final round 2: the Admin assistant under the rollback 
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let hbs: typeof import('@mantle/runtime/heartbeats');
+  let rt: typeof import('@mantle/runtime/agent');
   let dir = '';
   const owner = randomUUID(); // the anchor
   const maker = randomUUID(); // a user of Admin, not a Moderator
+  const teamOnly = randomUUID(); // a user of the team workspace only
   const tag = `w8f2${randomUUID().slice(0, 6)}`;
   const apiKeyId = randomUUID();
   let adminWs = '';
+  let teamWs = '';
   let agentSlug = '';
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -95,9 +104,11 @@ describe.skipIf(!URL)('W8 final round 2: the Admin assistant under the rollback 
     );
     m = await import('@mantle/db');
     hbs = await import('@mantle/runtime/heartbeats');
+    rt = await import('@mantle/runtime/agent');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
-      (${maker}, ${`${tag}-l@example.invalid`}, 'x', false, 'admin', 'Maker')`);
+      (${maker}, ${`${tag}-l@example.invalid`}, 'x', false, 'admin', 'Maker'),
+      (${teamOnly}, ${`${tag}-t@example.invalid`}, 'x', false, 'member', 'Team')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
@@ -108,6 +119,13 @@ describe.skipIf(!URL)('W8 final round 2: the Admin assistant under the rollback 
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${adminWs}, ${maker}, false)
                 on conflict (workspace_id, login_id) do update set moderator = false`);
+    teamWs = (
+      await x<{ id: string }>(sql`select id::text from workspaces
+        where owner_id = ${owner} and bridge_key = 'team'`)
+    )[0]!.id;
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${teamWs}, ${maker}, false), (${teamWs}, ${teamOnly}, false)
+                on conflict (workspace_id, login_id) do nothing`);
     await x(sql`insert into api_keys (id, user_id, service, label, key_enc)
       values (${apiKeyId}, ${owner}, 'openrouter', 'default', '\\x00'::bytea)`);
     agentSlug = `${tag}-admin`;
@@ -175,5 +193,39 @@ describe.skipIf(!URL)('W8 final round 2: the Admin assistant under the rollback 
     expect(h.scope).toMatchObject({ kind: 'assistant', loginId: maker, ws: [adminWs], modWs: [] });
     expect(h.gate).toBeNull();
     expect(await lastFire(hb.id)).toEqual({ by: maker, reply: 'fired, done' });
+  });
+
+  it('the switch on: an asSystem exit from a narrower turn scope does not reuse the outer Admin gate', async () => {
+    process.env.MANTLE_ADMIN_READS = 'system';
+    try {
+      const agent = { ownerId: owner, workspaceId: adminWs, role: 'responder' };
+      // The Admin assistant's own gate scope, acting for the anchor.
+      const outer = { kind: 'assistant' as const, loginId: owner, ws: [adminWs], modWs: [] };
+      const inAdminGate = <T>(fn: () => Promise<T>) =>
+        m.withTurnStamp({ workspaceId: adminWs, loginId: null }, () => m.withGateScope(outer, fn));
+      const seenGate = () => rt.withAgentScope(agent, async () => m.currentGateScope());
+      // Re-entered straight from its own gate scope it keeps the login chosen.
+      expect(await inAdminGate(seenGate)).toMatchObject({ loginId: owner, ws: [adminWs] });
+      // A narrower turn scope of the team workspace, then an asSystem exit.
+      const fromNarrower = (login: string) =>
+        inAdminGate(() =>
+          m.withTurnScope({ kind: 'assistant', loginId: login, ws: [teamWs], modWs: [] }, () =>
+            m.asSystem(seenGate, 'agent-workspace'),
+          ),
+        );
+      // It answers the login of the scope it left, not the outer gate's.
+      expect(await fromNarrower(maker)).toMatchObject({
+        kind: 'assistant',
+        loginId: maker,
+        ws: [adminWs],
+        modWs: [],
+      });
+      // A login of the left scope that is not a user of Admin is refused.
+      await expect(fromNarrower(teamOnly)).rejects.toThrow(
+        'The login this turn answers is not a user of the Admin workspace.',
+      );
+    } finally {
+      delete process.env.MANTLE_ADMIN_READS;
+    }
   });
 });
