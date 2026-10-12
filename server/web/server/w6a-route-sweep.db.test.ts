@@ -685,7 +685,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         { title: name, enterWhen: 'a test' },
         (j) => j.mapId,
       );
-      const note = await memberItem('note');
+      const note = await made('/api/notes', { title: name }, (j) => (j.note as Json).id);
       const share = await made('/api/shares', { nodeId: note }, (j) => (j.share as Json).id);
       return { task, event, map, note, share };
     };
