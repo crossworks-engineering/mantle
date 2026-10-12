@@ -61,10 +61,3 @@ export {
   type ConfirmOpts,
 } from './files-guard';
 export { guardNewPageIn, newPageDiff } from './page-guard';
-export {
-  clientTreeFolderPage,
-  clientTreeSearch,
-  loadReaderTreeFolder,
-  searchReaderTree,
-  type TreeReader,
-} from './reader';

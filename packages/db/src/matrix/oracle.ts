@@ -147,3 +147,41 @@ export function expectedAccess(
   }
   return { allow: true, lands: isAdminUser(role) ? 'admin' : 'private' };
 }
+
+// ── Folder counts (task b6e4a8aa) ───────────────────────────────────────────
+
+/**
+ * The folder-count fixture: a folder homed in workspace H and granted to
+ * workspace S, with three notes inside (they take the folder's grants).
+ * "Remove from this workspace" marks S "Removed here" on every note
+ * ('noneShared') or on two of the three ('oneOfThree').
+ */
+export type FolderCountCase = 'noneShared' | 'oneOfThree';
+
+/** Who opens the folder: a user of S only; an Admin user who is also a
+ *  user of S; an Admin user who is a user of H and S. */
+export type FolderCountCaller = 'member' | 'adminUser' | 'adminUserInHome';
+
+/** The scope the caller reads in: all its workspaces, or S picked in the
+ *  switcher. An MCP call has no switcher: all its workspaces. */
+export type FolderCountScope = 'all' | 'S';
+
+/** What the folder shows: it shows, with this many items. */
+export type FolderCountAnswer = { shows: true; items: number };
+
+/**
+ * What the guide says the folder shows ("A folder's counts are yours",
+ * docs/workspaces.md, Folders): only the items the caller reads in its
+ * scope, and the folder itself whenever the caller reads it, even with
+ * nothing in it to read. An item is read by the users of the workspaces it
+ * is granted to; "Being an Admin user is management, not reading", so an
+ * Admin user outside H reads what S reads, like a member.
+ */
+export function expectedFolderCount(
+  c: FolderCountCase,
+  caller: FolderCountCaller,
+  scope: FolderCountScope,
+): FolderCountAnswer {
+  if (caller === 'adminUserInHome' && scope === 'all') return { shows: true, items: 3 };
+  return { shows: true, items: c === 'oneOfThree' ? 1 : 0 };
+}

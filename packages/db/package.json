@@ -10,7 +10,8 @@
     "./schema": "./src/schema/index.ts",
     "./client": "./src/client.ts",
     "./viewer": "./src/viewer.ts",
-    "./test-support": "./src/test-support.ts"
+    "./test-support": "./src/test-support.ts",
+    "./matrix/oracle": "./src/matrix/oracle.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

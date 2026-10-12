@@ -15,8 +15,7 @@
  * reader's to read: it inherits only from above itself), so they are read
  * on the admin pool. That read takes no paths from a caller: `appLauncher`
  * reads the reader's apps itself and looks up the folders on their paths
- * only, as the reader trees do (./tree/reader.ts, `visibleFolders`). Call it
- * on the admin pool, outside any viewer scope.
+ * only. Call it on the admin pool, outside any viewer scope.
  */
 import { sql } from 'drizzle-orm';
 import { currentSpaceScope, db, withViewer, isSystemScope } from '@mantle/db';

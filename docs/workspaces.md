@@ -208,6 +208,12 @@ A folder is an item with a home and grants like any other.
   marks it "Removed here", with **Restore**.
 - An item that leaves a folder loses the grants it took from that folder,
   unless a nearer folder or a hand grant keeps them.
+- **A folder's counts are yours.** The number of items and folders a
+  folder shows counts only what you read inside it in your current scope
+  (the workspace picked in the switcher, or all your workspaces). A folder
+  you read still shows when nothing in it is yours to read, with no
+  count: an Admin user may share empty folders to give a workspace its
+  structure.
 
 ## Assistants and chats
 
@@ -363,13 +369,13 @@ workspaces allow, like any user. It is special only where stated:
 
 The users of the Admin workspace manage the brain through five areas:
 
-| Area                 | What it opens                                                                                                   |
-| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Area                 | What it opens                                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Settings             | brain settings, models, pools and AI workers, runs, traces and pending approvals, sandboxes, the terminal, MCP settings, branding |
-| Users and workspaces | logins and invites, every workspace's users, blocking or unpairing any Telegram chat, who opened an app         |
-| Assistants           | assistants, skills, tools, tool groups, Studio, heartbeats, attaching an assistant to a workspace               |
-| Connectors           | MCP and OpenAPI connectors, peers, mail, calendar and Telegram accounts, attaching a connector to a workspace   |
-| Keys                 | vault keys, secrets and PDF passwords, pairing a key with a host, keys that never expire, keys with risky tools |
+| Users and workspaces | logins and invites, every workspace's users, blocking or unpairing any Telegram chat, who opened an app                           |
+| Assistants           | assistants, skills, tools, tool groups, Studio, heartbeats, attaching an assistant to a workspace                                 |
+| Connectors           | MCP and OpenAPI connectors, peers, mail, calendar and Telegram accounts, attaching a connector to a workspace                     |
+| Keys                 | vault keys, secrets and PDF passwords, pairing a key with a host, keys that never expire, keys with risky tools                   |
 
 - Today every Admin user holds every area. Each user's row in the Admin
   workspace can switch an area off (`workspace_users.limits`); no screen
@@ -454,6 +460,7 @@ the system pool, as before W6a and W7a.
   read or write gained against the old levels rolls it back. The budget
   and the switch timing, and the roll notes for the switch, are in
   [update-prod.md](./update-prod.md), "Rolling to the workspaces switch".
+
 - **Grant drift.** `pnpm -C server/web workspaces:check` compares the
   derived read columns with the grants and reports drift. It reads only.
 - **The audit trail** of who changed users, Moderator ticks, grants and

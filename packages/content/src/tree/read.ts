@@ -7,7 +7,7 @@
  * that reader for free; the counts and pages are then what that reader sees.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, nodeAliasReadByWorkspace } from '@mantle/db';
 import type {
   TreeCrumb,
   TreeFolder,
@@ -93,6 +93,14 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
 /** Folder rows matching `where`, with the reader's counts and parent id,
  *  in the folder order: manual rank first, then name.
  *
+ *  The counts are what the folder shows when the reader opens it in the
+ *  same scope (the one count path; task b6e4a8aa): row security keeps them
+ *  to what the reader's workspaces read, and `ws` (the switcher's
+ *  workspace) keeps the items to what that workspace reads, as the item
+ *  page does. The subfolders are not narrowed by `ws`: a folder list keeps
+ *  every folder the reader reads (the way to the items). A folder the
+ *  reader reads but whose contents it does not still shows, with 0.
+ *
  *  The parents and both counts are read once for all the folders, not once
  *  per folder (W6a): under a workspace scope the planner cannot see how many
  *  items the scope holds and guesses a handful, so each per-folder count
@@ -102,6 +110,7 @@ export async function selectFolders(
   ownerId: string,
   kind: TreeKind,
   where: SQL,
+  ws?: string,
 ): Promise<TreeFolder[]> {
   const itemType = TREE_KIND_SPECS[kind].nodeType;
   const rows = (await db.execute(sql`
@@ -122,6 +131,7 @@ export async function selectFolders(
       select c.path as p, count(*)::int as n from nodes c
        where c.owner_id = ${ownerId} and c.type = ${itemType}
          and c.path = any(array(select path from f)) ${kindItemFilter(kind, 'c')}
+         ${readBy(ws, 'c')}
        group by 1)
     select f.id, f.path::text as path, f.title, f.data,
            (select up.id from up
@@ -161,17 +171,20 @@ export async function listTreeFolders(ownerId: string, kind: TreeKind): Promise<
   return out;
 }
 
-/** One folder by id, when it is a folder of `kind` below the kind's root. */
+/** One folder by id, when it is a folder of `kind` below the kind's root.
+ *  `ws` counts its items as selectFolders does. */
 export async function treeFolderById(
   ownerId: string,
   kind: TreeKind,
   folderId: string,
+  ws?: string,
 ): Promise<TreeFolder | null> {
   const root = TREE_KIND_SPECS[kind].root;
   const [folder] = await selectFolders(
     ownerId,
     kind,
     sql`f.id = ${folderId} and f.path <@ ${root}::ltree and nlevel(f.path) > 1`,
+    ws,
   );
   return folder ?? null;
 }
@@ -293,8 +306,8 @@ export function treePageLimit(raw: number | undefined): number {
  * One folder's page: its direct subfolders (all of them, in order) and one
  * page of its items. `folderId` null is the kind's root. Null when the id is
  * not a folder of this kind. A cursor pages the items only; the folders come
- * with the first page. `ws` keeps only the items that workspace reads (the
- * folders stay: they are the way to them).
+ * with the first page. `ws` keeps only the items that workspace reads, in the
+ * page and in the counts (the folders stay: they are the way to them).
  */
 export async function loadTreeFolder(
   ownerId: string,
@@ -309,19 +322,27 @@ export async function loadTreeFolder(
 ): Promise<TreeFolderPage | null> {
   const spec = TREE_KIND_SPECS[kind];
   const sort = opts.sort && spec.sorts.includes(opts.sort) ? opts.sort : spec.sorts[0]!;
-  const folder = opts.folderId ? await treeFolderById(ownerId, kind, opts.folderId) : null;
+  const folder = opts.folderId ? await treeFolderById(ownerId, kind, opts.folderId, opts.ws) : null;
   if (opts.folderId && !folder) return null;
   const path = folder?.path ?? spec.root;
   const [folders, crumbs, page] = await Promise.all([
     opts.cursor
       ? Promise.resolve([] as TreeFolder[])
-      : selectFolders(ownerId, kind, sql`f.path ~ ${`${path}.*{1}`}::lquery`),
+      : selectFolders(ownerId, kind, sql`f.path ~ ${`${path}.*{1}`}::lquery`, opts.ws),
     folder
       ? treeCrumbsFor(ownerId, [treeParentPath(folder.path)]).then(
           (m) => m.get(treeParentPath(folder.path)) ?? [],
         )
       : Promise.resolve([] as TreeCrumb[]),
-    itemPage(ownerId, kind, path, sort, opts.cursor, treePageLimit(opts.limit), readBy(opts.ws)),
+    itemPage(
+      ownerId,
+      kind,
+      path,
+      sort,
+      opts.cursor,
+      treePageLimit(opts.limit),
+      readBy(opts.ws, 'n'),
+    ),
   ]);
   return {
     kind,
@@ -334,10 +355,11 @@ export async function loadTreeFolder(
   };
 }
 
-/** Only the items workspace `ws` reads (`and ...` on alias `n`); every item
- *  without one. */
-function readBy(ws: string | undefined): SQL {
-  return ws ? sql`and ${ws}::uuid = any(n.read_ws)` : sql``;
+/** Only the items workspace `ws` reads (`and ...` on `alias`); every item
+ *  without one. The item page, its search and the folder counts all take
+ *  it from here. */
+function readBy(ws: string | undefined, alias: string): SQL {
+  return ws ? sql`and ${nodeAliasReadByWorkspace(ws, alias)}` : sql``;
 }
 
 /** `%` and `_` are ILIKE wildcards; a search for them means the characters. */
@@ -415,7 +437,7 @@ export async function searchTree(
     term,
     opts.cursor,
     limit,
-    sql`${readBy(opts.ws)} ${tag}`,
+    sql`${readBy(opts.ws, 'n')} ${tag}`,
   );
   const crumbs = await treeCrumbsFor(ownerId, [
     ...folders.map((f) => treeParentPath(f.path)),

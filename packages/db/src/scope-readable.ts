@@ -55,6 +55,13 @@ export function nodeReadByWorkspace(ws: string): SQL {
   return sql`${ws}::uuid = any(${nodes.readWs})`;
 }
 
+/** The same filter on a `nodes` row aliased `alias` in a hand-written
+ *  query (the item tree's reads, packages/content/src/tree/read.ts). */
+export function nodeAliasReadByWorkspace(ws: string, alias: string): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
+  return sql`${ws}::uuid = any(${sql.raw(alias)}.read_ws)`;
+}
+
 /** The same filter for a table whose rows follow an item (`nodeId`, such as
  *  recall_maps.node_id). */
 export function itemReadByWorkspace(ws: string, nodeId: SQLWrapper): SQL {

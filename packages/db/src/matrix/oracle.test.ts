@@ -4,7 +4,13 @@
  * grid agree with a wrong database.
  */
 import { describe, expect, it } from 'vitest';
-import { ORACLE_ROLES, expectedAccess, guideKindClass, guideWorkspaceKinds } from './oracle';
+import {
+  ORACLE_ROLES,
+  expectedAccess,
+  expectedFolderCount,
+  guideKindClass,
+  guideWorkspaceKinds,
+} from './oracle';
 
 const at = (placement: 'root' | 'folder') => ({ surface: 'sql' as const, placement });
 
@@ -73,5 +79,24 @@ describe('the access oracle', () => {
     for (const role of ORACLE_ROLES) {
       expect(expectedAccess(at('root'), role, 'journal', 'read')).toHaveProperty('na');
     }
+  });
+});
+
+describe('the folder-count oracle', () => {
+  it('"A folder\'s counts are yours": only what you read in your scope, the folder always shows', () => {
+    for (const caller of ['member', 'adminUser', 'adminUserInHome'] as const) {
+      expect(expectedFolderCount('noneShared', caller, 'S')).toEqual({ shows: true, items: 0 });
+      expect(expectedFolderCount('oneOfThree', caller, 'S')).toEqual({ shows: true, items: 1 });
+    }
+    // An Admin user reads only what its workspaces read.
+    expect(expectedFolderCount('noneShared', 'adminUser', 'all')).toEqual({
+      shows: true,
+      items: 0,
+    });
+    // A user of H reads all three in all its workspaces.
+    expect(expectedFolderCount('noneShared', 'adminUserInHome', 'all')).toEqual({
+      shows: true,
+      items: 3,
+    });
   });
 });

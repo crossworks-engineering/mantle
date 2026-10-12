@@ -4,9 +4,9 @@
  * do: a member reads through its space and workspaces, and a kind the
  * Library does not hold is a 404 before any read. The client tree routes
  * were removed in workspaces W5c: they answer 410 code gone to any login,
- * and a row still marked client is no login at all since W8a (401). The
- * rules themselves are proven on Postgres in
- * packages/content/src/tree/tree-reader.viewer.db.test.ts.
+ * and a row still marked client is no login at all since W8a (401). Every
+ * login reads the normal tree (GET /api/tree/:kind) in its own scope; its
+ * counts are proven on Postgres in server/web/server/folder-count-cells.db.test.ts.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 

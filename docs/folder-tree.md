@@ -245,12 +245,18 @@ workspace alone.
   ([access-levels.md](./access-levels.md)).
 - **Who reads the tree.** Every login reads `GET /api/tree/:kind` (with
   `/search` and `/tags`) in its own workspaces
-  (`server/web/lib/auth/route-scope.ts`, `MEMBER_OPEN_READS`): an item shows
-  when a workspace of the reader holds it, and a folder when a workspace of
-  the reader holds it or it is on the way to something the reader reads
-  (names are organisational; `packages/content/src/tree/reader.ts`). Folder
-  writes and moves are open to a non-Admin login where it may edit
+  (`server/web/lib/auth/route-scope.ts`, `MEMBER_OPEN_READS`): an item or
+  a folder shows when a workspace of the reader holds it (the row rules).
+  Folder writes and moves are open to a non-Admin login where it may edit
   (`MEMBER_OPEN_WRITES`).
+- **Folder counts are the reader's.** A folder's item and subfolder counts
+  are what the reader sees when it opens the folder in the same scope:
+  only what its workspaces read, and with `?ws=` only the items that
+  workspace reads (`selectFolders` in `packages/content/src/tree/read.ts`,
+  the one count path; the MCP `tree_folders` tool reads the same). A
+  folder the reader holds but whose contents it does not read still shows,
+  with no count: an Admin user may share an empty folder to give a
+  workspace its structure.
 
 ## Members' folders and drafts (history)
 
