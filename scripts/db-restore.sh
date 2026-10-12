@@ -351,6 +351,28 @@ elif [ -n "$DUMP_BRAIN_ID" ]; then
   echo "    UPDATE brain_identity SET brain_id = gen_random_uuid();   (or restore again with --new-brain)"
 fi
 
+# The box's check modes (workspaces arch A2b, migration 0277). The database
+# was dropped and made again, so its settings are gone: mantle.actor_check is
+# off and mantle.heads_check is back at its default (warn). But pg_restore
+# brings back each actor check trigger as it was in the dump (a dev dump:
+# enabled). Put the triggers in step with the mode (off: all disabled, so a
+# write calls none), then say how to set the modes again. A dump from before
+# 0277 has no such function: migrate does it when the app starts.
+HAS_ACTOR_SWITCH=$(q "SELECT to_regprocedure('public.mantle_actor_check_triggers(boolean,integer)') IS NOT NULL" || echo "")
+if [ "$HAS_ACTOR_SWITCH" = "t" ]; then
+  SWITCHED=$(q "SELECT public.mantle_actor_check_triggers(public.mantle_actor_check_box_mode() <> 'off', 50)" || echo "")
+  if [ -z "$SWITCHED" ]; then
+    echo "⚠ could not put the actor check triggers in step with the box mode: run by hand before the app starts:" >&2
+    echo "    SELECT mantle_set_actor_check('off');" >&2
+  else
+    echo "▷ Check modes: mantle.actor_check is off ($SWITCHED actor check trigger(s) switched off) and"
+    echo "  mantle.heads_check is at its default (warn): a dropped database keeps no setting. If the"
+    echo "  dump's box ran another mode, set it again as this superuser (docs/update-prod.md):"
+    echo "    SELECT mantle_set_actor_check('warn');                  -- or 'on'"
+    echo "    ALTER DATABASE postgres SET mantle.heads_check = 'on';  -- only if the box ran it on"
+  fi
+fi
+
 # Personal-space file bytes (member logins). The rows restored above point at
 # them; without them every member file answers "gone".
 DATA_DIR="${MANTLE_DATA_DIR:-}"

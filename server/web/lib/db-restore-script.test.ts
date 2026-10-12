@@ -218,4 +218,26 @@ describe('db-restore.sh', () => {
     // After the checks: a restore that failed them never re-ids anything.
     expect(branch).toBeGreaterThan(script.search(/Restore FAILED[\s\S]*?exit 2/));
   });
+
+  it('puts the actor check triggers in step with the box mode after the restore (A2b1 re-audit L2)', () => {
+    // The function the script calls exists with that signature (0277).
+    const m0277 = read('packages/db/migrations/0277_scoped_write_gate.sql');
+    expect(m0277).toMatch(
+      /FUNCTION "public"\."mantle_actor_check_triggers"\(enable boolean, tries integer DEFAULT 5\)/,
+    );
+    // Gated on the function (a dump from before 0277 has none), switched to
+    // the box mode, which a dropped database resets to off.
+    expect(script).toMatch(
+      /to_regprocedure\('public\.mantle_actor_check_triggers\(boolean,integer\)'\)/,
+    );
+    expect(script).toMatch(
+      /mantle_actor_check_triggers\(public\.mantle_actor_check_box_mode\(\) <> 'off', 50\)/,
+    );
+    // It says both modes are reset and how to set them again.
+    expect(script).toMatch(/mantle\.actor_check is off/);
+    expect(script).toMatch(/mantle\.heads_check is at its default \(warn\)/);
+    expect(script).toMatch(/SELECT mantle_set_actor_check\('warn'\)/);
+    // After the restore, before the app starts.
+    expect(script.indexOf('HAS_ACTOR_SWITCH=')).toBeGreaterThan(script.indexOf('Restore complete'));
+  });
 });

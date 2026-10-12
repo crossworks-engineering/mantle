@@ -13,6 +13,7 @@
  * the reaper-miss check only flags episodic/factual orphans.
  */
 import {
+  ACTOR_CHECK_DRIFT_SQL,
   db,
   extractParkedSql,
   GRANT_DRIFT_SQL,
@@ -234,6 +235,16 @@ const CHECKS: CheckDef[] = [
     spanQuery: () => sql`
       SELECT min(at)::date::text AS oldest, max(at)::date::text AS newest
       FROM heads_check_misses WHERE check_name <> 'bypass'`,
+  },
+  {
+    key: 'actor_check_drift',
+    label: 'Actor check triggers match the box mode',
+    severity: 'medium',
+    note: "whether the actor check's item-table triggers follow the box's actor check mode (workspaces arch A2b, migration 0277): off wants all of them disabled (a write then calls no trigger), warn and on want all enabled. A bare ALTER DATABASE, or a restore from a dump (the dump keeps each trigger's state but not the database setting), leaves them apart: in off the writes pay for triggers, in warn or on misses go unseen. The app does not fix it: as the superuser that runs migrations, set the mode again with the switch function in docs/update-prod.md (the actor check section).",
+    query: () => sql`
+      SELECT 'mantle_actor_check' AS id, 'mode ' || d.mode AS kind,
+             d.enabled::text || ' of ' || d.total::text || ' triggers enabled' AS detail
+      FROM (${sql.raw(ACTOR_CHECK_DRIFT_SQL)}) d`,
   },
   {
     key: 'keyword_index_rls',

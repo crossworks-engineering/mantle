@@ -169,11 +169,13 @@ export function refreshActorCheckMode(base: PgSql): void {
         return false;
       });
   };
-  /** The first read, tried again with backoff until it lands (L5). */
+  /** The first read, tried again with backoff until it lands (L5). Then,
+   *  once per pool, the triggers against the box mode (warnActorCheckDrift). */
   const warm = async () => {
     for (let delay = 1_000; !(await read()) && actorModePool === base; delay *= 2) {
       await quietSleep(Math.min(delay, 30_000));
     }
+    if (actorModePool === base) warnActorCheckDrift(base);
   };
   const first: Promise<void> = Promise.race([warm(), quietSleep(FIRST_MODE_WAIT_MS)]).finally(
     () => {
@@ -186,6 +188,39 @@ export function refreshActorCheckMode(base: PgSql): void {
     else void read();
   }, 60_000);
   timer.unref();
+}
+
+/**
+ * The actor check's triggers against the box mode (0277; A2b1 fix round 2
+ * re-audit): one row when they differ. Off wants every mantle_actor_check
+ * trigger disabled, warn and on want all enabled. A bare ALTER DATABASE or
+ * a restore (scripts/db-restore.sh) can leave them apart. Any role may run
+ * it (mantle_actor_check_mode and pg_trigger are readable). The integrity
+ * row actor_check_drift and the boot warning read it.
+ */
+export const ACTOR_CHECK_DRIFT_SQL = `
+  SELECT m.mode, t.enabled::int AS enabled, t.total::int AS total
+    FROM (SELECT "public"."mantle_actor_check_mode"() AS mode) m,
+         (SELECT count(*) FILTER (WHERE g.tgenabled <> 'D') AS enabled, count(*) AS total
+            FROM pg_catalog.pg_trigger g
+           WHERE g.tgname = 'mantle_actor_check' AND NOT g.tgisinternal) t
+   WHERE NOT ((m.mode = 'off' AND t.enabled = 0) OR (m.mode <> 'off' AND t.enabled = t.total))`;
+
+/** One warning at a pool's start when the triggers and the box mode differ
+ *  (never each minute). The app does not fix it: no DDL from the app. */
+function warnActorCheckDrift(base: PgSql): void {
+  base
+    .unsafe(`${ACTOR_SQL_TAG} ${ACTOR_CHECK_DRIFT_SQL}`)
+    .then((rows) => {
+      const r = rows[0] as { mode?: string; enabled?: number; total?: number } | undefined;
+      if (!r || typeof r.total !== 'number') return;
+      console.warn(
+        `[db] actor check: the box mode is ${r.mode} but ${r.enabled} of ${r.total} item-table ` +
+          `triggers are enabled. As the superuser that runs migrations: ` +
+          `select mantle_set_actor_check('${r.mode}'); (docs/update-prod.md)`,
+      );
+    })
+    .catch(() => {});
 }
 
 /** Write a miss row later, on another connection (20.3 item 7): never in
@@ -500,6 +535,8 @@ export function actorClient(base: PgSql): PgSql {
         answer(Promise.reject(err));
         return;
       }
+      // True once the SET is built: postgres.js sends it a moment later.
+      // Ending a connection the SET never reached errs on the safe side.
       let sent = false;
       try {
         const set = conn.unsafe(setSql);

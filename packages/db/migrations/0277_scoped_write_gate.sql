@@ -203,37 +203,63 @@ $$;
 
 -- Enable or disable every mantle_actor_check trigger. Only the ones in the
 -- wrong state change, so a call that changes nothing takes no lock. Returns
--- how many changed. Called by mantle_set_actor_check and by a migration that
--- adds the trigger to a new table (to match the box mode).
-CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_triggers"(enable boolean)
+-- how many changed. Each ALTER TABLE needs SHARE ROW EXCLUSIVE on its table,
+-- held to the commit. So all those locks are taken first, in one LOCK TABLE
+-- with NOWAIT: the call never waits on a table while it holds another (no
+-- stall per table, no deadlock with a writer). A busy table: wait 200 ms and
+-- try all again, `tries` times, then fail (55P03) with nothing changed. While
+-- the locks are held, new writes on those tables queue for the few
+-- milliseconds the ALTERs take. Called by mantle_set_actor_check, by this
+-- migration, and by a migration that adds the trigger to a new table.
+CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_triggers"(enable boolean, tries integer DEFAULT 5)
   RETURNS integer LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 DECLARE
-  t record;
-  n integer := 0;
+  todo regclass[];
+  t regclass;
+  i integer := 0;
 BEGIN
   IF enable IS NULL THEN
     RAISE EXCEPTION 'mantle_actor_check_triggers: give true or false' USING ERRCODE = '22023';
   END IF;
-  FOR t IN SELECT c.tbl, c.enabled FROM "public"."mantle_actor_check_tables"() c LOOP
-    IF t.enabled <> enable THEN
-      EXECUTE format('ALTER TABLE %s %s TRIGGER mantle_actor_check',
-                     t.tbl, CASE WHEN enable THEN 'ENABLE' ELSE 'DISABLE' END);
-      n := n + 1;
-    END IF;
+  SELECT coalesce(array_agg(c.tbl ORDER BY c.tbl::text), '{}'::regclass[]) INTO todo
+    FROM "public"."mantle_actor_check_tables"() c
+   WHERE c.enabled <> enable;
+  IF cardinality(todo) = 0 THEN
+    RETURN 0;
+  END IF;
+  LOOP
+    i := i + 1;
+    BEGIN
+      EXECUTE format('LOCK TABLE %s IN SHARE ROW EXCLUSIVE MODE NOWAIT',
+                     (SELECT string_agg(x::text, ', ') FROM unnest(todo) AS x));
+      EXIT;
+    EXCEPTION WHEN lock_not_available THEN
+      IF i >= greatest(coalesce(tries, 1), 1) THEN
+        RAISE EXCEPTION 'mantle_actor_check_triggers: the item tables are busy (% tries); nothing changed, run it again when the box is quiet', i
+          USING ERRCODE = '55P03';
+      END IF;
+      PERFORM pg_sleep(0.2);
+    END;
   END LOOP;
-  RETURN n;
+  FOREACH t IN ARRAY todo LOOP
+    EXECUTE format('ALTER TABLE %s %s TRIGGER mantle_actor_check',
+                   t, CASE WHEN enable THEN 'ENABLE' ELSE 'DISABLE' END);
+  END LOOP;
+  RETURN cardinality(todo);
 END
 $$;
 --> statement-breakpoint
 
 -- The one way to change the box's actor check mode (docs/update-prod.md): it
--- sets the database setting (a RESET for off) AND switches the triggers, in
--- one transaction. Off: the triggers are disabled, a write calls none.
--- Warn or on: enabled. Each ALTER TABLE waits for the writes in flight on
--- its table, at most 10 s (lock_timeout), then the call fails and changes
--- nothing; run it again. The app processes read the mode at start and each
--- minute; restart them to apply it at once.
+-- switches the triggers (mantle_actor_check_triggers: all locks at once, no
+-- wait, up to 5 tries; a busy box fails with nothing changed) AND sets the
+-- database setting (a RESET for off), in one transaction. Off: the triggers
+-- are disabled, a write calls none. Warn or on: enabled. Setting a custom
+-- parameter with ALTER DATABASE needs a superuser (or GRANT SET ON
+-- PARAMETER): run it as the superuser that runs the migrations. The app
+-- processes read the mode at start and each minute; restart them to apply
+-- it at once.
 CREATE OR REPLACE FUNCTION "public"."mantle_set_actor_check"(mode text)
   RETURNS text LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
@@ -241,13 +267,12 @@ BEGIN
   IF mode IS NULL OR mode NOT IN ('off', 'warn', 'on') THEN
     RAISE EXCEPTION 'mantle_set_actor_check: mode must be off, warn or on' USING ERRCODE = '22023';
   END IF;
-  PERFORM set_config('lock_timeout', '10s', true);
+  PERFORM "public"."mantle_actor_check_triggers"(mode <> 'off');
   IF mode = 'off' THEN
     EXECUTE format('ALTER DATABASE %I RESET mantle.actor_check', current_database());
   ELSE
     EXECUTE format('ALTER DATABASE %I SET mantle.actor_check = %L', current_database(), mode);
   END IF;
-  PERFORM "public"."mantle_actor_check_triggers"(mode <> 'off');
   RETURN mode;
 END
 $$;
@@ -256,15 +281,17 @@ REVOKE ALL ON FUNCTION "public"."mantle_actor_check_box_mode"() FROM PUBLIC;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_actor_check_tables"() FROM PUBLIC;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_actor_check_triggers"(boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_actor_check_triggers"(boolean, integer) FROM PUBLIC;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_set_actor_check"(text) FROM PUBLIC;
 --> statement-breakpoint
 
 -- The triggers follow the box mode now: disabled on a box that is off (a
 -- fresh install, every box but dev), enabled on one that is warn or on.
+-- Up to 50 tries (about 10 s) here: a migration on a busy box waits a
+-- little longer than an operator's call.
 DO $$ BEGIN
-  PERFORM "public"."mantle_actor_check_triggers"("public"."mantle_actor_check_box_mode"() <> 'off');
+  PERFORM "public"."mantle_actor_check_triggers"("public"."mantle_actor_check_box_mode"() <> 'off', 50);
 END $$;
 --> statement-breakpoint
 

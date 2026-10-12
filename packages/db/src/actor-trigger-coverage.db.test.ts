@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ACCESS_MATRIX } from './access-matrix';
+import { ACTOR_CHECK_DRIFT_SQL } from './client';
 import { createMigratedScratchDatabase, createScratchDatabaseBefore } from './test-support';
 
 type Mode = 'off' | 'warn' | 'on';
@@ -111,6 +112,67 @@ describe.skipIf(!URL)('the actor check trigger covers every content table (arch 
       await sql`select mantle_set_actor_check('off')`;
     }
     expect((await state()).enabled).toBe(0);
+  });
+
+  it('a busy item table: the switch waits for no lock, fails with nothing changed, then works (re-audit L1)', async () => {
+    const holder = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    // A writer's lock on one item table, kept open.
+    const tx = holder.begin(async (t) => {
+      await t`lock table pages in row exclusive mode`;
+      locked();
+      await held;
+    });
+    try {
+      await isLocked;
+      const started = Date.now();
+      await expect(sql`select mantle_set_actor_check('warn')`).rejects.toMatchObject({
+        code: '55P03',
+      });
+      // 5 tries, 200 ms apart: about a second, never a wait per table.
+      expect(Date.now() - started).toBeLessThan(5_000);
+      const after = await state();
+      expect(after.mode).toBe('off');
+      expect(after.enabled).toBe(0);
+      // No lock is left behind: other tables take writes at once.
+      await sql`update nodes set title = title where id = ${randomUUID()}`;
+    } finally {
+      release();
+      await tx;
+      await holder.end();
+    }
+    try {
+      await sql`select mantle_set_actor_check('warn')`;
+      expect((await state()).enabled).toBe((await state()).tables.length);
+    } finally {
+      await sql`select mantle_set_actor_check('off')`;
+    }
+  });
+
+  it('the drift row: none in step, one after a bare ALTER DATABASE (re-audit L2)', async () => {
+    const drift = () => sql.unsafe(ACTOR_CHECK_DRIFT_SQL);
+    expect(await drift()).toEqual([]);
+    await sql.unsafe(`alter database "${scratch.name}" set mantle.actor_check = 'warn'`);
+    try {
+      // A new session sees the box setting; the triggers are still off.
+      const fresh = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+      try {
+        const rows = await fresh.unsafe(ACTOR_CHECK_DRIFT_SQL);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ mode: 'warn', enabled: 0 });
+        expect(rows[0]!.total).toBeGreaterThan(20);
+      } finally {
+        await fresh.end();
+      }
+      await sql`select mantle_set_actor_check('warn')`;
+      expect(await drift()).toEqual([]);
+    } finally {
+      await sql`select mantle_set_actor_check('off')`;
+    }
+    expect(await drift()).toEqual([]);
   });
 
   it('mantle_set_actor_check takes off, warn or on, and is not the workspace roles’', async () => {

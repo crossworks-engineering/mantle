@@ -709,8 +709,9 @@ with no actor`. Name the session first.
 
 The check has three steps, set per box in the database (the box setting
 wins; a session can only make it stricter). Change it only with
-`mantle_set_actor_check`, as the database owner (the role that runs the
-migrations), connected to the brain's database:
+`mantle_set_actor_check`, as the superuser that runs the migrations (a
+custom setting set with ALTER DATABASE needs a superuser; the database
+owner is not enough), connected to the brain's database:
 
 ```sql
 select mantle_set_actor_check('warn');  -- off (default), warn, on
@@ -722,9 +723,13 @@ select count(*) filter (where enabled) as enabled, count(*) as tables
 The function sets the database setting and switches the item-table
 triggers in one transaction. With the check off the triggers are disabled,
 so a write calls no trigger. Do not use a bare `alter database ... set
-mantle.actor_check`: it leaves the triggers in the old state. The function
-waits at most 10 seconds for the writes in flight on each item table. If it
-fails with a lock timeout, nothing changed: run it again.
+mantle.actor_check`: it leaves the triggers in the old state (the
+integrity row `actor_check_drift` and one warning at app start show it).
+The function locks every item table it changes at once and never waits for
+a lock: if a table is busy it tries again 5 times, 200 ms apart, then fails
+with `55P03` and nothing changed. While it holds the locks, new writes on
+those tables queue for a moment. Run it when the box is quiet, and run it
+again if it fails.
 
 After you change the setting, restart the app processes (web, api,
 workers, mcp). The app reads the setting about once a minute, but each

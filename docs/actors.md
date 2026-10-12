@@ -348,11 +348,15 @@ job binds its actor.
   L4). A session can raise the check only where the triggers are enabled:
   on a box that is `off` a session value of `warn` or `on` checks nothing
   in SQL (the TypeScript check still runs).
-- **Change the mode only with `mantle_set_actor_check`.** A bare `ALTER
-DATABASE ... SET mantle.actor_check` changes the setting but not the
-  triggers. So does a restore into a box with another setting (pg_dump
-  keeps a trigger's state, not the database setting). Check with
-  `mantle_actor_check_tables()` and run the function again. A migration
+- **Change the mode only with `mantle_set_actor_check`.** A bare
+  `ALTER DATABASE ... SET mantle.actor_check` changes the setting but not
+  the triggers. A restore drops the database, so the setting is gone while
+  pg_dump keeps each trigger's state: `scripts/db-restore.sh` puts the
+  triggers in step with the mode (off) and says how to set the modes again.
+  The integrity row `actor_check_drift` and one warning at a pool's start
+  (`ACTOR_CHECK_DRIFT_SQL`) show any other drift; the app never fixes it
+  (no DDL from the app). The function locks every table it changes at once,
+  with NOWAIT (5 tries): it never stalls writes table by table. A migration
   that adds the trigger to a new table calls
   `mantle_actor_check_triggers(mantle_actor_check_box_mode() <> 'off')`
   after it, and the coverage test fails until the states match.
@@ -395,6 +399,13 @@ Found in the A2a audits:
   `mantle.actor_check` is warn or on; off runs today's path. The mode is
   read from the catalog (`mantle_actor_check_mode`), where a session can
   only make it stricter, so the security note above holds.
+- **Heads functions for the write role.** If the write role runs a nested
+  `withHeads`, grant it EXECUTE on `mantle_lock_heads_nested` (not on
+  `mantle_heads_taken`, which only the definers call). Never a signer
+  (`mantle_heads_set`, `_sig`, `_mac`) or a bypass.
+- **`mantle_actor_check_mode` stays open to PUBLIC** until the view and
+  write roles have an explicit grant: callers that are not definers need it.
+  Grant first, then revoke PUBLIC.
 
 ## A3a must
 
@@ -404,3 +415,6 @@ Found in the A2a audits:
 - **Tables that stay on the system pool until A3a:** `recall_maps`,
   `recall_nodes`, `shares` and `node_snapshots`. They are not `content`
   tables in `ACCESS_MATRIX`; A3a adds their checks and then moves them.
+- **`mantle_page_folder_id`** is a SECURITY DEFINER function open to PUBLIC
+  (pre-existing). Grant it explicitly to the roles that call it, then revoke
+  PUBLIC.
