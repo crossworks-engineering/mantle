@@ -32,7 +32,7 @@ import {
   type DrawRegion,
   type DrawPng,
 } from '@mantle/content';
-import type { BuiltinToolDef, ToolHandlerContext, ToolPrecondition } from './types';
+import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';

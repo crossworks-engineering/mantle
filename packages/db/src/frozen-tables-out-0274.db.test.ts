@@ -98,7 +98,7 @@ async function seed(sql: postgres.Sql, opts: { orphan: boolean }) {
 describe.skipIf(!URL)('0274: the frozen tables, archived and dropped', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
   let sql: ReturnType<typeof postgres>;
-  let before: Record<string, unknown[]>;
+  let before: Record<string, readonly unknown[]>;
 
   const archives = async () => ({
     cursors: await sql`select owner_id::text, contact_id::text, last_read_at
