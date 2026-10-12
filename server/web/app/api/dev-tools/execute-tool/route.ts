@@ -43,7 +43,9 @@ export async function POST(req: Request) {
   const t0 = performance.now();
   const result = await dispatchTool(tool, parsed.data.input, {
     ownerId: user.id,
-    surface: { kind: 'web' },
+    // The signed-in login (A0 fix round 2, L-6): a tool that checks the
+    // caller (a link) sees it.
+    surface: { kind: 'web', loginId: user.actor.id },
   });
   const durationMs = Math.round(performance.now() - t0);
   if (result.ok) {

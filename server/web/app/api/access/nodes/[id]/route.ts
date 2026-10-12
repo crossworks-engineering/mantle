@@ -9,12 +9,10 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
+import { goneResponse } from '@/lib/gone';
 
 function gone(): NextResponse {
-  return NextResponse.json(
-    { error: 'Sharing levels are gone. Use Grant Access.', code: 'gone' },
-    { status: 410 },
-  );
+  return goneResponse('Sharing levels are gone. Use Grant Access.');
 }
 
 export async function GET() {

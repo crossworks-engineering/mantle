@@ -19,43 +19,14 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db, nodes, withCreateHome, workspaces, workspaceUsers } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { CREATE_TOOL_SLUGS } from '@mantle/tools';
 
 /**
- * The create tools that make an item of a workspace kind (page, note, draw,
- * table, file, folder, app, formula, task, event, recall map): they take
- * `workspace` and name where the item landed. A create of an Admin-only
- * kind is ADMIN_KIND_CREATE_TOOL_SLUGS.
+ * The create tools that make an item of a workspace kind: they take
+ * `workspace` and name where the item landed. One list for MCP and
+ * assistant turns (A0 fix round 2): @mantle/tools CREATE_TOOL_SLUGS.
  */
-export const MCP_CREATE_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  'note_create',
-  'note_from_file',
-  'note_from_page',
-  'page_create',
-  'page_from_file',
-  'page_from_note',
-  'page_from_notes',
-  'page_from_journal',
-  'page_split',
-  'page_extract_section',
-  'file_create',
-  'file_upload',
-  'file_copy',
-  'folder_create',
-  'folder_copy',
-  'tree_folder_create',
-  'table_create',
-  'table_from_file',
-  'table_from_text',
-  'app_create',
-  'app_duplicate',
-  'app_import',
-  'formula_create',
-  'sheet_build',
-  'generate_image',
-  'task_create',
-  'event_create',
-  'recall_map_create',
-]);
+export const MCP_CREATE_TOOL_SLUGS: ReadonlySet<string> = CREATE_TOOL_SLUGS;
 
 /**
  * The create tools whose kind lives in the Admin workspace only (a contact,

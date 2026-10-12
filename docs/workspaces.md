@@ -127,10 +127,14 @@ is made, and only a move changes it.
 
 Where a new item lands:
 
-1. In the current workspace, when you moderate it and it can hold the kind.
+1. In the current workspace, when you moderate it and it can hold the
+   kind. This holds for everyone, Admin users too. On the web the current
+   workspace is the one picked in the switcher. In a chat it is the
+   assistant's workspace. A folder you make the item in then only passes
+   its grants.
 2. Else, when you make it in a folder you may edit: the folder's home.
-3. Else your private workspace. For an Admin user: the folder's home, else
-   Admin.
+3. Else your private workspace. An Admin user has no private fallback:
+   the item lands in Admin.
 
 The create dialog shows the home before you save. An MCP create says where
 the item landed (`landedIn`).

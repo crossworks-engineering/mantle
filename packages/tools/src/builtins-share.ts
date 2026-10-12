@@ -21,7 +21,7 @@ import {
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 import { str } from './coerce';
-import { isOwnerSurface, ownerSurfaceLoginId } from './surface';
+import { isOwnerSurface, keyOrPeerVia, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
 import { callerHasArea, callerScope } from './admin-gate';
 
@@ -49,20 +49,29 @@ export function serveInput(v: unknown): string[] | undefined | string {
  * round, M2): a surface that names its login (an owner surface's MCP
  * connection, API key, web or Telegram chat, a run or delegated child that
  * carries its login; a member login's turn) links as that login. The brain's
- * owner only on an owner path that names no login AND has no MCP channel
- * (stdio, a run with no login, the owner's own pending approval). Anything
+ * owner only on an owner path that names no login AND has no MCP channel,
+ * and only via stdio MCP, a run with no login or the owner's own pending
+ * approval (never a delegated child, whose parent chat may name none). Anything
  * else is refused, never read as the owner: a missing surface (the C4 rule
  * in surface.ts), a chat that names no login, a team or contact surface with
  * no login of its own, an MCP connection that names none (a peer bound to an
  * Admin login, W6b fix round 3).
  */
+/** The owner paths that may link as the brain owner when they name no
+ *  login. */
+const OWNER_FALLBACK_VIAS: ReadonlySet<string> = new Set(['mcp', 'run', 'pending']);
+
 export function linkLoginId(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string {
   const s = ctx.surface;
   if (s?.kind === 'team' && typeof s.loginId === 'string' && s.loginId !== '') return s.loginId;
   if (isOwnerSurface(s)) {
     const named = ownerSurfaceLoginId(s);
     if (named) return named;
-    if (s?.kind === 'owner' && !s.mcp) return ctx.ownerId;
+    // Only the owner paths that are the owner's own by construction: stdio
+    // MCP, a run with no login, the owner's own pending approval. Never a
+    // delegated child (its parent chat may name no login), nor any other
+    // via (A0 fix round 2, M-1).
+    if (s?.kind === 'owner' && !s.mcp && OWNER_FALLBACK_VIAS.has(s.via)) return ctx.ownerId;
   }
   throw new LinkRefusedError(
     403,
@@ -175,6 +184,10 @@ export function linkModeRefusal(mode: unknown): string | null {
  *  (callerHasArea's "yes, the surface decides") it is not. */
 async function mayCloseAnyLink(ctx: Pick<ToolHandlerContext, 'surface'>): Promise<boolean> {
   if (!isOwnerSurface(ctx.surface) || !callerScope()) return false;
+  // An API key or a linked brain has no users area of its own (its areas
+  // are content areas, key-scope.ts): it closes only links it may edit,
+  // whatever its login holds (A0 fix round 2, L-5).
+  if (keyOrPeerVia(ctx)) return false;
   return callerHasArea('users');
 }
 

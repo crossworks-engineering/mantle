@@ -48,9 +48,16 @@ const LABELS: Record<string, string> = {
 };
 
 /** Numbers that may go up without failing: the route counts grow with
- *  every new feature, and guarded routes are the wanted direction until
- *  A4 makes the guards go. */
-const MAY_GROW = new Set(['routeFiles', 'apiRouteFiles', 'guardCallFiles']);
+ *  every new feature; a new route is guarded until A4 makes the guards go
+ *  (guard calls and the files holding them); retiring a route to a 410
+ *  stub is fine (A0 fix round 2, M-2). */
+const MAY_GROW = new Set([
+  'routeFiles',
+  'apiRouteFiles',
+  'guardCalls',
+  'guardCallFiles',
+  'goneStubs',
+]);
 
 const mode = process.argv[2] ?? '';
 const numbers = (measure(ROOT) as { numbers: Record<string, number> }).numbers;

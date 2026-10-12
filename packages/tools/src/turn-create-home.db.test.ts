@@ -15,6 +15,9 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/turn-create-home.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Tool } from '@mantle/db';
@@ -97,6 +100,11 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     scratch = await ts.createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    // The disk stores the table, file and app creates write to.
+    const dir = mkdtempSync(join(tmpdir(), 'turn-home-'));
+    process.env.TABLE_DB_DIR = join(dir, 'tables');
+    process.env.APP_DB_DIR = join(dir, 'apps');
+    process.env.MANTLE_FILES_ROOT = join(dir, 'files');
     m = await import('@mantle/db');
     tools = await import('./index');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
@@ -115,6 +123,13 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
                  where workspace_id = ${team} and login_id in (${mod}, ${reader})`);
     await x(sql`update workspace_users set moderator = false
                  where workspace_id = ${admin} and login_id = ${adm2}`);
+    // The kind roots a fresh brain makes on the first read of a tree.
+    for (const root of ['files', 'notes', 'pages', 'tasks', 'events', 'tables', 'apps', 'recall']) {
+      await x(sql`insert into nodes (owner_id, type, title, path)
+                  select ${owner}, 'branch', ${root}, ${root}::ltree
+                   where not exists (select 1 from nodes where owner_id = ${owner}
+                                       and path = ${root}::ltree and type = 'branch')`);
+    }
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${team}, ${adm2}, true)
                 on conflict (workspace_id, login_id) do update set moderator = true`);
@@ -135,6 +150,73 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       select workspace_id::text as ws from private_workspaces where login_id = ${reader}`);
     expect(own[0]?.ws).toBeTruthy();
     expect(home).toBe(own[0]!.ws);
+  });
+
+  /** Every create tool kind a workspace holds (A0 fix round 2, L-2): its
+   *  input, and the node type it makes. */
+  const CREATES: Array<[string, (name: string) => Record<string, unknown>, string]> = [
+    ['page_create', (n) => ({ title: n, markdown: 'x' }), 'page'],
+    ['table_create', (n) => ({ title: n }), 'table'],
+    ['file_create', (n) => ({ parent_path: 'files', filename: `${n}.md`, content: 'x' }), 'file'],
+    ['tree_folder_create', (n) => ({ kind: 'notes', name: n }), 'branch'],
+    ['app_create', (n) => ({ name: n }), 'app'],
+    ['event_create', (n) => ({ title: n, startsAt: '2026-11-01T10:00:00Z' }), 'event'],
+    ['task_create', (n) => ({ title: n }), 'task'],
+    ['recall_map_create', (n) => ({ title: n, enter_when: 'testing the home rule' }), 'recall'],
+  ];
+
+  it.each(CREATES)('%s from a workspace turn follows the home rule', async (slug, input, type) => {
+    const own = async () =>
+      (
+        await x<{ ws: string }>(sql`
+          select workspace_id::text as ws from private_workspaces where login_id = ${reader}`)
+      )[0]?.ws;
+    for (const [login, modWs] of [
+      [mod, [team]],
+      [reader, []],
+    ] as const) {
+      const token = `${tag}${randomUUID().slice(0, 6)}`;
+      const res = await m.withTurnScope(
+        { kind: 'assistant', loginId: login, ws: [team], modWs: [...modWs] },
+        () =>
+          tools.dispatchTool(builtin(slug), input(token), {
+            ownerId: owner,
+            surface: { kind: 'team', loginId: login },
+          }),
+        { writes: true },
+      );
+      expect(res.ok, `${slug} as ${login === mod ? 'mod' : 'reader'}: ${res.ok ? '' : res.error}`).toBe(true);
+      const rows = await x<{ home: string | null }>(sql`
+        select g.workspace_id::text as home from nodes n
+          join item_grants g on g.node_id = n.id and g.is_home
+         where n.type = ${type}::node_type and n.title ilike ${`%${token}%`}
+         order by n.created_at desc limit 1`);
+      expect(rows[0]?.home, `${slug} as ${login === mod ? 'mod' : 'reader'}`).toBe(
+        login === mod ? team : await own(),
+      );
+    }
+  });
+
+  it('a read in a turn does not make the private workspace; a create does (L-3)', async () => {
+    const fresh = randomUUID();
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role)
+                values (${fresh}, ${`${tag}-f@example.invalid`}, 'x', false, 'member')`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${team}, ${fresh}, false)`);
+    const count = async () =>
+      (
+        await x<{ n: number }>(sql`
+          select count(*)::int as n from private_workspaces where login_id = ${fresh}`)
+      )[0]!.n;
+    const turn = <T>(fn: () => Promise<T>) =>
+      m.withTurnScope({ kind: 'assistant', loginId: fresh, ws: [team], modWs: [] }, fn, {
+        writes: true,
+      });
+    const ctx = { ownerId: owner, surface: { kind: 'team' as const, loginId: fresh } };
+    await turn(() => tools.dispatchTool(builtin('task_list'), {}, ctx));
+    expect(await count()).toBe(0);
+    await turn(() => tools.dispatchTool(builtin('task_create'), { title: `${tag} f` }, ctx));
+    expect(await count()).toBe(1);
   });
 
   it("an Admin user's create in the Admin assistant's turn lands in Admin", async () => {

@@ -38,7 +38,9 @@ export function isCounted(path) {
 export function countedFiles(root) {
   const out = execFileSync(
     'git',
-    ['ls-files', '-co', '--exclude-standard', 'packages', 'server', 'scripts'],
+    // Tracked files only (A0 fix round 2, L-7): an untracked local file
+    // would make a local run differ from CI's.
+    ['ls-files', 'packages', 'server', 'scripts'],
     { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   );
   return out
@@ -290,10 +292,12 @@ export function guardCalls(text) {
   return (stripComments(text).match(GUARD_CALL) ?? []).length;
 }
 
-/** Whether a route file is a 410 stub (gone(), goneResponse(), 410). */
+/** Whether a route file is a retired route's 410 stub: it answers through
+ *  lib/gone.ts (gone(), goneResponse(), goneForMemberAsset()), which logs
+ *  each hit. A raw 410 for a missing resource is not a stub (A0 fix round
+ *  2, L-8). */
 export function isGoneStub(text) {
-  const code = stripComments(text);
-  return /\bgone(?:Response|ForMemberAsset)?\s*\(/.test(code) || /status:\s*410\b/.test(code);
+  return /\bgone(?:Response|ForMemberAsset)?\s*\(/.test(stripComments(text));
 }
 
 // ── switch-over ─────────────────────────────────────────────────────────────

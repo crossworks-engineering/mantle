@@ -265,7 +265,11 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   'builtins-tool-results.ts': ["if (kind !== 'team') return undefined;"],
   // run_plan's origin channel: a workspace assistant's Telegram turn carries
   // its chat on the team surface (W7d+e).
-  'builtins-runs.ts': ["if (surface?.kind === 'team') return surface.originTelegramChatId;"],
+  // and the login a run is for: a member's turn names it (A0 fix round 2, L-1).
+  'builtins-runs.ts': [
+    "if (surface?.kind === 'team') return surface.loginId ?? null;",
+    "if (surface?.kind === 'team') return surface.originTelegramChatId;",
+  ],
   // draw_get: a team surface that reaches the system pool gets no image,
   // never every image of the owner's (W8 integration, D-L4).
   'builtins-draws.ts': ["const readFor = { teamSurface: ctx.surface?.kind === 'team' };"],

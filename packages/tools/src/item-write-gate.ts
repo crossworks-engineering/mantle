@@ -28,7 +28,7 @@ import {
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { mapRef } from './builtins-recall-write';
-import { callerHasArea } from './admin-gate';
+import { callerHasArea, callerScope } from './admin-gate';
 
 /** One item a write names: the argument holding its id (a list for an
  *  array argument) and what the write needs of it. */
@@ -47,7 +47,9 @@ const read = (param: string): Target => ({ param, need: 'read' });
 /** Closing a link: edit of the item, or the users area (an Admin user may
  *  close any link of the brain; closing only narrows). */
 const closeLinkTargets: Resolver = async (input) => {
-  if (await callerHasArea('users')) return [];
+  // Only in a workspace scope (callerHasArea says yes outside any), as
+  // node_unshare's own check (A0 fix round 2, L-4).
+  if (callerScope() && (await callerHasArea('users'))) return [];
   const id = typeof input.id === 'string' ? input.id.trim() : '';
   return id ? [{ ids: [id], need: 'edit' }] : [];
 };

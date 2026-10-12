@@ -96,7 +96,8 @@ describe('the architecture ratchets (pinned counts)', () => {
   });
 
   it('no-guard-calls (count only until A4): the guard calls in route files', () => {
-    expect(got.numbers.guardCalls).toBe(GUARD_CALL_PIN);
+    // A new route is guarded until A4 (M-2): the count may grow, never drop.
+    expect(got.numbers.guardCalls).toBeGreaterThanOrEqual(GUARD_CALL_PIN);
   });
 });
 

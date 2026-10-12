@@ -45,6 +45,7 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { resolveTools } from './resolve';
 import { loadAgentGrant } from './agent-grants';
 import { notFound } from './errors';
+import { ownerSurfaceLoginId } from './surface';
 
 /** Tools that may never run as queue items: the run tools themselves (no
  *  recursion — `run_audit` especially, or a queue item could rubber-stamp the
@@ -220,6 +221,13 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
     };
   }
   return { form };
+}
+
+/** The login a surface names: an owner surface's (ownerSurfaceLoginId) or
+ *  a member's turn; null when it names none. */
+function surfaceLogin(surface: ToolHandlerContext['surface']): string | null {
+  if (surface?.kind === 'team') return surface.loginId ?? null;
+  return ownerSurfaceLoginId(surface);
 }
 
 /** The Telegram chat a planning turn came from, for the run's origin
@@ -695,8 +703,11 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         created = await createRun(db, {
           ownerId: ctx.ownerId,
           agentId,
-          // The login the planning turn serves (R3), from its trace.
-          loginId: currentTrace()?.loginId ?? null,
+          // The login the planning turn serves (R3), from its trace; a call
+          // with no trace (MCP) names it on its surface (A0 fix round 2,
+          // L-1). The 0250 stamp falls back to mantle.login_id, which a
+          // typed write on the system pool does not carry.
+          loginId: currentTrace()?.loginId ?? surfaceLogin(ctx.surface),
           title,
           plan: parsed.plan,
           ...(budgetUsd !== undefined ? { budgetMicroUsd: Math.round(budgetUsd * 1e6) } : {}),

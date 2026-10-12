@@ -119,7 +119,7 @@ describe('appToolScope', () => {
     expect(appToolScope('admin', who, app)).toEqual({
       viewer: 'admin',
       actsFor,
-      surface: { kind: 'web' },
+      surface: { kind: 'web', loginId: 'l1' },
     });
     expect(appToolScope('team', who, app)).toEqual({
       viewer: 'team',

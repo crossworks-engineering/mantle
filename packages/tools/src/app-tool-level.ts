@@ -125,7 +125,9 @@ export function appToolScope(
       // appToolVerdict refuses every call at 'none', so nothing gets here.
       throw new Error(APP_NO_TOOLS);
     case 'admin':
-      return { viewer: 'admin', actsFor, surface: { kind: 'web' } };
+      // With the runner's login (A0 fix round 2, L-6): a tool that checks
+      // the caller (a link) sees that login, never a surface with none.
+      return { viewer: 'admin', actsFor, surface: { kind: 'web', loginId: runner.loginId } };
     case 'team':
       return {
         viewer: 'team',

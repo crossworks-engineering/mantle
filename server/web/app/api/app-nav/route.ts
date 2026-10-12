@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
+import { goneResponse } from '@/lib/gone';
 import { APP_NAV_LAYOUT_RETIRED, loadAppNavView } from '@mantle/content';
 
 /**
@@ -24,5 +25,5 @@ export async function GET() {
 export async function PUT() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  return NextResponse.json({ error: APP_NAV_LAYOUT_RETIRED }, { status: 410 });
+  return goneResponse(APP_NAV_LAYOUT_RETIRED);
 }

@@ -58,6 +58,7 @@ import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { adminToolGate, runGated } from './admin-gate';
 import { toolItemWriteRefusal } from './item-write-gate';
 import { turnCreateHome } from './turn-create-home';
+import { CREATE_TOOL_SLUGS } from './create-tools';
 import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-ref-gate';
 
 // Same-package callers that must not import this module (it imports the
@@ -116,7 +117,9 @@ export async function dispatchTool(
       if (refused) return { ok: false, error: refused };
       // What it makes lands by the home rule, as the same login's create
       // from the web would (A0, turn-create-home.ts).
-      const home = await turnCreateHome();
+      const home = await turnCreateHome(
+        CREATE_TOOL_SLUGS.has(tool.slug) || CREATE_TOOL_SLUGS.has(h.ref),
+      );
       const run = () => runGated(gate, () => fn(input, ctx));
       return await (home ? withCreateHome(home, run) : run());
     } catch (err) {

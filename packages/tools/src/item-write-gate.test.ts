@@ -13,10 +13,11 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-const area = vi.hoisted(() => ({ users: false }));
+const area = vi.hoisted(() => ({ users: false, scope: true }));
 vi.mock('./admin-gate', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./admin-gate')>()),
   callerHasArea: vi.fn(async (a: string) => a === 'users' && area.users),
+  callerScope: vi.fn(() => (area.scope ? { kind: 'user', loginId: 'l', ws: [], modWs: [] } : null)),
 }));
 
 import {
@@ -224,6 +225,10 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       expect(await resolve({ id: 'n1' }, 'o'), slug).toEqual([{ ids: ['n1'], need: 'edit' }]);
       area.users = true;
       expect(await resolve({ id: 'n1' }, 'o'), slug).toEqual([]);
+      // Outside a scope the area check says yes by default: not enough (L-4).
+      area.scope = false;
+      expect(await resolve({ id: 'n1' }, 'o'), slug).toEqual([{ ids: ['n1'], need: 'edit' }]);
+      area.scope = true;
     }
   });
 

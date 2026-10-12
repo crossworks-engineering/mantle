@@ -272,6 +272,31 @@ describe('which login a link is opened as (A0 fix round, M1 M2 L5)', () => {
     expect(assertMayLink).toHaveBeenCalledWith('o1', 'login-7', NODE_ID);
   });
 
+  it('a delegated child of a chat that names no login is refused, never the owner (M-1)', async () => {
+    for (const parent of [
+      { kind: 'web' as const },
+      { kind: 'telegram' as const, telegramChatId: '1' },
+    ]) {
+      const surface = childSurface(parent);
+      expect(surface).toEqual({ kind: 'owner', via: 'delegate' });
+      expect(errorOf(await share.handler({ id: NODE_ID }, { ownerId: 'o1', surface }))).toMatch(
+        refused,
+      );
+      expect(errorOf(await unshare.handler({ id: NODE_ID }, { ownerId: 'o1', surface }))).toMatch(
+        refused,
+      );
+    }
+    // Nor any other owner via that names no login.
+    for (const via of ['delegate', 'app', 'dev-tools', 'recipe-test'] as const) {
+      const res = await share.handler(
+        { id: NODE_ID },
+        { ownerId: 'o1', surface: { kind: 'owner', via } },
+      );
+      expect(errorOf(res), via).toMatch(refused);
+    }
+    expect(assertMayLink).not.toHaveBeenCalled();
+  });
+
   it("a run's surface links as the run's login; a run with no login as the owner", async () => {
     await share.handler(
       { id: NODE_ID },
@@ -419,6 +444,14 @@ describe('node_unshare', () => {
       });
       // Opening one is not closing: still refused.
       expect(errorOf(await share.handler({ id: NODE_ID }, admin))).toMatch(/not found/);
+      // An API key or a linked brain of that login: only links it may edit (L-5).
+      for (const via of ['api', 'federation'] as const) {
+        const res = await unshare.handler(
+          { id: NODE_ID },
+          { ownerId: 'o1', surface: { kind: 'owner', via, loginId: 'login-2' } },
+        );
+        expect(errorOf(res), via).toMatch(/not found/);
+      }
     } finally {
       area.scope = false;
       area.users = false;

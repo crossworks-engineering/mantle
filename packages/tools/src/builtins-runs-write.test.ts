@@ -304,6 +304,30 @@ describe('run_plan', () => {
     expect(step.setMeta).toHaveBeenCalledWith({ run_id: 'r1' });
   });
 
+  it('names the login of a call with no trace from its surface (A0 fix round 2, L-1)', async () => {
+    await plan.handler(
+      { title: 'Digest', plan: okPlan },
+      { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'login-2' } },
+    );
+    expect(createRun).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ loginId: 'login-2' }),
+    );
+    await plan.handler(
+      { title: 'Digest', plan: okPlan },
+      { ownerId: 'o1', surface: { kind: 'team', loginId: 'member-3' } },
+    );
+    expect(createRun).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ loginId: 'member-3' }),
+    );
+    await plan.handler({ title: 'Digest', plan: okPlan }, ctx);
+    expect(createRun).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ loginId: null }),
+    );
+  });
+
   it('remembers a Telegram origin so the final report returns to that chat', async () => {
     await plan.handler(
       { title: 'Digest', plan: okPlan },

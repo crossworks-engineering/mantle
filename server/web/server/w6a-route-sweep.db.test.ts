@@ -24,8 +24,9 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w6a-route-sweep.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RequestOutcome } from '@mantle/db';
@@ -127,17 +128,6 @@ const OWN_RULE_SYSTEM_READS: ReadonlySet<string> = new Set([
 ]);
 
 type Json = Record<string, unknown>;
-
-/** Whether this box has the app runtime built (the app build reads its
- *  manifest). Without it an app build answers 500 for want of the runtime,
- *  not of the gate: the member sweep, which since the A0 fix round (M3)
- *  runs the build route on a real app, lets that one pass then. */
-const APP_RUNTIME_BUILT =
-  (process.env.MANTLE_APP_RUNTIME_MANIFEST !== undefined &&
-    existsSync(process.env.MANTLE_APP_RUNTIME_MANIFEST)) ||
-  existsSync(
-    fileURLToPath(new globalThis.URL('../public/app-runtime/manifest.json', import.meta.url)),
-  );
 
 /** Streams that never end, and routes that reach outside this box. Their
  *  gate is the same function as their siblings'; they are skipped here. */
@@ -303,6 +293,21 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET = 'w6a-route-sweep-secret-at-least-32-characters';
+    // The app build reads the app runtime's exports map; a box that never
+    // built the runtime has none. A stub of its own, so the member sweep
+    // really runs the build route on a real app (A0 fix round 2, M-3).
+    const runtime = mkdtempSync(join(tmpdir(), 'w6a-runtime-'));
+    writeFileSync(
+      join(runtime, 'manifest.json'),
+      JSON.stringify({
+        exports: {
+          '@host': ['host'],
+          react: ['default', 'useState', 'useEffect', 'useMemo', 'useRef', 'useCallback'],
+          'react/jsx-runtime': ['jsx', 'jsxs', 'Fragment'],
+        },
+      }),
+    );
+    process.env.MANTLE_APP_RUNTIME_MANIFEST = join(runtime, 'manifest.json');
     delete process.env.MANTLE_DETACHED_DEV;
     delete process.env.MANTLE_ADMIN_READS;
     m = await import('@mantle/db');
@@ -464,9 +469,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         const key = `${method} ${e.pattern}`;
         noteWrites('member', key, r.writes);
         if (r.status >= 500 || r.status === 0) {
-          if (!(key === 'POST /api/apps/:id/build' && !APP_RUNTIME_BUILT && r.status === 500)) {
-            failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
-          }
+          failures.push(`${key} ${r.status} ${r.text.slice(0, 160)}`);
           continue;
         }
         if (r.outcome?.kind === 'system' && r.outcome.why !== 'login-self') {
@@ -590,6 +593,61 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     }
     expect(failures).toEqual([]);
     expect(checked).toBeGreaterThan(50);
+  }, 600_000);
+
+  it('a member with a Write grant only: delete and move stay refused (A0 fix round 2, L-10)', async () => {
+    // An item homed in Side (mem2 moderates) with a Write grant to the
+    // member's private workspace: the member edits it, never manages it.
+    const writeOnly = async (kind: string) => {
+      const id = await memberItem(kind);
+      await homeIn(id, side);
+      await m.withHeads([id], 'update', async (tx) => {
+        await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+                             values (${id}, ${priv}, true)
+                             on conflict (node_id, workspace_id) do update set write = true`);
+      });
+      return id;
+    };
+    const failures: string[] = [];
+    let manageChecked = 0;
+    for (const e of manifest) {
+      if (!e.pattern.startsWith('/api/') || skipped(e.pattern)) continue;
+      const kind = editKindOf(e.pattern);
+      if (!kind) continue;
+      for (const method of e.methods) {
+        if (!isOwnerRoute(method, e.pattern) || !memberMayWrite(method, e.pattern)) continue;
+        const at = (id: string) =>
+          e.pattern
+            .split('/')
+            .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : seg))
+            .join('/');
+        if (itemWriteTarget(method, e.pattern, at(randomUUID()))?.need !== 'manage') continue;
+        const path = at(await writeOnly(kind));
+        manageChecked += 1;
+        const r = await call(path, mem, method);
+        if (r.status !== 403 && r.status !== 404) {
+          failures.push(`${method} ${e.pattern} ${r.status} ${r.text.slice(0, 120)}`);
+        }
+      }
+    }
+    // The item routes of the kinds members do not write over HTTP (tasks,
+    // events, Recall maps, links): refused whatever the grant.
+    const note = await writeOnly('note');
+    let closedChecked = 0;
+    for (const e of manifest) {
+      if (!/^\/api\/(tasks|events|recall\/maps|shares)\/:id/.test(e.pattern)) continue;
+      for (const method of e.methods) {
+        if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') continue;
+        closedChecked += 1;
+        const r = await call(e.pattern.replace(':id', note), mem, method);
+        if (r.status !== 403 && r.status !== 404) {
+          failures.push(`${method} ${e.pattern} ${r.status} ${r.text.slice(0, 120)}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(manageChecked).toBeGreaterThan(6);
+    expect(closedChecked).toBeGreaterThan(4);
   }, 600_000);
 
   it('a member API key (U5): /api/v1 answers whoami in its scope and refuses the rest', async () => {

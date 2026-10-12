@@ -134,9 +134,9 @@ const SITES: Record<string, Site> = {
   },
   'server/web/app/api/dev-tools/execute-tool/route.ts': {
     calls: 1,
-    surface: /surface: \{ kind: 'web' \}/,
+    surface: /surface: \{ kind: 'web', loginId: user\.actor\.id \}/,
     scope: 'call',
-    why: "the owner's dev tool console",
+    why: "the owner's dev tool console, naming its signed-in login",
   },
   'server/web/app/api/apps/[id]/tool-broker/route.ts': {
     calls: 1,
