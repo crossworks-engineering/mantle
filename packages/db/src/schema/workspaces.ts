@@ -50,6 +50,10 @@ export const workspaces = pgTable(
     adminModerated: boolean('admin_moderated').notNull().default(false),
     /** The brain's workspaces the bridges keep ('admin', 'team'; 0250). */
     bridgeKey: text('bridge_key'),
+    /** The workspace's home app (0275): its landing page shows it in place
+     *  of the Built-in home while the workspace holds the app and its
+     *  published build is green. NULL = the Built-in home. */
+    landingAppId: uuid('landing_app_id').references(() => nodes.id, { onDelete: 'set null' }),
     createdBy: uuid('created_by').references(() => authUsers.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -66,6 +70,9 @@ export const workspaces = pgTable(
     uniqueIndex('workspaces_reserved_name_uq')
       .on(t.ownerId, sql`lower(btrim(${t.name}))`)
       .where(sql`${t.archivedAt} is null and lower(btrim(${t.name})) in ('admin', 'team')`),
+    index('workspaces_landing_app_idx')
+      .on(t.landingAppId)
+      .where(sql`${t.landingAppId} is not null`),
   ],
 );
 

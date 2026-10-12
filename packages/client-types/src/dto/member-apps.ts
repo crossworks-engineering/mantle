@@ -77,6 +77,29 @@ export type MemberHomeApp = {
 export type MemberHomeData<THub = unknown> =
   { homeApp: MemberHomeApp; hub: THub } | { homeApp: null; hub: null };
 
+/**
+ * GET /api/home?ws=<id>: the landing page of a workspace, for every login
+ * (task d78e7bde). Without `ws` it is "All my workspaces": the Built-in
+ * home over every workspace of the login, never a home app.
+ *
+ * `ws` echoes the workspace asked for (null: all). `homeApp` is the
+ * workspace's home app when the workspace still holds it, its published
+ * build is green and the login may run it; null means the Built-in home.
+ * `hub` is always there: the data of the Built-in home and what a home
+ * app's `host.hub.get()` answers, read in the login's scope and kept to
+ * what the workspace reads (sections are its newest pages, counts its items
+ * per kind, apps the other apps it holds that the login may run). A
+ * workspace the login may not name is 404 `{ error, code: 'not_found' }`.
+ *
+ * `THub` is `HubData` from `@mantle/share-ui/app-bridge-protocol` (see
+ * MemberHomeData).
+ */
+export type WorkspaceHomeData<THub = unknown> = {
+  ws: string | null;
+  homeApp: MemberHomeApp | null;
+  hub: THub;
+};
+
 // ── Admin: member chats ──────────────────────────────────────────────────
 
 /** GET /api/team-admin/member-chats: one member login and its chat. */

@@ -184,7 +184,8 @@ export type AppRow = {
    * has never been shared / the share is revoked (owner-only).
    */
   shareMode: ShareMode | null;
-  /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
+  /** Whether this app is the home app of a workspace the reader sees (its
+   *  landing page, set on the workspace screen; task d78e7bde). */
   isHub: boolean;
   /** A live open public link exists (not revoked, not expired): the
    *  "Public" pill. Absent from a brain before W5b2. */
@@ -567,11 +568,10 @@ export type ProfilePreferences = {
    *  group grant, so the switch can't be bypassed by a manifest change. Flip it
    *  from the Team admin surface. */
   teamPrivateReads?: boolean;
-  /** Node id of the mini-app designated as the members' HOME APP (the name
-   *  is from the retired /team hub). A member login's home renders it
-   *  full-bleed while it has a green published build and is at a level
-   *  members may run (`resolveMemberHomeApp`, member-apps.ts); the built-in
-   *  member home is the fallback. No share link is involved. Read via
+  /** RETIRED (task d78e7bde, migration 0275): the brain-wide members' home
+   *  app. 0275 made it the Team workspace's home app
+   *  (workspaces.landing_app_id); nothing reads it any more. It stays in
+   *  the stored preferences so a rollback finds it. Read via
    *  projectTeamHubAppId, never raw. */
   teamHubAppId?: string;
   /** The email account client sign-in codes are sent from (client logins

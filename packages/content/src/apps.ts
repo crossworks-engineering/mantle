@@ -17,7 +17,7 @@
  * promotes the draft (source + build) into the published columns.
  */
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
   db,
   executeWrite,
@@ -25,6 +25,7 @@ import {
   apps,
   appDatabases,
   shares,
+  workspaces,
   notifyNodeIngested,
   type Node,
   type AppSource,
@@ -38,7 +39,6 @@ import {
   draftAllowed,
   draftColumn,
 } from '@mantle/db';
-import { loadProfilePreferences } from './profile-preferences';
 import { notifyAppNavChanged } from './app-nav';
 import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
 import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
@@ -109,8 +109,9 @@ type SidecarCols = {
   shareSettings: Record<string, unknown> | null;
   /** That share's expiry (null: none). */
   shareExpiresAt?: Date | null;
-  /** prefs.teamHubAppId — resolved once per query, compared per row. */
-  hubAppId: string | null;
+  /** The home apps of the workspaces the reader sees (landingAppIds),
+   *  read once per query, compared per row. */
+  hubAppIds: ReadonlySet<string>;
   /** apps.data_read_only: informational (client logins C6). */
   dataReadOnly: boolean;
   /** apps.mcp_access: MCP may reach the app's data (0234). */
@@ -122,6 +123,23 @@ type SidecarCols = {
   /** apps.draft_updated_at: detail only (the editor's save check). */
   draftUpdatedAt?: Date | null;
 };
+
+/** The home apps of the brain's live workspaces (workspaces.landing_app_id,
+ *  task d78e7bde): an app's `isHub`. In a login's scope the row rule keeps
+ *  it to that login's workspaces. */
+async function landingAppIds(ownerId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: workspaces.landingAppId })
+    .from(workspaces)
+    .where(
+      and(
+        eq(workspaces.ownerId, ownerId),
+        isNull(workspaces.archivedAt),
+        isNotNull(workspaces.landingAppId),
+      ),
+    );
+  return new Set(rows.flatMap((r) => (r.id ? [r.id] : [])));
+}
 
 /** The node columns an app row shows (listApps reads only these). */
 type RowNode = Pick<Node, 'id' | 'title' | 'data' | 'tags' | 'createdAt' | 'updatedAt'>;
@@ -144,7 +162,7 @@ function rowOf(n: RowNode, s: Partial<SidecarCols> = {}): AppRow {
     hasDraft: s.hasDraft ?? s.draftSource != null,
     // Every live link is open: team links are retired (migration 0176).
     shareMode: s.shareSettings ? 'public' : null,
-    isHub: s.hubAppId != null && s.hubAppId === n.id,
+    isHub: s.hubAppIds?.has(n.id) === true,
     // A live open link: not revoked (the join), not expired.
     hasLink: s.shareSettings != null && !(s.shareExpiresAt && s.shareExpiresAt <= new Date()),
     dataReadOnly: s.dataReadOnly === true,
@@ -251,7 +269,7 @@ export async function listApps(
   // Only the columns a row shows (apps audit P2): the whole node row carried
   // the embedding, and the draft column the whole draft source tree (up to
   // 50 × 256 KB per app, up to 500 apps), to answer "is there a draft".
-  const [rows, prefs] = await Promise.all([
+  const [rows, hubAppIds] = await Promise.all([
     db
       .select({
         node: {
@@ -283,9 +301,8 @@ export async function listApps(
       .orderBy(appOrderBy(opts.sort))
       .limit(opts.limit ?? 500)
       .offset(opts.offset ?? 0),
-    loadProfilePreferences(ownerId),
+    landingAppIds(ownerId),
   ]);
-  const hubAppId = prefs.teamHubAppId ?? null;
   return rows.map((r) =>
     rowOf(r.node, {
       manifest: r.manifest ?? {},
@@ -293,7 +310,7 @@ export async function listApps(
       publishedBuild: r.publishedBuild ?? null,
       shareSettings: r.shareSettings ?? null,
       shareExpiresAt: r.shareExpiresAt ?? null,
-      hubAppId,
+      hubAppIds,
       dataReadOnly: r.dataReadOnly === true,
       mcpAccess: r.mcpAccess === true,
       authorLevel: r.authorLevel === 'team' ? 'team' : 'admin',
@@ -324,7 +341,7 @@ export async function listAppTags(ownerId: string): Promise<{ tag: string; count
 }
 
 async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null> {
-  const [[row], prefs] = await Promise.all([
+  const [[row], hubAppIds] = await Promise.all([
     db
       .select({
         node: nodes,
@@ -350,7 +367,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
       )
       .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
       .limit(1),
-    loadProfilePreferences(ownerId),
+    landingAppIds(ownerId),
   ]);
   if (!row) return null;
   return detailOf(row.node, {
@@ -361,7 +378,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     publishedBuild: row.publishedBuild ?? null,
     shareSettings: row.shareSettings ?? null,
     shareExpiresAt: row.shareExpiresAt ?? null,
-    hubAppId: prefs.teamHubAppId ?? null,
+    hubAppIds,
     dataReadOnly: row.dataReadOnly === true,
     mcpAccess: row.mcpAccess === true,
     authorLevel: row.authorLevel === 'team' ? 'team' : 'admin',
@@ -504,9 +521,9 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
         manifest,
         draftBuild: null,
         publishedBuild: null,
-        // A just-created app has no share and can't be the designated hub.
+        // A just-created app has no share and is no workspace's home app.
         shareSettings: null,
-        hubAppId: null,
+        hubAppIds: new Set(),
         dataReadOnly: false,
         authorLevel: input.authorLevel ?? 'admin',
       });

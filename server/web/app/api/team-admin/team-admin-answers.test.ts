@@ -6,7 +6,9 @@
  *
  * - badges: `{ openRequestCount }` (no `openRequests`, no `pendingUploadCount`)
  * - GET settings: no `dashboardTags`, no `teamAgent` (no agent level is read,
- *   W5c); `teamAssistant` is the Team workspace's assistant, or null
+ *   W5c), no `hubAppId` or `hubCandidates` (the home app is a workspace
+ *   setting since task d78e7bde); `teamAssistant` is the Team workspace's
+ *   assistant, or null
  *
  * GET requests was removed in W5c (review-gone-routes.test.ts pins its 410).
  *
@@ -34,7 +36,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   countOpenTeamRequests: vi.fn(async () => h.openRequests),
   loadProfilePreferences: vi.fn(async () => ({ teamHubAppId: APP, teamHubTags: ['faq'] })),
   isTeamPrivateReadsEnabled: vi.fn(() => false),
-  listApps: vi.fn(async () => [{ id: APP, title: 'Home', hasBuild: true }]),
   teamAssistant: vi.fn(async () => h.assistant),
   getAgentAccess: h.agentAccess,
 }));
@@ -60,14 +61,7 @@ describe('GET /api/team-admin/settings', () => {
     const res = await GET();
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(keys(body)).toEqual([
-      'badges',
-      'hubAppId',
-      'hubCandidates',
-      'privateReads',
-      'teamAssistant',
-    ]);
-    expect(body.hubAppId).toBe(APP);
+    expect(keys(body)).toEqual(['badges', 'privateReads', 'teamAssistant']);
     expect(body.teamAssistant).toBeNull();
     h.assistant = { id: 'agent-id', slug: 'helper', name: 'Helper', workspaceId: 'team-ws' };
     const withOne = (await (await GET()).json()) as Record<string, unknown>;

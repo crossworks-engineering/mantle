@@ -22,14 +22,16 @@
  * Only granted columns are read (never `apps.draft_*`), so these work on the
  * viewer roles.
  */
-import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import {
   apps,
   currentWorkspaceScope,
   db,
+  nodeReadByWorkspace,
   nodes,
   teamReadsSql,
   teamWritesSql,
+  workspaces,
   type AppManifest,
   type BuildRef,
 } from '@mantle/db';
@@ -101,20 +103,33 @@ export function memberMayWriteAppData(app: { writable: boolean }): boolean {
 
 const publishedGreen = sql`(${apps.publishedBuild}->>'ok')::boolean is true`;
 
-function runnableWhere(anchorId: string) {
-  return and(eq(nodes.ownerId, anchorId), eq(nodes.type, 'app'), memberReachSql(), publishedGreen);
+/** `ws` (a checked id, parseWsFilter) keeps only the apps that workspace
+ *  holds, on top of the member's own reach: a workspace's landing page
+ *  (task d78e7bde). */
+function runnableWhere(anchorId: string, ws?: string | null) {
+  return and(
+    eq(nodes.ownerId, anchorId),
+    eq(nodes.type, 'app'),
+    memberReachSql(),
+    publishedGreen,
+    ws ? nodeReadByWorkspace(ws) : undefined,
+  );
 }
 
 /** The apps a member's launcher lists, by title: those a workspace of
- *  theirs holds. */
-export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]> {
-  return (await listMemberAppsPlaced(anchorId)).apps;
+ *  theirs holds (`ws`: only those that workspace holds). */
+export async function listMemberApps(
+  anchorId: string,
+  opts: { ws?: string | null } = {},
+): Promise<MemberAppCard[]> {
+  return (await listMemberAppsPlaced(anchorId, opts)).apps;
 }
 
 /** The same list, with the folder path of each app: what the launcher's
  *  folders are built from (./app-folders.ts). The paths stay on the brain. */
 export async function listMemberAppsPlaced(
   anchorId: string,
+  opts: { ws?: string | null } = {},
 ): Promise<{ apps: MemberAppCard[]; places: AppPlace[] }> {
   const rows = await db
     .select({
@@ -128,7 +143,7 @@ export async function listMemberAppsPlaced(
     })
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
-    .where(runnableWhere(anchorId))
+    .where(runnableWhere(anchorId, opts.ws))
     .orderBy(asc(nodes.title))
     .limit(500);
   const places: AppPlace[] = [];
@@ -152,11 +167,12 @@ export async function listMemberAppsPlaced(
 }
 
 /** One app a member may run, or null: not an app, no workspace of theirs
- *  holds it, no green published build, or not this brain's. The same null
- *  for all of them. */
+ *  holds it, no green published build, or not this brain's (`ws`: or that
+ *  workspace does not hold it). The same null for all of them. */
 export async function getMemberRunnableApp(
   anchorId: string,
   appId: string,
+  opts: { ws?: string | null } = {},
 ): Promise<MemberRunnableApp | null> {
   const [row] = await db
     .select({
@@ -170,7 +186,7 @@ export async function getMemberRunnableApp(
     })
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
-    .where(and(eq(nodes.id, appId), runnableWhere(anchorId)))
+    .where(and(eq(nodes.id, appId), runnableWhere(anchorId, opts.ws)))
     .limit(1);
   if (!row?.publishedBuild?.ok) return null;
   const d = (row.data ?? {}) as Record<string, unknown>;
@@ -202,16 +218,81 @@ export async function listTeamLevelAppIds(anchorId: string): Promise<Set<string>
 }
 
 /**
- * The members' home app (plan 4a, "Hub app"): the app the brain pins as home
- * (the `teamHubAppId` pref, set in Team admin > Settings), honoured for a
- * member only while it is one they may run. No share is needed: the grant is
- * the access. Null means the member home shows its built-in view.
+ * A workspace's home app (task d78e7bde; was the brain-wide member home app
+ * of plan 4a): the app the workspace names as its landing page
+ * (workspaces.landing_app_id, set on the workspace screen by a Moderator),
+ * honoured only while the workspace holds it, its published build is green
+ * and the reader may run it. No share is needed: the grant is the access.
+ * Null means the landing page shows the Built-in home.
  */
 export async function resolveMemberHomeApp(
   anchorId: string,
-  homeAppId: string | undefined,
+  homeAppId: string | null | undefined,
+  ws?: string | null,
 ): Promise<MemberHomeApp | null> {
   if (!homeAppId) return null;
-  const app = await getMemberRunnableApp(anchorId, homeAppId);
+  const app = await getMemberRunnableApp(anchorId, homeAppId, { ws });
   return app ? { appId: app.id, title: app.title, icon: app.icon, color: app.color } : null;
+}
+
+/**
+ * An app as a workspace's home app, read for the workspace screen and for
+ * the landing setting (task d78e7bde): `appId` is an app of this brain that
+ * workspace `ws` holds, with `ready` true when its published build is green.
+ * Null when it is not one: no app, another brain's, or `ws` does not hold
+ * it. Only the workspace's own grant counts, never the reader's other
+ * workspaces: the workspace's users must all be able to open it. Runs where
+ * the caller runs (the workspace routes read on the system pool, with the
+ * rule in the query).
+ */
+export async function workspaceHeldApp(
+  anchorId: string,
+  ws: string,
+  appId: string,
+): Promise<{ appId: string; title: string; ready: boolean } | null> {
+  const [row] = await db
+    .select({ id: nodes.id, title: nodes.title, ready: publishedGreen })
+    .from(nodes)
+    .innerJoin(apps, eq(apps.nodeId, nodes.id))
+    .where(
+      and(
+        eq(nodes.id, appId),
+        eq(nodes.ownerId, anchorId),
+        eq(nodes.type, 'app'),
+        nodeReadByWorkspace(ws),
+      ),
+    )
+    .limit(1);
+  return row ? { appId: row.id, title: row.title, ready: row.ready === true } : null;
+}
+
+/** The home app id workspace `ws` names (workspaces.landing_app_id, task
+ *  d78e7bde), read where the caller runs: in a login's scope the row rule
+ *  answers null for a workspace it is not in. Null: the Built-in home. */
+export async function workspaceLandingAppId(anchorId: string, ws: string): Promise<string | null> {
+  const [row] = await db
+    .select({ appId: workspaces.landingAppId })
+    .from(workspaces)
+    .where(
+      and(eq(workspaces.id, ws), eq(workspaces.ownerId, anchorId), isNull(workspaces.archivedAt)),
+    )
+    .limit(1);
+  return row?.appId ?? null;
+}
+
+/** The Team workspace's id, read where the caller runs: in a login's scope
+ *  null when the login is not in Team (or the brain has none). */
+export async function teamWorkspaceId(anchorId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(
+      and(
+        eq(workspaces.ownerId, anchorId),
+        eq(workspaces.bridgeKey, 'team'),
+        isNull(workspaces.archivedAt),
+      ),
+    )
+    .limit(1);
+  return row?.id ?? null;
 }

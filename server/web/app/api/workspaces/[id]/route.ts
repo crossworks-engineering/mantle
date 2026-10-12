@@ -16,6 +16,7 @@ const PatchBody = z
     description: z.string().trim().max(2000).optional(),
     contactNodeId: z.string().uuid().nullable().optional(),
     assistantId: z.string().uuid().nullable().optional(),
+    landingAppId: z.string().uuid().nullable().optional(),
   })
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'Nothing to update.');
 

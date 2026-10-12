@@ -62,6 +62,7 @@ import type {
   WorkspaceUserSearchHit,
 } from '@mantle/client-types';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
+import { workspaceHeldApp } from '@mantle/content';
 import { auditLoginMutation, getLoginOr401, type SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
@@ -226,6 +227,7 @@ type WsRow = {
   is_admin: boolean;
   admin_moderated: boolean;
   bridge_key: string | null;
+  landing_app_id: string | null;
   archived_at: string | Date | null;
   user_count: number;
   resource_count: number;
@@ -238,7 +240,7 @@ type WsRow = {
 function wsSelect(caller: WsCaller, where: ReturnType<typeof sql>, lock = false) {
   return sql`
     select w.id, w.name, w.description, w.contact_id, w.is_admin, w.admin_moderated,
-           w.bridge_key, w.archived_at,
+           w.bridge_key, w.landing_app_id, w.archived_at,
            (select count(*)::int from workspace_users u where u.workspace_id = w.id) as user_count,
            (select count(*)::int from workspace_resources r where r.workspace_id = w.id) as resource_count,
            me.login_id is not null as me_member,
@@ -408,11 +410,17 @@ async function detail(
     write: r.write,
   }));
   const hasHistory = seen.row.agent_id ? await agentHasHistory(q, seen.row.agent_id) : false;
+  // The home app is named only while this workspace holds it: a user of the
+  // workspace may open it then, and no title of an app it lost leaks.
+  const landingApp = seen.row.landing_app_id
+    ? await workspaceHeldApp(caller.anchorId, id, seen.row.landing_app_id)
+    : null;
   return {
     workspace: toWorkspace(seen.row),
     users: outUsers,
     resources: outResources,
     hasHistory,
+    landingApp,
   };
 }
 
@@ -515,6 +523,7 @@ export async function patchWorkspace(
     description?: string;
     contactNodeId?: string | null;
     assistantId?: string | null;
+    landingAppId?: string | null;
   },
 ): Promise<Workspace> {
   try {
@@ -571,11 +580,64 @@ export async function patchWorkspace(
       if (body.assistantId !== undefined) {
         await setAssistant(caller, tx, w, body.assistantId);
       }
+      if (body.landingAppId !== undefined) {
+        await setLandingApp(caller, tx, seen, body.landingAppId);
+      }
     });
   } catch (err) {
     throw nameError(err) ?? assistantError(err) ?? err;
   }
   return (await getWorkspace(caller, id)).workspace;
+}
+
+// ── The landing page (task d78e7bde) ─────────────────────────────────────────
+
+/**
+ * Set or clear the workspace's home app: what its landing page shows in
+ * place of the Built-in home. A Moderator of this workspace only (the right
+ * mantle_may_manage gives on the workspace's items: the Moderator tick, read
+ * here with the workspace row), never an Admin area: the landing page is
+ * the workspace's own setting. Only an app the workspace holds (its grant;
+ * share the app with the workspace first, nothing is granted here) with a
+ * green published build. `null` clears it: the Built-in home.
+ */
+async function setLandingApp(
+  caller: WsCaller,
+  tx: Exec,
+  seen: Seen,
+  appId: string | null,
+): Promise<void> {
+  const w = seen.row;
+  if (!seen.mod) {
+    throw new WsError(
+      403,
+      'forbidden',
+      'Only a Moderator of this workspace can set its landing page.',
+    );
+  }
+  if (appId !== null) {
+    const held = await workspaceHeldApp(caller.anchorId, w.id, wsIdOrInvalid(appId));
+    if (!held) {
+      throw new WsError(
+        409,
+        'landing_app_not_held',
+        'This workspace does not hold that app. Share the app with the workspace first.',
+      );
+    }
+    if (!held.ready) {
+      throw new WsError(
+        409,
+        'landing_app_not_ready',
+        'That app has no working published build. Publish it first.',
+      );
+    }
+    appId = held.appId;
+  }
+  if (appId === w.landing_app_id) return;
+  await tx.execute(
+    sql`update workspaces set landing_app_id = ${appId}, updated_at = now() where id = ${w.id}`,
+  );
+  await event(tx, w.id, caller.loginId, 'workspace.landing', { appId });
 }
 
 function wsIdOrInvalid(id: string): string {

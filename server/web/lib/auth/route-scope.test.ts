@@ -245,6 +245,7 @@ describe('member route lists (A1: generated from the kind registry)', () => {
         'GET /api/nodes/:id',
         'GET /api/search',
         'GET /api/mentions/search',
+        'GET /api/home',
         'GET /api/formulas',
         'GET /api/formulas/:id',
         'GET /api/files/files',

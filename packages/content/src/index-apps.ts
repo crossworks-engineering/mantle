@@ -119,6 +119,9 @@ export {
   memberReachSql,
   memberWritesSql,
   resolveMemberHomeApp,
+  teamWorkspaceId,
+  workspaceHeldApp,
+  workspaceLandingAppId,
   type MemberAppCard,
   type MemberRunnableApp,
 } from './member-apps';

@@ -59,6 +59,9 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   // The Apps sidebar of older clients: the apps the login's scope reads
   // (W6a fix round 1, M2), with its own pins.
   ['/api/app-nav', 'content'],
+  // The landing page of the login's current workspace (task d78e7bde): its
+  // home app and the Built-in home's data, in the login's scope.
+  ['/api/home', 'content'],
   // The login's own things.
   ['/api/profile', 'self'],
   ['/api/push', 'self'],
@@ -227,6 +230,9 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'POST /api/formulas/:id/evaluate',
   'GET /api/recall/maps/:id/cards/:card',
   'GET /api/recall/maps/:id/revisions',
+  // The landing page of the current workspace (task d78e7bde): every login
+  // lands on it, in its own scope.
+  'GET /api/home',
 ];
 
 const MEMBER_OPEN: ReadonlySet<string> = new Set(MEMBER_OPEN_READS);

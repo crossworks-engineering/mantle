@@ -63,7 +63,6 @@ export const AS_SYSTEM_PINS = {
     why: ['rule-in-query'],
   },
   'server/web/app/api/assistant/transcribe/route.ts': { count: 2, why: ['rule-in-query'] },
-  'server/web/app/api/member/home/route.ts': { count: 1, why: ['owner-preferences'] },
   'server/web/lib/agent-telegram.ts': { count: 3, why: ['login-telegram'] },
   'server/web/lib/app-runner.ts': { count: 5, why: ['app-data'] },
   'server/web/lib/assistant-chat.ts': { count: 1, why: ['rule-in-query'] },
@@ -73,6 +72,7 @@ export const AS_SYSTEM_PINS = {
   'server/web/lib/chat-archive-http.ts': { count: 1, why: ['rule-in-query'] },
   'server/web/lib/debug.ts': { count: 1, why: ['login-telegram'] },
   'server/web/lib/grants.ts': { count: 1, why: ['rule-in-query'] },
+  'server/web/lib/landing.ts': { count: 1, why: ['owner-preferences'] },
   'server/web/lib/snapshot-copies.ts': { count: 1, why: ['snapshot-copies'] },
   'server/web/lib/workspaces.ts': { count: 1, why: ['rule-in-query'] },
 };

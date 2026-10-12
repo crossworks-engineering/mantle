@@ -94,6 +94,7 @@ export type {
   MemberChatsResponse,
   MemberHomeApp,
   MemberHomeData,
+  WorkspaceHomeData,
 } from './dto/member-apps';
 export type {
   MemberInviteAccepted,
@@ -192,6 +193,7 @@ export type {
   WorkspaceDetailResponse,
   WorkspaceError,
   WorkspaceErrorCode,
+  WorkspaceLandingApp,
   WorkspaceListResponse,
   WorkspacePatchBody,
   WorkspaceResource,

@@ -92,16 +92,33 @@ export type WorkspaceDetailResponse = {
   /** The assistant has history (threads or messages): it cannot be swapped
    *  or removed, only cloned to use elsewhere. */
   hasHistory: boolean;
+  /** The workspace's landing page (task d78e7bde): its home app, or null
+   *  for the Built-in home. Only an app the workspace still holds is named;
+   *  `ready` is false while its published build is not green (the landing
+   *  page then shows the Built-in home). Absent from an older brain. */
+  landingApp?: WorkspaceLandingApp | null;
+};
+
+/** A workspace's home app, as its screen shows it. */
+export type WorkspaceLandingApp = {
+  appId: string;
+  title: string;
+  /** It has a green published build: the landing page shows it. */
+  ready: boolean;
 };
 
 /** PATCH /api/workspaces/:id. Name and description: a Moderator or an Admin
  *  user. Contact and assistant: an Admin user (assistant: area
- *  'assistants'). `null` clears. Answers the updated Workspace. */
+ *  'assistants'). The landing page (`landingAppId`): a Moderator of this
+ *  workspace only, to an app the workspace holds with a green published
+ *  build (409 `landing_app_not_held` or `landing_app_not_ready`). `null`
+ *  clears (the Built-in home). Answers the updated Workspace. */
 export type WorkspacePatchBody = {
   name?: string;
   description?: string;
   contactNodeId?: string | null;
   assistantId?: string | null;
+  landingAppId?: string | null;
 };
 
 /** GET /api/workspaces/:id/archive-preview: what archiving would do.
@@ -203,6 +220,8 @@ export type WorkspaceErrorCode =
   | 'assistant_has_history'
   | 'assistant_in_use'
   | 'resource_exists'
+  | 'landing_app_not_held'
+  | 'landing_app_not_ready'
   | 'rate_limited';
 
 export type WorkspaceError = { error: string; code: WorkspaceErrorCode };

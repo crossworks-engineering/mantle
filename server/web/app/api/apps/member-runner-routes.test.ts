@@ -9,7 +9,8 @@
  * only on the published build. The rules themselves are proven on Postgres in
  * packages/{content,tools}/src/member-app*.viewer.db.test.ts. Also: the
  * removed member app, file and drawing routes answer 410, and the member
- * home (kept) reads in the member's scope.
+ * home (kept for older apps: the Team workspace's landing page, task
+ * d78e7bde) reads in the member's scope.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,6 +18,7 @@ const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const LOGIN = '22222222-2222-4222-8222-222222222222';
 const APP = '77777777-7777-4777-8777-777777777777';
 const OTHER_APP = '88888888-8888-4888-8888-888888888888';
+const TEAM = '99999999-9999-4999-8999-999999999999';
 const PUBLISHED = { storageKey: 'apps/published.js', ok: true };
 // The scope a member's app tool runs in: the app, for this login (AppRunFor).
 const APP_SCOPE = { login: LOGIN, app: { id: APP } };
@@ -134,12 +136,20 @@ vi.mock('@mantle/content', async (importOriginal) => {
           }
         : null;
     }),
-    loadProfilePreferences: vi.fn(async () => ({ siteName: 'Brain', teamHubAppId: h.homeAppId })),
-    resolveMemberHomeApp: vi.fn(async (_anchor: string, id: string | undefined) =>
-      read(
-        'resolveMemberHomeApp',
-        id === APP && h.runnable ? { appId: APP, title: 'Polls', icon: null, color: null } : null,
-      ),
+    loadProfilePreferences: vi.fn(async () => ({ siteName: 'Brain' })),
+    // The Team workspace and its home app (workspaces.landing_app_id).
+    teamWorkspaceId: vi.fn(async () => read('teamWorkspaceId', TEAM)),
+    workspaceLandingAppId: vi.fn(async (_anchor: string, ws: string) =>
+      read('workspaceLandingAppId', ws === TEAM ? (h.homeAppId ?? null) : null),
+    ),
+    resolveMemberHomeApp: vi.fn(
+      async (_anchor: string, id: string | null | undefined, ws?: string | null) =>
+        read(
+          'resolveMemberHomeApp',
+          id === APP && ws === TEAM && h.runnable
+            ? { appId: APP, title: 'Polls', icon: null, color: null }
+            : null,
+        ),
     ),
     listMemberApps: vi.fn(async () =>
       read('listMemberApps', [card(APP, 'Polls'), card(OTHER_APP, 'Budget')]),
@@ -626,13 +636,13 @@ describe('the removed member routes (W8d)', () => {
 });
 
 describe('member home', () => {
-  it('gives no hub data when nothing is pinned, and skips the hub reads', async () => {
+  it('gives no hub data when the Team workspace names no home app', async () => {
     const body = await (await homeRoute()).json();
     expect(body).toEqual({ homeApp: null, hub: null });
-    expect(h.reads.map((r) => r.fn)).toEqual(['resolveMemberHomeApp']);
+    expect(h.reads.map((r) => r.fn)).not.toContain('resolveMemberHomeApp');
   });
 
-  it("answers hub.get for a pinned app, read in the member's scope, without the app itself", async () => {
+  it("answers hub.get for the Team's home app, read in the member's scope, without the app itself", async () => {
     h.homeAppId = APP;
     const body = (await (await homeRoute()).json()) as {
       homeApp: { appId: string };
@@ -651,7 +661,8 @@ describe('member home', () => {
     ]);
     expect(Object.keys(body.hub.counts).sort()).toEqual(['draw', 'file', 'note', 'page', 'table']);
     expect(body.hub.apps.map((a) => a.token)).toEqual([OTHER_APP]);
-    expect(h.reads.length).toBe(4);
-    expect(h.reads.map((r) => r.ranAs)).toEqual(Array(4).fill({ login: LOGIN }));
+    // The Team lookup, the home app id, the app and the three hub reads.
+    expect(h.reads.length).toBe(6);
+    expect(h.reads.map((r) => r.ranAs)).toEqual(Array(6).fill({ login: LOGIN }));
   });
 });

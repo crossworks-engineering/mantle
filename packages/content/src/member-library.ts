@@ -15,7 +15,7 @@
  * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
  */
 import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
-import { db, nodes, currentScope } from '@mantle/db';
+import { db, nodes, currentScope, nodeReadByWorkspace } from '@mantle/db';
 import { getNote } from './notes';
 import { getPage } from './pages/read';
 import { getTable } from './tables/read';
@@ -75,14 +75,20 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
 const notExtractedFragment = sql`NOT (${nodes.type} = 'file' AND ${nodes.data} ? 'sourceFileId')`;
 
 /** What the Library lists: this brain's items of a Library kind the reader
- *  reads, without extracted image fragments. */
-function libraryWhere(anchorId: string, opts: { kind?: LibraryKind; q?: string } = {}) {
+ *  reads, without extracted image fragments. `ws` (a checked id,
+ *  parseWsFilter) keeps only what that workspace reads, on top of the
+ *  reader's own rule: a workspace's landing page (task d78e7bde). */
+function libraryWhere(
+  anchorId: string,
+  opts: { kind?: LibraryKind; q?: string; ws?: string | null } = {},
+) {
   const q = opts.q?.trim();
   return and(
     eq(nodes.ownerId, anchorId),
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...LIBRARY_KINDS]),
     notExtractedFragment,
     q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
+    opts.ws ? nodeReadByWorkspace(opts.ws) : undefined,
   );
 }
 
@@ -90,7 +96,13 @@ function libraryWhere(anchorId: string, opts: { kind?: LibraryKind; q?: string }
  *  extracted image fragments. `q` matches the title. */
 export async function listLibrary(
   anchorId: string,
-  opts: { kind?: LibraryKind; q?: string; limit?: number; offset?: number } = {},
+  opts: {
+    kind?: LibraryKind;
+    q?: string;
+    ws?: string | null;
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<{ items: LibraryRow[]; total: number }> {
   assertLimited();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
@@ -121,12 +133,15 @@ export async function libraryHolds(anchorId: string, ids: readonly string[]): Pr
 
 /** How many items the Library lists, per kind (zeros included): the stat
  *  tiles a members' home app shows. The same filter as `listLibrary`. */
-export async function libraryCounts(anchorId: string): Promise<Record<LibraryKind, number>> {
+export async function libraryCounts(
+  anchorId: string,
+  opts: { ws?: string | null } = {},
+): Promise<Record<LibraryKind, number>> {
   assertLimited();
   const rows = await db
     .select({ type: nodes.type, n: sql<number>`count(*)::int` })
     .from(nodes)
-    .where(libraryWhere(anchorId))
+    .where(libraryWhere(anchorId, { ws: opts.ws }))
     .groupBy(nodes.type);
   const out = Object.fromEntries(LIBRARY_KINDS.map((k) => [k, 0])) as Record<LibraryKind, number>;
   for (const r of rows) if (isLibraryKind(r.type)) out[r.type] = r.n;
