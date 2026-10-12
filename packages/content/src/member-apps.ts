@@ -79,6 +79,12 @@ export function memberWritesSql(): SQL<boolean> {
   if (scope) {
     return sql<boolean>`(${notInformational} and coalesce("public"."mantle_may_edit"(${nodes.homeWs}, ${nodes.writeWs}), false))`;
   }
+  // No workspace scope means no login to ask "Moderator of the home" of, so
+  // this keeps the pre-workspaces Team rule (A0 fix round, L6). It fails
+  // closed and no member path reaches it: a member's app run and its MCP
+  // app_data_* calls always hold the login's scope (session.ts,
+  // loginToolServer); off a scope is a brain not on workspaces, which has no
+  // Team workspace, so nothing here writes.
   return sql<boolean>`(${notInformational} and ${teamWritesSql()})`;
 }
 

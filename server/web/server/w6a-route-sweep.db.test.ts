@@ -232,6 +232,54 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       })
       .join('/');
 
+  /** The kind of item an open write route names by its `:id`, or null
+   *  when it names none (a create, a move by body). */
+  const editKindOf = (pattern: string): string | null => {
+    if (!pattern.includes('/:id')) return null;
+    for (const [prefix, kind] of [
+      ['/api/pages/', 'page'],
+      ['/api/notes/', 'note'],
+      ['/api/draws/', 'draw'],
+      ['/api/tables/', 'table'],
+      ['/api/apps/', 'app'],
+      ['/api/files/files/', 'file'],
+      ['/api/files/folders/', 'files-folder'],
+      ['/api/tree/:kind/folders/', 'tree-folder'],
+      ['/api/tree/items/', 'note'],
+    ] as const) {
+      if (pattern.startsWith(prefix)) return kind;
+    }
+    return null;
+  };
+  let made = 0;
+  /** A fresh item of `kind` the member may edit and manage (A0 fix round,
+   *  M3): made by the Admin user through its own create route, so every
+   *  side row exists, then homed in the member's private workspace. One per
+   *  write, so a delete never takes the item of the next. */
+  const memberItem = async (kind: string): Promise<string> => {
+    made += 1;
+    const name = `${tag}-${kind}-${made}`;
+    const [path, body, key] = (
+      {
+        page: ['/api/pages', { title: name }, 'page'],
+        note: ['/api/notes', { title: name }, 'note'],
+        draw: ['/api/draws', { title: name }, 'draw'],
+        table: ['/api/tables', { title: name }, 'table'],
+        app: ['/api/apps', { name }, 'app'],
+        file: ['/api/files/files', { parentPath: 'files', filename: `${name}.txt`, content: 'x' }, 'file'],
+        'files-folder': ['/api/files/folders', { parentPath: 'files', slug: name }, 'folder'],
+        'tree-folder': ['/api/tree/notes/folders', { parentId: null, name }, 'folder'],
+      } as Record<string, [string, Json, string]>
+    )[kind]!;
+    const r = await call(path, owner, 'POST', body);
+    expect(r.status, `${kind}: ${r.text.slice(0, 200)}`).toBeLessThan(300);
+    const row = (JSON.parse(r.text) as Record<string, Json>)[key]!;
+    const id = String(row.id ?? row.nodeId);
+    expect(id, `${kind}: ${r.text.slice(0, 200)}`).toMatch(/^[0-9a-f-]{36}$/);
+    await homeIn(id, priv);
+    return id;
+  };
+
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
@@ -368,6 +416,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     const failures: string[] = [];
     let opened = 0;
     let openWrites = 0;
+    let onItem = 0;
     let ownRule = 0;
     const systemReads = new Set<string>();
     for (const e of manifest) {
@@ -375,7 +424,26 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       for (const method of e.methods) {
         if (method === 'OPTIONS') continue;
         const read = method === 'GET';
-        const r = await call(concrete(e.pattern, read), mem, method);
+        // An open write on an item runs on one the member may edit, so the
+        // handler runs and the scope check below covers it (M3). The
+        // random-id 404 is its own pass, after this one.
+        const openOnItem =
+          isOwnerRoute(method, e.pattern) &&
+          !memberMayRead(method, e.pattern) &&
+          memberMayWrite(method, e.pattern) &&
+          editKindOf(e.pattern) !== null;
+        const path = openOnItem
+          ? (() => {
+              const kind = editKindOf(e.pattern)!;
+              return memberItem(kind).then((id) =>
+                e.pattern
+                  .split('/')
+                  .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : seg))
+                  .join('/'),
+              );
+            })()
+          : Promise.resolve(concrete(e.pattern, read));
+        const r = await call(await path, mem, method);
         const key = `${method} ${e.pattern}`;
         noteWrites('member', key, r.writes);
         if (r.status >= 500 || r.status === 0) {
@@ -424,11 +492,18 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
             if (r.status === 403 || r.outcome?.kind !== 'user') {
               failures.push(`${key} open read: ${r.status} ${JSON.stringify(r.outcome)}`);
             }
+          } else if (openOnItem) {
+            // An open write on an item the member may edit: the gate lets it
+            // through and the handler runs in the member's scope (M3).
+            openWrites += 1;
+            onItem += 1;
+            if (r.outcome?.kind !== 'user' || r.text.includes('"item-workspace"')) {
+              failures.push(`${key} open write on its item: ${r.status} ${r.text.slice(0, 120)}`);
+            }
           } else if (memberMayWrite(method, e.pattern)) {
-            // W6b: an open write runs in the member's scope, or is refused
-            // by the item check (an id it cannot edit; one it cannot read, or
-            // no row has, is its one 404: audit 2026-10-12) or the workspace
-            // check, never by member-login and never on the system pool.
+            // W6b: an open write with no item runs in the member's scope, or
+            // is refused by the workspace check, never by member-login and
+            // never on the system pool.
             openWrites += 1;
             const checked =
               (r.status === 403 &&
@@ -456,7 +531,41 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(failures).toEqual([]);
     expect(opened).toBeGreaterThan(20);
     expect(openWrites).toBeGreaterThan(30);
+    expect(onItem).toBeGreaterThan(25);
   }, 900_000);
+
+  it('a member: an open write on an id it cannot read, or no row has, is the gate’s one 404', async () => {
+    // The other half of M3: the same routes on a random id, and on an item
+    // homed where the member is not, answer the same 404 before any handler.
+    const failures: string[] = [];
+    let checked = 0;
+    for (const e of manifest) {
+      if (!e.pattern.startsWith('/api/') || skipped(e.pattern)) continue;
+      for (const method of e.methods) {
+        if (
+          !isOwnerRoute(method, e.pattern) ||
+          memberMayRead(method, e.pattern) ||
+          !memberMayWrite(method, e.pattern) ||
+          editKindOf(e.pattern) === null
+        ) {
+          continue;
+        }
+        for (const id of [randomUUID(), sideNote]) {
+          const path = e.pattern
+            .split('/')
+            .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : seg))
+            .join('/');
+          const r = await call(path, mem, method);
+          checked += 1;
+          if (r.status !== 404 || r.text !== '{"ok":false,"error":"not found"}' || r.outcome?.kind === 'user') {
+            failures.push(`${method} ${e.pattern} (${id === sideNote ? 'unread' : 'no row'}) ${r.status} ${r.text.slice(0, 120)}`);
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(checked).toBeGreaterThan(50);
+  }, 600_000);
 
   it('a member API key (U5): /api/v1 answers whoami in its scope and refuses the rest', async () => {
     const made = await call('/api/access-keys', mem, 'POST', {

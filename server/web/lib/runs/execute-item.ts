@@ -249,7 +249,11 @@ async function runResolved(
               // C4); it is no delivery channel, so send-to-user tools still
               // refuse cleanly.
               agent,
-              surface: { kind: 'owner', via: 'run' },
+              // It carries the run's login (A0 fix round, M1): a tool that
+              // checks the caller (a link) sees that login, not the owner.
+              surface: run.loginId
+                ? { kind: 'owner', via: 'run', loginId: run.loginId }
+                : { kind: 'owner', via: 'run' },
             }),
           );
           if (!res.ok) handle.setError(res.error);

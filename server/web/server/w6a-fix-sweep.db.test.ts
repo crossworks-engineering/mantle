@@ -52,6 +52,7 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
   const owner = randomUUID(); // the anchor, an Admin user
   const mem = randomUUID(); // a member (Team)
   const mem2 = randomUUID(); // a member, Moderator of Side and Ro
+  const noUsers = randomUUID(); // an Admin user without the users area
   const tag = `w6f${randomUUID().slice(0, 6)}`;
   const DRAFT = `${tag}draftmark`;
   let team = '';
@@ -127,7 +128,8 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Olive Owner'),
       (${mem}, ${email('mem')}, 'x', false, 'member', 'Mia Member'),
-      (${mem2}, ${email('mem2')}, 'x', false, 'member', 'Max Member')`);
+      (${mem2}, ${email('mem2')}, 'x', false, 'member', 'Max Member'),
+      (${noUsers}, ${email('nousers')}, 'x', false, 'admin', 'Nell Nousers')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
@@ -135,6 +137,8 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
       select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
     adminWs = ws.find((w) => w.key === 'admin')!.id;
+    await x(sql`update workspace_users set limits = ${JSON.stringify({ areas: { users: false } })}::jsonb
+                 where workspace_id = ${adminWs} and login_id = ${noUsers}`);
     const tokens = await import('../lib/auth/tokens');
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
     const { createApp } = await import('./app');
@@ -335,8 +339,51 @@ describe.skipIf(!URL)('W6a fix round 1: drafts, item writes, app-nav, marks, tra
     await homeIn(noteForShare, side);
     await x(sql`insert into shares (id, owner_id, node_id, node_type, token)
                 values (${shareId}, ${owner}, ${noteForShare}, 'note', ${`${tag}tok`})`);
+    // Changing the link is refused; closing it is not: an Admin user with
+    // the users area may close any link (docs/workspaces.md, A0).
+    const change = await call(`/api/shares/${shareId}`, owner, 'PATCH', { serve: [] });
+    expect(change.status, change.text.slice(0, 120)).toBe(403);
+    const shut = await call(`/api/shares/${shareId}`, noUsers, 'DELETE');
+    expect(shut.status, shut.text.slice(0, 120)).toBe(403);
     const revoke = await call(`/api/shares/${shareId}`, owner, 'DELETE');
-    expect(revoke.status, revoke.text.slice(0, 120)).toBe(403);
+    expect(revoke.status, revoke.text.slice(0, 120)).toBe(200);
+    expect(json(revoke.text).ok).toBe(true);
+  }, 60_000);
+
+  it('A0: a link needs edit to change or close (an app: manage), as the guide says', async () => {
+    // Homed in Side (mem2 moderates), granted to Ro with Write on: the
+    // Admin user (a user of Ro) edits these items but does not manage them.
+    const grantWrite = async (id: string) =>
+      m.withHeads([id], 'update', async (tx) => {
+        await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+                             values (${id}, ${ro}, true)
+                             on conflict (node_id, workspace_id) do update set write = true`);
+      });
+    const linkOn = async (id: string, type: string) => {
+      const sid = randomUUID();
+      await x(sql`insert into shares (id, owner_id, node_id, node_type, token)
+                  values (${sid}, ${owner}, ${id}, ${type}, ${`${tag}${sid.slice(0, 8)}`})`);
+      return sid;
+    };
+    const note = await node('note', `${tag} a0 link note`, 'notes');
+    await homeIn(note, side);
+    await grantWrite(note);
+    const noteLink = await linkOn(note, 'note');
+    // noUsers is no user of Ro: it may not read the note, so it may not close
+    // the link either (no users area).
+    const shut = await call(`/api/shares/${noteLink}`, noUsers, 'DELETE');
+    expect(shut.status, shut.text.slice(0, 120)).toBe(403);
+    const change = await call(`/api/shares/${noteLink}`, owner, 'PATCH', { serve: [] });
+    expect(change.status, change.text.slice(0, 200)).toBe(200);
+
+    const apps = await import('@mantle/content');
+    const app = await apps.createApp(owner, { title: `${tag} a0 link app` });
+    await homeIn(app.id, side);
+    await grantWrite(app.id);
+    const appLink = await linkOn(app.id, 'app');
+    const appChange = await call(`/api/shares/${appLink}`, owner, 'PATCH', { serve: [] });
+    expect(appChange.status, appChange.text.slice(0, 200)).toBe(403);
+    expect(appChange.text).toContain('item-workspace');
   }, 60_000);
 
   // ── M2 ────────────────────────────────────────────────────────────────────

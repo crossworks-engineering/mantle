@@ -8,7 +8,7 @@
 import { and, eq } from 'drizzle-orm';
 import { agents, db } from '@mantle/db';
 import { type BuiltinToolDef, type ToolHandlerContext } from './types';
-import { isOwnerSurface } from './surface';
+import { isOwnerSurface, ownerSurfaceLoginId } from './surface';
 import { str } from './coerce';
 
 /** The surface a delegated child runs on. A non-owner parent (team, client,
@@ -19,7 +19,12 @@ import { str } from './coerce';
 export function childSurface(
   surface: ToolHandlerContext['surface'],
 ): ToolHandlerContext['surface'] {
-  return isOwnerSurface(surface) ? { kind: 'owner', via: 'delegate' } : surface;
+  if (!isOwnerSurface(surface)) return surface;
+  // The child acts as the parent's login (A0 fix round, M1): a tool that
+  // stamps or checks the caller (a link, an author) sees the same login,
+  // never the brain owner in its place.
+  const loginId = ownerSurfaceLoginId(surface);
+  return loginId ? { kind: 'owner', via: 'delegate', loginId } : { kind: 'owner', via: 'delegate' };
 }
 
 export const invoke_agent: BuiltinToolDef = {

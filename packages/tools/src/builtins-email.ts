@@ -343,10 +343,10 @@ const email_page: BuiltinToolDef = {
     // not read is not found, and nothing is sent.
     const page = await getPage(ctx.ownerId, pageId);
     if (!page) return { ok: false, error: `page ${pageId} not found` };
-    // A public link is a link on the page: Moderators of its home only, as
-    // page_share. Refused before anything is sent.
+    // A public link is a link on the page: a user who may edit it, as
+    // page_share (docs/workspaces.md, A0). Refused before anything is sent.
     if (input.includeLink === true) {
-      const refused = await itemWriteRefusal([pageId], 'manage');
+      const refused = await itemWriteRefusal([pageId], 'edit');
       if (refused) return { ok: false, error: `Nothing was sent: ${refused}` };
     }
 

@@ -890,6 +890,7 @@ async function itemWriteGate(
   const path = getRequestContext()?.path;
   const target = path ? itemWriteTarget(method, pattern, path) : null;
   if (!target || !ITEM_ID_RE.test(target.id)) return null;
+  let need = target.need;
   // The rollback switch restores only the read path (W7 integration fix 2,
   // M6): an Admin user's item writes are still checked against its login.
   if (!(await brainOnWorkspacesNow())) return null;
@@ -940,10 +941,20 @@ async function itemWriteGate(
     // recall revision (read on the system pool: an id, no content).
     let nodeId: string | null = target.id;
     if (target.ref === 'share') {
+      // An Admin user with the users area may close any link of the brain
+      // (docs/workspaces.md: closing only narrows). The handler asks the
+      // area again (requireArea) before it revokes.
+      if (opts.admin && method.toUpperCase() === 'DELETE' && (await loginHoldsArea(loginId, 'users'))) {
+        return null;
+      }
       const r = (await db.execute(
-        sql`select node_id::text as id from shares where id = ${target.id}`,
-      )) as unknown as { id: string | null }[];
+        sql`select s.node_id::text as id, n.type::text as type
+              from shares s left join nodes n on n.id = s.node_id
+             where s.id = ${target.id}`,
+      )) as unknown as { id: string | null; type: string | null }[];
       nodeId = r[0]?.id ?? null;
+      // An app's link: home Moderators only (assertMayLink, link-serve.ts).
+      if (r[0]?.type === 'app') need = 'manage';
     } else if (target.ref === 'recall-revision') {
       const r = (await db.execute(
         sql`select m.node_id::text as id from recall_revisions v
@@ -961,11 +972,11 @@ async function itemWriteGate(
     )) as unknown as { edit: boolean | null; manage: boolean | null; copy: boolean }[];
     row = rows[0];
     if (row) {
-      if (target.need === 'read') return null;
+      if (need === 'read') return null;
       // A read-only snapshot copy: deleted or filed by its home's Moderator
       // (the database keeps it in its private workspace), never edited.
-      readOnlyCopy = rows[0]!.copy === true && target.need === 'edit';
-      if (!readOnlyCopy && (target.need === 'edit' ? row.edit === true : row.manage === true)) {
+      readOnlyCopy = rows[0]!.copy === true && need === 'edit';
+      if (!readOnlyCopy && (need === 'edit' ? row.edit === true : row.manage === true)) {
         return null;
       }
     } else {

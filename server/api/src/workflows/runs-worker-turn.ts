@@ -373,8 +373,11 @@ export async function runsWorkerTurnImpl(
                 initialMessages,
                 tools: allowedTools,
                 // The owner's own run (client logins C4): a missing surface is
-                // not the owner.
-                surface: { kind: 'owner', via: 'run' },
+                // not the owner. It carries the run's login (A0 fix round,
+                // M1), as the item path does.
+                surface: run.loginId
+                  ? { kind: 'owner', via: 'run', loginId: run.loginId }
+                  : { kind: 'owner', via: 'run' },
               });
               const ctx = currentTrace();
               if (ctx) {

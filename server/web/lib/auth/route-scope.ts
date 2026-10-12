@@ -393,9 +393,11 @@ export function itemWriteTarget(
     if (pattern !== head && !pattern.startsWith(`${head}/`)) continue;
     const id = path.split('/')[prefix.split('/').length];
     if (!id) return null;
-    // A share is a link (manage, 0241); a revision restore edits the map;
-    // a deleted app's purge and restore manage it.
-    const need: ItemWriteNeed = ref === 'share' || ref === 'deleted-app' ? 'manage' : 'edit';
+    // A share is a link: opening, changing and closing it needs edit of its
+    // item (docs/workspaces.md; an app's link needs manage, which the gate
+    // asks once it knows the item's type). A revision restore edits the
+    // map; a deleted app's purge and restore manage it.
+    const need: ItemWriteNeed = ref === 'deleted-app' ? 'manage' : 'edit';
     return { id, need, ref };
   }
   for (const prefix of ITEM_WRITE_PREFIXES) {

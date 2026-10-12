@@ -269,9 +269,12 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // draw_get: a team surface that reaches the system pool gets no image,
   // never every image of the owner's (W8 integration, D-L4).
   'builtins-draws.ts': ["const readFor = { teamSurface: ctx.surface?.kind === 'team' };"],
-  // A link is opened as the calling login: a member login's turn links as
-  // that member, a team surface with no login of its own never as the owner.
-  'builtins-share.ts': ["if (s?.kind === 'team' || s?.kind === 'contact') {"],
+  // A link is opened as the calling login (A0 fix round, M2): this asks
+  // WHICH login a member's turn names, never "is this the owner". The owner
+  // test is isOwnerSurface, and a team surface with no login is refused.
+  'builtins-share.ts': [
+    "if (s?.kind === 'team' && typeof s.loginId === 'string' && s.loginId !== '') return s.loginId;",
+  ],
 };
 
 function sourceFiles(dir: string): string[] {

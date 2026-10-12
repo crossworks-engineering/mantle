@@ -108,7 +108,9 @@ import type { BuiltinToolDef, ToolHandlerContext } from './types';
 const send = EMAIL_TOOLS.find((t) => t.slug === 'email_send')!;
 const page = EMAIL_TOOLS.find((t) => t.slug === 'email_page')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own path that names no login (stdio MCP). A missing surface
+// is not the owner: it may not open a link (A0 fix round, M2).
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
 
@@ -328,6 +330,26 @@ describe('email_page', () => {
     expect(createShare).toHaveBeenCalledWith('o1', 'p1', { serve: undefined });
     expect(res.ok && (res.output as { shareUrl?: string }).shareUrl).toMatch(/\/s\/tok$/);
     expect(res.ok && (res.output as { warning?: string }).warning).toBeUndefined();
+  });
+
+  it("opens the link as the CALLING login, and refuses a missing surface before sending (L5)", async () => {
+    vi.mocked(createShare).mockResolvedValue({ id: 's1', token: 'tok', mode: 'public' } as never);
+    const mcp: ToolHandlerContext = {
+      ownerId: 'o1',
+      surface: { kind: 'owner', via: 'mcp', loginId: 'login-2' },
+    };
+    const res = await page.handler({ pageId: 'p1', to: 'friend@example.com', includeLink: true }, mcp);
+    expect(res.ok).toBe(true);
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'login-2', 'p1');
+    vi.mocked(sendEmail).mockClear();
+    vi.mocked(createShare).mockClear();
+    const none = await page.handler(
+      { pageId: 'p1', to: 'friend@example.com', includeLink: true },
+      { ownerId: 'o1' },
+    );
+    expect(errorOf(none)).toMatch(/Nothing was sent: the page's link cannot be opened/);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(createShare).not.toHaveBeenCalled();
   });
 
   it('defaults the subject to the page title', async () => {

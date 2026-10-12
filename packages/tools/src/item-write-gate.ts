@@ -28,6 +28,7 @@ import {
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { mapRef } from './builtins-recall-write';
+import { callerHasArea } from './admin-gate';
 
 /** One item a write names: the argument holding its id (a list for an
  *  array argument) and what the write needs of it. */
@@ -42,6 +43,14 @@ type Resolver = (
 const edit = (param: string): Target => ({ param, need: 'edit' });
 const manage = (param: string): Target => ({ param, need: 'manage' });
 const read = (param: string): Target => ({ param, need: 'read' });
+
+/** Closing a link: edit of the item, or the users area (an Admin user may
+ *  close any link of the brain; closing only narrows). */
+const closeLinkTargets: Resolver = async (input) => {
+  if (await callerHasArea('users')) return [];
+  const id = typeof input.id === 'string' ? input.id.trim() : '';
+  return id ? [{ ids: [id], need: 'edit' }] : [];
+};
 
 /** A recall map, by slug, former slug or id, as the recall tools take it. */
 const recallMap =
@@ -115,10 +124,14 @@ export const ITEM_WRITE_TARGETS: ReadonlyMap<string, readonly Target[] | Resolve
   ['page_replace_from_file', [edit('page_id')]],
   ['page_move', [manage('id')]],
   ['page_delete', [manage('id')]],
-  ['page_share', [manage('id')]],
-  ['page_unshare', [manage('id')]],
-  ['node_share', [manage('id')]],
-  ['node_unshare', [manage('id')]],
+  // A link (docs/workspaces.md, A0): opening or closing it needs edit of
+  // the item; an app's needs manage, which assertMayLink asks once it knows
+  // the type (link-serve.ts). An Admin user with the users area may close
+  // any link: the handler checks the item, or that area, itself.
+  ['page_share', [edit('id')]],
+  ['page_unshare', closeLinkTargets],
+  ['node_share', [edit('id')]],
+  ['node_unshare', closeLinkTargets],
   // A conversion that retires its source edits the source. The handlers
   // retire it unless supersede_source is false (pages/from.ts): an omitted
   // flag retires too (W7a fix round 2, N2).

@@ -10,8 +10,9 @@
  *  - the app: one a workspace of the login holds, with a green PUBLISHED
  *    build (never the draft), read in the login's own scope
  *    (memberAppOr404). Anything else is the same plain 404.
- *  - its data: the app's own SQLite. The login writes it when a workspace of
- *    its holds the app with Write on and the app is not informational
+ *  - its data: the app's own SQLite. The login writes it when it may edit
+ *    the app (a Moderator of its home, or a workspace of its holds the app
+ *    with Write on) and the app is not informational
  *    (memberMayWriteAppData); else a write answers 403 `read-only`. Rows
  *    only, never the schema (dataOnly).
  *  - its tools: the team rules (appToolLevel 'team': the author ceiling and

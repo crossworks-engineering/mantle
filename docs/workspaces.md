@@ -90,7 +90,7 @@ every workspace it is granted to, each with a Write switch.
 | Remove a grant from T            | Moderator of its home, or Moderator of T              |
 | Switch Write on for T            | Moderator of its home and Moderator of T              |
 | Switch Write off for T           | Moderator of its home, or Moderator of T              |
-| Open or close its public link    | to be able to edit it (an app: Moderator of its home) |
+| Open, change or close its link   | to be able to edit it (an app: Moderator of its home) |
 | Close any public link            | to be an Admin user with the users area               |
 | Share it with one contact        | to be an Admin user (its home is not checked)         |
 | Delete it                        | Moderator of its home                                 |
@@ -100,8 +100,11 @@ every workspace it is granted to, each with a Write switch.
   only when that grant has Write on.
 - For an Admin user, **Add Admin** is the first choice in the panel. It
   needs no switch of workspace for an item they manage.
-- An item the caller may not read or change answers "not found", never
-  "exists but no".
+- An item the caller may not read answers "not found", never "exists
+  but no". An item the caller reads but may not change answers
+  "forbidden". (For now an Admin user still hears "Add yourself to it
+  first" for an item in a workspace they are not in, since they may add
+  themselves to any workspace.)
 - **Kinds.** Folders, files, notes, pages, tables, apps, formulas,
   drawings, tasks, events and Recall maps can be granted to any workspace.
   Telegram messages are a class of their own: they belong to the workspace

@@ -21,8 +21,9 @@ import {
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 import { str } from './coerce';
-import { ownerSurfaceLoginId } from './surface';
+import { isOwnerSurface, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
+import { callerHasArea, callerScope } from './admin-gate';
 
 /** The `serve` input both share tools take. */
 export const SERVE_INPUT = {
@@ -44,23 +45,30 @@ export function serveInput(v: unknown): string[] | undefined | string {
 
 /**
  * The login a link is opened or closed as (audit 2026-10-12): the CALLER,
- * as POST /api/shares passes the session's actor. An owner surface's login
- * (an MCP connection, an API key, a web or Telegram chat), a member login's
- * turn; the brain's owner only on an owner path that names no login (stdio,
- * a run, a pending approval). A surface with no login of its own (a team
- * contact, a contact link) is refused, never read as the owner.
+ * as POST /api/shares passes the session's actor. An ALLOWLIST (A0 fix
+ * round, M2): a surface that names its login (an owner surface's MCP
+ * connection, API key, web or Telegram chat, a run or delegated child that
+ * carries its login; a member login's turn) links as that login. The brain's
+ * owner only on an owner path that names no login AND has no MCP channel
+ * (stdio, a run with no login, the owner's own pending approval). Anything
+ * else is refused, never read as the owner: a missing surface (the C4 rule
+ * in surface.ts), a chat that names no login, a team or contact surface with
+ * no login of its own, an MCP connection that names none (a peer bound to an
+ * Admin login, W6b fix round 3).
  */
-function linkLoginId(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string {
+export function linkLoginId(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string {
   const s = ctx.surface;
-  if (s?.kind === 'team' || s?.kind === 'contact') {
-    if (s.kind !== 'contact' && s.loginId) return s.loginId;
-    throw new LinkRefusedError(
-      403,
-      'forbidden',
-      'Only a signed-in login may open or close a link: ask a user who may edit the item.',
-    );
+  if (s?.kind === 'team' && typeof s.loginId === 'string' && s.loginId !== '') return s.loginId;
+  if (isOwnerSurface(s)) {
+    const named = ownerSurfaceLoginId(s);
+    if (named) return named;
+    if (s?.kind === 'owner' && !s.mcp) return ctx.ownerId;
   }
-  return ownerSurfaceLoginId(s) ?? ctx.ownerId;
+  throw new LinkRefusedError(
+    403,
+    'forbidden',
+    'Only a signed-in login may open or close a link: ask a user who may edit the item.',
+  );
 }
 
 /**
@@ -162,6 +170,14 @@ export function linkModeRefusal(mode: unknown): string | null {
   return "mode must be 'public' (the only link mode)";
 }
 
+/** Whether the caller is an Admin user with the users area: an owner
+ *  surface in a workspace scope that holds that area. Outside any scope
+ *  (callerHasArea's "yes, the surface decides") it is not. */
+async function mayCloseAnyLink(ctx: Pick<ToolHandlerContext, 'surface'>): Promise<boolean> {
+  if (!isOwnerSurface(ctx.surface) || !callerScope()) return false;
+  return callerHasArea('users');
+}
+
 /** Turn the link on `id` off as the calling login (the checks of DELETE
  *  /api/shares/:id). Changes no level and no grant. */
 export async function closeLink(
@@ -169,9 +185,17 @@ export async function closeLink(
   id: string,
 ): Promise<{ id: string; unshared: boolean }> {
   const login = linkLoginId(ctx);
+  // The rights check first (A0 fix round, L4): a caller that may not link
+  // the item learns nothing about whether it has a link. An Admin user with
+  // the users area may close any link (docs/workspaces.md), as DELETE
+  // /api/shares/:id lets it.
+  try {
+    await assertMayLink(ctx.ownerId, login, id);
+  } catch (err) {
+    if (!(err instanceof LinkRefusedError) || !(await mayCloseAnyLink(ctx))) throw err;
+  }
   const share = await getActiveShareForNode(ctx.ownerId, id);
   if (!share) return { id, unshared: false };
-  await assertMayLink(ctx.ownerId, login, id);
   return { id, unshared: await revokeShare(ctx.ownerId, share.id) };
 }
 

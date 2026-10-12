@@ -32,6 +32,7 @@ vi.mock('@mantle/content', () => {
   }
   return {
     createShare: vi.fn(),
+    getPage: vi.fn(),
     getActiveShareForNode: vi.fn(),
     revokeShare: vi.fn(),
     assertMayLink: vi.fn(),
@@ -51,15 +52,20 @@ import {
   checkServeList,
   createShare,
   getActiveShareForNode,
+  getPage,
   LinkRefusedError,
   revokeShare,
 } from '@mantle/content';
 import { SHARE_TOOLS } from './builtins-share';
+import { page_share as pageShare, page_unshare as pageUnshare } from './pages/sharing';
+import { childSurface } from './builtins-delegation';
 import type { ToolHandlerContext } from './types';
 
 const share = SHARE_TOOLS.find((t) => t.slug === 'node_share')!;
 const unshare = SHARE_TOOLS.find((t) => t.slug === 'node_unshare')!;
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own path that names no login (stdio MCP): the one surface
+// that links as the brain owner. A missing surface is not the owner (M2).
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
 const NODE_ID = 'n-1';
 const ITEM = { id: NODE_ID, type: 'note', path: null, read: true, edit: true, manage: true };
 
@@ -88,6 +94,7 @@ beforeEach(() => {
   vi.mocked(assertMayLink).mockResolvedValue(ITEM);
   vi.mocked(getActiveShareForNode).mockResolvedValue(null);
   vi.mocked(checkServeList).mockImplementation(async (_o, _l, _i, serve) => [...serve]);
+  vi.mocked(getPage).mockResolvedValue({ id: NODE_ID, title: 'P' } as never);
 });
 
 describe('node_share', () => {
@@ -237,6 +244,76 @@ describe('the share tools act as the CALLING login (audit 2026-10-12)', () => {
   });
 });
 
+describe('which login a link is opened as (A0 fix round, M1 M2 L5)', () => {
+  const refused = /signed-in login/;
+
+  it('a missing surface is not the owner: refused, nothing checked or written', async () => {
+    const res = await share.handler({ id: NODE_ID }, { ownerId: 'o1' });
+    expect(errorOf(res)).toMatch(refused);
+    const off = await unshare.handler({ id: NODE_ID }, { ownerId: 'o1' });
+    expect(errorOf(off)).toMatch(refused);
+    expect(assertMayLink).not.toHaveBeenCalled();
+    expect(getActiveShareForNode).not.toHaveBeenCalled();
+    expect(createShare).not.toHaveBeenCalled();
+  });
+
+  it('a delegated child links as its parent login, never as the owner', async () => {
+    const parent = { kind: 'web' as const, loginId: 'login-7' };
+    const surface = childSurface(parent);
+    expect(surface).toEqual({ kind: 'owner', via: 'delegate', loginId: 'login-7' });
+    await share.handler({ id: NODE_ID }, { ownerId: 'o1', surface });
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'login-7', NODE_ID);
+  });
+
+  it("a run's surface links as the run's login; a run with no login as the owner", async () => {
+    await share.handler(
+      { id: NODE_ID },
+      { ownerId: 'o1', surface: { kind: 'owner', via: 'run', loginId: 'login-8' } },
+    );
+    expect(assertMayLink).toHaveBeenLastCalledWith('o1', 'login-8', NODE_ID);
+    await share.handler({ id: NODE_ID }, { ownerId: 'o1', surface: { kind: 'owner', via: 'run' } });
+    expect(assertMayLink).toHaveBeenLastCalledWith('o1', 'o1', NODE_ID);
+  });
+
+  it('an MCP connection that names no login (a peer bound to an Admin login) is refused', async () => {
+    const surface = {
+      kind: 'owner' as const,
+      via: 'federation' as const,
+      mcp: { via: 'peer' as const, write: true, peerId: 'p-1' },
+    };
+    expect(errorOf(await share.handler({ id: NODE_ID }, { ownerId: 'o1', surface }))).toMatch(
+      refused,
+    );
+    expect(errorOf(await unshare.handler({ id: NODE_ID }, { ownerId: 'o1', surface }))).toMatch(
+      refused,
+    );
+    expect(assertMayLink).not.toHaveBeenCalled();
+  });
+
+  it('a chat that names no login is refused, never read as the owner', async () => {
+    for (const surface of [{ kind: 'web' as const }, { kind: 'telegram' as const, telegramChatId: '1' }]) {
+      expect(errorOf(await share.handler({ id: NODE_ID }, { ownerId: 'o1', surface }))).toMatch(
+        refused,
+      );
+    }
+    expect(assertMayLink).not.toHaveBeenCalled();
+  });
+
+  it('page_share and page_unshare check the link as the caller', async () => {
+    const mcp: ToolHandlerContext = {
+      ownerId: 'o1',
+      surface: { kind: 'owner', via: 'mcp', loginId: 'login-2' },
+    };
+    await pageShare.handler({ id: NODE_ID }, mcp);
+    expect(assertMayLink).toHaveBeenLastCalledWith('o1', 'login-2', NODE_ID);
+    vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as never);
+    vi.mocked(revokeShare).mockResolvedValue(true);
+    await pageUnshare.handler({ id: NODE_ID }, mcp);
+    expect(assertMayLink).toHaveBeenLastCalledWith('o1', 'login-2', NODE_ID);
+    expect(errorOf(await pageShare.handler({ id: NODE_ID }, { ownerId: 'o1' }))).toMatch(refused);
+  });
+});
+
 describe('node_unshare', () => {
   it('refuses a blank id WITHOUT touching any share', async () => {
     const res = await unshare.handler({ id: '  ' }, ctx);
@@ -288,6 +365,20 @@ describe('node_unshare', () => {
       ),
     );
     expect(errorOf(await unshare.handler({ id: NODE_ID }, ctx))).toMatch(/may edit this item/);
+    expect(revokeShare).not.toHaveBeenCalled();
+  });
+
+  it('says nothing about a link on an item the caller may not link (L4)', async () => {
+    // An item with no link and an item with one answer the same refusal:
+    // the rights check runs before the link is looked up.
+    vi.mocked(assertMayLink).mockRejectedValue(
+      new LinkRefusedError(404, 'not_found', 'Item not found.'),
+    );
+    for (const active of [null, { id: 's-9' }]) {
+      vi.mocked(getActiveShareForNode).mockResolvedValue(active as never);
+      expect(errorOf(await unshare.handler({ id: NODE_ID }, ctx))).toMatch(/not found/);
+    }
+    expect(getActiveShareForNode).not.toHaveBeenCalled();
     expect(revokeShare).not.toHaveBeenCalled();
   });
 
