@@ -24,9 +24,12 @@
 --    former client a Moderator of Admin or Team.
 --    Its private workspace rows go too (W8a leftover, closed in W8d): each
 --    private_workspaces row of a former client is archived
---    (archive_client_private_workspaces) and removed, so the next review
---    homes run renames that workspace "Former user" and registers it, as
---    it does for a deleted login's.
+--    (archive_client_private_workspaces) and removed, and at the end of
+--    this migration (W8 integration) that workspace is renamed "Former
+--    user", its events lose the name and description it was given, and it
+--    is registered as the former client's Former user workspace, as the
+--    review homes do for a deleted login's: a migrated box never runs the
+--    review homes again, so nothing would.
 --    Nor of a private workspace (W8a fix round 2): the review homes (0264),
 --    the spaces fold (0267) and the app's private workspace function treat
 --    an archived client login as a login that is gone. It never gets a
@@ -362,11 +365,10 @@ END
 $$;
 --> statement-breakpoint
 -- A former client's private workspace row (W8a leftover, closed in W8d): a
--- private workspace whose row is gone is, to the review homes (0264 and
--- below), a private workspace of a login that is gone, and its next run
--- renames it "Former user" and registers it (former_user_workspaces), as
--- for a deleted login. Archived first, counted: a mismatch raises and the
--- whole migration rolls back. A second run finds none.
+-- private workspace whose row is gone is a private workspace of a login
+-- that is gone. The end of this migration makes it that login's Former
+-- user workspace (W8 integration). Archived first, counted: a mismatch
+-- raises and the whole migration rolls back. A second run finds none.
 DO $$
 DECLARE
   src int;
@@ -1613,6 +1615,66 @@ BEGIN
     ALTER TABLE "public"."mantle_peers" DROP CONSTRAINT IF EXISTS "mantle_peers_ended_acts_as_role_ck";
     ALTER TABLE "public"."mantle_peers" DROP COLUMN "acts_as_role" RESTRICT;
     ALTER TABLE "public"."mantle_peers" DROP COLUMN "ended_acts_as_role" RESTRICT;
+  END IF;
+END
+$$;
+--> statement-breakpoint
+-- The former clients' private workspaces become their Former user
+-- workspaces (W8 integration), on a brain on workspaces: the rename, the
+-- scrub of the name and description from the workspace's events, and the
+-- registration, as mantle_ws_review_off does for a deleted login's private
+-- workspace. Done here because a migrated box never runs the review homes
+-- again. Each archived row whose workspace is still unregistered: a second
+-- run finds none. Should the login have a Former user workspace already, the
+-- orphan is renamed and archived, as there. Grants and items do not change:
+-- the workspace stays their home.
+DO $$
+DECLARE
+  brain uuid := "public"."mantle_brain_id"();
+  r record;
+  made bigint := 0;
+  scrubbed bigint := 0;
+  scrub_n bigint;
+BEGIN
+  IF brain IS NULL OR NOT EXISTS (SELECT 1 FROM "public"."workspaces" w
+                                   WHERE w."owner_id" = brain AND w."is_admin") THEN
+    RETURN;
+  END IF;
+  FOR r IN
+    SELECT a."workspace_id" AS ws, a."login_id" AS former
+      FROM "public"."archive_client_private_workspaces" a
+      JOIN "public"."workspaces" w ON w."id" = a."workspace_id"
+     WHERE w."owner_id" = brain
+       AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p WHERE p."workspace_id" = w."id")
+       AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."workspace_id" = w."id")
+       AND NOT EXISTS (SELECT 1 FROM "public"."workspace_events" e2
+                        WHERE e2."workspace_id" = w."id" AND e2."action" = 'review_off.former_renamed')
+     ORDER BY a."workspace_id"
+  LOOP
+    UPDATE "public"."workspaces"
+       SET "name" = 'Former user',
+           "description" = 'The work of a login that was removed. It has no users; an Admin user may join it.',
+           "updated_at" = now()
+     WHERE "id" = r.ws;
+    UPDATE "public"."workspace_events"
+       SET "subject" = "subject" - 'name' - 'description'
+     WHERE "workspace_id" = r.ws AND "subject" ?| ARRAY['name', 'description'];
+    GET DIAGNOSTICS scrub_n = ROW_COUNT;
+    scrubbed := scrubbed + scrub_n;
+    IF NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."former_key" = r.former) THEN
+      INSERT INTO "public"."former_user_workspaces" ("former_key", "workspace_id") VALUES (r.former, r.ws);
+      INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+      VALUES (r.ws, NULL, 'review_off.former', '{}'::jsonb);
+    ELSE
+      UPDATE "public"."workspaces" SET "archived_at" = coalesce("archived_at", now()) WHERE "id" = r.ws;
+      INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+      VALUES (r.ws, NULL, 'review_off.former_renamed', '{}'::jsonb);
+    END IF;
+    made := made + 1;
+  END LOOP;
+  IF made > 0 THEN
+    RAISE NOTICE '0272: % former client private workspaces made Former user (% events scrubbed)',
+      made, scrubbed;
   END IF;
 END
 $$;

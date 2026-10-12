@@ -4,8 +4,9 @@
  *
  *  - team_messages is dropped only when every row is kept elsewhere (a
  *    login's row in assistant_messages, a contact's in archive_team_messages,
- *    0269); one row in neither raises and the whole migration rolls back,
- *    every table still there;
+ *    0269); a row in neither (a login's row whose copy went when its Team
+ *    assistant was deleted with its conversation) is archived first, as it
+ *    was, then the table goes (W8 integration);
  *  - team_read_cursors, team_notifications, login_chat_read_cursors,
  *    client_report_acks and client_quota_refusals are archived row for row,
  *    then dropped, with the two trigger functions left behind;
@@ -55,8 +56,9 @@ async function present(sql: postgres.Sql, names: string[]): Promise<string[]> {
   return rows.map((r) => r.t).sort();
 }
 
-/** Seed one row in each frozen table; `orphan` adds a team_messages row
- *  kept nowhere else. */
+/** Seed one row in each frozen table; `orphan` adds a login's team_messages
+ *  row kept nowhere else: its copy in assistant_messages went when its Team
+ *  assistant was deleted with its conversation (`?conversation=delete`). */
 async function seed(sql: postgres.Sql, opts: { orphan: boolean }) {
   const owner = randomUUID();
   const member = randomUUID();
@@ -75,8 +77,10 @@ async function seed(sql: postgres.Sql, opts: { orphan: boolean }) {
     await tx`insert into team_messages (id, owner_id, contact_id, direction, text, channel, status)
       values (${kept}, ${owner}, ${contact}, 'inbound', 'portal hello', 'web', 'complete')`;
     if (opts.orphan) {
-      await tx`insert into team_messages (id, owner_id, contact_id, direction, text, channel, status)
-        values (${orphan}, ${owner}, ${contact}, 'outbound', 'lost', 'web', 'complete')`;
+      await tx`insert into team_messages
+          (id, owner_id, direction, text, channel, status, login_id, created_at)
+        values (${orphan}, ${owner}, 'outbound', 'lost', 'web', 'complete', ${member},
+                '2026-01-04T03:04:05Z')`;
     }
     await tx`alter table team_messages enable trigger team_messages_frozen_trg`;
   });
@@ -195,11 +199,18 @@ describe.skipIf(!URL)('0274: the frozen tables, archived and dropped', () => {
 describe.skipIf(!URL)('0274: a team_messages row kept nowhere else', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
   let sql: ReturnType<typeof postgres>;
+  let ids: Awaited<ReturnType<typeof seed>>;
+
+  const archived = () =>
+    sql<{ id: string; login: string | null; text: string; created: string }[]>`
+      select id::text, login_id::text as login, text, created_at::text as created
+        from archive_team_messages order by text`;
 
   beforeAll(async () => {
     scratch = await createScratchDatabaseBefore(URL!, TAG);
     sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
-    await seed(sql, { orphan: true });
+    ids = await seed(sql, { orphan: true });
+    await run0274(sql);
   }, 240_000);
 
   afterAll(async () => {
@@ -207,11 +218,19 @@ describe.skipIf(!URL)('0274: a team_messages row kept nowhere else', () => {
     await scratch?.drop();
   });
 
-  it('raises, and the whole migration rolls back: every table is still there', async () => {
-    await expect(run0274(sql)).rejects.toThrow(
-      /1 of 2 team_messages rows are in neither assistant_messages nor archive_team_messages/,
-    );
-    expect(await present(sql, DROPPED)).toEqual([...DROPPED].sort());
-    expect(await present(sql, ['archive_team_read_cursors'])).toEqual([]);
+  it('W8 integration: archives the row as it was, then drops the tables', async () => {
+    const rows = await archived();
+    expect(rows.map((r) => [r.id, r.login, r.text])).toEqual([
+      [ids.orphan, ids.member, 'lost'],
+      [ids.kept, null, 'portal hello'],
+    ]);
+    expect(new Date(rows[0]!.created).toISOString()).toBe('2026-01-04T03:04:05.000Z');
+    expect(await present(sql, DROPPED)).toEqual([]);
   });
+
+  it('a second run changes nothing', async () => {
+    const again = await archived();
+    await run0274(sql);
+    expect(await archived()).toEqual(again);
+  }, 120_000);
 });

@@ -4,9 +4,12 @@
 --
 --  - team_messages, frozen since 0269: every row was copied there, a member
 --    login's to assistant_messages and a team-portal contact's to
---    archive_team_messages, with the same id. That is proved here (a row in
---    neither raises and the whole migration rolls back), then the table and
---    its frozen trigger's function are dropped. Nothing is copied again.
+--    archive_team_messages, with the same id. A row in neither (W8
+--    integration: a login's row whose copy went when its assistant was
+--    deleted with its conversation, `?conversation=delete`) is copied to
+--    archive_team_messages first, counted. Then every row is proved kept
+--    (a row in neither raises and the whole migration rolls back), and the
+--    table and its frozen trigger's function are dropped.
 --  - team_read_cursors (the owner's read cursor of the old portal threads),
 --    team_notifications (member notifications, unused since the forum went),
 --    login_chat_read_cursors (a member's own unread count, replaced by
@@ -135,11 +138,39 @@ DO $$
 DECLARE
   total bigint;
   missing bigint;
+  orphans bigint;
+  copied bigint;
 BEGIN
   IF to_regclass('public.team_messages') IS NULL THEN
     RETURN;
   END IF;
   EXECUTE $q$SELECT count(*) FROM "public"."team_messages"$q$ INTO total;
+  -- A row in neither place (W8 integration): a login's row whose copy in
+  -- assistant_messages went when its assistant was deleted with its
+  -- conversation. Archived here before the proof, counted: the archive
+  -- before every drop.
+  EXECUTE $q$
+    SELECT count(*) FROM "public"."team_messages" tm
+     WHERE NOT EXISTS (SELECT 1 FROM "public"."assistant_messages" a WHERE a."id" = tm."id")
+       AND NOT EXISTS (SELECT 1 FROM "public"."archive_team_messages" a WHERE a."id" = tm."id")$q$
+    INTO orphans;
+  IF orphans > 0 THEN
+    EXECUTE $q$
+      INSERT INTO "public"."archive_team_messages"
+        ("id", "owner_id", "contact_id", "direction", "text", "agent_id", "model", "channel",
+         "attachments", "trace_id", "status", "error", "login_id", "used_private", "created_at")
+      SELECT tm."id", tm."owner_id", tm."contact_id", tm."direction", tm."text", tm."agent_id",
+             tm."model", tm."channel", tm."attachments", tm."trace_id", tm."status", tm."error",
+             tm."login_id", tm."used_private", tm."created_at"
+        FROM "public"."team_messages" tm
+       WHERE NOT EXISTS (SELECT 1 FROM "public"."assistant_messages" a WHERE a."id" = tm."id")
+      ON CONFLICT ("id") DO NOTHING$q$;
+    GET DIAGNOSTICS copied = ROW_COUNT;
+    IF copied <> orphans THEN
+      RAISE EXCEPTION '0274: archived % of % team_messages rows found in neither place', copied, orphans;
+    END IF;
+    RAISE NOTICE '0274: % team_messages rows in neither place archived', copied;
+  END IF;
   -- Every row by its id: a login's row in assistant_messages, a contact's
   -- row (no login) in archive_team_messages (0269). A row in neither is a
   -- row the drop would lose.

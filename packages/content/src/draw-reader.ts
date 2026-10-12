@@ -82,21 +82,27 @@ export async function readableDraw(ownerId: string, id: string): Promise<Readabl
   };
 }
 
+/** Who a drawing is read for, beyond the current scope: `teamSurface` when
+ *  the call came from a team surface (a member's chat, a member's app). */
+export type DrawReadFor = { teamSurface?: boolean };
+
 /**
  * The scene file ids of this drawing's images the current scope may see, by
  * the same rule as the SVG byte route; null means all of them (the owner's
  * own paths on the admin pool). Fail closed: a rule that cannot run leaves
- * none.
+ * none, and so does a team surface that reaches here on the system pool
+ * (W8 integration): a member's read never gets every image of the owner's.
  */
 export async function readerVisibleFileIds(
   ownerId: string,
   id: string,
+  readFor: DrawReadFor = {},
 ): Promise<ReadonlySet<string> | null> {
   try {
     // Inside a turn scope (workspaces W4b fix round 2) the scope's own row
     // rules decide, and a turn never leaves its scope unnamed.
     if (inTurnScope()) return await scopeVisibleDrawFileIds(ownerId, id);
-    if (isSystemScope() && !currentSpaceScope()) return null;
+    if (isSystemScope() && !currentSpaceScope()) return readFor.teamSurface ? new Set() : null;
     return await scopeVisibleDrawFileIds(ownerId, id);
   } catch (err) {
     // An unnamed exit from a turn scope is a bug to report (strict mode
@@ -116,8 +122,12 @@ export async function readerVisibleFileIds(
  * written once by the file extractor), so the fold is redone per reader from
  * the same source the commit used, with the same bounds.
  */
-export async function readableDrawText(ownerId: string, id: string): Promise<string | null> {
-  const visible = await readerVisibleFileIds(ownerId, id);
+export async function readableDrawText(
+  ownerId: string,
+  id: string,
+  readFor: DrawReadFor = {},
+): Promise<string | null> {
+  const visible = await readerVisibleFileIds(ownerId, id, readFor);
   if (visible === null) return getDrawSceneText(ownerId, id);
   const [row] = await db
     .select({ scene: draws.scene, fileRefs: draws.fileRefs })
@@ -201,10 +211,11 @@ export type ReadableDrawSvg = {
 export async function readableDrawSvg(
   ownerId: string,
   id: string,
+  readFor: DrawReadFor = {},
 ): Promise<ReadableDrawSvg | null> {
   const snapshot = await getDrawSvg(ownerId, id);
   if (!snapshot) return null;
-  return { snapshot, visibleFileIds: await readerVisibleFileIds(ownerId, id) };
+  return { snapshot, visibleFileIds: await readerVisibleFileIds(ownerId, id, readFor) };
 }
 
 /**

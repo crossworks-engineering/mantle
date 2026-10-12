@@ -14,9 +14,11 @@
  *    login is archived (archive_client_workspace_users) and removed, with a
  *    workspace event each; a member's rows stay; a later role change (the
  *    login bridge) gives the former client nothing; its private workspace
- *    row is archived (archive_client_private_workspaces) and removed, so the
- *    next review homes run renames that workspace "Former user" and
- *    registers it (W8a leftover, closed in W8d); a second run changes
+ *    row is archived (archive_client_private_workspaces) and removed, and
+ *    the migration itself renames that workspace "Former user", scrubs the
+ *    name and description from its events and registers it (W8a leftover,
+ *    closed in W8d; done in the migration since the W8 integration, as a
+ *    migrated box never runs the review homes again); a second run changes
  *    nothing.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/former-clients-0272.db.test.ts
  */
@@ -198,6 +200,10 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
     privateArchived: await sql`select login_id::text, workspace_id::text
                                  from archive_client_private_workspaces order by 1`,
     events: await sql`select count(*)::int as n from workspace_events`,
+    former: await sql`select former_key::text, workspace_id::text from former_user_workspaces
+                       order by 1`,
+    names: await sql`select id::text, name, archived_at is null as live from workspaces
+                      order by 1`,
   });
 
   beforeAll(async () => {
@@ -237,7 +243,9 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
     );
     await sql`insert into private_workspaces (login_id, workspace_id) values (${client}, ${ws.own})`;
     await sql`insert into workspace_events (workspace_id, actor_id, action, subject)
-      values (${ws.own}, null, 'review_off.private', ${sql.json({ login: client })})`;
+      values (${ws.own}, null, 'review_off.private', ${sql.json({ login: client })}),
+             (${ws.own}, ${client}, 'workspace.update',
+              ${sql.json({ name: 'fc2 own name', description: 'fc2 own words', note: 'kept' })})`;
     await run0272(sql);
   }, 240_000);
 
@@ -268,23 +276,27 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
   });
 
-  it("archives and removes the former client's private workspace row; the next review homes make it Former user", async () => {
+  it("archives and removes the former client's private workspace row, and the migration makes it Former user", async () => {
     expect(await sql`select 1 from private_workspaces where login_id = ${client}`).toHaveLength(0);
     const [arch] = await sql<{ ws: string }[]>`
       select workspace_id::text as ws from archive_client_private_workspaces
        where login_id = ${client}`;
     expect(arch?.ws).toBe(ws.own);
-    const memberOwn = await sql`select 1 from private_workspaces where login_id = ${member}`;
-    await sql`select * from mantle_ws_review_off()`;
-    const [w] = await sql<{ name: string }[]>`select name from workspaces where id = ${ws.own}`;
-    expect(w?.name).toBe('Former user');
+    // No review homes run here (W8 integration): the migration did it.
+    const [w] = await sql<{ name: string; archived: boolean }[]>`
+      select name, archived_at is not null as archived from workspaces where id = ${ws.own}`;
+    expect(w).toEqual({ name: 'Former user', archived: false });
     const [f] = await sql<{ key: string }[]>`
       select former_key::text as key from former_user_workspaces where workspace_id = ${ws.own}`;
     expect(f?.key).toBe(client);
-    // The member's private workspace rows are untouched (control).
-    expect(await sql`select 1 from private_workspaces where login_id = ${member}`).toHaveLength(
-      memberOwn.length,
-    );
+    // Its events keep no name or description it was given; the rest stays.
+    const subjects = await sql<{ action: string; subject: Record<string, unknown> }[]>`
+      select action, subject from workspace_events where workspace_id = ${ws.own} order by id`;
+    expect(subjects.some((e) => 'name' in e.subject || 'description' in e.subject)).toBe(false);
+    expect(subjects.find((e) => e.action === 'workspace.update')?.subject).toEqual({
+      note: 'kept',
+    });
+    expect(subjects.filter((e) => e.action === 'review_off.former')).toHaveLength(1);
   }, 120_000);
 
   it('the login bridge gives the former client nothing, whatever its role', async () => {

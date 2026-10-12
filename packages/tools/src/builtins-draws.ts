@@ -197,7 +197,8 @@ const draw_get: BuiltinToolDef = {
       // (draw-reader.ts in @mantle/content).
       const draw = await readableDraw(ctx.ownerId, id);
       if (!draw) return notFound('drawing', id, 'draw_list / search_nodes');
-      const content = (await readableDrawText(ctx.ownerId, id)) ?? '';
+      const readFor = { teamSurface: ctx.surface?.kind === 'team' };
+      const content = (await readableDrawText(ctx.ownerId, id, readFor)) ?? '';
       const output: Record<string, unknown> = {
         id: draw.id,
         title: draw.title,
@@ -209,7 +210,7 @@ const draw_get: BuiltinToolDef = {
       };
       if (!wantImage) return { ok: true, output };
 
-      const snap = draw.hasSvg ? await readableDrawSvg(ctx.ownerId, id) : null;
+      const snap = draw.hasSvg ? await readableDrawSvg(ctx.ownerId, id, readFor) : null;
       if (!snap) {
         output.image = null;
         output.image_note =
