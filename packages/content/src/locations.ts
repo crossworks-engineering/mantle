@@ -31,6 +31,7 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
 } from '@mantle/db';
+import { asKindRootRepair } from './kind-root';
 
 export const LOCATIONS_ROOT_LABEL = 'locations';
 
@@ -74,7 +75,12 @@ function rowOf(n: Node): LocationRow {
   };
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: LOCATIONS_ROOT_LABEL }], (tx) =>
       tx

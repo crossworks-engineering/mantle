@@ -102,6 +102,8 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   'mantle_lock_heads_more(uuid[])': WRITE_ROLE_FUNCTIONS['public.mantle_lock_heads_more(uuid[])']!,
   'mantle_lock_heads_nested(uuid[],text)':
     WRITE_ROLE_FUNCTIONS['public.mantle_lock_heads_nested(uuid[],text)']!,
+  'mantle_lock_subtree_heads(uuid,uuid[])':
+    WRITE_ROLE_FUNCTIONS['public.mantle_lock_subtree_heads(uuid,uuid[])']!,
 };
 
 /** Rolls a cell's transaction back after its checks. */

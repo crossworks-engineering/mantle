@@ -43,6 +43,7 @@ import { notifyAppNavChanged } from './app-nav';
 import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
 import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
+import { asKindRootRepair } from './kind-root';
 export type { AppRow, AppDetail };
 
 export const APPS_ROOT_LABEL = 'apps';
@@ -198,7 +199,12 @@ export async function ensureAppsRoot(ownerId: string): Promise<void> {
   return ensureRoot(ownerId);
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: APPS_ROOT_LABEL }], (tx) =>
       tx

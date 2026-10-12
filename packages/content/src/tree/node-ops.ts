@@ -19,7 +19,6 @@ import {
   withNodeInsertHeads,
   withNodeMoveHeads,
   withSubtreeHeads,
-  runReadPathWrite,
 } from '@mantle/db';
 import { dashToLtree, folderSlugOf, type MoveGuard } from '@mantle/files';
 import {
@@ -30,6 +29,7 @@ import {
 } from '@mantle/client-types/tree';
 import { treeParentPath } from '@mantle/content-core/tree';
 import { unlessWriteRefused } from './refused-write';
+import { asKindRootRepair } from '../kind-root';
 
 /** A refusal written for people; the write module turns it into a TreeError. */
 export class NodeOpRefusal extends Error {
@@ -71,7 +71,7 @@ export async function ensureKindRoot(ownerId: string, kind: TreeKind): Promise<b
   // Heads first (plan U1): a root sits in no folder, so there are none to
   // wait on, but the insert runs in the heads transaction all the same.
   const made = await unlessWriteRefused(() =>
-    runReadPathWrite('repair:kind-root', () =>
+    asKindRootRepair(() =>
       withNodeInsertHeads(ownerId, [{ type: 'branch', path: root }], (tx) =>
         tx
           .insert(nodes)

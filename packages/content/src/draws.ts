@@ -40,6 +40,7 @@ import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
 // pages — identical semantics, one truth.
 import { evaluateDraftRev } from './pages';
 import { drawSceneText } from './draw-scene-text';
+import { asKindRootRepair } from './kind-root';
 
 export const DRAWS_ROOT_LABEL = 'draw';
 
@@ -220,7 +221,12 @@ export async function withDrawLock<T>(
   });
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await headsOrSpace(
     (f) =>
       withDeadlockRetry(() =>

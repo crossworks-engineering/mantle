@@ -22,6 +22,7 @@ import {
 import { pageDocText, pageHolders } from './level-text';
 import { guardNewPageIn } from '../tree/page-guard';
 import { EMPTY_DOC, PAGES_ROOT_LABEL, dedupeTags, detailOf, type PageDetail } from './shared';
+import { asKindRootRepair } from '../kind-root';
 
 function rootRow(ownerId: string) {
   return {
@@ -40,7 +41,12 @@ const ROOT_CONFLICT = {
 };
 
 /** Lazy-create the `pages` ltree root. Idempotent — every create calls it. */
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   if (currentSpaceScope()) return ensureSpaceRoot(ownerId);
   // Heads first (plan U1): a root sits in no folder, so there are none to
   // wait on, but the insert runs in the heads transaction all the same.

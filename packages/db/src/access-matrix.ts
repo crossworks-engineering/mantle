@@ -475,6 +475,8 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
   'public.mantle_lock_heads(uuid[],text)': 'the heads lock the app takes before a write',
   'public.mantle_lock_heads_more(uuid[])': 'more heads inside a transaction that holds some',
   'public.mantle_lock_heads_nested(uuid[],text)': 'the nested heads lock (client.ts, withHeads)',
+  'public.mantle_lock_subtree_heads(uuid,uuid[])':
+    'a folder’s heads lock (client.ts, withSubtreeHeads): a move, a folder’s grant change',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

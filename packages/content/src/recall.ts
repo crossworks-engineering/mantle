@@ -14,6 +14,7 @@ import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 
 import { db, nodes, recallNodes, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
 import { getRecallEmbedder } from './embed-bridge';
+import { asKindRootRepair } from './kind-root';
 
 /**
  * Recall v2: the ltree root label for the Recall item tree, the `*_ROOT_LABEL`
@@ -33,6 +34,10 @@ export const RECALL_ROOT_LABEL = 'recall';
  * native write path before a map is created.
  */
 export async function ensureRecallRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRecallRootNow(ownerId));
+}
+
+async function ensureRecallRootNow(ownerId: string): Promise<void> {
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: RECALL_ROOT_LABEL }], (tx) =>
       tx

@@ -24,6 +24,7 @@ import {
   withWriterHeads,
   isSnapshotCopy,
 } from '@mantle/db';
+import { asKindRootRepair } from './kind-root';
 
 type NoteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -60,7 +61,12 @@ function rowOf(n: Node): NoteRow {
   };
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await headsOrSpace(
     (f) =>
       withDeadlockRetry(() =>

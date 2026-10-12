@@ -59,6 +59,7 @@ export {
   type GapStatus,
 } from '@mantle/content-core/journal-options';
 import type { JournalRow } from '@mantle/client-types';
+import { asKindRootRepair } from './kind-root';
 export type { JournalRow };
 
 /**
@@ -123,7 +124,12 @@ function rowOf(n: Node): JournalRow {
   };
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: JOURNAL_ROOT_LABEL }], (tx) =>
       tx

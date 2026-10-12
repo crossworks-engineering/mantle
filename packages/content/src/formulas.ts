@@ -32,6 +32,7 @@ import {
   nodeReadByWorkspace,
 } from '@mantle/db';
 import { parseFormulaSpec, type FormulaSpec } from '@mantle/content-core/formula-spec';
+import { asKindRootRepair } from './kind-root';
 
 export const FORMULA_ROOT_LABEL = 'formulas';
 
@@ -61,7 +62,12 @@ function rowOf(n: Node): FormulaRow {
   };
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: FORMULA_ROOT_LABEL }], (tx) =>
       tx

@@ -30,6 +30,7 @@ import {
 } from '@mantle/content-core/table-model';
 import type { WorkbookStats } from '@mantle/tabledb';
 import { loadDocsFromFile } from '../table-storage';
+import { asKindRootRepair } from '../kind-root';
 
 export const TABLES_ROOT_LABEL = 'tables';
 
@@ -215,7 +216,12 @@ export function docsOf(
  *  with multi-tab (un-split) imports in P3. */
 export const TAB_NAME = 'Sheet1';
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 export async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await headsOrSpace(
     (f) =>
       withDeadlockRetry(() =>

@@ -65,7 +65,12 @@ function rowOf(n: Node): EventRow {
   };
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   // Heads first (workspaces plan U1): the folder the root lands in.
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: EVENTS_ROOT_LABEL }], (tx) =>
@@ -188,6 +193,7 @@ import {
   type RecurFreq,
 } from './events-time';
 import type { EventRow } from '@mantle/client-types';
+import { asKindRootRepair } from './kind-root';
 export type { EventRow };
 
 export async function createEvent(ownerId: string, input: CreateEventInput): Promise<EventRow> {

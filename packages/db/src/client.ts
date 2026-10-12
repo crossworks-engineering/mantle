@@ -850,7 +850,12 @@ export function takeWriteRoleGaps(): string[] {
  */
 function noteWriteRoleGap(route: LoginWriteRoute, err: unknown): void {
   const what = permissionGapOf(err) ?? 'permission denied';
-  const caller = systemDbCallerOf(longStack()) ?? 'unknown caller';
+  // The first frame outside @mantle/db (longStack's own frame included).
+  const stack = longStack()
+    .split('\n')
+    .filter((line, i) => i === 0 || !line.replace(/\\/g, '/').includes('packages/db/src/'))
+    .join('\n');
+  const caller = systemDbCallerOf(stack) ?? 'unknown caller';
   const detail = `${what} from ${caller}`;
   if (env('NODE_ENV') === 'test') {
     writeRoleGaps.push(detail);

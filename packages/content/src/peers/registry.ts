@@ -22,6 +22,7 @@ import {
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { hashToken, mintInboundToken, tokenMatchesHash } from '../peers-crypto';
+import { asKindRootRepair } from '../kind-root';
 
 export const PEERS_ROOT_LABEL = 'peers';
 
@@ -68,7 +69,12 @@ function rowOf(p: MantlePeer): PeerRow {
   };
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: PEERS_ROOT_LABEL }], (tx) =>
       tx

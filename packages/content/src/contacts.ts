@@ -76,6 +76,7 @@ export {
   type EmailEntryKind,
   type UpdateContactInput,
 } from '@mantle/content-core/contacts-format';
+import { asKindRootRepair } from './kind-root';
 
 // ─── row + CRUD ────────────────────────────────────────────────────────────
 
@@ -145,7 +146,12 @@ async function withSharing(ownerId: string, list: ContactRow[]): Promise<Contact
   return list.map((c) => ({ ...c, sharing: sharing.get(c.id) ?? null }));
 }
 
+/** The kind's root folder, made as system(repair:kind-root) (kind-root.ts). */
 async function ensureRoot(ownerId: string): Promise<void> {
+  await asKindRootRepair(() => ensureRootNow(ownerId));
+}
+
+async function ensureRootNow(ownerId: string): Promise<void> {
   await withDeadlockRetry(() =>
     withNodeInsertHeads(ownerId, [{ type: 'branch', path: CONTACTS_ROOT_LABEL }], (tx) =>
       tx

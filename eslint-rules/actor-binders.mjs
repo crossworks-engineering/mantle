@@ -28,9 +28,9 @@ export function binderSites(text) {
 
 /** @type {Record<string, number>} file -> binder calls */
 export const ACTOR_BINDER_PINS = {
+  'packages/content/src/kind-root.ts': 1,
   'packages/content/src/pages/read.ts': 1,
   'packages/content/src/tree/apps-nav.ts': 2,
-  'packages/content/src/tree/node-ops.ts': 1,
   'packages/db/src/actor.ts': 4,
   'packages/db/src/client.ts': 3,
   'packages/db/src/viewer.ts': 8,
