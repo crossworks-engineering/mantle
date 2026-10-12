@@ -67,7 +67,11 @@ export function inviteFailed(kind: keyof typeof INVITE_LIMITS): void {
 export function inviteErrorResponse(err: unknown): Response {
   if (err instanceof MemberInviteError) {
     const status =
-      err.reason === 'contact-has-login' || err.reason === 'email-has-login' ? 409 : 400;
+      err.reason === 'contact-has-login' ||
+      err.reason === 'email-has-login' ||
+      err.reason === 'email-was-client'
+        ? 409
+        : 400;
     return NextResponse.json({ error: err.message, reason: err.reason }, { status });
   }
   throw err;

@@ -38,8 +38,29 @@ its author):
 - `archive_client_logins`: its auth row as it was (no password hash);
 - disabled, its session epoch bumped; its device tokens, API keys and OAuth
   grants revoked, its OAuth codes and push devices deleted; the peers bound
-  to it unbound and switched off. Nobody was added to a workspace and no
-  notify fired.
+  to it unbound and switched off, with their Write off and their risky tools
+  cleared. Nobody was added to a workspace and no notify fired.
+
+A former client stays one (`archive_client_logins` is the list):
+
+- On a brain already on workspaces, each workspace row a client login held
+  was archived (`archive_client_workspace_users`) and removed, with a
+  workspace event `former_client.removed` each, so nothing is granted again
+  by itself.
+- A brain not on workspaces yet that had a client login (even one deleted
+  since) reports "clients present" and is never switched at boot (plan
+  21.9). After the hand setup, the switch is run by hand in one
+  transaction: `SET LOCAL mantle.ws_former_clients = 'reviewed'`, then
+  `select * from mantle_ws_migrate_locked()`.
+- The login bridge (`mantle_bridge_login`) gives a former client no role:
+  no switch, role change or invite puts one in Admin or Team.
+- An admin cannot enable a former client login again (`PATCH
+  /api/users/:id` with `disabled: false` answers 409), and an invite or a
+  new login on a former client's email is refused (409, `reason:
+  'email-was-client'`); an invite made before redeems nothing.
+- What a former client wrote stays client-sourced: its login id (its old
+  chat thread), an item it wrote, and a workspace it is a user of count for
+  the client-sourced write hold (`packages/tools/src/client-sourced.ts`).
 
 The email-code tables (`client_signin_codes`, `client_signin_code_skips`,
 `client_signin_sender_folders`) and the retired static login tokens

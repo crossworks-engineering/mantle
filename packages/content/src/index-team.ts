@@ -176,6 +176,12 @@ export {
   type RedeemMemberInviteInput,
   type RedeemedMemberInvite,
 } from './member-invites';
+export {
+  FORMER_CLIENT_EMAIL_MESSAGE,
+  FORMER_CLIENT_ENABLE_MESSAGE,
+  isFormerClientEmail,
+  isFormerClientLogin,
+} from './former-clients';
 
 // The plain unshare (agent and tool-group levels went in workspaces W7b).
 export { AccessError, isWorkspaceKind, unshareItem, type UnshareItemResult } from './access';

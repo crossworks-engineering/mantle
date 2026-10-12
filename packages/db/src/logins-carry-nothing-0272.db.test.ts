@@ -5,7 +5,8 @@
  *  - a client login is archived (its auth row, no password hash), then
  *    ended: disabled, its epoch bumped, its device tokens, API keys and
  *    OAuth grants revoked, its OAuth codes and push devices deleted, its
- *    peers unbound and switched off; its role becomes member and the role
+ *    peers unbound and switched off (Write off, no risky tools: W8a fix
+ *    round 1, L3); its role becomes member and the role
  *    CHECK admits admin and member only; nobody is added to a workspace and
  *    no notify fires;
  *  - the email-code tables and the static login tokens are archived (every
@@ -155,6 +156,9 @@ describe.skipIf(!URL)('0272: logins carry nothing', () => {
     await insertPeer(peer.owner, peerNode.owner, owner, 'admin');
     await insertPeer(peer.client, peerNode.client, client, 'client');
     await insertPeer(peer.moved, peerNode.moved, moved, 'admin');
+    // The client's peer may run a risky tool (W8a fix round 1, L3).
+    await sql`update mantle_peers set allowed_risky_tools = ${['app_file_write']}
+               where id = ${peer.client}`;
     // OAuth: a grant and an open code of the member and of the client.
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
       values (${oauthClient}, 'w8a', ${['https://app.example.invalid/cb']})`;
@@ -234,10 +238,19 @@ describe.skipIf(!URL)('0272: logins carry nothing', () => {
     expect(grants.map((g) => g.r)).toEqual([true]);
     expect(await sql`select 1 from oauth_auth_codes where actor_id = ${client}`).toHaveLength(0);
     expect(await sql`select 1 from push_subscriptions where login_id = ${client}`).toHaveLength(0);
+    // Unbound, off, its Write off and its risky tools cleared (L3), as a
+    // peer the old role check refused (step 3).
     const [p] =
-      await sql`select acts_as_login_id::text as a, ended_acts_as_login_id::text as e, enabled
-                            from mantle_peers where id = ${peer.client}`;
-    expect(p).toEqual({ a: null, e: client, enabled: false });
+      await sql`select acts_as_login_id::text as a, ended_acts_as_login_id::text as e, enabled,
+                       write_enabled, allowed_risky_tools
+                  from mantle_peers where id = ${peer.client}`;
+    expect(p).toEqual({
+      a: null,
+      e: client,
+      enabled: false,
+      write_enabled: false,
+      allowed_risky_tools: [],
+    });
   });
 
   it('admits admin and member only, adds nobody to a workspace, and notifies nothing', async () => {

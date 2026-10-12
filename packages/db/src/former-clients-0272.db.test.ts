@@ -1,0 +1,221 @@
+/**
+ * 0272 (workspaces W8a fix round 1, H1): a former client stays one, on
+ * scratch databases migrated to just before 0272.
+ *
+ *  - a brain NOT on workspaces that had a client login is still skipped
+ *    after 0272 (its client is a disabled member row now): the boot step
+ *    (mantle_ws_migrate_locked) does not switch it, and nobody is added to
+ *    a workspace (owner rule 21.9). A manual switch that says the clients
+ *    were set up by hand (mantle.ws_former_clients = 'reviewed') goes
+ *    ahead, and the bridge still gives the former client no row;
+ *  - on a brain ALREADY on workspaces, every workspace row of a client
+ *    login is archived (archive_client_workspace_users) and removed, with a
+ *    workspace event each; a member's rows stay; a later role change (the
+ *    login bridge) gives the former client nothing; a second run changes
+ *    nothing.
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/former-clients-0272.db.test.ts
+ */
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import postgres from 'postgres';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createScratchDatabaseBefore } from './test-support';
+
+const URL = process.env.MANTLE_TEST_DATABASE_URL;
+const TAG = '0272_workspaces_logins_carry_nothing';
+
+/** Run 0272 on `sql`, in one transaction, as migrate.ts does. */
+async function run0272(sql: postgres.Sql): Promise<void> {
+  const file = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations', `${TAG}.sql`),
+    'utf8',
+  );
+  const statements = file
+    .split('--> statement-breakpoint')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  await sql.begin(async (tx) => {
+    for (const stmt of statements) await tx.unsafe(stmt);
+  });
+}
+
+describe.skipIf(!URL)('0272: a brain not on workspaces that had a client', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: ReturnType<typeof postgres>;
+  const owner = randomUUID();
+  const member = randomUUID();
+  const client = randomUUID();
+
+  const rowsOf = async (login: string) =>
+    (
+      await sql<{ key: string | null }[]>`
+        select w.bridge_key as key from workspace_users u
+          join workspaces w on w.id = u.workspace_id
+         where u.login_id = ${login} order by 1`
+    ).map((r) => r.key);
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, TAG);
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
+      (${owner}, 'fc1-o@example.invalid', 'x', 'admin', true),
+      (${member}, 'fc1-m@example.invalid', 'x', 'member', false),
+      (${client}, 'fc1-c@example.invalid', 'x', 'client', false)`;
+    await sql`insert into nodes (id, owner_id, type, title, path, audience)
+      values (${randomUUID()}, ${owner}, 'page', 'fc1 team', 'pages', 'team')`;
+    // Before 0272 the box is skipped for its client login.
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toMatch(/^clients present/);
+    await run0272(sql);
+  }, 240_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  it('is still skipped at boot after 0272, and nobody is added to a workspace', async () => {
+    // The client is a disabled member row now: only the archive says it
+    // was a client.
+    const [c] = await sql<{ role: string; disabled: boolean }[]>`
+      select role, disabled_at is not null as disabled from auth.users where id = ${client}`;
+    expect(c).toEqual({ role: 'member', disabled: true });
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBe(
+      'clients present: 1 client login(s), 0 client-level item(s)',
+    );
+    const rows = await sql<{ section: string; subject: string }[]>`
+      select * from mantle_ws_migrate_locked()`;
+    expect(rows.map((r) => [r.section, r.subject])).toEqual([
+      ['skip', 'clients present: 1 client login(s), 0 client-level item(s)'],
+    ]);
+    expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(0);
+    expect(await rowsOf(client)).toEqual([]);
+  });
+
+  it('a deleted former client still counts: the brain had one', async () => {
+    const other = randomUUID();
+    await sql`insert into archive_client_logins (login_id, email, created_at, session_epoch)
+      values (${other}, 'fc1-gone@example.invalid', now(), 0)`;
+    try {
+      expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBe(
+        'clients present: 2 client login(s), 0 client-level item(s)',
+      );
+    } finally {
+      await sql`delete from archive_client_logins where login_id = ${other}`;
+    }
+  });
+
+  it('a manual switch after the hand setup goes ahead; the former client gets no row', async () => {
+    const rows = await sql.begin(async (tx) => {
+      await tx`set local mantle.ws_former_clients = 'reviewed'`;
+      return tx<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
+    });
+    expect(rows.filter((r) => r.section === 'skip' || r.section === 'reach-fail')).toEqual([]);
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
+    expect(await rowsOf(owner)).toEqual(expect.arrayContaining(['admin', 'team']));
+    expect(await rowsOf(member)).toContain('team');
+    expect(await rowsOf(member)).not.toContain('admin');
+    expect(await rowsOf(client)).toEqual([]);
+  }, 60_000);
+});
+
+describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a workspace', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: ReturnType<typeof postgres>;
+  const owner = randomUUID();
+  const member = randomUUID();
+  const client = randomUUID();
+  const ws = { team: '', ops: '' };
+
+  const rowsOf = async (login: string) =>
+    (
+      await sql<{ ws: string; moderator: boolean }[]>`
+        select workspace_id::text as ws, moderator from workspace_users
+         where login_id = ${login} order by 1`
+    ).map((r) => [r.ws, r.moderator]);
+  const snapshot = async () => ({
+    users: await sql`select workspace_id::text, login_id::text, moderator from workspace_users
+                      order by 1, 2`,
+    archived: await sql`select workspace_id::text, login_id::text, moderator
+                          from archive_client_workspace_users order by 1, 2`,
+    events: await sql`select count(*)::int as n from workspace_events`,
+  });
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, TAG);
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
+      (${owner}, 'fc2-o@example.invalid', 'x', 'admin', true),
+      (${member}, 'fc2-m@example.invalid', 'x', 'member', false)`;
+    await sql`select * from mantle_ws_migrate_locked()`;
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
+    ws.team = String(
+      (
+        await sql`select id::text as id from workspaces
+                  where owner_id = ${owner} and bridge_key = 'team'`
+      )[0]!.id,
+    );
+    ws.ops = String(
+      (
+        await sql`insert into workspaces (owner_id, name) values (${owner}, 'Ops')
+                  returning id::text as id`
+      )[0]!.id,
+    );
+    // A client login made after the switch, then put in two workspaces by
+    // hand (a Moderator of Ops), and the member in Ops too.
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner)
+      values (${client}, 'fc2-c@example.invalid', 'x', 'client', false)`;
+    await sql`insert into workspace_users (workspace_id, login_id, moderator) values
+      (${ws.team}, ${client}, false), (${ws.ops}, ${client}, true), (${ws.ops}, ${member}, false)
+      on conflict (workspace_id, login_id) do nothing`;
+    await run0272(sql);
+  }, 240_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  it("archives and removes every workspace row of the former client; a member's stay", async () => {
+    expect(await rowsOf(client)).toEqual([]);
+    const archived = await sql<{ ws: string; moderator: boolean }[]>`
+      select workspace_id::text as ws, moderator from archive_client_workspace_users
+       where login_id = ${client} order by 1`;
+    expect(new Map(archived.map((r) => [r.ws, r.moderator]))).toEqual(
+      new Map([
+        [ws.team, false],
+        [ws.ops, true],
+      ]),
+    );
+    const events = await sql<{ ws: string }[]>`
+      select workspace_id::text as ws from workspace_events
+       where action = 'former_client.removed' and subject->>'login' = ${client} order by 1`;
+    expect(events.map((e) => e.ws).sort()).toEqual([ws.team, ws.ops].sort());
+    const mine = new Map((await rowsOf(member)).map(([w, m]) => [w, m]));
+    expect(mine.get(ws.team)).toBe(true);
+    expect(mine.get(ws.ops)).toBe(false);
+    // The brain stays on workspaces.
+    expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
+  });
+
+  it('the login bridge gives the former client nothing, whatever its role', async () => {
+    await sql`update auth.users set role = 'admin' where id = ${client}`;
+    try {
+      await sql`select mantle_bridge_login(${client}::uuid)`;
+      expect(await rowsOf(client)).toEqual([]);
+    } finally {
+      await sql`update auth.users set role = 'member' where id = ${client}`;
+    }
+    // A member who never was a client is bridged as before (control).
+    await sql`delete from workspace_users where workspace_id = ${ws.team} and login_id = ${member}`;
+    await sql`select mantle_bridge_login(${member}::uuid)`;
+    expect(new Map((await rowsOf(member)).map(([w, m]) => [w, m])).get(ws.team)).toBe(true);
+  });
+
+  it('a second run changes nothing', async () => {
+    const before = await snapshot();
+    await run0272(sql);
+    expect(await snapshot()).toEqual(before);
+  }, 120_000);
+});

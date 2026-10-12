@@ -139,6 +139,20 @@ describe('POST /api/users, the insert refused', () => {
     expect(h.executedInTx).toEqual([1, 2]);
   });
 
+  it("refuses a former client's email, before any write (W8a fix round 1, L6)", async () => {
+    h.selects = [[{ id: CONTACT }]]; // archive_client_logins names the email
+    const { POST } = await import('./route');
+    const res = await POST(post(BODY));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error:
+        'That email belonged to a client login. A former client cannot be invited or given a new login.',
+      reason: 'email-was-client',
+    });
+    expect(h.inserted).toBeNull();
+    expect(h.txCount).toBe(0);
+  });
+
   it('still answers 500 for any other database error', async () => {
     h.insertError = drizzleError('23503');
     const { POST } = await import('./route');

@@ -8,10 +8,20 @@
 --    Disable end a login: disabled, its session epoch bumped, its device
 --    tokens and API keys revoked, its push devices removed, its OAuth grants
 --    revoked and its OAuth codes deleted, the peers bound to it unbound and
---    switched off. Then its role becomes member, and the role CHECK admits
---    admin and member only. The row stays: what it wrote keeps its author.
---    Nobody is added to a workspace, and no notify fires (the role and
---    disable triggers on auth.users are off for that one UPDATE).
+--    switched off (Write off, no risky tools). Then its role becomes
+--    member, and the role CHECK admits admin and member only. The row
+--    stays: what it wrote keeps its author. Nobody is added to a workspace,
+--    and no notify fires (the role and disable triggers on auth.users are
+--    off for that one UPDATE).
+--    A former client stays one (W8a fix round 1): on a brain already on
+--    workspaces, every workspace_users row of a client login is archived
+--    (archive_client_workspace_users) and removed, so a later re-enable
+--    grants nothing by itself. A brain not on workspaces yet counts its
+--    archived client logins as clients present (mantle_ws_skip_reason), so
+--    it is never switched at boot (owner rule 21.9: clients are set up by
+--    hand), and the login bridge treats an archived client login as having
+--    no role (mantle_bridge_login): no switch, manual or not, makes a
+--    former client a Moderator of Admin or Team.
 -- 2. The email-code sign-in tables (client_signin_codes,
 --    client_signin_code_skips, client_signin_sender_folders) and the static
 --    login tokens (mcp_login_tokens, retired since W7b and revoked by 0268)
@@ -54,7 +64,8 @@ BEGIN
     BEGIN
       LOCK TABLE "auth"."users", "public"."access_keys", "public"."mantle_peers",
                  "public"."mobile_tokens", "public"."push_subscriptions",
-                 "public"."oauth_auth_codes", "public"."oauth_access_tokens"
+                 "public"."oauth_auth_codes", "public"."oauth_access_tokens",
+                 "public"."workspace_users"
         IN ACCESS EXCLUSIVE MODE;
       FOREACH t IN ARRAY droppable LOOP
         IF to_regclass(t) IS NOT NULL THEN
@@ -87,6 +98,19 @@ CREATE TABLE IF NOT EXISTS "public"."archive_client_logins" (
   "disabled_at"    timestamptz,
   "session_epoch"  integer NOT NULL,
   "archived_at"    timestamptz NOT NULL DEFAULT now()
+);
+--> statement-breakpoint
+-- A client login's workspace rows on a brain already on workspaces, as they
+-- were when they were removed (W8a fix round 1).
+CREATE TABLE IF NOT EXISTS "public"."archive_client_workspace_users" (
+  "workspace_id" uuid NOT NULL,
+  "login_id"     uuid NOT NULL,
+  "moderator"    boolean NOT NULL,
+  "limits"       jsonb NOT NULL,
+  "added_by"     uuid,
+  "added_at"     timestamptz NOT NULL,
+  "archived_at"  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY ("workspace_id", "login_id")
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "public"."archive_client_signin_codes" (
@@ -149,7 +173,8 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['archive_client_logins', 'archive_client_signin_codes',
+  FOREACH t IN ARRAY ARRAY['archive_client_logins', 'archive_client_workspace_users',
+                           'archive_client_signin_codes',
                            'archive_client_signin_code_skips',
                            'archive_client_signin_sender_folders', 'archive_mcp_login_tokens',
                            'archive_key_roles', 'archive_peer_roles'] LOOP
@@ -212,11 +237,14 @@ DELETE FROM "public"."oauth_auth_codes" c
  WHERE c."actor_id" = u."id" AND u."role" = 'client';
 --> statement-breakpoint
 -- A peer bound to a client: unbound (the binding remembered, as
--- lib/peer-unbind.ts does) and switched off.
+-- lib/peer-unbind.ts does), switched off, its Write off and its risky tools
+-- cleared (as step 3 ends a peer the old role check refused).
 UPDATE "public"."mantle_peers" p
    SET "ended_acts_as_login_id" = p."acts_as_login_id",
        "acts_as_login_id" = NULL,
        "enabled" = false,
+       "write_enabled" = false,
+       "allowed_risky_tools" = '{}'::text[],
        "updated_at" = now()
   FROM auth.users u
  WHERE p."acts_as_login_id" = u."id" AND u."role" = 'client';
@@ -263,6 +291,142 @@ ALTER TABLE "auth"."users" DROP CONSTRAINT IF EXISTS "users_role_ck";
 --> statement-breakpoint
 ALTER TABLE "auth"."users" ADD CONSTRAINT "users_role_ck"
   CHECK ("role" IN ('admin', 'member') AND (NOT "is_owner" OR "role" = 'admin'));
+--> statement-breakpoint
+
+-- ── 1b. A former client stays one (W8a fix round 1) ─────────────────────────
+
+-- On a brain already on workspaces: every workspace row of a former client
+-- (the bridge kept clients out of Admin and Team, but a workspace screen, a
+-- private workspace of the spaces fold (0267) or a hand-made row may hold
+-- one) is archived, then removed, so a later re-enable grants nothing by
+-- itself. Counted: a mismatch raises and the whole migration rolls back.
+-- Each removal is a workspace event. A second run finds none.
+DO $$
+DECLARE
+  src int;
+  kept int;
+  gone int;
+BEGIN
+  SELECT count(*) INTO src FROM "public"."workspace_users" u
+   WHERE u."login_id" IN (SELECT a."login_id" FROM "public"."archive_client_logins" a);
+  IF src = 0 THEN
+    RETURN;
+  END IF;
+  INSERT INTO "public"."archive_client_workspace_users"
+         ("workspace_id", "login_id", "moderator", "limits", "added_by", "added_at")
+  SELECT u."workspace_id", u."login_id", u."moderator", u."limits", u."added_by", u."added_at"
+    FROM "public"."workspace_users" u
+   WHERE u."login_id" IN (SELECT a."login_id" FROM "public"."archive_client_logins" a)
+  ON CONFLICT ("workspace_id", "login_id") DO NOTHING;
+  SELECT count(*) INTO kept FROM "public"."workspace_users" u
+    JOIN "public"."archive_client_workspace_users" a
+      ON a."workspace_id" = u."workspace_id" AND a."login_id" = u."login_id"
+   WHERE u."login_id" IN (SELECT c."login_id" FROM "public"."archive_client_logins" c);
+  IF kept <> src THEN
+    RAISE EXCEPTION '0272: archived % of % workspace rows of former clients', kept, src;
+  END IF;
+  INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+  SELECT u."workspace_id", NULL, 'former_client.removed',
+         jsonb_build_object('login', u."login_id", 'moderator', u."moderator")
+    FROM "public"."workspace_users" u
+   WHERE u."login_id" IN (SELECT a."login_id" FROM "public"."archive_client_logins" a);
+  DELETE FROM "public"."workspace_users" u
+   WHERE u."login_id" IN (SELECT a."login_id" FROM "public"."archive_client_logins" a);
+  GET DIAGNOSTICS gone = ROW_COUNT;
+  IF gone <> src THEN
+    RAISE EXCEPTION '0272: removed % of % workspace rows of former clients', gone, src;
+  END IF;
+  RAISE NOTICE '0272: % workspace rows of former clients archived and removed', src;
+END
+$$;
+--> statement-breakpoint
+-- Why this brain has no workspaces, or NULL when it has them (0257), with
+-- the former clients: a brain not on workspaces yet that had client logins
+-- (archive_client_logins, a login deleted since included) has clients
+-- present, so the boot step never switches it (owner rule 21.9). A manual
+-- run after the clients are set up by hand says so for its transaction:
+--   BEGIN;
+--   SET LOCAL mantle.ws_former_clients = 'reviewed';
+--   SELECT * FROM mantle_ws_migrate_locked();
+--   COMMIT;
+-- Even then the bridge gives a former client no row (mantle_bridge_login).
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_skip_reason"()
+  RETURNS text LANGUAGE plpgsql STABLE
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  brain uuid := "public"."mantle_brain_id"();
+  clients bigint;
+  client_items bigint;
+BEGIN
+  IF brain IS NULL THEN RETURN 'no brain anchor yet'; END IF;
+  IF EXISTS (SELECT 1 FROM "public"."workspaces" w
+              WHERE w."owner_id" = brain AND w."bridge_key" = 'admin') THEN
+    RETURN NULL;
+  END IF;
+  SELECT count(*) INTO clients FROM auth.users u WHERE u."role" = 'client';
+  IF coalesce(current_setting('mantle.ws_former_clients', true), '') <> 'reviewed' THEN
+    clients := clients + (
+      SELECT count(*) FROM "public"."archive_client_logins" a
+       WHERE NOT EXISTS (SELECT 1 FROM auth.users u
+                          WHERE u."id" = a."login_id" AND u."role" = 'client'));
+  END IF;
+  SELECT count(*) INTO client_items FROM "public"."nodes" n
+   WHERE n."owner_id" = brain
+     AND (n."audience" = 'client' OR n."inherited_level" = 'client' OR n."embedded_level" = 'client');
+  IF clients > 0 OR client_items > 0 THEN
+    RETURN format('clients present: %s client login(s), %s client-level item(s)', clients, client_items);
+  END IF;
+  RETURN 'no workspaces yet';
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_skip_reason"() FROM PUBLIC;
+--> statement-breakpoint
+-- The login bridge (0251), with the former clients: a login in
+-- archive_client_logins has no role here, so it is never put in Admin or
+-- Team, and is taken out of them if it is in (a role change on the Users
+-- or the Admin workspace screen, a manual switch, an invite redeemed).
+CREATE OR REPLACE FUNCTION "public"."mantle_bridge_login"(login uuid)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  admin_ws uuid;
+  team_ws uuid;
+  r text;
+  changed int;
+  gone int;
+BEGIN
+  SELECT w."id" INTO admin_ws FROM "public"."workspaces" w
+   WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'admin';
+  SELECT w."id" INTO team_ws FROM "public"."workspaces" w
+   WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'team';
+  IF admin_ws IS NULL THEN RETURN; END IF;
+  SELECT u."role" INTO r FROM auth.users u WHERE u."id" = login;
+  IF EXISTS (SELECT 1 FROM "public"."archive_client_logins" a WHERE a."login_id" = login) THEN
+    r := NULL;
+  END IF;
+  -- Into the workspaces the role gives (Moderator in each).
+  INSERT INTO "public"."workspace_users" ("workspace_id", "login_id", "moderator")
+  SELECT x.ws, login, true
+    FROM (VALUES (admin_ws, r = 'admin'), (team_ws, r IN ('admin', 'member'))) AS x(ws, want)
+   WHERE x.ws IS NOT NULL AND coalesce(x.want, false)
+  ON CONFLICT ("workspace_id", "login_id") DO UPDATE SET "moderator" = true
+   WHERE NOT "workspace_users"."moderator";
+  GET DIAGNOSTICS changed = ROW_COUNT;
+  -- Out of the ones it no longer gives.
+  DELETE FROM "public"."workspace_users" u
+   WHERE u."login_id" = login
+     AND ((u."workspace_id" = admin_ws AND coalesce(r, '') <> 'admin')
+          OR (u."workspace_id" = team_ws AND coalesce(r, '') NOT IN ('admin', 'member')));
+  GET DIAGNOSTICS gone = ROW_COUNT;
+  IF changed + gone > 0 THEN
+    INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+    VALUES (admin_ws, NULL, 'bridge.login', jsonb_build_object('login', login, 'role', r));
+  END IF;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_login"(uuid) FROM PUBLIC;
 --> statement-breakpoint
 
 -- ── 2. The email-code sign-in and the static login tokens ───────────────────

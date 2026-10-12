@@ -3,12 +3,28 @@
  * carrying anything: every client login as it was (archive_client_logins,
  * no password hash), the email-code sign-in tables and the retired static
  * login tokens as metadata only (never a code, a token hash, a request id
- * or an address), and the role each key and peer was made under. Read by no
- * product code (an archive: the level-reads sweep skips this folder). No
- * grant to any role: the admin pool and definer functions only
- * (access-matrix.ts).
+ * or an address), the role each key and peer was made under, and the
+ * workspace rows a former client held on a brain already on workspaces
+ * (archive_client_workspace_users, W8a fix round 1).
+ *
+ * archive_client_logins is also the list of former clients (W8a fix round
+ * 1): their text stays client-sourced (packages/tools/src/client-sourced.ts),
+ * an admin cannot re-enable one, an invite or a new login on one's email is
+ * refused (packages/content/src/former-clients.ts), the login bridge gives
+ * one no workspace and a brain not on workspaces that had one is not
+ * switched at boot (0272). No grant to any role: the admin pool, the system
+ * pool and definer functions only (access-matrix.ts).
  */
-import { integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 export const archiveClientLogins = pgTable('archive_client_logins', {
   loginId: uuid('login_id').primaryKey(),
@@ -21,6 +37,20 @@ export const archiveClientLogins = pgTable('archive_client_logins', {
   sessionEpoch: integer('session_epoch').notNull(),
   archivedAt: timestamp('archived_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const archiveClientWorkspaceUsers = pgTable(
+  'archive_client_workspace_users',
+  {
+    workspaceId: uuid('workspace_id').notNull(),
+    loginId: uuid('login_id').notNull(),
+    moderator: boolean('moderator').notNull(),
+    limits: jsonb('limits').notNull(),
+    addedBy: uuid('added_by'),
+    addedAt: timestamp('added_at', { withTimezone: true }).notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.loginId] })],
+);
 
 export const archiveClientSigninCodes = pgTable('archive_client_signin_codes', {
   id: uuid('id').primaryKey(),

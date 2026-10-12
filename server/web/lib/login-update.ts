@@ -14,7 +14,11 @@ import {
   pairingCodes,
   sql,
 } from '@mantle/db';
-import { settleSpaceOnPromotion } from '@mantle/content';
+import {
+  FORMER_CLIENT_ENABLE_MESSAGE,
+  isFormerClientLogin,
+  settleSpaceOnPromotion,
+} from '@mantle/content';
 import { auditKeysEnded, endLoginSessions, type SessionUser } from '@/lib/auth';
 import { auditPeersUnbound } from '@/lib/peer-unbind';
 import { releaseAssignedAgent } from '@/lib/agents';
@@ -44,7 +48,14 @@ export type LoginChangeRefusal = {
   ok: false;
   status: 400 | 403 | 409;
   error: string;
-  reason: 'role-fixed' | 'owner' | 'self' | 'contact-missing' | 'contact-taken' | 'last-admin';
+  reason:
+    | 'role-fixed'
+    | 'owner'
+    | 'self'
+    | 'contact-missing'
+    | 'contact-taken'
+    | 'last-admin'
+    | 'former-client';
 };
 
 export type LoginChangeDone = {
@@ -107,6 +118,16 @@ export async function applyLoginChange(
       status: 400,
       reason: 'role-fixed',
       error: 'This login cannot change role. Disable it and create a new login.',
+    };
+  }
+  // A former client login (archived by 0272) stays disabled: enabling it
+  // would bring a client back as a member by itself (W8a fix round 1).
+  if (change.disabled === false && (await isFormerClientLogin(target.id))) {
+    return {
+      ok: false,
+      status: 409,
+      reason: 'former-client',
+      error: FORMER_CLIENT_ENABLE_MESSAGE,
     };
   }
   if (lockingOut && target.isOwner) {

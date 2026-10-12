@@ -31,6 +31,7 @@ import {
 } from '@mantle/db';
 import type { MemberInviteRow, MemberInviteState } from '@mantle/client-types';
 import { getContact } from './contacts';
+import { FORMER_CLIENT_EMAIL_MESSAGE, isFormerClientEmail } from './former-clients';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Exec = Tx | typeof db;
@@ -43,7 +44,12 @@ const LIST_LIMIT = 200;
 const ADDRESS_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export type MemberInviteErrorReason =
-  'contact-not-found' | 'contact-has-login' | 'no-email' | 'email-has-login';
+  | 'contact-not-found'
+  | 'contact-has-login'
+  | 'no-email'
+  | 'email-has-login'
+  /** The email was a client login's (archived by 0272, W8a fix round 1). */
+  | 'email-was-client';
 
 /** A create the admin can fix. The route maps `reason` to a status. */
 export class MemberInviteError extends Error {
@@ -183,6 +189,11 @@ export async function createMemberInvite(
   }
   if (!email || !ADDRESS_RE.test(email)) {
     throw new MemberInviteError('no-email', 'Enter an email address for the invite.');
+  }
+  // A former client's email first: its login may still exist (disabled),
+  // and the admin should read why, not "already exists".
+  if (await isFormerClientEmail(email)) {
+    throw new MemberInviteError('email-was-client', FORMER_CLIENT_EMAIL_MESSAGE);
   }
   if (await loginWithEmail(email)) {
     throw new MemberInviteError('email-has-login', 'A user with that email already exists.');
@@ -390,6 +401,8 @@ export async function redeemMemberInvite(
       const wanted = input.email?.trim().toLowerCase();
       if (wanted && wanted !== invite.email) return null;
       if (await loginWithEmail(invite.email, tx)) return null;
+      // An invite made before 0272 archived its email's client login.
+      if (await isFormerClientEmail(invite.email, tx)) return null;
       if (invite.contactId && (await loginOnContact(invite.contactId, tx))) return null;
 
       const loginId = randomUUID();

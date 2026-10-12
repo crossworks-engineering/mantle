@@ -13,6 +13,7 @@ import {
   nodes,
   sql,
 } from '@mantle/db';
+import { FORMER_CLIENT_EMAIL_MESSAGE, isFormerClientEmail } from '@mantle/content';
 import { getOwnerOr401, hashLoginPassword } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { insertLoginWithWorkspaces } from '@/lib/login-create';
@@ -135,6 +136,14 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.trim().toLowerCase();
+  // A former client (archived by 0272) never comes back as a login by
+  // itself, even after its row was deleted (W8a fix round 1).
+  if (await isFormerClientEmail(email)) {
+    return NextResponse.json(
+      { error: FORMER_CLIENT_EMAIL_MESSAGE, reason: 'email-was-client' },
+      { status: 409 },
+    );
+  }
   const passwordHash = await hashLoginPassword(parsed.data.password);
   const id = randomUUID();
 

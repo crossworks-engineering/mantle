@@ -74,6 +74,7 @@ describe.skipIf(!URL)('member invites', () => {
 
   afterAll(async () => {
     if (!admin) return;
+    await admin`delete from archive_client_logins where email like ${`%${tag}%`}`;
     const logins = await admin<Row[]>`select id from auth.users where email like ${`%${tag}%`}`;
     const loginIds = logins.map((r) => r.id as string);
     await admin`delete from member_invites where owner_id in (${anchor}, ${otherBrain})`;
@@ -126,6 +127,42 @@ describe.skipIf(!URL)('member invites', () => {
           reason,
         ).rejects.toMatchObject({ name: 'MemberInviteError', reason });
       }
+    });
+
+    it("refuses a former client's email, its login deleted or not (W8a fix round 1, L6)", async () => {
+      // One former client still a (disabled) row, one whose row was deleted:
+      // only the archive of 0272 remembers it.
+      const kept = randomUUID();
+      await admin`insert into auth.users (id, email, password_hash, role, disabled_at)
+        values (${kept}, ${email('fc-kept')}, 'x', 'member', now())`;
+      await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
+        values (${kept}, ${email('fc-kept')}, now(), 0),
+               (${randomUUID()}, ${email('FC-Gone')}, now(), 0)`;
+      for (const e of [email('fc-kept'), email('fc-gone')]) {
+        await expect(
+          inv.createMemberInvite(anchor, { email: e.toUpperCase(), createdBy: adminLogin }),
+          e,
+        ).rejects.toMatchObject({
+          name: 'MemberInviteError',
+          reason: 'email-was-client',
+          message:
+            'That email belonged to a client login. A former client cannot be invited or given a new login.',
+        });
+      }
+      expect(
+        await admin`select 1 from member_invites where lower(email) in ${admin([email('fc-kept'), email('fc-gone')])}`,
+      ).toHaveLength(0);
+    });
+
+    it('an invite made before its email was archived as a client redeems nothing (L6)', async () => {
+      const { code } = await inv.createMemberInvite(anchor, {
+        email: email('fc-late'),
+        createdBy: adminLogin,
+      });
+      await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
+        values (${randomUUID()}, ${email('fc-late')}, now(), 0)`;
+      expect(await inv.redeemMemberInvite({ code, passwordHash: HASH })).toBeNull();
+      expect(await loginByEmail(email('fc-late'))).toBeNull();
     });
 
     it('replaces an open invite for the same contact (the old code dies)', async () => {

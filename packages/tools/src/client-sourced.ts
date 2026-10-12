@@ -37,7 +37,7 @@ import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
   appDatabases,
   appTableExports,
-  authUsers,
+  archiveClientLogins,
   CLIENT_REQUEST_SOURCE,
   clientSourcedNodes,
   conversationTaints,
@@ -87,13 +87,16 @@ function batches<T>(list: readonly T[]): T[][] {
 
 /** The brain's live workspaces with a client user, as a uuid[] SQL value
  *  (workspaces W5b2: who reads an item is its grants, not its frozen
- *  level). */
+ *  level). A client user is a former client login (archive_client_logins,
+ *  W8a fix round 1): there is no client role since 0272. Run as the
+ *  system (every caller is inside asSystem): no level or workspace role
+ *  reads the archive. */
 export function clientWsSql(ownerId: string) {
   return sql`coalesce((
     select array_agg(distinct w.id) from workspaces w
       join workspace_users u on u.workspace_id = w.id
-      join auth.users l on l.id = u.login_id and l.role = 'client'
-     where w.owner_id = ${ownerId} and w.archived_at is null), '{}'::uuid[])`;
+     where w.owner_id = ${ownerId} and w.archived_at is null
+       and u.login_id in (select a.login_id from archive_client_logins a)), '{}'::uuid[])`;
 }
 
 /**
@@ -131,7 +134,8 @@ function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
 
 /**
  * Whether any of `ids` names client-sourced text: a client request task of
- * this brain, a client login (its chat thread), an item a client wrote
+ * this brain, a former client login (its old chat thread; listed in
+ * archive_client_logins since 0272), an item a client wrote
  * (client logins C5): a `space_items` row stamped `author_role` 'client',
  * in any state (submitted, taken over, accepted into the brain), or a node a
  * marked staff turn created (`client_sourced_nodes`, L10), or a Table
@@ -161,11 +165,12 @@ export async function namesClientSourced(
         )
         .limit(1);
       if (task) return true;
+      // A former client login (its chat thread): there is no client role
+      // since 0272, so the archive it wrote is the list (W8a fix round 1).
       const [login] = await db
-        .select({ id: authUsers.id })
-        .from(authUsers)
-        // Raw SQL: the role type names admin and member only since W8a.
-        .where(and(inArray(authUsers.id, list), sql`${authUsers.role} = 'client'`))
+        .select({ id: archiveClientLogins.loginId })
+        .from(archiveClientLogins)
+        .where(inArray(archiveClientLogins.loginId, list))
         .limit(1);
       if (login) return true;
       const [written] = await db

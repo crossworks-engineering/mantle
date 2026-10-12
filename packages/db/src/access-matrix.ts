@@ -576,8 +576,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.archive_mcp_cutoff', 'system'),
   // The client logins, the email-code sign-in, the static login tokens and
   // the role a key or a peer was made under, as they were when logins
-  // stopped carrying anything (0272, W8a). Metadata only.
+  // stopped carrying anything (0272, W8a). Metadata only. A former client's
+  // workspace rows on a brain already on workspaces (W8a fix round 1).
   none('public.archive_client_logins', 'system'),
+  none('public.archive_client_workspace_users', 'system'),
   none('public.archive_client_signin_codes', 'system'),
   none('public.archive_client_signin_code_skips', 'system'),
   none('public.archive_client_signin_sender_folders', 'system'),

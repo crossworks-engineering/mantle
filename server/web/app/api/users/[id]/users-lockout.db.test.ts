@@ -64,7 +64,8 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
   const dee = randomUUID(); // admin, deleted below
   const eve = randomUUID(); // admin, links contacts
   const raw = randomUUID(); // deleted with raw SQL (the FK)
-  const logins = [anchor, otherBrain, bea, cal, dee, eve, raw];
+  const former = randomUUID(); // a former client login (archived by 0272)
+  const logins = [anchor, otherBrain, bea, cal, dee, eve, raw, former];
   const ids = {
     contact: randomUUID(),
     otherContact: randomUUID(),
@@ -155,6 +156,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
   afterAll(async () => {
     if (!admin) return;
+    await admin`delete from archive_client_logins where login_id = ${former}`;
     await admin`delete from push_subscriptions where owner_id = ${anchor}`;
     await admin`delete from agents where owner_id in ${admin([anchor, otherBrain])}`;
     await admin`delete from nodes where owner_id in ${admin([anchor, otherBrain])}`;
@@ -321,6 +323,28 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
         200,
       );
     });
+  });
+
+  // W8a fix round 1 (L6): a former client login stays disabled.
+  it('refuses to enable a former client login; an ordinary disabled login enables', async () => {
+    await admin`update auth.users set role = 'member', disabled_at = now() where id = ${former}`;
+    await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
+      select id, email, created_at, session_epoch from auth.users where id = ${former}`;
+    h.caller = as(anchor);
+    const { PATCH } = await import('./route');
+    const res = await PATCH(json('PATCH', { disabled: false }), ctx(former));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error:
+        'This was a client login. A former client login stays disabled and cannot be enabled again.',
+    });
+    const [row] = await admin<Row[]>`
+      select disabled_at is not null as disabled from auth.users where id = ${former}`;
+    expect(row).toEqual({ disabled: true });
+    // A rename or a sign-out is still fine; only enabling is refused.
+    expect((await PATCH(json('PATCH', { signOut: true }), ctx(former))).status).toBe(200);
+    // Control: a login that was never a client enables (bea, disabled above).
+    expect((await PATCH(json('PATCH', { disabled: false }), ctx(bea))).status).toBe(200);
   });
 
   // W8a: there is no client login. The role check admits admin and member

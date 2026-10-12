@@ -83,6 +83,7 @@ describe('access matrix', () => {
       'public.mobile_tokens',
       'public.member_invites',
       'public.archive_client_logins',
+      'public.archive_client_workspace_users',
       'public.archive_client_signin_codes',
       'public.archive_mcp_login_tokens',
     ];

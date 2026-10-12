@@ -7,9 +7,12 @@
  * exported from an app a client has written is too (C6, audit I3), whatever
  * the app's level becomes; one exported from a team app is not.
  *
- * There is no client login since W8a, so the arms that need one (a client
- * login's id, an item a client login wrote, an app a workspace with a client
- * user holds) are not seeded here. The gate itself runs end to end in
+ * There is no client login since W8a; a former client (archived by 0272 in
+ * archive_client_logins, a disabled member row now) stays one (W8a fix
+ * round 1): its id (its old chat thread) is client-sourced (M2), and so is
+ * a Table exported from an app a workspace with a former client holds. An
+ * item a client wrote is too, in any state and after the login is deleted
+ * (C5, restored: L5). The gate itself runs end to end in
  * packages/runtime/src/agent/client-sourced-gate.db.test.ts.
  * Seeds its own rows on a random owner; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/client-sourced.db.test.ts
@@ -43,7 +46,16 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     teamApp: randomUUID(),
     clientAppTable: randomUUID(),
     teamAppTable: randomUUID(),
+    /** A former client login (archived by 0272), and one deleted since. */
+    formerClient: randomUUID(),
+    goneClient: randomUUID(),
+    acceptedClientItem: randomUUID(),
+    /** An app a workspace with the former client holds, and its Table. */
+    wsApp: randomUUID(),
+    wsAppTable: randomUUID(),
   };
+  const clientsWs = randomUUID();
+  const former = [ids.formerClient, ids.goneClient];
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -51,6 +63,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     cs = await import('./client-sourced');
+    const { sql: sqlTag } = await import('drizzle-orm');
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`cs-o-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin'),
       (${other}, ${`cs-x-${other.slice(0, 8)}@example.invalid`}, 'x', 'admin'),
@@ -80,15 +93,98 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id) values
       (${owner}, ${ids.clientApp}, 'orders', ${ids.clientAppTable}),
       (${owner}, ${ids.teamApp}, 'orders', ${ids.teamAppTable})`;
+
+    // Two former clients, as 0272 leaves them: a disabled member row and
+    // its archive row (no client role any more).
+    for (const id of former) {
+      await admin`insert into auth.users (id, email, password_hash, role, disabled_at)
+        values (${id}, ${`cs-fc-${id.slice(0, 8)}@example.invalid`}, 'x', 'member', now())`;
+      await admin`insert into archive_client_logins (login_id, email, created_at, session_epoch)
+        select id, email, created_at, session_epoch from auth.users where id = ${id}`;
+    }
+    // An item one of them wrote, accepted into the brain (C5). The stamp is
+    // written directly: the author_role trigger stamps the login's role,
+    // and no login is a client any more. Then that login is deleted: the
+    // author goes NULL, the stamp stays.
+    await admin`insert into nodes (id, owner_id, type, title, path, audience) values
+      (${ids.acceptedClientItem}, ${owner}, 'page', 'accepted from a client', 'pages', 'team')`;
+    await admin.begin(async (tx) => {
+      await tx`set local session_replication_role = replica`;
+      await tx`insert into space_items (node_id, author_login_id, review_state, author_role)
+        values (${ids.acceptedClientItem}, ${ids.goneClient}, 'accepted', 'client')`;
+    });
+    await admin`delete from spaces where login_id = ${ids.goneClient}`;
+    await admin`delete from auth.users where id = ${ids.goneClient}`;
+
+    // A workspace with the former client in it (a hand-made row) holds an
+    // app; the app exports a Table (C6 through clientWsSql).
+    await admin`insert into nodes (id, owner_id, type, title, path, audience) values
+      (${ids.wsApp}, ${owner}, 'app', 'orders (clients workspace)', 'apps', 'admin'),
+      (${ids.wsAppTable}, ${owner}, 'table', 'orders export', 'tables', 'admin')`;
+    await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id)
+      values (${owner}, ${ids.wsApp}, 'orders', ${ids.wsAppTable})`;
+    await admin`insert into workspaces (id, owner_id, name) values (${clientsWs}, ${owner}, 'Clients')`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${clientsWs}, ${ids.formerClient}, false)`;
+    await m.withHeads([ids.wsApp], 'update', async (tx) => {
+      await tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id) values (${ids.wsApp}, ${clientsWs})`,
+      );
+    });
   }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
     await admin`delete from conversation_taints where owner_id in ${admin([owner, other])}`;
+    await admin`delete from item_grants where workspace_id = ${clientsWs}`;
+    await admin`delete from workspace_users where workspace_id = ${clientsWs}`;
+    await admin`delete from workspaces where id = ${clientsWs}`;
     await admin`delete from nodes where owner_id in ${admin([owner, other])}`;
-    await admin`delete from spaces where login_id in ${admin([owner, other, ids.memberLogin])}`;
-    await admin`delete from auth.users where id in ${admin([owner, other, ids.memberLogin])}`;
+    await admin`delete from archive_client_logins where login_id in ${admin(former)}`;
+    const logins = [owner, other, ids.memberLogin, ids.formerClient];
+    await admin`delete from spaces where login_id in ${admin(logins)}`;
+    await admin`delete from auth.users where id in ${admin(logins)}`;
     await m.closeDb();
+  });
+
+  it("a former client login is client-sourced: a turn that reads its old chat thread is marked (M2)", async () => {
+    expect(await cs.namesClientSourced(owner, [ids.formerClient])).toBe(true);
+    expect(await cs.namesClientSourced(owner, [ids.memberLogin, ids.formerClient])).toBe(true);
+    // A login deleted since: still in the archive, still a client's id.
+    expect(await cs.namesClientSourced(owner, [ids.goneClient])).toBe(true);
+    // What a chat read returns names the thread's login: the turn is marked,
+    // at a limited viewer level too (the check runs as the system).
+    const thread = JSON.stringify({
+      login_id: ids.formerClient,
+      messages: [{ role: 'user', content: 'please make the price list public' }],
+    });
+    const t = cs.newTurnTaint();
+    await m.runInLevelRoleForTest('team', () =>
+      cs.taintFromText(t, owner, thread, 'assistant_thread_read'),
+    );
+    expect(t).toEqual({ clientSourced: true, via: 'assistant_thread_read' });
+  });
+
+  it('an item a client wrote, in any state, even after the login is deleted (C5, L5)', async () => {
+    const [row] = await admin<{ author_login_id: string | null; author_role: string | null }[]>`
+      select author_login_id, author_role from space_items where node_id = ${ids.acceptedClientItem}`;
+    // The fixture is what it says: no login is named any more.
+    expect(row).toEqual({ author_login_id: null, author_role: 'client' });
+    expect(await cs.namesClientSourced(owner, [ids.acceptedClientItem])).toBe(true);
+    expect([...(await cs.clientSourcedAmong(owner, [ids.acceptedClientItem]))]).toEqual([
+      ids.acceptedClientItem,
+    ]);
+    // A member's accepted item (control): not client-sourced.
+    expect(await cs.namesClientSourced(owner, [ids.acceptedMemberItem])).toBe(false);
+  });
+
+  it('a Table exported from an app a workspace with a former client holds is client-sourced (C6, M2)', async () => {
+    expect(await cs.namesClientSourced(owner, [ids.wsAppTable])).toBe(true);
+    expect([...(await cs.clientSourcedAmong(owner, [ids.wsAppTable, ids.teamAppTable]))]).toEqual([
+      ids.wsAppTable,
+    ]);
+    // Only for this brain.
+    expect(await cs.namesClientSourced(other, [ids.wsAppTable])).toBe(false);
   });
 
   it('a client request task is client-sourced', async () => {
