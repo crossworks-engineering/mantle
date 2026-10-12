@@ -20,7 +20,9 @@
  *  - in warn, the same number of round trips as off, apart from the round
  *    trips that send only the actor's own statements (a lookup, the
  *    wrapper's COMMIT): the SET goes in the same send as a transaction's
- *    first statement, and the wrapper's BEGIN and SET with its write.
+ *    first statement, and the wrapper's BEGIN and SET with its write;
+ *  - in warn, no round trip carries the SET without a statement of the
+ *    path's own: counted apart (setRoundTrips), always 0 (A2b).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a2a-round-trips.db.test.ts
  * MANTLE_RT_REPORT=1 prints the table. MANTLE_RT_BASELINE=1 also compares
@@ -72,6 +74,9 @@ const ACTOR_SQL = /mantle\.actor|mantle_actor_|\/\* mantle:actor \*\//;
  *  connection. */
 const NOISE_SQL = /mantle_actor_check_mode|from pg_catalog\.pg_type/;
 
+/** The actor SET itself (client.ts setActorSql). */
+const SET_SQL = /set_config\('mantle\.actor'/;
+
 type Kind = 'noise' | 'actor' | 'other';
 const kindOf = (s: string): Kind =>
   NOISE_SQL.test(s) ? 'noise' : ACTOR_SQL.test(s) ? 'actor' : 'other';
@@ -82,6 +87,9 @@ class WireCounter {
   roundTrips = 0;
   /** Round trips that sent only the actor's own statements. */
   actorRoundTrips = 0;
+  /** Of those, the ones that carried the actor SET (A2b: must be 0, the SET
+   *  always goes out with a statement of the path's own). */
+  setRoundTrips = 0;
   lastAt = 0;
   private server: net.Server | null = null;
   private sockets = new Set<net.Socket>();
@@ -98,6 +106,8 @@ class WireCounter {
       let last: Kind = 'other';
       /** The kind of this connection's open round trip. */
       let open: Kind = 'other';
+      /** Whether that round trip, while the actor's own, carried the SET. */
+      let openSet = false;
       upstream.on('data', (d) => {
         serverSpoke = true;
         client.write(d);
@@ -107,6 +117,7 @@ class WireCounter {
         buf = Buffer.concat([buf, d]);
         const kinds: Kind[] = [];
         let messages = 0;
+        let sentSet = false;
         for (;;) {
           if (startup) {
             if (buf.length < 8) break;
@@ -128,6 +139,7 @@ class WireCounter {
           if (type === 'P') text = cstring(body, body.indexOf(0) + 1);
           if (text !== null) {
             last = kindOf(text);
+            if (SET_SQL.test(text)) sentSet = true;
             kinds.push(last);
             if (last !== 'noise') this.statements.push(text);
           }
@@ -145,11 +157,18 @@ class WireCounter {
         if (serverSpoke) {
           this.roundTrips += 1;
           open = kind;
+          openSet = kind === 'actor' && sentSet;
           if (kind === 'actor') this.actorRoundTrips += 1;
+          if (openSet) this.setRoundTrips += 1;
         } else if (open === 'actor' && kind === 'other') {
           // The same round trip sent more than the actor's own after all.
           open = 'other';
           this.actorRoundTrips -= 1;
+          if (openSet) this.setRoundTrips -= 1;
+          openSet = false;
+        } else if (open === 'actor' && sentSet && !openSet) {
+          openSet = true;
+          this.setRoundTrips += 1;
         }
         serverSpoke = false;
         this.lastAt = Date.now();
@@ -169,6 +188,7 @@ class WireCounter {
     this.statements = [];
     this.roundTrips = 0;
     this.actorRoundTrips = 0;
+    this.setRoundTrips = 0;
   }
 
   async stop(): Promise<void> {
@@ -307,6 +327,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       statements: [...wire.statements],
       roundTrips: wire.roundTrips,
       actorRoundTrips: wire.actorRoundTrips,
+      setRoundTrips: wire.setRoundTrips,
     };
   };
 
@@ -409,6 +430,11 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
             `off ${off.roundTrips}`,
         );
       }
+      // (3b) the SET never takes a round trip of its own (A2b, the A2a
+      // audit's LOW): counted apart from the lookups and the COMMIT.
+      if (warn.setRoundTrips !== 0) {
+        failures.push(`${p}: warn sends the actor SET alone in ${warn.setRoundTrips} round trips`);
+      }
       // The A2a merge gate only: off against the counts before A2a.
       const base = OFF_BASELINE[p];
       if (
@@ -424,7 +450,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
         `| ${p} | ${off.statements.length} / ${off.roundTrips} | ` +
           `${warn.statements.length} / ${warn.roundTrips} | ` +
           `+${warn.statements.length - off.statements.length} / ` +
-          `+${warn.roundTrips - off.roundTrips} (actor ${warn.actorRoundTrips}) |`,
+          `+${warn.roundTrips - off.roundTrips} (actor ${warn.actorRoundTrips}, SET ${warn.setRoundTrips}) |`,
       );
     }
     if (process.env.MANTLE_RT_REPORT) {

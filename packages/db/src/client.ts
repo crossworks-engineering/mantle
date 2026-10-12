@@ -198,11 +198,22 @@ const STATEMENT_PROPS: ReadonlySet<PropertyKey> = new Set([
  *  parameters in two steps (describe, wait for the answer, then execute),
  *  and nothing queued behind it goes out until the first step is answered.
  *  A statement with no parameters goes out in one step, so the next one is
- *  sent with it: the SET adds no round trip. */
-function setActorSql([actor, writeMode, mode]: [string, string, string]): string {
+ *  sent with it: the SET adds no round trip.
+ *
+ *  Each value is checked against its shape first and refused otherwise
+ *  (A2b, defence in depth for the inlined literals): actor.ts builds them,
+ *  so a refusal here is a bug, never a caller's input. Exported for
+ *  actor-client.test.ts only (not in index.ts). */
+export function setActorSql([actor, writeMode, mode]: [string, string, string]): string {
+  if (!ACTOR_VALUE_RE.test(actor)) throw new Error('actor setting: not an actor');
+  if (writeMode !== 'rw' && writeMode !== 'ro') throw new Error('actor setting: write mode');
+  if (mode !== 'off' && mode !== 'warn' && mode !== 'on') {
+    throw new Error('actor setting: check mode');
+  }
   const lit = (v: string) => {
     // standard_conforming_strings is on (the Postgres default since 9.1):
-    // only a quote needs doubling. A NUL never reaches a setting.
+    // only a quote needs doubling. The shapes above admit no quote and no
+    // NUL; this stays as the second line.
     if (v.includes('\0')) throw new Error('actor setting: NUL');
     return `'${v.replace(/'/g, "''")}'`;
   };
@@ -212,6 +223,11 @@ function setActorSql([actor, writeMode, mode]: [string, string, string]): string
     `set_config('mantle.actor_check', ${lit(mode)}, true)`
   );
 }
+
+/** The shape of a mantle.actor value (actorSetting's output): no quote, no
+ *  space, no NUL. Wider than mantle_set_actor's own pattern on purpose:
+ *  that one names the kinds, this one only keeps the literal safe. */
+const ACTOR_VALUE_RE = /^[a-z0-9:._/@-]{1,200}$/i;
 
 /** Statements Postgres refuses inside a transaction block: they run as they
  *  are, with no actor set (DDL and maintenance; no item trigger fires). */
@@ -305,9 +321,17 @@ const SET_TRANSACTION_SQL = /^\s*set\s+transaction\b/i;
 export function actorInTransaction(t: PgSql, params: [string, string, string]): PgSql {
   /** The SET's outcome once sent: null, or its error. Never rejects. */
   let set: Promise<unknown> | null = null;
+  /** The SET answered without an error: later statements run plain. Until
+   *  then each one waits for the SET's answer too, so a statement sent in
+   *  parallel with the first reports the SET's own error, not the follow-on
+   *  "current transaction is aborted" (A2b, the A2a audit's LOW). */
+  let setOk = false;
   const sendSet = (): Promise<unknown> =>
     (set ??= t.unsafe(setActorSql(params)).then(
-      () => null,
+      () => {
+        setOk = true;
+        return null;
+      },
       (err: unknown) => err ?? new Error('the actor SET failed'),
     ));
   /** Start `start` right behind the SET. Both `.then` calls are direct, so
@@ -342,14 +366,14 @@ export function actorInTransaction(t: PgSql, params: [string, string, string]): 
           thisArg,
           args,
         ) as PromiseLike<unknown>;
-      if (set || !Array.isArray(first) || !('raw' in first)) return call();
+      if (setOk || !Array.isArray(first) || !('raw' in first)) return call();
       return afterSet(call);
     },
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
         return (query: string, args?: unknown[], opts?: unknown) => {
-          if (set) return target.unsafe(query, args as never[], opts as never);
-          if (SET_TRANSACTION_SQL.test(query)) {
+          if (setOk) return target.unsafe(query, args as never[], opts as never);
+          if (!set && SET_TRANSACTION_SQL.test(query)) {
             return target.unsafe(query, args as never[], opts as never);
           }
           const q = () => target.unsafe(query, args as never[], opts as never);

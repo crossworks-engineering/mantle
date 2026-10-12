@@ -10,6 +10,7 @@ import {
   needsActorWrap,
   refreshActorCheckMode,
   runsOutsideTransaction,
+  setActorSql,
 } from './client';
 
 type PgSql = Parameters<typeof actorInTransaction>[0];
@@ -204,6 +205,23 @@ describe('the actor SET in a transaction (fix round 2: pipelined)', () => {
     await expect(done).rejects.toThrow('the SET failed');
   });
 
+  it("a statement sent in parallel with the first reports the SET's error too (A2b)", async () => {
+    const f = fakeTx({
+      set_config: new Error('the SET failed'),
+      'select ': new Error('current transaction is aborted'),
+    });
+    const tx = actorInTransaction(f.t, PARAMS);
+    const one = Promise.resolve(tx.unsafe('select 1'));
+    const two = Promise.resolve(tx.unsafe('select 2'));
+    await tick();
+    // One SET, both statements behind it in the same send.
+    expect(f.sent).toHaveLength(3);
+    expect(f.sent.filter((s) => s.includes('set_config'))).toHaveLength(1);
+    f.release();
+    await expect(one).rejects.toThrow('the SET failed');
+    await expect(two).rejects.toThrow('the SET failed');
+  });
+
   it('sets the actor before a savepoint opened first, in the same send', async () => {
     const f = fakeTx();
     const raw = f.t as unknown as { unsafe: (q: string) => PromiseLike<unknown> };
@@ -218,6 +236,34 @@ describe('the actor SET in a transaction (fix round 2: pipelined)', () => {
     expect(f.sent[1]).toBe('savepoint s1');
     f.release();
     await expect(done).resolves.toBe('inner');
+  });
+});
+
+describe('setActorSql checks each value before it inlines it (A2b)', () => {
+  it('takes the values actor.ts makes', () => {
+    expect(setActorSql(['login:rw:0f0e0d0c-0b0a-4908-8706-050403020100', 'ro', 'off'])).toContain(
+      "'login:rw:0f0e0d0c-0b0a-4908-8706-050403020100'",
+    );
+    expect(setActorSql(['system:repair:page-block-ids', 'rw', 'on'])).toContain("'on'");
+  });
+
+  it('refuses any other shape, so nothing reaches the literal', () => {
+    for (const bad of ["x'; drop table nodes; --", 'a b', '', 'a\0b', 'x'.repeat(201)]) {
+      expect(() => setActorSql([bad, 'rw', 'warn']), JSON.stringify(bad)).toThrow(/not an actor/);
+    }
+    expect(() => setActorSql(['link', 'RW', 'warn'])).toThrow(/write mode/);
+    expect(() => setActorSql(['link', "rw'", 'warn'])).toThrow(/write mode/);
+    expect(() => setActorSql(['link', 'ro', 'strict'])).toThrow(/check mode/);
+  });
+
+  it('a refused value sends nothing in a transaction', async () => {
+    const f = fakeTx();
+    const tx = actorInTransaction(f.t, ["no'pe", 'rw', 'warn']);
+    await expect(Promise.resolve().then(() => tx.unsafe('select 1'))).rejects.toThrow(
+      /not an actor/,
+    );
+    await tick();
+    expect(f.sent).toEqual([]);
   });
 });
 

@@ -323,7 +323,8 @@ tree, and refuses a second run on the same box. The log stays on the box in
 
 ## Rolling across the client logins releases (history)
 
-The client logins releases (v0.232.318 to v0.232.350, migrations 0186 to 0200) are behind every box we run. Their roll notes (the client level, the
+The client logins releases (v0.232.318 to v0.232.350, migrations 0186 to
+0200) are behind every box we run. Their roll notes (the client level, the
 sign-in links and codes, the client space quotas, client apps) are in the
 repository history before workspaces W8f. Client logins themselves are
 gone since W8a (below, and [client-logins.md](./client-logins.md)); the
@@ -716,9 +717,9 @@ After you change the setting, restart the app processes (web, api,
 workers, mcp). The app reads the setting about once a minute, but each
 pooled connection keeps the value the database had when the connection
 opened, and the item-table trigger reads that value first. Without a
-restart, old connections keep the old mode. In warn it logs each miss to `actor_check_misses` (at most 100 rows an hour per
-check) and one console line per miss and caller an hour. Read them with
-numbers only:
+restart, old connections keep the old mode. In warn it logs each miss to
+`actor_check_misses` (at most 100 rows an hour per check) and one console
+line per miss and caller an hour. Read them with numbers only:
 
 ```sql
 select source, check_name, count(*) from actor_check_misses
