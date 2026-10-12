@@ -19,6 +19,7 @@ import mantleLevelReadsPlugin from './eslint-rules/level-reads.mjs';
 import mantleRawAclPlugin from './eslint-rules/no-raw-acl-columns.mjs';
 import mantleAsSystemPlugin from './eslint-rules/as-system-allowlist.mjs';
 import mantleActorSettersPlugin from './eslint-rules/actor-setters.mjs';
+import mantleNoModelInTxPlugin from './eslint-rules/no-model-in-transaction.mjs';
 
 export default tseslint.config(
   {
@@ -210,6 +211,14 @@ export default tseslint.config(
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
     plugins: { 'mantle-actor': mantleActorSettersPlugin },
     rules: { 'mantle-actor/actor-setters-in-db-only': 'error' },
+  },
+  {
+    // No database transaction is held across a model call or a stream
+    // (workspaces arch A2b, plan 4.2): it would hold its connection and its
+    // heads for the whole call.
+    files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
+    plugins: { 'mantle-tx': mantleNoModelInTxPlugin },
+    rules: { 'mantle-tx/no-model-in-transaction': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

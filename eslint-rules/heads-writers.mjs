@@ -40,7 +40,7 @@ const TABLE_IDENTS = new Set([
   'itemGrants',
 ]);
 
-const HEADS_CALLEES = new Set([
+export const HEADS_CALLEES = new Set([
   'withHeads',
   'withSubtreeHeads',
   'withNodeInsertHeads',
