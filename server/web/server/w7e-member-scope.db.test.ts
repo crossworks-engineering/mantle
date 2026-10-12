@@ -360,22 +360,18 @@ describe.skipIf(!URL)('W7e: member routes in the request scope, the phone contra
     expect(apps.status).toBe(410);
     expect(apps.json.code).toBe('gone');
     // The member home reads team pages and apps: in its scope too (W7e fix
-    // round 1, L1), the brain's home pin still read (the anchor's
-    // preferences, by the named door). Its own things (its push devices)
+    // round 1, L1). Since task d78e7bde it is the Team workspace's landing
+    // page (workspaces.landing_app_id). Its own things (its push devices)
     // hold their own rule.
-    await x(sql`insert into profiles (user_id, preferences)
-                values (${owner}, ${JSON.stringify({ teamHubAppId: teamApp })}::jsonb)
-                on conflict (user_id) do update
-                set preferences = profiles.preferences || excluded.preferences`);
+    await x(sql`update workspaces set landing_app_id = ${teamApp} where id = ${team}`);
     const home = await call('/api/member/home', mem);
     expect(home.status, home.text.slice(0, 200)).toBe(200);
     expect(home.outcome).toMatchObject({ kind: 'user', loginId: mem });
     expect(home.json.homeApp).toMatchObject({ appId: teamApp });
-    // A pin on an app the member does not read: the built-in home.
-    await x(sql`update profiles
-                set preferences = preferences || ${JSON.stringify({ teamHubAppId: sideApp })}::jsonb
-                where user_id = ${owner}`);
+    // A home app Team does not hold: the built-in home.
+    await x(sql`update workspaces set landing_app_id = ${sideApp} where id = ${team}`);
     expect((await call('/api/member/home', mem)).json).toMatchObject({ homeApp: null, hub: null });
+    await x(sql`update workspaces set landing_app_id = null where id = ${team}`);
     expect((await call('/api/member/push/subscriptions', mem)).outcome).toMatchObject({
       kind: 'own-rule',
     });

@@ -61,6 +61,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
   const owner = randomUUID(); // the anchor, an Admin user
   const mem = randomUUID(); // a member in Team only
   const mem2 = randomUUID(); // a member in Team, and the Moderator of Side
+  const mem3 = randomUUID(); // a user of Side only, not its Moderator
   const tag = `wl${randomUUID().slice(0, 6)}`;
   const teamPage = randomUUID();
   const sidePage = randomUUID();
@@ -160,6 +161,12 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     app = await createApp();
     side = (await call('/api/workspaces', mem2, 'POST', { name: 'Side' })).json.id as string;
     expect(side).toBeTruthy();
+    // A login made after the migration is in no workspace: Side's Moderator
+    // adds it to Side, without the Moderator tick.
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+                values (${mem3}, ${email('mem3')}, 'x', false, 'member', 'Sam Side')`);
+    const added = await call(`/api/workspaces/${side}/users`, mem2, 'POST', { loginId: mem3 });
+    expect(added.status, added.text.slice(0, 200)).toBeLessThan(300);
 
     // Pages: one Team reads, one only Side reads, one only Admin reads.
     for (const [id, title] of [
@@ -245,8 +252,8 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
   });
 
   it('only a Moderator of the workspace sets its landing page, to an app it holds with a green build', async () => {
-    // A member of Team who is not its Moderator: 403, nothing changes.
-    const notMod = await setLanding(mem, team, teamApp);
+    // A user of Side who is not its Moderator: 403, nothing changes.
+    const notMod = await setLanding(mem3, side, sideApp);
     expect(notMod.status).toBe(403);
     expect(notMod.json).toMatchObject({ code: 'forbidden' });
     // An Admin user with every area is no Moderator of Side: 403 (no Admin
@@ -255,9 +262,9 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     expect(adminOther.status).toBe(403);
     // Side is not the member's: 404, as every workspace route answers.
     expect((await setLanding(mem, side, sideApp)).status).toBe(404);
-    const [still] = await x<{ landing: string | null }>(sql`
-      select landing_app_id::text as landing from workspaces where id = ${team}`);
-    expect(still?.landing).toBeNull();
+    const still = await x<{ landing: string | null }>(sql`
+      select landing_app_id::text as landing from workspaces where id in (${team}, ${side})`);
+    expect(still.map((r) => r.landing)).toEqual([null, null]);
 
     // The Moderator (an Admin user is one in Team): only an app Team holds,
     // with a green published build.
@@ -323,6 +330,11 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     expect(s.json.homeApp?.appId).toBe(sideApp);
     expect(tokens(s.json.hub)).toEqual([sidePage]);
     expect(appTokens(s.json.hub)).toEqual([]);
+    // A user of Side who is not its Moderator lands on the same page.
+    const s3 = await home(mem3, side);
+    expect(s3.json.homeApp?.appId).toBe(sideApp);
+    expect(tokens(s3.json.hub)).toEqual([sidePage]);
+    expect((await home(mem3, team)).status).toBe(404);
     const t2 = await home(mem2, team);
     expect(t2.json.homeApp?.appId).toBe(teamApp);
     expect(tokens(t2.json.hub)).not.toContain(sidePage);
