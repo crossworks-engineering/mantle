@@ -63,6 +63,38 @@ table is `member_invites` (migration 0174); the logic is
   should reach on the workspace screen. Their private workspace comes the
   first time it is needed.
 
+## External access: outside tools in shared apps
+
+A site adds its own outside tools: an MCP connector or an http API, for
+example a read-only SQL bridge to a site database. The brain cannot judge
+what such a tool does, so an admin decides per tool with the switch
+**External access** on the tool row (`packages/tools/src/external-access.ts`).
+
+- **Which tools.** MCP and http tools only. An http tool must not send PUT,
+  PATCH or DELETE. Never a recipe or a shell tool, and never a tool that
+  needs a confirmation (nobody is there to confirm in an app loop).
+  Built-ins need no switch.
+- **Who switches it on.** Only an admin, in Settings > Tools on the tool
+  (`PUT /api/tools/:id/external-access` `{ allow, readOnlyConfirmed }`) or
+  through `api_tool_update` from the owner's own MCP client. The read-only
+  confirmation is required: the row keeps when, which admin, and a sha256
+  signature of the handler the admin looked at (`tools.external_access`,
+  migrations 0215 and 0225). An in-brain agent may switch it off, never on.
+- **Who may call it.** The app's sharing decides: a user who runs an app
+  granted to one of their workspaces, and a contact on a contact-share link
+  who passed the code. Never an open link. The app must declare the tool.
+  Everyone the app reaches can call the tool by hand with any input, not
+  only what the app's screens send; for a tool that takes free SQL, they
+  can read anything the connector can read.
+- **Off.** Switching off refuses the next call. A changed handler, or a
+  connector moved to another server or credential, voids the switch.
+- **Audit.** Every call, allowed or refused, lands in the app's access log
+  with the login, or the contact and the share.
+
+An MCP connector's own tools reach users through the workspaces it is a
+resource of, with the connector's read-only mark per tool
+([mcp-as-a-login.md](./mcp-as-a-login.md), "Connector tools").
+
 ## Files, deleting and rollback
 
 **Where the bytes live.** The bytes of files folded from a personal space

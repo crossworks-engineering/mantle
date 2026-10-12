@@ -6,7 +6,8 @@ caller (`McpCaller` in `packages/mcp-core/src/login-surface.ts`) from its
 bearer (`server/web/lib/mcp-auth.ts`). Since workspaces W7b (migration 0268)
 every login gets the SAME surface, the owner one
 (`packages/mcp-core/src/build-server.ts`), in its own workspaces. A login
-carries no permission of its own.
+carries no permission of its own. The access model as a whole:
+[workspaces.md](./workspaces.md).
 
 ## Who can connect
 
@@ -16,7 +17,7 @@ carries no permission of its own.
 | API key `mtlk_...` (migration 0232)                   | the login that made it | the one surface, narrowed by the key (docs/guide/07-api/08-api-keys.md)           |
 | Static token `mtlmcpk_...` (RETIRED, revoked by 0268) | one member login       | none: every one is revoked, a call answers 401                                    |
 | Peer token `mtlpeer_...` with "Acts as"               | the bound login        | the one surface as that login, narrowed by the peer's write switch and risky list |
-| Any bearer of a CLIENT login                          | refused                | none: 403 `no_tools` (no client exists yet, plan 21.9)                            |
+| Any bearer of a former client login                   | refused                | none: the login is disabled and its credentials revoked (W8a, migration 0272)     |
 
 The per-login MCP switch (`mcp_login_access`, 0227) is gone: 0268 archives
 its rows in `archive_mcp_login_access` and freezes the table (an insert or a
@@ -162,9 +163,9 @@ They are in no agent's tool group (the `app-data-mcp` group only seeds
 their rows); the MCP surface registers them itself.
 
 - **Reach** (`packages/content/src/mcp-app-data.ts`): an app the login may
-  run in the browser (a member: team, client or public level; a client:
-  client level; a green published build) whose `apps.mcp_access` is on.
-  Off by default; only `PATCH /api/apps/:id { mcpAccess }` (admin) sets it.
+  run in the browser (granted to one of its workspaces, with a green
+  published build) whose `apps.mcp_access` is on. Off by default; only
+  `PATCH /api/apps/:id { mcpAccess }` sets it.
   Every other app answers one plain "no such app".
 - **Write**: the connection's write (a key's or a peer's switch) and the
   grant's Write switch, never on an informational app.
@@ -232,11 +233,13 @@ registration and other logins' grants on it stay.
 
 ## Peers
 
-A peer gets "Acts as" (owner or a member), a Write switch (default
-off) and, for an admin login, a list of risky tools allowed by name
-(`mantle_peers.acts_as_login_id`, `acts_as_role`, `write_enabled`,
-`allowed_risky_tools`). A role change of the bound login fails closed. A peer
-with no "Acts as" is a share-only peer, as before ([federation.md](federation.md)).
+A peer gets "Acts as" (a login), a Write switch (default off) and a list
+of risky tools allowed by name (`mantle_peers.acts_as_login_id`,
+`write_enabled`, `allowed_risky_tools`). It acts as the bound login as
+that login is now (W8a): the role it was bound under was archived in
+`archive_peer_roles` and its column dropped by migration 0272, after a peer
+the old role check refused was ended. A peer with no "Acts as" is a
+share-only peer, as before ([federation.md](federation.md)).
 
 The peer gets the one surface as the bound login, filtered by
 `ownerPeerAllows`: read-only tools unless write is on, and never a risky tool
@@ -259,10 +262,10 @@ The calling brain uses `peer_tools`, `peer_call` and `peer_file_copy`
 `peer_file_copy` uses the peer's `file_upload`.
 
 A password change, "sign out everywhere" and an
-admin's End sessions also end an ADMIN's OAuth grants and every API key of
-the login (endLoginSessions `endKeys`, 2026-10-07). A member or
-client MCP request body is held to the plain JSON ceiling (8 MB), so a draft
-file over MCP is at most about 6 MB.
+admin's End sessions also end the login's OAuth grants and every API key of
+the login (endLoginSessions `endKeys`, 2026-10-07). A member's MCP request
+body is held to the plain JSON ceiling (8 MB), so a draft file over MCP is
+at most about 6 MB.
 
 ## Not done, and why
 
@@ -271,6 +274,8 @@ file over MCP is at most about 6 MB.
 - Pending peers verify, as for the federation routes.
 - The admin's connected-clients list in Settings, MCP shows every login's
   grants without naming the login. A member sees only their own (above).
-- A member's API key names no risky tool (mint stamps none below admin, a
-  W8 change), so it cannot change an app's code; its OAuth grant can.
-- Clients: refused until clients exist (plan 21.9).
+- A key of a login that is not in the Admin workspace with the keys area
+  names no risky tool (W8a), so it cannot change an app's code; its OAuth
+  grant can.
+- Clients: removed (W8a, [client-logins.md](./client-logins.md)). A client
+  may come back later as an ordinary workspace, set up by hand.
