@@ -65,8 +65,11 @@ export type KindSpec = {
   readonly peerShare: boolean;
   /** A `type` filter of GET /api/search (SEARCH_NODE_TYPES). */
   readonly searchable: boolean;
-  /** The kind's item routes: the content prefix (`:id` follows it) and the
-   *  public API v1 prefix. Null where the kind has none. */
+  /** The kind's item routes: the content prefix (`:id` follows it; the
+   *  member route lists are generated from it, route-scope.ts) and the
+   *  public API v1 prefix. Null where the kind has none. Nothing reads `v1`
+   *  yet: A4 generates the content rows of ROUTE_POLICY from both (plan v2,
+   *  section 7; D3, v1 answers as its base route). */
   readonly route: { readonly content: string | null; readonly v1: string | null };
   /** Hidden from a team surface: 'never' (opt-in or not), 'private-corpus'
    *  (unless the owner opted in, teamPrivateReads), or not. */
