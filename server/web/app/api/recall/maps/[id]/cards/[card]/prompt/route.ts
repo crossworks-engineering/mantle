@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { confirmRecallPrompt } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { recallWriteFailure } from '@/lib/recall';
+import { recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
 
@@ -34,7 +34,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; ca
       id,
       card,
       parsed.data.confirm,
-      { kind: 'owner', id: user.actor.id, name: user.actor.displayName ?? null },
+      await recallActorOf(user),
       parsed.data.version,
     );
     return NextResponse.json(res);

@@ -9,7 +9,7 @@ import {
   putRecallCard,
 } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { getRecallCardDetail, recallWriteFailure } from '@/lib/recall';
+import { getRecallCardDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
 
@@ -39,9 +39,6 @@ const Card = z.object({
   version: z.number().int().nonnegative(),
 });
 
-const actorOf = (user: { actor: { id: string; displayName?: string | null } }) =>
-  ({ kind: 'owner', id: user.actor.id, name: user.actor.displayName ?? null }) as const;
-
 /** The card with its body — what the editor opens. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; card: string }> }) {
   const user = await getOwnerOr401();
@@ -66,7 +63,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string; car
   }
   const { version, ...input } = parsed.data;
   try {
-    const res = await putRecallCard(user.id, id, card, input, actorOf(user), version);
+    const res = await putRecallCard(user.id, id, card, input, await recallActorOf(user), version);
     return NextResponse.json(res);
   } catch (err) {
     return recallWriteFailure(err);
@@ -91,7 +88,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
     );
   }
   try {
-    const res = await deleteRecallCard(user.id, id, card, actorOf(user), version);
+    const res = await deleteRecallCard(user.id, id, card, await recallActorOf(user), version);
     return NextResponse.json(res);
   } catch (err) {
     return recallWriteFailure(err);

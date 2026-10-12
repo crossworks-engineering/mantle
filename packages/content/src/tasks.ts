@@ -28,6 +28,7 @@ import {
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  nodeReadByWorkspace,
 } from '@mantle/db';
 import type { TaskRow, TaskStatus, TaskPriority, TaskTodo } from '@mantle/client-types';
 import { isValidRank } from './rank';
@@ -136,11 +137,14 @@ type ListTasksOpts = {
    * view; `'all'` is for exports and integrity checks.
    */
   archived?: 'exclude' | 'only' | 'all';
+  /** Only the items this workspace reads (`?ws=`, a checked id). */
+  ws?: string;
 };
 
 /** Shared WHERE conditions for task list/count queries. */
 function taskConds(ownerId: string, opts: ListTasksOpts) {
   const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'task')];
+  if (opts.ws) conds.push(nodeReadByWorkspace(opts.ws));
   if (opts.query?.trim()) {
     const q = `%${opts.query.trim()}%`;
     const c = or(

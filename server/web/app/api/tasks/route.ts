@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { parseWsFilter } from '@/lib/list-workspaces';
 import { TodosSchema } from '@/lib/task-schemas';
 import {
   RANK_RE,
@@ -32,6 +33,11 @@ const CreateBody = z.object({
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  // `?ws=<id>` keeps only what that workspace reads (as the notes and apps
+  // lists do), echoed as `ws`; a workspace the login cannot see is 404.
+  const ws = await parseWsFilter(req, user.id, user.actor.id);
+  if (ws instanceof Response) return ws;
+  const inWs = ws ? { ws } : {};
   const url = new URL(req.url);
   const statusParam = url.searchParams.get('status');
   const priorityParam = url.searchParams.get('priority');
@@ -83,12 +89,13 @@ export async function GET(req: Request) {
     priority,
     tag: url.searchParams.get('tag') ?? undefined,
     archived: (archivedParam ?? 'exclude') as 'exclude' | 'only' | 'all',
+    ...inWs,
   };
   const [tasks, total] = await Promise.all([
     listTasks(user.id, { ...opts, limit: pageSize, offset: (page - 1) * pageSize }),
     countTasks(user.id, opts),
   ]);
-  return NextResponse.json({ tasks, total, page, pageSize });
+  return NextResponse.json({ tasks, total, page, pageSize, ...inWs });
 }
 
 export async function POST(req: Request) {

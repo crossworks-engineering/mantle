@@ -22,12 +22,15 @@
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import {
   db,
+  loginScopeFor,
   nodes,
   notifyNodeIngested,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  withViewer,
   type Node,
+  nodeReadByWorkspace,
 } from '@mantle/db';
 
 export type { RecurFreq } from './events-time';
@@ -86,11 +89,18 @@ async function ensureRoot(ownerId: string): Promise<void> {
   );
 }
 
-type ListEventsOpts = { query?: string; window?: 'upcoming' | 'past' | 'all'; tag?: string };
+type ListEventsOpts = {
+  query?: string;
+  window?: 'upcoming' | 'past' | 'all';
+  tag?: string;
+  /** Only the items this workspace reads (`?ws=`, a checked id). */
+  ws?: string;
+};
 
 /** Shared WHERE conditions for event list/count queries. */
 function eventConds(ownerId: string, opts: ListEventsOpts) {
   const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'event')];
+  if (opts.ws) conds.push(nodeReadByWorkspace(opts.ws));
   if (opts.query?.trim()) {
     const q = `%${opts.query.trim()}%`;
     const c = or(
@@ -348,21 +358,31 @@ export async function deleteEvent(ownerId: string, id: string): Promise<boolean>
  * Worker-facing: events whose remind_at <= now and which haven't been
  * sent yet. The worker calls this on every tick. Owner-scoped because
  * we look up the destination Telegram chat per-owner.
+ *
+ * Only the events the owner's own scope reads (workspaces arch A1 fix
+ * round, M1): a reminder goes to the owner's chats, so an event in a
+ * workspace the owner is not in (a user's private workspace) is never
+ * delivered there; its title and place stay in its workspace. Delivery to
+ * each event's own users comes later. An owner in no workspace (a brain not
+ * on workspaces) keeps the rule from before (every event).
  */
 export async function listDueReminders(ownerId: string, limit = 50): Promise<EventRow[]> {
-  const rows = await db
-    .select()
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'event'),
-        sql`mantle_iso_to_ts(${nodes.data}->>'remind_at') <= now()`,
-        sql`${nodes.data}->>'reminder_sent_at' is null`,
-      ),
-    )
-    .orderBy(asc(sql`mantle_iso_to_ts(${nodes.data}->>'remind_at')`))
-    .limit(limit);
+  const due = () =>
+    db
+      .select()
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, ownerId),
+          eq(nodes.type, 'event'),
+          sql`mantle_iso_to_ts(${nodes.data}->>'remind_at') <= now()`,
+          sql`${nodes.data}->>'reminder_sent_at' is null`,
+        ),
+      )
+      .orderBy(asc(sql`mantle_iso_to_ts(${nodes.data}->>'remind_at')`))
+      .limit(limit);
+  const scoped = (await loginScopeFor(ownerId)).ws.length > 0;
+  const rows = scoped ? await withViewer({ login: ownerId }, due) : await due();
   return rows.map(rowOf);
 }
 

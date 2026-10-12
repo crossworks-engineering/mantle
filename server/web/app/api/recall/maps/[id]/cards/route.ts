@@ -8,7 +8,7 @@ import {
   putRecallCard,
 } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { recallWriteFailure } from '@/lib/recall';
+import { recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
 
@@ -45,18 +45,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
   const { version, ...input } = parsed.data;
   try {
-    const res = await putRecallCard(
-      user.id,
-      id,
-      null,
-      input,
-      {
-        kind: 'owner',
-        id: user.actor.id,
-        name: user.actor.displayName ?? null,
-      },
-      version,
-    );
+    const res = await putRecallCard(user.id, id, null, input, await recallActorOf(user), version);
     return NextResponse.json(res, { status: 201 });
   } catch (err) {
     return recallWriteFailure(err);

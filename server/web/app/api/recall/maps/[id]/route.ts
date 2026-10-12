@@ -7,7 +7,7 @@ import {
   updateRecallMap,
 } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { getRecallMapDetail, recallWriteFailure } from '@/lib/recall';
+import { getRecallMapDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
 
@@ -43,11 +43,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
-    const res = await updateRecallMap(user.id, id, parsed.data, {
-      kind: 'owner',
-      id: user.actor.id,
-      name: user.actor.displayName ?? null,
-    });
+    const res = await updateRecallMap(user.id, id, parsed.data, await recallActorOf(user));
     return NextResponse.json(res);
   } catch (err) {
     return recallWriteFailure(err);
@@ -62,11 +58,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   try {
-    await deleteRecallMap(user.id, id, {
-      kind: 'owner',
-      id: user.actor.id,
-      name: user.actor.displayName ?? null,
-    });
+    await deleteRecallMap(user.id, id, await recallActorOf(user));
     return NextResponse.json({ ok: true });
   } catch (err) {
     return recallWriteFailure(err);

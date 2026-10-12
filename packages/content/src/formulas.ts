@@ -29,6 +29,7 @@ import {
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  nodeReadByWorkspace,
 } from '@mantle/db';
 import { parseFormulaSpec, type FormulaSpec } from '@mantle/content-core/formula-spec';
 
@@ -148,10 +149,13 @@ type ListFormulasOpts = {
   query?: string;
   standard?: string;
   tag?: string;
+  /** Only the items this workspace reads (`?ws=`, a checked id). */
+  ws?: string;
 };
 
 function formulaConds(ownerId: string, opts: ListFormulasOpts) {
   const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'formula')];
+  if (opts.ws) conds.push(nodeReadByWorkspace(opts.ws));
   if (opts.query?.trim()) {
     const q = `%${opts.query.trim()}%`;
     const c = or(

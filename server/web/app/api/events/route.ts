@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { parseWsFilter } from '@/lib/list-workspaces';
 import { countEvents, createEvent, listEvents } from '@/lib/events';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -28,6 +29,11 @@ const CreateBody = z.object({
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  // `?ws=<id>` keeps only what that workspace reads (as the notes and apps
+  // lists do), echoed as `ws`; a workspace the login cannot see is 404.
+  const ws = await parseWsFilter(req, user.id, user.actor.id);
+  if (ws instanceof Response) return ws;
+  const inWs = ws ? { ws } : {};
   const url = new URL(req.url);
   const windowParam = url.searchParams.get('window');
   const window: 'upcoming' | 'past' | 'all' =
@@ -37,12 +43,13 @@ export async function GET(req: Request) {
     query: url.searchParams.get('q') ?? undefined,
     window,
     tag: url.searchParams.get('tag') ?? undefined,
+    ...inWs,
   };
   const [events, total] = await Promise.all([
     listEvents(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
     countEvents(user.id, opts),
   ]);
-  return NextResponse.json({ events, total, page, pageSize: PAGE_SIZE });
+  return NextResponse.json({ events, total, page, pageSize: PAGE_SIZE, ...inWs });
 }
 
 export async function POST(req: Request) {

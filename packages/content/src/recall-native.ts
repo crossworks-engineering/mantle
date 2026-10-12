@@ -34,6 +34,7 @@ import {
   recallNodes,
   recallRevisions,
   RECALL_REVISIONS_PER_MAP,
+  scopeReadsNodes,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
@@ -280,8 +281,12 @@ async function resolveOptions(
     if (o.targetMap) {
       // A slug the map had before a rename still lands, and is stored as the
       // map's slug NOW, so the option does not depend on the old one.
-      const [target] = await tx
-        .select({ slug: recallMaps.slug, published: recallMaps.published })
+      const [found] = await tx
+        .select({
+          slug: recallMaps.slug,
+          published: recallMaps.published,
+          nodeId: recallMaps.nodeId,
+        })
         .from(recallMaps)
         .where(
           and(
@@ -296,6 +301,11 @@ async function resolveOptions(
         )
         .orderBy(sql`${recallMaps.slug} = ${o.targetMap} desc`)
         .limit(1);
+      // A map outside the caller's scope does not exist for it: the same
+      // answer as no such map, so an option neither leads to it nor tells
+      // the caller it is there (A1 fix round, L1).
+      const target =
+        found && (await scopeReadsNodes(tx, [found.nodeId!])).has(found.nodeId!) ? found : null;
       if (!target) {
         throw new RecallWriteError(
           'cross_map_not_found',
@@ -371,21 +381,25 @@ async function warningsFor(tx: Tx, ownerId: string, cards: CardRow[]): Promise<R
     });
   }
   if (crossMaps.size > 0) {
-    const live = new Set(
-      (
-        await tx
-          .select({ slug: recallMaps.slug })
-          .from(recallMaps)
-          .where(
-            and(
-              eq(recallMaps.ownerId, ownerId),
-              eq(recallMaps.published, true),
-              isNotNull(recallMaps.nodeId),
-              inArray(recallMaps.slug, [...crossMaps]),
-            ),
-          )
-      ).map((r) => r.slug),
+    const found = await tx
+      .select({ slug: recallMaps.slug, nodeId: recallMaps.nodeId })
+      .from(recallMaps)
+      .where(
+        and(
+          eq(recallMaps.ownerId, ownerId),
+          eq(recallMaps.published, true),
+          isNotNull(recallMaps.nodeId),
+          inArray(recallMaps.slug, [...crossMaps]),
+        ),
+      );
+    // A target map the caller's scope does not read counts as gone: the
+    // warning must not tell it which maps exist outside its scope (A1 fix
+    // round, L1).
+    const readable = await scopeReadsNodes(
+      tx,
+      found.map((r) => r.nodeId!),
     );
+    const live = new Set(found.filter((r) => readable.has(r.nodeId!)).map((r) => r.slug));
     for (const c of cards) {
       for (const o of c.options ?? []) {
         if (o.targetMap && !live.has(o.targetMap)) {
@@ -1233,6 +1247,14 @@ export async function reorderRecallCards(
   actor: RecallActor,
   version?: number,
 ): Promise<RecallWriteResult> {
+  // The card order is the owner's (the map's shape a reader walks), as the
+  // recall_cards_reorder tool is owner-only on MCP (workspaces arch A1).
+  if (actor.kind !== 'owner') {
+    throw new RecallWriteError(
+      'reorder_is_owners',
+      "Reordering a map's cards is the owner's act. An agent can write a card directly instead.",
+    );
+  }
   return await db.transaction(async (tx) => {
     const map = await mapOr404(tx, ownerId, mapId);
     assertVersion(map, version);

@@ -200,6 +200,11 @@ const itemWrites = (p: string) => [`POST ${p}`, `PATCH ${p}/:id`, `DELETE ${p}/:
  * MEMBER_OPEN_WRITES; every other owner route still refuses a member
  * (403 member-login). The list and read routes of every workspace kind come
  * from the registry; the rest are named here.
+ *
+ * A file's list and detail (GET /api/files/files and /:id, generated) carry
+ * its text; its bytes and thumbnail stay on /api/member/files/:id (?raw and
+ * ?thumb answer a plain 401 here), a drawing's on /api/member/draws/:id/svg
+ * or the cached SVG below (W6b and its fix round 1).
  */
 export const MEMBER_OPEN_READS: readonly string[] = [
   ...WORKSPACE_ITEM_PREFIXES.flatMap(itemReads),
@@ -212,11 +217,6 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/nodes/:id',
   'GET /api/search',
   'GET /api/mentions/search',
-  // W6b: a member's own files are brain items now (their bytes and a
-  // drawing's SVG through /api/member/files/:id and /api/member/draws/:id/svg).
-  // W6b fix round 1: a file's detail (its text too), so a member opens it
-  // and a /n link finds its folder. Its bytes and thumbnail stay on
-  // /api/member/files/:id (?raw and ?thumb answer a plain 401 here).
   'GET /api/tree/:kind/marks',
   // W7e: a drawing's committed SVG (JSON, or ?raw=1 as an image), in the
   // login's scope: an image whose file the login does not read is taken
@@ -279,9 +279,11 @@ export const MEMBER_OPEN_WRITES: readonly string[] = [
   'POST /api/apps/:id/frame-ticket',
   'POST /api/apps/:id/db-broker',
   'POST /api/apps/:id/tool-broker',
-  // A1 (D1): a Recall map's cards, its prompt confirm and a revision
-  // restore, where the login may edit the map (itemWriteTarget), the same
-  // rule as the recall_* tools on MCP (item-write-gate.ts).
+  // A1 (D1): a Recall map's cards where the login may edit the map
+  // (itemWriteTarget). The owner's acts among them (a prompt confirm, a
+  // reorder, a revision restore, publish, a slug change, a map delete) are
+  // refused to a login outside Admin by the handler (recallActorOf: an
+  // editor writes as 'agent'), as those tools are owner-only on MCP.
   'POST /api/recall/maps/:id/cards',
   'PUT /api/recall/maps/:id/cards/:card',
   'DELETE /api/recall/maps/:id/cards/:card',

@@ -12,12 +12,20 @@
  */
 import { and, asc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { NextResponse } from '@/server/http-compat';
-import { db, nodes, recallMaps, recallNodes } from '@mantle/db';
+import {
+  db,
+  itemReadByWorkspace,
+  loginHoldsAdmin,
+  nodes,
+  recallMaps,
+  recallNodes,
+} from '@mantle/db';
 import {
   RecallWriteError,
   getRecallCard,
   listRecallRevisions,
   recallFolderCrumbs,
+  type RecallActor,
 } from '@mantle/content';
 import type {
   RecallCardDetailDTO,
@@ -70,8 +78,12 @@ async function withFolders(ownerId: string, rows: MapRow[]): Promise<RecallMapSu
 
 /** A map row with no tree item is a leftover page-built (v1) map, retired in
  *  R5 (migration 0209 deletes them): never listed, never opened. */
-function mapsWhere(ownerId: string, q?: string) {
-  const mine = and(eq(recallMaps.ownerId, ownerId), isNotNull(recallMaps.nodeId));
+function mapsWhere(ownerId: string, q?: string, ws?: string) {
+  const mine = and(
+    eq(recallMaps.ownerId, ownerId),
+    isNotNull(recallMaps.nodeId),
+    ws ? itemReadByWorkspace(ws, recallMaps.nodeId) : undefined,
+  );
   const trimmed = q?.trim();
   if (!trimmed) return mine;
   const like = `%${trimmed}%`;
@@ -80,12 +92,12 @@ function mapsWhere(ownerId: string, q?: string) {
 
 export async function listRecallMaps(
   ownerId: string,
-  opts: { q?: string; limit?: number; offset?: number } = {},
+  opts: { q?: string; limit?: number; offset?: number; ws?: string } = {},
 ): Promise<RecallMapSummaryDTO[]> {
   let query = db
     .select()
     .from(recallMaps)
-    .where(mapsWhere(ownerId, opts.q))
+    .where(mapsWhere(ownerId, opts.q, opts.ws))
     .orderBy(asc(recallMaps.slug))
     .$dynamic();
   if (opts.limit !== undefined) query = query.limit(opts.limit);
@@ -93,11 +105,11 @@ export async function listRecallMaps(
   return await withFolders(ownerId, await query);
 }
 
-export async function countRecallMaps(ownerId: string, q?: string): Promise<number> {
+export async function countRecallMaps(ownerId: string, q?: string, ws?: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(recallMaps)
-    .where(mapsWhere(ownerId, q));
+    .where(mapsWhere(ownerId, q, ws));
   return row?.n ?? 0;
 }
 
@@ -161,15 +173,49 @@ export async function getRecallMapDetail(
 /** The refusals that mean the THING addressed is missing. A bad reference
  *  inside a body (an option to a missing map, a folder that does not exist)
  *  is a 400: the request was wrong, not the address. */
+/**
+ * Who writes a map through the HTTP routes (workspaces arch A1 fix round,
+ * H1). The owner's acts on a map (publish it, confirm or drop a prompt,
+ * restore a revision, change a slug, reorder or delete it) stay with the
+ * Admin users, as on MCP, where those tools are owner-only and never reach a
+ * login outside Admin (admin-gate.ts). Any other login writes as an editor
+ * ('agent' in the revision log, the same as the recall_* write tools): its
+ * map starts as a draft and its edit of a confirmed prompt waits for an
+ * Admin user to confirm it again. The log names the real login (id and
+ * name), never the owner.
+ */
+export async function recallActorOf(user: {
+  actor: { id: string; displayName?: string | null };
+}): Promise<RecallActor> {
+  return {
+    kind: (await loginHoldsAdmin(user.actor.id)) ? 'owner' : 'agent',
+    id: user.actor.id,
+    name: user.actor.displayName ?? null,
+  };
+}
+
+/** The refusals of an owner's act to an editor: 403, the caller may read the
+ *  map but this act is not theirs. */
+const RECALL_OWNER_ACT_CODES = new Set([
+  'publish_is_owners',
+  'confirm_is_owners',
+  'restore_is_owners',
+  'slug_is_owners',
+  'reorder_is_owners',
+  'delete_is_owners',
+]);
+
 const RECALL_NOT_FOUND_CODES = new Set(['map_not_found', 'card_not_found', 'revision_not_found']);
 
 export function recallWriteFailure(err: unknown): Response {
   if (err instanceof RecallWriteError) {
     const status = RECALL_NOT_FOUND_CODES.has(err.code)
       ? 404
-      : err.code === 'version_stale'
-        ? 409
-        : 400;
+      : RECALL_OWNER_ACT_CODES.has(err.code)
+        ? 403
+        : err.code === 'version_stale'
+          ? 409
+          : 400;
     return NextResponse.json({ error: err.message, code: err.code }, { status });
   }
   throw err;

@@ -2,7 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { RECALL_LINE_MAX, RECALL_TITLE_MAX, createRecallMap } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { countRecallMaps, listRecallMaps, recallWriteFailure } from '@/lib/recall';
+import { parseWsFilter } from '@/lib/list-workspaces';
+import { countRecallMaps, listRecallMaps, recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 
 const PAGE_SIZE = 20;
@@ -13,14 +14,19 @@ const PAGE_SIZE = 20;
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  // `?ws=<id>` keeps only what that workspace reads (as the notes and apps
+  // lists do), echoed as `ws`; a workspace the login cannot see is 404.
+  const ws = await parseWsFilter(req, user.id, user.actor.id);
+  if (ws instanceof Response) return ws;
+  const inWs = ws ? { ws } : {};
   const url = new URL(req.url);
   const q = url.searchParams.get('q')?.trim() || undefined;
   const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const [maps, total] = await Promise.all([
-    listRecallMaps(user.id, { q, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    countRecallMaps(user.id, q),
+    listRecallMaps(user.id, { q, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, ...inWs }),
+    countRecallMaps(user.id, q, ws ?? undefined),
   ]);
-  return NextResponse.json({ maps, total, page, pageSize: PAGE_SIZE });
+  return NextResponse.json({ maps, total, page, pageSize: PAGE_SIZE, ...inWs });
 }
 
 const NewMap = z.object({
@@ -40,11 +46,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
-    const made = await createRecallMap(user.id, parsed.data, {
-      kind: 'owner',
-      id: user.actor.id,
-      name: user.actor.displayName ?? null,
-    });
+    const made = await createRecallMap(user.id, parsed.data, await recallActorOf(user));
     return NextResponse.json(made, { status: 201 });
   } catch (err) {
     return recallWriteFailure(err);

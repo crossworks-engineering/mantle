@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { parseWsFilter } from '@/lib/list-workspaces';
 import {
   countFormulas,
   createFormula,
@@ -24,12 +25,18 @@ const CreateBody = z.object({
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  // `?ws=<id>` keeps only what that workspace reads (as the notes and apps
+  // lists do), echoed as `ws`; a workspace the login cannot see is 404.
+  const ws = await parseWsFilter(req, user.id, user.actor.id);
+  if (ws instanceof Response) return ws;
+  const inWs = ws ? { ws } : {};
   const url = new URL(req.url);
   const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const opts = {
     query: url.searchParams.get('q') ?? undefined,
     standard: url.searchParams.get('standard') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
+    ...inWs,
   };
   const [formulas, total, standards] = await Promise.all([
     listFormulas(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
@@ -38,7 +45,7 @@ export async function GET(req: Request) {
     // is currently selected.
     listFormulaStandards(user.id),
   ]);
-  return NextResponse.json({ formulas, total, page, pageSize: PAGE_SIZE, standards });
+  return NextResponse.json({ formulas, total, page, pageSize: PAGE_SIZE, standards, ...inWs });
 }
 
 export async function POST(req: Request) {
