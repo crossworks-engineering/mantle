@@ -11,6 +11,7 @@
  * login (there is no client login since workspaces W8a).
  */
 import { NextResponse } from '@/server/http-compat';
+import { getRequestContext } from '@/server/request-context';
 import { getLoginOr401, getMemberForAsset, getMemberOr401, getOwnerOr401 } from '@/lib/auth';
 
 /** Who the removed route served. */
@@ -47,8 +48,11 @@ export const LEVELS_GONE_MESSAGE =
 export const MEMBER_ROUTES_GONE_MESSAGE =
   'This route moved: files, drawings and apps open from the normal routes. Update the app.';
 
-/** The 410 body every removed route answers. */
+/** The 410 body every removed route answers. Each one is logged as
+ *  `[gone] 410 <path>`, so a box's hits on retired routes can be counted
+ *  from its log (scripts/arch-scoreboard-box.sh) before a stub is removed. */
 export function goneResponse(error: string = GONE_MESSAGE): NextResponse {
+  console.warn(`[gone] 410 ${getRequestContext()?.path ?? '?'}`);
   return NextResponse.json({ error, code: 'gone' }, { status: 410 });
 }
 

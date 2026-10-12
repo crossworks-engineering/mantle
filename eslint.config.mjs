@@ -16,6 +16,8 @@ import mantlePlugin from './eslint-rules/pair-fill-foreground.mjs';
 import mantleDbPlugin from './eslint-rules/system-db-allowlist.mjs';
 import mantleHeadsPlugin from './eslint-rules/heads-writers.mjs';
 import mantleLevelReadsPlugin from './eslint-rules/level-reads.mjs';
+import mantleRawAclPlugin from './eslint-rules/no-raw-acl-columns.mjs';
+import mantleAsSystemPlugin from './eslint-rules/as-system-allowlist.mjs';
 
 export default tseslint.config(
   {
@@ -187,6 +189,19 @@ export default tseslint.config(
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
     plugins: { 'mantle-levels': mantleLevelReadsPlugin },
     rules: { 'mantle-levels/level-reads': 'error' },
+  },
+  {
+    // The architecture ratchets (workspaces arch plan v2, section 11; A0):
+    // raw ACL column reads outside packages/db, and asSystem call sites,
+    // pinned per file in the rule files; arch-lints.test.ts pins them
+    // exactly, so a count only goes down. Tests are not product code.
+    files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    plugins: { 'mantle-acl': mantleRawAclPlugin, 'mantle-system': mantleAsSystemPlugin },
+    rules: {
+      'mantle-acl/no-raw-acl-columns': 'error',
+      'mantle-system/as-system-allowlist': 'error',
+    },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.
