@@ -19,7 +19,9 @@ the phone app, MCP and the HTTP API.
   only), users, at most one assistant, and connectors.
 - Each user of a workspace has a **Moderator** tick.
 - A user can be in many workspaces. They keep one login, and a switcher
-  changes the current workspace.
+  changes the current workspace. You pick only a workspace you are in,
+  Admin users too: an Admin user joins a workspace first (it is logged),
+  then picks it.
 - An item is shared by a **grant** to a workspace. Each grant has its own
   **Write** switch.
 - Every item has exactly one **home** workspace.
@@ -213,8 +215,7 @@ A folder is an item with a home and grants like any other.
   the switcher, or all your workspaces. Its folder count counts the folders
   in it that you read. The picked workspace does not narrow the folders:
   the tree keeps every folder you read, so a folder can show a folder
-  count and no item count. You pick only a workspace you are in, Admin
-  users too.
+  count and no item count.
 - A folder you read still shows when nothing in it is yours to read: an
   Admin user may share empty folders to give a workspace its structure.
 

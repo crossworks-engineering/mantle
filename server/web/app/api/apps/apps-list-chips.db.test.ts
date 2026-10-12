@@ -90,7 +90,8 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
         (${ws.otherBrain}, ${other}, 'Other', false, null)`);
     await exec(sqlTag`
       insert into workspace_users (workspace_id, login_id, moderator) values
-        (${ws.admin}, ${owner}, true), (${ws.proj}, ${plain}, false)`);
+        (${ws.admin}, ${owner}, true), (${ws.quay}, ${owner}, false),
+        (${ws.proj}, ${plain}, false)`);
     ids.contact = randomUUID();
     await exec(sqlTag`
       insert into nodes (id, owner_id, type, title, path)
@@ -163,6 +164,8 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
       [plain, ws.quay],
       [plain, ws.admin],
       [owner, ws.otherBrain],
+      // An Admin user picks only a workspace it is in.
+      [owner, ws.team],
       [owner, randomUUID()],
       [owner, 'not-a-uuid'],
     ] as const) {

@@ -36,7 +36,8 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
   const owner = randomUUID();
   const mem = randomUUID();
   const P = randomUUID(); // the member's
-  const Q = randomUUID(); // nobody's: only an Admin user names it
+  const Q = randomUUID(); // the owner's (an Admin user picks only its own)
+  const N = randomUUID(); // nobody's: not even an Admin user names it
   const A = randomUUID(); // archived
   let admin = '';
   const ids = { folder: '', alpha: '', bravo: '', note1: '', note2: '' };
@@ -89,9 +90,10 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
       )
     )[0]!.id;
     await x(sql`insert into workspaces (id, owner_id, name) values
-      (${P}, ${owner}, 'Proj'), (${Q}, ${owner}, 'Quay'), (${A}, ${owner}, 'Attic')`);
+      (${P}, ${owner}, 'Proj'), (${Q}, ${owner}, 'Quay'), (${A}, ${owner}, 'Attic'),
+      (${N}, ${owner}, 'Nobody')`);
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
-      (${P}, ${mem}, false)`);
+      (${P}, ${mem}, false), (${Q}, ${owner}, false), (${A}, ${owner}, false)`);
     h.user = {
       id: owner,
       email: email('owner'),
@@ -158,7 +160,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
   }, 60_000);
 
   it('a workspace the caller may not name is 404 not_found', async () => {
-    for (const bad of [randomUUID(), 'not-an-id', A]) {
+    for (const bad of [randomUUID(), 'not-an-id', A, N]) {
       for (const path of [`/api/pages?ws=${bad}`, `/api/notes?ws=${bad}`]) {
         const mod = path.startsWith('/api/pages') ? routes.pages : routes.notes;
         expect(await get(mod, path)).toEqual({

@@ -158,9 +158,10 @@ export async function chipped<T extends { id: string }>(
 }
 
 /**
- * `?ws=` of a list: null when not asked; the workspace id when the caller
- * may name it (a user of it, or an Admin user; a live workspace of the
- * brain); else a 404 to answer as is.
+ * `?ws=` of a list (and of the landing page, /api/home): null when not
+ * asked; the workspace id when the caller is a user of it (a live workspace
+ * of the brain), Admin users too: an Admin user joins a workspace first
+ * (logged), then picks it; else a 404 to answer as is.
  */
 export async function parseWsFilter(
   req: Request,
@@ -174,10 +175,7 @@ export async function parseWsFilter(
   if (!UUID_RE.test(raw)) return notFound();
   const ws = raw.toLowerCase();
   const [hit] = (await db.execute(sql`
-    with me as (${mine(ownerId, loginId)})
-    select 1 as ok from workspaces w
-     where w.id = ${ws}::uuid and w.owner_id = ${ownerId} and w.archived_at is null
-       and (exists (select 1 from me where me.is_admin) or w.id in (select me.id from me))`)) as unknown as Array<{
+    select 1 as ok from (${mine(ownerId, loginId)}) me where me.id = ${ws}::uuid`)) as unknown as Array<{
     ok: number;
   }>;
   return hit ? ws : notFound();

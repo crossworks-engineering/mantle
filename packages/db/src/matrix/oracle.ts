@@ -196,7 +196,8 @@ const FOLDER_COUNT_CONTENTS: Readonly<
  *  - the folder count is the folders the caller reads; the pick does not
  *    narrow it;
  *  - a folder the caller reads shows, even with nothing in it to read;
- *  - "You pick only a workspace you are in, Admin users too".
+ *  - "You pick only a workspace you are in, Admin users too" (the
+ *    workspaces section of the guide).
  */
 export function expectedFolderCount(
   c: FolderCountCase,

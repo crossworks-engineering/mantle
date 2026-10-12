@@ -289,6 +289,14 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
       for (const scope of SCOPES) {
         const cell = `${who} ${scope}`;
         const probe = expectedFolderCount('oneOfThree', who, scope);
+        // The landing page takes the same pick (one helper, parseWsFilter).
+        if (scope !== 'all') {
+          const home = await send(who, `/api/home?x=1${wsQuery(scope)}`);
+          const wantHome = 'refused' in probe ? 404 : 200;
+          if (home.status !== wantHome) {
+            failures.push(`${cell}: /api/home ${home.status}, the tree pick wants ${wantHome}`);
+          }
+        }
         if ('refused' in probe) {
           const res = await send(who, `/api/tree/notes?sort=name${wsQuery(scope)}`);
           if (res.status !== 404) failures.push(`${cell}: ${res.status}, the oracle refuses`);
