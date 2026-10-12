@@ -171,6 +171,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   const privNote = randomUUID();
   const teamPage = randomUUID();
   let team = '';
+  let adminWs = '';
   let side = '';
   let priv = '';
 
@@ -336,6 +337,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
     const admin = ws.find((w) => w.key === 'admin')!.id;
+    adminWs = admin;
     await x(
       sql`update workspace_users set limits = ${JSON.stringify({
         areas: { settings: false, users: false, assistants: false, connectors: false, keys: false },
@@ -534,6 +536,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
             if (r.outcome?.kind !== 'user' || r.text.includes('"item-workspace"')) {
               failures.push(`${key} open write on its item: ${r.status} ${r.text.slice(0, 120)}`);
             }
+            // The member builds its own app (A0 fix round 3, L-d): a 4xx
+            // (a missing runtime import) fails here too.
+            if (key === 'POST /api/apps/:id/build' && r.status >= 300) {
+              failures.push(`${key} the member's build: ${r.status} ${r.text.slice(0, 160)}`);
+            }
           } else if (memberMayWrite(method, e.pattern)) {
             // W6b: an open write with no item runs in the member's scope, or
             // is refused by the workspace check, never by member-login and
@@ -642,24 +649,87 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         }
       }
     }
-    // The item routes of the kinds members do not write over HTTP (tasks,
-    // events, Recall maps, links): refused whatever the grant.
-    const note = await writeOnly('note');
-    let closedChecked = 0;
-    for (const e of manifest) {
-      if (!/^\/api\/(tasks|events|recall\/maps|shares)\/:id/.test(e.pattern)) continue;
-      for (const method of e.methods) {
-        if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') continue;
-        closedChecked += 1;
-        const r = await call(e.pattern.replace(':id', note), mem, method);
-        if (r.status !== 403 && r.status !== 404) {
-          failures.push(`${method} ${e.pattern} ${r.status} ${r.text.slice(0, 120)}`);
+    expect(failures).toEqual([]);
+    expect(manageChecked).toBeGreaterThan(6);
+  }, 600_000);
+
+  it('tasks, events, Recall maps and links: a Write grant alone manages nothing (A0 fix round 3, M-b)', async () => {
+    // Real items, made by the Admin user through their own routes, then
+    // homed in Side with a Write grant only: to the member's private
+    // workspace, and to Admin (so the Admin user edits them, never manages).
+    const grantWriteOnly = async (id: string) => {
+      await homeIn(id, side);
+      await m.withHeads([id], 'update', async (tx) => {
+        for (const ws of [priv, adminWs]) {
+          await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+                               values (${id}, ${ws}, true)
+                               on conflict (node_id, workspace_id) do update set write = true`);
         }
+      });
+    };
+    const made = async (path: string, body: Json, pick: (j: Json) => unknown) => {
+      const r = await call(path, owner, 'POST', body);
+      expect(r.status, `${path}: ${r.text.slice(0, 200)}`).toBeLessThan(300);
+      return String(pick(JSON.parse(r.text) as Json));
+    };
+    const seed = async () => {
+      const name = `${tag}-${randomUUID().slice(0, 6)}`;
+      const task = await made('/api/tasks', { title: name }, (j) => (j.task as Json).id);
+      const event = await made(
+        '/api/events',
+        { title: name, startsAt: '2026-11-01T10:00:00Z' },
+        (j) => (j.event as Json).id,
+      );
+      const map = await made('/api/recall/maps', { title: name, enterWhen: 'a test' }, (j) => j.mapId);
+      const note = await memberItem('note');
+      const share = await made('/api/shares', { nodeId: note }, (j) => (j.share as Json).id);
+      return { task, event, map, note, share };
+    };
+    const writes = (ids: Awaited<ReturnType<typeof seed>>) =>
+      [
+        ['DELETE', `/api/tasks/${ids.task}`],
+        ['DELETE', `/api/events/${ids.event}`],
+        ['DELETE', `/api/recall/maps/${ids.map}`],
+        ['DELETE', `/api/shares/${ids.share}`],
+      ] as const;
+    const writeOnly = await seed();
+    for (const id of [writeOnly.task, writeOnly.event, writeOnly.map, writeOnly.note]) {
+      await grantWriteOnly(id);
+    }
+    const failures: string[] = [];
+    for (const [method, path] of writes(writeOnly)) {
+      // The member: refused (these routes are not open to members at all).
+      const r = await call(path, mem, method);
+      if (r.status !== 403 && r.status !== 404) failures.push(`member ${method} ${path} ${r.status}`);
+    }
+    for (const [method, path] of writes(writeOnly).slice(0, 3)) {
+      // An Admin user with the users area may close any link (the guide),
+      // so the link is checked on the others only. The item gate: 403.
+      const r = await call(path, noArea, method);
+      if (r.status !== 403 || !r.text.includes('item-workspace')) {
+        failures.push(`admin ${method} ${path} ${r.status} ${r.text.slice(0, 120)}`);
       }
     }
     expect(failures).toEqual([]);
-    expect(manageChecked).toBeGreaterThan(6);
-    expect(closedChecked).toBeGreaterThan(4);
+    // The control: the same writes on items homed in Admin, which the Admin
+    // user manages, pass the gate. Without the gate's manage check the
+    // write-only items above would pass the same way.
+    const managed = await seed();
+    const [was] = await x<{ moderator: boolean }>(sql`
+      select moderator from workspace_users
+       where workspace_id = ${adminWs} and login_id = ${noArea}`);
+    await x(sql`update workspace_users set moderator = true
+                 where workspace_id = ${adminWs} and login_id = ${noArea}`);
+    try {
+      for (const [method, path] of writes(managed).slice(0, 3)) {
+        const r = await call(path, noArea, method);
+        expect(r.text, `control ${method} ${path}`).not.toContain('item-workspace');
+        expect(r.status, `control ${method} ${path} ${r.text.slice(0, 120)}`).toBeLessThan(300);
+      }
+    } finally {
+      await x(sql`update workspace_users set moderator = ${was!.moderator}
+                   where workspace_id = ${adminWs} and login_id = ${noArea}`);
+    }
   }, 600_000);
 
   it('a member API key (U5): /api/v1 answers whoami in its scope and refuses the rest', async () => {

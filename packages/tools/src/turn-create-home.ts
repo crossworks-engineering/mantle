@@ -34,9 +34,9 @@ const homes = new WeakMap<WorkspaceScope, Kept>();
 /**
  * The create home of the open assistant turn, or null (not a turn that
  * names a login, a home is already named, or it could not be resolved: the
- * database's own create checks then decide). `creates`: the call is a
- * create tool (CREATE_TOOL_SLUGS), the only kind that may make the login's
- * private workspace; any other call uses the one it has, if any.
+ * database's own create checks then decide). `creates`: the call may make
+ * an item (the tool is not readOnly), the only kind that may make the
+ * login's private workspace; a readOnly call uses the one it has, if any.
  *
  * Under the rollback switch (MANTLE_ADMIN_READS=system) an Admin turn runs
  * in a gate scope, not a workspace scope, so this answers null and its

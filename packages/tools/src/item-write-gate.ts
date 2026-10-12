@@ -29,6 +29,8 @@ import {
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { mapRef } from './builtins-recall-write';
 import { callerHasArea, callerScope } from './admin-gate';
+import { keyOrPeerVia } from './surface';
+import type { ToolHandlerContext } from './types';
 
 /** One item a write names: the argument holding its id (a list for an
  *  array argument) and what the write needs of it. */
@@ -38,6 +40,8 @@ type Target = { param: string; need: ItemNeed };
 type Resolver = (
   input: Record<string, unknown>,
   ownerId: string,
+  /** The caller's surface, for a rule that depends on who calls. */
+  ctx?: Pick<ToolHandlerContext, 'surface'>,
 ) => Promise<{ ids: string[]; need: ItemNeed }[]>;
 
 const edit = (param: string): Target => ({ param, need: 'edit' });
@@ -46,10 +50,11 @@ const read = (param: string): Target => ({ param, need: 'read' });
 
 /** Closing a link: edit of the item, or the users area (an Admin user may
  *  close any link of the brain; closing only narrows). */
-const closeLinkTargets: Resolver = async (input) => {
-  // Only in a workspace scope (callerHasArea says yes outside any), as
-  // node_unshare's own check (A0 fix round 2, L-4).
-  if (callerScope() && (await callerHasArea('users'))) return [];
+const closeLinkTargets: Resolver = async (input, _ownerId, ctx) => {
+  // Only in a workspace scope (callerHasArea says yes outside any), never
+  // for an API key or a linked brain, as node_unshare's own check (A0 fix
+  // rounds 2 and 3, L-4, L-e).
+  if (ctx && !keyOrPeerVia(ctx) && callerScope() && (await callerHasArea('users'))) return [];
   const id = typeof input.id === 'string' ? input.id.trim() : '';
   return id ? [{ ids: [id], need: 'edit' }] : [];
 };
@@ -267,19 +272,20 @@ export async function toolItemWriteRefusal(
   input: Record<string, unknown>,
   ownerId: string,
   ref?: string,
+  ctx?: Pick<ToolHandlerContext, 'surface'>,
 ): Promise<string | null> {
   if (!currentWorkspaceScope()) {
     // Under the rollback switch the login's own scope answers the check
     // (W7 integration fix 2, M6): the switch restores only the read path.
     const g = currentGateScope();
     if (!g) return null;
-    return withTurnScope(g, () => toolItemWriteRefusal(slug, input, ownerId, ref));
+    return withTurnScope(g, () => toolItemWriteRefusal(slug, input, ownerId, ref, ctx));
   }
   const targets = itemWriteTargetsOf(slug, ref);
   if (!targets) return null;
   const sets =
     typeof targets === 'function'
-      ? await targets(input, ownerId)
+      ? await targets(input, ownerId, ctx)
       : targets.map((t) => ({ ids: idsOf(input[t.param]), need: t.need }));
   for (const set of sets) {
     const refused = await itemWriteRefusal(set.ids, set.need);

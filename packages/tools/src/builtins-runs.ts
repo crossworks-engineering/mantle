@@ -698,6 +698,17 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         agentId = a?.id;
       }
       const originChat = originTelegramChatOf(ctx.surface);
+      // The login the run is for. A delegated child whose parent chat named
+      // none would make a run for nobody, which later runs as the owner:
+      // refused, as a link is (A0 fix round 3, L-b; M-1).
+      const runLogin = currentTrace()?.loginId ?? surfaceLogin(ctx.surface);
+      if (!runLogin && ctx.surface?.kind === 'owner' && ctx.surface.via === 'delegate') {
+        return {
+          ok: false,
+          error:
+            'run_plan from a delegated agent needs the login its chat serves, and this one names none. Plan the run from the chat itself.',
+        };
+      }
       let created: Awaited<ReturnType<typeof createRun>>;
       try {
         created = await createRun(db, {
@@ -707,7 +718,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
           // with no trace (MCP) names it on its surface (A0 fix round 2,
           // L-1). The 0250 stamp falls back to mantle.login_id, which a
           // typed write on the system pool does not carry.
-          loginId: currentTrace()?.loginId ?? surfaceLogin(ctx.surface),
+          loginId: runLogin,
           title,
           plan: parsed.plan,
           ...(budgetUsd !== undefined ? { budgetMicroUsd: Math.round(budgetUsd * 1e6) } : {}),

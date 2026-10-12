@@ -12,6 +12,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { agentGroups, agents, db } from '@mantle/db';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { ASK_HUMAN_FORM_LIMITS as FORM_LIMITS } from '@mantle/client-types';
 import { type BuiltinToolDef } from './types';
 import { ownerSurfaceLoginId } from './surface';
@@ -125,8 +126,11 @@ export const pending_approve: BuiltinToolDef = {
       answer || answers?.length
         ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
         : undefined;
-    // The approver is this connection's login (W6b fix round 3, L-2).
-    const approver = ownerSurfaceLoginId(ctx.surface);
+    // The approver is this connection's login (W6b fix round 3, L-2). A
+    // connection that names none to the tools (a peer bound to an Admin
+    // login) still runs in that login's scope: the scope names it, so the
+    // approved call never runs as the bare owner (A0 fix round 3, L-a).
+    const approver = ownerSurfaceLoginId(ctx.surface) ?? currentWorkspaceScope()?.loginId ?? null;
     const row = await approvePendingCall(
       ctx.ownerId,
       id,
@@ -151,7 +155,7 @@ export const pending_reject: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
-    const decider = ownerSurfaceLoginId(ctx.surface);
+    const decider = ownerSurfaceLoginId(ctx.surface) ?? currentWorkspaceScope()?.loginId ?? null;
     const row = await rejectPendingCall(ctx.ownerId, id, decider ?? undefined);
     if (!row) return { ok: false, error: 'not found or already decided' };
     return { ok: true, output: row };

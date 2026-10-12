@@ -135,7 +135,9 @@ export function makeRegisterContext(
     }
     // A write to an item: the scope may make it (W7a fix round 1, M2), as
     // dispatch.ts asks for the in-app agent.
-    const refused = await toolItemWriteRefusal(def.slug, input, ownerId);
+    const refused = await toolItemWriteRefusal(def.slug, input, ownerId, undefined, {
+      surface: callSurface,
+    });
     if (refused) {
       return { content: [{ type: 'text' as const, text: `Error: ${refused}` }], isError: true };
     }

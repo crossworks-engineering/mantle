@@ -18,7 +18,7 @@
  * Embeds do not follow (0261): nothing is ever granted for you.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { currentCreateHome, db } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -317,14 +317,66 @@ export async function newItemDiff(
   destPath: string,
   title: string,
 ): Promise<VisibilityDiff> {
-  const set = newItemSet(ownerId, TREE_KIND_SPECS[kind].nodeType, destPath);
+  const nodeType = TREE_KIND_SPECS[kind].nodeType;
+  const set = newItemSet(ownerId, nodeType, destPath);
   const admin = sql`array(select w.id from workspaces w
                            where w.owner_id = ${ownerId} and w.is_admin limit 1)`;
-  return listed(
+  const diff = await listed(
     via,
     sql`
     select ''::text as id, ${title}::text as title,
            array(select x from unnest(${set}) as s(x) where not (x = any(${admin}))) as gain,
            array(select x from unnest(${admin}) as s(x) where not (x = any(${set}))) as lose`,
   );
+  const change = diff.changes[0];
+  if (change) Object.assign(change, await newItemHome(via, ownerId, nodeType, destPath));
+  return diff;
+}
+
+/**
+ * Where a NEW item of `nodeType` in the folder at `destPath` will be homed,
+ * and which of the folder's workspaces will read it without edit (A0 fix
+ * round 3, L-c): the create home names the place (the current workspace a
+ * caller moderates, else the folder's home when it may edit the folder,
+ * else its private workspace; an Admin user: the folder's home, else
+ * Admin), and the folder passes its rows with their Write (its home row
+ * has Write off), as the insert trigger does (0261).
+ */
+async function newItemHome(
+  via: Via,
+  ownerId: string,
+  nodeType: string,
+  destPath: string,
+): Promise<{ home?: TreeWorkspaceChange['home']; readOnly: NonNullable<TreeWorkspaceChange['readOnly']> }> {
+  const type = sql`${nodeType}::node_type`;
+  const folder = sql`mantle_parent_folder(${ownerId}::uuid, ${type}, ${destPath}::ltree)`;
+  const created = currentCreateHome();
+  const live = (ws: SQL) =>
+    sql`(select w.id from workspaces w
+          where w.id = ${ws} and w.archived_at is null and mantle_grant_kind_ok(${type}, w.id))`;
+  const folderHome = live(sql`(select f.home_ws from nodes f where f.id = ${folder})`);
+  const mayEditFolder = sql`coalesce((select "public"."mantle_may_edit"(f.home_ws, f.write_ws)
+                                        from nodes f where f.id = ${folder}), false)`;
+  const fallback = created?.privateWs
+    ? sql`case when ${mayEditFolder} then ${folderHome} else ${live(sql`${created.privateWs}::uuid`)} end`
+    : folderHome;
+  const home = sql`coalesce(
+    ${created?.createWs ? live(sql`${created.createWs}::uuid`) : sql`null::uuid`},
+    ${fallback},
+    (select w.id from workspaces w where w.owner_id = ${ownerId} and w.is_admin limit 1))`;
+  const [row] = (await via.execute(sql`
+    with h as (select ${home} as ws)
+    select (select jsonb_build_object('wsId', w.id, 'name', w.name)
+              from workspaces w, h where w.id = h.ws) as home,
+           coalesce((
+             select jsonb_agg(jsonb_build_object('wsId', w.id, 'name', w.name)
+                              order by lower(w.name), w.id)
+               from item_grants g join workspaces w on w.id = g.workspace_id, h
+              where g.node_id = ${folder} and not g.excluded and not g.write
+                and g.workspace_id <> h.ws
+                and mantle_grant_kind_ok(${type}, g.workspace_id, true)), '[]'::jsonb) as "readOnly"`)) as unknown as Array<{
+    home: TreeWorkspaceChange['home'] | null;
+    readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
+  }>;
+  return { ...(row?.home ? { home: row.home } : {}), readOnly: row?.readOnly ?? [] };
 }

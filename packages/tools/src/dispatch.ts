@@ -58,7 +58,6 @@ import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { adminToolGate, runGated } from './admin-gate';
 import { toolItemWriteRefusal } from './item-write-gate';
 import { turnCreateHome } from './turn-create-home';
-import { CREATE_TOOL_SLUGS } from './create-tools';
 import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-ref-gate';
 
 // Same-package callers that must not import this module (it imports the
@@ -113,13 +112,14 @@ export async function dispatchTool(
       }
       // A write to an item checks the scope may make it (W7a fix round 1,
       // M2): the item routes' rule, asked before any write.
-      const refused = await toolItemWriteRefusal(tool.slug, input, ctx.ownerId, h.ref);
+      const refused = await toolItemWriteRefusal(tool.slug, input, ctx.ownerId, h.ref, ctx);
       if (refused) return { ok: false, error: refused };
       // What it makes lands by the home rule, as the same login's create
       // from the web would (A0, turn-create-home.ts).
-      const home = await turnCreateHome(
-        CREATE_TOOL_SLUGS.has(tool.slug) || CREATE_TOOL_SLUGS.has(h.ref),
-      );
+      // Any tool that is not readOnly may make an item (export_node,
+      // sandbox_export and the like, not only the listed creates), so it may
+      // make the login's private workspace (A0 fix round 3, M-a).
+      const home = await turnCreateHome(def?.readOnly !== true);
       const run = () => runGated(gate, () => fn(input, ctx));
       return await (home ? withCreateHome(home, run) : run());
     } catch (err) {

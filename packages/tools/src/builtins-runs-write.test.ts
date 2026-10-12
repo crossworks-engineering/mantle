@@ -328,6 +328,23 @@ describe('run_plan', () => {
     );
   });
 
+  it('refuses a delegated child that names no login, creating nothing (A0 fix round 3, L-b)', async () => {
+    const res = await plan.handler(
+      { title: 'Digest', plan: okPlan },
+      { ownerId: 'o1', surface: { kind: 'owner', via: 'delegate' } },
+    );
+    expect(errorOf(res)).toMatch(/needs the login/);
+    expect(createRun).not.toHaveBeenCalled();
+    await plan.handler(
+      { title: 'Digest', plan: okPlan },
+      { ownerId: 'o1', surface: { kind: 'owner', via: 'delegate', loginId: 'login-7' } },
+    );
+    expect(createRun).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ loginId: 'login-7' }),
+    );
+  });
+
   it('remembers a Telegram origin so the final report returns to that chat', async () => {
     await plan.handler(
       { title: 'Digest', plan: okPlan },

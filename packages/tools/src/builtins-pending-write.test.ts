@@ -65,6 +65,12 @@ vi.mock('@mantle/db', async (importOriginal) => {
     __insert: insert,
   };
 });
+const scope = vi.hoisted(() => ({ loginId: null as string | null }));
+vi.mock('@mantle/db/viewer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db/viewer')>()),
+  currentWorkspaceScope: () =>
+    scope.loginId ? { kind: 'user', loginId: scope.loginId, ws: [], modWs: [] } : null,
+}));
 vi.mock('./pending', () => ({
   approvePendingCall: vi.fn(),
   rejectPendingCall: vi.fn(),
@@ -139,6 +145,24 @@ describe('pending_approve', () => {
     // submission, and a plain yes must stay a plain yes.
     expect(approvePendingCall).toHaveBeenCalledWith('o1', ROW_ID, undefined);
     expect(outputOf(res)).toMatchObject({ id: ROW_ID, status: 'approved' });
+  });
+
+  it('names the scope login as the approver when the surface names none (A0 fix round 3, L-a)', async () => {
+    const peer: ToolHandlerContext = {
+      ownerId: 'o1',
+      surface: { kind: 'owner', via: 'federation', mcp: { via: 'peer', write: true } },
+    };
+    try {
+      scope.loginId = 'login-9';
+      await approve.handler({ id: ROW_ID }, peer);
+      expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, {
+        approverLoginId: 'login-9',
+      });
+      await reject.handler({ id: ROW_ID }, peer);
+      expect(rejectPendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, 'login-9');
+    } finally {
+      scope.loginId = null;
+    }
   });
 
   it('forwards a free-text answer', async () => {

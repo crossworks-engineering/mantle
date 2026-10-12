@@ -29,7 +29,13 @@ export function visibilityRefusal(err: unknown): string | null {
         c.alsoVisibleTo.length ? `also visible to ${names(c.alsoVisibleTo)}` : '',
         c.removedFrom.length ? `no longer in ${names(c.removedFrom)}` : '',
       ].filter(Boolean);
-      return `'${c.title}' ${parts.join('; ')}`;
+      // A new item says where it is homed and who only reads it (A0 fix
+      // round 3, L-c): a folder homed elsewhere passes its home as a read.
+      const placed = [
+        c.home ? `This will be homed in ${c.home.name}.` : '',
+        c.readOnly?.length ? `${names(c.readOnly)} can read it (not edit).` : '',
+      ].filter(Boolean);
+      return `'${c.title}' ${parts.join('; ')}${placed.length ? `: ${placed.join(' ')}` : ''}`;
     })
     .join(', ');
   return (

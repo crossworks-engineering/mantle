@@ -2,9 +2,9 @@
  * The create tools that make an item of a workspace kind (page, note, draw,
  * table, file, folder, app, formula, task, event, recall map). MCP gives
  * them the `workspace` argument and names where the item landed
- * (@mantle/mcp-core create-home.ts); an assistant turn makes the login's
- * private workspace only for one of them (turn-create-home.ts). A create
- * of an Admin-only kind is not here.
+ * (@mantle/mcp-core create-home.ts). A create of an Admin-only kind is not
+ * here. (An assistant turn makes the login's private workspace for any tool
+ * that is not readOnly: turn-create-home.ts.)
  */
 export const CREATE_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'note_create',

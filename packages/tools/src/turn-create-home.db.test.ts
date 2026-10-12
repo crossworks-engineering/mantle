@@ -260,6 +260,50 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     expect(await count()).toBe(1);
   });
 
+  it('a Team reader with no private workspace: any write tool makes it; export_node is refused (M-a)', async () => {
+    const fresh = randomUUID();
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role)
+                values (${fresh}, ${`${tag}-g@example.invalid`}, 'x', false, 'member')`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${team}, ${fresh}, false)`);
+    const count = async () =>
+      (
+        await x<{ n: number }>(sql`
+          select count(*)::int as n from private_workspaces where login_id = ${fresh}`)
+      )[0]!.n;
+    const turn = <T>(fn: () => Promise<T>) =>
+      m.withTurnScope({ kind: 'assistant', loginId: fresh, ws: [team], modWs: [] }, fn, {
+        writes: true,
+      });
+    const ctx = { ownerId: owner, surface: { kind: 'team' as const, loginId: fresh } };
+    // A note homed in Team with Write on for Team: the reader edits it.
+    const note = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+                values (${note}, ${owner}, 'note', ${`${tag} team rw note`}, 'notes')`);
+    await m.withHeads([note], 'update', async (tx) => {
+      await tx.execute(sql`delete from item_grants where node_id = ${note}`);
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
+                           values (${note}, ${team}, true)`);
+    });
+    await m.withHeads([note], 'update', async (tx) => {
+      await tx.execute(sql`update item_grants set write = true where node_id = ${note}`);
+    });
+    // export_node is Admin-only: refused in a Team turn, nothing made.
+    const exported = await turn(() =>
+      tools.dispatchTool(builtin('export_node'), { node_id: note }, ctx),
+    );
+    expect(exported.ok).toBe(false);
+    expect(await count()).toBe(0);
+    // A write tool that is not on the create list still makes it, since it
+    // is not readOnly.
+    expect(tools.CREATE_TOOL_SLUGS.has('note_update')).toBe(false);
+    const res = await turn(() =>
+      tools.dispatchTool(builtin('note_update'), { id: note, title: `${tag} renamed` }, ctx),
+    );
+    expect(res.ok, res.ok ? '' : res.error).toBe(true);
+    expect(await count()).toBe(1);
+  });
+
   it("an Admin user's create in the Admin assistant's turn lands in Admin", async () => {
     expect(await createIn(admin, owner, [admin])).toBe(admin);
   });
@@ -294,6 +338,26 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
                            values (${folder!.id}, ${admin}, true)`);
     });
+    // The confirm says where it is homed and who only reads it, by the
+    // workspaces' names (A0 fix round 3, L-c).
+    const names = await x<{ id: string; name: string }>(
+      sql`select id::text as id, name from workspaces where id in (${admin}, ${team})`,
+    );
+    const nameOf = (id: string) => names.find((w) => w.id === id)!.name;
+    const asked = await m.withTurnScope(
+      { kind: 'assistant', loginId: owner, ws: [admin], modWs: [admin] },
+      () =>
+        tools.dispatchTool(
+          builtin('page_create'),
+          { title: `${tag} unconfirmed`, markdown: 'x', folder_id: folder!.id },
+          { ownerId: owner, surface: { kind: 'web', loginId: owner } },
+        ),
+      { writes: true },
+    );
+    expect(asked.ok).toBe(false);
+    expect(asked.ok ? '' : asked.error).toContain(
+      `This will be homed in ${nameOf(admin)}. ${nameOf(team)} can read it (not edit).`,
+    );
     // A Moderator of Admin: the page homes in Admin, the folder passes Team.
     expect(await createIn(admin, owner, [admin], folder!.id), 'owner').toBe(admin);
     expect(await grantsOf(admin)).toContain(team);

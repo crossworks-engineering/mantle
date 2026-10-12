@@ -323,6 +323,12 @@ export type TreeWorkspaceChange = {
   alsoVisibleTo: GrantWorkspaceRef[];
   /** The workspaces that would no longer read it. */
   removedFrom: GrantWorkspaceRef[];
+  /** An item not made yet: the workspace it will be homed in (A0). */
+  home?: GrantWorkspaceRef;
+  /** An item not made yet: those of `alsoVisibleTo` that will read it but
+   *  not edit it (a folder's rows with Write off, the folder's own home
+   *  when the item is homed elsewhere). */
+  readOnly?: GrantWorkspaceRef[];
 };
 
 /** A level change, as the member review's accept still lists it (until
