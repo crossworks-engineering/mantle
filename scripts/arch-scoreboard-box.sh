@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 #
 # arch-scoreboard-box.sh: the scoreboard numbers of ONE box (workspaces arch
 # plan v2, section 3; A0), read over ssh. Not part of pnpm verify, which

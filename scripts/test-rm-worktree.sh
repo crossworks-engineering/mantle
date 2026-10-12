@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 #
 # Behavioural tests for scripts/rm-worktree.sh's viewer-login cleanup, on a
 # throwaway git repo with a stubbed pnpm (no database). Run by hand:
@@ -51,7 +52,8 @@ check() {
     [ "$flag" = 1 ] && printf 'MANTLE_VIEWER_ROLES_PER_DATABASE=1\n'
   } >.claude/worktrees/t/server/web/.env.local
   local out
-  out="$(bash "$SCRIPT" t "${args[@]}" 2>&1)"
+  # ${a[@]+"${a[@]}"}: bash before 4.4 calls an empty array unbound under set -u.
+  out="$(bash "$SCRIPT" t ${args[@]+"${args[@]}"} 2>&1)"
   local got=none
   [ -f "$PNPM_LOG" ] && got="$(cat "$PNPM_LOG")"
   local want=none

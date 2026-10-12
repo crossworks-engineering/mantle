@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Build the Mantle images and push them to Docker Hub.
 #
 # Every runtime service (web, agent, the workers, migrate) is the SAME

@@ -1,4 +1,5 @@
 #!/bin/sh
+# runs-on: both. The updater container (busybox sh), and the Mac when the deploy-scripts harness sources it: keep it bash 3.2 and BSD-tool safe.
 #
 # Mantle updater sidecar — the execution half of in-app updates.
 #

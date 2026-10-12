@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Pre-push gate: run the same typecheck + tests CI would, so a typecheck
 # regression or a broken test can't slip past `git push`. Catches the class
 # of "merged to main, then noticed" issues we hit during the May-2026 tika

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Wipe the dev brain and rebuild from scratch — one command for "I want to
 # start over." Asks for explicit confirmation (data deletion is irreversible),
 # takes a backup first (in case you want anything back), then runs the full

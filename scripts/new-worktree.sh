@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 set -euo pipefail
 #
 # new-worktree.sh — spin up a fully set-up, ISOLATED git worktree for a parallel

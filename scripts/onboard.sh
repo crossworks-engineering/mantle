@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: both. Linux boxes, and the Mac through the deploy-scripts harness: keep it bash 3.2 and BSD-tool safe.
 # ─────────────────────────────────────────────────────────────────────────────
 # scripts/onboard.sh: create the owner and finish first-run setup from the
 # terminal, on a brain with no owner web UI (installed with --no-client).

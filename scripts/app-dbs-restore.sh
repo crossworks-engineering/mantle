@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: box. A Linux box only: bash 4 features need a BASH_VERSINFO guard first.
 # Restore per-app SQLite snapshots (from db-dump.sh's mantle-app-dbs-<ts>.tgz)
 # into the app-dbs volume. Each snapshot is a COMPLETE SQLite database (VACUUM
 # INTO output), so restore is a straight extract into APP_DB_DIR — the exact

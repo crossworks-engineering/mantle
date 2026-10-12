@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 #
 # roll.sh: roll ONE box to a release tag through its own updater, with the
 # guards the fleet rules ask for, and stop loudly the moment one fails.

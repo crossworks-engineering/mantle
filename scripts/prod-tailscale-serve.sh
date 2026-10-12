@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # (Re)publish a remote Mantle's DATA PLANE — Postgres + object store — on the tailnet
 # via `tailscale serve --tcp` on the remote node, so devices on your tailnet can
 # reach them by MagicDNS (e.g. <your-brain>.<tailnet>.ts.net:5432) with no SSH tunnel.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Trace one node through every layer of Mantle's 6-layer brain.
 #
 # Given a node id, dumps its full footprint: the content_store row + any

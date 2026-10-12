@@ -1,4 +1,5 @@
 #!/bin/sh
+# runs-on: box. Inside the media sidecar container only (POSIX sh).
 # Media sidecar entrypoint.
 #
 # yt-dlp breaks the moment a site changes its player or signature scheme, and

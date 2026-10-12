@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: both. Linux boxes and the updater (POSIX sh), and the Mac through the deploy-scripts harness: keep it bash 3.2 and BSD-tool safe.
 # Back up the running Mantle stack under ./backups — ALL FOUR parts of its state:
 #   1. Postgres     → backups/mantle-<ts>.dump           (pg_dump -Fc; restore: db-restore.sh)
 #   2. App SQLite   → backups/mantle-app-dbs-<ts>.tgz    (per-app /apps databases;

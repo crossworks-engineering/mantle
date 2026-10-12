@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Run docker compose for the DEV stack, always from the original clone.
 #
 # Why this exists: the dev stack's data lives in bind mounts resolved relative

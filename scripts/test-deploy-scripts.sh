@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 #
 # Behavioural tests for the deploy shell: the root install.sh bootstrap and
 # infra/updater/updater.sh, run against a FAKE stack with a stubbed docker.
@@ -645,6 +646,7 @@ sanity_run() { # <https> <http> → output, then "rc=N"
     bash "$ROOT/scripts/sanity.sh" 2>&1; echo "rc=$?"
 }
 out=$(sanity_run down '308 https://brain.example.com/api/auth/bootstrap-state -')
+check "the stack's container is listed and judged (the listing runs on bash 3.2)" sh -c "printf '%s' \"\$1\" | grep -q 'web (healthy)'" _ "$out"
 check "308 to https on the site address: not reported as 'not Mantle'" sh -c "! printf '%s' \"\$1\" | grep -q 'not Mantle'" _ "$out"
 check "308 to https on the site address: named as the HTTPS redirect" sh -c "printf '%s' \"\$1\" | grep -q 'http://localhost redirects to HTTPS (HTTP 308)'" _ "$out"
 check "...and the install still fails when HTTPS never answered" sh -c "printf '%s' \"\$1\" | grep -q 'rc=1'" _ "$out"
@@ -1635,5 +1637,6 @@ check "the updater advertises the service verb" grep -q '"verbs":\["roll","servi
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo
+printf '(bash %s)\n' "$BASH_VERSION"
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

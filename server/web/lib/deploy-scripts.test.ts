@@ -12,16 +12,20 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '..', '..', '..');
+// /bin/bash, not the first bash on PATH: on a Mac that is 3.2, the oldest bash
+// these scripts must run under (see shell-portability.test.ts).
+const BASH = existsSync('/bin/bash') ? '/bin/bash' : 'bash';
 
 describe('deploy scripts harness', () => {
   it('passes every check (installer baselines, env ownership, compose env gate, caddy ordering, pre-roll backup, image prune, roll.sh guards)', () => {
     let out: string;
     try {
-      out = execFileSync('bash', [join(ROOT, 'scripts', 'test-deploy-scripts.sh')], {
+      out = execFileSync(BASH, [join(ROOT, 'scripts', 'test-deploy-scripts.sh')], {
         cwd: ROOT,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],

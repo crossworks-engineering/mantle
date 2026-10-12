@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Sync this working tree's source to a box's source-run stack (~/mantle-src,
 # served by the docker-compose.dev-src.yml override — see that file on the
 # box). Dev servers there hot-reload on sync; no image build.

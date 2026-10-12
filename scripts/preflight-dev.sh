@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Preflight before `pnpm dev` — refuse to start with a clear, actionable error
 # when the dev infra isn't ready. Without this, a missing Postgres turns into a
 # cryptic `ECONNREFUSED 127.0.0.1:54323` Next.js stack trace 30s into boot, which

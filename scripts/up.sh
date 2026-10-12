@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Bring up Mantle dev infra (postgres + object store + tika), apply migrations, create
 # the pg-boss schema, then run the dev servers. Idempotent — safe to run on a
 # clean machine or against an already-running stack.

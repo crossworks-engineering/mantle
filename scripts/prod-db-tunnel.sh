@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 # Open (or close) SSH tunnels from local ports to a remote Mantle's DATA PLANE —
 # Postgres AND object store — so the local dev server (or a future Electron desktop app)
 # runs as a thin client over the deployed brain. See docs/remote-db-dev.md.

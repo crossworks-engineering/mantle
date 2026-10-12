@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: mac. A dev or operator machine, the Mac included: keep it bash 3.2 and BSD-tool safe.
 #
 # box-maintain.sh: run ONE long `pnpm maintain` task on a box in its own
 # throwaway container, never inside mantle_web.

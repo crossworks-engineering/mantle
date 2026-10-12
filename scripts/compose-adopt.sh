@@ -1,4 +1,5 @@
 #!/bin/sh
+# runs-on: box. A Linux box only (POSIX sh, the updater may run it too).
 #
 # One-time adoption of the release-owned compose contract on an EXISTING box.
 #

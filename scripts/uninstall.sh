@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: box. A Linux box only: bash 4 features need a BASH_VERSINFO guard first.
 # ─────────────────────────────────────────────────────────────────────────────
 # Mantle uninstaller — take the stack down, and optionally erase the brain.
 #

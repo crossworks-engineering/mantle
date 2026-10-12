@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: both. Linux boxes, and the Mac through the deploy-scripts harness: keep it bash 3.2 and BSD-tool safe.
 # ─────────────────────────────────────────────────────────────────────────────
 # Mantle sanity check — is the stack actually up and serving?
 #
@@ -39,19 +40,29 @@ if ! docker info >/dev/null 2>&1; then bad "Docker daemon isn't running."; exit 
 # installed before that keeps the exited container until an `up --remove-orphans`.)
 is_oneshot() { case "$1" in *_migrate|*_objectstore_init|*_createbuckets|*_ollama_pull) return 0 ;; *) return 1 ;; esac; }
 
-mapfile -t NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' | sort)
+# A read loop, not mapfile: mapfile is bash 4, and the Mac's /bin/bash is 3.2.
+# Fills the array named by $1 with one compose project's container names.
+names_of() { # <array name> <compose project>
+  eval "$1=()"
+  local n
+  while IFS= read -r n; do
+    [[ -n "$n" ]] && eval "$1+=(\"\$n\")"
+  done < <(docker ps -a --filter "label=com.docker.compose.project=$2" --format '{{.Names}}' | sort)
+}
+names_of NAMES "$PROJECT"
 # Dev machines run the `mantle-dev` compose project (docker-compose.dev.yml);
 # fall back to it when the default prod project is empty and nothing was pinned.
 if [[ ${#NAMES[@]} -eq 0 && -z "${MANTLE_COMPOSE_PROJECT:-}" ]]; then
   PROJECT="mantle-dev"
-  mapfile -t NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' | sort)
+  names_of NAMES "$PROJECT"
 fi
 # The owner UI is a SEPARATE compose project (`mantle-client`,
 # docker-compose.client.yml) since the v0.200 split. Fold its container in so
 # a brain with a perfectly healthy backend and NO usable interface can't pass
 # a sanity check — the exact shape of a broken fresh install.
-mapfile -t CLIENT_NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$CLIENT_PROJECT" --format '{{.Names}}' | sort)
-NAMES+=("${CLIENT_NAMES[@]}")
+names_of CLIENT_NAMES "$CLIENT_PROJECT"
+# ${a[@]+"${a[@]}"}: bash before 4.4 calls an empty array unbound under set -u.
+NAMES+=(${CLIENT_NAMES[@]+"${CLIENT_NAMES[@]}"})
 if [[ ${#NAMES[@]} -eq 0 ]]; then bad "No containers found for compose project 'mantle' (or 'mantle-dev'). Is the stack up?"; exit 1; fi
 
 fail=0; up=0
@@ -101,7 +112,7 @@ fi
 # bound; empty for every healthy container.
 UNBOUND_TPL='{{range $p, $b := .HostConfig.PortBindings}}{{if $b}}{{$a := index $.NetworkSettings.Ports $p}}{{if not $a}}{{$p}} {{end}}{{end}}{{end}}'
 NETS_TPL='{{range $n, $v := .NetworkSettings.Networks}}{{$n}} {{end}}'
-for name in "${NAMES[@]}"; do
+for name in ${NAMES[@]+"${NAMES[@]}"}; do
   read -r state health exitcode < <(docker inspect \
     --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} {{.State.ExitCode}}' \
     "$name" 2>/dev/null)
@@ -168,6 +179,7 @@ probe() { # $1 = base url, $2 = extra curl args (unquoted, may be empty)
   P_CODE="${out##*$'\n'}"; out="${out%$'\n'*}"
   P_REDIRECT="${out##*$'\n'}"; P_BODY="${out%$'\n'*}"
 }
+lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 is_mantle() { [[ "$P_BODY" == *'"firstRun"'* ]]; }
 # Our own Caddy, sending plain HTTP to HTTPS: a redirect to https:// on the
 # configured site address, or on the very host that was probed. That is the
@@ -181,8 +193,9 @@ is_https_redirect() { # $1 = the probed url
   host="${to%%/*}"; probed="${1#*://}"; probed="${probed%%/*}"
   [[ "$host" =~ ^(.*):[0-9]+$ ]] && host="${BASH_REMATCH[1]}"
   [[ "$probed" =~ ^(.*):[0-9]+$ ]] && probed="${BASH_REMATCH[1]}"
-  host="${host,,}"
-  [[ -n "$host" && ( "$host" == "${SITE_ADDRESS,,}" || "$host" == "${probed,,}" ) ]]
+  # tr, not ${v,,}: lower case by expansion is bash 4, and the Mac runs 3.2.
+  host="$(lc "$host")"
+  [[ -n "$host" && ( "$host" == "$(lc "$SITE_ADDRESS")" || "$host" == "$(lc "$probed")" ) ]]
 }
 
 # Front door first. With a domain, resolve the real hostname to this box —
@@ -195,7 +208,7 @@ fi
 CANDIDATES+=("$(https_at localhost)|" "$(http_at localhost)|")
 
 reached=""
-for cand in "${CANDIDATES[@]}"; do
+for cand in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   url="${cand%%|*}"; extra="${cand#*|}"
   probe "$url" "$extra"
   [[ "$P_CODE" == 000 ]] && continue

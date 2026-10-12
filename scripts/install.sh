@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# runs-on: both. Linux boxes, and the Mac through the deploy-scripts harness: keep it bash 3.2 and BSD-tool safe.
 # ─────────────────────────────────────────────────────────────────────────────
 # ── THIS IS THE CONFIGURATOR. ────────────────────────────────────────────────
 # There are two files called install.sh and they do different jobs:
@@ -1177,7 +1178,9 @@ hd "Starting the stack"
 STARTED_AT=$SECONDS
 COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR")
 CLIENT_COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" -f "$STACK_DIR/docker-compose.client.yml")
-RERUN="$(printf '%q ' "$0" "${ORIG_ARGS[@]}")"; RERUN="${RERUN% }"
+# ${a[@]+"${a[@]}"}: a run with no flags has an empty ORIG_ARGS, which bash
+# before 4.4 (the Mac's /bin/bash is 3.2) calls unbound under set -u.
+RERUN="$(printf '%q ' "$0" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"})"; RERUN="${RERUN% }"
 
 # `compose pull` with retries. One reset connection on one layer (a fresh
 # install over IPv6 to ghcr.io, 2026-09-28) aborts the WHOLE pull, and an `up`
