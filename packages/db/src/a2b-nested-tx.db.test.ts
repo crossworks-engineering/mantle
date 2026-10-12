@@ -45,8 +45,6 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
     process.env.MANTLE_ACTOR_CHECK = 'warn';
     scratch = await createMigratedScratchDatabase(URL!);
     sql = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
-    // The box is strict: a heads lock that is not the first lock fails.
-    await sql.unsafe(`alter database "${scratch.name}" set mantle.heads_check = 'on'`);
     await sql`insert into auth.users (id, email, password_hash, is_owner, role)
       values (${owner}, ${`${owner}@example.invalid`}, 'x', true, 'admin')`;
     await sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
@@ -56,6 +54,9 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
       (${sub}, ${owner}, 'branch', 'a2b sub', 'notes.a2b.sub'),
       (${a}, ${owner}, 'note', 'a2b a', 'notes.a2b'),
       (${b}, ${owner}, 'note', 'a2b b', 'notes.a2b.sub')`;
+    // The box is strict from here: a heads lock that is not the first lock
+    // fails, and so does a write without heads (new connections only).
+    await sql.unsafe(`alter database "${scratch.name}" set mantle.heads_check = 'on'`);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('./index');
