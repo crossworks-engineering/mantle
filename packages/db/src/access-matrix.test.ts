@@ -12,9 +12,7 @@ import {
   DRAFT_COLUMNS,
   NEVER_GRANTED_COLUMNS,
   userReadFor,
-  readFor,
-  ruleFor,
-  viewerGrantStatements,
+  userGrantStatements,
 } from './access-matrix';
 
 const tables = Object.values(schema).filter((v) => is(v, Table)) as unknown as PgTable[];
@@ -33,18 +31,19 @@ describe('access matrix', () => {
 
   it('names only real columns', () => {
     for (const t of ACCESS_MATRIX) {
-      if (t.read === 'none' || t.read === 'all') continue;
+      const read = userReadFor(t);
+      if (read === 'none' || read === 'all') continue;
       const cols = Object.values(getTableColumns(byName.get(t.table)!)).map((c) => c.name);
-      for (const c of t.read) expect(cols, `${t.table}.${c}`).toContain(c);
+      for (const c of read) expect(cols, `${t.table}.${c}`).toContain(c);
     }
   });
 
   it('never grants a draft column or a login secret', () => {
     for (const [table, banned] of Object.entries(NEVER_GRANTED_COLUMNS)) {
-      const entry = ACCESS_MATRIX.find((t) => t.table === table)!;
-      expect(entry.read, `${table} must name its columns`).not.toBe('all');
-      if (entry.read === 'none') continue;
-      for (const c of banned) expect(entry.read, `${table}.${c}`).not.toContain(c);
+      const read = userReadFor(ACCESS_MATRIX.find((t) => t.table === table)!);
+      expect(read, `${table} must name its columns`).not.toBe('all');
+      if (read === 'none') continue;
+      for (const c of banned) expect(read, `${table}.${c}`).not.toContain(c);
     }
   });
 
@@ -69,16 +68,14 @@ describe('access matrix', () => {
     ]);
   });
 
-  it('never grants the private corpus or credentials', () => {
+  it('never grants credentials or the archived login secrets', () => {
+    // Emails, chat history and the graph are read by the workspace role
+    // under their row rules since W6a; these never are.
     const adminForever = [
       'public.api_keys',
       'public.secrets',
-      'public.emails',
       'public.email_accounts',
       'public.telegram_messages',
-      'public.assistant_messages',
-      'public.entities',
-      'public.entity_edges',
       'public.oauth_access_tokens',
       'public.mobile_tokens',
       'public.member_invites',
@@ -88,48 +85,23 @@ describe('access matrix', () => {
       'public.archive_mcp_login_tokens',
     ];
     for (const table of adminForever) {
-      expect(ACCESS_MATRIX.find((t) => t.table === table)?.read, table).toBe('none');
+      expect(userReadFor(ACCESS_MATRIX.find((t) => t.table === table)!), table).toBe('none');
     }
   });
 
-  it('every readable table has a row rule, and every unreadable one has none', () => {
+  it('a row rule of its own only where the workspace role reads', () => {
     for (const t of ACCESS_MATRIX) {
-      for (const level of ['team', 'client', 'public'] as const) {
-        const at = `${t.table} (${level})`;
-        if (readFor(t, level) === 'none') expect(ruleFor(t, level), at).toBe('none');
-        else expect(ruleFor(t, level), at).not.toBe('none');
-      }
+      if (t.userRule) expect(userReadFor(t), t.table).not.toBe('none');
     }
-  });
-
-  it('only the client role differs from the shared matrix (client logins C1)', () => {
-    for (const t of ACCESS_MATRIX) {
-      expect(t.byRole?.team, t.table).toBeUndefined();
-      expect(t.byRole?.public, t.table).toBeUndefined();
-    }
-    const client = (table: string) => ACCESS_MATRIX.find((t) => t.table === table)!;
-    expect(ruleFor(client('public.agents'), 'client')).toBe('level-rows');
-    expect(ruleFor(client('public.tool_groups'), 'client')).toBe('level-rows');
-    expect(readFor(client('auth.users'), 'client')).toBe('none');
-    // The team role still reads every agent: team delegation to admin agents.
-    expect(ruleFor(client('public.agents'), 'team')).toBe('all-rows');
-    // Audit A27: no embedding config (base URLs) and no owner name for the
-    // client role; the team role unchanged.
-    expect(readFor(client('public.embedding_config'), 'client')).toBe('none');
-    expect(readFor(client('public.embedding_config'), 'team')).toBe('all');
-    expect(readFor(client('public.profiles'), 'client')).toEqual(['user_id', 'preferences']);
-    expect(readFor(client('public.profiles'), 'team')).toBe('all');
-  });
-
-  it('renders no grant on auth.users for the client role', () => {
-    expect(viewerGrantStatements('client').some((s) => s.includes('"auth"."users"'))).toBe(false);
-    expect(viewerGrantStatements('team').some((s) => s.includes('"auth"."users"'))).toBe(true);
   });
 
   it('renders SELECT-only grants, column lists where named', () => {
-    const stmts = viewerGrantStatements('team');
+    const stmts = userGrantStatements();
     expect(stmts.every((s) => s.startsWith('GRANT SELECT'))).toBe(true);
-    expect(stmts).toContain('GRANT SELECT ON "public"."nodes" TO "mantle_view_team"');
+    expect(stmts).toContain('GRANT SELECT ON "public"."nodes" TO "mantle_view_user"');
+    expect(stmts).toContain(
+      'GRANT SELECT ("id", "is_owner", "created_at") ON "auth"."users" TO "mantle_view_user"',
+    );
     expect(stmts.find((s) => s.includes('"public"."pages"'))).toMatch(
       /^GRANT SELECT \("node_id", "doc", /,
     );

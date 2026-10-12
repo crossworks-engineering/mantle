@@ -1,14 +1,14 @@
 /**
  * `appLauncher` (./app-folders.ts) without a database: what it does around
- * its two reads. The reads themselves, as the real roles, are proven on
+ * its two reads. The reads themselves, in the real scopes, are proven on
  * Postgres in ./app-folders.viewer.db.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  level: 'admin' as string,
+  /** Whether the caller is system work (else inside a workspace scope). */
+  system: true,
   space: null as unknown,
-  viewers: [] as string[],
   logins: [] as unknown[],
   folderReads: 0,
   folderError: null as Error | null,
@@ -17,10 +17,9 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@mantle/db', () => ({
-  isSystemScope: () => h.level === 'admin',
+  isSystemScope: () => h.system,
   currentSpaceScope: () => h.space,
-  withViewer: async (level: string, actsFor: unknown, fn: () => Promise<unknown>) => {
-    h.viewers.push(level);
+  withViewer: async (actsFor: unknown, fn: () => Promise<unknown>) => {
     h.logins.push(actsFor);
     return fn();
   },
@@ -44,9 +43,8 @@ const { appLauncher } = await import('./app-folders');
 const LOGIN = '00000000-0000-4000-8000-0000000000a1';
 
 beforeEach(() => {
-  h.level = 'admin';
+  h.system = true;
   h.space = null;
-  h.viewers.length = 0;
   h.logins.length = 0;
   h.folderReads = 0;
   h.folderError = null;
@@ -57,7 +55,6 @@ beforeEach(() => {
 describe('appLauncher', () => {
   it('reads the apps as the reader it is given, and the folders from their places', async () => {
     const team = await appLauncher('anchor', 'team', LOGIN);
-    expect(h.viewers).toEqual(['team']);
     expect(h.logins).toEqual([{ login: LOGIN }]);
     expect(team.apps.map((a) => a.id)).toEqual(['a1']);
     expect(team.folders).toEqual([
@@ -68,7 +65,6 @@ describe('appLauncher', () => {
   it('reads no folder row when every app is at the top level', async () => {
     h.topLevel = true;
     const top = await appLauncher('anchor', 'team', LOGIN);
-    expect(h.viewers).toEqual(['team']);
     expect(h.logins).toEqual([{ login: LOGIN }]);
     expect(top.apps.map((a) => a.id)).toEqual(['c1']);
     expect(top.folders).toEqual([]);
@@ -89,12 +85,12 @@ describe('appLauncher', () => {
   });
 
   it('refuses a viewer scope or a space scope: it scopes its own reads', async () => {
-    h.level = 'team';
+    h.system = false;
     await expect(appLauncher('anchor', 'team', LOGIN)).rejects.toThrow(/admin pool/);
-    h.level = 'admin';
+    h.system = true;
     h.space = { spaceId: 's' };
     await expect(appLauncher('anchor', 'team', LOGIN)).rejects.toThrow(/admin pool/);
-    expect(h.viewers).toEqual([]);
+    expect(h.logins).toEqual([]);
     expect(h.folderReads).toBe(0);
   });
 });

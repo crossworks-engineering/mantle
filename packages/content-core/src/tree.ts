@@ -5,8 +5,12 @@
  * deepest a folder may sit. Pure, so the brain and every client agree on
  * depth, parents and crumbs without a round trip.
  */
-import { TREE_KIND_SPECS, TREE_KINDS, TREE_MAX_DEPTH, type TreeKind } from '@mantle/client-types/tree';
-
+import {
+  TREE_KIND_SPECS,
+  TREE_KINDS,
+  TREE_MAX_DEPTH,
+  type TreeKind,
+} from '@mantle/client-types/tree';
 
 function labels(path: string): string[] {
   return path ? path.split('.') : [];

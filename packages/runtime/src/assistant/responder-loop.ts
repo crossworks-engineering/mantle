@@ -43,11 +43,7 @@ import {
 } from '@mantle/tools/client-sourced';
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
-import {
-  ownerSurfaceLogin,
-  surfaceLoginId,
-  withAgentViewer,
-} from '../agent/agent-viewer';
+import { ownerSurfaceLogin, surfaceLoginId, withAgentViewer } from '../agent/agent-viewer';
 
 /** Rebuild the persistable thought trail from a turn's tool calls — the same
  *  grounded action labels the live trail shows (search/write/delegate), via the

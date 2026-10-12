@@ -36,26 +36,34 @@ export function missingPersonaGroups(
   return manifestPersonaGroups.filter((g) => !have.has(g));
 }
 
+/** The team responder's slug (manifest.ts): the Team workspace's assistant
+ *  once its brain is switched (the 0251 attach rule). */
+export const TEAM_RESPONDER_SLUG = 'team-responder';
+
 /**
  * Of the groups reconcile would add, keep only those the agent may use
  * (workspaces W8c; it was the agent's level until then): an adminOnly group
  * (0254) is never added to the assistant of a workspace other than Admin,
- * nor to a responder on no workspace (the Team assistant of a brain not yet
- * switched), whose turns never hold the Admin workspace. Without this, every
- * image update re-added `team-read-admin` to the team responder (seen on two
- * boxes of the fleet, v0.232.265). Every other agent gets them all.
+ * nor, on no workspace, to a responder or to the team responder (the Team
+ * assistant of a brain not yet switched, whose role is custom): their turns
+ * never hold the Admin workspace. Without this, every image update re-added
+ * `team-read-admin` to the team responder (seen on two boxes of the fleet,
+ * v0.232.265). Every other agent gets them all.
  */
 export function groupsForAgent(
   groups: readonly string[],
-  agent: { workspace: 'admin' | 'other' | 'none'; role?: string | null },
+  agent: { workspace: 'admin' | 'other' | 'none'; role?: string | null; slug?: string | null },
   adminOnlyGroups: ReadonlySet<string>,
 ): string[] {
   const outsideAdmin =
     agent.workspace === 'other' ||
-    (agent.workspace === 'none' && (agent.role === 'responder' || agent.role === 'assistant'));
+    (agent.workspace === 'none' &&
+      (agent.role === 'responder' ||
+        agent.role === 'assistant' ||
+        agent.slug === TEAM_RESPONDER_SLUG));
+
   return outsideAdmin ? groups.filter((g) => !adminOnlyGroups.has(g)) : [...groups];
 }
-
 
 /**
  * Converge an agent's skill links toward the manifest — the remove-capable

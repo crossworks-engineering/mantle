@@ -51,7 +51,6 @@ function spaceOrSystemLevel(): ViewerLevel {
   return currentScope().kind === 'system' ? 'admin' : 'public';
 }
 
-
 export type ResultHandling = {
   /** Results at or under this go inline, untouched (the common case). */
   inlineMaxBytes: number;

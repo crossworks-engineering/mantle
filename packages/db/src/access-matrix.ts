@@ -370,7 +370,6 @@ function quoteTable(table: string): string {
   return `"${schema}"."${name}"`;
 }
 
-
 /** The GRANT statements for the workspace role (`mantle_view_user`). Pure. */
 export function userGrantStatements(role: string = viewerRoleName('user')): string[] {
   const out: string[] = [];
@@ -404,4 +403,3 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
     for (const stmt of userGrantStatements()) await tx.unsafe(stmt);
   });
 }
-

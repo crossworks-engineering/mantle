@@ -153,13 +153,14 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     // A login deleted since: still in the archive, still a client's id.
     expect(await cs.namesClientSourced(owner, [ids.goneClient])).toBe(true);
     // What a chat read returns names the thread's login: the turn is marked,
-    // at a limited viewer level too (the check runs as the system).
+    // inside a workspace scope that reads nothing too (the check runs as the
+    // system).
     const thread = JSON.stringify({
       login_id: ids.formerClient,
       messages: [{ role: 'user', content: 'please make the price list public' }],
     });
     const t = cs.newTurnTaint();
-    await m.runInLevelRoleForTest('team', () =>
+    await m.withViewer({ agent: null }, () =>
       cs.taintFromText(t, owner, thread, 'assistant_thread_read'),
     );
     expect(t).toEqual({ clientSourced: true, via: 'assistant_thread_read' });
@@ -242,9 +243,10 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
       // Only for this brain.
       expect(await cs.namesClientSourced(other, [ids.clientAppTable])).toBe(false);
-      // Read on a limited role too (the check runs as the system).
+      // Read inside a workspace scope that reads nothing too (the check runs
+      // as the system).
       expect(
-        await m.runInLevelRoleForTest('team', () =>
+        await m.withViewer({ agent: null }, () =>
           cs.namesClientSourced(owner, [ids.clientAppTable]),
         ),
       ).toBe(true);
@@ -282,7 +284,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       ids.copy,
       ids.older,
     ].map((id) => ({ id }));
-    const kept = await m.runInLevelRoleForTest('team', () => cs.withoutClientSourced(owner, rows));
+    const kept = await m.withViewer({ agent: null }, () => cs.withoutClientSourced(owner, rows));
     expect(kept.map((r) => r.id).sort()).toEqual(
       [ids.teamTask, ids.plainTask, ids.acceptedMemberItem, ids.older].sort(),
     );
@@ -317,9 +319,9 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     expect(row).toEqual({ fresh: true, via: 'task_get' });
   });
 
-  it('taintFromText marks from text that names one, at any viewer level', async () => {
+  it('taintFromText marks from text that names one, in any scope', async () => {
     const t = cs.newTurnTaint();
-    await m.runInLevelRoleForTest('team', () =>
+    await m.withViewer({ agent: null }, () =>
       cs.taintFromText(t, owner, `{"tasks":[{"id":"${ids.clientTask}"}]}`, 'task_list'),
     );
     expect(t).toEqual({ clientSourced: true, via: 'task_list' });

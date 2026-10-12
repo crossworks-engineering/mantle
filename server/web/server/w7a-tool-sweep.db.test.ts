@@ -399,7 +399,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
       const input = argsFor((def.inputSchema ?? {}) as Schema, def.slug);
       const res = await timed(
         rt.withAgentScope(
-          { audience: 'admin', workspaceId: adminWs },
+          { workspaceId: adminWs },
           async () => {
             const s = m.currentScope();
             scopes.add(`${s.kind}:${'ws' in s ? (s.ws as string[]).join(',') : ''}`);
@@ -562,7 +562,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
         if (!id || (items === readOnly && needsRead.has(def.slug))) continue;
         const res = await timed(
           rt.withAgentScope(
-            { audience: 'admin', workspaceId: adminWs },
+            { workspaceId: adminWs },
             () => t.dispatchTool(toolRow(def), argsAt(def, id), { ownerId: owner, surface }),
             { ownerLoginId: owner },
           ),
@@ -634,7 +634,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const notRefused: string[] = [];
     for (const def of gated) {
       const res = await rt.withAgentScope(
-        { audience: 'team', workspaceId: teamWs },
+        { workspaceId: teamWs },
         () =>
           t.dispatchTool(toolRow(def), argsFor((def.inputSchema ?? {}) as Schema, def.slug), {
             ownerId: owner,

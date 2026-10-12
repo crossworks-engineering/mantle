@@ -499,7 +499,6 @@ describe('tool_group_ensure on a group an assistant of another workspace holds (
   const CLIENT_READ = {
     ...EXISTING_GROUP,
     slug: 'client-read',
-    audience: 'client',
     toolSlugs: ['client_shared_list', 'client_shared_open'],
   };
   const owner: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };

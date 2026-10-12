@@ -20,22 +20,22 @@ const h = vi.hoisted(() => ({
   execs: 0,
   callers: [] as unknown[],
   frameViewers: [] as unknown[],
-  dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
+  dispatched: [] as Array<{ scope: unknown; ctx: Record<string, unknown> }>,
   appLog: [] as Array<Record<string, unknown>>,
   shareLog: [] as Array<Record<string, unknown>>,
-  viewers: [] as Array<{ level: string; actsFor: unknown }>,
-  /** The level of the withViewer scope the code runs in, if any. */
-  inViewer: null as string | null,
+  viewers: [] as Array<{ actsFor: unknown }>,
+  /** Whom the withViewer scope the code runs in acts for, if any. */
+  inViewer: null as unknown,
 }));
 
 // The viewer scope without a database (W5b2, plan R6): who it acts for is
-// recorded, and the dispatch below sees the scope's level.
+// recorded, and the dispatch below sees the scope it runs in (W8c: no level).
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  withViewer: vi.fn(async (level: string, actsFor: unknown, fn: () => Promise<unknown>) => {
-    h.viewers.push({ level, actsFor });
+  withViewer: vi.fn(async (actsFor: unknown, fn: () => Promise<unknown>) => {
+    h.viewers.push({ actsFor });
     const prev = h.inViewer;
-    h.inViewer = level;
+    h.inViewer = actsFor;
     try {
       return await fn();
     } finally {
@@ -104,7 +104,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
         : real.contactAppToolVerdict(owner, declared, slug),
     ),
     dispatchTool: vi.fn(async (_t: unknown, _i: unknown, ctx: Record<string, unknown>) => {
-      h.dispatched.push({ level: h.inViewer ?? 'admin', ctx });
+      h.dispatched.push({ scope: h.inViewer ?? 'system', ctx });
       return { ok: true, output: { rows: [] } };
     }),
   };
@@ -264,7 +264,7 @@ describe('a contact share (0214)', () => {
     expect(res.status).toBe(200);
     expect(h.dispatched).toEqual([
       {
-        level: 'public',
+        scope: { link: { served: ['app-1', 'page-9'] } },
         ctx: {
           ownerId: 'owner-1',
           surface: { kind: 'contact', contactId: CONTACT, shareId: 'share-2' },
@@ -272,9 +272,7 @@ describe('a contact share (0214)', () => {
       },
     ]);
     // The link reads no workspace: only its own item and its served list.
-    expect(h.viewers).toEqual([
-      { level: 'public', actsFor: { link: { served: ['app-1', 'page-9'] } } },
-    ]);
+    expect(h.viewers).toEqual([{ actsFor: { link: { served: ['app-1', 'page-9'] } } }]);
     expect(h.appLog[0]).toMatchObject({
       contactId: CONTACT,
       shareId: 'share-2',

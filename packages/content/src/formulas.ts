@@ -55,8 +55,7 @@ function rowOf(n: Node): FormulaRow {
     spec: d.spec as FormulaSpec,
     tags: n.tags ?? [],
     summary,
-    createdAt:
- (n.createdAt as unknown as Date)?.toISOString?.() ?? String(n.createdAt),
+    createdAt: (n.createdAt as unknown as Date)?.toISOString?.() ?? String(n.createdAt),
     updatedAt: (n.updatedAt as unknown as Date)?.toISOString?.() ?? String(n.updatedAt),
   };
 }

@@ -36,7 +36,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  withViewer: vi.fn(async (_v: unknown, _o: unknown, fn: () => Promise<unknown>) => fn()),
+  withViewer: vi.fn(async (_o: unknown, fn: () => Promise<unknown>) => fn()),
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

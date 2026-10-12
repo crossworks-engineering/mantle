@@ -11,7 +11,8 @@
  *  - the grant decides both ways; the Write switch is read the same way;
  *  - the system form (the row owner's Team) and the viewer form (the
  *    brain's Team, mantle_brain_team_ws) agree;
- *  - the level roles and the workspace role may ask for the Team workspace.
+ *  - the workspace role may ask for the Team workspace (the level roles are
+ *    retired since W8c and hold no right).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/grant-reads.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -21,7 +22,7 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { teamReadsAliasSql } from './grant-reads';
 import { createMigratedScratchDatabase } from './test-support';
-import { runInLevelRoleForTest } from './viewer';
+import { runInTurnScope } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -53,7 +54,9 @@ describe.skipIf(!URL)('grant reads (W5b2): Team reads from the grants alone', ()
 
   /** Both forms of the helper, next to the plain "Team in read_ws". */
   const compare = async (): Promise<Cmp[]> => {
-    const viewerForm = await runInLevelRoleForTest('team', async () => teamReadsAliasSql('n'));
+    // Built in a workspace scope (the viewer form); only the SQL is taken.
+    const scope = { kind: 'assistant' as const, loginId: null, ws: [randomUUID()], modWs: [] };
+    const viewerForm = await runInTurnScope(scope, async () => teamReadsAliasSql('n'));
     const q = new PgDialect().sqlToQuery(sqlTag`
       select n.id::text as id, n.title, ${teamReadsAliasSql('n')} as sys,
              ${viewerForm as SQL} as viewer,
@@ -137,14 +140,8 @@ describe.skipIf(!URL)('grant reads (W5b2): Team reads from the grants alone', ()
     expect(w!.writes).toBe(true);
   });
 
-  it('the level roles and the workspace role may ask for the Team workspace', async () => {
-    for (const role of [
-      'mantle_view_team',
-      'mantle_view_client',
-      'mantle_view_public',
-      'mantle_view_space',
-      'mantle_view_user',
-    ]) {
+  it('the workspace role may ask for the Team workspace', async () => {
+    for (const role of ['mantle_view_user']) {
       const t = await sql.begin(async (tx) => {
         await tx.unsafe(`set local role ${role}`);
         return (await tx`select mantle_brain_team_ws() is not null as ok`)[0]!.ok;

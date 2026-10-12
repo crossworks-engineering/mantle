@@ -157,7 +157,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
                     from nodes n where id = ${id}`),
     );
   const inAdminTurn = <T>(login: string, fn: () => Promise<T>) =>
-    rt.withAgentScope({ id: agent.id, audience: 'admin', workspaceId: adminWs }, fn, {
+    rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, fn, {
       ownerLoginId: login,
     });
   const dispatchAs = (login: string, slug: string, input: Record<string, unknown>) =>
@@ -276,8 +276,8 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
         }),
       )
     ).id;
-    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience)
-      values (${owner}, ${groupSlug}, 'W7a API', ${'{}'}::text[], 'admin')`);
+    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs)
+      values (${owner}, ${groupSlug}, 'W7a API', ${'{}'}::text[])`);
     // An Admin folder that is on disk, to mount.
     const folder = await makeIn(adminWs, () =>
       files.createFolder({ ownerId: owner, parentPath: 'files', slug: `${tag}-inbox` }),
@@ -316,8 +316,8 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
                 ${JSON.stringify({ kind: 'builtin', ref: slug })}::jsonb)
         on conflict do nothing`);
     }
-    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience) values
-      (${owner}, ${`${tag}-reads`}, 'Reads', ${'{node_read,page_update}'}::text[], 'admin')`);
+    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs) values
+      (${owner}, ${`${tag}-reads`}, 'Reads', ${'{node_read,page_update}'}::text[])`);
     await x(sql`insert into api_keys (id, user_id, service, label, key_enc)
       values (${apiKeyId}, ${owner}, 'openrouter', ${tag}, '\\x00'::bytea)`);
     const [row] = await m.systemDb
@@ -403,7 +403,7 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
           m.asSystem(
             () =>
               rt.withAgentScope(
-                { id: agent.id, audience: 'admin', workspaceId: adminWs },
+                { id: agent.id, workspaceId: adminWs },
                 async () => m.currentScope(),
                 opts,
               ),

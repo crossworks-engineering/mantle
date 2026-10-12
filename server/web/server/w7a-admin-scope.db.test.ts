@@ -76,7 +76,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       )
     )[0]!.ws;
   const inAdminTurn = <T>(fn: () => Promise<T>, loginId?: string) =>
-    rt.withAgentScope({ id: agent.id, audience: 'admin', workspaceId: adminWs }, fn, {
+    rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, fn, {
       ownerLoginId: loginId ?? null,
     });
   const nodeRead = (id: string) =>
@@ -364,7 +364,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       mcp.runInOwnerMcpScope(owner, 'ask_responder', async () => {
         const outer = m.currentScope();
         const inner = await rt.withAgentScope(
-          { id: agent.id, audience: 'admin', workspaceId: adminWs },
+          { id: agent.id, workspaceId: adminWs },
           async () => m.currentScope(),
           { ownerLoginId: owner },
         );
@@ -379,17 +379,14 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
   });
 
   it('a turn that answers no login acts for the owner; its stamp names none', async () => {
-    const seen = await rt.withAgentScope(
-      { id: agent.id, audience: 'admin', workspaceId: adminWs },
-      async () => {
-        const s = m.currentScope();
-        return {
-          login: 'loginId' in s ? s.loginId : null,
-          mod: 'modWs' in s ? s.modWs : [],
-          stamp: m.currentTurnStamp(),
-        };
-      },
-    );
+    const seen = await rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, async () => {
+      const s = m.currentScope();
+      return {
+        login: 'loginId' in s ? s.loginId : null,
+        mod: 'modWs' in s ? s.modWs : [],
+        stamp: m.currentTurnStamp(),
+      };
+    });
     expect(seen.login).toBe(owner);
     expect(seen.mod).toEqual([adminWs]);
     expect(seen.stamp).toEqual({ workspaceId: adminWs, loginId: null });
@@ -415,13 +412,13 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       expect(seen.kind).toBe('system');
       expect(seen.memberPrivate).toBe(true);
       expect(seen.stamp).toEqual({ workspaceId: adminWs, loginId: null });
-      expect(await rt.agentTurnScoped({ audience: 'admin', workspaceId: adminWs })).toBe(false);
+      expect(await rt.agentTurnScoped({ workspaceId: adminWs })).toBe(false);
       const other = await mcpCall(owner, 'node_read', { node_id: privatePage });
       expect(other.isError, other.text.slice(0, 200)).toBe(false);
     } finally {
       delete process.env.MANTLE_ADMIN_READS;
     }
-    expect(await rt.agentTurnScoped({ audience: 'admin', workspaceId: adminWs })).toBe(true);
+    expect(await rt.agentTurnScoped({ workspaceId: adminWs })).toBe(true);
   });
   it('H1: area tools never read another user’s private item, nor overwrite one', async () => {
     const before = {
@@ -482,7 +479,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     const seen = await m.runInRequestSlot(() =>
       mcp.runInOwnerMcpScope(second, 'ask_responder', () =>
         // As run-sim-turn calls it: a web surface that names no login.
-        rt.withAgentScope({ id: agent.id, audience: 'admin', workspaceId: adminWs }, async () => {
+        rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, async () => {
           const s = m.currentScope();
           return {
             login: 'loginId' in s ? s.loginId : null,
@@ -509,11 +506,9 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     await expect(
       m.runInRequestSlot(() =>
         mcp.runInOwnerMcpScope(second, 'ask_responder', () =>
-          rt.withAgentScope(
-            { id: agent.id, audience: 'admin', workspaceId: adminWs },
-            async () => m.currentScope(),
-            { loginId: owner },
-          ),
+          rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, async () => m.currentScope(), {
+            loginId: owner,
+          }),
         ),
       ),
     ).rejects.toThrow(/answers the login that called it/);

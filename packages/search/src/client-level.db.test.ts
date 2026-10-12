@@ -1,14 +1,12 @@
 /**
- * The client role reads CLIENT items only (client logins C1, migration 0187,
- * decision 3), on every search arm, against a real, migrated Postgres. One
- * item per level carries the same title words, tags, path, passage text and
- * embedding, so only the level decides what comes back. Also: items that are
- * not the brain's (a member's personal item, a team draft, an admin's
- * private item) never reach the client role even at level client; agents
- * and tool groups are filtered by level for the client role only (client
- * level only since 0189); the client
- * role holds no grant on logins, yet the brain id still resolves. The team
- * and public roles are the controls.
+ * Every search arm fails closed outside the brain's workspaces (client
+ * logins C1, migration 0187; workspaces W8c), against a real, migrated
+ * Postgres. One item per old level carries the same title words, tags,
+ * path, passage text and embedding; a scope that holds no workspace reads
+ * none of them on any arm, whatever level an item still records (the level
+ * roles and their reads went in W8c: no level decides anything now). Items
+ * that are not the brain's (a member's personal item, a team draft, an
+ * admin's private item) never reach it either.
  *
  * Seeds its own rows on the shared anchor and removes them after.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/search/src/client-level.db.test.ts
@@ -21,7 +19,7 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const LEVELS = ['admin', 'team', 'client', 'public'] as const;
 type Level = (typeof LEVELS)[number];
 
-describe.skipIf(!URL)('the client role reads client items only, on every search arm', () => {
+describe.skipIf(!URL)('every search arm fails closed in a scope that holds no workspace', () => {
   type Db = typeof import('@mantle/db');
   type Admin = Parameters<Db['ensureViewerRoles']>[0];
   type Search = typeof import('./index');
@@ -46,8 +44,6 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     teamDraft: randomUUID(),
     adminPrivate: randomUUID(),
   };
-  const agentSlug = (l: Level) => `${tag}-agent-${l}`;
-  const groupSlug = (l: Level) => `${tag}-group-${l}`;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -70,12 +66,6 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
         values (${anchor}, ${item[l]}, 0, ${`${tag} passage ${l}`}, ${vecLit}::vector)`;
       await admin`insert into facts (owner_id, kind, content, source_node_id, embedding)
         values (${anchor}, 'factual', ${`${tag} fact ${l}`}, ${item[l]}, ${vecLit}::vector)`;
-      await admin`insert into tool_groups (owner_id, slug, name, tool_slugs, audience)
-        values (${anchor}, ${groupSlug(l)}, ${tag}, ${[]}, ${l})`;
-      await admin`insert into agents (owner_id, slug, name, model, provider, system_prompt,
-                                      tool_group_slugs, audience)
-        values (${anchor}, ${agentSlug(l)}, ${tag}, 'fake/model', 'openrouter', 'x',
-                ${[groupSlug(l)]}, ${l})`;
     }
     // A fact with no source: the owner's own chats, admin only.
     await admin`insert into facts (owner_id, kind, content, embedding)
@@ -107,8 +97,6 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
 
   afterAll(async () => {
     if (!admin) return;
-    await admin`delete from agents where slug like ${`${tag}-%`}`;
-    await admin`delete from tool_groups where slug like ${`${tag}-%`}`;
     await admin`delete from facts where content like ${`${tag}%`}`;
     await admin`delete from nodes where title like ${`${tag}%`}`;
     await admin`delete from spaces where login_id in (${member}, ${adminLogin})`;
@@ -120,11 +108,11 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     [...new Set(ids)].filter((id) =>
       [...Object.values(item), ...Object.values(notBrain)].includes(id),
     );
-  const want = (levels: Level[]) => levels.map((l) => item[l]).sort();
 
-  /** Every search arm at `level`: the ids of OUR items each returns. */
-  async function arms(level: 'team' | 'client' | 'public') {
-    return m.runInLevelRoleForTest(level, async () => {
+  /** Every search arm in a workspace scope that holds no workspace (an
+   *  assistant on none): the ids of OUR items each returns. */
+  async function arms() {
+    return m.withViewer({ agent: null }, async () => {
       const fts = await s.searchNodes({ ownerId: anchor, q: tag, limit: 50 });
       const hybrid = await s.searchNodes({
         ownerId: anchor,
@@ -183,84 +171,13 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     expect(r!.n).toBe(7);
   });
 
-  it('client: every arm returns the client item and nothing else', async () => {
-    const got = await arms('client');
+  it('a scope that holds no workspace: no arm returns any of them', async () => {
+    const got = await arms();
     for (const [arm, ids] of Object.entries(got)) {
       if (arm === 'sourceless') continue;
-      expect([...(ids as string[])].sort(), arm).toEqual(want(['client']));
+      expect([...(ids as string[])].sort(), arm).toEqual([]);
     }
     expect(got.sourceless, 'a sourceless fact').toBe(0);
-  });
-
-  it('team (control): team, client and public, never admin or anyone else', async () => {
-    const got = await arms('team');
-    for (const [arm, ids] of Object.entries(got)) {
-      if (arm === 'sourceless') continue;
-      expect([...(ids as string[])].sort(), arm).toEqual(want(['team', 'client', 'public']));
-    }
-    expect(got.sourceless).toBe(0);
-  });
-
-  it('public (control): public only', async () => {
-    const got = await arms('public');
-    for (const [arm, ids] of Object.entries(got)) {
-      if (arm === 'sourceless') continue;
-      expect([...(ids as string[])].sort(), arm).toEqual(want(['public']));
-    }
-  });
-
-  it('agents and tool groups: the client role reads client ones only (0189)', async () => {
-    const read = (level: 'team' | 'client' | 'public') =>
-      m.runInLevelRoleForTest(level, async () => ({
-        agents: (
-          (await m.db.execute(
-            sqlTag`select slug from agents where slug like ${`${tag}-%`} order by slug`,
-          )) as unknown as { slug: string }[]
-        ).map((r) => r.slug),
-        groups: (
-          (await m.db.execute(
-            sqlTag`select slug from tool_groups where slug like ${`${tag}-%`} order by slug`,
-          )) as unknown as { slug: string }[]
-        ).map((r) => r.slug),
-      }));
-    // Client and public are siblings, not a chain (decision 3, audit A5):
-    // a client-level turn never loads a public agent or group.
-    const client = await read('client');
-    expect(client.agents).toEqual([agentSlug('client')]);
-    expect(client.groups).toEqual([groupSlug('client')]);
-    // The team role keeps every row: a team agent may delegate to an admin one.
-    const team = await read('team');
-    expect(team.agents).toEqual(LEVELS.map(agentSlug).sort());
-    expect(team.groups).toEqual(LEVELS.map(groupSlug).sort());
-    const pub = await read('public');
-    expect(pub.agents).toEqual(LEVELS.map(agentSlug).sort());
-  });
-
-  it('logins: no grant for the client role, the brain id still resolves', async () => {
-    await expect(
-      m.runInLevelRoleForTest('client', () =>
-        m.db.execute(sqlTag`select id from auth.users limit 1`),
-      ),
-    ).rejects.toMatchObject({ cause: { code: '42501' } });
-    const [brain] = (await m.runInLevelRoleForTest('client', () =>
-      m.db.execute(sqlTag`select mantle_brain_id() as id`),
-    )) as unknown as { id: string }[];
-    expect(brain!.id).toBe(anchor);
-    // The team role still reads the columns the matrix names.
-    const rows = (await m.runInLevelRoleForTest('team', () =>
-      m.db.execute(sqlTag`select id, is_owner from auth.users where id = ${anchor}`),
-    )) as unknown as unknown[];
-    expect(rows).toHaveLength(1);
-  });
-
-  it('the brain owner resolves under the client viewer (no login grant needed)', async () => {
-    const saved = process.env.ALLOWED_USER_ID;
-    delete process.env.ALLOWED_USER_ID;
-    try {
-      expect(await m.runInLevelRoleForTest('client', () => m.resolveSingleOwnerId())).toBe(anchor);
-    } finally {
-      if (saved !== undefined) process.env.ALLOWED_USER_ID = saved;
-    }
   });
 
   // There is no client login since W8a: only the member half of the old

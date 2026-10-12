@@ -8,7 +8,7 @@
  *  - the scope reads what Team holds and nothing of Admin's;
  *  - a lost scope FAILS CLOSED: a query built in the turn and run after it
  *    ended, or run from a callback scheduled outside the turn, is refused,
- *    never sent on the system pool; a level question throws; nesting another
+ *    never sent on the system pool; it is never system work; nesting another
  *    scope is refused, the same scope runs as is;
  *  - the read rules 0254 adds for the workspace role: agents, tool groups
  *    (adminOnly, connectors as resources), and the per-login stores (R3).
@@ -189,9 +189,9 @@ describe.skipIf(!URL)('assistant turn scope (W4b)', () => {
     }
   });
 
-  it('a level question throws; another scope is refused; the same scope nests', async () => {
+  it('never system work; another scope is refused; the same scope nests', async () => {
     await m.withTurnScope(scope(), async () => {
-      expect(() => m.currentViewerLevel()).toThrow(m.ScopeLevelError);
+      expect(m.isSystemScope()).toBe(false);
       await expect(m.withScope(scope(), async () => 1)).rejects.toThrow(/already inside/);
       await expect(m.withTurnScope({ ...scope(), ws: [admin] }, async () => 1)).rejects.toThrow(
         /another scope/,

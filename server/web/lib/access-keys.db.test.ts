@@ -161,7 +161,6 @@ describe.skipIf(!URL)('inbound API keys', () => {
     const ids = keys.map((k) => String(k.id));
     if (ids.length) await sql`delete from audit_log where detail->>'keyId' in ${sql(ids)}`;
     await sql`delete from access_keys where login_id in ${sql(all)}`;
-    await sql`delete from mcp_login_access where login_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
   });

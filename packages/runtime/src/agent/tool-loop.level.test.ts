@@ -1,12 +1,12 @@
 /**
  * The tool loop runs in the agent's scope (member logins Phase 0b, workspaces
- * W5b2): for a team-level agent, the model call and every tool dispatch run
- * inside the scope the R6 shim (withViewer) enters for it, never as system
- * work, so the grants decide what the tools read. The audit removed this wrap
- * and every test stayed green; this pins it. No database: the dispatcher and
- * the model are faked, each records the scope it runs in, and withViewer
- * enters the scope viewerScopeFor gives an agent on no workspace (it reads
- * nothing).
+ * W5b2, W8c): for the assistant of a workspace other than Admin, the model
+ * call and every tool dispatch run inside a turn scope of that workspace,
+ * never as system work, so row security decides what the tools read. The
+ * audit removed this wrap and every test stayed green; this pins it. No
+ * database: the dispatcher and the model are faked, each records the scope
+ * it runs in, the agent's workspace lookups answer a live, non-Admin
+ * workspace, and withTurnScope enters the scope alone.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { currentScope } from '@mantle/db/viewer';
@@ -18,7 +18,6 @@ const h = vi.hoisted(() => ({ levels: [] as string[] }));
 function where(): string {
   const s = currentScope();
   if (s.kind === 'system') return 'admin';
-  if (s.kind === 'level') return `level:${s.level}`;
   return `${s.kind}(${s.ws.join(',')})`;
 }
 
@@ -57,20 +56,33 @@ vi.mock('@mantle/tools', async () => ({
 }));
 
 vi.mock('@mantle/db', async () => {
-  const { runInViewerScope } = await import('@mantle/db/viewer');
+  const { asSystem, runInViewerScope } = await import('@mantle/db/viewer');
+  // Stand-ins for the tables the agent's workspace lookups read
+  // (agent-viewer.ts, on the system pool): a live workspace that is not
+  // Admin.
+  const workspaces = { id: 'workspaces.id' };
+  const workspaceUsers = { workspaceId: 'wu.workspace_id', loginId: 'wu.login_id' };
+  const select = () => ({
+    from: (table: unknown) => {
+      const rows =
+        table === workspaces
+          ? [{ isAdmin: false, ownerId: 'owner-1', archivedAt: null }]
+          : [{ moderator: false }];
+      const chain: Record<string, unknown> = { where: () => chain, limit: async () => rows };
+      return chain;
+    },
+  });
   return {
     get systemDb(): unknown {
       return (this as { db: unknown }).db;
     },
-    db: {},
+    db: { select },
     pendingToolCalls: {},
-    // The R6 shim without a database: 'admin' is system work; any lower
-    // level enters the workspace scope of an agent on no workspace.
-    withViewer: vi.fn((level: string, _for: unknown, fn: () => Promise<unknown>) =>
-      level === 'admin'
-        ? fn()
-        : runInViewerScope({ kind: 'assistant', loginId: null, ws: [], modWs: [] }, fn),
-    ),
+    asSystem,
+    workspaces,
+    workspaceUsers,
+    // A turn scope without a database: the scope alone.
+    withTurnScope: vi.fn((scope: never, fn: () => Promise<unknown>) => runInViewerScope(scope, fn)),
   };
 });
 
@@ -130,22 +142,23 @@ beforeEach(() => {
 });
 
 describe('runToolLoop runs in the agent scope', () => {
-  it('a team agent: the model call and the tool dispatch run in its workspace scope', async () => {
-    const res = await run({ agentId: 'a1', agentSlug: 'team-responder', agentLevel: 'team' });
+  it('the Team workspace’s assistant: the model call and the tool dispatch run in its workspace scope', async () => {
+    const res = await run({
+      agentId: 'a1',
+      agentSlug: 'team-responder',
+      agentWorkspaceId: 'ws-team',
+    });
     expect(res.reply).toBe('done');
-    expect(h.levels).toEqual(['model:assistant()', 'dispatch:assistant()', 'model:assistant()']);
+    expect(h.levels).toEqual([
+      'model:assistant(ws-team)',
+      'dispatch:assistant(ws-team)',
+      'model:assistant(ws-team)',
+    ]);
     expect(where()).toBe('admin'); // the scope ends with the loop
   });
 
-  it('control: an admin agent runs at admin', async () => {
-    await run({ agentId: 'a1', agentSlug: 'saskia', agentLevel: 'admin' });
+  it('control: a helper answering no login is system work', async () => {
+    await run({ agentId: 'a1', agentSlug: 'saskia' });
     expect(h.levels).toEqual(['model:admin', 'dispatch:admin', 'model:admin']);
-  });
-
-  it('an agent run that does not say its level is refused', async () => {
-    await expect(run({ agentId: 'a1', agentSlug: 'team-responder' })).rejects.toThrow(
-      /needs agentLevel/,
-    );
-    expect(h.levels).toEqual([]);
   });
 });

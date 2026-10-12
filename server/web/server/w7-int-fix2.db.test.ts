@@ -390,7 +390,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
       await expect(rt.withAgentScope(agent, async () => 1, { loginId: member })).rejects.toThrow(
         /not a user of the Admin workspace/,
       );
-      const helper = { id: null, ownerId: owner, audience: 'admin', workspaceId: null };
+      const helper = { id: null, ownerId: owner, workspaceId: null };
       await expect(
         rt.withAgentScope(helper, async () => 1, { ownerLoginId: member }),
       ).rejects.toThrow(/not a user of the Admin workspace/);

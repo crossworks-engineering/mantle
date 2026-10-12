@@ -512,34 +512,20 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     expect(seenByB).not.toContain(`${tag} chat of A`);
   });
 
-  it('test 10: currentScope reports the scope; currentViewerLevel refuses inside a workspace scope', async () => {
+  it('test 10: currentScope reports the scope (system or a workspace scope; no level scope since W8c)', async () => {
     expect(m.currentScope()).toEqual({ kind: 'system' });
-    await m.runInLevelRoleForTest('team', async () => {
-      expect(m.currentScope()).toEqual({ kind: 'level', level: 'team' });
-    });
     await m.withScope({ kind: 'assistant', loginId: null, ws: [ws.team], modWs: [] }, async () => {
       expect(m.currentScope().kind).toBe('assistant');
-      expect(() => m.currentViewerLevel()).toThrow(m.ScopeLevelError);
     });
   });
 
-  it('W5b1: levelOfScope and scopeHasArea, kind by kind (plan S2)', async () => {
-    // System work: admin, every area, never an unknown area.
-    expect(m.levelOfScope(m.currentScope())).toBe('admin');
+  it('W5b1: scopeHasArea, kind by kind (plan S2)', async () => {
+    // System work: every area, never an unknown area.
     expect(m.isSystemScope()).toBe(true);
     expect(await m.scopeHasArea('users')).toBe(true);
     expect(await m.scopeHasArea('nope' as never)).toBe(false);
-    // A level scope: its level, no area.
-    await m.runInLevelRoleForTest('team', async () => {
-      expect(m.levelOfScope(m.currentScope())).toBe('team');
-      expect(m.inLevelScope('team')).toBe(true);
-      expect(m.inLevelScope('client')).toBe(false);
-      expect(m.isSystemScope()).toBe(false);
-      expect(await m.scopeHasArea('settings')).toBe(false);
-    });
-    // A workspace scope: no level; an area only when it holds the Admin workspace.
+    // A workspace scope: an area only when it holds the Admin workspace.
     await m.withScope({ kind: 'user', loginId: userA, ws: [ws.team], modWs: [] }, async () => {
-      expect(() => m.levelOfScope(m.currentScope())).toThrow(m.ScopeLevelError);
       expect(m.isSystemScope()).toBe(false);
       expect(await m.scopeHasArea('settings')).toBe(false);
     });
@@ -594,8 +580,6 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     await m.withScope({ kind: 'link', loginId: null, ws: [ws.admin], modWs: [] }, async () => {
       expect(await m.scopeHasArea('settings')).toBe(false);
     });
-    // An unknown kind has no level (fails closed).
-    expect(() => m.levelOfScope({ kind: 'robot' } as never)).toThrow(m.ScopeLevelError);
   });
 
   it('test 6: a user scope may place an item only where it may edit, and move only what it manages', async () => {
@@ -862,13 +846,9 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       mantle_scope_has_area: ['mantle_view_user'],
       // W5b1 (0256): the brain's Team workspace id, for the grant reads that
       // replace the level columns; one id every login of the brain may know.
-      mantle_brain_team_ws: [
-        'mantle_view_client',
-        'mantle_view_public',
-        'mantle_view_space',
-        'mantle_view_team',
-        'mantle_view_user',
-      ],
+      // The workspace role only since W8c (0273: the retired roles hold no
+      // right).
+      mantle_brain_team_ws: ['mantle_view_user'],
     };
     expect(
       rows
@@ -1012,7 +992,8 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
   });
 
   /** A transaction on the personal-space role for userA's space, as the
-   *  space pool runs it (row security on, its own login). */
+   *  space pool ran it (row security on, its own login). Retired since W8c:
+   *  it holds no right any more. */
   const asSpaceRole = async () => {
     const [s] = await admin<{ id: string }[]>`
       select id from spaces where kind = 'personal' and login_id = ${userA}`;
@@ -1029,7 +1010,9 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     const folder = randomUUID();
     await admin`insert into nodes (id, owner_id, type, title, path)
                 values (${folder}, ${s!.id}, 'branch', ${`${tag} m2`}, ${`pages.${tag}m2a`}::ltree)`;
-    const t = await asSpaceRole();
+    // On the admin connection (the space role that moved it here writes
+    // nothing since W8c): a space row needs no heads.
+    const t = await txConn();
     try {
       // The session's own objects: a table of that name whose every write
       // raises, and a view of that name next to it would be the same.
@@ -1047,7 +1030,8 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
         { n: number }[]
       >`select count(*)::int as n from pg_temp.mantle_moved_nodes`;
       expect(n!.n).toBe(0);
-      // And the definer's own table is closed to the role.
+      // And the definer's own table is closed to the workspace role.
+      await t.c`set local role mantle_view_user`;
       await expect(t.c`select 1 from public.mantle_moved_nodes`).rejects.toMatchObject({
         code: '42501',
       });
@@ -1109,28 +1093,17 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     expect(r!.l).toBe(userB);
   });
 
-  it('re-audit LOW b: the space role sets a node login only to nothing or its own', async () => {
+  it('re-audit LOW b: the space role writes no node at all (retired, W8c)', async () => {
     const [s] = await admin<{ id: string }[]>`
       select id from spaces where kind = 'personal' and login_id = ${userA}`;
     const id = randomUUID();
     await admin`insert into nodes (id, owner_id, type, title, path)
                 values (${id}, ${s!.id}, 'page', ${`${tag} lowb`}, 'pages')`;
     try {
-      const other = await asSpaceRole();
-      try {
-        await expect(
-          other.c`update nodes set login_id = ${userB} where id = ${id}`,
-        ).rejects.toThrow(/login can only be your own/);
-      } finally {
-        await other.rollback();
-      }
       const own = await asSpaceRole();
       try {
-        await own.c`update nodes set login_id = ${userA} where id = ${id}`;
-        await own.c`update nodes set login_id = null where id = ${id}`;
         await expect(
-          own.c`insert into nodes (owner_id, type, title, path, login_id)
-                values (${own.spaceId}, 'page', ${`${tag} lowb2`}, 'pages', ${userB})`,
+          own.c`update nodes set login_id = ${userA} where id = ${id}`,
         ).rejects.toMatchObject({ code: '42501' });
       } finally {
         await own.rollback();

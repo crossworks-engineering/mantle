@@ -1,11 +1,11 @@
 /**
  * Every tool of the Team assistant's groups, run in its turn scope (workspaces
  * W4b) through dispatchTool, as a turn calls it: the workspace role with the
- * scope [Team], each query its own short transaction. None may fail on a missing read rule (permission denied), ask
- * for a viewer level (a workspace scope has none), or lose the scope. The
- * team-level groups (team-read, formulas-eval) and what the run-time cap keeps
- * of team-read-admin (nothing: it is adminOnly) are swept. Also the whole
- * turn's own reads: the context loader and the tool groups it resolves.
+ * scope [Team], each query its own short transaction. None may fail on a
+ * missing read rule (permission denied) or lose the scope. The Team
+ * assistant's groups (team-read, formulas-eval) and what the run-time cap
+ * keeps of team-read-admin (nothing: it is adminOnly) are swept. Also the
+ * whole turn's own reads: the context loader and the tool groups it resolves.
  *
  * On a scratch database of its own: the workspaces migration is per brain.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/system-manifest/team-groups.turn-scope.db.test.ts
@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { MANIFEST_TOOL_GROUPS } from './manifest';
+import { MANIFEST_ADMIN_ONLY_GROUPS, MANIFEST_TOOL_GROUPS } from './manifest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const TEAM_GROUPS = ['team-read', 'formulas-eval'];
@@ -76,13 +76,14 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
     await x(sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     // The manifest's groups the Team assistant holds (a scratch brain has no
-    // seed): two at team level, and team-read-admin, adminOnly.
+    // seed): team-read, formulas-eval, and team-read-admin, adminOnly (as the
+    // seeder writes them: no level, admin_only from the manifest).
     for (const g of MANIFEST_TOOL_GROUPS.filter((g) =>
       [...TEAM_GROUPS, 'team-read-admin'].includes(g.slug),
     )) {
-      await x(sqlTag`insert into tool_groups (owner_id, slug, name, tool_slugs, audience, admin_only)
+      await x(sqlTag`insert into tool_groups (owner_id, slug, name, tool_slugs, admin_only)
         values (${owner}, ${g.slug}, ${g.name}, ${`{${g.toolSlugs.join(',')}}`}::text[],
-                ${g.level ?? 'admin'}, ${g.slug === 'team-read-admin'})`);
+                ${MANIFEST_ADMIN_ONLY_GROUPS.includes(g.slug)})`);
     }
     await x(sqlTag`select * from mantle_ws_migrate()`);
     const [ws] = (await x(
@@ -124,7 +125,7 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
     rmSync(root, { recursive: true, force: true });
   }, 60_000);
 
-  it('no tool fails on a read rule, a level question or a lost scope', async () => {
+  it('no tool fails on a read rule or a lost scope', async () => {
     const { BUILTIN_TOOLS, dispatchTool } = await import('@mantle/tools');
     const none = '00000000-0000-4000-8000-000000000000';
     const page = ids.page ?? none;
@@ -190,11 +191,11 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
         const cause = (err as { cause?: { message?: string } }).cause?.message ?? '';
         outcome = `threw: ${(err as Error).name} ${cause || (err as Error).message}`;
       }
-      // A missing read rule, a level question, a lost scope, a refused
+      // A missing read rule, a lost scope, a refused
       // scope change, an unscoped hand-off, an unnamed exit to the system
       // pool: each is a tool that does not work in the Team turn.
       if (
-        /permission denied|no viewer level|outside its turn scope|AgentWorkspaceError|another workspace|already inside another scope|would run unscoped|must carry that scope|allowlisted reason|ScopeLostError|TurnScopeExitError/i.test(
+        /permission denied|outside its turn scope|AgentWorkspaceError|another workspace|already inside another scope|would run unscoped|must carry that scope|allowlisted reason|ScopeLostError|TurnScopeExitError/i.test(
           outcome,
         )
       ) {
@@ -236,9 +237,9 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
     const [adminWs] = (await x(
       sqlTag`select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'admin'`,
     )) as unknown as { id: string }[];
-    const teamAgent = { audience: 'team', workspaceId: team };
-    const persona = { audience: 'admin', workspaceId: adminWs!.id };
-    const helper = { audience: 'admin', workspaceId: null };
+    const teamAgent = { workspaceId: team };
+    const persona = { workspaceId: adminWs!.id };
+    const helper = { workspaceId: null };
     // The member moderates Team (the login bridge): modWs is Team.
     const seen = await rt.withAgentScope(teamAgent, async () => m.currentScope(), {
       loginId: member,

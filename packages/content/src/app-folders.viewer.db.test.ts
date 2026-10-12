@@ -1,9 +1,9 @@
 /**
  * The Apps launcher for members, on a real, migrated Postgres
- * (./app-folders.ts, `appLauncher`): the apps are read as the real team
- * role, and the folders are the brain's rows on the way to those apps and
- * nothing else, as the route answers them (GET /api/member/apps). The client
- * launcher went with the client portal in workspaces W5c.
+ * (./app-folders.ts, `appLauncher`): the apps are read in the member's
+ * workspace scope, and the folders are the brain's rows on the way to those
+ * apps and nothing else, as the route answers them (GET /api/member/apps).
+ * The client launcher went with the client portal in workspaces W5c.
  *
  *  - a member sees an app inside a folder Team holds (the folder's grant,
  *    workspaces W5b2), with the folder's name, icon and colour;
@@ -516,8 +516,9 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
   });
 
   it('refuses to run inside a viewer scope', async () => {
+    // The member's own workspace scope (the level scope went in W8c).
     await expect(
-      m.runInLevelRoleForTest('team', () => folders.appLauncher(brain, 'team', member)),
+      m.withViewer({ login: member }, () => folders.appLauncher(brain, 'team', member)),
     ).rejects.toThrow(/admin pool/);
   });
 });

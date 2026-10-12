@@ -33,19 +33,19 @@ CLI `pnpm seed:*` scripts, and the `/settings/config` checker **all** derive fro
 The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 **additive and product-owned-only**:
 
-| Manifest change                                                                              | Reaches existing brains automatically?                                                                                   | How                                   |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
-| Tool-group membership                                                                        | ✅ overwrite                                                                                                             | `seedToolCapabilities`                |
-| Tool-group **level**                                                                         | ❌ gone from the manifest and the code (workspaces W8c): a group is system-wide or Admin only (`adminOnly`)                | `seedToolCapabilities`                |
+| Manifest change       | Reaches existing brains automatically?                                                                      | How                    |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Tool-group membership | ✅ overwrite                                                                                                | `seedToolCapabilities` |
+| Tool-group **level**  | ❌ gone from the manifest and the code (workspaces W8c): a group is system-wide or Admin only (`adminOnly`) | `seedToolCapabilities` |
 
-| Skill **body** (`SKILL_INSTRUCTIONS`)                                                        | ✅ overwrite                                                                                                             | `applyManifest` `skillMode`           |
-| **Persona** skill links (by ROLE, reaches operator personas too)                             | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept                 | `reconcilePersonaCapabilitiesByRole`  |
-| Persona default tool groups (by ROLE)                                                        | ✅ union (add-only)                                                                                                      | `reconcilePersonaCapabilitiesByRole`  |
-| New **specialist** agent                                                                     | ✅ create + wire delegation                                                                                              | `provisionMissingSpecialists`         |
-| Specialist tool groups                                                                       | ✅ union (add-only)                                                                                                      | `grantSpecialistCapabilities`         |
-| Specialist skill links                                                                       | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept                                       | `grantSpecialistCapabilities`         |
-| Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` and the owner switches `tool_loading` / `suggest_follow_up` / `top_p` excepted) | ✅ overwrite, switches kept | `syncSpecialistDefs`                  |
-| New **required** worker                                                                      | ✅ create                                                                                                                | `seedManifestWorkers({requiredOnly})` |
+| Skill **body** (`SKILL_INSTRUCTIONS`) | ✅ overwrite | `applyManifest` `skillMode` |
+| **Persona** skill links (by ROLE, reaches operator personas too) | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept | `reconcilePersonaCapabilitiesByRole` |
+| Persona default tool groups (by ROLE) | ✅ union (add-only) | `reconcilePersonaCapabilitiesByRole` |
+| New **specialist** agent | ✅ create + wire delegation | `provisionMissingSpecialists` |
+| Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
+| Specialist skill links | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
+| Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` and the owner switches `tool_loading` / `suggest_follow_up` / `top_p` excepted) | ✅ overwrite, switches kept | `syncSpecialistDefs` |
+| New **required** worker | ✅ create | `seedManifestWorkers({requiredOnly})` |
 
 **Deliberately NOT auto-propagated** (operator-owned / overlay):
 

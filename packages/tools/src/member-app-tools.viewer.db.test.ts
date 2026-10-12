@@ -4,7 +4,8 @@
  * only when the app declares it, it is a built-in without confirmation, it is
  * not on the refused list, and an ENABLED tool group at team level or lower
  * holds it. Checked per call, so a group raised to admin or switched off
- * refuses the next call. A dispatch on the team role reads only team items.
+ * refuses the next call. A dispatch in a workspace scope reads only what the
+ * scope holds.
  * `app_tools_set` warns with the same words when a workspace other than
  * Admin holds the app (its grants, workspaces W5b2 plan R2).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/member-app-tools.viewer.db.test.ts
@@ -154,11 +155,10 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     }
   });
 
-  it('dispatches on the team role: row security applies, unlike the admin pool', async () => {
-    // Row security on the team role is keyed on the box's one brain
-    // (mantle_brain_id()), which this test's brain is not: on the team role
-    // the tool sees none of its notes, on the admin pool it sees both. That
-    // difference is the proof the call ran on the limited role.
+  it('dispatches in a workspace scope: row security applies, unlike the admin pool', async () => {
+    // A scope that holds no workspace (W8c: the level roles are gone) sees
+    // none of the notes; the admin pool sees both. That difference is the
+    // proof the call ran on the workspace role.
     const v = await verdict('note_list');
     if (!v.ok) throw new Error(v.reason);
     const run = () =>
@@ -169,9 +169,9 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
       );
     const titles = (res: Awaited<ReturnType<typeof run>>) =>
       (res.ok ? (res.output as { title: string }[]) : []).map((r) => r.title);
-    const asTeam = await m.runInLevelRoleForTest('team', run);
-    expect(asTeam.ok).toBe(true);
-    expect(titles(asTeam)).toEqual([]);
+    const scoped = await m.withViewer({ agent: null }, run);
+    expect(scoped.ok).toBe(true);
+    expect(titles(scoped)).toEqual([]);
     const asAdmin = await run();
     expect(titles(asAdmin)).toEqual(
       expect.arrayContaining([`${tag} team note`, `${tag} admin note`]),

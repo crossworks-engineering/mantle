@@ -92,7 +92,6 @@ describe.skipIf(!URL)("a member's own MCP screen", () => {
     await sql`delete from oauth_access_tokens where client_id in (${clientA}, ${clientB})`;
     await sql`delete from oauth_auth_codes where client_id in (${clientA}, ${clientB})`;
     await sql`delete from oauth_clients where id in (${clientA}, ${clientB})`;
-    await sql`delete from mcp_login_access where login_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
   });

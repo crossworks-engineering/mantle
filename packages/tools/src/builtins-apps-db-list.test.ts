@@ -20,16 +20,14 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   };
 });
 
-import { runInLevelRoleForTest } from '@mantle/db';
 import { APP_DATA_TOOLS } from './builtins-apps';
 
 const list = APP_DATA_TOOLS.find((t) => t.slug === 'app_db_list')!;
 
 describe('app_db_list', () => {
   it('reports a lost app on its own line and lists the rest', async () => {
-    const res = await runInLevelRoleForTest('admin', () =>
-      list.handler({}, { ownerId: 'o1', surface: { kind: 'web' } }),
-    );
+    // System work on the owner's surface: every app.
+    const res = await list.handler({}, { ownerId: 'o1', surface: { kind: 'web' } });
     if (!res.ok) throw new Error(res.error);
     const { apps } = res.output as { apps: Record<string, unknown>[] };
     expect(apps).toHaveLength(2);

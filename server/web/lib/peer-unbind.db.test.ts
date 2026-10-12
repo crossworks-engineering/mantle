@@ -83,7 +83,6 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
 
   afterAll(async () => {
     await sql`delete from access_keys where login_id in (${member}, ${client})`;
-    await sql`delete from mcp_login_access where login_id in (${member}, ${client})`;
     await sql`delete from nodes where id in ${sql(Object.values(nodesOf))}`;
     await sql`delete from spaces where login_id in (${member}, ${client})`;
     await sql`delete from auth.users where id in (${member}, ${client})`;

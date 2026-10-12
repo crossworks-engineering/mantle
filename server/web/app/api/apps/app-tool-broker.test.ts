@@ -4,7 +4,8 @@
  * holds keeps the team rules, because the app reads only what every holder
  * reads; an app Admin alone holds keeps the owner's rules. The rule
  * (appToolLevel, appToolScope) is the real one; the verdict records the
- * level it was asked at. No database.
+ * rules it was asked at, and the dispatch records whether it ran as system
+ * work or inside withViewer for the app's scope (W8c). No database.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,23 +18,29 @@ const h = vi.hoisted(() => ({
   toolRules: 'admin' as 'admin' | 'team',
   toolSlugs: ['contact_list'] as string[],
   levels: [] as string[],
-  dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
-  viewers: [] as Array<{ level: string; actsFor: unknown }>,
+  // 'system' when the dispatch ran as is, else the actsFor withViewer had.
+  dispatched: [] as Array<{ ranAs: unknown; ctx: Record<string, unknown> }>,
+  viewers: [] as unknown[],
+  current: null as unknown,
 }));
 
 // No database: the workspace scope withViewer enters is read on Postgres
 // (proven in packages/db/src/viewer-shim.db.test.ts). Here it records who the
-// broker acts for and runs the dispatch at the level it names.
+// broker acts for, and marks the dispatch it wraps as run in that scope.
 vi.mock('@mantle/db', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/db')>();
   return {
     ...real,
-    withViewer: vi.fn(
-      async (level: 'admin' | 'team' | 'client', actsFor: unknown, fn: () => Promise<unknown>) => {
-        h.viewers.push({ level, actsFor });
-        return real.runInLevelRoleForTest(level, fn);
-      },
-    ),
+    withViewer: vi.fn(async (actsFor: unknown, fn: () => Promise<unknown>) => {
+      h.viewers.push(actsFor);
+      const outer = h.current;
+      h.current = actsFor;
+      try {
+        return await fn();
+      } finally {
+        h.current = outer;
+      }
+    }),
   };
 });
 
@@ -70,7 +77,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 }));
 vi.mock('@mantle/tools', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/tools')>();
-  const { currentViewerLevel } = await import('@mantle/db');
   return {
     ...real,
     appToolVerdict: vi.fn(
@@ -90,7 +96,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
       },
     ),
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
-      h.dispatched.push({ level: currentViewerLevel(), ctx });
+      h.dispatched.push({ ranAs: h.current ?? 'system', ctx });
       return { ok: true, output: [] };
     }),
   };
@@ -115,6 +121,7 @@ beforeEach(() => {
   h.levels.length = 0;
   h.dispatched.length = 0;
   h.viewers.length = 0;
+  h.current = null;
 });
 
 describe('owner app tool broker: team rules when another workspace holds the app', () => {
@@ -122,8 +129,10 @@ describe('owner app tool broker: team rules when another workspace holds the app
     const res = await call('contact_list');
     expect(res.status).toBe(200);
     expect(h.levels).toEqual(['admin']);
+    // System work: no workspace scope is entered.
+    expect(h.viewers).toEqual([]);
     expect(h.dispatched[0]).toMatchObject({
-      level: 'admin',
+      ranAs: 'system',
       ctx: { ownerId: ANCHOR, surface: { kind: 'web' } },
     });
   });
@@ -133,9 +142,10 @@ describe('owner app tool broker: team rules when another workspace holds the app
     const res = await call('contact_list');
     expect(res.status).toBe(200);
     expect(h.levels).toEqual(['team']);
-    expect(h.viewers).toEqual([{ level: 'team', actsFor: { login: ACTOR, app: { id: APP } } }]);
+    // The dispatch runs inside the app's scope for the acting login.
+    expect(h.viewers).toEqual([{ login: ACTOR, app: { id: APP } }]);
     expect(h.dispatched[0]).toMatchObject({
-      level: 'team',
+      ranAs: { login: ACTOR, app: { id: APP } },
       ctx: {
         ownerId: ANCHOR,
         surface: { kind: 'team', loginId: ACTOR, contactName: 'Jo', privateReads: false },

@@ -457,7 +457,6 @@ export async function withRunScope<T>(
     if (!wsId) return fn();
   }
   return withAgentScope({ workspaceId: wsId }, fn, {
-
     loginId: run.loginId ?? null,
   });
 }

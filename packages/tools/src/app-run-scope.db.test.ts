@@ -1,7 +1,7 @@
 /**
  * Workspaces W5b2 part B fix round 1, H1 (plan R2): an app run reads through
  * the APP, never the runner's whole login. The brokers call
- * appToolScope(level, runner, app) and withViewer(viewer, actsFor, fn); the
+ * appToolScope(level, runner, app) and withViewer(actsFor, fn); the
  * scope is the app's holders beyond Admin met with the runner's workspaces.
  * On a scratch database of its own. Checked:
  *  - an admin's run of a Team-held app: note_get on an Admin-only note is
@@ -45,7 +45,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
   /** The workspaces the current scope reads (none for system work). */
   const scopeWs = (): readonly string[] => {
     const s = m.currentScope();
-    return s.kind === 'system' || s.kind === 'level' ? [] : s.ws;
+    return s.kind === 'system' ? [] : s.ws;
   };
   const tool = (slug: string) => {
     const def = builtins.BUILTIN_TOOLS.find((t) => t.slug === slug);
@@ -55,7 +55,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
   /** Run note_get and note_list as `login` running `app` at team rules. */
   const run = async (login: string, app: import('@mantle/db').AppRunFor) => {
     const scope = level.appToolScope('team', { loginId: login, name: 'Runner' }, app);
-    return m.withViewer(scope.viewer, scope.actsFor, async () => {
+    return m.withViewer(scope.actsFor, async () => {
       const ctx = { ownerId: owner, surface: scope.surface } as Parameters<
         ReturnType<typeof tool>['handler']
       >[1];

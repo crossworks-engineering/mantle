@@ -44,7 +44,7 @@ vi.mock('@/lib/member-space', async (importOriginal) => ({
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  withViewer: vi.fn(async (_v: unknown, _o: unknown, fn: () => Promise<unknown>) => fn()),
+  withViewer: vi.fn(async (_o: unknown, fn: () => Promise<unknown>) => fn()),
 }));
 vi.mock('@mantle/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

@@ -207,7 +207,6 @@ export function viewerRolePlan(
 export function parseViewerLoginRole(
   role: string,
 ): { level: PoolRole | RetiredPoolRole; database: string } | null {
-
   for (const level of [...POOL_ROLES, ...RETIRED_POOL_ROLES]) {
     const prefix = `${viewerRoleName(level)}_`;
     if (role.startsWith(prefix) && role.length > prefix.length) {

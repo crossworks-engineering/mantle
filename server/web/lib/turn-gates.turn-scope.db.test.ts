@@ -11,7 +11,7 @@
  *  - withRunScope: a Team run re-enters [Team], an Admin run the system
  *    pool, a run whose login is no user of the workspace is refused;
  *  - spilled results (loadResult): only the scope's own login's rows of the
- *    scope; a level reader never reads a non-Admin workspace's spill;
+ *    scope;
  *  - a member's own MCP call of a connector tool (callLoginTool): the same
  *    resource, Write and Moderator rules.
  *
@@ -86,14 +86,14 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
       (${stranger}, ${`gs-${stranger.slice(0, 8)}@example.invalid`}, 'x', false, 'member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
-    // An admin-level connector: the bridge puts it on Admin only; the tests
-    // set Team's resource row by hand.
+    // A connector the bridge puts on Admin only; the tests set Team's
+    // resource row by hand.
     const binding = JSON.stringify({
       service: CONN,
       mcp: { url: 'https://mcp.example.invalid/mcp' },
     });
-    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration)
-      values (${owner}, ${CONN}, 'Connector X', ARRAY['conn_x_do']::text[], 'admin', true, ${binding}::jsonb)`);
+    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, enabled, integration)
+      values (${owner}, ${CONN}, 'Connector X', ARRAY['conn_x_do']::text[], true, ${binding}::jsonb)`);
     await x(sql`select * from mantle_ws_migrate()`);
     const wsRows = await x<{ id: string; key: string }>(sql`
       select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
@@ -210,7 +210,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
         rt.withRunScope({ workspaceId: team, loginId: stranger }, async () => 1),
       ).rejects.toBeInstanceOf(rt.AgentWorkspaceError);
       await expect(
-        rt.withAgentScope({ audience: 'team', workspaceId: team }, async () => 1, {
+        rt.withAgentScope({ workspaceId: team }, async () => 1, {
           loginId: stranger,
         }),
       ).rejects.toThrow(/not a user of the assistant’s workspace/);
@@ -238,10 +238,6 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     for (const handle of [h.other, h.admin, h.none]) {
       expect(await read(handle)).toMatchObject({ ok: false });
     }
-    // A level reader never reads a non-Admin workspace's spill.
-    expect(
-      await m.runInLevelRoleForTest('team', () => tools.readResultPage(owner, h.mine, 1, 10_000)),
-    ).toMatchObject({ ok: false });
   });
 
   it('draw_get in a Team turn: Team-visible images only, never an unnamed exit (fix round 2)', async () => {

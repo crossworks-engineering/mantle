@@ -19,7 +19,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
 import { createEmptyScratchDatabase } from './test-support';
-import { POOL_ROLES, dropViewerLogins, ensureViewerRoles } from './viewer-roles';
+import {
+  POOL_ROLES,
+  RETIRED_POOL_ROLES,
+  dropViewerLogins,
+  ensureViewerRoles,
+} from './viewer-roles';
 import { viewerDatabaseUrl, viewerLoginRoleName, viewerRolePassword } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -122,7 +127,7 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
 
   it("a brain's login cannot get into another brain's database to SET ROLE there", async () => {
     const [a, b] = brains;
-    for (const level of ['user', 'team'] as const) {
+    for (const level of POOL_ROLES) {
       // Brain A's login, with A's right password, pointed at brain B's database.
       const url = new globalThis.URL(
         viewerDatabaseUrl(a!.url, level, viewerRolePassword(a!.key, level), true),
@@ -139,6 +144,25 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
     );
     url.pathname = `/${a!.name}`;
     await expect(crossRead(url.toString())).rejects.toMatchObject({ code: NO_CONNECT });
+  });
+
+  it('the retired roles cannot log in, and no brain gets a login of its own for one (W8c)', async () => {
+    const sql = postgres(URL!, { max: 1, onnotice: () => {} });
+    try {
+      const shared = RETIRED_POOL_ROLES.map((r) => viewerLoginRoleName(r, null));
+      const rows = await sql<{ rolname: string; rolcanlogin: boolean }[]>`
+        select rolname, rolcanlogin from pg_roles where rolname = any(${shared})`;
+      expect(rows.map((r) => r.rolname).sort()).toEqual([...shared].sort());
+      expect(rows.filter((r) => r.rolcanlogin)).toEqual([]);
+      const own = brains.flatMap((b) =>
+        RETIRED_POOL_ROLES.map((r) => viewerLoginRoleName(r, b.name)),
+      );
+      const made = await sql<{ rolname: string }[]>`
+        select rolname from pg_roles where rolname = any(${own})`;
+      expect(made).toEqual([]);
+    } finally {
+      await sql.end();
+    }
   });
 
   it('migrating again keeps the database closed and its own logins in', async () => {

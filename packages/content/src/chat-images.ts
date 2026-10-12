@@ -141,7 +141,8 @@ export async function chatImagesFor(
 ): Promise<Map<string, ChatImageKind>> {
   const out = new Map<string, ChatImageKind>();
   if (!ids.length) return out;
-  const rows = await withViewer({ login: loginId },
+  const rows = await withViewer(
+    { login: loginId },
     async () =>
       await db
         .select({ id: nodes.id, type: nodes.type })

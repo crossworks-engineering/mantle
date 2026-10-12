@@ -72,7 +72,6 @@ describe.skipIf(!URL)('the corpus map and client-written titles', () => {
       id: randomUUID(),
       ownerId,
       slug: `assistant-${tag}`,
-      audience: 'admin',
       memoryConfig: {
         digest_limit: 0,
         fact_limit: 0,

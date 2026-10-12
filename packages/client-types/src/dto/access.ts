@@ -178,7 +178,6 @@ export type ClientReportRef = {
   title: string | null;
 };
 
-
 /** One item at client level, as the report lists it. */
 export type ClientReportItem = {
   id: string;

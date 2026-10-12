@@ -1,10 +1,13 @@
 /**
- * A tool group's level on the owner API, on a real, migrated Postgres. Only
- * the owner check is stood in. Seeds its own brain and removes it.
+ * The tool-group level is gone from the owner API (workspaces W7b, W8c), on a
+ * real, migrated Postgres. Only the owner check is stood in. Seeds its own
+ * brain and removes it.
  *
- *  - GET /api/tool-groups and GET /api/tool-groups/:id carry `audience`;
- *  - PATCH /api/access/tool-groups/:slug answers 410 since workspaces W7b
- *    (tool-group levels went; 0268 froze the column), and changes nothing.
+ *  - GET /api/tool-groups and GET /api/tool-groups/:id carry no `audience`
+ *    (W8c: the column is frozen until W10 and nothing reads it), even for a
+ *    group whose frozen column says 'team';
+ *  - PATCH /api/access/tool-groups/:slug answers 410 since W7b and changes
+ *    nothing.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run tool-group-level-routes.db.test
  */
@@ -25,9 +28,9 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Route = (req: Request, ctx?: { params: Promise<any> }) => Promise<Response>;
-type Group = { id: string; slug: string; audience?: string };
+type Group = { id: string; slug: string; name: string; grantedTo?: unknown[] };
 
-describe.skipIf(!URL)('a tool group level on the owner API on Postgres', () => {
+describe.skipIf(!URL)('the tool group level is gone from the owner API on Postgres', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -47,8 +50,9 @@ describe.skipIf(!URL)('a tool group level on the owner API on Postgres', () => {
     });
   const p = (o: Record<string, string>) => ({ params: Promise.resolve(o) });
   const list = async () =>
-    ((await (await r.list!(call('GET'))).json()) as { groups: Group[] }).groups;
-  const levelIn = async (slug: string) => (await list()).find((g) => g.slug === slug)?.audience;
+    ((await (await r.list!(call('GET'))).json()) as { groups: Group[] }).groups.filter((g) =>
+      g.slug.startsWith(tag),
+    );
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -64,13 +68,15 @@ describe.skipIf(!URL)('a tool group level on the owner API on Postgres', () => {
     await m.db.execute(
       sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`,
     );
+    // The held group's frozen column says 'team' (a pre-W7b level): the API
+    // must not answer it.
     await m.db.execute(sqlTag`
       insert into tool_groups (owner_id, slug, name, audience) values
         (${owner}, ${plain}, 'plain group', 'admin'),
         (${owner}, ${held}, 'held group', 'team')`);
     await m.db.execute(sqlTag`
-      insert into agents (id, owner_id, slug, name, model, system_prompt, audience, tool_group_slugs)
-      values (${agent}, ${owner}, ${`${tag}-agent`}, 'A', 'm', 'p', 'team', ${`{${held}}`}::text[])`);
+      insert into agents (id, owner_id, slug, name, model, system_prompt, tool_group_slugs)
+      values (${agent}, ${owner}, ${`${tag}-agent`}, 'A', 'm', 'p', ${`{${held}}`}::text[])`);
   }, 60_000);
 
   afterAll(async () => {
@@ -81,22 +87,25 @@ describe.skipIf(!URL)('a tool group level on the owner API on Postgres', () => {
     await m.closeDb();
   }, 60_000);
 
-  it('the list and the get carry each group level', async () => {
-    expect(await levelIn(plain)).toBe('admin');
-    expect(await levelIn(held)).toBe('team');
-    const id = (await list()).find((g) => g.slug === held)!.id;
+  it('the list and the get carry no level', async () => {
+    const groups = await list();
+    expect(groups.map((g) => g.slug).sort()).toEqual([held, plain].sort());
+    for (const g of groups) expect(g, g.slug).not.toHaveProperty('audience');
+    const id = groups.find((g) => g.slug === held)!.id;
     const res = await r.get!(call('GET'), p({ id }));
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { group: Group }).group.audience).toBe('team');
+    const { group } = (await res.json()) as { group: Group };
+    expect(group.slug).toBe(held);
+    expect(group).not.toHaveProperty('audience');
   });
 
-  it('W7b: the level route answers 410 and the level stays as it was', async () => {
+  it('W7b: the level route answers 410 and changes nothing', async () => {
+    const before = await list();
     for (const body of [{ audience: 'team' }, { audience: 'admin' }, { audience: 'owner' }]) {
       const res = await (r.level as unknown as () => Promise<Response>)();
       expect(res.status, JSON.stringify(body)).toBe(410);
       expect(await res.json()).toMatchObject({ code: 'gone' });
     }
-    expect(await levelIn(plain)).toBe('admin');
-    expect(await levelIn(held)).toBe('team');
+    expect(await list()).toEqual(before);
   });
 });

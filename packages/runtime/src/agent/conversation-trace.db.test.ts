@@ -95,7 +95,6 @@ describe.skipIf(!URL)('the decision trace on a real turn', () => {
       id: randomUUID(),
       ownerId,
       slug: `assistant-${tag}`,
-      audience: 'admin',
       memoryConfig: {
         digest_limit: 0,
         history_limit: 0,

@@ -9,7 +9,6 @@
  * public surface is byte-identical — only the file a symbol lives in moved.
  */
 
-
 // ── Skills ────────────────────────────────────────────────────────────────────
 
 /** A skill as returned by `GET /api/skills`. */

@@ -48,12 +48,7 @@ import {
   effectiveToolSlugs,
 } from './skills';
 import type { ChatMessage } from './messages';
-import {
-  agentTurnScoped,
-  ownerSurfaceLogin,
-  surfaceLoginId,
-  withAgentScope,
-} from './agent-viewer';
+import { agentTurnScoped, ownerSurfaceLogin, surfaceLoginId, withAgentScope } from './agent-viewer';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 
 /** A delegated child's thinking loop args. Inherit = the forwarded budget

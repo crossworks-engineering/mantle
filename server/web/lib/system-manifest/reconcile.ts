@@ -151,7 +151,11 @@ async function agentRows(ownerId: string, roles?: ('responder' | 'assistant')[])
     );
   return rows.map((r) => ({
     ...r,
-    workspace: !r.workspaceId ? ('none' as const) : r.wsIsAdmin ? ('admin' as const) : ('other' as const),
+    workspace: !r.workspaceId
+      ? ('none' as const)
+      : r.wsIsAdmin
+        ? ('admin' as const)
+        : ('other' as const),
   }));
 }
 

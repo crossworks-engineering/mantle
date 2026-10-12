@@ -198,8 +198,8 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
       })
       .returning();
     agent = row!;
-    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience)
-      values (${owner}, ${`${tag}-api`}, 'Sweep API', ${'{}'}::text[], 'admin')`);
+    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs)
+      values (${owner}, ${`${tag}-api`}, 'Sweep API', ${'{}'}::text[])`);
     await x(sql`insert into sandboxes (owner_id, name, image, status, container_id) values
       (${owner}, ${`${tag}-box`}, 'test/image', 'running', 'c1'),
       (${owner}, ${`${tag}-rmbox`}, 'test/image', 'running', 'c2')`);
@@ -302,7 +302,7 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
       let res: { ok: boolean; error?: string };
       try {
         res = await rt.withAgentScope(
-          { id: agent.id, audience: 'admin', workspaceId: adminWs },
+          { id: agent.id, workspaceId: adminWs },
           () =>
             t.dispatchTool(
               {
@@ -336,7 +336,7 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
   it('the stub carries the sandbox and peer tools to their answers', async () => {
     const run = (slug: string) =>
       rt.withAgentScope(
-        { id: agent.id, audience: 'admin', workspaceId: adminWs },
+        { id: agent.id, workspaceId: adminWs },
         () =>
           t.dispatchTool(
             {
@@ -376,7 +376,7 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
     armed = hits;
     try {
       await rt.withAgentScope(
-        { id: agent.id, audience: 'admin', workspaceId: adminWs },
+        { id: agent.id, workspaceId: adminWs },
         () =>
           m
             .asSystem(

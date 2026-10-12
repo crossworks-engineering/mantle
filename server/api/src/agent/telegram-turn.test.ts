@@ -161,12 +161,12 @@ vi.mock('@mantle/db', () => {
     withNodeInsertHeads: async (_o: unknown, _i: unknown, fn: (tx: unknown) => unknown) => fn(db),
     withNodeDeleteHeads: async (_ids: unknown, fn: (tx: unknown) => unknown) => fn(db),
     withDeadlockRetry: async (fn: () => unknown) => fn(),
-    // The R6 shim: a Telegram turn is an admin-level agent's, which runs
-    // as is (system work).
-    withViewer: async (_level: unknown, _for: unknown, fn: () => unknown) => fn(),
+    // The R6 shim, with no database: the scope is faked away and fn runs.
+    withViewer: async (_for: unknown, fn: () => unknown) => fn(),
     // The agent scope's own lookups (agent-viewer.ts): no Admin workspace,
     // a brain not on workspaces, so the helper answering the anchor (a
-    // Telegram turn names it, W7 integration fix) runs at its level.
+    // Telegram turn names it, W7 integration fix) runs through withViewer
+    // above (W8c: no level decides it).
     asSystem: async () => [],
     agents: table('agents'),
     toolGroups: table('toolGroups'),
@@ -618,7 +618,7 @@ describe('handleTelegramMessage: Telegram per paired user (workspaces W7d)', () 
     await runTurn(
       makeMsgRow({ chatLoginId: 'member-1', allowlistStatus: 'allowed' }),
       // The workspace scope itself is withAgentScope's (its own tests);
-      // here the agent answers at its level.
+      // here the scope is faked away.
       makeAgent({ id: 'agent-team', slug: 'team' }),
     );
     expect(h.loopCalls).toHaveLength(1);

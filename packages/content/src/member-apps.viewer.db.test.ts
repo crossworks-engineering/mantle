@@ -6,7 +6,7 @@
  * build, another brain's app, or an app that only has a public link; the
  * levels mean nothing. The workspaces of the member: a workspace scope's own,
  * else the brain's Team (the rule is in the query, so the admin pool proves
- * it). The lookups work on the team role (no draft column is read); the home
+ * it). The lookups work on the workspace role (no draft column is read); the home
  * app is honoured only while a member may run it; the access log names the
  * member login; an app's tool rules come from its holders (R2).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-apps.viewer.db.test.ts
@@ -144,7 +144,6 @@ describe.skipIf(!URL)('apps for members', () => {
     await m.closeDb();
   }, 60_000);
 
-  const team = <T>(fn: () => Promise<T>) => m.runInLevelRoleForTest('team', fn);
   const inField = <T>(fn: () => Promise<T>) =>
     m.withScope({ kind: 'user', loginId: member, ws: [ws.field], modWs: [] }, fn);
 
@@ -199,7 +198,7 @@ describe.skipIf(!URL)('apps for members', () => {
     expect(Object.keys(app ?? {})).not.toContain('draftBuild');
   });
 
-  it('in a workspace scope: the apps the scope holds, on the workspace role', async () => {
+  it('in a workspace scope: the apps the scope holds, on the workspace role (only granted columns)', async () => {
     const apps = await inField(() => ma.listMemberApps(anchor));
     expect(apps.map((a) => a.id)).toEqual([ids.field]);
     expect(apps[0]).toMatchObject({ dataAccess: 'read_write' });
@@ -208,15 +207,6 @@ describe.skipIf(!URL)('apps for members', () => {
     });
     expect(await inField(() => ma.getMemberRunnableApp(anchor, ids.teamRw))).toBeNull();
     expect([...(await inField(() => ma.listTeamLevelAppIds(anchor)))]).toEqual([ids.field]);
-  });
-
-  it('runs on the team role: only granted columns, and row security still applies', async () => {
-    // A draft column (never granted) would be "permission denied" here. Row
-    // security and the Team of the box's own brain then hide a brain that is
-    // not this box's: nothing leaks.
-    expect(await team(() => ma.listMemberApps(anchor))).toEqual([]);
-    expect(await team(() => ma.getMemberRunnableApp(anchor, ids.teamRw))).toBeNull();
-    expect(await team(() => ma.resolveMemberHomeApp(anchor, ids.teamRw))).toBeNull();
   });
 
   it('gives team chat the data of the apps Team holds only (published or not)', async () => {

@@ -35,9 +35,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 vi.mock('@mantle/db/viewer', () => ({
   currentScope: () => ({ kind: 'system' }),
-  levelOfScope: () => 'admin',
   currentWorkspaceScope: () => null,
-  levelsMeet: () => true,
 }));
 vi.mock('@mantle/tracing', () => ({
   startTrace: (_o: unknown, fn: () => unknown) => fn(),
@@ -63,7 +61,6 @@ vi.mock('./skills', () => ({
   effectiveToolSlugs: () => [],
 }));
 vi.mock('./agent-viewer', () => ({
-  agentLevel: () => 'admin',
   // A helper (no workspace): no turn scope of its own.
   agentTurnScoped: async () => false,
   surfaceLoginId: () => null,

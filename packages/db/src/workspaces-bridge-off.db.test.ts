@@ -501,8 +501,10 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
 
 // H2 (owner rule 21.9): a brain that was never moved to workspaces (here:
 // it has a client login) is not switched by 0261. It keeps its levels, its
-// bridge and its level upkeep; members read as before; nothing is archived;
-// mantle_ws_migrate_locked still skips it until it is set up by hand.
+// bridge and its level upkeep; nothing is archived; mantle_ws_migrate_locked
+// still skips it until it is set up by hand. Its members no longer read on
+// the team level role (retired in W8c: the grants are revoked after every
+// migrate).
 describe.skipIf(!URL)('0261 leaves a brain that is not on workspaces alone (H2)', () => {
   let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
   let sql: ReturnType<typeof postgres>;
@@ -518,7 +520,7 @@ describe.skipIf(!URL)('0261 leaves a brain that is not on workspaces alone (H2)'
     return id;
   };
   /** The brain titles the team level role reads (a member's reads before
-   *  the switch). */
+   *  W8c). */
   const teamReads = async () =>
     (
       await sql.begin(async (tx) => {
@@ -570,14 +572,13 @@ describe.skipIf(!URL)('0261 leaves a brain that is not on workspaces alone (H2)'
     });
   });
 
-  it('members read as before, and the levels still change and keep their upkeep', async () => {
-    expect(await teamReads()).toEqual(['inShared', 'teamPage']);
+  it('the levels still change and keep their upkeep; the team level role reads nothing (W8c)', async () => {
+    await expect(teamReads()).rejects.toMatchObject({ code: '42501' });
     await sql`update nodes set audience = 'team' where id = ${ids.adminPage!}`;
     await node('laterInShared', 'page', 'pages.shared');
     const [lv] = await sql<{ i: string | null }[]>`
       select inherited_level as i from nodes where id = ${ids.laterInShared!}`;
     expect(lv!.i).toBe('team');
-    expect(await teamReads()).toEqual(['adminPage', 'inShared', 'laterInShared', 'teamPage']);
   });
 
   // L3: the links were checked once, by 0262. A tick the owner makes on a

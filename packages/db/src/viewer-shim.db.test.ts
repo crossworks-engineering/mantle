@@ -7,9 +7,9 @@
  *    frozen level no longer counts); a disabled login reads nothing;
  *  - an assistant reads its own workspace; one on no workspace, nothing;
  *  - a public link reads no workspace and carries its served list;
- *  - 'admin' is system work; nested in the same scope it runs as is, in
- *    another one it is refused; inside, currentScope() never says system
- *    and a level question throws;
+ *  - system work runs outside it (W8c: no 'admin' argument); nested in the
+ *    same scope it runs as is, in another one it is refused; inside,
+ *    currentScope() never says system, and no level scope is exported;
  *  - the human level-role path (withHumanViewer, withTeamDrafts) is gone
  *    (W5c): nothing exports it and no scope sets the human flag.
  * The static half (every caller names whom it acts for) is
@@ -122,19 +122,19 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
   });
 
   it('a public link reads no workspace and carries its served list', async () => {
-    const out = await m.withViewer({ link: { served: [ids.teamPage!.toUpperCase(), 'not-a-uuid'] } },
+    const out = await m.withViewer(
+      { link: { served: [ids.teamPage!.toUpperCase(), 'not-a-uuid'] } },
       async () => ({ scope: m.currentScope(), titles: await titles() }),
     );
     expect(out.scope).toMatchObject({ kind: 'link', ws: [], served: [ids.teamPage] });
     expect(out.titles).toEqual([]);
   });
 
-  it('admin is system work; nesting keeps the scope or is refused; no level inside', async () => {
-    const sysTitles = await m.withViewer('admin', { login: member }, async () => ({
-      kind: m.currentScope().kind,
-      titles: await titles(),
-    }));
-    expect(sysTitles).toEqual({ kind: 'system', titles: ['adminPage', 'teamPage'] });
+  it('system work is outside any scope; nesting keeps the scope or is refused; no level scope', async () => {
+    // System work no longer goes through withViewer (its level argument went
+    // in W8c): the caller runs fn itself.
+    expect(m.currentScope().kind).toBe('system');
+    expect(await titles()).toEqual(['adminPage', 'teamPage']);
     const nested = await m.withViewer({ login: member }, () =>
       m.withViewer({ login: member }, titles),
     );
@@ -144,14 +144,17 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
     ).rejects.toThrow(/another workspace scope/);
     await m.withViewer({ login: member }, async () => {
       expect(m.currentScope().kind).not.toBe('system');
-      expect(() => m.levelOfScope(m.currentScope())).toThrow(m.ScopeLevelError);
     });
-    // From a personal-space-like level scope (the test runner), withViewer
-    // replaces it with the login's workspace scope.
-    const fromLevel = await m.runInLevelRoleForTest('team', () =>
-      m.withViewer({ login: gone }, titles),
-    );
-    expect(fromLevel).toEqual([]);
+    // The level scope is gone (W8c): nothing exports a way into it.
+    for (const name of [
+      'levelOfScope',
+      'currentViewerLevel',
+      'inLevelScope',
+      'ScopeLevelError',
+      'runInLevelRoleForTest',
+    ]) {
+      expect(Object.keys(m), name).not.toContain(name);
+    }
   });
 
   it('the human level-role path is gone (W5c): nothing exports it, no scope sets the flag', async () => {

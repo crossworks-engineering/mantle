@@ -1200,8 +1200,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     // Not adminOnly: the Team workspace's assistant holds it (W4b). Every
     // tool here runs in that workspace's turn scope
     // (team-groups.turn-scope.db.test.ts).
-    toolSlugs:
- [
+    toolSlugs: [
       // memory-core reads
       'search_nodes',
       'search_chunks',

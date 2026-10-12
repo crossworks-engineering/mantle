@@ -96,7 +96,7 @@ vi.mock('@mantle/db', () => ({
   },
   pendingToolCalls: {},
   // The R6 shim: no database here, the scope is not under test.
-  withViewer: vi.fn(async (_level: unknown, _for: unknown, fn: () => Promise<unknown>) => fn()),
+  withViewer: vi.fn(async (_for: unknown, fn: () => Promise<unknown>) => fn()),
 }));
 
 // Import AFTER mocks so the loop picks up the mocked deps.

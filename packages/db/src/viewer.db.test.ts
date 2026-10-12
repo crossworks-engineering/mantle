@@ -1,7 +1,9 @@
 /**
- * The access adapter against a real Postgres (member logins Phase 0b): the
- * `db` proxy switches to a limited LOGIN role inside withViewer, row level
- * security filters what it reads, and `systemDb` stays admin.
+ * The access adapter against a real Postgres (member logins Phase 0b; the
+ * workspace role since W8c retired the level roles): the `db` proxy switches
+ * to the workspace LOGIN role inside a workspace scope, row level security
+ * filters what it reads by the scope's workspaces, and `systemDb` stays
+ * admin.
  *
  * Self-contained: it creates the viewer roles (ensureViewerRoles) and one
  * probe table with a policy in its own schema (so the access-matrix test's
@@ -15,6 +17,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 /** Postgres SQLSTATE for "permission denied" (drizzle wraps it in `cause`). */
 const INSUFFICIENT_PRIVILEGE = '42501';
+const W1 = '00000000-0000-4000-8000-00000000f101';
+const W2 = '00000000-0000-4000-8000-00000000f102';
+const W3 = '00000000-0000-4000-8000-00000000f103';
 
 describe.skipIf(!URL)('viewer pools on Postgres', () => {
   type DbModule = typeof import('./index');
@@ -30,6 +35,10 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
       }[]
     ).map((r) => r.id);
 
+  /** A turn scope reading `ws` (no lookup: the probe needs no workspace rows). */
+  const inScope = <T>(ws: string[], fn: () => Promise<T>) =>
+    m.withTurnScope({ kind: 'assistant', loginId: null, ws, modWs: [] }, fn);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     // ONE key for every viewer DB test: roles are cluster-wide, so tests with
@@ -42,20 +51,15 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
       await ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
       await admin.unsafe(`
         create schema if not exists viewer_test;
-        grant usage on schema viewer_test to mantle_view_team, mantle_view_client, mantle_view_public;
+        grant usage on schema viewer_test to mantle_view_user;
         set search_path = viewer_test;
         drop table if exists viewer_probe;
-        create table viewer_probe (id int primary key, audience text not null);
-        insert into viewer_probe values (1,'admin'),(2,'team'),(3,'client'),(4,'public');
+        create table viewer_probe (id int primary key, ws uuid not null);
+        insert into viewer_probe values (1,'${W1}'),(2,'${W2}'),(3,'${W3}'),(4,'${W3}');
         alter table viewer_probe enable row level security;
-        create policy viewer_probe_read on viewer_probe for select
-          to mantle_view_team, mantle_view_client, mantle_view_public
-          using (audience = any (case current_user
-            when 'mantle_view_team' then array['team','client','public']
-            when 'mantle_view_client' then array['client','public']
-            when 'mantle_view_public' then array['public']
-            else array[]::text[] end));
-        grant select on viewer_probe to mantle_view_team, mantle_view_client, mantle_view_public;
+        create policy viewer_probe_read on viewer_probe for select to mantle_view_user
+          using (ws = any (coalesce(nullif(current_setting('mantle.ws', true), ''), '{}')::uuid[]));
+        grant select on viewer_probe to mantle_view_user;
       `);
     } finally {
       await admin.end();
@@ -73,34 +77,45 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
     expect(await probe(m.db)).toEqual([1, 2, 3, 4]);
   });
 
-  it('inside withViewer, row level security filters by level', async () => {
-    expect(await m.runInLevelRoleForTest('team', () => probe(m.db))).toEqual([2, 3, 4]);
-    expect(await m.runInLevelRoleForTest('client', () => probe(m.db))).toEqual([3, 4]);
-    expect(await m.runInLevelRoleForTest('public', () => probe(m.db))).toEqual([4]);
+  it("inside a workspace scope, row level security filters by the scope's workspaces", async () => {
+    expect(await inScope([W1], () => probe(m.db))).toEqual([1]);
+    expect(await inScope([W3], () => probe(m.db))).toEqual([3, 4]);
+    expect(await inScope([W1, W2], () => probe(m.db))).toEqual([1, 2]);
   });
 
   it('really is the limited role, not a role switch on the admin session', async () => {
-    const who = await m.runInLevelRoleForTest(
-      'team',
+    const who = await inScope(
+      [W1],
       async () =>
         (await m.db.execute(sqlTag`select session_user as s, current_user as c`)) as unknown as {
           s: string;
           c: string;
         }[],
     );
-    expect(who[0]).toEqual({ s: 'mantle_view_team', c: 'mantle_view_team' });
+    expect(who[0]).toEqual({ s: 'mantle_view_user', c: 'mantle_view_user' });
     // And it cannot climb out.
-    await expect(
-      m.runInLevelRoleForTest('team', () => m.db.execute(sqlTag`set role postgres`)),
-    ).rejects.toThrow();
+    await expect(inScope([W1], () => m.db.execute(sqlTag`set role postgres`))).rejects.toThrow();
+  });
+
+  it('a retired level role cannot log in (W8c)', async () => {
+    const rows = (await m.systemDb.execute(
+      sqlTag`select rolname, rolcanlogin from pg_roles
+              where rolname in ('mantle_view_team', 'mantle_view_client', 'mantle_view_public')
+              order by rolname`,
+    )) as unknown as { rolname: string; rolcanlogin: boolean }[];
+    expect(rows).toEqual([
+      { rolname: 'mantle_view_client', rolcanlogin: false },
+      { rolname: 'mantle_view_public', rolcanlogin: false },
+      { rolname: 'mantle_view_team', rolcanlogin: false },
+    ]);
   });
 
   it('systemDb ignores the viewer (infrastructure writes)', async () => {
-    expect(await m.runInLevelRoleForTest('public', () => probe(m.systemDb))).toEqual([1, 2, 3, 4]);
+    expect(await inScope([W1], () => probe(m.systemDb))).toEqual([1, 2, 3, 4]);
   });
 
   it('a transaction opened inside the scope is filtered too', async () => {
-    const ids = await m.runInLevelRoleForTest('client', () =>
+    const ids = await inScope([W3], () =>
       m.db.transaction(async (tx) =>
         (
           (await tx.execute(
@@ -116,17 +131,15 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
 
   it('a limited role has no write grant: writes fail loudly', async () => {
     await expect(
-      m.runInLevelRoleForTest('team', () =>
-        m.db.execute(sqlTag`insert into viewer_test.viewer_probe values (9, 'team')`),
+      inScope([W1], () =>
+        m.db.execute(sqlTag`insert into viewer_test.viewer_probe values (9, ${W1})`),
       ),
     ).rejects.toMatchObject({ cause: { code: INSUFFICIENT_PRIVILEGE } });
   });
 
   it('a table the grant matrix does not name is an error, not an empty result', async () => {
     await expect(
-      m.runInLevelRoleForTest('team', () =>
-        m.db.execute(sqlTag`select 1 from pg_catalog.pg_authid`),
-      ),
+      inScope([W1], () => m.db.execute(sqlTag`select 1 from pg_catalog.pg_authid`)),
     ).rejects.toMatchObject({ cause: { code: INSUFFICIENT_PRIVILEGE } });
   });
 });

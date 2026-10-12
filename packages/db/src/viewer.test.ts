@@ -16,21 +16,14 @@ import {
   currentScope,
   runInTurnScope,
   TurnScopeExitError,
-  currentScopeTx,
-  currentSpaceScope,
-  currentViewerLevel,
-  itemLevelAbove,
   levelCovers,
   levelsMeet,
   lowerLevel,
   ViewerLevelConflictError,
-  readsDrafts,
-  runInTxScope,
   viewerDatabaseUrl,
   viewerLoginRoleName,
   viewerRoleName,
   viewerRolePassword,
-  runInLevelRoleForTest,
 } from './viewer';
 import {
   noteOwner,
@@ -41,116 +34,49 @@ import {
   viewerRoleStatements,
 } from './viewer-roles';
 
-describe('personal-space scope (Phase 2)', () => {
-  const space = { spaceId: 'space-a', loginId: 'login-a' };
-  const tx = { fake: 'tx' };
-  const inSpace = <T>(fn: () => Promise<T>) => runInTxScope({ level: 'team', space, tx }, fn);
+describe('scope basics (no level scope since W8c)', () => {
+  const scopeOf = (w: string) =>
+    Object.freeze({ kind: 'assistant' as const, loginId: null, ws: [w], modWs: [] });
+  const W1 = '00000000-0000-4000-8000-0000000000b1';
+  const W2 = '00000000-0000-4000-8000-0000000000b2';
 
-  it('runs at team, carries its space and its transaction, and reads drafts', async () => {
-    const seen = await inSpace(async () => ({
-      level: currentViewerLevel(),
-      space: currentSpaceScope(),
-      tx: currentScopeTx(),
-      drafts: readsDrafts(),
-    }));
-    expect(seen).toEqual({ level: 'team', space, tx, drafts: true });
-    expect([currentSpaceScope(), currentScopeTx(), readsDrafts()]).toEqual([null, null, true]);
+  it('outside any scope the code is system work', () => {
+    expect(currentScope()).toEqual({ kind: 'system' });
   });
 
-  it('cannot queue work', async () => {
-    await inSpace(async () => {
-      expect(() => assertNoViewer('a job')).toThrow(/cannot queue work/);
-    });
-  });
-
-  it("withViewer('admin') changes nothing: the space and its transaction stay", async () => {
-    const seen = await inSpace(() =>
-      runInLevelRoleForTest('admin', async () => [currentSpaceScope(), currentScopeTx()]),
-    );
-    expect(seen).toEqual([space, tx]);
-  });
-
-  it('a lower withViewer leaves the space for the brain at that level (no drafts)', async () => {
-    const seen = await inSpace(() =>
-      runInLevelRoleForTest('team', async () => [
-        currentSpaceScope(),
-        currentScopeTx(),
-        readsDrafts(),
-      ]),
-    );
-    expect(seen).toEqual([null, null, false]);
-  });
-
-  it('asSystem leaves the space for the admin pool', async () => {
-    const seen = await inSpace(() =>
-      asSystem(async () => [currentViewerLevel(), currentSpaceScope()]),
-    );
-    expect(seen).toEqual(['admin', null]);
-  });
-
-  it('a level scope never reads drafts', async () => {
-    expect(await runInLevelRoleForTest('team', async () => readsDrafts())).toBe(false);
-  });
-});
-
-describe('withViewer', () => {
-  it('runs at admin outside any scope', () => {
-    expect(currentViewerLevel()).toBe('admin');
-  });
-
-  it('holds the level across awaits', async () => {
-    const seen = await runInLevelRoleForTest('team', async () => {
-      await new Promise((r) => setTimeout(r, 1));
-      return currentViewerLevel();
-    });
-    expect(seen).toBe('team');
-    expect(currentViewerLevel()).toBe('admin');
-  });
-
-  it('only ever goes down: a nested admin scope stays at the outer level', async () => {
-    const seen = await runInLevelRoleForTest('team', () =>
-      runInLevelRoleForTest('admin', async () => currentViewerLevel()),
-    );
-    expect(seen).toBe('team');
-  });
-
-  it('a nested lower scope wins', async () => {
-    const seen = await runInLevelRoleForTest('team', () =>
-      runInLevelRoleForTest('public', async () => currentViewerLevel()),
-    );
-    expect(seen).toBe('public');
-  });
-
-  it('keeps concurrent scopes apart', async () => {
+  it('holds a scope across awaits and keeps concurrent scopes apart', async () => {
     const [a, b] = await Promise.all([
-      runInLevelRoleForTest('team', async () => {
+      runInTurnScope(scopeOf(W1), async () => {
         await new Promise((r) => setTimeout(r, 5));
-        return currentViewerLevel();
+        return currentScope();
       }),
-      runInLevelRoleForTest('client', async () => currentViewerLevel()),
+      runInTurnScope(scopeOf(W2), async () => currentScope()),
     ]);
-    expect([a, b]).toEqual(['team', 'client']);
+    expect([a, b]).toMatchObject([{ ws: [W1] }, { ws: [W2] }]);
+    expect(currentScope()).toEqual({ kind: 'system' });
   });
 
   it('asSystem steps out of the scope for its own work only', async () => {
-    const seen = await runInLevelRoleForTest('team', async () => {
+    const seen = await runInTurnScope(scopeOf(W1), async () => {
       const inside = await asSystem(async () => {
         await new Promise((r) => setTimeout(r, 1));
-        return currentViewerLevel();
-      });
-      return [inside, currentViewerLevel()];
+        return currentScope();
+      }, 'connector-binding');
+      return [inside, currentScope()];
     });
-    expect(seen).toEqual(['admin', 'team']);
+    expect(seen).toMatchObject([{ kind: 'system' }, { ws: [W1] }]);
   });
 
-  it('refuses to queue work from inside a limited scope', async () => {
+  it('refuses to queue work from inside a workspace scope', async () => {
     expect(() => assertNoViewer('enqueueX')).not.toThrow();
-    await runInLevelRoleForTest('team', async () => {
-      expect(() => assertNoViewer('enqueueX')).toThrow(/enqueueX .* 'team'/);
+    await runInTurnScope(scopeOf(W1), async () => {
+      expect(() => assertNoViewer('enqueueX')).toThrow(/enqueueX leaves this process/);
     });
   });
 
   it('lowerLevel: team and admin over the rest, client and public are siblings', () => {
+    // Pure helpers for code that still names a level in a value; no read is
+    // decided by them since W8c.
     expect(lowerLevel('admin', 'team')).toBe('team');
     expect(lowerLevel('client', 'team')).toBe('client');
     expect(lowerLevel('team', 'public')).toBe('public');
@@ -160,73 +86,33 @@ describe('withViewer', () => {
     expect(() => lowerLevel('public', 'client')).toThrow(ViewerLevelConflictError);
     expect(levelsMeet('client', 'public')).toBe(false);
     expect(levelsMeet('team', 'public')).toBe(true);
-    // What each level reads (mantle_viewer_audiences, 0187).
     expect(levelCovers('client', 'public')).toBe(false);
     expect(levelCovers('public', 'client')).toBe(false);
     expect(levelCovers('team', 'client')).toBe(true);
     expect(levelCovers('team', 'admin')).toBe(false);
-    // The item rank stays a chain (raising and lowering items).
-    expect(itemLevelAbove('client', 'public')).toBe(true);
-    expect(itemLevelAbove('public', 'client')).toBe(false);
-  });
-
-  it('a client scope refuses public work and a public scope client work (never widened)', async () => {
-    await runInLevelRoleForTest('client', async () => {
-      await expect(
-        runInLevelRoleForTest('public', async () => currentViewerLevel()),
-      ).rejects.toBeInstanceOf(ViewerLevelConflictError);
-      // admin and team requests keep the client scope.
-      expect(await runInLevelRoleForTest('team', async () => currentViewerLevel())).toBe('client');
-      expect(await runInLevelRoleForTest('admin', async () => currentViewerLevel())).toBe('client');
-    });
-    await runInLevelRoleForTest('public', async () => {
-      await expect(runInLevelRoleForTest('client', async () => 1)).rejects.toMatchObject({
-        code: 'viewer-level-conflict',
-        current: 'public',
-        requested: 'client',
-      });
-    });
-    // A team scope still lowers to either.
-    await runInLevelRoleForTest('team', async () => {
-      expect(await runInLevelRoleForTest('public', async () => currentViewerLevel())).toBe(
-        'public',
-      );
-      expect(await runInLevelRoleForTest('client', async () => currentViewerLevel())).toBe(
-        'client',
-      );
-    });
-  });
-
-  it("a client's space opened under a public scope is refused", async () => {
-    await runInLevelRoleForTest('public', async () => {
-      expect(() => runInTxScope({ level: 'client', tx: { fake: 'tx' } }, async () => 1)).toThrow(
-        ViewerLevelConflictError,
-      );
-    });
   });
 });
 
 describe('viewer role credentials', () => {
-  it('derives a stable password per key and level, different per level and key', () => {
-    const a = viewerRolePassword('key-1', 'team');
-    expect(viewerRolePassword('key-1', 'team')).toBe(a);
-    expect(viewerRolePassword('key-1', 'client')).not.toBe(a);
-    expect(viewerRolePassword('key-2', 'team')).not.toBe(a);
+  it('derives a stable password per key, different per key', () => {
+    const a = viewerRolePassword('key-1', 'user');
+    expect(viewerRolePassword('key-1', 'user')).toBe(a);
+    expect(viewerRolePassword('key-2', 'user')).not.toBe(a);
     expect(a).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 
   it('refuses to derive without a master key', () => {
-    expect(() => viewerRolePassword('', 'team')).toThrow(/MANTLE_MASTER_KEY/);
+    expect(() => viewerRolePassword('', 'user')).toThrow(/MANTLE_MASTER_KEY/);
   });
 
   it('swaps only the user and password in the admin URL', () => {
     const url = viewerDatabaseUrl(
       'postgres://postgres:secret@db:5432/postgres?sslmode=disable',
-      'team',
+      'user',
       'pw',
     );
     const u = new URL(url);
-    expect(u.username).toBe('mantle_view_team');
+    expect(u.username).toBe('mantle_view_user');
     expect(u.password).toBe('pw');
     expect(u.host).toBe('db:5432');
     expect(u.pathname).toBe('/postgres');
@@ -240,21 +126,21 @@ describe('viewer role credentials', () => {
 
 describe('viewerRoleStatements', () => {
   it('creates a LOGIN role that can never bypass row level security', () => {
-    const [stmt] = viewerRoleStatements('team', 'key-1', false);
-    expect(stmt).toMatch(/^CREATE ROLE "mantle_view_team" WITH LOGIN /);
+    const [stmt] = viewerRoleStatements('user', 'key-1', false);
+    expect(stmt).toMatch(/^CREATE ROLE "mantle_view_user" WITH LOGIN /);
     for (const attr of ['NOSUPERUSER', 'NOBYPASSRLS', 'NOCREATEROLE', 'NOINHERIT']) {
       expect(stmt).toContain(attr);
     }
-    expect(stmt).toContain(`PASSWORD '${viewerRolePassword('key-1', 'team')}'`);
+    expect(stmt).toContain(`PASSWORD '${viewerRolePassword('key-1', 'user')}'`);
   });
 
   it('alters an existing role (re-derives the password after a key change)', () => {
-    const [stmt] = viewerRoleStatements('client', 'key-2', true);
-    expect(stmt).toMatch(/^ALTER ROLE "mantle_view_client" WITH LOGIN /);
+    const [stmt] = viewerRoleStatements('user', 'key-2', true);
+    expect(stmt).toMatch(/^ALTER ROLE "mantle_view_user" WITH LOGIN /);
   });
 
   it('with no master key the role exists but cannot log in', () => {
-    const [stmt] = viewerRoleStatements('public', null, false);
+    const [stmt] = viewerRoleStatements('user', null, false);
     expect(stmt).toContain('NOLOGIN');
     expect(stmt).toContain('PASSWORD NULL');
     expect(stmt).not.toMatch(/\bLOGIN\b/);
@@ -262,12 +148,12 @@ describe('viewerRoleStatements', () => {
 });
 
 describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
-  const shared = [
-    'mantle_view_team',
-    'mantle_view_client',
-    'mantle_view_public',
-    'mantle_view_user',
-  ];
+  // The level roles (retired in W8c) still exist on every upgraded cluster.
+  const retired = ['mantle_view_team', 'mantle_view_client', 'mantle_view_public'];
+  const live = ['mantle_view_user'];
+  const shared = [...retired, ...live];
+  const NOLOGIN =
+    'WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL';
   const cluster = (
     database: string,
     owner: string | null,
@@ -292,17 +178,22 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
 
   it('a box upgrading (roles with no note) resets the passwords as before and claims them', () => {
     const plan = viewerRolePlan(cluster('brain_a', null), 'key-a', false);
-    for (const role of shared) {
+    for (const role of live) {
       expect(plan).toContain(
-        `ALTER ROLE "${role}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 30 PASSWORD '${viewerRolePassword('key-a', role.replace('mantle_view_', '') as 'team')}'`,
+        `ALTER ROLE "${role}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 30 PASSWORD '${viewerRolePassword('key-a', 'user')}'`,
       );
       expect(plan).toContain(`COMMENT ON ROLE "${role}" IS '${ownerNote('brain_a')}'`);
+    }
+    // The level roles are made NOLOGIN, never claimed.
+    for (const role of retired) {
+      expect(plan).toContain(`ALTER ROLE "${role}" ${NOLOGIN}`);
+      expect(plan.some((s) => s.startsWith(`COMMENT ON ROLE "${role}"`))).toBe(false);
     }
   });
 
   it('the owner migrating again resets the passwords (a key change) and writes no note', () => {
     const plan = viewerRolePlan(cluster('brain_a', 'brain_a'), 'key-a2', false);
-    expect(plan.filter((s) => s.startsWith('ALTER ROLE'))).toHaveLength(shared.length);
+    expect(plan.filter((s) => /^ALTER ROLE .* WITH LOGIN /.test(s))).toHaveLength(live.length);
     expect(plan.some((s) => s.startsWith('COMMENT'))).toBe(false);
   });
 
@@ -323,10 +214,10 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     const plan = viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', true);
     expect(plan.some((s) => shared.some((r) => s.startsWith(`ALTER ROLE "${r}" `)))).toBe(false);
     expect(plan.some((s) => s.startsWith('COMMENT'))).toBe(false);
-    for (const role of shared) {
+    for (const role of live) {
       const login = `${role}_brain_b`;
       expect(plan).toContain(
-        `CREATE ROLE "${login}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 30 PASSWORD '${viewerRolePassword('key-b', role.replace('mantle_view_', '') as 'team')}'`,
+        `CREATE ROLE "${login}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 30 PASSWORD '${viewerRolePassword('key-b', 'user')}'`,
       );
       expect(plan).toContain(
         `GRANT "${role}" TO "${login}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`,
@@ -339,7 +230,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     const plan = viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', true);
     const revoke = plan.indexOf('REVOKE CONNECT ON DATABASE "brain_b" FROM PUBLIC');
     const grant = plan.indexOf(
-      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_team_brain_b", "mantle_view_client_brain_b", "mantle_view_public_brain_b", "mantle_view_user_brain_b", CURRENT_USER',
+      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_user_brain_b", CURRENT_USER',
     );
     expect(revoke).toBeGreaterThan(-1);
     expect(grant).toBeGreaterThan(revoke);
@@ -390,14 +281,14 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
       'mantle_view_team_brain_b',
     ]);
     expect(viewerLoginDropStatements('brain_b', true, roles)).toEqual([
-      'REVOKE ALL ON DATABASE "brain_b" FROM "mantle_view_team_brain_b"',
-      'DROP ROLE IF EXISTS "mantle_view_team_brain_b"',
       'REVOKE ALL ON DATABASE "brain_b" FROM "mantle_view_space_brain_b"',
       'DROP ROLE IF EXISTS "mantle_view_space_brain_b"',
+      'REVOKE ALL ON DATABASE "brain_b" FROM "mantle_view_team_brain_b"',
+      'DROP ROLE IF EXISTS "mantle_view_team_brain_b"',
     ]);
     expect(viewerLoginDropStatements('brain_b', false, roles)).toEqual([
-      'DROP ROLE IF EXISTS "mantle_view_team_brain_b"',
       'DROP ROLE IF EXISTS "mantle_view_space_brain_b"',
+      'DROP ROLE IF EXISTS "mantle_view_team_brain_b"',
     ]);
     expect(() => viewerLoginDropStatements('Brain-B', false, roles)).toThrow(/\[a-z0-9_\]/);
   });
@@ -408,9 +299,9 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
       'key-b',
       true,
     );
-    expect(plan).toContain(
-      'CREATE ROLE "mantle_view_team" WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL',
-    );
+    for (const role of ['mantle_view_user', 'mantle_view_team']) {
+      expect(plan).toContain(`CREATE ROLE "${role}" ${NOLOGIN}`);
+    }
   });
 
   it('per-database alters its own existing login role', () => {
@@ -425,8 +316,6 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
   });
 
   it('the personal-space role is retired (W6b): no login, no password; made NOLOGIN where missing', () => {
-    const NOLOGIN =
-      'WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL';
     // Shared mode: the shared role, where it exists.
     const box = viewerRolePlan(
       cluster('brain_a', 'brain_a', undefined, { mantle_view_space: null }),
@@ -461,12 +350,32 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     ]);
   });
 
+  it('the level roles are retired too (W8c): never a LOGIN in either mode', () => {
+    const extra = { mantle_view_team_brain_b: null, mantle_view_client_brain_b: null };
+    for (const perDatabase of [false, true]) {
+      const plan = viewerRolePlan(
+        cluster(perDatabase ? 'brain_b' : 'brain_a', 'brain_a', undefined, extra),
+        'key',
+        perDatabase,
+      );
+      for (const role of retired) {
+        expect(plan.some((s) => s.includes(`"${role}`) && /WITH LOGIN/.test(s))).toBe(false);
+      }
+    }
+    // Per-database: a level login that exists is retired, never dropped
+    // while its database exists.
+    const own = viewerRolePlan(cluster('brain_b', 'brain_a', undefined, extra), 'key', true);
+    expect(own).toContain(`ALTER ROLE "mantle_view_team_brain_b" ${NOLOGIN}`);
+    expect(own).toContain(`ALTER ROLE "mantle_view_client_brain_b" ${NOLOGIN}`);
+    expect(own.some((s) => s.startsWith('DROP'))).toBe(false);
+  });
+
   it('the pool logs in as the per-database role only when asked', () => {
     const admin = 'postgres://postgres:pw@db:5432/brain_b?sslmode=disable';
-    expect(new URL(viewerDatabaseUrl(admin, 'space', 'p')).username).toBe('mantle_view_space');
-    const u = new URL(viewerDatabaseUrl(admin, 'space', 'p', true));
+    expect(new URL(viewerDatabaseUrl(admin, 'user', 'p')).username).toBe('mantle_view_user');
+    const u = new URL(viewerDatabaseUrl(admin, 'user', 'p', true));
     expect([u.username, u.pathname, u.search]).toEqual([
-      'mantle_view_space_brain_b',
+      'mantle_view_user_brain_b',
       '/brain_b',
       '?sslmode=disable',
     ]);

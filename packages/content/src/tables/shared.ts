@@ -119,8 +119,7 @@ export function rowOf(n: Node, counts: { columnCount: number; rowCount: number }
     appLink: appLinkOf(d),
     columnCount: counts.columnCount,
     rowCount: counts.rowCount,
-    ...(isSnapshotCopy(n)
- ? { readOnly: true as const } : {}),
+    ...(isSnapshotCopy(n) ? { readOnly: true as const } : {}),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

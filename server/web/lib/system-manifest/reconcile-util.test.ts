@@ -119,6 +119,15 @@ describe('groupsForAgent (W8c: the workspace, not the level)', () => {
       'team-read',
     ]);
   });
+  it('nor to the team responder on no workspace (its role is custom)', () => {
+    expect(
+      groupsForAgent(
+        both,
+        { workspace: 'none', role: 'custom', slug: 'team-responder' },
+        adminOnly,
+      ),
+    ).toEqual(['team-read']);
+  });
   it('keeps everything for the Admin assistant and for a helper', () => {
     expect(groupsForAgent(both, { workspace: 'admin', role: 'responder' }, adminOnly)).toEqual(
       both,
@@ -128,7 +137,6 @@ describe('groupsForAgent (W8c: the workspace, not the level)', () => {
     );
   });
 });
-
 
 describe('shippedPromptUpgrade', () => {
   const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');

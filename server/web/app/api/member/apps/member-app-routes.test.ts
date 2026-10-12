@@ -1,8 +1,9 @@
 /**
  * The member app routes (member logins Phase 4b, plan v3.1 section 4a),
  * without a database: the lookups and the tool rules are stood in, so these
- * pin what the ROUTES must do with them. The tool broker dispatches on the
- * team role and a team surface that names the login; the db broker checks the
+ * pin what the ROUTES must do with them. The tool broker dispatches in the
+ * app's scope for the login (withViewer) on a team surface that names the
+ * login; the db broker checks the
  * app before it touches SQLite; the frame opens only for a member ticket and
  * only the published build; the owner frame (drafts) refuses a member ticket.
  * The rules themselves are proven on Postgres in
@@ -17,6 +18,8 @@ const OTHER_APP = '88888888-8888-4888-8888-888888888888';
 const PUBLISHED = { storageKey: 'apps/published.js', ok: true };
 // The author's personal space a member-built app lives in (team apps Phase 3).
 const SPACE = '44444444-4444-4444-8444-444444444444';
+// The scope a member's app tool runs in: the app, for this login (AppRunFor).
+const APP_SCOPE = { login: LOGIN, app: { id: APP } };
 
 const h = vi.hoisted(() => ({
   runnable: true,
@@ -25,8 +28,10 @@ const h = vi.hoisted(() => ({
   dataReadOnly: false,
   displayName: 'Pat' as string | null,
   lookups: [] as string[],
-  reads: [] as Array<{ fn: string; level: string }>,
-  launcherReads: [] as Array<{ level: string; reader: string; loginId: string }>,
+  // `ranAs`: 'system' when the read ran as is, else the actsFor of the
+  // withViewer it ran inside.
+  reads: [] as Array<{ fn: string; ranAs: unknown }>,
+  launcherReads: [] as Array<{ ranAs: unknown; reader: string; loginId: string }>,
   homeAppId: undefined as string | undefined,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
@@ -35,7 +40,7 @@ const h = vi.hoisted(() => ({
   toolKind: 'builtin' as 'builtin' | 'mcp',
   toolSlugs: ['note_list'] as string[],
   levels: [] as string[],
-  dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
+  dispatched: [] as Array<{ ranAs: unknown; ctx: Record<string, unknown> }>,
   logged: [] as Array<Record<string, unknown>>,
   dbCalls: [] as string[],
   dbError: null as Error | null,
@@ -48,21 +53,33 @@ const h = vi.hoisted(() => ({
   spaceApp: null as null | { frozen: boolean },
   // Who each withViewer call acted for.
   viewers: [] as unknown[],
+  // The actsFor of the withViewer the code runs inside now (null: system).
+  current: null as unknown,
 }));
 
 // No database: the workspace scope withViewer enters is read on Postgres
-// (packages/db/src/viewer-shim.db.test.ts). Here it records who the route
-// acts for and runs the reads at the level it names, so the stand-ins below
-// see which role a read ran on.
+// (packages/db/src/viewer-shim.db.test.ts). Here withViewer records who the
+// route acts for and marks what runs inside it, and asSystem clears the mark,
+// so the stand-ins below see whether a read ran in the scope or as system.
 vi.mock('@mantle/db', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/db')>();
+  const marked = async <T>(actsFor: unknown, fn: () => Promise<T>): Promise<T> => {
+    const outer = h.current;
+    h.current = actsFor;
+    try {
+      return await fn();
+    } finally {
+      h.current = outer;
+    }
+  };
   return {
     ...real,
-    withViewer: vi.fn(
-      async (level: 'admin' | 'team' | 'client', actsFor: unknown, fn: () => Promise<unknown>) => {
-        h.viewers.push(actsFor);
-        return real.runInLevelRoleForTest(level, fn);
-      },
+    withViewer: vi.fn(async (actsFor: unknown, fn: () => Promise<unknown>) => {
+      h.viewers.push(actsFor);
+      return marked(actsFor, fn);
+    }),
+    asSystem: vi.fn((fn: () => Promise<unknown>, reason?: never) =>
+      real.asSystem(() => marked(null, fn), reason),
     ),
   };
 });
@@ -81,9 +98,8 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   memberLoginActive: vi.fn(async () => h.loginActive),
 }));
 vi.mock('@mantle/content', async (importOriginal) => {
-  const { currentViewerLevel } = await import('@mantle/db');
   const read = <T>(fn: string, value: T) => {
-    h.reads.push({ fn, level: currentViewerLevel() });
+    h.reads.push({ fn, ranAs: h.current ?? 'system' });
     return value;
   };
   const card = (id: string, title: string) => ({
@@ -92,7 +108,6 @@ vi.mock('@mantle/content', async (importOriginal) => {
     icon: null,
     color: null,
     description: null,
-    audience: 'team',
     updatedAt: '2026-09-27T00:00:00.000Z',
   });
   return {
@@ -139,7 +154,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
       read('listMemberApps', [card(APP, 'Polls'), card(OTHER_APP, 'Budget')]),
     ),
     appLauncher: vi.fn(async (_anchor: string, reader: string, loginId: string) => {
-      h.launcherReads.push({ level: currentViewerLevel(), reader, loginId });
+      h.launcherReads.push({ ranAs: h.current ?? 'system', reader, loginId });
       return {
         apps: [card(APP, 'Polls'), card(OTHER_APP, 'Budget')],
         folders: [
@@ -156,7 +171,6 @@ vi.mock('@mantle/content', async (importOriginal) => {
             title: 'Plan',
             icon: null,
             summary: 'S',
-            audience: 'team',
             updatedAt: 'u',
           },
         ],
@@ -173,12 +187,11 @@ vi.mock('@mantle/content', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/tools', async (importOriginal) => {
-  const { currentViewerLevel } = await import('@mantle/db');
   return {
     ...(await importOriginal<Record<string, unknown>>()),
-    // The level rule (appToolLevel, appToolScope) is the real one; the
-    // verdict records the level it was asked at. At none the REAL rules
-    // answer: they refuse before any lookup.
+    // The rule (appToolLevel, appToolScope) is the real one; the verdict
+    // records the rules it was asked at. At none the REAL rules answer: they
+    // refuse before any lookup.
     appToolVerdict: vi.fn(
       async (level: string, owner: string, declared: string[], slug: string) => {
         h.levels.push(level);
@@ -194,7 +207,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
       },
     ),
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
-      h.dispatched.push({ level: currentViewerLevel(), ctx });
+      h.dispatched.push({ ranAs: h.current ?? 'system', ctx });
       return { ok: true, output: [] };
     }),
   };
@@ -202,10 +215,9 @@ vi.mock('@mantle/tools', async (importOriginal) => {
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   const { AppSqlError, AppSqlBusyError, AppDbMissingError } =
     await importOriginal<typeof import('@mantle/content/app-broker')>();
-  const { currentViewerLevel } = await import('@mantle/db');
-  // The SQLite work must run on the admin pool: it writes registry rows.
+  // The SQLite work must run as system work: it writes registry rows.
   const call = (op: string, owner: string, app: string) =>
-    h.dbCalls.push(`${op}:${owner}:${app}:${currentViewerLevel()}`);
+    h.dbCalls.push(`${op}:${owner}:${app}:${h.current === null ? 'system' : 'scoped'}`);
   return {
     AppSqlError,
     AppSqlBusyError,
@@ -291,13 +303,13 @@ beforeEach(() => {
 });
 
 describe('member tool broker', () => {
-  it('an outside tool an admin opened to team apps runs on the team role, and the log names the member and the kind', async () => {
+  it("an outside tool an admin opened to team apps runs in the app's scope, and the log names the member and the kind", async () => {
     h.toolKind = 'mcp';
     h.toolSlugs = ['site_query'];
     const res = await toolBroker(post({ slug: 'site_query', input: { q: 'x' } }), params());
     expect(res.status).toBe(200);
     expect(h.dispatched).toHaveLength(1);
-    expect(h.dispatched[0]!.level).toBe('team');
+    expect(h.dispatched[0]!.ranAs).toEqual(APP_SCOPE);
     expect(h.dispatched[0]!.ctx).toMatchObject({
       surface: { kind: 'team', loginId: LOGIN, privateReads: false },
     });
@@ -324,11 +336,11 @@ describe('member tool broker', () => {
     });
   });
 
-  it('dispatches on the team role with a team surface that names the login', async () => {
+  it("dispatches in the app's scope for the login with a team surface that names the login", async () => {
     const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
     expect(res.status).toBe(200);
     expect(h.dispatched).toHaveLength(1);
-    expect(h.dispatched[0]!.level).toBe('team');
+    expect(h.dispatched[0]!.ranAs).toEqual(APP_SCOPE);
     expect(h.dispatched[0]!.ctx).toMatchObject({
       ownerId: ANCHOR,
       surface: { kind: 'team', loginId: LOGIN, privateReads: false },
@@ -358,7 +370,7 @@ describe('member tool broker', () => {
       expect(res.status).toBe(200);
       expect(h.levels).toEqual(['team']);
     }
-    expect(h.dispatched.map((d) => d.level)).toEqual(['team', 'team']);
+    expect(h.dispatched.map((d) => d.ranAs)).toEqual([APP_SCOPE, APP_SCOPE]);
   });
 
   it('passes a refusal through, dispatches nothing, and logs the refusal', async () => {
@@ -448,7 +460,7 @@ describe('member db broker', () => {
   it("writes to the brain's app database and schedules the export sync", async () => {
     const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
     expect(res.status).toBe(200);
-    expect(h.dbCalls).toEqual([`exec:${ANCHOR}:${APP}:admin`]);
+    expect(h.dbCalls).toEqual([`exec:${ANCHOR}:${APP}:system`]);
     expect(h.synced).toBe(1);
     expect(h.logged[0]).toMatchObject({ actorId: LOGIN, kind: 'db' });
   });
@@ -464,12 +476,12 @@ describe('member db broker', () => {
     expect(h.dbCalls).toEqual([]);
     expect(h.synced).toBe(0);
     await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
-    expect(h.dbCalls).toEqual([`query:${ANCHOR}:${APP}:admin`]);
+    expect(h.dbCalls).toEqual([`query:${ANCHOR}:${APP}:system`]);
   });
 
   it('reads without scheduling a sync', async () => {
     await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
-    expect(h.dbCalls).toEqual([`query:${ANCHOR}:${APP}:admin`]);
+    expect(h.dbCalls).toEqual([`query:${ANCHOR}:${APP}:system`]);
     expect(h.synced).toBe(0);
   });
 });
@@ -596,12 +608,15 @@ describe('member frame', () => {
 });
 
 describe('member app list and home', () => {
-  it('lists the apps on the team role, with the home app id only while runnable', async () => {
+  it("lists the apps in the member's scope, with the home app id only while runnable", async () => {
     h.homeAppId = APP;
     const body = (await (await listRoute()).json()) as { apps: unknown[]; homeAppId: string };
     expect(body.apps).toHaveLength(2);
     expect(body.homeAppId).toBe(APP);
-    expect(h.reads.every((r) => r.level === 'team')).toBe(true);
+    expect(h.reads.length).toBeGreaterThan(0);
+    expect(h.reads.every((r) => JSON.stringify(r.ranAs) === JSON.stringify({ login: LOGIN }))).toBe(
+      true,
+    );
     expect(h.viewers.length).toBeGreaterThan(0);
     expect(h.viewers.every((v) => JSON.stringify(v) === JSON.stringify({ login: LOGIN }))).toBe(
       true,
@@ -619,9 +634,9 @@ describe('member app list and home', () => {
       { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
     ]);
     // The route hands no path to anything: the launcher is asked for the
-    // team reader, on the admin pool (it scopes its own reads; the rule is
+    // team reader, outside any withViewer (it scopes its own reads; the rule is
     // proven on Postgres in packages/content/src/app-folders.viewer.db.test.ts).
-    expect(h.launcherReads).toEqual([{ level: 'admin', reader: 'team', loginId: LOGIN }]);
+    expect(h.launcherReads).toEqual([{ ranAs: 'system', reader: 'team', loginId: LOGIN }]);
   });
 
   it('gives no hub data when nothing is pinned, and skips the hub reads', async () => {
@@ -630,7 +645,7 @@ describe('member app list and home', () => {
     expect(h.reads.map((r) => r.fn)).toEqual(['resolveMemberHomeApp']);
   });
 
-  it('answers hub.get for a pinned app, read on the team role, without the app itself', async () => {
+  it("answers hub.get for a pinned app, read in the member's scope, without the app itself", async () => {
     h.homeAppId = APP;
     const body = (await (await homeRoute()).json()) as {
       homeApp: { appId: string };
@@ -650,6 +665,6 @@ describe('member app list and home', () => {
     expect(Object.keys(body.hub.counts).sort()).toEqual(['draw', 'file', 'note', 'page', 'table']);
     expect(body.hub.apps.map((a) => a.token)).toEqual([OTHER_APP]);
     expect(h.reads.length).toBe(4);
-    expect(h.reads.every((r) => r.level === 'team')).toBe(true);
+    expect(h.reads.map((r) => r.ranAs)).toEqual(Array(4).fill({ login: LOGIN }));
   });
 });

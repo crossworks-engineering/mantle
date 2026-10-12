@@ -1,7 +1,7 @@
 /**
- * The frozen agent and tool-group levels and the frozen per-login MCP switch
- * (migration 0268, workspaces W7b) against a real, migrated Postgres, and the
- * plain unshare of workspaces W5b2: revoking a link changes no level and no
+ * The frozen agent and tool-group levels (migration 0268, workspaces W7b;
+ * the per-login MCP switch table went in 0273) against a real, migrated
+ * Postgres, and the plain unshare of workspaces W5b2: revoking a link changes no level and no
  * grant. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/access.db.test.ts
  */
@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('frozen levels and switches, and the plain unshare, on Postgres', () => {
+describe.skipIf(!URL)('frozen levels and the plain unshare, on Postgres', () => {
   type Db = typeof import('@mantle/db');
   type Access = typeof import('./access');
   let m: Db;
@@ -77,17 +77,7 @@ describe.skipIf(!URL)('frozen levels and switches, and the plain unshare, on Pos
     await expect(a.unshareItem(randomUUID(), shareId)).resolves.toEqual({ revoked: false });
   });
 
-  it('agent and tool-group levels are frozen (0268, W7b): a change keeps the old value; the MCP switch refuses', async () => {
-    const frozen = { code: '55000' };
-    const caught = async (q: Promise<unknown>) => {
-      try {
-        await q;
-        return null;
-      } catch (err) {
-        const e = err as { code?: string; cause?: { code?: string } };
-        return { code: e.cause?.code ?? e.code };
-      }
-    };
+  it('agent and tool-group levels are frozen (0268, W7b): a change keeps the old value', async () => {
     const level = async (q: ReturnType<typeof sqlTag>) =>
       ((await m.db.execute(q)) as unknown as { audience: string }[])[0]?.audience;
     await m.db.execute(
@@ -109,14 +99,6 @@ describe.skipIf(!URL)('frozen levels and switches, and the plain unshare, on Pos
       sqlTag`select name from agents where id = ${ids.agent}`,
     )) as unknown as { name: string }[];
     expect(named?.name).toBe('B');
-    // A per-login MCP switch can be neither made nor changed.
-    expect(
-      await caught(
-        m.db.execute(
-          sqlTag`insert into mcp_login_access (login_id, enabled, write_enabled) values (${owner}, true, true)`,
-        ),
-      ),
-    ).toEqual(frozen);
     // The archive tables are the system's alone.
     const [n] = (await m.db.execute(
       sqlTag`select count(*)::int as n from archive_tool_levels where owner_id = ${owner}`,

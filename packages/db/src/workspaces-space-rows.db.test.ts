@@ -185,11 +185,11 @@ describe.skipIf(!URL)('workspaces W1b: personal-space rows, re-own, bypass (0244
       select count(*)::int as n from heads_check_misses
        where check_name = 'bypass' and detail = ${`${tag} test migration`}`;
     expect(log!.n).toBe(1);
-    // A limited role cannot call it.
+    // The workspace role (the only live limited role) cannot call it.
     const role = await admin.reserve();
     try {
       await role`begin`;
-      await role`set local role mantle_view_space`;
+      await role`set local role mantle_view_user`;
       await expect(role`select mantle_heads_bypass('x')`).rejects.toMatchObject({
         code: '42501',
       });

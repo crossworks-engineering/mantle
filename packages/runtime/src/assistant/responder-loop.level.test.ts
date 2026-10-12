@@ -1,12 +1,12 @@
 /**
  * The responder loop runs in the agent's scope (member logins Phase 0b,
- * workspaces W5b2): for a team-level agent, the context load, the
- * backup-route lookup, the message build and the tool loop all start inside
- * the scope the R6 shim (withViewer) enters for it, never as system work.
- * The audit removed this wrap and every test stayed green; this pins it. The
- * tool loop and tracing are faked; each collaborator records the scope it
- * runs in. withViewer enters the scope viewerScopeFor gives an agent on no
- * workspace.
+ * workspaces W5b2, W8c): for the assistant of a workspace other than Admin,
+ * the context load, the backup-route lookup, the message build and the tool
+ * loop all start inside a turn scope of that workspace for the login it
+ * answers, never as system work. The audit removed this wrap and every test
+ * stayed green; this pins it. The tool loop and tracing are faked; each
+ * collaborator records the scope it runs in. withTurnScope enters the scope
+ * alone (no database).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { currentScope } from '@mantle/db/viewer';
@@ -21,29 +21,38 @@ const h = vi.hoisted(() => ({ levels: [] as string[] }));
 function where(): string {
   const s = currentScope();
   if (s.kind === 'system') return 'admin';
-  if (s.kind === 'level') return `level:${s.level}`;
   return `${s.kind}(${s.ws.join(',')})`;
 }
 
 vi.mock('@mantle/db', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
   const { runInViewerScope } = await import('@mantle/db/viewer');
+  // The agent's workspace lookups (agent-viewer.ts, on the system pool)
+  // without a database: a live workspace that is not Admin, and the login a
+  // user there.
+  const select = () => ({
+    from: (table: unknown) => {
+      const rows =
+        table === actual.workspaces
+          ? [{ isAdmin: false, ownerId: 'owner-1', archivedAt: null }]
+          : [{ moderator: false }];
+      const chain: Record<string, unknown> = { where: () => chain, limit: async () => rows };
+      return chain;
+    },
+  });
   return {
-    ...(await importOriginal<Record<string, unknown>>()),
-    // The R6 shim without a database: 'admin' is system work; any lower
-    // level enters the workspace scope of an agent on no workspace.
-    withViewer: vi.fn((level: string, _for: unknown, fn: () => Promise<unknown>) =>
-      level === 'admin'
-        ? fn()
-        : runInViewerScope({ kind: 'assistant', loginId: null, ws: [], modWs: [] }, fn),
-    ),
+    ...actual,
+    db: { select },
+    // A turn scope without a database: the scope alone.
+    withTurnScope: vi.fn((scope: never, fn: () => Promise<unknown>) => runInViewerScope(scope, fn)),
   };
 });
 
 vi.mock('../agent', async () => {
   const level = where;
   return {
-    runToolLoop: vi.fn(async (args: { agentLevel?: string }) => {
-      h.levels.push(`loop:${level()}`, `loop-arg:${args.agentLevel}`);
+    runToolLoop: vi.fn(async () => {
+      h.levels.push(`loop:${level()}`);
       return {
         reply: 'ok',
         messages: [],
@@ -103,13 +112,15 @@ const ASSEMBLED = {
 
 const MEMBER_SURFACE = { kind: 'team', loginId: 'login-1', privateReads: false };
 
-const run = (audience: string, surface: unknown = MEMBER_SURFACE) =>
+/** `workspaceId`: the Team workspace's assistant, or (null) a helper. */
+const run = (workspaceId: string | null, surface: unknown = MEMBER_SURFACE) =>
   runResponderLoop({
     ownerId: 'owner-1',
     agent: {
       id: 'agent-1',
+      ownerId: 'owner-1',
       slug: 'team-responder',
-      audience,
+      workspaceId,
       model: 'm',
       provider: 'openrouter',
       params: {},
@@ -135,30 +146,23 @@ beforeEach(() => {
 });
 
 describe('runResponderLoop runs in the agent scope', () => {
-  it('a team agent: context, backup lookup, messages and the loop run in its workspace scope', async () => {
-    const res = await run('team');
+  it('the Team workspace’s assistant: context, backup lookup, messages and the loop run in its workspace scope', async () => {
+    const res = await run('ws-team');
     expect(res.reply).toBe('ok');
     expect(h.levels).toEqual([
-      'context:assistant()',
-      'backup:assistant()',
-      'messages:assistant()',
-      'loop:assistant()',
-      'loop-arg:team',
+      'context:assistant(ws-team)',
+      'backup:assistant(ws-team)',
+      'messages:assistant(ws-team)',
+      'loop:assistant(ws-team)',
     ]);
   });
 
-  // Answering no login (system work, a run's turn), an admin agent on no
-  // workspace runs at admin. Answering a login it runs in that login's turn
+  // Answering no login (system work, a run's turn), a helper on no
+  // workspace is system work. Answering a login it runs in that login's turn
   // scope of Admin (W7c fix round 2), which needs the database: the W7c
   // chat db test pins it.
-  it('control: an admin agent answering no login runs at admin', async () => {
-    await run('admin', { kind: 'web' });
-    expect(h.levels).toEqual([
-      'context:admin',
-      'backup:admin',
-      'messages:admin',
-      'loop:admin',
-      'loop-arg:admin',
-    ]);
+  it('control: a helper answering no login is system work', async () => {
+    await run(null, { kind: 'web' });
+    expect(h.levels).toEqual(['context:admin', 'backup:admin', 'messages:admin', 'loop:admin']);
   });
 });

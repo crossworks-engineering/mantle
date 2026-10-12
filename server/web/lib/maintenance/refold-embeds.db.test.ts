@@ -2,11 +2,11 @@
  * Workspaces W2, clean derived text (plan 5.3 with R8, migration 0247), on a
  * real migrated Postgres. The phase's "done when":
  *
- *  - a page LEVELLED without its embed (a public page that embeds an admin
- *    file) finds none of the embed's words, and
+ *  - a page no workspace holds is re-folded to its own words and a marker
+ *    for the picture, and
  *  - a page GRANTED without its embed (to Team, the file to nobody) finds
- *    none of them either, through doc_text, chunks, keyword search, the
- *    summary or facts;
+ *    none of the embed's words, through doc_text, chunks, keyword search,
+ *    the summary or facts;
  *  - the extract queue is unchanged by the hand-run task (no notify, no job);
  *  - a marked fact is read in a scope that holds the Admin workspace only;
  *  - the old summary sits in node_mixed_summaries, which no limited role reads.
@@ -39,7 +39,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   // of the page who may not read the file.
   const SECRET = ['zanzibarquux', 'quokkaplinth', 'marmaladerift'];
   const file = randomUUID();
-  const levelled = randomUUID();
+  const unheld = randomUUID();
   const granted = randomUUID();
   // A page whose embedded file was deleted: no node_embeds edge is left.
   const orphan = randomUUID();
@@ -69,9 +69,9 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
 
   /** A page as the pre-W2 commit path left it: the embed's words in its
    *  doc_text, its summary, one chunk and one live fact. */
-  async function oldPage(id: string, audience: string, doc: unknown = docWithEmbed) {
-    await admin`insert into nodes (id, owner_id, type, title, path, audience, data, embedding)
-      values (${id}, ${anchor}, 'page', ${`${tag} pump page`}, 'pages', ${audience},
+  async function oldPage(id: string, doc: unknown = docWithEmbed) {
+    await admin`insert into nodes (id, owner_id, type, title, path, data, embedding)
+      values (${id}, ${anchor}, 'page', ${`${tag} pump page`}, 'pages',
               ${JSON.stringify({ summary: `Pump overhaul with ${SECRET[1]} calibration`, entities: [SECRET[2]!] })}::jsonb,
               ${vecLit}::vector)`;
     await admin`insert into pages (node_id, doc, doc_text)
@@ -92,15 +92,15 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
       const like = `%${w}%`;
       const r = (await m.db.execute(m.sql`
         select
-          (select count(*) from pages p where p.node_id in (${levelled}, ${granted}, ${orphan})
+          (select count(*) from pages p where p.node_id in (${unheld}, ${granted}, ${orphan})
               and p.doc_text ilike ${like})::int as doc_text,
-          (select count(*) from content_chunks c where c.node_id in (${levelled}, ${granted}, ${orphan})
+          (select count(*) from content_chunks c where c.node_id in (${unheld}, ${granted}, ${orphan})
               and c.text ilike ${like})::int as chunks,
-          (select count(*) from nodes n where n.id in (${levelled}, ${granted}, ${orphan})
+          (select count(*) from nodes n where n.id in (${unheld}, ${granted}, ${orphan})
               and (n.search_tsv @@ plainto_tsquery('english', ${w}) or n.data::text ilike ${like}))::int as nodes,
-          (select count(*) from facts f where f.source_node_id in (${levelled}, ${granted}, ${orphan})
+          (select count(*) from facts f where f.source_node_id in (${unheld}, ${granted}, ${orphan})
               and f.content ilike ${like})::int as facts,
-          (select count(*) from nodes n where n.id in (${levelled}, ${granted}, ${orphan}))::int as pages_seen`)) as unknown as Record<
+          (select count(*) from nodes n where n.id in (${unheld}, ${granted}, ${orphan}))::int as pages_seen`)) as unknown as Record<
         string,
         number
       >[];
@@ -123,27 +123,27 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     anchor = await ensureTestAnchor(admin);
     await admin`insert into auth.users (id, email, password_hash, role)
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`;
-    await admin`insert into nodes (id, owner_id, type, title, path, audience, data)
-      values (${file}, ${anchor}, 'file', ${`${SECRET[0]}.png`}, 'files', 'admin',
+    await admin`insert into nodes (id, owner_id, type, title, path, data)
+      values (${file}, ${anchor}, 'file', ${`${SECRET[0]}.png`}, 'files',
               ${JSON.stringify({ text: `${SECRET[1]} ${SECRET[2]} calibration` })}::jsonb)`;
-    await oldPage(levelled, 'public');
-    await oldPage(granted, 'admin');
+    await oldPage(unheld);
+    await oldPage(granted);
     // The embedded file of this one is gone: the doc still names it.
     const gone = randomUUID();
-    await oldPage(orphan, 'public', {
+    await oldPage(orphan, {
       ...docWithEmbed,
       content: [
         docWithEmbed.content[0],
         { type: 'image', attrs: { nodeId: gone, alt: `${SECRET[0]}.png`, src: null } },
       ],
     });
-    await oldPage(raced, 'admin');
+    await oldPage(raced);
     // A page that embeds nothing, and one that holds a child page.
-    await oldPage(plain, 'admin', {
+    await oldPage(plain, {
       type: 'doc',
       content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Pump overhaul notes.' }] }],
     });
-    await oldPage(parent, 'admin', {
+    await oldPage(parent, {
       type: 'doc',
       content: [
         { type: 'paragraph', content: [{ type: 'text', text: 'Pump overhaul notes.' }] },
@@ -151,14 +151,14 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
       ],
     });
     // A note 0247 marked (over-marked: a note's body is its own markdown).
-    await admin`insert into nodes (id, owner_id, type, title, path, audience, data, derived_mixed)
-      values (${note}, ${anchor}, 'note', ${`${tag} valve note`}, 'notes', 'admin',
+    await admin`insert into nodes (id, owner_id, type, title, path, data, derived_mixed)
+      values (${note}, ${anchor}, 'note', ${`${tag} valve note`}, 'notes',
               ${JSON.stringify({ content: `Valve check ![gauge](media:${file})` })}::jsonb, true)`;
     await admin`insert into node_mixed_summaries (node_id, summary, summary_model)
       values (${note}, 'Valve check summary', 'm1')`;
     // The same, but edited after the mark: its old summary must not return.
-    await admin`insert into nodes (id, owner_id, type, title, path, audience, data, derived_mixed)
-      values (${noteEdited}, ${anchor}, 'note', ${`${tag} edited note`}, 'notes', 'admin',
+    await admin`insert into nodes (id, owner_id, type, title, path, data, derived_mixed)
+      values (${noteEdited}, ${anchor}, 'note', ${`${tag} edited note`}, 'notes',
               ${JSON.stringify({ content: `New words ![gauge](media:${file})` })}::jsonb, true)`;
     await admin`insert into node_mixed_summaries (node_id, summary, summary_model, moved_at)
       values (${noteEdited}, 'Stale summary', 'm1', now() - interval '1 hour')`;
@@ -177,10 +177,10 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
 
   afterAll(async () => {
     if (!admin) return;
-    await admin`delete from item_grants where node_id in (${granted}, ${levelled}, ${file})`;
+    await admin`delete from item_grants where node_id in (${granted}, ${unheld}, ${file})`;
     await admin`delete from facts where content like ${`${tag}%`}`;
-    await admin`delete from node_mixed_summaries where node_id in (${levelled}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent})`;
-    await admin`delete from nodes where id in (${levelled}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent}, ${file})`;
+    await admin`delete from node_mixed_summaries where node_id in (${unheld}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent})`;
+    await admin`delete from nodes where id in (${unheld}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent}, ${file})`;
     // Items other test files made on the shared anchor meanwhile may have
     // taken a home here: their rows go with the workspaces, in one
     // transaction that holds new grants back (an insert between the two
@@ -195,8 +195,10 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     await m?.closeDb();
   });
 
-  it('before W2, the old rows leak (the control)', async () => {
-    const leaked = await m.runInLevelRoleForTest('public', found);
+  // The control: the old rows hold the embed's words in every derived store
+  // (read on the system pool), so the empty finds below are not vacuous.
+  it('before W2, the old rows hold the embed’s words (the control)', async () => {
+    const leaked = await found();
     for (const h of [
       `doc_text:${SECRET[1]}`,
       `chunks:${SECRET[1]}`,
@@ -209,7 +211,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
 
   it('the mark sets the old summary aside and hides the old facts; the re-fold changes no queue', async () => {
     const marked = (await admin`
-      select * from mantle_mark_derived_mixed(false, ${[levelled, granted, orphan]}::uuid[])`) as unknown as {
+      select * from mantle_mark_derived_mixed(false, ${[unheld, granted, orphan]}::uuid[])`) as unknown as {
       node_type: string;
       nodes_marked: string;
       summaries_moved: string;
@@ -221,7 +223,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     ]);
     // Idempotent.
     const again =
-      await admin`select * from mantle_mark_derived_mixed(false, ${[levelled, granted, orphan]}::uuid[])`;
+      await admin`select * from mantle_mark_derived_mixed(false, ${[unheld, granted, orphan]}::uuid[])`;
     expect(again).toEqual([]);
 
     const notified: string[] = [];
@@ -230,13 +232,13 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     const jobs = async () => {
       const [r] = await admin<{ n: number }[]>`
         select count(*)::int as n from pgboss.job
-         where data::text like any (${[`%${levelled}%`, `%${granted}%`, `%${orphan}%`]}::text[])`;
+         where data::text like any (${[`%${unheld}%`, `%${granted}%`, `%${orphan}%`]}::text[])`;
       return r!.n;
     };
     const jobsBefore = await jobs();
     const updatedBefore = await admin<{ id: string; u: string }[]>`
-      select id, updated_at::text as u from nodes where id in (${levelled}, ${granted}, ${orphan}) order by id`;
-    const ids: string[] = [levelled, granted, orphan];
+      select id, updated_at::text as u from nodes where id in (${unheld}, ${granted}, ${orphan}) order by id`;
+    const ids: string[] = [unheld, granted, orphan];
     const dry = await refold.refoldEmbeds(anchor, { apply: false, ids, deps });
     expect(dry).toMatchObject({ textRewritten: 3, rechunked: 3, nodeVectors: 3 });
     expect(dry.marked.page).toBe(3);
@@ -250,16 +252,16 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     expect(notified.filter((id) => ids.includes(id))).toEqual([]);
     expect(await jobs()).toBe(jobsBefore);
     const updatedAfter = await admin<{ id: string; u: string }[]>`
-      select id, updated_at::text as u from nodes where id in (${levelled}, ${granted}, ${orphan}) order by id`;
+      select id, updated_at::text as u from nodes where id in (${unheld}, ${granted}, ${orphan}) order by id`;
     expect(updatedAfter.map((x) => x.u)).toEqual(updatedBefore.map((x) => x.u));
 
     const [side] = await admin<{ n: number }[]>`
       select count(*)::int as n from node_mixed_summaries
-       where node_id in (${levelled}, ${granted}, ${orphan}) and summary like ${`%${SECRET[1]}%`}`;
+       where node_id in (${unheld}, ${granted}, ${orphan}) and summary like ${`%${SECRET[1]}%`}`;
     expect(side!.n).toBe(3);
     const [p] = await admin<
       { t: string }[]
-    >`select doc_text as t from pages where node_id = ${levelled}`;
+    >`select doc_text as t from pages where node_id = ${unheld}`;
     // Its own words and a marker for the picture (no workspace holds this
     // page, so nothing else is hidden; W5b2).
     expect(p!.t).toBe('Pump overhaul notes.\n[embedded file]');
@@ -324,10 +326,6 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     expect(await admin`select * from mantle_mark_derived_mixed(false, ${[note]}::uuid[])`).toEqual(
       [],
     );
-  });
-
-  it('LEVELLED without its embed: the public reader finds none of its words', async () => {
-    expect(await m.runInLevelRoleForTest('public', found)).toEqual([]);
   });
 
   it('GRANTED without its embed: a Team scope finds none of its words', async () => {

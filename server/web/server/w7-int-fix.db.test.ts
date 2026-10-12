@@ -152,8 +152,8 @@ describe.skipIf(!URL)('W7 integration fix', () => {
   };
   const newDigest = async (login: string) => {
     const id = randomUUID();
-    await x(sql`insert into nodes (id, owner_id, type, title, path, audience, tags, data, login_id)
-      values (${id}, ${owner}, 'note', 'Digest', 'notes', 'admin',
+    await x(sql`insert into nodes (id, owner_id, type, title, path, tags, data, login_id)
+      values (${id}, ${owner}, 'note', 'Digest', 'notes',
               array['conversation-digest']::text[],
               ${JSON.stringify({ kind: 'conversation_digest', login_id: login, summary: tag })}::jsonb,
               ${login})`);
@@ -468,7 +468,6 @@ describe.skipIf(!URL)('W7 integration fix', () => {
       ownerId: owner2,
       agentId: main!.id,
       agentSlug: main!.slug,
-      agentLevel: 'admin',
       initialMessages: [{ role: 'user', content: 'hello' }],
       tools: [],
       surface: { kind: 'web', loginId: owner2 },
@@ -509,7 +508,7 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     );
     expect(curated.status).toBe(403);
     const refused = await rt.withAgentScope(
-      { id: agent.id, ownerId: owner, audience: 'admin', workspaceId: adminWs },
+      { id: agent.id, ownerId: owner, workspaceId: adminWs },
       () =>
         t.dispatchTool(
           {
@@ -534,7 +533,7 @@ describe.skipIf(!URL)('W7 integration fix', () => {
   });
 
   it("C7: a helper started from a scope's system-pool work answers that scope's login", async () => {
-    const helper = { id: remy.id, ownerId: owner, audience: 'admin', workspaceId: null };
+    const helper = { id: remy.id, ownerId: owner, workspaceId: null };
     const seen = await m.withTurnScope(
       { kind: 'assistant', loginId: second, ws: [adminWs], modWs: [] },
       () => m.asSystem(() => rt.withAgentScope(helper, async () => m.currentScope()), 'admin-area'),

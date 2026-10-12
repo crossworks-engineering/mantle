@@ -94,7 +94,7 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
     asAgent = true,
   ) =>
     rt.withAgentScope(
-      { id: agent.id, audience: 'admin', workspaceId: adminWs },
+      { id: agent.id, workspaceId: adminWs },
       () =>
         t.dispatchTool(
           {

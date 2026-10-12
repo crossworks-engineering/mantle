@@ -33,10 +33,10 @@ vi.mock('@mantle/content', async (importOriginal) => {
     setManifest: vi.fn(),
     updateAppMeta: vi.fn(),
     notifyAppNavChanged: vi.fn(),
-    // app_tools_set reads the app's level to decide on member warnings; an
-    // admin-level app gets none (proven on Postgres in
+    // The app exists (a handler refuses a missing one). An app no workspace
+    // beyond Admin holds gets no member warnings (proven on Postgres in
     // member-app-tools.viewer.db.test.ts).
-    getApp: vi.fn(async () => ({ audience: 'admin' })),
+    getApp: vi.fn(async () => ({})),
   };
 });
 vi.mock('@mantle/content/app-table-exports', async (importOriginal) => {

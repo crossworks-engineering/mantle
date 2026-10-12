@@ -1,11 +1,11 @@
 /**
  * The responder-turn assembly runs in the agent's scope (member logins Phase
- * 0b, workspaces W5b2): for a team-level agent, the skill, tool-group and
- * tool lookups (and anything else the prompt derives from the brain) run in
- * the scope the R6 shim (withViewer) enters for it, never as system work.
- * The audit removed this wrap and every test stayed green; this pins it.
- * Collaborators are faked; each records the scope it runs in. withViewer
- * enters the scope viewerScopeFor gives an agent on no workspace.
+ * 0b, workspaces W5b2, W8c): for the assistant of a workspace other than
+ * Admin, the skill, tool-group and tool lookups (and anything else the
+ * prompt derives from the brain) run in a turn scope of that workspace,
+ * never as system work. The audit removed this wrap and every test stayed
+ * green; this pins it. Collaborators are faked; each records the scope it
+ * runs in. withTurnScope enters the scope alone (no database).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { currentScope } from '@mantle/db/viewer';
@@ -18,21 +18,30 @@ const h = vi.hoisted(() => ({ levels: [] as string[] }));
 function where(): string {
   const s = currentScope();
   if (s.kind === 'system') return 'admin';
-  if (s.kind === 'level') return `level:${s.level}`;
   return `${s.kind}(${s.ws.join(',')})`;
 }
 
 vi.mock('@mantle/db', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
   const { runInViewerScope } = await import('@mantle/db/viewer');
+  // The agent's workspace lookups (agent-viewer.ts, on the system pool)
+  // without a database: a live workspace that is not Admin, and the login a
+  // user there.
+  const select = () => ({
+    from: (table: unknown) => {
+      const rows =
+        table === actual.workspaces
+          ? [{ isAdmin: false, ownerId: 'owner-1', archivedAt: null }]
+          : [{ moderator: false }];
+      const chain: Record<string, unknown> = { where: () => chain, limit: async () => rows };
+      return chain;
+    },
+  });
   return {
-    ...(await importOriginal<Record<string, unknown>>()),
-    // The R6 shim without a database: 'admin' is system work; any lower
-    // level enters the workspace scope of an agent on no workspace.
-    withViewer: vi.fn((level: string, _for: unknown, fn: () => Promise<unknown>) =>
-      level === 'admin'
-        ? fn()
-        : runInViewerScope({ kind: 'assistant', loginId: null, ws: [], modWs: [] }, fn),
-    ),
+    ...actual,
+    db: { select },
+    // A turn scope without a database: the scope alone.
+    withTurnScope: vi.fn((scope: never, fn: () => Promise<unknown>) => runInViewerScope(scope, fn)),
   };
 });
 
@@ -90,12 +99,13 @@ vi.mock('@mantle/tracing', () => ({
 
 import { assembleResponderTurn } from './assemble-turn';
 
-const agent = (audience: string) =>
+/** The Team workspace's assistant, or (null) a helper on no workspace. */
+const agent = (workspaceId: string | null) =>
   ({
     id: 'agent-1',
     ownerId: 'owner-1',
     slug: 'team-responder',
-    audience,
+    workspaceId,
     model: 'm',
     provider: 'openrouter',
     systemPrompt: 'PROMPT',
@@ -105,10 +115,10 @@ const agent = (audience: string) =>
     params: {},
   }) as unknown as Agent;
 
-const assemble = (audience: string) =>
+const assemble = (workspaceId: string | null) =>
   assembleResponderTurn({
     ownerId: 'owner-1',
-    agent: agent(audience),
+    agent: agent(workspaceId),
     prefs: { timezone: 'UTC', locale: 'en-GB' },
     logPrefix: '[test]',
     includeIdentity: false,
@@ -121,15 +131,15 @@ beforeEach(() => {
 });
 
 describe('assembleResponderTurn runs in the agent scope', () => {
-  it('a team agent: skills, groups and tools resolve in its workspace scope', async () => {
-    const a = await assemble('team');
+  it('the Team workspace’s assistant: skills, groups and tools resolve in its workspace scope', async () => {
+    const a = await assemble('ws-team');
     expect(a.allowedTools.map((t) => t.slug)).toContain('search_nodes');
-    expect(h.levels).toContain('tools:assistant()');
-    expect(h.levels.filter((l) => !l.endsWith(':assistant()'))).toEqual([]);
+    expect(h.levels).toContain('tools:assistant(ws-team)');
+    expect(h.levels.filter((l) => !l.endsWith(':assistant(ws-team)'))).toEqual([]);
   });
 
-  it('control: an admin agent resolves at admin', async () => {
-    await assemble('admin');
+  it('control: a helper answering no login resolves as system work', async () => {
+    await assemble(null);
     expect(h.levels).toContain('tools:admin');
     expect(h.levels.filter((l) => !l.endsWith(':admin'))).toEqual([]);
   });

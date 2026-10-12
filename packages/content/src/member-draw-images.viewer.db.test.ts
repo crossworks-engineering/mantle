@@ -182,8 +182,9 @@ describe.skipIf(!URL)('member drawing images', () => {
   });
 
   it('reads on the admin pool only', async () => {
+    // Inside a workspace scope (the member's own) it refuses.
     await expect(
-      m.runInLevelRoleForTest('team', () => di.memberVisibleDrawFileIds(anchor, member, draw)),
+      m.withViewer({ login: member }, () => di.memberVisibleDrawFileIds(anchor, member, draw)),
     ).rejects.toThrow(/admin pool/);
   });
 });

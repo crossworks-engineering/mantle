@@ -79,7 +79,6 @@ describe.skipIf(!URL)('chat archive on Postgres', () => {
     id: agentId,
     ownerId: owner,
     slug: `assistant-${tag}`,
-    audience: 'admin',
     memoryConfig: {
       history_limit: 20,
       digest_limit: 3,

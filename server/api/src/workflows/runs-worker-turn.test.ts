@@ -89,7 +89,6 @@ vi.mock('@mantle/runs', () => ({
 }));
 
 vi.mock('@mantle/runtime/agent', () => ({
-  agentLevel: () => 'admin',
   // The run's scope (W4b): these runs carry none, so the work runs as is.
   withRunScope: (_run: unknown, fn: () => Promise<unknown>) => fn(),
   composeSystemPromptWithSkills: (p: string) => p ?? 'sys',

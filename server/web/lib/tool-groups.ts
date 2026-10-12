@@ -8,13 +8,7 @@
  */
 
 import { and, asc, eq, sql } from 'drizzle-orm';
-import {
-  db,
-  toolGroups,
-  agents,
-  type ToolGroup,
-  type ToolGroupIntegration,
-} from '@mantle/db';
+import { db, toolGroups, agents, type ToolGroup, type ToolGroupIntegration } from '@mantle/db';
 import { deleteMcpConnector, deleteOpenapiConnector } from '@mantle/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
 

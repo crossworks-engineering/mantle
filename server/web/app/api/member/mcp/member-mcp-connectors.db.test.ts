@@ -84,14 +84,15 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
       mcp: { url: 'https://mcp.example.invalid/mcp' },
     });
     await exec(sqlTag`
-      insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration) values
-        (${anchor}, 'g-team', 'g', ARRAY['note_list'], 'team', true, null),
-        (${anchor}, 'mcp-src', 'Source', ARRAY['mcp_src_read','mcp_src_write'], 'team', true, ${binding}::jsonb)`);
+      insert into tool_groups (owner_id, slug, name, tool_slugs, enabled, integration) values
+        (${anchor}, 'g-team', 'g', ARRAY['note_list'], true, null),
+        (${anchor}, 'mcp-src', 'Source', ARRAY['mcp_src_read','mcp_src_write'], true, ${binding}::jsonb)`);
     await exec(sqlTag`
-      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, audience) values
-        (${anchor}, 'team-responder', 't', 'm', 'p', ARRAY['g-team'], 'team')`);
-    // The connector reaches the member through a workspace (W5b2): one the
-    // member moderates holds it with Write on.
+      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs) values
+        (${anchor}, 'team-responder', 't', 'm', 'p', ARRAY['g-team'])`);
+    // No level on the group or the agent (W8c): the connector reaches the
+    // member through a workspace (W5b2), one the member moderates holds it
+    // with Write on.
     const ws = randomUUID();
     await exec(
       sqlTag`insert into workspaces (id, owner_id, name) values (${ws}, ${anchor}, ${tag})`,
@@ -108,7 +109,6 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
     await exec(sqlTag`delete from agents where owner_id = ${anchor}`);
     await exec(sqlTag`delete from tool_groups where owner_id = ${anchor}`);
     await exec(sqlTag`delete from tools where owner_id = ${anchor}`);
-    await exec(sqlTag`delete from mcp_login_access where login_id = ${member}`);
     await exec(sqlTag`delete from profiles where user_id = ${anchor}`);
     await exec(sqlTag`delete from spaces where login_id in (${anchor}, ${member})`);
     await exec(sqlTag`delete from auth.users where id in (${anchor}, ${member})`);

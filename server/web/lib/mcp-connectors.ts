@@ -9,12 +9,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import {
-  db,
-  toolGroups,
-  type ToolGroup,
-  type ToolGroupMcpBinding,
-} from '@mantle/db';
+import { db, toolGroups, type ToolGroup, type ToolGroupMcpBinding } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { getConfigStatus } from '@mantle/microsoft';
 import {

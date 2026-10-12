@@ -16,9 +16,7 @@
  *
  * The lookups run on the admin pool here: the rule is in the query (as the
  * member-apps tests prove theirs; on the admin pool the member's workspace is
- * the Team of the app's owner). Row security on the team role is keyed on
- * the box's one brain, which this test's brain is not; the team-role case
- * only proves the lookup's columns are granted.
+ * the Team of the app's owner).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/builtins-app-data.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -34,7 +32,6 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let admin: Parameters<Db['ensureViewerRoles']>[0];
-  let content: typeof import('@mantle/content');
   let broker: typeof import('@mantle/content/app-broker');
   let tools: typeof import('./builtins-app-data');
   let dir = '';
@@ -124,7 +121,6 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    content = await import('@mantle/content');
     broker = await import('@mantle/content/app-broker');
     tools = await import('./builtins-app-data');
     await admin`insert into auth.users (id, email, password_hash, role, display_name) values
@@ -350,17 +346,5 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     });
     expect(String(logs[0]?.detail.sql)).toContain('INSERT INTO items');
     expect(String(logs[0]?.detail.me)).toMatch(/^u_/);
-  });
-
-  it('the lookup runs on the team and client roles (its columns are granted)', async () => {
-    // A column the role may not read fails the query (42501), so getting an
-    // answer at all is the proof.
-    await expect(
-      m.runInLevelRoleForTest('team', () => content.listMcpDataApps(anchor, 'member')),
-    ).resolves.toBeInstanceOf(Array);
-    const one = await m.runInLevelRoleForTest('client', () =>
-      content.getMcpDataApp(anchor, 'client', ids['e client']!),
-    );
-    expect(one === null || one.id === ids['e client']).toBe(true);
   });
 });

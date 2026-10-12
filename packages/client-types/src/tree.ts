@@ -167,7 +167,6 @@ export const TREE_KIND_SPECS: Readonly<Record<TreeKind, TreeKindSpec>> = {
     shareable: false,
     sorts: ['name', 'updated'],
   },
-
 };
 
 /** One folder as the tree shows it. Counts are what THIS reader can see. */

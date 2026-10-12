@@ -94,7 +94,7 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     (await m.systemDb.execute(q)) as unknown as T[];
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
   const inAdminTurn = <T>(login: string, fn: () => Promise<T>) =>
-    rt.withAgentScope({ id: agent.id, audience: 'admin', workspaceId: adminWs }, fn, {
+    rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, fn, {
       ownerLoginId: login,
     });
   const dispatchAs = (login: string, slug: string, input: Record<string, unknown>) =>
@@ -226,11 +226,11 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
       }),
     );
     // A connector's group, with its base URL and credential.
-    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience, integration)
-      values (${owner}, ${connGroup}, 'GitHub', ${'{}'}::text[], 'admin',
+    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, integration)
+      values (${owner}, ${connGroup}, 'GitHub', ${'{}'}::text[],
               ${JSON.stringify(connIntegration)}::jsonb)`);
-    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience, integration)
-      values (${owner}, ${`${tag}-oauth`}, 'OAuth API', ${'{}'}::text[], 'admin',
+    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, integration)
+      values (${owner}, ${`${tag}-oauth`}, 'OAuth API', ${'{}'}::text[],
               ${JSON.stringify({ service: 'acme', baseUrl: 'https://api.acme.example' })}::jsonb)`);
     // A vault key, and the anchor's tool that sends it.
     const keys = await import('@mantle/api-keys');

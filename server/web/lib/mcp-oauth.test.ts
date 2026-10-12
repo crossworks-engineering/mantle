@@ -111,7 +111,6 @@ vi.mock('@mantle/db', () => {
     ]),
     oauthAuthCodes: cols(['id', 'codeHash', 'clientId', 'actorId', 'expiresAt']),
     authUsers: cols(['id', 'role', 'disabledAt', 'email', 'sessionEpoch']),
-    mcpLoginAccess: cols(['loginId', 'enabled', 'writeEnabled']),
     oauthClients: cols(['id', 'clientName', 'redirectUris']),
     resolveSingleOwnerId: vi.fn(),
   };

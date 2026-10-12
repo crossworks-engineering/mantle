@@ -3,14 +3,15 @@
  * plan section 2b, workspaces W5b2): with the Team workspace's assistant
  * (W5c: a workspace resource, no agent level read), everything runTeamTurn
  * reads for the turn (the owner's preferences, the member's thread, the
- * retrieval, the assembly, the loop) runs in the scope the R6 shim
- * (withViewer) enters for the agent, with no outer wrap from the caller.
- * Client chat went in W5c: a queued client turn refuses. The audit removed
- * this wrap and every test stayed green; this pins it. No
- * database: the agent row, the content functions and the inner stages are
- * faked, each recording the scope it runs in, and withViewer enters a fake
- * scope that names whom it acts for. The inner stages wrap themselves too;
- * faking them here is what makes this test about runTeamTurn's own wrap.
+ * retrieval, the assembly, the loop) runs in a turn scope of the Team
+ * workspace for the member (withAgentViewer), with no outer wrap from the
+ * caller. Client chat went in W5c: a queued client turn refuses. The audit
+ * removed this wrap and every test stayed green; this pins it. No
+ * database: the agent row, the workspace lookups, the content functions and
+ * the inner stages are faked, each recording the scope it runs in, and
+ * withTurnScope enters the scope alone. The inner stages wrap themselves
+ * too; faking them here is what makes this test about runTeamTurn's own
+ * wrap.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { currentScope } from '@mantle/db/viewer';
@@ -18,7 +19,12 @@ import { currentScope } from '@mantle/db/viewer';
 const h = vi.hoisted(() => ({
   levels: [] as string[],
   /** The Team workspace's assistant teamAssistant answers, or none. */
-  team: { id: 'agent-1', slug: 'team-responder', name: 'Team Responder' } as {
+  team: {
+    id: 'agent-1',
+    slug: 'team-responder',
+    name: 'Team Responder',
+    workspaceId: 'ws-team',
+  } as {
     id: string;
     slug: string;
     name: string;
@@ -36,53 +42,53 @@ const h = vi.hoisted(() => ({
 function where(): string {
   const s = currentScope();
   if (s.kind === 'system') return 'admin';
-  if (s.kind === 'level') return `level:${s.level}`;
   return `${s.kind}(${s.ws.join(',')})`;
 }
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   const { runInViewerScope } = await import('@mantle/db/viewer');
-  const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'where']) chain[m] = () => chain;
-  chain['limit'] = async () => {
-    // Where the agent row is read (by the id the Team workspace names).
-    h.levels.push(`agent:${where()}`);
-    return [
-      {
-        id: 'agent-1',
-        slug: 'team-responder',
-        // No workspace row in this fake: the agent scope falls back to the
-        // stored level (agent-viewer.ts), as an assistant on no workspace.
-        // The turn itself reads no level to pick the agent (W5c).
-        audience: 'team',
-        enabled: true,
-        apiKeyId: 'key-1',
-        provider: 'openrouter',
-        model: 'fake/model',
-        memoryConfig: {},
-        params: {},
-      },
-    ];
+  const select = () => {
+    let table: unknown = null;
+    const chain: Record<string, unknown> = {};
+    chain['from'] = (t: unknown) => {
+      table = t;
+      return chain;
+    };
+    chain['where'] = () => chain;
+    chain['limit'] = async () => {
+      // The agent's workspace lookups (agent-viewer.ts, on the system pool):
+      // the Team workspace is live and not Admin, and the login a user there.
+      if (table === actual.workspaces) {
+        return [{ isAdmin: false, ownerId: 'owner-1', archivedAt: null }];
+      }
+      if (table === actual.workspaceUsers) return [{ moderator: false }];
+      // Where the agent row is read (by the id the Team workspace names).
+      h.levels.push(`agent:${where()}`);
+      return [
+        {
+          id: 'agent-1',
+          slug: 'team-responder',
+          // The Team workspace's assistant: the turn runs in its scope.
+          workspaceId: 'ws-team',
+          enabled: true,
+          apiKeyId: 'key-1',
+          provider: 'openrouter',
+          model: 'fake/model',
+          memoryConfig: {},
+          params: {},
+        },
+      ];
+    };
+    return chain;
   };
   return {
     ...actual,
-    db: { select: () => chain },
+    db: { select },
     // No "New chat" yet: the thread has no lower bound.
     openChatThread: vi.fn(async () => null),
-    // The R6 shim without a database: 'admin' is system work; a login reads
-    // its workspaces (here one named for it); an agent on no workspace reads
-    // none.
-    withViewer: vi.fn((level: string, actsFor: { login?: string }, fn: () => Promise<unknown>) =>
-      level === 'admin'
-        ? fn()
-        : runInViewerScope(
-            actsFor.login
-              ? { kind: 'user', loginId: actsFor.login, ws: [`ws-of-${actsFor.login}`], modWs: [] }
-              : { kind: 'assistant', loginId: null, ws: [], modWs: [] },
-            fn,
-          ),
-    ),
+    // A turn scope without a database: the scope alone.
+    withTurnScope: vi.fn((scope: never, fn: () => Promise<unknown>) => runInViewerScope(scope, fn)),
   };
 });
 
@@ -199,7 +205,12 @@ import { runClientTurn, runTeamTurn } from './run-team-turn';
 
 beforeEach(() => {
   h.levels = [];
-  h.team = { id: 'agent-1', slug: 'team-responder', name: 'Team Responder' };
+  h.team = {
+    id: 'agent-1',
+    slug: 'team-responder',
+    name: 'Team Responder',
+    workspaceId: 'ws-team',
+  };
   h.appended = 0;
   h.groupTools = [];
   h.loopTools = [];
@@ -215,12 +226,12 @@ describe('runTeamTurn runs in the agent scope', () => {
     expect(h.levels).toEqual([
       'team-assistant:admin',
       'agent:admin',
-      'prefs:assistant()',
+      'prefs:assistant(ws-team)',
       // The thread first: a short follow-up is enriched from it.
-      'thread:assistant()',
-      'context:assistant()',
-      'assemble:assistant()',
-      'loop:assistant()',
+      'thread:assistant(ws-team)',
+      'context:assistant(ws-team)',
+      'assemble:assistant(ws-team)',
+      'loop:assistant(ws-team)',
     ]);
   });
 
@@ -244,7 +255,7 @@ describe('runTeamTurn runs in the agent scope', () => {
   it('control: an assistant that does not answer in the Team workspace is refused (fail closed)', async () => {
     // The resource names it, but its own workspace is another one (or none):
     // the turn would not run in the Team scope, so it never runs.
-    h.team = { id: 'agent-1', slug: 'team-responder', name: 'Team', workspaceId: 'ws-team' };
+    h.team = { id: 'agent-1', slug: 'team-responder', name: 'Team', workspaceId: 'ws-other' };
     await expect(runTeamTurn('owner-1', 'hello', { loginId: 'login-1' })).rejects.toThrow(
       /does not answer in its workspace/,
     );

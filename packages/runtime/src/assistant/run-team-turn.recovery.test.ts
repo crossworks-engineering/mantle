@@ -19,7 +19,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const agent = {
     id: 'agent-1',
     slug: 'team-responder',
-    audience: 'team',
     enabled: true,
     apiKeyId: 'key-1',
     provider: 'openrouter',
@@ -34,7 +33,6 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 vi.mock('@mantle/api-keys', () => ({ getApiKeyById: vi.fn(async () => ({ id: 'key-1' })) }));
 vi.mock('../agent/agent-viewer', () => ({
-  agentLevel: () => 'team',
   withAgentViewer: (_a: unknown, fn: () => Promise<unknown>) => fn(),
 }));
 vi.mock('../agent', async (importOriginal) => ({

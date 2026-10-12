@@ -464,4 +464,3 @@ export function findPgTools(url: string, containerName?: string): PgTools | null
   }
   return null;
 }
-

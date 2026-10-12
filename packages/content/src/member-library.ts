@@ -48,7 +48,6 @@ export type LibraryRow = {
 function assertLimited(): void {
   const kind = currentScope().kind;
   if (kind !== 'user') {
-
     throw new Error('member Library read outside a viewer scope: wrap it in withViewer');
   }
 }

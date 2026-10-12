@@ -255,10 +255,8 @@ setup rather than skipping them, docs/scripts.md): the team-turn,
 team-groups and shadow-report tests seed a minimal brain of their own (the shared test anchor from
 `@mantle/db/test-support`, a team-level agent and tool group, items at team
 and admin level with one fixed embedding) instead of needing a copy of a
-provisioned brain. `packages/db/src/nodes-owner-rls.db.test.ts` pins the
-owner check in the nodes read rule directly: a team-level node the brain does
-not own (a personal space, another brain-kind space) is invisible to every
-level role. The agent-level wrap on each of the five entry points
+provisioned brain. Since workspaces W8c the level roles hold no policy and
+no grant (migration 0273), so no test reads as one any more. The agent-level wrap on each of the five entry points
 (`loadConversationContext`, `runToolLoop`, `assembleResponderTurn`,
 `runResponderLoop`, `runTeamTurn`) has its own unit test
 (`packages/runtime/src/{agent,assistant}/*.level.test.ts`, no database): each

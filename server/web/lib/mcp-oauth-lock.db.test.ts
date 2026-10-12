@@ -78,7 +78,6 @@ describe.skipIf(!URL)('the OAuth lock', () => {
     await sql`delete from oauth_access_tokens where client_id = ${client}`;
     await sql`delete from oauth_auth_codes where client_id = ${client}`;
     await sql`delete from oauth_clients where id = ${client}`;
-    await sql`delete from mcp_login_access where login_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
   });

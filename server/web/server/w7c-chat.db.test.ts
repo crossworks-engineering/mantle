@@ -140,7 +140,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
   const windowIds = (r: { ok: boolean; output?: unknown }) =>
     ((r.output as { windows?: { node_id: string }[] })?.windows ?? []).map((w) => w.node_id);
   const asRemy = <T>(fn: () => Promise<T>, loginId?: string) =>
-    rt.withAgentScope({ id: remy, audience: 'admin', workspaceId: null }, fn, {
+    rt.withAgentScope({ id: remy, workspaceId: null }, fn, {
       ownerLoginId: loginId ?? null,
     });
   const mcpCall = async (loginId: string, name: string, args: Record<string, unknown>) => {
@@ -286,8 +286,8 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
         period_start: window.from,
         period_end: window.to,
       };
-      await x(sql`insert into nodes (id, owner_id, type, title, path, audience, tags, data, embedding, login_id)
-        values (${id}, ${owner}, 'note', 'Digest', 'notes', 'admin',
+      await x(sql`insert into nodes (id, owner_id, type, title, path, tags, data, embedding, login_id)
+        values (${id}, ${owner}, 'note', 'Digest', 'notes',
                 ARRAY['conversation-digest']::text[], ${JSON.stringify(data)}::jsonb,
                 ${vec}::vector, ${login})`);
       await x(sql`insert into item_grants (node_id, workspace_id, write, is_home)
@@ -308,8 +308,8 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
         summary: `${login} kettle archive`,
         content: `${login} kettle archive`,
       };
-      await x(sql`insert into nodes (id, owner_id, type, title, path, audience, tags, data, embedding, login_id)
-        values (${id}, ${owner}, 'note', ${`${tag} kettle archive`}, 'notes', 'admin',
+      await x(sql`insert into nodes (id, owner_id, type, title, path, tags, data, embedding, login_id)
+        values (${id}, ${owner}, 'note', ${`${tag} kettle archive`}, 'notes',
                 ARRAY['chat-archive']::text[], ${JSON.stringify(data)}::jsonb,
                 ${vec}::vector, ${login})`);
       await x(sql`insert into item_grants (node_id, workspace_id, write, is_home)
@@ -448,7 +448,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     await expect(asRemy(async () => 'ran', member)).rejects.toThrow(
       /not a user of the Admin workspace/,
     );
-    // No login asked: system work at the agent's level, as before.
+    // No login asked: system work (W8c: no level decides it).
     expect(await asRemy(async () => m.currentWorkspaceScope())).toBeNull();
   });
 

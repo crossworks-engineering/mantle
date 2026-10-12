@@ -885,7 +885,8 @@ export async function disallowedRefs(
   } else if (rest.length) {
     // The brain, read as the login reads it (its workspaces; row security
     // decides).
-    const lib = await withViewer({ login: loginId },
+    const lib = await withViewer(
+      { login: loginId },
       async () =>
         await db
           .select({ id: nodes.id })

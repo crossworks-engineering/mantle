@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ACCESS_MATRIX } from './access-matrix';
+import { ACCESS_MATRIX, userReadFor } from './access-matrix';
 
 const SQL = readFileSync(
   path.join(__dirname, '..', 'migrations', '0268_workspaces_mcp_one_surface.sql'),
@@ -38,7 +38,7 @@ describe('0268: one MCP surface', () => {
     for (const t of ['archive_mcp_cutoff', 'archive_mcp_login_access', 'archive_tool_levels']) {
       const row = ACCESS_MATRIX.find((a) => a.table === `public.${t}`);
       expect(row, t).toBeDefined();
-      expect(row).toMatchObject({ read: 'none', rule: 'none' });
+      expect(userReadFor(row!), t).toBe('none');
     }
   });
 });

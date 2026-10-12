@@ -1,40 +1,23 @@
 /**
- * Agent levels where client and public meet (client logins audit A5,
- * migration 0189), on a real, migrated Postgres. Since decision 3 the
- * client role reads client items only and the public role public items
- * only, so the two are siblings, not a chain:
+ * Helpers and tool groups with no level (workspaces W5b2, W7b, W8c), on a
+ * real, migrated Postgres. Agents and tool groups once carried a level and
+ * the level roles read them by it; the level engine is gone, so what is left
+ * to assert:
  *
- *  - a public agent run from a client scope reads nothing (W5b2: it runs
- *    in the caller's workspace scope or none, never at its own level);
- *  - the client role loads client agents and tool groups only, never public
- *    ones, so a client scope cannot even find a public agent to delegate to;
- *  - a public scope never runs a client agent (invoke_agent refuses it);
- *  - a team scope still delegates to an admin agent, which runs at team.
+ *  - a helper (an agent with no workspace) run inside a scope runs in that
+ *    scope, never wider: a scope with no workspace reads none of the pages;
+ *  - system work resolves every group an agent holds (no level cap).
  *
- * Only the model is faked. Seeds its own agents, groups and two pages on
- * the shared anchor, and removes them after.
+ * Seeds its own agents, groups and two pages on the shared anchor (the
+ * frozen audience columns are still written, so a stray read of them would
+ * show), and removes them after.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/runtime/src/agent/agent-level.viewer.db.test.ts
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-const h = vi.hoisted(() => ({ levels: [] as string[] }));
-
-vi.mock('@mantle/voice', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>();
-  const chat = async () => {
-    const { currentViewerLevel } = await import('@mantle/db/viewer');
-    h.levels.push(currentViewerLevel());
-    return { text: 'child done', model: 'fake/model' };
-  };
-  return {
-    ...actual,
-    getChatAdapter: vi.fn(() => ({ providerId: 'local', adapterName: 'fake-chat', chat })),
-  };
-});
-
-describe.skipIf(!URL)('agent levels: client and public never meet', () => {
+describe.skipIf(!URL)('helpers and tool groups carry no level', () => {
   type Db = typeof import('@mantle/db');
   type Admin = Parameters<Db['ensureViewerRoles']>[0];
   let m: Db;
@@ -83,94 +66,27 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
       sqlTag`select id from nodes where id in (${page.client}, ${page.public})`,
     ) as unknown as Promise<{ id: string }[]>;
 
-  it('a public agent under a client scope reads 0 public items, never wider', async () => {
+  it('a helper under a scope with no workspace runs in that scope and reads 0 items', async () => {
     // W5b2 (R6): an agent on no workspace runs in the caller's workspace
-    // scope, never wider; outside one, the shim gives it no workspace. The
-    // level meeting that refused it is gone with the level engine; what it
-    // guarded stays asserted: the public page never reaches it.
+    // scope, never wider. The pages' old public and client marks give it
+    // nothing.
     const { withAgentViewer } = await import('./agent-viewer');
-    const fromLevel = await m.runInLevelRoleForTest('client', () =>
-      // Awaited inside: a query handed out unrun leaves the scope (refused).
-      withAgentViewer({ audience: 'public' }, async () => await readPages()),
-    );
-    expect(fromLevel).toEqual([]);
     const inScope = await m.withViewer({ agent: null }, async () => ({
       outer: m.currentScope(),
-      inner: await withAgentViewer({ audience: 'public' }, async () => ({
+      inner: await withAgentViewer({}, async () => ({
         scope: m.currentScope(),
         read: await readPages(),
       })),
     }));
     expect(inScope.inner).toEqual({ scope: inScope.outer, read: [] });
-    // The client role itself reads its own level only.
-    const own = await m.runInLevelRoleForTest('client', readPages);
-    expect(own.map((r) => r.id)).toEqual([page.client]);
   });
 
-  it('the client role loads client agents and tool groups only (0189)', async () => {
-    const slugs = await m.runInLevelRoleForTest('client', async () => ({
-      agents: (
-        (await m.db.execute(
-          sqlTag`select slug from agents where slug like ${`${tag}-%`} order by slug`,
-        )) as unknown as { slug: string }[]
-      ).map((r) => r.slug),
-      groups: (
-        (await m.db.execute(
-          sqlTag`select slug from tool_groups where slug like ${`${tag}-%`} order by slug`,
-        )) as unknown as { slug: string }[]
-      ).map((r) => r.slug),
-    }));
-    expect(slugs).toEqual({ agents: [agentSlug('client')], groups: [groupSlug('client')] });
-  });
-
-  it('W7b: no level cap on groups: an agent gets the groups it holds that the reader may load', async () => {
+  it('W7b: no level cap on groups: system work gets every group an agent holds', async () => {
     const { resolveAgentToolGroups } = await import('./skills');
     const both = [groupSlug('client'), groupSlug('public')];
-    // System work: every group it holds (tool-group levels went in W7b).
     expect(await resolveAgentToolGroups(anchor, both)).toEqual([
       `${tag}-tool-client`,
       `${tag}-tool-public`,
     ]);
-    // The client role loads its own groups only (0189): never wider.
-    expect(
-      await m.runInLevelRoleForTest('client', () => resolveAgentToolGroups(anchor, both)),
-    ).toEqual([`${tag}-tool-client`]);
-  });
-
-  it('invoke_agent: no public agent for a client, no client agent for a public caller', async () => {
-    const { invokeAgent } = await import('./invoke-agent');
-    const call = (slug: string) =>
-      invokeAgent({
-        ownerId: anchor,
-        agentSlug: slug,
-        prompt: 'hi',
-        depth: 1,
-        parentTraceId: null,
-      });
-    h.levels = [];
-    // The client role cannot even load a public agent.
-    const fromClient = await m.runInLevelRoleForTest('client', () => call(agentSlug('public')));
-    expect(fromClient).toMatchObject({ ok: false });
-    // The public role loads every agent, but a client one is refused before it runs.
-    const fromPublic = await m.runInLevelRoleForTest('public', () => call(agentSlug('client')));
-    expect(fromPublic).toMatchObject({ ok: false });
-    expect((fromPublic as { error: string }).error).toMatch(/client-level.*public/);
-    expect(h.levels).toEqual([]);
-  });
-
-  it('team delegation to an admin agent still works, at team', async () => {
-    const { invokeAgent } = await import('./invoke-agent');
-    h.levels = [];
-    const res = await m.runInLevelRoleForTest('team', () =>
-      invokeAgent({
-        ownerId: anchor,
-        agentSlug: agentSlug('admin'),
-        prompt: 'hi',
-        depth: 1,
-        parentTraceId: null,
-      }),
-    );
-    expect(res).toMatchObject({ ok: true, text: 'child done' });
-    expect(h.levels).toEqual(['team']);
   });
 });

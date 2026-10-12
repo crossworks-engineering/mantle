@@ -8,7 +8,6 @@
  * from the login's row (team for an admin or a member, client for a client),
  * and these limits read that level.
  */
-import { currentSpaceScope } from '@mantle/db';
 
 export type SpaceLimits = {
   /** One upload's ceiling. */
@@ -71,7 +70,6 @@ export const CLIENT_NOTE_MAX_CHARS = 50_000;
 export function inClientSpace(): boolean {
   return false;
 }
-
 
 /** The limits of the current personal-space scope, by its login's role. */
 export function spaceLimits(): SpaceLimits {

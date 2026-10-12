@@ -10,8 +10,10 @@
  * member's run without a login by Team, a login's run by the login's
  * workspaces, and a contact link never (a link holds no workspace); the
  * switch is its READ-ONLY MARK (on = a read, off = a write, which needs the
- * connector's Write tick and a Moderator). It runs under the caller's role;
- * a disabled connector refuses; confirm-gated, shell and recipe tools never
+ * connector's Write tick and a Moderator). An app run reads in the app's
+ * workspace scope, as the broker runs it; a non-owner call outside a
+ * workspace scope takes its rule from its surface (a member's login, a
+ * link); a disabled connector refuses; confirm-gated, shell and recipe tools never
  * pass, nor any built-in on a link; a changed handler or a moved connector
  * voids the mark; the author warnings follow the workspaces;
  * only the owner's MCP client may switch it on through `api_tool_update`;
@@ -213,7 +215,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
   });
 
-  it('on + declared: a member may call it, and it runs under the team role', async () => {
+  it('on + declared: a member may call it, in the app run’s workspace scope', async () => {
     const res = await switchOn('site_query');
     expect(res.ok).toBe(true);
     const v = await verdict('site_query');
@@ -222,7 +224,8 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     const scope = level.appToolScope('team', { loginId: member, name: 'A member' }, { team: true });
     expect(scope).toMatchObject({ viewer: 'team', surface: { kind: 'team', privateReads: false } });
     fake.calls.length = 0;
-    const out = await m.runInLevelRoleForTest(scope.viewer, () =>
+    // As the broker runs it (W8c: no level role, the app run's scope).
+    const out = await m.withViewer(scope.actsFor, () =>
       dispatch.dispatchTool(v.tool, { q: 'x' }, { ownerId: anchor, surface: scope.surface }),
     );
     expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] }, untrusted: true });
@@ -271,17 +274,15 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
         sqlTag`select * from tools where id = ${ids.site_query!}`,
       )) as unknown as Array<Record<string, unknown>>;
       fake.calls.length = 0;
-      const out = await m.runInLevelRoleForTest('team', () =>
-        dispatch.dispatchTool(
-          {
-            ...(row as unknown as import('@mantle/db').Tool),
-            slug: 'site_query',
-            requiresConfirm: false,
-            handler: { kind: 'mcp', group: 'mcp-site', toolName: 'query' },
-          },
-          {},
-          { ownerId: anchor, surface: { kind: 'team' } },
-        ),
+      const out = await dispatch.dispatchTool(
+        {
+          ...(row as unknown as import('@mantle/db').Tool),
+          slug: 'site_query',
+          requiresConfirm: false,
+          handler: { kind: 'mcp', group: 'mcp-site', toolName: 'query' },
+        },
+        {},
+        { ownerId: anchor, surface: { kind: 'team' } },
       );
       expect(out).toMatchObject({ ok: false, error: expect.stringMatching(/disabled/) });
       expect(fake.calls).toEqual([]);
@@ -341,15 +342,13 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       fake.calls.length = 0;
       // The dispatch holds it too (M2 audit, low 6).
       const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
-      const out = await m.runInLevelRoleForTest('public', () =>
-        dispatch.dispatchTool(
-          fresh!,
-          { q: 'l' },
-          {
-            ownerId: anchor,
-            surface: { kind: 'contact', contactId: randomUUID(), shareId: randomUUID() },
-          },
-        ),
+      const out = await dispatch.dispatchTool(
+        fresh!,
+        { q: 'l' },
+        {
+          ownerId: anchor,
+          surface: { kind: 'contact', contactId: randomUUID(), shareId: randomUUID() },
+        },
       );
       expect(out).toMatchObject({ ok: false, error: expect.stringMatching(/holds no workspace/) });
       expect(fake.calls).toEqual([]);
@@ -427,7 +426,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('quick_sum')).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('dispatch itself holds the workspace rule and the public read-only rule on every non-owner call', async () => {
+  it('dispatch itself holds the workspace rule and the link read-only rule on every non-owner call', async () => {
     const [row] = (await exec(
       sqlTag`select id from tools where id = ${ids.site_query!}`,
     )) as unknown as { id: string }[];
@@ -437,12 +436,10 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     // A member's call through some other group: the workspaces that hold
     // the connector decide (M2 audit, low 6; W5b2), never its level.
     const asLogin = (loginId?: string) =>
-      m.runInLevelRoleForTest('team', () =>
-        dispatch.dispatchTool(
-          tool,
-          {},
-          { ownerId: anchor, surface: { kind: 'team', ...(loginId ? { loginId } : {}) } },
-        ),
+      dispatch.dispatchTool(
+        tool,
+        {},
+        { ownerId: anchor, surface: { kind: 'team', ...(loginId ? { loginId } : {}) } },
       );
     fake.calls.length = 0;
     expect(await asLogin(member)).toMatchObject({ ok: true });
@@ -475,16 +472,24 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     } finally {
       await setConnectorLevel('team');
     }
-    // A public run (a public agent) only reads, whatever else holds.
+    // A link's call only reads, whatever else holds (the public agent and
+    // its level scope went in W8c; a link is what is left below a member).
     await switchOff('site_query');
     try {
       const unmarked = await crud.getToolById(anchor, ids.site_query!);
       expect(unmarked).toBeTruthy();
       const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
-      const pub = await m.runInLevelRoleForTest('public', () =>
-        dispatch.dispatchTool(fresh!, {}, { ownerId: anchor, surface: { kind: 'web' } }),
+      fake.calls.length = 0;
+      const pub = await dispatch.dispatchTool(
+        fresh!,
+        {},
+        {
+          ownerId: anchor,
+          surface: { kind: 'contact', contactId: randomUUID(), shareId: randomUUID() },
+        },
       );
       expect(pub).toMatchObject({ ok: false, error: expect.stringMatching(/marked read-only/) });
+      expect(fake.calls).toEqual([]);
     } finally {
       await switchOn('site_query');
     }
@@ -767,9 +772,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     if (!tool) throw new Error('no tool');
     const surface = { kind: 'team' as const, loginId: member };
     const asMember = (input: Record<string, unknown>) =>
-      m.runInLevelRoleForTest('team', () =>
-        dispatch.dispatchTool(tool, input, { ownerId: anchor, surface }),
-      );
+      dispatch.dispatchTool(tool, input, { ownerId: anchor, surface });
     fake.calls.length = 0;
     expect(await asMember({ q: 'x' })).toMatchObject({ ok: true });
     const extra = await asMember({ q: 'x', statement: 'delete from rows' });
@@ -790,12 +793,10 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await switchOff('site_query');
     try {
       const fresh = await resolveTool(anchor, 'site_query');
-      const write = await m.runInLevelRoleForTest('team', () =>
-        dispatch.dispatchTool(
-          fresh!,
-          { q: 'x', statement: 'select 1' },
-          { ownerId: anchor, surface },
-        ),
+      const write = await dispatch.dispatchTool(
+        fresh!,
+        { q: 'x', statement: 'select 1' },
+        { ownerId: anchor, surface },
       );
       expect(write.ok).toBe(true);
     } finally {

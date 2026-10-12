@@ -17,10 +17,15 @@ const FILE = '44444444-4444-4444-8444-444444444444';
 const h = vi.hoisted(() => ({
   teamHit: false,
   drawHit: false,
-  reads: [] as string[],
+  // Per read: 'system' when it ran as is, else the actsFor of its withViewer.
+  reads: [] as unknown[],
   byteReads: [] as string[],
   svgFilters: [] as unknown[][],
+  current: null as unknown,
 }));
+
+// The scope a member's read must run in: their own login's.
+const OWN = { login: LOGIN };
 
 const member = {
   role: 'member' as const,
@@ -42,24 +47,26 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
   return {
     ...actual,
-    // The R6 shim reads the login's workspaces on the admin pool; here it
-    // runs `fn` at the level asked, so the stubs see who reads.
-    withViewer: vi.fn(
-      async (
-        level: Parameters<typeof actual.runInLevelRoleForTest>[0],
-        _for: unknown,
-        fn: () => Promise<unknown>,
-      ) => actual.runInLevelRoleForTest(level, fn),
-    ),
+    // The R6 shim reads the login's workspaces on Postgres; here it marks
+    // what runs inside it with who it acts for, so the stubs see who reads.
+    withViewer: vi.fn(async (actsFor: unknown, fn: () => Promise<unknown>) => {
+      const outer = h.current;
+      h.current = actsFor;
+      try {
+        return await fn();
+      } finally {
+        h.current = outer;
+      }
+    }),
   };
 });
 
 vi.mock('@/lib/files', async () => {
-  const { currentViewerLevel } = await import('@mantle/db');
+  // A read in a scope finds the file only when the test says the scope
+  // holds it; a system read would find anything, which the routes must not do.
   const hit = () => {
-    const level = currentViewerLevel();
-    h.reads.push(level);
-    return level === 'team' ? h.teamHit : true;
+    h.reads.push(h.current ?? 'system');
+    return h.current ? h.teamHit : true;
   };
   return {
     fileById: vi.fn(async () =>
@@ -88,8 +95,7 @@ vi.mock('@/lib/files', async () => {
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getDrawSvg: vi.fn(async () => {
-    const { currentViewerLevel } = await import('@mantle/db');
-    h.reads.push(currentViewerLevel());
+    h.reads.push(h.current ?? 'system');
     return h.drawHit ? '<svg>saved</svg>' : null;
   }),
   scopedDrawSvg: vi.fn(async (...args: unknown[]) => {
@@ -119,6 +125,7 @@ beforeEach(() => {
   h.reads = [];
   h.byteReads = [];
   h.svgFilters = [];
+  h.current = null;
 });
 
 describe('GET /api/member/files/:id', () => {
@@ -127,7 +134,7 @@ describe('GET /api/member/files/:id', () => {
     const { GET } = await import('../files/[id]/route');
     const res = await GET(new Request(`http://x/api/member/files/${FILE}`), ctx(FILE));
     expect(res.status).toBe(200);
-    expect(h.reads).toEqual(['team']);
+    expect(h.reads).toEqual([OWN]);
   });
 
   it('streams the bytes (never buffers the whole file) with the same headers', async () => {
@@ -173,7 +180,7 @@ describe('GET /api/member/files/:id', () => {
     const { GET } = await import('../files/[id]/route');
     const res = await GET(new Request(`http://x/api/member/files/${FILE}`), ctx(FILE));
     expect(res.status).toBe(404);
-    expect(h.reads).toEqual(['team']);
+    expect(h.reads).toEqual([OWN]);
   });
 });
 
@@ -184,7 +191,7 @@ describe('GET /api/member/draws/:id/svg', () => {
     const res = await GET(new Request(`http://x/api/member/draws/${FILE}/svg`), ctx(FILE));
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('<svg>images the member may see</svg>');
-    expect(h.reads).toEqual(['team']);
+    expect(h.reads).toEqual([OWN]);
     expect(h.svgFilters).toEqual([[ANCHOR, FILE, '<svg>saved</svg>']]);
   });
 
@@ -192,7 +199,7 @@ describe('GET /api/member/draws/:id/svg', () => {
     const { GET } = await import('../draws/[id]/svg/route');
     const res = await GET(new Request(`http://x/api/member/draws/${FILE}/svg`), ctx(FILE));
     expect(res.status).toBe(404);
-    expect(h.reads).toEqual(['team']);
+    expect(h.reads).toEqual([OWN]);
     expect(h.svgFilters).toEqual([]);
   });
 });

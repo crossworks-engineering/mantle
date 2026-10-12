@@ -108,7 +108,7 @@ vi.mock('@mantle/db', () => ({
   },
   pendingToolCalls: {},
   // The R6 shim: no database here, the scope is not under test.
-  withViewer: vi.fn(async (_level: unknown, _for: unknown, fn: () => Promise<unknown>) => fn()),
+  withViewer: vi.fn(async (_for: unknown, fn: () => Promise<unknown>) => fn()),
 }));
 
 // The client-sourced scan (client logins C4): a stand-in that marks the turn
@@ -843,7 +843,6 @@ describe('runToolLoop — requires_confirm path', () => {
       params: {},
       ownerId: 'owner-1',
       agentId: 'agent-1',
-      agentLevel: 'admin',
       initialMessages: [{ role: 'user', content: 'send it' }],
       tools: [tool],
     });
@@ -890,7 +889,6 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
       params: {},
       ownerId: 'owner-1',
       agentId: 'agent-1',
-      agentLevel: 'admin',
       initialMessages: [{ role: 'user', content: 'go' }],
       tools: [accessSet, taskGet],
       ...(taint ? { taint } : {}),
@@ -996,7 +994,6 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
       params: {},
       ownerId: 'owner-1',
       agentId: 'agent-1',
-      agentLevel: 'admin',
       initialMessages: [{ role: 'user', content: 'go' }],
       tools,
       taint: tainted,
@@ -1031,7 +1028,6 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
       params: {},
       ownerId: 'owner-1',
       agentId: 'agent-1',
-      agentLevel: 'admin',
       initialMessages: [{ role: 'user', content: 'go' }],
       tools,
     });
@@ -1057,7 +1053,6 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
         params: {},
         ownerId: 'owner-1',
         agentId: 'agent-1',
-        agentLevel: 'admin',
         initialMessages: [{ role: 'user', content: 'go' }],
         tools: [noteCreate],
         ...(taint ? { taint } : {}),

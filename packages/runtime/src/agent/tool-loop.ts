@@ -613,7 +613,6 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
 }
 
 async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
-
   const maxIters = args.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const taint = args.taint ?? newTurnTaint();
   const handling = resolveResultHandling(args.resultHandling);

@@ -14,8 +14,8 @@
  *    changes the content of an item another workspace reads (N3);
  *  - a key that acts as a member reaches whoami and nothing else on v1;
  *  - /api/mcp: an admin key's caller carries its write switch, risky tools
- *    and areas; a member key needs the login's MCP switch and writes only
- *    while both the key and the login's Write switch allow it.
+ *    and areas; a member key acts as its login at once (no per-login MCP
+ *    switch since W7b) and writes only while the key allows it.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/access-keys-scope.db.test.ts
  */
@@ -124,7 +124,6 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     if (workspacesMade.length) {
       await sql`delete from workspaces where id in ${sql(workspacesMade)}`;
     }
-    await sql`delete from mcp_login_access where login_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
   });

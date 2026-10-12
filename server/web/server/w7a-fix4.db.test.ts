@@ -81,7 +81,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn);
   const dispatchAs = (login: string, slug: string, input: Record<string, unknown>) =>
     rt.withAgentScope(
-      { id: agent.id, audience: 'admin', workspaceId: adminWs },
+      { id: agent.id, workspaceId: adminWs },
       () =>
         t.dispatchTool(
           {

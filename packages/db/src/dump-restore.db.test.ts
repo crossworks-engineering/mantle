@@ -157,7 +157,7 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
     // dropped the share refresh trigger and froze the levels.)
     expect(Object.keys(before.triggers)).toContain('public.nodes.nodes_levels_frozen');
     expect(Object.keys(before.triggers).length).toBeGreaterThan(20);
-    expect(Object.keys(before.policies)).toContain('public.nodes.nodes_viewer_read');
+    expect(Object.keys(before.policies)).toContain('public.nodes.nodes_user_read');
     expect(Object.keys(before.functions)).toContain('mantle_nodes_refresh_trg()');
     expect(Object.keys(before.constraints)).toContain('public.nodes.nodes_share_level_ck');
     expect(Object.keys(before.indexes)).toContain('public.nodes_shared_folder_idx');
