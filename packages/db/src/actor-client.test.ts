@@ -3,7 +3,7 @@
  * no actor set (arch A2a fix round, M3b): Postgres refuses them inside one.
  */
 import { describe, expect, it } from 'vitest';
-import { actorCheckMode, noteBoxActorCheckMode, runAsSystem } from './actor';
+import { actorCheckMode, noteBoxActorCheckMode, runAsActor, runAsSystem } from './actor';
 import {
   actorClient,
   actorInTransaction,
@@ -365,9 +365,10 @@ describe('the first mode read (A2b, the startup race)', () => {
 describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', () => {
   /** A pool whose reserved connection holds the RESET's answer until
    *  `answerReset`, and records what is sent and when it is released. */
-  function resetPool(o: { failReset?: boolean; failWrite?: boolean } = {}) {
+  function resetPool(o: { failReset?: boolean; failWrite?: boolean; throwWrite?: boolean } = {}) {
     const sent: string[] = [];
     let released = false;
+    let reserved = 0;
     let answerReset: () => void = () => {};
     const stmt = (q: string) => {
       sent.push(q);
@@ -376,6 +377,8 @@ describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', ()
         p = new Promise((ok, bad) => {
           answerReset = () => (o.failReset ? bad(new Error('reset failed')) : ok([]));
         });
+      } else if (o.throwWrite && q.startsWith('insert')) {
+        throw new Error('write would not build');
       } else if (o.failWrite && q.startsWith('insert')) {
         p = Promise.reject(new Error('write failed'));
       } else {
@@ -390,10 +393,19 @@ describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', ()
         q.includes('mantle_actor_check_mode')
           ? Promise.resolve([{ m: 'warn' }])
           : stmt(`pool: ${q}`),
-      reserve: async () => conn,
+      reserve: async () => {
+        reserved += 1;
+        return conn;
+      },
       end: async () => {},
     } as unknown as PgSql;
-    return { base, sent, released: () => released, answerReset: () => answerReset() };
+    return {
+      base,
+      sent,
+      released: () => released,
+      reserved: () => reserved,
+      answerReset: () => answerReset(),
+    };
   }
 
   const inWarn = async (base: PgSql, fn: () => Promise<void>) => {
@@ -456,6 +468,36 @@ describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', ()
       f.answerReset();
       await tick();
       await tick();
+      expect(f.sent).toContain('select pg_terminate_backend(pg_backend_pid())');
+      expect(f.released()).toBe(true);
+    });
+  });
+
+  it('a value the SET refuses fails the caller and takes no connection (A2b1 fix round 2, L1)', () => {
+    const f = resetPool();
+    return inWarn(f.base, async () => {
+      const client = actorClient(f.base);
+      const bad = { kind: 'login', mode: 'rw', loginId: "x' or true" } as never;
+      await expect(
+        runAsActor(bad, () => Promise.resolve(client.unsafe('insert into t values (1)'))),
+      ).rejects.toThrow(/not an actor/);
+      expect(f.reserved()).toBe(0);
+      expect(f.sent).toEqual([]);
+    });
+  });
+
+  it('a throw after the connection is taken fails the caller and ends the connection (L1)', () => {
+    const f = resetPool({ throwWrite: true });
+    return inWarn(f.base, async () => {
+      const client = actorClient(f.base);
+      await expect(
+        runAsSystem('worker:test', () =>
+          Promise.resolve(client.unsafe('insert into t values (1)')),
+        ),
+      ).rejects.toThrow('write would not build');
+      await tick();
+      expect(f.reserved()).toBe(1);
+      // The SET went out: the connection may hold it, so it ends.
       expect(f.sent).toContain('select pg_terminate_backend(pg_backend_pid())');
       expect(f.released()).toBe(true);
     });

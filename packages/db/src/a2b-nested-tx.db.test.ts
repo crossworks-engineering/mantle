@@ -12,14 +12,19 @@
  *    call retries;
  *  - a nested call with another actor or create home is refused;
  *  - withHeads works under every actor kind (the actor SET takes no
- *    transaction id, so the heads stay the first lock).
+ *    transaction id, so the heads stay the first lock);
+ *  - more than 32 nested calls in one transaction warn once (A2b1 fix
+ *    round 2, L2);
+ *  - a first heads lock in a savepoint that rolls back leaves the
+ *    transaction id taken: a later first lock is refused (fix round 2, L3,
+ *    a known limit in docs/actors.md).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/a2b-nested-tx.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { sql as sqlTag } from 'drizzle-orm';
 import postgres from 'postgres';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMigratedScratchDatabase } from './test-support';
 import type { Actor } from './actor';
 
@@ -261,6 +266,43 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
         ),
       ),
     ).rejects.toThrow(/different create home/);
+  });
+
+  it('more than 32 nested calls in one transaction warn once (A2b1 fix round 2, L2)', async () => {
+    const { NESTED_SAVEPOINT_WARN } = await import('./client');
+    expect(NESTED_SAVEPOINT_WARN).toBe(32);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const nested = (n: number) =>
+        m.withSystemTx(async () => {
+          for (let i = 0; i < n; i += 1) await m.withSystemTx(async () => undefined);
+        });
+      await nested(NESTED_SAVEPOINT_WARN);
+      expect(warn.mock.calls.filter((c) => /nested calls/.test(String(c[0])))).toHaveLength(0);
+      await nested(NESTED_SAVEPOINT_WARN * 2);
+      const calls = warn.mock.calls.filter((c) => /nested calls/.test(String(c[0])));
+      expect(calls).toHaveLength(1);
+      expect(String(calls[0]![0])).toMatch(/more than 32 nested calls in one transaction/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a first heads lock in a savepoint that rolls back leaves the transaction id: a later first lock is refused (L3)', async () => {
+    await expect(
+      m.withSystemTx(async () => {
+        await m
+          .withHeads([a], 'update', async () => {
+            throw new Error('inner fails');
+          })
+          .catch(() => undefined);
+        // The savepoint took back the signed held list, not the
+        // transaction id the lock took: this is no longer a first lock.
+        await m.withHeads([b], 'update', async () => undefined);
+      }),
+    ).rejects.toMatchObject({
+      cause: { code: '55000', message: expect.stringMatching(/first lock of the transaction/) },
+    });
   });
 
   it('withHeads works under every actor kind with heads_check on', async () => {

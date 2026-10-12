@@ -79,6 +79,21 @@ never opens a second transaction:
 - `withDeadlockRetry` inside runs once. Only the outermost call retries.
 - A nested call with another actor or create home is refused. There is no
   set-and-restore helper yet.
+- **No nested write in a loop.** Each nested call is a savepoint, and
+  postgres.js never releases one. A release would not help: Postgres keeps
+  the id of each subtransaction that wrote until the top transaction ends.
+  Past 64 of them the backend's subtransaction cache overflows, and every
+  snapshot on the box gets slower. More than 32 nested calls in one
+  transaction log one warning (`NESTED_SAVEPOINT_WARN`). Put the loop in one
+  nested call, or do the writes in the outer call.
+- **A first heads lock in a savepoint that rolls back** keeps the
+  transaction id it took (`txid_current`, in `mantle_heads_mac`). The
+  savepoint takes back the signed held list but not the id, so the
+  transaction now holds no heads but is no longer at its start. A later
+  `withHeads` in the outer call is a first lock again: with
+  `mantle.heads_check = on` it is refused (55000, the first-lock rule), in
+  `warn` it is a heads miss. Take the heads in the outer call before the
+  nested call that can fail.
 
 `packages/db/src/a2b-nested-tx.db.test.ts` runs each shape, and `withHeads`
 under every actor kind, with `mantle.heads_check = on`.
@@ -155,20 +170,28 @@ on the write role.
 ## The check
 
 `mantle.actor_check` is `off` (the default), `warn` or `on`, set per box in
-the database. A session can only make it stricter (the rule of
-`mantle.heads_check`). `MANTLE_ACTOR_CHECK` raises it for one process.
+the database with `mantle_set_actor_check(mode)` (0277, docs/update-prod.md):
+it sets the setting and switches the item-table triggers together. A session
+can only make it stricter (the rule of `mantle.heads_check`).
+`MANTLE_ACTOR_CHECK` raises it for one process.
 
 - **TypeScript**: every statement through `db` or `systemDb`, and every
   `withSystemTx`, with no actor bound is a miss. In `on` it is also refused
   (`ActorMissingError`). Until the first mode read lands this side uses
   `MANTLE_ACTOR_CHECK` alone; the SQL side reads the box itself.
-- **SQL**: a write on an item table (nodes, pages, draws, tables, apps,
-  app_databases, the recall tables, node_embeds, app_table_exports, shares,
-  node_snapshots, item_grants, peer_shares, contact_share_codes,
-  node_comments) with no `mantle.actor` raises a NOTICE in `warn`. It writes
-  nothing in that transaction, so it never takes a transaction id before
-  `mantle_lock_heads`. The app reads the notice and logs the miss later, on
-  another connection. In `on` it is refused: 42501, detail `no_actor`
+- **SQL**: the statement trigger `mantle_actor_check` is on every item
+  table: nodes, pages, draws, tables, apps, app_databases, the recall
+  tables, node_embeds, app_table_exports, shares, node_snapshots,
+  item_grants, peer_shares, contact_share_codes, node_comments, and the
+  other content tables of the access matrix (`mantle_actor_check_tables()`
+  lists them from the catalog; `actor-trigger-coverage.db.test.ts` pins
+  them). The triggers are enabled only while the box is `warn` or `on`. On a
+  box that is `off` they are disabled, so a write calls no trigger at all
+  (the owner's scaling rule), and a session that raises its own value does
+  not turn them on. A write with no `mantle.actor` raises a NOTICE in
+  `warn`. It writes nothing in that transaction, so it never takes a
+  transaction id before `mantle_lock_heads`. The app reads the notice and
+  logs the miss later, on another connection. In `on` it is refused: 42501, detail `no_actor`
   (migration 0277).
 
 Misses are capped at 100 rows an hour per check. An operator's psql names
@@ -316,15 +339,23 @@ job binds its actor.
 
 ## Known limits
 
-- **The trigger's mode read.** The item-table trigger takes a fast path
-  when the check reads off in `current_setting` (no catalog read), so a box
-  that is off pays nothing more per write. Otherwise a write with no actor
-  reads the box setting through a SECURITY DEFINER catalog lookup
-  (`mantle_actor_check_mode`). A session that sets its own value to off
-  skips the check, `on` included. That is accepted: the check finds code
-  that forgot its actor; it is not a credential (any role can set
-  `mantle.actor` too). The refusals that decide access (0277's gate, A3a)
-  read the catalog or the role.
+- **The trigger follows the box mode.** On a box that is `off` the
+  item-table triggers are disabled: a write calls none. In `warn` and `on`
+  they are enabled. A write with an actor pays one setting read. A write
+  with no actor (the miss path) first reads the box mode from the catalog
+  (`mantle_actor_check_mode`, SECURITY DEFINER), so a session that sets its
+  own value to `off` cannot skip a box that is `warn` or `on` (A2b1 audit,
+  L4). A session can raise the check only where the triggers are enabled:
+  on a box that is `off` a session value of `warn` or `on` checks nothing
+  in SQL (the TypeScript check still runs).
+- **Change the mode only with `mantle_set_actor_check`.** A bare `ALTER
+DATABASE ... SET mantle.actor_check` changes the setting but not the
+  triggers. So does a restore into a box with another setting (pg_dump
+  keeps a trigger's state, not the database setting). Check with
+  `mantle_actor_check_tables()` and run the function again. A migration
+  that adds the trigger to a new table calls
+  `mantle_actor_check_triggers(mantle_actor_check_box_mode() <> 'off')`
+  after it, and the coverage test fails until the states match.
 - **An approved pending call** runs as the login that asked, on the owner
   surface, with the approver named in the audit. Open for A2b: whether it
   should run as the approver instead.

@@ -257,10 +257,12 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
               : placement === 'folder'
                 ? f.folderPath
                 : f.root;
-          await tx`select mantle_lock_heads(array[${parent}]::uuid[], 'share')`;
-          // The login's actor, as the app's pool sets it (arch A2a), with the
-          // actor check in warn for this transaction.
+          // The login's actor first, as the app's pool sets it (arch A2a:
+          // with the transaction's first statement; it takes no transaction
+          // id, so the heads below stay the first lock), with the actor
+          // check in warn for this transaction.
           await tx`select mantle_set_actor(${`login:rw:${s.login}`}, 'rw', 'warn')`;
+          await tx`select mantle_lock_heads(array[${parent}]::uuid[], 'share')`;
           await tx`select set_config('mantle.ws', ${s.ws}, true),
                           set_config('mantle.mod_ws', ${s.mod}, true),
                           set_config('mantle.create_ws', '', true),
@@ -312,6 +314,10 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
     let na = 0;
     let allowed = 0;
     let denied = 0;
+    // The box in warn, as dev is: the actor check's triggers run only when
+    // the box mode is not off (0277, A2b1 fix round 2 M1). The scratch
+    // database is dropped after the file.
+    await sql`select mantle_set_actor_check('warn')`;
     // The fixture's own writes (beforeAll, as an operator's psql would) are
     // not cells; the cells start with no miss.
     misses.length = 0;

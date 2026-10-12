@@ -264,13 +264,16 @@ export type CreateHome = {
  * with (arch A2b, plan 20.2): a nested withSystemTx reuses it only for the
  * same actor and create home. `busy`: a nested call runs on it now (a
  * second one at the same time is refused). `done`: it ended (a nested call
- * after that is refused). Set and read by client.ts only.
+ * after that is refused). `saves`: the nested calls (savepoints) of the
+ * whole outer transaction so far, shared by every level (A2b1 fix round 2,
+ * L2). Set and read by client.ts only.
  */
 export type SystemTxNest = {
   readonly actor: string;
   readonly home: string;
   busy: boolean;
   done: boolean;
+  readonly saves: { n: number };
 };
 
 /** Work a scope's transaction owes the world outside the database, run once

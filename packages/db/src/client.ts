@@ -475,36 +475,59 @@ export function actorClient(base: PgSql): PgSql {
     args: unknown[] | undefined,
     mode: 'rows' | 'values' | 'simple',
   ): Promise<unknown> => {
-    let answer!: (v: Promise<unknown>) => void;
-    const result = new Promise<unknown>((r) => (answer = r));
+    let settle!: (v: Promise<unknown>) => void;
+    const result = new Promise<unknown>((r) => (settle = r));
+    let answered = false;
+    /** The caller's answer, once: a later one is dropped (never left as an
+     *  unhandled rejection). */
+    const answer = (v: Promise<unknown>) => {
+      if (answered) return;
+      answered = true;
+      settle(v);
+    };
     // Kept until the connection is back: closeDb waits for these first
     // (postgres.js never finishes ending a pool whose reserved connection
     // comes back late).
     const life = (async () => {
+      // The SET's text first: a value it refuses (setActorSql throws) fails
+      // the caller before any connection is taken (A2b1 fix round 2, L1).
+      let setSql: string;
       let conn: Awaited<ReturnType<PgSql['reserve']>>;
       try {
+        setSql = setActorSql(params, false);
         conn = await base.reserve();
       } catch (err) {
         answer(Promise.reject(err));
         return;
       }
-      const set = conn.unsafe(setActorSql(params, false));
-      const q = conn.unsafe(query, (args ?? []) as never[]);
-      const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
-      const reset = conn.unsafe(RESET_ACTOR_SQL).simple();
-      answer(
-        Promise.allSettled([set, main]).then(([s, m]) => {
-          // The write's own result. A SET that failed is reported when the
-          // write failed too (it is the cause); a write that ran without
-          // its actor meets the SQL check (a miss in warn, refused in on).
-          if (m.status === 'fulfilled') return m.value;
-          throw s.status === 'rejected' ? s.reason : m.reason;
-        }),
-      );
+      let sent = false;
       try {
+        const set = conn.unsafe(setSql);
+        sent = true;
+        const q = conn.unsafe(query, (args ?? []) as never[]);
+        const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
+        const reset = conn.unsafe(RESET_ACTOR_SQL).simple();
+        answer(
+          Promise.allSettled([set, main]).then(([s, m]) => {
+            // The write's own result. A SET that failed is reported when the
+            // write failed too (it is the cause); a write that ran without
+            // its actor meets the SQL check (a miss in warn, refused in on).
+            if (m.status === 'fulfilled') return m.value;
+            throw s.status === 'rejected' ? s.reason : m.reason;
+          }),
+        );
         await reset;
-      } catch {
-        await conn.unsafe('select pg_terminate_backend(pg_backend_pid())').catch(() => {});
+      } catch (err) {
+        // Anything that throws here (a failed RESET, or a throw while the
+        // statements are built) fails the caller if it has no answer yet,
+        // and a connection that may hold the settings ends instead of going
+        // back.
+        if (!answered) answer(Promise.reject(err));
+        if (sent) {
+          await Promise.resolve()
+            .then(() => conn.unsafe('select pg_terminate_backend(pg_backend_pid())'))
+            .catch(() => {});
+        }
       } finally {
         conn.release();
       }
@@ -762,6 +785,16 @@ function systemTxKeys(): Pick<SystemTxNest, 'actor' | 'home'> {
 }
 
 /**
+ * Nested calls in one outer transaction before a warning (A2b1 fix round 2,
+ * L2). Each is a savepoint that postgres.js never releases, and a released
+ * one would not help: Postgres keeps a subtransaction's id until the top
+ * transaction ends. Past 64 subtransactions that wrote, the backend's
+ * subtransaction cache overflows and every snapshot on the box pays for it.
+ * So no nested write in a loop; the warning finds one.
+ */
+export const NESTED_SAVEPOINT_WARN = 32;
+
+/**
  * withSystemTx nested in an open system transaction (arch A2b, plan 20.2;
  * A2b1 audit M2): a SAVEPOINT of that transaction, never a second one. An
  * inner error rolls back the inner writes only, and runs the inner
@@ -784,7 +817,16 @@ async function nestedSystemTx<T>(
     home: outer.nest.home,
     busy: false,
     done: false,
+    saves: outer.nest.saves,
   };
+  outer.nest.saves.n += 1;
+  if (outer.nest.saves.n === NESTED_SAVEPOINT_WARN + 1) {
+    console.warn(
+      `[db] withSystemTx: more than ${NESTED_SAVEPOINT_WARN} nested calls in one transaction ` +
+        '(a nested write in a loop?): past 64 subtransactions that write, every snapshot ' +
+        'on the box gets slower (docs/actors.md)',
+    );
+  }
   outer.nest.busy = true;
   let result: T;
   try {
@@ -856,7 +898,7 @@ export async function withSystemTx<T>(
       ]
     : null;
   const hooks = newTxHooks();
-  const nest: SystemTxNest = { ...systemTxKeys(), busy: false, done: false };
+  const nest: SystemTxNest = { ...systemTxKeys(), busy: false, done: false, saves: { n: 0 } };
   let result: T;
   try {
     result = await getAdminDb().transaction(async (tx) => {

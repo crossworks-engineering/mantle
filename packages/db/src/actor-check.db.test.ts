@@ -47,6 +47,11 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
     await scratch?.drop();
   });
 
+  /** The box mode, set the one supported way (0277, A2b1 fix round 2 M1):
+   *  the setting and the triggers together. Off disables the triggers, so
+   *  a test of the SQL check sets warn or on first. */
+  const boxMode = (mode: 'off' | 'warn' | 'on') => sql`select mantle_set_actor_check(${mode})`;
+
   /** A write on an item table that changes no row (the statement trigger
    *  still fires). */
   const touch = (tx: postgres.TransactionSql) =>
@@ -60,7 +65,7 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
       const [b] = await tx`select mantle_actor_check_mode() as m`;
       expect(b!.m).toBe('warn');
     });
-    await sql.unsafe(`alter database "${scratch.name}" set mantle.actor_check = 'warn'`);
+    await boxMode('warn');
     try {
       const low = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
       try {
@@ -73,11 +78,11 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
         await low.end();
       }
     } finally {
-      await sql.unsafe(`alter database "${scratch.name}" reset mantle.actor_check`);
+      await boxMode('off');
     }
   });
 
-  it('warn: a write with no actor is one NOTICE per transaction and table, and runs; on refuses it', async () => {
+  const warnThenOn = async () => {
     notices.length = 0;
     await sql.begin(async (tx) => {
       await tx`select set_config('mantle.actor_check', 'warn', true)`;
@@ -104,6 +109,15 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
       await tx`select mantle_set_actor('system:test', 'rw', 'on')`;
       await touch(tx);
     });
+  };
+
+  it('warn: a write with no actor is one NOTICE per transaction and table, and runs; on refuses it', async () => {
+    await boxMode('warn');
+    try {
+      await warnThenOn();
+    } finally {
+      await boxMode('off');
+    }
   });
 
   it('no NOTICE with an actor set, or with the check off', async () => {
@@ -251,7 +265,7 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
   });
 
   it('on: a session that lowers its own check cannot skip the refusal (A2b1 audit, L4)', async () => {
-    await sql.unsafe(`alter database "${scratch.name}" set mantle.actor_check = 'on'`);
+    await boxMode('on');
     try {
       const fresh = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
       try {
@@ -265,7 +279,7 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
         await fresh.end();
       }
     } finally {
-      await sql.unsafe(`alter database "${scratch.name}" reset mantle.actor_check`);
+      await boxMode('off');
     }
   });
 

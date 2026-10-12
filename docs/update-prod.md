@@ -708,12 +708,23 @@ UPDATE on nodes`. In `warn` a miss only logs. In `on` (A2b, migration
 with no actor`. Name the session first.
 
 The check has three steps, set per box in the database (the box setting
-wins; a session can only make it stricter):
+wins; a session can only make it stricter). Change it only with
+`mantle_set_actor_check`, as the database owner (the role that runs the
+migrations), connected to the brain's database:
 
 ```sql
-alter database postgres set mantle.actor_check = 'warn';  -- off (default), warn, on
+select mantle_set_actor_check('warn');  -- off (default), warn, on
 select mantle_actor_check_mode();
+select count(*) filter (where enabled) as enabled, count(*) as tables
+  from mantle_actor_check_tables();      -- warn, on: all enabled; off: 0
 ```
+
+The function sets the database setting and switches the item-table
+triggers in one transaction. With the check off the triggers are disabled,
+so a write calls no trigger. Do not use a bare `alter database ... set
+mantle.actor_check`: it leaves the triggers in the old state. The function
+waits at most 10 seconds for the writes in flight on each item table. If it
+fails with a lock timeout, nothing changed: run it again.
 
 After you change the setting, restart the app processes (web, api,
 workers, mcp). The app reads the setting about once a minute, but each
@@ -743,7 +754,8 @@ changes: no new query and no new round trip.
 
 `on` refuses a statement with no actor, in the app and in the database
 (A2b). Do not set it on any box until the scaling task says so (task
-2d96f472). Going back is `alter database postgres reset mantle.actor_check`.
+2d96f472). Going back is `select mantle_set_actor_check('off');`, then
+restart the app processes.
 
 ## Rollback
 

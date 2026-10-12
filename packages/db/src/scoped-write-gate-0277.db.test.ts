@@ -128,7 +128,7 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
   });
 
   it('a session cannot lower the box mode to skip the refusal', async () => {
-    await sql.unsafe(`alter database "${scratch.name}" set mantle.actor_check = 'on'`);
+    await sql`select mantle_set_actor_check('on')`;
     try {
       const fresh = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
       try {
@@ -142,7 +142,7 @@ describe.skipIf(!URL)('0277: the scoped write gate', () => {
         await fresh.end();
       }
     } finally {
-      await sql.unsafe(`alter database "${scratch.name}" reset mantle.actor_check`);
+      await sql`select mantle_set_actor_check('off')`;
     }
   });
 

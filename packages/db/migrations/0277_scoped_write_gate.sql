@@ -20,8 +20,12 @@
 -- can only raise. The gate runs only on the refusing path, so an allowed
 -- write pays nothing for it.
 --
--- Last in this file: the 0275 statement check now refuses a write with no
--- actor when the check is on. Re-runnable.
+-- Then: the 0275 statement check now refuses a write with no actor when the
+-- check is on, and its triggers follow the box mode: disabled when the box
+-- is off, so a write there calls no trigger at all (A2b1 fix round 2, M1;
+-- the owner's scaling rule). mantle_set_actor_check(mode) is the one way to
+-- change the mode. Last: the heads functions this file adds are not open to
+-- PUBLIC (fix round 2, M2). Re-runnable.
 
 -- Whether a refusal of the 0266 checks stands for this session. `what`
 -- names it for the warn NOTICE.
@@ -117,10 +121,12 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_nodes_scope_delete_trg"() FROM PUBLI
 --> statement-breakpoint
 
 -- The SQL actor check refuses in 'on' (A2b; A2a only logged). A write on an
--- item table with no mantle.actor: off runs it, warn reports it (a NOTICE
--- the app logs later, as in 0275), on refuses it (42501). A statement with
--- an actor pays one setting read. One with no actor reads the box mode from
--- the catalog first (mantle_actor_check_mode: a session may only make it
+-- item table with no mantle.actor: warn reports it (a NOTICE the app logs
+-- later, as in 0275), on refuses it (42501). The trigger is enabled only
+-- while the box is warn or on (mantle_set_actor_check, below), so it never
+-- runs on a box that is off. A statement with an actor pays one setting
+-- read. One with no actor (the miss path) reads the box mode from the
+-- catalog first (mantle_actor_check_mode: a session may only make it
 -- stricter), so a session that sets its own value to off cannot skip the
 -- refusal (A2b1 audit, L4). Statement level: once per statement, not per
 -- row.
@@ -146,6 +152,120 @@ BEGIN
   RETURN NULL;
 END
 $$;
+--> statement-breakpoint
+
+-- The box's own mode (the catalog only, no session value): off, warn or on.
+-- mantle_actor_check_mode reads it, then lets a session raise it.
+CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_box_mode"()
+  RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  box text;
+BEGIN
+  SELECT split_part(c, '=', 2) INTO box
+    FROM pg_db_role_setting d, unnest(d.setconfig) AS c
+   WHERE d.setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+     AND d.setrole = 0 AND c LIKE 'mantle.actor_check=%'
+   LIMIT 1;
+  RETURN CASE box WHEN 'warn' THEN 'warn' WHEN 'on' THEN 'on' ELSE 'off' END;
+END
+$$;
+--> statement-breakpoint
+
+-- 0275's mode, now on the one catalog read above. Same answer.
+CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_mode"()
+  RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  sess text := coalesce(nullif(current_setting('mantle.actor_check', true), ''), 'off');
+  rank_box int;
+  rank_sess int;
+BEGIN
+  rank_box := CASE "public"."mantle_actor_check_box_mode"() WHEN 'warn' THEN 1 WHEN 'on' THEN 2 ELSE 0 END;
+  rank_sess := CASE sess WHEN 'warn' THEN 1 WHEN 'on' THEN 2 ELSE 0 END;
+  RETURN CASE greatest(rank_box, rank_sess) WHEN 0 THEN 'off' WHEN 2 THEN 'on' ELSE 'warn' END;
+END
+$$;
+--> statement-breakpoint
+
+-- The tables that carry the actor check, and whether each trigger is
+-- enabled. Derived from the triggers that exist, never a copied list: a
+-- later migration that adds the trigger to a table is in it at once.
+CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_tables"()
+  RETURNS TABLE (tbl regclass, enabled boolean) LANGUAGE sql STABLE
+  SET search_path = "public", pg_temp AS $$
+  SELECT g.tgrelid::regclass, g.tgenabled <> 'D'
+    FROM pg_trigger g
+   WHERE g.tgname = 'mantle_actor_check' AND NOT g.tgisinternal
+   ORDER BY g.tgrelid::regclass::text
+$$;
+--> statement-breakpoint
+
+-- Enable or disable every mantle_actor_check trigger. Only the ones in the
+-- wrong state change, so a call that changes nothing takes no lock. Returns
+-- how many changed. Called by mantle_set_actor_check and by a migration that
+-- adds the trigger to a new table (to match the box mode).
+CREATE OR REPLACE FUNCTION "public"."mantle_actor_check_triggers"(enable boolean)
+  RETURNS integer LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  t record;
+  n integer := 0;
+BEGIN
+  IF enable IS NULL THEN
+    RAISE EXCEPTION 'mantle_actor_check_triggers: give true or false' USING ERRCODE = '22023';
+  END IF;
+  FOR t IN SELECT c.tbl, c.enabled FROM "public"."mantle_actor_check_tables"() c LOOP
+    IF t.enabled <> enable THEN
+      EXECUTE format('ALTER TABLE %s %s TRIGGER mantle_actor_check',
+                     t.tbl, CASE WHEN enable THEN 'ENABLE' ELSE 'DISABLE' END);
+      n := n + 1;
+    END IF;
+  END LOOP;
+  RETURN n;
+END
+$$;
+--> statement-breakpoint
+
+-- The one way to change the box's actor check mode (docs/update-prod.md): it
+-- sets the database setting (a RESET for off) AND switches the triggers, in
+-- one transaction. Off: the triggers are disabled, a write calls none.
+-- Warn or on: enabled. Each ALTER TABLE waits for the writes in flight on
+-- its table, at most 10 s (lock_timeout), then the call fails and changes
+-- nothing; run it again. The app processes read the mode at start and each
+-- minute; restart them to apply it at once.
+CREATE OR REPLACE FUNCTION "public"."mantle_set_actor_check"(mode text)
+  RETURNS text LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF mode IS NULL OR mode NOT IN ('off', 'warn', 'on') THEN
+    RAISE EXCEPTION 'mantle_set_actor_check: mode must be off, warn or on' USING ERRCODE = '22023';
+  END IF;
+  PERFORM set_config('lock_timeout', '10s', true);
+  IF mode = 'off' THEN
+    EXECUTE format('ALTER DATABASE %I RESET mantle.actor_check', current_database());
+  ELSE
+    EXECUTE format('ALTER DATABASE %I SET mantle.actor_check = %L', current_database(), mode);
+  END IF;
+  PERFORM "public"."mantle_actor_check_triggers"(mode <> 'off');
+  RETURN mode;
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_actor_check_box_mode"() FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_actor_check_tables"() FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_actor_check_triggers"(boolean) FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_set_actor_check"(text) FROM PUBLIC;
+--> statement-breakpoint
+
+-- The triggers follow the box mode now: disabled on a box that is off (a
+-- fresh install, every box but dev), enabled on one that is warn or on.
+DO $$ BEGIN
+  PERFORM "public"."mantle_actor_check_triggers"("public"."mantle_actor_check_box_mode"() <> 'off');
+END $$;
 --> statement-breakpoint
 
 -- Heads taken: the transaction called mantle_lock_heads (its first lock),
@@ -213,3 +333,19 @@ BEGIN
   END IF;
 END
 $$;
+--> statement-breakpoint
+
+-- Heads functions are for the migrating role and the definer functions only
+-- (0241's rule): no limited role takes heads or signs a held list (A2b1 fix
+-- round 2, M2). The two this file adds were open to PUBLIC. The three
+-- signers were closed by 0241; closed again here so the rule holds even if
+-- one is dropped and made again. The pin: actor-trigger-coverage.db.test.ts.
+REVOKE ALL ON FUNCTION "public"."mantle_heads_taken"() FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_lock_heads_nested"(uuid[], text) FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_heads_set"(uuid[], uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_heads_sig"(text, text) FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_heads_mac"(text) FROM PUBLIC;
