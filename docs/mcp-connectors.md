@@ -104,10 +104,12 @@ as the same account keeps it; the account is a hash of the token's issuer
 and subject), and when the vault key it signs in with is rotated or saved
 over. Between syncs, below the owner a marked tool takes only the inputs
 its stored schema lists (one level deep), and a tool synced without its list
-of inputs cannot be marked. Below admin a new or returning tool arrives
-switched off; an agent turning one on, clearing its confirmation, or
-lowering the connector's level waits in Pending, and an API key or a linked
-brain is refused. Known gap: an http tool with External access whose
+of inputs cannot be marked. On a connector a workspace other than Admin
+holds, a new or returning tool arrives switched off; an agent turning one
+on or clearing its confirmation (`api_tool_update`) waits in Pending, and an
+API key or a linked brain doing it is refused. (Lowering the connector's
+level was the third such step; the group levels decide nothing since W7b.)
+Known gap: an http tool with External access whose
 template uses a rotated vault key keeps its mark. The full rules: docs/member-logins.md
 ("External access") and docs/mcp-as-a-login.md.
 
