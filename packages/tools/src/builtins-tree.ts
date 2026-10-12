@@ -22,10 +22,10 @@ import {
   moveTreeItems,
   notifyTreeChanged,
   updateTreeFolder,
-  TREE_LIVE_KINDS,
   type TreeFolderPatch,
 } from '@mantle/content/tree';
 import { TREE_KIND_SPECS, TREE_MAX_DEPTH, type TreeKind } from '@mantle/client-types/tree';
+import { treeKindsBy } from '@mantle/client-types/kinds';
 import { APP_TINTS, isAppTint, type AppTint } from '@mantle/client-types/app-nav';
 import { projectAppIcon } from '@mantle/content-core/app-nav';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
@@ -35,12 +35,12 @@ import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 import { movedAppToolWarnings } from './app-tool-level';
 
-/** The kinds these tools serve: every tree kind the brain serves
- *  (TREE_LIVE_KINDS, from the kind registry) but Files, which use the
+/** The kinds these tools serve: every tree kind the brain serves (the kind
+ *  registry's `tree.liveOrder`, as TREE_LIVE_KINDS) but Files, which use the
  *  folder_* tools. Recall maps are rows too (a map is a `recall` node filed
  *  by path): no other tool makes a Recall folder, and recall_map_create
  *  files into one. */
-export const TREE_TOOL_KINDS = TREE_LIVE_KINDS.filter(
+export const TREE_TOOL_KINDS = treeKindsBy('liveOrder').filter(
   (k): k is Exclude<TreeKind, 'files'> => k !== 'files',
 ) as unknown as readonly [Exclude<TreeKind, 'files'>, ...Exclude<TreeKind, 'files'>[]];
 type TreeToolKind = (typeof TREE_TOOL_KINDS)[number];
