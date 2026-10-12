@@ -5,11 +5,12 @@
  * made from a tool in a turn lands where the same login's create from the
  * web would.
  *
- *  - A workspace assistant's turn: its workspace, when the login the turn
- *    answers moderates it; else, for a login outside Admin, the folder it
- *    makes the item in when it may edit that, else its private workspace.
- *  - The Admin assistant's turn (an Admin user): the folder's home, else
- *    Admin, as before.
+ *  - Every assistant's turn, the Admin assistant's too: the assistant's
+ *    workspace is the current one. When the login the turn answers
+ *    moderates it, the item lands there (a folder it is made in only
+ *    passes its grants). Else the guide's fallback: the folder's home when
+ *    the login may edit that folder, else its private workspace; for an
+ *    Admin user, the folder's home, else Admin.
  *
  * Only in an assistant turn scope that names its login, and only when
  * nothing has named a home already (an HTTP request's, an MCP call's). Once
@@ -18,7 +19,6 @@
 import {
   currentCreateHome,
   resolveCreateHome,
-  scopeHoldsAdmin,
   type CreateHome,
   type WorkspaceScope,
 } from '@mantle/db';
@@ -41,10 +41,9 @@ export async function turnCreateHome(): Promise<CreateHome | null> {
 }
 
 async function resolveTurnHome(scope: WorkspaceScope): Promise<CreateHome | null> {
-  const wsId = scope.ws.length === 1 ? scope.ws[0]! : null;
-  // The Admin assistant names no workspace: an Admin user's create goes to
-  // its folder's home, else Admin (the rule's step 3 for an Admin user).
-  const askedWs = wsId && !(await scopeHoldsAdmin()) ? wsId : null;
+  // The turn's current workspace: the assistant's own (one rule for every
+  // assistant, CEO answer 2026-10-12).
+  const askedWs = scope.ws.length === 1 ? scope.ws[0]! : null;
   const home = await resolveCreateHome(scope.loginId!, {
     askedWs,
     ownWork: 'auto',
