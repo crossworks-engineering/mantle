@@ -169,4 +169,16 @@ describe('the actor binders (eslint-rules/actor-binders.mjs)', () => {
     ].join('\n');
     expect(binderSites(text)).toBe(4);
   });
+
+  it('counts the slot setters, runWithoutActor and nested type arguments (fix round 2, L7)', () => {
+    const text = [
+      'export function setSlotActor(actor: Actor): void {}',
+      'setSlotActor(loginActor(id));',
+      "setRequestActor({ kind: 'link' });",
+      'runWithoutActor(() => refresh(sql));',
+      "runAsSystem<Array<Row>>('worker:x', fn);",
+      "runAsSystem<Map<string, Array<Row>>>('worker:x', fn);",
+    ].join('\n');
+    expect(binderSites(text)).toBe(5);
+  });
 });
