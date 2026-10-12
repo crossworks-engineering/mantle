@@ -148,23 +148,68 @@ END
 $$;
 --> statement-breakpoint
 
+-- Heads taken: the transaction called mantle_lock_heads (its first lock),
+-- even for no rows. The signed settings say so; mantle_heads_held() alone
+-- cannot tell "taken for none" from "never taken".
+CREATE OR REPLACE FUNCTION "public"."mantle_heads_taken"()
+  RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  held text := coalesce(current_setting('mantle.heads_held', true), '');
+BEGIN
+  RETURN held <> '' AND coalesce(current_setting('mantle.heads_sig', true), '')
+           = "public"."mantle_heads_sig"(held, coalesce(current_setting('mantle.heads_held_upd', true), ''));
+END
+$$;
+--> statement-breakpoint
+
+-- mantle_lock_heads_more (0241) with one change (A2b1 fix round): a
+-- transaction that took its heads first for no rows may take more. Before,
+-- it was refused as "no heads held yet", and a first lock was refused too
+-- (the empty lock had already started the transaction id), so it could take
+-- no heads at all.
+CREATE OR REPLACE FUNCTION "public"."mantle_lock_heads_more"(ids uuid[])
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  held uuid[] := "public"."mantle_heads_held"();
+  held_upd uuid[] := "public"."mantle_heads_held"(true);
+  add uuid[];
+BEGIN
+  IF NOT "public"."mantle_heads_taken"() THEN
+    RAISE EXCEPTION 'mantle_lock_heads_more: no heads held yet' USING ERRCODE = '55000';
+  END IF;
+  SELECT coalesce(array_agg(d.x ORDER BY d.x), '{}'::uuid[]) INTO add
+    FROM (SELECT u.x FROM unnest(ids) AS u(x) WHERE u.x IS NOT NULL
+          EXCEPT
+          SELECT h.x FROM unnest(held_upd) AS h(x)) d;
+  IF cardinality(add) = 0 THEN RETURN; END IF;
+  INSERT INTO "public"."node_acl_head" ("node_id")
+    SELECT n."id" FROM "public"."nodes" n
+     WHERE n."id" = ANY (add)
+       AND NOT EXISTS (SELECT 1 FROM "public"."node_acl_head" h WHERE h."node_id" = n."id")
+    ON CONFLICT DO NOTHING;
+  PERFORM 1 FROM "public"."node_acl_head" h
+    WHERE h."node_id" = ANY (add) ORDER BY h."node_id" FOR UPDATE NOWAIT;
+  PERFORM "public"."mantle_heads_set"(held || add, held_upd || add);
+END
+$$;
+--> statement-breakpoint
+
 -- A heads lock nested in a transaction that may hold heads already (A2b,
 -- plan 20.2; A2b1 audit L2): the database decides, not a flag in the app.
--- Heads held: take more (mantle_lock_heads_more, FOR UPDATE NOWAIT). None
--- held, or heads taken for no rows: this is the transaction's first lock,
--- with every rule of mantle_lock_heads (first lock, heads check). Open to
--- the same roles as mantle_lock_heads.
+-- Heads taken (even for no rows): take more (mantle_lock_heads_more, FOR
+-- UPDATE NOWAIT). None taken: this is the transaction's first lock, with
+-- every rule of mantle_lock_heads (first lock, heads check). Open to the
+-- same roles as mantle_lock_heads.
 CREATE OR REPLACE FUNCTION "public"."mantle_lock_heads_nested"(ids uuid[], lock_mode text)
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
-  IF cardinality("public"."mantle_heads_held"()) > 0 THEN
+  IF "public"."mantle_heads_taken"() THEN
     PERFORM "public"."mantle_lock_heads_more"(ids);
-    RETURN;
+  ELSE
+    PERFORM "public"."mantle_lock_heads"(ids, lock_mode);
   END IF;
-  PERFORM set_config('mantle.heads_held', '', true);
-  PERFORM set_config('mantle.heads_held_upd', '', true);
-  PERFORM set_config('mantle.heads_sig', '', true);
-  PERFORM "public"."mantle_lock_heads"(ids, lock_mode);
 END
 $$;

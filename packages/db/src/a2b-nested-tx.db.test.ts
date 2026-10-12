@@ -200,7 +200,7 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
     });
   });
 
-  it('heads taken for no rows are no heads: a nested withHeads takes the first lock', async () => {
+  it('heads taken for no rows are heads taken: a nested withHeads takes more', async () => {
     await m.withHeads([], 'update', async () => {
       await m.withHeads([b], 'update', async (tx) => {
         expect(await held(tx)).toEqual([b]);
@@ -211,7 +211,9 @@ describe.skipIf(!URL)('nested system transactions (arch A2b, plan 20.2)', () => 
   it('the database refuses a nested subtree lock where heads are held, allows it where none are', async () => {
     await expect(
       m.withHeads([a], 'update', () => m.withSubtreeHeads(sub, [], async () => undefined)),
-    ).rejects.toMatchObject({ code: '55000' });
+    ).rejects.toSatisfy(
+      (e: { code?: string; cause?: { code?: string } }) => (e.cause?.code ?? e.code) === '55000',
+    );
     await m.withSystemTx(() =>
       m.withSubtreeHeads(sub, [], async (tx) => {
         expect(await held(tx)).toEqual(expect.arrayContaining([sub, b]));
