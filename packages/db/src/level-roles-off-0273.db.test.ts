@@ -11,6 +11,8 @@
  *    dropped functions gone, mantle_workspace_kind and the switch
  *    functions kept (mantle_ws_reach_diff still runs), the level columns'
  *    data unchanged;
+ *  - the retired client-responder agent is disabled, by slug, and kept
+ *    (W8 integration); any other agent is left as it was;
  *  - re-runnable: a second run changes nothing.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/level-roles-off-0273.db.test.ts
  */
@@ -97,6 +99,10 @@ describe.skipIf(!URL)('0273: the old pool roles lose their policies and rights',
     await sql`insert into auth.users (id, email, password_hash, is_owner, role)
               values (${owner}, ${`o-${owner}@example.invalid`}, 'x', true, 'admin'),
                      (${member}, ${`m-${member}@example.invalid`}, 'x', false, 'member')`;
+    // The retired client chat's agent and an operator's own responder.
+    await sql`insert into agents (owner_id, slug, name, model, provider, system_prompt, role)
+              values (${owner}, 'client-responder', 'Client', 'fake/model', 'local', 'x', 'responder'),
+                     (${owner}, 'kept-responder', 'Kept', 'fake/model', 'local', 'x', 'responder')`;
     // The switch is frozen (0268); set the world up past the freeze.
     await sql`alter table mcp_login_access disable trigger mcp_login_access_frozen`;
     await sql`insert into mcp_login_access (login_id, enabled, write_enabled)
@@ -160,15 +166,29 @@ describe.skipIf(!URL)('0273: the old pool roles lose their policies and rights',
     expect(await levels()).toBe(levelsBefore);
   });
 
+  const agentRows = () =>
+    sql<{ slug: string; enabled: boolean; prompt: string }[]>`
+      select slug, enabled, system_prompt as prompt from agents
+       where owner_id = ${owner} order by slug`;
+
+  it('W8 integration: disables the retired client-responder, deletes nothing, leaves the rest', async () => {
+    expect(await agentRows()).toEqual([
+      { slug: 'client-responder', enabled: false, prompt: 'x' },
+      { slug: 'kept-responder', enabled: true, prompt: 'x' },
+    ]);
+  });
+
   it('leaves the switch proof working', async () => {
     const rows = await sql`select * from mantle_ws_reach_diff()`;
     expect(Array.isArray(rows)).toBe(true);
   });
 
   it('is re-runnable: a second run changes nothing', async () => {
-    const before = [await userPolicies(), await oldRights(), await levels()];
+    const before = [await userPolicies(), await oldRights(), await levels(), await agentRows()];
     await run();
-    expect([await userPolicies(), await oldRights(), await levels()]).toEqual(before);
+    expect([await userPolicies(), await oldRights(), await levels(), await agentRows()]).toEqual(
+      before,
+    );
     expect(await oldPolicies()).toBe(0);
   });
 });

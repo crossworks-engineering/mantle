@@ -22,6 +22,11 @@
 --    mantle_member_space_node. Found by pg_depend (the policies were their
 --    only dependents) and by a scan of every function body; the scan runs
 --    here again and raises if any function left still names one.
+-- 4. The retired client chat's agent (`client-responder`, retired in W5c,
+--    its logins gone in W8a) is disabled on every brain, by slug: a
+--    responder on no workspace that answers nobody any more (W8
+--    integration). Nothing is deleted: the row, its groups and its prompt
+--    stay, and `enabled = true` brings it back.
 --
 -- Kept, on purpose: the level columns and their data, the archives, the
 -- spaces tables, mantle_view_user, and everything the switch of a brain not
@@ -32,11 +37,13 @@
 -- mantle_inherited_level, mantle_embedded_level) and the nodes level
 -- CHECKs call it. W10 drops the rest.
 --
--- Every drop is RESTRICT. No row of any content table changes, no LLM work
--- is queued and no notify fires.
+-- Every drop is RESTRICT. No row of any content table changes (step 4
+-- touches one agents row a brain), no LLM work is queued and no notify
+-- fires.
 --
 -- Re-runnable: each step reads only what is still there (the table, a
--- policy, a function), so a second run changes nothing.
+-- policy, a function, an enabled client-responder), so a second run
+-- changes nothing.
 --
 -- The `when` sits above 1790195580000 (0272's): migrate.ts skips a
 -- migration whose `when` is at or below the highest one applied.
@@ -211,3 +218,7 @@ DROP FUNCTION IF EXISTS "public"."mantle_client_space"(uuid) RESTRICT;
 DROP FUNCTION IF EXISTS "public"."mantle_member_space_node"(uuid) RESTRICT;
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS "public"."mantle_space_id"() RESTRICT;
+--> statement-breakpoint
+UPDATE "public"."agents"
+   SET "enabled" = false, "updated_at" = now()
+ WHERE "slug" = 'client-responder' AND "enabled";

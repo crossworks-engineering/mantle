@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: workspaces W8 (levels, client logins and frozen tables out)
+
+- A helper agent (a specialist such as the replay agent) asked for by a
+  login that is not an Admin user now refuses, on a brain on workspaces:
+  it fails closed with `AgentWorkspaceError` instead of reading at the
+  agent's old level. A responder or assistant in no workspace refuses a
+  call that names no login (a heartbeat, a run); specialists and workers
+  keep doing system work. See docs/workspaces.md, "Assistants and chats".
+- The retired `client-responder` agent is disabled by migration 0273 (kept,
+  not deleted). The boot reconcile gives the persona's tool groups only to
+  the Admin workspace's assistants on a brain on workspaces.
+
 ## Unreleased: team apps hardening (access matrix Part 2)
 
 - An admin sees and stops members' apps: Team admin > Member apps lists the

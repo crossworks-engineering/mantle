@@ -110,31 +110,41 @@ describe('groupsForAgent (W8c: the workspace, not the level)', () => {
   const adminOnly = new Set(['team-read-admin']);
   const both = ['team-read', 'team-read-admin'];
   it('never re-adds an adminOnly group to an assistant of another workspace', () => {
-    expect(groupsForAgent(both, { workspace: 'other', role: 'responder' }, adminOnly)).toEqual([
-      'team-read',
-    ]);
-  });
-  it('nor to a responder on no workspace (a brain not yet switched)', () => {
-    expect(groupsForAgent(both, { workspace: 'none', role: 'responder' }, adminOnly)).toEqual([
-      'team-read',
-    ]);
-  });
-  it('nor to the team responder on no workspace (its role is custom)', () => {
     expect(
-      groupsForAgent(
-        both,
-        { workspace: 'none', role: 'custom', slug: 'team-responder' },
-        adminOnly,
-      ),
+      groupsForAgent(both, { workspace: 'other', role: 'responder' }, adminOnly, true),
     ).toEqual(['team-read']);
   });
+  it('nor, on a brain on workspaces, to a responder or assistant on no workspace', () => {
+    for (const role of ['responder', 'assistant']) {
+      expect(groupsForAgent(both, { workspace: 'none', role }, adminOnly, true)).toEqual([
+        'team-read',
+      ]);
+    }
+  });
+  it('W8 integration: on a brain not on workspaces a responder on no workspace is the Admin persona', () => {
+    for (const role of ['responder', 'assistant']) {
+      expect(groupsForAgent(both, { workspace: 'none', role }, adminOnly, false)).toEqual(both);
+    }
+  });
+  it('nor to the team responder on no workspace (its role is custom), switched or not', () => {
+    for (const switched of [true, false]) {
+      expect(
+        groupsForAgent(
+          both,
+          { workspace: 'none', role: 'custom', slug: 'team-responder' },
+          adminOnly,
+          switched,
+        ),
+      ).toEqual(['team-read']);
+    }
+  });
   it('keeps everything for the Admin assistant and for a helper', () => {
-    expect(groupsForAgent(both, { workspace: 'admin', role: 'responder' }, adminOnly)).toEqual(
-      both,
-    );
-    expect(groupsForAgent(both, { workspace: 'none', role: 'specialist' }, adminOnly)).toEqual(
-      both,
-    );
+    expect(
+      groupsForAgent(both, { workspace: 'admin', role: 'responder' }, adminOnly, true),
+    ).toEqual(both);
+    expect(
+      groupsForAgent(both, { workspace: 'none', role: 'specialist' }, adminOnly, true),
+    ).toEqual(both);
   });
 });
 

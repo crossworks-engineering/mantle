@@ -159,13 +159,46 @@ async function agentRows(ownerId: string, roles?: ('responder' | 'assistant')[])
   }));
 }
 
-async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<string[]> {
+/** Whether brain `ownerId` is on workspaces: it has an Admin workspace. */
+async function brainOnWorkspaces(ownerId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(and(eq(workspaces.ownerId, ownerId), eq(workspaces.isAdmin, true)))
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * On a brain NOT on workspaces only: the agents the persona reconcile
+ * reached before W8c, those whose frozen level was admin (0268). The one
+ * read of that column left in the code, until W10 drops it; listed in
+ * eslint-rules/level-reads.mjs. A brain on workspaces never asks.
+ */
+async function frozenAdminLevelAgentIds(ownerId: string): Promise<Set<string>> {
+  const res = (await db.execute(
+    sql`select id::text as id from agents where owner_id = ${ownerId} and audience = 'admin'`,
+  )) as unknown;
+  const rows = (Array.isArray(res) ? res : ((res as { rows?: unknown[] }).rows ?? [])) as {
+    id: string;
+  }[];
+  return new Set(rows.map((r) => r.id));
+}
+
+export async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<string[]> {
   const adminOnly = await adminOnlyGroups(ownerId);
-  // The persona and the operator's own personas: never the assistant of a
-  // workspace other than Admin, nor a manifest agent with its own entry
-  // (W8c: this used to be the agent's level).
+  const switched = await brainOnWorkspaces(ownerId);
+  // The persona and the operator's own personas, never a manifest agent with
+  // its own entry. On a brain on workspaces: the Admin workspace's
+  // assistants only, never a responder on no workspace nor another
+  // workspace's assistant (W8 integration). On a brain not yet switched:
+  // the responders the old level check reached, read from the frozen
+  // column (W8c took the level out of the code).
+  const frozenAdmin = switched ? null : await frozenAdminLevelAgentIds(ownerId);
   const responders = (await agentRows(ownerId, ['responder', 'assistant'])).filter(
-    (a) => a.workspace !== 'other' && !MANIFEST_NON_PERSONA_SLUGS.has(a.slug),
+    (a) =>
+      !MANIFEST_NON_PERSONA_SLUGS.has(a.slug) &&
+      (frozenAdmin ? a.workspace !== 'other' && frozenAdmin.has(a.id) : a.workspace === 'admin'),
   );
   // Persona skills safe to ATTACH: manifest persona skills whose row exists + is
   // enabled. (The DROP side needs no existence check.)
@@ -189,6 +222,7 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
       missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS),
       a,
       adminOnly,
+      switched,
     );
     const curSkills = a.skills ?? [];
     const nextSkills = convergeManifestSkills(curSkills, wantSkills, MANIFEST_SKILL_SLUGS, addable);
@@ -223,6 +257,7 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
  */
 async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
   const adminOnly = await adminOnlyGroups(ownerId);
+  const switched = await brainOnWorkspaces(ownerId);
   const rows = await agentRows(ownerId);
   const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
   const changes: string[] = [];
@@ -234,8 +269,8 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
       missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []),
       row,
       adminOnly,
+      switched,
     );
-
     const curSkills = row.skills ?? [];
     const nextSkills = convergeManifestSkills(curSkills, a.skillSlugs, MANIFEST_SKILL_SLUGS);
     const skillsChanged =

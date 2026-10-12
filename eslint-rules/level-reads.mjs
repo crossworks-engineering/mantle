@@ -14,9 +14,10 @@
  *
  * A permanent guard since W8c, which took the last level read out of the
  * code (the columns stay in the database, frozen, until W10 drops them).
- * The allowlist below holds only files where the word means something else
- * (an OAuth audience, plain English), with the number of matching lines
- * pinned: eslint-rules/level-reads.test.ts fails on any other count, so a
+ * The allowlist below holds files where the word means something else
+ * (an OAuth audience, plain English), and one frozen read kept until W10
+ * drops the columns (the persona reconcile of a brain not on workspaces),
+ * with the number of matching lines pinned: eslint-rules/level-reads.test.ts fails on any other count, so a
  * new read in a listed file fails too, and on any `audience` line outside
  * the list.
  *
@@ -27,6 +28,12 @@ export const LEVEL_READ_PATTERN =
 
 /** @type {Record<string, { lines: number, phase: 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
+  // ── keep until W10 (a frozen level read with no other source) ──
+  'server/web/lib/system-manifest/reconcile.ts': {
+    lines: 1,
+    phase: 'keep',
+    why: 'frozen until W10: the persona reconcile on a brain NOT on workspaces reaches the agents whose frozen level was admin (W8 integration); W10 drops the column and this read with it',
+  },
   // ── keep (the word means something else: OAuth audience, plain English) ──
   'packages/db/src/schema/tool-groups.ts': {
     lines: 1,

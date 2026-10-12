@@ -183,6 +183,13 @@ A folder is an item with a home and grants like any other.
 - **Helpers and workers** (specialists, summarizer, extractor and the
   others) are system wide. A helper runs in its caller's scope and never
   widens it. Only the Admin assistant reads the entity graph.
+- **A helper asked for by a login that is not an Admin user refuses** (fails
+  closed, `AgentWorkspaceError`), since W8c: before, the agent's old level
+  decided what it read. A responder or assistant in no workspace refuses
+  too when no login asks (a heartbeat, a run): it has no workspace to run
+  in. Specialists and workers with no login still do system work. On a
+  brain not yet on workspaces an admin login's helper runs on the system
+  pool and any other login's reads nothing.
 
 The chat details: [conversation.md](./conversation.md) section 6d.
 
