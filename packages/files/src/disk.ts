@@ -6,7 +6,7 @@
  * compose them with `@mantle/db` writes inside a single API handler.
  */
 
-import { createWriteStream, promises as fs } from 'node:fs';
+import { createReadStream, createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { Transform, type Readable } from 'node:stream';
@@ -62,6 +62,186 @@ export async function writeFile(
   await fs.writeFile(filePath, bytes);
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   return { path: filePath, sha256, size: bytes.byteLength };
+}
+
+// ─── Staged creates: write beside, place after the row ──────────────────────
+//
+// A create writes its bytes under a temporary name in the file's own folder
+// (same directory, so the placing rename is atomic) and renames them to the
+// final name only once its node insert has won (W8b). The temporary name is
+// dot-prefixed and ends in `.tmp`, so the disk-sync watcher and the untracked
+// scan ignore it (`isDiskChaff`), and a create that loses the race to another
+// one unlinks it: the loser's bytes never land under the winner's row.
+
+/** Bytes staged for a create: where they are now and where they go. */
+export type StagedFile = { tempPath: string; finalPath: string; sha256: string; size: number };
+
+/** A unique temporary path beside `filename` in its folder (mkdir -p). */
+async function stagingPathFor(
+  parentLtreePath: string,
+  filename: string,
+): Promise<{ tempPath: string; finalPath: string }> {
+  const finalPath = diskPathForFile(parentLtreePath, filename);
+  if (!finalPath) {
+    throw new Error(`stageFile: cannot resolve disk path for ${parentLtreePath}/${filename}`);
+  }
+  const dir = path.dirname(finalPath);
+  await fs.mkdir(dir, { recursive: true });
+  return { tempPath: path.join(dir, `.${randomUUID()}.staged.tmp`), finalPath };
+}
+
+/** Write `bytes` to a staging file beside `filename`. Never touches the
+ *  final name: `placeStaged` does that, `discardStaged` drops it. */
+export async function stageFile(
+  parentLtreePath: string,
+  filename: string,
+  bytes: Buffer,
+): Promise<StagedFile> {
+  const { tempPath, finalPath } = await stagingPathFor(parentLtreePath, filename);
+  try {
+    await fs.writeFile(tempPath, bytes, { flag: 'wx' });
+  } catch (err) {
+    await fs.unlink(tempPath).catch(() => {});
+    throw err;
+  }
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  return { tempPath, finalPath, sha256, size: bytes.byteLength };
+}
+
+/** Move a spooled upload to a staging file beside `filename` (a rename, or a
+ *  copy across mounts). On any failure the spool file is removed. */
+export async function stageSpooled(
+  parentLtreePath: string,
+  filename: string,
+  spooled: SpooledUpload,
+): Promise<StagedFile> {
+  let tempPath: string | null = null;
+  try {
+    const at = await stagingPathFor(parentLtreePath, filename);
+    tempPath = at.tempPath;
+    try {
+      await fs.rename(spooled.tempPath, at.tempPath);
+    } catch (err) {
+      // Spool and folder on different mounts (EXDEV): copy, then drop the spool.
+      if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err;
+      await fs.copyFile(spooled.tempPath, at.tempPath);
+      await fs.unlink(spooled.tempPath);
+    }
+    return { ...at, sha256: spooled.sha256, size: spooled.size };
+  } catch (err) {
+    await discardSpooled(spooled);
+    if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    throw err;
+  }
+}
+
+/** Put staged bytes under their final name (an atomic rename that replaces
+ *  an orphan disk file of that name, the self-heal). */
+export async function placeStaged(staged: StagedFile): Promise<void> {
+  await fs.rename(staged.tempPath, staged.finalPath);
+}
+
+/** Drop a staging file. Safe after placement (ENOENT is fine). */
+export async function discardStaged(staged: StagedFile): Promise<void> {
+  await fs.unlink(staged.tempPath).catch(() => {});
+}
+
+/** Whether the final name still holds the bytes `staged` placed there. A
+ *  create whose transaction is retried after its bytes were placed asks this
+ *  before its insert wins again: in between, another create may have put
+ *  its own bytes under the name (fix round 1). False when the file is gone. */
+export async function placedBytesIntact(staged: StagedFile): Promise<boolean> {
+  try {
+    const hash = createHash('sha256');
+    for await (const chunk of createReadStream(staged.finalPath)) hash.update(chunk as Buffer);
+    return hash.digest('hex') === staged.sha256;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+// ─── Staging files a crash left behind ──────────────────────────────────────
+//
+// A process that dies between staging a create's bytes and placing or
+// discarding them leaves its staging file in the folder. The watcher ignores
+// it, so nothing else ever removes it. The nightly `files-staged-reap`
+// maintenance sweep (also run by hand) unlinks them after an hour.
+
+/** The name `stagingPathFor` gives a staging file, and nothing else. */
+export const STAGED_LEFTOVER_NAME = /^\.[0-9a-f-]{36}\.staged\.tmp$/;
+
+/** A staging file this old is residue: a live create places or drops its
+ *  staging file within one request. */
+export const STAGED_LEFTOVER_MIN_AGE_MS = 60 * 60 * 1000;
+
+/** Folders below the files root the sweep walks into: the folder limit
+ *  (FILES_MAX_FOLDER_DEPTH), with room for older, deeper trees. */
+const STAGED_SWEEP_MAX_DEPTH = 8;
+
+/**
+ * Unlink the staging files a crash left under the files root: only names
+ * matching STAGED_LEFTOVER_NAME, only regular files, only when last written
+ * an hour ago or more. Never follows a symlink (a linked folder is not
+ * entered, a linked file is not touched), never enters a dot folder (the
+ * upload spool, thumbnails) and never enters `exclude` (other stores, such
+ * as the app and table databases, should one be mounted inside the files
+ * root). When the files root itself is a symlink, or sits inside an
+ * excluded store, nothing is walked and `skipped` says why. `dryRun` counts
+ * without removing.
+ */
+export async function sweepStagedLeftovers(
+  opts: { exclude?: readonly string[]; now?: number; dryRun?: boolean; root?: string } = {},
+): Promise<{ removed: number; skipped: string | null }> {
+  const root = path.resolve(opts.root ?? filesRoot());
+  const within = (p: string, dir: string) => p === dir || p.startsWith(dir + path.sep);
+  const excluded: string[] = [];
+  for (const x of opts.exclude ?? []) {
+    if (!x || !x.trim()) continue;
+    excluded.push(path.resolve(x));
+    const real = await fs.realpath(x).catch(() => null);
+    if (real) excluded.push(real);
+  }
+  try {
+    const st = await fs.lstat(root);
+    if (!st.isDirectory()) return { removed: 0, skipped: 'the files root is not a directory' };
+  } catch {
+    return { removed: 0, skipped: 'the files root does not exist' };
+  }
+  if (excluded.some((x) => within(root, x))) {
+    return { removed: 0, skipped: 'the files root sits inside another store' };
+  }
+  const cutoff = (opts.now ?? Date.now()) - STAGED_LEFTOVER_MIN_AGE_MS;
+  let removed = 0;
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      // A Dirent is lstat-like: a symlink is neither a directory nor a file.
+      if (e.isDirectory()) {
+        if (e.name.startsWith('.') || depth >= STAGED_SWEEP_MAX_DEPTH) continue;
+        if (excluded.some((x) => within(p, x))) continue;
+        await walk(p, depth + 1);
+        continue;
+      }
+      if (!e.isFile() || !STAGED_LEFTOVER_NAME.test(e.name)) continue;
+      try {
+        const st = await fs.lstat(p);
+        if (!st.isFile() || st.mtimeMs >= cutoff) continue;
+        if (!opts.dryRun) await fs.unlink(p);
+        removed++;
+      } catch {
+        // gone already (placed, discarded or swept by another run)
+      }
+    }
+  };
+  await walk(root, 0);
+  return { removed, skipped: null };
 }
 
 export async function readFile(parentLtreePath: string, filename: string): Promise<Buffer> {

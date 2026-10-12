@@ -186,6 +186,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL and file removal, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron and the script.',
   },
   {
+    slug: 'files-staged-reap',
+    title: 'Remove staging files a crash left in Files',
+    description:
+      "Removes the staging files a crash left beside a file create: a create writes its bytes under a dot-prefixed .<uuid>.staged.tmp in the file's folder and places or drops them within the request, so one an hour old or more is residue the files watcher never sees. Only that exact name, only regular files; never follows a symlink, never enters a dot folder (the upload spool, thumbnails) or the app, table, spaces or sandbox stores, even one mounted inside the files root.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: true,
+    script: 'scripts/files-staged-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'File removal only, no database, no model; idempotent, a no-op once clean. The rule lives in @mantle/files (sweepStagedLeftovers), the stores it skips in lib/maintenance/files-staged-reap.ts, shared by the cron and the script.',
+  },
+  {
     slug: 'app-export-catch-up',
     title: 'Sync app table exports a restart left behind',
     description:
