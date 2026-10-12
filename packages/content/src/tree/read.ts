@@ -97,9 +97,11 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  same scope (the one count path; task b6e4a8aa): only what the reader's
  *  workspaces read (the row rules on a read; the caller's scope on the
  *  system pool, as in a write's reply), and `ws` (the switcher's workspace)
- *  keeps the items to what that workspace reads, as the item page does. The subfolders are not narrowed by `ws`: a folder list keeps
- *  every folder the reader reads (the way to the items). A folder the
- *  reader reads but whose contents it does not still shows, with 0.
+ *  keeps the items to what that workspace reads, as the item page does.
+ *  The subfolders are not narrowed by `ws`: a folder list keeps every
+ *  folder the reader reads (the way to the items). A folder the reader
+ *  reads but whose contents it does not still shows, with 0. The parent
+ *  id takes the same scope: a parent the reader does not read is null.
  *
  *  The parents and both counts are read once for all the folders, not once
  *  per folder (W6a): under a workspace scope the planner cannot see how many
@@ -119,7 +121,7 @@ export async function selectFolders(
        where f.owner_id = ${ownerId} and f.type = 'branch' and ${where}),
     up as materialized (
       select p.id, p.path from nodes p
-       where p.owner_id = ${ownerId} and p.type = 'branch'
+       where p.owner_id = ${ownerId} and p.type = 'branch' and ${nodeAliasScopeReads('p')}
          and p.path = any(array(
            select subpath(path, 0, nlevel(path) - 1) from f where nlevel(path) > 2))),
     fc as materialized (

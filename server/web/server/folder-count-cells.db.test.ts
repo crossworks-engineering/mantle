@@ -70,6 +70,8 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
    *  and `hidden` (home H, "Removed here" for S); `dest` (home S) is also
    *  granted to T. */
   const mv = { moved: randomUUID(), seen: randomUUID(), hidden: randomUUID(), dest: randomUUID() };
+  /** A folder only H reads, holding a subfolder granted to S by hand. */
+  const hOnly = { parent: randomUUID(), child: randomUUID() };
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -81,6 +83,9 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
         values (${id}, ${owner}, ${type}::node_type, ${title}, ${at}::ltree,
                 ${type === 'note' ? '{"content":"x"}' : '{}'}::jsonb)`),
     );
+  /** A grant the row already takes from its folder becomes a hand grant. */
+  const asHandGrant = sql`on conflict (node_id, workspace_id) do update
+    set is_home = excluded.is_home, write = excluded.write, via_folder_id = null`;
   /** Its hand grants replaced: `home` is the home, then each of `also`
    *  (Write on). A folder passes its grants on to what it holds. */
   const grants = (id: string, home: string, ...also: string[]) =>
@@ -89,10 +94,10 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
         sql`delete from item_grants where node_id = ${id} and via_folder_id is null`,
       );
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home, write)
-        values (${id}, ${home}, true, false)`);
+        values (${id}, ${home}, true, false) ${asHandGrant}`);
       for (const w of also) {
         await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home, write)
-          values (${id}, ${w}, false, true)`);
+          values (${id}, ${w}, false, true) ${asHandGrant}`);
       }
     });
   /** "Remove from this workspace": S marked "Removed here" on `id`. */
@@ -244,6 +249,10 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     await removeFromS(mv.hidden);
     await insert(root!.id, mv.dest, 'branch', `${tag} dest`, `notes.${tag}_dest`);
     await grants(mv.dest, ws.S, ws.T);
+    await insert(root!.id, hOnly.parent, 'branch', `${tag} h only`, `notes.${tag}_honly`);
+    await grants(hOnly.parent, ws.H);
+    await insert(hOnly.parent, hOnly.child, 'branch', `${tag} s child`, `notes.${tag}_honly.s`);
+    await grants(hOnly.child, ws.H, ws.S);
 
     const tokens = await import('../lib/auth/tokens');
     for (const who of CALLERS) {
@@ -371,6 +380,21 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
       color: 'green',
     })) as Json;
     expect(out).toMatchObject({ id: folder.noneShared, ...counts });
+    // A parent the caller does not read is no parent in the reply either,
+    // as on the read path.
+    const child = await send('adminUser', `/api/tree/notes/folders/${hOnly.child}`, 'PATCH', {
+      color: 'red',
+    });
+    expect(child.status, JSON.stringify(child.body).slice(0, 200)).toBe(200);
+    expect(child.body.folder).toMatchObject({ id: hOnly.child, parentId: null });
+    expect((await get('adminUser', `/api/tree/notes?folder=${hOnly.child}`)).folder).toMatchObject({
+      id: hOnly.child,
+      parentId: null,
+    });
+    // A user of H reads the parent: it is named there.
+    expect(
+      (await get('adminUserInHome', `/api/tree/notes?folder=${hOnly.child}`)).folder.parentId,
+    ).toBe(hOnly.parent);
   }, 60_000);
 
   it('a move’s confirm list names and counts only what the caller reads', async () => {
