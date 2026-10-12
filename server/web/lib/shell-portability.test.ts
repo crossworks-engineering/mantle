@@ -87,7 +87,7 @@ function emptyArrayHits(src: string): { line: number; what: string }[] {
   if (!/^\s*set\s+-[a-zA-Z]*u/m.test(src)) return [];
   const maybeEmpty = new Set<string>();
   for (const m of src.matchAll(new RegExp(`\\b(${NAME})=\\(\\s*("\\$@"\\s*)?\\)`, 'g'))) {
-    maybeEmpty.add(m[1]);
+    if (m[1]) maybeEmpty.add(m[1]);
   }
   const hits: { line: number; what: string }[] = [];
   for (const { text, line } of code(src)) {
@@ -96,7 +96,7 @@ function emptyArrayHits(src: string): { line: number; what: string }[] {
       '',
     );
     for (const m of bare.matchAll(new RegExp(`\\$\\{(${NAME})\\[[@*]\\]\\}`, 'g'))) {
-      if (maybeEmpty.has(m[1])) {
+      if (m[1] && maybeEmpty.has(m[1])) {
         hits.push({
           line,
           what: `\${${m[1]}[@]} may be empty under set -u (use \${${m[1]}[@]+"\${${m[1]}[@]}"})`,
