@@ -108,7 +108,7 @@ describe('the counters', () => {
     expect(s).not.toMatch(/read_ws|home_ws|write_ws/);
     expect(s).toContain("'http://x'");
     expect(s).toContain('"//y"');
-    expect(rawAclLines('// read_ws\nconst a = n.read_ws;\n * homeWs')).toBe(1);
+    expect(rawAclLines('// read_ws\nconst a = n.read_ws;\n/**\n * homeWs\n */')).toBe(1);
   });
 
   it('count asSystem calls with their reasons, not the definition or imports', () => {

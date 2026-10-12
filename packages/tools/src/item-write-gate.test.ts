@@ -11,7 +11,14 @@
  *    on an id it changes is listed (or named here as one that does not
  *    change the item it reads).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const area = vi.hoisted(() => ({ users: false }));
+vi.mock('./admin-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./admin-gate')>()),
+  callerHasArea: vi.fn(async (a: string) => a === 'users' && area.users),
+}));
+
 import {
   AREA_SYSTEM_TOOLS,
   ADMIN_ONLY_TOOL_SLUGS,
@@ -201,6 +208,22 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
     expect(missing).toEqual([]);
     for (const slug of NOT_AN_ITEM_WRITE.keys()) {
       expect(getBuiltin(slug), `${slug} is no builtin now: drop it from the list`).not.toBeNull();
+    }
+  });
+
+  it('a link needs edit to open or close; the users area closes any link (A0)', async () => {
+    for (const slug of ['page_share', 'node_share']) {
+      expect(ITEM_WRITE_TARGETS.get(slug), slug).toEqual([{ param: 'id', need: 'edit' }]);
+    }
+    for (const slug of ['page_unshare', 'node_unshare']) {
+      const resolve = ITEM_WRITE_TARGETS.get(slug) as (
+        i: Record<string, unknown>,
+        o: string,
+      ) => Promise<{ ids: string[]; need: string }[]>;
+      area.users = false;
+      expect(await resolve({ id: 'n1' }, 'o'), slug).toEqual([{ ids: ['n1'], need: 'edit' }]);
+      area.users = true;
+      expect(await resolve({ id: 'n1' }, 'o'), slug).toEqual([]);
     }
   });
 

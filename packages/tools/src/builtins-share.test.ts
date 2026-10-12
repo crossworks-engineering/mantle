@@ -47,6 +47,13 @@ vi.mock('@mantle/content', () => {
   };
 });
 
+const area = vi.hoisted(() => ({ scope: false, users: false }));
+vi.mock('./admin-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./admin-gate')>()),
+  callerScope: () => (area.scope ? { kind: 'user', loginId: 'login-2', ws: [], modWs: [] } : null),
+  callerHasArea: async (a: string) => a === 'users' && area.users,
+}));
+
 import {
   assertMayLink,
   checkServeList,
@@ -383,6 +390,39 @@ describe('node_unshare', () => {
     }
     expect(getActiveShareForNode).not.toHaveBeenCalled();
     expect(revokeShare).not.toHaveBeenCalled();
+  });
+
+  it('an Admin user with the users area closes a link it may not edit; nobody else (A0)', async () => {
+    vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as never);
+    vi.mocked(revokeShare).mockResolvedValue(true);
+    vi.mocked(assertMayLink).mockRejectedValue(
+      new LinkRefusedError(404, 'not_found', 'Item not found.'),
+    );
+    const admin: ToolHandlerContext = {
+      ownerId: 'o1',
+      surface: { kind: 'owner', via: 'mcp', loginId: 'login-2' },
+    };
+    const member: ToolHandlerContext = {
+      ownerId: 'o1',
+      surface: { kind: 'team', loginId: 'member-3' },
+    };
+    try {
+      area.scope = true;
+      area.users = false;
+      expect(errorOf(await unshare.handler({ id: NODE_ID }, admin))).toMatch(/not found/);
+      area.users = true;
+      expect(errorOf(await unshare.handler({ id: NODE_ID }, member))).toMatch(/not found/);
+      expect(revokeShare).not.toHaveBeenCalled();
+      expect(outputOf(await unshare.handler({ id: NODE_ID }, admin))).toEqual({
+        id: NODE_ID,
+        unshared: true,
+      });
+      // Opening one is not closing: still refused.
+      expect(errorOf(await share.handler({ id: NODE_ID }, admin))).toMatch(/not found/);
+    } finally {
+      area.scope = false;
+      area.users = false;
+    }
   });
 
   it('surfaces a revoke failure rather than reporting success', async () => {

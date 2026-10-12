@@ -168,11 +168,15 @@ describe('itemWriteTarget (W6a, the item an Admin write touches)', () => {
         `/api/recall/revisions/${id}/restore`,
       ),
     ).toEqual({ id, need: 'edit', ref: 'recall-revision' });
-    expect(itemWriteTarget('DELETE', '/api/shares/:id', `/api/shares/${id}`)).toEqual({
-      id,
-      need: 'manage',
-      ref: 'share',
-    });
+    // A link needs edit of its item (A0; an app's link: manage, which the
+    // session gate asks once it knows the item's type).
+    for (const method of ['DELETE', 'PATCH']) {
+      expect(itemWriteTarget(method, '/api/shares/:id', `/api/shares/${id}`)).toEqual({
+        id,
+        need: 'edit',
+        ref: 'share',
+      });
+    }
     expect(itemWriteTarget('DELETE', '/api/apps/deleted/:id', `/api/apps/deleted/${id}`)).toEqual({
       id,
       need: 'manage',

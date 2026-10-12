@@ -52,7 +52,9 @@ const share = all.find((t) => t.slug === 'page_share')!;
 const pageDel = all.find((t) => t.slug === 'page_delete')!;
 const unshare = all.find((t) => t.slug === 'page_unshare')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own path that names no login (stdio MCP): a missing surface
+// may not open or close a link (A0 fix round, M2).
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
 const PAGE_ID = 'p-1';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
