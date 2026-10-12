@@ -15,9 +15,9 @@ else: as a user of a workspace that holds it.
   signs in by no path (cookie, device token, API key, OAuth grant or peer),
   and every gate answers it as a stranger (`server/web/server/role-sweep.test.ts`).
 - Email-code sign-in. `GET`/`POST /api/auth/client-code`,
-  `POST /api/auth/client-code/verify`, `GET`/`PUT
-/api/team-admin/clients/signin-sender` and its `preview` answer 410
-  `{ error, code: 'gone' }` before any work. The sign-in code queue
+  `POST /api/auth/client-code/verify`,
+  `GET`/`PUT /api/team-admin/clients/signin-sender` and its `preview` answer
+  410 `{ error, code: 'gone' }` before any work. The sign-in code queue
   (`mantle.client.code`) has no worker, and the nightly code reaper is gone.
 - Every role fence that came with the client: the client session and
   device lifetimes, the client gate, the routes closed to a client, the
@@ -57,12 +57,18 @@ A former client stays one (`archive_client_logins` is the list):
 - Nor in a private workspace: the review homes, the spaces fold of a
   switch and `mantle_ws_private_workspace` treat a former client as a
   login that is gone. Its items go to its "Former user" workspace (no
-  users; an Admin user may join it), as a deleted login's do.
-- An admin cannot enable a former client login again (`PATCH
-/api/users/:id` with `disabled: false` answers 409), and an invite or a
-  new login on a former client's email is refused (409, `reason:
-'email-was-client'`), or linked to its contact (409, `reason:
-'contact-was-client'`); an invite made before redeems nothing.
+  users; an Admin user may join it), as a deleted login's do. A private
+  workspace a former client already had loses its `private_workspaces` row
+  (archived first, `archive_client_private_workspaces`), so the next
+  review homes run renames it "Former user" and registers it.
+- An admin cannot enable a former client login again
+  (`PATCH /api/users/:id` with `disabled: false` answers 409), and an
+  invite or a new login on a former client's email is refused (409,
+  `reason: 'email-was-client'`), or linked to its contact (409,
+  `reason: 'contact-was-client'`); an invite made before redeems nothing.
+  Linking another login to a former client's contact with
+  `PATCH /api/users/:id` is refused the same way (409,
+  `reason: 'contact-was-client'`).
 - What a former client wrote stays client-sourced: its login id (its old
   chat thread), an item it wrote, and a workspace it is a user of count for
   the client-sourced write hold (`packages/tools/src/client-sourced.ts`).
@@ -94,3 +100,12 @@ again in the account's folder settings.
 - The client-sourced write hold and its marks (`client_sourced_nodes`), the
   client comment ledger and the client level columns: those are W8c and W10
   work, not the login's.
+
+## What went in W8d
+
+Migration 0274 archived, then dropped, the client tables nothing reads any
+more: `client_report_acks` (What clients see) into
+`archive_client_report_acks` and `client_quota_refusals` (the client quota
+log) into `archive_client_quota_refusals`, each counted, each drop RESTRICT.
+The client code that read them, the client reader of drawings and accepted
+items, and the client branch of the app data tools are gone.

@@ -45,7 +45,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
 
   const done = await applyLoginChange(user, target, body);
-  if (!done.ok) return NextResponse.json({ error: done.error }, { status: done.status });
+  // The refusal's reason rides along (W8d): `contact-was-client` and
+  // `former-client` among them, as the invite routes name theirs.
+  if (!done.ok) {
+    return NextResponse.json({ error: done.error, reason: done.reason }, { status: done.status });
+  }
 
   auditFireAndForget({
     actorId: user.actor.id,

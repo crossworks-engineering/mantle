@@ -5,7 +5,8 @@
  * login tokens as metadata only (never a code, a token hash, a request id
  * or an address), the role each key and peer was made under, and the
  * workspace rows a former client held on a brain already on workspaces
- * (archive_client_workspace_users, W8a fix round 1).
+ * (archive_client_workspace_users, W8a fix round 1) and its private
+ * workspace row (archive_client_private_workspaces, W8d).
  *
  * archive_client_logins is also the list of former clients (W8a fix round
  * 1): their text stays client-sourced (packages/tools/src/client-sourced.ts),
@@ -51,6 +52,16 @@ export const archiveClientWorkspaceUsers = pgTable(
   },
   (t) => [primaryKey({ columns: [t.workspaceId, t.loginId] })],
 );
+
+/** A former client's private workspace row as it was when it was removed
+ *  (W8a leftover, closed in W8d): the review homes then rename that
+ *  workspace "Former user" and register it. */
+export const archiveClientPrivateWorkspaces = pgTable('archive_client_private_workspaces', {
+  loginId: uuid('login_id').primaryKey(),
+  workspaceId: uuid('workspace_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  archivedAt: timestamp('archived_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const archiveClientSigninCodes = pgTable('archive_client_signin_codes', {
   id: uuid('id').primaryKey(),

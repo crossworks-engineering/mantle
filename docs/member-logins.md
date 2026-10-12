@@ -277,7 +277,8 @@ it to Team (or Client, when clients should read it too).
   member copy keeps an image only when its file passes the files route's
   rule (team level or lower, or the member's own accepted file); any other
   image, an admin screenshot in a team drawing say, is taken out and its
-  frame shows empty (`packages/content/src/member-draw-images.ts`).
+  frame shows empty. (Since workspaces W8d every login's SVG is read in its
+  scope, `scopedDrawSvg` in `packages/content/src/draw-reader.ts`.)
 - **Not yet:** attachments in chat. Own items: section 5; review by an
   admin: section 6; running apps: section 7.
 
@@ -1231,12 +1232,12 @@ wear none. `state=` takes `all` (default), one pill, `brain` (the rows
 without a pill) or `by-me` (every accepted item of this member). The filter
 is pushed into each source's own query (`itemsPlan`), never applied to a
 loaded page, and the pill a row wears is always the filter that finds it
-(pinned in `member-items.test.ts`).
+(pinned in `member-items.test.ts`, removed in W8d).
 
 The four source routes stay until no client calls them.
 
-**Tests.** `packages/content/src/member-items.test.ts` (pills, plans, the
-merge and its paging; `GET /api/member/items` answers 410 since W6b), and
+**Tests.** `member-items.test.ts` (pills, plans, the merge and its paging;
+removed in W8d, the merge moved to `packages/content/src/list-merge.test.ts`; `GET /api/member/items` answers 410 since W6b), and
 the new cases
 in `member-space.viewer.db.test.ts` (sharing and review filters, team
 drafts by review state) and `member-accepted.viewer.db.test.ts` (level

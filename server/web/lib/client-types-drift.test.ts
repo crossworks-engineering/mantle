@@ -137,7 +137,7 @@ describe('client-types mirrors have not drifted from their source of truth', () 
       Awaited<ReturnType<typeof resolveMemberHomeApp>>
     >().toEqualTypeOf<MemberHomeApp | null>();
     expectTypeOf<
-      SameUnion<Db.TeamMessage['status'], MemberChatArchiveMessage['status']>
+      SameUnion<Db.AssistantMessage['status'], MemberChatArchiveMessage['status']>
     >().toEqualTypeOf<true>();
   });
 });

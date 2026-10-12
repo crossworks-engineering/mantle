@@ -75,7 +75,7 @@ included); user-to-user talk moves to the forum.
 Brain (mantle):
 
 - `listMemberAppsForReview()` and `getMemberAppForReview(id)` in
-  `packages/content/src/member-space-apps.ts`: the two lists and the detail,
+  `member-space-apps.ts` (removed in workspaces W8d): the two lists and the detail,
   on the `adminVisible` rule. `sendBackSpaceApp(id, reviewer)` replaces the
   old return with a note.
 - app-review-test.ts (deleted in W5c): the throwaway test copy under
