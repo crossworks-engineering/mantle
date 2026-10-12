@@ -102,9 +102,9 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
   return sql`array(select distinct x from unnest(
     ${folderPasses(folder, type)} || array[coalesce(
       (select f.home_ws from nodes f
-         join workspaces w on w.id = f.home_ws and w.archived_at is null
-        where f.id = ${folder} and mantle_grant_kind_ok(${type}, f.home_ws)),
-      (select w.id from workspaces w where w.owner_id = ${ownerId} and w.is_admin limit 1))]
+        where f.id = ${folder} and mantle_ws_live(f.home_ws)
+          and mantle_grant_kind_ok(${type}, f.home_ws)),
+      mantle_ws_admin_id(${ownerId}::uuid))]
   ) as s(x) where x is not null)`;
 }
 
@@ -114,10 +114,9 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
  *  system pool inside a write, and must not name, or count, an item the
  *  caller cannot open. A new item (id '') is the caller's own. */
 async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
-  const names = (col: SQL) => sql`(
-    select coalesce(jsonb_agg(jsonb_build_object('wsId', w.id, 'name', w.name)
-                              order by lower(w.name), w.id), '[]'::jsonb)
-      from workspaces w where w.id = any(${col}))`;
+  // The names by definer (0279): inside a write on the write role the
+  // workspaces row rule hides those the scope is not in.
+  const names = (col: SQL) => sql`mantle_ws_names(${col})`;
   const found = (await via.execute(sql`
     select r.id::text as id, r.title,
            ${names(sql`r.gain`)} as "alsoVisibleTo",
@@ -323,8 +322,7 @@ export async function newItemDiff(
 ): Promise<VisibilityDiff> {
   const nodeType = TREE_KIND_SPECS[kind].nodeType;
   const set = newItemSet(ownerId, nodeType, destPath);
-  const admin = sql`array(select w.id from workspaces w
-                           where w.owner_id = ${ownerId} and w.is_admin limit 1)`;
+  const admin = sql`array[mantle_ws_admin_id(${ownerId}::uuid)]`;
   const diff = await listed(
     via,
     sql`
@@ -358,9 +356,11 @@ async function newItemHome(
   const type = sql`${nodeType}::node_type`;
   const folder = sql`mantle_parent_folder(${ownerId}::uuid, ${type}, ${destPath}::ltree)`;
   const created = currentCreateHome();
+  // Workspaces by definer (0279): inside a write on the write role the
+  // workspaces row rule hides those the scope is not in.
   const live = (ws: SQL) =>
-    sql`(select w.id from workspaces w
-          where w.id = ${ws} and w.archived_at is null and mantle_grant_kind_ok(${type}, w.id))`;
+    sql`(select x.id from (select ${ws} as id) x
+          where mantle_ws_live(x.id) and mantle_grant_kind_ok(${type}, x.id))`;
   // The folder's home through its home grant row (not the raw columns).
   const folderHome = live(
     sql`(select g.workspace_id from item_grants g where g.node_id = ${folder} and g.is_home)`,
@@ -378,18 +378,15 @@ async function newItemHome(
   const home = sql`coalesce(
     ${created?.createWs ? live(sql`${created.createWs}::uuid`) : sql`null::uuid`},
     ${fallback},
-    (select w.id from workspaces w where w.owner_id = ${ownerId} and w.is_admin limit 1))`;
+    mantle_ws_admin_id(${ownerId}::uuid))`;
   const [row] = (await via.execute(sql`
     with h as (select ${home} as ws)
-    select (select jsonb_build_object('wsId', w.id, 'name', w.name)
-              from workspaces w, h where w.id = h.ws) as home,
-           coalesce((
-             select jsonb_agg(jsonb_build_object('wsId', w.id, 'name', w.name)
-                              order by lower(w.name), w.id)
-               from item_grants g join workspaces w on w.id = g.workspace_id, h
-              where g.node_id = ${folder} and not g.excluded and not g.write
-                and g.workspace_id <> h.ws
-                and mantle_grant_kind_ok(${type}, g.workspace_id, true)), '[]'::jsonb) as "readOnly"`)) as unknown as Array<{
+    select (select mantle_ws_names(array[h.ws]) -> 0 from h) as home,
+           (select mantle_ws_names(array(
+              select g.workspace_id from item_grants g, h
+               where g.node_id = ${folder} and not g.excluded and not g.write
+                 and g.workspace_id <> h.ws
+                 and mantle_grant_kind_ok(${type}, g.workspace_id, true)))) as "readOnly"`)) as unknown as Array<{
     home: TreeWorkspaceChange['home'] | null;
     readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
   }>;

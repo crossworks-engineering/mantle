@@ -36,6 +36,16 @@
 --       home row is cleared first, then the new one set;
 --     - mantle_workspace_event(ws, actor, action, subject): a grant's audit
 --       row (grant.* actions only).
+-- 5. What a write's visibility confirm reads of workspaces outside the
+--    scope (packages/content/src/tree/visibility.ts): it ran on the system
+--    pool inside the write, and on the write role the workspaces row rule
+--    hides every workspace the scope is not in (a folder homed in Team for
+--    an Admin turn). Three definers, each naming only a workspace the scope
+--    holds, or one that holds a grant on an item the scope reads, or any
+--    for an Admin scope (all of them with no scope set):
+--     - mantle_ws_admin_id(owner): the brain's Admin workspace (an id);
+--     - mantle_ws_live(ws): the workspace is live (not archived);
+--     - mantle_ws_names(ids): [{wsId, name}], by name.
 --    Each checks only while a scope is set (mantle_scope_active): on the
 --    write role its refusal is staged (mantle_scoped_write_refuses: on
 --    refuses, warn and off report and run); every other session with a
@@ -496,3 +506,52 @@ END
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_workspace_event"(uuid, uuid, text, jsonb) FROM PUBLIC;
+--> statement-breakpoint
+
+-- 5. The visibility confirm's workspace reads.
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_admin_id"(o uuid)
+  RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT w."id" FROM "public"."workspaces" w WHERE w."owner_id" = o AND w."is_admin" LIMIT 1
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_ws_admin_id"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+
+-- Whether the scope may see workspace `ws` named (see 5 above).
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_nameable"(ws uuid)
+  RETURNS boolean LANGUAGE sql STABLE
+  SET search_path = "public", pg_temp AS $$
+  SELECT NOT "public"."mantle_scope_active"()
+      OR ws = ANY ("public"."mantle_scope_ws"())
+      OR "public"."mantle_scope_has_admin"()
+      OR EXISTS (SELECT 1 FROM "public"."item_grants" g
+                   JOIN "public"."nodes" n ON n."id" = g."node_id"
+                  WHERE g."workspace_id" = ws AND NOT g."excluded"
+                    AND n."read_ws" && "public"."mantle_scope_ws"())
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_ws_nameable"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_live"(ws uuid)
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM "public"."workspaces" w
+                  WHERE w."id" = ws AND w."archived_at" IS NULL
+                    AND "public"."mantle_ws_nameable"(w."id"))
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_ws_live"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_names"(ids uuid[])
+  RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT coalesce(jsonb_agg(jsonb_build_object('wsId', w."id", 'name', w."name")
+                            ORDER BY lower(w."name"), w."id"), '[]'::jsonb)
+    FROM "public"."workspaces" w
+   WHERE w."id" = ANY (ids) AND "public"."mantle_ws_nameable"(w."id")
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_ws_names"(uuid[]) FROM PUBLIC;

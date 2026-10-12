@@ -110,6 +110,9 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_grant_move_home(uuid,uuid,boolean,uuid)']!,
   'mantle_workspace_event(uuid,uuid,text,jsonb)':
     WRITE_ROLE_FUNCTIONS['public.mantle_workspace_event(uuid,uuid,text,jsonb)']!,
+  'mantle_ws_admin_id(uuid)': WRITE_ROLE_FUNCTIONS['public.mantle_ws_admin_id(uuid)']!,
+  'mantle_ws_live(uuid)': WRITE_ROLE_FUNCTIONS['public.mantle_ws_live(uuid)']!,
+  'mantle_ws_names(uuid[])': WRITE_ROLE_FUNCTIONS['public.mantle_ws_names(uuid[])']!,
 };
 
 /** Rolls a cell's transaction back after its checks. */
