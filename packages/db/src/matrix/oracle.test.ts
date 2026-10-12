@@ -83,20 +83,30 @@ describe('the access oracle', () => {
 });
 
 describe('the folder-count oracle', () => {
+  const shows = (items: number, folders: number) => ({ shows: true, items, folders });
+
   it('"A folder\'s counts are yours": only what you read in your scope, the folder always shows', () => {
     for (const caller of ['member', 'adminUser', 'adminUserInHome'] as const) {
-      expect(expectedFolderCount('noneShared', caller, 'S')).toEqual({ shows: true, items: 0 });
-      expect(expectedFolderCount('oneOfThree', caller, 'S')).toEqual({ shows: true, items: 1 });
+      expect(expectedFolderCount('oneOfThree', caller, 'S')).toEqual(shows(1, 0));
     }
     // An Admin user reads only what its workspaces read.
-    expect(expectedFolderCount('noneShared', 'adminUser', 'all')).toEqual({
-      shows: true,
-      items: 0,
-    });
-    // A user of H reads all three in all its workspaces.
-    expect(expectedFolderCount('noneShared', 'adminUserInHome', 'all')).toEqual({
-      shows: true,
-      items: 3,
+    expect(expectedFolderCount('noneShared', 'adminUser', 'all')).toEqual(shows(0, 0));
+    expect(expectedFolderCount('noneShared', 'member', 'S')).toEqual(shows(0, 0));
+    // A user of H reads all three, and the subfolder.
+    expect(expectedFolderCount('noneShared', 'adminUserInHome', 'all')).toEqual(shows(3, 1));
+  });
+
+  it('"The picked workspace does not narrow the folders"', () => {
+    expect(expectedFolderCount('noneShared', 'adminUserInHome', 'S')).toEqual(shows(0, 1));
+  });
+
+  it('"An Admin user may pick a workspace they are not in"', () => {
+    // What it reads (through S) that H reads too.
+    expect(expectedFolderCount('oneOfThree', 'adminUser', 'H')).toEqual(shows(1, 0));
+    expect(expectedFolderCount('noneShared', 'adminUser', 'H')).toEqual(shows(0, 0));
+    expect(expectedFolderCount('noneShared', 'adminUserInHome', 'H')).toEqual(shows(3, 1));
+    expect(expectedFolderCount('oneOfThree', 'member', 'H')).toMatchObject({
+      refused: expect.any(String),
     });
   });
 });

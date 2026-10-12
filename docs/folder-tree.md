@@ -253,10 +253,14 @@ workspace alone.
   are what the reader sees when it opens the folder in the same scope:
   only what its workspaces read, and with `?ws=` only the items that
   workspace reads (`selectFolders` in `packages/content/src/tree/read.ts`,
-  the one count path; the MCP `tree_folders` tool reads the same). A
-  folder the reader holds but whose contents it does not read still shows,
-  with no count: an Admin user may share an empty folder to give a
-  workspace its structure.
+  the one count path; the MCP `tree_folders` tool and the reply of a
+  folder write read the same). `?ws=` does not narrow the subfolders (the
+  tree keeps every folder the reader reads), so a folder with no item for
+  that workspace can still show a subfolder count. A folder the reader
+  holds but whose contents it does not read still shows, with 0: an Admin
+  user may share an empty folder to give a workspace its structure. The
+  tag counts (`/tags?ws=`) and a move's confirm list follow the same
+  scope: a confirm never names or counts an item the caller cannot open.
 
 ## Members' folders and drafts (history)
 

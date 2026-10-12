@@ -18,7 +18,7 @@
  * Embeds do not follow (0261): nothing is ever granted for you.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { currentCreateHome, db, itemWriteRefusal } from '@mantle/db';
+import { currentCreateHome, db, itemWriteRefusal, scopeReadsItem } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -109,7 +109,10 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
 }
 
 /** The changed rows of `rows` (id, title, gain uuid[], lose uuid[]), named,
- *  the first TREE_VISIBILITY_LIST_MAX by title, with the total. */
+ *  the first TREE_VISIBILITY_LIST_MAX by title, with the total. Only the
+ *  rows the caller's scope reads (task b6e4a8aa): the list runs on the
+ *  system pool inside a write, and must not name, or count, an item the
+ *  caller cannot open. */
 async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
   const names = (col: SQL) => sql`(
     select coalesce(jsonb_agg(jsonb_build_object('wsId', w.id, 'name', w.name)
@@ -121,7 +124,8 @@ async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
            ${names(sql`r.lose`)} as "removedFrom",
            count(*) over () as total
       from (${rows}) r
-     where cardinality(r.gain) > 0 or cardinality(r.lose) > 0
+     where (cardinality(r.gain) > 0 or cardinality(r.lose) > 0)
+       and ${scopeReadsItem(sql`r.id`)}
      order by lower(r.title), r.id
      limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as Array<
     TreeWorkspaceChange & { total: number | string }

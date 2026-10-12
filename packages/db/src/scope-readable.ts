@@ -22,13 +22,30 @@ type Exec = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The read rule on a nodes row aliased `n` (see scopeReadsNodes). */
-function scopeReads(): SQL {
+/** The read rule on a nodes row aliased `alias` (see scopeReadsNodes). The
+ *  scope functions sit in sub-selects, as in the row rules: read once per
+ *  statement, not once per row. */
+function scopeReads(alias = 'n'): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`bad alias: ${alias}`);
+  const a = sql.raw(alias);
   const scope = requestWriteScope();
   const ws = scope ? scope.ws.filter((id) => UUID.test(id)) : null;
   return ws
-    ? sql`n.read_ws && ${`{${ws.join(',')}}`}::uuid[]`
-    : sql`(not "public"."mantle_scope_active"() or n.read_ws && "public"."mantle_scope_ws"())`;
+    ? sql`${a}.read_ws && ${`{${ws.join(',')}}`}::uuid[]`
+    : sql`(not (select "public"."mantle_scope_active"())
+           or ${a}.read_ws && (select "public"."mantle_scope_ws"()))`;
+}
+
+/**
+ * The same rule on a `nodes` row aliased `alias` in a hand-written query,
+ * for a read that may run on the system pool inside a login's write (the
+ * reply of a folder write, a move's confirm list; task b6e4a8aa): only
+ * what the caller's scope reads. A read in a workspace scope already has
+ * it from the row rules; with no scope at all (the system's own work) it
+ * keeps every row.
+ */
+export function nodeAliasScopeReads(alias: string): SQL {
+  return scopeReads(alias);
 }
 
 /** The same rule as a condition on a table whose rows follow an item

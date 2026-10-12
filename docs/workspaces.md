@@ -208,12 +208,15 @@ A folder is an item with a home and grants like any other.
   marks it "Removed here", with **Restore**.
 - An item that leaves a folder loses the grants it took from that folder,
   unless a nearer folder or a hand grant keeps them.
-- **A folder's counts are yours.** The number of items and folders a
-  folder shows counts only what you read inside it in your current scope
-  (the workspace picked in the switcher, or all your workspaces). A folder
-  you read still shows when nothing in it is yours to read, with no
-  count: an Admin user may share empty folders to give a workspace its
-  structure.
+- **A folder's counts are yours.** A folder's item count counts only the
+  items in it that you read in your current scope: the workspace picked in
+  the switcher, or all your workspaces. Its folder count counts the folders
+  in it that you read. The picked workspace does not narrow the folders:
+  the tree keeps every folder you read, so a folder can show a folder
+  count and no item count. An Admin user may pick a workspace they are not
+  in: the item count is then what they read that the workspace reads too.
+- A folder you read still shows when nothing in it is yours to read: an
+  Admin user may share empty folders to give a workspace its structure.
 
 ## Assistants and chats
 

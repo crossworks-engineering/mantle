@@ -7,7 +7,7 @@
  * that reader for free; the counts and pages are then what that reader sees.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { db, nodeAliasReadByWorkspace } from '@mantle/db';
+import { db, nodeAliasReadByWorkspace, nodeAliasScopeReads } from '@mantle/db';
 import type {
   TreeCrumb,
   TreeFolder,
@@ -94,10 +94,10 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
  *  in the folder order: manual rank first, then name.
  *
  *  The counts are what the folder shows when the reader opens it in the
- *  same scope (the one count path; task b6e4a8aa): row security keeps them
- *  to what the reader's workspaces read, and `ws` (the switcher's
- *  workspace) keeps the items to what that workspace reads, as the item
- *  page does. The subfolders are not narrowed by `ws`: a folder list keeps
+ *  same scope (the one count path; task b6e4a8aa): only what the reader's
+ *  workspaces read (the row rules on a read; the caller's scope on the
+ *  system pool, as in a write's reply), and `ws` (the switcher's workspace)
+ *  keeps the items to what that workspace reads, as the item page does. The subfolders are not narrowed by `ws`: a folder list keeps
  *  every folder the reader reads (the way to the items). A folder the
  *  reader reads but whose contents it does not still shows, with 0.
  *
@@ -126,12 +126,13 @@ export async function selectFolders(
       select subpath(c.path, 0, nlevel(c.path) - 1) as p, count(*)::int as n from nodes c
        where c.owner_id = ${ownerId} and c.type = 'branch' and nlevel(c.path) > 1
          and subpath(c.path, 0, nlevel(c.path) - 1) = any(array(select path from f))
+         and ${nodeAliasScopeReads('c')}
        group by 1),
     ic as materialized (
       select c.path as p, count(*)::int as n from nodes c
        where c.owner_id = ${ownerId} and c.type = ${itemType}
          and c.path = any(array(select path from f)) ${kindItemFilter(kind, 'c')}
-         ${readBy(ws, 'c')}
+         and ${nodeAliasScopeReads('c')} ${readBy(ws, 'c')}
        group by 1)
     select f.id, f.path::text as path, f.title, f.data,
            (select up.id from up
@@ -459,15 +460,20 @@ export async function searchTree(
  * The tags on a kind's items (under its root), most used first, for the
  * filter menu. The tag every item of the kind carries by default (its node
  * type: every file is tagged `file`) narrows nothing, so it is left out.
+ * `ws` counts only the items that workspace reads, as the tree does.
  */
-export async function listTreeTags(ownerId: string, kind: TreeKind): Promise<TreeTagList> {
+export async function listTreeTags(
+  ownerId: string,
+  kind: TreeKind,
+  ws?: string,
+): Promise<TreeTagList> {
   const spec = TREE_KIND_SPECS[kind];
   const rows = (await db.execute(sql`
     select t.tag, count(*)::int as count
       from nodes n, unnest(n.tags) as t(tag)
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
        and n.path <@ ${spec.root}::ltree and t.tag <> ${spec.nodeType}
-       ${kindItemFilter(kind, 'n')}
+       ${kindItemFilter(kind, 'n')} ${readBy(ws, 'n')}
      group by t.tag
      order by count(*) desc, t.tag
      limit ${TREE_TAGS_LIST_MAX}`)) as unknown as Array<{ tag: string; count: number }>;

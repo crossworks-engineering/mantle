@@ -281,6 +281,7 @@ export { takeShareReadLock, takeShareWriteLock } from './share-lock';
 export {
   itemReadByWorkspace,
   nodeAliasReadByWorkspace,
+  nodeAliasScopeReads,
   nodeReadByWorkspace,
   scopeLacksAdmin,
   scopeReadsItem,

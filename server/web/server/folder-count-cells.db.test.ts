@@ -3,18 +3,20 @@
  * plan v2, A8 surface cells against the oracle's `expectedFolderCount`,
  * packages/db/src/matrix/oracle.ts). Through the real app (a session cookie
  * per login, GET /api/tree/notes with and without `?ws=`) and the real MCP
- * surface (the Admin-only `tree_folders` tool).
+ * surface (the Admin-only `tree_folders` and `tree_folder_update` tools).
  *
- * The fixture: folders F and G, homed in H and granted to S. F holds three
- * notes, two of them "Removed here" for S: S reads one of three. G holds
- * three notes and a subfolder, all "Removed here" for S: S reads nothing in
- * G, which still shows (an Admin user shares empty folders to give a
- * workspace its structure). The callers: a member (a user of S), an Admin
- * user who is a user of S, and an Admin user who is a user of H and S.
+ * The fixture: folders F and G, homed in H and granted to S (Write on). F
+ * holds three notes, two of them "Removed here" for S: S reads one of
+ * three. G holds three notes and a subfolder, all "Removed here" for S: S
+ * reads nothing in G, which still shows (an Admin user shares empty folders
+ * to give a workspace its structure). The callers: a member (a user of S),
+ * an Admin user who is a user (and Moderator) of S, and an Admin user who
+ * is a user of H and S.
  *
  * Each count must also be what the folder shows when opened in the same
- * scope (the one count path). Subfolders are not narrowed by `?ws=`: the
- * folder list keeps every folder the caller reads (W5b2 contract 14).
+ * scope (the one count path), and the reply of a folder write must carry
+ * the same counts (it is read on the system pool, in the caller's scope).
+ * A move's confirm list names and counts only the items the caller reads.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/folder-count-cells.db.test.ts
  */
@@ -38,7 +40,7 @@ type Counts = { itemCount: number; folderCount: number };
 
 const CASES: readonly FolderCountCase[] = ['oneOfThree', 'noneShared'];
 const CALLERS: readonly FolderCountCaller[] = ['member', 'adminUser', 'adminUserInHome'];
-const SCOPES: readonly FolderCountScope[] = ['all', 'S'];
+const SCOPES: readonly FolderCountScope[] = ['all', 'S', 'H'];
 
 describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
   type Ts = typeof import('@mantle/db/test-support');
@@ -54,7 +56,8 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     adminUserInHome: randomUUID(),
   };
   const cookie: Partial<Record<FolderCountCaller, string>> = {};
-  const ws = { H: randomUUID(), S: randomUUID() };
+  /** H and S of the oracle; T only reads the move's destination. */
+  const ws = { H: randomUUID(), S: randomUUID(), T: randomUUID() };
   /** Each case's folder and its path. */
   const folder: Record<FolderCountCase, string> = { oneOfThree: '', noneShared: '' };
   const pathOf: Record<FolderCountCase, string> = {
@@ -63,6 +66,10 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
   };
   /** The subfolder of G, not read by S. */
   let sub = '';
+  /** The move fixture: folder `moved` (home S) holds `seen` (read by S)
+   *  and `hidden` (home H, "Removed here" for S); `dest` (home S) is also
+   *  granted to T. */
+  const mv = { moved: randomUUID(), seen: randomUUID(), hidden: randomUUID(), dest: randomUUID() };
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -74,14 +81,19 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
         values (${id}, ${owner}, ${type}::node_type, ${title}, ${at}::ltree,
                 ${type === 'note' ? '{"content":"x"}' : '{}'}::jsonb)`),
     );
-  /** Home H and a grant to S (a folder passes the grant on to what it holds). */
-  const homeH = (id: string) =>
+  /** Its hand grants replaced: `home` is the home, then each of `also`
+   *  (Write on). A folder passes its grants on to what it holds. */
+  const grants = (id: string, home: string, ...also: string[]) =>
     m.withSubtreeHeads(id, [], async (tx) => {
       await tx.execute(
         sql`delete from item_grants where node_id = ${id} and via_folder_id is null`,
       );
-      await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home) values
-        (${id}, ${ws.H}, true), (${id}, ${ws.S}, false)`);
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home, write)
+        values (${id}, ${home}, true, false)`);
+      for (const w of also) {
+        await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home, write)
+          values (${id}, ${w}, false, true)`);
+      }
     });
   /** "Remove from this workspace": S marked "Removed here" on `id`. */
   const removeFromS = (id: string) =>
@@ -91,13 +103,21 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
         on conflict (node_id, workspace_id) do update set excluded = true, via_folder_id = null`),
     );
 
-  const get = async (who: FolderCountCaller, url: string): Promise<Json> => {
-    const res = await app.request(url, { headers: { cookie: cookie[who]! } });
-    const text = await res.text();
-    expect(res.status, `${who} GET ${url}: ${text.slice(0, 200)}`).toBe(200);
-    return JSON.parse(text) as Json;
+  const send = async (who: FolderCountCaller, url: string, method = 'GET', body?: unknown) => {
+    const res = await app.request(url, {
+      method,
+      headers: { cookie: cookie[who]!, 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: res.status, body: (await res.json()) as Json };
   };
-  const wsQuery = (scope: FolderCountScope) => (scope === 'S' ? `&ws=${ws.S}` : '');
+  const get = async (who: FolderCountCaller, url: string): Promise<Json> => {
+    const res = await send(who, url);
+    expect(res.status, `${who} GET ${url}: ${JSON.stringify(res.body).slice(0, 200)}`).toBe(200);
+    return res.body;
+  };
+  const wsQuery = (scope: FolderCountScope) =>
+    scope === 'all' ? '' : `&ws=${scope === 'S' ? ws.S : ws.H}`;
 
   /** The counts the root lists for each case's folder, as `who` in `scope`;
    *  null for a folder the root does not list. */
@@ -124,7 +144,8 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     };
   };
 
-  const mcpFolders = async (who: FolderCountCaller): Promise<Map<string, Json>> => {
+  /** One MCP tool call as `who` (an Admin user), its JSON output. */
+  const mcpCall = async (who: FolderCountCaller, name: string, args: Json): Promise<unknown> => {
     const ls = await import('@mantle/mcp-core');
     const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
     const { Client } = await import('@modelcontextprotocol/client');
@@ -136,19 +157,18 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
         anchorId: owner,
         loginId: login[who],
         via: 'oauth',
-        write: false,
+        write: true,
       }),
     );
     const [a, b] = InMemoryTransport.createLinkedPair();
     const c = new Client({ name: 'test-client', version: '0' });
     await Promise.all([server.connect(a), c.connect(b)]);
     try {
-      const res = (await m.runAsActor(m.loginActor(login[who], 'ro'), () =>
-        c.callTool({ name: 'tree_folders', arguments: { kind: 'notes' } }),
+      const res = (await m.runAsActor(m.loginActor(login[who], 'rw'), () =>
+        c.callTool({ name, arguments: args }),
       )) as { isError?: boolean; content?: { text?: string }[] };
       expect(res.isError, JSON.stringify(res.content)).not.toBe(true);
-      const rows = JSON.parse(res.content![0]!.text!) as Json[];
-      return new Map(rows.map((r) => [r.id as string, r]));
+      return JSON.parse(res.content![0]!.text!);
     } finally {
       await c.close();
     }
@@ -178,10 +198,11 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
     await x(sql`insert into workspaces (id, owner_id, name) values
-      (${ws.H}, ${owner}, ${`${tag} H`}), (${ws.S}, ${owner}, ${`${tag} S`})`);
-    await x(sql`insert into workspace_users (workspace_id, login_id) values
-      (${ws.S}, ${login.member}), (${ws.S}, ${login.adminUser}),
-      (${ws.S}, ${login.adminUserInHome}), (${ws.H}, ${login.adminUserInHome})`);
+      (${ws.H}, ${owner}, ${`${tag} H`}), (${ws.S}, ${owner}, ${`${tag} S`}),
+      (${ws.T}, ${owner}, ${`${tag} T`})`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+      (${ws.S}, ${login.member}, false), (${ws.S}, ${login.adminUser}, true),
+      (${ws.S}, ${login.adminUserInHome}, false), (${ws.H}, ${login.adminUserInHome}, false)`);
     // The member's Team seat would not change a cell (nothing is granted to
     // Team); taken out so its scope is exactly S.
     await x(sql`delete from workspace_users u using workspaces w
@@ -200,7 +221,7 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
       const id = randomUUID();
       folder[c] = id;
       await insert(root!.id, id, 'branch', `${tag} ${c}`, pathOf[c]);
-      await homeH(id);
+      await grants(id, ws.H, ws.S);
       for (let i = 0; i < 3; i += 1) {
         const note = randomUUID();
         await insert(id, note, 'note', `${tag} ${c} ${i}`, pathOf[c]);
@@ -213,6 +234,17 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
         await removeFromS(sub);
       }
     }
+    // The move: `moved` and `dest` homed in S; `hidden` re-homed in H and
+    // "Removed here" for S, so no user of S reads it.
+    await insert(root!.id, mv.moved, 'branch', `${tag} moved`, `notes.${tag}_moved`);
+    await grants(mv.moved, ws.S);
+    await insert(mv.moved, mv.seen, 'note', `${tag} seen note`, `notes.${tag}_moved`);
+    await insert(mv.moved, mv.hidden, 'note', `${tag} hidden note`, `notes.${tag}_moved`);
+    await grants(mv.hidden, ws.H);
+    await removeFromS(mv.hidden);
+    await insert(root!.id, mv.dest, 'branch', `${tag} dest`, `notes.${tag}_dest`);
+    await grants(mv.dest, ws.S, ws.T);
+
     const tokens = await import('../lib/auth/tokens');
     for (const who of CALLERS) {
       cookie[who] = `mantle_session=${tokens.buildSessionCookie(login[who]).value}`;
@@ -228,7 +260,7 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     // The scratch drop waits for the app's pools: slow under a full suite.
   }, 60_000);
 
-  it('the fixture: H is the home of all, S reads one note of F and nothing in G', async () => {
+  it('the fixture: H is the home, S reads one note of F, nothing in G, not the hidden note', async () => {
     const rows = await x<{ path: string; s: boolean; home: string }>(sql`
       select path::text as path, ${ws.S}::uuid = any(read_ws) as s, home_ws::text as home
         from nodes
@@ -241,34 +273,50 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
       rows.filter((r) => (r.path === pathOf[c] || r.path.startsWith(`${pathOf[c]}.`)) && r.s)
         .length;
     // F's own row and one note; G's own row only.
-    expect(sReads('oneOfThree')).toBe(4 - 2);
+    expect(sReads('oneOfThree')).toBe(2);
     expect(sReads('noneShared')).toBe(1);
+    const moved = await x<{ id: string; s: boolean; home: string }>(sql`
+      select id::text as id, ${ws.S}::uuid = any(read_ws) as s, home_ws::text as home
+        from nodes where id in (${mv.seen}, ${mv.hidden})`);
+    const by = new Map(moved.map((r) => [r.id, r]));
+    expect(by.get(mv.seen)).toMatchObject({ s: true, home: ws.S });
+    expect(by.get(mv.hidden)).toMatchObject({ s: false, home: ws.H });
   });
 
-  it('the tree (http): each caller and scope gets the oracle’s count, and opening shows it', async () => {
+  it('the tree (http): each caller and scope gets the oracle’s counts, and opening shows them', async () => {
     const failures: string[] = [];
     for (const who of CALLERS) {
       for (const scope of SCOPES) {
+        const cell = `${who} ${scope}`;
+        const probe = expectedFolderCount('oneOfThree', who, scope);
+        if ('refused' in probe) {
+          const res = await send(who, `/api/tree/notes?sort=name${wsQuery(scope)}`);
+          if (res.status !== 404) failures.push(`${cell}: ${res.status}, the oracle refuses`);
+          continue;
+        }
         const got = await listed(who, scope);
         for (const c of CASES) {
           const want = expectedFolderCount(c, who, scope);
-          const cell = `${who} ${scope} ${c}`;
+          if ('refused' in want) continue;
           const row = got[c];
           if (!row) {
-            failures.push(`${cell}: not listed, the oracle shows it`);
+            failures.push(`${cell} ${c}: not listed, the oracle shows it`);
             continue;
           }
-          if (row.itemCount !== want.items) {
-            failures.push(`${cell}: ${row.itemCount} items, the oracle says ${want.items}`);
+          const expected = { itemCount: want.items, folderCount: want.folders };
+          if (JSON.stringify(row) !== JSON.stringify(expected)) {
+            failures.push(
+              `${cell} ${c}: ${JSON.stringify(row)}, the oracle says ${JSON.stringify(expected)}`,
+            );
           }
           const open = await opened(who, scope, folder[c]);
           if (JSON.stringify(open.shown) !== JSON.stringify(row)) {
             failures.push(
-              `${cell}: lists ${JSON.stringify(row)}, opens to ${JSON.stringify(open.shown)}`,
+              `${cell} ${c}: lists ${JSON.stringify(row)}, opens to ${JSON.stringify(open.shown)}`,
             );
           }
           if (JSON.stringify(open.self) !== JSON.stringify(row)) {
-            failures.push(`${cell}: the open folder says ${JSON.stringify(open.self)}`);
+            failures.push(`${cell} ${c}: the open folder says ${JSON.stringify(open.self)}`);
           }
         }
       }
@@ -276,36 +324,87 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     expect(failures).toEqual([]);
   }, 120_000);
 
-  it('a subfolder the caller does not read is not counted', async () => {
-    for (const who of ['member', 'adminUser'] as const) {
-      for (const scope of SCOPES) {
-        expect((await listed(who, scope)).noneShared, `${who} ${scope}`).toEqual({
-          itemCount: 0,
-          folderCount: 0,
-        });
-      }
-    }
-    // A user of H reads it. `?ws=` keeps the folders (contract 14), so the
-    // count stays what opening G shows.
-    expect((await listed('adminUserInHome', 'all')).noneShared).toEqual({
-      itemCount: 3,
-      folderCount: 1,
-    });
-    expect((await listed('adminUserInHome', 'S')).noneShared).toEqual({
-      itemCount: 0,
-      folderCount: 1,
-    });
-  }, 60_000);
-
   it('the MCP tree_folders tool (Admin only, all the login’s workspaces) gives the same counts', async () => {
     for (const who of ['adminUser', 'adminUserInHome'] as const) {
-      const rows = await mcpFolders(who);
+      const rows = new Map(
+        ((await mcpCall(who, 'tree_folders', { kind: 'notes' })) as Json[]).map((r) => [r.id, r]),
+      );
       for (const c of CASES) {
         const want = expectedFolderCount(c, who, 'all');
-        expect(rows.get(folder[c]), `${who} ${c}`).toMatchObject({ items: want.items });
+        if ('refused' in want) throw new Error('the oracle refuses no scope of all');
+        expect(rows.get(folder[c]), `${who} ${c}`).toMatchObject({
+          items: want.items,
+          subfolders: want.folders,
+        });
       }
-      expect(rows.get(folder.noneShared)?.subfolders, who).toBe(who === 'adminUser' ? 0 : 1);
       expect(rows.has(sub), who).toBe(who === 'adminUserInHome');
     }
+  }, 60_000);
+
+  it('the reply of a folder write carries the caller’s counts (http and MCP)', async () => {
+    // Write on through S: the member and the Admin user of S may restyle G.
+    const want = expectedFolderCount('noneShared', 'adminUser', 'all');
+    if ('refused' in want) throw new Error('the oracle refuses no scope of all');
+    const counts = { itemCount: want.items, folderCount: want.folders };
+    for (const [who, color] of [
+      ['adminUser', 'red'],
+      ['member', 'blue'],
+    ] as const) {
+      const res = await send(who, `/api/tree/notes/folders/${folder.noneShared}`, 'PATCH', {
+        color,
+      });
+      expect(res.status, `${who}: ${JSON.stringify(res.body).slice(0, 200)}`).toBe(200);
+      expect(res.body.folder, who).toMatchObject(counts);
+      expect((await opened(who, 'all', folder.noneShared)).shown, who).toEqual(counts);
+    }
+    const out = (await mcpCall('adminUser', 'tree_folder_update', {
+      kind: 'notes',
+      folder_id: folder.noneShared,
+      color: 'green',
+    })) as Json;
+    expect(out).toMatchObject({ id: folder.noneShared, ...counts });
+  }, 60_000);
+
+  it('a move’s confirm list names and counts only what the caller reads', async () => {
+    // The Admin user moderates S: it may move `moved` into `dest`, which T
+    // reads too. `hidden` would gain T as well, but it is not the caller's
+    // to see.
+    const res = await send('adminUser', `/api/tree/notes/folders/${mv.moved}`, 'PATCH', {
+      parentId: mv.dest,
+    });
+    expect(res.status, JSON.stringify(res.body).slice(0, 300)).toBe(409);
+    expect(res.body.error).toBe('visibility');
+    const ids = (res.body.changes as Json[]).map((ch) => ch.id).sort();
+    expect(ids).toEqual([mv.moved, mv.seen].sort());
+    expect(res.body.total).toBe(2);
+    expect(JSON.stringify(res.body)).not.toContain('hidden note');
+    // A user of H reads it: the same move would name it.
+    const diff = await m.withTurnScope(
+      await m.loginScopeFor(login.adminUserInHome),
+      async () => {
+        const tree = await import('@mantle/content/tree');
+        return tree.moveFolderDiff(
+          owner,
+          { id: mv.moved, path: `notes.${tag}_moved` },
+          `notes.${tag}_dest`,
+        );
+      },
+      { writes: true },
+    );
+    expect(diff.total).toBe(3);
+  }, 60_000);
+
+  it('the tag counts follow ?ws=', async () => {
+    await x(sql`update nodes set tags = array['note', ${`${tag}t`}]
+                 where owner_id = ${owner} and type = 'note'
+                   and (path <@ ${pathOf.oneOfThree}::ltree or path <@ ${pathOf.noneShared}::ltree)`);
+    const count = async (who: FolderCountCaller, scope: FolderCountScope) => {
+      const body = await get(who, `/api/tree/notes/tags?x=1${wsQuery(scope)}`);
+      return (body.tags as Json[]).find((t) => t.tag === `${tag}t`)?.count ?? 0;
+    };
+    // A user of H reads all six; S reads one of them.
+    expect(await count('adminUserInHome', 'all')).toBe(6);
+    expect(await count('adminUserInHome', 'S')).toBe(1);
+    expect(await count('member', 'all')).toBe(1);
   }, 60_000);
 });

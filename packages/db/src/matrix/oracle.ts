@@ -152,9 +152,9 @@ export function expectedAccess(
 
 /**
  * The folder-count fixture: a folder homed in workspace H and granted to
- * workspace S, with three notes inside (they take the folder's grants).
- * "Remove from this workspace" marks S "Removed here" on every note
- * ('noneShared') or on two of the three ('oneOfThree').
+ * workspace S. Inside it, three notes (they take the folder's grants);
+ * "Remove from this workspace" marks S "Removed here" on two of them
+ * ('oneOfThree') or on all three and on a subfolder ('noneShared').
  */
 export type FolderCountCase = 'noneShared' | 'oneOfThree';
 
@@ -162,26 +162,57 @@ export type FolderCountCase = 'noneShared' | 'oneOfThree';
  *  user of S; an Admin user who is a user of H and S. */
 export type FolderCountCaller = 'member' | 'adminUser' | 'adminUserInHome';
 
-/** The scope the caller reads in: all its workspaces, or S picked in the
+/** The scope: all the caller's workspaces, or S or H picked in the
  *  switcher. An MCP call has no switcher: all its workspaces. */
-export type FolderCountScope = 'all' | 'S';
+export type FolderCountScope = 'all' | 'S' | 'H';
 
-/** What the folder shows: it shows, with this many items. */
-export type FolderCountAnswer = { shows: true; items: number };
+/** The folder shows with these counts, or the pick is refused. */
+export type FolderCountAnswer =
+  { shows: true; items: number; folders: number } | { refused: string };
+
+/** The workspaces each caller is a user of, by the fixture's names. */
+const FOLDER_COUNT_CALLERS: Readonly<Record<FolderCountCaller, readonly string[]>> = {
+  member: ['S'],
+  adminUser: ['Admin', 'S'],
+  adminUserInHome: ['Admin', 'H', 'S'],
+};
+
+/** What each case holds: per child, the workspaces it is granted to (and
+ *  not "Removed here"). The folder itself is granted to H and S. */
+const FOLDER_COUNT_CONTENTS: Readonly<
+  Record<FolderCountCase, { items: readonly string[][]; folders: readonly string[][] }>
+> = {
+  oneOfThree: { items: [['H', 'S'], ['H'], ['H']], folders: [] },
+  noneShared: { items: [['H'], ['H'], ['H']], folders: [['H']] },
+};
 
 /**
  * What the guide says the folder shows ("A folder's counts are yours",
- * docs/workspaces.md, Folders): only the items the caller reads in its
- * scope, and the folder itself whenever the caller reads it, even with
- * nothing in it to read. An item is read by the users of the workspaces it
- * is granted to; "Being an Admin user is management, not reading", so an
- * Admin user outside H reads what S reads, like a member.
+ * docs/workspaces.md, Folders):
+ *  - an item is read by the users of the workspaces it is granted to;
+ *    "Being an Admin user is management, not reading";
+ *  - the item count is what the caller reads, and with a picked workspace
+ *    what that workspace reads too;
+ *  - the folder count is the folders the caller reads; the pick does not
+ *    narrow it;
+ *  - a folder the caller reads shows, even with nothing in it to read;
+ *  - "An Admin user may pick a workspace they are not in"; anyone else
+ *    picks only their own.
  */
 export function expectedFolderCount(
   c: FolderCountCase,
   caller: FolderCountCaller,
   scope: FolderCountScope,
 ): FolderCountAnswer {
-  if (caller === 'adminUserInHome' && scope === 'all') return { shows: true, items: 3 };
-  return { shows: true, items: c === 'oneOfThree' ? 1 : 0 };
+  const mine = FOLDER_COUNT_CALLERS[caller];
+  if (scope !== 'all' && !mine.includes('Admin') && !mine.includes(scope)) {
+    return { refused: 'not a workspace of the caller' };
+  }
+  const reads = (ws: readonly string[]) => ws.some((w) => mine.includes(w));
+  const box = FOLDER_COUNT_CONTENTS[c];
+  return {
+    shows: true,
+    items: box.items.filter((ws) => reads(ws) && (scope === 'all' || ws.includes(scope))).length,
+    folders: box.folders.filter(reads).length,
+  };
 }
