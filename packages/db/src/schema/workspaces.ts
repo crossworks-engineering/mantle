@@ -50,7 +50,7 @@ export const workspaces = pgTable(
     adminModerated: boolean('admin_moderated').notNull().default(false),
     /** The brain's workspaces the bridges keep ('admin', 'team'; 0250). */
     bridgeKey: text('bridge_key'),
-    /** The workspace's home app (0275): its landing page shows it in place
+    /** The workspace's home app (0276): its landing page shows it in place
      *  of the Built-in home while the workspace holds the app and its
      *  published build is green. NULL = the Built-in home. */
     landingAppId: uuid('landing_app_id').references(() => nodes.id, { onDelete: 'set null' }),

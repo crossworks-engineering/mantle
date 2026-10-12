@@ -738,7 +738,7 @@ get it full-screen at **Home** while the workspace is their current one
 published build. A Moderator of the workspace sets it on the workspace
 screen; the workspace must hold the app already. (Until task d78e7bde one
 app was the home of every member, set in Team admin > Settings; migration
-0275 made it the Team workspace's home app.)
+0276 made it the Team workspace's home app.)
 Until member logins Phase 6 the same app was the team-code **Team Hub** at
 `/hub`, beside the `/team` workspace and the Forum; those are retired and
 redirect to `/login`. Home apps get one extra namespace, `host.hub.get()`

@@ -9,7 +9,7 @@ import { landingName, teamWorkspaceOf, workspaceHome } from '@/lib/landing';
  * landing pages (task d78e7bde). Every login now reads GET /api/home?ws=,
  * the landing page of its current workspace. The one brain-wide member
  * home app this route answered became the Team workspace's home app
- * (migration 0275), so this answers the Team workspace's landing page in
+ * (migration 0276), so this answers the Team workspace's landing page in
  * the old shape: `homeApp` is the Team's home app when the member may run
  * it, and then `hub` is its data, kept to what Team reads; null for both
  * means the built-in member home. A member not in Team gets nulls.

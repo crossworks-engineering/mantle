@@ -568,8 +568,8 @@ export type ProfilePreferences = {
    *  group grant, so the switch can't be bypassed by a manifest change. Flip it
    *  from the Team admin surface. */
   teamPrivateReads?: boolean;
-  /** RETIRED (task d78e7bde, migration 0275): the brain-wide members' home
-   *  app. 0275 made it the Team workspace's home app
+  /** RETIRED (task d78e7bde, migration 0276): the brain-wide members' home
+   *  app. 0276 made it the Team workspace's home app
    *  (workspaces.landing_app_id); nothing reads it any more. It stays in
    *  the stored preferences so a rollback finds it. Read via
    *  projectTeamHubAppId, never raw. */

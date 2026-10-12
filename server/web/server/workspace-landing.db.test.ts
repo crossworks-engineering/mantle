@@ -2,7 +2,7 @@
  * Each workspace's landing page (task d78e7bde), on a migrated scratch
  * database through the real app (createApp), with signed session cookies:
  *
- *  - migration 0275 makes the old brain-wide member home app (the anchor's
+ *  - migration 0276 makes the old brain-wide member home app (the anchor's
  *    `teamHubAppId` preference) the Team workspace's home app;
  *  - PATCH /api/workspaces/:id `landingAppId`: a Moderator of that workspace
  *    only (no Admin area stands in), an app the workspace holds with a green
@@ -213,7 +213,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it('0275 makes the old member home app the Team workspace home app', async () => {
+  it('0276 makes the old member home app the Team workspace home app', async () => {
     await x(sql`update workspaces set landing_app_id = null where owner_id = ${owner}`);
     await x(sql`insert into profiles (user_id, preferences)
                 values (${owner}, ${JSON.stringify({ teamHubAppId: teamApp })}::jsonb)
@@ -221,7 +221,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
                 set preferences = profiles.preferences || excluded.preferences`);
     const file = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      '../../../packages/db/migrations/0275_workspace_landing.sql',
+      '../../../packages/db/migrations/0276_workspace_landing.sql',
     );
     const run = async () => {
       for (const stmt of readFileSync(file, 'utf8').split('--> statement-breakpoint')) {
@@ -381,7 +381,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
   it('a workspace that stops holding its home app forgets it; a new share does not bring it back', async () => {
     expect(await landingOf(team)).toBe(teamApp);
     await outOf(teamApp, team);
-    // Cleared at commit by the item_grants trigger (0275, audit M2).
+    // Cleared at commit by the item_grants trigger (0276, audit M2).
     expect(await landingOf(team)).toBeNull();
     const t = await home(mem, team);
     expect(t.json.homeApp).toBeNull();
@@ -407,7 +407,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
   });
 
   it('a pointer left from before names nothing, and a Moderator clears it', async () => {
-    // As a brain could hold it before 0275's trigger: Team points at an app
+    // As a brain could hold it before 0276's trigger: Team points at an app
     // it does not hold.
     await x(sql`update workspaces set landing_app_id = ${sideApp} where id = ${team}`);
     try {
@@ -497,10 +497,21 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     let removal: Promise<void> | null = null;
     try {
       await raw.begin(async (t1) => {
+        const [me] = await t1<{ pid: number }[]>`select pg_backend_pid() as pid`;
+        const pid = me?.pid ?? 0;
         await t1`select 1 from workspaces where id = ${team} for update`;
         await t1`update workspaces set landing_app_id = ${teamApp2} where id = ${team}`;
         removal = outOf(teamApp2, team);
-        await new Promise((r) => setTimeout(r, 500));
+        // Commit t1 only once the removal's trigger waits on t1's row lock.
+        const deadline = Date.now() + 10_000;
+        for (;;) {
+          const waiting = await x<{ n: number }>(sql`
+            select count(*)::int as n from pg_stat_activity
+             where wait_event_type = 'Lock' and ${pid}::int = any(pg_blocking_pids(pid))`);
+          if (waiting[0]?.n) break;
+          if (Date.now() > deadline) throw new Error('the removal never waited on the pick');
+          await new Promise((r) => setTimeout(r, 20));
+        }
       });
       await removal;
       expect(await landingOf(team)).toBeNull();

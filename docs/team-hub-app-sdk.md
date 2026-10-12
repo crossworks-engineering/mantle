@@ -11,7 +11,7 @@
 > workspace sets it on the workspace screen (`PATCH /api/workspaces/:id`
 > `landingAppId`); `PUT /api/team-admin/hub-app` answers 410, and the old
 > `teamHubAppId` pick became the Team workspace's home app (migration
-> 0275). Where this guide says `/hub`, the team token gate, the Forum link,
+> 0276). Where this guide says `/hub`, the team token gate, the Forum link,
 > the signed team bearer, the pref or the Team-admin picker, read it as
 > history.
 

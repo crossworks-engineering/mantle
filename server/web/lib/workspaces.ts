@@ -428,7 +428,7 @@ async function detail(
  * title) only to a user of the workspace and only while the workspace holds
  * it: an Admin user outside the workspace learns only that one is set
  * (audit L1), and a pointer to an app the workspace lost names nothing, so
- * the screen can offer the clear (audit M2; the item_grants trigger of 0275
+ * the screen can offer the clear (audit M2; the item_grants trigger of 0276
  * clears such a pointer at commit, this covers one left from before).
  */
 async function landingAppOf(caller: WsCaller, seen: Seen): Promise<WorkspaceLandingApp | null> {
