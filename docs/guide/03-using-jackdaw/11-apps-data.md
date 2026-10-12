@@ -29,7 +29,7 @@ Each app gets one private database. No other app can open it.
 3. If the service needs an API key you have not stored, Appsmith stops and says which key to add. Add it under **Settings > API keys**, then ask it to carry on. See [Models and API keys](../05-admin/05-models-and-keys.md).
 4. The tool is added to the app's list of allowed tools. The app calls it through Jackdaw. Your key never reaches the app.
 
-An app at **Team** level or lower may use a connector's tools when the connector's level (**Settings > Tool groups**) is at the app's level or lower: team for a team app, client for a client app. A connector tool you marked read-only only reads; one without the mark can change data. Any other outside tool needs **External access** on **Settings > Tools**. A public link gets no tools at all.
+An app shared beyond the Admin workspace may use a connector's tools when the connector is attached to every workspace that holds the app (**Settings > Workspaces**), with **Write** on in each for a tool that changes data. A connector tool you marked read-only only reads; one without the mark can change data. Any other outside tool needs **External access** on **Settings > Tools**. A public link gets no tools at all.
 
 For more on building tools, see [Toolsmith](../07-api/05-toolsmith.md).
 

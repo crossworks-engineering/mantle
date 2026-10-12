@@ -359,8 +359,8 @@ and through `app_snapshot_list`.
   toward that budget: the automatic ones (before a restore, a schema change,
   a delete, an import, an MCP write, and the nightly ones) never do, and
   neither do the ones a member took before an admin approved or deleted
-  their app. A member's own snapshots count toward the same budget in their
-  own space.
+  their app. A member's own snapshots count toward a budget of the same
+  size kept for that login (the snapshots it took).
 
 **Restore** (`app_snapshot_restore`, or the History tab) has three modes:
 

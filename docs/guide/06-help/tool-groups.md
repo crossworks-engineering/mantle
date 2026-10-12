@@ -15,9 +15,9 @@ agent can answer questions about your data all day and never change a cell.
 
 - **New** creates a group: a **Name**, a **Slug** (fixed once created) and the
   **Tools in this group**.
-- Each group has a level (Admin, Team, Client or Public). An agent may hold a
-  group only at a level it can read. Setting a group to Client or Public lets
-  every tool in it run for clients or the public, so the screen asks first.
+- A group has no level. An agent uses the groups granted to it, and only on
+  what the workspace it works in reads. A connector's tools reach the users
+  of the workspaces the connector is attached to (Settings > Workspaces).
 - An integration group stands for one outside API. It holds the base URL and
   the credential reference, and every tool added to it uses them.
 

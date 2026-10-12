@@ -17,7 +17,7 @@ A key acts as the login that made it, limited to its access and areas. A login t
 
 ## Routes
 
-The routes past `whoami` are admin routes. A member's or client's key gets `403` from them and uses MCP instead.
+The routes past `whoami` are admin routes. A member's key gets `403` from them and uses MCP instead.
 
 | Method and path | Area | Does |
 | --- | --- | --- |

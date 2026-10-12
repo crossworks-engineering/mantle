@@ -6,7 +6,7 @@ Every assistant turn, extraction and background job leaves a record in Jackdaw. 
 |---|---|---|
 | **Traces** | menu, System | Open one turn or job step by step: the prompt, each tool call and result, the model, tokens, cost and time. Sort by cost or duration to find expensive or slow turns. |
 | **Debug** | menu, System | Health dashboards (tabs below). |
-| **Audit log** | Settings | See who did what and when: logins, agents, MCP clients, members and clients. |
+| **Audit log** | Settings | See who did what and when: logins, agents, MCP clients and members. |
 | **Config** | Settings | Compare your agents, skills, tools and workers with what the release ships. Shows what an update added and what you changed. |
 
 ## Debug tabs
