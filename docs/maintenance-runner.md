@@ -228,7 +228,7 @@ took four tries):
   key, so CLI, UI, and cron (three different processes) can never merge
   concurrently, a contender fails fast with a clear message. Dry-runs skip
   the lock.
-- The schedule contains eleven tasks: `entities-dedupe` (auto tier),
+- The schedule contains twelve tasks: `entities-dedupe` (auto tier),
   `traces-reap` and `turns-reap` (all owners), `device-tokens-reap` (device
   token rows 30 days after they were revoked or expired; plain SQL; by hand `pnpm -C server/web device-tokens:reap`, dry
   run unless `--apply`),
@@ -245,6 +245,9 @@ took four tries):
   files root, never a symlink, a dot folder, or the app, table, spaces or
   sandbox stores; the worker mounts /data/files for it; by hand
   `pnpm -C server/web files-staged:reap`, dry run unless `--apply`),
+  `actor-misses-reap` (actor check miss rows in `actor_check_misses` older
+  than 14 days, see [actors.md](./actors.md); plain SQL in batches; by hand
+  `pnpm -C server/web actor-misses:reap`, dry run unless `--apply`),
   `app-export-catch-up` (app table exports still dirty 20 minutes after a
   write, a sync a restart lost; by hand only, as a changed table is
   re-indexed: `pnpm -C server/web app-export:catch-up`, dry run unless
