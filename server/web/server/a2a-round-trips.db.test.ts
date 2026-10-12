@@ -4,22 +4,23 @@
  *
  * Every connection the brain opens (the system pool and the scoped pools)
  * goes through a TCP proxy that reads the Postgres wire: each statement the
- * client sends (Parse or Query) and each round trip (a send of one or more
- * statements after the server last answered on that connection; a pipelined
- * BEGIN, actor, statement, COMMIT is one). Six paths run through the real
- * app or the real runtime: tree load, item open, search, chat turn start,
- * MCP tool call, page save.
+ * client sends (Parse or Query), and each round trip: any send after the
+ * server last answered on that connection. With prepare off, postgres.js
+ * sends a statement with parameters in two steps (Parse and Describe, then
+ * Bind and Execute), so it is two round trips. Six paths run through the
+ * real app or the real runtime: tree load, item open, search, chat turn
+ * start, MCP tool call, page save.
  *
  * Pinned, within the build (fix round 2: no hard-coded counts):
  *  - with the check off, no statement sets or reads the actor: the setting,
- *    and the actor's own lookups, tagged `/* mantle:actor *\/` (the mode
- *    read, loginActorNow, the Telegram and heartbeat lookups);
- *  - in warn, the only added statements are the actor's own: its setting,
- *    its tagged lookups, and the BEGIN and COMMIT around a write sent
- *    outside a transaction;
+ *    and the actor's own statements, tagged `/* mantle:actor *\/` (the mode
+ *    read, loginActorNow, the Telegram and heartbeat lookups, the write
+ *    wrapper's BEGIN and COMMIT);
+ *  - in warn, the only added statements are the actor's own;
  *  - in warn, the same number of round trips as off, apart from the round
- *    trips of the tagged lookups (the SET goes with a transaction's first
- *    statement, a write's BEGIN, SET, COMMIT go with the write).
+ *    trips that send only the actor's own statements (a lookup, the
+ *    wrapper's COMMIT): the SET goes in the same send as a transaction's
+ *    first statement, and the wrapper's BEGIN and SET with its write.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a2a-round-trips.db.test.ts
  * MANTLE_RT_REPORT=1 prints the table. MANTLE_RT_BASELINE=1 also compares
@@ -65,20 +66,22 @@ const OFF_BASELINE: Record<Path, Count> = {
 };
 
 /** The actor's own statements: its setting (packages/db/src/client.ts) and
- *  its tagged lookups. */
+ *  its tagged statements. */
 const ACTOR_SQL = /mantle\.actor|mantle_actor_|\/\* mantle:actor \*\//;
-/** The actor's tagged lookups alone. */
-const LOOKUP_SQL = /\/\* mantle:actor \*\//;
 /** Not a path's: the box mode timer and postgres.js's type fetch on a new
  *  connection. */
 const NOISE_SQL = /mantle_actor_check_mode|from pg_catalog\.pg_type/;
+
+type Kind = 'noise' | 'actor' | 'other';
+const kindOf = (s: string): Kind =>
+  NOISE_SQL.test(s) ? 'noise' : ACTOR_SQL.test(s) ? 'actor' : 'other';
 
 /** A Postgres wire proxy that counts statements and round trips. */
 class WireCounter {
   statements: string[] = [];
   roundTrips = 0;
-  /** Round trips that sent only the actor's tagged lookups. */
-  lookupRoundTrips = 0;
+  /** Round trips that sent only the actor's own statements. */
+  actorRoundTrips = 0;
   lastAt = 0;
   private server: net.Server | null = null;
   private sockets = new Set<net.Socket>();
@@ -90,8 +93,11 @@ class WireCounter {
       let buf = Buffer.alloc(0);
       let startup = true;
       let serverSpoke = true;
-      /** Whether this connection's open round trip sent only lookups. */
-      let lookupOnly = false;
+      /** The kind of the statement this connection sent last: a send with
+       *  no statement (Bind and Execute of a two-step one) is its. */
+      let last: Kind = 'other';
+      /** The kind of this connection's open round trip. */
+      let open: Kind = 'other';
       upstream.on('data', (d) => {
         serverSpoke = true;
         client.write(d);
@@ -99,7 +105,8 @@ class WireCounter {
       client.on('data', (d: Buffer) => {
         upstream.write(d);
         buf = Buffer.concat([buf, d]);
-        const sent: string[] = [];
+        const kinds: Kind[] = [];
+        let messages = 0;
         for (;;) {
           if (startup) {
             if (buf.length < 8) break;
@@ -116,24 +123,35 @@ class WireCounter {
           if (buf.length < len + 1) break;
           const type = String.fromCharCode(buf[0]!);
           const body = buf.subarray(5, len + 1);
-          if (type === 'Q') sent.push(cstring(body, 0));
-          if (type === 'P') sent.push(cstring(body, body.indexOf(0) + 1));
+          let text: string | null = null;
+          if (type === 'Q') text = cstring(body, 0);
+          if (type === 'P') text = cstring(body, body.indexOf(0) + 1);
+          if (text !== null) {
+            last = kindOf(text);
+            kinds.push(last);
+            if (last !== 'noise') this.statements.push(text);
+          }
+          // Sign-in (p) and the goodbye (X) are no statement's round trip.
+          if (type !== 'p' && type !== 'X') messages += 1;
           buf = buf.subarray(len + 1);
         }
-        const counted = sent.filter((s) => !NOISE_SQL.test(s));
-        if (sent.length === 0) return;
-        const lookups = counted.length > 0 && counted.every((s) => LOOKUP_SQL.test(s));
-        if (counted.length > 0 && serverSpoke) {
+        if (messages === 0) return;
+        const counted = kinds.length ? kinds.filter((k) => k !== 'noise') : [last];
+        if (counted.length === 0 || counted[0] === 'noise') {
+          serverSpoke = false;
+          return;
+        }
+        const kind: Kind = counted.every((k) => k === 'actor') ? 'actor' : 'other';
+        if (serverSpoke) {
           this.roundTrips += 1;
-          lookupOnly = lookups;
-          if (lookups) this.lookupRoundTrips += 1;
-        } else if (counted.length > 0 && lookupOnly && !lookups) {
-          // The same round trip sent more than lookups after all.
-          lookupOnly = false;
-          this.lookupRoundTrips -= 1;
+          open = kind;
+          if (kind === 'actor') this.actorRoundTrips += 1;
+        } else if (open === 'actor' && kind === 'other') {
+          // The same round trip sent more than the actor's own after all.
+          open = 'other';
+          this.actorRoundTrips -= 1;
         }
         serverSpoke = false;
-        this.statements.push(...counted);
         this.lastAt = Date.now();
       });
       const end = () => {
@@ -150,7 +168,7 @@ class WireCounter {
   reset(): void {
     this.statements = [];
     this.roundTrips = 0;
-    this.lookupRoundTrips = 0;
+    this.actorRoundTrips = 0;
   }
 
   async stop(): Promise<void> {
@@ -288,7 +306,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     return {
       statements: [...wire.statements],
       roundTrips: wire.roundTrips,
-      lookupRoundTrips: wire.lookupRoundTrips,
+      actorRoundTrips: wire.actorRoundTrips,
     };
   };
 
@@ -375,7 +393,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       const actorOff = off.statements.filter((s) => ACTOR_SQL.test(s));
       if (actorOff.length) failures.push(`${p}: off sent the actor: ${actorOff[0]}`);
       // (2) warn: the same statements as off, plus the actor's own.
-      const own = (s: string) => ACTOR_SQL.test(s) || /^(begin|commit)$/i.test(s);
+      const own = (s: string) => ACTOR_SQL.test(s);
       const a = tally(off.statements.filter((s) => !own(s)).map(norm));
       const b = tally(warn.statements.filter((s) => !own(s)).map(norm));
       for (const k of new Set([...a.keys(), ...b.keys()])) {
@@ -383,10 +401,11 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
           failures.push(`${p}: warn differs from off on ${k.slice(0, 160)}`);
         }
       }
-      // (3) warn: no round trip of its own, apart from the tagged lookups.
-      if (warn.roundTrips - warn.lookupRoundTrips !== off.roundTrips) {
+      // (3) warn: no round trip of its own, apart from those that send only
+      // the actor's own statements (a lookup, the wrapper's COMMIT).
+      if (warn.roundTrips - warn.actorRoundTrips !== off.roundTrips) {
         failures.push(
-          `${p}: warn takes ${warn.roundTrips} round trips (${warn.lookupRoundTrips} lookups), ` +
+          `${p}: warn takes ${warn.roundTrips} round trips (${warn.actorRoundTrips} of the actor), ` +
             `off ${off.roundTrips}`,
         );
       }
@@ -405,7 +424,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
         `| ${p} | ${off.statements.length} / ${off.roundTrips} | ` +
           `${warn.statements.length} / ${warn.roundTrips} | ` +
           `+${warn.statements.length - off.statements.length} / ` +
-          `+${warn.roundTrips - off.roundTrips} (lookups ${warn.lookupRoundTrips}) |`,
+          `+${warn.roundTrips - off.roundTrips} (actor ${warn.actorRoundTrips}) |`,
       );
     }
     if (process.env.MANTLE_RT_REPORT) {

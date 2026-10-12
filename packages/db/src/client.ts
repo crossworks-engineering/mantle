@@ -191,10 +191,27 @@ const STATEMENT_PROPS: ReadonlySet<PropertyKey> = new Set([
  *  actor-setters-in-db-only lint). Plain set_config, as mantle_set_actor
  *  does without its checks: it works on every role and on a database
  *  before 0275 (an operator or a test role), and actor.ts already checked
- *  the value. */
-const SET_ACTOR_SQL =
-  "select set_config('mantle.actor', $1, true), set_config('mantle.write_mode', $2, true), " +
-  "set_config('mantle.actor_check', $3, true)";
+ *  the value.
+ *
+ *  The values are inlined as quoted literals, not sent as parameters (fix
+ *  round 2): with prepare off, postgres.js sends a statement that has
+ *  parameters in two steps (describe, wait for the answer, then execute),
+ *  and nothing queued behind it goes out until the first step is answered.
+ *  A statement with no parameters goes out in one step, so the next one is
+ *  sent with it: the SET adds no round trip. */
+function setActorSql([actor, writeMode, mode]: [string, string, string]): string {
+  const lit = (v: string) => {
+    // standard_conforming_strings is on (the Postgres default since 9.1):
+    // only a quote needs doubling. A NUL never reaches a setting.
+    if (v.includes('\0')) throw new Error('actor setting: NUL');
+    return `'${v.replace(/'/g, "''")}'`;
+  };
+  return (
+    `select set_config('mantle.actor', ${lit(actor)}, true), ` +
+    `set_config('mantle.write_mode', ${lit(writeMode)}, true), ` +
+    `set_config('mantle.actor_check', ${lit(mode)}, true)`
+  );
+}
 
 /** Statements Postgres refuses inside a transaction block: they run as they
  *  are, with no actor set (DDL and maintenance; no item trigger fires). */
@@ -234,9 +251,10 @@ const WITH_WRITES = /\b(insert|update|delete|merge)\b/i;
 /** A `;` with more text after it: more than one statement, unknown. */
 const MORE_STATEMENTS = /;\s*\S/;
 
-/** The tag on the actor's own lookups (the mode read, a login read now):
- *  the round-trip test (a2a-round-trips.db.test.ts) proves the check off
- *  sends none. */
+/** The tag on the actor's own statements (the mode read, a login read now,
+ *  the write wrapper's BEGIN and COMMIT): the round-trip test
+ *  (a2a-round-trips.db.test.ts) proves the check off sends none, and counts
+ *  their round trips as the actor's cost in warn. */
 const ACTOR_SQL_TAG = '/* mantle:actor */';
 
 /**
@@ -288,7 +306,7 @@ export function actorInTransaction(t: PgSql, params: [string, string, string]): 
   /** The SET's outcome once sent: null, or its error. Never rejects. */
   let set: Promise<unknown> | null = null;
   const sendSet = (): Promise<unknown> =>
-    (set ??= t.unsafe(SET_ACTOR_SQL, params).then(
+    (set ??= t.unsafe(setActorSql(params)).then(
       () => null,
       (err: unknown) => err ?? new Error('the actor SET failed'),
     ));
@@ -357,10 +375,11 @@ export function actorInTransaction(t: PgSql, params: [string, string, string]): 
 /**
  * The system pool's postgres.js client with the actor (arch A2a, plan 4.2):
  * while the check is not off and an actor is bound, a transaction (`begin`)
- * sets the actor before its first statement, and a write outside one
- * (needsActorWrap) runs pipelined in its own short transaction that sets it
- * (BEGIN, the actor, the statement, COMMIT: one round trip, as
- * turnScopedClient). A read runs plain. With the check off, or no actor
+ * sets the actor with its first statement (no round trip of its own), and a
+ * write outside one (needsActorWrap) runs pipelined in its own short
+ * transaction that sets it (BEGIN, the actor and the statement in one send;
+ * the COMMIT, behind a statement with parameters, is one more round trip).
+ * A read runs plain. With the check off, or no actor
  * bound, every statement runs exactly as before. Statements Postgres refuses in a
  * transaction block (runsOutsideTransaction) always run as they are.
  */
@@ -387,11 +406,15 @@ function actorClient(base: PgSql): PgSql {
   ) => {
     const conn = await base.reserve();
     try {
-      const begin = conn.unsafe('begin');
-      const set = conn.unsafe(SET_ACTOR_SQL, params);
+      // BEGIN, the SET and the write go out in one send. A write with
+      // parameters goes in two steps (setActorSql), and postgres.js sends
+      // the COMMIT queued behind it only once it is done: the COMMIT is the
+      // wrapper's own round trip, tagged as the actor's (ACTOR_SQL_TAG).
+      const begin = conn.unsafe(`${ACTOR_SQL_TAG} begin`);
+      const set = conn.unsafe(setActorSql(params));
       const q = conn.unsafe(query, (args ?? []) as never[]);
       const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
-      const commit = conn.unsafe('commit');
+      const commit = conn.unsafe(`${ACTOR_SQL_TAG} commit`);
       const out = await Promise.allSettled([begin, set, main, commit]);
       const failed = out.find((r) => r.status === 'rejected');
       // A failed statement aborted the transaction; the COMMIT then rolled

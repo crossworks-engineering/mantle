@@ -63,21 +63,26 @@ off and an actor is bound, `client.ts` (`needsActorWrap`):
 
 - sets `mantle.actor` and `mantle.write_mode` in every transaction
   (`withSystemTx`, the heads helpers, `db.transaction`), sent unawaited
-  right before its first statement, so both go in one round trip (after a
-  `SET TRANSACTION`, which Postgres takes only first). A SET that fails is
-  the error reported;
+  right before its first statement, so both go in one send: no round trip
+  of its own (after a `SET TRANSACTION`, which Postgres takes only first).
+  The SET carries its values as quoted literals: with prepare off,
+  postgres.js sends a statement with parameters in two steps and holds
+  what is queued behind it. A SET that fails is the error reported;
 - sends a write outside a transaction (INSERT, UPDATE, DELETE, MERGE,
   TRUNCATE, COPY, a WITH that names a write verb anywhere, more than one
   statement, and any verb it cannot name) in its own short pipelined
-  transaction that sets them first (one round trip);
+  transaction: BEGIN, the SET and the write in one send. The COMMIT waits
+  until a write with parameters is done, so it is one more round trip per
+  such write;
 - sends a read (SELECT, WITH ... SELECT, VALUES, SHOW, EXPLAIN without
   ANALYZE or ANALYSE) plain, exactly as with the check off.
 
 `server/web/server/a2a-round-trips.db.test.ts` pins the cost on six hot
 paths: with the check off no statement sets or reads the actor (the actor's
-own lookups carry a `/* mantle:actor */` tag), and warn sends the same
-statements as off plus the actor's own, in the same number of round trips
-apart from the tagged lookups.
+own statements carry a `/* mantle:actor */` tag: its lookups and the
+wrapper's BEGIN and COMMIT), and warn sends the same statements as off plus
+the actor's own, in the same number of round trips apart from the round
+trips that send only the actor's own statements.
 
 The wrapper of a write in warn is a promise with `values()` and
 `simple()` only: no `cursor`, `forEach`, `describe`, `readable` or
