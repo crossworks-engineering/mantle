@@ -236,12 +236,20 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
     expect((await call(`/api/pages/${id}`, mem)).text).toContain(`${tag} draftword`);
     // Another member reads nothing of it (its private workspace).
     expect((await call(`/api/pages/${id}`, mem2)).status).toBe(404);
-    // An item it only reads (Ro) or cannot see (Admin): refused.
-    for (const target of [roNote, adminNote]) {
-      const r = await call(`/api/notes/${target}`, mem, 'PATCH', { title: 'x' });
-      expect(r.status, r.text.slice(0, 200)).toBe(403);
-      expect(r.json.reason).toBe('item-workspace');
-      expect((await call(`/api/notes/${target}`, mem, 'DELETE')).status).toBe(403);
+    // An item it only reads (Ro): refused, it knows the item.
+    const ro = await call(`/api/notes/${roNote}`, mem, 'PATCH', { title: 'x' });
+    expect(ro.status, ro.text.slice(0, 200)).toBe(403);
+    expect(ro.json.reason).toBe('item-workspace');
+    expect((await call(`/api/notes/${roNote}`, mem, 'DELETE')).status).toBe(403);
+    // An item it cannot see (Admin) answers exactly as an id no row has:
+    // not found, never "exists but no" (docs/workspaces.md; audit 2026-10-12).
+    const missing = randomUUID();
+    for (const method of ['PATCH', 'DELETE'] as const) {
+      const hidden = await call(`/api/notes/${adminNote}`, mem, method, { title: 'x' });
+      const none = await call(`/api/notes/${missing}`, mem, method, { title: 'x' });
+      expect(hidden.status, `${method} ${hidden.text.slice(0, 200)}`).toBe(404);
+      expect(none.status, `${method} ${none.text.slice(0, 200)}`).toBe(404);
+      expect(hidden.text.replaceAll(adminNote, '<id>')).toBe(none.text.replaceAll(missing, '<id>'));
     }
     const note = idOf(await call('/api/notes', mem, 'POST', { title: `${tag} gone` }), 'note');
     expect((await call(`/api/notes/${note}`, mem, 'DELETE')).status).toBe(200);

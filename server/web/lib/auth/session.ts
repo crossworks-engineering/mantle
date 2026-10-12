@@ -864,13 +864,16 @@ const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * only when the login's scope may edit the item (mantle_may_edit: a Moderator of its
  * home, or a Write grant to one of its workspaces), manage it for a delete
  * or a move (mantle_may_manage), or read it for its own marks and app runs.
- * An item homed in a workspace the user is not in is refused: the user adds
- * itself to that workspace first. The rule is the database's, asked in the
- * login's scope; the write itself then runs on the system pool as before.
+ * An item homed in a workspace the user is not in is refused: an Admin user
+ * is told to add itself to that workspace first; a non-Admin login gets
+ * the same 404 as an id no row has, so no item's existence leaves its scope
+ * (docs/workspaces.md: "not found", never "exists but no"; audit
+ * 2026-10-12). The rule is the database's, asked in the login's scope; the
+ * write itself then runs on the system pool as before.
  * Off on a brain not on workspaces, and for an Admin login where Admin
  * reads are off (the rollback switch); a member's write is
- * always checked (W6b fix round 1, M1). An id no row has goes on to the
- * handler (its own 404). A read-only snapshot copy (data.snapshot_of) is
+ * always checked (W6b fix round 1, M1). For an Admin user an id no row has
+ * goes on to the handler (its own 404). A read-only snapshot copy (data.snapshot_of) is
  * never edited, by anyone; its author may still delete it (W6b fix round 1,
  * CEO decision 2). A deleted app a login other than the brain's owner
  * deleted is purged by the owner only (CEO decision 1).
@@ -879,8 +882,11 @@ async function itemWriteGate(
   loginId: string,
   method: string,
   pattern: string,
-  _opts: { admin: boolean },
+  opts: { admin: boolean },
 ): Promise<NextResponse | null> {
+  // What a non-Admin login hears of an item it does not read, existing or
+  // not: one answer, so the two cannot be told apart (W7e, audit 2026-10-12).
+  const notFound = () => NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   const path = getRequestContext()?.path;
   const target = path ? itemWriteTarget(method, pattern, path) : null;
   if (!target || !ITEM_ID_RE.test(target.id)) return null;
@@ -945,7 +951,7 @@ async function itemWriteGate(
       )) as unknown as { id: string | null }[];
       nodeId = r[0]?.id ?? null;
     }
-    if (!nodeId) return null;
+    if (!nodeId) return opts.admin ? null : notFound();
     const rows = (await withViewer({ login: loginId }, () =>
       db.execute(sql`
         select "public"."mantle_may_edit"(home_ws, write_ws) as edit,
@@ -963,17 +969,16 @@ async function itemWriteGate(
         return null;
       }
     } else {
-      // Not in the scope: refused when it exists, the handler's 404 when not.
+      // Not in the scope. A non-Admin login is told nothing about an item it
+      // does not read, whatever the write needs: the same 404 as an id no
+      // row has, answered here for both (a handler's own 404 may differ).
+      if (!opts.admin) return notFound();
+      // An Admin user may add itself to any workspace: refused with that
+      // hint when the item exists, the handler's 404 when not.
       const seen = (await db.execute(
         sql`select 1 from nodes where id = ${nodeId}`,
       )) as unknown as unknown[];
       if (seen.length === 0) return null;
-      // A non-Admin login that only needs to read the item (running an app,
-      // its own marks) is told nothing about an item it does not read: the
-      // same 404 as an id no row has (W7e).
-      if (target.need === 'read' && !_opts.admin) {
-        return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
-      }
     }
   }
   return NextResponse.json(

@@ -21,6 +21,7 @@ import {
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 import { str } from './coerce';
+import { ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
 
 /** The `serve` input both share tools take. */
@@ -42,21 +43,43 @@ export function serveInput(v: unknown): string[] | undefined | string {
 }
 
 /**
- * Open (or fetch) the link on `id` as the owner, with its served list
- * replaced when `serve` is given: the checks of POST /api/shares (who may
- * link, what may be served). The owner tools act as the brain's owner login.
+ * The login a link is opened or closed as (audit 2026-10-12): the CALLER,
+ * as POST /api/shares passes the session's actor. An owner surface's login
+ * (an MCP connection, an API key, a web or Telegram chat), a member login's
+ * turn; the brain's owner only on an owner path that names no login (stdio,
+ * a run, a pending approval). A surface with no login of its own (a team
+ * contact, a contact link) is refused, never read as the owner.
+ */
+function linkLoginId(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string {
+  const s = ctx.surface;
+  if (s?.kind === 'team' || s?.kind === 'contact') {
+    if (s.kind !== 'contact' && s.loginId) return s.loginId;
+    throw new LinkRefusedError(
+      403,
+      'forbidden',
+      'Only a signed-in login may open or close a link: ask a user who may edit the item.',
+    );
+  }
+  return ownerSurfaceLoginId(s) ?? ctx.ownerId;
+}
+
+/**
+ * Open (or fetch) the link on `id` as the calling login, with its served
+ * list replaced when `serve` is given: the checks of POST /api/shares (who
+ * may link, what may be served), both on the caller's rights.
  */
 export async function openLink(
-  ctx: Pick<ToolHandlerContext, 'ownerId'>,
+  ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>,
   id: string,
   serve: readonly string[] | undefined,
 ) {
-  const item = await assertMayLink(ctx.ownerId, ctx.ownerId, id);
+  const login = linkLoginId(ctx);
+  const item = await assertMayLink(ctx.ownerId, login, id);
   const current = await getActiveShareForNode(ctx.ownerId, id);
   const list =
     serve === undefined
       ? undefined
-      : await checkServeList(ctx.ownerId, ctx.ownerId, item, serve, current?.served ?? []);
+      : await checkServeList(ctx.ownerId, login, item, serve, current?.served ?? []);
   return createShare(ctx.ownerId, id, { serve: list });
 }
 
@@ -139,15 +162,16 @@ export function linkModeRefusal(mode: unknown): string | null {
   return "mode must be 'public' (the only link mode)";
 }
 
-/** Turn the link on `id` off as the owner (the checks of DELETE
+/** Turn the link on `id` off as the calling login (the checks of DELETE
  *  /api/shares/:id). Changes no level and no grant. */
 export async function closeLink(
-  ctx: Pick<ToolHandlerContext, 'ownerId'>,
+  ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>,
   id: string,
 ): Promise<{ id: string; unshared: boolean }> {
+  const login = linkLoginId(ctx);
   const share = await getActiveShareForNode(ctx.ownerId, id);
   if (!share) return { id, unshared: false };
-  await assertMayLink(ctx.ownerId, ctx.ownerId, id);
+  await assertMayLink(ctx.ownerId, login, id);
   return { id, unshared: await revokeShare(ctx.ownerId, share.id) };
 }
 

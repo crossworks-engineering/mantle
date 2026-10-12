@@ -426,12 +426,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
             }
           } else if (memberMayWrite(method, e.pattern)) {
             // W6b: an open write runs in the member's scope, or is refused
-            // by the item check (an id it cannot edit) or the workspace
+            // by the item check (an id it cannot edit; one it cannot read, or
+            // no row has, is its one 404: audit 2026-10-12) or the workspace
             // check, never by member-login and never on the system pool.
             openWrites += 1;
             const checked =
-              r.status === 403 &&
-              (r.text.includes('"item-workspace"') || r.text.includes('"workspace"'));
+              (r.status === 403 &&
+                (r.text.includes('"item-workspace"') || r.text.includes('"workspace"'))) ||
+              (r.status === 404 && r.text === '{"ok":false,"error":"not found"}');
             if (r.text.includes('member-login') || (!checked && r.outcome?.kind !== 'user')) {
               failures.push(`${key} open write: ${r.status} ${JSON.stringify(r.outcome)}`);
             }

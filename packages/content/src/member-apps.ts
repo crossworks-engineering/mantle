@@ -13,9 +13,9 @@
  * admin pool (the registry rows it writes are admin), and row security does
  * not reach SQLite.
  *
- * Writing the app's data: a member writes when a workspace of theirs holds
- * the app with Write on (the grant's Write switch) AND the app is not
- * informational (`apps.data_read_only`). Informational writes no grant
+ * Writing the app's data: a member writes when they may edit the app (a
+ * Moderator of its home, or a workspace of theirs holds it with Write on)
+ * AND the app is not informational (`apps.data_read_only`). Informational writes no grant
  * (contract change 36): while it is on nobody beyond Admin writes the data,
  * whatever the grants say; off, the grants' Write decides.
  *
@@ -47,8 +47,9 @@ export type MemberRunnableApp = {
   title: string;
   icon: string | null;
   color: AppTint | null;
-  /** A workspace of the member holds it with Write on and it is not
-   *  informational: the member writes its data (else reads only). */
+  /** The member may edit it (a Moderator of its home, or a grant with Write
+   *  on) and it is not informational: the member writes its data (else
+   *  reads only). */
   writable: boolean;
   manifest: AppManifest;
   publishedBuild: BuildRef;
@@ -67,21 +68,24 @@ export function memberReachSql(): SQL<boolean> {
   return teamReadsSql();
 }
 
-/** A workspace of the member holds the app with Write on, and the app is
- *  not informational. Over `nodes` joined to `apps` (every caller joins
- *  them): `apps.data_read_only` is an AND here, never a grant change. */
+/** The member may edit the app (docs/workspaces.md, Apps, Data): a
+ *  Moderator of its home or a grant with Write on, the database's own rule
+ *  (mantle_may_edit, over the scope's settings), and the app is not
+ *  informational. Over `nodes` joined to `apps` (every caller joins them):
+ *  `apps.data_read_only` is an AND here, never a grant change. */
 export function memberWritesSql(): SQL<boolean> {
   const scope = currentWorkspaceScope();
   const notInformational = sql`not coalesce(${apps.dataReadOnly}, false)`;
   if (scope) {
-    return sql<boolean>`(${notInformational} and (${nodes.writeWs} && ${wsArray(scope.ws)}))`;
+    return sql<boolean>`(${notInformational} and coalesce("public"."mantle_may_edit"(${nodes.homeWs}, ${nodes.writeWs}), false))`;
   }
   return sql<boolean>`(${notInformational} and ${teamWritesSql()})`;
 }
 
 /**
- * May a member WRITE this app's database? The grant's Write switch of a
- * workspace of theirs, and not informational (`writable`, memberWritesSql);
+ * May a member WRITE this app's database? They may edit the app (a
+ * Moderator of its home, or a grant with Write on), and it is not
+ * informational (`writable`, memberWritesSql);
  * a member-built app under review is read only (server/web/lib/member-apps.ts
  * sets it).
  */

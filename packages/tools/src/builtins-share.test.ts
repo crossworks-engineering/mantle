@@ -194,6 +194,49 @@ describe('node_share', () => {
   });
 });
 
+describe('the share tools act as the CALLING login (audit 2026-10-12)', () => {
+  // A login on MCP is not the brain's owner: who may link an item and what
+  // its served list may hold are the caller's rights, never the owner's.
+  const mcp: ToolHandlerContext = {
+    ownerId: 'o1',
+    surface: { kind: 'owner', via: 'mcp', loginId: 'login-2' },
+  };
+
+  it('node_share checks the link and the serve list as the caller', async () => {
+    await share.handler({ id: NODE_ID, serve: ['f-1'] }, mcp);
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'login-2', NODE_ID);
+    expect(checkServeList).toHaveBeenCalledWith('o1', 'login-2', ITEM, ['f-1'], []);
+  });
+
+  it('node_unshare checks the link as the caller', async () => {
+    vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as never);
+    vi.mocked(revokeShare).mockResolvedValue(true);
+    await unshare.handler({ id: NODE_ID }, mcp);
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'login-2', NODE_ID);
+  });
+
+  it('a member login’s turn links as that member', async () => {
+    const team: ToolHandlerContext = {
+      ownerId: 'o1',
+      surface: { kind: 'team', loginId: 'member-3' },
+    };
+    await share.handler({ id: NODE_ID }, team);
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'member-3', NODE_ID);
+  });
+
+  it('a surface that names no login of its own never links as the owner', async () => {
+    for (const surface of [
+      { kind: 'team' as const, contactId: 'c-1' },
+      { kind: 'contact' as const, contactId: 'c-1', shareId: 's-1' },
+    ]) {
+      const res = await share.handler({ id: NODE_ID }, { ownerId: 'o1', surface });
+      expect(errorOf(res)).toMatch(/signed-in login/);
+    }
+    expect(assertMayLink).not.toHaveBeenCalled();
+    expect(createShare).not.toHaveBeenCalled();
+  });
+});
+
 describe('node_unshare', () => {
   it('refuses a blank id WITHOUT touching any share', async () => {
     const res = await unshare.handler({ id: '  ' }, ctx);

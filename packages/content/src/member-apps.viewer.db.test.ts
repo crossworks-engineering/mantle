@@ -33,6 +33,7 @@ describe.skipIf(!URL)('apps for members', () => {
     team: randomUUID(),
     field: randomUUID(),
     otherTeam: randomUUID(),
+    own: randomUUID(),
   };
   const ids = {
     teamRw: randomUUID(),
@@ -44,6 +45,8 @@ describe.skipIf(!URL)('apps for members', () => {
     linkOnly: randomUUID(),
     levelOnly: randomUUID(),
     otherBrain: randomUUID(),
+    ownApp: randomUUID(),
+    ownInfo: randomUUID(),
   };
   const green = JSON.stringify({
     storageKey: 'apps/x.js',
@@ -87,7 +90,8 @@ describe.skipIf(!URL)('apps for members', () => {
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
         (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team'),
         (${ws.field}, ${anchor}, ${`${tag} Field`}, false, null),
-        (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, 'team')`);
+        (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, 'team'),
+        (${ws.own}, ${anchor}, ${`${tag} Own`}, false, null)`);
     // The levels mean nothing now: every app carries 'team', none is read
     // by it.
     await m.systemDb.execute(sqlTag`
@@ -100,7 +104,9 @@ describe.skipIf(!URL)('apps for members', () => {
         (${ids.red}, ${anchor}, 'app', ${`${tag} red`}, 'apps', 'team'),
         (${ids.linkOnly}, ${anchor}, 'app', ${`${tag} link only`}, 'apps', 'public'),
         (${ids.levelOnly}, ${anchor}, 'app', ${`${tag} level only`}, 'apps', 'team'),
-        (${ids.otherBrain}, ${other}, 'app', ${`${tag} other`}, 'apps', 'team')`);
+        (${ids.otherBrain}, ${other}, 'app', ${`${tag} other`}, 'apps', 'team'),
+        (${ids.ownApp}, ${anchor}, 'app', ${`${tag} own`}, 'apps', 'team'),
+        (${ids.ownInfo}, ${anchor}, 'app', ${`${tag} own informational`}, 'apps', 'team')`);
     const manifest = JSON.stringify({ toolSlugs: ['note_list'], description: 'Polls' });
     await m.systemDb.execute(sqlTag`
       insert into apps (node_id, manifest, published_build, draft_build, draft_source) values
@@ -112,9 +118,16 @@ describe.skipIf(!URL)('apps for members', () => {
         (${ids.red}, '{}'::jsonb, ${red}::jsonb, null, null),
         (${ids.linkOnly}, '{}'::jsonb, ${green}::jsonb, null, null),
         (${ids.levelOnly}, '{}'::jsonb, ${green}::jsonb, null, null),
-        (${ids.otherBrain}, '{}'::jsonb, ${green}::jsonb, null, null)`);
+        (${ids.otherBrain}, '{}'::jsonb, ${green}::jsonb, null, null),
+        (${ids.ownApp}, '{}'::jsonb, ${green}::jsonb, null, null),
+        (${ids.ownInfo}, '{}'::jsonb, ${green}::jsonb, null, null)`);
+    await m.systemDb.execute(
+      sqlTag`update apps set data_read_only = true where node_id = ${ids.ownInfo}`,
+    );
     for (const id of Object.values(ids)) {
-      if (id !== ids.otherBrain && id !== ids.levelOnly) await grant(id, ws.admin, false, true);
+      if (id === ids.otherBrain || id === ids.levelOnly) continue;
+      if (id === ids.ownApp || id === ids.ownInfo) continue;
+      await grant(id, ws.admin, false, true);
     }
     await grant(ids.teamRw, ws.team, true);
     await grant(ids.teamRo, ws.team, false);
@@ -122,6 +135,9 @@ describe.skipIf(!URL)('apps for members', () => {
     await grant(ids.draftOnly, ws.team, true);
     await grant(ids.red, ws.team, true);
     await grant(ids.otherBrain, ws.otherTeam, true, true);
+    // Homed in Own, with no grant that has Write on: its Moderator edits it.
+    await grant(ids.ownApp, ws.own, false, true);
+    await grant(ids.ownInfo, ws.own, false, true);
     await m.systemDb.execute(sqlTag`
       insert into shares (owner_id, node_id, node_type, token)
       values (${anchor}, ${ids.linkOnly}, 'app', ${`${tag}-${randomUUID()}`})`);
@@ -171,6 +187,28 @@ describe.skipIf(!URL)('apps for members', () => {
     expect(ro).toMatchObject({ writable: false });
     expect(ma.memberMayWriteAppData(rw!)).toBe(true);
     expect(ma.memberMayWriteAppData(ro!)).toBe(false);
+  });
+
+  it('a Moderator of the app’s home writes its data, unless it is Informational (audit 2026-10-12)', async () => {
+    const asMod = <T>(fn: () => Promise<T>) =>
+      m.withScope({ kind: 'user', loginId: member, ws: [ws.own], modWs: [ws.own] }, fn);
+    const asUser = <T>(fn: () => Promise<T>) =>
+      m.withScope({ kind: 'user', loginId: member, ws: [ws.own], modWs: [] }, fn);
+    // The docs' rule: a user writes app data when they may edit the app (a
+    // Moderator of its home, or a grant with Write on).
+    expect(await asMod(() => ma.getMemberRunnableApp(anchor, ids.ownApp))).toMatchObject({
+      writable: true,
+    });
+    const card = (await asMod(() => ma.listMemberApps(anchor))).find((a) => a.id === ids.ownApp);
+    expect(card).toMatchObject({ dataReadOnly: false, dataAccess: 'read_write' });
+    // Informational stays an AND: not even the home's Moderator writes.
+    expect(await asMod(() => ma.getMemberRunnableApp(anchor, ids.ownInfo))).toMatchObject({
+      writable: false,
+    });
+    // A user of the home who is not its Moderator, with no Write grant, reads.
+    expect(await asUser(() => ma.getMemberRunnableApp(anchor, ids.ownApp))).toMatchObject({
+      writable: false,
+    });
   });
 
   it('never opens an Admin-only app, a draft-only app, a red build, another brain, a link or a level', async () => {
