@@ -68,9 +68,10 @@ Who may change a workspace:
   Moderator or an Admin user to add the user.
 - **Any user** may leave a workspace. Nobody removes or demotes the last
   Moderator.
-- **Archiving** a workspace removes its grants from the items granted to
-  it. The confirm lists the counts first. The Admin workspace cannot be
-  archived.
+- **Archiving** a workspace (a Moderator of it, or an Admin user) removes
+  its grants from the items granted to it. The confirm lists the counts
+  first. It is refused while any item still has its home there: move those
+  items first. The Admin and Team workspaces cannot be archived.
 
 Every change of users, Moderator ticks, grants and resources writes a
 `workspace_events` row. A workspace or a login the caller may not see
@@ -81,15 +82,18 @@ answers 404, never 403.
 Open an item and use **Grant Access**. The panel lists the item's home and
 every workspace it is granted to, each with a Write switch.
 
-| To do this                                                  | You need                                        |
-| ----------------------------------------------------------- | ----------------------------------------------- |
-| Read the item                                               | to be a user of a workspace it is granted to    |
-| Edit its content                                            | Moderator of its home, or a grant with Write on |
-| Add a grant to workspace T                                  | Moderator of its home and Moderator of T        |
-| Remove a grant from T                                       | Moderator of its home, or Moderator of T        |
-| Flip a Write switch, open or close a public link, delete it | Moderator of its home                           |
-| Share it with one contact                                   | Moderator of its home                           |
-| Move it to another home (H to T)                            | Moderator of H and Moderator of T               |
+| To do this                       | You need                                              |
+| -------------------------------- | ----------------------------------------------------- |
+| Read the item                    | to be a user of a workspace it is granted to          |
+| Edit its content                 | Moderator of its home, or a grant with Write on       |
+| Add a grant to workspace T       | Moderator of its home and Moderator of T              |
+| Remove a grant from T            | Moderator of its home, or Moderator of T              |
+| Switch Write on for T            | Moderator of its home and Moderator of T              |
+| Switch Write off for T           | Moderator of its home, or Moderator of T              |
+| Open or close its public link    | to be able to edit it (an app: Moderator of its home) |
+| Share it with one contact        | to be an Admin user (its home is not checked)         |
+| Delete it                        | Moderator of its home                                 |
+| Move it to another home (H to T) | Moderator of H and Moderator of T                     |
 
 - A Moderator of a workspace that is not the item's home edits the item
   only when that grant has Write on.
@@ -99,8 +103,11 @@ every workspace it is granted to, each with a Write switch.
   "exists but no".
 - **Kinds.** Folders, files, notes, pages, tables, apps, formulas,
   drawings, tasks, events and Recall maps can be granted to any workspace.
-  Every other kind (mail, contacts, journal entries, secrets, saved places
-  and the like) lives in the Admin workspace only.
+  Telegram messages are a class of their own: they belong to the workspace
+  of the assistant that holds the chat, and a grant of one to any
+  workspace is set by hand, never passed on by a folder. Every other kind
+  (mail, contacts, journal entries, secrets, saved places and the like)
+  lives in the Admin workspace only.
 - **Embeds.** Granting a page does not grant what it embeds. The panel
   offers to grant the embeds too, as a step you tick.
 - **Public links and contact shares** stay per item. A public link serves
@@ -328,10 +335,9 @@ The users of the Admin workspace manage the brain through five areas:
   again. An invite or a new login on a former client's email is refused.
   The client portal routes answer 410. Details:
   [client-logins.md](./client-logins.md).
-- **Per-login MCP switches** and the static login tokens (`mtlmcpk_`),
-  W7b.
-- **Admins reading other users' chats**, the member chat routes and the
-  team chat tools, W7c.
+- **Per-login MCP switches**, the static login tokens (`mtlmcpk_`) and the
+  team chat tools, W7b.
+- **Admins reading other users' chats** and the member chat routes, W7c.
 - **Review, submit and accept**, team drafts and client requests (W5c),
   and comment threads (2026-10-09).
 - **The team portal, team codes and the forum** (earlier, member logins
@@ -360,20 +366,30 @@ the system pool, as before W6a and W7a.
 ## Operator notes
 
 - **A brain with former clients** (or client level items) is not switched
-  to workspaces at boot. It reports "clients present". Set its workspaces
-  up by hand first, then run the switch by hand in one transaction:
+  to workspaces at boot. It reports "clients present". `scripts/roll.sh`
+  and the updater refuse to roll such a box to v0.239.90 or later, so this
+  path is only for a box that did not come through that gate. Set its
+  workspaces up by hand first, then run the switch by hand in one
+  transaction, as the database superuser (EXECUTE on
+  `mantle_ws_migrate_locked()` is revoked from PUBLIC):
 
   ```sql
   BEGIN;
   SET LOCAL mantle.ws_former_clients = 'reviewed';
+  -- a large brain: SET LOCAL mantle.ws_switch_budget = '10 minutes';
   SELECT * FROM mantle_ws_migrate_locked();
+  -- a row with section 'skip' means nothing was switched: ROLLBACK
   COMMIT;
   ```
 
-  The switch ends in its guard (`mantle_ws_switch_guard()`): any read or
-  write gained against the old levels rolls it back. The roll notes for the
-  switch are in [update-prod.md](./update-prod.md), "Rolling to the
-  workspaces switch".
+  The setting covers former client logins only. Client level items (on
+  `nodes`, an `audience`, `inherited_level` or `embedded_level` of
+  `client`) still block the switch: clear them first. Before COMMIT, check
+  that the result has no `skip` row; one names why the brain was not
+  switched. The switch ends in its guard (`mantle_ws_switch_guard()`): any
+  read or write gained against the old levels rolls it back. The budget
+  and the switch timing, and the roll notes for the switch, are in
+  [update-prod.md](./update-prod.md), "Rolling to the workspaces switch".
 - **Grant drift.** `pnpm -C server/web workspaces:check` compares the
   derived read columns with the grants and reports drift. It reads only.
 - **The audit trail** of who changed users, Moderator ticks, grants and

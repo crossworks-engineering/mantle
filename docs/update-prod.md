@@ -668,15 +668,28 @@ RESTRICT, and a second run changes nothing. The whole model:
 [client-logins.md](./client-logins.md).
 
 A brain not on workspaces yet that ever had a client login reports
-"clients present" and is never switched at boot. Set its workspaces up by
-hand, then run the switch by hand in one transaction:
+"clients present" and is never switched at boot. `scripts/roll.sh` and the
+updater refuse to roll such a box to v0.239.90 or later ("Rolling to the
+workspaces switch", above), so this path is only for a box that did not
+come through that gate. Set its workspaces up by hand, then run the switch
+by hand in one transaction, as the database superuser (EXECUTE on
+`mantle_ws_migrate_locked()` is revoked from PUBLIC):
 
 ```sql
 BEGIN;
 SET LOCAL mantle.ws_former_clients = 'reviewed';
+-- a large brain: SET LOCAL mantle.ws_switch_budget = '10 minutes';
 SELECT * FROM mantle_ws_migrate_locked();
+-- a row with section 'skip' means nothing was switched: ROLLBACK
 COMMIT;
 ```
+
+The setting covers former client logins only. Client level items (on
+`nodes`, an `audience`, `inherited_level` or `embedded_level` of `client`)
+still block the switch: clear them first. Before COMMIT, check that the
+result has no `skip` row; one names why the brain was not switched. Time
+the switch on a copy first and give a large brain a budget, as "The switch
+at a later start" above says.
 
 ## Rollback
 
