@@ -198,11 +198,11 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
       ),
     );
     expect((tx as unknown as { a: string }[])[0]!.a).toBe('system:worker:test');
-    // A read is sent as it is: no transaction, no setting.
+    // A read carries it too (a function it calls may write).
     const read = (await m.runAsSystem('worker:test', () =>
       m.db.execute(sqlTag`select current_setting('mantle.actor', true) as a`),
     )) as unknown as { a: string | null }[];
-    expect(read[0]!.a ?? '').toBe('');
+    expect(read[0]!.a).toBe('system:worker:test');
     expect(m.takeActorMisses()).toEqual([]);
   });
 

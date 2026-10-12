@@ -307,6 +307,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.workspace_events'),
   none('public.node_acl_head', 'content'),
   none('public.heads_check_misses', 'system'),
+  // The actor-check log (arch A2a, 0275): written by a definer function.
+  none('public.actor_check_misses', 'system'),
   // The key the held-heads list is signed with: definer functions only.
   none('public.mantle_heads_key', 'system'),
   // The move triggers' per-transaction list of moved rows: definer only.

@@ -58,11 +58,17 @@ off, `client.ts`:
 
 - sets `mantle.actor` and `mantle.write_mode` first in every transaction
   (`withSystemTx`, the heads helpers, `db.transaction`);
-- sends each write outside a transaction in its own short pipelined
-  transaction that sets them first (one round trip).
+- sends every other statement in its own short pipelined transaction that
+  sets them first (one round trip), so a write a function makes inside a
+  SELECT carries the actor too.
 
-Reads, and everything while the check is off, run exactly as before. The
-workspace role (`mantle_view_user`) reads only and cannot run the setter.
+With the check off, or no actor bound, every statement runs exactly as
+before. The first statements of a process wait for the first read of the
+box's mode, so a box in warn checks from its first statement. The client
+sets the settings with plain `set_config` (it works on every role and on a
+database before 0275); `mantle_set_actor` is the checked form for psql and
+tests. The workspace role (`mantle_view_user`) cannot run the setter
+functions.
 
 This is not a secret: any role can set a `mantle.*` setting. The protection
 is the lint, the runtime role (A9) and the read rule on the write role.
