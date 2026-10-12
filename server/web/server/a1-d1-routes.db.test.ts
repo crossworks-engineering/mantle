@@ -294,6 +294,7 @@ describe.skipIf(!URL)('A1 D1: tasks, events, formulas and Recall maps on HTTP', 
     const add = await call(`/api/recall/maps/${map}/cards`, mod, 'POST', {
       title: `${tag} card`,
       bodyMd: 'What the card says.',
+      useWhen: 'When the test asks for the A1 card.',
       prompt: true,
       version: await versionOf(map),
     });
