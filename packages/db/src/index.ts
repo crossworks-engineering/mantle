@@ -35,6 +35,7 @@ export {
   systemDb,
   closeDb,
   withSystemTx,
+  NestedSystemTxError,
   withViewer,
   viewerScopeFor,
   withScope,

@@ -33,8 +33,10 @@ import {
   noteRequestSystemWrite,
   requestWriteScope,
   currentCreateHome,
+  currentSystemTx,
   requestScopeMemo,
   type CreateHome,
+  type SystemTxNest,
 } from './viewer';
 import {
   actorCheckMode,
@@ -680,16 +682,63 @@ function getDb(): PostgresJsDatabase<typeof schema> {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A nested system transaction asked for another actor, write scope or
+ *  create home than the open one (arch A2b, plan 20.2). */
+export class NestedSystemTxError extends Error {
+  readonly code = 'nested-system-tx';
+  constructor(what: 'actor' | 'write scope' | 'create home' | 'subtree heads') {
+    super(
+      what === 'subtree heads'
+        ? 'withSubtreeHeads: not inside a transaction that already holds heads; lock the subtree in the outermost call'
+        : `withSystemTx: a nested call with a different ${what} than the open transaction is refused`,
+    );
+    this.name = 'NestedSystemTxError';
+  }
+}
+
+/** What a system transaction opened now would set: its actor, write scope
+ *  and create home, as keys a nested call compares (SystemTxNest). */
+function systemTxKeys(): Omit<SystemTxNest, 'heads'> {
+  const actor = currentActor();
+  const scope = requestWriteScope();
+  const home = currentCreateHome();
+  return {
+    actor: actor ? `${actorSetting(actor)}|${writeModeOf(actor)}` : '',
+    scope: scope ? `${[...scope.ws].sort().join(',')}|${[...scope.modWs].sort().join(',')}` : '',
+    home: home
+      ? JSON.stringify([home.createWs, home.privateWs, !!home.quiet, home.stamp ?? null])
+      : '',
+  };
+}
+
 /**
  * Run `fn` in ONE admin-pool transaction, on its own connection: every `db`
  * query inside is that transaction (`fn` gets it too). `afterCommit` work
  * inside runs once it commits, `afterRollback` work once it rolls back:
  * file side effects follow the rows they belong to (team apps follow-up).
- * Only from outside any viewer scope and outside another transaction scope.
+ * Only from outside any viewer scope and outside another transaction scope,
+ * or nested in a system transaction (below).
+ *
+ * Nested in an open system transaction (arch A2b, plan 20.2) it reuses that
+ * transaction, never a second one: `fn` gets the outer `tx`, its commit
+ * and rollback hooks join the outer ones, and an error goes to the
+ * outermost call (which alone retries: withDeadlockRetry runs once inside).
+ * Only for the same actor, write scope and create home: a nested call that
+ * names another one is refused (NestedSystemTxError). Inside the outer
+ * transaction a request's write scope reads as none (the transaction
+ * masks it); none means "the open one".
  */
 export async function withSystemTx<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
+  const outer = currentSystemTx();
+  if (outer) {
+    const want = systemTxKeys();
+    if (want.actor !== outer.nest.actor) throw new NestedSystemTxError('actor');
+    if (want.scope && want.scope !== outer.nest.scope) throw new NestedSystemTxError('write scope');
+    if (want.home && want.home !== outer.nest.home) throw new NestedSystemTxError('create home');
+    return fn(outer.tx as PostgresJsDatabase<typeof schema>);
+  }
   // A request scope (W6a) writes through here: writes stay on the system
   // pool with their rule in the statement (plan 2.3), in a read request too
   // (a lazy backfill, a root folder made on first open).
@@ -726,6 +775,7 @@ export async function withSystemTx<T>(
       ]
     : null;
   const hooks = newTxHooks();
+  const nest: SystemTxNest = { ...systemTxKeys(), heads: false };
   let result: T;
   try {
     result = await getAdminDb().transaction(async (tx) => {
@@ -743,7 +793,7 @@ export async function withSystemTx<T>(
                         set_config('mantle.create_stamp', ${homeSettings[2]}, true)`,
         );
       }
-      return runInSystemTx({ tx, hooks }, () => fn(tx));
+      return runInSystemTx({ tx, hooks, nest }, () => fn(tx));
     });
   } catch (err) {
     await runTxHooks(hooks.rollback, 'rollback');
@@ -1038,7 +1088,13 @@ export async function withHeads<T>(
 ): Promise<T> {
   const list = uuidArrayLiteral(ids, 'withHeads');
   return withSystemTx(async (tx) => {
-    await tx.execute(sqlTag`select mantle_lock_heads(${list}::uuid[], ${mode})`);
+    // Nested in a transaction that holds heads (arch A2b, plan 20.2): take
+    // more of them (FOR UPDATE NOWAIT; a busy one fails with 55P03 and the
+    // outermost call retries), never a second first lock.
+    const nest = currentSystemTx()!.nest;
+    if (nest.heads) await tx.execute(sqlTag`select mantle_lock_heads_more(${list}::uuid[])`);
+    else await tx.execute(sqlTag`select mantle_lock_heads(${list}::uuid[], ${mode})`);
+    nest.heads = true;
     return fn(tx);
   });
 }
@@ -1058,9 +1114,20 @@ export async function withSubtreeHeads<T>(
   if (!UUID_RE.test(root)) throw new Error('withSubtreeHeads: root must be a uuid');
   const list = uuidArrayLiteral(extra, 'withSubtreeHeads');
   return withSystemTx(async (tx) => {
+    // The subtree lock is a first lock: nested in a transaction that holds
+    // heads it is refused (arch A2b, plan 20.2); lock it in the outer call.
+    const nest = currentSystemTx()!.nest;
+    if (nest.heads) throw new NestedSystemTxError('subtree heads');
     await tx.execute(sqlTag`select mantle_lock_subtree_heads(${root}::uuid, ${list}::uuid[])`);
+    nest.heads = true;
     return fn(tx);
   });
+}
+
+/** The open system transaction (it sees its own rows), else the system
+ *  pool: where a heads helper reads which heads to take (arch A2b). */
+function systemTxOrPool(): PostgresJsDatabase<typeof schema> {
+  return (currentSystemTx()?.tx as PostgresJsDatabase<typeof schema> | undefined) ?? getAdminDb();
 }
 
 /** The folders `items` would sit in (an item's path is its folder's path; a
@@ -1077,7 +1144,7 @@ export async function folderHeadIds(
     const key = `${it.type}\u0000${it.path}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const rows = (await getAdminDb().execute(
+    const rows = (await systemTxOrPool().execute(
       sqlTag`select mantle_parent_folder(${ownerId}::uuid, ${it.type}::node_type, ${it.path}::ltree) as id`,
     )) as unknown as { id: string | null }[];
     const id = rows[0]?.id;
@@ -1126,7 +1193,7 @@ export async function withNodeDeleteHeads<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
   const list = uuidArrayLiteral(ids, 'withNodeDeleteHeads');
-  const rows = (await getAdminDb().execute(
+  const rows = (await systemTxOrPool().execute(
     sqlTag`select distinct x.id from (
              select d.id from nodes n
                join nodes d on d.owner_id = n.owner_id
@@ -1264,6 +1331,9 @@ function sqlState(err: unknown): string | null {
  * withSystemTx), so nothing of a failed attempt survives.
  */
 export async function withDeadlockRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  // Inside an open system transaction (arch A2b, plan 20.2) a retry cannot
+  // start afresh: the error goes to the outermost call, which retries.
+  if (currentSystemTx()) return run();
   for (let attempt = 1; ; attempt++) {
     try {
       return await run();

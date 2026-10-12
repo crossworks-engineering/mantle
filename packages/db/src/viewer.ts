@@ -179,6 +179,9 @@ type Scope = {
   ws?: WorkspaceScope;
   tx?: unknown;
   hooks?: TxHooks;
+  /** A system transaction's own (withSystemTx): what a nested call must
+   *  match to reuse it (arch A2b, plan 20.2). */
+  nest?: SystemTxNest;
   /** A turn scope (workspaces W4b): no transaction of its own; every query
    *  opens a short one on the workspace role (client.ts). */
   perQuery?: true;
@@ -254,6 +257,20 @@ export type CreateHome = {
    *  0267's create stamp trigger), in the insert itself: a snapshot copy's
    *  snapshot_of and extract_skipped (W6b fix round 1, M4). */
   stamp?: Readonly<Record<string, unknown>>;
+};
+
+/**
+ * What an open system transaction was opened with (arch A2b, plan 20.2): a
+ * nested withSystemTx reuses that transaction only for the same actor,
+ * write scope and create home. `heads`: whether it holds heads, so a nested
+ * withHeads takes more of them (mantle_lock_heads_more) instead of a second
+ * first lock. Set and read by client.ts only.
+ */
+export type SystemTxNest = {
+  readonly actor: string;
+  readonly scope: string;
+  readonly home: string;
+  heads: boolean;
 };
 
 /** Work a scope's transaction owes the world outside the database, run once
@@ -774,7 +791,7 @@ export function currentTurnStamp(): TurnStamp | null {
  * low 1), never run early. Only client.ts calls this (`withSystemTx`).
  */
 export function runInSystemTx<T>(
-  scope: { tx: unknown; hooks: TxHooks },
+  scope: { tx: unknown; hooks: TxHooks; nest: SystemTxNest },
   fn: () => Promise<T>,
 ): Promise<T> {
   // A request scope around it is fine: a system transaction is the write
@@ -783,7 +800,15 @@ export function runInSystemTx<T>(
   if (open && !open.request) {
     return Promise.reject(new Error('runInSystemTx: only outside a viewer scope'));
   }
-  return store.run({ system: true, tx: scope.tx, hooks: scope.hooks }, fn);
+  return store.run({ system: true, tx: scope.tx, hooks: scope.hooks, nest: scope.nest }, fn);
+}
+
+/** The system transaction the current code runs in (runInSystemTx), or
+ *  null: inside asSystem, a workspace scope or a space it is none. */
+export function currentSystemTx(): { tx: unknown; nest: SystemTxNest } | null {
+  const s = active();
+  if (!s?.system || !s.tx || !s.nest) return null;
+  return { tx: s.tx, nest: s.nest };
 }
 
 /**
