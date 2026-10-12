@@ -4,14 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## Unreleased: Postgres max_connections 400
+## Unreleased: Postgres max_connections 450
 
-- The canonical compose raises Postgres `max_connections` from 200 to 400.
+- The canonical compose raises Postgres `max_connections` from 200 to 450.
   The worst case of the code (every pool of every process at its max) is
   339 on the full shape, 299 with MANTLE_RUNS off and 175 on a core; the
   write role of A2b2 adds 20. The roll recreates `mantle_pg` once (a few
   seconds of errors, no data change). See docs/update-prod.md and
-  docs/deploy.md §0a.
+  docs/deploy.md §0a. `docker-compose.dev.yml` gets the same value: the dev
+  Postgres takes it when the dev stack is recreated (`pnpm infra:up`).
 - `packages/db/src/connection-ceiling.test.ts` sums every pool per box shape
   from the code and the compose files and fails above 90% of
   `max_connections`, or when a pool call appears that it does not count.

@@ -376,7 +376,7 @@ services:
     # burst; an idle connection holds a few MB. connection-ceiling.test.ts
     # (packages/db) keeps the sum of the pools at or under 90% of this number.
     # A change here restarts Postgres on the next roll (a few seconds).
-    command: ['postgres', '-c', 'max_connections=400']
+    command: ['postgres', '-c', 'max_connections=450']
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env — scripts/install.sh writes one}

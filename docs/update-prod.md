@@ -266,7 +266,7 @@ Then smoke-test the surface the release actually changed in the browser (and
   `/settings/updates` shows the compose state (in sync / stale / drifted);
   box-local customization belongs in `docker-compose.override.yml` + `.env`,
   never in the canonical file.
-- **Postgres `max_connections` 200 to 400 (the release after v0.300.9).**
+- **Postgres `max_connections` 200 to 450 (the release after v0.300.9).**
   The value is in the postgres `command` of the canonical compose. The roll
   that brings it changes the postgres container's config, so `up -d`
   recreates `mantle_pg`: Postgres restarts once, with a few seconds of
@@ -278,7 +278,7 @@ Then smoke-test the surface the release actually changed in the browser (and
   2026-10-12 (their overrides set only `image` and `environment` for
   postgres). Check after the roll:
   `docker exec mantle_pg psql -U postgres -tAc 'show max_connections'`
-  must print 400. A manual roll needs `scripts/compose-adopt.sh --apply`
+  must print 450. A manual roll needs `scripts/compose-adopt.sh --apply`
   first, as for every compose change. Sizing: deploy.md §0a.
 - **Topology-change releases** (a renamed / added / removed service in
   `docker-compose.yml`) also need `docker compose up -d --wait

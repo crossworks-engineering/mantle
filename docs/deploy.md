@@ -82,14 +82,14 @@ compose recreates the container (the next roll, or `docker compose up -d`).
 pool, pg-boss, DBOS, LISTEN clients), so the worst case is the sum of all pool
 maxes on the box: about 340 on the full shape (about 360 with the write role
 of A2b2), about 175 on a core. Postgres refuses connections past
-`max_connections`, so the canonical compose sets it to **400**
+`max_connections`, so the canonical compose sets it to **450**
 (`packages/db/src/connection-ceiling.test.ts` keeps the sum at or under 90%
 of it, and fails when a new pool would pass that). Real use is much lower:
 30 to 45 connections on the fleet at idle (2026-10-12).
 
 - `shared_buffers` stays at the image default (128 MB). It is shared memory
   and does not grow with the connection count. Do not raise it for this.
-- An idle connection holds a few MB of its own. The extra 200 slots cost
+- An idle connection holds a few MB of its own. The extra 250 slots cost
   nothing until a burst fills them; a full burst is about 1 to 2 GB more RAM.
 - On a box with little free RAM and no swap (a 4 GB box, or 8 GB with less
   than 2 GB available), add 2 GB swap as insurance. If the host runs out of

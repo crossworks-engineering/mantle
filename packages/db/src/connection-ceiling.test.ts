@@ -431,6 +431,9 @@ describe('Postgres connection ceiling', () => {
   it('reads max_connections from the postgres command, and only there', () => {
     expect(MAX_CONNECTIONS).not.toBeNull();
     expect(maxConnectionsOf(serviceBlocks(coreOverride).get('postgres'))).toBeNull();
+    // The dev stack runs the same processes with the same pools.
+    const dev = serviceBlocks(read('docker-compose.dev.yml')).get('postgres');
+    expect(maxConnectionsOf(dev), 'docker-compose.dev.yml').toBe(MAX_CONNECTIONS);
     for (const f of readdirSync(repoRoot).filter((n) => /^docker-compose.*\.ya?ml$/.test(n))) {
       if (f === 'docker-compose.yml' || f === 'docker-compose.dev.yml') continue;
       expect(read(f), `${f} sets max_connections`).not.toMatch(/max_connections/);

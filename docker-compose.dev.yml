@@ -29,6 +29,9 @@ services:
     image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
     container_name: mantle_dev_pg
     restart: unless-stopped
+    # The same limit as docker-compose.yml: `pnpm dev` runs the same processes
+    # with the same pools. connection-ceiling.test.ts keeps the two equal.
+    command: ['postgres', '-c', 'max_connections=450']
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
