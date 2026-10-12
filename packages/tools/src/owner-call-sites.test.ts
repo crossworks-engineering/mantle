@@ -33,6 +33,10 @@ type Site = {
 };
 
 const OWNER = (via: string) => new RegExp(`surface: \\{ kind: 'owner', via: '${via}' \\}`);
+/** A run's owner surface, with the run's login when it has one (A0 fix
+ *  round, M1). */
+const OWNER_RUN =
+  /surface: run\.loginId\s*\?\s*\{ kind: 'owner', via: 'run', loginId: run\.loginId \}\s*:\s*\{ kind: 'owner', via: 'run' \}/;
 const INHERIT_CTX = /\.\.\.\(ctx\.surface \? \{ surface: ctx\.surface \} : \{\}\)/;
 
 const SITES: Record<string, Site> = {
@@ -64,13 +68,13 @@ const SITES: Record<string, Site> = {
   },
   'server/web/lib/runs/execute-item.ts': {
     calls: 1,
-    surface: OWNER('run'),
+    surface: OWNER_RUN,
     scope: 'call',
     why: "a run item is the owner's own queued work",
   },
   'server/api/src/workflows/runs-worker-turn.ts': {
     calls: 1,
-    surface: OWNER('run'),
+    surface: OWNER_RUN,
     scope: 'call',
     why: "a run worker turn is the owner's own work",
   },
