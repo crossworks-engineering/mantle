@@ -1131,6 +1131,31 @@ export async function afterOuterCommit(fn: () => unknown): Promise<void> {
   await afterCommit(fn);
 }
 
+/**
+ * One short transaction on a fresh connection of the system pool, outside
+ * every caller's transaction and scope (never joined to an open login write
+ * transaction or a savepoint of one, whose link it would wait behind), with
+ * `lock_timeout`: a store broker's put-back after a flip that never landed
+ * (A3b part 2 fix round 2, N3). `q` runs one statement in it; a lock wait
+ * past `lockTimeoutMs` throws (55P03), as does a database that is gone.
+ */
+export async function brokerLockTx<T>(
+  fn: (q: (text: string, params?: unknown[]) => Promise<Record<string, unknown>[]>) => Promise<T>,
+  lockTimeoutMs = 2_000,
+): Promise<T> {
+  const sql = rawAdminSql();
+  const ms = Math.max(1, Math.floor(lockTimeoutMs));
+  return runWithoutActor(() =>
+    sql.begin(async (t) => {
+      await t.unsafe(`set local lock_timeout = '${ms}ms'`);
+      return fn(
+        async (text, params = []) =>
+          (await t.unsafe(text, params as never[])) as unknown as Record<string, unknown>[],
+      );
+    }),
+  ) as Promise<T>;
+}
+
 /** A write transaction's state (WriteTx), or a savepoint's under `parent`.
  *  `saves`: the transaction's savepoint count when it is a system
  *  transaction's too (withSystemTx on the write role). */

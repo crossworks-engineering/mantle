@@ -37,6 +37,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   utimesSync,
@@ -548,6 +549,100 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       expect((await row(a.id))!.n).toBe('a.bin');
     });
 
+    it('a delete, then a create of the same name, in one outer transaction: the commit keeps the new bytes (fix round 2, N2)', async () => {
+      const again = await folder('again', H);
+      const a = await file(again.path, 'a.bin', 'old', H);
+      const finalAbs = f.diskPathForFile(again.path, 'a.bin')!;
+      await sys(() =>
+        m.withSystemTx(async () => {
+          expect((await f.deleteFileById({ ownerId: owner, fileId: a.id })).ok).toBe(true);
+          // What a create's placing rename does: a new inode under the name.
+          const tmp = path.join(path.dirname(finalAbs), `.${randomUUID()}.staged.tmp`);
+          writeFileSync(tmp, 'new');
+          renameSync(tmp, finalAbs);
+        }),
+      );
+      expect(onDisk(again.path, 'a.bin')).toBe('new');
+      // A folder: deleted, made again with a file in it, in one transaction.
+      const sub = await folder('again-sub', H, again.path);
+      let madePath = '';
+      await sys(() =>
+        m.withSystemTx(async () => {
+          expect(await f.deleteFolder({ ownerId: owner, folderId: sub.id })).toEqual({ ok: true });
+          const made = await f.createFolder({
+            ownerId: owner,
+            parentPath: again.path,
+            slug: 'again-sub',
+          });
+          madePath = made.path;
+          writeFileSync(path.join(f.diskPathForLtree(made.path)!, 'kept.txt'), 'inside');
+        }),
+      );
+      expect(readFileSync(path.join(f.diskPathForLtree(madePath)!, 'kept.txt'), 'utf8')).toBe(
+        'inside',
+      );
+      // Rolled back: the deleted folder's directory comes back.
+      const gone = await folder('again-gone', H, again.path);
+      const goneDir = f.diskPathForLtree(gone.path)!;
+      const err = await errorOf(
+        sys(() =>
+          m.withSystemTx(async () => {
+            expect(await f.deleteFolder({ ownerId: owner, folderId: gone.id })).toEqual({
+              ok: true,
+            });
+            expect(existsSync(goneDir)).toBe(false);
+            throw new Error('the caller failed');
+          }),
+        ),
+      );
+      expect(String(err)).toMatch(/the caller failed/);
+      expect(existsSync(goneDir)).toBe(true);
+      expect(readdirSync(path.dirname(goneDir)).filter((n) => n.includes('.kept-'))).toEqual([]);
+    });
+
+    it("an overwrite's put-back inside a failing savepoint of a login's open write transaction never hangs (fix round 2, N3)", async () => {
+      const quietly = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const nest = await folder('nest', H);
+      const a = await file(nest.path, 'a.bin', 'old', H);
+      const finalAbs = f.diskPathForFile(nest.path, 'a.bin')!;
+      const stageOf = (bytes: string) => {
+        const tempPath = path.join(path.dirname(finalAbs), `.${randomUUID()}.staged.tmp`);
+        writeFileSync(tempPath, bytes);
+        return {
+          tempPath,
+          finalPath: finalAbs,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          size: bytes.length,
+        };
+      };
+      const failingFlip = (place: () => Promise<void>) =>
+        m.db.transaction(() =>
+          m.inFlipTransaction(async () => {
+            await place();
+            throw new Error('the savepoint fails');
+          }),
+        );
+      for (const holdsRow of [false, true]) {
+        const started = Date.now();
+        await inRequest(mem, () =>
+          m.db.transaction(async (tx) => {
+            // The open transaction holds the row's lock first: the put-back's
+            // lock waits 2 s at most, then the bytes-only branch.
+            if (holdsRow) {
+              await tx.execute(sql`update nodes set updated_at = now() where id = ${a.id}`);
+            }
+            const err = await errorOf(
+              m.flipThenPlace({ ...f.overwriteSteps(a.id, stageOf('new')), flip: failingFlip }),
+            );
+            expect(String(err)).toMatch(/the savepoint fails/);
+          }),
+        );
+        expect(Date.now() - started, `holds the row: ${holdsRow}`).toBeLessThan(10_000);
+        expect(onDisk(nest.path, 'a.bin')).toBe('old');
+      }
+      quietly.mockRestore();
+    }, 30_000);
+
     it('a crash between the stage and the flip: the old bytes stay live, the staged-leftover sweep takes the stage', async () => {
       const crash = await folder('crash', H);
       await file(crash.path, 'a.bin', 'old', H);
@@ -682,6 +777,28 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       expect(existsSync(path.join(appRoot, '_snapshots', added[0]!))).toBe(true);
       // Too young without the clock moved on: kept.
       expect((await sweep.removeLeftovers(wanted, { apply: true })).removed).toEqual([]);
+      // Never while a restore's hold is on a store (fix round 2, N4).
+      writeFileSync(path.join(appRoot, '.store-sweep-hold'), '');
+      await expect(sweep.removeLeftovers(wanted, { apply: true, now: later })).rejects.toThrow(
+        /hold is on/,
+      );
+      rmSync(path.join(appRoot, '.store-sweep-hold'));
+      // A store whose rows name no file at all (no table snapshot here):
+      // every file there would look left over; none is listed or removed.
+      const stray = path.join(tableRoot, '_snapshots', 'o', 't', `${randomUUID()}.sqlite`);
+      mkdirSync(path.dirname(stray), { recursive: true });
+      writeFileSync(stray, 'x');
+      const old = (Date.now() - 3 * m.STORE_SWEEP_GRACE_MS) / 1000;
+      utimesSync(stray, old, old);
+      expect((await sweep.reportedLeftovers()).some((l) => l.label === 'tablesnap')).toBe(false);
+      const strayRel = path.relative(path.join(tableRoot, '_snapshots'), stray);
+      const none = await sweep.removeLeftovers([{ label: 'tablesnap', rel: strayRel }], {
+        apply: true,
+        now: later,
+      });
+      expect(none.removed).toEqual([]);
+      expect(existsSync(stray)).toBe(true);
+      rmSync(stray);
       await sweep.removeLeftovers(wanted, { apply: true, now: later });
       expect(existsSync(path.join(appRoot, '_snapshots', added[0]!))).toBe(false);
       expect(existsSync(path.join(appRoot, '_snapshots', named))).toBe(true);

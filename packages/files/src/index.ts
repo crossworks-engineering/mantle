@@ -71,7 +71,7 @@ export {
   deleteFile,
   renameFile,
   renameFolder,
-  removeFolder,
+  setFolderAside,
   isDiskChaff,
   strayFilesIn,
   diskNamesIn,

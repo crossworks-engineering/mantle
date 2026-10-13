@@ -60,7 +60,12 @@ overwrite's old bytes go back only inside one short transaction that holds
 the row's lock (`SELECT ... FOR UPDATE`), while the row does not name the
 new bytes and the file still holds them: a write that landed after this
 one's transaction let the row go is never undone, and the old bytes are
-then left to the staged-leftover sweep (fix round 1, M1). Inside an outer
+then left to the staged-leftover sweep (fix round 1, M1). That transaction
+runs on a fresh system connection, never joined to the caller's open
+transaction, with a 2 s lock wait (`brokerLockTx`); once it has decided,
+its own COMMIT failing changes nothing; a lock it cannot take in time puts
+the old bytes back only while the file holds the new ones (fix round 2, N1
+and N3). Inside an outer
 transaction the disk goes back if that one rolls back
 (`afterOuterRollback`; rollback hooks run newest first, so two renames of
 one file go back last first), and the old bytes stay until it commits
@@ -155,7 +160,12 @@ where a copy per write would cost a whole file:
   old path's unlink before the row moved). A file or folder delete is the
   checked DELETE (exactly one row: a delete the row rules left at none is
   refused, 404) and removes the bytes once it has committed (inside an
-  outer transaction, once that one has: `afterOuterCommit`). A
+  outer transaction, once that one has: `afterOuterCommit`), and only the
+  bytes it saw (the same inode): a file made again under the name in the
+  same outer transaction stays. A deleted folder's directory moves aside at
+  once (`.<uuid>.kept-<time>.tmp`), goes at the commit and comes back on a
+  rollback, so a folder made again under its name gets its own (fix round
+  2, N2). A
   create was already staged and placed inside its insert (W8b). A folded
   member file's bytes stay in its space (named by its id): its rename and
   move change the row only. Email attachments' bytes are stored before the
@@ -228,7 +238,9 @@ the brokers, the backups and the sweep.
   review, with the lines that must stay deleted, `store:sweep
 --remove-orphans <list-file>` says what would go, and with `--apply`
   removes it: each only while the stores still report it as a leftover and
-  once it is an hour old. The nightly sweep never does this.
+  once it is an hour old; never while a restore's hold is on any store,
+  and never in a store whose rows name no file at all (a wrong or empty
+  database: fix round 2, N4). The nightly sweep never does this.
 - **How much per run:** at most the larger of 500 files and half the files
   the store holds, the oldest marked first. The rest are carried to the
   next run and reported (`deferred`), never a failure: a busy day (every

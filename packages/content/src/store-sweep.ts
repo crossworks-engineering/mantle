@@ -169,13 +169,26 @@ function sweptRoots(): Map<string, string> {
   return out;
 }
 
-/** The leftovers every store reports now (a dry run, past a hold). */
+/** The leftovers every store reports now (a dry run, past a hold), but
+ *  never of a store whose rows name no file at all: to a wrong or empty
+ *  database every file is a leftover (fix round 2, N4). */
 export async function reportedLeftovers(): Promise<Leftover[]> {
   const out: Leftover[] = [];
   for (const r of await sweepStores({ dryRun: true, allowMany: true })) {
+    if (r.aborted || r.named === 0) continue;
     for (const rel of [...r.noRow, ...r.legacy]) out.push({ label: r.label, rel });
   }
   return out;
+}
+
+/** A store a restore's hold is on: leftovers are not removed then. */
+export class StoreHeldError extends Error {
+  constructor(readonly labels: string[]) {
+    super(
+      `a restore's hold is on ${labels.join(', ')}: no leftover is removed while one is in place (read the dry run, lift the hold, then run again)`,
+    );
+    this.name = 'StoreHeldError';
+  }
 }
 
 /** Parse a leftovers list (blank lines and `#` comments skipped). */
@@ -192,8 +205,10 @@ export function parseLeftovers(text: string): Leftover[] {
 
 /**
  * Remove leftovers an operator listed after reviewing them (never run by
- * the nightly sweep): each only while the stores still report it as a
- * leftover now (a row named since, or a tombstone, takes it off the list),
+ * the nightly sweep): refused while any store is held by a restore; each
+ * only while the stores still report it as a leftover now (a row named
+ * since, or a tombstone, takes it off the list; a store whose rows name no
+ * file at all reports none),
  * and only once it is a grace period old (a stage in flight is younger).
  * A dry run (`apply` false) says what would go. Returns what went and what
  * was skipped, with why.
@@ -203,6 +218,12 @@ export async function removeLeftovers(
   opts: { apply?: boolean; now?: number } = {},
 ): Promise<{ removed: Leftover[]; skipped: (Leftover & { why: string })[] }> {
   const now = opts.now ?? Date.now();
+  // Never past a restore's hold: restored rows may name what looks left
+  // over (fix round 2, N4).
+  if (opts.apply) {
+    const held = (await sweepStores({ dryRun: true })).filter((r) => r.held).map((r) => r.label);
+    if (held.length) throw new StoreHeldError(held);
+  }
   const still = new Set((await reportedLeftovers()).map((l) => `${l.label}\t${l.rel}`));
   const roots = sweptRoots();
   const removed: Leftover[] = [];

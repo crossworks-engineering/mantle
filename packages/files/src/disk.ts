@@ -501,22 +501,80 @@ export async function diskNamesIn(ltreePath: string): Promise<Set<string>> {
   }
 }
 
-/** Recursively remove a folder. Caller must check it's empty in the DB AND
- *  on disk (`untrackedFilesOnDisk`) beforehand — this is the unconditional
- *  "delete from disk" half, and it takes any chaff with it. */
-export async function removeFolder(ltreePath: string): Promise<void> {
-  if (!isFilesPath(ltreePath)) return;
-  const dir = diskPathForLtree(ltreePath);
-  if (!dir) return;
-  // Refuse to nuke the entire root by accident.
-  if (dir === filesRoot()) {
-    throw new Error('removeFolder: refusing to delete the files root');
-  }
+/** What a file's bytes ARE on disk now (its inode, its change time, its
+ *  size), or null when there are none: a delete's commit hook unlinks only
+ *  these bytes (A3b part 2 fix round 2, N2). */
+export type FileIdentity = { dev: number; ino: number; ctimeMs: number; size: number };
+
+export async function fileIdentity(
+  parentLtreePath: string,
+  filename: string,
+): Promise<FileIdentity | null> {
+  const p = diskPathForFile(parentLtreePath, filename);
+  if (!p) return null;
   try {
-    await fs.rm(dir, { recursive: true, force: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    const st = await fs.stat(p);
+    return { dev: st.dev, ino: st.ino, ctimeMs: st.ctimeMs, size: st.size };
+  } catch {
+    return null;
   }
+}
+
+/** Unlink a file only while its name still holds the bytes `was` saw: a
+ *  file made under the name since (a create in the same outer transaction
+ *  as the delete) is a new inode and stays (fix round 2, N2). */
+export async function deleteFileIfSame(
+  parentLtreePath: string,
+  filename: string,
+  was: FileIdentity,
+): Promise<void> {
+  const now = await fileIdentity(parentLtreePath, filename);
+  if (
+    !now ||
+    now.dev !== was.dev ||
+    now.ino !== was.ino ||
+    now.ctimeMs !== was.ctimeMs ||
+    now.size !== was.size
+  ) {
+    return;
+  }
+  await deleteFile(parentLtreePath, filename);
+}
+
+/**
+ * A deleted folder's directory moved aside now (`.<uuid>.kept-<time>.tmp`
+ * beside it), so a folder made again under its name in the same outer
+ * transaction gets a directory of its own (fix round 2, N2): `remove` once
+ * the delete commits, `restore` if it rolls back (only while nothing has
+ * taken the name). Null when there is no directory.
+ */
+export async function setFolderAside(
+  ltreePath: string,
+): Promise<{ remove: () => Promise<void>; restore: () => Promise<void> } | null> {
+  if (!isFilesPath(ltreePath)) return null;
+  const dir = diskPathForLtree(ltreePath);
+  if (!dir) return null;
+  if (dir === filesRoot()) throw new Error('setFolderAside: refusing to move the files root');
+  const aside = path.join(
+    path.dirname(dir),
+    `.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`,
+  );
+  try {
+    await fs.rename(dir, aside);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+  return {
+    remove: () => fs.rm(aside, { recursive: true, force: true }),
+    restore: async () => {
+      const taken = await fs.stat(dir).then(
+        () => true,
+        () => false,
+      );
+      if (!taken) await fs.rename(aside, dir);
+    },
+  };
 }
 
 // ─── Streamed uploads: spool, then adopt ────────────────────────────────────

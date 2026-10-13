@@ -13,13 +13,14 @@ import {
   FILES_ROOT_LABEL,
   isFilesPath,
   notAFilesFolder,
-  removeFolder as removeFolderOnDisk,
+  setFolderAside,
   renameFolder as renameFolderOnDisk,
   folderSlugOf,
   untrackedFilesOnDisk,
 } from '../index';
 import {
   afterOuterCommit,
+  afterOuterRollback,
   carrySpaceRows,
   db,
   flipThenPlace,
@@ -338,9 +339,15 @@ export async function deleteFolder(args: {
     throw err;
   });
   if (refused) return { ok: false, reason: refused };
-  // Once the delete has committed: inside an outer transaction, once that
-  // one has (fix round 1, L1).
-  await afterOuterCommit(() => removeFolderOnDisk(folder.path));
+  // The directory moves aside now, so a folder made again under the name in
+  // the same outer transaction gets its own; it goes once the delete has
+  // committed (inside an outer transaction, once that one has: fix round 1,
+  // L1), and comes back if that one rolls back (fix round 2, N2).
+  const aside = await setFolderAside(folder.path);
+  if (aside) {
+    afterOuterRollback(() => aside.restore());
+    await afterOuterCommit(() => aside.remove());
+  }
   return { ok: true };
 }
 

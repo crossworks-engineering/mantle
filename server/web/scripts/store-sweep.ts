@@ -30,7 +30,9 @@
  *   pnpm store:sweep --remove-orphans list-file     # DRY RUN of that list
  *   pnpm store:sweep --remove-orphans list-file --apply
  * Edit the list down to what may go first. Each listed file goes only while
- * the stores still report it as a leftover and once it is an hour old.
+ * the stores still report it as a leftover and once it is an hour old;
+ * never while a restore's hold is on any store (exit 2), and never a file
+ * of a store whose rows name no file at all (a wrong or empty database).
  *
  * Exit codes: 0 done (a store a restore holds says HELD) · 1 crash · 2 a
  * hard stop (nothing removed there; the line says why: a row outside the
@@ -43,6 +45,7 @@ import {
   parseLeftovers,
   removeLeftovers,
   reportedLeftovers,
+  StoreHeldError,
   summariseStoreSweep,
   sweepStores,
 } from '@mantle/content/store-sweep';
@@ -81,7 +84,15 @@ async function main() {
   if (args.includes('--remove-orphans')) {
     const file = valueOf('--remove-orphans');
     if (!file) throw new Error('--remove-orphans needs the reviewed list file');
-    const r = await removeLeftovers(parseLeftovers(readFileSync(file, 'utf8')), { apply });
+    let r: Awaited<ReturnType<typeof removeLeftovers>>;
+    try {
+      r = await removeLeftovers(parseLeftovers(readFileSync(file, 'utf8')), { apply });
+    } catch (err) {
+      if (!(err instanceof StoreHeldError)) throw err;
+      console.error(`[store-sweep] ${err.message}`);
+      process.exitCode = 2;
+      return;
+    }
     for (const l of r.removed)
       console.log(`  ${apply ? 'removed' : 'would remove'}: ${l.label} ${l.rel}`);
     for (const l of r.skipped) console.log(`  kept (${l.why}): ${l.label} ${l.rel}`);

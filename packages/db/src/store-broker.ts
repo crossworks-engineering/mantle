@@ -456,6 +456,10 @@ export type SweepReport = {
   store: StoreName;
   /** The spec's label, else the store. */
   label: string;
+  /** How many files the store's rows name (0 before the rows are read, or
+   *  for a held store): none at all is a wrong or empty database to the
+   *  leftovers command (fix round 2, N4). */
+  named: number;
   /** Files no row points at, seen for the first time this run. */
   marked: number;
   /** Removed (or, in a dry run, due): an old revision of a node whose row
@@ -638,6 +642,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
   const report: SweepReport = {
     store: spec.store,
     label: spec.label ?? spec.store,
+    named: 0,
     marked: 0,
     removed: [],
     deferred: 0,
@@ -710,6 +715,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
   }
   // The tombstones (0284), as paths relative to the real root; one outside
   // it never lets anything go.
+  report.named = referenced.size;
   // Each tombstone's age at `now` (a run told another time shifts it).
   const shift = now - Date.now();
   const tombs = new Map<string, { abs: string; age: number }>();

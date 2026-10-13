@@ -17,13 +17,15 @@ import {
   renameFile as renameFileOnDisk,
   sanitizeFilename,
   TEXT_EXTS,
-  deleteFile as deleteFileOnDisk,
   foldedFilePath,
   type SpooledUpload,
 } from '../index';
 import {
+  deleteFileIfSame,
   discardSpooled,
   discardStaged,
+  fileIdentity,
+  type FileIdentity,
   overwritePlacement,
   placedBytesIntact,
   placeStaged,
@@ -36,6 +38,7 @@ import { deleteThumbnailsFor } from '../thumbnail';
 import {
   asSystem,
   assertNotSnapshotCopy,
+  brokerLockTx,
   currentCreateHome,
   requestWriteScope,
   withViewer,
@@ -480,9 +483,17 @@ export async function upsertFile(args: {
  * this write's bytes and the row does not name them: a write that landed
  * meanwhile (another caller's, once this one's transaction let the row go)
  * is never undone. Otherwise the old bytes are left to the staged-leftover
- * sweep and it is logged (A3b part 2 fix round 1, M1).
+ * sweep and it is logged (A3b part 2 fix round 1, M1). The residual: when
+ * this write (A) skips because B's bytes are in the file and B's own flip
+ * then fails too, B puts back the bytes it kept, A's never-landed ones; the
+ * true old bytes are in A's kept copy until the reaper takes it.
  */
-export function overwriteSteps(id: string, staged: StagedFile) {
+export function overwriteSteps(
+  id: string,
+  staged: StagedFile,
+  /** The put-back's lock transaction (tests stand in for it). */
+  lockTx: typeof brokerLockTx = brokerLockTx,
+) {
   const placement = overwritePlacement(staged);
   const putBack = async (why: string) => {
     if (!(await placedBytesIntact(staged))) {
@@ -499,20 +510,33 @@ export function overwriteSteps(id: string, staged: StagedFile) {
     discard: placement.discard,
     settle: async () => (await rowNow(id)).sha256 === staged.sha256,
     unplace: async () => {
-      let tried = false;
+      // Decided inside the lock: never the bytes-only branch after that,
+      // whatever the read-only transaction's COMMIT does (fix round 2, N1).
+      let decided = false;
       try {
-        await db.transaction(async (tx) => {
-          const rows = (await tx.execute(
-            sql`select data->>'sha256' as sha from nodes where id = ${id} for update`,
-          )) as unknown as { sha: string | null }[];
+        // A fresh system connection, never joined to the caller's open
+        // transaction (its link would wait behind this one), and a bounded
+        // lock wait (fix round 2, N3).
+        await lockTx(async (q) => {
+          const rows = await q(
+            `select data->>'sha256' as sha from nodes where id = $1 for update`,
+            [id],
+          );
+          decided = true;
           if (rows[0]?.sha === staged.sha256) return; // it landed: keep it
-          tried = true;
           await putBack('an overwrite that never landed');
         });
       } catch (err) {
-        if (tried) throw err;
-        // The row cannot be locked (the database is gone): the file is put
-        // back only while it holds this write's own bytes.
+        if (decided) {
+          console.error(
+            '[files] an overwrite that never landed: its put-back transaction failed after deciding:',
+            err instanceof Error ? err.message : err,
+          );
+          return;
+        }
+        // The row cannot be locked in time (a caller's open transaction
+        // holds it) or the database is gone: the file is put back only while
+        // it holds this write's own bytes.
         console.error(
           '[files] an overwrite that never landed: its row cannot be locked:',
           err instanceof Error ? err.message : err,
@@ -836,6 +860,9 @@ export async function deleteFileById(args: {
   // database's row rules left at none (a caller that may read the file but
   // not delete it) is a refusal, and the bytes stay; they used to be
   // unlinked whatever the delete did.
+  // What the bytes are, read under the row's lock: the commit hook below
+  // unlinks only these (fix round 2, N2).
+  let was: FileIdentity | null = null;
   try {
     await withDeadlockRetry(() =>
       withNodeDeleteHeads([node.id], async (tx) => {
@@ -844,6 +871,7 @@ export async function deleteFileById(args: {
           .where(eq(nodes.id, node.id))
           .returning({ id: nodes.id });
         oneRow('files', rows, 'file');
+        if (filename && !foldedFilePath(node)) was = await fileIdentity(node.path, filename);
       }),
     );
   } catch (err) {
@@ -858,9 +886,10 @@ export async function deleteFileById(args: {
   // Inside an outer transaction (a login's open write transaction, a
   // personal space) the delete was a savepoint: the bytes go once that one
   // commits, never before (fix round 1, L1).
-  if (filename && !foldedFilePath(node)) {
-    await afterOuterCommit(() => deleteFileOnDisk(node.path, filename));
-  }
+  // Only the bytes the delete saw: a file made again under the name in the
+  // same outer transaction is another inode and stays (fix round 2, N2).
+  const seen = was as FileIdentity | null;
+  if (seen) await afterOuterCommit(() => deleteFileIfSame(node.path, filename, seen));
   // Reap the cached thumbnail derivatives too — keyed by content hash, so a
   // deleted photo doesn't leave its preview behind. Best-effort.
   void deleteThumbnailsFor(typeof data.sha256 === 'string' ? (data.sha256 as string) : null);
