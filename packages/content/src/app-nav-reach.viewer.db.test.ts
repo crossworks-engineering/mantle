@@ -65,7 +65,8 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
   const grant = (node: string, wsId: string, home = false) =>
     m.withHeads([node], 'update', (tx) =>
       tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write, is_home)
-        values (${node}, ${wsId}, false, ${home})`),
+        values (${node}, ${wsId}, false, ${home})
+        on conflict (node_id, workspace_id) do nothing`),
     );
 
   beforeAll(async () => {
@@ -109,6 +110,7 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
         insert into apps (node_id, source, published_build, mcp_access)
         values (${id}, '{}'::jsonb, ${key === 'unpublished' ? null : green}::jsonb,
                 ${key !== 'mcpOff'})`);
+      // On this brain a new item is homed in Admin already; make sure.
       await grant(id, ws.admin, true);
     }
     await grant(ids.team, ws.team);
