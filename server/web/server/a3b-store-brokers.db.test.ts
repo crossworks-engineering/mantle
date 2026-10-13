@@ -11,12 +11,15 @@
  *    row points at the new revision; readers follow the row);
  *  - a crash between stage and flip leaves the old revision live and the
  *    stage for the sweep; a commit that fails (a deferred trigger here)
- *    takes its stage with it, one that committed and then threw keeps it;
+ *    keeps its stage (it may have committed: the sweep takes it), as one
+ *    that committed and then threw does; a table created in an outer
+ *    transaction that rolls back leaves no stage;
  *    the sweep removes the old revisions of an item whose row names another
  *    file, never a file whose item has no row nor a draft from before A3b;
  *  - a backup taken while a flip lands holds the revision the dump names;
  *  - an app write whose row a restore moved writes neither file, and a
- *    single statement waits at most a moment behind a seed;
+ *    single statement waits out a seed for about 10 s, then answers busy;
+ *  - a restore's hold stops the sweep;
  *  - off (both checks off, as NATREF, Astron and prod): the same writes
  *    give today's results.
  *
@@ -35,6 +38,7 @@ import {
   rmSync,
   statSync,
   utimesSync,
+  writeFileSync,
 } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
@@ -378,19 +382,51 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(existsSync(path.join(tableRoot, row.p!))).toBe(true);
     });
 
-    it('a commit that fails after the stage: the stage goes, the old revision stays live', async () => {
+    it('a commit that fails after the stage (it may have committed): the stage stays for the sweep, the old revision stays live', async () => {
       const t = await makeTable('fail', H);
       await sys(() => tablesMod.saveTableDraft(owner, t, DOC('kept draft')));
-      const before = stateOf(tableRoot);
+      const before = filesOf(stateOf(tableRoot));
       const row = await tableRow(t);
       await failCommits(true);
       const err = await errorOf(sys(() => tablesMod.saveTableDraft(owner, t, DOC('lost'))));
       expect(String(err)).toMatch(/the commit fails/);
       await failCommits(false);
-      expect(filesOf(stateOf(tableRoot))).toEqual(filesOf(before));
+      // A failed COMMIT is an error that may have committed: the stage is
+      // kept (fix round 2, N3), no row names it, and the sweep takes it.
+      const added = Object.keys(filesOf(stateOf(tableRoot))).filter((f) => !(f in before));
+      expect(added).toHaveLength(1);
+      expect(added[0]).toMatch(new RegExp(`${t}\\.r-[0-9a-z]+\\.draft\\.sqlite$`));
       expect(await tableRow(t)).toEqual(row);
       const read = await sys(() => tablesMod.getTable(owner, t));
       expect(read?.draft?.rows[0]?.cells.c1).toBe('kept draft');
+      await sweepTwice();
+      expect(existsSync(path.join(tableRoot, added[0]!))).toBe(false);
+      expect(existsSync(path.join(tableRoot, row.d!))).toBe(true);
+    });
+
+    it('a table created inside an outer transaction that rolls back leaves no stage', async () => {
+      const before = filesOf(stateOf(tableRoot));
+      const err = await errorOf(
+        sys(() =>
+          m.withSystemTx(async () => {
+            await tablesMod.createTable(owner, { title: `${tag} rolled back`, data: DOC('x') });
+            throw new Error('the outer transaction rolls back');
+          }),
+        ),
+      );
+      expect(String(err)).toMatch(/rolls back/);
+      expect(filesOf(stateOf(tableRoot))).toEqual(before);
+      // And inside a login's open write transaction (a request's).
+      const err2 = await errorOf(
+        inRequest(owner, () =>
+          m.db.transaction(async () => {
+            await tablesMod.createTable(owner, { title: `${tag} rolled back 2`, data: DOC('x') });
+            throw new Error('the request transaction rolls back');
+          }),
+        ),
+      );
+      expect(String(err2)).toMatch(/rolls back/);
+      expect(filesOf(stateOf(tableRoot))).toEqual(before);
     });
 
     it('a flip that committed and then threw (a post-commit throw, a lost COMMIT ack): the stage stays and the row works', async () => {
@@ -552,6 +588,33 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(tablesReport.legacy).toContain(path.relative(tableRoot, legacy));
     });
 
+    it("a restore's hold stops the store sweep loudly; nothing removed, nothing marked", async () => {
+      const t = await makeTable('held', H);
+      const first = await tableRow(t);
+      await sys(() => tablesMod.saveTableDraft(owner, t, DOC('a')));
+      await sys(() => tablesMod.commitTable(owner, t));
+      const hold = path.join(tableRoot, m.STORE_SWEEP_HOLD_FILE);
+      writeFileSync(hold, '');
+      const quietly = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const now = Date.now() + 2 * m.STORE_SWEEP_GRACE_MS;
+        for (const at of [now, now + m.STORE_SWEEP_GRACE_MS]) {
+          const reports = await sweep.sweepStores({ now: at });
+          const r = reports.find((x) => x.store === 'tables')!;
+          expect(r.aborted).toMatch(/hold/);
+          expect(r.removed).toEqual([]);
+          expect(sweep.summariseStoreSweep(reports)).toMatch(/tables: STOPPED/);
+        }
+        expect(existsSync(path.join(tableRoot, first.p!))).toBe(true);
+      } finally {
+        quietly.mockRestore();
+        rmSync(hold, { force: true });
+      }
+      // Lifted, the old revision goes as before.
+      await sweepTwice();
+      expect(existsSync(path.join(tableRoot, first.p!))).toBe(false);
+    });
+
     it("off (both checks off): the refused write of above gives today's result", async () => {
       const t = await makeTable('off', R);
       const rev = (await tableRow(t)).r;
@@ -618,7 +681,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(existsSync(next)).toBe(true);
     });
 
-    it('a restore whose commit fails: the stage goes, the old file stays live', async () => {
+    it('a restore whose commit fails (it may have committed): the stage stays for the sweep, the old file stays live', async () => {
       const a = await makeApp('restore fails', H);
       const live = (await sys(() => appdb.appDatabasePath(owner, a)))!;
       const snap = path.join(dir, `${a}.snap.sqlite`);
@@ -631,10 +694,15 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       );
       expect(String(err)).toMatch(/the commit fails/);
       await failCommits(false);
-      expect(filesOf(stateOf(appRoot))).toEqual(before);
+      const added = Object.keys(filesOf(stateOf(appRoot))).filter((f) => !(f in before));
+      expect(added).toHaveLength(1);
+      expect(added[0]).toMatch(new RegExp(`${a}\\.r-[0-9a-z]+\\.sqlite$`));
       expect(await sys(() => appdb.appDatabasePath(owner, a))).toBe(live);
       const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by rowid'));
       expect(rows.map((r) => r.v)).toEqual(['first', 'after the snapshot']);
+      await sweepTwice();
+      expect(existsSync(path.join(appRoot, added[0]!))).toBe(false);
+      expect(existsSync(live)).toBe(true);
     });
 
     it('a write whose row a restore moved to another file since it read it writes neither file (a statement, a seed, a schema)', async () => {
@@ -675,30 +743,40 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       rmSync(other, { force: true });
     });
 
-    it("a single statement waits at most a moment behind a seed's row lock: busy, retried, nothing written", async () => {
+    it("a single statement waits out a seed's row lock (up to about 10 s), then answers busy; nothing written while it waits", async () => {
       const a = await makeApp('busy', H);
-      let release: () => void = () => {};
-      const held = new Promise<void>((r) => (release = r));
-      let locked: () => void = () => {};
-      const isLocked = new Promise<void>((r) => (locked = r));
-      const hold = m.systemDb.transaction(async (tx) => {
-        await tx.execute(sql`select 1 from app_databases where app_node_id = ${a} for update`);
-        locked();
-        await held;
-      });
-      await isLocked;
+      /** Hold the registry row lock for `ms`, as a running seed does. */
+      const holdFor = async (ms: number) => {
+        let locked: () => void = () => {};
+        const isLocked = new Promise<void>((r) => (locked = r));
+        const hold = m.systemDb.transaction(async (tx) => {
+          await tx.execute(sql`select 1 from app_databases where app_node_id = ${a} for update`);
+          locked();
+          await new Promise((r) => setTimeout(r, ms));
+        });
+        await isLocked;
+        return hold;
+      };
+      // Held 5 s: the statement waits it out and lands after the seed.
+      const short = await holdFor(5000);
       const t0 = Date.now();
+      await sys(() => appdb.appDbExec(owner, a, "insert into t (v) values ('after the seed')"));
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(4000);
+      await short;
+      // Held 15 s: past the retry, busy, nothing written.
+      const long = await holdFor(15000);
+      const t1 = Date.now();
       const err = await errorOf(
         sys(() => appdb.appDbExec(owner, a, "insert into t (v) values ('busy')")),
       );
-      const waited = Date.now() - t0;
-      release();
-      await hold;
+      const waited = Date.now() - t1;
+      await long;
       expect(err).toBeInstanceOf(appdb.AppSqlBusyError);
-      expect(waited).toBeLessThan(appdb.APP_DB_CHECK_LOCK_TIMEOUT_MS + 3000);
+      expect(waited).toBeGreaterThanOrEqual(appdb.APP_DB_CHECK_RETRY_MS - 1000);
+      expect(waited).toBeLessThan(appdb.APP_DB_CHECK_RETRY_MS + 4000);
       const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by rowid'));
-      expect(rows.map((r) => r.v)).toEqual(['first']);
-    });
+      expect(rows.map((r) => r.v)).toEqual(['first', 'after the seed']);
+    }, 60_000);
 
     it('a backup taken while a restore lands holds the file the dump names', async () => {
       const a = await makeApp('backup', H);
