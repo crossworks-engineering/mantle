@@ -38,6 +38,7 @@
  *    container, so the tests that dump and restore use the tools inside
  *    that container, and a host install only when there is none.
  */
+import { env } from '@mantle/config';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -272,7 +273,7 @@ export async function createMigratedScratchDatabase(
  * off: the database stays off, as every box starts.
  */
 async function applyTestEditCheck(sql: ReturnType<typeof postgres>): Promise<void> {
-  const mode = (process.env.MANTLE_TEST_EDIT_CHECK ?? '').trim().toLowerCase();
+  const mode = (env('MANTLE_TEST_EDIT_CHECK') ?? '').trim().toLowerCase();
   if (mode !== 'warn' && mode !== 'on') return;
   await sql`select mantle_set_edit_check(${mode})`;
 }
