@@ -34,6 +34,10 @@ write calls none of them.
   on first.
 - A pooled connection keeps the setting the database had when it opened:
   restart the app processes after a change.
+- A bare `alter database ... set mantle.edit_check` (or a restore) leaves the
+  triggers apart from the mode: the integrity row `edit_check_drift` and one
+  warning at a pool's start (`EDIT_CHECK_DRIFT_SQL`) show it; the app never
+  fixes it.
 
 ## The rule, written once
 

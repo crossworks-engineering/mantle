@@ -14,6 +14,7 @@
  */
 import {
   ACTOR_CHECK_DRIFT_SQL,
+  EDIT_CHECK_DRIFT_SQL,
   db,
   extractParkedSql,
   GRANT_DRIFT_SQL,
@@ -245,6 +246,16 @@ const CHECKS: CheckDef[] = [
       SELECT 'mantle_actor_check' AS id, 'mode ' || d.mode AS kind,
              d.enabled::text || ' of ' || d.total::text || ' triggers enabled' AS detail
       FROM (${sql.raw(ACTOR_CHECK_DRIFT_SQL)}) d`,
+  },
+  {
+    key: 'edit_check_drift',
+    label: 'Edit check triggers match the box mode',
+    severity: 'medium',
+    note: "whether the edit check's triggers (the per-table checks of the write role and the read-only refusal, workspaces arch A3a, migrations 0280 and 0281) follow the box's edit check mode: off wants all of them disabled (a write then calls none), warn and on want all enabled. A bare ALTER DATABASE or a restore leaves them apart. The app does not fix it: as the superuser that runs migrations, set the mode again with the switch function in docs/update-prod.md (the edit check section).",
+    query: () => sql`
+      SELECT 'mantle_edit_check' AS id, 'mode ' || d.mode AS kind,
+             d.enabled::text || ' of ' || d.total::text || ' triggers enabled' AS detail
+      FROM (${sql.raw(EDIT_CHECK_DRIFT_SQL)}) d`,
   },
   {
     key: 'keyword_index_rls',

@@ -72,6 +72,7 @@ export {
   loginActorNow,
   openLoginWritePool,
   ACTOR_CHECK_DRIFT_SQL,
+  EDIT_CHECK_DRIFT_SQL,
   type Db,
 } from './client';
 export {

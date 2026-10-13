@@ -229,29 +229,54 @@ export function refreshActorCheckMode(base: PgSql): void {
  * it (mantle_actor_check_mode and pg_trigger are readable). The integrity
  * row actor_check_drift and the boot warning read it.
  */
-export const ACTOR_CHECK_DRIFT_SQL = `
+export const ACTOR_CHECK_DRIFT_SQL = checkDriftSql(
+  `"public"."mantle_actor_check_mode"()`,
+  `g.tgname = 'mantle_actor_check'`,
+);
+
+/** The same for the edit check (arch A3a, 0280): its box mode and every
+ *  trigger named mantle_edit_check or mantle_edit_check_* (the matrix's
+ *  and the read-only refusal). The integrity row edit_check_drift and the
+ *  boot warning read it. */
+export const EDIT_CHECK_DRIFT_SQL = checkDriftSql(
+  `"public"."mantle_check_box_mode"('edit_check')`,
+  `(g.tgname = 'mantle_edit_check' OR g.tgname LIKE 'mantle\\_edit\\_check\\_%')`,
+);
+
+/** One row when the triggers `triggers` picks do not follow the mode
+ *  `mode` reads: off wants them all disabled, warn and on all enabled. */
+function checkDriftSql(mode: string, triggers: string): string {
+  return `
   SELECT m.mode, t.enabled::int AS enabled, t.total::int AS total
-    FROM (SELECT "public"."mantle_actor_check_mode"() AS mode) m,
+    FROM (SELECT ${mode} AS mode) m,
          (SELECT count(*) FILTER (WHERE g.tgenabled <> 'D') AS enabled, count(*) AS total
             FROM pg_catalog.pg_trigger g
-           WHERE g.tgname = 'mantle_actor_check' AND NOT g.tgisinternal) t
+           WHERE ${triggers} AND NOT g.tgisinternal) t
    WHERE NOT ((m.mode = 'off' AND t.enabled = 0) OR (m.mode <> 'off' AND t.enabled = t.total))`;
+}
 
-/** One warning at a pool's start when the triggers and the box mode differ
- *  (never each minute). The app does not fix it: no DDL from the app. */
+/** One warning at a pool's start when a check's triggers and its box mode
+ *  differ (never each minute), for the actor check and the edit check. The
+ *  app does not fix it: no DDL from the app. A database before a check's
+ *  migration answers an error, ignored. */
 function warnActorCheckDrift(base: PgSql): void {
-  base
-    .unsafe(`${ACTOR_SQL_TAG} ${ACTOR_CHECK_DRIFT_SQL}`)
-    .then((rows) => {
-      const r = rows[0] as { mode?: string; enabled?: number; total?: number } | undefined;
-      if (!r || typeof r.total !== 'number') return;
-      console.warn(
-        `[db] actor check: the box mode is ${r.mode} but ${r.enabled} of ${r.total} item-table ` +
-          `triggers are enabled. As the superuser that runs migrations: ` +
-          `select mantle_set_actor_check('${r.mode}'); (docs/update-prod.md)`,
-      );
-    })
-    .catch(() => {});
+  for (const [check, drift, setter] of [
+    ['actor check', ACTOR_CHECK_DRIFT_SQL, 'mantle_set_actor_check'],
+    ['edit check', EDIT_CHECK_DRIFT_SQL, 'mantle_set_edit_check'],
+  ] as const) {
+    base
+      .unsafe(`${ACTOR_SQL_TAG} ${drift}`)
+      .then((rows) => {
+        const r = rows[0] as { mode?: string; enabled?: number; total?: number } | undefined;
+        if (!r || typeof r.total !== 'number') return;
+        console.warn(
+          `[db] ${check}: the box mode is ${r.mode} but ${r.enabled} of ${r.total} ` +
+            `triggers are enabled. As the superuser that runs migrations: ` +
+            `select ${setter}('${r.mode}'); (docs/update-prod.md)`,
+        );
+      })
+      .catch(() => {});
+  }
 }
 
 /** Write a miss row later, on another connection (20.3 item 7): never in
