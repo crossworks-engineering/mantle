@@ -92,13 +92,14 @@ fi
 # login and a password derived from MANTLE_MASTER_KEY), or every policy fails
 # to restore: a team-level agent sees an empty brain and a member an empty
 # space. The write role (mantle_write_user, arch A2b2a) too: its rules name it.
-# The list is the roles of packages/db/src/viewer-roles.ts (POOL_ROLES and
-# RETIRED_POOL_ROLES).
+# And the gap writer (mantle_gap_writer, A2b2b: a row rule on each gap table
+# names it). The list is the roles of packages/db/src/viewer-roles.ts
+# (POOL_ROLES and RETIRED_POOL_ROLES) and GAP_WRITER_ROLE (access-matrix.ts).
 docker exec "$CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "
 DO \$\$
 DECLARE r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space', 'mantle_view_user', 'mantle_write_user'] LOOP
+  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space', 'mantle_view_user', 'mantle_write_user', 'mantle_gap_writer'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT', r);
     END IF;
