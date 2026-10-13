@@ -199,8 +199,10 @@ export function revisionFiles(dirAbs: string, node: string, store: RevisionStore
 }
 
 /** Which columns of which registry name a store's files: the one spec the
- *  sweep (`storeRows`) and the backups read (A3b fix round 2, N5). A
- *  table's are relative to TABLE_DB_DIR, an app database's absolute. */
+ *  sweep and the backups read, through `storeRows` (A3b fix rounds 2 and
+ *  3). The first is the item's current file (a table's published workbook,
+ *  an app's database). A table's are relative to TABLE_DB_DIR, an app
+ *  database's absolute. */
 export const STORE_FILE_COLUMNS = {
   tables: { table: 'tables', node: 'node_id', files: ['storage_path', 'draft_path'] },
   appdb: { table: 'app_databases', node: 'app_node_id', files: ['storage_path'] },
@@ -210,7 +212,8 @@ export const STORE_FILE_COLUMNS = {
 >;
 
 /** Every row of a store with the files it names now (STORE_FILE_COLUMNS),
- *  read on the caller's handle. */
+ *  read on the caller's handle: `columns` in the spec's order (null where
+ *  none), `files` the ones that are set. */
 export async function storeRows(store: RevisionStore): Promise<SweepRow[]> {
   const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
   const spec = STORE_FILE_COLUMNS[store];
@@ -220,12 +223,27 @@ export async function storeRows(store: RevisionStore): Promise<SweepRow[]> {
   const rows = (await db.execute(
     sql.raw(`select "${spec.node}"::text as node, ${cols} from "${spec.table}"`),
   )) as unknown as Record<string, string | null>[];
-  return rows.map((r) => ({
-    node: String(r.node),
-    files: spec.files
-      .map((_, i) => r[`f${i}`])
-      .filter((f): f is string => typeof f === 'string' && f.length > 0),
-  }));
+  return rows.map((r) => {
+    const columns = spec.files.map((_, i) => {
+      const f = r[`f${i}`];
+      return typeof f === 'string' && f.length > 0 ? f : null;
+    });
+    return {
+      node: String(r.node),
+      columns,
+      files: columns.filter((f): f is string => f !== null),
+    };
+  });
+}
+
+/** When a revision was made, from its name's token (`revisionToken`: the
+ *  time in base 36, then 8 hex characters); 0 for a name with no token (a
+ *  file from before A3b, the oldest). */
+export function revisionTime(name: string): number {
+  const m = /\.r-([0-9a-z]+)(?:\.draft)?\.sqlite$/.exec(name);
+  if (!m || m[1]!.length <= 8) return 0;
+  const t = parseInt(m[1]!.slice(0, -8), 36);
+  return Number.isFinite(t) ? t : 0;
 }
 
 // ── The sweep ───────────────────────────────────────────────────────────
@@ -236,8 +254,14 @@ export async function storeRows(store: RevisionStore): Promise<SweepRow[]> {
 export const STORE_SWEEP_GRACE_MS = 60 * 60 * 1000;
 
 /** A row of a store, as the sweep reads it: its node and the files it
- *  names (relative to the store's root, or absolute). */
-export type SweepRow = { node: string; files: readonly string[] };
+ *  names (relative to the store's root, or absolute); `columns`, when
+ *  given, the files by STORE_FILE_COLUMNS column, the first the item's
+ *  current file. */
+export type SweepRow = {
+  node: string;
+  files: readonly string[];
+  columns?: readonly (string | null)[];
+};
 
 export type SweepSpec = {
   store: StoreName;
@@ -272,8 +296,12 @@ export type SweepReport = {
   rowFileMissing: string[];
   /** Legacy names (`spare`): reported, never removed. */
   legacy: string[];
-  /** Why this run removed nothing (a hard stop or a restore's hold), or
-   *  null. */
+  /** Until when a restore's hold keeps this store from being swept (an ISO
+   *  time), or null. A held run removes and marks nothing; not a failure. */
+  held: string | null;
+  /** Why a hard stop kept this run from removing anything, or null: a row
+   *  outside the root, no row naming any file, a row naming an older
+   *  current revision than on the last run. A failure. */
   aborted: string | null;
 };
 
@@ -284,8 +312,8 @@ export type SweepOptions = {
   /** Most files one run removes: the larger of this (500) and half the
    *  files the store holds. The rest are carried, oldest marked first. */
   budget?: number;
-  /** Sweep although a restore's hold is in place (the CLI's --allow-many,
-   *  after a dry run was read). */
+  /** Sweep although a restore's hold is in place or a row went back to an
+   *  older revision (the CLI's --allow-many, after a dry run was read). */
   allowMany?: boolean;
 };
 
@@ -293,12 +321,25 @@ export type SweepOptions = {
 export const STORE_SWEEP_BUDGET = 500;
 
 /** The file a restore writes at a store's root (scripts/db-restore.sh,
- *  scripts/app-dbs-restore.sh): restored rows may name OLDER revisions than
- *  the files on disk, which would look like old revisions to remove. While
- *  it is younger than STORE_SWEEP_HOLD_MS the sweep stops unless told
- *  otherwise. */
+ *  scripts/app-dbs-restore.sh, before they restore anything; any other
+ *  restore must too, and remove `.store-sweep.json`): restored rows may
+ *  name OLDER revisions than the files on disk, which would look like old
+ *  revisions to remove. While it is younger than STORE_SWEEP_HOLD_MS the
+ *  sweep holds the store, and a backup keeps every revision. */
 export const STORE_SWEEP_HOLD_FILE = '.store-sweep-hold';
 export const STORE_SWEEP_HOLD_MS = 7 * 24 * 60 * 60 * 1000;
+/** The sweep's memory at a store's root. */
+export const STORE_SWEEP_STATE_FILE = '.store-sweep.json';
+
+/** When the hold at `root` was put down, while it holds; else null. */
+function holdSince(root: string, now: number): number | null {
+  try {
+    const held = statSync(join(root, STORE_SWEEP_HOLD_FILE)).mtimeMs;
+    return now - held < STORE_SWEEP_HOLD_MS ? held : null;
+  } catch {
+    return null;
+  }
+}
 
 /** `p`'s real path; for a file that is gone, its folder's real path joined
  *  with its name. */
@@ -314,18 +355,32 @@ function realOrResolved(p: string): string {
   }
 }
 
-/** The sweep's memory of what it saw unreferenced, beside the store. */
-function markFile(root: string): string {
-  return join(root, '.store-sweep.json');
-}
+/** The sweep's memory beside the store: when it first saw each file
+ *  unreferenced (`marks`), and the time of each item's current revision on
+ *  its last run (`current`). */
+type SweepState = { marks: Record<string, number>; current: Record<string, number> };
 
-function readMarks(root: string): Record<string, number> {
+function readState(root: string): SweepState {
   try {
-    const m = JSON.parse(readFileSync(markFile(root), 'utf8')) as Record<string, number>;
-    return m && typeof m === 'object' ? m : {};
+    const raw = JSON.parse(readFileSync(join(root, STORE_SWEEP_STATE_FILE), 'utf8')) as unknown;
+    if (raw && typeof raw === 'object') {
+      const r = raw as { marks?: unknown; current?: unknown };
+      if (r.marks && typeof r.marks === 'object') {
+        return {
+          marks: r.marks as Record<string, number>,
+          current: (r.current && typeof r.current === 'object' ? r.current : {}) as Record<
+            string,
+            number
+          >,
+        };
+      }
+      // The first shape: the marks alone.
+      return { marks: raw as Record<string, number>, current: {} };
+    }
   } catch {
-    return {};
+    /* none yet */
   }
+  return { marks: {}, current: {} };
 }
 
 /**
@@ -333,16 +388,23 @@ function readMarks(root: string): Record<string, number> {
  * by the sweep before `before` (ms): a flip never points a row back at an
  * old revision, so such a file was unreferenced when a Postgres dump taken
  * at `before` ran, and a backup made with that dump may leave it out
- * (bounded backups, A3b fix round 2). `abs` is any spelling of its path.
+ * (bounded backups, A3b fix round 2). Never while a restore's hold is in
+ * place: a restore points rows back at older revisions, which an old mark
+ * may name (fix round 3, F1). `abs` is any spelling of its path.
  */
-export function markedBefore(root: string, before: number): (abs: string) => boolean {
+export function markedBefore(
+  root: string,
+  before: number,
+  now: number = Date.now(),
+): (abs: string) => boolean {
   let realRoot: string;
   try {
     realRoot = realpathSync(root);
   } catch {
     return () => false;
   }
-  const marks = readMarks(realRoot);
+  if (holdSince(realRoot, now) !== null) return () => false;
+  const { marks } = readState(realRoot);
   return (abs) => {
     const seen = marks[relativeTo(realRoot, realOrResolved(abs))];
     return seen !== undefined && seen < before;
@@ -382,15 +444,18 @@ function walkFiles(root: string, rel = '', out: string[] = [], depth = 0): strin
  * long gone; it may be the only copy), the files of a node whose row names
  * a file that is missing, and the legacy names (`spare`).
  *
- * Stops (nothing removed, nothing marked, logged, `aborted`): a restore's
- * hold at the root younger than a week (unless `allowMany`); a row naming a
+ * Held (nothing removed or marked, `held`, not a failure): a restore's hold
+ * at the root younger than a week, unless `allowMany`.
+ *
+ * Hard stops (nothing removed or marked, logged, `aborted`): a row naming a
  * file outside the root (both sides compared as real paths: the root is
  * not the one the rows were written under); a store holding files while no
- * row names any (a wrong or empty database). Idempotent, plain files and
- * one read of the rows: no model, no extraction, no notify.
+ * row names any (a wrong or empty database); a row whose current file is
+ * an OLDER revision than the one it named on the last run (a restore no
+ * hold announced), unless `allowMany`. Idempotent, plain files and one
+ * read of the rows: no model, no extraction, no notify.
  */
 export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Promise<SweepReport> {
-  const now = opts.now ?? Date.now();
   const grace = opts.graceMs ?? STORE_SWEEP_GRACE_MS;
   const report: SweepReport = {
     store: spec.store,
@@ -401,6 +466,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     noRow: [],
     rowFileMissing: [],
     legacy: [],
+    held: null,
     aborted: null,
   };
   let root: string;
@@ -416,22 +482,24 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     return report;
   };
   if (!opts.allowMany) {
-    try {
-      const held = statSync(join(root, STORE_SWEEP_HOLD_FILE)).mtimeMs;
-      if (now - held < STORE_SWEEP_HOLD_MS) {
-        return stop(
-          `a restore put a hold on this store ${new Date(held).toISOString()} (${STORE_SWEEP_HOLD_FILE}): the restored rows may name older revisions than the files here. Read a dry run, then run it with --allow-many, or remove the hold`,
-        );
-      }
-    } catch {
-      /* no hold */
+    const held = holdSince(root, opts.now ?? Date.now());
+    if (held !== null) {
+      report.held = new Date(held + STORE_SWEEP_HOLD_MS).toISOString();
+      console.warn(
+        `[store-sweep] ${spec.store}: HELD until ${report.held} by a restore (${STORE_SWEEP_HOLD_FILE}): read a dry run, then run it with --allow-many, or remove the hold`,
+      );
+      return report;
     }
   }
   const owned = walkFiles(root).filter((f) => spec.nodeOf(f) !== null);
   const rows = await spec.rows();
+  // The time marks are taken at: after the rows were read (fix round 3, F3).
+  const now = opts.now ?? Date.now();
+  const state = readState(root);
   // Every file a row names, as a path relative to the real root.
   const referenced = new Set<string>();
   const byNode = new Map<string, string[]>();
+  const current: Record<string, number> = {};
   for (const row of rows) {
     const named: string[] = [];
     for (const f of row.files) {
@@ -446,13 +514,24 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
       named.push(rel);
     }
     byNode.set(row.node, [...(byNode.get(row.node) ?? []), ...named]);
+    const first = row.columns?.[0];
+    if (first) {
+      const t = revisionTime(basename(first));
+      const before = state.current[row.node];
+      if (before !== undefined && t < before && !opts.allowMany) {
+        return stop(
+          `the row of ${row.node} names ${first}, an older revision than on the last run: a restore? Put a hold (${STORE_SWEEP_HOLD_FILE}) or read a dry run, then run it with --allow-many`,
+        );
+      }
+      current[row.node] = t;
+    }
   }
   if (owned.length > 0 && referenced.size === 0) {
     return stop(
       `${owned.length} store files and no row names any: is this the right database and root?`,
     );
   }
-  const marks = readMarks(root);
+  const marks = state.marks;
   const next: Record<string, number> = {};
   const due: { rel: string; seen: number }[] = [];
   for (const rel of owned) {
@@ -500,16 +579,17 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     }
     report.removed.push(rel);
   }
-  if (!opts.dryRun) writeMarks(root, next);
+  if (!opts.dryRun) writeState(root, { marks: next, current });
   return report;
 }
 
-/** Remember the unreferenced files and when they were first seen. */
-function writeMarks(root: string, marks: Record<string, number>): void {
+/** Remember the unreferenced files and each item's current revision. */
+function writeState(root: string, state: SweepState): void {
   try {
-    const tmp = `${markFile(root)}.tmp`;
-    writeFileSync(tmp, JSON.stringify(marks));
-    renameSync(tmp, markFile(root));
+    const file = join(root, STORE_SWEEP_STATE_FILE);
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, JSON.stringify(state));
+    renameSync(tmp, file);
   } catch {
     /* an unwritable root: the next run starts the grace period again */
   }

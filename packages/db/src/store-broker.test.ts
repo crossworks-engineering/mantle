@@ -13,6 +13,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -22,6 +23,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   STORE_SWEEP_HOLD_FILE,
+  STORE_SWEEP_HOLD_MS,
   StoreRefusedError,
   flipNeverLanded,
   flipRolledBack,
@@ -32,6 +34,7 @@ import {
   removeSqliteFile,
   revisionFiles,
   revisionNode,
+  revisionTime,
   revisionToken,
   stageThenFlip,
   sweepOrphans,
@@ -384,8 +387,8 @@ describe('sweepOrphans', () => {
     for (const f of late) expect(existsSync(f)).toBe(false);
   });
 
-  it("a restore's hold stops the sweep (loudly) for a week, unless --allow-many", async () => {
-    const err = quiet();
+  it("a restore's hold holds the sweep for a week (not a failure), unless --allow-many", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     root = path.join(dir, 'store-11');
     const old = put('y/k.r-0.sqlite', 30 * HOUR);
     put('y/k.r-1.sqlite', 30 * HOUR);
@@ -394,20 +397,64 @@ describe('sweepOrphans', () => {
     const now = Date.now();
     for (const t of [now, now + 2 * HOUR]) {
       const r = await sweepOrphans(spec(rows), { now: t });
-      expect(r.aborted).toMatch(/hold/);
+      expect(r.aborted).toBeNull();
+      expect(r.held).toBe(new Date(statSync(hold).mtimeMs + STORE_SWEEP_HOLD_MS).toISOString());
       expect(r.marked).toBe(0);
     }
     expect(existsSync(old)).toBe(true);
-    expect(err).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
     // Overridden after a dry run: the grace period starts now.
     await sweepOrphans(spec(rows), { now: now + 2 * HOUR, allowMany: true });
     const r = await sweepOrphans(spec(rows), { now: now + 4 * HOUR, allowMany: true });
     expect(r.removed).toEqual(['y/k.r-0.sqlite']);
-    // A week on, the hold no longer stops it.
+    // A week on, the hold no longer holds.
     const t = (Date.now() - 8 * 24 * HOUR) / 1000;
     utimesSync(hold, t, t);
-    expect((await sweepOrphans(spec(rows), { now: now + 5 * HOUR })).aborted).toBeNull();
+    expect((await sweepOrphans(spec(rows), { now: now + 5 * HOUR })).held).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('stops when a row names an OLDER current revision than on the last run (a restore no hold announced), unless --allow-many', async () => {
+    const err = quiet();
+    root = path.join(dir, 'store-13');
+    const tok = (t: number) => `${t.toString(36)}0a0b0c0d`;
+    const newer = `v/c.r-${tok(2_000_000)}.sqlite`;
+    const older = `v/c.r-${tok(1_000_000)}.sqlite`;
+    const keep = put(older, 30 * HOUR);
+    put(newer, 30 * HOUR);
+    const now = Date.now();
+    const at = (f: string) => [{ node: 'c', files: [f], columns: [f] }];
+    expect((await sweepOrphans(spec(at(newer)), { now })).aborted).toBeNull();
+    for (const t of [now + 2 * HOUR, now + 4 * HOUR]) {
+      const r = await sweepOrphans(spec(at(older)), { now: t });
+      expect(r.aborted).toMatch(/older revision/);
+      expect(r.removed).toEqual([]);
+    }
+    expect(existsSync(keep)).toBe(true);
+    // A legacy name (no token) is older than any revision.
+    expect(revisionTime('c.sqlite')).toBe(0);
+    expect(revisionTime(`c.r-${tok(5)}.draft.sqlite`)).toBe(5);
+    // Read and accepted: it goes on from there.
+    expect((await sweepOrphans(spec(at(older)), { now, allowMany: true })).aborted).toBeNull();
+    expect((await sweepOrphans(spec(at(older)), { now: now + HOUR })).aborted).toBeNull();
     err.mockRestore();
+  });
+
+  it('marks take the time the rows were read, not the run start', async () => {
+    root = path.join(dir, 'store-14');
+    const old = put('u/e.r-0.sqlite', 30 * HOUR);
+    put('u/e.r-1.sqlite', 30 * HOUR);
+    let readAt = 0;
+    await sweepOrphans({
+      ...spec([]),
+      rows: async () => {
+        await new Promise((r) => setTimeout(r, 50));
+        readAt = Date.now();
+        return [{ node: 'e', files: ['u/e.r-1.sqlite'] }];
+      },
+    });
+    expect(markedBefore(root, readAt)(old)).toBe(false);
+    expect(markedBefore(root, Date.now() + 1)(old)).toBe(true);
   });
 
   it('a backup leaves out only what the sweep had marked before the dump started', async () => {
@@ -420,5 +467,8 @@ describe('sweepOrphans', () => {
     expect(markedBefore(root, now + 1)(old)).toBe(true);
     expect(markedBefore(root, now)(old)).toBe(false); // marked during the dump: kept
     expect(markedBefore(root, now + 1)(live)).toBe(false);
+    // While a restore's hold is in place, nothing is left out.
+    put(STORE_SWEEP_HOLD_FILE, 0);
+    expect(markedBefore(root, now + 1)(old)).toBe(false);
   });
 });
