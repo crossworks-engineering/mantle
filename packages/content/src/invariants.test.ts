@@ -203,6 +203,20 @@ describe('brain-core override ↔ main compose', () => {
     expect(script('docker-compose.dev.yml')).toBe(prod);
   });
 
+  // The nightly store-sweep (arch A3b) reads the table and app database
+  // folders through the same mounts the web and api write: an app-dbs folder
+  // missing here is an empty folder in the container (A3b fix round 1, M3).
+  it(`worker_maintenance mounts every store folder the store-sweep walks`, () => {
+    const text = read(COMPOSE);
+    const start = text.indexOf('\n  worker_maintenance:\n');
+    expect(start).toBeGreaterThan(0);
+    const next = text.slice(start + 1).search(/\n {2}[a-z][a-z0-9_]*:\s*\n/);
+    const body = text.slice(start, next < 0 ? undefined : start + 1 + next);
+    for (const dir of ['table-dbs', 'app-dbs']) {
+      expect(body, dir).toContain(`\${MANTLE_DATA_DIR:-./data}/${dir}:/data/${dir}`);
+    }
+  });
+
   it(`${COMPOSE_CORE} gates exactly the doc helpers + the six channel workers`, () => {
     // The core shape's OFF list is as load-bearing as the main file's ON list:
     // gating a data-spine service (postgres, web, migrate…) here would brick

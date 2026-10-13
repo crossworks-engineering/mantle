@@ -1301,6 +1301,12 @@ services:
       # space-purge that deleted them is gone (W8d).
       - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
+      # The nightly store-sweep removes the old revisions of table workbooks
+      # and app databases (arch A3b): it needs the same app-dbs folder the
+      # web and api write (APP_DB_DIR=/data/app-dbs). Without it the folder
+      # here is empty and the app store is skipped; a row outside it stops
+      # the sweep (docs/store-brokers.md).
+      - ${MANTLE_DATA_DIR:-./data}/app-dbs:/data/app-dbs
       # The nightly files-staged-reap removes the staging files a crash left
       # beside a file create (a dot-prefixed .staged.tmp an hour old or more).
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
