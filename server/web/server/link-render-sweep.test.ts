@@ -585,4 +585,118 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       }
     }
   });
+
+  // More probes (A4 step 2 audit L6), in a file snapshot of their own so
+  // the sweep's snapshot above stays as the step 1 code wrote it. This one
+  // was written on the step 1 code too (the sweep's commit), then checked
+  // on step 2: conditional and range requests, trailing slashes, a session
+  // cookie on /s, and the drawing SVG byte route a render page loads.
+  it('answers conditional, range, trailing-slash, session and drawing-SVG requests as before', async () => {
+    const render = (nodeId: string) =>
+      `mantle_render=${tokens.buildRenderToken({ ownerId: OWNER, actorId: ADMIN, nodeId })}`;
+    const session = `mantle_session=${tokens.buildSessionCookie(ADMIN).value}`;
+    const withOrigin = { headers: { origin: ORIGIN } };
+    const probes: Probe[] = [
+      // Conditional and range requests.
+      {
+        label: 'page: If-None-Match',
+        path: '/s/live',
+        init: { headers: { 'if-none-match': '"x"' } },
+      },
+      {
+        label: 'view: If-None-Match',
+        path: '/s/live/view',
+        init: { headers: { origin: ORIGIN, 'if-none-match': '*' } },
+      },
+      {
+        label: 'page image: render cookie, If-None-Match',
+        path: `/api/files/files/${FILE}?raw=1`,
+        init: { headers: { cookie: render(PAGE), 'if-none-match': '"x"' } },
+      },
+      {
+        label: 'page image: render cookie, Range',
+        path: `/api/files/files/${FILE}?raw=1`,
+        init: { headers: { cookie: render(PAGE), range: 'bytes=0-1' } },
+      },
+      {
+        label: 'page image: render cookie, bad Range',
+        path: `/api/files/files/${FILE}?raw=1`,
+        init: { headers: { cookie: render(PAGE), range: 'bytes=9-12' } },
+      },
+      {
+        label: 'print page: render cookie, Range',
+        path: `/print/pages/${PAGE}`,
+        init: { headers: { cookie: render(PAGE), range: 'bytes=0-1' } },
+      },
+      // Trailing slashes.
+      { label: 'page: trailing slash', path: '/s/live/' },
+      { label: 'view: trailing slash', path: '/s/live/view/', init: withOrigin },
+      { label: 'bundle: trailing slash', path: '/s/liveapp/bundle/', init: withOrigin },
+      {
+        label: 'print page: trailing slash, render cookie',
+        path: `/print/pages/${PAGE}/`,
+        init: { headers: { cookie: render(PAGE) } },
+      },
+      {
+        label: 'page image: trailing slash, render cookie',
+        path: `/api/files/files/${FILE}/`,
+        init: { headers: { cookie: render(PAGE) } },
+      },
+      // A session cookie on /s: the share surface reads no session.
+      { label: 'page: session cookie', path: '/s/live', init: { headers: { cookie: session } } },
+      {
+        label: 'page: session cookie, contact share',
+        path: '/s/contact',
+        init: { headers: { cookie: session } },
+      },
+      {
+        label: 'view: session cookie',
+        path: '/s/live/view',
+        init: { headers: { origin: ORIGIN, cookie: session } },
+      },
+      {
+        label: 'bundle: session cookie',
+        path: '/s/liveapp/bundle',
+        init: { headers: { origin: ORIGIN, cookie: session } },
+      },
+      // The drawing SVG byte route a render page loads (raw bytes, the
+      // cache only, as the print page asks for them).
+      { label: 'draw svg: no credential', path: `/api/draws/${DRAW}/svg?raw=1&nofill=1` },
+      {
+        label: 'draw svg: render cookie',
+        path: `/api/draws/${DRAW}/svg?raw=1&nofill=1`,
+        init: { headers: { cookie: render(PAGE) } },
+      },
+      {
+        label: 'draw svg: render cookie, HEAD',
+        path: `/api/draws/${DRAW}/svg?raw=1&nofill=1`,
+        init: { method: 'HEAD', headers: { cookie: render(PAGE) } },
+      },
+      {
+        label: 'draw svg: render cookie, POST',
+        path: `/api/draws/${DRAW}/svg?raw=1&nofill=1`,
+        init: { method: 'POST', headers: { cookie: render(PAGE) } },
+      },
+      {
+        label: 'draw svg: render cookie, If-None-Match',
+        path: `/api/draws/${DRAW}/svg?raw=1&nofill=1`,
+        init: { headers: { cookie: render(PAGE), 'if-none-match': '"x"' } },
+      },
+      {
+        label: 'draw svg: session',
+        path: `/api/draws/${DRAW}/svg?raw=1&nofill=1`,
+        init: { headers: { cookie: session } },
+      },
+      {
+        label: 'draw svg: escaped, render cookie',
+        path: `/api/draws/${DRAW}/%73vg?raw=1&nofill=1`,
+        init: { headers: { cookie: render(PAGE) } },
+      },
+    ];
+    const answers: Record<string, unknown> = {};
+    for (const p of probes) answers[p.label] = await answer(app, p);
+    await expect(`${JSON.stringify(answers, null, 2)}\n`).toMatchFileSnapshot(
+      './__snapshots__/link-render-sweep.more.json',
+    );
+  });
 });

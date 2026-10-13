@@ -1,0 +1,246 @@
+{
+  "page: If-None-Match": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=UTF-8"
+    },
+    "body": "html 6107 sha256:80ab5b62f4dba1cc",
+    "actors": [
+      "view share-live: link"
+    ]
+  },
+  "view: If-None-Match": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin"
+    },
+    "body": "{\"mode\":\"public\",\"view\":{\"kind\":\"note\",\"title\":\"A note\",\"content\":\"Some **text**.\"}}",
+    "actors": [
+      "view share-live: link"
+    ]
+  },
+  "page image: render cookie, If-None-Match": {
+    "status": 200,
+    "headers": {
+      "cache-control": "private, no-store",
+      "content-disposition": "inline; filename*=UTF-8''a.png",
+      "content-length": "3",
+      "content-type": "image/png",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "png",
+    "actors": [
+      "file bytes: login:rw:55555555-5555-4555-8555-555555555555"
+    ]
+  },
+  "page image: render cookie, Range": {
+    "status": 200,
+    "headers": {
+      "cache-control": "private, no-store",
+      "content-disposition": "inline; filename*=UTF-8''a.png",
+      "content-length": "3",
+      "content-type": "image/png",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "png",
+    "actors": [
+      "file bytes: login:rw:55555555-5555-4555-8555-555555555555"
+    ]
+  },
+  "page image: render cookie, bad Range": {
+    "status": 200,
+    "headers": {
+      "cache-control": "private, no-store",
+      "content-disposition": "inline; filename*=UTF-8''a.png",
+      "content-length": "3",
+      "content-type": "image/png",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "png",
+    "actors": [
+      "file bytes: login:rw:55555555-5555-4555-8555-555555555555"
+    ]
+  },
+  "print page: render cookie, Range": {
+    "status": 200,
+    "headers": {
+      "content-security-policy": "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/html; charset=UTF-8"
+    },
+    "body": "html 4944 sha256:168e1132d83d2699",
+    "actors": [
+      "page 4444: login:rw:55555555-5555-4555-8555-555555555555"
+    ]
+  },
+  "page: trailing slash": {
+    "status": 308,
+    "headers": {
+      "location": "/s/live"
+    },
+    "body": "",
+    "actors": []
+  },
+  "view: trailing slash": {
+    "status": 308,
+    "headers": {
+      "location": "/s/live/view"
+    },
+    "body": "",
+    "actors": []
+  },
+  "bundle: trailing slash": {
+    "status": 308,
+    "headers": {
+      "location": "/s/liveapp/bundle"
+    },
+    "body": "",
+    "actors": []
+  },
+  "print page: trailing slash, render cookie": {
+    "status": 308,
+    "headers": {
+      "location": "/print/pages/44444444-4444-4444-8444-444444444444"
+    },
+    "body": "",
+    "actors": []
+  },
+  "page image: trailing slash, render cookie": {
+    "status": 308,
+    "headers": {
+      "location": "/api/files/files/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    },
+    "body": "",
+    "actors": []
+  },
+  "page: session cookie": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=UTF-8"
+    },
+    "body": "html 6107 sha256:80ab5b62f4dba1cc",
+    "actors": [
+      "view share-live: link"
+    ]
+  },
+  "page: session cookie, contact share": {
+    "status": 401,
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/html; charset=UTF-8"
+    },
+    "body": "html 5771 sha256:2a6881a503045768",
+    "actors": []
+  },
+  "view: session cookie": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin"
+    },
+    "body": "{\"mode\":\"public\",\"view\":{\"kind\":\"note\",\"title\":\"A note\",\"content\":\"Some **text**.\"}}",
+    "actors": [
+      "view share-live: link"
+    ]
+  },
+  "bundle: session cookie": {
+    "status": 404,
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "text/plain;charset=UTF-8",
+      "vary": "Origin"
+    },
+    "body": "no build",
+    "actors": [
+      "app: link"
+    ]
+  },
+  "draw svg: no credential": {
+    "status": 401,
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "body": "{\"error\":\"unauthorized\"}",
+    "actors": []
+  },
+  "draw svg: render cookie": {
+    "status": 200,
+    "headers": {
+      "cache-control": "private, max-age=300",
+      "content-security-policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      "content-type": "image/svg+xml; charset=utf-8",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+    "actors": [
+      "draw svg: login:rw:55555555-5555-4555-8555-555555555555"
+    ]
+  },
+  "draw svg: render cookie, HEAD": {
+    "status": 401,
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "body": "",
+    "actors": []
+  },
+  "draw svg: render cookie, POST": {
+    "status": 401,
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "body": "{\"error\":\"unauthorized\"}",
+    "actors": []
+  },
+  "draw svg: render cookie, If-None-Match": {
+    "status": 200,
+    "headers": {
+      "cache-control": "private, max-age=300",
+      "content-security-policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      "content-type": "image/svg+xml; charset=utf-8",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+    "actors": [
+      "draw svg: login:rw:55555555-5555-4555-8555-555555555555"
+    ]
+  },
+  "draw svg: session": {
+    "status": 200,
+    "headers": {
+      "cache-control": "private, max-age=300",
+      "content-security-policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      "content-type": "image/svg+xml; charset=utf-8",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+    "actors": [
+      "draw svg: login:rw:55555555-5555-4555-8555-555555555555"
+    ]
+  },
+  "draw svg: escaped, render cookie": {
+    "status": 401,
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    },
+    "body": "{\"error\":\"unauthorized\"}",
+    "actors": []
+  }
+}
