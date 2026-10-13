@@ -41,7 +41,7 @@ import {
 } from '@mantle/db';
 import {
   adminGateLists,
-  connectorMarkState,
+  connectorToolPolicy,
   dispatchTool,
   getBuiltin,
   isBuiltinReadOnly,
@@ -449,9 +449,10 @@ async function callConnectorTool(
   args: Record<string, unknown>,
   keysOff: boolean,
 ) {
-  // A stale (voided) mark counts as a write here: dispatch refuses it below
-  // the owner anyway (connectorMarkState).
-  const write = connectorMarkState(row) !== 'read';
+  // The connector tool's policy (arch A3c, runtime-policy.ts): a stale
+  // (voided) mark counts as a write here; dispatch refuses it below the
+  // owner anyway.
+  const write = connectorToolPolicy(row).effect === 'write';
   if (write && !caller.write) {
     return {
       content: [

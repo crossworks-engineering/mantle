@@ -7,6 +7,7 @@
 import { getSandboxByRef, touchSandbox } from '@mantle/content';
 import { notFound } from '../errors';
 import { capOutput } from '../output-cap';
+import { sandboxMcpToolPolicy } from '../runtime-policy';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
 import { DEFAULT_TIMEOUT_S, MAX_TIMEOUT_S, sandboxd, sandboxRefusal } from './common';
 
@@ -106,7 +107,10 @@ export const sandbox_mcp_call: BuiltinToolDef = {
     const notYours = sandboxRefusal(row, ctx.ownerId);
     if (notYours) return { ok: false, error: notYours };
     const tool = typeof input.tool === 'string' ? input.tool : '';
-    if (!tool) return { ok: false, error: 'tool is required — list names with sandbox_mcp_tools' };
+    // No runtime tool runs without a policy (arch A3c, runtime-policy.ts).
+    if (!sandboxMcpToolPolicy(tool)) {
+      return { ok: false, error: 'tool is required — list names with sandbox_mcp_tools' };
+    }
     const timeoutSeconds = Math.min(
       MAX_TIMEOUT_S,
       Math.max(

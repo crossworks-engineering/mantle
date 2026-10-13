@@ -20,6 +20,7 @@ import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { boolOpt, str, strOpt } from './coerce';
 import { FILE_ID_PRE } from './builtins-common';
 import { areaSystem } from './admin-gate';
+import { peerToolPolicy } from './runtime-policy';
 
 const CALL_TIMEOUT_MS = 120_000;
 const RESULT_TEXT_CAP = 80_000;
@@ -189,7 +190,10 @@ const peer_call: BuiltinToolDef = {
   handler: (input, ctx) =>
     withPeer(ctx.ownerId, str(input.peer), async ({ client, peerName }) => {
       const tool = str(input.tool).trim();
-      if (!tool) return { ok: false, error: 'tool is required: a name from `peer_tools`.' };
+      // No runtime tool runs without a policy (arch A3c, runtime-policy.ts).
+      if (!peerToolPolicy(tool)) {
+        return { ok: false, error: 'tool is required: a name from `peer_tools`.' };
+      }
       const args =
         input.args && typeof input.args === 'object' && !Array.isArray(input.args)
           ? (input.args as Record<string, unknown>)

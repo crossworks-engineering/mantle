@@ -62,6 +62,7 @@ import {
 } from '@mantle/db';
 import type { ToolExternalAccessDTO } from '@mantle/client-types';
 import { resolveTool } from './resolve';
+import type { RuntimeToolPolicy } from './runtime-policy';
 
 /** The handler kinds an admin may open to external access. */
 export const EXTERNAL_ACCESS_KINDS: readonly ToolHandler['kind'][] = ['mcp', 'http'];
@@ -191,6 +192,54 @@ export function connectorMarkState(
   if (!tool.externalAccess) return 'write';
   return externalAccessActive(tool) ? 'read' : 'stale';
 }
+
+/**
+ * A connector tool's policy (workspaces arch A3c, plan section 8: one
+ * function per runtime tool row type, runtime-policy.ts). It comes from the
+ * row and the connector's workspace resource rows: the admin's read-only
+ * mark makes it a read, its absence a write (a stale mark counts as a
+ * write, and is refused below the owner); a call needs the connector to be
+ * a resource of a workspace of the caller's, and a write needs that row's
+ * Write tick in a workspace where the caller is a Moderator
+ * (loginConnectorRule: the one rule that checks it). Every connector path
+ * reads the mark through this: the login's MCP listing and call, an app
+ * run's verdict and dispatch.
+ */
+export function connectorToolPolicy(
+  tool: Pick<
+    Tool,
+    'slug' | 'handler' | 'requiresConfirm' | 'externalAccess' | 'description' | 'inputSchema'
+  >,
+): ConnectorToolPolicy {
+  const mark = connectorMarkState(tool);
+  const group = (tool.handler as { group?: unknown }).group;
+  const write = mark !== 'read';
+  return Object.freeze({
+    rowType: 'connector' as const,
+    effect: write ? ('write' as const) : ('read' as const),
+    scope: 'any' as const,
+    spends: 'none' as const,
+    fields: Object.freeze({
+      mark,
+      resource: Object.freeze({
+        type: 'connector',
+        ref: typeof group === 'string' ? group : '',
+        writeTick: write,
+      }),
+      requiresConfirm: tool.requiresConfirm === true,
+    }),
+  });
+}
+
+/** What connectorToolPolicy says (a RuntimeToolPolicy, runtime-policy.ts). */
+export type ConnectorToolPolicy = RuntimeToolPolicy & {
+  readonly rowType: 'connector';
+  readonly fields: Readonly<{
+    mark: 'read' | 'write' | 'stale';
+    resource: Readonly<{ type: 'connector'; ref: string; writeTick: boolean }>;
+    requiresConfirm: boolean;
+  }>;
+};
 
 /** Who runs a shared app, for the refusal's words. */
 export type ExternalAccessRunner = 'member' | 'client' | 'contact';
@@ -512,13 +561,13 @@ export async function connectorToolVerdict(
       `The connector of the tool '${slug}' is off or not set up, so ${who} can't use it.`,
     );
   }
-  const mark = connectorMarkState(tool);
-  if (mark === 'stale') {
+  const policy = connectorToolPolicy(tool);
+  if (policy.fields.mark === 'stale') {
     return refuse(
       `The tool '${slug}' changed after an admin marked it read-only, so ${who} can't use it until an admin marks it again.`,
     );
   }
-  const write = mark === 'write';
+  const write = policy.effect === 'write';
   // A client always runs as a known login (W5a audit W2): with none, there
   // is no rule to hold it to, so refuse rather than fall through. Only the
   // author warnings ask without a run (rulesOnly).
@@ -594,14 +643,14 @@ export async function listLoginConnectorTools(
   );
   const rule = await loginConnectorRule(ownerId, loginId);
   return rows.flatMap((r) => {
-    // A voided mark is refused below the owner (connectorMarkState).
-    const mark = connectorMarkState(r.tool);
-    if (mark === 'stale') return [];
-    if (rule(r.groupSlug, mark === 'write') !== null) return [];
+    // A voided mark is refused below the owner (connectorToolPolicy).
+    const policy = connectorToolPolicy(r.tool);
+    if (policy.fields.mark === 'stale') return [];
+    if (rule(r.groupSlug, policy.effect === 'write') !== null) return [];
     return [
       {
         tool: r.tool,
-        readOnly: externalAccessActive(r.tool),
+        readOnly: policy.effect === 'read',
         groupId: r.groupId,
         groupName: r.groupName,
       },

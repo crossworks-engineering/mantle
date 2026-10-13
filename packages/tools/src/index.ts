@@ -213,6 +213,21 @@ export {
   type MemberAppToolVerdict,
 } from './member-app-tools';
 export {
+  NO_RUNTIME_POLICY_ERROR,
+  apiToolPolicy,
+  appToolPolicy,
+  connectorToolPolicy,
+  memberAppRefusal,
+  peerToolPolicy,
+  recipeToolPolicy,
+  runtimeToolPolicy,
+  sandboxMcpToolPolicy,
+  shellToolPolicy,
+  type ConnectorToolPolicy,
+  type RuntimeRowType,
+  type RuntimeToolPolicy,
+} from './runtime-policy';
+export {
   setToolExternalAccess,
   externalToolVerdict,
   outsideToolVerdict,

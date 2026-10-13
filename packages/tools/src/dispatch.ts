@@ -22,11 +22,12 @@ import {
 } from '@mantle/db';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import {
-  connectorMarkState,
   connectorResources,
+  connectorToolPolicy,
   LINK_NO_CONNECTORS,
   loginConnectorRefused,
 } from './external-access';
+import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
@@ -126,6 +127,9 @@ export async function dispatchTool(
       return { ok: false, error: errorMessage(err) };
     }
   }
+  // No runtime tool runs without a policy (arch A3c, plan section 8): one
+  // function per row type gives it (runtime-policy.ts).
+  if (!runtimeToolPolicy(tool)) return { ok: false, error: NO_RUNTIME_POLICY_ERROR };
   if (h.kind === 'http') {
     return dispatchHttp(h, applyInputDefaults(tool.inputSchema, input), ctx, tool);
   }
@@ -197,6 +201,23 @@ export function undeclaredToolArgs(schema: unknown, input: Record<string, unknow
   return out;
 }
 
+/** What a connector tool's read-only mark refuses (one copy for the scope
+ *  rule and the rule below the owner, arch A3c): a stale mark, or a marked
+ *  tool called with an input it was not marked with. Null for a write. */
+function connectorMarkRefusal(
+  mark: 'read' | 'write' | 'stale',
+  tool: Tool,
+  input: Record<string, unknown>,
+): string | null {
+  if (mark === 'stale') {
+    return 'This connector tool changed after an admin marked it read-only; it runs again once an admin marks it again.';
+  }
+  if (mark !== 'read') return null;
+  const extra = undeclaredToolArgs(tool.inputSchema, input);
+  if (extra.length === 0) return null;
+  return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask an admin to sync the connector and mark the tool again.`;
+}
+
 /** Why a connector call is refused in a workspace turn scope (W4b, plan
  *  section 6), or null: the connector must be a resource of the scope's
  *  workspace; a tool not marked read-only needs that resource's Write on AND
@@ -215,17 +236,9 @@ async function connectorScopeRefused(
   if (held.length === 0) {
     return "This connector is not one of this workspace's resources, so its tools do not run here.";
   }
-  const mark = connectorMarkState(tool);
-  if (mark === 'stale') {
-    return 'This connector tool changed after an admin marked it read-only; it runs again once an admin marks it again.';
-  }
-  if (mark === 'read') {
-    const extra = undeclaredToolArgs(tool.inputSchema, input);
-    if (extra.length) {
-      return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask an admin to sync the connector and mark the tool again.`;
-    }
-    return null;
-  }
+  const { fields } = connectorToolPolicy(tool);
+  const marked = connectorMarkRefusal(fields.mark, tool, input);
+  if (marked !== null || fields.mark === 'read') return marked;
   const mod = new Set(scope.modWs);
   if (!held.some((r) => r.write && mod.has(r.workspaceId))) {
     return 'This connector tool can change data: it needs the connector’s Write switched on in this workspace, and the person asking to be a Moderator here.';
@@ -252,19 +265,13 @@ async function connectorCallRefused(
   if (currentWorkspaceScope()) return null;
   const run = nonOwnerRunLevel(ctx);
   if (!run) return null;
-  const mark = connectorMarkState(tool);
-  if (mark === 'stale') {
-    return 'This connector tool changed after an admin marked it read-only; it runs again once an admin marks it again.';
-  }
+  const { mark } = connectorToolPolicy(tool).fields;
+  if (mark === 'stale') return connectorMarkRefusal(mark, tool, input);
   if (run === 'public' && mark === 'write') {
     return 'On a shared link only connector tools an admin marked read-only run; this one can change data.';
   }
-  if (mark === 'read') {
-    const extra = undeclaredToolArgs(tool.inputSchema, input);
-    if (extra.length) {
-      return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask an admin to sync the connector and mark the tool again.`;
-    }
-  }
+  const marked = connectorMarkRefusal(mark, tool, input);
+  if (marked !== null) return marked;
   const s = ctx.surface;
   if (s?.kind === 'contact') return LINK_NO_CONNECTORS;
   if (s?.kind === 'team' && s.loginId) {

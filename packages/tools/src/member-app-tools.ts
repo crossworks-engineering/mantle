@@ -41,6 +41,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
 import { resolveTool } from './resolve';
 import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
+import { appToolPolicy } from './runtime-policy';
 
 /**
  * Tools a member's app may never call, even from a system-wide group:
@@ -120,32 +121,20 @@ export async function memberAppToolVerdict(
     // changed since are refused.
     return outsideToolVerdict(ownerId, tool, slug, 'member', loginId, check);
   }
-  if (MEMBER_APP_REFUSED_SLUGS.includes(tool.handler.ref)) {
-    return { ok: false, status: 403, reason: `The tool '${slug}' is not available in team apps.` };
-  }
   // Lazy: the registry imports every builtin, app_tools_set among them.
   const { isBuiltinReadOnly, isBuiltinSpending } = await import('./registry');
-  if (isBuiltinSpending(tool.handler.ref)) {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' starts paid model work on every call, so a team app can't use it.`,
-    };
-  }
-  if (!isBuiltinReadOnly(tool.handler.ref)) {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).`,
-    };
-  }
-  if (tool.requiresConfirm) {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' needs an admin's confirmation, so a team app can't use it.`,
-    };
-  }
+  // Rules 2 to 4 on the row: the app tool's policy (runtime-policy.ts, arch
+  // A3c), the one reading of them.
+  const policy = appToolPolicy(
+    tool,
+    {
+      readOnly: isBuiltinReadOnly(tool.handler.ref),
+      spends: isBuiltinSpending(tool.handler.ref),
+    },
+    MEMBER_APP_REFUSED_SLUGS,
+  );
+  const refused = policy?.fields?.memberApp;
+  if (typeof refused === 'string') return { ok: false, status: 403, reason: refused };
   if (!(await inSystemWideGroup(ownerId, slug))) {
     return {
       ok: false,
