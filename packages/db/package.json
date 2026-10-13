@@ -10,6 +10,7 @@
     "./schema": "./src/schema/index.ts",
     "./client": "./src/client.ts",
     "./viewer": "./src/viewer.ts",
+    "./store-broker": "./src/store-broker.ts",
     "./test-support": "./src/test-support.ts",
     "./matrix/oracle": "./src/matrix/oracle.ts"
   },

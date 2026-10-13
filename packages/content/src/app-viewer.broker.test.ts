@@ -29,6 +29,9 @@ vi.mock('@mantle/db', async () => {
   h.storagePath = path.join(dir, 'app.sqlite');
   const registryRow = { id: 'reg-1', storagePath: h.storagePath, schemaVersion: 0 };
   return {
+    // The store broker's helper is the real one (A3b).
+    ...(await import('@mantle/db/store-broker')),
+    runReadPathWrite: <T>(_name: string, fn: () => T) => fn(),
     db: {
       select: () => ({
         from: (t: { t?: string }) => ({

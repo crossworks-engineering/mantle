@@ -50,8 +50,18 @@ vi.mock('@mantle/db', async () => {
   h.storagePath = path.join(dir, 'app.sqlite');
   const registryRow = { id: 'reg-1', storagePath: h.storagePath, schemaVersion: 0, sizeBytes: 0 };
   h.registryRow = registryRow;
-  const update = () => ({ set: () => ({ where: async () => undefined }) });
+  // A where that can be awaited, or asked for the row it changed (the store
+  // broker's checked statement, A3b: one row).
+  const update = () => ({
+    set: () => ({
+      where: () =>
+        Object.assign(Promise.resolve(undefined), { returning: async () => [{ seq: 1 }] }),
+    }),
+  });
   return {
+    // The store broker's helper is the real one (A3b).
+    ...(await import('@mantle/db/store-broker')),
+    runReadPathWrite: <T>(_name: string, fn: () => T) => fn(),
     db: {
       select: () => ({ from: () => ({ where: () => ({ limit: async () => [registryRow] }) }) }),
       insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
