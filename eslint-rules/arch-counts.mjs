@@ -320,11 +320,22 @@ export function namesAdminReads(text) {
 // ── store brokers ───────────────────────────────────────────────────────────
 
 /** The disk stores (plan section 6) and how a file reaches each one's
- *  write API: the package import, or the store's directory setting. */
+ *  WRITE API (A3b): the write entry of the package, or the app SQL runner's
+ *  writing functions and the store's directory setting. Readers keep the
+ *  read entries (@mantle/tabledb, @mantle/storage) and are not counted. */
 export const STORES = {
-  tabledb: { why: 'table workbooks (SQLite)', test: /from\s+'@mantle\/tabledb'/ },
-  objectstore: { why: 'file bytes (RustFS)', test: /from\s+'@mantle\/storage'/ },
-  appdb: { why: 'app databases (SQLite), by APP_DB_DIR', test: /\bAPP_DB_DIR\b/ },
+  tabledb: {
+    why: 'table workbooks (SQLite): @mantle/tabledb/write',
+    test: /from\s+'@mantle\/tabledb\/write'/,
+  },
+  objectstore: {
+    why: 'file bytes and app bundles (RustFS): @mantle/storage/write',
+    test: /from\s+'@mantle\/storage\/write'/,
+  },
+  appdb: {
+    why: 'app databases (SQLite): the SQL runner writes, and APP_DB_DIR',
+    test: /import\s*\{[^}]*\b(runAppSql|runAppSqlBatch|copyAppDbFile|adoptAppDbFile)\b[^}]*\}\s*from\s*'\.\/app-sql-runner'|\bAPP_DB_DIR\b/,
+  },
 };
 
 /** The stores whose write API `text` reaches (comments exempt). */

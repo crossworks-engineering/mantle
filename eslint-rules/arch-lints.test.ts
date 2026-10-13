@@ -26,7 +26,12 @@ import { AS_SYSTEM_PINS, rule as asSystemRule } from './as-system-allowlist.mjs'
 // @ts-expect-error: plain-JS module, no types shipped.
 import { ROUTE_LIST_PINS, TOOL_LIST_PINS } from './no-policy-name-lists.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
-import { STORE_PINS } from './store-brokers.mjs';
+import {
+  DOCS_STORE_FILES,
+  STORE_PINS,
+  fsWritesIn,
+  rule as storeBrokersRule,
+} from './store-brokers.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { GUARD_CALL_PIN } from './no-guard-calls.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -117,6 +122,21 @@ describe('the architecture ratchets (pinned counts)', () => {
   it('store-brokers: the files that reach each disk store, store by store', () => {
     const show = (v: unknown) => JSON.stringify(v);
     expect(diff(STORE_PINS, got.perFile.stores, show)).toEqual([]);
+  });
+
+  it('store-brokers (A3b): the tables store is written by its broker alone', () => {
+    expect(got.perFile.stores.tabledb).toEqual(['packages/content/src/table-broker.ts']);
+  });
+
+  it('store-brokers (A3b): the docs store has no disk writer', () => {
+    const found: Record<string, string[]> = {};
+    for (const f of DOCS_STORE_FILES as string[]) {
+      const text = readRepoFile(ROOT, f) as string | null;
+      expect(text, `${f} is gone: update DOCS_STORE_FILES`).not.toBeNull();
+      const w = fsWritesIn(stripComments(text!)) as string[];
+      if (w.length) found[f] = w;
+    }
+    expect(found).toEqual({});
   });
 
   it('no-guard-calls (count only until A4): the guard calls in route files', () => {
@@ -237,6 +257,59 @@ describe('the editor rules', () => {
         },
       ],
     });
+  });
+
+  it('store-brokers: a store write API outside its broker fails; the broker, a reader and a test pass', () => {
+    tester.run('store-brokers', storeBrokersRule, {
+      valid: [
+        {
+          code: "import { writeDocFile } from '@mantle/tabledb/write';",
+          filename: '/r/packages/content/src/table-broker.ts',
+        },
+        {
+          code: "import { readDocClipped } from '@mantle/tabledb';",
+          filename: '/r/packages/content/src/tables/read.ts',
+        },
+        {
+          code: "import { getContent } from '@mantle/storage';",
+          filename: '/r/server/web/lib/new-reader.ts',
+        },
+        {
+          code: "import { writeDocFile } from '@mantle/tabledb/write';",
+          filename: '/r/packages/content/src/tables/draft.test.ts',
+        },
+        {
+          code: "// import { putContent } from '@mantle/storage/write';\nconst a = 1;",
+          filename: '/r/packages/files/src/ops/files.ts',
+        },
+      ],
+      invalid: [
+        {
+          code: "import { writeDocFile } from '@mantle/tabledb/write';",
+          filename: '/r/packages/content/src/tables/draft.ts',
+          errors: [{ messageId: 'unpinned' }],
+        },
+        {
+          code: "import { putContent } from '@mantle/storage/write';",
+          filename: '/r/packages/files/src/ops/files.ts',
+          errors: [{ messageId: 'unpinned' }],
+        },
+        {
+          code: "import { runAppSqlBatch, AppSqlError } from './app-sql-runner';",
+          filename: '/r/packages/content/src/app-viewer.ts',
+          errors: [{ messageId: 'unpinned' }],
+        },
+      ],
+    });
+  });
+
+  it('store-brokers: fsWritesIn finds named and namespace writes, not reads', () => {
+    expect(
+      fsWritesIn(
+        "import { readFile, writeFile as w } from 'node:fs/promises';\nimport * as fs from 'node:fs';\nfs.rmSync(x); fs.existsSync(y);",
+      ),
+    ).toEqual(['rmSync', 'writeFile']);
+    expect(fsWritesIn("import { readFile, stat } from 'node:fs/promises';")).toEqual([]);
   });
 
   it('flag the actor settings outside packages/db, and none there, in a test or a comment', () => {

@@ -1,66 +1,138 @@
 /**
- * store-brokers (workspaces arch plan v2, sections 6 and 11; A0): only a
- * store's broker writes its disk (A3b). Today many files reach each disk
- * store's write API; each is listed here by store.
+ * store-brokers (workspaces arch plan v2, sections 6 and 11; A3b;
+ * docs/store-brokers.md): only a store's broker writes its disk. Each store
+ * splits its API: readers keep the read entry, and the WRITE API
+ * (arch-counts.mjs STORES: @mantle/tabledb/write, @mantle/storage/write,
+ * the app SQL runner's writing functions and APP_DB_DIR) is reached only by
+ * the files pinned here, store by store.
  *
- * Pinned-count mode: eslint-rules/arch-lints.test.ts fails when the files
- * that reach a store differ from this list, so a file may only leave it.
+ * The rule flags a file that reaches a store's write API without a pin for
+ * that store; eslint-rules/arch-lints.test.ts holds the pins exactly, so a
+ * file may only leave a list (a new writer is a review decision: it goes
+ * through the store's broker instead).
+ *
+ * The docs store has no write API at all: the docs feature reads markdown
+ * from disk and writes only Postgres rows (system(worker:docs-sync)).
+ * DOCS_STORE_FILES may import no file-writing function (arch-lints.test.ts).
  */
-/** @type {Record<string, string[]>} files per store (arch-counts.mjs STORES), A0 baseline */
+import { isCounted, repoPathOf, storesReached } from './arch-counts.mjs';
+
+/** @type {Record<string, string[]>} files per store that reach its write API */
 export const STORE_PINS = {
   appdb: [
+    // The settings schema names the directory; nothing is written there.
     'packages/config/src/index.ts',
+    // THE app database broker: the only writer of an app's SQLite file.
     'packages/content/src/app-broker.ts',
+    // An imported package's data, checked into a TEMP file
+    // (adoptAppDbFile); the store write is the broker's restore.
+    'packages/content/src/app-package.ts',
+    // Snapshot copies of app databases (copyAppDbFile): the snapshot
+    // store, A3b part 2.
+    'packages/content/src/history-files.ts',
+    // The trash sweep's description names the directory.
     'server/web/lib/maintenance/registry.ts',
   ],
   objectstore: [
+    // Email attachments' bytes: the files store, A3b part 2.
     'packages/email/src/sync.ts',
-    'packages/files/src/ops/files.ts',
+    // OneDrive / SharePoint files' bytes: the files store, A3b part 2.
     'packages/microsoft/src/drives/store.ts',
+    // THE app build broker: bundles, after the app row's checked write.
     'packages/tools/src/app-build-stage.ts',
-    'server/api/src/agent/extract/file-bytes.ts',
-    'server/web/app/api/appearance/logo/route.ts',
-    'server/web/app/api/apps/[id]/bundle/css/route.ts',
-    'server/web/app/api/apps/[id]/bundle/route.ts',
-    'server/web/app/api/attachments/[id]/route.ts',
+    // A login's logo and photo (not one of the six item stores).
     'server/web/app/api/profile/logo/route.ts',
     'server/web/app/api/profile/photo/route.ts',
-    'server/web/app/s/[token]/bundle/css/route.ts',
-    'server/web/app/s/[token]/bundle/route.ts',
-    'server/web/lib/app-frame.ts',
-    'server/web/lib/onboarding-steps.ts',
-    'server/web/lib/sanity/checks.ts',
-    'server/web/lib/system-health.ts',
   ],
   tabledb: [
-    'packages/content/src/app-broker.ts',
-    'packages/content/src/app-table-exports.ts',
-    'packages/content/src/app-trash.ts',
-    'packages/content/src/app-viewer.ts',
-    'packages/content/src/member-snapshots.ts',
-    'packages/content/src/table-snapshots.ts',
-    'packages/content/src/table-storage.ts',
-    'packages/content/src/tables/draft.ts',
-    'packages/content/src/tables/read.ts',
-    'packages/content/src/tables/shared.ts',
-    'packages/content/src/tables/workbook.ts',
-    'packages/content/src/tables/write.ts',
-    'packages/tools/src/builtins-app-data.ts',
-    'packages/tools/src/tables/common.ts',
-    'packages/tools/src/tables/query.ts',
-    'packages/tools/src/tables/read.ts',
-    'packages/tools/src/tables/rows.ts',
-    'server/api/src/agent/extract/index-writes.ts',
-    'server/api/src/main.ts',
-    'server/web/app/api/tables/[id]/draft-ops/route.ts',
-    'server/web/app/api/tables/[id]/export/route.ts',
-    'server/web/app/api/tables/[id]/rows/route.ts',
-    'server/web/app/s/[token]/aggregate/route.ts',
-    'server/web/app/s/[token]/rows/route.ts',
-    'server/web/lib/maintenance/files-staged-reap.ts',
-    'server/web/lib/sanity/checks.ts',
-    'server/web/lib/shares.ts',
-    'server/web/scripts/merge-part-tables.ts',
-    'server/web/scripts/retire-table-blobs.ts',
+    // THE tables broker: the only writer of a table's workbook files.
+    'packages/content/src/table-broker.ts',
   ],
 };
+
+/** The docs feature: it reads markdown and writes rows, never the disk. */
+export const DOCS_STORE_FILES = [
+  'packages/files/src/docs.ts',
+  'server/web/lib/docs-reader.ts',
+  'server/web/workers/docs-sync.ts',
+];
+
+/** The file-writing functions of node:fs and node:fs/promises. */
+export const FS_WRITE_NAMES = [
+  'appendFile',
+  'appendFileSync',
+  'copyFile',
+  'copyFileSync',
+  'cp',
+  'cpSync',
+  'createWriteStream',
+  'link',
+  'linkSync',
+  'mkdir',
+  'mkdirSync',
+  'rename',
+  'renameSync',
+  'rm',
+  'rmSync',
+  'rmdir',
+  'rmdirSync',
+  'symlink',
+  'symlinkSync',
+  'truncate',
+  'truncateSync',
+  'unlink',
+  'unlinkSync',
+  'writeFile',
+  'writeFileSync',
+];
+
+/** The fs write functions `text` imports by name, or uses through a
+ *  namespace import (`fs.writeFile`). */
+export function fsWritesIn(text) {
+  const out = new Set();
+  const named = /import\s*\{([^}]*)\}\s*from\s*'node:fs(?:\/promises)?'/g;
+  let m;
+  while ((m = named.exec(text))) {
+    for (const part of m[1].split(',')) {
+      const name = part
+        .trim()
+        .split(/\s+as\s+/)[0]
+        .trim();
+      if (FS_WRITE_NAMES.includes(name)) out.add(name);
+    }
+  }
+  const ns = /import\s+\*\s+as\s+(\w+)\s+from\s*'node:fs(?:\/promises)?'/g;
+  while ((m = ns.exec(text))) {
+    const re = new RegExp(`\\b${m[1]}\\.(\\w+)\\s*\\(`, 'g');
+    let c;
+    while ((c = re.exec(text))) if (FS_WRITE_NAMES.includes(c[1])) out.add(c[1]);
+  }
+  return [...out].sort();
+}
+
+export const rule = {
+  meta: {
+    type: 'problem',
+    docs: { description: "Only a store's broker reaches its write API (plan v2, section 6; A3b)." },
+    messages: {
+      unpinned:
+        "This file reaches the {{store}} store's write API. Only the store's broker writes its disk (docs/store-brokers.md): go through the broker, or pin the file in eslint-rules/store-brokers.mjs (review).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const path = repoPathOf(context.filename);
+    if (!path || !isCounted(path)) return {};
+    return {
+      Program(node) {
+        for (const store of storesReached(context.sourceCode.getText())) {
+          if (!(STORE_PINS[store] ?? []).includes(path)) {
+            context.report({ node, messageId: 'unpinned', data: { store } });
+          }
+        }
+      },
+    };
+  },
+};
+
+export default { rules: { 'store-brokers': rule } };
