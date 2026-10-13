@@ -615,10 +615,46 @@ function quoteTable(table: string): string {
   return `"${schema}"."${name}"`;
 }
 
-/** The GRANT statements for the workspace role (`mantle_view_user`). Pure. */
 /** Whether a table's column exists now: grants name only those (a test
  *  database migrated up to an older migration lacks a newer column, A3b). */
 export type ColumnExists = (table: string, column: string) => boolean;
+
+/**
+ * The matrix columns a database may still lack while it migrates (a test's
+ * scratch database migrated up to an older migration, or a box between the
+ * grants and the migration that adds them): the grants skip ONLY these when
+ * they are missing, each one logged. Any other matrix column the database
+ * lacks is an error, as a GRANT naming it would be (A3b fix round 1, L4).
+ */
+export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
+  'public.tables': ['draft_path'], // 0283
+};
+
+/** The grants' column filter over the columns that exist (`present`, as
+ *  `<schema>.<table>.<column>`): a missing late column is skipped and
+ *  logged, any other missing one throws. */
+export function grantColumnFilter(
+  present: ReadonlySet<string>,
+  log: (message: string) => void = console.warn,
+): ColumnExists {
+  const logged = new Set<string>();
+  return (table, column) => {
+    if (present.has(`${table}.${column}`)) return true;
+    const key = `${table}.${column}`;
+    if (!(COLUMNS_ADDED_LATE[table] ?? []).includes(column)) {
+      throw new Error(
+        `the access matrix names ${key}, which this database lacks: migrate it first`,
+      );
+    }
+    if (!logged.has(key)) {
+      logged.add(key);
+      log(`[access-matrix] ${key} is not in this database yet: its grant is skipped`);
+    }
+    return false;
+  };
+}
+
+/** The GRANT statements for the workspace role (`mantle_view_user`). Pure. */
 
 export function userGrantStatements(
   role: string = viewerRoleName('user'),
@@ -1042,8 +1078,7 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
         `select table_schema || '.' || table_name as t, column_name as c
            from information_schema.columns where table_schema in ('public', 'auth')`,
       )) as unknown as { t: string; c: string }[];
-      const present = new Set(cols.map((r) => `${r.t}.${r.c}`));
-      const has: ColumnExists = (table, column) => present.has(`${table}.${column}`);
+      const has = grantColumnFilter(new Set(cols.map((r) => `${r.t}.${r.c}`)));
       for (const stmt of userGrantStatements(undefined, has)) await tx.unsafe(stmt);
       for (const stmt of writeGrantStatements(undefined, has)) await tx.unsafe(stmt);
       // The sequences a write to those tables draws from (a serial or
