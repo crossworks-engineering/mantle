@@ -42,6 +42,7 @@ import {
   type SystemTxNest,
   type TxHooks,
   systemDbCallerOf,
+  afterCommit,
   afterRollback,
 } from './viewer';
 import {
@@ -1113,6 +1114,21 @@ export function afterOuterRollback(fn: () => unknown): void {
     return;
   }
   afterRollback(fn);
+}
+
+/**
+ * Run `fn` once the transaction the caller's work joined COMMITS (the twin
+ * of afterOuterRollback); outside one the work has committed and `fn` runs
+ * now. For what a store broker keeps until its flip can no longer be rolled
+ * back (the old bytes of a file it replaced, A3b part 2).
+ */
+export async function afterOuterCommit(fn: () => unknown): Promise<void> {
+  const open = openWriteTx.getStore();
+  if (open && !open.done) {
+    open.hooks.commit.push(fn);
+    return;
+  }
+  await afterCommit(fn);
 }
 
 /** A write transaction's state (WriteTx), or a savepoint's under `parent`.

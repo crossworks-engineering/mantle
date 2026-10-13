@@ -141,6 +141,55 @@ export async function placeStaged(staged: StagedFile): Promise<void> {
   await fs.rename(staged.tempPath, staged.finalPath);
 }
 
+/**
+ * Staged bytes put over a file a row owns: the place step of an overwrite's
+ * flip (A3b part 2, store-broker.ts flipThenPlace). `place` keeps the old
+ * bytes under a staging name (a hard link: no copy) and renames the stage
+ * over the file, atomically; `unplace` puts the old bytes back (or removes
+ * the new ones when there were none: a row whose bytes were lost);
+ * `release` drops the old bytes once the flip has landed; `discard` drops a
+ * stage never placed. A crash in between leaves the old bytes under a
+ * staging name, which the staged-leftover sweep removes after an hour.
+ */
+export function overwritePlacement(staged: StagedFile): {
+  place: () => Promise<void>;
+  unplace: () => Promise<void>;
+  release: () => Promise<void>;
+  discard: () => Promise<void>;
+} {
+  const keep = path.join(path.dirname(staged.finalPath), `.${randomUUID()}.staged.tmp`);
+  let kept = false;
+  return {
+    place: async () => {
+      try {
+        await fs.link(staged.finalPath, keep);
+        kept = true;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') {
+          // A filesystem that refuses hard links: a copy of the old bytes.
+          if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'EXDEV' && code !== 'EMLINK') {
+            throw err;
+          }
+          await fs.copyFile(staged.finalPath, keep);
+          kept = true;
+        }
+      }
+      await fs.rename(staged.tempPath, staged.finalPath);
+    },
+    unplace: async () => {
+      if (kept) await fs.rename(keep, staged.finalPath);
+      else await fs.unlink(staged.finalPath).catch(() => {});
+      kept = false;
+    },
+    release: async () => {
+      if (kept) await fs.unlink(keep).catch(() => {});
+      kept = false;
+    },
+    discard: () => discardStaged(staged),
+  };
+}
+
 /** Drop a staging file. Safe after placement (ENOENT is fine). */
 export async function discardStaged(staged: StagedFile): Promise<void> {
   await fs.unlink(staged.tempPath).catch(() => {});

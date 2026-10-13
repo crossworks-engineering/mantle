@@ -150,6 +150,100 @@ export async function stageThenFlip<S, T>(
   }
 }
 
+// ── A store whose disk path IS its row ──────────────────────────────────
+
+/**
+ * Flip, then place: plan 20.3 for the files tree, where there is no pointer
+ * to flip (A3b part 2). A file lives at its folder's path and its name,
+ * which the host sees and the files watcher mirrors, so new bytes cannot
+ * wait under another name for a row to point at them: the disk follows the
+ * row INSIDE the flip. `flip` runs the one short transaction: the checked
+ * statement first (exactly one row, `oneRow`; none is a refusal), then
+ * `place` as its LAST step, a rename (atomic, no bytes copied: staged bytes
+ * onto their name, a file or a folder to its new path), then the commit.
+ * No transaction is held across a write of bytes: those were staged before
+ * the flip (`discard` removes the stage).
+ *
+ *  - A refusal, or anything thrown in the transaction (`flipNeverLanded`):
+ *    the disk is put back (`unplace`, if `place` ran) and the stage goes.
+ *  - Any other error (a failed or lost COMMIT): `settle` asks the database
+ *    whether the row landed. No: put back as above. Yes: the disk is right
+ *    (`release`). Unknown (the row cannot be read): left as it is, logged.
+ *  - Landed: `release` (what `unplace` would have needed goes), and, inside
+ *    an outer transaction (a login's open write transaction, a personal
+ *    space), `unplace` again should that one roll back (afterOuterRollback).
+ *
+ * `place` runs at most once, even when the transaction is retried (a
+ * deadlock): a retry finds the disk already placed.
+ */
+export async function flipThenPlace<T>(steps: {
+  /** The flip's transaction; calls the `place` it is given as its last step. */
+  flip: (place: () => Promise<void>) => Promise<T>;
+  place: () => Promise<void>;
+  /** Put the disk back as it was before `place`. */
+  unplace?: () => Promise<void>;
+  /** Remove a stage `place` did not take (ENOENT is fine). */
+  discard?: () => Promise<void>;
+  /** After a flip that landed: drop what `unplace` would have needed. */
+  release?: () => Promise<void>;
+  /** After an error that may have committed: did the row land? */
+  settle: () => Promise<boolean>;
+}): Promise<T> {
+  let placed = false;
+  const placeOnce = async () => {
+    if (placed) return;
+    await steps.place();
+    placed = true;
+  };
+  const quietly = async (fn: (() => Promise<void>) | undefined, what: string) => {
+    if (!fn) return;
+    try {
+      await fn();
+    } catch (err) {
+      console.error(
+        `[store-broker] files: could not ${what}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  };
+  let out: T;
+  try {
+    out = await steps.flip(placeOnce);
+  } catch (err) {
+    let landed: boolean | null = false;
+    if (!flipNeverLanded(err)) {
+      try {
+        landed = await steps.settle();
+      } catch {
+        landed = null;
+      }
+    }
+    if (landed === false) {
+      if (placed) await quietly(steps.unplace, 'put the disk back after a flip that never landed');
+      await quietly(steps.discard, 'remove a stage');
+    } else if (landed === true) {
+      await quietly(steps.release, 'release after a flip that landed');
+      await quietly(steps.discard, 'remove a stage');
+    } else {
+      console.error(
+        '[store-broker] files: a flip failed after it may have committed and its row cannot be read; the disk is left as it is:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+    throw err;
+  }
+  await quietly(steps.discard, 'remove a stage');
+  // Inside an outer transaction the flip was a savepoint: the disk goes back
+  // if that one rolls back, and what `unplace` needs stays until it commits.
+  const { afterOuterCommit, afterOuterRollback } = await import('./client');
+  if (placed && steps.unplace) {
+    const back = steps.unplace;
+    afterOuterRollback(() => quietly(back, 'put the disk back after an outer rollback'));
+  }
+  await afterOuterCommit(() => quietly(steps.release, 'release after a flip that landed'));
+  return out;
+}
+
 // ── The stores' files ───────────────────────────────────────────────────
 
 /** The stores whose files the brokers write under revision names. */

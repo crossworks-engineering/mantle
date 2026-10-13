@@ -34,10 +34,9 @@ export const STORE_PINS = {
     'server/web/lib/maintenance/registry.ts',
   ],
   objectstore: [
-    // Email attachments' bytes: the files store, A3b part 2.
-    'packages/email/src/sync.ts',
-    // OneDrive / SharePoint files' bytes: the files store, A3b part 2.
-    'packages/microsoft/src/drives/store.ts',
+    // THE files store's object bytes (email attachments, OneDrive and
+    // SharePoint files): stored before the row that names them (A3b part 2).
+    'packages/files/src/file-broker.ts',
     // THE app build broker: bundles, after the app row's checked write.
     'packages/tools/src/app-build-stage.ts',
     // A login's logo and photo (not one of the six item stores).

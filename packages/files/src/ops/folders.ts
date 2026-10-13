@@ -21,8 +21,12 @@ import {
 import {
   carrySpaceRows,
   db,
+  flipThenPlace,
+  inFlipTransaction,
   isUniqueViolation,
   nodes,
+  oneRow,
+  StoreRefusedError,
   takeShareWriteLock,
   withDeadlockRetry,
   withNodeDeleteHeads,
@@ -30,7 +34,7 @@ import {
   withNodeMoveHeads,
   refuseHiddenRows,
 } from '@mantle/db';
-import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
+import { folderCounts, folderRowFromNode, rowNow, type FolderRow } from './shared';
 import { folderById } from './queries';
 
 /** Longest folder name people see (TREE_FOLDER_NAME_MAX in
@@ -319,8 +323,18 @@ export async function deleteFolder(args: {
     }
     const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
     await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });
-    await tx.delete(nodes).where(eq(nodes.id, args.folderId));
+    // The checked statement (A3b part 2): exactly one row. A delete the row
+    // rules left at none is refused (the rollback takes the lift back), and
+    // the directory stays; it used to be removed whatever the delete did.
+    const gone = await tx
+      .delete(nodes)
+      .where(eq(nodes.id, args.folderId))
+      .returning({ id: nodes.id });
+    if (gone.length !== 1) throw new StoreRefusedError('files', 'folder', gone.length);
     return null;
+  }).catch((err: unknown) => {
+    if (err instanceof StoreRefusedError) return 'not-found';
+    throw err;
   });
   if (refused) return { ok: false, reason: refused };
   await removeFolderOnDisk(folder.path);
@@ -444,50 +458,55 @@ export async function renameFolderById(args: {
     throw new Error(`renameFolderById: a folder named '${slug}' already exists here`);
   }
 
-  // Disk first (atomic fs.rename of the directory), then the DB cascade in a
-  // transaction. If the DB write fails, put the directory back so disk and DB
-  // never diverge.
-  await renameFolderOnDisk(oldPath, newPath);
-  try {
-    // Heads first (workspaces plan U1): the folder, its subtree and both
-    // parents, then the share lock.
-    await withDeadlockRetry(() =>
-      withNodeMoveHeads(
-        args.ownerId,
-        { id: node.id, type: 'branch', path: oldPath },
-        newPath,
-        async (tx) => {
-          await takeShareWriteLock(tx, args.ownerId);
-          // Rewrite the prefix for the folder itself + every descendant (folders and
-          // files — a file's path IS its parent folder's path). The folder itself is
-          // handled by the CASE: `subpath(path, nlevel(oldPath))` would throw
-          // "invalid positions" when offset == nlevel (the self row), so map it to
-          // newPath directly; descendants keep their tail under the new prefix.
-          // One definer moves every row below the folder, those the caller's
-          // scope does not read too, so a file's row keeps its disk path (arch
-          // A3a fix round 2). Filing is not editing: only the folder itself
-          // is stamped, by its label update below.
-          await tx.execute(
-            sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
-          );
-          // Members' drafts and folders under it follow (no bytes move: member
-          // files are keyed by id, never by path).
-          await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
-          // The folder's own label fields (path already rewritten above).
-          const data = (node.data ?? {}) as Record<string, unknown>;
-          await tx
-            .update(nodes)
-            .set({ title: name, slug, data: { ...data, slug }, updatedAt: new Date() })
-            .where(eq(nodes.id, node.id));
-        },
+  // A3b part 2 (store-broker.ts flipThenPlace): the DB cascade first, in one
+  // transaction (the folder's own row the checked statement), then the
+  // directory's rename (atomic) as its last step; a flip that never landed
+  // puts the directory back. It used to rename the directory first, so a
+  // rename the database refused had already moved it.
+  await flipThenPlace({
+    flip: (place) =>
+      // Heads first (workspaces plan U1): the folder, its subtree and both
+      // parents, then the share lock.
+      withDeadlockRetry(() =>
+        withNodeMoveHeads(
+          args.ownerId,
+          { id: node.id, type: 'branch', path: oldPath },
+          newPath,
+          (tx) =>
+            inFlipTransaction(async () => {
+              await takeShareWriteLock(tx, args.ownerId);
+              // Rewrite the prefix for the folder itself + every descendant
+              // (folders and files: a file's path IS its parent folder's
+              // path). One definer moves every row below the folder, those
+              // the caller's scope does not read too, so a file's row keeps
+              // its disk path (arch A3a fix round 2). Filing is not editing:
+              // only the folder itself is stamped, by its label update below.
+              await tx.execute(
+                sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
+              );
+              // Members' drafts and folders under it follow (no bytes move:
+              // member files are keyed by id, never by path).
+              await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
+              // The folder's own label fields (path already rewritten above):
+              // the checked statement, exactly one row.
+              const data = (node.data ?? {}) as Record<string, unknown>;
+              const rows = await tx
+                .update(nodes)
+                .set({ title: name, slug, data: { ...data, slug }, updatedAt: new Date() })
+                .where(eq(nodes.id, node.id))
+                .returning({ id: nodes.id });
+              oneRow('files', rows, 'folder');
+              await place();
+            }),
+        ),
       ),
-    );
-  } catch (err) {
-    await renameFolderOnDisk(newPath, oldPath).catch((back: unknown) => {
-      // Never swallowed: the directory and its rows now disagree.
-      console.error(`[files] could not move ${newPath} back to ${oldPath} on disk:`, back);
-    });
-    throw err;
-  }
+    place: async () => {
+      await renameFolderOnDisk(oldPath, newPath);
+    },
+    unplace: async () => {
+      await renameFolderOnDisk(newPath, oldPath);
+    },
+    settle: async () => (await rowNow(node.id)).path === newPath,
+  });
   return folderById({ ownerId: args.ownerId, folderId: args.folderId });
 }

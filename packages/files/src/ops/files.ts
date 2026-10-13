@@ -17,14 +17,14 @@ import {
   renameFile as renameFileOnDisk,
   sanitizeFilename,
   TEXT_EXTS,
-  writeFile as writeFileOnDisk,
   deleteFile as deleteFileOnDisk,
-  adoptSpooled,
   foldedFilePath,
   type SpooledUpload,
 } from '../index';
 import {
+  discardSpooled,
   discardStaged,
+  overwritePlacement,
   placedBytesIntact,
   placeStaged,
   stageFile,
@@ -43,17 +43,21 @@ import {
   db,
   draws,
   emailAttachments,
+  flipThenPlace,
+  inFlipTransaction,
   type Node,
   nodes,
   notifyNodeIngested,
+  oneRow,
   pgConstraint,
+  StoreRefusedError,
   withDeadlockRetry,
   withHeads,
   withNodeDeleteHeads,
   withNodeInsertHeads,
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
-import { fileRowFromNode, type FileRow } from './shared';
+import { fileRowFromNode, rowNow, type FileRow } from './shared';
 import { isSystemScope } from '@mantle/db/viewer';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
@@ -226,30 +230,34 @@ export async function upsertFile(args: {
     }
   }
 
-  // Disk write. Over a file a row owns: in place, as before (refused when
-  // its bytes are on disk and the caller did not ask to overwrite). For a
-  // create (no row owns the name) the bytes are staged beside their final
-  // name, under a name the watcher ignores, and placed only once this
-  // create's node insert wins (W8b): two creates racing for one name used
-  // to both write the final path first, so the loser's bytes could end up
-  // under the winner's row. A disk file with NO node is orphan residue from
-  // an interrupted upload (the disk write landed but the node insert never
-  // ran): the placing rename replaces it, so a re-upload self-heals instead
-  // of being stuck forever on "already exists" with nothing in the UI to
-  // delete.
-  let staged: StagedFile | null = null;
-  let written: { path: string; sha256: string; size: number };
-  if (existing) {
-    const overwrite = !!args.overwrite;
-    written = args.spooled
-      ? await adoptSpooled(args.parentPath, filename, args.spooled, { overwrite })
-      : await writeFileOnDisk(args.parentPath, filename, args.bytes!, { overwrite });
-  } else {
-    staged = args.spooled
-      ? await stageSpooled(args.parentPath, filename, args.spooled)
-      : await stageFile(args.parentPath, filename, args.bytes!);
-    written = { path: staged.tempPath, sha256: staged.sha256, size: staged.size };
+  // The bytes are staged beside their final name, under a name the watcher
+  // ignores, whatever the write. A create places them once its node insert
+  // wins (W8b): two creates racing for one name used to both write the
+  // final path first, so the loser's bytes could end up under the winner's
+  // row. A disk file with NO node is orphan residue from an interrupted
+  // upload: the placing rename replaces it, so a re-upload self-heals
+  // instead of being stuck forever on "already exists". Over a file a row
+  // owns (A3b part 2, store-broker.ts flipThenPlace): the row is checked
+  // and changed first, and the stage goes over the file as the LAST step of
+  // that transaction, so a write the database refuses never touches the
+  // file (it used to be written in place before the row's update).
+  if (existing && !args.overwrite) {
+    const finalPath = diskPathForFile(args.parentPath, filename);
+    const there =
+      finalPath !== null &&
+      (await fsp.access(finalPath).then(
+        () => true,
+        () => false,
+      ));
+    if (there) {
+      if (args.spooled) await discardSpooled(args.spooled);
+      throw new Error(`writeFile: '${filename}' already exists in this folder`);
+    }
   }
+  const staged: StagedFile = args.spooled
+    ? await stageSpooled(args.parentPath, filename, args.spooled)
+    : await stageFile(args.parentPath, filename, args.bytes!);
+  const written = { path: staged.tempPath, sha256: staged.sha256, size: staged.size };
 
   // Small text files are cached in the node for the editor / responder. A
   // spooled upload is read back from disk for that: never more than 1 MB.
@@ -262,7 +270,7 @@ export async function upsertFile(args: {
           : (await fsp.readFile(written.path)).toString('utf8')
         : null;
   } catch (err) {
-    if (staged) await discardStaged(staged);
+    await discardStaged(staged);
     throw err;
   }
 
@@ -289,7 +297,7 @@ export async function upsertFile(args: {
   // this create's transaction, so without the create's stamp and home.
   let raced = false;
   if (!target) {
-    const toPlace = staged!;
+    const toPlace = staged;
     let placed = false;
     let inserted: Node | undefined;
     try {
@@ -395,43 +403,71 @@ export async function upsertFile(args: {
   const nextTitle =
     args.title?.trim() || (existingTitle && existingTitle !== filename ? existingTitle : filename);
   const row = target;
+  // Over a file a row owns, the stage goes over it as the flip's last step;
+  // a create that lost the race to a row holding its bytes has nothing to
+  // place (its stage went above).
+  const placement = existing ? overwritePlacement(staged) : null;
   // Heads first (workspaces plan U1): the chunk delete below needs them.
-  const updated = await withDeadlockRetry(() =>
-    withHeads([row.id], 'update', async (tx) => {
-      // Only the watcher's own row takes a create's stamp and home: a row
-      // another create made in the meantime is that create's item, never
-      // turned into this one's copy (W6b fix round 3, L-3), and the watcher's
-      // row holds the bytes this create wrote (fix round 4, L-2). Checked
-      // under its heads, before anything is written; refused as a taken name
-      // (409).
-      const watcherRow = raced && (await isWatcherInsert(tx, row.id, written.sha256));
-      if (stamp && !watcherRow) {
-        throw new FileNameTakenError(filename);
-      }
-      const [u] = await tx
-        .update(nodes)
-        .set({
-          title: nextTitle,
-          data: fileDataAfterWrite(oldData, newData, !sameContent),
-          // Only when the caller brings tags: a plain re-upsert leaves them be,
-          // and the race path above must still land them on the watcher's row.
-          ...(args.tags?.length ? { tags: [...new Set([...row.tags, 'file', ...args.tags])] } : {}),
-          // The watcher's row of a create made for a login: that login's too.
-          // Only the watcher's: a row another create made is that create's
-          // file, never made private to this one's login (fix round 1).
-          ...(watcherRow && args.loginId && !row.loginId ? { loginId: args.loginId } : {}),
-          updatedAt: new Date(),
-          ...(sameContent ? {} : columnsAfterContentChange(row)),
-        })
-        .where(eq(nodes.id, row.id))
-        .returning();
-      // Old passages go now, not when the re-extract lands: until then (and
-      // for good, should it never run) search would quote the old bytes.
-      if (u && !sameContent) await tx.delete(contentChunks).where(eq(contentChunks.nodeId, u.id));
-      if (u && stamp) return restampRacedCreate(tx, u.id, stamp, home?.createWs ?? null);
-      return u;
-    }),
-  );
+  const flip = (place: (() => Promise<void>) | null) =>
+    withDeadlockRetry(() =>
+      withHeads([row.id], 'update', (tx) =>
+        inFlipTransaction(async () => {
+          // Only the watcher's own row takes a create's stamp and home: a row
+          // another create made in the meantime is that create's item, never
+          // turned into this one's copy (W6b fix round 3, L-3), and the
+          // watcher's row holds the bytes this create wrote (fix round 4,
+          // L-2). Checked under its heads, before anything is written;
+          // refused as a taken name (409).
+          const watcherRow = raced && (await isWatcherInsert(tx, row.id, written.sha256));
+          if (stamp && !watcherRow) {
+            throw new FileNameTakenError(filename);
+          }
+          // The checked statement (A3b part 2): exactly one row, else a
+          // refusal (a 404), with the file untouched.
+          const rows = await tx
+            .update(nodes)
+            .set({
+              title: nextTitle,
+              data: fileDataAfterWrite(oldData, newData, !sameContent),
+              // Only when the caller brings tags: a plain re-upsert leaves them
+              // be, and the race path above must still land them on the
+              // watcher's row.
+              ...(args.tags?.length
+                ? { tags: [...new Set([...row.tags, 'file', ...args.tags])] }
+                : {}),
+              // The watcher's row of a create made for a login: that login's
+              // too. Only the watcher's: a row another create made is that
+              // create's file, never made private to this one's login (fix
+              // round 1).
+              ...(watcherRow && args.loginId && !row.loginId ? { loginId: args.loginId } : {}),
+              updatedAt: new Date(),
+              ...(sameContent ? {} : columnsAfterContentChange(row)),
+            })
+            .where(eq(nodes.id, row.id))
+            .returning();
+          const u = oneRow('files', rows, 'file');
+          // Old passages go now, not when the re-extract lands: until then
+          // (and for good, should it never run) search would quote the old
+          // bytes.
+          if (!sameContent) await tx.delete(contentChunks).where(eq(contentChunks.nodeId, u.id));
+          const out = stamp ? await restampRacedCreate(tx, u.id, stamp, home?.createWs ?? null) : u;
+          // The bytes, last: a rename over the file (its old bytes kept
+          // until the flip settles).
+          if (place) await place();
+          return out;
+        }),
+      ),
+    );
+  const updated = placement
+    ? await flipThenPlace({
+        flip: (place) => flip(place),
+        place: placement.place,
+        unplace: placement.unplace,
+        release: placement.release,
+        discard: placement.discard,
+        settle: async () => (await rowNow(row.id)).sha256 === written.sha256,
+      })
+    : await flip(null);
   if (!updated) throw new Error('upsertFile: update returned no row');
   // Notify the extractor again only when content changed.
   if (!sameContent) {
@@ -750,11 +786,26 @@ export async function deleteFileById(args: {
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
   // Heads first (workspaces plan U1): the file and its folder.
-  await withDeadlockRetry(() =>
-    withNodeDeleteHeads([node.id], async (tx) => {
-      await tx.delete(nodes).where(eq(nodes.id, node.id));
-    }),
-  );
+  // The checked statement (A3b part 2): exactly one row. A delete the
+  // database's row rules left at none (a caller that may read the file but
+  // not delete it) is a refusal, and the bytes stay; they used to be
+  // unlinked whatever the delete did.
+  try {
+    await withDeadlockRetry(() =>
+      withNodeDeleteHeads([node.id], async (tx) => {
+        const rows = await tx
+          .delete(nodes)
+          .where(eq(nodes.id, node.id))
+          .returning({ id: nodes.id });
+        oneRow('files', rows, 'file');
+      }),
+    );
+  } catch (err) {
+    if (err instanceof StoreRefusedError) return { ok: false, reason: 'not_found' };
+    throw err;
+  }
+  // The bytes go once the row's delete has committed (a crash in between
+  // leaves a file the watcher brings back, never a row without bytes).
   // A folded member file (W6b) has its bytes in its old space's directory,
   // named by its id: the tree path its name builds is another file's (fix
   // round 1, H1). Its bytes stay where they are.
@@ -1068,18 +1119,42 @@ export async function renameFileById(args: {
   if (taken && taken.id !== node.id && (taken.folded || foldedFilePath(node))) {
     throw new Error(`renameFile: '${newFilename}' already exists in this folder`);
   }
-  if (!foldedFilePath(node)) await renameFileOnDisk(node.path, oldFilename, newFilename);
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      title: newFilename,
-      slug: newFilename,
-      data: { ...data, filename: newFilename },
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, node.id))
-    .returning();
-  return updated ? fileRowFromNode(updated) : null;
+  // A3b part 2 (store-broker.ts flipThenPlace): the row first, the checked
+  // statement (exactly one row, else a refusal with the disk untouched),
+  // then the rename on disk as the transaction's last step; a flip that
+  // never landed puts the name back. It used to rename the disk first, so a
+  // rename the database refused had already moved the file.
+  const onDisk = !foldedFilePath(node);
+  const updated = await flipThenPlace({
+    flip: (place) =>
+      withDeadlockRetry(() =>
+        withHeads([node.id], 'update', (tx) =>
+          inFlipTransaction(async () => {
+            const rows = await tx
+              .update(nodes)
+              .set({
+                title: newFilename,
+                slug: newFilename,
+                data: { ...data, filename: newFilename },
+                updatedAt: new Date(),
+              })
+              .where(eq(nodes.id, node.id))
+              .returning();
+            const u = oneRow('files', rows, 'file');
+            if (onDisk) await place();
+            return u;
+          }),
+        ),
+      ),
+    place: async () => {
+      await renameFileOnDisk(node.path, oldFilename, newFilename);
+    },
+    unplace: async () => {
+      await renameFileOnDisk(node.path, newFilename, oldFilename);
+    },
+    settle: async () => (await rowNow(node.id)).filename === newFilename,
+  });
+  return fileRowFromNode(updated);
 }
 
 export async function bulkDeleteFiles(args: { ownerId: string; fileIds: string[] }): Promise<{

@@ -345,6 +345,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/files':
+        specifier: workspace:*
+        version: link:../files
       '@mantle/rules':
         specifier: workspace:*
         version: link:../rules

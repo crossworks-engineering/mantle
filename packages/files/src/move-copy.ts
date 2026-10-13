@@ -4,9 +4,10 @@
  * Until these existed the files tree supported rename only: a file lived
  * where it was uploaded, forever. The invariants each op protects:
  *
- *   - **Disk and DB never diverge.** Same discipline as renameFolderById:
- *     disk first (fs.rename is atomic within the tree), then the DB write in
- *     a transaction, and a failed DB write puts the disk back.
+ *   - **Disk and DB never diverge.** Same discipline as renameFolderById
+ *     (A3b part 2, store-broker.ts flipThenPlace): the rows first, checked,
+ *     then the rename on disk (atomic within the tree) as the transaction's
+ *     last step, and a flip that never landed puts the disk back.
  *   - **A move follows the indexing rules of where it LANDS.** Effective
  *     indexing (P1) resolves by folder chain, so moving a file into a
  *     name-only gallery must shed its content index and moving it out must
@@ -26,8 +27,11 @@ import { and, eq, sql } from 'drizzle-orm';
 import {
   carrySpaceRows,
   db,
+  flipThenPlace,
+  inFlipTransaction,
   type Node,
   nodes,
+  oneRow,
   takeShareReadLock,
   takeShareWriteLock,
   withDeadlockRetry,
@@ -51,6 +55,7 @@ import {
   fileNameTaken,
   folderById,
   readFileById,
+  rowNow,
   upsertFile,
   type FileRow,
   type FolderRow,
@@ -160,30 +165,45 @@ export async function moveFileById(args: {
   // A folded member file (W6b) keeps its bytes in its old space's directory,
   // named by its id: the move changes only its row.
   const onDisk = !foldedFilePath(node);
-  if (onDisk) await moveFileOnDisk(oldPath, filename, args.destPath);
-  try {
-    // Heads first (workspaces plan U1): the file and both folders. Then the
-    // share lock (shared) before the row: see takeShareReadLock.
-    await withDeadlockRetry(() =>
-      withNodeMoveHeads(
-        args.ownerId,
-        { id: node.id, type: 'file', path: oldPath },
-        args.destPath,
-        async (tx) => {
-          await takeShareReadLock(tx, args.ownerId);
-          if (args.guard) await args.guard(tx, node.id);
-          await tx
-            .update(nodes)
-            // Filing is not editing: the file keeps its updated_at (node-ops.ts).
-            .set({ path: args.destPath })
-            .where(eq(nodes.id, node.id));
-        },
+  // A3b part 2 (store-broker.ts flipThenPlace): the row first, the checked
+  // statement (exactly one row, else a refusal with the disk untouched),
+  // then the move on disk as the transaction's last step; a flip that never
+  // landed moves it back. It used to move the disk first, so a move the
+  // database refused had already moved the file (and the watcher could
+  // read the old path's unlink before the row moved).
+  await flipThenPlace({
+    flip: (place) =>
+      // Heads first (workspaces plan U1): the file and both folders. Then
+      // the share lock (shared) before the row: see takeShareReadLock.
+      withDeadlockRetry(() =>
+        withNodeMoveHeads(
+          args.ownerId,
+          { id: node.id, type: 'file', path: oldPath },
+          args.destPath,
+          (tx) =>
+            inFlipTransaction(async () => {
+              await takeShareReadLock(tx, args.ownerId);
+              if (args.guard) await args.guard(tx, node.id);
+              const rows = await tx
+                .update(nodes)
+                // Filing is not editing: the file keeps its updated_at
+                // (node-ops.ts).
+                .set({ path: args.destPath })
+                .where(eq(nodes.id, node.id))
+                .returning({ id: nodes.id });
+              oneRow('files', rows, 'file');
+              if (onDisk) await place();
+            }),
+        ),
       ),
-    );
-  } catch (err) {
-    if (onDisk) await moveFileOnDisk(args.destPath, filename, oldPath).catch(() => {});
-    throw err;
-  }
+    place: async () => {
+      await moveFileOnDisk(oldPath, filename, args.destPath);
+    },
+    unplace: async () => {
+      await moveFileOnDisk(args.destPath, filename, oldPath);
+    },
+    settle: async () => (await rowNow(node.id)).path === args.destPath,
+  });
 
   // The destination's folder chain may index differently — reconcile now so
   // "moved into the gallery" behaves exactly like "flagged name-only".
@@ -282,40 +302,48 @@ export async function moveFolderById(args: {
   // system pool, never refused, when the actor check is off), so the disk
   // never moves for nothing. The definer below stays the authority.
   await refuseHiddenRows(args.ownerId, oldPath);
-  // Disk first, DB cascade second, disk rollback on DB failure — the exact
-  // renameFolderById discipline; the ltree rewrite is the same CASE shape.
-  await renameFolderOnDisk(oldPath, newPath);
-  try {
-    // Heads first (workspaces plan U1): the folder, its subtree and both
-    // parents, then the share lock.
-    await withDeadlockRetry(() =>
-      withNodeMoveHeads(
-        args.ownerId,
-        { id: node.id, type: 'branch', path: oldPath },
-        newPath,
-        async (tx) => {
-          await takeShareWriteLock(tx, args.ownerId);
-          // One definer moves every row below the folder; a move of a folder
-          // holding rows the caller cannot read is refused there (409, the
-          // owner's rule, arch A3a fix round 2), and the disk goes back below.
-          await tx.execute(
-            sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
-          );
-          // Filing is not editing: only the folder itself is stamped.
-          await tx.execute(
-            sql`update ${nodes} set updated_at = now() where id = ${node.id} and owner_id = ${args.ownerId}`,
-          );
-          await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
-        },
+  // A3b part 2 (store-broker.ts flipThenPlace): the rows first, in one
+  // transaction (the definer's 409 on hidden rows, the folder's own row the
+  // checked statement), then the directory's rename as its last step; a
+  // flip that never landed moves it back. It used to move the directory
+  // first, so a move the database refused had already moved it.
+  await flipThenPlace({
+    flip: (place) =>
+      // Heads first (workspaces plan U1): the folder, its subtree and both
+      // parents, then the share lock.
+      withDeadlockRetry(() =>
+        withNodeMoveHeads(
+          args.ownerId,
+          { id: node.id, type: 'branch', path: oldPath },
+          newPath,
+          (tx) =>
+            inFlipTransaction(async () => {
+              await takeShareWriteLock(tx, args.ownerId);
+              // One definer moves every row below the folder; a move of a
+              // folder holding rows the caller cannot read is refused there
+              // (409, the owner's rule, arch A3a fix round 2), before the
+              // disk moves.
+              await tx.execute(
+                sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
+              );
+              // Filing is not editing: only the folder itself is stamped.
+              const rows = (await tx.execute(
+                sql`update ${nodes} set updated_at = now() where id = ${node.id} and owner_id = ${args.ownerId} returning id`,
+              )) as unknown as { id: string }[];
+              oneRow('files', rows, 'folder');
+              await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
+              await place();
+            }),
+        ),
       ),
-    );
-  } catch (err) {
-    await renameFolderOnDisk(newPath, oldPath).catch((back: unknown) => {
-      // Never swallowed: the directory and its rows now disagree.
-      console.error(`[files] could not move ${newPath} back to ${oldPath} on disk:`, back);
-    });
-    throw err;
-  }
+    place: async () => {
+      await renameFolderOnDisk(oldPath, newPath);
+    },
+    unplace: async () => {
+      await renameFolderOnDisk(newPath, oldPath);
+    },
+    settle: async () => (await rowNow(node.id)).path === newPath,
+  });
 
   // Every file that moved may now sit under a different indexing chain.
   const movedFiles = await db

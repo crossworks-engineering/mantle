@@ -229,3 +229,23 @@ export function fileRowFromNode(row: Node): FileRow {
 }
 
 // ─── Lookup helpers ─────────────────────────────────────────────────────
+
+/** An item row's path, and a file's name and bytes, as the database holds
+ *  them now, read in the caller's scope: what a flip that may have
+ *  committed settles by (store-broker.ts flipThenPlace, A3b part 2).
+ *  Throws when the row cannot be read (the flip's outcome is unknown). */
+export async function rowNow(
+  id: string,
+): Promise<{ path: string; filename: string | null; sha256: string | null }> {
+  const [r] = await db
+    .select({
+      path: sql<string>`${nodes.path}::text`,
+      filename: sql<string | null>`${nodes.data}->>'filename'`,
+      sha256: sql<string | null>`${nodes.data}->>'sha256'`,
+    })
+    .from(nodes)
+    .where(eq(nodes.id, id))
+    .limit(1);
+  if (!r) throw new Error('the row cannot be read');
+  return r;
+}

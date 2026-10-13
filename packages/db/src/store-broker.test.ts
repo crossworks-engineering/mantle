@@ -12,6 +12,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -27,6 +28,7 @@ import {
   StoreRefusedError,
   flipNeverLanded,
   flipRolledBack,
+  flipThenPlace,
   inFlipTransaction,
   isLegacyDraftName,
   markedBefore,
@@ -135,6 +137,116 @@ describe('stageThenFlip', () => {
       ).rejects.toBe(err);
       expect(existsSync(f)).toBe(true);
     }
+    quietly.mockRestore();
+  });
+});
+
+describe('flipThenPlace (a store whose disk path is its row: the files tree)', () => {
+  /** A file at `from` that a flip renames to `to` as its last step. */
+  const setup = (name: string) => {
+    const from = path.join(dir, `${name}-old`);
+    const to = path.join(dir, `${name}-new`);
+    writeFileSync(from, name);
+    const steps = {
+      place: async () => renameSync(from, to),
+      unplace: async () => renameSync(to, from),
+    };
+    return { from, to, steps };
+  };
+
+  it('a refusal (the checked statement first) never touches the disk', async () => {
+    const { from, to, steps } = setup('refused');
+    await expect(
+      flipThenPlace({
+        ...steps,
+        flip: (place) =>
+          inFlipTransaction(async () => {
+            oneRow('files', [], 'file');
+            await place();
+          }),
+        settle: async () => true,
+      }),
+    ).rejects.toBeInstanceOf(StoreRefusedError);
+    expect(existsSync(from)).toBe(true);
+    expect(existsSync(to)).toBe(false);
+  });
+
+  it('a flip that lands keeps the disk where place put it; place runs once on a retry', async () => {
+    const { from, to, steps } = setup('lands');
+    let places = 0;
+    const out = await flipThenPlace({
+      ...steps,
+      place: async () => {
+        places += 1;
+        await steps.place();
+      },
+      flip: async (place) => {
+        await place();
+        await place(); // a retried transaction finds it placed
+        return 'ok';
+      },
+      settle: async () => true,
+    });
+    expect(out).toBe('ok');
+    expect(places).toBe(1);
+    expect(existsSync(from)).toBe(false);
+    expect(existsSync(to)).toBe(true);
+  });
+
+  it('a commit that failed after place: the database says it never landed, the disk goes back', async () => {
+    const { from, to, steps } = setup('commit-failed');
+    let discarded = false;
+    await expect(
+      flipThenPlace({
+        ...steps,
+        discard: async () => {
+          discarded = true;
+        },
+        flip: async (place) => {
+          await place();
+          throw new Error('the commit fails');
+        },
+        settle: async () => false,
+      }),
+    ).rejects.toThrow('the commit fails');
+    expect(existsSync(from)).toBe(true);
+    expect(existsSync(to)).toBe(false);
+    expect(discarded).toBe(true);
+  });
+
+  it('a lost COMMIT acknowledgement after place: the database says it landed, the disk stays; unknown: left, logged', async () => {
+    const quietly = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = setup('landed');
+    let released = false;
+    await expect(
+      flipThenPlace({
+        ...a.steps,
+        release: async () => {
+          released = true;
+        },
+        flip: async (place) => {
+          await place();
+          throw new Error('write CONNECTION_CLOSED');
+        },
+        settle: async () => true,
+      }),
+    ).rejects.toThrow('CONNECTION_CLOSED');
+    expect(existsSync(a.to)).toBe(true);
+    expect(released).toBe(true);
+    const b = setup('unknown');
+    await expect(
+      flipThenPlace({
+        ...b.steps,
+        flip: async (place) => {
+          await place();
+          throw new Error('write CONNECTION_CLOSED');
+        },
+        settle: async () => {
+          throw new Error('the database is gone');
+        },
+      }),
+    ).rejects.toThrow('CONNECTION_CLOSED');
+    expect(existsSync(b.to)).toBe(true);
     quietly.mockRestore();
   });
 });

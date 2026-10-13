@@ -17,7 +17,7 @@ import {
 } from '@mantle/db';
 import { runRules } from '@mantle/rules';
 import { hashBuffer } from '@mantle/storage';
-import { putContent } from '@mantle/storage/write';
+import { stageFileObject } from '@mantle/files/broker';
 import { loadContactGate } from '@mantle/content';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { domainOf } from './addresses';
@@ -214,9 +214,19 @@ async function ingestOne(
   // between our pre-check SELECT and now, the INSERT returns 0 rows and we
   // throw DuplicateRaceError. The catch around the transaction below treats
   // it as "already exists" — same outcome as the SELECT fast-path.
+  // The attachments' bytes first, under their content address (the files
+  // store's broker, A3b part 2): the object is the stage, the rows below the
+  // flip. Never inside the transaction (a network write: plan 20.3). An
+  // email whose rows never land leaves objects nothing names, shared by
+  // content and never swept.
+  const stagedKeys: string[] = [];
+  for (const att of full.attachments) {
+    const { key } = await stageFileObject(att.content, att.mimeType ?? 'application/octet-stream');
+    stagedKeys.push(key);
+  }
+
   // Heads first (workspaces plan U1): the folders the email node and its
-  // attachment file nodes land in. No retry: the transaction stores
-  // attachment bytes as it goes.
+  // attachment file nodes land in. No retry, as before.
   const headItems = [
     { type: 'email', path },
     ...(full.attachments.length > 0 ? [{ type: 'file', path: `${path}.attachments` }] : []),
@@ -280,7 +290,7 @@ async function ingestOne(
 
       // Attachments: upload bytes (content-addressed dedupe in storage),
       // create one file node per unique sha256, link via email_attachments.
-      for (const att of full.attachments) {
+      for (const [i, att] of full.attachments.entries()) {
         const sha256 = hashBuffer(att.content);
         const fileNodeId = await getOrCreateFileNode(tx, {
           ownerId: account.userId,
@@ -290,7 +300,7 @@ async function ingestOne(
           mimeType: att.mimeType,
           sizeBytes: att.sizeBytes ?? att.content.byteLength,
         });
-        const { key } = await putContent(att.content, att.mimeType ?? 'application/octet-stream');
+        const key = stagedKeys[i]!;
         const row: NewEmailAttachment = {
           emailId: insertedEmail.id,
           fileNodeId,

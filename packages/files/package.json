@@ -7,6 +7,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./broker": "./src/file-broker.ts",
     "./pdf": "./src/pdf.ts",
     "./docx": "./src/docx.ts",
     "./pptx": "./src/pptx.ts",
