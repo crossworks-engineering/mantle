@@ -332,6 +332,70 @@ describe('sweepOrphans', () => {
     for (const kept of [live, fresh, history, other]) expect(existsSync(kept)).toBe(true);
   });
 
+  it('tombstones (A3b part 2): a file whose row went goes a grace period after the tombstone, never while a row names it; neither: reported', async () => {
+    root = path.join(dir, 'store-tomb');
+    const hold = path.join(dir, 'store-tomb-base');
+    mkdirSync(hold, { recursive: true });
+    // A snapshot store: `<owner>/<item>/<id>.sqlite`, the item the row.
+    const snapOf = (rel: string) => /^[a-z]+\/[a-z]+\/([a-z]+)\.sqlite$/.exec(rel)?.[1] ?? null;
+    const deleted = put('o/app/gone.sqlite', 3 * HOUR);
+    put('o/app/gone.sqlite-wal', 3 * HOUR);
+    const fresh = put('o/app/fresh.sqlite', 3 * HOUR);
+    const named = put('o/app/kept.sqlite', 3 * HOUR);
+    const unknown = put('o/app/mystery.sqlite', 3 * HOUR);
+    const now = Date.now();
+    let tombs = [
+      { abs: deleted, at: now - 2 * HOUR },
+      // A tombstone younger than the grace period: not yet.
+      { abs: fresh, at: now - 1000 },
+      // A tombstone for a file a row names again (a restore): never.
+      { abs: named, at: now - 5 * HOUR },
+      // One outside the root never lets anything go.
+      { abs: path.join(dir, 'elsewhere.sqlite'), at: now - 5 * HOUR },
+    ];
+    const forgotten: string[] = [];
+    const tspec = {
+      store: 'snapshots' as const,
+      label: 'appsnap',
+      root,
+      holdRoot: hold,
+      nodeOf: snapOf,
+      pruneEmptyDirs: true,
+      rows: async () => [{ node: 'kept', files: ['o/app/kept.sqlite'] }],
+      tombstones: async () => tombs,
+      forget: async (abs: readonly string[]) => {
+        forgotten.push(...abs);
+      },
+    };
+    const first = await sweepOrphans(tspec, { now });
+    expect(first.removed).toEqual(['o/app/gone.sqlite']);
+    expect(first.label).toBe('appsnap');
+    expect(existsSync(deleted)).toBe(false);
+    expect(existsSync(`${deleted}-wal`)).toBe(false);
+    for (const f of [fresh, named, unknown]) expect(existsSync(f)).toBe(true);
+    expect(first.noRow).toEqual(['o/app/mystery.sqlite']);
+    expect(forgotten).toEqual([deleted]);
+    // A restore's hold at the store root holds this folder too.
+    writeFileSync(path.join(hold, STORE_SWEEP_HOLD_FILE), '');
+    tombs = [{ abs: fresh, at: now - 2 * HOUR }];
+    const held = await sweepOrphans(tspec, { now: now + HOUR });
+    expect(held.held).not.toBeNull();
+    expect(existsSync(fresh)).toBe(true);
+    rmSync(path.join(hold, STORE_SWEEP_HOLD_FILE));
+    // No row naming any file, but tombstones: no stop (the right database).
+    const none = await sweepOrphans({ ...tspec, rows: async () => [] }, { now: now + HOUR });
+    expect(none.aborted).toBeNull();
+    expect(none.removed).toEqual(['o/app/fresh.sqlite']);
+    // Without a tombstone among the files: the stop of part 1.
+    tombs = [];
+    rmSync(named);
+    const stop = quiet();
+    const wrong = await sweepOrphans({ ...tspec, rows: async () => [] }, { now: now + HOUR });
+    stop.mockRestore();
+    expect(wrong.aborted).toMatch(/no row names any/);
+    expect(existsSync(unknown)).toBe(true);
+  });
+
   it('never removes a file a row points at again (a flip back), and a dry run removes nothing', async () => {
     root = path.join(dir, 'store-2');
     const f = put('p/b.r-9.sqlite', 3 * HOUR);

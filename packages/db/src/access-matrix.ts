@@ -351,6 +351,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // The accepted snapshot a member author reads (0183): the admin pool
   // serves it with the author rule in the query (member-accepted.ts).
   none('public.accepted_snapshots'),
+  // The snapshot store's tombstones (A3b part 2, 0284): written by definer
+  // triggers, read and cleared by the store sweep on the system pool.
+  none('public.store_tombstones'),
   none('public.space_uploads', 'content'),
   none('public.space_submissions', 'content'),
   none('public.client_comment_ledger', 'content'),

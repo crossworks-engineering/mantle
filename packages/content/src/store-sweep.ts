@@ -19,13 +19,16 @@
  */
 import path from 'node:path';
 import {
+  forgetTombstones,
   isLegacyDraftName,
   revisionNode,
   storeRows,
+  storeTombstones,
   sweepOrphans,
   type RevisionStore,
   type SweepOptions,
   type SweepReport,
+  type SweepSpec,
 } from '@mantle/db';
 import { tableDbRoot } from '@mantle/tabledb';
 import { appDbRoot } from './app-broker';
@@ -50,6 +53,66 @@ export type StoreSweepOptions = Pick<
   SweepOptions,
   'dryRun' | 'now' | 'graceMs' | 'allowMany' | 'budget'
 >;
+
+const SNAPSHOT_FILE =
+  /^[^/]+\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.sqlite$/;
+
+/**
+ * The snapshot store's three folders (A3b part 2): an app's history
+ * (APP_DB_DIR/_snapshots), a table's (TABLE_DB_DIR/_snapshots), and the
+ * accepted tables' workbook copies (TABLE_DB_DIR/accepted-snapshots). A
+ * snapshot's item is its row (`<owner>/<item>/<snapshot id>.sqlite`), an
+ * accepted copy's the table (`<table>.r-<token>.sqlite`). Their rows'
+ * paths are relative to the store root they sit in (`base`); a restore's
+ * hold is that root's. A file goes when a tombstone says the row that
+ * named it went (0284), or (an accepted copy) when it is an old revision
+ * of a table whose row names another; a file with neither a row nor a
+ * tombstone is only reported.
+ */
+export function snapshotSweepSpecs(): SweepSpec[] {
+  const roots = storeRoots();
+  const part = (
+    label: 'appsnap' | 'tablesnap' | 'accepted',
+    base: string,
+    folder: string,
+    nodeOf: (rel: string) => string | null,
+  ): SweepSpec => {
+    const stored = new Map<string, string>();
+    return {
+      store: 'snapshots',
+      label,
+      root: path.join(base, folder),
+      holdRoot: base,
+      nodeOf,
+      pruneEmptyDirs: label !== 'accepted',
+      rows: async () =>
+        (await storeRows(label)).map((r) => ({
+          ...r,
+          files: r.files.map((f) => path.resolve(base, f)),
+          columns: r.columns?.map((f) => (f ? path.resolve(base, f) : null)),
+        })),
+      tombstones: async () =>
+        (await storeTombstones(label)).map((t) => {
+          const abs = path.resolve(base, t.path);
+          stored.set(abs, t.path);
+          return { abs, at: t.at };
+        }),
+      forget: (abs) =>
+        forgetTombstones(
+          label,
+          abs.map((a) => stored.get(a)).filter((p): p is string => p !== undefined),
+        ),
+    };
+  };
+  const snapshotOf = (rel: string) => SNAPSHOT_FILE.exec(rel)?.[1] ?? null;
+  return [
+    part('appsnap', roots.appdb, '_snapshots', snapshotOf),
+    part('tablesnap', roots.tables, '_snapshots', snapshotOf),
+    part('accepted', roots.tables, SNAPSHOT_OWNER, (rel) =>
+      rel.includes('/') || rel.endsWith('.draft.sqlite') ? null : revisionNode(rel, 'tables'),
+    ),
+  ];
+}
 
 /** Sweep every revisioned store once: the files each names come from the
  *  one spec of which columns name them (STORE_FILE_COLUMNS, storeRows). */
@@ -76,14 +139,15 @@ export async function sweepStores(opts: StoreSweepOptions = {}): Promise<SweepRe
       ),
     );
   }
+  for (const spec of snapshotSweepSpecs()) out.push(await sweepOrphans(spec, opts));
   return out;
 }
 
 /** One line for a maintenance run row. */
 export function summariseStoreSweep(reports: SweepReport[], dryRun = false): string {
   const parts = reports.map((r) => {
-    if (r.aborted) return `${r.store}: STOPPED, nothing removed (${r.aborted})`;
-    if (r.held) return `${r.store}: HELD until ${r.held} by a restore, nothing removed`;
+    if (r.aborted) return `${r.label}: STOPPED, nothing removed (${r.aborted})`;
+    if (r.held) return `${r.label}: HELD until ${r.held} by a restore, nothing removed`;
     const kept = [
       r.deferred ? `${r.deferred} deferred to the next run` : '',
       r.noRow.length ? `${r.noRow.length} kept with no row` : '',
@@ -91,7 +155,7 @@ export function summariseStoreSweep(reports: SweepReport[], dryRun = false): str
       r.legacy.length ? `${r.legacy.length} legacy drafts kept` : '',
     ].filter(Boolean);
     return (
-      `${r.store}: ${r.removed.length} ${dryRun ? 'would go' : 'removed'}, ${r.marked} newly unreferenced` +
+      `${r.label}: ${r.removed.length} ${dryRun ? 'would go' : 'removed'}, ${r.marked} newly unreferenced` +
       `${r.failed ? `, ${r.failed} failed` : ''}${kept.length ? `, ${kept.join(', ')}` : ''}`
     );
   });

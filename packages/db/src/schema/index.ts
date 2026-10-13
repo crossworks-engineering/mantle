@@ -68,6 +68,7 @@ export * from './heartbeats';
 export * from './tool-results';
 export * from './prompt-versions';
 export * from './node-snapshots';
+export * from './store-tombstones';
 export * from './maintenance-runs';
 export * from './runs';
 export * from './agent-groups';

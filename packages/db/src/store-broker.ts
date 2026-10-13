@@ -37,6 +37,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -296,26 +297,48 @@ export function revisionFiles(dirAbs: string, node: string, store: RevisionStore
  *  sweep and the backups read, through `storeRows` (A3b fix rounds 2 and
  *  3). The first is the item's current file (a table's published workbook,
  *  an app's database). A table's are relative to TABLE_DB_DIR, an app
- *  database's absolute. */
+ *  database's absolute. The snapshot store (A3b part 2): a snapshot's
+ *  database copy (an app's relative to APP_DB_DIR, a table's to
+ *  TABLE_DB_DIR; the item is the snapshot row) and an accepted table's
+ *  workbook copy (relative to TABLE_DB_DIR; the item is the table). */
 export const STORE_FILE_COLUMNS = {
   tables: { table: 'tables', node: 'node_id', files: ['storage_path', 'draft_path'] },
   appdb: { table: 'app_databases', node: 'app_node_id', files: ['storage_path'] },
+  appsnap: {
+    table: 'node_snapshots',
+    node: 'id',
+    files: ['db_path'],
+    where: "node_kind <> 'table'",
+  },
+  tablesnap: {
+    table: 'node_snapshots',
+    node: 'id',
+    files: ['db_path'],
+    where: "node_kind = 'table'",
+  },
+  accepted: { table: 'accepted_snapshots', node: 'node_id', files: ['table_path'] },
 } as const satisfies Record<
-  RevisionStore,
-  { table: string; node: string; files: readonly string[] }
+  string,
+  { table: string; node: string; files: readonly string[]; where?: string }
 >;
+
+/** A store the sweep and the backups read rows of (STORE_FILE_COLUMNS). */
+export type SweptStore = keyof typeof STORE_FILE_COLUMNS;
 
 /** Every row of a store with the files it names now (STORE_FILE_COLUMNS),
  *  read on the caller's handle: `columns` in the spec's order (null where
  *  none), `files` the ones that are set. */
-export async function storeRows(store: RevisionStore): Promise<SweepRow[]> {
+export async function storeRows(store: SweptStore): Promise<SweepRow[]> {
   const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
-  const spec = STORE_FILE_COLUMNS[store];
+  const spec: { table: string; node: string; files: readonly string[]; where?: string } =
+    STORE_FILE_COLUMNS[store];
   // One column per file (never a SQL array: a null element would come back
   // as the text NULL).
   const cols = spec.files.map((c, i) => `"${c}" as f${i}`).join(', ');
   const rows = (await db.execute(
-    sql.raw(`select "${spec.node}"::text as node, ${cols} from "${spec.table}"`),
+    sql.raw(
+      `select "${spec.node}"::text as node, ${cols} from "${spec.table}"${spec.where ? ` where ${spec.where}` : ''}`,
+    ),
   )) as unknown as Record<string, string | null>[];
   return rows.map((r) => {
     const columns = spec.files.map((_, i) => {
@@ -328,6 +351,36 @@ export async function storeRows(store: RevisionStore): Promise<SweepRow[]> {
       files: columns.filter((f): f is string => f !== null),
     };
   });
+}
+
+/** The tombstones of a snapshot store (migration 0284: a file a deleted or
+ *  re-pointed row named), as stored (relative to the store's base), with
+ *  when its row went (ms). Read on the caller's handle (the system pool). */
+export async function storeTombstones(
+  store: 'appsnap' | 'tablesnap' | 'accepted',
+): Promise<{ path: string; at: number }[]> {
+  const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
+  const rows = (await db.execute(
+    sql`select path, (extract(epoch from created_at) * 1000)::float8 as at
+          from store_tombstones where store = ${store}`,
+  )) as unknown as { path: string; at: number }[];
+  return rows.map((r) => ({ path: String(r.path), at: Number(r.at) }));
+}
+
+/** Clear the tombstones of files the sweep removed (or found gone). */
+export async function forgetTombstones(
+  store: 'appsnap' | 'tablesnap' | 'accepted',
+  paths: readonly string[],
+): Promise<void> {
+  if (!paths.length) return;
+  const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
+  await db.execute(
+    sql`delete from store_tombstones where store = ${store}
+          and path in (${sql.join(
+            paths.map((p) => sql`${p}`),
+            sql`, `,
+          )})`,
+  );
 }
 
 /** When a revision was made, from its name's token (`revisionToken`: the
@@ -359,8 +412,23 @@ export type SweepRow = {
 
 export type SweepSpec = {
   store: StoreName;
+  /** The part of the store, when it has several (the snapshot store: app
+   *  snapshots, table snapshots, accepted copies): the report's name. */
+  label?: string;
   /** The store's root folder. */
   root: string;
+  /** Where a restore puts its hold for this root, when it is a folder
+   *  inside another store's root (a snapshot folder): that root. */
+  holdRoot?: string;
+  /** Files a deleted or re-pointed row named (migration 0284), absolute,
+   *  with when the row went (ms): such a file goes a grace period later,
+   *  while no row names it, though its item has no row. */
+  tombstones?: () => Promise<readonly { abs: string; at: number }[]>;
+  /** Clear the tombstones of files removed or found gone (absolute). */
+  forget?: (abs: readonly string[]) => Promise<void>;
+  /** Remove a folder the sweep emptied (up to the root): the snapshot
+   *  folders, one per item. */
+  pruneEmptyDirs?: boolean;
   /** The node a file under the root (its path relative to it) is a revision
    *  of, or null: not one of the store's files at all, never touched. */
   nodeOf: (rel: string) => string | null;
@@ -373,6 +441,8 @@ export type SweepSpec = {
 
 export type SweepReport = {
   store: StoreName;
+  /** The spec's label, else the store. */
+  label: string;
   /** Files no row points at, seen for the first time this run. */
   marked: number;
   /** Removed (or, in a dry run, due): an old revision of a node whose row
@@ -491,6 +561,8 @@ export function markedBefore(
   root: string,
   before: number,
   now: number = Date.now(),
+  /** Where a restore puts its hold, when not at `root` (SweepSpec). */
+  holdRoot?: string,
 ): (abs: string) => boolean {
   let realRoot: string;
   try {
@@ -499,6 +571,7 @@ export function markedBefore(
     return () => false;
   }
   if (holdSince(realRoot, now) !== null) return () => false;
+  if (holdRoot && holdSince(holdRoot, now) !== null) return () => false;
   const { marks } = readState(realRoot);
   return (abs) => {
     const seen = marks[relativeTo(realRoot, realOrResolved(abs))];
@@ -554,6 +627,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
   const grace = opts.graceMs ?? STORE_SWEEP_GRACE_MS;
   const report: SweepReport = {
     store: spec.store,
+    label: spec.label ?? spec.store,
     marked: 0,
     removed: [],
     deferred: 0,
@@ -573,15 +647,16 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
   const stop = (why: string): SweepReport => {
     report.aborted = why;
     report.removed = [];
-    console.error(`[store-sweep] ${spec.store}: STOPPED, nothing removed: ${why}`);
+    console.error(`[store-sweep] ${report.label}: STOPPED, nothing removed: ${why}`);
     return report;
   };
   if (!opts.allowMany) {
-    const held = holdSince(root, opts.now ?? Date.now());
+    const at = opts.now ?? Date.now();
+    const held = holdSince(root, at) ?? (spec.holdRoot ? holdSince(spec.holdRoot, at) : null);
     if (held !== null) {
       report.held = new Date(held + STORE_SWEEP_HOLD_MS).toISOString();
       console.warn(
-        `[store-sweep] ${spec.store}: HELD until ${report.held} by a restore (${STORE_SWEEP_HOLD_FILE}): read the dry run (pnpm -C server/web store:sweep --allow-many, without --apply), then run it with --apply --allow-many, or remove the hold`,
+        `[store-sweep] ${report.label}: HELD until ${report.held} by a restore (${STORE_SWEEP_HOLD_FILE}): read the dry run (pnpm -C server/web store:sweep --allow-many, without --apply), then run it with --apply --allow-many, or remove the hold`,
       );
       return report;
     }
@@ -618,10 +693,19 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
           `the row of ${row.node} names ${first}, an older revision than on the last run: a restore? Put a hold (${STORE_SWEEP_HOLD_FILE}), or read the dry run (pnpm -C server/web store:sweep --allow-many, without --apply), then run it with --apply --allow-many`,
         );
       }
-      current[row.node] = t;
+      // A name with no revision token (a snapshot's, a file from before
+      // A3b) is never remembered: it can never be newer than another.
+      if (t > 0) current[row.node] = t;
     }
   }
-  if (owned.length > 0 && referenced.size === 0) {
+  // The tombstones (0284), as paths relative to the real root; one outside
+  // it never lets anything go.
+  const tombs = new Map<string, { abs: string; at: number }>();
+  for (const t of spec.tombstones ? await spec.tombstones() : []) {
+    const rel = relativeTo(root, realOrResolved(t.abs));
+    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) tombs.set(rel, t);
+  }
+  if (owned.length > 0 && referenced.size === 0 && !owned.some((f) => tombs.has(f))) {
     return stop(
       `${owned.length} store files and no row names any: is this the right database and root?`,
     );
@@ -637,11 +721,15 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     }
     const node = spec.nodeOf(rel)!;
     const named = byNode.get(node);
+    const tomb = tombs.get(rel);
     if (!named || named.length === 0) {
-      report.noRow.push(rel);
-      continue;
-    }
-    if (named.some((n) => !existsSync(join(root, n)))) {
+      // No row: reported, never removed, unless a tombstone says the row
+      // that named it went (a deleted snapshot, A3b part 2).
+      if (!tomb) {
+        report.noRow.push(rel);
+        continue;
+      }
+    } else if (named.some((n) => !existsSync(join(root, n)))) {
       report.rowFileMissing.push(rel);
       continue;
     }
@@ -656,7 +744,8 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     // period old and unreferenced" wherever it is read (a backup's
     // markedBefore among them; A3b fix round 4, L1).
     if (now - mtime < grace) continue;
-    const seen = marks[rel] ?? now;
+    // A tombstoned file counts as unreferenced since its row went.
+    const seen = Math.min(marks[rel] ?? now, tomb?.at ?? now);
     if (marks[rel] === undefined) report.marked += 1;
     next[rel] = seen;
     if (now - seen >= grace) due.push({ rel, seen });
@@ -676,11 +765,43 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
         continue;
       }
       delete next[rel];
+      if (spec.pruneEmptyDirs) removeEmptyDirs(root, rel);
     }
     report.removed.push(rel);
   }
-  if (!opts.dryRun) writeState(root, { marks: next, current });
+  if (!opts.dryRun) {
+    writeState(root, { marks: next, current });
+    // Tombstones whose file is gone (removed now, or before), a grace
+    // period old: cleared.
+    const done = [...tombs]
+      .filter(([rel, t]) => now - t.at >= grace && !existsSync(join(root, rel)))
+      .map(([, t]) => t.abs);
+    if (done.length && spec.forget) {
+      try {
+        await spec.forget(done);
+      } catch (err) {
+        console.error(
+          `[store-sweep] ${report.label}: could not clear tombstones:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
   return report;
+}
+
+/** Remove the folders above `rel` the sweep emptied, up to the root. */
+function removeEmptyDirs(root: string, rel: string): void {
+  let dir = dirname(rel);
+  while (dir && dir !== '.' && dir !== '/') {
+    try {
+      if (readdirSync(join(root, dir)).length > 0) return;
+      rmdirSync(join(root, dir));
+    } catch {
+      return;
+    }
+    dir = dirname(dir);
+  }
 }
 
 /** Remember the unreferenced files and each item's current revision. */

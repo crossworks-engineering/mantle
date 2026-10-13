@@ -1982,6 +1982,13 @@
       "when": 1790196240000,
       "tag": "0283_store_broker_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 284,
+      "version": "7",
+      "when": 1790196300000,
+      "tag": "0284_store_tombstones",
+      "breakpoints": true
     }
   ]
 }
