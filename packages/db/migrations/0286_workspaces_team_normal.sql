@@ -400,7 +400,7 @@ GRANT EXECUTE ON FUNCTION "public"."mantle_ws_any_shared"(uuid[]) TO "mantle_vie
 -- A live holder beyond Admin (7): any of `ws` is live and not Admin; a
 -- private or Former user workspace holds too (its user runs and reaches
 -- the item there). The rule of an app run's holders (appRunHolders,
--- liveHolderBeyondAdminSql), for a reader in a scope: an app's MCP reach.
+-- holderWorkspacesSql), for a reader in a scope: an app's MCP reach.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_any_holder"(ws uuid[])
   RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$

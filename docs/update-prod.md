@@ -1001,7 +1001,8 @@ select
     where a.author_level = 'team' and n.owner_id = mantle_brain_id()
       and not exists (select 1 from workspaces w
                        where w.id = any(n.read_ws) and not w.is_admin
-                         and w.archived_at is null)) as member_apps_without_holder;
+                         and w.archived_at is null
+                         and w.owner_id = mantle_brain_id())) as member_apps_without_holder;
 rollback;
 ```
 
