@@ -105,7 +105,8 @@ changes nothing change no trigger; a new one follows the box mode.
 - **App data** (D6): edit of the app; while Informational is on, an Admin
   user only. A member's and a contact's app-data writes run as named system
   work (`asSystem(..., 'app-data')`, the `/s` broker) after the app's own
-  check; the store brokers are A3b.
+  check. The app database's own broker (A3b) runs its checked statement
+  before the file: [store-brokers.md](./store-brokers.md).
 - **Links** follow the guide's table: open, change or close a link needs
   edit (an app: a Moderator of its home); an Admin user with the users area
   closes any; a contact share needs an Admin user, its home not checked.

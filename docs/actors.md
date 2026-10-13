@@ -807,3 +807,13 @@ The database checks writes, behind its own switch, `mantle.edit_check`
   presentation key, the array forms of the edit rule, D4 (app code: a
   Moderator of the home), D5 (the app switches: Admin users) and D6 (app
   data under Informational: Admin users), all behind the switch.
+
+## Closed in A3b (part 1)
+
+The store brokers: the database checks a write before its disk changes
+([store-brokers.md](./store-brokers.md)). One broker per store, one helper
+for the order (`packages/db/src/store-broker.ts`): the checked statement as
+the caller, exactly one row (none is a 404), then the disk with a journal,
+undone if the transaction fails, repaired on the next access if its commit
+was never seen. The tables, app databases and app builds are brokered; the
+docs store writes no disk; file bytes and snapshot files are part 2.
