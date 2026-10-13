@@ -14,11 +14,16 @@
  *     (a 404 through every existing mapper);
  *  3. a stage the flip is known not to have taken is removed at once
  *     (`stageThenFlip`: a refusal, a conflict, a throw in the transaction);
- *     after any other error the row is read again and a stage a row names
- *     is kept. One that outlives a crash, and every revision a row no
- *     longer points at, is the one sweep's (`sweepOrphans`, run by the
- *     maintenance worker), which removes only an old revision of an item
- *     whose row names another file.
+ *     after any other error (it may have committed) it is kept. One that
+ *     outlives a crash or such an error, and every revision a row no longer
+ *     points at, is the one sweep's (`sweepOrphans`, run by the maintenance
+ *     worker), which removes only an old revision of an item whose row
+ *     names another file.
+ *
+ * The stores' file names, which columns name them, and the one remover of a
+ * SQLite file with its sidecars live here too (`revisionNode`,
+ * `STORE_FILE_COLUMNS`, `removeSqliteFile`): the brokers, the backups and
+ * the sweep read them from one place.
  *
  * No transaction is held across a disk write. Readers resolve a store's
  * file through its row, in one place per store. The exceptions (an app's
@@ -106,40 +111,6 @@ export async function inFlipTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Where a broker's stage lives, for the re-read after a flip that may
- *  have committed: the store's registry, and the paths as its rows store
- *  them (a table's relative to TABLE_DB_DIR, an app database's absolute). */
-export type StagedPaths = { store: 'tables' | 'appdb'; paths: readonly string[] };
-
-/**
- * Whether any row names one of `paths` now, read as the system (no row
- * rule may hide a row the flip wrote). The one check a broker runs after a
- * flip failed in a way that may have committed (plan 20.3; A3b fix round 1,
- * H2): a stage a row names is live, never removed.
- */
-export async function stageNamedByRow(staged: StagedPaths): Promise<boolean> {
-  if (staged.paths.length === 0) return false;
-  const [{ systemDb }, { tables, appDatabases }, { inArray, or }] = await Promise.all([
-    import('./client'),
-    import('./schema/index'),
-    import('drizzle-orm'),
-  ]);
-  const paths = [...staged.paths];
-  const rows =
-    staged.store === 'tables'
-      ? await systemDb
-          .select({ id: tables.nodeId })
-          .from(tables)
-          .where(or(inArray(tables.storagePath, paths), inArray(tables.draftPath, paths)))
-          .limit(1)
-      : await systemDb
-          .select({ id: appDatabases.id })
-          .from(appDatabases)
-          .where(inArray(appDatabases.storagePath, paths))
-          .limit(1);
-  return rows.length > 0;
-}
-
 /**
  * Stage, then flip: `stage` writes the new revision (no row points at it),
  * `flip` is the one short transaction that checks the row and points it at
@@ -149,53 +120,116 @@ export async function stageNamedByRow(staged: StagedPaths): Promise<boolean> {
  * A flip that throws removes its stage at once ONLY when the error is known
  * to be before the commit (`flipNeverLanded`: a refusal, a conflict, a
  * throw in the transaction's body). Any other error may have committed (a
- * lost COMMIT acknowledgement): the row is read again as the system
- * (`landed`), and the stage goes only when no row names it; when that read
- * fails too, it stays (the sweep removes it once no row names it). Returns
- * the flip's result.
+ * lost COMMIT acknowledgement): the stage is kept, whether a row names it
+ * or not. A row never points at a removed stage; one no row names is an
+ * unreferenced revision for the sweep (A3b fix round 2, N3). Returns the
+ * flip's result.
  */
 export async function stageThenFlip<S, T>(
   stage: () => S | Promise<S>,
   flip: (staged: S) => Promise<T>,
   discard: (staged: S) => void,
-  landed: (staged: S) => Promise<boolean>,
 ): Promise<T> {
   const staged = await stage();
   try {
     return await flip(staged);
   } catch (err) {
-    let drop = flipNeverLanded(err);
-    if (!drop) {
-      try {
-        drop = !(await landed(staged));
-      } catch {
-        drop = false;
-      }
-      if (!drop) {
-        console.error(
-          '[store-broker] a flip failed after it may have committed; its stage is kept (a row names it, or the sweep removes it):',
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }
-    if (drop) {
+    if (flipNeverLanded(err)) {
       try {
         discard(staged);
       } catch {
         /* the sweep removes it */
       }
+    } else {
+      console.error(
+        '[store-broker] a flip failed after it may have committed; its stage is kept (a row names it, or the sweep removes it):',
+        err instanceof Error ? err.message : err,
+      );
     }
     throw err;
   }
 }
 
+// ── The stores' files ───────────────────────────────────────────────────
+
+/** The stores whose files the brokers write under revision names. */
+export type RevisionStore = 'tables' | 'appdb';
+
+/** The SQLite files that belong to a database file. */
+export const SQLITE_SIDECARS = ['-wal', '-shm', '-journal'] as const;
+
+/** Remove a SQLite file and every sidecar it may have (best effort: a file
+ *  that is gone is fine). THE remover for a store's database files. */
+export function removeSqliteFile(abs: string): void {
+  rmSync(abs, { force: true });
+  for (const s of SQLITE_SIDECARS) rmSync(`${abs}${s}`, { force: true });
+}
+
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+/** A revision's file name: `<node>[.r-<token>][.draft].sqlite` (a draft for
+ *  a table only). */
+const REVISION_NAME = new RegExp(`^(${UUID})(\\.r-[0-9a-z]+)?(\\.draft)?\\.sqlite$`);
+
+/** The node a store file NAME is a revision of, or null: not one of the
+ *  store's revisions (a sidecar, a marker, a trial copy, anything else). */
+export function revisionNode(name: string, store: RevisionStore): string | null {
+  const m = REVISION_NAME.exec(name);
+  if (!m) return null;
+  if (m[3] !== undefined && store !== 'tables') return null;
+  return m[1] ?? null;
+}
+
+/** A table draft written before A3b (`<node>.draft.sqlite`, no revision
+ *  token): the sweep never removes one, it reports it. */
+export function isLegacyDraftName(name: string): boolean {
+  const m = REVISION_NAME.exec(name);
+  return m !== null && m[2] === undefined && m[3] !== undefined;
+}
+
+/** Every revision of `node` in the folder `dirAbs` (absolute paths, no
+ *  sidecars): what a backup keeps and a table delete removes. */
+export function revisionFiles(dirAbs: string, node: string, store: RevisionStore): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(dirAbs);
+  } catch {
+    return [];
+  }
+  return names.filter((n) => revisionNode(n, store) === node).map((n) => join(dirAbs, n));
+}
+
+/** Which columns of which registry name a store's files: the one spec the
+ *  sweep (`storeRows`) and the backups read (A3b fix round 2, N5). A
+ *  table's are relative to TABLE_DB_DIR, an app database's absolute. */
+export const STORE_FILE_COLUMNS = {
+  tables: { table: 'tables', node: 'node_id', files: ['storage_path', 'draft_path'] },
+  appdb: { table: 'app_databases', node: 'app_node_id', files: ['storage_path'] },
+} as const satisfies Record<
+  RevisionStore,
+  { table: string; node: string; files: readonly string[] }
+>;
+
+/** Every row of a store with the files it names now (STORE_FILE_COLUMNS),
+ *  read on the caller's handle. */
+export async function storeRows(store: RevisionStore): Promise<SweepRow[]> {
+  const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
+  const spec = STORE_FILE_COLUMNS[store];
+  const cols = spec.files.map((c) => `"${c}"`).join(', ');
+  const rows = (await db.execute(
+    sql.raw(`select "${spec.node}"::text as node, array[${cols}] as files from "${spec.table}"`),
+  )) as unknown as { node: string; files: (string | null)[] }[];
+  return rows.map((r) => ({
+    node: r.node,
+    files: (r.files ?? []).filter((f): f is string => typeof f === 'string' && f.length > 0),
+  }));
+}
+
+// ── The sweep ───────────────────────────────────────────────────────────
+
 /** How long a file no row points at stays before the sweep removes it: a
  *  stage in flight is younger, and a revision just un-referenced has had
  *  its readers finish (a reader that resolved it before the flip). */
 export const STORE_SWEEP_GRACE_MS = 60 * 60 * 1000;
-
-/** The SQLite files that belong to a database file. */
-export const SQLITE_SIDECARS = ['-wal', '-shm', '-journal'] as const;
 
 /** A row of a store, as the sweep reads it: its node and the files it
  *  names (relative to the store's root, or absolute). */
@@ -222,6 +256,9 @@ export type SweepReport = {
   /** Removed (or, in a dry run, due): an old revision of a node whose row
    *  names another file, unreferenced for a whole grace period. */
   removed: string[];
+  /** Due, but past this run's budget: carried to the next run (the oldest
+   *  marked go first). Not a failure. */
+  deferred: number;
   failed: number;
   /** Files whose node has NO row (a deleted item's, a create that never
    *  landed, an app deleted long ago): reported, never removed. */
@@ -231,7 +268,8 @@ export type SweepReport = {
   rowFileMissing: string[];
   /** Legacy names (`spare`): reported, never removed. */
   legacy: string[];
-  /** Why this run removed nothing (a guard stopped it), or null. */
+  /** Why this run removed nothing (a hard stop or a restore's hold), or
+   *  null. */
   aborted: string | null;
 };
 
@@ -239,23 +277,24 @@ export type SweepOptions = {
   now?: number;
   graceMs?: number;
   dryRun?: boolean;
-  /** The most files one run may remove (default 50): past it, or past
-   *  `maxShare` of the files the store holds (once more than 10 would go),
-   *  the run removes NOTHING and says so (a wrong root or database looks
-   *  like a store full of orphans). */
-  maxRemovals?: number;
-  /** The largest share of the store's files one run may remove (0.1). */
-  maxShare?: number;
-  /** Lift the two limits above for this run (the CLI's --allow-many,
+  /** Most files one run removes: the larger of this (500) and half the
+   *  files the store holds. The rest are carried, oldest marked first. */
+  budget?: number;
+  /** Sweep although a restore's hold is in place (the CLI's --allow-many,
    *  after a dry run was read). */
   allowMany?: boolean;
 };
 
-/** The default removal limits of one run. */
-export const STORE_SWEEP_MAX_REMOVALS = 50;
-export const STORE_SWEEP_MAX_SHARE = 0.1;
-/** Below this many removals the share limit does not apply. */
-const SHARE_FLOOR = 10;
+/** The least a run may remove (or half the store, if more). */
+export const STORE_SWEEP_BUDGET = 500;
+
+/** The file a restore writes at a store's root (scripts/db-restore.sh,
+ *  scripts/app-dbs-restore.sh): restored rows may name OLDER revisions than
+ *  the files on disk, which would look like old revisions to remove. While
+ *  it is younger than STORE_SWEEP_HOLD_MS the sweep stops unless told
+ *  otherwise. */
+export const STORE_SWEEP_HOLD_FILE = '.store-sweep-hold';
+export const STORE_SWEEP_HOLD_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** `p`'s real path; for a file that is gone, its folder's real path joined
  *  with its name. */
@@ -285,6 +324,27 @@ function readMarks(root: string): Record<string, number> {
   }
 }
 
+/**
+ * Whether a file of the store under `root` was already marked unreferenced
+ * by the sweep before `before` (ms): a flip never points a row back at an
+ * old revision, so such a file was unreferenced when a Postgres dump taken
+ * at `before` ran, and a backup made with that dump may leave it out
+ * (bounded backups, A3b fix round 2). `abs` is any spelling of its path.
+ */
+export function markedBefore(root: string, before: number): (abs: string) => boolean {
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(root);
+  } catch {
+    return () => false;
+  }
+  const marks = readMarks(realRoot);
+  return (abs) => {
+    const seen = marks[relativeTo(realRoot, realOrResolved(abs))];
+    return seen !== undefined && seen < before;
+  };
+}
+
 function walkFiles(root: string, rel = '', out: string[] = [], depth = 0): string[] {
   if (depth > 4) return out;
   let entries;
@@ -308,19 +368,21 @@ function walkFiles(root: string, rel = '', out: string[] = [], depth = 0): strin
  * files, all of them on disk; and only once it has been unreferenced on two
  * runs a grace period apart and is older than it (a stage in flight, a
  * reader that resolved the old revision just before a flip). A SQLite
- * file's sidecars go with it.
+ * file's sidecars go with it. Each run removes at most its budget (the
+ * larger of 500 and half the store's files), the oldest marked first; the
+ * rest are carried to the next run and reported (`deferred`), never a
+ * failure.
  *
  * Never removed, only reported: a file whose node has no row (a deleted
  * item's, a create that never landed, a file from before A3b of an item
  * long gone; it may be the only copy), the files of a node whose row names
  * a file that is missing, and the legacy names (`spare`).
  *
- * Guards: both sides are compared as real paths; a row naming a file
- * outside the root stops the store's run (the root is not the one the rows
- * were written under), as does a store holding files while no row names
- * any (a wrong or empty database), and a run that would remove more than
- * `maxRemovals` files or `maxShare` of the store. A stopped run removes
- * nothing, says why (`aborted`) and logs it. Idempotent, plain files and
+ * Stops (nothing removed, nothing marked, logged, `aborted`): a restore's
+ * hold at the root younger than a week (unless `allowMany`); a row naming a
+ * file outside the root (both sides compared as real paths: the root is
+ * not the one the rows were written under); a store holding files while no
+ * row names any (a wrong or empty database). Idempotent, plain files and
  * one read of the rows: no model, no extraction, no notify.
  */
 export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Promise<SweepReport> {
@@ -330,6 +392,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     store: spec.store,
     marked: 0,
     removed: [],
+    deferred: 0,
     failed: 0,
     noRow: [],
     rowFileMissing: [],
@@ -348,6 +411,18 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     console.error(`[store-sweep] ${spec.store}: STOPPED, nothing removed: ${why}`);
     return report;
   };
+  if (!opts.allowMany) {
+    try {
+      const held = statSync(join(root, STORE_SWEEP_HOLD_FILE)).mtimeMs;
+      if (now - held < STORE_SWEEP_HOLD_MS) {
+        return stop(
+          `a restore put a hold on this store ${new Date(held).toISOString()} (${STORE_SWEEP_HOLD_FILE}): the restored rows may name older revisions than the files here. Read a dry run, then run it with --allow-many, or remove the hold`,
+        );
+      }
+    } catch {
+      /* no hold */
+    }
+  }
   const owned = walkFiles(root).filter((f) => spec.nodeOf(f) !== null);
   const rows = await spec.rows();
   // Every file a row names, as a path relative to the real root.
@@ -375,7 +450,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
   }
   const marks = readMarks(root);
   const next: Record<string, number> = {};
-  const due: string[] = [];
+  const due: { rel: string; seen: number }[] = [];
   for (const rel of owned) {
     if (referenced.has(rel)) continue;
     if (spec.spare?.(rel)) {
@@ -401,24 +476,18 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     const seen = marks[rel] ?? now;
     if (marks[rel] === undefined) report.marked += 1;
     next[rel] = seen;
-    if (now - seen >= grace && now - mtime >= grace) due.push(rel);
+    if (now - seen >= grace && now - mtime >= grace) due.push({ rel, seen });
   }
-  const maxRemovals = opts.maxRemovals ?? STORE_SWEEP_MAX_REMOVALS;
-  const maxShare = opts.maxShare ?? STORE_SWEEP_MAX_SHARE;
-  const tooMany =
-    due.length > maxRemovals || (due.length > SHARE_FLOOR && due.length > maxShare * owned.length);
-  if (!opts.dryRun) writeMarks(root, next);
-  if (tooMany && !opts.allowMany) {
-    return stop(
-      `${due.length} of ${owned.length} files would go (the limit is ${maxRemovals}, or ${Math.round(maxShare * 100)}% once more than ${SHARE_FLOOR}): read a dry run, then run it with --allow-many`,
-    );
-  }
-  for (const rel of due) {
+  // The run's budget: the oldest marked first; the rest wait for the next
+  // run (A3b fix round 2, N1: a busy day never stops the sweep).
+  const budget = Math.max(opts.budget ?? STORE_SWEEP_BUDGET, Math.floor(owned.length / 2));
+  due.sort((a, b) => a.seen - b.seen || (a.rel < b.rel ? -1 : 1));
+  const thisRun = due.slice(0, budget);
+  report.deferred = due.length - thisRun.length;
+  for (const { rel } of thisRun) {
     if (!opts.dryRun) {
-      const abs = join(root, rel);
       try {
-        rmSync(abs, { force: true });
-        for (const s of SQLITE_SIDECARS) rmSync(`${abs}${s}`, { force: true });
+        removeSqliteFile(join(root, rel));
       } catch {
         report.failed += 1;
         continue;

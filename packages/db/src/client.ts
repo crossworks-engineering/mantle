@@ -42,6 +42,7 @@ import {
   type SystemTxNest,
   type TxHooks,
   systemDbCallerOf,
+  afterRollback,
 } from './viewer';
 import {
   actorCheckMode,
@@ -1096,6 +1097,23 @@ type WriteTx = {
 };
 
 const openWriteTx = new AsyncLocalStorage<WriteTx>();
+
+/**
+ * Run `fn` if the transaction the caller's work joined rolls back: an open
+ * login write transaction (a request's db.transaction, M2), whose savepoint
+ * the work's own transaction was, or else the scope's (afterRollback: a
+ * personal space, a withSystemTx). Outside both the work has committed, and
+ * this does nothing. For bytes written beside rows that may never commit (a
+ * store broker's stage, A3b fix round 2, N6).
+ */
+export function afterOuterRollback(fn: () => unknown): void {
+  const open = openWriteTx.getStore();
+  if (open && !open.done) {
+    open.hooks.rollback.push(fn);
+    return;
+  }
+  afterRollback(fn);
+}
 
 /** A write transaction's state (WriteTx), or a savepoint's under `parent`.
  *  `saves`: the transaction's savepoint count when it is a system

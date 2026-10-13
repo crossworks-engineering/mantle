@@ -21,11 +21,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
+  STORE_SWEEP_HOLD_FILE,
   StoreRefusedError,
   flipNeverLanded,
   flipRolledBack,
   inFlipTransaction,
+  isLegacyDraftName,
+  markedBefore,
   oneRow,
+  removeSqliteFile,
+  revisionFiles,
+  revisionNode,
   revisionToken,
   stageThenFlip,
   sweepOrphans,
@@ -69,35 +75,28 @@ describe('stageThenFlip', () => {
 
   it('a flip that lands keeps the stage', async () => {
     const f = path.join(dir, 'kept');
-    const landed = vi.fn(async () => true);
     const out = await stageThenFlip(
       () => put('kept'),
       async () => 'flipped',
       rm,
-      landed,
     );
     expect(out).toBe('flipped');
     expect(existsSync(f)).toBe(true);
-    expect(landed).not.toHaveBeenCalled();
   });
 
-  it('a refused flip removes its stage at once (no re-read) and throws the refusal', async () => {
-    const landed = vi.fn(async () => true);
+  it('a refused flip removes its stage at once and throws the refusal', async () => {
     let f = '';
     await expect(
       stageThenFlip(
         () => (f = put('refused')),
         async () => oneRow('tables', [], 'table'),
         rm,
-        landed,
       ),
     ).rejects.toBeInstanceOf(StoreRefusedError);
     expect(existsSync(f)).toBe(false);
-    expect(landed).not.toHaveBeenCalled();
   });
 
   it("a throw inside the flip's transaction (rolled back) removes the stage at once", async () => {
-    const landed = vi.fn(async () => true);
     let f = '';
     await expect(
       stageThenFlip(
@@ -107,59 +106,65 @@ describe('stageThenFlip', () => {
             throw new Error('a conflict');
           }),
         rm,
-        landed,
       ),
     ).rejects.toThrow('a conflict');
     expect(existsSync(f)).toBe(false);
-    expect(landed).not.toHaveBeenCalled();
     expect(flipNeverLanded(flipRolledBack(new Error('x')))).toBe(true);
     expect(flipNeverLanded(new Error('x'))).toBe(false);
   });
 
-  it('a flip that committed and then threw (a post-commit throw, a lost COMMIT ack) keeps a stage the row names', async () => {
-    for (const err of [new Error('after the commit'), new Error('write CONNECTION_CLOSED')]) {
+  it('a flip that may have committed (a post-commit throw, a lost COMMIT ack, a failed commit) keeps its stage', async () => {
+    const quietly = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const err of [
+      new Error('after the commit'),
+      new Error('write CONNECTION_CLOSED'),
+      new Error('the commit fails'),
+    ]) {
       let f = '';
       await expect(
         stageThenFlip(
-          () => (f = put(`landed-${revisionToken()}`)),
+          () => (f = put(`ambiguous-${revisionToken()}`)),
           async () => {
             throw err;
           },
           rm,
-          async (s) => s === f, // the row names the stage
         ),
       ).rejects.toBe(err);
       expect(existsSync(f)).toBe(true);
     }
+    quietly.mockRestore();
+  });
+});
+
+describe("the stores' file names", () => {
+  const node = '0b4f1c1e-2d3a-4b5c-8d9e-0f1a2b3c4d5e';
+  it('one name rule for both stores; a draft for a table only', () => {
+    expect(revisionNode(`${node}.sqlite`, 'tables')).toBe(node);
+    expect(revisionNode(`${node}.r-abc123.sqlite`, 'appdb')).toBe(node);
+    expect(revisionNode(`${node}.r-abc123.draft.sqlite`, 'tables')).toBe(node);
+    expect(revisionNode(`${node}.r-abc123.draft.sqlite`, 'appdb')).toBeNull();
+    for (const n of [
+      `${node}.sqlite-wal`,
+      `${node}.sqlite.restoring`,
+      'x.sqlite',
+      '.store-sweep.json',
+    ]) {
+      expect(revisionNode(n, 'tables')).toBeNull();
+    }
+    expect(isLegacyDraftName(`${node}.draft.sqlite`)).toBe(true);
+    expect(isLegacyDraftName(`${node}.r-1.draft.sqlite`)).toBe(false);
   });
 
-  it('a flip that failed in a way that may have committed: removed only when no row names it; kept when the re-read fails', async () => {
-    let gone = '';
-    await expect(
-      stageThenFlip(
-        () => (gone = put('not-named')),
-        async () => {
-          throw new Error('the commit fails');
-        },
-        rm,
-        async () => false,
-      ),
-    ).rejects.toThrow('the commit fails');
-    expect(existsSync(gone)).toBe(false);
-    let kept = '';
-    await expect(
-      stageThenFlip(
-        () => (kept = put('unknown')),
-        async () => {
-          throw new Error('the connection is gone');
-        },
-        rm,
-        async () => {
-          throw new Error('still gone');
-        },
-      ),
-    ).rejects.toThrow('the connection is gone');
-    expect(existsSync(kept)).toBe(true);
+  it('removeSqliteFile takes every sidecar, -journal too', () => {
+    const f = path.join(dir, `${node}.sqlite`);
+    for (const x of ['', '-wal', '-shm', '-journal']) writeFileSync(`${f}${x}`, 'x');
+    writeFileSync(path.join(dir, `${node}.r-2.sqlite`), 'x');
+    expect(revisionFiles(dir, node, 'tables').sort()).toEqual([
+      path.join(dir, `${node}.r-2.sqlite`),
+      f,
+    ]);
+    removeSqliteFile(f);
+    for (const x of ['', '-wal', '-shm', '-journal']) expect(existsSync(`${f}${x}`)).toBe(false);
   });
 });
 
@@ -328,8 +333,7 @@ describe('sweepOrphans', () => {
     err.mockRestore();
   });
 
-  it('stops when more than the per-run limit would go; --allow-many lifts it', async () => {
-    const err = quiet();
+  it("a busy day: past the run's budget the oldest marked go first, the rest next run; never a stop", async () => {
     root = path.join(dir, 'store-9');
     const rows: { node: string; files: string[] }[] = [];
     const old: string[] = [];
@@ -341,21 +345,80 @@ describe('sweepOrphans', () => {
     }
     const now = Date.now();
     await sweepOrphans(spec(rows), { now });
-    const stopped = await sweepOrphans(spec(rows), { now: now + 2 * HOUR });
-    expect(stopped.aborted).toMatch(/60 of 120 files would go/);
-    expect(stopped.removed).toEqual([]);
-    for (const f of old) expect(existsSync(f)).toBe(true);
-    // A share past 10% stops it too, under the absolute limit.
-    const share = await sweepOrphans(spec(rows), {
-      now: now + 2 * HOUR,
-      maxRemovals: 1000,
-      dryRun: true,
-    });
-    expect(share.aborted).toMatch(/10%/);
-    const many = await sweepOrphans(spec(rows), { now: now + 3 * HOUR, allowMany: true });
-    expect(many.aborted).toBeNull();
-    expect(many.removed).toHaveLength(60);
+    // 60 due of 120 files, with a budget of 20: the run removes the larger
+    // of its budget and half the store, all 60, and nothing stops.
+    const first = await sweepOrphans(spec(rows), { now: now + 2 * HOUR, budget: 20 });
+    expect(first.aborted).toBeNull();
+    expect(first.removed).toHaveLength(60); // half the store (60) is above 20
+    expect(first.deferred).toBe(0);
     for (const f of old) expect(existsSync(f)).toBe(false);
+  });
+
+  it('carries what is past the budget to the next run, oldest marked first', async () => {
+    root = path.join(dir, 'store-10');
+    const rows: { node: string; files: string[] }[] = [];
+    const now = Date.now();
+    const olds: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const node = `m${String.fromCharCode(97 + i)}`;
+      put(`x/${node}.r-1.sqlite`, 30 * HOUR);
+      rows.push({ node, files: [`x/${node}.r-1.sqlite`] });
+    }
+    // Two waves of old revisions, marked half an hour apart: 18 owned
+    // files, half is 9, a budget of 1: 9 per run.
+    for (let i = 0; i < 6; i++)
+      olds.push(put(`x/m${String.fromCharCode(97 + i)}.r-0.sqlite`, 30 * HOUR));
+    await sweepOrphans(spec(rows), { now });
+    const late: string[] = [];
+    for (let i = 0; i < 6; i++)
+      late.push(put(`x/m${String.fromCharCode(97 + i)}.r-00.sqlite`, 30 * HOUR));
+    await sweepOrphans(spec(rows), { now: now + HOUR / 2, budget: 1 });
+    const run = await sweepOrphans(spec(rows), { now: now + 3 * HOUR, budget: 1 });
+    expect(run.aborted).toBeNull();
+    expect(run.removed).toHaveLength(9); // half of 18 owned
+    expect(run.deferred).toBe(3);
+    for (const f of olds) expect(existsSync(f)).toBe(false); // the oldest marked went first
+    const next = await sweepOrphans(spec(rows), { now: now + 4 * HOUR, budget: 1 });
+    expect(next.removed).toHaveLength(3);
+    expect(next.deferred).toBe(0);
+    for (const f of late) expect(existsSync(f)).toBe(false);
+  });
+
+  it("a restore's hold stops the sweep (loudly) for a week, unless --allow-many", async () => {
+    const err = quiet();
+    root = path.join(dir, 'store-11');
+    const old = put('y/k.r-0.sqlite', 30 * HOUR);
+    put('y/k.r-1.sqlite', 30 * HOUR);
+    const rows = [{ node: 'k', files: ['y/k.r-1.sqlite'] }];
+    const hold = put(STORE_SWEEP_HOLD_FILE, 0);
+    const now = Date.now();
+    for (const t of [now, now + 2 * HOUR]) {
+      const r = await sweepOrphans(spec(rows), { now: t });
+      expect(r.aborted).toMatch(/hold/);
+      expect(r.marked).toBe(0);
+    }
+    expect(existsSync(old)).toBe(true);
+    expect(err).toHaveBeenCalled();
+    // Overridden after a dry run: the grace period starts now.
+    await sweepOrphans(spec(rows), { now: now + 2 * HOUR, allowMany: true });
+    const r = await sweepOrphans(spec(rows), { now: now + 4 * HOUR, allowMany: true });
+    expect(r.removed).toEqual(['y/k.r-0.sqlite']);
+    // A week on, the hold no longer stops it.
+    const t = (Date.now() - 8 * 24 * HOUR) / 1000;
+    utimesSync(hold, t, t);
+    expect((await sweepOrphans(spec(rows), { now: now + 5 * HOUR })).aborted).toBeNull();
     err.mockRestore();
+  });
+
+  it('a backup leaves out only what the sweep had marked before the dump started', async () => {
+    root = path.join(dir, 'store-12');
+    const old = put('z/q.r-0.sqlite', 30 * HOUR);
+    const live = put('z/q.r-1.sqlite', 30 * HOUR);
+    const rows = [{ node: 'q', files: ['z/q.r-1.sqlite'] }];
+    const now = Date.now();
+    await sweepOrphans(spec(rows), { now });
+    expect(markedBefore(root, now + 1)(old)).toBe(true);
+    expect(markedBefore(root, now)(old)).toBe(false); // marked during the dump: kept
+    expect(markedBefore(root, now + 1)(live)).toBe(false);
   });
 });
