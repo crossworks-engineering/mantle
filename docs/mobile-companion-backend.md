@@ -747,7 +747,9 @@ the app keeps its own strip as a fallback for older brains.
 
 **Version 1 is push plus refetch.** On a `chat` push the app refetches the
 member's thread, `GET /api/assistant/thread` (since W7c a member's chat is an
-ordinary per-user thread with the Team workspace's assistant; the member chat
+ordinary per-user thread with the assistant of one of its workspaces: with
+none named, its oldest workspace beyond Admin that has one, Team's on a
+brain switched before migration 0286; the member chat
 routes `GET` and `POST /api/member/chat` answer 410 `{ error, code: 'gone' }`).
 (The old client chat, `GET /api/client/chat`, answers 410 since W5c; the
 client logins themselves went in W8a.)

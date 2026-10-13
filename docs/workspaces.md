@@ -44,44 +44,59 @@ Each workspace has a **look**: a colour and an icon, picked the way a
 folder's are (the same palette and the same icons). The workspace switcher
 shows it, and so do the share marks on the item tree. With no colour or icon
 picked, the workspace shows a neutral colour and the default icon of its
-kind: Admin, Team, a private workspace, or any other.
+kind: Admin, a private workspace, or any other. (Team, a normal workspace
+since migration 0286, kept the icon its old kind drew.)
 
 The workspaces a brain has:
 
-- **Admin**: exactly one. Its users manage the brain (see "Admin areas").
-  It cannot be archived, and it keeps at least one Moderator.
-- **Team**: the shared workspace made at the switch. Admin users stay
-  Moderators of Team. The screen says "Admin users moderate this
-  workspace".
+- **Admin**: exactly one, and the only workspace with rules of its own.
+  Its users manage the brain (see "Admin areas"). It keeps its name,
+  cannot be archived, and keeps at least one Moderator. An admin login is
+  its user and a Moderator there.
+- **Team**: on a brain switched to workspaces before migration 0286, the
+  shared workspace the switch made. Since 0286 (owner decision 2026-10-13)
+  it is a normal workspace: renamed, archived and moderated like any
+  other, with the same name, items, grants and users. Its Moderators kept
+  their ticks; an Admin user reviews them on the workspace screen. A new
+  brain has no Team workspace.
 - **A private workspace per user**, named after the user with "(only
   you)". The brain makes it the first time the user needs it. Nobody else
   is in it, and it is not granted to Admin.
 - **A "Former user" workspace** for the items of a login that was removed.
   It has no users. An Admin user may join it.
 - Any other workspace a user makes. Any user may make one. They become its
-  only user and its Moderator.
+  only user and its Moderator: the one way to become a Moderator without
+  an Admin user.
 
 Who may change a workspace:
 
-- **A Moderator** adds users (by a search on name or email), sets or clears
-  the Moderator tick, removes users, edits the name, description and look,
-  and sets the landing page. The look follows the name's rule: whoever may
-  rename a workspace sets its colour and icon. Admin and Team keep their
-  names, but their look can change. A Moderator outside Admin types at least 3 letters
-  and sees at most 10 matches.
+- **A Moderator** adds users (by a search on name or email), removes
+  users, edits the name, description and look, and sets the landing page.
+  The look follows the name's rule: whoever may rename a workspace sets its
+  colour and icon, on every workspace. Admin keeps its name, but its look
+  can change (its Moderators are Admin users). A Moderator outside Admin
+  types at least 3 letters and sees at most 10 matches.
+- **Only an Admin user** (with the users area) sets or clears the
+  Moderator tick, on any workspace, and adds a user with the tick (owner
+  decision 2026-10-13, migration 0286). A Moderator who is not an Admin
+  user adds users without it; the screen shows the tick switched off,
+  with "Only an Admin user can change the Moderator tick." The brain
+  answers 403 `admin_only` to anyone else.
 - **An Admin user** (with the users area) sees every workspace and may add
   anyone to any workspace, themselves included. The add is logged and the
   screen shows "Added by NAME on DATE".
-- **A new login** (an invite, or **Add login**) joins the Team workspace
-  as a Moderator, and an admin login joins Admin too (plan Q1). That is the
-  only membership the brain gives by itself. Any other workspace needs a
-  Moderator or an Admin user to add the user.
+- **A new login** (an invite, or **Add login**) gets its private workspace
+  the first time it needs one, and an admin login joins Admin as a
+  Moderator. That is the only membership the brain gives by itself (until
+  0286 every new login also joined Team as a Moderator, plan Q1). Any
+  other workspace needs a Moderator or an Admin user to add the user.
 - **Any user** may leave a workspace. Nobody removes or demotes the last
   Moderator.
 - **Archiving** a workspace (a Moderator of it, or an Admin user) removes
   its grants from the items granted to it. The confirm lists the counts
   first. It is refused while any item still has its home there: move those
-  items first. The Admin and Team workspaces cannot be archived.
+  items first. The Admin workspace cannot be archived; Team can, like any
+  other, since 0286.
 
 Every change of users, Moderator ticks, grants and resources writes a
 `workspace_events` row. A workspace or a login the caller may not see
@@ -110,14 +125,13 @@ they switch, the landing page changes with it.
 - **All my workspaces** in the switcher shows the Built-in home over every
   workspace of the user. It never shows a home app. A user who never picked
   a workspace lands here; the browser remembers each pick after that.
-- **Who sets it.** Every Moderator of the workspace. In Team that is every
-  member (a new login joins Team as a Moderator) and every Admin user (they
-  moderate Team). A pick opens for every user of the workspace, Admin users
-  included. The app still reads only what its holder workspaces read (see
+- **Who sets it.** Every Moderator of the workspace. A pick opens for every
+  user of the workspace, Admin users included. The app still reads only what its holder workspaces read (see
   "Apps"): a landing page gives it no more. Each change is logged as a
   `workspace_events` row, `workspace.landing`.
 - An Admin area does not set another workspace's landing page: only its
-  Moderators do. Admin users moderate Team, so they set Team's.
+  Moderators do. An Admin user who should set one is made a Moderator of
+  it (by an Admin user).
 - The brain health **Dashboard** is no landing page. Admin users with the
   settings area open it from the menu.
 - The landing page always reads in the user's own workspaces, also under
@@ -426,6 +440,16 @@ The users of the Admin workspace manage the brain through five areas:
   browser then remembers it.
 - **Automatic Admin grants.** Nothing adds a grant to Admin. To put an item
   in Admin, an Admin user shares it with Admin by hand.
+- **The built-in Team workspace** (migration 0286, owner decision
+  2026-10-13, which reverses plan Q1). Team is a normal workspace: no
+  reserved name, no archive refusal, no Admin users kept as its
+  Moderators, no special look rule. A new login no longer joins it, and a
+  new brain has none. Nobody becomes a Moderator by themselves: an Admin
+  user ticks Moderator, and the one who makes a workspace is its
+  Moderator. Where a rule asked for "the Team workspace" it now asks for
+  the login's own workspaces: a member's chat with no assistant named goes
+  to the assistant of its oldest workspace beyond Admin that has one, and
+  the old member home route answers its oldest shared workspace.
 
 Clients may come back later as ordinary workspaces, set up by hand: a
 workspace with its users in it, like any other.

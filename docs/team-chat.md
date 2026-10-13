@@ -22,7 +22,8 @@ What is left of the old team chat:
 
 ## Email and journal stay private
 
-The Team workspace's assistant never reads the owner's mail or journal.
+The assistant of a workspace other than Admin (Team's, on a brain switched
+before migration 0286) never reads the owner's mail or journal.
 Mail and journal entries are Admin-only kinds, so no other workspace holds
 them, and the assistant reads only what its own workspace holds (row
 security in the turn scope). The `email_*` tools also need the connectors

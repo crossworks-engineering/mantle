@@ -18,11 +18,12 @@ You set permissions in two places only: **Settings > Workspaces**, and the **Gra
 | Workspace | Who is in it | What it is for |
 |---|---|---|
 | **Admin** | You and the other admins | Running the brain: settings, logins, workspaces, assistants, connectors, keys |
-| **Team** | Every login, as a Moderator | Work the whole team shares |
 | **Your private workspace** | Only you | Your own work. Nobody else sees it, admins included |
-| Any other | The users a Moderator adds | A project, a group, a company you work with |
+| Any other | The users a Moderator or an admin adds | A team, a project, a group, a company you work with |
 
-Any user may make a new workspace. They become its only user and its Moderator.
+Admin is the only workspace with rules of its own: it keeps its name and cannot be archived. A brain set up before October 2026 also has a **Team** workspace; it is a workspace like any other now.
+
+Any user may make a new workspace. They become its only user and its Moderator. Only an admin ticks **Moderator** for anyone else.
 
 ## Share an item
 
@@ -42,7 +43,7 @@ Each workspace can have one assistant. It reads only that workspace's items, and
 
 | To add | Do this |
 |---|---|
-| A member | **Settings > Logins > Invite**. They join Team. Add them to other workspaces on **Settings > Workspaces**. |
+| A member | **Settings > Logins > Invite**. They get their private workspace only. Add them to the workspaces they need on **Settings > Workspaces**. |
 | Another admin | Add them to the Admin workspace, or **Settings > Logins > Add login** with role Admin. |
 | Someone outside your company | Make a workspace for them, add their login, and share only what they need. |
 

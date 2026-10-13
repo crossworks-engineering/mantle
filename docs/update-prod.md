@@ -935,6 +935,59 @@ and `app_databases.write_seq`, with no table rewrite.
   `--allow-many` a held store only says HELD), then run it with
   `--apply --allow-many`, or remove the hold files.
 
+## Team is a normal workspace (migration 0286)
+
+Owner decision 2026-10-13: the only built-in workspace with rules of its own
+is Admin. This is a rule change, not a staged check: it applies the moment a
+box rolls, whatever `MANTLE_ACTOR_CHECK` and `MANTLE_EDIT_CHECK` say, so a
+box that runs both off (NATREF, Astron, prod) gets it in full. Roll NATREF
+only after the Pinnacle showcase, with the owner's go.
+
+What migration 0286 does on a box (one statement per brain, under a 30 s
+lock wait, re-runnable):
+
+- **Team stays as it is**: its name, items, homes, grants, users, Moderator
+  ticks, assistant, connectors and landing page are untouched. It loses its
+  built-in mark (`bridge_key` and `admin_moderated` cleared) and gets the
+  icon it already showed (`lucide:users`) when none was picked. One
+  `workspace_events` row (`workspace.update`, no actor) records it.
+- **New logins join no Team.** An invite or **Add login** gives a member
+  login no workspace (its private one comes when needed); an admin login
+  joins Admin as a Moderator, as before.
+- **Only Admin users tick Moderator**, on every workspace: a Moderator who
+  is not an Admin user can no longer make someone a Moderator or take the
+  tick away (403 `admin_only`); they still add and remove users. The maker
+  of a new workspace is still its Moderator.
+- **Team renames and archives like any workspace** (archive is still
+  refused while an item has its home there), and its look follows the
+  rename rule. Only "Admin" stays a reserved name.
+- A member who chats without naming an assistant gets the assistant of
+  their oldest workspace beyond Admin that has one: Team's on such a box,
+  so nothing changes there.
+
+What the operator tells the users of the box: "Team is now a workspace like
+any other. Nobody loses access. From now on only an admin can make someone a
+Moderator, and new people are added to workspaces by an admin." Then an
+Admin user reviews Team's users on **Settings > Workspaces > Team** and
+clears the Moderator tick of anyone who should only read and use Team
+(every member had it since the workspaces switch).
+
+Check after the roll (read only):
+
+```sql
+select name, bridge_key, admin_moderated, icon from workspaces where not is_admin
+ and lower(name) = 'team';
+-- one row: Team, null, false, lucide:users (or the icon picked before)
+select count(*) from workspace_users u join workspaces w on w.id = u.workspace_id
+ where lower(w.name) = 'team' and u.moderator;   -- the same count as before the roll
+```
+
+Rolling the image back alone leaves Team normal, and the older image finds
+no Team by its mark: a member's chat that names no assistant is refused
+("Team chat isn't provisioned") and the old member home answers nothing,
+until the newer image is back. Roll forward; do not put the mark back by
+hand.
+
 ## Rollback
 
 ```bash

@@ -15,7 +15,7 @@ The person opens the link, sets a password and is signed in. The link works once
 
 You can also make a login directly: **Settings > Logins > Add login**. Give the person the email and starting password yourself.
 
-A new login joins the Team workspace as a Moderator. To give it more, add it to other workspaces in **Settings > Workspaces**.
+A new login gets only its own private workspace (an admin login joins Admin too). Add it to the workspaces it should reach in **Settings > Workspaces**, and tick **Moderator** where it should manage the workspace. Only an Admin user ticks Moderator.
 
 ## Add another admin
 

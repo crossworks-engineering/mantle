@@ -58,10 +58,11 @@ table is `member_invites` (migration 0174); the logic is
   redeems. Every failure is the same 401. Both are rate limited per IP and
   for the whole brain on failed codes only.
 - An invite on the email of a former client login is refused (W8a).
-- The new login joins the Team workspace as a Moderator (plan Q1), in the
-  same transaction as the redeem. Add them to any other workspace they
-  should reach on the workspace screen. Their private workspace comes the
-  first time it is needed.
+- The new login joins no workspace by itself (since migration 0286; until
+  then it joined the Team workspace as a Moderator, plan Q1). An Admin
+  user adds them to the workspaces they should reach on the workspace
+  screen, and ticks Moderator where they should manage. Their private
+  workspace comes the first time it is needed.
 
 ## External access: outside tools in shared apps
 

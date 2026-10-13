@@ -12,7 +12,8 @@ Your team signs in with its own logins:
 
 1. Open **Settings > Logins** and click **Invite**.
 2. Make an invite link for an email address.
-3. Send the link. The person sets a password and joins the Team workspace.
+3. Send the link. The person sets a password and signs in.
+4. Add them to the workspaces they need on **Settings > Workspaces**.
 
 Each user chats with the assistant of each workspace they are in, in their
 own thread. See [Logins](users.md) and [Add logins](../05-admin/07-logins.md).

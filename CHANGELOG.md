@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: Team is a normal workspace; only Admin users tick Moderator
+
+- Owner decision 2026-10-13 (reverses plan Q1): the only built-in workspace
+  with rules of its own is Admin. Migration 0286 clears the Team
+  workspace's built-in mark on every brain (its name, items, homes, grants,
+  users and Moderator ticks stay; it keeps the icon it showed). Team now
+  renames, archives (refused while an item has its home there) and takes a
+  look like any workspace; only "Admin" stays a reserved name.
+- A new login (an invite, **Add login**) joins no Team: a member login gets
+  its private workspace when it needs one, an admin login joins Admin as a
+  Moderator. A new brain has no Team workspace.
+- Only an Admin user (the users area) ticks or clears Moderator, and adds a
+  user with the tick: anyone else gets 403 `admin_only` (one check,
+  `mayPromote`). The maker of a workspace is still its Moderator. Jackdaw
+  shows the tick off, with the reason, to everyone else.
+- Nothing looks Team up any more: a member's chat with no assistant named,
+  and the key-made notice, go to the assistant of the login's oldest
+  workspace beyond Admin that has one; the old member home route answers
+  the login's oldest shared workspace; an app run with no holder beyond
+  Admin reads nothing; a connector call with no login needs a workspace
+  beyond Admin to hold it; the author warnings ask the app's own holders.
+- Roll notes and what to tell users: [update-prod.md](docs/update-prod.md),
+  "Team is a normal workspace".
+
 ## Unreleased: a reserved connection that dies no longer crashes the process
 
 - A reserved Postgres connection that the server ended (killed, a restart,

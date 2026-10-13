@@ -19,7 +19,8 @@ The list shows **Open invites** first (while any is open), then the
 logins.
 
 **Invite** makes an invite link for a new member. The person opens it, sets
-a password and becomes a member login, a Moderator of the Team workspace.
+a password and becomes a member login, in no workspace but its own private
+one. Add it to workspaces on **Settings > Workspaces**.
 Select an open invite to **Revoke** it or make a **New link**. **Add
 login** takes an **Email**, a **Starting password** (at least 8
 characters) and an optional **Display name**. Steps for both:
