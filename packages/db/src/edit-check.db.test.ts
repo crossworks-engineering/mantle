@@ -140,6 +140,12 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
+    // The file starts off, as every box does, before its connections open:
+    // a connection keeps the database's setting from when it opened (a test
+    // config may have switched the scratch database).
+    const first = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
+    await first`select mantle_set_edit_check('off')`;
+    await first.end();
     const onnotice = (x: { message?: string }) => notices.push(String(x.message ?? ''));
     sql = postgres(scratch.url, { max: 2, prepare: false, onnotice });
     w = postgres(viewerDatabaseUrl(scratch.url, 'write', viewerRolePassword(testKey, 'write')), {
@@ -225,9 +231,6 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
                values (${L.owner}, ${n.map2}, 'jump', 'card', 'Jump',
                        ${sql.json([{ targetMap: `${tag}-one`, targetSlug: `${tag}-one` }] as never)})`;
     });
-    // Every cell names its own mode; the file starts off, as every box does
-    // (a test config may have switched the scratch database).
-    await setMode('off');
   }, 240_000);
 
   afterAll(async () => {

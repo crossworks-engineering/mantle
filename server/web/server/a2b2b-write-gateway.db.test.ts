@@ -298,10 +298,33 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
           .values({ ownerId: owner, type: 'note', title, path: 'notes', data: {} })
           .returning({ id: m.nodes.id, home: m.nodes.homeWs }),
       );
+    // With the edit check on (pnpm test:edit-on, arch A3a) an assistant with
+    // no user and a public link write nothing: the read-only refusal.
+    const editOn = process.env.MANTLE_TEST_EDIT_CHECK === 'on';
     for (const mode of ['warn', 'on'] as const) {
       setMode(mode);
       for (const a of actors) {
         const name = `${mode} ${a.actor.kind}`;
+        if (editOn && m.writeModeOf(a.actor) === 'ro') {
+          const ro = await m
+            .runAsActor(a.actor, () =>
+              m.withTurnScope(
+                { kind: a.kind, loginId: null, ws: [team], modWs: [team] },
+                () =>
+                  m.withCreateHome({ createWs: team, privateWs: null }, () =>
+                    create(`${tag} ${name} read only`),
+                  ),
+                { writes: true },
+              ),
+            )
+            .then(
+              () => null,
+              (e: unknown) => e,
+            );
+          expect(m.editRefusalDetail(ro), name).toBe('ro_actor');
+          m.takeActorMisses();
+          continue;
+        }
         // A Moderator of the workspace it creates in: allowed, on the role.
         let made: { id: string; home: string | null }[] = [];
         const who = await writersOf(() =>
