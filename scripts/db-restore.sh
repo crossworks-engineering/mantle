@@ -86,6 +86,39 @@ if [ "$EXISTING" = "t" ]; then
   exit 1
 fi
 
+# Where this box keeps its data (the personal-space files below, the stores).
+DATA_DIR="${MANTLE_DATA_DIR:-}"
+if [ -z "$DATA_DIR" ] && [ -f .env ]; then
+  DATA_DIR="$(sed -n 's/^MANTLE_DATA_DIR=//p' .env | tail -1 | tr -d "\"'")"
+fi
+DATA_DIR="${DATA_DIR:-./data}"
+
+# The store sweep hold (arch A3b), put down BEFORE anything is restored: the
+# restored rows may name OLDER revisions of table workbooks and app
+# databases than the files on this disk, which the nightly store-sweep would
+# read as old revisions to remove, and the sweep's memory (.store-sweep.json)
+# names files as unreferenced that the restored rows may name again. Each
+# store root gets a hold (the sweep holds it for a week, or until someone
+# has read a dry run, pnpm -C server/web store:sweep, and runs it with
+# --allow-many) and loses that memory. The deployed layout
+# ($MANTLE_DATA_DIR/{table-dbs,app-dbs}, made if missing so the hold lands
+# before any file does) and the dev one (.table-dbs, .app-dbs at the repo root, where they
+# exist).
+for STORE_DIR in "$DATA_DIR/table-dbs" "$DATA_DIR/app-dbs" ./.table-dbs ./.app-dbs; do
+  case "$STORE_DIR" in
+    ./.table-dbs|./.app-dbs) [ -d "$STORE_DIR" ] || continue ;;
+  esac
+  if mkdir -p "$STORE_DIR" 2>/dev/null && touch "$STORE_DIR/.store-sweep-hold" 2>/dev/null \
+     && rm -f "$STORE_DIR/.store-sweep.json"; then
+    echo "▷ store sweep held for a week: $STORE_DIR/.store-sweep-hold"
+  else
+    # Not fatal (a data folder this user cannot write): the sweep still
+    # stops on its own when a row names an older revision than on its last
+    # run, but put the hold down by hand.
+    echo "⚠ could not write $STORE_DIR/.store-sweep-hold: put it down by hand (touch it, remove .store-sweep.json there, as root if need be) before the stack starts." >&2
+  fi
+done
+
 # The viewer roles (member logins Phase 0b, plus the personal-space role of
 # Phase 2) are cluster objects: a dump does not carry them, but its row
 # policies and grants name them. Create them first (no login; migrate sets the
@@ -391,11 +424,6 @@ fi
 
 # Personal-space file bytes (member logins). The rows restored above point at
 # them; without them every member file answers "gone".
-DATA_DIR="${MANTLE_DATA_DIR:-}"
-if [ -z "$DATA_DIR" ] && [ -f .env ]; then
-  DATA_DIR="$(sed -n 's/^MANTLE_DATA_DIR=//p' .env | tail -1 | tr -d "\"'")"
-fi
-DATA_DIR="${DATA_DIR:-./data}"
 STAMP="$(basename "$DUMP" .dump)"
 STAMP="${STAMP#mantle-}"
 SPACES_TGZ="${MANTLE_SPACES_ARCHIVE:-$(dirname "$DUMP")/mantle-spaces-${STAMP}.tgz}"
@@ -409,23 +437,6 @@ else
   tar -C "$SPACES_DIR" -xzf "$SPACES_TGZ"
   echo "✔ Restored personal-space files → $SPACES_DIR"
 fi
-
-# The store sweep hold (arch A3b): the restored rows may name OLDER
-# revisions of table workbooks and app databases than the files on this
-# disk, which the nightly store-sweep would read as old revisions to remove.
-# A hold at each store root stops it for a week, or until someone has read a
-# dry run (pnpm -C server/web store:sweep) and runs it with --allow-many.
-# The deployed layout ($MANTLE_DATA_DIR/{table-dbs,app-dbs}) and the dev one
-# (.table-dbs, .app-dbs at the repo root), where they exist.
-for STORE_DIR in "$DATA_DIR/table-dbs" "$DATA_DIR/app-dbs" ./.table-dbs ./.app-dbs; do
-  if [ -d "$STORE_DIR" ]; then
-    if touch "$STORE_DIR/.store-sweep-hold" 2>/dev/null; then
-      echo "▷ store sweep held for a week: $STORE_DIR/.store-sweep-hold"
-    else
-      echo "⚠ could not write $STORE_DIR/.store-sweep-hold: run the store sweep only after the restored files are checked." >&2
-    fi
-  fi
-done
 
 if [ "$UNEXPLAINED" -gt 0 ]; then
   echo "✗ pg_restore reported $UNEXPLAINED error(s) this script cannot explain: something in the dump" >&2
