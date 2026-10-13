@@ -128,8 +128,10 @@ off and an actor is bound, `client.ts` (`needsActorWrap`):
   the write commits by itself), then a real `RESET` of the three
   settings. The caller gets the write's own answer and waits no longer
   than with the check off. The connection goes back to the pool only once
-  the RESET has answered; a RESET that fails ends the connection
-  (A2b1 audit, Q1). No pooled connection keeps an actor;
+  the RESET has answered; a RESET that fails ends the connection, which
+  never goes back (A2b1 audit, Q1), and a connection that died is neither
+  sent to nor handed back (`packages/db/src/reserved.ts`, the one way the
+  package reserves a connection). No pooled connection keeps an actor;
 - sends a read (SELECT, WITH ... SELECT, VALUES, SHOW, EXPLAIN without
   ANALYZE or ANALYSE) plain, exactly as with the check off.
 

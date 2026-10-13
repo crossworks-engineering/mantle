@@ -16,6 +16,7 @@
  * Nothing here starts LLM work.
  */
 import type { Sql } from 'postgres';
+import { withLease } from './reserved';
 
 export interface ConcurrentIndex {
   /** Index name (schema public). */
@@ -98,40 +99,57 @@ async function buildAll(
   opts: ConcurrentIndexOptions,
 ): Promise<Record<string, ConcurrentIndexOutcome>> {
   const out: Record<string, ConcurrentIndexOutcome> = {};
-  const conn = await sql.reserve();
-  try {
-    await conn`select set_config('lock_timeout', ${`${lockMs}ms`}, false),
-                      set_config('statement_timeout', ${`${stmtMs}ms`}, false)`;
-    for (const ix of list) {
-      const valid = async () =>
-        (
-          await conn<{ valid: boolean }[]>`
-            select i.indisvalid as valid
-              from pg_index i join pg_class c on c.oid = i.indexrelid
-              join pg_namespace s on s.oid = c.relnamespace
-             where s.nspname = 'public' and c.relname = ${ix.name}`
-        )[0]?.valid;
-      const was = await valid();
-      if (was) {
-        out[ix.name] = 'present';
-        continue;
+  // A connection that dies takes no more statements and is not handed back
+  // (reserved.ts, hotfix after v0.300.13).
+  return withLease(sql, async (lease) => {
+    const conn = lease.sql;
+    let goneErr: unknown;
+    try {
+      await lease.watch(conn`select set_config('lock_timeout', ${`${lockMs}ms`}, false),
+                                set_config('statement_timeout', ${`${stmtMs}ms`}, false)`);
+      for (const ix of list) {
+        if (lease.gone) {
+          // Its connection died on an earlier index: not tried (no statement
+          // goes to a dead connection); the next run tries again.
+          out[ix.name] = 'failed';
+          opts.onError?.(ix.name, goneErr);
+          continue;
+        }
+        const valid = async () =>
+          (
+            await lease.watch(conn<{ valid: boolean }[]>`
+              select i.indisvalid as valid
+                from pg_index i join pg_class c on c.oid = i.indexrelid
+                join pg_namespace s on s.oid = c.relnamespace
+               where s.nspname = 'public' and c.relname = ${ix.name}`)
+          )[0]?.valid;
+        const was = await valid();
+        if (was) {
+          out[ix.name] = 'present';
+          continue;
+        }
+        const drop = () =>
+          lease.watch(conn.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS "public"."${ix.name}"`));
+        try {
+          if (was === false) await drop();
+          await lease.watch(conn.unsafe(ix.create));
+          out[ix.name] = was === false ? 'rebuilt' : 'built';
+        } catch (err) {
+          out[ix.name] = 'failed';
+          if (!lease.gone && (await valid().catch(() => undefined)) === false) {
+            await drop().catch(() => undefined);
+          }
+          if (lease.gone) goneErr = err;
+          if (!opts.onError) throw err;
+          opts.onError(ix.name, err);
+        }
       }
-      const drop = () => conn.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS "public"."${ix.name}"`);
-      try {
-        if (was === false) await drop();
-        await conn.unsafe(ix.create);
-        out[ix.name] = was === false ? 'rebuilt' : 'built';
-      } catch (err) {
-        out[ix.name] = 'failed';
-        if ((await valid().catch(() => undefined)) === false) await drop().catch(() => undefined);
-        if (!opts.onError) throw err;
-        opts.onError(ix.name, err);
+    } finally {
+      if (!lease.gone) {
+        await lease.watch(conn`reset lock_timeout`).catch(() => undefined);
+        await lease.watch(conn`reset statement_timeout`).catch(() => undefined);
       }
     }
-  } finally {
-    await conn`reset lock_timeout`.catch(() => undefined);
-    await conn`reset statement_timeout`.catch(() => undefined);
-    conn.release();
-  }
-  return out;
+    return out;
+  });
 }

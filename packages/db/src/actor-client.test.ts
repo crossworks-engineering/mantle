@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { actorCheckMode, noteBoxActorCheckMode, runAsActor, runAsSystem } from './actor';
+import { END_SESSION_SQL } from './reserved';
 import {
   actorClient,
   actorInTransaction,
@@ -365,7 +366,9 @@ describe('the first mode read (A2b, the startup race)', () => {
 describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', () => {
   /** A pool whose reserved connection holds the RESET's answer until
    *  `answerReset`, and records what is sent and when it is released. */
-  function resetPool(o: { failReset?: boolean; failWrite?: boolean; throwWrite?: boolean } = {}) {
+  function resetPool(
+    o: { failReset?: boolean; killed?: boolean; failWrite?: boolean; throwWrite?: boolean } = {},
+  ) {
     const sent: string[] = [];
     let released = false;
     let reserved = 0;
@@ -375,7 +378,12 @@ describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', ()
       let p: Promise<unknown>;
       if (q.startsWith('/* mantle:actor */ reset')) {
         p = new Promise((ok, bad) => {
-          answerReset = () => (o.failReset ? bad(new Error('reset failed')) : ok([]));
+          answerReset = () =>
+            o.killed
+              ? bad(Object.assign(new Error('closed'), { code: 'CONNECTION_CLOSED' }))
+              : o.failReset
+                ? bad(new Error('reset failed'))
+                : ok([]);
         });
       } else if (o.throwWrite && q.startsWith('insert')) {
         throw new Error('write would not build');
@@ -458,7 +466,7 @@ describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', ()
     });
   });
 
-  it('a failed RESET ends the connection before it goes back', () => {
+  it('a failed RESET ends the connection, which never goes back', () => {
     const f = resetPool({ failReset: true });
     return inWarn(f.base, async () => {
       const client = actorClient(f.base);
@@ -468,8 +476,23 @@ describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', ()
       f.answerReset();
       await tick();
       await tick();
-      expect(f.sent).toContain('select pg_terminate_backend(pg_backend_pid())');
-      expect(f.released()).toBe(true);
+      expect(f.sent).toContain(END_SESSION_SQL);
+      expect(f.released()).toBe(false);
+    });
+  });
+
+  it('a connection that died under the RESET: nothing more is sent, it never goes back', () => {
+    const f = resetPool({ killed: true });
+    return inWarn(f.base, async () => {
+      const client = actorClient(f.base);
+      await runAsSystem('worker:test', () =>
+        Promise.resolve(client.unsafe('insert into t values (1)')),
+      );
+      f.answerReset();
+      await tick();
+      await tick();
+      expect(f.sent.at(-1)).toMatch(/^\/\* mantle:actor \*\/ reset/);
+      expect(f.released()).toBe(false);
     });
   });
 
@@ -498,8 +521,8 @@ describe('a write outside a transaction (A2b1 audit, Q1): SET, write, RESET', ()
       await tick();
       expect(f.reserved()).toBe(1);
       // The SET went out: the connection may hold it, so it ends.
-      expect(f.sent).toContain('select pg_terminate_backend(pg_backend_pid())');
-      expect(f.released()).toBe(true);
+      expect(f.sent).toContain(END_SESSION_SQL);
+      expect(f.released()).toBe(false);
     });
   });
 });

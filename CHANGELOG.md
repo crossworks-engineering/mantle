@@ -4,6 +4,28 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a reserved connection that dies no longer crashes the process
+
+- A reserved Postgres connection that the server ended (killed, a restart,
+  a dropped network) was handed back to the pool, and the next statement on
+  it threw "Cannot read properties of null (reading 'write')" from
+  postgres.js outside every promise: an uncaught exception, in a server a
+  crash (it failed the v0.300.13 release guard). Every reserve in
+  packages/db now goes through one lease (`packages/db/src/reserved.ts`):
+  a connection that died is never handed back and takes no more
+  statements, and one ended on purpose (the actor's failed RESET) is never
+  handed back either. Callers: the actor's write outside a transaction,
+  the turn-scoped query, the concurrent index build.
+- postgres.js 3.4.9 is patched (`patches/postgres@3.4.9.patch`): a
+  reservation the connection's close ended is not handed back, takes no
+  statement, and its queued statements are rejected on close; a
+  transaction (`begin`, so drizzle's `db.transaction`) whose connection
+  closed sends nothing more. Before, a transaction killed mid-statement
+  wrote its ROLLBACK to the null socket (the same crash, and that pool
+  slot then timed out on every connect), and a write or a turn-scoped
+  query whose connection died while a statement waited behind a described
+  one never settled (closeDb, or the request, waited forever).
+
 ## Unreleased: Postgres max_connections 450
 
 - The canonical compose raises Postgres `max_connections` from 200 to 450.

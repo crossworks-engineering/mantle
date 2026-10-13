@@ -55,6 +55,7 @@ import {
   type Actor,
   type ActorMiss,
 } from './actor';
+import { reserveLease, withLease, type Lease } from './reserved';
 import { errorMessage } from '@mantle/std';
 
 declare global {
@@ -505,7 +506,8 @@ export function actorClient(base: PgSql): PgSql {
    * to the pool only once the RESET has answered, so no other statement
    * ever sees this actor. A RESET that fails ends the connection instead
    * (pg_terminate_backend on itself), never handing it back with the
-   * settings on.
+   * settings on; a connection that died is neither sent to nor handed back
+   * (reserved.ts, hotfix after v0.300.13).
    */
   const pipelined = (
     params: [string, string, string],
@@ -530,10 +532,10 @@ export function actorClient(base: PgSql): PgSql {
       // The SET's text first: a value it refuses (setActorSql throws) fails
       // the caller before any connection is taken (A2b1 fix round 2, L1).
       let setSql: string;
-      let conn: Awaited<ReturnType<PgSql['reserve']>>;
+      let lease: Lease;
       try {
         setSql = setActorSql(params, false);
-        conn = await base.reserve();
+        lease = await reserveLease(base);
       } catch (err) {
         answer(Promise.reject(err));
         return;
@@ -542,13 +544,14 @@ export function actorClient(base: PgSql): PgSql {
       // Ending a connection the SET never reached errs on the safe side.
       let sent = false;
       try {
+        const conn = lease.sql;
         const set = conn.unsafe(setSql);
         sent = true;
         const q = conn.unsafe(query, (args ?? []) as never[]);
         const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
         const reset = conn.unsafe(RESET_ACTOR_SQL).simple();
         answer(
-          Promise.allSettled([set, main]).then(([s, m]) => {
+          Promise.allSettled([lease.watch(set), lease.watch(main)]).then(([s, m]) => {
             // The write's own result. A SET that failed is reported when the
             // write failed too (it is the cause); a write that ran without
             // its actor meets the SQL check (a miss in warn, refused in on).
@@ -556,20 +559,17 @@ export function actorClient(base: PgSql): PgSql {
             throw s.status === 'rejected' ? s.reason : m.reason;
           }),
         );
-        await reset;
+        await lease.watch(reset);
       } catch (err) {
         // Anything that throws here (a failed RESET, or a throw while the
         // statements are built) fails the caller if it has no answer yet,
         // and a connection that may hold the settings ends instead of going
-        // back.
+        // back (lease.end: never handed back, nothing sent if it died).
         if (!answered) answer(Promise.reject(err));
-        if (sent) {
-          await Promise.resolve()
-            .then(() => conn.unsafe('select pg_terminate_backend(pg_backend_pid())'))
-            .catch(() => {});
-        }
+        lease.note(err);
+        if (sent) await lease.end();
       } finally {
-        conn.release();
+        lease.release();
       }
     })();
     actorPipelines.add(life);
@@ -716,8 +716,9 @@ type PgSql = ReturnType<typeof postgres>;
  * callback lost it) the query is refused (ScopeLostError), never sent on
  * another pool. `begin` (db.transaction) sets the same settings first, so a
  * search step that needs one transaction (withHnswPool) keeps the scope.
+ * Exported for reserved.db.test.ts only (not in index.ts).
  */
-function turnScopedClient(base: PgSql): PgSql {
+export function turnScopedClient(base: PgSql): PgSql {
   // BEGIN, the settings, the query and COMMIT go out together on one
   // reserved connection: one round trip, not three (W6a: `begin` waits for
   // BEGIN, and COMMIT is a trip of its own). A failing statement aborts the
@@ -728,8 +729,9 @@ function turnScopedClient(base: PgSql): PgSql {
     mode: 'rows' | 'values' | 'simple',
   ) => {
     const settings = turnScopeParams();
-    const conn = await base.reserve();
-    try {
+    // A connection that died on the way is not handed back (reserved.ts).
+    return withLease(base, async (lease) => {
+      const conn = lease.sql;
       const begin = conn.unsafe('begin');
       const scope = conn.unsafe(SCOPE_SETTINGS_SQL, settings);
       const q = conn.unsafe(query, (params ?? []) as never[]);
@@ -737,13 +739,11 @@ function turnScopedClient(base: PgSql): PgSql {
       // literals, entities.ts graph paths) works in a scope too (W7a).
       const main = mode === 'values' ? q.values() : mode === 'simple' ? q.simple() : q;
       const commit = conn.unsafe('commit');
-      const out = await Promise.allSettled([begin, scope, main, commit]);
+      const out = await Promise.allSettled([begin, scope, main, commit].map((s) => lease.watch(s)));
       const failed = out.find((r) => r.status === 'rejected');
       if (failed) throw (failed as PromiseRejectedResult).reason;
       return (out[2] as PromiseFulfilledResult<unknown>).value;
-    } finally {
-      conn.release();
-    }
+    });
   };
   const client = {
     options: base.options,
