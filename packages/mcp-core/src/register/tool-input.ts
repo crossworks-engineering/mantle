@@ -13,6 +13,7 @@
 
 import { z } from 'zod';
 import { DATABASE_ERROR_PUBLIC, isDatabaseError } from '@mantle/std';
+import { HIDDEN_ROWS_MESSAGE, editRefusalDetail, isHiddenRowsRefusal } from '@mantle/db';
 import type { McpServer, StandardSchemaWithJSON, ToolCallback } from '@modelcontextprotocol/server';
 
 type ShapeSchema<S extends z.ZodRawShape> = StandardSchemaWithJSON<
@@ -56,10 +57,20 @@ export function addTool<S extends z.ZodRawShape>(
       if (!isDatabaseError(err)) throw err;
       console.error(`[mcp ${name}] database error:`, err);
       return {
-        content: [{ type: 'text' as const, text: `Error: ${DATABASE_ERROR_PUBLIC}` }],
+        content: [{ type: 'text' as const, text: `Error: ${toolDatabaseError(err)}` }],
         isError: true,
       };
     }
   }) as unknown as ToolCallback<ShapeSchema<S>>;
   server.registerTool(name, { description, inputSchema: toolInputSchema(shape) }, guarded);
+}
+
+/** What a tool says for a database error (arch A3a): an item the caller
+ *  may not read is "not found" (owner decision D2), a folder holding items
+ *  the caller cannot move says so in plain words; any other error the one
+ *  public message, never its text. */
+export function toolDatabaseError(err: unknown): string {
+  if (editRefusalDetail(err) === 'no_read') return 'not found';
+  if (isHiddenRowsRefusal(err)) return HIDDEN_ROWS_MESSAGE;
+  return DATABASE_ERROR_PUBLIC;
 }

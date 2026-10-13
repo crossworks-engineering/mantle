@@ -89,6 +89,16 @@ const EDIT_REFUSAL_DETAILS: ReadonlySet<string> = new Set([
   'ro_actor',
 ]);
 
+/** A folder move or delete refused because the folder holds rows the
+ *  caller cannot read (mantle_subtree_refuse_hidden, 0282): a 409. */
+export function isHiddenRowsRefusal(err: unknown): boolean {
+  const pg = findPgError(err) as (PgLike & { detail?: unknown }) | null;
+  return !!pg && pg.code === '42501' && pg.detail === 'hidden_rows';
+}
+
+/** The words a person sees for it (HTTP and the tools). */
+export const HIDDEN_ROWS_MESSAGE = 'This folder holds items you cannot move.';
+
 /** The detail of an edit check refusal (42501 with one of the details
  *  above, mantle_edit_refuse), else null. */
 export function editRefusalDetail(err: unknown): EditRefusalDetail | null {
@@ -104,6 +114,7 @@ const SCOPE_WRITE_REFUSALS = new RegExp(
       'not allowed to (move this item|add items to that folder|delete this item|change this item' +
         '|share this item|edit this item|create an item in that workspace|grant to that workspace' +
         "|change the kind of this item|change anything|change this app's|write this app's)",
+      'This folder holds items you cannot move',
       'placing this app adds a workspace you do not moderate',
       'this kind of item lives in the Admin workspace only',
       'no workspace to create this item in',

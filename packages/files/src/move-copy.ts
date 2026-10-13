@@ -289,17 +289,16 @@ export async function moveFolderById(args: {
         newPath,
         async (tx) => {
           await takeShareWriteLock(tx, args.ownerId);
-          await tx.execute(sql`
-        UPDATE ${nodes}
-        SET path = CASE
-              WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
-              ELSE (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
-            END,
-            -- Filing is not editing (as for every other kind, node-ops.ts):
-            -- only the folder itself is stamped, never what it holds.
-            updated_at = CASE WHEN path = ${oldPath}::ltree THEN now() ELSE updated_at END
-        WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
-      `);
+          // One definer moves every row below the folder; a move of a folder
+          // holding rows the caller cannot read is refused there (409, the
+          // owner's rule, arch A3a fix round 2), and the disk goes back below.
+          await tx.execute(
+            sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
+          );
+          // Filing is not editing: only the folder itself is stamped.
+          await tx.execute(
+            sql`update ${nodes} set updated_at = now() where id = ${node.id} and owner_id = ${args.ownerId}`,
+          );
           await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
         },
       ),

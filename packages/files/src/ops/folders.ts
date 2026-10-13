@@ -452,17 +452,13 @@ export async function renameFolderById(args: {
           // handled by the CASE: `subpath(path, nlevel(oldPath))` would throw
           // "invalid positions" when offset == nlevel (the self row), so map it to
           // newPath directly; descendants keep their tail under the new prefix.
-          await tx.execute(sql`
-        UPDATE ${nodes}
-        SET path = CASE
-              WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
-              ELSE (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
-            END,
-            -- Filing is not editing (as for every other kind, node-ops.ts):
-            -- only the folder itself is stamped, never what it holds.
-            updated_at = CASE WHEN path = ${oldPath}::ltree THEN now() ELSE updated_at END
-        WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
-      `);
+          // One definer moves every row below the folder, those the caller's
+          // scope does not read too, so a file's row keeps its disk path (arch
+          // A3a fix round 2). Filing is not editing: only the folder itself
+          // is stamped, by its label update below.
+          await tx.execute(
+            sql`select mantle_subtree_rewrite(${args.ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
+          );
           // Members' drafts and folders under it follow (no bytes move: member
           // files are keyed by id, never by path).
           await carrySpaceRows(tx, args.ownerId, oldPath, newPath);

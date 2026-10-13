@@ -744,6 +744,8 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a folder’s rename or move (0282): every row below it, those the scope does not read too',
   'public.mantle_subtree_hidden(uuid,ltree)':
     'a folder delete counts the rows below it the scope does not read (0282): refused, never orphaned',
+  'public.mantle_subtree_refuse_hidden(uuid,ltree)':
+    'a folder move or delete refused when it holds rows the scope does not read (0282, the 409)',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the

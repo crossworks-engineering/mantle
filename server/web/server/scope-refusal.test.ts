@@ -27,6 +27,13 @@ describe('scopeRefusalResponse', () => {
       ],
       // A refusal of the checks before A3a carries no detail: as before.
       [refusal('not allowed to move this item'), 403, 'item-workspace', 'forbidden'],
+      // A folder that holds items the caller cannot move (0282): 409.
+      [
+        refusal('This folder holds items you cannot move.', 'hidden_rows'),
+        409,
+        'hidden-items',
+        'hidden_items',
+      ],
     ];
     for (const [err, status, reason, code] of cases) {
       const res = scopeRefusalResponse(err)!;

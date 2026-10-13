@@ -275,6 +275,10 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
+-- An earlier build's one-argument form, if a database has it: dropped, so
+-- a one-argument call is never ambiguous (as for the actor check below).
+DROP FUNCTION IF EXISTS "public"."mantle_set_edit_check"(text);
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_set_edit_check"(mode text, tries integer DEFAULT 50)
   RETURNS text LANGUAGE sql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$

@@ -820,12 +820,61 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
         expect(h!.n).toBe(1);
         return { count: r!.n };
       });
+    // A rename (the same parent): every row moves, the hidden one too.
     expect(await move(who.homeMod)).toMatchObject({ rows: 3 });
+    // A move (a new parent) of a folder holding a row the mover cannot read:
+    // refused, the owner's rule (fix round 2), detail hidden_rows (a 409).
+    const dest = await folderAt('dst');
+    const reparent = await attempt(who.homeMod, async (tx) => {
+      await tx`select mantle_lock_subtree_heads(${folder}::uuid, array[${dest}]::uuid[])`;
+      const [r] = await tx<{ n: number }[]>`
+        select mantle_subtree_rewrite(${L.owner}, ${`notes.${tag}mv`}::ltree,
+                                      ${`notes.${tag}dst.${tag}mv`}::ltree) as n`;
+      return { count: r!.n };
+    });
+    expect(reparent).toMatchObject({
+      code: '42501',
+      detail: 'hidden_rows',
+      message: 'This folder holds items you cannot move.',
+    });
     // A Write grant (no Moderator of the home) moves nothing.
     expect(await move(who.member)).toMatchObject({
       code: '42501',
       message: 'not allowed to move this item',
     });
+    // A folder holding an app, moved into a folder that adds a workspace the
+    // mover does not moderate (O): every app inside is held to the placement
+    // rule, not only a moved app (fix round 2). Staged: off moves, on
+    // refuses.
+    const box = await folderAt('box');
+    const app = randomUUID();
+    await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${box}]::uuid[], 'share')`;
+      await tx`insert into nodes (id, owner_id, type, title, path)
+               values (${app}, ${L.owner}, 'app', ${`${tag} boxed app`}, ${`notes.${tag}box`}::ltree)`;
+    });
+    const wide = await folderAt('wide');
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${wide}]::uuid[], 'update')`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+               values (${wide}, ${ws.O}, false, false)`;
+    });
+    const intoWide = () =>
+      attempt(who.homeMod, async (tx) => {
+        await tx`select mantle_lock_subtree_heads(${box}::uuid, array[${wide}]::uuid[])`;
+        const [r] = await tx<{ n: number }[]>`
+          select mantle_subtree_rewrite(${L.owner}, ${`notes.${tag}box`}::ltree,
+                                        ${`notes.${tag}wide.${tag}box`}::ltree) as n`;
+        return { count: r!.n };
+      });
+    expect(await intoWide()).toMatchObject({
+      code: '42501',
+      message: 'placing this app adds a workspace you do not moderate',
+    });
+    await setMode('off');
+    expect(await intoWide()).toMatchObject({ rows: 2 });
+    await setMode('on');
     // Off the write role nothing is hidden.
     const [sys] = await sql<{ n: number }[]>`
       select mantle_subtree_hidden(${L.owner}, ${`notes.${tag}mv`}::ltree) as n`;

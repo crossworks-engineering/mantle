@@ -163,13 +163,33 @@ gate: `warn` reports and locks them all, `on` drops them.
 ## Folders
 
 A folder's rename or move rewrites the path of everything below it. On the
-write role a plain UPDATE would reach only the rows the scope reads and
-leave the rest orphaned under the old path. `mantle_subtree_rewrite(owner,
-old_path, new_path)` (0282) does it as the brain: for a write-role caller
-it asks manage of the folder's home first (the move check asks the same in
-every mode), takes the heads of the rows the scope does not read, and
-moves every row below the folder. A folder delete that would leave rows
-the caller cannot read behind is refused (409, `mantle_subtree_hidden`).
+write role a plain UPDATE reaches only the rows the scope reads and would
+leave the rest orphaned under the old path (for a Files folder: a file's
+row no longer where its bytes are). So every folder rename and move, node
+folders (`packages/content/src/tree/node-ops.ts`) and Files folders
+(`packages/files/src/ops/folders.ts`, `packages/files/src/move-copy.ts`),
+goes through one definer, `mantle_subtree_rewrite(owner, old_path,
+new_path)` (0282). For a write-role caller it asks manage of the folder's
+home first (the move check asks the same in every mode), then:
+
+- a RENAME (the same parent, no grant change) moves every row below the
+  folder, the ones the caller cannot read too, and takes their heads;
+- a MOVE (a new parent) of a folder that holds rows the caller cannot read
+  is refused (the owner's rule, 2026-10-13): 409, "This folder holds items
+  you cannot move.", nothing moved (a Files folder's directory goes back).
+
+A folder delete (node folders and Files folders,
+`packages/content/src/tree/files-merge.ts`) that would leave such rows
+behind is refused the same way. The one rule is
+`mantle_subtree_refuse_hidden` (42501, detail `hidden_rows`); the HTTP
+mapper answers 409 and the tools say the same words. None of this is
+staged by `mantle.edit_check`: it fixes orphans the write role made, so it
+applies on any box where login writes run on the write role (the actor
+check `warn` or `on`), from the roll.
+
+The move check also holds every app inside a moved folder to the placement
+rule its root had (a new holder needs a Moderator of it). That one is new
+and staged: `off` moves as before, `warn` reports, `on` refuses.
 
 ## The write-role gaps
 
@@ -239,6 +259,10 @@ stays on the system pool until A4.
   user's HTTP write (until A4), the workers and the scripts run there; the
   TypeScript checks stay for them (and everywhere: none is removed before
   its database check is on on every box, plan 7 step 4).
+- **The tools** (MCP) answer `not found` for a `no_read` refusal (D2) and
+  "This folder holds items you cannot move." for a folder's 409
+  (`toolDatabaseError`, `packages/mcp-core/src/register/tool-input.ts`);
+  every other database error stays the one public message.
 - **The settings are not a credential.** Any role can set
   `mantle.write_mode`: on the write role a session that sets `rw` skips
   only the read-only refusal; the per-table checks and the row rules still

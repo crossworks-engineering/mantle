@@ -10,10 +10,23 @@
  *  - no_edit, or no detail (the workspace checks before A3a): 403, reason
  *    item-workspace, as before (jackdaw's "Add yourself" keys on it).
  */
-import { editRefusalDetail, isScopeWriteRefusal } from '@mantle/db';
+import {
+  HIDDEN_ROWS_MESSAGE,
+  editRefusalDetail,
+  isHiddenRowsRefusal,
+  isScopeWriteRefusal,
+} from '@mantle/db';
 
 export function scopeRefusalResponse(err: unknown): Response | null {
   if (!isScopeWriteRefusal(err)) return null;
+  // A folder move or delete that would leave rows the caller cannot read
+  // behind (0282): a conflict, in plain words, naming nothing hidden.
+  if (isHiddenRowsRefusal(err)) {
+    return Response.json(
+      { error: HIDDEN_ROWS_MESSAGE, reason: 'hidden-items', code: 'hidden_items' },
+      { status: 409 },
+    );
+  }
   const detail = editRefusalDetail(err);
   if (detail === 'no_read') {
     return Response.json(

@@ -233,6 +233,8 @@ export {
   isUniqueViolation,
   isScopeWriteRefusal,
   editRefusalDetail,
+  isHiddenRowsRefusal,
+  HIDDEN_ROWS_MESSAGE,
   type EditRefusalDetail,
   pgConstraint,
   pgErrorCode,
