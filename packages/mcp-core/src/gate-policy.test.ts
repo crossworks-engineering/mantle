@@ -12,10 +12,11 @@ import {
   gateCheck,
   gateLists,
   type PolicyRef,
+  type ScopeArea,
   type Tool,
   type ToolHandler,
 } from '@mantle/db';
-import { BUILTIN_TOOLS, externalAccessToolSig } from '@mantle/tools';
+import { BUILTIN_TOOLS, externalAccessToolSig, type AdminGateView } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
 import { mcpGateCaller, mcpToolPolicy } from './gate-policy';
 import {
@@ -36,16 +37,16 @@ function registered(): string[] {
   return out;
 }
 
-const AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'] as const;
+const AREAS: ScopeArea[] = ['settings', 'users', 'assistants', 'connectors', 'keys'];
 
 /** A matrix of connections: each login kind, credential and scope. */
 function preparedMatrix(): PreparedCallerTools[] {
-  const views = [
+  const views: (AdminGateView | null)[] = [
     null,
-    { holdsAdmin: false, areas: new Set<string>() },
-    { holdsAdmin: true, areas: new Set<string>(AREAS) },
-    { holdsAdmin: true, areas: new Set<string>(['settings']) },
-    { holdsAdmin: true, areas: new Set<string>() },
+    { holdsAdmin: false, areas: new Set<ScopeArea>() },
+    { holdsAdmin: true, areas: new Set<ScopeArea>(AREAS) },
+    { holdsAdmin: true, areas: new Set<ScopeArea>(['settings']) },
+    { holdsAdmin: true, areas: new Set<ScopeArea>() },
   ];
   const callers: McpCaller[] = [];
   for (const role of ['admin', 'member'] as const) {

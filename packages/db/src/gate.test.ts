@@ -169,12 +169,13 @@ describe('step 3: the declared policy, then the actor and the scope', () => {
       { writes: false },
       { writes: true },
     ]);
-    const enterScope = vi.fn(async <T>(writes: boolean, fn: () => Promise<T>) => {
-      h.log.push(`own-scope:${writes}`);
+    const entered: boolean[] = [];
+    const enterScope = async <T>(writes: boolean, fn: () => Promise<T>): Promise<T> => {
+      entered.push(writes);
       return fn();
-    });
+    };
     await enterCall(login({ scope: SCOPE, enterScope }), ref('write'), ok);
-    expect(enterScope).toHaveBeenCalledTimes(1);
+    expect(entered).toEqual([true]);
     expect(withTurnScope).toHaveBeenCalledTimes(2);
   });
 });
