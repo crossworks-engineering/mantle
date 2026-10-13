@@ -159,9 +159,13 @@ export function overwritePlacement(staged: StagedFile): {
 } {
   const keep = path.join(path.dirname(staged.finalPath), `.${randomUUID()}.staged.tmp`);
   let kept = false;
+  // The old bytes' times, put back with them (`unplace`).
+  let times: { atime: Date; mtime: Date } | null = null;
   return {
     place: async () => {
       try {
+        const st = await fs.stat(staged.finalPath);
+        times = { atime: st.atime, mtime: st.mtime };
         await fs.link(staged.finalPath, keep);
         kept = true;
       } catch (err) {
@@ -175,11 +179,21 @@ export function overwritePlacement(staged: StagedFile): {
           kept = true;
         }
       }
+      if (kept) {
+        // The staged-leftover sweep goes by the write time: the kept old
+        // bytes are as new as the link, or a crash would leave them to be
+        // reaped at once (fix round 1, L3). Their own times come back with
+        // them (`unplace`).
+        const now = new Date();
+        await fs.utimes(keep, now, now).catch(() => {});
+      }
       await fs.rename(staged.tempPath, staged.finalPath);
     },
     unplace: async () => {
-      if (kept) await fs.rename(keep, staged.finalPath);
-      else await fs.unlink(staged.finalPath).catch(() => {});
+      if (kept) {
+        await fs.rename(keep, staged.finalPath);
+        if (times) await fs.utimes(staged.finalPath, times.atime, times.mtime).catch(() => {});
+      } else await fs.unlink(staged.finalPath).catch(() => {});
       kept = false;
     },
     release: async () => {

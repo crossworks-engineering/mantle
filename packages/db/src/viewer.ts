@@ -284,10 +284,14 @@ export function newTxHooks(): TxHooks {
   return { commit: [], rollback: [] };
 }
 
-/** Run hooks in order. Each is best effort: the transaction has already
- *  ended, so a failing hook is logged, never thrown. */
+/** Run hooks: commit hooks in order, rollback hooks newest first (each
+ *  undoes the work after the one before it: two renames of one file in a
+ *  transaction that rolls back go back last first; A3b part 2 fix round 1,
+ *  L2). Each is best effort: the transaction has already ended, so a
+ *  failing hook is logged, never thrown. */
 export async function runTxHooks(list: (() => unknown)[], what: string): Promise<void> {
-  for (const fn of list) {
+  const ordered = what === 'rollback' ? [...list].reverse() : list;
+  for (const fn of ordered) {
     try {
       await fn();
     } catch (err) {

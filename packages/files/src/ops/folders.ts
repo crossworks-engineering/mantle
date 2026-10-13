@@ -19,6 +19,7 @@ import {
   untrackedFilesOnDisk,
 } from '../index';
 import {
+  afterOuterCommit,
   carrySpaceRows,
   db,
   flipThenPlace,
@@ -337,7 +338,9 @@ export async function deleteFolder(args: {
     throw err;
   });
   if (refused) return { ok: false, reason: refused };
-  await removeFolderOnDisk(folder.path);
+  // Once the delete has committed: inside an outer transaction, once that
+  // one has (fix round 1, L1).
+  await afterOuterCommit(() => removeFolderOnDisk(folder.path));
   return { ok: true };
 }
 

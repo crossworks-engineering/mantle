@@ -14,7 +14,9 @@
 -- names it. A file with neither a row nor a tombstone is only reported.
 --
 -- Tombstones live in the database with the rows, so a restore brings back
--- exactly the tombstones of the rows it does not bring back.
+-- exactly the tombstones of the rows it does not bring back. A path named
+-- again and dropped again starts its day over (the time is the latest
+-- row's going, never an older one's).
 --
 -- The table is the system pool's (row level security on, no policy, no
 -- grant): the triggers are definers, so a member's delete of its own
@@ -43,7 +45,7 @@ BEGIN
   IF TG_OP = 'UPDATE' AND NEW.db_path IS NOT DISTINCT FROM OLD.db_path THEN RETURN NULL; END IF;
   INSERT INTO "public"."store_tombstones" ("store", "path")
   VALUES (CASE WHEN OLD.node_kind = 'table' THEN 'tablesnap' ELSE 'appsnap' END, OLD.db_path)
-  ON CONFLICT DO NOTHING;
+  ON CONFLICT ("store", "path") DO UPDATE SET "created_at" = clock_timestamp();
   RETURN NULL;
 END
 $$;
@@ -57,7 +59,7 @@ BEGIN
   IF TG_OP = 'UPDATE' AND NEW.table_path IS NOT DISTINCT FROM OLD.table_path THEN RETURN NULL; END IF;
   INSERT INTO "public"."store_tombstones" ("store", "path")
   VALUES ('accepted', OLD.table_path)
-  ON CONFLICT DO NOTHING;
+  ON CONFLICT ("store", "path") DO UPDATE SET "created_at" = clock_timestamp();
   RETURN NULL;
 END
 $$;

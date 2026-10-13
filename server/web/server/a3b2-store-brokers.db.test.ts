@@ -457,6 +457,97 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       quietly.mockRestore();
     });
 
+    it('a failed overwrite never puts its old bytes over a write that landed after it (fix round 1, M1)', async () => {
+      const quietly = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const race = await folder('race', H);
+      const a = await file(race.path, 'a.bin', 'old', H);
+      const finalAbs = f.diskPathForFile(race.path, 'a.bin')!;
+      const stageOf = (bytes: string) => {
+        const tempPath = path.join(path.dirname(finalAbs), `.${randomUUID()}.staged.tmp`);
+        writeFileSync(tempPath, bytes);
+        return {
+          tempPath,
+          finalPath: finalAbs,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          size: bytes.length,
+        };
+      };
+      // A places its bytes; its commit fails and the row lets go; B saves and
+      // lands before A settles.
+      const err = await errorOf(
+        m.flipThenPlace({
+          ...f.overwriteSteps(a.id, stageOf('A')),
+          flip: async (place) => {
+            await place();
+            await sys(() =>
+              f.upsertFile({
+                ownerId: owner,
+                parentPath: race.path,
+                filename: 'a.bin',
+                bytes: Buffer.from('B'),
+                overwrite: true,
+              }),
+            );
+            throw new Error('the commit fails');
+          },
+        }),
+      );
+      expect(String(err)).toMatch(/the commit fails/);
+      expect(onDisk(race.path, 'a.bin')).toBe('B');
+      expect((await row(a.id))!.s).toBe(createHash('sha256').update('B').digest('hex'));
+      // Alone, the same failure puts the old bytes back, with their times.
+      const before = stateOf(path.dirname(finalAbs));
+      const err2 = await errorOf(
+        m.flipThenPlace({
+          ...f.overwriteSteps(a.id, stageOf('C')),
+          flip: async (place) => {
+            await place();
+            throw new Error('the commit fails');
+          },
+        }),
+      );
+      expect(String(err2)).toMatch(/the commit fails/);
+      expect(onDisk(race.path, 'a.bin')).toBe('B');
+      expect(stateOf(path.dirname(finalAbs))['a.bin']).toBe(before['a.bin']);
+      quietly.mockRestore();
+    });
+
+    it('two renames of one file inside an outer transaction that rolls back go back last first (fix round 1, L2)', async () => {
+      const outer = await folder('outer', H);
+      const a = await file(outer.path, 'a.bin', 'one', H);
+      const err = await errorOf(
+        sys(() =>
+          m.withSystemTx(async () => {
+            await f.renameFileById({ ownerId: owner, fileId: a.id, newStem: 'b' });
+            await f.renameFileById({ ownerId: owner, fileId: a.id, newStem: 'c' });
+            expect(onDisk(outer.path, 'c.bin')).toBe('one');
+            throw new Error('the caller failed');
+          }),
+        ),
+      );
+      expect(String(err)).toMatch(/the caller failed/);
+      expect(onDisk(outer.path, 'a.bin')).toBe('one');
+      expect(onDisk(outer.path, 'b.bin')).toBeNull();
+      expect(onDisk(outer.path, 'c.bin')).toBeNull();
+      expect((await row(a.id))!.n).toBe('a.bin');
+    });
+
+    it('a delete inside an outer transaction that rolls back keeps the bytes (fix round 1, L1)', async () => {
+      const outer = await folder('outer-del', H);
+      const a = await file(outer.path, 'a.bin', 'one', H);
+      const err = await errorOf(
+        sys(() =>
+          m.withSystemTx(async () => {
+            expect((await f.deleteFileById({ ownerId: owner, fileId: a.id })).ok).toBe(true);
+            throw new Error('the caller failed');
+          }),
+        ),
+      );
+      expect(String(err)).toMatch(/the caller failed/);
+      expect(onDisk(outer.path, 'a.bin')).toBe('one');
+      expect((await row(a.id))!.n).toBe('a.bin');
+    });
+
     it('a crash between the stage and the flip: the old bytes stay live, the staged-leftover sweep takes the stage', async () => {
       const crash = await folder('crash', H);
       await file(crash.path, 'a.bin', 'old', H);

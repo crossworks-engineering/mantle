@@ -41,6 +41,7 @@ import {
   withViewer,
   contentChunks,
   db,
+  afterOuterCommit,
   draws,
   emailAttachments,
   flipThenPlace,
@@ -406,7 +407,7 @@ export async function upsertFile(args: {
   // Over a file a row owns, the stage goes over it as the flip's last step;
   // a create that lost the race to a row holding its bytes has nothing to
   // place (its stage went above).
-  const placement = existing ? overwritePlacement(staged) : null;
+  const placement = existing ? overwriteSteps(row.id, staged) : null;
   // Heads first (workspaces plan U1): the chunk delete below needs them.
   const flip = (place: (() => Promise<void>) | null) =>
     withDeadlockRetry(() =>
@@ -459,14 +460,7 @@ export async function upsertFile(args: {
       ),
     );
   const updated = placement
-    ? await flipThenPlace({
-        flip: (place) => flip(place),
-        place: placement.place,
-        unplace: placement.unplace,
-        release: placement.release,
-        discard: placement.discard,
-        settle: async () => (await rowNow(row.id)).sha256 === written.sha256,
-      })
+    ? await flipThenPlace({ ...placement, flip: (place) => flip(place) })
     : await flip(null);
   if (!updated) throw new Error('upsertFile: update returned no row');
   // Notify the extractor again only when content changed.
@@ -475,6 +469,58 @@ export async function upsertFile(args: {
   }
 
   return fileRowFromNode(updated);
+}
+
+/**
+ * The steps of an overwrite's flip (store-broker.ts flipThenPlace): the
+ * stage goes over the file a row owns as the flip's last step, its old
+ * bytes kept until the flip settles. Putting them back (a flip that never
+ * landed, an outer transaction that rolled back) happens in one short
+ * transaction holding the row's lock, and only while the file still holds
+ * this write's bytes and the row does not name them: a write that landed
+ * meanwhile (another caller's, once this one's transaction let the row go)
+ * is never undone. Otherwise the old bytes are left to the staged-leftover
+ * sweep and it is logged (A3b part 2 fix round 1, M1).
+ */
+export function overwriteSteps(id: string, staged: StagedFile) {
+  const placement = overwritePlacement(staged);
+  const putBack = async (why: string) => {
+    if (!(await placedBytesIntact(staged))) {
+      console.error(
+        `[files] ${why}: another write's bytes are in the file now; the old bytes stay under a staging name for the staged-leftover sweep`,
+      );
+      return;
+    }
+    await placement.unplace();
+  };
+  return {
+    place: placement.place,
+    release: placement.release,
+    discard: placement.discard,
+    settle: async () => (await rowNow(id)).sha256 === staged.sha256,
+    unplace: async () => {
+      let tried = false;
+      try {
+        await db.transaction(async (tx) => {
+          const rows = (await tx.execute(
+            sql`select data->>'sha256' as sha from nodes where id = ${id} for update`,
+          )) as unknown as { sha: string | null }[];
+          if (rows[0]?.sha === staged.sha256) return; // it landed: keep it
+          tried = true;
+          await putBack('an overwrite that never landed');
+        });
+      } catch (err) {
+        if (tried) throw err;
+        // The row cannot be locked (the database is gone): the file is put
+        // back only while it holds this write's own bytes.
+        console.error(
+          '[files] an overwrite that never landed: its row cannot be locked:',
+          err instanceof Error ? err.message : err,
+        );
+        await putBack('an overwrite that never landed');
+      }
+    },
+  };
 }
 
 /**
@@ -809,7 +855,12 @@ export async function deleteFileById(args: {
   // A folded member file (W6b) has its bytes in its old space's directory,
   // named by its id: the tree path its name builds is another file's (fix
   // round 1, H1). Its bytes stay where they are.
-  if (filename && !foldedFilePath(node)) await deleteFileOnDisk(node.path, filename);
+  // Inside an outer transaction (a login's open write transaction, a
+  // personal space) the delete was a savepoint: the bytes go once that one
+  // commits, never before (fix round 1, L1).
+  if (filename && !foldedFilePath(node)) {
+    await afterOuterCommit(() => deleteFileOnDisk(node.path, filename));
+  }
   // Reap the cached thumbnail derivatives too — keyed by content hash, so a
   // deleted photo doesn't leave its preview behind. Best-effort.
   void deleteThumbnailsFor(typeof data.sha256 === 'string' ? (data.sha256 as string) : null);

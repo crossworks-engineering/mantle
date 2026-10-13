@@ -185,6 +185,9 @@ export {
   type FolderRow,
   type FileRow,
 } from './ops';
+// The files store's overwrite steps (A3b part 2: flipThenPlace), for the
+// broker's DB tests to drive a race between two writers.
+export { overwriteSteps } from './ops/files';
 export {
   ownIndexingMode,
   resolveEffectiveIndexing,
