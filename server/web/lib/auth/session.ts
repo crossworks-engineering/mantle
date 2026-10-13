@@ -71,8 +71,8 @@ import {
   currentRoute,
   memberOpenRead,
   memberOpenWrite,
+  requestKeyRoute,
   routeItemTarget,
-  rowKeyRoute,
   type RouteRow,
 } from './route-policy';
 import {
@@ -512,7 +512,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
  * shape the gate lets through) has no key login at all.
  *
  * The scope guard runs again here (audit item 1), on the request's
- * ROUTE_POLICY row (rowKeyRoute, as the gate judged it), so a
+ * ROUTE_POLICY row and raw path (requestKeyRoute, as the gate judged it), so a
  * `source: 'api'` login exists only for a /api/v1 route the key may call:
  * the route's area, and a write only for a read_write key. Every gate below
  * (getOwnerOr401, getMemberOr401, getLoginOr401) resolves
@@ -526,7 +526,7 @@ async function accessKeyLogin(): Promise<Resolved | null | undefined> {
   const grant = ctx?.accessKey;
   if (!ctx || !grant) return null;
   if (!isApiV1Path(ctx.path)) return null;
-  if (!keyMayCall(grant, rowKeyRoute(currentRoute())).ok) return null;
+  if (!keyMayCall(grant, requestKeyRoute(currentRoute(), ctx.method, ctx.path)).ok) return null;
   const resolved = await resolvedFor(grant.login, 'api');
   // Arch A2a: a read key's request runs as login(ro).
   if (resolved) nameRequestLogin(resolved, grant.access === 'read_write' ? 'rw' : 'ro');

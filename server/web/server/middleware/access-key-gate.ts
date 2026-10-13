@@ -11,7 +11,7 @@ import {
 } from '../../lib/access-keys';
 import { keyMayCall } from '../../lib/api-v1';
 import { requestMetaFrom } from '../../lib/audit';
-import { rowKeyRoute, type RouteRow } from '../../lib/auth/route-policy';
+import { requestKeyRoute, type RouteRow } from '../../lib/auth/route-policy';
 import { clientIp, clientIpKey } from '../../lib/rate-limit';
 
 /**
@@ -27,7 +27,8 @@ import { clientIp, clientIpKey } from '../../lib/rate-limit';
  * expiry, login), then the key's own rate budget, then its scope on the
  * request's ROUTE_POLICY row (`row`, the one the gate middleware found:
  * the v1 table's area and access as the row carries them, keyMayCall in
- * lib/api-v1.ts; no row: not in the API). Only a key that passes
+ * lib/api-v1.ts; no row, or a raw path that names no v1 route: not in the
+ * API). Only a key that passes
  * every step is handed on (`grant`): the request context carries it, and
  * the route's login lookup (lib/auth/session.ts) takes a key from there
  * and nowhere else.
@@ -68,9 +69,10 @@ export async function gateAccessKey(
   if (!limit.ok) return { response: tooMany(limit.retryAfterSec) };
 
   // The key's scope on the request's row. A request whose row the key
-  // table does not list (or that no route answers) is a 404: it is not
-  // part of the API a key can call.
-  const scope = keyMayCall(grant, rowKeyRoute(row));
+  // table does not list (or that no route answers), or whose raw path
+  // names no v1 route (an encoded spelling: requestKeyRoute), is a 404: it
+  // is not part of the API a key can call.
+  const scope = keyMayCall(grant, requestKeyRoute(row, req.method, path));
   if (!scope.ok) {
     if (scope.reason === 'not-in-api') return { response: notFound() };
     auditKeyRefusal({ keyId: grant.id, reason: scope.reason, ...meta() });

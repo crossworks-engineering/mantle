@@ -145,9 +145,11 @@ const compiled = API_V1_ROUTES.map((route) => ({
   re: new RegExp(`^${route.pattern.replace(/:[A-Za-z]+/g, '[^/]+')}/?$`),
 }));
 
-/** The v1 route a request names by its path, or null. HEAD is looked up
- *  as GET. The gate and the guard judge a key on the request's ROUTE_POLICY
- *  row (rowKeyRoute), never by path; the tests hold the rows to this. */
+/** The v1 route a RAW (undecoded) request path names, or null. HEAD is
+ *  looked up as GET. The raw-path check for an API key: the gate and the
+ *  guard judge a key on the request's ROUTE_POLICY row, and only where
+ *  this names the same route (route-policy.ts requestKeyRoute), so an
+ *  encoded spelling Hono decodes onto a row is still not in the API. */
 export function matchApiV1Route(method: string, path: string): ApiV1Route | null {
   const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
   for (const { route, re } of compiled) if (route.method === m && re.test(path)) return route;
