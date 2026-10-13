@@ -190,11 +190,17 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     const g = await folder('files', `${tag}g`);
     const e = await folder('files', `${tag}e`);
     const gPath = (await pathOf(g))!;
-    const up = await call('/api/files/files', owner, 'POST', {
-      parentPath: gPath,
-      filename: `${tag}.txt`,
-      content: 'hidden bytes',
-    });
+    const body = { parentPath: gPath, filename: `${tag}.txt`, content: 'hidden bytes' };
+    let up = await call('/api/files/files', owner, 'POST', body);
+    // Filing into a shared folder asks first (who will see it), as the UI
+    // does.
+    if (up.status === 409 && up.json.error === 'visibility') {
+      up = await call('/api/files/files', owner, 'POST', {
+        ...body,
+        confirm: true,
+        seen: up.json.total,
+      });
+    }
     expect(up.status, up.text.slice(0, 200)).toBeLessThan(300);
     const file = ((up.json.file as Json | undefined)?.id ?? up.json.id) as string;
     expect(await pathOf(file)).toBe(gPath);
