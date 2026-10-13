@@ -213,6 +213,17 @@ export {
   type MemberAppToolVerdict,
 } from './member-app-tools';
 export {
+  GATE_NARROWERS,
+  KEY_AREA_ERROR,
+  OWNER_KEYS_ERROR,
+  RISKY_TOOL_ERROR,
+  TEAM_APP_NO_TOOL_ERROR,
+  ensureGateReady,
+  registerGateNarrowers,
+  registerPeerToolRule,
+  type PeerToolRule,
+} from './gate-narrowers';
+export {
   NO_RUNTIME_POLICY_ERROR,
   apiToolPolicy,
   appToolPolicy,

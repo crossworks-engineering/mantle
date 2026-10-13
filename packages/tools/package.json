@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./client-sourced": "./src/client-sourced.ts",
-    "./client-sourced-rules": "./src/client-sourced-rules.ts"
+    "./client-sourced-rules": "./src/client-sourced-rules.ts",
+    "./gate-narrowers": "./src/gate-narrowers.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

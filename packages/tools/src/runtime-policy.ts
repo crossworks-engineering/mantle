@@ -19,7 +19,6 @@
  * Every policy starts at today's behaviour: none changes who may call what.
  */
 import {
-  registerNarrower,
   registerPolicySource,
   type GatePolicy,
   type PolicyRef,
@@ -106,9 +105,10 @@ export function shellToolPolicy(row: Row): RuntimeToolPolicy {
 }
 
 /** Why a member's app run may not call a built-in tool, or null (rules 2
- *  to 4 of member-app-tools.ts, on the resolved row; `refused`: the slugs
- *  no team app calls). The one reading of them: memberAppToolVerdict and
- *  appToolPolicy both ask it. */
+ *  to 4 of member-app-tools.ts, on the resolved row: its slug or its
+ *  builtin ref refused, it spends, it is not read-only, it needs a
+ *  confirm; `refused`: the slugs no team app calls). The one reading of
+ *  them: memberAppToolVerdict and appToolPolicy both ask it. */
 export function memberAppRefusal(
   slug: string,
   ref: string,
@@ -116,7 +116,9 @@ export function memberAppRefusal(
   requiresConfirm: boolean,
   refused: readonly string[],
 ): string | null {
-  if (refused.includes(ref)) return `The tool '${slug}' is not available in team apps.`;
+  if (refused.includes(slug) || refused.includes(ref)) {
+    return `The tool '${slug}' is not available in team apps.`;
+  }
   if (builtin.spends) {
     return `The tool '${slug}' starts paid model work on every call, so a team app can't use it.`;
   }
@@ -227,22 +229,3 @@ registerPolicySource('runtime-tool', (ref) => {
 });
 registerPolicySource('sandbox-mcp-tool', (ref) => sandboxMcpToolPolicy(ref.name));
 registerPolicySource('peer-tool', (ref) => peerToolPolicy(ref.name));
-
-// ── The gate's narrowers of this package (step 4) ───────────────────────────
-
-/** The member-app rule (rules 2 to 4, memberAppRefusal): a run at team
- *  rules (`facts.appRules === 'team'`) may call only what the app tool's
- *  policy allows; every other caller passes. The brokers ask the same
- *  function today (memberAppToolVerdict). */
-registerNarrower('member-app', (caller, policy) => {
-  if (caller.facts?.appRules !== 'team') return null;
-  const refused = policy.fields?.memberApp;
-  return typeof refused === 'string' ? refused : null;
-});
-
-/** The member turn caps: an explicit no-op until A5. TODO(A5): the caps
- *  are the member turn ledger (claimMemberTurn, a daily count and tokens
- *  per member turn, packages/content/src/member-turn-ledger.ts), claimed
- *  once per turn by workspace-turn.ts, not per tool call; A5 decides
- *  whether a call checks the claim here. */
-registerNarrower('turn-caps', () => null);

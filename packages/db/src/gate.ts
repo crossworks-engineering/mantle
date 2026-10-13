@@ -169,7 +169,9 @@ const narrowers = new Map<NarrowerName, Narrower>();
 /** Register the policy source of one kind of ref (A4: 'route'; A5:
  *  'tool'; @mantle/tools: 'runtime-tool'). The same source again is a no-op
  *  (a module loaded twice); another source under a kind that has one is
- *  refused, never a silent replacement. */
+ *  refused, never a silent replacement. The throw is on purpose: two
+ *  sources for one kind would make which one decides an accident of import
+ *  order. */
 export function registerPolicySource(kind: string, source: PolicySource): void {
   if (kind === 'job') throw new Error("registerPolicySource: 'job' is the gate's own");
   const had = sources.get(kind);
@@ -179,9 +181,11 @@ export function registerPolicySource(kind: string, source: PolicySource): void {
 }
 
 /** Register one narrower at its place in NARROWERS. The same narrower
- *  again is a no-op; another under a taken name is refused. A surface where
- *  a narrower does not apply registers it as an explicit no-op: the gate
- *  refuses to run while any is missing (assertNarrowers). */
+ *  again is a no-op; another under a taken name throws, on purpose: two
+ *  rules under one name would make which one runs an accident of import
+ *  order. A surface where a narrower does not apply registers it as an
+ *  explicit no-op: the gate refuses to run while any is missing
+ *  (assertGateReady). */
 export function registerNarrower(name: NarrowerName, narrower: Narrower): void {
   if (!NARROWERS.includes(name)) throw new Error(`registerNarrower: unknown narrower ${name}`);
   if (name === 'read-only') throw new Error("registerNarrower: 'read-only' is the gate's own");
@@ -204,14 +208,16 @@ export class GateNotReadyError extends Error {
   constructor(missing: readonly string[]) {
     super(
       `the gate is not ready: no narrower registered for ${missing.join(', ')} ` +
-        '(load @mantle/mcp-core and @mantle/tools, or register an explicit no-op)',
+        '(load @mantle/tools, whose gate-narrowers registers each, at boot)',
     );
     this.name = 'GateNotReadyError';
   }
 }
 
-/** Fail closed: every narrower of NARROWERS but the gate's own registered. */
-function assertNarrowers(): void {
+/** Fail closed: every narrower of NARROWERS but the gate's own registered.
+ *  Each process main asks it at boot (@mantle/tools ensureGateReady), so a
+ *  missing narrower shows there, not at the first call. */
+export function assertGateReady(): void {
   const missing = NARROWERS.filter((n) => n !== 'read-only' && !narrowers.has(n));
   if (missing.length > 0) throw new GateNotReadyError(missing);
 }
@@ -246,6 +252,9 @@ export function lookupPolicy(ref: PolicyRef): GatePolicy {
  *  no call can run in lists nothing. A surface that enters its own scope
  *  (`enterScope`) answers for its own: it throws an AccessError, mapped. */
 export function scopeStep(caller: GateCaller): void {
+  // TODO(A5): the owner MCP surface LISTS its tools for a login in no
+  // workspace today and refuses each call (owner-scope.ts); the gate
+  // refuses the listing too. A5 decides which, when MCP lists through it.
   if (caller.enterScope || !caller.scope) return;
   const problem = turnScopeProblem(caller.scope);
   if (problem) {
@@ -294,7 +303,7 @@ export function adminStep(caller: GateCaller, policy: GatePolicy): void {
  * GateNotReadyError while a narrower is not registered (fail closed).
  */
 export function gateCheck(caller: GateCaller, ref: PolicyRef): AccessError | null {
-  assertNarrowers();
+  assertGateReady();
   try {
     const policy = lookupPolicy(ref);
     scopeStep(caller);
@@ -417,6 +426,61 @@ export function currentCaller(): GateCaller | null {
   return callerStore.getStore() ?? null;
 }
 
+/** A Set that refuses every change. */
+function frozenSet<T>(values: Iterable<T>): ReadonlySet<T> {
+  const set = new Set(values);
+  const refuse = () => {
+    throw new TypeError('the bound caller is frozen');
+  };
+  Object.defineProperties(set, {
+    add: { value: refuse },
+    delete: { value: refuse },
+    clear: { value: refuse },
+  });
+  return Object.freeze(set);
+}
+
+/** A value of the caller's facts, frozen: an array or a Set copied. */
+function frozenValue(v: unknown): unknown {
+  if (Array.isArray(v)) return Object.freeze([...v]);
+  if (v instanceof Set) return frozenSet(v);
+  return v;
+}
+
+/** The bound caller (step 2): a frozen COPY, deep enough for what the
+ *  steps read (the Admin view's areas, the scope's workspaces, the facts'
+ *  arrays and Sets, the create home's rule and fallback). The surface's own
+ *  object is never frozen in place, and a later change to it does not reach
+ *  the bound caller. The create-home rule keeps its memo object (its
+ *  identity is the key). */
+function frozenCaller(c: GateCaller): GateCaller {
+  const facts = c.facts
+    ? Object.freeze(
+        Object.fromEntries(Object.entries(c.facts).map(([k, v]) => [k, frozenValue(v)])),
+      )
+    : c.facts;
+  return Object.freeze({
+    ...c,
+    ...(c.admin
+      ? {
+          admin: Object.freeze({ holdsAdmin: c.admin.holdsAdmin, areas: frozenSet(c.admin.areas) }),
+        }
+      : {}),
+    ...(c.scope
+      ? {
+          scope: Object.freeze({
+            ...c.scope,
+            ws: Object.freeze([...c.scope.ws]),
+            modWs: Object.freeze([...c.scope.modWs]),
+          }),
+        }
+      : {}),
+    ...(facts !== undefined ? { facts } : {}),
+    ...(c.createHome ? { createHome: Object.freeze({ ...c.createHome }) } : {}),
+    ...(c.createFallback ? { createFallback: Object.freeze({ ...c.createFallback }) } : {}),
+  });
+}
+
 /** What one call adds: the workspace it asks its creates to land in. */
 export type CallInput = { ask?: CreateAsk | null };
 
@@ -446,13 +510,14 @@ export async function enterCall<T>(
   fn: () => Promise<T>,
   input: CallInput = {},
 ): Promise<GateResult<T>> {
-  assertNarrowers();
+  assertGateReady();
   try {
     // 1. Resolve the caller.
     const resolved = typeof caller === 'function' ? await caller() : caller;
     if (!resolved) throw new AccessError('unauthorized');
-    // 2. Bind the caller, frozen: nothing the call runs changes who it is.
-    const bound = Object.isFrozen(resolved) ? resolved : Object.freeze(resolved);
+    // 2. Bind a frozen copy of the caller: nothing the call runs changes
+    // who it is, and the surface's own object is left as it was.
+    const bound = frozenCaller(resolved);
     return await callerStore.run(bound, async () => {
       // 3. The declared policy; then the actor and the scope it implies.
       const policy = lookupPolicy(ref);

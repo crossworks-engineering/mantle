@@ -1,27 +1,26 @@
 /**
  * The owner MCP surface's side of the one gate (workspaces arch A3c; plan
- * sections 2, 8 and 20.3): what an MCP tool's policy is, and the surface
- * narrowers (a key's areas, a peer's or key's risky tools and Write switch,
- * spending on the owner's keys), registered at their places in the gate's
- * order (@mantle/db gate.ts).
+ * sections 2, 8 and 20.3): what an MCP tool's policy is (the `mcp-tool`
+ * source), and the gate caller of a prepared MCP connection. The surface
+ * narrowers (a key's areas, a key's or peer's risky tools and Write switch,
+ * spending on the owner's keys) live in @mantle/tools (gate-narrowers.ts),
+ * so every process that dispatches registers them (fix round 2, M-A); they
+ * read what this policy declares, and the peer narrower this surface's
+ * rule by a tool's name (PEER_TOOL_RULE, registered here).
  *
  * The policy is DERIVED from today's lists (the registry's flags, the Admin
- * gate's tables, the risky and spending lists, the key areas), and the
- * narrowers call the functions the listing calls today (ownerPeerAllows,
- * keyAreasAllowTool, spendsOwnerKeys): nothing is copied. A5 declares the
- * policy on each definition and deletes the lists; until then
- * gate-policy.test.ts pins that the gate lists exactly what preparedAllows
- * lists, for every tool and every kind of caller, and that the call runs
- * exactly when the listing shows it.
+ * gate's tables, the risky and spending lists, the key areas): nothing is
+ * copied. A5 declares the policy on each definition and deletes the lists;
+ * until then gate-policy.test.ts pins that the gate lists exactly what
+ * preparedAllows lists, for every tool and every kind of caller, and that
+ * the call runs exactly when the listing shows it.
  *
  * A3c does not move the MCP surface onto the gate: registration, the
  * listing filter and the scope and create-home wrappers stay as they are
  * until A5.
  */
 import {
-  READ_ONLY_CALLER_ERROR,
   loginActor,
-  registerNarrower,
   registerPolicySource,
   type GateCaller,
   type GatePolicy,
@@ -32,14 +31,15 @@ import {
   getBuiltin,
   isAdminOnlyTool,
   isBuiltinSpending,
+  registerPeerToolRule,
   toolAdminArea,
+  type PeerToolRule,
 } from '@mantle/tools';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 import { toolKeyArea } from './key-scope';
 import {
   isMcpToolReadOnly,
   isPeerRiskyTool,
-  ownerPeerAllows,
   spendsOwnerKeys,
   type PreparedCallerTools,
 } from './login-surface';
@@ -95,65 +95,17 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller | null 
   });
 }
 
-/** The refusal of a tool outside a key's areas. */
-export const KEY_AREA_ERROR = 'This API key is limited to areas this tool is not in.';
+/** The narrowers' refusals: the narrowers live in @mantle/tools
+ *  (gate-narrowers.ts), registered by every process that dispatches. */
+export { KEY_AREA_ERROR, OWNER_KEYS_ERROR, RISKY_TOOL_ERROR } from '@mantle/tools';
 
-/** The refusal of a risky tool the owner did not name on a key or a peer. */
-export const RISKY_TOOL_ERROR =
-  'This tool sends outside the brain, spends or hands out access: the owner did not name it on this key or linked brain.';
-
-/** The refusal of a tool that spends on the owner's keys outside Admin. */
-export const OWNER_KEYS_ERROR =
-  "This tool spends on the brain owner's provider keys, which only a user of the Admin workspace may do.";
-
-/** Whether the caller is narrowed like a peer: an API key or a peer (the
- *  login's own OAuth consent is not). */
-function narrowedCaller(caller: GateCaller): boolean {
-  return caller.via === 'key' || caller.via === 'peer';
-}
-
-/** Whether `ref` names a tool (an MCP tool or a runtime tool row). */
-function toolRef(ref: PolicyRef): boolean {
-  return ref.kind === 'mcp-tool' || ref.kind === 'runtime-tool';
-}
-
-/** A key's areas (null: every area): the policy's key area must be one of
- *  them (a policy with none is open only to an all-areas key). The tools'
- *  policies carry toolKeyArea; A4's route rows carry their own. */
-registerNarrower('key', (caller, policy) => {
-  const areas = (caller.facts?.keyAreas ?? null) as readonly string[] | null;
-  if (!narrowedCaller(caller) || areas === null) return null;
-  const area = (policy.fields?.keyArea ?? null) as string | null;
-  return area !== null && areas.includes(area) ? null : KEY_AREA_ERROR;
+/** The peer narrower's rule by a tool's name (@mantle/tools
+ *  gate-narrowers.ts): this surface's own two lists, the ones
+ *  ownerPeerAllows reads. */
+export const PEER_TOOL_RULE: PeerToolRule = Object.freeze({
+  risky: isPeerRiskyTool,
+  readOnly: isMcpToolReadOnly,
 });
-
-/** A key's or a peer's risky tools and Write switch, on a tool:
- *  ownerPeerAllows, the rule the listing runs today (by the tool's name: it
- *  counts a connector tool as a write whatever its mark, as today; see the
- *  A3c report). */
-registerNarrower('peer', (caller, _policy, ref) => {
-  if (!narrowedCaller(caller) || !toolRef(ref)) return null;
-  const riskyAllowed = (caller.facts?.riskyAllowed ?? []) as readonly string[];
-  if (ownerPeerAllows(ref.name, { write: caller.write !== false, riskyAllowed })) return null;
-  return isPeerRiskyTool(ref.name) && !riskyAllowed.includes(ref.name)
-    ? RISKY_TOOL_ERROR
-    : READ_ONLY_CALLER_ERROR;
-});
-
-/** Whether the caller is an MCP connection (the login's own OAuth, a key
- *  or a peer): the surface the owner-keys rule is for. */
-function mcpConnection(caller: GateCaller): boolean {
-  return caller.via === 'oauth' || narrowedCaller(caller);
-}
-
-/** Spending on the owner's keys, on an MCP connection: only a scope that
- *  holds Admin (an unscoped caller keeps its own rules). A workspace
- *  assistant's turn keeps its own rules (the member turn ledger), as today:
- *  it is not narrowed here. */
-registerNarrower('spending', (caller, policy) =>
-  mcpConnection(caller) && policy.spends === 'ownerKey' && caller.admin && !caller.admin.holdsAdmin
-    ? OWNER_KEYS_ERROR
-    : null,
-);
 
 registerPolicySource('mcp-tool', mcpToolPolicy);
+registerPeerToolRule(PEER_TOOL_RULE);

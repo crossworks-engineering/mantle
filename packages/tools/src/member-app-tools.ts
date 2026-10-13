@@ -38,7 +38,14 @@
  * the client rules instead, for every runner.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, toolGroups, type Tool } from '@mantle/db';
+import {
+  db,
+  registerPolicySource,
+  toolGroups,
+  type GatePolicy,
+  type PolicyRef,
+  type Tool,
+} from '@mantle/db';
 import { resolveTool } from './resolve';
 import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
 import { appToolPolicy } from './runtime-policy';
@@ -144,3 +151,45 @@ export async function memberAppToolVerdict(
   }
   return { ok: true, tool };
 }
+
+/**
+ * An app tool (ref kind `app-tool`, arch A3c fix round 2, M-B): what an
+ * app's run calls through a broker (A5). The member-app rule is NOT read
+ * again here: the ref carries `verdict`, what memberAppToolVerdict (the
+ * live rule, above) said for this call, and the policy's `memberApp` is its
+ * answer (null: allowed; else its reason). No verdict: no answer, and the
+ * member-app narrower refuses a run at team rules (fail closed). The ref
+ * also carries the resolved `row` and, for a built-in, its registry facts
+ * (`builtin`: readOnly, spends), for what the call is (read or write).
+ *
+ * A call the verdict refused before any row was read (not declared, a
+ * refused slug, no such tool) is a write here (the strictest), refused by
+ * the narrower in the verdict's words. TODO(A5): the brokers answer the
+ * verdict's status (403, or 404 for no such tool); the gate's narrowed
+ * refusal answers 403.
+ */
+export function appToolGatePolicy(ref: PolicyRef): GatePolicy | null {
+  const verdict = ref.verdict as MemberAppToolVerdict | undefined;
+  const answer = verdict === undefined ? undefined : verdict.ok ? null : verdict.reason;
+  const row = ref.row as Tool | undefined;
+  if (!row || typeof row !== 'object' || !row.handler) {
+    if (typeof answer !== 'string') return null;
+    return Object.freeze({
+      effect: 'write' as const,
+      scope: 'any' as const,
+      fields: Object.freeze({ memberApp: answer }),
+    });
+  }
+  const builtin = ref.builtin as { readOnly: boolean; spends: boolean } | undefined;
+  const own = appToolPolicy(row, builtin ?? null, MEMBER_APP_REFUSED_SLUGS);
+  if (!own) return null;
+  // Only the verdict answers the member-app rule (rules 1 to 5 and the
+  // outside rules); the row's own reading of rules 2 to 4 is dropped.
+  const { memberApp: _rowOnly, ...fields } = own.fields ?? {};
+  return Object.freeze({
+    ...own,
+    fields: Object.freeze({ ...fields, ...(answer !== undefined ? { memberApp: answer } : {}) }),
+  });
+}
+
+registerPolicySource('app-tool', appToolGatePolicy);

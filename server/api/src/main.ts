@@ -27,6 +27,7 @@ import {
 } from './config';
 import { assertEnvShape } from '@mantle/config';
 import { openLoginWritePool } from '@mantle/db';
+import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
@@ -80,6 +81,10 @@ process.on('unhandledRejection', (reason) => {
 });
 
 async function main(): Promise<void> {
+  // The one gate (arch A3c fix round 2, M-A): every narrower registered, or
+  // the boot fails here, not at the first tool call of a turn.
+  // gate-boot.test.ts pins this call in every process entry.
+  ensureGateReady();
   // Liveness: the api runner exposes no HTTP port (DBOS 5 has no admin
   // server), so its container healthcheck reads a heartbeat
   // file we touch on a timer. Catches a WEDGED process; a dead one is already

@@ -48,6 +48,13 @@ const { registerRecallEmbedder } = await import('@mantle/content');
 const { embedBatch } = await import('@mantle/embeddings');
 registerRecallEmbedder(embedBatch);
 
+// The one gate (arch A3c fix round 2, M-A): every narrower registered, or
+// the process stops here at boot, not at its first call. AWAITED like the
+// imports above (env first). gate-boot.test.ts pins this call in every
+// process entry.
+const { ensureGateReady } = await import('@mantle/tools/gate-narrowers');
+ensureGateReady();
+
 const { serve } = await import('@hono/node-server');
 const { createApp } = await import('./app');
 

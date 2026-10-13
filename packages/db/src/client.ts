@@ -2225,15 +2225,12 @@ export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>):
   if (currentWorkspaceScope() || currentScopeTx() || currentSpaceScope()) {
     throw new Error('withScope: already inside a scope');
   }
-  if (scope.loginId !== null && !UUID_RE.test(scope.loginId)) {
-    throw new Error('withScope: loginId must be a uuid');
-  }
+  // The one scope check (scopeProblem), in withScope's own words; unlike a
+  // turn, a request scope may read no workspace (an empty list reads nothing).
+  const problem = scopeProblem(scope, 'withScope', { needsWorkspace: false });
+  if (problem) throw new Error(problem);
   const ws = uuidArrayLiteral(scope.ws, 'withScope ws');
   const mod = uuidArrayLiteral(scope.modWs, 'withScope modWs');
-  const inWs = new Set(scope.ws);
-  if (scope.modWs.some((id) => !inWs.has(id))) {
-    throw new Error('withScope: modWs must be a subset of ws');
-  }
   const frozen: WorkspaceScope = {
     kind: scope.kind,
     loginId: scope.loginId,
@@ -2301,20 +2298,36 @@ export async function withTurnScope<T>(
  * (gate.ts) asks it before it lists or calls, so listing equals calling.
  */
 export function turnScopeProblem(scope: WorkspaceScope): string | null {
+  return scopeProblem(scope, 'withTurnScope', { needsWorkspace: true });
+}
+
+/**
+ * The one scope check, worded for the function that asks it (`prefix`):
+ * withTurnScope (turnScopeProblem, and the gate through it) and withScope.
+ * `needsWorkspace`: no workspace at all is a problem (a turn); a request
+ * scope (withScope) may read none.
+ */
+function scopeProblem(
+  scope: WorkspaceScope,
+  prefix: 'withTurnScope' | 'withScope',
+  opts: { needsWorkspace: boolean },
+): string | null {
   if (scope.loginId !== null && !UUID_RE.test(scope.loginId)) {
-    return 'withTurnScope: loginId must be a uuid';
+    return `${prefix}: loginId must be a uuid`;
   }
   for (const [ids, what] of [
-    [scope.ws, 'withTurnScope ws'],
-    [scope.modWs, 'withTurnScope modWs'],
+    [scope.ws, `${prefix} ws`],
+    [scope.modWs, `${prefix} modWs`],
   ] as const) {
     for (const id of ids) {
       if (!UUID_RE.test(id)) return `${what}: not a uuid: ${String(id).slice(0, 40)}`;
     }
   }
-  if (scope.ws.length === 0) return 'withTurnScope: a turn reads at least one workspace';
+  if (opts.needsWorkspace && scope.ws.length === 0) {
+    return `${prefix}: a turn reads at least one workspace`;
+  }
   const inWs = new Set(scope.ws);
-  if (scope.modWs.some((id) => !inWs.has(id))) return 'withTurnScope: modWs must be a subset of ws';
+  if (scope.modWs.some((id) => !inWs.has(id))) return `${prefix}: modWs must be a subset of ws`;
   return null;
 }
 

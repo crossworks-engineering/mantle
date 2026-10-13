@@ -34,6 +34,7 @@ import {
   withTurnScope,
 } from '@mantle/db';
 import { adminToolGate, getBuiltin, runGated } from '@mantle/tools';
+import { NO_SCOPE_ERROR as NO_WORKSPACE_ERROR } from '@mantle/std';
 
 /** A tool reply that refuses the call. */
 function refusal(text: string) {
@@ -45,9 +46,12 @@ function refusal(text: string) {
 export const NOT_ON_WORKSPACES_ERROR =
   'This brain is not on workspaces yet, so only an admin login has MCP tools here.';
 
-/** The reply when the login holds no workspace at all. */
-export const NO_WORKSPACE_ERROR =
-  'This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one.';
+/** The reply when the login holds no workspace at all: the gate's own
+ *  no-scope refusal (@mantle/std NO_SCOPE_ERROR, one constant, in the words
+ *  this surface has always said). TODO(A5): this surface LISTS its tools
+ *  for such a login and refuses each call; the gate refuses the listing too
+ *  (gate.ts scopeStep). A5 decides which when MCP lists through the gate. */
+export { NO_WORKSPACE_ERROR };
 
 /**
  * Run one call of tool `slug` in `loginId`'s scope, gated (see the module

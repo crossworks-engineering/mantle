@@ -22,7 +22,7 @@
  */
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { authUsers, db, resolveSingleOwnerId, runAsSystem } from '@mantle/db';
-import { buildMantleMcpServer } from '@mantle/mcp-core';
+import { buildMantleMcpServer, ensureGateReady } from '@mantle/mcp-core';
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { eq } from 'drizzle-orm';
@@ -35,6 +35,11 @@ import { connectStdioAs, stdioOwnerActor } from './stdio-actor';
 // Desktop must embed its prompts too.
 // recall-embed-registration.test.ts pins this call in all three entrypoints.
 registerRecallEmbedder(embedBatch);
+
+// The one gate (arch A3c fix round 2, M-A): every narrower registered, or
+// the server stops here at boot, not at its first tool call.
+// gate-boot.test.ts pins this call in every process entry.
+ensureGateReady();
 
 // Resolve the owner: ALLOWED_USER_ID when set (validated as a UUID inside
 // resolveSingleOwnerId), else the sole auth.users row — so a self-hosted setup

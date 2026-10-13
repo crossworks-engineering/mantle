@@ -25,6 +25,7 @@ import { PgBoss } from 'pg-boss';
 import { startProcessHeartbeat } from '@mantle/content';
 import { env } from '@mantle/config';
 import { runAsSystem } from '@mantle/db';
+import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 
 /** How long pg-boss may take to finish in-flight jobs. */
 const BOSS_STOP_TIMEOUT_MS = 10_000;
@@ -101,7 +102,12 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
     console.error(`[${name}] unhandledRejection (kept alive):`, reason);
   });
 
-  startWorkerAs(name, start)
+  // The one gate (arch A3c fix round 2, M-A): every narrower registered
+  // before the worker starts, or it fails to start (gate-boot.test.ts).
+  startWorkerAs(name, async () => {
+    ensureGateReady();
+    await start();
+  })
     .then(() => console.log(`[${name}] worker up.`))
     .catch((err) => {
       clearInterval(keepAlive);
