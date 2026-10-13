@@ -73,6 +73,8 @@
     "typecheck": "tsc --noEmit",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",
     "workspaces:check": "tsx --env-file-if-exists=./.env.local scripts/workspaces-check.ts",
+    "ws:team-check": "tsx --env-file-if-exists=./.env.local scripts/ws-team-check.ts",
+    "ws:clear-member-ticks": "tsx --env-file-if-exists=./.env.local scripts/ws-clear-member-ticks.ts",
     "worker:calendar:dev": "tsx --watch --env-file-if-exists=./.env.local workers/calendar-sync.ts",
     "worker:dev": "tsx --watch --env-file-if-exists=./.env.local workers/email-sync.ts",
     "worker:docs:dev": "tsx --watch --env-file-if-exists=./.env.local workers/docs-sync.ts",
