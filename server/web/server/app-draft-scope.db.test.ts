@@ -271,15 +271,17 @@ describe.skipIf(!URL)('app drafts under the row lock read as the caller’s scop
     await x(sql`insert into spaces (id, kind, login_id) values (${ids.owner}, 'brain', ${ids.owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
-    const ws = await x<{ id: string; admin: boolean; key: string | null }>(sql`
-      select id::text, is_admin as admin, bridge_key as key from workspaces
+    const ws = await x<{ id: string; admin: boolean }>(sql`
+      select id::text, is_admin as admin from workspaces
        where owner_id = ${ids.owner} and archived_at is null`);
     adminWs = ws.find((w) => w.admin)!.id;
-    teamWs = ws.find((w) => w.key === 'team')!.id;
-    const [proj] = await x<{ id: string }>(sql`
-      insert into workspaces (owner_id, name) values (${ids.owner}, ${`${tag} Proj`})
+    // A brain has no built-in Team: the writer's workspace is a normal one.
+    const [proj, share] = await x<{ id: string }>(sql`
+      insert into workspaces (owner_id, name) values
+        (${ids.owner}, ${`${tag} Proj`}), (${ids.owner}, ${`${tag} Share`})
       returning id::text`);
     projWs = proj!.id;
+    teamWs = share!.id;
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${projWs}, ${ids.admin}, true), (${projWs}, ${ids.moderator}, true),
       (${teamWs}, ${ids.writer}, false)
