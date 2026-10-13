@@ -4,7 +4,7 @@
  * db-dump.sh invokes this and tars the result to the host, so the app-dbs are
  * backed up alongside the Postgres dump.
  *
- *   pnpm -C server/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap
+ *   pnpm -C server/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap [dump-started-ms]
  *
  * Exit codes: 0 all good · 1 usage/crash · 2 one or more DBs failed to snapshot
  * (loud — a backup must never silently skip a database).
@@ -18,7 +18,14 @@ async function main() {
     console.error('usage: tsx scripts/backup-app-dbs.ts <destDir>');
     process.exit(1);
   }
-  const r = await snapshotAllAppDatabases(destDir);
+  // When the Postgres dump this archive goes with started (ms, db-dump.sh):
+  // revisions the store sweep had marked unreferenced before it are left
+  // out. Without it, every revision on disk goes (A3b).
+  const started = Number(process.argv[3]);
+  const r = await snapshotAllAppDatabases(
+    destDir,
+    Number.isFinite(started) && started > 0 ? { dumpStartedAt: started } : {},
+  );
   // Summary to STDERR so stdout stays clean for callers that pipe.
   console.error(
     `app-dbs snapshot → ${destDir}: ${r.snapshotted.length} ok, ${r.missing.length} missing, ${r.failed.length} failed`,

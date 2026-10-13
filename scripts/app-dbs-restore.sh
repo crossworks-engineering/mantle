@@ -52,5 +52,10 @@ docker exec -i "$APP_CONTAINER" sh -c '
     rm -f "/data/app-dbs/$f-wal" "/data/app-dbs/$f-shm" "/data/app-dbs/$f-journal"
   done
   tar -C /data/app-dbs -xzf "$t"
+  # The store sweep hold (arch A3b): the restored files and the rows may name
+  # different revisions until both are back; the sweep waits a week, or for
+  # a run with --allow-many after a dry run was read.
+  touch /data/app-dbs/.store-sweep-hold
 ' < "$TGZ"
 echo "✔ Restored. (Restore the Postgres dump first if you haven't — the registry rows point at these files.)"
+echo "  The store sweep is held for a week (/data/app-dbs/.store-sweep-hold): read pnpm -C server/web store:sweep, then --apply --allow-many."

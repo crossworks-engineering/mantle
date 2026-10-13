@@ -54,6 +54,10 @@ if ! docker exec "$CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1
   exit 1
 fi
 
+# When the dump starts (ms; a second early, as `date` has no milliseconds
+# everywhere): the app and table archives leave out only the revisions the
+# store sweep had marked unreferenced before it (arch A3b).
+DUMP_STARTED_MS="$(( $(date +%s) - 1 ))000"
 echo "▶ Dumping '$CONTAINER' (postgres/postgres) → $OUT"
 # --no-owner keeps the dump portable across roles. Custom format is compressed.
 # A failed or empty dump is removed, never left looking like a backup.
@@ -80,10 +84,10 @@ elif ! docker exec "$APP_CONTAINER" sh -c 'test -d "${APP_DB_DIR:-/data/app-dbs}
   echo "▷ no app databases yet in '$APP_CONTAINER' — skipping per-app SQLite."
 else
   echo "▶ Snapshotting per-app SQLite via '$APP_CONTAINER' → $APPDB_OUT"
-  if docker exec "$APP_CONTAINER" sh -c '
+  if docker exec -e DUMP_STARTED_MS="$DUMP_STARTED_MS" "$APP_CONTAINER" sh -c '
         set -e
         rm -rf /tmp/appdbsnap && mkdir -p /tmp/appdbsnap
-        pnpm -C server/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap 1>&2
+        pnpm -C server/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap "$DUMP_STARTED_MS" 1>&2
         tar -C /tmp/appdbsnap -czf - .
       ' > "$APPDB_OUT"; then
     docker exec "$APP_CONTAINER" rm -rf /tmp/appdbsnap >/dev/null 2>&1 || true
@@ -110,10 +114,10 @@ elif ! docker exec "$APP_CONTAINER" sh -c 'test -d "${TABLE_DB_DIR:-/data/table-
   echo "▷ no table workbooks yet in '$APP_CONTAINER' — skipping table SQLite."
 else
   echo "▶ Snapshotting table workbooks via '$APP_CONTAINER' → $TABLEDB_OUT"
-  if docker exec "$APP_CONTAINER" sh -c '
+  if docker exec -e DUMP_STARTED_MS="$DUMP_STARTED_MS" "$APP_CONTAINER" sh -c '
         set -e
         rm -rf /tmp/tabledbsnap && mkdir -p /tmp/tabledbsnap
-        pnpm -C server/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap 1>&2
+        pnpm -C server/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap "$DUMP_STARTED_MS" 1>&2
         tar -C /tmp/tabledbsnap -czf - .
       ' > "$TABLEDB_OUT"; then
     docker exec "$APP_CONTAINER" rm -rf /tmp/tabledbsnap >/dev/null 2>&1 || true

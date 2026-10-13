@@ -5,7 +5,7 @@
  * table workbooks are backed up alongside the Postgres dump — durability gate
  * 2 of Tables v2: no table file exists outside the backup surface, ever.
  *
- *   pnpm -C server/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap
+ *   pnpm -C server/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap [dump-started-ms]
  *
  * Exit codes: 0 all good · 1 usage/crash · 2 one or more snapshots failed
  * (loud — a backup must never silently skip a workbook).
@@ -19,7 +19,14 @@ async function main() {
     console.error('usage: tsx scripts/backup-table-dbs.ts <destDir>');
     process.exit(1);
   }
-  const r = await snapshotAllTableDatabases(destDir);
+  // When the Postgres dump this archive goes with started (ms, db-dump.sh):
+  // revisions the store sweep had marked unreferenced before it are left
+  // out. Without it, every revision on disk goes (A3b).
+  const started = Number(process.argv[3]);
+  const r = await snapshotAllTableDatabases(
+    destDir,
+    Number.isFinite(started) && started > 0 ? { dumpStartedAt: started } : {},
+  );
   console.error(
     `table-dbs snapshot → ${destDir}: ${r.snapshotted.length} ok, ${r.missing.length} missing, ${r.failed.length} failed`,
   );

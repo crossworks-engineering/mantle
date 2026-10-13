@@ -410,6 +410,23 @@ else
   echo "✔ Restored personal-space files → $SPACES_DIR"
 fi
 
+# The store sweep hold (arch A3b): the restored rows may name OLDER
+# revisions of table workbooks and app databases than the files on this
+# disk, which the nightly store-sweep would read as old revisions to remove.
+# A hold at each store root stops it for a week, or until someone has read a
+# dry run (pnpm -C server/web store:sweep) and runs it with --allow-many.
+# The deployed layout ($MANTLE_DATA_DIR/{table-dbs,app-dbs}) and the dev one
+# (.table-dbs, .app-dbs at the repo root), where they exist.
+for STORE_DIR in "$DATA_DIR/table-dbs" "$DATA_DIR/app-dbs" ./.table-dbs ./.app-dbs; do
+  if [ -d "$STORE_DIR" ]; then
+    if touch "$STORE_DIR/.store-sweep-hold" 2>/dev/null; then
+      echo "▷ store sweep held for a week: $STORE_DIR/.store-sweep-hold"
+    else
+      echo "⚠ could not write $STORE_DIR/.store-sweep-hold: run the store sweep only after the restored files are checked." >&2
+    fi
+  fi
+done
+
 if [ "$UNEXPLAINED" -gt 0 ]; then
   echo "✗ pg_restore reported $UNEXPLAINED error(s) this script cannot explain: something in the dump" >&2
   echo "  did not restore, and nothing in the app will say so. The logins, the role CHECK, the" >&2
