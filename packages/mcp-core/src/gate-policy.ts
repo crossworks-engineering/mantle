@@ -19,6 +19,7 @@
  * until A5.
  */
 import {
+  READ_ONLY_CALLER_ERROR,
   loginActor,
   registerNarrower,
   registerPolicySource,
@@ -136,13 +137,21 @@ registerNarrower('peer', (caller, _policy, ref) => {
   if (ownerPeerAllows(ref.name, { write: caller.write !== false, riskyAllowed })) return null;
   return isPeerRiskyTool(ref.name) && !riskyAllowed.includes(ref.name)
     ? RISKY_TOOL_ERROR
-    : 'This connection only reads: it cannot call this.';
+    : READ_ONLY_CALLER_ERROR;
 });
 
-/** Spending on the owner's keys: only a scope that holds Admin (an
- *  unscoped caller keeps its own rules). */
+/** Whether the caller is an MCP connection (the login's own OAuth, a key
+ *  or a peer): the surface the owner-keys rule is for. */
+function mcpConnection(caller: GateCaller): boolean {
+  return caller.via === 'oauth' || narrowedCaller(caller);
+}
+
+/** Spending on the owner's keys, on an MCP connection: only a scope that
+ *  holds Admin (an unscoped caller keeps its own rules). A workspace
+ *  assistant's turn keeps its own rules (the member turn ledger), as today:
+ *  it is not narrowed here. */
 registerNarrower('spending', (caller, policy) =>
-  policy.spends === 'ownerKey' && caller.admin && !caller.admin.holdsAdmin
+  mcpConnection(caller) && policy.spends === 'ownerKey' && caller.admin && !caller.admin.holdsAdmin
     ? OWNER_KEYS_ERROR
     : null,
 );

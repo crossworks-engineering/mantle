@@ -19,6 +19,7 @@
  * Every policy starts at today's behaviour: none changes who may call what.
  */
 import {
+  registerNarrower,
   registerPolicySource,
   type GatePolicy,
   type PolicyRef,
@@ -226,3 +227,22 @@ registerPolicySource('runtime-tool', (ref) => {
 });
 registerPolicySource('sandbox-mcp-tool', (ref) => sandboxMcpToolPolicy(ref.name));
 registerPolicySource('peer-tool', (ref) => peerToolPolicy(ref.name));
+
+// ── The gate's narrowers of this package (step 4) ───────────────────────────
+
+/** The member-app rule (rules 2 to 4, memberAppRefusal): a run at team
+ *  rules (`facts.appRules === 'team'`) may call only what the app tool's
+ *  policy allows; every other caller passes. The brokers ask the same
+ *  function today (memberAppToolVerdict). */
+registerNarrower('member-app', (caller, policy) => {
+  if (caller.facts?.appRules !== 'team') return null;
+  const refused = policy.fields?.memberApp;
+  return typeof refused === 'string' ? refused : null;
+});
+
+/** The member turn caps: an explicit no-op until A5. TODO(A5): the caps
+ *  are the member turn ledger (claimMemberTurn, a daily count and tokens
+ *  per member turn, packages/content/src/member-turn-ledger.ts), claimed
+ *  once per turn by workspace-turn.ts, not per tool call; A5 decides
+ *  whether a call checks the claim here. */
+registerNarrower('turn-caps', () => null);
