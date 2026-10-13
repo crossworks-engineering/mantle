@@ -18,7 +18,15 @@
 --    file.
 --
 -- Constant defaults: no table rewrite. Both locks first, in one statement
--- (a migration that alters several tables never waits holding one).
+-- (a migration that alters several tables never waits holding one), and
+-- never waiting past 30 s behind live traffic (as 0265): the migration
+-- fails and is retried rather than queueing every reader behind it.
+--
+-- The draft_path backfill names the old draft file whether or not it is on
+-- disk (a migration cannot see the disk): every writer and reader treats a
+-- named draft that is not there as no draft (A3b fix round 1, L1).
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
 LOCK TABLE public.tables, public.app_databases IN ACCESS EXCLUSIVE MODE;
 ALTER TABLE tables ADD COLUMN IF NOT EXISTS draft_path text;
 UPDATE tables
