@@ -3,10 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./src/read.ts",
+  "types": "./src/read.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/read.ts",
+    "./write": "./src/write.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

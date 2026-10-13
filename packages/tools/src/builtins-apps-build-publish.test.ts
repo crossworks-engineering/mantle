@@ -37,7 +37,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/app-build', () => ({ buildApp: vi.fn(), loadRuntimeExports: vi.fn() }));
-vi.mock('@mantle/storage', () => ({ putContent: vi.fn() }));
+vi.mock('@mantle/storage/write', () => ({ putContent: vi.fn() }));
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/app-broker')>();
   return { ...actual, appDbSeedRows: vi.fn(), checkAppSchemaScript: vi.fn() };
@@ -61,7 +61,8 @@ import {
   NoGreenBuildError,
 } from '@mantle/content';
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
-import { putContent } from '@mantle/storage';
+import { putContent } from '@mantle/storage/write';
+import { contentKey, hashBuffer } from '@mantle/storage';
 import { AppSqlError, appDbSeedRows, checkAppSchemaScript } from '@mantle/content/app-broker';
 import { createAppSnapshot } from '@mantle/content/app-snapshots';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
@@ -128,7 +129,17 @@ beforeEach(() => {
         deduped: false,
       }) as never,
   );
-  vi.mocked(setDraftBuild).mockResolvedValue(true as never);
+  // The broker (A3b): setDraftBuild runs the store step after its checked
+  // row write; the mock does the same.
+  vi.mocked(setDraftBuild).mockImplementation((async (
+    _o: string,
+    _id: string,
+    _ref: unknown,
+    opts?: { store?: () => Promise<void> },
+  ) => {
+    await opts?.store?.();
+    return true;
+  }) as never);
   vi.mocked(setManifest).mockResolvedValue({} as never);
   vi.mocked(publishApp).mockResolvedValue(app({ draft: null }) as never);
   vi.mocked(appDbSeedRows).mockResolvedValue({ table: 'fluids', inserted: 3, deleted: 0 } as never);
@@ -173,19 +184,27 @@ describe('app_build', () => {
       'o1',
       APP_ID,
       expect.objectContaining({
-        storageKey: 'content/application/javascript',
-        sha256: 'sha',
+        storageKey: contentKey(hashBuffer(Buffer.from(GREEN.code, 'utf8'))),
+        sha256: hashBuffer(Buffer.from(GREEN.code, 'utf8')),
         bytes: GREEN.code.length,
         esbuildVersion: '0.25.0',
         ok: true,
       }),
-      { builtFrom: expect.anything() },
+      { builtFrom: expect.anything(), store: expect.any(Function) },
     );
     // No CSS sidecar and no warnings: neither key should be written at all.
     const ref = vi.mocked(setDraftBuild).mock.calls[0]![2];
     expect(ref).not.toHaveProperty('css');
     expect(ref).not.toHaveProperty('warnings');
     expect(outputOf(res)).toMatchObject({ id: APP_ID, build_ok: true, bytes: GREEN.code.length });
+  });
+
+  it('stores nothing when the row write is refused (the store broker, A3b)', async () => {
+    // setDraftBuild's checked statement refused: it never runs the store step.
+    vi.mocked(setDraftBuild).mockResolvedValue(false as never);
+    await build.handler({ id: APP_ID }, ctx);
+    expect(setDraftBuild).toHaveBeenCalledTimes(1);
+    expect(putContent).not.toHaveBeenCalled();
   });
 
   it('stores the CSS sidecar and the warning texts alongside the bundle', async () => {
@@ -201,9 +220,13 @@ describe('app_build', () => {
       APP_ID,
       expect.objectContaining({
         warnings: ['undeclared tool slug: weather'],
-        css: { storageKey: 'content/text/css', sha256: 'sha', bytes: 18 },
+        css: {
+          storageKey: contentKey(hashBuffer(Buffer.from('.p-4{padding:1rem}', 'utf8'))),
+          sha256: hashBuffer(Buffer.from('.p-4{padding:1rem}', 'utf8')),
+          bytes: 18,
+        },
       }),
-      { builtFrom: expect.anything() },
+      { builtFrom: expect.anything(), store: expect.any(Function) },
     );
     // Warnings do not fail the call; they ride along for the agent to read.
     expect(outputOf(res).build_ok).toBe(true);

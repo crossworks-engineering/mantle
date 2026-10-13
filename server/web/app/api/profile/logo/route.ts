@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { loadPreferencesFor, savePreferencesFor } from '@mantle/content';
-import { putContent, deleteContent } from '@mantle/storage';
+import { putContent, deleteContent } from '@mantle/storage/write';
 import { sniffType, staleLogoBytes, SVG_ACTIVE_RE, LOGO_MAX_BYTES } from '@/lib/logo-validation';
 
 /**

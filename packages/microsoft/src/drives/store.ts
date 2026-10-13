@@ -8,7 +8,8 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes, withDeadlockRetry, withNodeInsertHeads, type NewNode } from '@mantle/db';
-import { hashBuffer, putContent } from '@mantle/storage';
+import { hashBuffer } from '@mantle/storage';
+import { putContent } from '@mantle/storage/write';
 import { extOf, mimeForExt, sanitizeFilename } from '@mantle/files';
 import { ensureBranchPath } from './branch';
 

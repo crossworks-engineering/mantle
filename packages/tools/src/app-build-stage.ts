@@ -8,16 +8,21 @@
  * A failed build never overwrites the last good preview: a BuildRef is
  * recorded on success only; the errors come back for the caller to show.
  *
- * Inside a caller's transaction (a member's app change, withSystemTx) the
- * bundle is stored before the row: if that transaction rolls back, the
- * stored bundle stays without a row pointing at it. That is left on
- * purpose (team apps follow-up): bundles are content-addressed and shared
- * by every app whose build is byte-identical, so removing one on rollback
- * could break another app; an unreferenced bundle costs only its bytes.
+ * The app build store's broker (workspaces arch A3b, docs/store-brokers.md):
+ * the only writer of app bundles to the object store. The bundle is stored
+ * AFTER the app row's checked write (setDraftBuild: the draft_build update,
+ * as the caller, exactly one row), inside its transaction: a build the
+ * database refuses (D4: the code needs a Moderator of the app's home) stores
+ * nothing. If the commit then fails, the stored bundle stays without a row
+ * pointing at it. That is left on purpose (team apps follow-up): bundles are
+ * content-addressed and shared by every app whose build is byte-identical,
+ * so removing one could break another app; an unreferenced bundle costs
+ * only its bytes, and the next identical build reuses it.
  */
 import { getApp, setDraftBuild, workingSource } from '@mantle/content';
 import { buildApp, loadRuntimeExports, type BuildMessage } from '@mantle/app-build';
-import { putContent } from '@mantle/storage';
+import { contentKey, hashBuffer } from '@mantle/storage';
+import { putContent } from '@mantle/storage/write';
 
 export type AppBuildOutcome = {
   buildOk: boolean;
@@ -52,24 +57,34 @@ export async function buildAndStageApp(
       bytes: res.code ? Buffer.byteLength(res.code, 'utf8') : 0,
     };
     if (!res.ok || !res.code) return outcome;
-    const put = await putContent(Buffer.from(res.code, 'utf8'), 'application/javascript');
-    const cssPut = res.css ? await putContent(Buffer.from(res.css, 'utf8'), 'text/css') : null;
+    // The keys are the bytes' hashes: known before anything is stored.
+    const js = Buffer.from(res.code, 'utf8');
+    const css = res.css ? Buffer.from(res.css, 'utf8') : null;
+    const jsSha = hashBuffer(js);
+    const cssSha = css ? hashBuffer(css) : null;
     const staged = await setDraftBuild(
       ownerId,
       id,
       {
-        storageKey: put.key,
-        sha256: put.sha256,
+        storageKey: contentKey(jsSha),
+        sha256: jsSha,
         builtAt: new Date().toISOString(),
         esbuildVersion: res.esbuildVersion,
-        bytes: put.size,
+        bytes: js.length,
         ok: true,
         ...(res.warnings.length ? { warnings: res.warnings.map((w) => w.text) } : {}),
-        ...(cssPut
-          ? { css: { storageKey: cssPut.key, sha256: cssPut.sha256, bytes: cssPut.size } }
+        ...(css && cssSha
+          ? { css: { storageKey: contentKey(cssSha), sha256: cssSha, bytes: css.length } }
           : {}),
       },
-      { builtFrom: source },
+      {
+        builtFrom: source,
+        // After the row's check, inside its transaction (A3b).
+        store: async () => {
+          await putContent(js, 'application/javascript');
+          if (css) await putContent(css, 'text/css');
+        },
+      },
     );
     if (staged === false) return null;
     if (staged === true) return outcome;

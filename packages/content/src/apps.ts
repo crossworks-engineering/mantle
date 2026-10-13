@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
+  brokerTransaction,
   db,
   executeWrite,
   nodes,
@@ -859,20 +860,38 @@ export async function setDraftBuild(
   ownerId: string,
   id: string,
   build: BuildRef,
-  opts: { builtFrom?: AppSource } = {},
+  opts: {
+    builtFrom?: AppSource;
+    /** Store the bundle (the app build broker, packages/tools
+     *  app-build-stage.ts): run after the row's checked write, inside its
+     *  transaction (arch A3b), so a build the database refuses stores
+     *  nothing. */
+    store?: () => Promise<void>;
+  } = {},
 ): Promise<boolean | 'stale'> {
-  const done = await db.transaction(async (tx) => {
-    const app = await lockAppRow(tx, ownerId, id);
-    if (!app) return false;
-    if (opts.builtFrom && codeHash(app.draft ?? app.source) !== codeHash(opts.builtFrom)) {
-      return 'stale' as const;
-    }
-    await tx
-      .update(apps)
-      .set({ draftBuild: build, updatedAt: new Date() })
-      .where(eq(apps.nodeId, id));
-    return true;
-  });
+  const done = await brokerTransaction<DbTx, boolean | 'stale'>(
+    'appbuild',
+    (run) => db.transaction(run),
+    async (tx, w) => {
+      const app = await lockAppRow(tx, ownerId, id);
+      if (!app) return false;
+      if (opts.builtFrom && codeHash(app.draft ?? app.source) !== codeHash(opts.builtFrom)) {
+        return 'stale' as const;
+      }
+      // The checked statement (a store broker, A3b): the app's code row, as
+      // the caller, exactly one row; then the bundle.
+      w.one(
+        await tx
+          .update(apps)
+          .set({ draftBuild: build, updatedAt: new Date() })
+          .where(eq(apps.nodeId, id))
+          .returning({ id: apps.nodeId }),
+        'app',
+      );
+      if (opts.store) await w.external(opts.store);
+      return true;
+    },
+  );
   // The app list shows whether each app can be previewed.
   if (done === true) void notifyAppNavChanged(ownerId);
   return done;

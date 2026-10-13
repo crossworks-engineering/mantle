@@ -3,7 +3,8 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
 import { loadPreferencesFor, savePreferencesFor, projectAvatarPhotoType } from '@mantle/content';
-import { putContent, getContent } from '@mantle/storage';
+import { getContent } from '@mantle/storage';
+import { putContent } from '@mantle/storage/write';
 import { sniffType, LOGO_MAX_BYTES } from '@/lib/logo-validation';
 
 /**

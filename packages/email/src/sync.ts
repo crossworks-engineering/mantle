@@ -16,7 +16,8 @@ import {
   type NewNode,
 } from '@mantle/db';
 import { runRules } from '@mantle/rules';
-import { hashBuffer, putContent } from '@mantle/storage';
+import { hashBuffer } from '@mantle/storage';
+import { putContent } from '@mantle/storage/write';
 import { loadContactGate } from '@mantle/content';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { domainOf } from './addresses';
