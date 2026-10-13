@@ -1,0 +1,210 @@
+diff --git a/cf/src/index.js b/cf/src/index.js
+index ffbe7aef075d6037c540cbd5e8f7e298d4345cc3..d8a10b54b95a4b51b796296860f18aef69ed0e77 100644
+--- a/cf/src/index.js
++++ b/cf/src/index.js
+@@ -212,20 +212,32 @@ function Postgres(a, b) {
+       })
+ 
+     move(c, reserved)
+-    c.reserved = () => queue.length
++    const reservation = c.reserved = () => queue.length
+       ? c.execute(queue.shift())
+       : move(c, reserved)
+     c.reserved.release = true
++    // mantle patch: a close rejects the statements still queued on the
++    // reservation (as begin() does); they were never sent and never settled.
++    c.onclose = e => { while (queue.length) queue.shift().reject(e) }
+ 
+     const sql = Sql(handler)
+     sql.release = () => {
++      // mantle patch: a reservation the connection's close already ended
++      // (onclose cleared it) is not handed back: the dead connection would
++      // go to the open queue and its next statement to a null socket.
++      if (c.reserved !== reservation)
++        return
+       c.reserved = null
++      c.onclose = null
+       onopen(c)
+     }
+ 
+     return sql
+ 
+     function handler(q) {
++      // mantle patch: nothing is written for a reservation that is over.
++      if (c.reserved !== reservation)
++        return q.reject(Errors.connection('CONNECTION_CLOSED', options))
+       c.queue === full
+         ? queue.push(q)
+         : c.execute(q) || move(c, full)
+@@ -238,12 +250,20 @@ function Postgres(a, b) {
+     let savepoints = 0
+       , connection
+       , prepare = null
++      , lost = null
+ 
+     try {
+       await sql.unsafe('begin ' + options.replace(/[^a-z ]/ig, ''), [], { onexecute }).execute()
+       return await Promise.race([
+         scope(connection, fn),
+-        new Promise((_, reject) => connection.onclose = reject)
++        new Promise((_, reject) => connection.onclose = e => {
++          // mantle patch: once the connection closed, the transaction sends
++          // nothing more (its ROLLBACK went to the null socket) and the
++          // statements queued on it are rejected, not left unsettled.
++          lost = e
++          while (queries.length) queries.shift().reject(e)
++          reject(e)
++        })
+       ])
+     } catch (error) {
+       throw error
+@@ -290,6 +310,9 @@ function Postgres(a, b) {
+       }
+ 
+       function handler(q) {
++        // mantle patch: see onclose above.
++        if (lost)
++          return q.reject(lost)
+         q.catch(e => uncaughtError || (uncaughtError = e))
+         c.queue === full
+           ? queries.push(q)
+diff --git a/cjs/src/index.js b/cjs/src/index.js
+index f09c61c7e998f411560b95c9a8e1ed6a97972c11..2605b6a8f2d800b0eb34ab03390ca069efaac64c 100644
+--- a/cjs/src/index.js
++++ b/cjs/src/index.js
+@@ -211,20 +211,32 @@ function Postgres(a, b) {
+       })
+ 
+     move(c, reserved)
+-    c.reserved = () => queue.length
++    const reservation = c.reserved = () => queue.length
+       ? c.execute(queue.shift())
+       : move(c, reserved)
+     c.reserved.release = true
++    // mantle patch: a close rejects the statements still queued on the
++    // reservation (as begin() does); they were never sent and never settled.
++    c.onclose = e => { while (queue.length) queue.shift().reject(e) }
+ 
+     const sql = Sql(handler)
+     sql.release = () => {
++      // mantle patch: a reservation the connection's close already ended
++      // (onclose cleared it) is not handed back: the dead connection would
++      // go to the open queue and its next statement to a null socket.
++      if (c.reserved !== reservation)
++        return
+       c.reserved = null
++      c.onclose = null
+       onopen(c)
+     }
+ 
+     return sql
+ 
+     function handler(q) {
++      // mantle patch: nothing is written for a reservation that is over.
++      if (c.reserved !== reservation)
++        return q.reject(Errors.connection('CONNECTION_CLOSED', options))
+       c.queue === full
+         ? queue.push(q)
+         : c.execute(q) || move(c, full)
+@@ -237,12 +249,20 @@ function Postgres(a, b) {
+     let savepoints = 0
+       , connection
+       , prepare = null
++      , lost = null
+ 
+     try {
+       await sql.unsafe('begin ' + options.replace(/[^a-z ]/ig, ''), [], { onexecute }).execute()
+       return await Promise.race([
+         scope(connection, fn),
+-        new Promise((_, reject) => connection.onclose = reject)
++        new Promise((_, reject) => connection.onclose = e => {
++          // mantle patch: once the connection closed, the transaction sends
++          // nothing more (its ROLLBACK went to the null socket) and the
++          // statements queued on it are rejected, not left unsettled.
++          lost = e
++          while (queries.length) queries.shift().reject(e)
++          reject(e)
++        })
+       ])
+     } catch (error) {
+       throw error
+@@ -289,6 +309,9 @@ function Postgres(a, b) {
+       }
+ 
+       function handler(q) {
++        // mantle patch: see onclose above.
++        if (lost)
++          return q.reject(lost)
+         q.catch(e => uncaughtError || (uncaughtError = e))
+         c.queue === full
+           ? queries.push(q)
+diff --git a/src/index.js b/src/index.js
+index c7fba3dace20173f4cb13f3f138bb6d213b43683..fa7ccaa76475e0ad0d37999ed081e21391c82fe2 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -211,20 +211,32 @@ function Postgres(a, b) {
+       })
+ 
+     move(c, reserved)
+-    c.reserved = () => queue.length
++    const reservation = c.reserved = () => queue.length
+       ? c.execute(queue.shift())
+       : move(c, reserved)
+     c.reserved.release = true
++    // mantle patch: a close rejects the statements still queued on the
++    // reservation (as begin() does); they were never sent and never settled.
++    c.onclose = e => { while (queue.length) queue.shift().reject(e) }
+ 
+     const sql = Sql(handler)
+     sql.release = () => {
++      // mantle patch: a reservation the connection's close already ended
++      // (onclose cleared it) is not handed back: the dead connection would
++      // go to the open queue and its next statement to a null socket.
++      if (c.reserved !== reservation)
++        return
+       c.reserved = null
++      c.onclose = null
+       onopen(c)
+     }
+ 
+     return sql
+ 
+     function handler(q) {
++      // mantle patch: nothing is written for a reservation that is over.
++      if (c.reserved !== reservation)
++        return q.reject(Errors.connection('CONNECTION_CLOSED', options))
+       c.queue === full
+         ? queue.push(q)
+         : c.execute(q) || move(c, full)
+@@ -237,12 +249,20 @@ function Postgres(a, b) {
+     let savepoints = 0
+       , connection
+       , prepare = null
++      , lost = null
+ 
+     try {
+       await sql.unsafe('begin ' + options.replace(/[^a-z ]/ig, ''), [], { onexecute }).execute()
+       return await Promise.race([
+         scope(connection, fn),
+-        new Promise((_, reject) => connection.onclose = reject)
++        new Promise((_, reject) => connection.onclose = e => {
++          // mantle patch: once the connection closed, the transaction sends
++          // nothing more (its ROLLBACK went to the null socket) and the
++          // statements queued on it are rejected, not left unsettled.
++          lost = e
++          while (queries.length) queries.shift().reject(e)
++          reject(e)
++        })
+       ])
+     } catch (error) {
+       throw error
+@@ -289,6 +309,9 @@ function Postgres(a, b) {
+       }
+ 
+       function handler(q) {
++        // mantle patch: see onclose above.
++        if (lost)
++          return q.reject(lost)
+         q.catch(e => uncaughtError || (uncaughtError = e))
+         c.queue === full
+           ? queries.push(q)
