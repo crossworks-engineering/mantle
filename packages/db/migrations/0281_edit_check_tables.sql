@@ -140,14 +140,14 @@ BEGIN
         format('%s on %s: no %s of the item', TG_OP, TG_TABLE_NAME, need),
         CASE WHEN need = 'appdata' AND "public"."mantle_check_item"(node, 'edit')
              THEN 'read_only' ELSE 'no_edit' END,
-        CASE need
-          WHEN 'manage' THEN CASE WHEN TG_TABLE_NAME = 'apps'
-                                  THEN 'not allowed to change this app''s code: a Moderator of its workspace does'
-                                  ELSE 'not allowed to change this item: a Moderator of its workspace does' END
-          WHEN 'admin' THEN 'not allowed to change this app''s settings: an Admin user does'
-          WHEN 'appdata' THEN 'not allowed to write this app''s data'
-          WHEN 'link' THEN 'not allowed to share this item'
-          WHEN 'link_close' THEN 'not allowed to share this item'
+        CASE
+          WHEN TG_TABLE_NAME = 'shares' THEN 'not allowed to share this item'
+          WHEN need = 'appdata' THEN 'not allowed to write this app''s data'
+          WHEN TG_TABLE_NAME = 'apps' AND need = 'manage'
+            THEN 'not allowed to change this app''s code: a Moderator of its workspace does'
+          WHEN TG_TABLE_NAME = 'apps' AND need = 'admin'
+            THEN 'not allowed to change this app''s settings: an Admin user does'
+          WHEN need = 'manage' THEN 'not allowed to change this item: a Moderator of its workspace does'
           ELSE 'not allowed to change this item' END);
     END IF;
   END LOOP;

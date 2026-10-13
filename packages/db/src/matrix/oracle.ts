@@ -235,13 +235,7 @@ export const ORACLE_WRITE_ROLES: readonly OracleWriteRole[] = [
 
 /** Who a statement runs as (docs/actors.md, the actor kinds). */
 export type OracleActor =
-  | 'login'
-  | 'login-ro'
-  | 'assistant'
-  | 'link'
-  | 'peer'
-  | 'contact-ro'
-  | 'system';
+  'login' | 'login-ro' | 'assistant' | 'link' | 'peer' | 'contact-ro' | 'system';
 
 export const ORACLE_ACTORS: readonly OracleActor[] = [
   'login',

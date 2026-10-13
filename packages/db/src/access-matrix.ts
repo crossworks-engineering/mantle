@@ -482,13 +482,25 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     table: 'public.recall_nodes',
     user: 'all',
     writer: 'content',
-    editCheck: { item: 'map_id', via: 'recall_maps', insert: 'edit', update: 'edit', delete: 'edit' },
+    editCheck: {
+      item: 'map_id',
+      via: 'recall_maps',
+      insert: 'edit',
+      update: 'edit',
+      delete: 'edit',
+    },
   },
   {
     table: 'public.recall_revisions',
     user: 'all',
     writer: 'content',
-    editCheck: { item: 'map_id', via: 'recall_maps', insert: 'edit', update: 'edit', delete: 'edit' },
+    editCheck: {
+      item: 'map_id',
+      via: 'recall_maps',
+      insert: 'edit',
+      update: 'edit',
+      delete: 'edit',
+    },
   },
   // Comments (Phase 2): the admin pool only since W8c.
   none('public.node_comments', 'content'),

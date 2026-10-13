@@ -186,7 +186,9 @@ describe('isScopeWriteRefusal (arch A2b2b: every refusal of the write role is a 
   });
   it('the edit check carries a detail the mapper reads (plan 5.2)', () => {
     const withDetail = (detail: string, code = '42501') =>
-      drizzleQueryError(Object.assign(new Error('not allowed to change this item'), { code, detail }));
+      drizzleQueryError(
+        Object.assign(new Error('not allowed to change this item'), { code, detail }),
+      );
     for (const d of ['no_read', 'no_edit', 'read_only', 'ro_actor'] as const) {
       expect(editRefusalDetail(withDetail(d)), d).toBe(d);
     }
