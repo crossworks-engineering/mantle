@@ -13,7 +13,8 @@
  *   pnpm store:sweep                        # DRY RUN: counts only, removes nothing
  *   pnpm store:sweep --apply                # remove them
  *   pnpm store:sweep --apply --allow-many   # past a restore's hold
- *                                           # (.store-sweep-hold), after a dry run
+ *                                           # (.store-sweep-hold) or a row back
+ *                                           # on an older revision, after a dry run
  *
  * Each run removes at most the larger of 500 files and half a store, the
  * oldest marked first; the rest wait for the next run ("deferred"). The dry
@@ -21,9 +22,9 @@
  * file is missing, and table drafts from before A3b (`<node>.draft.sqlite`,
  * kept for ever: check no row names one, then remove it by hand).
  *
- * Exit codes: 0 done · 1 crash · 2 a store's guard stopped it (nothing removed
- * there; the line says why: a restore's hold, a row outside the root, no
- * row naming any file).
+ * Exit codes: 0 done (a store a restore holds says HELD) · 1 crash · 2 a
+ * hard stop (nothing removed there; the line says why: a row outside the
+ * root, no row naming any file, a row back on an older revision).
  */
 import { env } from '@mantle/config';
 import { closeDb } from '@mantle/db';

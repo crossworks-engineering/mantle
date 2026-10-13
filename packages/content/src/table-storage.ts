@@ -12,6 +12,7 @@ import {
   readsDrafts,
   removeSqliteFile,
   revisionFiles,
+  storeRows,
   tables,
 } from '@mantle/db';
 import {
@@ -413,16 +414,25 @@ export async function snapshotAllTableDatabases(
     opts.dumpStartedAt !== undefined
       ? markedBefore(tableDbRoot(), opts.dumpStartedAt)
       : () => false;
-  const rows = await db
-    .select({
-      nodeId: tables.nodeId,
-      ownerId: nodes.ownerId,
-      storagePath: tables.storagePath,
-      draftPath: tables.draftPath,
-    })
-    .from(tables)
-    .innerJoin(nodes, eq(nodes.id, tables.nodeId))
-    .where(and(isNotNull(tables.storagePath)));
+  // The files each row names, through the one spec of which columns name
+  // a store's files (STORE_FILE_COLUMNS: storage_path, draft_path); the
+  // owner only as the folder of a path that names none.
+  const owners = new Map(
+    (
+      await db
+        .select({ nodeId: tables.nodeId, ownerId: nodes.ownerId })
+        .from(tables)
+        .innerJoin(nodes, eq(nodes.id, tables.nodeId))
+    ).map((o) => [o.nodeId, o.ownerId]),
+  );
+  const rows = (await storeRows('tables'))
+    .filter((r) => r.columns?.[0])
+    .map((r) => ({
+      nodeId: r.node,
+      ownerId: owners.get(r.node) ?? SNAPSHOT_OWNER,
+      storagePath: r.columns![0]!,
+      draftPath: r.columns![1] ?? null,
+    }));
 
   // The workbook copies member authors read their accepted tables from
   // (audit F07, member-snapshots.ts): kept under their own owner segment,

@@ -164,8 +164,9 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
       ? 'nothing to purge'
       : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s), ${left} leftover work file(s)`;
   },
-  // Arch A3b: the old store revisions no row points at. A store whose
-  // guard stopped it fails the run, so the history shows it (fix round 1).
+  // Arch A3b: the old store revisions no row points at. A store a hard
+  // stop stopped fails the run, so the history shows it (fix round 1); a
+  // store a restore holds is a done run that says so (fix round 3).
   'store-sweep': async () => {
     const reports = await sweepStores();
     const line = summariseStoreSweep(reports);

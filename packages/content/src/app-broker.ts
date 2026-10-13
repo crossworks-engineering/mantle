@@ -30,9 +30,10 @@ import {
   revisionToken,
   SQLITE_SIDECARS,
   stageThenFlip,
+  storeRows,
 } from '@mantle/db';
 import { env } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, sleep } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
 import { linkHistoryTree } from './history-files';
 import {
@@ -350,13 +351,15 @@ async function bumpWriteSeq(tx: Tx, regId: string, storagePath: string): Promise
 
 /** How long one try of a single statement's check waits for the registry
  *  row lock (a seed or a schema script holds it for its run, up to
- *  APP_SCHEMA_TIMEOUT_MS): no transaction or file write is held while it
- *  waits but its own (A3b fix round 1, M2). */
-export const APP_DB_CHECK_LOCK_TIMEOUT_MS = 2000;
-/** How long a single statement's check keeps trying, in lock waits of
- *  APP_DB_CHECK_LOCK_TIMEOUT_MS, before it answers busy (A3b fix round 2,
- *  N2: nothing on the client retries a busy answer, so the server waits out
- *  a seed of up to this long itself). */
+ *  APP_SCHEMA_TIMEOUT_MS). Short: a try holds a pooled connection while it
+ *  waits (A3b fix round 3, F2). */
+export const APP_DB_CHECK_LOCK_TIMEOUT_MS = 200;
+/** The pause between tries, OUTSIDE any transaction: no connection is
+ *  held while the statement waits for a seed to end. */
+export const APP_DB_CHECK_RETRY_PAUSE_MS = 500;
+/** How long a single statement's check keeps trying before it answers
+ *  busy (A3b fix round 2, N2: nothing on the client retries a busy answer,
+ *  so the server waits out a seed of up to this long itself). */
 export const APP_DB_CHECK_RETRY_MS = 10_000;
 
 /**
@@ -365,12 +368,14 @@ export const APP_DB_CHECK_RETRY_MS = 10_000;
  * or row lock is held across it (an app's statement may run for
  * APP_SQL_TIMEOUT_MS). A refusal stops it before the file; a statement that
  * then fails leaves only the revision one higher. Behind a seed or a schema
- * script it waits in lock waits of APP_DB_CHECK_LOCK_TIMEOUT_MS for up to
- * APP_DB_CHECK_RETRY_MS, holding nothing between tries; past that it
- * answers busy (AppSqlBusyError: 429 with reason 'busy', which reaches the
- * app's code as an error; nothing retries it for the app). A row a restore
- * moved to another file since the caller read it is refused
- * (AppDbRestoringError).
+ * script it tries again: each try waits at most APP_DB_CHECK_LOCK_TIMEOUT_MS
+ * for the lock, then gives its connection back and pauses
+ * APP_DB_CHECK_RETRY_PAUSE_MS outside any transaction, for up to
+ * APP_DB_CHECK_RETRY_MS in all (a few waiting app writes never take the
+ * write pool from the other logins' writes). Past that it answers busy
+ * (AppSqlBusyError: 429 with reason 'busy', which reaches the app's code as
+ * an error; nothing retries it for the app). A row a restore moved to
+ * another file since the caller read it is refused (AppDbRestoringError).
  */
 async function checkAppDbWrite(
   regId: string,
@@ -379,20 +384,23 @@ async function checkAppDbWrite(
 ): Promise<void> {
   const deadline = Date.now() + (opts.retryMs ?? APP_DB_CHECK_RETRY_MS);
   for (;;) {
-    const wait = Math.min(APP_DB_CHECK_LOCK_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
     try {
       await db.transaction(async (tx) => {
-        await tx.execute(sql`select set_config('lock_timeout', ${`${wait}ms`}, true)`);
+        await tx.execute(
+          sql`select set_config('lock_timeout', ${`${APP_DB_CHECK_LOCK_TIMEOUT_MS}ms`}, true)`,
+        );
         await bumpWriteSeq(tx, regId, storagePath);
       });
       return;
     } catch (err) {
       if (err instanceof AppSqlError || !isBusy(err)) throw err;
-      if (Date.now() >= deadline) {
+      const left = deadline - Date.now();
+      if (left <= 0) {
         throw new AppSqlBusyError(
           "the app's database is busy with a seed or a schema change; try again in a few seconds",
         );
       }
+      await sleep(Math.min(APP_DB_CHECK_RETRY_PAUSE_MS, left));
     }
   }
 }
@@ -1039,13 +1047,23 @@ export async function snapshotAllAppDatabases(
   // can name it); without it, every revision goes.
   const leaveOut =
     opts.dumpStartedAt !== undefined ? markedBefore(appDbRoot(), opts.dumpStartedAt) : () => false;
-  const rows = await db
-    .select({
-      ownerId: appDatabases.ownerId,
-      appNodeId: appDatabases.appNodeId,
-      storagePath: appDatabases.storagePath,
-    })
-    .from(appDatabases);
+  // The file each row names, through the one spec of which columns name a
+  // store's files (STORE_FILE_COLUMNS); the owner only for the folder of a
+  // path outside the root's layout.
+  const owners = new Map(
+    (
+      await db
+        .select({ appNodeId: appDatabases.appNodeId, ownerId: appDatabases.ownerId })
+        .from(appDatabases)
+    ).map((o) => [o.appNodeId, o.ownerId]),
+  );
+  const rows = (await storeRows('appdb'))
+    .filter((r) => r.columns?.[0])
+    .map((r) => ({
+      ownerId: owners.get(r.node) ?? '-',
+      appNodeId: r.node,
+      storagePath: r.columns![0]!,
+    }));
   const report: AppDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
   // The apps' own snapshots (History tab) ride along: immutable files, so a
   // hard link is as good as a copy and costs no disk (apps audit 2026-10-02,

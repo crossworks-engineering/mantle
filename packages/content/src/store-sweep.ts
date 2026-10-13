@@ -9,8 +9,9 @@
  * reported. Never a revision a row points at, never anything younger than
  * the grace period, only after a file has been seen unreferenced on two
  * runs a grace period apart, at most a budget per run (the rest carried),
- * and nothing at all when a guard trips (a restore's hold, a row outside
- * the root, no row naming any file). Plain files
+ * nothing while a restore's hold is in place (held, not a failure), and
+ * nothing at all when a hard stop trips (a row outside the root, no row
+ * naming any file, a row back on an older revision). Plain files
  * and one read of the rows: no model, no extraction, no notify. Run by the
  * maintenance worker (`store-sweep`) and `pnpm store:sweep`.
  *
@@ -82,6 +83,7 @@ export async function sweepStores(opts: StoreSweepOptions = {}): Promise<SweepRe
 export function summariseStoreSweep(reports: SweepReport[], dryRun = false): string {
   const parts = reports.map((r) => {
     if (r.aborted) return `${r.store}: STOPPED, nothing removed (${r.aborted})`;
+    if (r.held) return `${r.store}: HELD until ${r.held} by a restore, nothing removed`;
     const kept = [
       r.deferred ? `${r.deferred} deferred to the next run` : '',
       r.noRow.length ? `${r.noRow.length} kept with no row` : '',
