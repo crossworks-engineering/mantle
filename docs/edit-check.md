@@ -189,6 +189,20 @@ stays.
   round trip is added either. A page, drawing or table save fires nothing
   new (only a delete has a check); a node update fires the derived keys'
   trigger only when `data` changes.
+- p95 per write, the edit check off against on (2026-10-13, a restored
+  Bible brain copy: 3,762 items, 122,277 chunks; the write role, a Write
+  grant member, the actor check on; 400 transactions per path, in
+  alternating blocks; a 62 KB page):
+
+  | Write            | off p50 / p95 (ms) | on p50 / p95 (ms) | p95 on less off |
+  | ---------------- | ------------------ | ----------------- | --------------- |
+  | page save        | 8.99 / 10.29       | 9.09 / 10.65      | +0.36           |
+  | draft save       | 5.78 / 6.82        | 6.02 / 6.64       | -0.18           |
+  | title edit       | 1.89 / 2.23        | 1.85 / 2.04       | -0.19           |
+  | rank drag        | 1.92 / 2.26        | 1.94 / 2.28       | +0.02           |
+  | create in folder | 4.10 / 4.52        | 4.11 / 4.65       | +0.13           |
+
+  Within the run's noise: no path pays a measurable cost.
 
 ## Known limits
 
