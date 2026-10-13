@@ -189,7 +189,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'store-sweep',
     title: 'Remove store files no row points at',
     description:
-      "Removes the table workbooks and app database files no row points at any more: the old revision a save, a commit or a restore replaced, a staged revision whose write never landed (refused, or cut off by a crash), and a deleted table's files. A file goes only once it has been unreferenced on two runs an hour or more apart and is an hour old or more, so a write in flight and a reader that has just opened the old revision are never cut off. Never a file a row points at, never the history (_snapshots) or the accepted copies.",
+      "Removes the old revisions of table workbooks and app database files: the file a save, a commit or a restore replaced, and a staged revision whose write never landed (refused, or cut off by a crash), only for an item whose row names another file that is on disk. A file goes only once it has been unreferenced on two runs an hour or more apart and is an hour old or more, so a write in flight and a reader that has just opened the old revision are never cut off. Never a file a row points at, never a file whose item has no row (a deleted item's, an app's from long ago: reported), never a draft from before the change (reported), never the history (_snapshots) or the accepted copies. A store stops with nothing removed when a row names a file outside its folder, when no row names any file, or when more than 50 files (or 10% of the store) would go at once: read the dry run, then run the script with --apply --allow-many.",
     kind: 'recurring',
     status: 'live',
     cost: 'io',

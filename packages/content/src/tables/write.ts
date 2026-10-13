@@ -13,15 +13,21 @@ import {
   afterRollback,
   db,
   headsOrSpace,
+  inFlipTransaction,
   oneRow,
-  stageThenFlip,
   nodes,
   tables,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
 } from '@mantle/db';
-import { MATERIALIZE_MAX, TableTooLargeError, importMaxRows, publishedPath } from '@mantle/tabledb';
+import path from 'node:path';
+import {
+  MATERIALIZE_MAX,
+  TableTooLargeError,
+  importMaxRows,
+  resolveStoragePath,
+} from '@mantle/tabledb';
 import {
   ensureTableDoc,
   ensureWorkbookDoc,
@@ -31,8 +37,15 @@ import {
   type TableDetail,
   type TableVisibility,
 } from '@mantle/content-core/table-model';
-import { buildTableDataText, registryFileColumns, SNAPSHOT_OWNER } from '../table-storage';
-import { removeWorkbook, stageDoc, tableRevisionPath } from '../table-broker';
+import { buildTableDataText, registryFileColumns } from '../table-storage';
+import { snapshotTableAbs } from '../member-snapshots';
+import {
+  removeWorkbook,
+  stageDoc,
+  stageThenFlipTable,
+  tableRevisionFiles,
+  tableRevisionPath,
+} from '../table-broker';
 import {
   TABLES_ROOT_LABEL,
   TAB_NAME,
@@ -110,54 +123,62 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
   // it. A failure removes the stage; inside a personal space the space's
   // rollback does (afterRollback).
   const pubRel = tableRevisionPath(ownerId, id, false);
-  return stageThenFlip(
-    () => stageDoc(pubRel, workbook ?? data, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true }),
+  return stageThenFlipTable(
+    () => {
+      const st = stageDoc(pubRel, workbook ?? data, {
+        nodeId: id,
+        ownerId,
+        tabName: TAB_NAME,
+        fts: true,
+      });
+      return { ...st, files: [st.abs] };
+    },
     async (staged) => {
       // Heads first (workspaces plan U1): the folder the table lands in.
       const created = await headsOrSpace<ReturnType<typeof detailOf>>(
         (f) => withNodeInsertHeads(ownerId, [{ type: 'table', path: TABLES_ROOT_LABEL }], f),
-        async (tx) => {
-          const node = oneRow(
-            'tables',
-            await tx
-              .insert(nodes)
-              .values({
-                id,
-                ownerId,
-                type: 'table',
-                title: input.title.trim().slice(0, 200) || 'Untitled table',
-                path: TABLES_ROOT_LABEL,
-                data: {
-                  visibility: 'private',
-                  ...(input.icon ? { icon: input.icon } : {}),
-                  ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
-                  ...(input.description?.trim() ? { description: input.description.trim() } : {}),
-                  ...(input.brainDepth ? { brain_depth: input.brainDepth } : {}),
-                },
-                tags: dedupeTags(input.tags ?? []),
-              })
-              .returning(),
-            'table',
-          );
-          await tx.insert(tables).values({
-            nodeId: node.id,
-            // JSONB mirror only while it fits the window AND stays
-            // single-tab; beyond either, the file is the sole carrier.
-            data: !workbook && data.rows.length <= MATERIALIZE_MAX ? data : {},
-            dataText: buildTableDataText(staged.abs, workbook ? null : data, node.title),
-            ...registryFileColumns(staged.res, pubRel),
-          });
-          return detailOf(node, data, null, {
-            totalRows,
-            tabs: tabsFromStats(staged.res.stats),
-            tabId: staged.res.stats.tabs[0]?.tabId,
-          });
-        },
+        (tx) =>
+          inFlipTransaction(async () => {
+            const node = oneRow(
+              'tables',
+              await tx
+                .insert(nodes)
+                .values({
+                  id,
+                  ownerId,
+                  type: 'table',
+                  title: input.title.trim().slice(0, 200) || 'Untitled table',
+                  path: TABLES_ROOT_LABEL,
+                  data: {
+                    visibility: 'private',
+                    ...(input.icon ? { icon: input.icon } : {}),
+                    ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
+                    ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+                    ...(input.brainDepth ? { brain_depth: input.brainDepth } : {}),
+                  },
+                  tags: dedupeTags(input.tags ?? []),
+                })
+                .returning(),
+              'table',
+            );
+            await tx.insert(tables).values({
+              nodeId: node.id,
+              // JSONB mirror only while it fits the window AND stays
+              // single-tab; beyond either, the file is the sole carrier.
+              data: !workbook && data.rows.length <= MATERIALIZE_MAX ? data : {},
+              dataText: buildTableDataText(staged.abs, workbook ? null : data, node.title),
+              ...registryFileColumns(staged.res, pubRel),
+            });
+            return detailOf(node, data, null, {
+              totalRows,
+              tabs: tabsFromStats(staged.res.stats),
+              tabId: staged.res.stats.tabs[0]?.tabId,
+            });
+          }),
       );
       afterRollback(() => removeWorkbook(staged.abs));
       return created;
     },
-    (staged) => removeWorkbook(staged.abs),
   );
 }
 
@@ -217,7 +238,7 @@ export async function updateTable(
 
 export async function deleteTable(ownerId: string, id: string): Promise<boolean> {
   const [row] = await db
-    .select({ id: nodes.id, storagePath: tables.storagePath })
+    .select({ id: nodes.id, storagePath: tables.storagePath, draftPath: tables.draftPath })
     .from(nodes)
     .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
@@ -229,10 +250,7 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
   // app-bound check, never the copy check of assertTableWritable.
   await assertTableNotAppBound(id);
   // `tables` row cascades. The store broker (A3b, plan 20.3): the delete of
-  // exactly one node is the check; its workbook revisions are then files no
-  // row points at, which the sweep removes (store-sweep.ts). A member
-  // author's copy of the accepted version (audit F07) goes once the delete
-  // commits: its row went with the node.
+  // exactly one node is the check.
   await headsOrSpace(
     (f) => withDeadlockRetry(() => withNodeDeleteHeads([id], f)),
     async (tx) =>
@@ -242,8 +260,21 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
         'table',
       ),
   );
-  if (row.storagePath) {
-    await afterCommit(() => removeWorkbook(publishedPath(SNAPSHOT_OWNER, id)));
+  // Workbook files go AFTER the registry delete commits (a failed delete
+  // must never leave a registry row pointing at removed files); inside a
+  // personal space afterCommit waits for the space transaction. The table's
+  // own files, as before A3b, not the sweep's (A3b fix round 1, H4: the
+  // sweep never removes a file whose item has no row): every revision of
+  // the table in the folders its row named, and a member author's copy of
+  // the accepted version (audit F07), whose row went with the node.
+  // Best-effort; the sanity check reports orphaned files.
+  const named = [row.storagePath, row.draftPath].filter((p): p is string => !!p);
+  if (named.length > 0) {
+    await afterCommit(() => {
+      const dirs = new Set(named.map((p) => path.dirname(resolveStoragePath(p))));
+      for (const d of dirs) tableRevisionFiles(d, id).forEach(removeWorkbook);
+      removeWorkbook(snapshotTableAbs(id));
+    });
   }
   return true;
 }

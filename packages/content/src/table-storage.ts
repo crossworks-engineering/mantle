@@ -34,6 +34,7 @@ import {
   removeWorkbook,
   stageDoc,
   stagedTableWrite,
+  tableRevisionFiles,
   tableRevisionPath,
 } from './table-broker';
 
@@ -225,7 +226,8 @@ export async function ensureFileBacked(node: EnsureFileNode): Promise<void> {
             }).abs,
           );
         }
-        return { files, skip: false as const, pubRel, draftRel, pub, doc };
+        const dataText = buildTableDataText(pub.abs, doc, node.title);
+        return { files, skip: false as const, pubRel, draftRel, pub, dataText };
       } catch (err) {
         files.forEach(removeWorkbook);
         throw err;
@@ -234,7 +236,7 @@ export async function ensureFileBacked(node: EnsureFileNode): Promise<void> {
     async (row, s) => {
       if (s.skip) return;
       await flipTable(node.id, row.draftRev, {
-        dataText: buildTableDataText(s.pub.abs, s.doc, node.title),
+        dataText: s.dataText,
         ...registryFileColumns(s.pub.res, s.pubRel),
         ...(s.draftRel ? { draftPath: s.draftRel } : {}),
       });
@@ -398,10 +400,12 @@ export type TableDbSnapshotReport = {
 
 /**
  * Consistent-snapshot EVERY file-backed table into destDir via VACUUM INTO,
- * mirroring the live <owner>/<node>.sqlite layout so a restore drops straight
- * back into TABLE_DB_DIR. Drafts (uncommitted edits — the classic loss) are
- * snapshotted too when present. Same contract as snapshotAllAppDatabases:
- * report partial failures loudly, never let a missing file look backed up.
+ * mirroring the live <owner>/<node>.<revision>.sqlite layout so a restore
+ * drops straight back into TABLE_DB_DIR. Every revision of a table on disk
+ * goes (published and drafts, the ones its row names and the ones a flip
+ * replaced since the Postgres dump; the sweep removes the extra ones after a
+ * restore). Same contract as snapshotAllAppDatabases: report partial
+ * failures loudly, never let a missing file look backed up.
  */
 export async function snapshotAllTableDatabases(destDir: string): Promise<TableDbSnapshotReport> {
   const rows = await db
@@ -442,8 +446,30 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
   for (const r of all) {
     const storagePath = r.storagePath!;
     let abs: string;
+    let files: { abs: string; rel: string }[];
     try {
       abs = resolveStoragePath(storagePath);
+      // EVERY revision of the table on disk, not only the ones the row
+      // names now (A3b fix round 1, H1): the Postgres dump ran first, and a
+      // flip since then left the revision the dump names beside the new one
+      // (the sweep keeps it for a grace period), so the archive holds the
+      // file a restored row points at. Each under its own folder: a table
+      // folded in from a member's space (W6b) keeps its files there, and a
+      // draft can sit in another folder than the published file.
+      const named = [storagePath, ...(r.draftPath ? [r.draftPath] : [])];
+      const seen = new Set<string>();
+      files = [];
+      for (const rel of named) {
+        const dirRel = path.posix.dirname(rel);
+        const found = r.snapshot
+          ? [resolveStoragePath(rel)].filter((f) => existsSync(f))
+          : tableRevisionFiles(path.dirname(resolveStoragePath(rel)), r.nodeId);
+        for (const f of found) {
+          if (seen.has(f)) continue;
+          seen.add(f);
+          files.push({ abs: f, rel: `${dirRel}/${path.basename(f)}` });
+        }
+      }
     } catch (err) {
       report.failed.push({
         nodeId: r.nodeId,
@@ -451,31 +477,19 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
       });
       continue;
     }
-    if (!existsSync(abs)) {
-      report.missing.push({ nodeId: r.nodeId, storagePath });
-      continue;
-    }
-    // The revisions the row points at (A3b), under their own names.
-    const draftAbs = draftAbsOf(r.draftPath);
-    for (const [file, draft] of [
-      [abs, false],
-      [draftAbs ?? '', true],
-    ] as const) {
-      if (draft && r.snapshot) continue;
-      if (draft && (!file || !existsSync(file))) continue;
+    if (!existsSync(abs)) report.missing.push({ nodeId: r.nodeId, storagePath });
+    for (const file of files) {
       try {
-        // The live layout (<owner>/<node>.sqlite as storage_path records it),
-        // so a restore drops the file where storage_path points: a table
-        // folded in from a member's space (W6b) keeps its file under the
-        // space's directory while its row's owner is the brain.
-        const dest = path.join(destDir, layoutDirOf(storagePath, r.ownerId), path.basename(file));
+        // The live layout (the folder the stored path names), so a restore
+        // drops each file where the rows point.
+        const dest = path.join(destDir, layoutDirOf(file.rel, r.ownerId), path.basename(file.abs));
         // In a SQL child, off the event loop (apps audit 2026-10-02, item 14).
-        await copySqliteFile(file, dest);
+        await copySqliteFile(file.abs, dest);
         report.snapshotted.push({
           ownerId: r.ownerId,
           nodeId: r.nodeId,
           bytes: statSync(dest).size,
-          draft,
+          draft: /\.draft\.sqlite$/.test(file.abs),
         });
       } catch (err) {
         report.failed.push({

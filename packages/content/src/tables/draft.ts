@@ -12,15 +12,7 @@
  * interleave into a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import {
-  db,
-  nodes,
-  tables,
-  notifyNodeIngested,
-  oneRow,
-  StoreRefusedError,
-  stageThenFlip,
-} from '@mantle/db';
+import { db, nodes, tables, notifyNodeIngested, oneRow, StoreRefusedError } from '@mantle/db';
 import { existsSync, statSync } from 'node:fs';
 import {
   MATERIALIZE_MAX,
@@ -58,6 +50,7 @@ import {
   stageDraftCopy,
   stageOps,
   stagePromote,
+  stageThenFlipTable,
   type TableRow,
 } from '../table-broker';
 import { TAB_NAME, assertTableWritable, detailOf } from './shared';
@@ -129,7 +122,10 @@ export async function applyTableOps(
         await ensureFileBacked({ id, ownerId, title: node.title });
         continue;
       }
-      if (row.draftPath) {
+      // A draft on disk takes the batch in place; a row naming a draft file
+      // that is gone (A3b fix round 1, L1) gets a new draft below.
+      const draftAbs = draftAbsOf(row.draftPath);
+      if (draftAbs && existsSync(draftAbs)) {
         const done = await opsInPlace(id, opts.ifRev, async (tx, draftAbs, rev) => {
           const res = stageOps(draftAbs, ops, coerceCell);
           await tx
@@ -147,12 +143,12 @@ export async function applyTableOps(
       const rel = revisionBesideRow(row, ownerId, id, true);
       const publishedAbs = resolveStoragePath(row.storagePath);
       try {
-        return await stageThenFlip(
+        return await stageThenFlipTable(
           () => {
             const abs = stageDraftCopy(publishedAbs, rel);
             try {
               const res = stageOps(abs, ops, coerceCell);
-              return { abs, res, mirror: draftMirror(abs) };
+              return { files: [abs], res, mirror: draftMirror(abs) };
             } catch (err) {
               removeWorkbook(abs);
               throw err;
@@ -166,7 +162,6 @@ export async function applyTableOps(
             });
             return { ok: true as const, draftRev: rev, createdIds: s.res.createdIds };
           },
-          (s) => removeWorkbook(s.abs),
         );
       } catch (err) {
         if (err instanceof TableRevConflict && opts.ifRev === undefined && attempt < FLIP_TRIES) {
@@ -278,13 +273,16 @@ async function saveDraftFile(
   }
   if (!workbook) guardSingleTabWrite(effectiveTabCount(row));
   const rel = revisionBesideRow(row, ownerId, id, true);
-  return stageThenFlip(
-    () =>
-      stageDoc(rel, workbook ?? doc!, {
-        nodeId: id,
-        ownerId,
-        tabName: workbook ? TAB_NAME : effectiveTabName(row),
-      }),
+  return stageThenFlipTable(
+    () => ({
+      files: [
+        stageDoc(rel, workbook ?? doc!, {
+          nodeId: id,
+          ownerId,
+          tabName: workbook ? TAB_NAME : effectiveTabName(row),
+        }).abs,
+      ],
+    }),
     () =>
       flipTable(id, row.draftRev, {
         draftPath: rel,
@@ -293,7 +291,6 @@ async function saveDraftFile(
         draftData: workbook ? null : doc,
         draftUpdatedAt: new Date(),
       }),
-    (s) => removeWorkbook(s.abs),
   );
 }
 
@@ -326,6 +323,9 @@ type StagedCommit = {
   stats: ReturnType<typeof fileStats>;
   shapeHash: string;
   history: ReturnType<typeof stageCommitSnapshot>;
+  clipped: ReturnType<typeof readDocClipped>;
+  mirror: TableDoc | Record<string, never>;
+  dataText: string;
 };
 
 /** The node's new data for a commit: the shape-hash gate (plan section 6).
@@ -384,8 +384,7 @@ export async function commitTable(
     throw new TableTooLargeError(commitTotalRows, MATERIALIZE_MAX);
   }
 
-  let kept = false;
-  let result: TableDetail | null;
+  let flipped: { out: typeof node; staged: StagedCommit; draft: boolean } | undefined;
   try {
     for (let attempt = 1; ; attempt++) {
       const row = await readTableRow(id);
@@ -415,33 +414,37 @@ export async function commitTable(
       const tabName = workbook ? TAB_NAME : effectiveTabName(row);
       const rel = revisionBesideRow(row, ownerId, id, false);
       const oldPublishedAbs = row.storagePath ? resolveStoragePath(row.storagePath) : null;
+      const fromDraft = draftAbs;
       try {
-        result = await stageThenFlip(
+        // Everything is read from the staged files before the flip; nothing
+        // runs inside the flip but its transaction, and nothing after its
+        // commit but this function's own reads (A3b fix round 1, H2).
+        const staged = await stageThenFlipTable(
           (): StagedCommit => {
             const files: string[] = [];
             try {
               let abs: string;
               let shapeHash: string;
               let stats: ReturnType<typeof fileStats>;
-              if (draftAbs) {
+              if (fromDraft) {
                 // Promote via VACUUM INTO, not a bare rename (audit findings
                 // 1+2): the copy reads THROUGH the draft's WAL, so frames a
                 // concurrent reader kept un-checkpointed are captured.
-                abs = stagePromote(draftAbs, rel);
+                abs = stagePromote(fromDraft, rel);
                 files.push(abs);
                 shapeHash = shapeHashOfFile(abs);
                 stats = fileStats(abs);
               } else {
-                const staged = stageDoc(rel, commitDoc!, {
+                const st = stageDoc(rel, commitDoc!, {
                   nodeId: id,
                   ownerId,
                   tabName,
                   fts: true,
                 });
-                abs = staged.abs;
+                abs = st.abs;
                 files.push(abs);
                 shapeHash = shapeHashOf(commitDoc!, tabName);
-                stats = staged.res.stats;
+                stats = st.res.stats;
               }
               // The published workbook this commit replaces is kept on the
               // table's history (apps plan Phase 4), except for an app-bound
@@ -451,29 +454,40 @@ export async function commitTable(
                   ? stageCommitSnapshot({ ownerId, tableId: id, publishedAbs: oldPublishedAbs })
                   : null;
               if (history) files.push(history.abs);
-              return { files, rel, abs, sizeBytes: statSync(abs).size, stats, shapeHash, history };
+              const clipped = readDocClipped(abs, MATERIALIZE_MAX);
+              // JSONB mirror: single-tab, in-window docs only (the rollback
+              // lever can't represent tabs: v2.1 plan decision 2).
+              const mirror = fromDraft
+                ? clipped.clipped || stats.tabs.length > 1
+                  ? {}
+                  : ensureTableDoc(clipped.doc)
+                : workbook
+                  ? {}
+                  : doc!;
+              return {
+                files,
+                rel,
+                abs,
+                sizeBytes: statSync(abs).size,
+                stats,
+                shapeHash,
+                history,
+                clipped,
+                mirror,
+                dataText: buildTableDataText(abs, fromDraft ? null : doc, node.title),
+              };
             } catch (err) {
               files.forEach(removeWorkbook);
               throw err;
             }
           },
           async (s) => {
-            const clipped = readDocClipped(s.abs, MATERIALIZE_MAX);
-            // JSONB mirror: single-tab, in-window docs only (the rollback
-            // lever can't represent tabs: v2.1 plan decision 2).
-            const mirror = draftAbs
-              ? clipped.clipped || s.stats.tabs.length > 1
-                ? {}
-                : ensureTableDoc(clipped.doc)
-              : workbook
-                ? {}
-                : doc!;
             const { out } = await flipTable(
               id,
               row.draftRev,
               {
-                data: mirror,
-                dataText: buildTableDataText(s.abs, draftAbs ? null : doc, node.title),
+                data: s.mirror,
+                dataText: s.dataText,
                 draftPath: null,
                 draftData: null,
                 draftUpdatedAt: null,
@@ -513,18 +527,10 @@ export async function commitTable(
                 return nodeRow;
               },
             );
-            kept = s.history !== null;
-            return draftAbs
-              ? detailOf(out, ensureTableDoc(clipped.doc), null, {
-                  totalRows: clipped.total,
-                  docClipped: clipped.clipped,
-                })
-              : detailOf(out, workbook ? ensureTableDoc(workbook.tabs[0]) : doc!, null, {
-                  totalRows: commitTotalRows,
-                });
+            return { out, staged: s, draft: fromDraft !== null };
           },
-          (s) => s.files.forEach(removeWorkbook),
         );
+        flipped = staged;
         break;
       } catch (err) {
         if (err instanceof TableRevConflict && attempt < FLIP_TRIES) continue;
@@ -538,8 +544,20 @@ export async function commitTable(
     if (err instanceof StoreRefusedError) return null;
     throw err;
   }
-  if (kept) await pruneTableCommitSnapshots(id);
-  if (result) await notifyNodeIngested(id);
+  // After the commit: the detail from what was staged, the history prune,
+  // the extractor.
+  if (!flipped) return null;
+  const { out, staged: s, draft } = flipped;
+  const result = draft
+    ? detailOf(out, ensureTableDoc(s.clipped.doc), null, {
+        totalRows: s.clipped.total,
+        docClipped: s.clipped.clipped,
+      })
+    : detailOf(out, workbook ? ensureTableDoc(workbook.tabs[0]) : doc!, null, {
+        totalRows: commitTotalRows,
+      });
+  if (s.history !== null) await pruneTableCommitSnapshots(id);
+  await notifyNodeIngested(id);
   return result;
 }
 

@@ -17,7 +17,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
-import { db, nodes, appDatabases, oneRow, revisionToken, stageThenFlip } from '@mantle/db';
+import {
+  db,
+  nodes,
+  appDatabases,
+  inFlipTransaction,
+  isBusy,
+  oneRow,
+  revisionToken,
+  stageNamedByRow,
+  stageThenFlip,
+} from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
@@ -28,6 +38,7 @@ import {
   APP_SQL_JOURNAL_LIMIT_BYTES,
   APP_SQL_TIMEOUT_MS,
   AppDbRestoringError,
+  AppSqlBusyError,
   AppSqlError,
   appSqlMaxDbBytes,
   copyAppDbFile,
@@ -308,38 +319,85 @@ async function isRestoring(storagePath: string): Promise<boolean> {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/** The bumped row must still name the file the write read: a restore that
+ *  flipped `storage_path` since then (A3b fix round 1, M1) means the write
+ *  would land in the replaced file. A busy error: the caller retries and
+ *  reads the row again. */
+function assertSamePath(named: string, read: string): void {
+  if (named !== read) throw new AppDbRestoringError();
+}
+
 /** The checked statement inside a write's transaction: the revision bumped
- *  as the caller (it takes the row lock), exactly one row. */
-async function bumpWriteSeq(tx: Tx, regId: string): Promise<number> {
+ *  as the caller (it takes the row lock), exactly one row, still naming the
+ *  file `storagePath` (AppDbRestoringError when a restore moved it). */
+async function bumpWriteSeq(tx: Tx, regId: string, storagePath: string): Promise<number> {
   const row = oneRow(
     'appdb',
     await tx
       .update(appDatabases)
       .set({ writeSeq: sql`${appDatabases.writeSeq} + 1` })
       .where(eq(appDatabases.id, regId))
-      .returning({ seq: appDatabases.writeSeq }),
+      .returning({ seq: appDatabases.writeSeq, storagePath: appDatabases.storagePath }),
     'app database',
   );
+  assertSamePath(row.storagePath, storagePath);
   return Number(row.seq);
 }
+
+/** How long a single statement's check waits for the registry row lock (a
+ *  seed or a schema script holds it for its run, up to
+ *  APP_SCHEMA_TIMEOUT_MS): past it, the statement is busy and retried
+ *  (A3b fix round 1, M2). */
+export const APP_DB_CHECK_LOCK_TIMEOUT_MS = 2000;
 
 /**
  * The checked statement of a single statement's write (host.db.exec, an MCP
  * write), on its own: committed before the app's SQL runs, so no transaction
  * or row lock is held across it (an app's statement may run for
  * APP_SQL_TIMEOUT_MS). A refusal stops it before the file; a statement that
- * then fails leaves only the revision one higher.
+ * then fails leaves only the revision one higher. It waits at most
+ * APP_DB_CHECK_LOCK_TIMEOUT_MS behind a seed or a schema script
+ * (AppSqlBusyError, a 429 the app retries), and refuses a row a restore
+ * moved to another file since the caller read it (AppDbRestoringError).
  */
-async function checkAppDbWrite(regId: string): Promise<void> {
-  oneRow(
-    'appdb',
-    await db
-      .update(appDatabases)
-      .set({ writeSeq: sql`${appDatabases.writeSeq} + 1` })
-      .where(eq(appDatabases.id, regId))
-      .returning({ seq: appDatabases.writeSeq }),
-    'app database',
-  );
+async function checkAppDbWrite(regId: string, storagePath: string): Promise<void> {
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('lock_timeout', ${`${APP_DB_CHECK_LOCK_TIMEOUT_MS}ms`}, true)`,
+      );
+      await bumpWriteSeq(tx, regId, storagePath);
+    });
+  } catch (err) {
+    if (!(err instanceof AppSqlError) && isBusy(err)) {
+      throw new AppSqlBusyError(
+        "the app's database is busy with a seed or a schema change; try again in a few seconds",
+      );
+    }
+    throw err;
+  }
+}
+
+/** An app database file's name: `<app>[.r-<token>].sqlite`. */
+const APP_FILE_NAME =
+  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\.r-[0-9a-z]+)?\.sqlite$/;
+
+/** The app a database file name belongs to, or null: not an app database
+ *  revision (a sidecar, a restore marker, the history, a trial copy). */
+export function appFileNode(name: string): string | null {
+  return APP_FILE_NAME.exec(name)?.[1] ?? null;
+}
+
+/** Every database revision of `appNodeId` in the folder `dirAbs` (absolute
+ *  paths, no sidecars): what a backup keeps (A3b fix round 1, H1). */
+export function appRevisionFiles(dirAbs: string, appNodeId: string): string[] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dirAbs);
+  } catch {
+    return [];
+  }
+  return names.filter((n) => appFileNode(n) === appNodeId).map((n) => path.join(dirAbs, n));
 }
 
 /** A new revision of an app's database file, beside the current one. */
@@ -400,7 +458,7 @@ async function applySchema(reg: AppDbRegistry, schema: AppDbSchema): Promise<voi
     }
     // The store broker (A3b): the checked statement, then the script in
     // place (the app SQL exception), under the row lock a restore takes too.
-    await bumpWriteSeq(tx, reg.id);
+    await bumpWriteSeq(tx, reg.id, reg.storagePath);
     await mkdir(path.dirname(reg.storagePath), { recursive: true });
     await runAppSql(reg.storagePath, {
       sql: schema.schemaSql,
@@ -554,8 +612,9 @@ export async function appDbExec(
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
   const bound = await bindViewerParams(sql, params, viewerThunk(ownerId, appNodeId, reg.id, opts));
-  // The store broker (A3b): the checked statement before the file.
-  await checkAppDbWrite(reg.id);
+  // The store broker (A3b): the checked statement before the file, on the
+  // file this write read.
+  await checkAppDbWrite(reg.id, reg.storagePath);
   await mkdir(path.dirname(reg.storagePath), { recursive: true });
   const res = (await runAppSql(reg.storagePath, {
     sql,
@@ -708,7 +767,7 @@ export async function appDbSeedRows(
   // is even read.
   let columns: string[] = [];
   const changes = await db.transaction(async (tx) => {
-    await bumpWriteSeq(tx, reg.id);
+    await bumpWriteSeq(tx, reg.id, reg.storagePath);
     if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
     if (!(await fileExists(reg.storagePath))) (await openSqlite(reg.storagePath)).close();
     const read = (q: string) =>
@@ -954,7 +1013,8 @@ export function snapshotDestPath(
 }
 
 /**
- * Consistent-snapshot EVERY registered per-app SQLite database into destDir via
+ * Consistent-snapshot EVERY registered per-app SQLite database (every revision
+ * of its file on disk, A3b) into destDir via
  * `VACUUM INTO` — SQLite's online-backup primitive, so each snapshot is a
  * transactionally consistent, compacted copy even while an app writes
  * concurrently (no raw-file copy race, no sqlite3 CLI dependency). The per-app
@@ -987,15 +1047,12 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
     }
   }
   for (const r of rows) {
-    try {
-      await stat(r.storagePath);
-    } catch {
+    if (!(await fileExists(r.storagePath))) {
       report.missing.push({
         ownerId: r.ownerId,
         appNodeId: r.appNodeId,
         storagePath: r.storagePath,
       });
-      continue;
     }
     // The live layout under APP_DB_DIR (<owner>/<app>.sqlite as
     // storage_path records it): an app folded in from a member's space (W6b)
@@ -1006,21 +1063,27 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
       !live.startsWith('..') && path.dirname(live) !== '.' && !path.dirname(live).includes(path.sep)
         ? path.dirname(live)
         : r.ownerId;
-    const destFile = snapshotDestPath(destDir, layoutOwner, r.appNodeId, r.storagePath);
-    try {
-      await mkdir(path.dirname(destFile), { recursive: true });
-      await rm(destFile, { force: true }); // VACUUM INTO refuses an existing target
-      // In a SQL child (apps audit P5): a 256 MB VACUUM INTO on the main
-      // thread froze the process that runs the backup.
-      await copyAppDbFile(r.storagePath, destFile);
-      const { size } = await stat(destFile);
-      report.snapshotted.push({ ownerId: r.ownerId, appNodeId: r.appNodeId, bytes: size });
-    } catch (err) {
-      report.failed.push({
-        ownerId: r.ownerId,
-        appNodeId: r.appNodeId,
-        error: errorMessage(err),
-      });
+    // EVERY revision of the app's database on disk, not only the one the
+    // row names now (A3b fix round 1, H1): the Postgres dump ran first, and
+    // a restore since then flipped the row to a new file while the dump
+    // names the old one (the sweep keeps it for a grace period).
+    for (const file of appRevisionFiles(path.dirname(r.storagePath), r.appNodeId)) {
+      const destFile = snapshotDestPath(destDir, layoutOwner, r.appNodeId, file);
+      try {
+        await mkdir(path.dirname(destFile), { recursive: true });
+        await rm(destFile, { force: true }); // VACUUM INTO refuses an existing target
+        // In a SQL child (apps audit P5): a 256 MB VACUUM INTO on the main
+        // thread froze the process that runs the backup.
+        await copyAppDbFile(file, destFile);
+        const { size } = await stat(destFile);
+        report.snapshotted.push({ ownerId: r.ownerId, appNodeId: r.appNodeId, bytes: size });
+      } catch (err) {
+        report.failed.push({
+          ownerId: r.ownerId,
+          appNodeId: r.appNodeId,
+          error: errorMessage(err),
+        });
+      }
     }
   }
   return report;
@@ -1120,31 +1183,37 @@ export async function restoreAppDatabaseFile(
       },
       async (staged) => {
         const { size } = await stat(staged);
-        await db.transaction(async (tx) => {
-          // Fresh marker for the flip itself (a slow drain must not age it out).
-          const now = new Date();
-          await utimes(marker, now, now);
-          oneRow(
-            'appdb',
-            await tx
-              .update(appDatabases)
-              .set({
-                storagePath: staged,
-                writeSeq: sql`${appDatabases.writeSeq} + 1`,
-                schemaVersion,
-                sizeBytes: size,
-                updatedAt: new Date(),
-              })
-              .where(eq(appDatabases.id, reg.id))
-              .returning({ id: appDatabases.id }),
-            'app database',
-          );
-        });
+        // Fresh marker for the flip itself (a slow drain must not age it out).
+        const now = new Date();
+        await utimes(marker, now, now);
+        await db.transaction((tx) =>
+          inFlipTransaction(async () => {
+            oneRow(
+              'appdb',
+              await tx
+                .update(appDatabases)
+                .set({
+                  storagePath: staged,
+                  writeSeq: sql`${appDatabases.writeSeq} + 1`,
+                  schemaVersion,
+                  sizeBytes: size,
+                  updatedAt: new Date(),
+                })
+                .where(eq(appDatabases.id, reg.id))
+                .returning({ id: appDatabases.id }),
+              'app database',
+            );
+          }),
+        );
         return { bytes: size };
       },
       (staged) => {
         for (const f of appDbFiles(staged)) fs.rmSync(f, { force: true });
       },
+      // A flip that may have committed (a lost acknowledgement): the stage
+      // goes only when no row names it (A3b fix round 1, H2), so a restored
+      // app never points at a removed file while its old one is swept.
+      (staged) => stageNamedByRow({ store: 'appdb', paths: [staged] }),
     );
   } finally {
     await rm(marker, { force: true });

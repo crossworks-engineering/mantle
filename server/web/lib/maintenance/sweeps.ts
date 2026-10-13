@@ -164,8 +164,14 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
       ? 'nothing to purge'
       : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s), ${left} leftover work file(s)`;
   },
-  // Arch A3b: the store files no row points at (old revisions, stages).
-  'store-sweep': async () => summariseStoreSweep(await sweepStores()),
+  // Arch A3b: the old store revisions no row points at. A store whose
+  // guard stopped it fails the run, so the history shows it (fix round 1).
+  'store-sweep': async () => {
+    const reports = await sweepStores();
+    const line = summariseStoreSweep(reports);
+    if (reports.some((r) => r.aborted)) throw new Error(line);
+    return line;
+  },
   // W8b fix round 1: the staging files a crash left beside a file create.
   'files-staged-reap': async () => summariseFilesStagedReap(await runFilesStagedReap()),
   // Arch A2a: actor check miss rows older than 14 days.

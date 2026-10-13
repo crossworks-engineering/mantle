@@ -23,10 +23,27 @@
  *
  * Server-only (node:fs, node:sqlite).
  */
-import { copyFileSync, existsSync, linkSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import path from 'node:path';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
-import { db, oneRow, revisionToken, SQLITE_SIDECARS, stageThenFlip, tables } from '@mantle/db';
+import {
+  db,
+  inFlipTransaction,
+  oneRow,
+  revisionToken,
+  SQLITE_SIDECARS,
+  stageNamedByRow,
+  stageThenFlip,
+  tables,
+} from '@mantle/db';
 import {
   applyOpsToFile,
   finalizePublishedFile,
@@ -36,6 +53,7 @@ import {
 import {
   resolveStoragePath,
   snapshotFile,
+  tableDbRoot,
   type ApplyResult,
   type CoerceFn,
   type TableOp,
@@ -73,6 +91,60 @@ export function tableRevisionPath(ownerId: string, nodeId: string, draft: boolea
     throw new Error('table broker: unsafe id for a path');
   }
   return `${ownerId}/${nodeId}.r-${revisionToken()}${draft ? '.draft' : ''}.sqlite`;
+}
+
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+/** A workbook's file name: `<node>[.r-<token>][.draft].sqlite`. */
+const TABLE_FILE_NAME = new RegExp(`^(${UUID})(\\.r-[0-9a-z]+)?(\\.draft)?\\.sqlite$`);
+
+/** The node a workbook file name belongs to, or null: not a workbook
+ *  revision (a sidecar, the history, anything else). */
+export function tableFileNode(name: string): string | null {
+  return TABLE_FILE_NAME.exec(name)?.[1] ?? null;
+}
+
+/** A draft written before A3b (`<node>.draft.sqlite`, no revision token):
+ *  the sweep never removes one (it reports it). */
+export function isLegacyDraftName(name: string): boolean {
+  const m = TABLE_FILE_NAME.exec(name);
+  return m !== null && m[2] === undefined && m[3] !== undefined;
+}
+
+/** Every workbook revision of `nodeId` in the folder `dirAbs` (absolute
+ *  paths; no sidecars): what a backup keeps (A3b fix round 1, H1: the
+ *  revision a dump names may be one a flip has since replaced) and what a
+ *  delete removes. */
+export function tableRevisionFiles(dirAbs: string, nodeId: string): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(dirAbs);
+  } catch {
+    return [];
+  }
+  return names.filter((n) => tableFileNode(n) === nodeId).map((n) => path.join(dirAbs, n));
+}
+
+/** A stored path (relative to TABLE_DB_DIR) for an absolute one under it. */
+export function tableRelOf(abs: string): string {
+  return path.relative(path.resolve(tableDbRoot()), abs).split(path.sep).join('/');
+}
+
+/**
+ * Stage, then flip, for a table (the store's one way to call the helper):
+ * `stage` returns the files it wrote (absolute); a flip known not to have
+ * landed removes them, and after any other error they go only when no
+ * registry row names one of them (read again as the system).
+ */
+export function stageThenFlipTable<S extends { files: string[] }, T>(
+  stage: () => S | Promise<S>,
+  flip: (staged: S) => Promise<T>,
+): Promise<T> {
+  return stageThenFlip(
+    stage,
+    flip,
+    (staged) => staged.files.forEach(removeWorkbook),
+    (staged) => stageNamedByRow({ store: 'tables', paths: staged.files.map(tableRelOf) }),
+  );
 }
 
 /** A new revision beside the row's published file (its folder: a table
@@ -144,28 +216,30 @@ export async function flipTable<R = void>(
   set: TableSet,
   then?: (tx: Tx, rev: number) => Promise<R>,
 ): Promise<{ rev: number; out: R }> {
-  return db.transaction(async (tx) => {
-    const rows = await tx
-      .update(tables)
-      .set({ ...set, draftRev: sql`${tables.draftRev} + 1` })
-      .where(
-        expectRev === undefined
-          ? eq(tables.nodeId, nodeId)
-          : and(eq(tables.nodeId, nodeId), eq(tables.draftRev, expectRev)),
-      )
-      .returning({ draftRev: tables.draftRev });
-    if (rows.length === 0 && expectRev !== undefined) {
-      const [cur] = await tx
-        .select({ draftRev: tables.draftRev })
-        .from(tables)
-        .where(eq(tables.nodeId, nodeId))
-        .limit(1);
-      if (cur) throw new TableRevConflict(Number(cur.draftRev));
-    }
-    const rev = Number(oneRow('tables', rows, 'table').draftRev);
-    const out = then ? await then(tx, rev) : (undefined as R);
-    return { rev, out };
-  });
+  return db.transaction((tx) =>
+    inFlipTransaction(async () => {
+      const rows = await tx
+        .update(tables)
+        .set({ ...set, draftRev: sql`${tables.draftRev} + 1` })
+        .where(
+          expectRev === undefined
+            ? eq(tables.nodeId, nodeId)
+            : and(eq(tables.nodeId, nodeId), eq(tables.draftRev, expectRev)),
+        )
+        .returning({ draftRev: tables.draftRev });
+      if (rows.length === 0 && expectRev !== undefined) {
+        const [cur] = await tx
+          .select({ draftRev: tables.draftRev })
+          .from(tables)
+          .where(eq(tables.nodeId, nodeId))
+          .limit(1);
+        if (cur) throw new TableRevConflict(Number(cur.draftRev));
+      }
+      const rev = Number(oneRow('tables', rows, 'table').draftRev);
+      const out = then ? await then(tx, rev) : (undefined as R);
+      return { rev, out };
+    }),
+  );
 }
 
 /**
@@ -189,10 +263,9 @@ export async function stagedTableWrite<S extends { files: string[] }, T>(
       throw new TableRevConflict(row.draftRev);
     }
     try {
-      return await stageThenFlip(
+      return await stageThenFlipTable(
         () => stage(row),
         (staged) => flip(row, staged),
-        (staged) => staged.files.forEach(removeWorkbook),
       );
     } catch (err) {
       if (err instanceof TableRevConflict && attempt < tries) continue;
@@ -276,7 +349,8 @@ export function stageHistoryLink(fromAbs: string, toAbs: string): void {
  * The op batch exception (see the header): one short transaction, the check
  * first (the bump, as the caller, exactly one row; a stale `ifRev` is a
  * conflict), then the batch on the draft the row points at, in place, then
- * `then` (the JSONB mirror). Only for a row that HAS a draft file.
+ * `then` (the JSONB mirror). Only for a row that HAS a draft file on disk:
+ * otherwise 'no_draft', with nothing changed.
  */
 export async function opsInPlace<T>(
   nodeId: string,
@@ -293,12 +367,16 @@ export async function opsInPlace<T>(
       const r = oneRow('tables', rows, 'table');
       const rev = Number(r.draftRev);
       if (ifRev !== undefined && rev - 1 !== ifRev) throw new TableRevConflict(rev - 1);
-      if (!r.draftPath) {
-        // A commit or a discard took the draft since the caller read it:
-        // nothing in place; the caller stages a new draft instead.
+      const draftAbs = r.draftPath ? resolveStoragePath(r.draftPath) : null;
+      if (!draftAbs || !existsSync(draftAbs)) {
+        // A commit or a discard took the draft since the caller read it, or
+        // the row names a draft file that is not there (0283 pointed every
+        // row with a draft time at its old name; A3b fix round 1, L1):
+        // nothing in place (the bump rolls back); the caller stages a new
+        // draft from the published workbook instead.
         throw new NoDraftInPlace();
       }
-      return run(tx, resolveStoragePath(r.draftPath), rev);
+      return run(tx, draftAbs, rev);
     })
     .catch((err: unknown) => {
       if (err instanceof NoDraftInPlace) return 'no_draft' as const;

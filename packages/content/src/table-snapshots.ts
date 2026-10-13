@@ -38,10 +38,10 @@ import { envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapsho
 import { withTableRegistryLock } from './table-storage';
 import {
   flipTable,
+  revisionBesideRow,
   stageCopy,
   stagedTableWrite,
   stageHistoryLink,
-  tableRevisionPath,
 } from './table-broker';
 import { assertTableWritable } from './tables/shared';
 import type { AppHistoryActor } from './apps';
@@ -392,7 +392,9 @@ export async function restoreTableSnapshot(
         .limit(1);
       const hasDraft = row.draftPath !== null || (reg?.draftData ?? null) !== null;
       if (hasDraft && !opts.discardDraft) throw new TableRestoreDraftError();
-      const rel = tableRevisionPath(ownerId, tableId, true);
+      // Beside the row's published file (a table folded in from a member's
+      // space keeps its files in that folder; A3b fix round 1, M4).
+      const rel = revisionBesideRow(row, ownerId, tableId, true);
       return { files: [stageCopy(source, rel)], rel };
     },
     async (row, s) => {
