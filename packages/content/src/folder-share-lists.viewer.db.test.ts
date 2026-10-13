@@ -259,8 +259,9 @@ describe.skipIf(!URL)('folder-shared items in the Library and at the client leve
     expect(teamApps.find((a) => a.id === ids.appInClient)).toBeDefined();
     const run = await as('team', () => memberApps.getMemberRunnableApp(brain, ids.appInTeam));
     expect(run?.writable).toBe(true);
-    // The team surfaces' app-data reach (admin pool).
-    const teamIds = await memberApps.listTeamLevelAppIds(brain);
+    // The team surfaces' app-data reach, in the member's scope (with none it
+    // reaches nothing since 0286: no built-in Team to stand in).
+    const teamIds = await as('team', () => memberApps.listTeamLevelAppIds(brain));
     expect(teamIds.has(ids.appInTeam) && teamIds.has(ids.appInClient)).toBe(true);
   });
 

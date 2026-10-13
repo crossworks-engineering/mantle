@@ -27,9 +27,10 @@
 --    and nobody is made a Moderator of one: an invite and Add login give
 --    a member login no workspace (its private one is made the first time
 --    it needs it). Rows already in Team stay, with their ticks.
--- 4. mantle_ws_migrate (the switch, last 0267): the chain of 0267, with
---    Team's users as the switch gave them before (every admin and member
---    login a Moderator: the login bridge did that until now), then
+-- 4. The switch of a brain not on workspaces yet: mantle_ws_migrate_bridged
+--    (0251, renamed by 0261) gives Team its users as before (every admin
+--    and member login a Moderator: the login bridge did that until now),
+--    and mantle_ws_migrate (last 0267) ends its chain with
 --    mantle_ws_team_normal(true). The switch still finds Team by its
 --    bridge_key while it runs (the folds of an old brain's team items go
 --    there), then Team ends normal, or gone when it holds nothing but the
@@ -149,6 +150,161 @@ $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_login"(uuid) FROM PUBLIC;
 --> statement-breakpoint
+-- The switch's first part (0251, renamed by 0261): only its user step
+-- changes. Team's users are put there by the switch itself now, as the
+-- login bridge put them before.
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate_bridged"()
+ RETURNS TABLE(section text, subject text, metric text, n bigint)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+#variable_conflict use_column
+DECLARE
+  brain uuid := "public"."mantle_brain_id"();
+  admin_ws uuid;
+  team_ws uuid;
+  clients bigint;
+  client_items bigint;
+  persona uuid;
+  fails bigint;
+BEGIN
+  IF brain IS NULL THEN
+    RETURN QUERY SELECT 'skip'::text, 'brain'::text, 'no brain anchor'::text, 1::bigint;
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM "public"."workspaces" w WHERE w."owner_id" = brain AND w."bridge_key" = 'admin') THEN
+    RETURN QUERY SELECT 'skip'::text, 'workspaces'::text, 'already migrated'::text, 1::bigint;
+    RETURN;
+  END IF;
+  -- 21.9: clients are set up by hand, never migrated.
+  SELECT count(*) INTO clients FROM auth.users u WHERE u."role" = 'client';
+  SELECT count(*) INTO client_items FROM "public"."nodes" n
+   WHERE n."owner_id" = brain
+     AND (n."audience" = 'client' OR n."inherited_level" = 'client' OR n."embedded_level" = 'client');
+  IF clients > 0 OR client_items > 0 THEN
+    RAISE NOTICE 'workspaces not migrated: % client login(s), % client-level item(s); set them up by hand',
+      clients, client_items;
+    RETURN QUERY SELECT 'skip'::text, 'client logins'::text, 'count'::text, clients;
+    RETURN QUERY SELECT 'skip'::text, 'client-level items'::text, 'count'::text, client_items;
+    RETURN;
+  END IF;
+
+  -- Workspaces.
+  INSERT INTO "public"."workspaces" ("owner_id", "name", "description", "is_admin", "bridge_key")
+  VALUES (brain, 'Admin', 'Brain management, and everything made before workspaces.', true, 'admin')
+  RETURNING "id" INTO admin_ws;
+  INSERT INTO "public"."workspaces" ("owner_id", "name", "description", "admin_moderated", "bridge_key")
+  VALUES (brain, 'Team', 'Work shared with the whole team.', true, 'team')
+  RETURNING "id" INTO team_ws;
+
+  -- Users: the login bridge, once per login (Admin for an admin login, 0286),
+  -- then Team's users as the switch gave them before 0286 (every admin and
+  -- member login a Moderator; the bridge did it then), so a brain switched
+  -- now ends as every brain switched before, and the proof below sees the
+  -- members' reach through Team. mantle_ws_migrate makes Team a normal
+  -- workspace at the end (mantle_ws_team_normal).
+  PERFORM "public"."mantle_bridge_login"(u."id") FROM auth.users u WHERE u."role" IN ('admin', 'member');
+  INSERT INTO "public"."workspace_users" ("workspace_id", "login_id", "moderator")
+  SELECT team_ws, u."id", true FROM auth.users u
+   WHERE u."role" IN ('admin', 'member')
+     AND NOT EXISTS (SELECT 1 FROM "public"."archive_client_logins" a WHERE a."login_id" = u."id")
+  ON CONFLICT ("workspace_id", "login_id") DO UPDATE SET "moderator" = true
+   WHERE NOT "workspace_users"."moderator";
+
+  -- Grants for every brain item.
+  PERFORM "public"."mantle_bridge_apply"(ARRAY(
+    SELECT n."id" FROM "public"."nodes" n WHERE n."owner_id" = brain));
+
+  -- Facts learned in chat: admin only today, so Admin.
+  PERFORM set_config('mantle.acl_internal', 'on', true);
+  UPDATE "public"."facts" f SET "read_ws" = ARRAY[admin_ws]
+   WHERE f."source_node_id" IS NULL AND f."owner_id" = brain AND f."read_ws" = '{}'::uuid[];
+  PERFORM set_config('mantle.acl_internal', '', true);
+
+  -- Assistants: the persona (the enabled admin-level responder, highest
+  -- priority, a shared one before a login's own) on Admin; the team
+  -- responder on Team. No Client workspace, so the client responder stays
+  -- unattached.
+  SELECT a."id" INTO persona FROM "public"."agents" a
+   WHERE a."owner_id" = brain AND a."role" = 'responder' AND a."audience" = 'admin' AND a."enabled"
+   ORDER BY a."priority" DESC, a."assigned_user_id" IS NOT NULL, a."created_at"
+   LIMIT 1;
+  IF persona IS NOT NULL THEN
+    INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
+    VALUES (admin_ws, 'assistant', persona::text, true);
+  END IF;
+  INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
+  SELECT team_ws, 'assistant', a."id"::text, true
+    FROM "public"."agents" a
+   WHERE a."owner_id" = brain AND a."slug" = 'team-responder' AND a."audience" = 'team'
+   LIMIT 1;
+
+  -- Connectors (a tool group with an integration binding): every one on
+  -- Admin with Write on (the owner's turns write today). On Team exactly the
+  -- ones a member may use today (an enabled mcp connector at team level or
+  -- below), Write on as today (a member's app run or MCP may call its
+  -- unmarked tools; the read-only marks still apply per tool).
+  INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
+  SELECT admin_ws, 'connector', g."slug", true
+    FROM "public"."tool_groups" g
+   WHERE g."owner_id" = brain AND g."integration" IS NOT NULL;
+  INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
+  SELECT team_ws, 'connector', g."slug", true
+    FROM "public"."tool_groups" g
+   WHERE g."owner_id" = brain AND g."integration" ? 'mcp' AND g."enabled"
+     AND g."audience" IN ('team', 'client', 'public');
+
+  -- R3 backfill: only rows of agents attached outside Admin (NULL = Admin).
+  UPDATE "public"."assistant_messages" m SET "workspace_id" = a."workspace_id"
+    FROM "public"."agents" a WHERE a."id" = m."agent_id" AND a."workspace_id" = team_ws;
+  UPDATE "public"."chat_threads" m SET "workspace_id" = a."workspace_id"
+    FROM "public"."agents" a WHERE a."id" = m."agent_id" AND a."workspace_id" = team_ws;
+  UPDATE "public"."runs" m SET "workspace_id" = a."workspace_id"
+    FROM "public"."agents" a WHERE a."id" = m."agent_id" AND a."workspace_id" = team_ws;
+  UPDATE "public"."run_items" i SET "workspace_id" = r."workspace_id"
+    FROM "public"."runs" r WHERE r."id" = i."run_id" AND r."workspace_id" = team_ws;
+  UPDATE "public"."pending_tool_calls" m SET "workspace_id" = a."workspace_id"
+    FROM "public"."agents" a WHERE a."id" = m."agent_id" AND a."workspace_id" = team_ws;
+  UPDATE "public"."traces" m SET "workspace_id" = a."workspace_id"
+    FROM "public"."agents" a WHERE a."id" = m."agent_id" AND a."workspace_id" = team_ws;
+  UPDATE "public"."tool_results" m SET "workspace_id" = t."workspace_id"
+    FROM "public"."traces" t WHERE t."id" = m."trace_id" AND t."workspace_id" = team_ws;
+
+  -- Any item the bridge left out of step (none expected on a fresh run) is
+  -- brought to its level before the proof, so the proof sees the result.
+  PERFORM "public"."mantle_bridge_apply"(ARRAY(SELECT "public"."mantle_bridge_drift_ids"()));
+
+  -- The proof (9.4): nobody reads more than today, or nothing is written.
+  SELECT coalesce(sum(d."n"), 0) INTO fails
+    FROM "public"."mantle_ws_reach_diff"() d WHERE d."section" = 'reach-fail';
+  IF fails > 0 THEN
+    RAISE EXCEPTION 'workspaces migration: % item read(s) would be gained (reach diff); nothing written', fails
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN QUERY SELECT 'done', 'workspaces', 'count', count(*)
+    FROM "public"."workspaces" w WHERE w."owner_id" = brain;
+  RETURN QUERY SELECT 'done', 'workspace users', 'count', count(*) FROM "public"."workspace_users";
+  RETURN QUERY
+    SELECT 'done', 'grants to ' || w."name" ||
+             CASE WHEN g."is_home" THEN ' (home)' WHEN g."excluded" THEN ' (removed here)' ELSE '' END,
+           'count', count(*)
+      FROM "public"."item_grants" g JOIN "public"."workspaces" w ON w."id" = g."workspace_id"
+     GROUP BY 2;
+  RETURN QUERY SELECT 'done', 'resources ' || r."type", 'count', count(*)
+    FROM "public"."workspace_resources" r GROUP BY 2;
+  RETURN QUERY
+    SELECT 'done', 'admin responders left unattached', 'count', count(*)
+      FROM "public"."agents" a
+     WHERE a."owner_id" = brain AND a."role" = 'responder' AND a."audience" = 'admin'
+       AND a."workspace_id" IS NULL;
+  RETURN QUERY SELECT * FROM "public"."mantle_ws_reach_diff"() d WHERE d."section" <> 'reach-fail';
+END
+$function$
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_migrate_bridged"() FROM PUBLIC;
+--> statement-breakpoint
 -- The switch (0267's chain), then Team ends normal or, holding nothing, gone.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate"()
   RETURNS TABLE(section text, subject text, metric text, n bigint)
@@ -158,19 +314,6 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate"()
 BEGIN
   RETURN QUERY SELECT * FROM "public"."mantle_ws_migrate_bridged"();
   IF "public"."mantle_ws_skip_reason"() IS NOT NULL THEN RETURN; END IF;
-  -- Team's users as the switch gave them before 0286 (the login bridge
-  -- did it then; it gives Admin only now): every admin and member login a
-  -- Moderator there, so a brain switched now ends as every brain switched
-  -- before (its Moderators keep their ticks, decision 2.a). A new brain's
-  -- Team then holds its admin logins only and is removed below.
-  INSERT INTO "public"."workspace_users" ("workspace_id", "login_id", "moderator")
-  SELECT w."id", u."id", true
-    FROM "public"."workspaces" w, auth.users u
-   WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'team'
-     AND u."role" IN ('admin', 'member')
-     AND NOT EXISTS (SELECT 1 FROM "public"."archive_client_logins" a WHERE a."login_id" = u."id")
-  ON CONFLICT ("workspace_id", "login_id") DO UPDATE SET "moderator" = true
-   WHERE NOT "workspace_users"."moderator";
   PERFORM "public"."mantle_ws_switch_off"();
   RETURN QUERY SELECT 'bridge off'::text, b."step", 'count'::text, b."n"
                  FROM "public"."mantle_ws_bridge_off"() b;

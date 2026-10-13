@@ -161,9 +161,12 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
     const warnings: string[] = [];
     for (const slug of declared) {
-      // No run here, so no runner login: the rules alone.
+      // No run here, so no runner login: the rules alone, against the
+      // workspaces that hold this app (they read the built-in Team's until
+      // 0286 made Team a normal workspace).
       const verdict = await appToolVerdict(level, ownerId, declared, slug, undefined, {
         rulesOnly: true,
+        appId,
       });
       if (verdict.ok) continue;
       warnings.push(

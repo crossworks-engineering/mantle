@@ -67,9 +67,13 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
   const call = (slug: string, input: Record<string, unknown>, ctx: ToolHandlerContext) => {
     const run = () => tools.LOGIN_APP_DATA_TOOLS.find((t) => t.slug === slug)!.handler(input, ctx);
     const surface = ctx.surface as { loginId?: string } | undefined;
-    return surface?.loginId === member
-      ? m.withScope({ kind: 'user', loginId: member, ws: [ws.team], modWs: [] }, run)
-      : run();
+    if (surface?.loginId === member) {
+      return m.withScope({ kind: 'user', loginId: member, ws: [ws.team], modWs: [] }, run);
+    }
+    if (surface?.loginId === anchor) {
+      return m.withScope({ kind: 'user', loginId: anchor, ws: [ws.admin], modWs: [ws.admin] }, run);
+    }
+    return run();
   };
   const out = <T>(r: Awaited<ReturnType<typeof call>>) => {
     if (!r.ok) throw new Error(r.error);
