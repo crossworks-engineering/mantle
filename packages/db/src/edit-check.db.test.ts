@@ -225,6 +225,9 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
                values (${L.owner}, ${n.map2}, 'jump', 'card', 'Jump',
                        ${sql.json([{ targetMap: `${tag}-one`, targetSlug: `${tag}-one` }] as never)})`;
     });
+    // Every cell names its own mode; the file starts off, as every box does
+    // (a test config may have switched the scratch database).
+    await setMode('off');
   }, 240_000);
 
   afterAll(async () => {

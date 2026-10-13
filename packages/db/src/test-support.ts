@@ -255,6 +255,7 @@ export async function createMigratedScratchDatabase(
     // Grants are per database: migrate applies the access matrix after the
     // migrations, so a limited role (a member's space) can work here too.
     await applyViewerGrants(sql);
+    await applyTestEditCheck(sql);
   } catch (err) {
     await sql.end();
     await drop();
@@ -262,6 +263,18 @@ export async function createMigratedScratchDatabase(
   }
   await sql.end();
   return { url, name, drop };
+}
+
+/**
+ * The edit check's box mode for a test's scratch database (arch A3a):
+ * MANTLE_TEST_EDIT_CHECK (warn or on; a test config sets it, never a box)
+ * runs mantle_set_edit_check on it, as an operator would on a box. Unset or
+ * off: the database stays off, as every box starts.
+ */
+async function applyTestEditCheck(sql: ReturnType<typeof postgres>): Promise<void> {
+  const mode = (process.env.MANTLE_TEST_EDIT_CHECK ?? '').trim().toLowerCase();
+  if (mode !== 'warn' && mode !== 'on') return;
+  await sql`select mantle_set_edit_check(${mode})`;
 }
 
 /**
