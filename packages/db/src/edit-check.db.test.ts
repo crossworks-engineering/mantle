@@ -444,6 +444,43 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     });
     expect(more).toContain(n.page);
     expect(more).not.toContain(n.other);
+    // A folder's subtree with an item the scope does not read (its grant
+    // "Removed here"): the subtree lock takes the rest and ends; it never
+    // asks again for the dropped id (no "subtree kept growing").
+    const folder = randomUUID();
+    const hidden = randomUUID();
+    await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${n.note}]::uuid[], 'share')`;
+      await tx`insert into nodes (id, owner_id, type, title, path)
+               values (${folder}, ${L.owner}, 'branch', ${`${tag} F`}, ${`notes.${tag}f`}::ltree)`;
+    });
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${folder}]::uuid[], 'update')`;
+      await tx`delete from item_grants where node_id = ${folder} and via_folder_id is null`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+               values (${folder}, ${ws.H}, true, false), (${folder}, ${ws.W}, false, true)`;
+    });
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${folder}]::uuid[], 'share')`;
+      await tx`insert into nodes (id, owner_id, type, title, path)
+               values (${hidden}, ${L.owner}, 'note', ${`${tag} hidden`}, ${`notes.${tag}f`}::ltree)`;
+    });
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${hidden}]::uuid[], 'update')`;
+      await tx`update item_grants set excluded = true where node_id = ${hidden} and workspace_id = ${ws.W}`;
+    });
+    let subtree = '';
+    const sub = await attempt(who.member, async (tx) => {
+      await tx`select mantle_lock_subtree_heads(${folder}::uuid, '{}'::uuid[])`;
+      subtree = (
+        await tx<{ h: string }[]>`select current_setting('mantle.heads_held', true) as h`
+      )[0]!.h;
+      return { count: 1 };
+    });
+    expect(sub).toMatchObject({ rows: 1 });
+    expect(subtree).toContain(folder);
+    expect(subtree).not.toContain(hidden);
     await setMode('off');
   });
 

@@ -495,6 +495,53 @@ END
 $$;
 --> statement-breakpoint
 
+-- mantle_lock_subtree_heads (0241) with the filter in its rounds: an id
+-- the scope does not read, dropped from the first lock, is not asked for
+-- again round after round (it would never be held, and the fifth round
+-- would fail "subtree kept growing"). The rest as it was.
+CREATE OR REPLACE FUNCTION "public"."mantle_lock_subtree_heads"(root uuid, extra uuid[])
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  r record;
+  ids uuid[];
+  held uuid[];
+  rounds int := 0;
+BEGIN
+  SELECT "owner_id", "path", "type" INTO r FROM "public"."nodes" WHERE "id" = root;
+  IF NOT FOUND THEN
+    PERFORM "public"."mantle_lock_heads"(coalesce(extra, '{}'::uuid[]), 'update');
+    RETURN;
+  END IF;
+  SELECT coalesce(array_agg(n."id"), '{}'::uuid[]) INTO ids
+    FROM "public"."nodes" n
+   WHERE n."id" = root
+      OR (r."type" = 'branch' AND n."owner_id" = r."owner_id" AND n."path" <@ r."path");
+  PERFORM "public"."mantle_lock_heads"(
+    ids || coalesce(extra, '{}'::uuid[])
+        || coalesce(ARRAY["public"."mantle_parent_folder"(r."owner_id", r."type", r."path")], '{}'::uuid[]),
+    'update');
+  IF r."type" <> 'branch' THEN RETURN; END IF;
+  LOOP
+    held := "public"."mantle_heads_held"();
+    SELECT coalesce(array_agg(d.id ORDER BY d.id), '{}'::uuid[]) INTO ids
+      FROM (SELECT n."id" FROM "public"."nodes" n
+             WHERE n."owner_id" = r."owner_id"
+               AND n."path" <@ (SELECT x."path" FROM "public"."nodes" x WHERE x."id" = root)
+            EXCEPT
+            SELECT h.x FROM unnest(held) AS h(x)) d;
+    ids := "public"."mantle_heads_scope_filter"(ids);
+    EXIT WHEN cardinality(ids) = 0;
+    rounds := rounds + 1;
+    IF rounds > 5 THEN
+      RAISE EXCEPTION 'mantle_lock_subtree_heads: subtree kept growing' USING ERRCODE = '40001';
+    END IF;
+    PERFORM "public"."mantle_lock_heads_more"(ids);
+  END LOOP;
+END
+$$;
+--> statement-breakpoint
+
 -- The triggers follow the box mode: a fresh box is off, so every edit check
 -- trigger is disabled (a write calls none).
 DO $$ BEGIN
