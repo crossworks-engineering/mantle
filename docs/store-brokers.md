@@ -40,7 +40,29 @@ One helper, `packages/db/src/store-broker.ts`; each broker calls it.
    rollback (`afterOuterRollback`).
 3. **Sweep.** The revision a flip replaced, and a stage a crash left, go in
    the one sweep (`sweepOrphans`; below). A deleted table's files go with
-   its delete, after the commit, as before A3b.
+   its delete, after the commit, as before A3b. A deleted snapshot's file
+   goes in the sweep by its tombstone (below).
+
+**A store whose disk path IS its row** (the files tree, A3b part 2): a file
+lives at its folder's path and its name, which the host sees and the files
+watcher mirrors, so there is no pointer to flip and new bytes cannot wait
+under a revision name. The disk follows the row INSIDE the flip
+(`flipThenPlace`): the one short transaction runs the checked statement
+first (exactly one row), then a rename as its LAST step (atomic, no bytes
+copied: staged bytes over their name, a file or a folder to its new path),
+then commits. The bytes were staged beside their name before the
+transaction (a name the watcher ignores). A flip known not to have landed
+puts the disk back (the rename back; an overwrite's old bytes, kept under a
+staging name by a hard link until the flip settles); after any other error
+the database is asked where the row is, and the disk is put back only when
+it never landed (left as it is, logged, when the row cannot be read). Inside
+an outer transaction the disk goes back if that one rolls back
+(`afterOuterRollback`), and the old bytes stay until it commits
+(`afterOuterCommit`). A crash between the rename and the COMMIT (a
+microsecond window, after the check passed) leaves the new bytes in place
+and the old ones under a staging name: the watcher adopts the bytes on disk,
+as it adopts any edit made there, and the staged-leftover sweep
+(`files-staged-reap`) removes the old ones after an hour.
 
 No transaction is held across a disk write. The exceptions write in place,
 where a copy per write would cost a whole file:
@@ -79,14 +101,15 @@ where a copy per write would cost a whole file:
 
 ## The stores
 
-| Store | Broker | Check and flip | Readers resolve through |
-| --- | --- | --- | --- |
-| Table workbooks (SQLite) | `packages/content/src/table-broker.ts` (the only importer of `@mantle/tabledb/write`) | `UPDATE tables SET draft_rev = draft_rev + 1, storage_path / draft_path = <stage>` at the revision the stage was built from (`flipTable`); a create: the node's INSERT; a delete: the node's DELETE | `tables.storage_path` (published) and `tables.draft_path` (draft, migration 0283; `draftAbsOf` in `packages/content/src/table-storage.ts`) |
-| App databases (SQLite) | `packages/content/src/app-broker.ts` | `UPDATE app_databases SET write_seq = write_seq + 1` (0283); a restore also flips `storage_path` | `app_databases.storage_path` |
-| App build artifacts (RustFS) | `packages/tools/src/app-build-stage.ts`, through `setDraftBuild` (`packages/content/src/apps.ts`) | the bundle stored under its content address first, then `UPDATE apps SET draft_build` (D4: a Moderator of the app's home) | `apps.draft_build` |
-| Docs collections | the docs worker (`server/web/workers/docs-sync.ts`) | none: it writes no disk | `data.sha256` on the row |
-| File bytes (disk and RustFS) | files ops (`packages/files/src/ops/files.ts`) | A3b part 2 | the file's row |
-| Snapshot database files | the snapshot modules | A3b part 2 (a table commit's history copy is already a stage of the commit) | the `node_snapshots` row |
+| Store                        | Broker                                                                                                           | Check and flip                                                                                                                                                                                                                                                 | Readers resolve through                                                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Table workbooks (SQLite)     | `packages/content/src/table-broker.ts` (the only importer of `@mantle/tabledb/write`)                            | `UPDATE tables SET draft_rev = draft_rev + 1, storage_path / draft_path = <stage>` at the revision the stage was built from (`flipTable`); a create: the node's INSERT; a delete: the node's DELETE                                                            | `tables.storage_path` (published) and `tables.draft_path` (draft, migration 0283; `draftAbsOf` in `packages/content/src/table-storage.ts`) |
+| App databases (SQLite)       | `packages/content/src/app-broker.ts`                                                                             | `UPDATE app_databases SET write_seq = write_seq + 1` (0283); a restore also flips `storage_path`                                                                                                                                                               | `app_databases.storage_path`                                                                                                               |
+| App build artifacts (RustFS) | `packages/tools/src/app-build-stage.ts`, through `setDraftBuild` (`packages/content/src/apps.ts`)                | the bundle stored under its content address first, then `UPDATE apps SET draft_build` (D4: a Moderator of the app's home)                                                                                                                                      | `apps.draft_build`                                                                                                                         |
+| Docs collections             | the docs worker (`server/web/workers/docs-sync.ts`)                                                              | none: it writes no disk                                                                                                                                                                                                                                        | `data.sha256` on the row                                                                                                                   |
+| File bytes (disk)            | files ops (`packages/files/src/ops/files.ts`, `folders.ts`, `move-copy.ts`, through `disk.ts`)                   | the node's UPDATE (or DELETE) as the caller, exactly one row, then the rename on disk as the transaction's last step (`flipThenPlace`)                                                                                                                         | the node's folder path and `data.filename`                                                                                                 |
+| File bytes (RustFS)          | `packages/files/src/file-broker.ts` (`stageFileObject`; email attachments, OneDrive and SharePoint files)        | the object under its content address first, then the row's INSERT                                                                                                                                                                                              | `email_attachments.storage_key`, the node's `data.sha256`                                                                                  |
+| Snapshot database files      | `packages/content/src/snapshot-broker.ts` (with `app-snapshots.ts`, `table-snapshots.ts`, `member-snapshots.ts`) | the copy under a new name first, then one short transaction: the `node_snapshots` INSERT (the edit check) with `db_path` and `db_bytes`, or the `accepted_snapshots` row's `table_path`; a delete removes the row only (its trigger records a tombstone, 0284) | `node_snapshots.db_path`, `accepted_snapshots.table_path`                                                                                  |
 
 - **Tables.** A draft save, a commit (both shapes, with the history copy of
   the version it replaces), a history restore, a first op batch and the
@@ -111,11 +134,47 @@ where a copy per write would cost a whole file:
   file) with the same bytes, so the sweep never removes an object.
 - **Docs.** The docs feature reads markdown and writes only rows; the lint
   holds its files to no file-writing import.
+- **Files** (A3b part 2). An overwrite stages the new bytes beside the file,
+  then flips (the node's update, exactly one row) and renames the stage over
+  the file last; it used to write the file in place before the row, so an
+  overwrite the database refused had already changed the bytes. A rename, a
+  file move, a folder rename and a folder move change the rows first (a
+  folder's through `mantle_subtree_rewrite`, whose 409 on rows the caller
+  cannot read still comes before anything moves) and rename on disk last;
+  they used to move the disk first and move it back on a failure, so a move
+  the database refused had moved the file (and the watcher could read the
+  old path's unlink before the row moved). A file or folder delete is the
+  checked DELETE (exactly one row: a delete the row rules left at none is
+  refused, 404) and removes the bytes once it has committed, as before. A
+  create was already staged and placed inside its insert (W8b). A folded
+  member file's bytes stay in its space (named by its id): its rename and
+  move change the row only. Email attachments' bytes are stored before the
+  email's transaction (they used to be stored inside it), a drive file's
+  before its node's INSERT (already so); both through the files broker.
+- **Snapshots** (A3b part 2). An app snapshot, a table snapshot and an
+  accepted table's workbook copy are copied first, under a new name (the
+  snapshot's id; an accepted copy's revision token), outside any
+  transaction: they used to be copied inside the history lock's or the
+  registry lock's transaction, held across the whole copy, and an accepted
+  copy was copied over its one name in place. Then one short transaction
+  (the history lock, the registry row lock) checks the item's file is the
+  one copied (a restore or a commit moved meanwhile: taken again, twice at
+  most) and writes the row naming the copy with its size. A table commit's
+  history copy was already a stage of the commit (part 1). A delete, a
+  prune, a purge (an app's trash, a deleted table's history) removes rows
+  only: the row's trigger records its file in `store_tombstones` (0284), in
+  the same transaction, and the sweep removes it (below). They used to
+  remove the files after the rows, outside any transaction, so a crash
+  between left a file no row named, and a backup that dumped the row before
+  the delete could miss its file.
 
 ## The sweep
 
 ONE sweep for every store: `sweepOrphans` (the rule) over the stores'
-specs in `packages/content/src/store-sweep.ts` (tables and app databases),
+specs in `packages/content/src/store-sweep.ts` (tables, app databases, and
+the snapshot store's three folders: `APP_DB_DIR/_snapshots`,
+`TABLE_DB_DIR/_snapshots`, `TABLE_DB_DIR/accepted-snapshots`, each with its
+own memory, held by its store root's restore hold),
 run nightly by the maintenance worker (task `store-sweep`) and by
 `pnpm -C server/web store:sweep [--apply [--allow-many]]`. The stores'
 file names (`revisionNode`), which registry columns name them
@@ -128,6 +187,15 @@ the brokers, the backups and the sweep.
   the accepted copies, the work files) that no row names, whose item HAS a
   row naming other files, all of them on disk: the revision a flip
   replaced, a stage a crash, a refused flip or a failed commit left.
+- **A tombstoned file** (the snapshot store, A3b part 2): a file a deleted
+  or re-pointed row named, recorded by the row's trigger
+  (`store_tombstones`, 0284), goes a grace period after its row went, while
+  no row names it (a restore that brought the row back keeps it), within
+  the run's budget and under the same holds and stops; its folder goes when
+  it empties, and the tombstone once its file is gone. Tombstones live with
+  the rows, so a restore brings back exactly the tombstones of the rows it
+  does not bring back. A store holding files and no row is no hard stop
+  while a tombstone names one of them.
 - **What it never removes, only reports:** a file whose item has no row (a
   deleted item's, a create that never landed, an app's file from before
   A3b; it may be the only copy), every file of an item whose row names a
@@ -201,6 +269,13 @@ same spec as the sweep's (`storeRows`). Without the dump's start every
 revision goes. After a restore, the revisions the restored rows do not
 name are the sweep's, once the restore's hold is lifted.
 
+The snapshot store (A3b part 2): the history folders are hard-linked whole
+(`linkHistoryTree`, the sweep's memory left out), so a backup holds every
+snapshot file on disk, the ones whose rows were deleted after the dump
+began among them (the sweep keeps a tombstoned file a grace period). Every
+accepted copy of a table goes too (`revisionFiles`), the one the dump names
+and the ones a newer copy replaced since.
+
 ## The lint
 
 `eslint-rules/store-brokers.mjs` (rule `mantle-stores/store-brokers`). Each
@@ -209,9 +284,13 @@ store splits its API: readers keep the read entry, and the write API is
 writing functions (with `APP_DB_DIR`). A file that reaches a store's write
 API without a pin for that store fails lint; `eslint-rules/arch-lints.test.ts`
 holds the pins exactly and checks the docs files. The tables store has its
-broker alone; the app database and object store lists name the writers
-part 2 moves behind their brokers (and the profile logo and photo, which
-stay pinned: not one of the six stores).
+broker alone. The object store's writers are the files broker
+(`file-broker.ts`) and the app build broker (and the profile logo and
+photo: not one of the six stores); the app database's are the app broker,
+the snapshot broker (`snapshot-broker.ts`, which copies snapshot and
+accepted files), and the package import's temp file. The files tree's disk
+writes are the files ops' (through `disk.ts`), which the lint does not pin
+(an owner question, A3b part 2).
 
 ## Off boxes
 
@@ -237,6 +316,21 @@ for every box:
 - **An app database write** adds one short transaction (the `write_seq`
   bump, which also reads the file the row names); a statement that then
   fails leaves the revision one higher.
+- **Files** (A3b part 2). An overwrite holds the new bytes beside the old
+  until the flip (a staging name the watcher ignores), and the old ones,
+  hard-linked, until it settles. A rename or move the database refuses
+  answers its refusal with nothing moved; the watcher no longer sees a
+  refused move's unlink and add. A delete a row rule left at none answers
+  not found and keeps the bytes.
+- **Snapshots** (A3b part 2). A deleted, pruned or purged snapshot's file
+  stays on disk until the next nightly sweep a grace period later (up to
+  about a day; the budgets count rows, so they free at once). A purge no
+  longer removes files under an app's or table's history folder that no
+  row ever named: the sweep reports them. A snapshot whose file a restore
+  or commit replaced while it was copied is copied again. Email
+  attachments' bytes are stored before the email's transaction: a sync
+  whose rows never land leaves objects nothing names (shared by content,
+  never swept).
 
 ## Cost
 
@@ -251,11 +345,11 @@ statement adds one short transaction (its lock wait set, then the bump).
 p95 per write (2026-10-13, the workstation, a disk folder, as the owner, 60
 writes each, the second run; main `af5a041a5` against this branch):
 
-| Write | 1,000 rows main / A3b (ms) | 10,000 rows main / A3b (ms) |
-| --- | --- | --- |
-| draft save | 20.3 / 20.2 | 91.7 / 99.3 |
-| op batch | 14.7 / 15.3 | 68.7 / 69.6 |
-| commit | 36.1 / 41.4 | 129.5 / 140.8 |
+| Write      | 1,000 rows main / A3b (ms) | 10,000 rows main / A3b (ms) |
+| ---------- | -------------------------- | --------------------------- |
+| draft save | 20.3 / 20.2                | 91.7 / 99.3                 |
+| op batch   | 14.7 / 15.3                | 68.7 / 69.6                 |
+| commit     | 36.1 / 41.4                | 129.5 / 140.8               |
 
 ## Tests
 
@@ -285,3 +379,21 @@ writes each, the second run; main `af5a041a5` against this branch):
   writes neither file, a single statement waits out a 5 s seed and answers
   busy behind a 15 s one, and the off cells give today's results.
 - `eslint-rules/arch-lints.test.ts`: the pins, the rule, the docs store.
+- `packages/db/src/store-broker.test.ts` (A3b part 2): flip then place (a
+  refusal never touches the disk; place runs once on a retry; a failed
+  commit the database says never landed puts the disk back; a lost
+  acknowledgement keeps it), and the tombstone rule (a tombstoned file goes
+  a grace period after its row, never while a row names it, never one
+  outside the root; the store root's hold; no stop while a tombstone names
+  a file).
+- `server/web/server/a3b2-store-brokers.db.test.ts` (A3b part 2), both
+  checks on: per store a refused caller changes nothing on disk (files: an
+  overwrite, a rename, a file move, a folder rename and move, a delete;
+  snapshots: an app snapshot, a table snapshot, a delete), an allowed
+  caller writes row and disk in step, a folder move with hidden rows still
+  answers 409 with nothing moved, a failed commit puts the files tree back
+  and keeps a snapshot's stage (reported, never removed), a crash between
+  stage and flip leaves the old bytes live and the stage for the
+  staged-leftover sweep, a tombstoned file goes and a named one stays, an
+  accepted copy's old revision goes by its tombstone, a backup holds every
+  file a dumped row names, and the off cells give today's results.
