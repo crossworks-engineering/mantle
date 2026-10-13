@@ -56,6 +56,10 @@ afterAll(async () => {
 describe('STAGED_LEFTOVER_NAME', () => {
   it('matches the name a create stages under, and nothing near it', () => {
     expect(STAGED_LEFTOVER_NAME.test(staged())).toBe(true);
+    // An overwrite's kept old bytes (A3b part 2 fix round 1, L3).
+    expect(STAGED_LEFTOVER_NAME.test(`.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`)).toBe(
+      true,
+    );
     for (const name of [
       `${randomUUID()}.staged.tmp`, // not dot-prefixed
       `.${randomUUID()}.staged.tmp.bak`,
@@ -66,6 +70,8 @@ describe('STAGED_LEFTOVER_NAME', () => {
       `.${randomUUID()}.staged`,
       'report.staged.tmp',
       '.upload.part',
+      `.${randomUUID()}.kept-.tmp`,
+      `.${randomUUID()}.kept-X1.tmp`,
     ]) {
       expect(STAGED_LEFTOVER_NAME.test(name), name).toBe(false);
     }
@@ -110,6 +116,21 @@ describe('sweepStagedLeftovers', () => {
 
     // Idempotent: a second run finds nothing.
     expect(await sweepStagedLeftovers({ root })).toEqual({ removed: 0, skipped: null });
+  });
+
+  it("an overwrite's kept old bytes go by the time in their name, not their old write time (A3b part 2 fix round 1, L3)", async () => {
+    const dir = path.join(root, 'kept');
+    const keptNow = await put(
+      path.join(dir, `.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`),
+      5 * HOUR,
+    );
+    const keptLong = await put(
+      path.join(dir, `.${randomUUID()}.kept-${(Date.now() - 2 * HOUR).toString(36)}.tmp`),
+      5 * HOUR,
+    );
+    await sweepStagedLeftovers({ root });
+    expect(await exists(keptNow)).toBe(true);
+    expect(await exists(keptLong)).toBe(false);
   });
 
   it('never follows a symlink: a linked file or folder keeps its target', async () => {

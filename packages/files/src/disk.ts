@@ -124,15 +124,17 @@ export function overwritePlacement(staged: StagedFile): {
   release: () => Promise<void>;
   discard: () => Promise<void>;
 } {
-  const keep = path.join(path.dirname(staged.finalPath), `.${randomUUID()}.staged.tmp`);
+  // The old bytes keep their own times (a hard link); the name says when
+  // they were kept, which the staged-leftover sweep goes by (fix round 1,
+  // L3).
+  const keep = path.join(
+    path.dirname(staged.finalPath),
+    `.${randomUUID()}.kept-${Date.now().toString(36)}.tmp`,
+  );
   let kept = false;
-  // The old bytes' times, put back with them (`unplace`).
-  let times: { atime: Date; mtime: Date } | null = null;
   return {
     place: async () => {
       try {
-        const st = await fs.stat(staged.finalPath);
-        times = { atime: st.atime, mtime: st.mtime };
         await fs.link(staged.finalPath, keep);
         kept = true;
       } catch (err) {
@@ -146,21 +148,11 @@ export function overwritePlacement(staged: StagedFile): {
           kept = true;
         }
       }
-      if (kept) {
-        // The staged-leftover sweep goes by the write time: the kept old
-        // bytes are as new as the link, or a crash would leave them to be
-        // reaped at once (fix round 1, L3). Their own times come back with
-        // them (`unplace`).
-        const now = new Date();
-        await fs.utimes(keep, now, now).catch(() => {});
-      }
       await fs.rename(staged.tempPath, staged.finalPath);
     },
     unplace: async () => {
-      if (kept) {
-        await fs.rename(keep, staged.finalPath);
-        if (times) await fs.utimes(staged.finalPath, times.atime, times.mtime).catch(() => {});
-      } else await fs.unlink(staged.finalPath).catch(() => {});
+      if (kept) await fs.rename(keep, staged.finalPath);
+      else await fs.unlink(staged.finalPath).catch(() => {});
       kept = false;
     },
     release: async () => {
@@ -198,8 +190,19 @@ export async function placedBytesIntact(staged: StagedFile): Promise<boolean> {
 // it, so nothing else ever removes it. The nightly `files-staged-reap`
 // maintenance sweep (also run by hand) unlinks them after an hour.
 
-/** The name `stagingPathFor` gives a staging file, and nothing else. */
-export const STAGED_LEFTOVER_NAME = /^\.[0-9a-f-]{36}\.staged\.tmp$/;
+/** The name `stagingPathFor` gives a staging file, or `overwritePlacement`
+ *  the old bytes it keeps (`.<uuid>.kept-<time>.tmp`, the time it kept them
+ *  in base 36), and nothing else. */
+export const STAGED_LEFTOVER_NAME = /^\.[0-9a-f-]{36}\.(?:staged|kept-[0-9a-z]{1,12})\.tmp$/;
+
+/** When a staging file was made: the time in a kept file's name (a hard link
+ *  keeps the old bytes' write time: A3b part 2 fix round 1, L3), else its
+ *  write time. */
+function stagedAt(name: string, mtimeMs: number): number {
+  const m = /\.kept-([0-9a-z]+)\.tmp$/.exec(name);
+  const t = m ? parseInt(m[1]!, 36) : NaN;
+  return Number.isFinite(t) ? Math.max(t, mtimeMs) : mtimeMs;
+}
 
 /** A staging file this old is residue: a live create places or drops its
  *  staging file within one request. */
@@ -211,8 +214,9 @@ const STAGED_SWEEP_MAX_DEPTH = 8;
 
 /**
  * Unlink the staging files a crash left under the files root: only names
- * matching STAGED_LEFTOVER_NAME, only regular files, only when last written
- * an hour ago or more. Never follows a symlink (a linked folder is not
+ * matching STAGED_LEFTOVER_NAME, only regular files, only when made (the
+ * time a kept file's name carries, else the write time) an hour ago or
+ * more. Never follows a symlink (a linked folder is not
  * entered, a linked file is not touched), never enters a dot folder (the
  * upload spool, thumbnails) and never enters `exclude` (other stores, such
  * as the app and table databases, should one be mounted inside the files
@@ -262,7 +266,7 @@ export async function sweepStagedLeftovers(
       if (!e.isFile() || !STAGED_LEFTOVER_NAME.test(e.name)) continue;
       try {
         const st = await fs.lstat(p);
-        if (!st.isFile() || st.mtimeMs >= cutoff) continue;
+        if (!st.isFile() || stagedAt(e.name, st.mtimeMs) >= cutoff) continue;
         if (!opts.dryRun) await fs.unlink(p);
         removed++;
       } catch {
