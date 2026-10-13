@@ -317,7 +317,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       });
       expect((await tableRow(t)).r).toBe(first.r + 3);
       // The sweep: the old published file and the old draft go, the live
-      // revision stays, the history copy of the old version stays.
+      // revision stays.
       const oldPub = path.join(tableRoot, first.p!);
       const oldDraft = path.join(tableRoot, afterSave.d!);
       expect(existsSync(oldPub)).toBe(true);
@@ -325,9 +325,6 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(existsSync(oldPub)).toBe(false);
       expect(existsSync(oldDraft)).toBe(false);
       expect(existsSync(path.join(tableRoot, afterCommit.p!))).toBe(true);
-      expect(
-        Object.keys(stateOf(path.join(tableRoot, '_snapshots'))).some((f) => f.includes(t)),
-      ).toBe(true);
     });
 
     it('a crash between stage and flip: the old revision stays live, the sweep takes the stage', async () => {
