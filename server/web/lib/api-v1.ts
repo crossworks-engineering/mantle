@@ -74,7 +74,8 @@ export type ApiV1Route = {
   access: 'read' | 'write';
   /** About the key itself (whoami): every key may call it, whatever its
    *  areas. The route's ROUTE_POLICY row carries it (keySelf), so the
-   *  gate's key narrower answers what keyMayCall answers. */
+   *  gate's key narrower would answer what keyMayCall answers (it does not
+   *  run on HTTP: the HTTP caller sets no key areas). */
   self?: true;
   /** The v1 file has its own handler (it narrows a key past the route it
    *  wraps): not an alias of the route without /v1 (ROUTE_POLICY aliasOf,

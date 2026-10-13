@@ -171,9 +171,11 @@ function httpCaller(via: CallerVia, accessKey?: AccessKeyGrant): GateCaller {
     actor: systemActor('http:no-login'),
     via,
     // A key's write switch. gateAccessKey judged the key's areas and its
-    // read-only switch first, on the same row (rowKeyRoute: the row's
+    // read-only switch first, on the same row (requestKeyRoute: the row's
     // effect, pinned to the key table's access by route-policy.test.ts),
     // with the 403 bodies the API promises; this narrows nothing past it.
+    // No `facts.keyAreas`: the gate's key narrower does not run on HTTP
+    // (gateAccessKey and accessKeyLogin judge the areas).
     ...(accessKey ? { write: accessKey.access === 'read_write' } : {}),
     admin: null,
     // The request slot (workspaces W6a), opened for the handler.

@@ -62,8 +62,12 @@ function mcpConnection(caller: GateCaller): boolean {
  *  them (a policy with none is open only to an all-areas key). A policy
  *  about the key itself (`keySelf`: the whoami route) is open to every
  *  key, as keyMayCall answers (server/web lib/api-v1.ts; pinned against it
- *  for every v1 row by route-policy.test.ts). The tools' policies carry
- *  their key area; A4's route rows carry their own. */
+ *  for every v1 row by route-policy.test.ts, with the areas set on the
+ *  caller by hand). The tools' policies carry their key area; A4's route
+ *  rows carry their own, but on HTTP this narrows nothing yet: the gate's
+ *  HTTP caller (server/web gate.ts httpCaller) sets no `facts.keyAreas`,
+ *  so a key's areas there are judged by gateAccessKey and accessKeyLogin
+ *  (keyMayCall), not here. */
 const keyNarrower: Narrower = (caller, policy) => {
   const areas = (caller.facts?.keyAreas ?? null) as readonly string[] | null;
   if (!narrowedCaller(caller) || areas === null) return null;
