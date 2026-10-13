@@ -4,15 +4,15 @@
  * the tool policy table, copied BEFORE the codemod that puts a policy on
  * every builtin. Each list, as the code reads it, must equal its literal
  * here; the literals never change with the codemod, only how the list is
- * read (CURRENT, below).
+ * read (CURRENT, below: two lists their modules did not export were read
+ * from the source before the codemod; one is an exported view now, the
+ * other each app tool's own policy).
  *
  * In @mantle/runtime: the lowest package that sees every builtin (this
  * package's heartbeat tools are builtins too, registered at boot) and
  * heartbeats/fire.ts's egress list. No database: the resolvers' probes
  * stay off it (the recall map lookup is stubbed).
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../tools/src/builtins-recall-write', async (importOriginal) => ({
@@ -34,23 +34,13 @@ import {
   OWNER_ONLY_IN_SCOPE,
   TOOL_ADMIN_AREAS,
   UNTRUSTED_CONTENT_TOOL_SLUGS,
+  listBuiltins,
+  policyLowers,
 } from '@mantle/tools';
 import { isLoweringCall } from '@mantle/tools/client-sourced';
 import { RECIPE_FORBIDDEN_SLUGS } from '../../tools/src/recipe';
+import { HEARTBEAT_EGRESS_SLUGS } from './heartbeats/fire';
 import { registerHeartbeatTools } from './heartbeats/tools';
-
-const ROOT = join(__dirname, '..', '..', '..');
-
-/** The strings of the list literal `name` is declared with in `file` (for a
- *  list its module does not export). */
-function sourceList(file: string, name: string): string[] {
-  const text = readFileSync(join(ROOT, file), 'utf8');
-  const at = text.indexOf(`const ${name}`);
-  if (at < 0) throw new Error(`${name} is not declared in ${file}`);
-  const open = text.indexOf('[', at);
-  const close = text.indexOf(']', open);
-  return [...text.slice(open, close).matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]!);
-}
 
 /** How each list is read today. */
 const CURRENT: Record<string, () => Iterable<string>> = {
@@ -63,11 +53,15 @@ const CURRENT: Record<string, () => Iterable<string>> = {
   MEMBER_APP_REFUSED_SLUGS: () => MEMBER_APP_REFUSED_SLUGS,
   BANNED_ITEM_TOOLS: () => BANNED_ITEM_TOOLS,
   UNTRUSTED_CONTENT_TOOL_SLUGS: () => UNTRUSTED_CONTENT_TOOL_SLUGS,
-  CODE_TOOLS: () => sourceList('packages/tools/src/builtins-apps.ts', 'CODE_TOOLS'),
+  // Read once, at definition time, from each app tool's own policy
+  // (builtins-apps.ts withAuthorCeiling): no list is left.
+  CODE_TOOLS: () =>
+    listBuiltins()
+      .filter((d) => d.policy.outside?.appCode === true)
+      .map((d) => d.slug),
   APP_DATA_READ_TOOL_SLUGS: () => APP_DATA_READ_TOOL_SLUGS,
   APP_DATA_WRITE_TOOL_SLUGS: () => APP_DATA_WRITE_TOOL_SLUGS,
-  HEARTBEAT_EGRESS_SLUGS: () =>
-    sourceList('packages/runtime/src/heartbeats/fire.ts', 'HEARTBEAT_EGRESS_SLUGS'),
+  HEARTBEAT_EGRESS_SLUGS: () => HEARTBEAT_EGRESS_SLUGS,
 };
 
 /** The slug lists, each sorted (the order of a Set or a list was never
@@ -563,5 +557,24 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     expect(isLoweringCall('email_page', {})).toBe(false);
     expect(isLoweringCall('page_update', { level: 'public' })).toBe(false);
     expect(isLoweringCall('no_such_tool', {})).toBe(false);
+  });
+
+  it("isLoweringCall answers as each builtin's policy.lowering says", () => {
+    const probes = [
+      {},
+      { level: 'client' },
+      { level: ' Public ' },
+      { level: 'team' },
+      { includeLink: true },
+      { includeLink: 'true' },
+      { includeLink: false },
+    ];
+    for (const d of listBuiltins()) {
+      for (const input of probes) {
+        expect(policyLowers(d.policy, input), `${d.slug} ${JSON.stringify(input)}`).toBe(
+          isLoweringCall(d.slug, input),
+        );
+      }
+    }
   });
 });

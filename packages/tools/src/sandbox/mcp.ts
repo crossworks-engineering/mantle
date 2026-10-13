@@ -13,7 +13,12 @@ import { DEFAULT_TIMEOUT_S, MAX_TIMEOUT_S, sandboxd, sandboxRefusal } from './co
 
 export const sandbox_mcp_tools: BuiltinToolDef = {
   slug: 'sandbox_mcp_tools',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+  },
   name: 'List sandbox toolbelt',
   description:
     "List the tools of the sandbox's embedded Claude Code MCP server (Read, Grep, Glob, Edit, " +
@@ -71,6 +76,13 @@ export const sandbox_mcp_tools: BuiltinToolDef = {
 
 export const sandbox_mcp_call: BuiltinToolDef = {
   slug: 'sandbox_mcp_call',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Call sandbox toolbelt',
   description:
     "Invoke one tool of the sandbox's Claude Code toolbelt (names + schemas from " +

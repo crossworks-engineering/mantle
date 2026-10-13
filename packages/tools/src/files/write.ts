@@ -21,9 +21,11 @@ import { type BuiltinToolDef } from '../types';
 import { str, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
+import { edit } from '../item-write-gate';
 
 export const file_create: BuiltinToolDef = {
   slug: 'file_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'file', keyArea: 'files' },
   name: 'Create / overwrite a file',
   description:
     'Create or overwrite a **named text file** in a specific folder (e.g. `notes.md`, `config.json`, `recipe.txt`). Use when the user asks for a file with a particular name/extension in a particular place. Filename is lowercased and sanitised automatically. ' +
@@ -101,6 +103,13 @@ export const file_create: BuiltinToolDef = {
 
 export const file_rename: BuiltinToolDef = {
   slug: 'file_rename',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('file_id')],
+    keyArea: 'files',
+  },
   name: 'Rename a file',
   description:
     "Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. rename `huntsman-report.xlsx` → stem `customerx-report`). Find the file id with `file_list` / `search_nodes` first. To change a file's CONTENTS use `file_create` with overwrite=true; to rename a FOLDER use `folder_rename`.",
@@ -138,6 +147,13 @@ export const file_rename: BuiltinToolDef = {
 
 export const folder_rename: BuiltinToolDef = {
   slug: 'folder_rename',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('folder_id')],
+    keyArea: 'files',
+  },
   name: 'Rename a folder',
   description:
     "Rename a folder in place. `new_name` is lowercased and sanitised automatically. Every file and sub-folder inside moves with it (their paths update), so this is safe for a folder full of content. Find the folder id with `folder_list` / `folder_get_by_path` first. The root `files` folder can't be renamed. To change a folder's DESCRIPTION use `folder_describe`.",
@@ -180,6 +196,13 @@ export const folder_rename: BuiltinToolDef = {
 
 export const folder_describe: BuiltinToolDef = {
   slug: 'folder_describe',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('folder_id')],
+    keyArea: 'files',
+  },
   name: 'Update a folder description',
   description:
     "Set or update a folder's free-text description (what the folder is for). Find the folder id with `folder_list` / `folder_get_by_path` first. This does NOT rename the folder — use `folder_rename` for that.",
@@ -229,6 +252,13 @@ const INDEXING_MODE_SCHEMA = {
 
 export const file_set_indexing: BuiltinToolDef = {
   slug: 'file_set_indexing',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('file_id')],
+    keyArea: 'files',
+  },
   name: 'Set file indexing mode',
   description:
     "Control whether ONE file's CONTENT is indexed into the brain. 'metadata' keeps the file fully stored, shareable and findable by name/type/tags, but its content is never read: no passages, no facts — search_chunks and content questions will not see inside it. 'full' restores normal indexing (re-extraction is queued and takes a moment). 'inherit' clears the file's own flag so the folder chain decides. For a whole folder use `folder_set_indexing`; this is the per-file override.",
@@ -272,6 +302,13 @@ export const file_set_indexing: BuiltinToolDef = {
 
 export const folder_set_indexing: BuiltinToolDef = {
   slug: 'folder_set_indexing',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('folder_id')],
+    keyArea: 'files',
+  },
   name: 'Set folder indexing mode',
   description:
     "Control whether the CONTENT of every file under a folder is indexed into the brain. 'metadata' turns the subtree into a store-and-share area (a photo gallery, temp files, transcription clips): files stay fully stored and findable by name/type/tags, but their content is never read into search or the knowledge graph. 'full' restores content indexing for the subtree — NOTE this re-runs real extraction over every affected file, which costs LLM calls in proportion to the file count. 'inherit' clears the folder's own flag. Individual files can override either way with `file_set_indexing`. Returns how many files were queued for re-indexing.",

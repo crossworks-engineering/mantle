@@ -52,6 +52,7 @@ const MAX_INLINE_IMAGE_BYTES = 6_000_000;
 
 const show_image: BuiltinToolDef = {
   slug: 'show_image',
+  policy: { effect: 'write', spends: 'none', scope: 'any' },
   name: 'Show an image',
   description:
     "Display a stored image to the person you're talking to; returns the file's metadata and renders the picture BELOW your reply, not at the point you called it. Use for a one-off visual answer (a diagram, a chart, a screenshot someone asked to see) and on Telegram, which this is the only way to reach. **To place a picture at a chosen spot in the reply or in a page, write `![alt](media:<file-id>)` there instead; to quote a document's text use `file_read`.** Images pulled out of documents (tagged `extracted-image`) are the common case: locate one with `search_nodes`. Re-serves stored bytes only; generates nothing.",

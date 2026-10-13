@@ -19,6 +19,7 @@
  */
 
 import type { RecipeStep } from '@mantle/db';
+import { policySlugSet } from './tool-policy';
 
 export type { RecipeStep };
 
@@ -32,41 +33,15 @@ export const MAX_RECIPE_DEPTH = 4;
  * surfaces — composing them would let an agent-authored recipe escalate past
  * the "agents author safe compositions only" boundary. Shell-kind tools and
  * any confirm-gated tool are refused separately (by kind / flag), so this set
- * is only the dangerous *builtins* (which are kind:'builtin', not 'shell').
+ * is only the dangerous *builtins* (which are kind:'builtin', not 'shell'):
+ * shell-equivalents and host escapes (run_terminal, the sandbox tools),
+ * secrets and privilege, delegation into other agents, the tool-authoring
+ * and grant kit, web_fetch, and recipe authoring itself. A view of the tool
+ * policy table (tool-policy.ts, A5): `recipe.step` forbidden.
  */
-export const RECIPE_FORBIDDEN_SLUGS: ReadonlySet<string> = new Set([
-  // shell-equivalent / host escape
-  'run_terminal',
-  'sandbox_create',
-  'sandbox_exec',
-  'sandbox_stop',
-  'sandbox_rm',
-  'sandbox_publish',
-  'sandbox_mcp_call',
-  // secrets + privilege
-  'secret_create',
-  'update_persona',
-  // delegation / recursion into other agents
-  'invoke_agent',
-  // tool-authoring + grant kit (minting/granting capability)
-  'api_tool_create',
-  'api_tool_update',
-  'api_tool_delete',
-  'api_tool_test',
-  'api_tool_list',
-  'api_tool_get',
-  'api_key_refs',
-  'tool_group_ensure',
-  'tool_group_list',
-  'agent_list',
-  'agent_grant_tool_group',
-  'agent_set_thinking_effort',
-  'web_fetch',
-  // recipe authoring itself (no self-referential authoring from inside a recipe)
-  'tool_catalog',
-  'recipe_tool_create',
-  'recipe_tool_test',
-]);
+export const RECIPE_FORBIDDEN_SLUGS: ReadonlySet<string> = policySlugSet(
+  (p) => p.recipe?.step === 'forbidden',
+);
 
 /** Handler kinds that an agent may bundle into a group + grant. http (Toolsmith
  *  classic) and recipe (Tier 1). Shell + builtin stay operator/manifest-owned. */

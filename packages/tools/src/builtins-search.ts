@@ -33,7 +33,7 @@ import { ownerKeysOff } from './surface';
 
 export const search_nodes: BuiltinToolDef = {
   slug: 'search_nodes',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Search nodes',
   description:
     "Hybrid full-text + semantic search across the user's entire Mantle (notes, files, emails, events, tasks, pages, telegram messages — everything). **Ranked by relevance, NOT by date.** " +
@@ -172,8 +172,15 @@ export const search_nodes: BuiltinToolDef = {
 
 export const search_chunks: BuiltinToolDef = {
   slug: 'search_chunks',
-  spends: true,
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'model',
+    startsModelWork: true,
+    scope: 'any',
+    peerRisky: true,
+    keyArea: 'search',
+    memberApp: 'refused',
+  },
   name: 'Search document passages',
   description:
     'Semantic (vector) search over document passages — finds the most relevant *sections* inside long files, pages, emails, and documentation (not just whole-node hits). **Reach for this FIRST on a content question** ("what does the CoF procedure say about inventory grouping?"): it returns the exact passages, so you answer (and quote) without loading whole files into context. ' +
@@ -342,7 +349,7 @@ function chunkKey(h: { nodeId: string; ordinal: number }): string {
 
 export const read_section: BuiltinToolDef = {
   slug: 'read_section',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Read a document section',
   description:
     "Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and `file_read`/`node_read` (the entire document). Reach for this once you know WHERE the answer lives: feed a `search_chunks` hit's `nodeId` plus its `heading` (or an ordinal range) here to read the whole procedure / clause / table contiguously, WITHOUT loading the entire file into context. " +
@@ -409,7 +416,7 @@ export const read_section: BuiltinToolDef = {
 
 export const tree_list: BuiltinToolDef = {
   slug: 'tree_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'List tree children',
   description:
     "List children of a branch in the user's tree (the universal navigator — whatever kinds of nodes live under that branch). Pass `path` to scope (ltree, e.g. 'files.work'). Omit for top-level branches. " +

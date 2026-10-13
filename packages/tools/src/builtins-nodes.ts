@@ -16,10 +16,11 @@ import { errorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
 import { HIDDEN_NODE_ERROR, surfaceHiddenNodeTypes } from './team-visibility';
 import { isOwnerSurface } from './surface';
+import { edit, read } from './item-write-gate';
 
 export const brain_capacity: BuiltinToolDef = {
   slug: 'brain_capacity',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: { area: 'settings' } },
   name: 'Check brain capacity',
   description:
     "Corpus size vs the split policy: document and passage-vector counts with a zone per axis — 'green' (no action), 'watch' (run recall checks, identify the growing category), 'split' (break the dominant category into a federated breakout brain). Use for capacity/health checks and scheduled monitoring; alert the user when the zone is not green. Read-only.",
@@ -40,7 +41,7 @@ export const brain_capacity: BuiltinToolDef = {
 
 export const node_read: BuiltinToolDef = {
   slug: 'node_read',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Read a node',
   description:
     'Universal reader — read the full content of any node by id. Returns title, type, tags, path, summary, and the full `data` blob (markdown body for notes, body+location+starts_at for events, status+due_at for tasks, etc.). ' +
@@ -136,6 +137,7 @@ async function readingWorkspaces(nodeId: string): Promise<string[]> {
 
 export const content_supersede: BuiltinToolDef = {
   slug: 'content_supersede',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', items: [edit('node_id')] },
   ownerOnly: true,
   name: 'Mark content superseded',
   description:
@@ -238,6 +240,7 @@ export const content_supersede: BuiltinToolDef = {
 
 export const process_extraction: BuiltinToolDef = {
   slug: 'process_extraction',
+  policy: { effect: 'write', spends: 'ownerKey', scope: 'any', items: [read('node_id')] },
   name: 'Kick the extractor',
   description:
     "Re-fires the pg_notify('node_ingested') signal for any nodes missing data.summary or embedding. Optional `node_id` to target a single node; optional `types` to restrict by node kind; optional `limit` to cap (default 100). Idempotent — already-extracted nodes are short-circuited by the extractor.",

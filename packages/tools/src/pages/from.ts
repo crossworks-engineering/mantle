@@ -31,9 +31,17 @@ import {
   placementOutput,
   placementRefusal,
 } from './common';
+import { pageFromFileSource, pageFromNoteSource, pageFromNotesSources } from '../item-write-gate';
 
 export const page_from_file: BuiltinToolDef = {
   slug: 'page_from_file',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'page',
+    items: pageFromFileSource,
+  },
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Create page from file',
   description:
@@ -187,6 +195,13 @@ export const page_from_file: BuiltinToolDef = {
 
 export const page_from_note: BuiltinToolDef = {
   slug: 'page_from_note',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'page',
+    items: pageFromNoteSource,
+  },
   preconditions: [...NOTE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Create page from note',
   description:
@@ -313,6 +328,13 @@ export const page_from_note: BuiltinToolDef = {
 
 export const page_from_notes: BuiltinToolDef = {
   slug: 'page_from_notes',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'page',
+    items: pageFromNotesSources,
+  },
   preconditions: FOLDER_ID_PRE,
   name: 'Create page from several notes',
   description:
@@ -475,6 +497,7 @@ export const page_from_notes: BuiltinToolDef = {
 
 export const page_from_journal: BuiltinToolDef = {
   slug: 'page_from_journal',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'page' },
   preconditions: FOLDER_ID_PRE,
   name: 'Create page from journal entries',
   description:

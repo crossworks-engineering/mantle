@@ -206,6 +206,7 @@ async function loadCatalog(): Promise<
 
 const openrouter_rankings: BuiltinToolDef = {
   slug: 'openrouter_rankings',
+  policy: { effect: 'write', spends: 'none', scope: 'admin' },
   ownerOnly: true,
   name: 'OpenRouter usage rankings',
   description:
@@ -288,6 +289,7 @@ const openrouter_rankings: BuiltinToolDef = {
 
 const openrouter_benchmarks: BuiltinToolDef = {
   slug: 'openrouter_benchmarks',
+  policy: { effect: 'write', spends: 'none', scope: 'admin' },
   ownerOnly: true,
   name: 'OpenRouter benchmarks',
   description:
@@ -340,6 +342,7 @@ const openrouter_benchmarks: BuiltinToolDef = {
 
 const openrouter_task_classes: BuiltinToolDef = {
   slug: 'openrouter_task_classes',
+  policy: { effect: 'write', spends: 'none', scope: 'admin' },
   ownerOnly: true,
   name: 'OpenRouter task classifications',
   description:
@@ -358,6 +361,11 @@ const openrouter_task_classes: BuiltinToolDef = {
 
 const model_catalog: BuiltinToolDef = {
   slug: 'model_catalog',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true, adminOnly: true },
+  },
   ownerOnly: true,
   name: 'Model catalog with pricing',
   description:
@@ -420,6 +428,7 @@ const POOL_HINT = `valid pools: ${MODEL_POOLS.map((p) => p.id).join(', ')}`;
 
 const model_pool_list: BuiltinToolDef = {
   slug: 'model_pool_list',
+  policy: { effect: 'write', spends: 'none', scope: { area: 'settings', systemWhole: true } },
   name: 'List curated model pools',
   description:
     'The curated pools and their current entries (name, vendor, per-provider routes, pricing snapshot, rating, note, order) plus each pool’s purpose. Read this FIRST when curating — pools the owner already filled reflect their judgment; say so before replacing entries. The owner sees the same data at /models/pools.',
@@ -487,6 +496,12 @@ async function poolFitIssue(pool: string, routes: CuratedRoute[]): Promise<strin
 
 const model_pool_set: BuiltinToolDef = {
   slug: 'model_pool_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true, adminOnly: true },
+    peerRisky: true,
+  },
   ownerOnly: true,
   name: 'Add or update a curated pool entry',
   description:
@@ -612,6 +627,12 @@ const model_pool_set: BuiltinToolDef = {
 
 const model_pool_remove: BuiltinToolDef = {
   slug: 'model_pool_remove',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true, adminOnly: true },
+    peerRisky: true,
+  },
   ownerOnly: true,
   name: 'Remove a curated pool entry',
   description:

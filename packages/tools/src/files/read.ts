@@ -22,7 +22,7 @@ import { FILE_ID_PRE } from '../builtins-common';
 
 export const folder_list: BuiltinToolDef = {
   slug: 'folder_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files', keyEmail: true },
   name: 'List folders',
   description:
     "List folders (only) in the user's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') for that folder's immediate sub-folders; pass `tree: true` for every folder under the root. " +
@@ -57,7 +57,7 @@ export const folder_list: BuiltinToolDef = {
 
 export const file_list: BuiltinToolDef = {
   slug: 'file_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files', keyEmail: true },
   name: 'List files in a folder',
   description:
     "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
@@ -94,7 +94,7 @@ const FILE_HEAD_CHARS = 4000;
 
 export const file_read: BuiltinToolDef = {
   slug: 'file_read',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   name: 'Read a file',
   description:
     "Read a file's content by id. For text files (.md / .txt / .json / .yaml) returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, returned here so you can read or quote the document's actual contents. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). " +
@@ -199,7 +199,7 @@ export const file_read: BuiltinToolDef = {
 
 export const file_get: BuiltinToolDef = {
   slug: 'file_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   name: 'Fetch file metadata',
   description:
     "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. " +
@@ -231,7 +231,7 @@ export const file_get: BuiltinToolDef = {
 
 export const folder_get_by_path: BuiltinToolDef = {
   slug: 'folder_get_by_path',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   name: 'Look up folder by path',
   description:
     "Look up a folder's metadata + description by its ltree path. " +

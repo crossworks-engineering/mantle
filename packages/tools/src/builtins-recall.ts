@@ -179,7 +179,7 @@ async function nodePayload(ownerId: string, map: MapRow, row: typeof recallNodes
 
 const recall_index: BuiltinToolDef = {
   slug: 'recall_index',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'List the Recall maps',
   description:
     "The catalog of this brain's Recall maps — owner-authored memory maps for agents. Each entry says WHEN to enter it ('enter_when'). Call this before working in a domain a map covers, then recall_open the relevant map and follow its options. For prompts (reusable procedures/styles), recall_match finds them by meaning instead.",
@@ -258,7 +258,7 @@ const recall_index: BuiltinToolDef = {
 
 const recall_open: BuiltinToolDef = {
   slug: 'recall_open',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Open a Recall map',
   description:
     "Enter a Recall map at its index node: the map's own content plus its options — each option says where it leads and when to follow it ('use when …'). Follow an option with recall_go(map, target). Maps come from recall_index.",
@@ -298,7 +298,7 @@ const recall_open: BuiltinToolDef = {
 
 const recall_go: BuiltinToolDef = {
   slug: 'recall_go',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Go to a Recall node',
   description:
     "Read one node of a Recall map by its slug — the 'target' of an option from recall_open/recall_go, or the winner from recall_match. Returns the node's content and its own options.",
@@ -371,7 +371,7 @@ const recall_go: BuiltinToolDef = {
 
 const recall_match: BuiltinToolDef = {
   slug: 'recall_match',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Match a Recall prompt',
   description:
     "Find the owner's Recall PROMPTS (reusable procedures, styles, checklists) that fit a task, by meaning. Call at the start of a distinct task with one line describing it; read each hit's 'use_when' to judge fit, then open the winner with recall_go(map, target) and apply it. Returns pointers only — at most 3, best first. No hits above the floor means no prompt covers this; just proceed.",

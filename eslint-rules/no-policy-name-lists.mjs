@@ -8,7 +8,9 @@
  * eslint-rules/arch-lints.test.ts fails on any other count, so a pin only
  * goes down. No editor rule: a tool list needs the slug set of the repo.
  */
-/** @type {Record<string, { lists: number, entries: number }>} A0 baseline */
+/** @type {Record<string, { lists: number, entries: number }>} A0 baseline;
+ *  A5 step 1: the @mantle/tools access lists are views of the tool policy
+ *  table, and a list of definition objects is not counted (RUN_TOOLS). */
 export const TOOL_LIST_PINS = {
   'packages/content-core/src/profile-projections.ts': { lists: 1, entries: 4 },
   'packages/mcp-core/src/build-server.ts': { lists: 1, entries: 9 },
@@ -17,21 +19,10 @@ export const TOOL_LIST_PINS = {
   'packages/mcp-core/src/key-scope.ts': { lists: 2, entries: 19 },
   'packages/mcp-core/src/login-surface.ts': { lists: 3, entries: 32 },
   'packages/mcp-core/src/register/tables.ts': { lists: 1, entries: 3 },
-  'packages/runtime/src/heartbeats/fire.ts': { lists: 1, entries: 3 },
-  'packages/tools/src/admin-gate.ts': { lists: 4, entries: 141 },
-  'packages/tools/src/builtins-app-data.ts': { lists: 1, entries: 3 },
-  'packages/tools/src/builtins-apps.ts': { lists: 1, entries: 6 },
   'packages/tools/src/builtins-contacts.ts': { lists: 1, entries: 5 },
   'packages/tools/src/builtins-formulas.ts': { lists: 1, entries: 5 },
   'packages/tools/src/builtins-journal.ts': { lists: 1, entries: 5 },
-  'packages/tools/src/builtins-runs.ts': { lists: 2, entries: 18 },
-  'packages/tools/src/client-sourced.ts': { lists: 1, entries: 4 },
-  'packages/tools/src/create-tools.ts': { lists: 1, entries: 28 },
-  'packages/tools/src/item-write-gate.ts': { lists: 1, entries: 98 },
-  'packages/tools/src/member-app-tools.ts': { lists: 1, entries: 4 },
-  'packages/tools/src/recipe.ts': { lists: 1, entries: 26 },
   'packages/tools/src/selection/deferred.ts': { lists: 1, entries: 20 },
-  'packages/tools/src/untrusted.ts': { lists: 1, entries: 4 },
 };
 
 /** @type {Record<string, number>} route lists per file, A0 baseline */

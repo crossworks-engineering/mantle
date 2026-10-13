@@ -46,6 +46,7 @@ import { resolveTools } from './resolve';
 import { loadAgentGrant } from './agent-grants';
 import { notFound } from './errors';
 import { ownerSurfaceLoginId } from './surface';
+import { policySlugSet } from './tool-policy';
 
 /** Tools that may never run as queue items: the run tools themselves (no
  *  recursion — `run_audit` especially, or a queue item could rubber-stamp the
@@ -54,16 +55,12 @@ import { ownerSurfaceLoginId } from './surface';
  *
  *  SINGLE SOURCE: `execute-item.ts` imports this set for the execution-time
  *  re-check (defense in depth), and `builtins-runs.test.ts` asserts every
- *  RUN_TOOLS slug is in it — add a run_* tool and the test fails until it's
- *  banned here too. */
-export const BANNED_ITEM_TOOLS: ReadonlySet<string> = new Set([
-  'run_plan',
-  'run_append',
-  'run_state',
-  'run_cancel',
-  'run_audit',
-  'invoke_agent',
-]);
+ *  RUN_TOOLS slug is in it — add a run_* tool and the test fails until its
+ *  policy bans it too. A view of the tool policy table (tool-policy.ts, A5):
+ *  `recipe.runItem` banned. */
+export const BANNED_ITEM_TOOLS: ReadonlySet<string> = policySlugSet(
+  (p) => p.recipe?.runItem === 'banned',
+);
 
 const MAX_PLAN_DEPTH = 4;
 const MAX_PLAN_NODES = 50;
@@ -640,6 +637,13 @@ async function loadOwnedRun(ownerId: string, runId: unknown) {
 export const RUN_TOOLS: BuiltinToolDef[] = [
   {
     slug: 'run_plan',
+    policy: {
+      effect: 'write',
+      spends: 'none',
+      scope: 'admin',
+      peerRisky: true,
+      recipe: { runItem: 'banned' },
+    },
     name: 'Plan a durable run',
     description:
       'Create a durable run — a tree of seq/par groups of tool_call, note, worker_invoke, audit, and ask_human items executed in the background — and return its id plus the tree. Use for delegated multi-step jobs worth tracking; for a quick answer or one or two calls, call the tools inline. The default shape for real work: seq( note(plan) → worker_invoke(step) → audit → … ) — every worker step followed by an audit you will judge (via `run_audit`) when resumed. An ask_human step parks the run until the operator answers (pending approvals) — the consent gate for side-effecting phases. You are resumed with compiled results when the run completes. Check progress with `run_state`, extend with `run_append`, stop with `run_cancel`.',
@@ -753,6 +757,13 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   },
   {
     slug: 'run_append',
+    policy: {
+      effect: 'write',
+      spends: 'none',
+      scope: 'admin',
+      peerRisky: true,
+      recipe: { runItem: 'banned' },
+    },
     name: 'Append items to a run',
     description:
       'Append tool_call / note items (or nested groups) to an OPEN group of an existing run; returns the new item ids. Sealed (completed) groups refuse — check `run_state` first and target an open group, or start a new run with `run_plan`. Same node shapes as `run_plan`.',
@@ -847,7 +858,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   },
   {
     slug: 'run_state',
-    readOnly: true,
+    policy: { effect: 'read', spends: 'none', scope: 'admin', recipe: { runItem: 'banned' } },
     name: 'Inspect runs',
     description:
       "With run_id: return the compiled state of one run — per-item status, one-line outcomes, costs — as text plus structured data. Without run_id: list this brain's recent runs (id, title, status). The compiled state is the ground truth to re-read at resume; never rely on remembered progress.",
@@ -902,6 +913,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   },
   {
     slug: 'run_cancel',
+    policy: { effect: 'write', spends: 'none', scope: 'admin', recipe: { runItem: 'banned' } },
     name: 'Cancel a run',
     description:
       'Cancel a run: every queued/ready/running item in its tree is marked cancelled and no resume fires. Idempotent — cancelling a finished or already-cancelled run reports cancelled=false. In-flight tool executions are not interrupted mid-call; their late results are discarded.',
@@ -925,6 +937,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   },
   {
     slug: 'run_audit',
+    policy: { effect: 'write', spends: 'none', scope: 'admin', recipe: { runItem: 'banned' } },
     name: 'Record an audit verdict',
     description:
       "Record your verdict on a pending audit item: 'pass' (advisory findings allowed) advances the run; 'redo' requires at least one blocking finding and supersedes the audited worker step with a fresh attempt carrying your findings (one redo max — a second blocking audit fails the step for human decision). Judge the worker's recorded tool ledger against its claims, not its confidence. Use during a resume turn that presents a pending audit; `run_state` shows which item is waiting.",

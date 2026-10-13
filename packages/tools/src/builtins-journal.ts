@@ -37,6 +37,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
+import { edit, manage } from './item-write-gate';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING journal entry the owner holds.
@@ -68,7 +69,7 @@ function compact(n: JournalRow) {
 
 const journal_list: BuiltinToolDef = {
   slug: 'journal_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'journal' },
   name: 'List journal entries',
   description:
     "Browse the Journal — the user's durable self-knowledge (kinds identity/context/preference/goal) and the agents' working notes (lesson/expectation/gap), newest first. Use to recall what the user has said about themselves or what agents have learned. `kind`/`author`/`status`/`query` narrow the list; `kind='gap', status='open'` lists the unanswered questions. For a topic search across everything, `search_nodes` is broader.",
@@ -125,7 +126,7 @@ const journal_list: BuiltinToolDef = {
 
 const journal_get: BuiltinToolDef = {
   slug: 'journal_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'journal' },
   name: 'Read a journal entry',
   description: 'Fetch one journal entry by its node id. Returns the full entry.',
   inputSchema: {
@@ -153,6 +154,7 @@ const journal_get: BuiltinToolDef = {
 
 const journal_create: BuiltinToolDef = {
   slug: 'journal_create',
+  policy: { effect: 'write', spends: 'none', scope: 'admin-kind', keyArea: 'journal' },
   name: 'Add a journal entry',
   description:
     'Record one short journal entry. User lane (kinds identity/context/preference/goal): durable self-knowledge, written in the user\'s voice, when the user shares something about themselves and wants it remembered ("I lead the ops team", "always answer me in short sentences"). Agent lane, YOUR working log: `lesson` when an approach clearly worked or failed, `expectation` when the user corrects you or sets a standard, `gap` when you could not do your job because knowledge is missing (write it as one answerable question — it will be shown to the user). ' +
@@ -228,6 +230,13 @@ const journal_create: BuiltinToolDef = {
 
 const journal_update: BuiltinToolDef = {
   slug: 'journal_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'journal',
+  },
   name: 'Update a journal entry',
   description:
     'Patch a journal entry — only the fields you pass change (omit to keep stored value). Use when the user corrects or refines an entry, or to re-kind one. To answer an open question use `journal_resolve_gap` instead — it also records the answer.',
@@ -283,6 +292,13 @@ const journal_update: BuiltinToolDef = {
 
 const journal_resolve_gap: BuiltinToolDef = {
   slug: 'journal_resolve_gap',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'journal',
+  },
   name: 'Resolve an open question',
   description:
     "Close one open `gap` entry with the user's answer. Two effects: the question is marked resolved (and leaves every agent's Open-questions list), and the answer is saved as a new user-lane journal entry so all agents carry it from now on. Use the moment the user answers an open question — asked or volunteered. For editing any other entry use `journal_update`.",
@@ -339,6 +355,14 @@ const journal_resolve_gap: BuiltinToolDef = {
 
 const journal_delete: BuiltinToolDef = {
   slug: 'journal_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    peerRisky: true,
+    keyArea: 'journal',
+  },
   name: 'Delete a journal entry',
   description:
     'Remove a journal entry by id. Use only when the user explicitly asks to delete it. Returns ok=true on success; ok=false if not found.',

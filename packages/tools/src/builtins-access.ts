@@ -15,6 +15,8 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { strOpt } from './coerce';
 import { NODE_ID_PRE } from './builtins-common';
 import { isOwnerSurface } from './surface';
+import { manage } from './item-write-gate';
+import { lowersAccessSet } from './client-sourced';
 
 /** access_set's answer for a brain item. */
 export const ITEM_LEVEL_GONE =
@@ -77,8 +79,8 @@ function ownerOnly(ctx: ToolHandlerContext): ToolHandlerResult | null {
 
 export const access_get: BuiltinToolDef = {
   slug: 'access_get',
+  policy: { effect: 'read', spends: 'none', scope: 'admin' },
   ownerOnly: true,
-  readOnly: true,
   preconditions: NODE_ID_PRE,
   name: 'Get who can read an item, or an access level',
   description:
@@ -139,6 +141,14 @@ export const access_get: BuiltinToolDef = {
 
 export const access_set: BuiltinToolDef = {
   slug: 'access_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin',
+    items: [manage('node_id')],
+    peerRisky: true,
+    lowering: lowersAccessSet,
+  },
   ownerOnly: true,
   preconditions: NODE_ID_PRE,
   name: 'Set an access level (retired)',

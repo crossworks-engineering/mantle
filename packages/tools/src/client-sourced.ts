@@ -46,6 +46,7 @@ import {
   spaceItems,
 } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
+import { policySlugSet } from './tool-policy';
 
 /** A turn's taint, shared by reference across the turn (and its delegated
  *  children: a child that reads client text taints the parent too). */
@@ -413,14 +414,12 @@ export async function markCreatedClientSourced(
 }
 
 /** The tools whose whole purpose is to hand brain content to clients or the
- *  public. Writes INTO an item already at client or public level are the
- *  other half of the guard (client-sourced-rules.ts). */
-export const LOWERING_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  'access_set',
-  'node_share',
-  'page_share',
-  'email_page',
-]);
+ *  public: a view of each builtin's `policy.lowering` (tool-policy.ts).
+ *  Writes INTO an item already at client or public level are the other half
+ *  of the guard (client-sourced-rules.ts). */
+export const LOWERING_TOOL_SLUGS: ReadonlySet<string> = policySlugSet(
+  (p) => p.lowering !== undefined && p.lowering !== 'never',
+);
 
 /** A level as `access_set` reads it: trimmed, and lower-cased on top (L9), so
  *  no spelling the tool might accept slips past the check. */
@@ -428,22 +427,36 @@ function normalLevel(v: unknown): string {
   return typeof v === 'string' ? v.trim().toLowerCase() : '';
 }
 
+/** access_set's lowering: to client or public (an item, an agent or a tool
+ *  group). Its policy's `lowering`. */
+export function lowersAccessSet(input: Record<string, unknown>): boolean {
+  const level = normalLevel(input.level);
+  return level === 'client' || level === 'public';
+}
+
+/** email_page's lowering: with a link. Its policy's `lowering`. */
+export function lowersEmailPage(input: Record<string, unknown>): boolean {
+  return input.includeLink === true || input.includeLink === 'true';
+}
+
 /**
  * Whether this call would lower something to client or public: `access_set`
  * to client or public (an item, an agent or a tool group), any share link
- * (public by construction), and `email_page` with a link.
+ * (public by construction), and `email_page` with a link. The rule of each
+ * is its policy's `lowering` (the functions above); this name-keyed reading
+ * goes in A5 step 6, and until then tool-policy-snapshot.test.ts pins it to
+ * the policies. It reads no table, so the tool loop asks it before anything
+ * is loaded.
  */
 export function isLoweringCall(slug: string, input: Record<string, unknown>): boolean {
   switch (slug) {
-    case 'access_set': {
-      const level = normalLevel(input.level);
-      return level === 'client' || level === 'public';
-    }
+    case 'access_set':
+      return lowersAccessSet(input);
     case 'node_share':
     case 'page_share':
       return true;
     case 'email_page':
-      return input.includeLink === true || input.includeLink === 'true';
+      return lowersEmailPage(input);
     default:
       return false;
   }

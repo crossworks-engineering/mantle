@@ -53,6 +53,9 @@ import {
   appToolWarnings,
   APP_NO_TOOLS,
 } from './app-tool-level';
+// The access lists are views of the tool policy table, which the registry
+// fills (A5): load it.
+import './registry';
 
 beforeEach(() => {
   h.app = null;

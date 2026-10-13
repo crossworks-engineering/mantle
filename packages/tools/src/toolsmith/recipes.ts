@@ -22,7 +22,7 @@ import { SLUG_RE, rec, reservedSlugError, toolRowBySlug } from './common';
 
 export const tool_catalog: BuiltinToolDef = {
   slug: 'tool_catalog',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', recipe: { step: 'forbidden' } },
   name: 'Browse composable tools',
   description:
     "List the tools you can COMPOSE into a recipe tool (recipe_tool_create) — the brain's own content/search/file/page/task/journal/event/table builtins plus your authored http tools. Returns each tool's slug, kind, full description, and input_schema so you know the exact slug + input shape to chain. Excludes tools recipes may not call (terminal, secrets, delegation, the tool-authoring kit, confirm-gated, shell). Filter with q. This is how you discover the steps for a new recipe.",
@@ -83,6 +83,13 @@ const RECIPE_DOC =
 
 export const recipe_tool_create: BuiltinToolDef = {
   slug: 'recipe_tool_create',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Create a recipe tool',
   description:
     `Author a NEW tool by composing EXISTING tools — no external service, no code change. ${RECIPE_DOC} ` +
@@ -233,6 +240,13 @@ export const recipe_tool_create: BuiltinToolDef = {
 
 export const recipe_tool_test: BuiltinToolDef = {
   slug: 'recipe_tool_test',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Test a recipe tool',
   description:
     'Run a recipe tool with the given input and return its real output — use after recipe_tool_create to prove the chain works before granting it. Runs the exact dispatcher agents use, so side effects ARE real (a recipe that creates a page will create one). Refuses non-recipe tools (use api_tool_test for http).',

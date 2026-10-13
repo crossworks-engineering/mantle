@@ -17,6 +17,7 @@ import {
   routePolicyLists,
   stripComments,
   toolPolicyLists,
+  isDefinitionList,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './arch-counts.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -178,6 +179,12 @@ describe('the counters', () => {
         slugs,
       ),
     ).toEqual([3]);
+    // A list of definition objects is not a policy list (A5: RUN_TOOLS).
+    const defs =
+      "export const T: Def[] = [\n  { slug: 'note_create', a: 1 },\n  { slug: 'page_create' },\n  { slug: 'task_create' },\n];";
+    expect(isDefinitionList(listLiterals(defs)[0])).toBe(true);
+    expect(toolPolicyLists(defs, slugs)).toEqual([]);
+    expect(isDefinitionList("['note_create', { slug: 'x' }]")).toBe(false);
     expect(routePolicyLists("const R = ['GET /api/a', 'POST /api/b', '/api/c'];")).toEqual([3]);
     expect(routePolicyLists("const R = ['GET /api/a', 'x'];")).toEqual([]);
   });

@@ -34,6 +34,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { edit, manage } from './item-write-gate';
 
 const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'contact', lookup: 'contact_find / contact_list' },
@@ -81,7 +82,7 @@ function compact(c: ContactRow) {
 
 const contact_find: BuiltinToolDef = {
   slug: 'contact_find',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'contacts' },
   name: 'Find a contact',
   description:
     "Look up one of the user's contacts by name OR email (substring, case-insensitive). Use this FIRST whenever the user refers to someone by name ('email Modular', 'text Sarah') — it returns the contact's id, email, and cell so you can pass them to email_send / sms_send. Returns up to `limit` matches, most-recently-updated first; if you get more than one back, pick the obvious match or ask the user to disambiguate.",
@@ -114,7 +115,7 @@ const contact_find: BuiltinToolDef = {
 
 const contact_list: BuiltinToolDef = {
   slug: 'contact_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'contacts' },
   name: 'List contacts',
   description:
     "Browse the user's contacts, newest-updated first. Useful when the user asks 'who do I know?' or 'show me my contacts'. For finding a specific person, prefer `contact_find` — it's narrower.",
@@ -147,7 +148,7 @@ const contact_list: BuiltinToolDef = {
 
 const contact_get: BuiltinToolDef = {
   slug: 'contact_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'contacts' },
   preconditions: CONTACT_ID_PRE,
   name: 'Read a contact',
   description: 'Fetch one contact by its node id. Returns the full record including counters.',
@@ -183,6 +184,13 @@ const ONLY_WHEN_ASKED =
 
 const contact_create: BuiltinToolDef = {
   slug: 'contact_create',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin-kind',
+    peerRisky: true,
+    keyArea: 'contacts',
+  },
   name: 'Add a contact',
   description:
     "Save a person or organisation as a contact in the user's Mantle. **Contacts are the email allowlist in BOTH directions:** adding one enables Saskia to email those addresses AND lets their inbound mail be ingested into the brain (a 90-day history backfill kicks off automatically)." +
@@ -247,6 +255,14 @@ const contact_create: BuiltinToolDef = {
 
 const contact_update: BuiltinToolDef = {
   slug: 'contact_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'contacts',
+  },
   preconditions: CONTACT_ID_PRE,
   name: 'Update a contact',
   description:
@@ -322,6 +338,14 @@ const contact_update: BuiltinToolDef = {
 
 const contact_delete: BuiltinToolDef = {
   slug: 'contact_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    peerRisky: true,
+    keyArea: 'contacts',
+  },
   preconditions: CONTACT_ID_PRE,
   name: 'Delete a contact',
   description:

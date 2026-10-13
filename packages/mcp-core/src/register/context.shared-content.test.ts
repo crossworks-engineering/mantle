@@ -25,6 +25,7 @@ function pageUpdate() {
     name: 'page_update',
     description: 'probe',
     inputSchema: { type: 'object', properties: {} },
+    policy: { effect: 'write', spends: 'none', scope: 'any' },
     handler,
   } as BuiltinToolDef;
   return { def, handler };

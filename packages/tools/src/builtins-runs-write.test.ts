@@ -87,6 +87,9 @@ import { resolveTools } from './resolve';
 import { paramsOf } from './test-support';
 import { RUN_TOOLS } from './builtins-runs';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+// The access lists are views of the tool policy table, which the registry
+// fills (A5): load it.
+import './registry';
 
 const plan = RUN_TOOLS.find((t) => t.slug === 'run_plan')!;
 const append = RUN_TOOLS.find((t) => t.slug === 'run_append')!;

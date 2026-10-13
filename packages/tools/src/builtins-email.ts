@@ -46,6 +46,7 @@ import { linkError, openLink } from './builtins-share';
 import { str, strOptTrim as strOpt } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { areaSystem } from './admin-gate';
+import { lowersEmailPage } from './client-sourced';
 
 /**
  * The email tools run in the caller's scope (W7a fix round 1, H1): the
@@ -221,6 +222,13 @@ async function resolveSendAccountOnSystem(
 
 const email_send: BuiltinToolDef = {
   slug: 'email_send',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    outside: { egress: true },
+    peerRisky: true,
+  },
   name: 'Send an email',
   description:
     "Send an email FROM the user's own mailbox via their provider (SMTP, or Microsoft Graph for connected Microsoft accounts). Provide `to`, `subject`, and a plain-text `body`. Optional `cc`/`bcc`, and `from` to choose which of the user's accounts sends it (defaults to the first send-enabled account). Use only when the user explicitly asks to send or email something. The message goes out under the user's real address, so write it accurately and professionally; when relaying research, include the source links in the body. If no account can send the call fails with a clear message.",
@@ -302,6 +310,13 @@ const email_send: BuiltinToolDef = {
 
 const email_page: BuiltinToolDef = {
   slug: 'email_page',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    peerRisky: true,
+    lowering: lowersEmailPage,
+  },
   name: 'Email a page',
   description:
     "Send one of the user's pages as a richly-formatted HTML email: the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also add a 'View online' footer with the page's public link (see `page_share`). The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account can send the call fails with a clear message.",
@@ -456,7 +471,7 @@ const email_page: BuiltinToolDef = {
 
 const email_list: BuiltinToolDef = {
   slug: 'email_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: { area: 'connectors' } },
   name: 'List recent emails',
   description:
     'Recent emails newest-first (sorted by `internal_date` desc, NOT by ingest time). ' +
@@ -559,7 +574,7 @@ export function htmlToPlainText(html: string): string {
 
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: { area: 'connectors' } },
   name: 'Get one email by id',
   description:
     'Fetch a single email by id — headers (from/to/cc, subject, date, folder, flags) plus the ' +

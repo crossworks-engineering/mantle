@@ -52,11 +52,15 @@ vi.mock('@mantle/tools', async () => ({
   sanitizeToolError: (
     await vi.importActual<typeof import('../../../tools/src/errors')>('../../../tools/src/errors')
   ).sanitizeToolError,
-  UNTRUSTED_CONTENT_TOOL_SLUGS: (
-    await vi.importActual<typeof import('../../../tools/src/untrusted')>(
-      '../../../tools/src/untrusted',
-    )
-  ).UNTRUSTED_CONTENT_TOOL_SLUGS,
+  // The real list is a view of the tool policy table (A5), which needs every
+  // builtin and the real @mantle/db; its value is pinned by
+  // packages/runtime/src/tool-policy-snapshot.test.ts.
+  UNTRUSTED_CONTENT_TOOL_SLUGS: new Set([
+    'web_fetch',
+    'web_search',
+    'app_errors',
+    'app_data_query',
+  ]),
   PRIVATE_OUTPUT_TOOL_SLUGS: (
     await vi.importActual<typeof import('../../../tools/src/private-output')>(
       '../../../tools/src/private-output',

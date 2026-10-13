@@ -29,7 +29,14 @@ export function childSurface(
 
 export const invoke_agent: BuiltinToolDef = {
   slug: 'invoke_agent',
-  spends: true,
+  policy: {
+    effect: 'write',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    peerRisky: true,
+    recipe: { step: 'forbidden', runItem: 'banned' },
+  },
   name: 'Delegate to another agent',
   description:
     "Hand off a single, self-contained prompt to another agent (e.g. a researcher with a stronger model + retrieval tools). Use only when the work would clearly benefit from a different persona or model — not for routing every turn. The child runs once and returns its final text; its conversation history is NOT shared with the parent. Pack the prompt to stand alone: the user's ask (their words, not a paraphrase), the exact node ids via `subject_node_ids`, any composed content IN FULL, and what 'done' looks like. The runtime also attaches the triggering user message automatically as a safety net. The parent agent's `memory_config.delegate_to` must list the target slug, or this call is refused.",

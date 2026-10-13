@@ -29,6 +29,9 @@ import {
 } from '@mantle/content/table-snapshots';
 import { TABLE_TOOLS } from './builtins-tables';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+// The access lists are views of the tool policy table, which the registry
+// fills (A5): load it.
+import './registry';
 
 const tool = (slug: string) => TABLE_TOOLS.find((t) => t.slug === slug)!;
 

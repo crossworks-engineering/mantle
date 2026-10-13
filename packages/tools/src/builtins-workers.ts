@@ -96,7 +96,13 @@ export async function resolveDefaultWorker(
 
 const synthesize_speech: BuiltinToolDef = {
   slug: 'synthesize_speech',
-  spends: true,
+  policy: {
+    effect: 'write',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    peerRisky: true,
+  },
   name: 'Send a voice reply',
   description:
     "Synthesize text-to-speech using the owner's default TTS worker. On Telegram it sends as a voice note; on the web /assistant it returns audio bytes that the page renders inline as a play-button bubble. Use when the user explicitly asks for audio ('send me a voice note', 'read that aloud') or when a long answer would land better as audio. After calling, write a brief text follow-up — don't repeat the spoken content verbatim.",
@@ -281,8 +287,14 @@ const synthesize_speech: BuiltinToolDef = {
 
 const extract_from_image: BuiltinToolDef = {
   slug: 'extract_from_image',
-  spends: true,
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    peerRisky: true,
+    memberApp: 'refused',
+  },
   name: 'Read text from an image',
   description:
     "Run the owner's default vision worker over an image and return the extracted text. Use when the user asks to re-read a previously-sent photo, OCR a file in their notes, or extract content from a specific image they reference. For photos that JUST arrived in this conversation, the agent's auto-ingest pipeline has already saved the transcript as a note — search_nodes for it before re-extracting.",
@@ -414,8 +426,14 @@ const extract_from_image: BuiltinToolDef = {
 
 const summarize_text: BuiltinToolDef = {
   slug: 'summarize_text',
-  spends: true,
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    peerRisky: true,
+    memberApp: 'refused',
+  },
   name: 'Summarize a note or block of text',
   description:
     "Run the owner's default summarizer worker (a chat-shaped worker tuned for compression) over text — either inline content or a note's body. Use when the user asks for a TLDR, a recap of a long note, or a digest of something they pasted. For automatic chat-history summarization, the background summarizer already runs; don't call this for that.",
@@ -564,7 +582,14 @@ function ensureGeneratedImagesDateFolder(ownerId: string): Promise<string> {
 
 const generate_image: BuiltinToolDef = {
   slug: 'generate_image',
-  spends: true,
+  policy: {
+    effect: 'write',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    creates: 'file',
+    peerRisky: true,
+  },
   name: 'Generate an image',
   description:
     "Generate an image from a prompt using the owner's default image_gen worker. The image is saved under /files/auto-filed/generated-images/<month>/ AND sent inline when running on Telegram. Use when the user asks for an illustration, mockup, sketch, or visual aid. Be concrete in the prompt — vague prompts produce vague images. After calling, summarise what you sent in one sentence (don't repeat the prompt verbatim).",

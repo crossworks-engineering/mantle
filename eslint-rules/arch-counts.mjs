@@ -231,9 +231,18 @@ export function builtinSlugs(root, files = countedFiles(root)) {
   return slugs;
 }
 
-/** The tool policy lists of `text`: lists holding 3 or more slugs. */
+/** Whether a list literal is a list of definition objects (`[{ slug:
+ *  'run_plan', ... }, ...]`, RUN_TOOLS): definitions, each with its own
+ *  policy (A5), not a policy list keyed by name. */
+export function isDefinitionList(list) {
+  return /^\[\s*\{/.test(list) && /\bslug\s*:/.test(list);
+}
+
+/** The tool policy lists of `text`: lists holding 3 or more slugs, not
+ *  counting a list of definition objects. */
 export function toolPolicyLists(text, slugs) {
   return listLiterals(stripComments(text))
+    .filter((l) => !isDefinitionList(l))
     .map((l) => stringsIn(l).filter((s) => slugs.has(s)).length)
     .filter((n) => n >= 3);
 }

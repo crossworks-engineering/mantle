@@ -107,7 +107,7 @@ export async function appGuideHandler(input: Record<string, unknown>): Promise<T
 
 const app_authoring_guide: BuiltinToolDef = {
   slug: 'app_authoring_guide',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   mcpOnly: true,
   name: 'Read the mini-app authoring guide',
   description:

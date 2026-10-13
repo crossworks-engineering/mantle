@@ -38,6 +38,13 @@ import {
 
 export const sandbox_create: BuiltinToolDef = {
   slug: 'sandbox_create',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Create sandbox',
   description:
     'Create a persistent isolated Ubuntu sandbox and return its id, name and files directory. ' +
@@ -197,6 +204,13 @@ export const sandbox_create: BuiltinToolDef = {
 
 export const sandbox_exec: BuiltinToolDef = {
   slug: 'sandbox_exec',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Run command in sandbox',
   description:
     'Run a bash command inside a sandbox and return stdout, stderr and exit code. Default cwd ' +
@@ -280,7 +294,12 @@ export const sandbox_exec: BuiltinToolDef = {
 
 export const sandbox_list: BuiltinToolDef = {
   slug: 'sandbox_list',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+  },
   name: 'List sandboxes',
   description:
     "List this owner's sandboxes: name, status, image, network tier, description and last-used " +
@@ -319,6 +338,13 @@ export const sandbox_list: BuiltinToolDef = {
 
 export const sandbox_stop: BuiltinToolDef = {
   slug: 'sandbox_stop',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Stop sandbox',
   description:
     "Stop a sandbox's container to free memory/CPU. Installed packages and /files are kept; " +
@@ -347,6 +373,13 @@ export const sandbox_stop: BuiltinToolDef = {
 
 export const sandbox_rm: BuiltinToolDef = {
   slug: 'sandbox_rm',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Remove sandbox',
   description:
     'Remove a sandbox: deletes the container (installed packages, images) and frees the name. ' +
@@ -391,6 +424,12 @@ export const sandbox_rm: BuiltinToolDef = {
 
 export const sandbox_autostart: BuiltinToolDef = {
   slug: 'sandbox_autostart',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+  },
   name: 'Set a sandbox wake command',
   description:
     'Store a command the sandbox runs every time it wakes. A sandbox idle-stops after an hour: ' +

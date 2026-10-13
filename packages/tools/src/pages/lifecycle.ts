@@ -38,9 +38,11 @@ import {
   placementOutput,
   placementRefusal,
 } from './common';
+import { edit, manage } from '../item-write-gate';
 
 export const page_create: BuiltinToolDef = {
   slug: 'page_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'page', keyArea: 'pages' },
   preconditions: [...MARKDOWN_REFS_PRE, ...FOLDER_ID_PRE],
   name: 'Create a page',
   description:
@@ -119,6 +121,13 @@ export const page_create: BuiltinToolDef = {
 
 export const page_replace_from_file: BuiltinToolDef = {
   slug: 'page_replace_from_file',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('page_id')],
+    keySharedContent: true,
+  },
   preconditions: [...PAGE_ID_PRE, ...FILE_ID_PRE],
   name: 'Replace an existing page from a file',
   description:
@@ -224,6 +233,14 @@ export const page_replace_from_file: BuiltinToolDef = {
 
 export const page_update: BuiltinToolDef = {
   slug: 'page_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   name: 'Update a page',
   preconditions: [...PAGE_NODE_ID_PRE, ...MARKDOWN_REFS_PRE],
   description:
@@ -274,6 +291,14 @@ export const page_update: BuiltinToolDef = {
 
 export const page_update_draft: BuiltinToolDef = {
   slug: 'page_update_draft',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: [...PAGE_NODE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Update a page (draft-only)',
   description:
@@ -371,6 +396,14 @@ export const page_update_draft: BuiltinToolDef = {
 
 export const page_commit: BuiltinToolDef = {
   slug: 'page_commit',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Commit a page draft',
   description:
@@ -434,6 +467,7 @@ export const page_commit: BuiltinToolDef = {
 
 export const page_discard_draft: BuiltinToolDef = {
   slug: 'page_discard_draft',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')], keyArea: 'pages' },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Discard a page draft',
   description:
@@ -461,6 +495,14 @@ export const page_discard_draft: BuiltinToolDef = {
 
 export const page_delete: BuiltinToolDef = {
   slug: 'page_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    peerRisky: true,
+    keyArea: 'pages',
+  },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Delete a page',
   description:

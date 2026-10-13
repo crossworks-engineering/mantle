@@ -18,9 +18,17 @@ import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
+import { manage } from '../item-write-gate';
 
 export const file_move: BuiltinToolDef = {
   slug: 'file_move',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('file_id')],
+    keyArea: 'files',
+  },
   name: 'Move a file',
   description:
     'Move ONE file to another folder; the filename travels unchanged (use `file_rename` to change the name). The file keeps its id, shares, and history. If the destination folder indexes differently (name-only vs full), the file is automatically re-indexed to match where it lands. Refuses when the destination already has a file by that name. To duplicate instead of relocate, use `file_copy`.',
@@ -58,6 +66,7 @@ export const file_move: BuiltinToolDef = {
 
 export const file_copy: BuiltinToolDef = {
   slug: 'file_copy',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'file', keyArea: 'files' },
   name: 'Copy a file',
   description:
     "Copy ONE file into another folder — a genuinely NEW file with its own id and its own indexing under the destination folder's mode; nothing links it to the original. Pass `new_filename` to copy under a different name (the way past a name clash). To relocate rather than duplicate, use `file_move`.",
@@ -100,6 +109,13 @@ export const file_copy: BuiltinToolDef = {
 
 export const folder_move: BuiltinToolDef = {
   slug: 'folder_move',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('folder_id')],
+    keyArea: 'files',
+  },
   name: 'Move a folder',
   description:
     'Move a folder — its whole subtree included — under another parent folder. The folder keeps its name (use `folder_rename` to change it), every file keeps its id, and files whose new location indexes differently (name-only vs full) are re-indexed automatically; the result reports how many. Refuses to move a folder into its own subtree or onto a name clash.',
@@ -144,6 +160,7 @@ export const folder_move: BuiltinToolDef = {
 
 export const folder_copy: BuiltinToolDef = {
   slug: 'folder_copy',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'branch', keyArea: 'files' },
   name: 'Copy a folder',
   description:
     'Copy a folder — subtree included — under another parent. Every copy is a NEW file that re-indexes under the destination, so this costs extraction in proportion to the file count and refuses above 200 files (copy subfolders individually, or flag the destination name-only first to make the copy index-free). To relocate without duplicating, use `folder_move`.',

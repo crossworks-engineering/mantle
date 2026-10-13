@@ -25,7 +25,7 @@ import { TABLE_ID_PRE, TAB_HINT, loadTab, pageMeta, resolveColumn, windowFile } 
 
 export const table_query: BuiltinToolDef = {
   slug: 'table_query',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   preconditions: TABLE_ID_PRE,
   name: 'Query rows by value',
   description:
@@ -237,7 +237,7 @@ export const table_query: BuiltinToolDef = {
 
 export const table_aggregate: BuiltinToolDef = {
   slug: 'table_aggregate',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   preconditions: TABLE_ID_PRE,
   name: 'Group + summarise rows',
   description:

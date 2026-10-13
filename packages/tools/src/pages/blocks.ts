@@ -30,10 +30,11 @@ import {
   draftConflict,
   pickEditingBaseline,
 } from './common';
+import { edit } from '../item-write-gate';
 
 export const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
   preconditions: PAGE_ID_PRE,
   name: 'List the blocks in a page',
   description:
@@ -120,7 +121,7 @@ export const page_blocks_list: BuiltinToolDef = {
 
 export const page_block_get: BuiltinToolDef = {
   slug: 'page_block_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
   preconditions: PAGE_ID_PRE,
   name: 'Get one block from a page',
   description:
@@ -168,6 +169,14 @@ export const page_block_get: BuiltinToolDef = {
 
 export const page_block_update: BuiltinToolDef = {
   slug: 'page_block_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Replace one block in a page',
   description:
@@ -253,6 +262,14 @@ export const page_block_update: BuiltinToolDef = {
 
 export const page_block_insert_after: BuiltinToolDef = {
   slug: 'page_block_insert_after',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Insert blocks after a target block',
   description:
@@ -330,6 +347,14 @@ export const page_block_insert_after: BuiltinToolDef = {
 
 export const page_block_insert_before: BuiltinToolDef = {
   slug: 'page_block_insert_before',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Insert blocks before a target block',
   description:
@@ -408,6 +433,14 @@ export const page_block_insert_before: BuiltinToolDef = {
 
 export const page_block_append: BuiltinToolDef = {
   slug: 'page_block_append',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Add blocks at the start or end of a page',
   description:
@@ -484,6 +517,13 @@ export const page_block_append: BuiltinToolDef = {
 
 export const page_block_delete: BuiltinToolDef = {
   slug: 'page_block_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+  },
   preconditions: PAGE_ID_PRE,
   name: 'Delete one block from a page',
   description:

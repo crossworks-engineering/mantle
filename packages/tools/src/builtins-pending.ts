@@ -29,8 +29,8 @@ const PENDING_STATUSES = ['pending', 'approved', 'rejected', 'expired'] as const
 
 export const pending_list: BuiltinToolDef = {
   slug: 'pending_list',
+  policy: { effect: 'read', spends: 'none', scope: 'admin' },
   mcpOnly: true,
-  readOnly: true,
   name: 'List pending tool calls',
   description:
     "List operator-approval-required tool calls an agent has queued. By default returns the still-pending queue; pass `status` ('pending'|'approved'|'rejected'|'expired') to filter, and `limit` to cap.",
@@ -56,8 +56,8 @@ export const pending_list: BuiltinToolDef = {
 
 export const pending_get: BuiltinToolDef = {
   slug: 'pending_get',
+  policy: { effect: 'read', spends: 'none', scope: 'admin' },
   mcpOnly: true,
-  readOnly: true,
   name: 'Get a pending tool call',
   description: 'Fetch a pending tool call by id — useful to inspect the args before deciding.',
   inputSchema: {
@@ -76,6 +76,7 @@ export const pending_get: BuiltinToolDef = {
 
 export const pending_approve: BuiltinToolDef = {
   slug: 'pending_approve',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
   mcpOnly: true,
   name: 'Approve a pending tool call',
   description:
@@ -143,6 +144,7 @@ export const pending_approve: BuiltinToolDef = {
 
 export const pending_reject: BuiltinToolDef = {
   slug: 'pending_reject',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
   mcpOnly: true,
   name: 'Reject a pending tool call',
   description:
@@ -164,8 +166,8 @@ export const pending_reject: BuiltinToolDef = {
 
 export const worker_group_list: BuiltinToolDef = {
   slug: 'worker_group_list',
+  policy: { effect: 'read', spends: 'none', scope: { area: 'assistants', systemWhole: true } },
   mcpOnly: true,
-  readOnly: true,
   name: 'List worker groups',
   description:
     'List worker groups (panels) for runner queues. A run step with group:<slug> fans out into one attempt per member worker plus a panel audit.',
@@ -178,6 +180,7 @@ export const worker_group_list: BuiltinToolDef = {
 
 export const worker_group_ensure: BuiltinToolDef = {
   slug: 'worker_group_ensure',
+  policy: { effect: 'write', spends: 'none', scope: { area: 'assistants', systemWhole: true } },
   mcpOnly: true,
   name: 'Create or update a worker group',
   description:

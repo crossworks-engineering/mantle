@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { APP_GUIDE_TOOLS, findGuideSections, splitGuideSections } from './builtins-app-guide';
+// The access lists are views of the tool policy table, which the registry
+// fills (A5): load it.
+import './registry';
 
 const guide = APP_GUIDE_TOOLS[0]!;
 const call = (input: Record<string, unknown>) => guide.handler(input, { ownerId: 'owner-1' });

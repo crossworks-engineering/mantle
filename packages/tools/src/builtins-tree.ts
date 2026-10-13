@@ -34,6 +34,7 @@ import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 import { movedAppToolWarnings } from './app-tool-level';
+import { manage, treeFolderUpdateTargets } from './item-write-gate';
 
 /** The kinds these tools serve: every tree kind the brain serves (the kind
  *  registry's `tree.liveOrder`, as TREE_LIVE_KINDS) but Files, which use the
@@ -114,7 +115,7 @@ async function run(
 
 export const tree_folders: BuiltinToolDef = {
   slug: 'tree_folders',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   ownerOnly: true,
   name: 'List folders of a kind',
   description:
@@ -147,6 +148,7 @@ export const tree_folders: BuiltinToolDef = {
 
 export const tree_folder_create: BuiltinToolDef = {
   slug: 'tree_folder_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'branch' },
   ownerOnly: true,
   preconditions: [
     { kind: 'node_exists', param: 'parent_id', nodeType: 'branch', lookup: 'tree_folders' },
@@ -195,6 +197,7 @@ export const tree_folder_create: BuiltinToolDef = {
 
 export const tree_folder_update: BuiltinToolDef = {
   slug: 'tree_folder_update',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: treeFolderUpdateTargets },
   ownerOnly: true,
   name: 'Rename, move or restyle a folder',
   description:
@@ -256,6 +259,7 @@ export const tree_folder_update: BuiltinToolDef = {
 
 export const tree_item_move: BuiltinToolDef = {
   slug: 'tree_item_move',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [manage('item_ids')] },
   ownerOnly: true,
   preconditions: [
     { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
@@ -314,6 +318,7 @@ export const tree_item_move: BuiltinToolDef = {
 
 export const tree_folder_delete: BuiltinToolDef = {
   slug: 'tree_folder_delete',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [manage('folder_id')] },
   mcpOnly: true,
   ownerOnly: true,
   name: 'Delete a folder',

@@ -26,6 +26,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr, strOptTrim as strOpt } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
+import { edit, manage } from './item-write-gate';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING node of the right type.
@@ -41,6 +42,7 @@ const PAGE_ID_PRE: readonly ToolPrecondition[] = [
 
 const note_create: BuiltinToolDef = {
   slug: 'note_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'note', keyArea: 'notes' },
   name: 'Create a note',
   description:
     "Save a markdown note into the user's Mantle (a `note` node under /notes). Title required; `content` is markdown. The note is automatically indexed into the brain — summary, embedding, facts, and entities — so it becomes searchable and is recalled in future turns. Use this to capture research findings, decisions, drafts, or anything the user asks you to remember as plain text. Include source URLs in the body when saving research. For passwords/keys use secret_create instead; for file-shaped content use file_create." +
@@ -103,7 +105,7 @@ const note_create: BuiltinToolDef = {
 
 const note_list: BuiltinToolDef = {
   slug: 'note_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'notes', keyEmail: true },
   name: 'List notes',
   description:
     "List the owner's notes, newest first. `query` substring-matches title/body/summary; `tag` " +
@@ -135,7 +137,7 @@ const note_list: BuiltinToolDef = {
 
 const note_get: BuiltinToolDef = {
   slug: 'note_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'notes' },
   name: 'Get one note by id',
   description:
     'Fetch a single note by id — full row including the markdown content. Use after `note_list` or ' +
@@ -173,6 +175,14 @@ const note_get: BuiltinToolDef = {
 // log-style flow in one call without re-emitting the whole body.
 const note_update: BuiltinToolDef = {
   slug: 'note_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'notes',
+    keySharedContent: true,
+  },
   name: 'Update a note',
   description:
     'Edit an EXISTING note in place. Pass only what changes: `title`/`tags` (metadata), ' +
@@ -256,6 +266,7 @@ const note_update: BuiltinToolDef = {
 
 const note_from_file: BuiltinToolDef = {
   slug: 'note_from_file',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'note' },
   name: 'Create note from file',
   description:
     "Import a markdown/text file's bytes into a new editable note, server-side — nothing round-trips through your output, so it scales to arbitrarily large files and the note is byte-faithful to the source. Prefer it over `file_read` + `note_create`; the note counterpart of `page_from_file`. Use for 'make this file a note' / 'import this doc as a note I can edit'. Only text-like files are accepted; binaries (PDF / docx / xlsx) are rejected — their extracted text already lives on the file node (`file_get`). The new note is auto-indexed into the brain like any note. The original file is LEFT IN PLACE (non-destructive). Returns the new note's id + title; the body is never echoed back (verify with `note_get`).",
@@ -358,6 +369,7 @@ const note_from_file: BuiltinToolDef = {
 
 const note_from_page: BuiltinToolDef = {
   slug: 'note_from_page',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'note' },
   name: 'Create note from page',
   description:
     "Copy an EXISTING page's body into a new editable note — the page's rich doc is serialized to markdown server-side, WITHOUT round-tripping through your output. The inverse of `page_from_note`: use it for 'save this page as a note' or 'make an editable note from this doc'. Headings, lists, tables, callouts and formatting are all preserved as markdown. The original page is LEFT IN PLACE (non-destructive) — delete it separately if the user wants it gone. The new note is auto-indexed into the brain. Returns the new note's id + title; the body is never echoed back (verify with `note_get`).",
@@ -427,6 +439,13 @@ const note_from_page: BuiltinToolDef = {
  *  delete — the assistant creates and updates, the owner removes. */
 export const note_delete: BuiltinToolDef = {
   slug: 'note_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    keyArea: 'notes',
+  },
   mcpOnly: true,
   preconditions: NOTE_ID_PRE,
   name: 'Delete a note',

@@ -20,9 +20,17 @@ import {
 import type { BuiltinToolDef } from '../types';
 import { str, strArr } from '../coerce';
 import { TABLE_ID_PRE, TAB_HINT, editViaOps, resolveColumn, resolveRefTarget } from './common';
+import { edit } from '../item-write-gate';
 
 export const table_column_add: BuiltinToolDef = {
   slug: 'table_column_add',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Add a column',
   description:
@@ -106,6 +114,13 @@ export const table_column_add: BuiltinToolDef = {
 
 export const table_column_update: BuiltinToolDef = {
   slug: 'table_column_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Update a column',
   description:
@@ -203,6 +218,13 @@ export const table_column_update: BuiltinToolDef = {
 
 export const table_column_delete: BuiltinToolDef = {
   slug: 'table_column_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Delete a column',
   description: 'Remove a column (by id or name) and all its cells. Writes to DRAFT.',
@@ -234,6 +256,13 @@ export const table_column_delete: BuiltinToolDef = {
 
 export const table_set_aggregate: BuiltinToolDef = {
   slug: 'table_set_aggregate',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Set a column total',
   description:
@@ -282,6 +311,13 @@ export const table_set_aggregate: BuiltinToolDef = {
 
 export const table_set_view: BuiltinToolDef = {
   slug: 'table_set_view',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Save a filter/sort view',
   description:

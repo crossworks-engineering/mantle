@@ -230,7 +230,7 @@ async function fetchWindowTraces(
 
 const find_window: BuiltinToolDef = {
   slug: 'find_window',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'admin' },
   name: 'Find a conversation window',
   description:
     "Locate WHEN a past topic was discussed. Semantic search over conversation digests (the rolled-up summaries of older chats) and archived chat threads (one summary per chat the user closed with New chat; kind 'thread', with its thread_id), returning candidate time windows each with a topic, summary, and period_start/period_end. Use this first when the user vaguely remembers discussing something ('last week we talked about a Bible topic') but not exactly when, then call `replay_window` with the best window's dates to read the actual turns. Optional `from`/`to` (YYYY-MM-DD or ISO) narrow to a rough date range; omit them to search all of time.",
@@ -347,7 +347,7 @@ const find_window: BuiltinToolDef = {
 
 const replay_window: BuiltinToolDef = {
   slug: 'replay_window',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'admin' },
   name: 'Recall a conversation window',
   description:
     "Replay the actual raw turns of past conversations within a date range, chronological and lossless (the real words, not a summary). Use after `find_window` has pinned a window, or directly when the user gives a date ('what did we say on Tuesday?'). `from`/`to` accept a bare date (YYYY-MM-DD, widened to the whole day) or a full ISO datetime. If the window is larger than `limit` the result is truncated — narrow the range or pull it in sub-ranges and reason over each. Set `include_traces` to also see what the system actually did in that window (tools run + their results) — useful when the dialogue references work whose details aren't in the words themselves.",

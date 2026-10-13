@@ -30,8 +30,8 @@ export type WorkspaceListRow = {
 
 export const workspaces_list: BuiltinToolDef = {
   slug: 'workspaces_list',
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   mcpOnly: true,
-  readOnly: true,
   name: 'List my workspaces',
   description:
     "The workspaces you read, each with `moderator` (you may create in it and edit what it holds) and `admin` (the Admin workspace). Pass a workspace's id or name as `workspace` to a create tool (`note_create`, `page_create`, `table_create`, `app_create`, …) to put the new item there; it must be one you moderate. Without it a create lands by the usual rule (the folder's workspace, else your own private one) and the reply says where.",

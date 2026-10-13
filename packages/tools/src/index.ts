@@ -13,6 +13,22 @@ export type {
 export { checkToolPreconditions, type NodeTypeLookup } from './preconditions';
 
 export {
+  PolicyTableNotLoadedError,
+  builtinPolicy,
+  policyAdminOnly,
+  policyLowers,
+  policySlugList,
+  policySlugMap,
+  policySlugSet,
+  toGatePolicy,
+  type ToolItemResolver,
+  type ToolItemTarget,
+  type ToolOutside,
+  type ToolPolicy,
+  type ToolScope,
+} from './tool-policy';
+
+export {
   registerBuiltin,
   getBuiltin,
   getBuiltinHandler,
@@ -24,6 +40,7 @@ export {
   isBuiltinOwnerOnly,
   listReadOnlyBuiltinSlugs,
   redactArgsForLogging,
+  builtinRowSlugError,
 } from './registry';
 
 export {

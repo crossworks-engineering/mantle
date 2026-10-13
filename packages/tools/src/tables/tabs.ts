@@ -10,9 +10,17 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, TABLE_ID_PRE, loadTab } from './common';
+import { edit } from '../item-write-gate';
 
 export const table_tab_add: BuiltinToolDef = {
   slug: 'table_tab_add',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Add a tab',
   description:
@@ -62,6 +70,13 @@ export const table_tab_add: BuiltinToolDef = {
 
 export const table_tab_rename: BuiltinToolDef = {
   slug: 'table_tab_rename',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Rename a tab',
   description:
@@ -108,6 +123,13 @@ export const table_tab_rename: BuiltinToolDef = {
 
 export const table_tab_delete: BuiltinToolDef = {
   slug: 'table_tab_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Delete a tab',
   description:

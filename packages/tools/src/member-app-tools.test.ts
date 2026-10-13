@@ -14,6 +14,9 @@ vi.mock('./resolve', () => ({
 import { resolveTool } from './resolve';
 import { BUILTIN_TOOLS } from './builtins';
 import { MEMBER_APP_REFUSED_SLUGS, memberAppToolVerdict } from './member-app-tools';
+// The access lists are views of the tool policy table, which the registry
+// fills (A5): load it.
+import './registry';
 
 describe('memberAppToolVerdict refused list', () => {
   it('holds the private-item readers, the LLM spenders and the chat-only tools', () => {

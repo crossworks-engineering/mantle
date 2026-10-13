@@ -19,6 +19,13 @@ const SECRETS_ROOT_LABEL = 'secrets';
 
 export const secret_create: BuiltinToolDef = {
   slug: 'secret_create',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'keys' },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Capture a secret',
   description:
     "Capture a sensitive value — password, PIN, API key, recovery code, anything the user explicitly says is private — into the encrypted /secrets store. ALWAYS prefer this over `note_create` or `file_create` for a dictated credential: a note stores it in plaintext where any future tool call can read it, while this seals the value behind a key only the owner's browser session can unlock. The value is REDACTED in trace logs — never echo it back to the user; confirm by title only ('saved your safe PIN'). For multi-field secrets (e.g. a server with both username and password) the /secrets UI is still the right path; this handles the common one-value case.",

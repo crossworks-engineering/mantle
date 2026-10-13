@@ -15,9 +15,19 @@ import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, PAGE_NODE_ID_PRE } from './common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
+import { edit, manage } from '../item-write-gate';
 
 export const page_split: BuiltinToolDef = {
   slug: 'page_split',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'page',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: PAGE_ID_PRE,
   name: 'Split a page into pages',
   description:
@@ -82,6 +92,15 @@ export const page_split: BuiltinToolDef = {
 
 export const page_extract_section: BuiltinToolDef = {
   slug: 'page_extract_section',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'page',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: PAGE_ID_PRE,
   name: 'Lift a section into its own page',
   description:
@@ -133,6 +152,13 @@ export const page_extract_section: BuiltinToolDef = {
 
 export const page_move: BuiltinToolDef = {
   slug: 'page_move',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    keyArea: 'pages',
+  },
   // Like tree_item_move: a member or client organises through its own tree.
   ownerOnly: true,
   preconditions: [
@@ -229,6 +255,14 @@ export const page_move: BuiltinToolDef = {
 
 export const page_mention: BuiltinToolDef = {
   slug: 'page_mention',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: PAGE_ID_PRE,
   name: 'Mention another doc/entity in a page',
   description:

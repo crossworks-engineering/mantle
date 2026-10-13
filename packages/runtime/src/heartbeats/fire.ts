@@ -52,6 +52,7 @@ import {
   runToolLoop,
   type ChatMessage,
 } from '../agent';
+import { policySlugSet } from '@mantle/tools';
 import { chatRouteKeyRefusal } from '../agent/chat-failover';
 import {
   loadProfilePreferences,
@@ -85,8 +86,11 @@ const HEARTBEAT_CONTROL_TOOLS = [
  *  enables `heartbeatEgressGate`, these are force-confirmed for an
  *  unattended fire so they park for approval instead of running inline.
  *  The heartbeat's own surface reply is delivered separately (not a tool)
- *  and is unaffected. */
-const HEARTBEAT_EGRESS_SLUGS = new Set(['email_send', 'web_fetch', 'web_search']);
+ *  and is unaffected. A view of the tool policy table (@mantle/tools
+ *  tool-policy.ts, A5): `outside.egress`. */
+export const HEARTBEAT_EGRESS_SLUGS: ReadonlySet<string> = policySlugSet(
+  (p) => p.outside?.egress === true,
+);
 
 export type FireResult = {
   /** See HeartbeatFireDisposition in @mantle/db for the canonical

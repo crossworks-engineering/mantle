@@ -6,27 +6,39 @@
 
 import type { BuiltinToolDef, BuiltinToolHandler } from './types';
 import { BUILTIN_TOOLS } from './builtins';
+import { loadPolicyTable, putPolicyTable, tableBuiltin, tableBuiltins } from './tool-policy';
 
-const REGISTRY = new Map<string, BuiltinToolDef>();
-
-for (const def of BUILTIN_TOOLS) {
-  REGISTRY.set(def.slug, def);
-}
+// The registry IS the tool policy table (tool-policy.ts): each builtin's
+// definition, its policy with it. The table lives there so a module a
+// builtin imports can hold a view of it without importing every builtin.
+loadPolicyTable(BUILTIN_TOOLS);
 
 export function registerBuiltin(def: BuiltinToolDef): void {
-  REGISTRY.set(def.slug, def);
+  putPolicyTable(def);
 }
 
 export function getBuiltin(slug: string): BuiltinToolDef | null {
-  return REGISTRY.get(slug) ?? null;
+  return tableBuiltin(slug);
 }
 
 export function getBuiltinHandler(slug: string): BuiltinToolHandler | null {
-  return REGISTRY.get(slug)?.handler ?? null;
+  return tableBuiltin(slug)?.handler ?? null;
 }
 
 export function listBuiltins(): BuiltinToolDef[] {
-  return Array.from(REGISTRY.values()).sort((a, b) => a.slug.localeCompare(b.slug));
+  return Array.from(tableBuiltins()).sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+/** The refusal of a builtin row (a `tools` row whose handler is a builtin)
+ *  named with ANOTHER builtin's slug, or null. A tool's policy is its
+ *  builtin's (by the handler ref), while some checks still match the row's
+ *  slug as well as the ref (admin-gate.ts): a row that took another
+ *  builtin's name would be read as both tools. Seeding names each row by
+ *  its ref and the tool routes refuse to make or rename a builtin row, so
+ *  no such row is made; dispatch refuses one that exists anyway. */
+export function builtinRowSlugError(slug: string, ref: string): string | null {
+  if (slug === ref || !tableBuiltin(slug)) return null;
+  return `This tool row is named '${slug}', another built-in tool's name, but runs '${ref}', so it does not run. Ask an admin to remove the row.`;
 }
 
 /** The builtins that become rows in the owner's `tools` table — everything
@@ -42,7 +54,7 @@ export function listSeedableBuiltins(): BuiltinToolDef[] {
  *  else (or unknown slugs). Cheap O(1) lookup used by the tool-loop
  *  before recording call args to `trace_steps.input`. */
 export function getBuiltinRedactFields(slug: string): readonly string[] {
-  return REGISTRY.get(slug)?.redactInputFields ?? [];
+  return tableBuiltin(slug)?.redactInputFields ?? [];
 }
 
 /** Return a shallow copy of `input` with the named top-level fields
@@ -71,21 +83,21 @@ export function redactArgsForLogging(
  *  been told is safe. Mirrors `getBuiltinRedactFields`: an O(1) registry
  *  lookup for one piece of per-tool metadata. */
 export function isBuiltinReadOnly(slug: string): boolean {
-  return REGISTRY.get(slug)?.readOnly === true;
+  return tableBuiltin(slug)?.policy.effect === 'read';
 }
 
-/** Does this builtin start paid model work on a call (`spends`)? Unknown
+/** Does this builtin start paid model work on a call (`policy.startsModelWork`)? Unknown
  *  slugs answer false; the callers that refuse spenders (the member app
  *  broker) also refuse anything that is not a known read-only builtin. */
 export function isBuiltinSpending(slug: string): boolean {
-  return REGISTRY.get(slug)?.spends === true;
+  return tableBuiltin(slug)?.policy.startsModelWork === true;
 }
 
 /** Is this builtin owner only (`ownerOnly`)? Unknown slugs answer false;
  *  the client app broker also refuses anything that is not a known
  *  read-only builtin. */
 export function isBuiltinOwnerOnly(slug: string): boolean {
-  return REGISTRY.get(slug)?.ownerOnly === true;
+  return tableBuiltin(slug)?.ownerOnly === true;
 }
 
 /** Every registered builtin currently marked read-only, sorted. Used by the
@@ -93,8 +105,8 @@ export function isBuiltinOwnerOnly(slug: string): boolean {
  *  path, which filters the agent's own resolved allowlist through
  *  {@link isBuiltinReadOnly} instead of intersecting with this set. */
 export function listReadOnlyBuiltinSlugs(): string[] {
-  return Array.from(REGISTRY.values())
-    .filter((d) => d.readOnly === true)
+  return Array.from(tableBuiltins())
+    .filter((d) => d.policy.effect === 'read')
     .map((d) => d.slug)
     .sort();
 }

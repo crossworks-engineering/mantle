@@ -35,6 +35,7 @@ import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './type
 import { str, strArr, strArrOpt, strOpt } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
+import { edit, manage } from './item-write-gate';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING task the owner holds.
@@ -90,7 +91,7 @@ const TODOS_SCHEMA = {
 
 const task_list: BuiltinToolDef = {
   slug: 'task_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tasks' },
   name: 'List tasks',
   description:
     "List the user's tasks, **sorted not-done-first then by board order and due date**. `status` filters by lifecycle state ('active' = everything not done); `priority` filters by urgency; `query` substring-matches title/body/summary; `tag` narrows to a tag. " +
@@ -158,7 +159,7 @@ const task_list: BuiltinToolDef = {
 
 const task_get: BuiltinToolDef = {
   slug: 'task_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tasks' },
   name: 'Get a task',
   description:
     'Read one task by id — full row including body, status, priority, due_at. ' +
@@ -187,6 +188,7 @@ const task_get: BuiltinToolDef = {
 
 const task_create: BuiltinToolDef = {
   slug: 'task_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'task', keyArea: 'tasks' },
   name: 'Create a task',
   description:
     "Create a task. `title` is a short imperative ('Renew passport'). `body` holds any detail; `todos` breaks the work into checklist steps. `priority` defaults to 'normal'. `dueAt`, if given, MUST be a UTC ISO 8601 instant — convert from the user's natural-language date using the system-prompt time context. Use this whenever the user asks you to remember to do something, add a task, or put something on their list.",
@@ -252,6 +254,7 @@ const task_create: BuiltinToolDef = {
 
 const task_update: BuiltinToolDef = {
   slug: 'task_update',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')], keyArea: 'tasks' },
   name: 'Update a task',
   description:
     "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. To undo a completion, send `reopen: true` with no status: the task goes back to the status it had before it was marked done. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details. Tasks have no comments: record progress or a note in `body` (read it first and append).",
@@ -344,6 +347,13 @@ const task_update: BuiltinToolDef = {
 
 const task_delete: BuiltinToolDef = {
   slug: 'task_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    keyArea: 'tasks',
+  },
   name: 'Delete a task',
   description:
     "Delete a task by id. Prefer task_update with status='done' to complete a task; only delete when the user explicitly wants it gone. Confirm first unless they named this specific task.",

@@ -29,7 +29,7 @@ import {
 } from './external-access';
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
 import { getApiKey } from '@mantle/api-keys';
-import { getBuiltin, getBuiltinHandler } from './registry';
+import { builtinRowSlugError, getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
 import {
   applyInputDefaults,
@@ -89,6 +89,11 @@ export async function dispatchTool(
         error: `builtin handler '${h.ref}' not registered in this process`,
       };
     }
+    // A builtin row named with another builtin's slug runs nothing (A5): a
+    // check that matches the row's slug as well as its ref would read it as
+    // both tools.
+    const clash = builtinRowSlugError(tool.slug, h.ref);
+    if (clash) return { ok: false, error: clash };
     const def = getBuiltin(h.ref);
     // Owner-only tools refuse anyone but the owner before any other work
     // (client logins C4): a team or MISSING surface is not the owner.

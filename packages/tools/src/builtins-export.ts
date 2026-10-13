@@ -28,6 +28,7 @@ const NODE_ID_PRE: readonly ToolPrecondition[] = [
 
 const export_node: BuiltinToolDef = {
   slug: 'export_node',
+  policy: { effect: 'write', spends: 'none', scope: 'admin' },
   name: 'Export to Word / Excel',
   description:
     "Render a page or note to a Word (.docx) document, or a table to an Excel (.xlsx) spreadsheet, and save it under /files/auto-filed/exports/<month>. The format is chosen automatically from the node type — pages/notes → Word, tables → Excel. Pages keep their headings, lists, tables, callouts and images; tables export typed cells (currency/number/percent/checkbox) plus the totals row. Returns the new file's id, name, and path. Use this when the user asks to download, export, or 'get a Word/Excel copy' of a page, note, or table.",

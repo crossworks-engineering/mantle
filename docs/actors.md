@@ -354,7 +354,7 @@ worker-shell server/web/workers/telegram-poll.ts system(worker:channel-poll)
 | A page's block-id backfill (a detached promise)                             | `packages/content/src/pages/read.ts`                                       | `system(backfill:page-block-ids)`                                                                                                                                                                  |
 | The audit row of a connector call on a login's MCP (a detached promise)     | `packages/mcp-core/src/login-surface.ts`                                   | `system(audit-log)`                                                                                                                                                                                |
 | Operator scripts                                                            | `server/web/scripts/*`, `maintain`, any `scripts/` file run as the process | `system(script:<file name>)`, from the process's main file (`scriptActor` in `packages/db/src/actor.ts`)                                                                                           |
-| Clearing member Moderator ticks (0286 roll)                                 | `server/web/scripts/ws-clear-member-ticks.ts` (`lib/workspace-ticks.ts`)   | `system(script:ws-clear-member-ticks)`, from the main file (`scriptActor`); each `user.moderator` event it writes has no `actor_id` and `by` "ws:clear-member-ticks"; `ws:team-check` reads only |
+| Clearing member Moderator ticks (0286 roll)                                 | `server/web/scripts/ws-clear-member-ticks.ts` (`lib/workspace-ticks.ts`)   | `system(script:ws-clear-member-ticks)`, from the main file (`scriptActor`); each `user.moderator` event it writes has no `actor_id` and `by` "ws:clear-member-ticks"; `ws:team-check` reads only   |
 | Hand psql                                                                   | the box                                                                    | `mantle_operator_actor('reason')` first                                                                                                                                                            |
 | Migrations                                                                  | `packages/db/src/migrate.ts`                                               | `system(migration)`, set on each migration's transaction                                                                                                                                           |
 
@@ -545,7 +545,7 @@ check off. Both are tagged as the actor's own for the round-trip test.
   on the system pool with `SET LOCAL ROLE mantle_write_user` and the same
   scope, every statement as the write role (its row rules and write checks)
   except a write whose target is a gap table, a row-locking read (`FOR
-  UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
+UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
   a read naming one the write role cannot read at all (`secrets`,
   `app_table_exports`), which runs
   as `mantle_gap_writer` (fix round 2) between `set local role` to it and
@@ -725,7 +725,7 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   `mantle_workspace_event` (0279).
 - **The refusal messages.** `isScopeWriteRefusal` knows 0278's and 0279's
   write check messages, the row rule's own (`new row violates row-level
-  security policy`) and `mantle_default_home`'s, so each is a 403
+security policy`) and `mantle_default_home`'s, so each is a 403
   (`pg-error.test.ts`). A missing grant (`isPermissionGap`) is not.
 - **One helper for the manage rule** (0279): `mantle_may_manage_home`
   (manage of the home, or Admin when there is none), `mantle_may_add_to_folder`
@@ -930,3 +930,42 @@ declares the policy on each tool). Every narrower registers from
 `packages/tools/src/gate-narrowers.ts`. `route`
 (`server/web/lib/auth/route-policy.ts`, A4 step 1) reads the ROUTE_POLICY
 row the ref carries.
+
+## A policy on every builtin (A5 step 1)
+
+Plan sections 8 and 23: what a built-in tool is, for every check that
+asks, is declared once on its definition, `policy: ToolPolicy`
+(`packages/tools/src/tool-policy.ts`), required on `BuiltinToolDef`: its
+effect (read or write), what it spends, its Admin step (`any`, `admin`,
+`admin-kind`, or an area, which may run whole on the system pool), the
+kind it creates, what it reaches outside the database, the items its
+write names (transitional, `items`: deleted per tool once the database's
+edit check is on everywhere), its key area, its key and peer marks, the
+recipe and run-item rules, whether a call lowers content to clients or
+the public, and the team app rule. The definition's `readOnly` and
+`spends` are accessors of the policy (`effect`, `startsModelWork`), never
+set by hand. No behaviour changed.
+
+The builtin registry is the policy table, and each `@mantle/tools`
+access list is a view of it, with its name and type as before: the four
+lists of `admin-gate.ts`, `CREATE_TOOL_SLUGS`, `ITEM_WRITE_TARGETS`,
+`LOWERING_TOOL_SLUGS` (and `isLoweringCall`), `RECIPE_FORBIDDEN_SLUGS`,
+`MEMBER_APP_REFUSED_SLUGS`, `BANNED_ITEM_TOOLS`,
+`UNTRUSTED_CONTENT_TOOL_SLUGS`, the app data lists, and
+`HEARTBEAT_EGRESS_SLUGS` (`packages/runtime/src/heartbeats/fire.ts`); the
+app tools' author ceiling reads each tool's own policy. Two views keep
+names that are not builtins, named where the view is: the two
+hand-written responder MCP tools (until step 2) and three team tool names
+of the system manifest. A view is read live, so a builtin registered at
+boot (the heartbeat tools) is in it, and it throws
+(`PolicyTableNotLoadedError`) when read before the registry loaded, never
+answering from an empty table.
+
+Proof: `packages/runtime/src/tool-policy-snapshot.test.ts` holds every
+list's literal value, committed before the policies existed, and each view
+equals it; `packages/mcp-core/src/tool-policy-sweep.test.ts` pins that
+`toGatePolicy` of every builtin's policy equals the `mcp-tool` policy the
+gate gets today, and that the owner MCP surface's own lists agree with
+the policy (step 2 derives them). A builtin row named with another
+builtin's slug does not run (`builtinRowSlugError`, in dispatch): some
+checks still match a row's slug as well as its builtin ref.

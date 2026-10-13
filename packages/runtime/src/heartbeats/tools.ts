@@ -176,6 +176,7 @@ async function resolveTargetHeartbeat(
 
 const heartbeat_complete: BuiltinToolDef = {
   slug: 'heartbeat_complete',
+  policy: { effect: 'write', spends: 'none', scope: 'any' },
   name: 'Mark a heartbeat complete',
   description:
     'Permanently stop a heartbeat. Use this when the skill has accomplished what it set out to do (e.g. all interview questions answered) OR when the user explicitly asks you to stop. Pass `slug` to target a specific heartbeat — required when called from a regular responder turn; optional inside a heartbeat fire (the firing one is the default). After this call, the heartbeat never fires again unless an operator re-activates it. Takes an optional `reason` string stored on the row for the operator to see.',
@@ -222,6 +223,7 @@ const heartbeat_complete: BuiltinToolDef = {
 
 const heartbeat_snooze: BuiltinToolDef = {
   slug: 'heartbeat_snooze',
+  policy: { effect: 'write', spends: 'none', scope: 'any' },
   name: 'Snooze a heartbeat',
   description:
     "Push a heartbeat's next fire forward without completing it. Pass `slug` to target a specific heartbeat — required from a regular responder turn; optional inside a heartbeat fire (firing one is the default). Specify the delay via `for_hours` (e.g. 24 = try again tomorrow) or `until` (ISO-8601 instant). Useful when the user is busy or the moment isn't right but the heartbeat should keep trying.",
@@ -284,6 +286,7 @@ const heartbeat_snooze: BuiltinToolDef = {
 
 const heartbeat_update_state: BuiltinToolDef = {
   slug: 'heartbeat_update_state',
+  policy: { effect: 'write', spends: 'none', scope: 'any' },
   name: "Update a heartbeat's state",
   description:
     "JSON-merge a `patch` object into a heartbeat's `state` jsonb. Top-level keys overwrite same-named keys in the existing state; other keys are preserved. Set a key to null to remove it. Pass `slug` to target a specific heartbeat — required from a regular responder turn (look at the 'Open heartbeats' block in your system prompt to find which slug to use); optional inside a heartbeat fire (firing one is the default). Use this to track progress (e.g. {answered: ['family'], expecting_reply: false}) so the next fire knows where the skill left off.",
@@ -372,6 +375,11 @@ const HEARTBEAT_LIST_MAX_LIMIT = 100;
 
 const heartbeat_list: BuiltinToolDef = {
   slug: 'heartbeat_list',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'assistants', systemWhole: true, adminOnly: true },
+  },
   name: 'List the user heartbeats',
   description:
     "List the user's heartbeats with status, schedule, agent/skill slugs, and next-fire time. By default returns up to 20 rows with a SLIM projection (no state jsonb) — that's enough for the user-facing question 'what are you tracking for me?'. Pass `include_state: true` to get each heartbeat's full state (useful when the model needs to reason about progress). Pass `limit` to override (max 100). Pass `status` to filter.",
@@ -471,6 +479,7 @@ export const HEARTBEAT_FIRE_MAKER_ONLY =
 
 const heartbeat_fire: BuiltinToolDef = {
   slug: 'heartbeat_fire',
+  policy: { effect: 'write', spends: 'none', scope: { area: 'assistants', adminOnly: true } },
   name: 'Force-fire a heartbeat now',
   description:
     "Fire the heartbeat with the given slug RIGHT NOW, bypassing all gates (idle / quiet hours / cooldown). Used by the operator's 'Fire now' button and by skills that want to chain into another heartbeat. The fire still records to traces + heartbeat_fires with disposition='fired'. Does NOT need to be inside an existing heartbeat fire. Cannot fire the heartbeat that is currently calling this tool (direct self-recursion is refused), and chained fires are capped at MAX_HEARTBEAT_DEPTH to prevent runaway loops. Only the user who set up the heartbeat may fire it.",

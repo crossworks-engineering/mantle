@@ -33,6 +33,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
+import { edit, manage } from './item-write-gate';
 
 const FORMULA_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'formula', lookup: 'formula_list / search_nodes' },
@@ -72,7 +73,7 @@ function targetsOf(n: FormulaRow) {
 
 const formula_list: BuiltinToolDef = {
   slug: 'formula_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'List formulas',
   description:
     'List the stored calculation models — id, title, source standard and tags — ordered by title. Returns `total` alongside `formulas`, so a clipped page is never mistaken for the whole set; page with `offset`. Use to find a formula before `formula_get` or `formula_evaluate`. For a conceptual question about what a standard says, `search_nodes` / `search_chunks` search the indexed text instead; this returns the models themselves.',
@@ -126,7 +127,7 @@ const formula_list: BuiltinToolDef = {
 
 const formula_get: BuiltinToolDef = {
   slug: 'formula_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Read a formula',
   description:
     'Return one formula in full: the spec (variables, equations, branches, lookup tables, rating criteria) and `targets` — every evaluable id with what it produces and **the exact inputs `formula_evaluate` needs**, each marked required or defaulted, carrying its unit and, for a rating or lookup key, its legal values. Read the input list from there rather than inferring one from the spec. Also `coverage_gaps` — key combinations a lookup declares as legal but has no row for — and `dimension_issues`, where a declared unit disagrees with the arithmetic that produces it. **A non-empty `coverage_gaps` means the source table is incomplete, not that the spec is wrong**; say so rather than inventing a value for the missing case.',
@@ -163,7 +164,7 @@ const formula_get: BuiltinToolDef = {
 
 const formula_evaluate: BuiltinToolDef = {
   slug: 'formula_evaluate',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Evaluate a formula',
   description:
     'Compute one target of a formula and return the value plus a `trace` — which branch was taken, which lookup row matched, and what every symbol resolved to. Quote the trace when reporting a number so it can be checked. **Symbols are case-sensitive** (`k` and `K` are different quantities) and a missing or misspelled input is an error, never a zero. Get valid `target` ids and required inputs from `formula_get`.',
@@ -236,6 +237,7 @@ const SPEC_PARAM_DESC =
 
 const formula_create: BuiltinToolDef = {
   slug: 'formula_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'formula' },
   name: 'Save a formula',
   description:
     'Store a calculation model transcribed from a standard, so it can be evaluated and cited later. The spec is validated on the way in and **every** problem is returned at once — fix them together and re-issue. Store lookup tables as rows, never as a nested `IF()` chain in an expression. Where the source is ambiguous or self-contradictory, record that in `notes` rather than silently correcting it. Use `formula_update` to revise one already stored.',
@@ -276,6 +278,7 @@ const formula_create: BuiltinToolDef = {
 
 const formula_update: BuiltinToolDef = {
   slug: 'formula_update',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')] },
   name: 'Update a formula',
   description:
     'Patch a stored formula — only the fields you pass change. `spec` replaces the whole model (there is no partial-spec merge), so read it with `formula_get` first, amend, and pass it back whole. A changed spec re-summarises and re-embeds the formula.',
@@ -319,6 +322,7 @@ const formula_update: BuiltinToolDef = {
 
 const formula_delete: BuiltinToolDef = {
   slug: 'formula_delete',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [manage('id')] },
   name: 'Delete a formula',
   description:
     'Permanently delete a stored formula and its brain index. Not reversible. Anything that cited it keeps only the text of the citation.',

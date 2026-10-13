@@ -49,6 +49,16 @@ import {
 import { resolveTool } from './resolve';
 import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
 import { appToolPolicy } from './runtime-policy';
+import { policySlugList } from './tool-policy';
+
+/** Names the system manifest's team groups hold that are not builtins of
+ *  this package (my_items_list, my_item_open, team_request_create, below):
+ *  refused by name, as before, with no policy to carry the rule. */
+const TEAM_TOOLS_REFUSED: readonly string[] = [
+  'my_items_list',
+  'my_item_open',
+  'team_request_create',
+];
 
 /**
  * Tools a member's app may never call, even from a system-wide group:
@@ -65,16 +75,14 @@ import { appToolPolicy } from './runtime-policy';
  * - team_request_create files an admin task from a chat turn; it needs the
  *   turn's message, and an app could file them in a loop.
  * - read_result opens a spilled result of an agent turn by handle.
+ *
+ * A view of the tool policy table (tool-policy.ts, A5): the builtins whose
+ * policy says `memberApp: 'refused'`, plus TEAM_TOOLS_REFUSED.
  */
-export const MEMBER_APP_REFUSED_SLUGS: readonly string[] = [
-  'my_items_list',
-  'my_item_open',
-  'summarize_text',
-  'extract_from_image',
-  'search_chunks',
-  'team_request_create',
-  'read_result',
-];
+export const MEMBER_APP_REFUSED_SLUGS: readonly string[] = policySlugList(
+  (p) => p.memberApp === 'refused',
+  TEAM_TOOLS_REFUSED,
+);
 
 /** `write`: an outside call that writes (a connector tool without the
  *  read-only mark, team apps Phase 2); the broker logs its input. */

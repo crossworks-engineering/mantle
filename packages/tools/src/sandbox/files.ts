@@ -37,6 +37,7 @@ import {
 
 export const sandbox_export: BuiltinToolDef = {
   slug: 'sandbox_export',
+  policy: { effect: 'write', spends: 'none', scope: { area: 'settings' }, peerRisky: true },
   name: 'Export sandbox files',
   description:
     "Snapshot a path under a sandbox's /files into the brain as a .tgz in the Files workspace " +
@@ -131,6 +132,7 @@ export const sandbox_export: BuiltinToolDef = {
 
 export const sandbox_import: BuiltinToolDef = {
   slug: 'sandbox_import',
+  policy: { effect: 'write', spends: 'none', scope: { area: 'settings' }, peerRisky: true },
   name: 'Import a file into a sandbox',
   description:
     "Copy a file from the Files workspace into a sandbox's /files, byte for byte. The mirror of " +
@@ -204,7 +206,12 @@ export const sandbox_import: BuiltinToolDef = {
 
 export const sandbox_ls: BuiltinToolDef = {
   slug: 'sandbox_ls',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+  },
   name: 'List sandbox files',
   description:
     "List a directory under a sandbox's /files as structured rows (name, type, size, modified) " +
@@ -246,6 +253,13 @@ export const sandbox_ls: BuiltinToolDef = {
 
 export const sandbox_publish: BuiltinToolDef = {
   slug: 'sandbox_publish',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Publish sandbox service',
   description:
     'Make a service running inside a sandbox callable by the brain: declares the port to the ' +

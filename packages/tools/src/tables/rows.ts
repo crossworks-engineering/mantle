@@ -21,9 +21,17 @@ import {
   rowExists,
   windowFile,
 } from './common';
+import { edit } from '../item-write-gate';
 
 export const table_row_add: BuiltinToolDef = {
   slug: 'table_row_add',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Add a row',
   description:
@@ -92,6 +100,13 @@ const ROWS_ADD_MAX = 200;
 
 export const table_rows_add: BuiltinToolDef = {
   slug: 'table_rows_add',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Add many rows',
   description:
@@ -169,6 +184,13 @@ export const table_rows_add: BuiltinToolDef = {
 // plus a row-by-row write loop. Whole batch = one atomic applyTableOps.
 export const table_rows_upsert: BuiltinToolDef = {
   slug: 'table_rows_upsert',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Upsert many rows by key',
   description:
@@ -384,6 +406,13 @@ export const table_rows_upsert: BuiltinToolDef = {
 
 export const table_row_update: BuiltinToolDef = {
   slug: 'table_row_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Update a row',
   description:
@@ -443,6 +472,13 @@ export const table_row_update: BuiltinToolDef = {
 
 export const table_row_delete: BuiltinToolDef = {
   slug: 'table_row_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Delete a row',
   description: 'Remove a row by id. Writes to DRAFT.',
@@ -492,6 +528,13 @@ export const table_row_delete: BuiltinToolDef = {
 
 export const table_cell_set: BuiltinToolDef = {
   slug: 'table_cell_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('table_id')],
+    keyArea: 'tables',
+  },
   preconditions: TABLE_ID_PRE,
   name: 'Set one cell',
   description: 'Set a single cell — row by id, column by id or name. Writes to DRAFT.',

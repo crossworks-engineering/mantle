@@ -49,7 +49,12 @@ const TEMPLATE_DOC =
 
 export const api_tool_list: BuiltinToolDef = {
   slug: 'api_tool_list',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    recipe: { step: 'forbidden' },
+  },
   name: 'List registered tools',
   description:
     'List every tool in the registry (builtin, http, shell, recipe, mcp): slug, kind, enabled, requires_confirm, and a short description. Use api_tool_get for full details of one tool.',
@@ -87,7 +92,12 @@ export const api_tool_list: BuiltinToolDef = {
 
 export const api_tool_get: BuiltinToolDef = {
   slug: 'api_tool_get',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    recipe: { step: 'forbidden' },
+  },
   name: 'Get one tool',
   description:
     'Full definition of one tool by slug: description, input schema, and handler (url/method/headers/query/body templates for http tools).',
@@ -120,6 +130,13 @@ export const api_tool_get: BuiltinToolDef = {
 
 export const api_tool_create: BuiltinToolDef = {
   slug: 'api_tool_create',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Create an HTTP API tool',
   description:
     `Register a new HTTP tool agents can call. ${TEMPLATE_DOC} ` +
@@ -274,6 +291,13 @@ function externalAccessOffActor(ctx: ToolHandlerContext): ExternalAccessOffActor
 
 export const api_tool_update: BuiltinToolDef = {
   slug: 'api_tool_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Update an HTTP API tool',
   description:
     "Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents. `external_access` (see its param) opens an http tool to shared apps; on an mcp connector tool it is only the read-only mark, so close one by raising its connector's level or disabling it. Only the owner's MCP client switches it on.",
@@ -554,6 +578,13 @@ export const api_tool_update: BuiltinToolDef = {
 
 export const api_tool_delete: BuiltinToolDef = {
   slug: 'api_tool_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Delete a user-defined tool',
   description:
     'Delete a user-defined (http/shell) tool by slug. Built-ins cannot be deleted. Check tool_group_list first — deleting a tool other agents use breaks them silently.',
@@ -581,6 +612,13 @@ export const api_tool_delete: BuiltinToolDef = {
 
 export const api_tool_test: BuiltinToolDef = {
   slug: 'api_tool_test',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Test an HTTP API tool',
   description:
     'Execute an HTTP tool with the given input and return the real response — use after api_tool_create/update to prove the tool works before handing it to agents. Runs the exact dispatcher agents use (templating + vault secrets). Refuses builtin/shell tools.',
@@ -628,7 +666,12 @@ export const api_tool_test: BuiltinToolDef = {
 
 export const api_key_refs: BuiltinToolDef = {
   slug: 'api_key_refs',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'keys', systemWhole: true },
+    recipe: { step: 'forbidden' },
+  },
   name: 'List vault key references',
   description:
     'List the encrypted API-key vault entries as {{secret:service/label}} reference strings for use in tool templates. Returns masked previews only — plaintext never leaves the vault. If the service the user wants is missing, ask them to add the key under Settings → API keys.',

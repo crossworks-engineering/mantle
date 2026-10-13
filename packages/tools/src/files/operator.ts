@@ -23,9 +23,11 @@ import { str, strOpt, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { manage } from '../item-write-gate';
 
 export const folder_create: BuiltinToolDef = {
   slug: 'folder_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'branch', keyArea: 'files' },
   mcpOnly: true,
   name: 'Create a folder',
   description:
@@ -89,6 +91,13 @@ export const folder_create: BuiltinToolDef = {
 
 export const folder_delete: BuiltinToolDef = {
   slug: 'folder_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('folder_id')],
+    keyArea: 'files',
+  },
   mcpOnly: true,
   preconditions: FOLDER_ID_PRE,
   name: 'Delete a folder',
@@ -112,6 +121,7 @@ export const folder_delete: BuiltinToolDef = {
 
 export const file_upload: BuiltinToolDef = {
   slug: 'file_upload',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'file', keyArea: 'files' },
   mcpOnly: true,
   name: 'Create or overwrite a file',
   description:
@@ -216,6 +226,13 @@ function undeletableReason(
 
 export const file_delete: BuiltinToolDef = {
   slug: 'file_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('file_id')],
+    keyArea: 'files',
+  },
   mcpOnly: true,
   preconditions: FILE_ID_PRE,
   name: 'Delete a file',

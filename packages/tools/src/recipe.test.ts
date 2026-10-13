@@ -22,6 +22,9 @@ import {
   resolveTemplateValue,
   type RecipeScope,
 } from './recipe';
+// The access lists are views of the tool policy table, which the registry
+// fills (A5): load it.
+import './registry';
 
 const scope = (over: Partial<RecipeScope> = {}): RecipeScope => ({
   input: { note_id: 'n1', title: 'Hi', tags: ['a', 'b'] },

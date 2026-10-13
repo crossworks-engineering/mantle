@@ -1,3 +1,5 @@
+import { policySlugSet } from './tool-policy';
+
 /**
  * Which tool results carry THIRD-PARTY authored content and must be fenced
  * as data before the model reads them (see agent-runtime's fenceRetrieved).
@@ -12,15 +14,12 @@
  *    purely of brain builtins stays unfenced — its data is the user's own.
  *
  * Single source of truth: the loop and dispatchRecipe both import this set;
- * don't redeclare it elsewhere.
+ * don't redeclare it elsewhere. A view of the tool policy table
+ * (tool-policy.ts, A5): `outside.untrusted`. Today: the web fetch and
+ * search, a mini app's error log (its SQL and messages can come from a
+ * public visitor, apps audit 2026-10-02, item 12) and a mini app's rows over
+ * MCP (written by the app's users, team apps Phase 1).
  */
-export const UNTRUSTED_CONTENT_TOOL_SLUGS: ReadonlySet<string> = new Set([
-  'web_fetch',
-  'web_search',
-  // A mini app's error log: the SQL and the messages can come from a public
-  // visitor of the app (apps audit 2026-10-02, item 12).
-  'app_errors',
-  // A mini app's rows over MCP (team apps Phase 1): written by the app's
-  // users (members, clients), not by the reader.
-  'app_data_query',
-]);
+export const UNTRUSTED_CONTENT_TOOL_SLUGS: ReadonlySet<string> = policySlugSet(
+  (p) => p.outside?.untrusted === true,
+);

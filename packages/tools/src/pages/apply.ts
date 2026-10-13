@@ -22,6 +22,7 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, draftConflict, pickEditingBaseline } from './common';
+import { edit } from '../item-write-gate';
 
 /** Upper bound on ops per batch — big enough for real jobs (the 47-quote
  *  wrap, a 40-block renumber), small enough that a runaway payload is
@@ -37,6 +38,14 @@ const MAX_APPLY_OPS = 50;
 
 export const page_blocks_apply: BuiltinToolDef = {
   slug: 'page_blocks_apply',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('page_id')],
+    keyArea: 'pages',
+    keySharedContent: true,
+  },
   preconditions: [...PAGE_ID_PRE, { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' }],
   name: 'Apply a batch of block edits to a page (atomic)',
   description:

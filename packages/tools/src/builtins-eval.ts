@@ -125,11 +125,17 @@ function toNodeHits(
 
 const recall_eval: BuiltinToolDef = {
   slug: 'recall_eval',
+  // The Jev-scored passage path calls the decider (when a pool is set).
+  policy: {
+    effect: 'write',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'admin',
+    peerRisky: true,
+  },
   name: 'Run the retrieval-quality eval',
   description:
     "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases`, a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) runs through the retrievers agents use (hybrid node and passage search; with passage_scoring's pool set, also the Jev-scored path, about USD 0.0007 per 25 passages per case), is scored (recall@k, MRR), saved as one run note and compared to the previous run. `alert: true` with `reason: 'quality_dropped'` when quality fell, or `reason: 'gold_set_unmatched'` when EVERY case missed both retrievers (repair the gold set, see `unmatchedCases`). `skipped: true, alert: false` when no gold set exists: unmeasured, not degraded, say nothing. Capacity is `brain_capacity`; this measures QUALITY.",
-  // The Jev-scored passage path calls the decider (when a pool is set).
-  spends: true,
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const casesNote = await latestTaggedNoteJson(ctx.ownerId, CASES_TAG);

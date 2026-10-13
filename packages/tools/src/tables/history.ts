@@ -19,6 +19,7 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
 import { TABLE_NODE_ID_PRE } from './common';
+import { edit } from '../item-write-gate';
 
 const ID = { type: 'string', description: "The table's id (UUID) — from `table_list`." };
 const SNAPSHOT_ID = {
@@ -43,8 +44,8 @@ function historyError(err: unknown): { ok: false; error: string } {
 
 export const table_history: BuiltinToolDef = {
   slug: 'table_history',
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   ownerOnly: true,
-  readOnly: true,
   preconditions: TABLE_NODE_ID_PRE,
   name: "List a table's history",
   description:
@@ -82,6 +83,7 @@ export const table_history: BuiltinToolDef = {
 
 export const table_snapshot_create: BuiltinToolDef = {
   slug: 'table_snapshot_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')], keyArea: 'tables' },
   ownerOnly: true,
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Snapshot a table',
@@ -120,6 +122,14 @@ export const table_snapshot_create: BuiltinToolDef = {
 
 export const table_snapshot_restore: BuiltinToolDef = {
   slug: 'table_snapshot_restore',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'tables',
+  },
   ownerOnly: true,
   requiresConfirm: true,
   preconditions: TABLE_NODE_ID_PRE,
@@ -189,6 +199,14 @@ export const table_snapshot_restore: BuiltinToolDef = {
 
 export const table_snapshot_delete: BuiltinToolDef = {
   slug: 'table_snapshot_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'tables',
+  },
   ownerOnly: true,
   requiresConfirm: true,
   preconditions: TABLE_NODE_ID_PRE,

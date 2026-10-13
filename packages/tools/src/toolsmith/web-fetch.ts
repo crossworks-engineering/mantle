@@ -36,6 +36,14 @@ function crudeHtmlToText(html: string): string {
 
 export const web_fetch: BuiltinToolDef = {
   slug: 'web_fetch',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    outside: { untrusted: true, egress: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Fetch a web page',
   description:
     "Fetch a URL (API documentation, OpenAPI spec, reference page) and return its readable text. HTML is converted to plain text; JSON/markdown/plain text come back as-is. Long pages are truncated — pass offset to continue reading. Use this to read a service's API docs before authoring tools with api_tool_create.",

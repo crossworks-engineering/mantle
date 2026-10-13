@@ -52,6 +52,7 @@ async function groupForIntegrationWrite(
 
 export const api_docs_set: BuiltinToolDef = {
   slug: 'api_docs_set',
+  policy: { effect: 'write', spends: 'none', scope: { area: 'connectors' }, peerRisky: true },
   name: "Store an integration's API docs",
   description:
     "Store (or REPLACE) an integration group's API documentation as a markdown file on this brain and point the group at it. Returns the stored size. Do this right after `web_fetch`ing a service's docs, before authoring: the next pass — any agent, months later — then reads `api_docs_get` instead of re-fetching a page that may have moved or gone behind auth. The stored copy is indexed, so every agent's `search_nodes` can find it. Keep the endpoint reference, auth scheme, parameters, and an example response; drop the marketing pages. Pass source_url so provenance is recorded.",
@@ -147,7 +148,7 @@ export const api_docs_set: BuiltinToolDef = {
 
 export const api_docs_get: BuiltinToolDef = {
   slug: 'api_docs_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: { area: 'connectors' } },
   name: "Read an integration's stored API docs",
   description:
     "Read back the API documentation stored on an integration group — the markdown `api_docs_set` saved, in slices (pass offset to continue). **Read this FIRST when adding a call to an existing integration**: it's this brain's captured copy, so it costs nothing and can't have moved. Use `web_fetch` only when a group has no stored docs or they don't cover the endpoint you need — then `api_docs_set` the refreshed copy back. Returns has_docs false (not an error) when nothing is stored, plus where the copy came from and when it was captured, so you can judge staleness.",
@@ -250,6 +251,12 @@ const SOFT_SKILL_WORDS = 320;
  */
 export const api_skill_set: BuiltinToolDef = {
   slug: 'api_skill_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+  },
   name: "Write an integration's usage skill",
   description:
     'Write (or replace) the short USAGE skill that travels with an integration group: distilled judgment — which endpoint answers which question, unit and date conventions, how to chain two calls, how to read the response. Every agent granted the group gets this in its context on every turn, so keep it tight and never paste the reference docs in (those live in `api_docs_set`; this is what you learned USING them). Do it last, after the calls test green. Creates/updates one skill per group and links it, so calling twice revises rather than forking.',

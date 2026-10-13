@@ -4,6 +4,7 @@
  */
 
 import type { TurnTaint } from './client-sourced';
+import type { ToolPolicy } from './tool-policy';
 
 export type ToolHandlerContext = {
   /** The owner running this tool. Every handler scopes its work to one owner. */
@@ -315,29 +316,34 @@ export type BuiltinToolDef = {
   inputSchema: Record<string, unknown>;
   /** Whether the tool-call loop should pause for operator approval. */
   requiresConfirm?: boolean;
-  /** Marks this builtin as SAFE FOR A READ-ONLY TURN: it mutates nothing the
-   *  owner owns and sends nothing outward. Consumed by the `read_only` turn
-   *  preset (see `isBuiltinReadOnly`), which is DEFAULT-DENY: a tool without
-   *  this flag is excluded, so a new write/egress builtin is locked out the
-   *  day it ships without anyone updating a list. That is the whole point —
-   *  do NOT invert it into a `writes: true` flag.
+  /** What the tool is, for every check that asks (A5, tool-policy.ts):
+   *  read or write, what it spends, its Admin step, what it creates, what
+   *  it reaches outside the database. Required: a builtin with no policy
+   *  does not build. The access lists of this package are views of it. */
+  policy: ToolPolicy;
+  /** SAFE FOR A READ-ONLY TURN: `policy.effect === 'read'`, read through
+   *  this accessor (withPolicyFlags); never set it on a definition. Consumed
+   *  by the `read_only` turn preset (see `isBuiltinReadOnly`), which is
+   *  DEFAULT-DENY: a tool whose effect is not `read` is excluded, so a new
+   *  write/egress builtin is locked out the day it ships.
    *
-   *  Set it only when ALL of these hold:
+   *  A policy says `read` only when ALL of these hold:
    *    1. No write to the owner's data (no node/file/table/app row touched).
    *    2. Nothing leaves the box — no email, no Telegram, no arbitrary URL.
    *    3. No hand-off to something that could do either (`invoke_agent` is
    *       NOT read-only: the child runs its own, possibly writing, grants).
-   *  If you are unsure, leave it off. Excluding a safe read costs a probe
+   *  If you are unsure, say `write`. Excluding a safe read costs a probe
    *  some reach; including an unsafe one sends real mail. */
-  readOnly?: true;
-  /** Starts paid model work on a call: a chat, vision, speech, image or
-   *  decider adapter, a web-search model, or a delegated agent turn (the
-   *  local embedder does not count). Orthogonal to `readOnly`: a read can
-   *  spend (extract_from_image reads an image through the vision model). A
-   *  member's app never calls a spending tool (member-app-tools.ts), and
-   *  spends-drift.test.ts fails until every builtin that calls one of those
-   *  adapters carries this flag. */
-  spends?: true;
+  readonly readOnly?: true;
+  /** Starts paid model work on a call: `policy.startsModelWork`, read
+   *  through this accessor (withPolicyFlags); never set it on a definition.
+   *  A chat, vision, speech, image or decider adapter, a web-search model,
+   *  or a delegated agent turn (the local embedder does not count).
+   *  Orthogonal to `readOnly`: a read can spend (extract_from_image reads an
+   *  image through the vision model). A member's app never calls a spending
+   *  tool (member-app-tools.ts), and spends-drift.test.ts fails until every
+   *  builtin that calls one of those adapters carries it. */
+  readonly spends?: true;
   /** Referential requirements checked centrally pre-dispatch — see
    *  {@link ToolPrecondition}. */
   preconditions?: readonly ToolPrecondition[];

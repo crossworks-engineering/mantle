@@ -20,6 +20,7 @@ import { errorMessage } from '@mantle/std';
 
 const set_timezone: BuiltinToolDef = {
   slug: 'set_timezone',
+  policy: { effect: 'write', spends: 'none', scope: 'admin' },
   name: 'Set the profile timezone',
   description:
     "Change the user's profile timezone. Use when the user is in — or travelling to — a different timezone and the 'Current time:' context line is wrong for where they actually are, or when they ask. If you know their location (the Current location line / a reverse-geocoded city), derive the correct IANA zone yourself and set it. PERSISTENT — all times, event scheduling, reminders, and quiet hours follow it until it's changed back — so say what you changed and offer to switch it back when they head home. Returns the new timezone and the current local time in it so you can confirm.",

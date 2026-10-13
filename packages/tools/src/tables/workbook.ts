@@ -23,9 +23,11 @@ import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, TABLE_NODE_ID_PRE, colSummary } from './common';
 import { tableHistoryActor } from './history';
+import { edit, manage } from '../item-write-gate';
 
 export const table_create: BuiltinToolDef = {
   slug: 'table_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'table', keyArea: 'tables' },
   name: 'Create a table',
   description:
     "Create a typed database grid (a `table` node under /tables). `title` required. Optionally seed `columns` — each `{ name, type }` where type is text|number|currency|percent|date|datetime|checkbox|select|multiselect|url|formula. Starts empty (no rows) so you can add rows next, or import from a spreadsheet with `table_from_file`. The grid is indexed into the brain (summary, embedding, facts) on commit. Prefer this over a Pages table when the data is tabular and you'll want totals, typed columns, sorting, or per-row edits.",
@@ -101,6 +103,7 @@ export const table_create: BuiltinToolDef = {
 
 export const table_from_file: BuiltinToolDef = {
   slug: 'table_from_file',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'table' },
   preconditions: FILE_ID_PRE,
   name: 'Create a table from a spreadsheet',
   description:
@@ -200,6 +203,7 @@ export const table_from_file: BuiltinToolDef = {
 
 export const table_from_text: BuiltinToolDef = {
   slug: 'table_from_text',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'table' },
   name: 'Create a table from pasted tabular text',
   description:
     'Build a NEW typed grid from a block of tabular text in ONE call — CSV, TSV, or a markdown pipe table. **This is the right tool for "make a table from these results / this data" when the rows are in the conversation.** It always CREATES a new table — to add rows to an EXISTING table use `table_rows_add` (bulk) or `table_row_add` (single), never this. Do NOT create an empty table and add rows one at a time either — `table_rows_add` ingests a whole batch at once. The header row becomes columns and types are inferred (numbers, dates from xlsx, text). The table is created + indexed immediately. `title` is optional.',
@@ -278,6 +282,7 @@ export const table_from_text: BuiltinToolDef = {
 
 export const table_update: BuiltinToolDef = {
   slug: 'table_update',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')], keyArea: 'tables' },
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Update table metadata',
   description:
@@ -319,6 +324,14 @@ export const table_update: BuiltinToolDef = {
 
 export const table_delete: BuiltinToolDef = {
   slug: 'table_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    peerRisky: true,
+    keyArea: 'tables',
+  },
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Delete a table',
   description:
@@ -347,6 +360,7 @@ export const table_delete: BuiltinToolDef = {
 
 export const table_commit: BuiltinToolDef = {
   slug: 'table_commit',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')], keyArea: 'tables' },
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Commit a table draft',
   description:

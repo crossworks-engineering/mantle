@@ -210,7 +210,14 @@ async function runWebSearch(
 
 const web_search: BuiltinToolDef = {
   slug: 'web_search',
-  spends: true,
+  policy: {
+    effect: 'write',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    outside: { untrusted: true, egress: true },
+    peerRisky: true,
+  },
   name: 'Search the web',
   description:
     "Search the live internet and get a synthesised, cited answer (backed by Perplexity Sonar). Pass a focused natural-language query; returns an `answer` plus the `citations` (source URLs) it relied on. This is the STANDARD, fast/cheap tier — use it for most lookups: current events, latest docs/prices, how-tos, fact-checking a claim. You can call it several times to triangulate. For genuinely hard or conflicting questions use web_search_pro. For the user's OWN past data use search_nodes or recall instead — this only sees the public web.",
@@ -220,7 +227,13 @@ const web_search: BuiltinToolDef = {
 
 const web_search_pro: BuiltinToolDef = {
   slug: 'web_search_pro',
-  spends: true,
+  policy: {
+    effect: 'write',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    peerRisky: true,
+  },
   name: 'Deep web search',
   description:
     'Like web_search but uses a STRONGER, SLOWER model — reserve it for hard, ambiguous, or high-stakes questions, or when standard web_search results conflict or are thin. It costs more and takes noticeably longer, so prefer web_search for routine lookups and reach for this only when the question warrants the extra depth.',

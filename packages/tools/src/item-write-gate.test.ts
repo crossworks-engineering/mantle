@@ -131,7 +131,8 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       'email_get',
       'run_terminal',
       // W7a fix round 2: each reads, writes or runs something in the scope.
-      'heartbeat_fire',
+      // (heartbeat_fire too: its policy is on its definition in
+      // @mantle/runtime, pinned by packages/runtime/src/tool-policy-snapshot.test.ts.)
       'api_docs_set',
       'api_docs_get',
       'update_persona',

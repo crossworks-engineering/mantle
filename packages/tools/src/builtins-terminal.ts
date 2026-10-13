@@ -45,6 +45,13 @@ function resolveCwd(override?: unknown): string {
 
 const run_terminal: BuiltinToolDef = {
   slug: 'run_terminal',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', adminOnly: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Run terminal command',
   description:
     'Run a shell command on the server and return its stdout, stderr and exit code. ' +

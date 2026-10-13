@@ -64,7 +64,7 @@ function regionOf(raw: unknown): DrawRegion | null | 'invalid' {
 
 const draw_list: BuiltinToolDef = {
   slug: 'draw_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'List drawings',
   description:
     "List the owner's whiteboard drawings (/draw), **newest first**. Optional `query` substring-matches title/body/summary; `tag` filters. Bodies are omitted. " +
@@ -139,7 +139,7 @@ async function pictureOf(
 
 const draw_get: BuiltinToolDef = {
   slug: 'draw_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any' },
   preconditions: DRAW_ID_PRE,
   name: 'Get a drawing',
   description:

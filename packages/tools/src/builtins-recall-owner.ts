@@ -38,6 +38,7 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { str } from './coerce';
 import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
 import { mapRef } from './builtins-recall-write';
+import { recallMap, recallRevisionTargets } from './item-write-gate';
 
 /** The owner, through an MCP client. */
 const OWNER_VIA_MCP: RecallActor = { kind: 'owner', id: null, name: 'mcp' };
@@ -99,9 +100,9 @@ const VERSION_PROP = {
 
 const recall_pending: BuiltinToolDef = {
   slug: 'recall_pending',
+  policy: { effect: 'read', spends: 'none', scope: 'admin' },
   mcpOnly: true,
   ownerOnly: true,
-  readOnly: true,
   name: 'List what waits for the owner in Recall',
   description:
     'List what in Recall waits for the owner: maps an agent made that are not published yet, and cards an agent asked to make a prompt (or whose prompt text an agent changed), with the text to confirm and the map version to confirm it at. Use before `recall_prompt_confirm` or `recall_map_publish`, and show the user the text first.',
@@ -168,9 +169,9 @@ const recall_pending: BuiltinToolDef = {
 
 const recall_map_get: BuiltinToolDef = {
   slug: 'recall_map_get',
+  policy: { effect: 'read', spends: 'none', scope: 'admin' },
   mcpOnly: true,
   ownerOnly: true,
-  readOnly: true,
   name: 'Read a whole Recall map as the owner',
   description:
     'Read one Recall map whole, as the owner sees it in the editor: its settings, version and every card with body, use-when, prompt state and options, published or not. Agents walking a published map use `recall_open` instead.',
@@ -218,6 +219,7 @@ const recall_map_get: BuiltinToolDef = {
 
 const recall_prompt_confirm: BuiltinToolDef = {
   slug: 'recall_prompt_confirm',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', items: recallMap('edit') },
   mcpOnly: true,
   ownerOnly: true,
   name: 'Confirm or drop a Recall prompt',
@@ -259,6 +261,7 @@ const recall_prompt_confirm: BuiltinToolDef = {
 
 const recall_map_publish: BuiltinToolDef = {
   slug: 'recall_map_publish',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', items: recallMap('edit') },
   mcpOnly: true,
   ownerOnly: true,
   name: 'Publish or unpublish a Recall map',
@@ -296,6 +299,7 @@ const recall_map_publish: BuiltinToolDef = {
 
 const recall_map_delete: BuiltinToolDef = {
   slug: 'recall_map_delete',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', items: recallMap('manage') },
   mcpOnly: true,
   ownerOnly: true,
   name: 'Delete a Recall map',
@@ -328,6 +332,7 @@ const recall_map_delete: BuiltinToolDef = {
 
 const recall_cards_reorder: BuiltinToolDef = {
   slug: 'recall_cards_reorder',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', items: recallMap('edit') },
   mcpOnly: true,
   ownerOnly: true,
   name: "Reorder a Recall map's cards",
@@ -363,9 +368,9 @@ const recall_cards_reorder: BuiltinToolDef = {
 
 const recall_revisions: BuiltinToolDef = {
   slug: 'recall_revisions',
+  policy: { effect: 'read', spends: 'none', scope: 'admin' },
   mcpOnly: true,
   ownerOnly: true,
-  readOnly: true,
   name: "Read a Recall map's revision log",
   description:
     "A Recall map's revision log, newest first (the last 50): who changed what and when, with each revision's id for `recall_revision_restore`.",
@@ -397,6 +402,7 @@ const recall_revisions: BuiltinToolDef = {
 
 const recall_revision_restore: BuiltinToolDef = {
   slug: 'recall_revision_restore',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', items: recallRevisionTargets },
   mcpOnly: true,
   ownerOnly: true,
   name: 'Restore a Recall revision',
@@ -431,6 +437,7 @@ const recall_revision_restore: BuiltinToolDef = {
 
 const recall_map_set_slug: BuiltinToolDef = {
   slug: 'recall_map_set_slug',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', items: recallMap('edit') },
   mcpOnly: true,
   ownerOnly: true,
   name: "Change a Recall map's slug",
@@ -468,6 +475,7 @@ const recall_map_set_slug: BuiltinToolDef = {
 
 const recall_card_set_slug: BuiltinToolDef = {
   slug: 'recall_card_set_slug',
+  policy: { effect: 'write', spends: 'none', scope: 'admin', items: recallMap('edit') },
   mcpOnly: true,
   ownerOnly: true,
   name: "Change a Recall card's slug",

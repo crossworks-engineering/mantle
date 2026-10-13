@@ -26,7 +26,12 @@ import { isOwnerSurface } from '../surface';
 
 export const tool_group_list: BuiltinToolDef = {
   slug: 'tool_group_list',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'assistants', systemWhole: true },
+    recipe: { step: 'forbidden' },
+  },
   name: 'List tool groups',
   description:
     'List tool groups (capability bundles agents are granted): slug, tool slugs, and which agents currently grant each group. A group bound to an API also reports its integration — service, base URL, vault ref, whether documentation is stored, and its usage skill. Start here when extending an existing integration: find the group, then `api_docs_get` its stored docs.',
@@ -89,6 +94,13 @@ function oauth2Summary(o: ToolGroupIntegration['oauth2']) {
 
 export const tool_group_ensure: BuiltinToolDef = {
   slug: 'tool_group_ensure',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'assistants', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Create or update a tool group',
   description:
     "Create a tool group if it doesn't exist, or update its tool list. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Unknown tool slugs are reported as warnings, not errors. " +
@@ -431,7 +443,12 @@ export const tool_group_ensure: BuiltinToolDef = {
 
 export const agent_list: BuiltinToolDef = {
   slug: 'agent_list',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'assistants', systemWhole: true },
+    recipe: { step: 'forbidden' },
+  },
   name: 'List agents',
   description:
     'Read-only list of the agents on this Mantle: slug, name, role, enabled, which tool groups each grants, and its thinking effort (null = inherits the profile). Use before agent_grant_tool_group or agent_set_thinking_effort.',
@@ -469,6 +486,13 @@ export const agent_list: BuiltinToolDef = {
 
 export const agent_grant_tool_group: BuiltinToolDef = {
   slug: 'agent_grant_tool_group',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'assistants', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Grant a tool group to an agent',
   description:
     "Add a tool group to an agent's grants so its tools become callable by that agent (chat turns and heartbeat fires alike). Confirm with the user which agent should receive new capabilities before granting.",
@@ -613,6 +637,13 @@ const THINKING_EFFORT_INPUTS = ['inherit', ...AGENT_THINKING_EFFORTS] as const;
 
 export const agent_set_thinking_effort: BuiltinToolDef = {
   slug: 'agent_set_thinking_effort',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'assistants', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: "Set an agent's thinking effort",
   description:
     "Set how hard an agent reasons before it answers: 'inherit' (follow the owner's profile setting), 'off', or a tier from 'low' to 'max'. Higher tiers cost more per turn and are used only when the model supports reasoning effort. Confirm the agent and the tier with the user first. Another agent asking waits for operator approval.",

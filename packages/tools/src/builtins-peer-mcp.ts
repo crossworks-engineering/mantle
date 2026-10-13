@@ -112,7 +112,12 @@ function firstSentence(s: string | undefined): string {
 
 const peer_tools: BuiltinToolDef = {
   slug: 'peer_tools',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+  },
   name: 'List the tools a peer lets us call',
   description:
     "List the tools a federated peer lets this brain call on its MCP endpoint, as the login the peer's owner bound us to (the owner, a member or a client, read-only unless they turned write on). Returns names and one-line descriptions; pass `tool` to get one tool's full input schema before `peer_call`. For data a peer shared the older way use `peer_query`.",
@@ -167,6 +172,12 @@ const peer_tools: BuiltinToolDef = {
 
 const peer_call: BuiltinToolDef = {
   slug: 'peer_call',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+  },
   name: 'Call a tool on a peer',
   description:
     "Call one tool on a federated peer's MCP endpoint, as the login the peer's owner bound us to. It can WRITE on the peer when the peer allows it (its write switch). Get the tool names and schemas with `peer_tools` first. To copy one of our files to the peer use `peer_file_copy`.",
@@ -211,6 +222,7 @@ const peer_call: BuiltinToolDef = {
 
 const peer_file_copy: BuiltinToolDef = {
   slug: 'peer_file_copy',
+  policy: { effect: 'write', spends: 'none', scope: { area: 'connectors' }, peerRisky: true },
   name: 'Copy one of our files to a peer',
   preconditions: FILE_ID_PRE,
   description:

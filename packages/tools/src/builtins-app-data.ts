@@ -209,7 +209,7 @@ const PARAMS_PROP = {
 
 export const app_data_list: BuiltinToolDef = {
   slug: 'app_data_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'app_data' },
   name: 'List the apps you can reach',
   description:
     "List the mini apps whose data your MCP connection may reach: each app's id, name, whether you may only read or also write its data, and its tables. Only apps an admin opened to MCP and that you may run are listed. Start here, then app_data_schema for columns and app_data_query to read rows.",
@@ -259,7 +259,7 @@ export const app_data_list: BuiltinToolDef = {
 
 export const app_data_schema: BuiltinToolDef = {
   slug: 'app_data_schema',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'app_data' },
   name: "Read an app's tables and columns",
   description:
     "One app's database: its tables and views, each column (name, type, not null, primary key), the row count of each table, and the schema version. Read it before you query or write. The schema belongs to the app's author: the app_data tools never change it.",
@@ -319,7 +319,13 @@ export const app_data_schema: BuiltinToolDef = {
 
 export const app_data_query: BuiltinToolDef = {
   slug: 'app_data_query',
-  readOnly: true,
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    outside: { untrusted: true },
+    keyArea: 'app_data',
+  },
   name: "Query an app's data",
   description:
     "Run ONE read-only SQL statement (SELECT or WITH) on one app's database and get the rows. Use ? placeholders with params for values. The database is opened read-only, so any write is refused. `:host_me_id`, `:host_me_name` and `:host_me_kind` are filled with who you are in this app, as when the app runs. Caps: 5 s, 50,000 rows, 8 MB: add WHERE, LIMIT or an aggregate.",
@@ -383,6 +389,7 @@ export const app_data_query: BuiltinToolDef = {
 
 export const app_data_write: BuiltinToolDef = {
   slug: 'app_data_write',
+  policy: { effect: 'write', spends: 'none', scope: 'any', keyArea: 'app_data' },
   name: "Change an app's data",
   description:
     "Run ONE INSERT, UPDATE, DELETE or REPLACE on one app's database (a WITH before it is fine). Use ? placeholders with params for values; write `:host_me_id` / `:host_me_name` to record who did it, the server fills them. Rows only: CREATE, DROP, ALTER and every other schema change are refused (the schema is the app author's). Only on an app app_data_list shows as read_write. The first write to an app in an hour saves a snapshot first, so an admin can undo it.",
@@ -533,11 +540,11 @@ export const LOGIN_APP_DATA_TOOLS: BuiltinToolDef[] = [
   app_data_write,
 ];
 
-/** The read tools: a login with MCP on gets these. */
-export const APP_DATA_READ_TOOL_SLUGS: readonly string[] = [
-  'app_data_list',
-  'app_data_schema',
-  'app_data_query',
-];
+/** The read tools: a login with MCP on gets these (their policy's effect). */
+export const APP_DATA_READ_TOOL_SLUGS: readonly string[] = Object.freeze(
+  LOGIN_APP_DATA_TOOLS.filter((d) => d.policy.effect === 'read').map((d) => d.slug),
+);
 /** The write tool: only with the login's Write switch on. */
-export const APP_DATA_WRITE_TOOL_SLUGS: readonly string[] = ['app_data_write'];
+export const APP_DATA_WRITE_TOOL_SLUGS: readonly string[] = Object.freeze(
+  LOGIN_APP_DATA_TOOLS.filter((d) => d.policy.effect === 'write').map((d) => d.slug),
+);

@@ -47,6 +47,9 @@ import {
   uuidsIn,
   type TurnTaint,
 } from './client-sourced';
+// The access lists are views of the tool policy table, which the registry
+// fills (A5): load it.
+import './registry';
 
 const ID = '99999999-9999-4999-8999-999999999999';
 

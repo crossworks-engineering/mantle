@@ -92,7 +92,7 @@ import {
   scopeHoldsAdmin,
   withCreateHome,
 } from '@mantle/db';
-import { toolItemWriteRefusal } from './item-write-gate';
+import { appCopy, edit, manage, toolItemWriteRefusal } from './item-write-gate';
 
 /**
  * The app write tools (everything that writes an app's code, manifest,
@@ -152,6 +152,14 @@ function fileList(app: AppDetail) {
 
 const app_create: BuiltinToolDef = {
   slug: 'app_create',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'app',
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   name: 'Create a mini app',
   description:
@@ -221,6 +229,14 @@ const app_create: BuiltinToolDef = {
 
 const app_update: BuiltinToolDef = {
   slug: 'app_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Update a mini app's name and look",
@@ -295,7 +311,7 @@ const app_update: BuiltinToolDef = {
 
 const app_get: BuiltinToolDef = {
   slug: 'app_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   preconditions: APP_ID_PRE,
   name: 'Get a mini app',
   description:
@@ -334,6 +350,15 @@ const app_get: BuiltinToolDef = {
 
 const app_file_write: BuiltinToolDef = {
   slug: 'app_file_write',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    outside: { appCode: true },
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Write a file in a mini app',
@@ -382,6 +407,15 @@ const app_file_write: BuiltinToolDef = {
 
 const app_file_delete: BuiltinToolDef = {
   slug: 'app_file_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    outside: { appCode: true },
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a file from a mini app',
@@ -418,6 +452,15 @@ const app_file_delete: BuiltinToolDef = {
 
 const app_source_set: BuiltinToolDef = {
   slug: 'app_source_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    outside: { appCode: true },
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Set a mini app's whole source tree",
@@ -489,6 +532,14 @@ const app_source_set: BuiltinToolDef = {
 
 const app_build: BuiltinToolDef = {
   slug: 'app_build',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Build a mini app',
@@ -547,6 +598,15 @@ const app_build: BuiltinToolDef = {
 
 const app_tools_set: BuiltinToolDef = {
   slug: 'app_tools_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    outside: { appCode: true },
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Declare a mini app's data tools",
@@ -603,6 +663,14 @@ const app_tools_set: BuiltinToolDef = {
 
 const app_db_schema_set: BuiltinToolDef = {
   slug: 'app_db_schema_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Set a mini app's SQLite schema",
@@ -674,6 +742,14 @@ const app_db_schema_set: BuiltinToolDef = {
 
 const app_db_seed: BuiltinToolDef = {
   slug: 'app_db_seed',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Bulk-load rows into a mini app's database",
@@ -751,7 +827,7 @@ const app_db_seed: BuiltinToolDef = {
 
 const app_list: BuiltinToolDef = {
   slug: 'app_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   name: 'List mini apps',
   description:
     "List the owner's mini apps, newest first. Optional `query` substring-matches name/source/summary; `tag` filters. Source is omitted to stay small.",
@@ -794,6 +870,15 @@ const app_list: BuiltinToolDef = {
 
 const app_publish: BuiltinToolDef = {
   slug: 'app_publish',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    outside: { appCode: true },
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
@@ -843,6 +928,14 @@ const app_publish: BuiltinToolDef = {
 
 const app_delete: BuiltinToolDef = {
   slug: 'app_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a mini app',
@@ -916,7 +1009,7 @@ async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) 
 
 const app_db_list: BuiltinToolDef = {
   slug: 'app_db_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   name: 'List app databases',
   description:
     "List the user's mini apps that have their OWN database, each with its tables (the CREATE statements reveal the columns). Use this FIRST to discover what app data exists, then `app_db_query` to read rows. Read-only.",
@@ -953,7 +1046,7 @@ const app_db_list: BuiltinToolDef = {
 
 const app_db_query: BuiltinToolDef = {
   slug: 'app_db_query',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   preconditions: APP_DB_ID_PRE,
   name: 'Query an app database',
   description:
@@ -1022,6 +1115,14 @@ const app_db_query: BuiltinToolDef = {
 
 const app_table_export_set: BuiltinToolDef = {
   slug: 'app_table_export_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Export an app's table to Tables",
@@ -1074,6 +1175,14 @@ const app_table_export_set: BuiltinToolDef = {
 
 const app_table_export_remove: BuiltinToolDef = {
   slug: 'app_table_export_remove',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Remove an app-table export',
@@ -1114,6 +1223,14 @@ export const APP_DATA_TOOL_SLUGS: string[] = APP_DATA_TOOLS.map((t) => t.slug);
 
 const app_snapshot_create: BuiltinToolDef = {
   slug: 'app_snapshot_create',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Snapshot a mini app',
@@ -1153,8 +1270,8 @@ const app_snapshot_create: BuiltinToolDef = {
 
 const app_snapshot_list: BuiltinToolDef = {
   slug: 'app_snapshot_list',
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   ownerOnly: true,
-  readOnly: true,
   preconditions: APP_ID_PRE,
   name: "List a mini app's history",
   description:
@@ -1191,6 +1308,15 @@ const app_snapshot_list: BuiltinToolDef = {
 
 const app_snapshot_restore: BuiltinToolDef = {
   slug: 'app_snapshot_restore',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    outside: { appCode: true },
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   requiresConfirm: true,
   preconditions: APP_ID_PRE,
@@ -1264,6 +1390,14 @@ const app_snapshot_restore: BuiltinToolDef = {
 
 const app_snapshot_delete: BuiltinToolDef = {
   slug: 'app_snapshot_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   requiresConfirm: true,
   preconditions: APP_ID_PRE,
@@ -1334,8 +1468,8 @@ async function manageableDeletedApps(ownerId: string): Promise<Map<string, strin
 
 const app_deleted_list: BuiltinToolDef = {
   slug: 'app_deleted_list',
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   ownerOnly: true,
-  readOnly: true,
   name: 'List recently deleted mini apps',
   description:
     'List the apps deleted in the last 30 days, newest first: id, name, when, until when it can come back, and whether its data was kept. Bring one back with `app_undelete`.',
@@ -1360,6 +1494,7 @@ const app_deleted_list: BuiltinToolDef = {
 
 const app_undelete: BuiltinToolDef = {
   slug: 'app_undelete',
+  policy: { effect: 'write', spends: 'none', scope: 'any', peerRisky: true, keyArea: 'apps' },
   ownerOnly: true,
   name: 'Bring back a deleted mini app',
   description:
@@ -1412,6 +1547,15 @@ const app_undelete: BuiltinToolDef = {
 
 const app_duplicate: BuiltinToolDef = {
   slug: 'app_duplicate',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'app',
+    items: appCopy,
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Duplicate a mini app',
@@ -1466,6 +1610,14 @@ const app_duplicate: BuiltinToolDef = {
 
 const app_export: BuiltinToolDef = {
   slug: 'app_export',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: appCopy,
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Export a mini app as a file',
@@ -1531,6 +1683,14 @@ const app_export: BuiltinToolDef = {
 
 const app_import: BuiltinToolDef = {
   slug: 'app_import',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'app',
+    peerRisky: true,
+    keyArea: 'apps',
+  },
   ownerOnly: true,
   preconditions: FILE_ID_PRE,
   name: 'Import a mini app from a file',
@@ -1638,8 +1798,14 @@ async function readStreamCapped(
 
 const app_errors: BuiltinToolDef = {
   slug: 'app_errors',
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    outside: { untrusted: true },
+    keyArea: 'apps',
+  },
   ownerOnly: true,
-  readOnly: true,
   preconditions: APP_ID_PRE,
   name: "Read a mini app's errors",
   description:
@@ -1705,16 +1871,6 @@ async function outsideAdmin(): Promise<boolean> {
   return currentWorkspaceScope() !== null && !(await scopeHoldsAdmin());
 }
 
-/** The app tools whose change reaches what the app's code or tools do. */
-const CODE_TOOLS: ReadonlySet<string> = new Set([
-  'app_file_write',
-  'app_file_delete',
-  'app_source_set',
-  'app_tools_set',
-  'app_publish',
-  'app_snapshot_restore',
-]);
-
 /** Put app `id` at team rules (the author ceiling, apps.author_level) when
  *  the caller may edit it: never lifted here, only lowered. */
 async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
@@ -1738,7 +1894,9 @@ async function lowerToTeamRules(ownerId: string, id: string): Promise<void> {
  * nothing (dispatch and the MCP bridge ask it too).
  */
 function withAuthorCeiling(def: BuiltinToolDef): BuiltinToolDef {
-  if (!CODE_TOOLS.has(def.slug)) return def;
+  // The app tools whose change reaches what the app's code or tools do:
+  // their policy says so (`outside.appCode`, A5; the CODE_TOOLS list before).
+  if (def.policy.outside?.appCode !== true) return def;
   return {
     ...def,
     handler: async (input, ctx) => {

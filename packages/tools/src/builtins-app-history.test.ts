@@ -90,6 +90,9 @@ import {
 import { AppRestoreDraftError, listAppAccess } from '@mantle/content';
 import { APP_TOOLS } from './builtins-apps';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+// The access lists are views of the tool policy table, which the registry
+// fills (A5): load it.
+import './registry';
 
 const tool = (slug: string) => APP_TOOLS.find((t) => t.slug === slug)!;
 const create = tool('app_snapshot_create');

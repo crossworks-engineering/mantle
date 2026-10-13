@@ -99,6 +99,12 @@ async function ownAllowedChat(
 
 export const telegram_send: BuiltinToolDef = {
   slug: 'telegram_send',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+  },
   name: 'Send a Telegram message',
   description:
     "Send a Telegram DM to one of the user's own paired chats. Use only when explicitly asked to message someone, never on the user's initiative without confirmation.",
@@ -142,8 +148,13 @@ export const telegram_send: BuiltinToolDef = {
 
 export const telegram_pending: BuiltinToolDef = {
   slug: 'telegram_pending',
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+  },
   mcpOnly: true,
-  readOnly: true,
   name: 'List unanswered Telegram DMs',
   description:
     'Unanswered Telegram DMs in your own paired chats, oldest first. Call after each turn (or via /loop) to see what needs a reply. Returns the row id (for mark_processed), telegram_message_id (for reply threading), chat_id, sender, text, and sent_at.',
@@ -195,6 +206,12 @@ export const telegram_pending: BuiltinToolDef = {
 
 export const telegram_react: BuiltinToolDef = {
   slug: 'telegram_react',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+  },
   mcpOnly: true,
   name: 'React to a Telegram message',
   description:
@@ -228,6 +245,12 @@ export const telegram_react: BuiltinToolDef = {
 
 export const telegram_edit: BuiltinToolDef = {
   slug: 'telegram_edit',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+  },
   mcpOnly: true,
   name: 'Edit a sent Telegram message',
   description:
@@ -266,6 +289,12 @@ export const telegram_edit: BuiltinToolDef = {
 
 export const telegram_mark_processed: BuiltinToolDef = {
   slug: 'telegram_mark_processed',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors', systemWhole: true },
+    peerRisky: true,
+  },
   mcpOnly: true,
   name: 'Mark a Telegram message answered',
   description:
@@ -318,6 +347,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
 
 export const telegram_pair: BuiltinToolDef = {
   slug: 'telegram_pair',
+  policy: { effect: 'write', spends: 'none', scope: 'any', peerRisky: true },
   mcpOnly: true,
   name: 'Pair your Telegram chat',
   description:

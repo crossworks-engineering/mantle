@@ -13,7 +13,7 @@ import { PAGE_NODE_ID_PRE } from './common';
 
 export const page_list: BuiltinToolDef = {
   slug: 'page_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages', keyEmail: true },
   name: 'List pages',
   description:
     "List the owner's pages, **newest first**. Optional `query` substring-matches title/body/summary; `tag` filters to pages carrying that tag. Bodies are omitted to keep the response small. " +
@@ -52,7 +52,7 @@ export const page_list: BuiltinToolDef = {
 
 export const page_get: BuiltinToolDef = {
   slug: 'page_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Get a page',
   description:

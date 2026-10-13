@@ -24,6 +24,7 @@ import { str } from './coerce';
 import { isOwnerSurface, keyOrPeerVia, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
 import { callerHasArea, callerScope } from './admin-gate';
+import { closeLinkTargets, edit } from './item-write-gate';
 
 /** The `serve` input both share tools take. */
 export const SERVE_INPUT = {
@@ -110,6 +111,14 @@ export function linkError(err: unknown): string {
 
 const node_share: BuiltinToolDef = {
   slug: 'node_share',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    lowering: 'always',
+  },
   name: 'Share an item',
   description:
     'Create (or fetch) the public read-only link to a shareable item (note, task, event, file, app, table, drawing, or folder under files) and return its URL. One link per item; anyone with it can view, no login. It shows the item plus its served list (`serve`): what the item names or embeds, or a folder holds, shows only when on that list. A link is no grant: to show an item to members or clients, grant it to their workspace. Only someone who may edit the item may share it (an app: a home Moderator). For a PAGE prefer `page_share`; to turn a link off use `node_unshare`.',
@@ -214,6 +223,7 @@ export async function closeLink(
 
 const node_unshare: BuiltinToolDef = {
   slug: 'node_unshare',
+  policy: { effect: 'write', spends: 'none', scope: 'any', items: closeLinkTargets },
   name: 'Stop sharing an item',
   description:
     "Revoke an item's share link: the existing URL stops working immediately. No-op (still succeeds) if it wasn't shared. Changes no one's access in the brain. Works for any shareable item; `page_unshare` is the same for pages.",

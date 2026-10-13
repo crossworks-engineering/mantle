@@ -34,6 +34,7 @@ import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './type
 import { str, strArrOpt, strOpt, numOpt as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
+import { edit, manage } from './item-write-gate';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING event the owner holds.
@@ -52,7 +53,7 @@ function recurOpt(v: unknown): RecurFreq | undefined {
 
 const event_list: BuiltinToolDef = {
   slug: 'event_list',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'calendar' },
   name: 'List calendar events',
   description:
     "List the user's calendar events, **date-windowed**. `window` defaults to 'upcoming' — pass 'past' to look back or 'all' to include both. `query` substring-matches title/body/location/summary; `tag` narrows to events with that tag. Returns full event rows. " +
@@ -95,7 +96,7 @@ const event_list: BuiltinToolDef = {
 
 const event_get: BuiltinToolDef = {
   slug: 'event_get',
-  readOnly: true,
+  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'calendar' },
   name: 'Get a calendar event',
   description:
     'Read one event by id — full row including body, location, starts_at, ends_at. ' +
@@ -124,6 +125,7 @@ const event_get: BuiltinToolDef = {
 
 const event_create: BuiltinToolDef = {
   slug: 'event_create',
+  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'event', keyArea: 'calendar' },
   name: 'Schedule a calendar event',
   description:
     "Create a calendar event. `startsAt` MUST be a UTC ISO 8601 instant (e.g. '2026-05-20T15:00:00Z') — convert from the user's natural-language reference using the timezone from the system-prompt time context. `remindMinutesBefore` controls when a Telegram reminder fires (default 0 = right at start; set higher for advance notice). `timezone` defaults to the user's profile timezone — only override when the event is in a DIFFERENT timezone (e.g. a travel meeting).",
@@ -223,6 +225,13 @@ const event_create: BuiltinToolDef = {
 
 const event_update: BuiltinToolDef = {
   slug: 'event_update',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'calendar',
+  },
   name: 'Update a calendar event',
   description:
     "Update an existing event. Omitted fields stay unchanged EXCEPT `endsAt` and `location`, which are CLEARED when omitted — re-pass their current values to keep them. If you move `startsAt` or `remindMinutesBefore` and the new reminder time lands in the future, a previously-sent reminder fires again. `startsAt` / `endsAt` are UTC ISO 8601 instants. Set `recur` to make it repeat (or 'none' to stop repeating); `recurUntil` caps the series.",
@@ -303,6 +312,13 @@ const event_update: BuiltinToolDef = {
 
 const event_delete: BuiltinToolDef = {
   slug: 'event_delete',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    keyArea: 'calendar',
+  },
   name: 'Delete a calendar event',
   description:
     "Delete an event by id. Pending reminders won't fire. Confirm with the user before calling unless they explicitly asked to delete this specific event — the action is mostly-reversible (you can recreate from memory) but the original id and any deeplinks are gone.",

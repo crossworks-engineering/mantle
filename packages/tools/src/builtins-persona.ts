@@ -49,7 +49,14 @@ function asStringArray(v: unknown): string[] {
 
 const update_persona: BuiltinToolDef = {
   slug: 'update_persona',
-  spends: true,
+  policy: {
+    effect: 'write',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: { area: 'assistants' },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Update persona',
   description:
     "Adjust how YOU (the assistant) behave with this user — style, tone, how you address them — ONLY when they explicitly ask for a durable change ('be more professional', 'call me Jay', 'stop using bullet lists'). " +

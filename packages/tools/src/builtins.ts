@@ -9,6 +9,7 @@
  */
 
 import { type BuiltinToolDef } from './types';
+import { withPolicyFlags } from './tool-policy';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { VIDEO_TOOLS } from './builtins-video';
 import { IMAGE_TOOLS } from './builtins-images';
@@ -256,6 +257,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // app_authoring skill instead).
   ...APP_GUIDE_TOOLS,
 ];
+
+// Each definition's `readOnly` and `spends` read its policy (A5).
+for (const def of BUILTIN_TOOLS) withPolicyFlags(def);
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's
 // capability is the union of its granted tool GROUPS (the manifest persona's

@@ -21,9 +21,19 @@ import {
   SERVE_INPUT,
   serveInput,
 } from '../builtins-share';
+import { closeLinkTargets, edit } from '../item-write-gate';
 
 export const page_share: BuiltinToolDef = {
   slug: 'page_share',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    peerRisky: true,
+    keyArea: 'pages',
+    lowering: 'always',
+  },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Share a page',
   description:
@@ -75,6 +85,13 @@ export const page_share: BuiltinToolDef = {
 
 export const page_unshare: BuiltinToolDef = {
   slug: 'page_unshare',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: closeLinkTargets,
+    keyArea: 'pages',
+  },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Stop sharing a page',
   description:
