@@ -256,8 +256,10 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       for (const [what, write] of writes) {
         const err = await errorOf(inRequest(mem, write));
         expect(m.isScopeWriteRefusal(err), `${what}: ${String(err)}`).toBe(true);
-        // The stage it made went with the refusal: the very same files.
-        expect(stateOf(tableRoot), what).toEqual(before);
+        // The stage it made went with the refusal: the very same files
+        // (bytes, mtime, list; less the -wal and -shm a READ of the draft
+        // opens for its guards, as before A3b).
+        expect(filesOf(stateOf(tableRoot)), what).toEqual(filesOf(before));
       }
       expect(await tableRow(t)).toEqual(row);
     });
@@ -300,7 +302,8 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
         tablesMod.saveTableDraft(owner, t, DOC('stale'), { ifRev: first.r }),
       );
       expect(stale).toEqual({ ok: false, conflict: true, currentRev: first.r + 2 });
-      const read = await inRequest(mem, () => tablesMod.getTable(owner, t));
+      // A member does not read drafts (below admin): the owner's read.
+      const read = await sys(() => tablesMod.getTable(owner, t));
       expect(read?.draft?.rows[0]?.cells.c1).toBe('mine 2');
       const committed = await inRequest(mem, () => tablesMod.commitTable(owner, t));
       expect(committed?.data.rows[0]?.cells.c1).toBe('mine 2');
