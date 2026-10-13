@@ -379,17 +379,16 @@ async function checkAppDbWrite(
 ): Promise<void> {
   const deadline = Date.now() + (opts.retryMs ?? APP_DB_CHECK_RETRY_MS);
   for (;;) {
+    const wait = Math.min(APP_DB_CHECK_LOCK_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
     try {
       await db.transaction(async (tx) => {
-        await tx.execute(
-          sql`select set_config('lock_timeout', ${`${APP_DB_CHECK_LOCK_TIMEOUT_MS}ms`}, true)`,
-        );
+        await tx.execute(sql`select set_config('lock_timeout', ${`${wait}ms`}, true)`);
         await bumpWriteSeq(tx, regId, storagePath);
       });
       return;
     } catch (err) {
       if (err instanceof AppSqlError || !isBusy(err)) throw err;
-      if (Date.now() + APP_DB_CHECK_LOCK_TIMEOUT_MS > deadline) {
+      if (Date.now() >= deadline) {
         throw new AppSqlBusyError(
           "the app's database is busy with a seed or a schema change; try again in a few seconds",
         );
