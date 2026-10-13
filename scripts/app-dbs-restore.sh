@@ -51,8 +51,8 @@ docker exec -i "$APP_CONTAINER" sh -c '
   # The store sweep hold (arch A3b), before anything is extracted: the
   # restored files and the rows may name different revisions until both are
   # back, and the sweep memory may name a restored file as unreferenced. The
-  # sweep holds the store for a week, or until a run with --allow-many after
-  # a dry run was read.
+  # sweep holds the store for a week, or until a run with --apply --allow-many
+  # after its dry run (--allow-many alone) was read.
   touch /data/app-dbs/.store-sweep-hold
   rm -f /data/app-dbs/.store-sweep.json
   tar -tzf "$t" | grep "\.sqlite$" | while IFS= read -r f; do
@@ -61,4 +61,4 @@ docker exec -i "$APP_CONTAINER" sh -c '
   tar -C /data/app-dbs -xzf "$t"
 ' < "$TGZ"
 echo "✔ Restored. (Restore the Postgres dump first if you haven't — the registry rows point at these files.)"
-echo "  The store sweep is held for a week (/data/app-dbs/.store-sweep-hold): read pnpm -C server/web store:sweep, then --apply --allow-many."
+echo "  The store sweep is held for a week (/data/app-dbs/.store-sweep-hold): read the dry run (pnpm -C server/web store:sweep --allow-many), then --apply --allow-many."

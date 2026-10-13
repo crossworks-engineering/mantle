@@ -377,7 +377,7 @@ async function checkTableStorageDir(): Promise<SanityCheck> {
       status: 'fail',
       detail: `${missing.length} of ${rows.length} sampled file-backed tables have NO workbook file on disk (${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ', …' : ''}). Those tables will error on open — restore the files from a backup (mantle-table-dbs-*).`,
       fix: {
-        summary: `Untar the latest mantle-table-dbs-*.tgz back into ${'${MANTLE_DATA_DIR}'}/table-dbs, or restore the per-table snapshot from the in-app backup directory.`,
+        summary: `First put the store sweep's hold down (touch ${'${MANTLE_DATA_DIR}'}/table-dbs/.store-sweep-hold and remove ${'${MANTLE_DATA_DIR}'}/table-dbs/.store-sweep.json, docs/store-brokers.md), then untar the latest mantle-table-dbs-*.tgz back into ${'${MANTLE_DATA_DIR}'}/table-dbs, or restore the per-table snapshot from the in-app backup directory.`,
       },
     };
   }

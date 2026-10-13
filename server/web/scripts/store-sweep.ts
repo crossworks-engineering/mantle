@@ -12,9 +12,10 @@
  * Usage:
  *   pnpm store:sweep                        # DRY RUN: counts only, removes nothing
  *   pnpm store:sweep --apply                # remove them
- *   pnpm store:sweep --apply --allow-many   # past a restore's hold
- *                                           # (.store-sweep-hold) or a row back
- *                                           # on an older revision, after a dry run
+ *   pnpm store:sweep --allow-many           # DRY RUN past a restore's hold
+ *                                           # (.store-sweep-hold) or a row back on
+ *                                           # an older revision: read this first
+ *   pnpm store:sweep --apply --allow-many   # then remove them
  *
  * Each run removes at most the larger of 500 files and half a store, the
  * oldest marked first; the rest wait for the next run ("deferred"). The dry

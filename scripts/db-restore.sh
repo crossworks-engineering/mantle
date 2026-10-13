@@ -99,12 +99,13 @@ DATA_DIR="${DATA_DIR:-./data}"
 # read as old revisions to remove, and the sweep's memory (.store-sweep.json)
 # names files as unreferenced that the restored rows may name again. Each
 # store root gets a hold (the sweep holds it for a week, or until someone
-# has read a dry run, pnpm -C server/web store:sweep, and runs it with
-# --allow-many) and loses that memory. The deployed layout
-# ($MANTLE_DATA_DIR/{table-dbs,app-dbs}, made if missing so the hold lands
-# before any file does) and the dev one (.table-dbs, .app-dbs at the repo root, where they
-# exist).
-for STORE_DIR in "$DATA_DIR/table-dbs" "$DATA_DIR/app-dbs" ./.table-dbs ./.app-dbs; do
+# has read its dry run, pnpm -C server/web store:sweep --allow-many, and
+# runs it with --apply --allow-many) and loses that memory. The roots:
+# TABLE_DB_DIR and APP_DB_DIR when set here, else the deployed layout
+# ($MANTLE_DATA_DIR/{table-dbs,app-dbs}); made if missing, so the hold lands
+# before any file does. And the dev ones (.table-dbs, .app-dbs at the repo
+# root), where they exist.
+for STORE_DIR in "${TABLE_DB_DIR:-$DATA_DIR/table-dbs}" "${APP_DB_DIR:-$DATA_DIR/app-dbs}" ./.table-dbs ./.app-dbs; do
   case "$STORE_DIR" in
     ./.table-dbs|./.app-dbs) [ -d "$STORE_DIR" ] || continue ;;
   esac
