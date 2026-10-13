@@ -17,7 +17,7 @@
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { teamReadsSql, apps, db, draftColumn, nodes, executeWrite } from '@mantle/db';
+import { sharedReadsSql, apps, db, draftColumn, nodes, executeWrite } from '@mantle/db';
 import type {
   AppNavEntry,
   AppNavFolder,
@@ -64,8 +64,9 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       publishedBuild: apps.publishedBuild,
       draftBuild: draftColumn<{ ok?: boolean } | null>(apps.draftBuild),
       mcpAccess: apps.mcpAccess,
-      // Read below admin (workspaces W5b1: the Team grant, not the levels).
-      teamReads: teamReadsSql(),
+      // Read below admin: a workspace beyond Admin holds it (its grants,
+      // not the levels; any such workspace since 0286, not only Team).
+      sharedReads: sharedReadsSql(),
     })
     .from(nodes)
     .leftJoin(apps, eq(apps.nodeId, nodes.id))
@@ -94,7 +95,7 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       mcpAccess: r.mcpAccess === true,
       // Whether that switch reaches anyone now (access matrix N9): the
       // app_data tools reach a published app below admin only.
-      mcpReach: r.mcpAccess === true && r.publishedBuild?.ok === true && r.teamReads === true,
+      mcpReach: r.mcpAccess === true && r.publishedBuild?.ok === true && r.sharedReads === true,
     };
   });
 }

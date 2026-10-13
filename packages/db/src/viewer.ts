@@ -152,15 +152,15 @@ export type ViewerFor =
  * workspaces other than Admin, met with the runner's own workspaces, never
  * the runner's whole union:
  * - `{ id }`: a brain app; its holders come from its grants. An app with
- *   no grant row beyond Admin at all (an archived workspace's row counts;
- *   a "Removed here" row holds nothing) runs here only at team rules (the
- *   author ceiling), so it reads the Team workspace. An app whose rows
- *   beyond Admin are all on archived workspaces reads nothing, and so does
- *   an id that is not an app (fix round 2, L1). Two or more holders beyond
- *   Admin read nothing: the row rule reads any workspace of the scope, not
+ *   no live holder beyond Admin (it runs here only at team rules, the
+ *   author ceiling) reads nothing: until 0286 it read the built-in Team
+ *   workspace, which is a normal workspace now. An id that is not an app
+ *   reads nothing too (fix round 2, L1). Two or more holders beyond Admin
+ *   read nothing: the row rule reads any workspace of the scope, not
  *   "every one of them", so no scope expresses their common items yet.
  * - `{ team: true }`: a run at team rules with no brain holders (a member's
- *   own space app, an admin's test run of one): the Team workspace.
+ *   own space app, an admin's test run of one): reads nothing (the Team
+ *   workspace until 0286).
  * A runner outside the holder reads nothing. No Moderator rights beyond the
  * scope.
  */

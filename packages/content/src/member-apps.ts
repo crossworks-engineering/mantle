@@ -6,9 +6,10 @@
  * a draft. A public link tells nothing about who else runs it: a member with
  * the link and no grant opens it as anyone with the link does.
  *
- * The workspaces of the member: in a workspace scope, the scope's own; in a
- * team level scope (members until the scope shim moves them), the brain's
- * Team workspace (`teamReadsSql`). The rule is written in every query here,
+ * The workspaces of the member: in a workspace scope, the scope's own; with
+ * no workspace scope (system work), any workspace beyond Admin
+ * (`sharedReadsSql`; the brain's Team workspace until 0286 made it a normal
+ * one). The rule is written in every query here,
  * not left to row security alone: the db broker runs the app's SQLite on the
  * admin pool (the registry rows it writes are admin), and row security does
  * not reach SQLite.
@@ -29,8 +30,7 @@ import {
   db,
   nodeReadByWorkspace,
   nodes,
-  teamReadsSql,
-  teamWritesSql,
+  sharedReadsSql,
   workspaces,
   type AppManifest,
   type BuildRef,
@@ -67,7 +67,7 @@ function wsArray(ws: readonly string[]): SQL {
 export function memberReachSql(): SQL<boolean> {
   const scope = currentWorkspaceScope();
   if (scope) return sql<boolean>`(${nodes.readWs} && ${wsArray(scope.ws)})`;
-  return teamReadsSql();
+  return sharedReadsSql();
 }
 
 /** The member may edit the app (docs/workspaces.md, Apps, Data): a
@@ -81,13 +81,11 @@ export function memberWritesSql(): SQL<boolean> {
   if (scope) {
     return sql<boolean>`(${notInformational} and coalesce("public"."mantle_may_edit"(${nodes.homeWs}, ${nodes.writeWs}), false))`;
   }
-  // No workspace scope means no login to ask "Moderator of the home" of, so
-  // this keeps the pre-workspaces Team rule (A0 fix round, L6). It fails
-  // closed and no member path reaches it: a member's app run and its MCP
-  // app_data_* calls always hold the login's scope (session.ts,
-  // loginToolServer); off a scope is a brain not on workspaces, which has no
-  // Team workspace, so nothing here writes.
-  return sql<boolean>`(${notInformational} and ${teamWritesSql()})`;
+  // No workspace scope means no login to ask "Moderator of the home" of:
+  // nothing writes (it kept the old Team grant's Write until 0286). No
+  // member path reaches it: a member's app run and its MCP app_data_* calls
+  // always hold the login's scope (session.ts, loginToolServer).
+  return sql<boolean>`false`;
 }
 
 /**
@@ -282,19 +280,25 @@ export async function workspaceLandingAppId(anchorId: string, ws: string): Promi
   return row?.appId ?? null;
 }
 
-/** The Team workspace's id, read where the caller runs: in a login's scope
- *  null when the login is not in Team (or the brain has none). */
-export async function teamWorkspaceId(anchorId: string): Promise<string | null> {
+/** The login's first shared workspace, read where the caller runs (in a
+ *  login's scope, its own workspaces): the oldest live one that is neither
+ *  Admin nor a private one, else null. What GET /api/member/home answers for
+ *  an app older than per-workspace landing pages; on a brain switched
+ *  before 0286 that is the Team workspace, which holds the old brain-wide
+ *  member home app (0276). No workspace is special: it is only the oldest. */
+export async function firstSharedWorkspaceId(anchorId: string): Promise<string | null> {
   const [row] = await db
     .select({ id: workspaces.id })
     .from(workspaces)
     .where(
       and(
         eq(workspaces.ownerId, anchorId),
-        eq(workspaces.bridgeKey, 'team'),
+        eq(workspaces.isAdmin, false),
         isNull(workspaces.archivedAt),
+        sql`"public"."mantle_ws_kind"(${workspaces.id}) = 'other'`,
       ),
     )
+    .orderBy(asc(workspaces.createdAt), asc(workspaces.id))
     .limit(1);
   return row?.id ?? null;
 }

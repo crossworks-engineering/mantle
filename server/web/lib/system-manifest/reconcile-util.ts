@@ -37,7 +37,8 @@ export function missingPersonaGroups(
 }
 
 /** The team responder's slug (manifest.ts): the Team workspace's assistant
- *  once its brain is switched (the 0251 attach rule). */
+ *  on a brain switched before 0286 (the 0251 attach rule). A newer brain has
+ *  no Team: no workspace holds it until an Admin user attaches it. */
 export const TEAM_RESPONDER_SLUG = 'team-responder';
 
 /**

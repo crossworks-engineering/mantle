@@ -25,7 +25,7 @@ import {
   listMemberApps,
   loadProfilePreferences,
   resolveMemberHomeApp,
-  teamWorkspaceId,
+  firstSharedWorkspaceId,
   workspaceLandingAppId,
 } from '@mantle/content';
 import { APP_VERSION } from '@mantle/client-types/version';
@@ -97,9 +97,10 @@ export async function workspaceHome(
   });
 }
 
-/** The Team workspace's id as the login's scope reads it: null when the
- *  login is not in Team (or the brain has none). For GET /api/member/home,
- *  whose app asks for no workspace: its one home app was the Team's. */
-export async function teamWorkspaceOf(who: LandingCaller): Promise<string | null> {
-  return withViewer({ login: who.loginId }, () => teamWorkspaceId(who.anchorId));
+/** The login's first shared workspace as its scope reads it (null: none).
+ *  For GET /api/member/home, whose app asks for no workspace: its one home
+ *  app was the Team's, the oldest shared workspace of a brain switched
+ *  before 0286 (firstSharedWorkspaceId). */
+export async function firstSharedWorkspaceOf(who: LandingCaller): Promise<string | null> {
+  return withViewer({ login: who.loginId }, () => firstSharedWorkspaceId(who.anchorId));
 }

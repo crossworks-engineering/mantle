@@ -171,10 +171,9 @@ export {
 // The plain unshare (agent and tool-group levels went in workspaces W7b).
 export { AccessError, isWorkspaceKind, unshareItem, type UnshareItemResult } from './access';
 export {
-  teamAssistant,
+  defaultWorkspaceAssistant,
   workspaceAssistantFor,
   workspaceAssistants,
-  type TeamAssistant,
   type WorkspaceAssistant,
 } from './team-assistant';
 // What an item embeds (W5b2: an embed never changes who reads anything).

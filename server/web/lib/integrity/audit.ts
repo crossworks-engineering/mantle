@@ -19,7 +19,7 @@ import {
   extractParkedSql,
   GRANT_DRIFT_SQL,
   MIGRATION_TAGS,
-  teamReadsAliasSql,
+  sharedReadsAliasSql,
 } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
@@ -305,7 +305,7 @@ const CHECKS: CheckDef[] = [
       SELECT n.id::text AS id, 'snapshot copy pending' AS kind, si.review_state AS detail
       FROM space_items si JOIN nodes n ON n.id = si.node_id
       WHERE si.review_state IN ('accepted', 'taken') AND n.owner_id = mantle_brain_id()
-        AND NOT ${teamReadsAliasSql('n')}
+        AND NOT ${sharedReadsAliasSql('n')}
         AND NOT EXISTS (SELECT 1 FROM nodes c WHERE c.data->>'snapshot_of' = n.id::text)
       LIMIT ${CAP}`,
   },

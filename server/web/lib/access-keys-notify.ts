@@ -3,11 +3,13 @@
  * session that makes a key must not go unseen. Never the secret, never the
  * prefix: only the key's name, its access and its expiry.
  *
- *  - A member: one message in their own thread with the Team
- *    workspace's assistant (their in-app notices; per login since 0269),
- *    which the push worker also sends to their phone as a chat push (the
- *    login_notice trigger, 0269), sealed to each device. A brain whose Team
- *    workspace has no assistant has no such thread: nothing is written.
+ *  - A member: one message in their own thread with their default
+ *    assistant (defaultWorkspaceAssistant: their oldest workspace beyond
+ *    Admin with one; Team's on a brain switched before 0286), their in-app
+ *    notices (per login since 0269), which the push worker also sends to
+ *    their phone as a chat push (the login_notice trigger, 0269), sealed to
+ *    each device. A member in no workspace with an assistant has no such
+ *    thread: nothing is written.
  *  - An admin has no thread of their own (the assistant thread is shared and
  *    model-facing), so an admin gets a push sealed to their own devices, and
  *    the key's row in Settings > API access.
@@ -16,7 +18,7 @@
  * phone vendors see ciphertext only. Best effort: a failure is logged and
  * the key stays made; the key.created audit row is written either way.
  */
-import { appendThreadMessage, teamAssistant } from '@mantle/content';
+import { appendThreadMessage, defaultWorkspaceAssistant } from '@mantle/content';
 import type { AccessKeyAccess, AccessKeyRole } from './access-keys';
 
 export type KeyMadeNotice = {
@@ -55,11 +57,11 @@ export async function notifyKeyMade(n: KeyMadeNotice): Promise<void> {
       return;
     }
     const text = keyMadeText(n, { withName: false });
-    const team = await teamAssistant(n.ownerId);
-    if (!team) return;
+    const assistant = await defaultWorkspaceAssistant(n.ownerId, n.loginId);
+    if (!assistant) return;
     await appendThreadMessage({
       ownerId: n.ownerId,
-      agentId: team.id,
+      agentId: assistant.id,
       loginId: n.loginId,
       direction: 'outbound',
       text,

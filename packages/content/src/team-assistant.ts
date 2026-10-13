@@ -1,53 +1,36 @@
 /**
- * The assistant a member chats with (workspaces W5c): the one attached to the
- * brain's Team workspace (bridge_key 'team'), as its workspace_resources row
- * of type 'assistant'. No agent level is read: who answers the team is a
- * resource of the Team workspace, set on the workspace page, never the
- * agent's own level. A brain with no live Team workspace, or a Team with no
- * assistant (or a disabled one), has no member chat.
+ * The assistants a login chats with (workspaces W5c, W7c): each workspace's
+ * assistant, its workspace_resources row of type 'assistant'. No agent
+ * level is read: who answers in a workspace is a resource of that
+ * workspace, set on the workspace page, never the agent's own level.
+ *
+ * Until migration 0286 a member's chat with no assistant named went to the
+ * built-in Team workspace's assistant. Team is a normal workspace now (owner
+ * decision 2026-10-13) and a new brain has none: the default is the
+ * assistant of the login's oldest workspace beyond Admin that has one
+ * (defaultWorkspaceAssistant), which is Team's on a brain switched before.
  *
  * Read on the system pool, before any turn scope is entered.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { agents, db, workspaceResources, workspaceUsers, workspaces } from '@mantle/db';
 
-/** The assistant, and the Team workspace it answers in. */
-export type TeamAssistant = { id: string; slug: string; name: string; workspaceId: string };
-
-/** The enabled assistant of the brain's live Team workspace, or null. */
-export async function teamAssistant(ownerId: string): Promise<TeamAssistant | null> {
-  const [row] = await db
-    .select({ id: agents.id, slug: agents.slug, name: agents.name, workspaceId: workspaces.id })
-    .from(workspaces)
-    .innerJoin(
-      workspaceResources,
-      and(
-        eq(workspaceResources.workspaceId, workspaces.id),
-        eq(workspaceResources.type, 'assistant'),
-      ),
-    )
-    .innerJoin(agents, sql`${agents.id}::text = ${workspaceResources.refId}`)
-    .where(
-      and(
-        eq(workspaces.ownerId, ownerId),
-        eq(workspaces.bridgeKey, 'team'),
-        isNull(workspaces.archivedAt),
-        eq(agents.ownerId, ownerId),
-        eq(agents.enabled, true),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-/** An assistant a workspace holds, and whether that workspace is Admin. */
-export type WorkspaceAssistant = TeamAssistant & { isAdmin: boolean };
+/** An assistant a workspace holds, the workspace, and whether it is Admin. */
+export type WorkspaceAssistant = {
+  id: string;
+  slug: string;
+  name: string;
+  workspaceId: string;
+  isAdmin: boolean;
+};
 
 /**
  * The enabled assistants of the brain's live workspaces (workspaces W7c):
- * each workspace's assistant resource. With `loginId`, only those of the
- * workspaces that login is a user of: the assistants it may chat with, each
- * in its own thread. Read on the system pool (the caller names the login).
+ * each workspace's assistant resource, Admin's first, then by the age of
+ * their workspace (oldest first), then by name. With `loginId`, only those
+ * of the workspaces that login is a user of: the assistants it may chat
+ * with, each in its own thread. Read on the system pool (the caller names
+ * the login).
  */
 export async function workspaceAssistants(
   ownerId: string,
@@ -86,8 +69,22 @@ export async function workspaceAssistants(
           : []),
       ),
     )
-    .orderBy(sql`${workspaces.isAdmin} desc`, workspaces.name);
+    .orderBy(sql`${workspaces.isAdmin} desc`, workspaces.createdAt, workspaces.name);
   return rows;
+}
+
+/**
+ * The assistant a login's chat goes to when it names none, and the one its
+ * notices land with: the first assistant of its workspaces beyond Admin
+ * (the oldest workspace first, workspaceAssistants), or null when it is in
+ * none with an enabled assistant. ONE rule for the member chat engine, the
+ * chat routes and the key notices: no workspace is special.
+ */
+export async function defaultWorkspaceAssistant(
+  ownerId: string,
+  loginId: string,
+): Promise<WorkspaceAssistant | null> {
+  return (await workspaceAssistants(ownerId, loginId)).find((a) => !a.isAdmin) ?? null;
 }
 
 /** The assistant a login names by slug, if a workspace it is a user of holds

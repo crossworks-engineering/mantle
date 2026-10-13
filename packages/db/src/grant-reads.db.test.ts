@@ -1,34 +1,29 @@
 /**
- * Workspaces W5b2 (bridge off, migration 0261): "does the Team workspace
- * read this item" is the Team grant alone, on a scratch database of its own.
- * Checked:
+ * "Does a workspace beyond Admin read this item" (sharedReadsSql, the grants
+ * alone since W5b2 / 0261; any workspace beyond Admin since 0286, when Team
+ * became a normal workspace), on a scratch database of its own. Checked:
  *
- *  - before the brain is migrated nothing reads as Team's (no Team: fail
+ *  - before the brain is migrated nothing reads as shared (no grants: fail
  *    closed), whatever the levels say;
- *  - after the migration every brain item answers from its Team grant
- *    (read_ws), and the levels mean nothing: a new item at 'team' is not
- *    Team's, a personal-space row is not Team's (no grants until W6b);
- *  - the grant decides both ways; the Write switch is read the same way;
- *  - the system form (the row owner's Team) and the viewer form (the
- *    brain's Team, mantle_brain_team_ws) agree;
- *  - the workspace role may ask for the Team workspace (the level roles are
- *    retired since W8c and hold no right).
+ *  - after the switch every brain item answers from its grants (read_ws),
+ *    and the levels mean nothing: a new item at 'team' is not shared, a
+ *    personal-space row is not shared (no grants until W6b);
+ *  - the switch keeps a Team that holds something as a normal workspace (no
+ *    bridge_key, so mantle_brain_team_ws finds none);
+ *  - the grant decides both ways, for Team and for any other workspace.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/grant-reads.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { sql as sqlTag, type SQL } from 'drizzle-orm';
+import { sql as sqlTag } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { teamReadsAliasSql } from './grant-reads';
+import { sharedReadsAliasSql } from './grant-reads';
 import { createMigratedScratchDatabase } from './test-support';
-import { runInTurnScope } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-type Cmp = { id: string; title: string; sys: boolean; viewer: boolean; inws: boolean };
-
-describe.skipIf(!URL)('grant reads (W5b2): Team reads from the grants alone', () => {
+describe.skipIf(!URL)('grant reads: a workspace beyond Admin reads from the grants alone', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let sql: ReturnType<typeof postgres>;
   const owner = randomUUID();
@@ -52,19 +47,29 @@ describe.skipIf(!URL)('grant reads (W5b2): Team reads from the grants alone', ()
     return id;
   };
 
-  /** Both forms of the helper, next to the plain "Team in read_ws". */
-  const compare = async (): Promise<Cmp[]> => {
-    // Built in a workspace scope (the viewer form); only the SQL is taken.
-    const scope = { kind: 'assistant' as const, loginId: null, ws: [randomUUID()], modWs: [] };
-    const viewerForm = await runInTurnScope(scope, async () => teamReadsAliasSql('n'));
+  const reads = async (): Promise<Record<string, boolean>> => {
     const q = new PgDialect().sqlToQuery(sqlTag`
-      select n.id::text as id, n.title, ${teamReadsAliasSql('n')} as sys,
-             ${viewerForm as SQL} as viewer,
-             coalesce(mantle_brain_team_ws() = any(n.read_ws), false) as inws
-        from nodes n order by n.title`);
-    return (await sql.unsafe(q.sql, q.params as never[])) as unknown as Cmp[];
+      select n.title, ${sharedReadsAliasSql('n')} as shared from nodes n order by n.title`);
+    const rows = (await sql.unsafe(q.sql, q.params as never[])) as unknown as {
+      title: string;
+      shared: boolean;
+    }[];
+    return Object.fromEntries(rows.map((r) => [r.title, r.shared]));
   };
-  const reads = async () => Object.fromEntries((await compare()).map((r) => [r.title, r.sys]));
+  const teamId = async () =>
+    (
+      await sql<{ id: string }[]>`select id::text as id from workspaces
+        where owner_id = ${owner} and name = 'Team' and not is_admin`
+    )[0]!.id;
+  const grant = async (node_: string, ws: string, add: boolean) =>
+    sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${node_}::uuid], 'update')`;
+      if (add) {
+        await tx`insert into item_grants (node_id, workspace_id, write) values (${node_}, ${ws}, false)`;
+      } else {
+        await tx`delete from item_grants where node_id = ${node_} and workspace_id = ${ws}`;
+      }
+    });
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
@@ -95,20 +100,20 @@ describe.skipIf(!URL)('grant reads (W5b2): Team reads from the grants alone', ()
     await scratch?.drop();
   });
 
-  it('before the migration: no Team, so nothing is Team’s (fail closed)', async () => {
-    expect((await sql`select mantle_brain_team_ws() as t`)[0]!.t).toBeNull();
-    const rows = await compare();
-    expect(rows.length).toBe(8);
-    expect(rows.filter((r) => r.sys || r.viewer).map((r) => r.title)).toEqual([]);
+  it('before the migration: no grants, so nothing is shared (fail closed)', async () => {
+    const r = await reads();
+    expect(Object.keys(r).length).toBe(8);
+    expect(Object.entries(r).filter(([, v]) => v)).toEqual([]);
   });
 
-  it('after the migration: the Team grant, in both forms, and levels mean nothing', async () => {
+  it('after the switch: the grants, and levels mean nothing; Team is a normal workspace', async () => {
     const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate()`;
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
-    const team = (await sql<{ t: string }[]>`select mantle_brain_team_ws()::text as t`)[0]!.t;
-    expect(team).toMatch(/^[0-9a-f-]{36}$/);
-    const rows = await compare();
-    expect(rows.filter((r) => r.sys !== r.inws || r.viewer !== r.inws)).toEqual([]);
+    // It holds the team items and the member: kept, with no built-in mark.
+    const [t] = await sql<{ bridge_key: string | null; admin_moderated: boolean }[]>`
+      select bridge_key, admin_moderated from workspaces where id = ${await teamId()}`;
+    expect(t).toEqual({ bridge_key: null, admin_moderated: false });
+    expect((await sql`select mantle_brain_team_ws() as t`)[0]!.t).toBeNull();
     expect(await reads()).toMatchObject({
       adminPage: false,
       teamPage: true,
@@ -126,27 +131,20 @@ describe.skipIf(!URL)('grant reads (W5b2): Team reads from the grants alone', ()
     expect((await reads()).newTeamPage).toBe(false);
   });
 
-  it('the grant decides both ways, and the Write switch reads the same', async () => {
-    const team = (await sql<{ t: string }[]>`select mantle_brain_team_ws()::text as t`)[0]!.t;
-    await sql.begin(async (tx) => {
-      await tx`select mantle_lock_heads(array[${ids.adminPage!}::uuid, ${ids.teamPage!}::uuid], 'update')`;
-      await tx`insert into item_grants (node_id, workspace_id, write)
-               values (${ids.adminPage!}, ${team}, true)`;
-      await tx`delete from item_grants where node_id = ${ids.teamPage!} and workspace_id = ${team}`;
-    });
+  it('the grant decides both ways, for Team and for any other workspace', async () => {
+    const team = await teamId();
+    await grant(ids.adminPage!, team, true);
+    await grant(ids.teamPage!, team, false);
     expect(await reads()).toMatchObject({ adminPage: true, teamPage: false });
-    const [w] = await sql<{ writes: boolean }[]>`
-      select ${team}::uuid = any(write_ws) as writes from nodes where id = ${ids.adminPage!}`;
-    expect(w!.writes).toBe(true);
-  });
-
-  it('the workspace role may ask for the Team workspace', async () => {
-    for (const role of ['mantle_view_user']) {
-      const t = await sql.begin(async (tx) => {
-        await tx.unsafe(`set local role ${role}`);
-        return (await tx`select mantle_brain_team_ws() is not null as ok`)[0]!.ok;
-      });
-      expect([role, t]).toEqual([role, true]);
-    }
+    const [other] = await sql<{ id: string }[]>`
+      insert into workspaces (owner_id, name) values (${owner}, 'Projects') returning id::text as id`;
+    await grant(ids.adminApp!, other!.id, true);
+    expect((await reads()).adminApp).toBe(true);
+    // An item Admin alone reads (its home) is not shared.
+    const [e] = await sql<{ only_admin: boolean }[]>`
+      select n.read_ws = array[w.id] as only_admin from nodes n, workspaces w
+       where n.id = ${ids.email!} and w.owner_id = ${owner} and w.is_admin`;
+    expect(e!.only_admin).toBe(true);
+    expect((await reads()).email).toBe(false);
   });
 });

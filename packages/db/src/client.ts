@@ -2941,36 +2941,22 @@ export async function brainOnWorkspacesNow(): Promise<boolean> {
 }
 
 /** The live workspaces beyond Admin an app run reads through (AppRunFor):
- *  a brain app's holders from its grants; the brain's Team workspace (team
- *  rules) only for `{ team: true }` or a brain app with no row beyond Admin
- *  at all (an archived workspace's row counts: such an app reads nothing,
- *  as `getAppRuntime`'s toolRules says 'team' for it). An id that is not an
- *  app reads nothing. Admin pool. */
+ *  a brain app's holders from its grants. `{ team: true }`, an id that is
+ *  not an app, and an app with no live holder beyond Admin read nothing
+ *  (they read the built-in Team workspace until 0286 made it a normal one;
+ *  no workspace stands in for "team rules" now). Admin pool. */
 async function appRunHolders(app: AppRunFor): Promise<string[]> {
-  const admin = getAdminDb();
-  if ('id' in app) {
-    if (!UUID_RE.test(app.id)) throw new Error('withViewer: app must be a uuid');
-    const [row] = (await admin.execute(
-      sqlTag`select coalesce(array(
-                      select w.id::text from workspaces w
-                       where w.id = any(n.read_ws) and not w.is_admin and w.archived_at is null
-                       order by w.id), '{}') as live,
-                    exists (select 1 from item_grants g
-                              join workspaces w on w.id = g.workspace_id and not w.is_admin
-                             where g.node_id = n.id and not g.excluded) as beyond
-               from nodes n
-              where n.id = ${app.id} and n.type = 'app'`,
-    )) as unknown as { live: string[]; beyond: boolean }[];
-    if (!row) return [];
-    if (row.live.length > 0) return [...row.live];
-    if (row.beyond) return [];
-  }
-  const team = (await admin.execute(
-    sqlTag`select w.id::text as id from workspaces w
-            where w.owner_id = mantle_brain_id() and w.bridge_key = 'team'
-              and w.archived_at is null`,
-  )) as unknown as { id: string }[];
-  return team.map((r) => r.id);
+  if (!('id' in app)) return [];
+  if (!UUID_RE.test(app.id)) throw new Error('withViewer: app must be a uuid');
+  const [row] = (await getAdminDb().execute(
+    sqlTag`select coalesce(array(
+                    select w.id::text from workspaces w
+                     where w.id = any(n.read_ws) and not w.is_admin and w.archived_at is null
+                     order by w.id), '{}') as live
+             from nodes n
+            where n.id = ${app.id} and n.type = 'app'`,
+  )) as unknown as { live: string[] }[];
+  return row ? [...row.live] : [];
 }
 
 /** The scope `withViewer` enters for `actsFor`, read on the admin pool. */

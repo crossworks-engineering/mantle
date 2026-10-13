@@ -300,10 +300,19 @@ export async function connectorOpensBeyondAdmin(
   ownerId: string,
   groupSlug: string,
 ): Promise<boolean> {
+  return (await connectorBeyondAdmin(ownerId, groupSlug)) !== null;
+}
+
+/** How the live workspaces other than Admin hold the connector `groupSlug`:
+ *  null when none does, else whether one of them has its Write on. */
+async function connectorBeyondAdmin(
+  ownerId: string,
+  groupSlug: string,
+): Promise<{ write: boolean } | null> {
   const [row] = await asSystem(
     () =>
       db
-        .select({ id: workspaceResources.id })
+        .select({ write: sql<boolean>`bool_or(${workspaceResources.write})` })
         .from(workspaceResources)
         .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
         .where(
@@ -314,32 +323,10 @@ export async function connectorOpensBeyondAdmin(
             eq(workspaces.isAdmin, false),
             sql`${workspaces.archivedAt} is null`,
           ),
-        )
-        .limit(1),
+        ),
     'workspace-resources',
   );
-  return !!row;
-}
-
-/** The brain's Team workspace (the built-in one, bridge_key 'team'), else
- *  null (a brain the workspaces migration skipped). */
-async function teamWorkspace(ownerId: string): Promise<string | null> {
-  const [row] = await asSystem(
-    () =>
-      db
-        .select({ id: workspaces.id })
-        .from(workspaces)
-        .where(
-          and(
-            eq(workspaces.ownerId, ownerId),
-            eq(workspaces.bridgeKey, 'team'),
-            sql`${workspaces.archivedAt} is null`,
-          ),
-        )
-        .limit(1),
-    'workspace-resources',
-  );
-  return row?.id ?? null;
+  return row && row.write !== null ? { write: row.write === true } : null;
 }
 
 /**
@@ -486,12 +473,12 @@ export const LINK_NO_CONNECTORS =
  *    The brokers log every write call with its input;
  *  - who: with the runner's login known (a member's or a client's run), the
  *    login's workspace rule (loginConnectorRule), the same as the login's
- *    own MCP, so an app is no way around it. A member's run with no login
- *    (a member-built app an admin opens) runs at Team's rule: the Team
- *    workspace must hold the connector, with Write on for a write. A
- *    client's run always names its login (W5a audit W2); the author
- *    warnings (rulesOnly) ask with none, and then a workspace other than
- *    Admin must hold it. A contact link holds no workspace, so it uses no
+ *    own MCP, so an app is no way around it. A run with no login (a
+ *    member-built app an admin opens, the author warnings: rulesOnly) needs
+ *    a workspace other than Admin to hold the connector, with Write on in
+ *    one of them for a write (until 0286 a member's such run needed the
+ *    built-in Team workspace to). A client's run always names its login
+ *    (W5a audit W2). A contact link holds no workspace, so it uses no
  *    connector (LINK_NO_CONNECTORS);
  *  - which app: with `check.appId`, every workspace that holds the app
  *    must hold the connector too (appConnectorRefused).
@@ -543,18 +530,18 @@ export async function connectorToolVerdict(
   if (loginId) {
     const refused = await loginConnectorRefused(ownerId, loginId, group.slug, write);
     if (refused) return refuse(`The tool '${slug}' can't run: ${refused}`);
-  } else if (runner === 'member') {
-    const team = await teamWorkspace(ownerId);
-    const [res] = team ? await connectorResources(ownerId, group.slug, [team]) : [];
-    if (!res || (write && !res.write)) {
+  } else {
+    const held = await connectorBeyondAdmin(ownerId, group.slug);
+    if (!held) {
       return refuse(
-        `The tool '${slug}' belongs to a connector the Team workspace does not hold${res ? ' with Write on' : ''}, so ${who} can't use it.`,
+        `The tool '${slug}' belongs to a connector no workspace other than Admin holds, so ${who} can't use it.`,
       );
     }
-  } else if (!(await connectorOpensBeyondAdmin(ownerId, group.slug))) {
-    return refuse(
-      `The tool '${slug}' belongs to a connector no workspace other than Admin holds, so ${who} can't use it.`,
-    );
+    if (write && !held.write) {
+      return refuse(
+        `The tool '${slug}' belongs to a connector no workspace other than Admin holds with Write on, so ${who} can't use it.`,
+      );
+    }
   }
   if (check?.appId) {
     const refused = await appConnectorRefused(ownerId, check.appId, group.slug, write);

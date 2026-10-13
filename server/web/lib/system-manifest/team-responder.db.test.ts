@@ -9,7 +9,9 @@
  *  - the boot reconcile (reconcileOwner) never puts `team-read-admin` back on
  *    the assistant of the Team workspace (groupsForAgent: by the workspace,
  *    no longer by the level);
- *  - the member chat is the assistant the brain's Team workspace holds (W5c).
+ *  - a member's chat with no assistant named goes to the assistant of their
+ *    oldest workspace beyond Admin that holds one (defaultWorkspaceAssistant;
+ *    the built-in Team's until 0286, a normal workspace's now).
  * The client twin (client-responder, client-read) no longer ships (W5c).
  *
  * Only the two auth checks are stubbed. Seeds its own brains; removes them.
@@ -51,6 +53,8 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   // fresh: installed with this manifest. opened: an older brain whose admin
   // opened the responder (the old open call took `team-read-admin` off it).
   const brains = { fresh: randomUUID(), opened: randomUUID() };
+  // A member login of the fresh brain, the one who chats.
+  const member = randomUUID();
 
   const agent = async (owner: string, slug: string) =>
     (
@@ -64,23 +68,25 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
         (r) => [r.slug as string, r.admin_only as boolean],
       ),
     );
-  /** A Team workspace on the brain, holding its team responder. */
+  /** A workspace on the brain holding its team responder (a normal one,
+   *  as Team is since 0286), with the member in it. */
   const teamHolds = async (owner: string, agentId: string) => {
     const [ws] = await admin<Row[]>`
-      insert into workspaces (owner_id, name, bridge_key) values (${owner}, 'Team', 'team')
-      returning id`;
+      insert into workspaces (owner_id, name) values (${owner}, 'Team') returning id`;
     await admin`insert into workspace_resources (workspace_id, type, ref_id, write)
                 values (${ws!.id as string}, 'assistant', ${agentId}, true)`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${ws!.id as string}, ${member}, false)`;
     return ws!.id as string;
   };
   const setLevel = (owner: string) => {
     h.owner = owner;
     return levelRoute.PATCH();
   };
-  // The member chat's agent (W7c: the chat routes resolve the Team
-  // workspace's assistant through teamAssistant, lib/assistant-chat.ts).
+  // The member chat's agent with none named (lib/assistant-chat.ts and the
+  // turn engine: defaultWorkspaceAssistant).
   const memberChatAgent = async (owner: string) => {
-    const a = await content.teamAssistant(owner);
+    const a = await content.defaultWorkspaceAssistant(owner, member);
     return a ? { slug: a.slug } : null;
   };
 
@@ -100,6 +106,8 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
       await admin`insert into api_keys (id, user_id, service, label, key_enc)
                   values (${randomUUID()}, ${owner}, 'openrouter', 'default', '\\x00'::bytea)`;
     }
+    await admin`insert into auth.users (id, email, password_hash, role)
+                values (${member}, ${`trm-${member.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
     // Each starts as onboarding leaves it, then the older shape is set.
     for (const owner of Object.values(brains)) await seed.applyManifest(owner);
     await admin`update agents set tool_group_slugs = ${['team-read', 'formulas-eval']}
@@ -126,7 +134,9 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     await admin`delete from api_keys where user_id in ${admin(owners)}`;
     await admin`delete from profiles where id in ${admin(owners)}`.catch(() => undefined);
     await admin`delete from spaces where id in ${admin(owners)}`;
+    await admin`delete from workspaces where owner_id in ${admin(owners)}`.catch(() => undefined);
     await admin`delete from auth.users where id in ${admin(owners)}`;
+    await admin`delete from auth.users where id = ${member}`;
     await m.closeDb();
   }, 120_000);
 
@@ -159,12 +169,12 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     ]);
   }, 240_000);
 
-  it('the member chat is the Team workspace’s assistant (W5c)', async () => {
+  it('the member chat is the assistant of the member’s workspace (W5c, 0286)', async () => {
     const owner = brains.fresh;
     const row = await agent(owner, 'team-responder');
     const wsId = await teamHolds(owner, row.id as string);
     expect(await memberChatAgent(owner)).toMatchObject({ slug: 'team-responder' });
-    // A disabled assistant, or an archived Team, closes it.
+    // A disabled assistant, or an archived workspace, closes it.
     await admin`update agents set enabled = false where id = ${row.id as string}`;
     expect(await memberChatAgent(owner)).toBeNull();
     await admin`update agents set enabled = true where id = ${row.id as string}`;

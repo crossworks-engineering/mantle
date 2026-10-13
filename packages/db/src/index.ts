@@ -23,7 +23,7 @@ export {
   ActorMissingError,
   SYSTEM_REASON_RE,
 } from './actor';
-export { teamReadsSql, teamReadsAliasSql, teamWritesSql } from './grant-reads';
+export { sharedReadsSql, sharedReadsAliasSql } from './grant-reads';
 export {
   GRANT_DRIFT_SQL,
   WORKSPACES_CHECK_SQL,

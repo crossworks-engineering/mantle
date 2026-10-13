@@ -119,7 +119,7 @@ export {
   memberReachSql,
   memberWritesSql,
   resolveMemberHomeApp,
-  teamWorkspaceId,
+  firstSharedWorkspaceId,
   workspaceHeldApp,
   workspaceLandingAppId,
   type MemberAppCard,

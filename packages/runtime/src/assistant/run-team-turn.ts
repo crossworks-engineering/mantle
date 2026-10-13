@@ -1,7 +1,8 @@
 /**
  * Workspace chat turn execution: one conversational turn for a LOGIN against
- * the assistant of a workspace other than Admin (the Team workspace's by
- * default; any workspace the login is a user of since W7c). POST
+ * the assistant of a workspace other than Admin (any workspace the login is a
+ * user of since W7c; with none named, its default, defaultWorkspaceAssistant:
+ * its oldest workspace beyond Admin with an assistant). POST
  * /api/assistant/turn enqueues it for such an assistant (the member chat
  * route it served before answers 410 since W7c).
  *
@@ -11,8 +12,8 @@
  * persisted thought trails) that must never run for an outsider. This path is
  * the minimal, auditable subset:
  *
- *   1. Resolve the Team workspace's assistant (teamAssistant: a workspace
- *      resource, never an agent level and never the persona).
+ *   1. Resolve the workspace's assistant (a workspace resource, never an
+ *      agent level and never the persona).
  *   2. loadConversationContext for retrieval and the login's own digests
  *      (per agent and login, 0269; the shipped Team assistant has them off,
  *      digest_limit 0); journal/identity injection is skipped entirely.
@@ -59,7 +60,7 @@ import {
   isTeamPrivateReadsEnabled,
   teamHiddenNodeTypes,
   TEAM_PRIVATE_READ_SLUGS,
-  teamAssistant,
+  defaultWorkspaceAssistant,
   workspaceAssistantFor,
   type ThreadMessage,
 } from '@mantle/content';
@@ -86,9 +87,10 @@ import { withAgentViewer } from '../agent/agent-viewer';
 type TeamChannel = 'web' | 'api' | 'msteams';
 
 /** The agent the manifest ships for the team surface. Since workspaces W5c a
- *  member chats with whichever assistant the Team workspace holds (which is
- *  this one unless an admin chose another); the slug still names it for the
- *  MCP login surface and the turn-input tools. */
+ *  member chats with whichever assistant a workspace of theirs holds (this
+ *  one on the Team workspace of a brain switched before 0286, unless an
+ *  admin chose another); the slug still names it for the MCP login surface
+ *  and the turn-input tools. */
 export const TEAM_RESPONDER_SLUG = 'team-responder';
 
 /** The agent that served a CLIENT login's chat (client logins C4). Client
@@ -110,13 +112,14 @@ export type RunTeamTurnOptions = {
    *  owner surface — see docs/live-turn-streaming.md). */
   streamId?: string;
   /** The MEMBER login this turn belongs to (member logins, plan section 5):
-   *  the turn joins that login's own thread, and runs in the Team
-   *  workspace's scope for that login. Required: the team-code portal's
+   *  the turn joins that login's own thread, and runs in the scope of the
+   *  assistant's workspace for that login. Required: the team-code portal's
    *  contact turns are retired (Phase 6). */
   loginId: string;
-  /** The agent the route resolved (the Team workspace's assistant). The turn
-   *  re-checks it: an agent that is not the Team workspace's assistant now
-   *  is refused. Absent: the Team workspace's assistant. */
+  /** The agent the route resolved (an assistant of a workspace of the
+   *  login). The turn re-checks it: an agent that is not such an assistant
+   *  now is refused. Absent: the login's default
+   *  (defaultWorkspaceAssistant). */
   agentSlug?: string;
 };
 
@@ -148,7 +151,7 @@ async function resolveAgentById(ownerId: string, id: string): Promise<Agent | nu
  * The agent a workspace turn runs: the assistant a workspace holds, never one
  * picked by level (workspaces W5c). With a slug, it must be the assistant of
  * a workspace other than Admin that the login is a user of (W7c); without
- * one, the Team workspace's. The route resolves it too; this is the engine's
+ * one, the login's default (defaultWorkspaceAssistant). The route resolves it too; this is the engine's
  * own check, so no caller can hand a login another agent. The Admin
  * assistant never runs here (the owner turn engine runs it).
  */
@@ -159,24 +162,22 @@ async function resolveMemberAgent(
 ): Promise<Agent> {
   const team = slug
     ? await workspaceAssistantFor(ownerId, loginId, slug)
-    : await teamAssistant(ownerId);
+    : await defaultWorkspaceAssistant(ownerId, loginId);
   if (!team) {
     throw new Error(
       slug
         ? `Agent '${slug}' is not the assistant of a workspace this login is a user of.`
-        : "Team chat isn't provisioned on this brain: the Team workspace has no enabled assistant.",
+        : 'This login is in no workspace other than Admin with an enabled assistant.',
     );
   }
-  if ('isAdmin' in team && team.isAdmin) {
+  if (team.isAdmin) {
     throw new Error(
       `Agent '${team.slug}' is the Admin assistant: it does not run as a workspace turn.`,
     );
   }
   const agent = await resolveAgentById(ownerId, team.id);
   if (!agent) {
-    throw new Error(
-      "Team chat isn't provisioned on this brain: the Team workspace has no enabled assistant.",
-    );
+    throw new Error(`Agent '${team.slug}' is not an enabled assistant of this brain.`);
   }
   // The turn scope comes from the agent's own workspace (withAgentViewer):
   // it must be the workspace that holds it, or the turn would run in another
@@ -336,7 +337,7 @@ async function runTeamTurnSteps(
     throw new Error(`api_key_id ${agent.apiKeyId} not found for agent '${agent.slug}'.`);
   }
 
-  // Everything below runs in the Team workspace's turn scope for this login
+  // Everything below runs in the assistant's workspace's turn scope for this login
   // (withAgentViewer): the assistant reads only what row security shows that
   // workspace.
   return withAgentViewer(

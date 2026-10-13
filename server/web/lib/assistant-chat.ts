@@ -10,8 +10,8 @@
  *    one rule more: an assistant of a workspace other than Admin answers only
  *    a user of that workspace;
  *  - a member reaches only the assistants of its own workspaces other than
- *    Admin (the Team assistant first): never the Admin assistant, never a
- *    helper;
+ *    Admin (its oldest workspace's first, defaultWorkspaceAssistant): never
+ *    the Admin assistant, never a helper;
  *  - a client has no chat at all (W7c fix round 1, M4): clients do not exist
  *    as chat users yet, so every chat route answers as if there were no
  *    assistant.
@@ -23,12 +23,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { agents, asSystem, db, workspaces, type Agent } from '@mantle/db';
-import {
-  chatTextsForReader,
-  teamAssistant,
-  workspaceAssistants,
-  type WorkspaceAssistant,
-} from '@mantle/content';
+import { chatTextsForReader, workspaceAssistants, type WorkspaceAssistant } from '@mantle/content';
 import type { AssistantAgentOption } from '@mantle/client-types';
 import type { ChatLogin } from './auth';
 import { listAssistantAgents, resolveAgentForActor } from './assistant';
@@ -53,14 +48,10 @@ async function inOtherWorkspace(agent: Agent): Promise<boolean> {
 }
 
 /** The assistants a non-Admin login may chat with: those of its workspaces
- *  other than Admin, the Team assistant first. */
+ *  other than Admin, its oldest workspace's first (the order of
+ *  workspaceAssistants; the first is defaultWorkspaceAssistant's pick). */
 async function memberAssistants(login: ChatLogin): Promise<WorkspaceAssistant[]> {
-  const [all, team] = await Promise.all([
-    workspaceAssistants(login.ownerId, login.loginId),
-    teamAssistant(login.ownerId),
-  ]);
-  const first = (a: WorkspaceAssistant) => (team && a.id === team.id ? 1 : 0);
-  return all.filter((a) => !a.isAdmin).sort((a, b) => first(b) - first(a));
+  return (await workspaceAssistants(login.ownerId, login.loginId)).filter((a) => !a.isAdmin);
 }
 
 /**
