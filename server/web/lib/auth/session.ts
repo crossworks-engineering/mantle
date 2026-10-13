@@ -201,7 +201,7 @@ async function ownerForAsset(req: Request): Promise<SessionUser | NextResponse> 
       // login's 2-hour window too.
       const row = await loadLoginRow(claims.act ?? claims.uid);
       if (!row || row.role !== 'admin' || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
-        return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+        return accessRefusal(new AccessError('unauthorized'));
       }
       return {
         id: claims.uid,
@@ -218,7 +218,7 @@ async function ownerForAsset(req: Request): Promise<SessionUser | NextResponse> 
     const render = await renderCaller();
     if (render) return render.user;
   }
-  return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  return accessRefusal(new AccessError('unauthorized'));
 }
 
 /**
@@ -318,7 +318,7 @@ async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse
       }
     }
   }
-  return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  return accessRefusal(new AccessError('unauthorized'));
 }
 
 /**
@@ -710,7 +710,7 @@ export type OwnerRouteLogin =
  */
 export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextResponse> {
   const res = await resolveLogin();
-  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!res) return accessRefusal(new AccessError('unauthorized'));
   if (res.kind !== 'admin') {
     // A member reaches an owner route to read brain items in its
     // own scope (W6a, MEMBER_OPEN_READS; drafts where it may edit, W6b), or
@@ -824,23 +824,12 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
   const { method, pattern } = routeOfRequest();
   if (!hasRequestSlot() || pattern === null) return null;
   const cls = routeClass(pattern);
-  if (!cls) {
-    return NextResponse.json(
-      { error: 'forbidden', reason: 'unclassified-route', message: 'This route is not open.' },
-      { status: 403 },
-    );
-  }
+  // The gate's refusals, answered by the one mapper (arch A3c): no route
+  // class is step 3 (no policy), an area the login lacks step 5.
+  if (!cls) return accessRefusal(new AccessError('unclassified'));
   if (cls.kind === 'area') {
     if (!(await loginHoldsArea(loginId, cls.area))) {
-      return NextResponse.json(
-        {
-          error: 'forbidden',
-          reason: 'area',
-          area: cls.area,
-          message: 'You cannot manage this part of the brain.',
-        },
-        { status: 403 },
-      );
+      return accessRefusal(new AccessError('area', undefined, { area: cls.area }));
     }
     noteRequestSystem('area');
     return null;
@@ -1074,14 +1063,20 @@ async function createHomeFor(
     { ownWork, makePrivate },
   );
   if ('refused' in home) {
-    // Answered by the one mapper (@mantle/std mapAccessError): 400 invalid,
-    // else 403 workspace, the bodies as before.
-    const refusal = mapAccessError(
+    // Answered by the one mapper: 400 invalid, else 403 workspace, the
+    // bodies as before.
+    return accessRefusal(
       new AccessError(home.refused === 'invalid' ? 'invalid' : 'workspace', home.message),
-    )!.http!;
-    return NextResponse.json(refusal.body, { status: refusal.status });
+    );
   }
   return home;
+}
+
+/** A refusal of the gate as its HTTP answer: the one mapper's
+ *  (@mantle/std mapAccessError, arch A3c), the bodies the guards sent. */
+function accessRefusal(err: AccessError): NextResponse {
+  const { status, body } = mapAccessError(err)!.http!;
+  return NextResponse.json(body, { status });
 }
 
 /** The 403 a gate answers a login of the wrong kind with. The reason names
@@ -1104,7 +1099,7 @@ export function loginRefused(kind: Resolved['kind']): NextResponse {
  */
 export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   const res = await resolveLogin();
-  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!res) return accessRefusal(new AccessError('unauthorized'));
   // A member and nothing else: an admin gets admin-login.
   if (res.kind !== 'member') return loginRefused(res.kind);
   // A write made with an API key is always on the trail, whoever the key
@@ -1207,7 +1202,7 @@ export async function getLoginOr401(): Promise<
   | NextResponse
 > {
   const res = await resolveLogin();
-  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!res) return accessRefusal(new AccessError('unauthorized'));
   await anyLoginScope(res);
   switch (res.kind) {
     case 'admin':
@@ -1262,7 +1257,7 @@ export type ChatLogin = {
  */
 export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
   const res = await resolveLogin();
-  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!res) return accessRefusal(new AccessError('unauthorized'));
   await anyLoginScope(res);
   if (res.kind === 'admin') {
     await auditMutation(res.user);
@@ -1341,7 +1336,7 @@ export async function getCookieUpgradeLoginOr401(): Promise<
   | NextResponse
 > {
   const bearer = await bearerLogin();
-  if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!bearer) return accessRefusal(new AccessError('unauthorized'));
   const { resolved: res, jti: deviceJti } = bearer;
   switch (res.kind) {
     case 'admin':
