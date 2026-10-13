@@ -366,9 +366,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { table: 'public.embedding_config', user: 'all', writer: 'admin' },
   { table: 'public.ai_workers', user: 'all', writer: 'admin' },
   // Its own login's row and the brain's, every row only in an Admin scope
-  // (0266). A3a: the write role writes what it reads (a turn notes the
-  // inbound channel and the time zone on the brain's row); no more.
-  { table: 'public.profiles', user: 'all', userRule: 'own-login', writer: 'content' },
+  // (0266). Written in a login's transaction it is a write-role gap
+  // (WRITE_ROLE_GAP_TABLES, A3a's decision).
+  { table: 'public.profiles', user: 'all', userRule: 'own-login', writer: 'admin' },
   // mantle_brain_id() reads the anchor row; nothing else of a login.
   { table: 'auth.users', user: ['id', 'is_owner', 'created_at'], writer: 'admin' },
 
@@ -649,16 +649,21 @@ export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
  * write to a table outside WRITE_ROLE_TABLES goes to the system pool up
  * front and is no gap.
  *
- * Empty since A3a (docs/edit-check.md): node_snapshots, the Recall tables,
- * shares and profiles are write tables with their checks (editCheck); a
- * secret's sealed value goes through mantle_secret_put and a renamed Recall
- * map's cross-map options through mantle_recall_retarget (0281); an app
- * table's export rows are written by the brain only, never in a login's
- * transaction. The mechanism stays (the gateway's rerun, the gap writer
- * role, the test setup's rule) for a table a later phase finds; with the
- * list empty nothing reruns and every denial is an error.
+ * A3a (docs/edit-check.md) moved node_snapshots, the Recall tables and
+ * shares to the write role with their checks (editCheck); a secret's sealed
+ * value goes through mantle_secret_put and a renamed Recall map's cross-map
+ * options through mantle_recall_retarget (0281). Two stay, decided:
+ * profiles (a login's settings row, not an item: no item check applies to
+ * it, and whether a member's turn should write the brain's row is the
+ * owner's question) and app_table_exports (no login transaction writes it
+ * today: its rows are the brain's, written top level; on the list a flow
+ * that does keeps today's checked rerun instead of a 500).
  */
-export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {};
+export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {
+  app_table_exports: 'an app table’s export row, with the Table it mirrors into',
+  profiles:
+    'a login’s own profile row, made on its first read in a savepoint (profile-preferences.ts)',
+};
 
 /**
  * The role a gap table's statement runs as in the checked rerun (A2b2b fix
@@ -779,8 +784,11 @@ function safeLiteral(v: string | boolean | null): string {
 
 /**
  * The triggers of `t`'s A3a checks (TableAccess.editCheck), given the
- * table's columns as the catalog has them (not dropped, not generated).
- * Pure. Each fires for the write role only, BEFORE the row's write, and
+ * table's columns as the catalog has them (not dropped, not generated) and
+ * those whose type lives outside pg_catalog (`textCompare`: a vector, an
+ * ltree), which the WHEN compares as text: a restore runs with an empty
+ * search_path, where `vector = vector` is not found (the 0204 lesson;
+ * dump-restore.db.test.ts). Pure. Each fires for the write role only, BEFORE the row's write, and
  * calls mantle_edit_check_trg(need, item, via, mode):
  *  - mantle_edit_check_<need>: the operations that need it;
  *  - mantle_edit_check_cols_<need>: an UPDATE of one of its columns (the
@@ -794,6 +802,7 @@ function safeLiteral(v: string | boolean | null): string {
 export function editCheckTriggers(
   t: TableAccess,
   columns: readonly string[],
+  textCompare: ReadonlySet<string> = new Set(),
 ): EditCheckTrigger[] {
   const e = t.editCheck;
   if (!e || !writeRoleWrites(t)) return [];
@@ -838,11 +847,18 @@ export function editCheckTriggers(
     const cols =
       spec === 'rest' ? columns.filter((c) => !listed.has(c)) : spec.map((c) => named(c));
     if (cols.length === 0) continue;
-    const changed = cols.map((c) =>
-      Object.hasOwn(safe, c)
-        ? `(OLD.${ident(c, where)} IS DISTINCT FROM NEW.${ident(c, where)} AND NEW.${ident(c, where)} IS DISTINCT FROM ${safeLiteral(safe[c]!)})`
-        : `OLD.${ident(c, where)} IS DISTINCT FROM NEW.${ident(c, where)}`,
-    );
+    const changed = cols.map((c) => {
+      const q = ident(c, where);
+      const cast = textCompare.has(c) ? '::text' : '';
+      const differs = `OLD.${q}${cast} IS DISTINCT FROM NEW.${q}${cast}`;
+      if (!Object.hasOwn(safe, c)) return differs;
+      // The safe value first, so a write that sets it (an embedding
+      // cleared) never compares the old value.
+      const v = safe[c]!;
+      return v === null
+        ? `(NEW.${q} IS NOT NULL AND ${differs})`
+        : `(NEW.${q}${cast} IS DISTINCT FROM ${safeLiteral(v)} AND ${differs})`;
+    });
     out.push({
       name: `mantle_edit_check_cols_${need}`,
       ddl:
@@ -857,7 +873,11 @@ export function editCheckTriggers(
         ddl:
           `CREATE TRIGGER "mantle_edit_check_ins_${need}" BEFORE INSERT ON ${table} ` +
           `FOR EACH ROW WHEN (${when} AND (${insertSafe
-            .map((c) => `NEW.${ident(c, where)} IS DISTINCT FROM ${safeLiteral(safe[c]!)}`)
+            .map((c) =>
+              safe[c] === null
+                ? `NEW.${ident(c, where)} IS NOT NULL`
+                : `NEW.${ident(c, where)}${textCompare.has(c) ? '::text' : ''} IS DISTINCT FROM ${safeLiteral(safe[c]!)}`,
+            )
             .join(' OR ')})) ${fn(need)}`,
       });
     }
@@ -904,11 +924,21 @@ async function syncEditChecks(
     select to_regprocedure('public.mantle_edit_check_trg()') is not null
        and to_regclass(${table}) is not null as ok`;
   if (!ready?.ok) return;
-  const cols = await tx<{ c: string }[]>`
-    select a.attname::text as c from pg_attribute a
+  const cols = await tx<{ c: string; text: boolean }[]>`
+    select a.attname::text as c, tn.nspname <> 'pg_catalog' as text
+      from pg_attribute a
+      join pg_type ty on ty.oid = a.atttypid
+      join pg_namespace tn on tn.oid = ty.typnamespace
      where a.attrelid = ${table}::regclass and a.attnum > 0 and not a.attisdropped
        and a.attgenerated = '' order by a.attnum`;
-  const want = t && write ? editCheckTriggers(t, cols.map((r) => r.c)) : [];
+  const want =
+    t && write
+      ? editCheckTriggers(
+          t,
+          cols.map((r) => r.c),
+          new Set(cols.filter((r) => r.text).map((r) => r.c)),
+        )
+      : [];
   const have = await tx<{ name: string; note: string }[]>`
     select tg.tgname::text as name, coalesce(obj_description(tg.oid, 'pg_trigger'), '') as note
       from pg_trigger tg

@@ -5,6 +5,7 @@ import {
   isHeadsCheckError,
   isPermissionGap,
   isScopeWriteRefusal,
+  editRefusalDetail,
   isUniqueViolation,
   pgConstraint,
   pgErrorCode,
@@ -172,9 +173,26 @@ describe('isScopeWriteRefusal (arch A2b2b: every refusal of the write role is a 
       // mantle_default_home (0267)
       'this kind of item lives in the Admin workspace only',
       'no workspace to create this item in',
+      // the edit check (A3a, 0280 and 0281)
+      'not allowed to change anything: this caller only reads',
+      "not allowed to change this app's code: a Moderator of its workspace does",
+      "not allowed to change this app's settings: an Admin user does",
+      "not allowed to write this app's data",
+      'not allowed to change this item: only the brain sets that value',
+      'not allowed to change this item: a Moderator of its workspace does',
     ]) {
       expect(isScopeWriteRefusal(refusal(m)), m).toBe(true);
     }
+  });
+  it('the edit check carries a detail the mapper reads (plan 5.2)', () => {
+    const withDetail = (detail: string, code = '42501') =>
+      drizzleQueryError(Object.assign(new Error('not allowed to change this item'), { code, detail }));
+    for (const d of ['no_read', 'no_edit', 'read_only', 'ro_actor'] as const) {
+      expect(editRefusalDetail(withDetail(d)), d).toBe(d);
+    }
+    expect(editRefusalDetail(withDetail('no_actor'))).toBeNull();
+    expect(editRefusalDetail(withDetail('no_edit', '23514'))).toBeNull();
+    expect(editRefusalDetail(new Error('x'))).toBeNull();
   });
   it('never a missing grant (a gap), another code, or another message', () => {
     expect(isScopeWriteRefusal(refusal('permission denied for table node_snapshots'))).toBe(false);
@@ -212,10 +230,16 @@ describe('isPermissionGap (arch A2b2b: a right the write role does not hold)', (
 
 describe('writeRoleGapTable (A2b2b fix round 1, H1: the one rule the gateway runs again by)', () => {
   it('only "permission denied for table <t>" with <t> a gap table', () => {
-    expect(writeRoleGapTable('permission denied for table node_snapshots')).toBe('node_snapshots');
+    expect(writeRoleGapTable('permission denied for table app_table_exports')).toBe(
+      'app_table_exports',
+    );
     expect(writeRoleGapTable('permission denied for table profiles')).toBe('profiles');
-    expect(isWriteRoleGapTable('public.recall_maps')).toBe(true);
+    expect(isWriteRoleGapTable('public.profiles')).toBe(true);
     expect(isWriteRoleGapTable('auth.profiles')).toBe(false);
+    // Write tables since A3a: never a gap.
+    for (const t of ['node_snapshots', 'recall_maps', 'recall_nodes', 'shares', 'secrets']) {
+      expect(writeRoleGapTable(`permission denied for table ${t}`), t).toBeNull();
+    }
   });
   it('never a column, function, sequence or schema denial, nor a table off the list', () => {
     for (const m of [

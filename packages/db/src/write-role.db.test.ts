@@ -113,6 +113,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_grant_move_home(uuid,uuid,boolean,uuid)']!,
   'mantle_workspace_event(uuid,uuid,text,jsonb)':
     WRITE_ROLE_FUNCTIONS['public.mantle_workspace_event(uuid,uuid,text,jsonb)']!,
+  'mantle_recall_retarget(uuid,text,text)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_recall_retarget(uuid,text,text)']!,
+  'mantle_secret_put(uuid,bytea,integer)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_secret_put(uuid,bytea,integer)']!,
   // The visibility confirm's workspace reads (0279, A2b2b fix round 1 M3):
   // the workspace role's, so the write role's too.
   'mantle_folder_grant_rows(uuid)':
@@ -348,11 +352,12 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
     expect(none.map((r) => r.t)).toEqual([]);
   });
 
-  it('the matrix splits the content tables in two: 12 write tables, 9 system only', () => {
+  it('the matrix splits the content tables in two: 17 write tables, 9 system only', () => {
     expect([...WRITE_ROLE_TABLES, ...WRITE_ROLE_SYSTEM_ONLY].sort()).toEqual(
       [...contentTables].sort(),
     );
-    expect(WRITE_ROLE_TABLES).toHaveLength(12);
+    // 12 since A2b2a; A3a moved the Recall tables, shares and node_snapshots.
+    expect(WRITE_ROLE_TABLES).toHaveLength(17);
     expect(WRITE_ROLE_SYSTEM_ONLY).toHaveLength(9);
   });
 
@@ -486,8 +491,11 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
            and c.confrelid = 'public.nodes'::regclass and a.attname = ${t.writeCheck.item}`;
       expect(fk!.n, `${t.table}.${t.writeCheck.item}`).toBe(1);
     }
-    // A write table with no check is read in an Admin scope only.
-    for (const t of ACCESS_MATRIX.filter((x) => writeRoleWrites(x) && !x.writeCheck)) {
+    // A write table with no check (neither the write check nor A3a's) is
+    // read in an Admin scope only.
+    for (const t of ACCESS_MATRIX.filter(
+      (x) => writeRoleWrites(x) && !x.writeCheck && !x.editCheck,
+    )) {
       const [rule] = await sql<{ qual: string }[]>`
         select qual from pg_policies where schemaname || '.' || tablename = ${t.table}
            and cmd = 'SELECT' and 'mantle_view_user' = any(roles)`;
