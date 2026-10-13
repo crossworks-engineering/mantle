@@ -40,7 +40,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const WRITER = /^mantle_write_user/;
@@ -787,14 +787,22 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     expect(names(after).length).toBeGreaterThan(0);
   });
 
-  it('L5: a grant’s audit row only in a workspace of the scope, or for an item whose home it manages', async () => {
-    // A workspace mem is not in.
+  it('L5, L3, L7: a grant’s audit row only in a workspace of the scope, or one holding a grant row on an item whose home it manages', async () => {
+    // Workspaces mem is not in.
     const other = (await call('/api/workspaces', mem2, 'POST', { name: `${tag} Elsewhere` })).json
       .id as string;
-    expect(other).toBeTruthy();
+    const forged = (await call('/api/workspaces', mem2, 'POST', { name: `${tag} Forged` })).json
+      .id as string;
+    expect(other && forged).toBeTruthy();
+    // `other` holds a grant on the Team note (mem manages its home).
+    await m.withHeads([teamNote], 'update', (tx) =>
+      tx.execute(
+        sql`insert into item_grants (node_id, workspace_id) values (${teamNote}, ${other})`,
+      ),
+    );
     const ev = (ws: string, node: string) => (tx: postgres.TransactionSql) =>
       tx`select mantle_workspace_event(${ws}::uuid, ${mem}::uuid, 'grant.add',
-                                       ${JSON.stringify({ node })}::jsonb)`;
+                                       ${tx.json({ node })}::jsonb)`;
     // Ro: mem reads it, a workspace of its scope.
     const inScope = await asWriter(mem, 'on', [roNote], ev(ro, roNote));
     expect(inScope.code, inScope.message).toBeUndefined();
@@ -802,8 +810,129 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     const outside = await asWriter(mem, 'on', [roNote], ev(other, roNote));
     expect(outside.code).toBe('42501');
     expect(outside.message).toBe('not allowed to grant to that workspace');
-    // The same workspace for an item whose home (Team) mem manages.
+    // A workspace with a grant row on an item whose home (Team) mem manages.
     const manages = await asWriter(mem, 'on', [teamNote], ev(other, teamNote));
     expect(manages.code, manages.message).toBeUndefined();
+    // L3: the same item, a workspace with no grant row on it: a forged
+    // event, refused.
+    const forge = await asWriter(mem, 'on', [teamNote], ev(forged, teamNote));
+    expect(forge.code).toBe('42501');
+    expect(forge.message).toBe('not allowed to grant to that workspace');
+    await m.withHeads([teamNote], 'update', (tx) =>
+      tx.execute(
+        sql`delete from item_grants where node_id = ${teamNote} and workspace_id = ${other}`,
+      ),
+    );
+  });
+
+  // ── Fix round 2 ───────────────────────────────────────────────────────────
+
+  it('M1 (round 2): joined writes run one after another; a failing one leaves the others committed', async () => {
+    setMode('warn');
+    const ids = await Promise.all([0, 1, 2].map((i) => noteIn(team, `${tag} j ${i}`)));
+    await inRequest(mem, () =>
+      m.db.transaction(async (tx) => {
+        await tx
+          .update(m.nodes)
+          .set({ title: `${tag} j outer` })
+          .where(eq(m.nodes.id, ids[0]!));
+        const out = await Promise.allSettled([
+          m.db
+            .update(m.nodes)
+            .set({ title: `${tag} j a` })
+            .where(eq(m.nodes.id, ids[1]!)),
+          // A statement that fails (no such kind).
+          m.executeWrite(sql`update nodes set type = 'no_such_kind' where id = ${ids[2]!}`),
+          m.db
+            .update(m.nodes)
+            .set({ title: `${tag} j c` })
+            .where(eq(m.nodes.id, ids[2]!)),
+        ]);
+        expect(out.map((o) => o.status)).toEqual(['fulfilled', 'rejected', 'fulfilled']);
+      }),
+    );
+    expect(await titleOf(ids[0]!)).toBe(`${tag} j outer`);
+    expect(await titleOf(ids[1]!)).toBe(`${tag} j a`);
+    expect(await titleOf(ids[2]!)).toBe(`${tag} j c`);
+  });
+
+  it('M1 (round 2): a loop of 100 joins warns once and commits', async () => {
+    setMode('warn');
+    const id = await noteIn(team, `${tag} loop`);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await inRequest(mem, () =>
+        m.db.transaction(async () => {
+          for (let i = 0; i < 100; i += 1) {
+            await m.db
+              .update(m.nodes)
+              .set({ title: `${tag} loop ${i}` })
+              .where(eq(m.nodes.id, id));
+          }
+        }),
+      );
+      const said = warn.mock.calls.map((c) => String(c[0])).filter((t) => /joined writes/.test(t));
+      expect(said).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await titleOf(id)).toBe(`${tag} loop 99`);
+  });
+
+  it('L2: the checked rerun writes a gap table as mantle_gap_writer, which holds no right on an item table', async () => {
+    const sys = postgres(scratch!.url, { max: 1, prepare: false, onnotice: () => {} });
+    try {
+      const res = await sys
+        .begin(async (tx) => {
+          await tx`set local role mantle_gap_writer`;
+          const [me] = await tx<{ u: string }[]>`select current_user as u`;
+          // A gap table: allowed (rolled back below).
+          await tx`insert into profiles (user_id, preferences) values (${mem2}, '{}'::jsonb)
+                   on conflict (user_id) do nothing`;
+          // An item table: no right at all.
+          const write = await tx`update nodes set title = 'x' where id = ${teamNote}`.then(
+            () => null,
+            (e: { message?: string }) => e.message ?? 'error',
+          );
+          throw Object.assign(new Error('rollback'), { me: me!.u, write });
+        })
+        .catch((e: { me?: string; write?: string }) => e);
+      expect(res.me).toBe('mantle_gap_writer');
+      expect(res.write).toMatch(/^permission denied for table nodes/);
+    } finally {
+      await sys.end();
+    }
+  });
+
+  it('L4: a workspace is named only through the change’s own folder or item', async () => {
+    setMode('warn');
+    const tree = await import('@mantle/content/tree');
+    const elsewhere = (await call('/api/workspaces', mem2, 'POST', { name: `${tag} Unseen` })).json
+      .id as string;
+    // `elsewhere` holds a grant on a note mem reads (Team), not on the folder.
+    await m.withHeads([teamNote], 'update', (tx) =>
+      tx.execute(
+        sql`insert into item_grants (node_id, workspace_id) values (${teamNote}, ${elsewhere})`,
+      ),
+    );
+    const named = await inRequest(mem, () =>
+      m.withSystemTx(async (tx) => {
+        const rows = (await tx.execute(sql`
+          select mantle_ws_names(array[${elsewhere}::uuid], ${teamNote}::uuid) as via_item,
+                 mantle_ws_names(array[${elsewhere}::uuid], ${roNote}::uuid) as via_other`)) as unknown as {
+          via_item: unknown[];
+          via_other: unknown[];
+        }[];
+        return rows[0]!;
+      }),
+    );
+    expect(named.via_item).toHaveLength(1);
+    expect(named.via_other).toEqual([]);
+    await m.withHeads([teamNote], 'update', (tx) =>
+      tx.execute(
+        sql`delete from item_grants where node_id = ${teamNote} and workspace_id = ${elsewhere}`,
+      ),
+    );
+    void tree;
   });
 });

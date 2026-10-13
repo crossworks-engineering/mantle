@@ -113,10 +113,12 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   // The visibility confirm's workspace reads (0279, A2b2b fix round 1 M3):
   // the workspace role's, so the write role's too.
   'mantle_folder_grant_rows(uuid)':
-    'a folder’s grant rows, only for a folder the scope reads: the confirm',
+    'a folder’s grant rows not excluded, only for a folder the scope reads: the confirm',
   'mantle_ws_admin_id(uuid)': 'the brain’s Admin workspace id (an id, no name): the confirm',
-  'mantle_ws_live(uuid)': 'a workspace is live, only one the scope may see named: the confirm',
-  'mantle_ws_names(uuid[])': 'workspace names, only those the scope may see named: the confirm',
+  'mantle_ws_live(uuid,uuid)':
+    'a workspace is live, only one the scope may see named through `via`: the confirm',
+  'mantle_ws_names(uuid[],uuid)':
+    'workspace names, only those the scope may see named through `via`: the confirm',
 };
 
 /** Rolls a cell's transaction back after its checks. */

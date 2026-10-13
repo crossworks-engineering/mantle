@@ -854,6 +854,14 @@ export async function removeGrant(
     // @heads-held: change() runs this under the item's heads (a folder: its subtree).
     async (tx, ctx, item, _grants, row) => {
       const exclude = row.via !== null || (await folderGrants(tx, item, row.ws));
+      // Logged first, while the row is there: an event in a workspace
+      // outside the caller's scope needs that workspace's grant row on the
+      // item (mantle_workspace_event, A2b2b fix round 2, L3).
+      await event(tx, row.ws, ctx.caller.loginId, 'grant.remove', {
+        node: item.id,
+        excluded: exclude,
+        ...(row.via ? { folder: row.via } : {}),
+      });
       await grantChange(
         tx,
         exclude ? 'exclude' : 'remove',
@@ -862,11 +870,6 @@ export async function removeGrant(
         false,
         ctx.caller.loginId,
       );
-      await event(tx, row.ws, ctx.caller.loginId, 'grant.remove', {
-        node: item.id,
-        excluded: exclude,
-        ...(row.via ? { folder: row.via } : {}),
-      });
     },
   );
 }

@@ -538,17 +538,38 @@ check off. Both are tagged as the actor's own for the round-trip test.
   once more: in warn on the system pool, as before A2b2b; in on **checked**,
   on the system pool with `SET LOCAL ROLE mantle_write_user` and the same
   scope, every statement as the write role (its row rules and write checks)
-  except a write to a gap table or a read that names one, which runs as the
-  system between `set local role none` and the role set back. So in on no
-  item write leaves the role's checks through a rerun; a statement that
-  needs a gap table and is neither fails. Each gap is logged as an actor
+  except a write whose target is a gap table, or a read naming one the
+  write role cannot read at all (`secrets`, `app_table_exports`), which runs
+  as `mantle_gap_writer` (fix round 2) between `set local role` to it and
+  the write role set back. That role is NOLOGIN and holds rights on the gap
+  tables only (and a row rule that lets it through theirs), made by
+  `syncGapWriterRights` from the same list, so an item write in that window
+  is impossible by construction; a statement that needs more fails. So in
+  on no item write leaves the role's checks through a rerun; a statement
+  that needs a gap table and is neither fails. A single statement with a
+  `WITH` that writes a gap table is not seen as a gap target
+  (`rawWriteTarget` reads only a plain INSERT, UPDATE or DELETE): it is a
+  gap Postgres answers, so in warn it runs again on the system pool and in
+  on it is a 500 (fail closed; no such statement is known today). Each gap is logged as an actor
   miss (`write-role-gap`). ONE rule decides it, `writeRoleGapTable`, used
   by the gateway and by `vitest.setup.ts` (the suite fails on any other
   denial). Any other denial, a column, a function, a sequence, a table off
   the list, is a bug and stays an error (a 500). A refusal the database
   decided (a check, a row rule) never runs again. The rerun needs a system
-  login that may SET ROLE to the write role (a superuser, as on every box
-  today); one that may not fails loudly in on.
+  login that may SET ROLE to the write role and to `mantle_gap_writer` (a
+  superuser, as on every box today); one that may not fails loudly in on.
+- **Rollout: warn under-reports the gap flows** (fix round 2). In warn a
+  gap's rerun runs on the system pool unchecked, so for the gap flows (app
+  publish, restore, delete, app and table snapshots, Recall maps, share
+  links, `secret_create`, the profile row) warn's misses do not show what
+  on would refuse. Watch those flows on dev with the box in on before
+  another box goes on.
+- **Rollout: any other denial is a 500 in warn and in on** (fix round 1,
+  H1): a right the write role does not hold, outside the gap tables (a
+  column, a function, a table off the list), was run again on the system
+  pool before and is an error now. It is a bug to fix in the matrix or the
+  caller; the suite fails on it, a box shows it as a 500 and a
+  `write-role-gap` miss.
 - **Running a gap's flow twice is safe** (audit, 2026-10-13): of the flows
   that meet one (app publish, restore, delete, snapshots, table snapshots,
   Recall maps, contact share links, `secret_create`, the profile row), none
@@ -562,11 +583,14 @@ check off. Both are tagged as the actor's own for the round-trip test.
   (`packages/content/src/tree/visibility.ts`) It names every workspace a
   change reaches, those the caller is not in too. What a scoped read
   cannot see goes through definers of 0279, held to the scope: a
-  destination folder's grant rows (`mantle_folder_grant_rows`, only for a
-  folder the scope reads) and the workspaces (`mantle_ws_names`,
-  `mantle_ws_live`, `mantle_ws_admin_id`; a name only of a workspace in the
-  scope, one with a grant on an item the scope reads, or any for an Admin
-  scope). No second connection, and the transaction's own changes count.
+  destination folder's grant rows (`mantle_folder_grant_rows`: not
+  excluded, only for a folder the scope reads) and the workspaces
+  (`mantle_ws_names`, `mantle_ws_live`, `mantle_ws_admin_id`, an id only).
+  A workspace is named only when it is in the scope, the scope holds
+  Admin, or it holds a grant on the change's own `via` node, read by the
+  scope: the destination folder for what is gained, the moved item for
+  what is lost (fix round 2, L4). No second connection, and the
+  transaction's own changes count.
 - **Writes inside an open write transaction join it.** A login's write
   (a top-level `db.insert`, `executeWrite`, a `withSystemTx`) made while
   its own write transaction is open in the same request, with the same
@@ -574,7 +598,14 @@ check off. Both are tagged as the actor's own for the round-trip test.
   never on a second connection (3 per process: three such requests at once
   waited on each other for ever). A statement gets its own savepoint (it
   fails alone, as on its own connection); a joined `withSystemTx`'s hooks
-  run when the outer transaction ends. So in warn and on such a write
+  run when the outer transaction ends. Joins at one level run one after
+  another (fix round 2): two at once would interleave their savepoints, and
+  a rollback to the second would take the first's statement after its
+  caller was told it succeeded. A statement of that level waits for the
+  joins queued before it, and the transaction waits for joins left running
+  before it commits. Each join counts toward `NESTED_SAVEPOINT_WARN` (one
+  warning past 32): postgres.js never releases a savepoint, and releasing
+  would not help, as Postgres keeps a subtransaction's id to the end. So in warn and on such a write
   commits and rolls back with the transaction around it (off keeps the old
   separate connection). Any wait for a write-pool connection is bounded
   (15 s, `WritePoolBusyError`, a busy answer, logged); the suite fails on a
@@ -592,8 +623,9 @@ check off. Both are tagged as the actor's own for the round-trip test.
   runs as `system(rule-in-query)`: its panel reads workspaces past the scope.
   So in the app those definers run on the system pool with no scope set,
   where they check nothing: their checks (and the scope rule of
-  `mantle_workspace_event`: a workspace of the scope, or a grant on an item
-  whose home the scope manages) are exercised only by the direct-SQL cells
+  `mantle_workspace_event`: a workspace of the scope, or one holding a grant
+  row on the subject's item whose home the scope manages; a removal is
+  logged before its row goes) are exercised only by the direct-SQL cells
   (`a2b2b-write-gateway.db.test.ts`, `write-role.db.test.ts`) until the
   grants panel moves to the role.
 
@@ -695,6 +727,12 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   workspace comes from `resolveCreateHome`. L5: `mantle_workspace_event`
   is held to the scope. L6: a gap caught in a savepoint still runs the
   transaction again and is logged.
+- **Fix round 2 (2026-10-13).** Joins run one after another and count
+  toward the savepoint warning; the checked rerun's gap window runs as
+  `mantle_gap_writer`; an event in a workspace outside the scope needs that
+  workspace's grant row on the item; a workspace is named only through the
+  change's own folder or item; the event's subject is the caller's object
+  (no unwrap).
 - **The system-only content tables** stay on the system pool: by table up
   front for a single write, by a logged gap for a transaction
   (`WRITE_ROLE_GAP_TABLES`).

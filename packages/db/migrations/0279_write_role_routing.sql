@@ -45,14 +45,18 @@
 --    the scope is not in (a folder homed in Team for a member who only
 --    edits it), and the item_grants row rule hides every grant row of a
 --    workspace outside the scope. Four definers, each held to the scope:
---     - mantle_folder_grant_rows(folder): the folder's grant rows (the
---       workspace, write, home, excluded), only for a folder the scope
---       reads (all of them for an Admin scope, or with no scope set);
+--     - mantle_folder_grant_rows(folder): the folder's grant rows that are
+--       not excluded (the workspace, write, home), only for a folder (a
+--       branch) the scope reads (any for an Admin scope, or no scope set);
 --     - mantle_ws_admin_id(owner): the brain's Admin workspace (an id);
---     - mantle_ws_live(ws): the workspace is live (not archived), and
---     - mantle_ws_names(ids): [{wsId, name}], by name: both only for a
---       workspace the scope holds, one that holds a grant on an item the
---       scope reads, or any for an Admin scope (or with no scope set).
+--     - mantle_ws_live(ws, via): the workspace is live (not archived), and
+--     - mantle_ws_names(ids, via): [{wsId, name}], by name: both only for a
+--       workspace the scope holds, one holding a grant on `via` (the
+--       destination folder, or the moved item) that the scope reads, or any
+--       for an Admin scope (or with no scope set).
+-- 6. mantle_contact_share_check (a trigger on shares, 0214) runs as its
+--    owner: the checked rerun writes shares as mantle_gap_writer, a role
+--    with rights on the gap tables only (access-matrix.ts).
 --    Open to the workspace role (the write role mirrors its function
 --    rights, access-matrix.ts applyViewerGrants), never to PUBLIC.
 --
@@ -502,24 +506,23 @@ CREATE OR REPLACE FUNCTION "public"."mantle_workspace_event"(
   SET search_path = "public", pg_temp AS $$
 DECLARE
   node uuid;
-  subj jsonb := subject;
 BEGIN
   IF action IS NULL OR action NOT LIKE 'grant.%' THEN
     RAISE EXCEPTION 'mantle_workspace_event: only grant.* actions' USING ERRCODE = '22023';
   END IF;
-  -- Held to the scope (L5): a workspace of the scope, or the workspace of a
-  -- grant on an item whose home the scope manages (a home's manager may
-  -- remove or exclude a grant of a workspace it is not in).
+  -- Held to the scope (L5; fix round 2, L3): a workspace of the scope, or
+  -- one that holds a grant row on the subject's item (`node`) whose home
+  -- the scope manages (a home's manager may exclude a grant of a workspace
+  -- it is not in; a removal is logged before its row goes, grants.ts). An
+  -- event in any other workspace is refused: never a forged one.
   IF "public"."mantle_scope_active"() AND NOT coalesce(ws = ANY ("public"."mantle_scope_ws"()), false) THEN
-    -- A subject sent as JSON text (postgres.js encodes a string parameter
-    -- cast to jsonb as a JSON string): its object.
-    IF jsonb_typeof(subj) = 'string' AND left(subj #>> '{}', 1) = '{' THEN
-      subj := (subj #>> '{}')::jsonb;
-    END IF;
-    node := CASE WHEN jsonb_typeof(subj) = 'object' AND subj ->> 'node' ~ '^[0-9a-fA-F-]{36}$'
-                 THEN (subj ->> 'node')::uuid END;
+    node := CASE WHEN jsonb_typeof(subject) = 'object' AND subject ->> 'node' ~ '^[0-9a-fA-F-]{36}$'
+                 THEN (subject ->> 'node')::uuid END;
     PERFORM "public"."mantle_grant_refuses"(
-      node IS NOT NULL AND coalesce((
+      node IS NOT NULL
+      AND EXISTS (SELECT 1 FROM "public"."item_grants" g
+                   WHERE g."node_id" = node AND g."workspace_id" = ws)
+      AND coalesce((
         SELECT "public"."mantle_may_manage_home"(n."home_ws") FROM "public"."nodes" n
          WHERE n."id" = node AND n."owner_id" = "public"."mantle_brain_id"()), false),
       'workspace_events: a workspace outside the scope',
@@ -534,7 +537,12 @@ REVOKE ALL ON FUNCTION "public"."mantle_workspace_event"(uuid, uuid, text, jsonb
 --> statement-breakpoint
 
 -- 5. The visibility confirm's workspace reads (see 5 above).
-CREATE OR REPLACE FUNCTION "public"."mantle_ws_nameable"(ws uuid)
+-- Whether the scope may see `ws` named, for the confirm of a change that
+-- reaches it through `via` (fix round 2, L4): a workspace of the scope, any
+-- for an Admin scope (or with no scope set), or one holding a grant (not
+-- excluded) on `via` itself, a node the scope reads: the destination folder
+-- (what a new or moved item gains) or the moved item (what it loses).
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_nameable"(ws uuid, via uuid)
   RETURNS boolean LANGUAGE sql STABLE
   SET search_path = "public", pg_temp AS $$
   SELECT NOT "public"."mantle_scope_active"()
@@ -542,23 +550,25 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_nameable"(ws uuid)
       OR "public"."mantle_scope_has_admin"()
       OR EXISTS (SELECT 1 FROM "public"."item_grants" g
                    JOIN "public"."nodes" n ON n."id" = g."node_id"
-                  WHERE g."workspace_id" = ws AND NOT g."excluded"
+                  WHERE g."node_id" = via AND g."workspace_id" = ws AND NOT g."excluded"
                     AND n."read_ws" && "public"."mantle_scope_ws"())
 $$;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_ws_nameable"(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_ws_nameable"(uuid, uuid) FROM PUBLIC;
 --> statement-breakpoint
 
+-- A folder's grant rows the confirm reads (not excluded: it never reads
+-- those), only for a folder (a branch) the scope reads.
 CREATE OR REPLACE FUNCTION "public"."mantle_folder_grant_rows"(folder uuid)
-  RETURNS TABLE ("workspace_id" uuid, "write" boolean, "is_home" boolean, "excluded" boolean)
+  RETURNS TABLE ("workspace_id" uuid, "write" boolean, "is_home" boolean)
   LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
-  SELECT g."workspace_id", g."write", g."is_home", g."excluded"
+  SELECT g."workspace_id", g."write", g."is_home"
     FROM "public"."item_grants" g
-   WHERE g."node_id" = folder
+    JOIN "public"."nodes" f ON f."id" = g."node_id" AND f."type" = 'branch'
+   WHERE g."node_id" = folder AND NOT g."excluded"
      AND (NOT "public"."mantle_scope_active"() OR "public"."mantle_scope_has_admin"()
-          OR EXISTS (SELECT 1 FROM "public"."nodes" f
-                      WHERE f."id" = folder AND f."read_ws" && "public"."mantle_scope_ws"()))
+          OR f."read_ws" && "public"."mantle_scope_ws"())
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_folder_grant_rows"(uuid) FROM PUBLIC;
@@ -566,6 +576,9 @@ REVOKE ALL ON FUNCTION "public"."mantle_folder_grant_rows"(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION "public"."mantle_folder_grant_rows"(uuid) TO "mantle_view_user";
 --> statement-breakpoint
 
+-- The brain's Admin workspace: an id only, never a name (that goes through
+-- mantle_ws_names and its rule); every login's brain has one, and the
+-- confirm needs it as the place a new item would otherwise land.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_admin_id"(o uuid)
   RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
@@ -577,28 +590,39 @@ REVOKE ALL ON FUNCTION "public"."mantle_ws_admin_id"(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION "public"."mantle_ws_admin_id"(uuid) TO "mantle_view_user";
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION "public"."mantle_ws_live"(ws uuid)
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_live"(ws uuid, via uuid)
   RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
   SELECT EXISTS (SELECT 1 FROM "public"."workspaces" w
                   WHERE w."id" = ws AND w."archived_at" IS NULL
-                    AND "public"."mantle_ws_nameable"(w."id"))
+                    AND "public"."mantle_ws_nameable"(w."id", via))
 $$;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_ws_live"(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_ws_live"(uuid, uuid) FROM PUBLIC;
 --> statement-breakpoint
-GRANT EXECUTE ON FUNCTION "public"."mantle_ws_live"(uuid) TO "mantle_view_user";
+GRANT EXECUTE ON FUNCTION "public"."mantle_ws_live"(uuid, uuid) TO "mantle_view_user";
 --> statement-breakpoint
 
-CREATE OR REPLACE FUNCTION "public"."mantle_ws_names"(ids uuid[])
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_names"(ids uuid[], via uuid)
   RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
   SELECT coalesce(jsonb_agg(jsonb_build_object('wsId', w."id", 'name', w."name")
                             ORDER BY lower(w."name"), w."id"), '[]'::jsonb)
     FROM "public"."workspaces" w
-   WHERE w."id" = ANY (ids) AND "public"."mantle_ws_nameable"(w."id")
+   WHERE w."id" = ANY (ids) AND "public"."mantle_ws_nameable"(w."id", via)
 $$;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_ws_names"(uuid[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_ws_names"(uuid[], uuid) FROM PUBLIC;
 --> statement-breakpoint
-GRANT EXECUTE ON FUNCTION "public"."mantle_ws_names"(uuid[]) TO "mantle_view_user";
+GRANT EXECUTE ON FUNCTION "public"."mantle_ws_names"(uuid[], uuid) TO "mantle_view_user";
+--> statement-breakpoint
+
+-- 6. The contact share check (a trigger on shares) reads nodes only to
+--    test a share's contact and item: as its owner (fix round 2, L2), so a
+--    share written as mantle_gap_writer (rights on the gap tables only) is
+--    checked the same. It returns nothing it reads.
+ALTER FUNCTION "public"."mantle_contact_share_check"() SECURITY DEFINER;
+--> statement-breakpoint
+ALTER FUNCTION "public"."mantle_contact_share_check"() SET search_path = "public", pg_temp;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_contact_share_check"() FROM PUBLIC;

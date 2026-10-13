@@ -488,6 +488,26 @@ export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {
     'a login’s own profile row, made on its first read in a savepoint (profile-preferences.ts)',
 };
 
+/**
+ * The role a gap table's statement runs as in the checked rerun (A2b2b fix
+ * round 2, L2; client.ts): NOLOGIN, no BYPASSRLS, holding rights on the gap
+ * tables only (and a row rule that lets it through their row level
+ * security), so a write to an item table there is impossible by
+ * construction. The system pool SETs it for one statement at a time.
+ * applyViewerGrants makes it and its rights from WRITE_ROLE_GAP_TABLES.
+ */
+export const GAP_WRITER_ROLE = 'mantle_gap_writer';
+
+/** The gap tables the write role cannot read at all (no read rule): a read
+ *  that names one runs as GAP_WRITER_ROLE in the checked rerun; every other
+ *  read stays the write role's. */
+export const WRITE_ROLE_GAP_UNREADABLE: readonly string[] = Object.keys(
+  WRITE_ROLE_GAP_TABLES,
+).filter((t) => {
+  const row = ACCESS_MATRIX.find((a) => a.table === `public.${t}`);
+  return !row || userReadFor(row) === 'none';
+});
+
 /** A gap table (WRITE_ROLE_GAP_TABLES) by its name, schema-qualified
  *  (`public.x`, as rawWriteTarget gives it) or not. All of them are public's. */
 export function isWriteRoleGapTable(name: string): boolean {
@@ -622,6 +642,92 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
     }),
   );
   await syncWriteRoleRules(sql);
+  await syncGapWriterRights(sql);
+}
+
+/**
+ * GAP_WRITER_ROLE (A2b2b fix round 2, L2), from WRITE_ROLE_GAP_TABLES: made
+ * NOLOGIN when missing (a cluster object, like the viewer roles, so a
+ * restore into a fresh cluster gets it back here); every table right
+ * revoked, then SELECT, INSERT, UPDATE and DELETE on each gap table, the
+ * sequences they draw from, and a permissive row rule on each gap table
+ * with row level security (none other: a rule left on a table no longer
+ * on the list is dropped). Each row rule change in its own short
+ * transaction (lock_timeout 3 s, with retries), as syncWriteRoleRules.
+ */
+export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Promise<void> {
+  const role = `"${GAP_WRITER_ROLE}"`;
+  const gap = Object.keys(WRITE_ROLE_GAP_TABLES).map((t) => `public.${t}`);
+  await withRoleRetry(() =>
+    sql.begin(async (tx) => {
+      const [has] = await tx<{ ok: boolean }[]>`
+        select exists (select 1 from pg_roles where rolname = ${GAP_WRITER_ROLE}) as ok`;
+      if (!has?.ok) {
+        await tx.unsafe(
+          `CREATE ROLE ${role} WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`,
+        );
+      }
+      await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public, auth FROM ${role}`);
+      await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, auth FROM ${role}`);
+      await tx.unsafe(`GRANT USAGE ON SCHEMA public TO ${role}`);
+      const present = await tx<{ t: string }[]>`
+        select n.nspname || '.' || c.relname as t from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+         where c.relkind in ('r', 'p') and n.nspname || '.' || c.relname = any(${gap}::text[])`;
+      for (const { t } of present) {
+        await tx.unsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${t} TO ${role}`);
+      }
+      const seqs = await tx<{ seq: string }[]>`
+        select distinct quote_ident(sn.nspname) || '.' || quote_ident(s.relname) as seq
+          from pg_depend d
+          join pg_class s on s.oid = d.objid and s.relkind = 'S'
+          join pg_namespace sn on sn.oid = s.relnamespace
+          join pg_class t on t.oid = d.refobjid
+          join pg_namespace tn on tn.oid = t.relnamespace
+         where d.deptype in ('a', 'i') and tn.nspname || '.' || t.relname = any(${gap}::text[])`;
+      for (const { seq } of seqs) await tx.unsafe(`GRANT USAGE ON SEQUENCE ${seq} TO ${role}`);
+    }),
+  );
+  // The row rules: one per gap table with row level security, none else.
+  const rules = await sql<{ t: string; rls: boolean; has: boolean; stray: boolean }[]>`
+    select n.nspname || '.' || c.relname as t, c.relrowsecurity as rls,
+           exists (select 1 from pg_policies p
+                    where p.schemaname = n.nspname and p.tablename = c.relname
+                      and p.policyname = c.relname || '_gap_writer') as has,
+           not (n.nspname || '.' || c.relname = any(${gap}::text[])) as stray
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname in ('public', 'auth') and c.relkind in ('r', 'p')
+       and (n.nspname || '.' || c.relname = any(${gap}::text[])
+            or exists (select 1 from pg_policies p
+                        where p.schemaname = n.nspname and p.tablename = c.relname
+                          and ${GAP_WRITER_ROLE}::name = any(p.roles)))`;
+  for (const r of rules) {
+    const name = `"${r.t.split('.')[1]}_gap_writer"`;
+    const stmt =
+      r.stray || !r.rls
+        ? r.has
+          ? `DROP POLICY ${name} ON ${r.t}`
+          : null
+        : r.has
+          ? null
+          : `CREATE POLICY ${name} ON ${r.t} AS PERMISSIVE FOR ALL TO ${role} USING (true) WITH CHECK (true)`;
+    if (!stmt) continue;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await withRoleRetry(() =>
+          sql.begin(async (tx) => {
+            await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
+            await tx.unsafe(stmt);
+          }),
+        );
+        break;
+      } catch (err) {
+        const code = (err as { code?: string }).code ?? '';
+        if (attempt >= 8 || !RETRY_CODES.has(code)) throw err;
+        await new Promise((res) => setTimeout(res, 1000));
+      }
+    }
+  }
 }
 
 /** Errors a short policy change may meet on a busy box: a lock it waited

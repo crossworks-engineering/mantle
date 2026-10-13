@@ -67,7 +67,8 @@ import { reserveLease, withLease, type Lease } from './reserved';
 import { errorMessage } from '@mantle/std';
 import { BusyError, permissionGapOf } from './pg-error';
 import {
-  WRITE_ROLE_GAP_TABLES,
+  GAP_WRITER_ROLE,
+  WRITE_ROLE_GAP_UNREADABLE,
   WRITE_ROLE_TABLES,
   isWriteRoleGapTable,
   writeRoleGapTable,
@@ -986,20 +987,23 @@ function noteWriteRoleGap(route: LoginWriteRoute, what: string): void {
   });
 }
 
-/** A gap table's name in a statement's text (a read that names one). */
-const GAP_TABLE_NAME = new RegExp(`\\b(${Object.keys(WRITE_ROLE_GAP_TABLES).join('|')})\\b`, 'i');
+/** The name of a gap table the write role cannot read, in a statement's
+ *  text (a read that names one). */
+const GAP_UNREADABLE_NAME = new RegExp(`\\b(${WRITE_ROLE_GAP_UNREADABLE.join('|')})\\b`, 'i');
 
 /**
- * Whether a statement of a checked transaction runs as the system: a
- * single write whose target is a gap table, or a read (needsActorWrap:
- * none) that names one. Every other statement runs as the write role, its
- * row rules and write checks on; one that needs a gap table there fails
- * (never a second rerun).
+ * Whether a statement of a checked transaction runs as GAP_WRITER_ROLE (fix
+ * round 2, L2): a single write whose target is a gap table, or a read
+ * (needsActorWrap: none) that names a gap table the write role cannot read
+ * at all. That role holds rights on the gap tables only, so nothing else
+ * it might name is written there (a statement that needs more fails).
+ * Every other statement runs as the write role, its row rules and write
+ * checks on; one that needs a gap table there fails (never a second rerun).
  */
-function runsAsSystemWhenChecked(query: string): boolean {
+function runsAsGapWriterWhenChecked(query: string): boolean {
   const target = rawWriteTarget(query);
   if (target !== null) return isWriteRoleGapTable(target);
-  return !needsActorWrap(query) && GAP_TABLE_NAME.test(statementBody(query, false));
+  return !needsActorWrap(query) && GAP_UNREADABLE_NAME.test(statementBody(query, false));
 }
 
 /** The write role's name, as its row rules and write checks name it. */
@@ -1018,7 +1022,7 @@ function checkedSettingsSql(route: LoginWriteRoute): string {
 type WriteTx = {
   route: LoginWriteRoute;
   /** The checked rerun: the system pool, every statement as the write role
-   *  but those on a gap table (runsAsSystemWhenChecked). */
+   *  but those on a gap table (runsAsGapWriterWhenChecked). */
   checked: boolean;
   /** Its client once its work runs: a write that joins it runs here. */
   t: PgSql | null;
@@ -1140,8 +1144,9 @@ function joinableWriteTx(route: LoginWriteRoute): WriteTx | null {
  *    a WriteRoleGapError, the gap noted and kept (H1, L6). A denial
  *    Postgres answers is noted; a gap table's is kept too, so a gap the
  *    caller caught still runs the transaction again;
- *  - checked (M1), a statement on a gap table runs as the system, between
- *    `set local role none` and the write role set back, sent in one go;
+ *  - checked (M1), a statement on a gap table runs as GAP_WRITER_ROLE
+ *    (rights on the gap tables only), between `set local role` to it and
+ *    the write role set back, sent in one go;
  *    every other runs as the write role.
  * Savepoints (drizzle's nested transactions) are watched too.
  */
@@ -1176,9 +1181,9 @@ function watchTx(t: PgSql, tx: WriteTx): PgSql {
       }
       return observe(send());
     }
-    if (!runsAsSystemWhenChecked(text)) return observe(send());
-    // In order, in one send: the system for this statement only.
-    const off = sendIn(t.unsafe(`${ACTOR_SQL_TAG} set local role none`), 'rows');
+    if (!runsAsGapWriterWhenChecked(text)) return observe(send());
+    // In order, in one send: the gap writer for this statement only.
+    const off = sendIn(t.unsafe(`${ACTOR_SQL_TAG} set local role ${GAP_WRITER_ROLE}`), 'rows');
     const main = observe(send());
     const back = sendIn(
       t.unsafe(`${ACTOR_SQL_TAG} select set_config('role', '${WRITE_ROLE}', true)`),
@@ -1452,8 +1457,8 @@ function writeRoleBegin(route: LoginWriteRoute, args: unknown[]): Promise<unknow
 /**
  * A gap's rerun in on (M1): the same transaction on the system pool, every
  * statement as the write role (SET LOCAL ROLE, its row rules and write
- * checks on) but those on a gap table, which run as the system
- * (runsAsSystemWhenChecked). The staged checks refuse here as the role
+ * checks on) but those on a gap table, which run as GAP_WRITER_ROLE
+ * (runsAsGapWriterWhenChecked). The staged checks refuse here as the role
  * does in on (the session is not the write role's login). Needs a system
  * login that may SET ROLE to the write role (a superuser, as every box's
  * is); one that may not fails loudly.

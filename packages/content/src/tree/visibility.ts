@@ -96,8 +96,7 @@ function folderGrants(folder: SQL): SQL {
 function folderPasses(folder: SQL, type: SQL): SQL {
   return sql`array(
     select g.workspace_id from ${folderGrants(folder)} g
-     where not g.excluded
-       and mantle_grant_kind_ok(${type}, g.workspace_id, true))`;
+     where mantle_grant_kind_ok(${type}, g.workspace_id, true))`;
 }
 
 /** The workspaces a NEW item of `nodeType` at `destPath` is read in: the
@@ -109,13 +108,14 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
   return sql`array(select distinct x from unnest(
     ${folderPasses(folder, type)} || array[coalesce(
       (select f.home_ws from nodes f
-        where f.id = ${folder} and mantle_ws_live(f.home_ws)
+        where f.id = ${folder} and mantle_ws_live(f.home_ws, f.id)
           and mantle_grant_kind_ok(${type}, f.home_ws)),
       mantle_ws_admin_id(${ownerId}::uuid))]
   ) as s(x) where x is not null)`;
 }
 
-/** The changed rows of `rows` (id, title, gain uuid[], lose uuid[]), named,
+/** The changed rows of `rows` (id, title, gain uuid[], lose uuid[], via:
+ *  the folder the gain comes through), named,
  *  the first TREE_VISIBILITY_LIST_MAX by title, with the total. Only the
  *  rows the caller's scope reads (task b6e4a8aa): the list may run on the
  *  system pool inside a write, and must not name, or count, an item the
@@ -130,11 +130,14 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
  *  folders on the way are read as the caller reads them: those diffs run
  *  before their write, through `db`, never inside a write transaction. */
 async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
-  const names = (col: SQL) => sql`mantle_ws_names(${col})`;
+  // A workspace is named when the scope may see it named for this change
+  // (fix round 2, L4): what is gained through the folder (r.via), what is
+  // lost from the item itself (r.id; none for a new item).
+  const names = (col: SQL, through: SQL) => sql`mantle_ws_names(${col}, ${through})`;
   const found = (await via.execute(sql`
     select r.id::text as id, r.title,
-           ${names(sql`r.gain`)} as "alsoVisibleTo",
-           ${names(sql`r.lose`)} as "removedFrom",
+           ${names(sql`r.gain`, sql`r.via`)} as "alsoVisibleTo",
+           ${names(sql`r.lose`, sql`(nullif(r.id::text, ''))::uuid`)} as "removedFrom",
            count(*) over () as total
       from (${rows}) r
      where (cardinality(r.gain) > 0 or cardinality(r.lose) > 0)
@@ -176,7 +179,8 @@ function placedRows(ownerId: string, where: SQL, destPath: string): SQL {
            array(select g.workspace_id from item_grants g
                   where g.node_id = n.id and g.via_folder_id is not null
                     and not g.is_home and not g.excluded
-                    and not (g.workspace_id = any(${folderPasses(folder, sql`n.type`)}))) as lose
+                    and not (g.workspace_id = any(${folderPasses(folder, sql`n.type`)}))) as lose,
+           ${folder} as via
       from nodes n
      where n.owner_id = ${ownerId} and n.type <> 'branch' and ${where}`;
 }
@@ -251,7 +255,8 @@ export function moveFolderDiff(
                                and e.via_folder_id is not null and not e.is_home
                                and not e.excluded)
                 and not ${onTheWay(sql`not ag.excluded and ag.via_folder_id is null`)})
-           end as lose
+           end as lose,
+           ${parent} as via
       from nodes n, f
      where n.owner_id = ${ownerId} and n.path <@ f.path`,
   );
@@ -315,7 +320,8 @@ export function copyDiff(
     select n.id, n.title,
            array(select x from unnest(${newItemSet(ownerId, TREE_KIND_SPECS.files.nodeType, destPath)}) as s(x)
                   where not (x = any(n.read_ws))) as gain,
-           '{}'::uuid[] as lose
+           '{}'::uuid[] as lose,
+           mantle_parent_folder(${ownerId}::uuid, ${TREE_KIND_SPECS.files.nodeType}::node_type, ${destPath}::ltree) as via
       from nodes n
      where n.owner_id = ${ownerId} and n.type = 'file' and ${which}`,
   );
@@ -343,7 +349,8 @@ export async function newItemDiff(
     sql`
     select ''::text as id, ${title}::text as title,
            array(select x from unnest(${set}) as s(x) where not (x = any(${admin}))) as gain,
-           array(select x from unnest(${admin}) as s(x) where not (x = any(${set}))) as lose`,
+           array(select x from unnest(${admin}) as s(x) where not (x = any(${set}))) as lose,
+           mantle_parent_folder(${ownerId}::uuid, ${nodeType}::node_type, ${destPath}::ltree) as via`,
   );
   const change = diff.changes[0];
   if (change) Object.assign(change, await newItemHome(via, ownerId, nodeType, destPath));
@@ -374,7 +381,7 @@ async function newItemHome(
   // Workspaces by definer (see listed).
   const live = (ws: SQL) =>
     sql`(select x.id from (select ${ws} as id) x
-          where mantle_ws_live(x.id) and mantle_grant_kind_ok(${type}, x.id))`;
+          where mantle_ws_live(x.id, ${folder}) and mantle_grant_kind_ok(${type}, x.id))`;
   // The folder's home through its home grant row (not the raw columns).
   const folderHome = live(
     sql`(select g.workspace_id from ${folderGrants(folder)} g where g.is_home)`,
@@ -395,12 +402,12 @@ async function newItemHome(
     mantle_ws_admin_id(${ownerId}::uuid))`;
   const [row] = (await via.execute(sql`
     with h as (select ${home} as ws)
-    select (select mantle_ws_names(array[h.ws]) -> 0 from h) as home,
+    select (select mantle_ws_names(array[h.ws], ${folder}) -> 0 from h) as home,
            (select mantle_ws_names(array(
               select g.workspace_id from ${folderGrants(folder)} g, h
-               where not g.excluded and not g.write
+               where not g.write
                  and g.workspace_id <> h.ws
-                 and mantle_grant_kind_ok(${type}, g.workspace_id, true)))) as "readOnly"`)) as unknown as Array<{
+                 and mantle_grant_kind_ok(${type}, g.workspace_id, true)), ${folder})) as "readOnly"`)) as unknown as Array<{
     home: TreeWorkspaceChange['home'] | null;
     readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
   }>;
