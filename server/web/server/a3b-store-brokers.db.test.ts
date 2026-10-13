@@ -11,7 +11,12 @@
  *    row points at the new revision; readers follow the row);
  *  - a crash between stage and flip leaves the old revision live and the
  *    stage for the sweep; a commit that fails (a deferred trigger here)
- *    takes its stage with it; the sweep removes what no row points at;
+ *    takes its stage with it, one that committed and then threw keeps it;
+ *    the sweep removes the old revisions of an item whose row names another
+ *    file, never a file whose item has no row nor a draft from before A3b;
+ *  - a backup taken while a flip lands holds the revision the dump names;
+ *  - an app write whose row a restore moved writes neither file, and a
+ *    single statement waits at most a moment behind a seed;
  *  - off (both checks off, as NATREF, Astron and prod): the same writes
  *    give today's results.
  *
@@ -23,12 +28,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
 } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -74,6 +82,8 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
   let appdb: typeof import('@mantle/content/app-broker');
   let content: typeof import('@mantle/content');
   let sweep: typeof import('@mantle/content/store-sweep');
+  let storage: typeof import('@mantle/content/table-storage');
+  let history: typeof import('@mantle/content/table-snapshots');
   let dir = '';
   let tableRoot = '';
   let appRoot = '';
@@ -167,6 +177,8 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
     appdb = await import('@mantle/content/app-broker');
     content = await import('@mantle/content');
     sweep = await import('@mantle/content/store-sweep');
+    storage = await import('@mantle/content/table-storage');
+    history = await import('@mantle/content/table-snapshots');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${mem}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
@@ -206,6 +218,25 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
           deferrable initially deferred for each row execute function a3b_fail_commit()`),
       );
     }
+    // A restore that flips an app's file between a write's read of the row
+    // and its check (this scratch database only): armed by a row in
+    // a3b_moved, the next bump of write_seq lands on a row that names
+    // another file, as if a restore had flipped it just before.
+    await x(sql`create table a3b_moved (app uuid, path text)`);
+    await x(
+      sql.raw(`create function a3b_move_path() returns trigger language plpgsql
+        security definer set search_path = public as $$
+        declare p text;
+        begin
+          select m.path into p from a3b_moved m where m.app = new.app_node_id;
+          if p is not null and new.write_seq <> old.write_seq then new.storage_path := p; end if;
+          return new;
+        end $$`),
+    );
+    await x(
+      sql.raw(`create trigger a3b_move_path before update on app_databases
+        for each row execute function a3b_move_path()`),
+    );
   }, 240_000);
 
   afterEach(async () => {
@@ -220,11 +251,13 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** Two sweeps a grace period apart, as the nightly worker runs them. */
+  /** Two sweeps a grace period apart, as the nightly worker runs them (past
+   *  the per-run limit: this database collects every test's revisions; the
+   *  limit is store-broker.test.ts's). */
   const sweepTwice = async () => {
     const now = Date.now() + 2 * m.STORE_SWEEP_GRACE_MS;
-    await sweep.sweepStores({ now });
-    return sweep.sweepStores({ now: now + m.STORE_SWEEP_GRACE_MS });
+    await sweep.sweepStores({ now, allowMany: true });
+    return sweep.sweepStores({ now: now + m.STORE_SWEEP_GRACE_MS, allowMany: true });
   };
   const tableRow = async (id: string) =>
     (
@@ -360,6 +393,165 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(read?.draft?.rows[0]?.cells.c1).toBe('kept draft');
     });
 
+    it('a flip that committed and then threw (a post-commit throw, a lost COMMIT ack): the stage stays and the row works', async () => {
+      const t = await makeTable('h2', H);
+      const lostAck = Object.assign(new Error('write CONNECTION_CLOSED'), {
+        code: 'CONNECTION_CLOSED',
+      });
+      for (const [label, thrown] of [
+        ['after the commit', new Error('a throw after the commit')],
+        ['lost ack', lostAck],
+      ] as const) {
+        let rel = '';
+        const err = await errorOf(
+          sys(() =>
+            broker.stagedTableWrite(
+              t,
+              {},
+              async (r) => {
+                rel = broker.revisionBesideRow(r, owner, t, true);
+                return {
+                  files: [
+                    broker.stageDoc(rel, DOC(label) as never, { nodeId: t, ownerId: owner }).abs,
+                  ],
+                };
+              },
+              async (r) => {
+                await broker.flipTable(t, r.draftRev, {
+                  draftPath: rel,
+                  draftUpdatedAt: new Date(),
+                });
+                throw thrown;
+              },
+            ),
+          ),
+        );
+        expect(err, label).toBe(thrown);
+        expect(existsSync(path.join(tableRoot, rel)), label).toBe(true);
+        expect((await tableRow(t)).d, label).toBe(rel);
+        const read = await sys(() => tablesMod.getTable(owner, t));
+        expect(read?.draft?.rows[0]?.cells.c1, label).toBe(label);
+      }
+      // And the sweep keeps it: the row names it.
+      const live = (await tableRow(t)).d!;
+      await sweepTwice();
+      expect(existsSync(path.join(tableRoot, live))).toBe(true);
+    });
+
+    it('a backup taken while a flip lands holds the revision the dump names: restored, the table opens with it', async () => {
+      const t = await makeTable('backup', H);
+      await sys(() => tablesMod.saveTableDraft(owner, t, DOC('the dumped draft')));
+      // The Postgres dump runs first: it records this row.
+      const dumped = await tableRow(t);
+      // A commit lands between the dump and the file archive.
+      const committed = await sys(() => tablesMod.commitTable(owner, t));
+      expect(committed?.data.rows[0]?.cells.c1).toBe('the dumped draft');
+      const now = await tableRow(t);
+      expect(now.d).toBeNull();
+      const dest = mkdtempSync(path.join(dir, 'table-backup-'));
+      const report = await sys(() => storage.snapshotAllTableDatabases(dest));
+      expect(report.failed).toEqual([]);
+      for (const f of [dumped.p!, dumped.d!, now.p!]) {
+        expect(existsSync(path.join(dest, f)), f).toBe(true);
+      }
+      // Restore: the dump's row, the archive as the store.
+      const liveRoot = process.env.TABLE_DB_DIR;
+      await x(sql`update tables set storage_path = ${dumped.p}, draft_path = ${dumped.d},
+                  draft_rev = ${dumped.r} where node_id = ${t}`);
+      process.env.TABLE_DB_DIR = dest;
+      try {
+        const read = await sys(() => tablesMod.getTable(owner, t));
+        expect(read?.draft?.rows[0]?.cells.c1).toBe('the dumped draft');
+        expect(read?.data.rows[0]?.cells.c1).toBe('backup');
+      } finally {
+        process.env.TABLE_DB_DIR = liveRoot;
+        await x(sql`update tables set storage_path = ${now.p}, draft_path = ${now.d},
+                    draft_rev = ${now.r} where node_id = ${t}`);
+      }
+    });
+
+    it("a draft restored from history lands in the row's folder; the backup keeps each file in its own folder", async () => {
+      const t = await makeTable('folded', H);
+      const row = await tableRow(t);
+      // A table folded in from a member's space keeps its files there (W6b).
+      const folder = `space-${tag}`;
+      const folded = `${folder}/${path.basename(row.p!)}`;
+      mkdirSync(path.join(tableRoot, folder), { recursive: true });
+      copyFileSync(path.join(tableRoot, row.p!), path.join(tableRoot, folded));
+      await x(sql`update tables set storage_path = ${folded} where node_id = ${t}`);
+      const snap = await sys(() => history.createTableSnapshot(owner, t));
+      expect(snap).not.toBeNull();
+      const restored = await sys(() => history.restoreTableSnapshot(owner, t, snap!.id));
+      expect(restored).not.toBeNull();
+      const after = await tableRow(t);
+      expect(after.d!.startsWith(`${folder}/`)).toBe(true);
+      expect(existsSync(path.join(tableRoot, after.d!))).toBe(true);
+      const dest = mkdtempSync(path.join(dir, 'table-backup-'));
+      const report = await sys(() => storage.snapshotAllTableDatabases(dest));
+      expect(report.failed).toEqual([]);
+      expect(existsSync(path.join(dest, after.d!))).toBe(true);
+      expect(existsSync(path.join(dest, folded))).toBe(true);
+    });
+
+    it('a row naming a draft file that is gone (0283 backfill) is no draft: an op batch makes a new one', async () => {
+      const t = await makeTable('gone draft', H);
+      const row = await tableRow(t);
+      const goneRel = row
+        .p!.replace(/\.r-[0-9a-z]+\.sqlite$/, '.draft.sqlite')
+        .replace(/[^/]+\.draft\.sqlite$/, `${t}.draft.sqlite`);
+      await x(sql`update tables set draft_path = ${goneRel}, draft_updated_at = now()
+                  where node_id = ${t}`);
+      expect(existsSync(path.join(tableRoot, goneRel))).toBe(false);
+      const before = await tableRow(t);
+      const read = await sys(() => tablesMod.getTable(owner, t));
+      expect(read?.draft ?? null).toBeNull();
+      const ops = await sys(() =>
+        tablesMod.applyTableOps(owner, t, [
+          { op: 'cell_set', rowId: 'r1', columnId: 'c1', value: 'new draft' },
+        ] as never),
+      );
+      expect(ops).toMatchObject({ ok: true, draftRev: before.r + 1 });
+      const after = await tableRow(t);
+      expect(after.d).toMatch(/\.r-[0-9a-z]+\.draft\.sqlite$/);
+      const again = await sys(() => tablesMod.getTable(owner, t));
+      expect(again?.draft?.rows[0]?.cells.c1).toBe('new draft');
+    });
+
+    it("a deleted table's files go with the delete; the sweep never removes a file whose item has no row, nor a draft from before A3b", async () => {
+      const t = await makeTable('deleted', H);
+      await sys(() => tablesMod.saveTableDraft(owner, t, DOC('d1')));
+      await sys(() => tablesMod.commitTable(owner, t));
+      await sys(() => tablesMod.saveTableDraft(owner, t, DOC('d2')));
+      const row = await tableRow(t);
+      const folder = path.join(tableRoot, path.dirname(row.p!));
+      expect(readdirSync(folder).filter((f) => f.startsWith(t)).length).toBeGreaterThan(2);
+      expect(await sys(() => tablesMod.deleteTable(owner, t))).toBe(true);
+      expect(readdirSync(folder).filter((f) => f.startsWith(t) && f.endsWith('.sqlite'))).toEqual(
+        [],
+      );
+      // An old file of an item long gone (from before A3b, maybe the only
+      // copy), and a live table's draft from before A3b.
+      const old = Date.now() / 1000 - 3 * 86400;
+      const ghost = path.join(folder, `${randomUUID()}.sqlite`);
+      copyFileSync(path.join(tableRoot, (await tableRow(await makeTable('src', H))).p!), ghost);
+      utimesSync(ghost, old, old);
+      const live = await makeTable('legacy draft', H);
+      const legacy = path.join(
+        tableRoot,
+        path.dirname((await tableRow(live)).p!),
+        `${live}.draft.sqlite`,
+      );
+      copyFileSync(ghost, legacy);
+      utimesSync(legacy, old, old);
+      const reports = await sweepTwice();
+      expect(existsSync(ghost)).toBe(true);
+      expect(existsSync(legacy)).toBe(true);
+      const tablesReport = reports.find((r) => r.store === 'tables')!;
+      expect(tablesReport.aborted).toBeNull();
+      expect(tablesReport.noRow).toContain(path.relative(tableRoot, ghost));
+      expect(tablesReport.legacy).toContain(path.relative(tableRoot, legacy));
+    });
+
     it("off (both checks off): the refused write of above gives today's result", async () => {
       const t = await makeTable('off', R);
       const rev = (await tableRow(t)).r;
@@ -443,6 +635,107 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(await sys(() => appdb.appDatabasePath(owner, a))).toBe(live);
       const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by rowid'));
       expect(rows.map((r) => r.v)).toEqual(['first', 'after the snapshot']);
+    });
+
+    it('a write whose row a restore moved to another file since it read it writes neither file (a statement, a seed, a schema)', async () => {
+      const a = await makeApp('moved', H);
+      const live = (await sys(() => appdb.appDatabasePath(owner, a)))!;
+      const other = path.join(path.dirname(live), `${a}.r-moved${tag}.sqlite`);
+      copyFileSync(live, other);
+      const before = filesOf(stateOf(appRoot));
+      const seq = await writeSeq(a);
+      await x(sql`insert into a3b_moved values (${a}, ${other})`);
+      try {
+        const writes: [string, () => Promise<unknown>][] = [
+          ['exec', () => appdb.appDbExec(owner, a, "insert into t (v) values ('lost')")],
+          ['seed', () => appdb.appDbSeedRows(owner, a, 't', [{ v: 'lost' }])],
+          [
+            'schema',
+            () =>
+              appdb.appDbQuery(owner, a, 'select 1', [], {
+                schemaSql: 'create table if not exists s (v text)',
+                schemaVersion: 7,
+              }),
+          ],
+        ];
+        for (const [what, write] of writes) {
+          const err = await errorOf(sys(write));
+          expect(err, `${what}: ${String(err)}`).toBeInstanceOf(appdb.AppDbRestoringError);
+          expect(filesOf(stateOf(appRoot)), what).toEqual(before);
+        }
+      } finally {
+        await x(sql`delete from a3b_moved`);
+      }
+      // Every check rolled back with its refusal: the revision is where it
+      // was, the row still names the live file, which holds what it held.
+      expect(await writeSeq(a)).toBe(seq);
+      expect(await sys(() => appdb.appDatabasePath(owner, a))).toBe(live);
+      const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by rowid'));
+      expect(rows.map((r) => r.v)).toEqual(['first']);
+      rmSync(other, { force: true });
+    });
+
+    it("a single statement waits at most a moment behind a seed's row lock: busy, retried, nothing written", async () => {
+      const a = await makeApp('busy', H);
+      let release: () => void = () => {};
+      const held = new Promise<void>((r) => (release = r));
+      let locked: () => void = () => {};
+      const isLocked = new Promise<void>((r) => (locked = r));
+      const hold = m.systemDb.transaction(async (tx) => {
+        await tx.execute(sql`select 1 from app_databases where app_node_id = ${a} for update`);
+        locked();
+        await held;
+      });
+      await isLocked;
+      const t0 = Date.now();
+      const err = await errorOf(
+        sys(() => appdb.appDbExec(owner, a, "insert into t (v) values ('busy')")),
+      );
+      const waited = Date.now() - t0;
+      release();
+      await hold;
+      expect(err).toBeInstanceOf(appdb.AppSqlBusyError);
+      expect(waited).toBeLessThan(appdb.APP_DB_CHECK_LOCK_TIMEOUT_MS + 3000);
+      const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by rowid'));
+      expect(rows.map((r) => r.v)).toEqual(['first']);
+    });
+
+    it('a backup taken while a restore lands holds the file the dump names', async () => {
+      const a = await makeApp('backup', H);
+      const dumped = (await sys(() => appdb.appDatabasePath(owner, a)))!;
+      const snap = path.join(dir, `${a}.snap.sqlite`);
+      copyFileSync(dumped, snap);
+      await sys(() => appdb.appDbExec(owner, a, "insert into t (v) values ('after the snapshot')"));
+      // The dump names `dumped`; a restore flips the row before the archive.
+      await sys(() => appdb.restoreAppDatabaseFile(owner, a, snap, 0, { drainMs: 0 }));
+      const now = (await sys(() => appdb.appDatabasePath(owner, a)))!;
+      expect(now).not.toBe(dumped);
+      const dest = mkdtempSync(path.join(dir, 'app-backup-'));
+      const report = await sys(() => appdb.snapshotAllAppDatabases(dest));
+      expect(report.failed).toEqual([]);
+      const rel = (p: string) => path.relative(appRoot, p);
+      for (const f of [dumped, now]) expect(existsSync(path.join(dest, rel(f))), f).toBe(true);
+      const restored = new DatabaseSync(path.join(dest, rel(dumped)), { readOnly: true });
+      try {
+        const vs = restored.prepare('select v from t order by rowid').all() as { v: string }[];
+        expect(vs.map((r) => r.v)).toEqual(['first', 'after the snapshot']);
+      } finally {
+        restored.close();
+      }
+    });
+
+    it('the sweep never removes an app database whose app has no row (an app deleted long ago, from before A3b)', async () => {
+      const a = await makeApp('ghost source', H);
+      const live = (await sys(() => appdb.appDatabasePath(owner, a)))!;
+      const ghost = path.join(path.dirname(live), `${randomUUID()}.sqlite`);
+      copyFileSync(live, ghost);
+      const old = Date.now() / 1000 - 3 * 86400;
+      utimesSync(ghost, old, old);
+      const reports = await sweepTwice();
+      expect(existsSync(ghost)).toBe(true);
+      const r = reports.find((x) => x.store === 'appdb')!;
+      expect(r.aborted).toBeNull();
+      expect(r.noRow).toContain(path.relative(appRoot, ghost));
     });
 
     it("off (both checks off): the refused write of above gives today's result", async () => {
