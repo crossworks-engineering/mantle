@@ -147,6 +147,8 @@ describe.skipIf(!URL)('table history on Postgres', () => {
     );
     expect(entries.find((e) => e.trigger === 'manual')?.id).toBe(manual!.id);
     const dirFiles = path.join(dir, '_snapshots', owner, id);
+    // The pruned entries' files go with the store sweep (A3b part 2).
+    await sweepHistory();
     const { readdirSync } = await import('node:fs');
     expect(readdirSync(dirFiles)).toHaveLength(hist.TABLE_SNAPSHOT_COMMIT_KEEP + 1);
 

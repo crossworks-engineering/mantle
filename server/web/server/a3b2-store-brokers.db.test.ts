@@ -43,6 +43,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -122,12 +123,27 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       }),
     ) as Promise<T>;
   };
+  /** Home `id` in `ws` alone: its own grants go, a folder's inherited ones
+   *  are "Removed here" (a3a-folders.db.test.ts). */
   const homeIn = async (id: string, ws: string) => {
     await m.withHeads([id], 'update', async (tx) => {
-      await tx.execute(sql`delete from item_grants where node_id = ${id}`);
+      await tx.execute(
+        sql`delete from item_grants where node_id = ${id} and via_folder_id is null`,
+      );
+      await tx.execute(sql`update item_grants set excluded = true, is_home = false, write = false
+                           where node_id = ${id} and workspace_id <> ${ws}`);
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
-                           values (${id}, ${ws}, true)`);
+                           values (${id}, ${ws}, true)
+                           on conflict (node_id, workspace_id)
+                           do update set is_home = true, excluded = false`);
     });
+  };
+  /** A real SQLite file (a workbook copy) at `abs`. */
+  const sqliteAt = (abs: string, v: string) => {
+    mkdirSync(path.dirname(abs), { recursive: true });
+    const d = new DatabaseSync(abs);
+    d.exec(`create table t (v text); insert into t values ('${v}')`);
+    d.close();
   };
   const failCommits = async (on: boolean) => {
     await x(on ? sql`insert into a3b2_fail values (true)` : sql`delete from a3b2_fail`);
@@ -476,7 +492,6 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
     it('a caller the database refuses changes nothing: an app snapshot, a table snapshot, a delete', async () => {
       const app = await makeApp('snap-ro', R);
       const t = await makeTable('snap-ro', R);
-      await sys(() => tablesMod.commitTable(owner, t));
       const own = await sys(() => snaps.createAppSnapshot(owner, app, { note: 'owner' }));
       const before = snapState();
       const rows = await snapRows();
@@ -561,11 +576,11 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       const acc = path.join(tableRoot, 'accepted-snapshots');
       mkdirSync(acc, { recursive: true });
       const old = `accepted-snapshots/${t}.r-${m.revisionToken()}.sqlite`;
-      writeFileSync(path.join(tableRoot, old), 'old copy');
+      sqliteAt(path.join(tableRoot, old), 'old copy');
       await x(sql`insert into accepted_snapshots (node_id, kind, title, table_path)
                   values (${t}, 'table', 'x', ${old})`);
       const next = `accepted-snapshots/${t}.r-${m.revisionToken()}.sqlite`;
-      writeFileSync(path.join(tableRoot, next), 'new copy');
+      sqliteAt(path.join(tableRoot, next), 'new copy');
       // A history file a dumped row names, deleted after the dump began.
       const app = await makeApp('backup', H);
       const snap = await sys(() => snaps.createAppSnapshot(owner, app, { note: 'dumped' }));
