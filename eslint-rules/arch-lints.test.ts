@@ -181,9 +181,17 @@ describe('the counters', () => {
     ).toEqual([3]);
     // A list of definition objects is not a policy list (A5: RUN_TOOLS).
     const defs =
-      "export const T: Def[] = [\n  { slug: 'note_create', a: 1 },\n  { slug: 'page_create' },\n  { slug: 'task_create' },\n];";
+      "export const T: Def[] = [\n  { slug: 'note_create', handler: h },\n  { slug: 'page_create', inputSchema: {} },\n  { slug: 'task_create', handler: h },\n];";
     expect(isDefinitionList(listLiterals(defs)[0])).toBe(true);
     expect(toolPolicyLists(defs, slugs)).toEqual([]);
+    // A list of slug-only objects is a policy list keyed by name: counted.
+    const slugOnly =
+      "export const T = [{ slug: 'note_create' }, { slug: 'page_create' }, { slug: 'task_create' }];";
+    expect(isDefinitionList(listLiterals(slugOnly)[0])).toBe(false);
+    expect(toolPolicyLists(slugOnly, slugs)).toEqual([3]);
+    const mixed =
+      "export const T = [{ slug: 'note_create', handler: h }, { slug: 'page_create' }, { slug: 'task_create' }];";
+    expect(isDefinitionList(listLiterals(mixed)[0])).toBe(false);
     expect(isDefinitionList("['note_create', { slug: 'x' }]")).toBe(false);
     expect(routePolicyLists("const R = ['GET /api/a', 'POST /api/b', '/api/c'];")).toEqual([3]);
     expect(routePolicyLists("const R = ['GET /api/a', 'x'];")).toEqual([]);

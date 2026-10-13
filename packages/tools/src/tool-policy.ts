@@ -57,12 +57,18 @@ export type ToolItemResolver = (
 export type ToolOutside = Readonly<{
   /** How it reaches out. */
   via?: 'link' | 'send' | 'publish' | 'web' | 'http' | 'shell' | 'sandbox' | 'peer';
-  /** Its result carries third-party content: fenced as data before a model
-   *  reads it (UNTRUSTED_CONTENT_TOOL_SLUGS). */
+  /** Every result it returns is fenced as data before a model reads it, by
+   *  its name (UNTRUSTED_CONTENT_TOOL_SLUGS: the web fetch and search, a
+   *  mini app's error log and rows). Not every tool that returns
+   *  third-party content: others are fenced per result, by the
+   *  ToolHandlerResult `untrusted` flag (untrusted.ts). */
   untrusted?: true;
-  /** It reaches out of the brain (mail, the web): an unattended heartbeat
-   *  fire parks it for approval when the egress gate is on
-   *  (heartbeats/fire.ts). */
+  /** It is in the heartbeat egress set (heartbeats/fire.ts
+   *  HEARTBEAT_EGRESS_SLUGS: email_send, web_fetch, web_search): an
+   *  unattended heartbeat fire parks it for approval when the egress gate is
+   *  on. Not every tool that reaches out of the brain carries it; marking
+   *  another one changes what a heartbeat fire does, a behaviour change for
+   *  A5 step 5. */
   egress?: true;
   /** It changes what a mini app's code or tools do (builtins-apps.ts
    *  withAuthorCeiling: the author ceiling). */

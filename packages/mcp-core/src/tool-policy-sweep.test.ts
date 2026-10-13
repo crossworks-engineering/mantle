@@ -4,8 +4,8 @@
  * (toGatePolicy) equals what the gate gets today (mcpToolPolicy, derived
  * from the lists until step 2 derives them from the policy). Also pinned:
  * the parts of the policy the owner MCP surface's own lists still decide
- * (the key's shared content and the Admin-only kinds), so step 2 can swap
- * the lists for the policy with nothing to find.
+ * (the key's shared content and email lists, the Admin-only kinds), so
+ * step 2 can swap the lists for the policy with nothing to find.
  *
  * Here and not in @mantle/tools: this package sees every builtin (the
  * heartbeat tools of @mantle/runtime too) and the gate policy of today.
@@ -23,6 +23,7 @@ import {
 import { registerHeartbeatTools } from '@mantle/runtime';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 import { mcpToolPolicy } from './gate-policy';
+import { LIST_TOOLS } from './key-email-guard';
 import { KEY_SHARED_CONTENT_TOOLS } from './key-scope';
 import { isMcpToolReadOnly, isPeerRiskyTool, spendsOwnerKeys } from './login-surface';
 
@@ -103,8 +104,15 @@ describe('a policy on every builtin (A5 step 1)', () => {
       expect(spendsOwnerKeys(d.slug), d.slug).toBe(p.spends === 'ownerKey');
       expect(isPeerRiskyTool(d.slug), d.slug).toBe(p.peerRisky === true);
       expect(KEY_SHARED_CONTENT_TOOLS.has(d.slug), d.slug).toBe(p.keySharedContent === true);
+      expect(LIST_TOOLS.has(d.slug), d.slug).toBe(p.keyEmail === true);
       expect(ADMIN_KIND_CREATE_TOOL_SLUGS.has(d.slug), d.slug).toBe(p.scope === 'admin-kind');
     }
+    // Every name LIST_TOOLS holds is a builtin's: the two say the same set.
+    expect([...LIST_TOOLS].sort()).toEqual(
+      DEFS.filter((d) => d.policy.keyEmail === true)
+        .map((d) => d.slug)
+        .sort(),
+    );
   });
 
   it("refuses a builtin row named with another builtin's slug", () => {

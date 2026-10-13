@@ -354,7 +354,7 @@ worker-shell server/web/workers/telegram-poll.ts system(worker:channel-poll)
 | A page's block-id backfill (a detached promise)                             | `packages/content/src/pages/read.ts`                                       | `system(backfill:page-block-ids)`                                                                                                                                                                  |
 | The audit row of a connector call on a login's MCP (a detached promise)     | `packages/mcp-core/src/login-surface.ts`                                   | `system(audit-log)`                                                                                                                                                                                |
 | Operator scripts                                                            | `server/web/scripts/*`, `maintain`, any `scripts/` file run as the process | `system(script:<file name>)`, from the process's main file (`scriptActor` in `packages/db/src/actor.ts`)                                                                                           |
-| Clearing member Moderator ticks (0286 roll)                                 | `server/web/scripts/ws-clear-member-ticks.ts` (`lib/workspace-ticks.ts`)   | `system(script:ws-clear-member-ticks)`, from the main file (`scriptActor`); each `user.moderator` event it writes has no `actor_id` and `by` "ws:clear-member-ticks"; `ws:team-check` reads only   |
+| Clearing member Moderator ticks (0286 roll)                                 | `server/web/scripts/ws-clear-member-ticks.ts` (`lib/workspace-ticks.ts`)   | `system(script:ws-clear-member-ticks)`, from the main file (`scriptActor`); each `user.moderator` event it writes has no `actor_id` and `by` "ws:clear-member-ticks"; `ws:team-check` reads only |
 | Hand psql                                                                   | the box                                                                    | `mantle_operator_actor('reason')` first                                                                                                                                                            |
 | Migrations                                                                  | `packages/db/src/migrate.ts`                                               | `system(migration)`, set on each migration's transaction                                                                                                                                           |
 
@@ -545,7 +545,7 @@ check off. Both are tagged as the actor's own for the round-trip test.
   on the system pool with `SET LOCAL ROLE mantle_write_user` and the same
   scope, every statement as the write role (its row rules and write checks)
   except a write whose target is a gap table, a row-locking read (`FOR
-UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
+  UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
   a read naming one the write role cannot read at all (`secrets`,
   `app_table_exports`), which runs
   as `mantle_gap_writer` (fix round 2) between `set local role` to it and
@@ -725,7 +725,7 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   `mantle_workspace_event` (0279).
 - **The refusal messages.** `isScopeWriteRefusal` knows 0278's and 0279's
   write check messages, the row rule's own (`new row violates row-level
-security policy`) and `mantle_default_home`'s, so each is a 403
+  security policy`) and `mantle_default_home`'s, so each is a 403
   (`pg-error.test.ts`). A missing grant (`isPermissionGap`) is not.
 - **One helper for the manage rule** (0279): `mantle_may_manage_home`
   (manage of the home, or Admin when there is none), `mantle_may_add_to_folder`

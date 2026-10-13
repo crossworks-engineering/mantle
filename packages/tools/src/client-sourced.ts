@@ -445,8 +445,11 @@ export function lowersEmailPage(input: Record<string, unknown>): boolean {
  * (public by construction), and `email_page` with a link. The rule of each
  * is its policy's `lowering` (the functions above); this name-keyed reading
  * goes in A5 step 6, and until then tool-policy-snapshot.test.ts pins it to
- * the policies. It reads no table, so the tool loop asks it before anything
- * is loaded.
+ * the policies. It stays a switch, not a read of builtinPolicy, because it
+ * is reached through the `@mantle/tools/client-sourced` subpath export,
+ * which does not load the builtin registry: an importer of that subpath
+ * alone (or a test that mocks @mantle/tools) has no policy table, and a read
+ * of it would throw.
  */
 export function isLoweringCall(slug: string, input: Record<string, unknown>): boolean {
   switch (slug) {

@@ -41,6 +41,7 @@ import { isLoweringCall } from '@mantle/tools/client-sourced';
 import { RECIPE_FORBIDDEN_SLUGS } from '../../tools/src/recipe';
 import { HEARTBEAT_EGRESS_SLUGS } from './heartbeats/fire';
 import { registerHeartbeatTools } from './heartbeats/tools';
+import UNTRUSTED_SNAPSHOT from './tool-policy-snapshot.untrusted.json' with { type: 'json' };
 
 /** How each list is read today. */
 const CURRENT: Record<string, () => Iterable<string>> = {
@@ -240,7 +241,9 @@ const LISTS: Record<string, readonly string[]> = {
     'run_plan',
     'run_state',
   ],
-  UNTRUSTED_CONTENT_TOOL_SLUGS: ['app_data_query', 'app_errors', 'web_fetch', 'web_search'],
+  // Shared with the @mantle/tools mocks of agent/tool-loop*.test.ts, so a
+  // mock cannot drift from the snapshot.
+  UNTRUSTED_CONTENT_TOOL_SLUGS: UNTRUSTED_SNAPSHOT,
   CODE_TOOLS: [
     'app_file_delete',
     'app_file_write',

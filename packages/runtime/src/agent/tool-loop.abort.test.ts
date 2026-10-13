@@ -46,14 +46,12 @@ vi.mock('@mantle/tools', async () => ({
     await vi.importActual<typeof import('../../../tools/src/errors')>('../../../tools/src/errors')
   ).sanitizeToolError,
   // The real list is a view of the tool policy table (A5), which needs every
-  // builtin and the real @mantle/db; its value is pinned by
-  // packages/runtime/src/tool-policy-snapshot.test.ts.
-  UNTRUSTED_CONTENT_TOOL_SLUGS: new Set([
-    'web_fetch',
-    'web_search',
-    'app_errors',
-    'app_data_query',
-  ]),
+  // builtin and the real @mantle/db: the mock holds the snapshot's own
+  // literal (packages/runtime/src/tool-policy-snapshot.test.ts pins the real
+  // list to it), so the two cannot drift.
+  UNTRUSTED_CONTENT_TOOL_SLUGS: new Set(
+    (await import('../tool-policy-snapshot.untrusted.json', { with: { type: 'json' } })).default,
+  ),
   PRIVATE_OUTPUT_TOOL_SLUGS: (
     await vi.importActual<typeof import('../../../tools/src/private-output')>(
       '../../../tools/src/private-output',

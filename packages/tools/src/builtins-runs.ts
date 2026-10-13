@@ -55,7 +55,7 @@ import { policySlugSet } from './tool-policy';
  *
  *  SINGLE SOURCE: `execute-item.ts` imports this set for the execution-time
  *  re-check (defense in depth), and `builtins-runs.test.ts` asserts every
- *  RUN_TOOLS slug is in it — add a run_* tool and the test fails until its
+ *  RUN_TOOLS slug is in it: add a run_* tool and the test fails until its
  *  policy bans it too. A view of the tool policy table (tool-policy.ts, A5):
  *  `recipe.runItem` banned. */
 export const BANNED_ITEM_TOOLS: ReadonlySet<string> = policySlugSet(

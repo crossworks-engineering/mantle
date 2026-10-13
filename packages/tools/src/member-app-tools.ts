@@ -51,9 +51,12 @@ import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
 import { appToolPolicy } from './runtime-policy';
 import { policySlugList } from './tool-policy';
 
-/** Names the system manifest's team groups hold that are not builtins of
- *  this package (my_items_list, my_item_open, team_request_create, below):
- *  refused by name, as before, with no policy to carry the rule. */
+/** Retired builtins with no definition here (the system manifest's
+ *  RETIRED_BUILTIN_TOOL_SLUGS: my_items_list, my_item_open,
+ *  team_request_create): refused by name, as before, with no policy to
+ *  carry the rule. Kept: without them an app that declares one gets a 404
+ *  (its row is disabled) instead of this 403, and a brain whose row is not
+ *  yet disabled would reach the row rules. */
 const TEAM_TOOLS_REFUSED: readonly string[] = [
   'my_items_list',
   'my_item_open',

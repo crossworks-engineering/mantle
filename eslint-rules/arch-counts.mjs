@@ -232,10 +232,16 @@ export function builtinSlugs(root, files = countedFiles(root)) {
 }
 
 /** Whether a list literal is a list of definition objects (`[{ slug:
- *  'run_plan', ... }, ...]`, RUN_TOOLS): definitions, each with its own
- *  policy (A5), not a policy list keyed by name. */
+ *  'run_plan', handler, ... }, ...]`, RUN_TOOLS): definitions, each with its
+ *  own policy (A5), not a policy list keyed by name. A real definition has a
+ *  `handler` or an `inputSchema` besides its slug, so the list needs one of
+ *  them per slug: a list of slug-only objects (`[{ slug: 'a' }, { slug: 'b'
+ *  }]`), or one real definition among them, is a policy list and counts. */
 export function isDefinitionList(list) {
-  return /^\[\s*\{/.test(list) && /\bslug\s*:/.test(list);
+  if (!/^\[\s*\{/.test(list)) return false;
+  const slugKeys = list.match(/\bslug\s*:/g)?.length ?? 0;
+  const defKeys = list.match(/\b(handler|inputSchema)\b/g)?.length ?? 0;
+  return slugKeys > 0 && defKeys >= slugKeys;
 }
 
 /** The tool policy lists of `text`: lists holding 3 or more slugs, not

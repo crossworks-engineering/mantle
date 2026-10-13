@@ -35,7 +35,7 @@ const ID_FIELDS = [
 ] as const;
 const ID_LIST_FIELDS = ['file_ids', 'table_ids'] as const;
 const PATH_FIELDS = ['parent_path', 'parent', 'path', 'dest_path', 'dest_parent_path'] as const;
-const LIST_TOOLS: ReadonlySet<string> = new Set([
+export const LIST_TOOLS: ReadonlySet<string> = new Set([
   'file_list',
   'folder_list',
   'table_list',
