@@ -317,8 +317,16 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
         return count(await tx.unsafe(`delete from ${table} where node_id = $1`, [id]));
       }
       case 'openLink':
-        return count(await tx`insert into shares (token, owner_id, node_id, node_type)
-                              values (${`${tag}-${randomUUID()}`}, ${login.owner}, ${id}, ${kind})`);
+        // As the app opens a new link (content shares.ts createShare): the
+        // old open link is retired first (closing it asks no more than
+        // opening one), then the new one is made.
+        return count(await tx`
+          with retired as (
+            update shares set revoked_at = now()
+             where node_id = ${id} and revoked_at is null and contact_id is null returning 1)
+          insert into shares (token, owner_id, node_id, node_type)
+          select ${`${tag}-${randomUUID()}`}, ${login.owner}, ${id}, ${kind}
+            from (select count(*) from retired) r`);
       case 'closeLink':
         return count(await tx`update shares set revoked_at = now() where node_id = ${id}`);
       case 'appCode':
