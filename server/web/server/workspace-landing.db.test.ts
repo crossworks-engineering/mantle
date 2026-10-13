@@ -214,6 +214,9 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
   });
 
   it('0276 makes the old member home app the Team workspace home app', async () => {
+    // 0276 ran while Team carried its bridge key (0286 cleared it): put it
+    // back for the re-runs, and take it away again at the end.
+    await x(sql`update workspaces set bridge_key = 'team' where id = ${team}`);
     await x(sql`update workspaces set landing_app_id = null where owner_id = ${owner}`);
     await x(sql`insert into profiles (user_id, preferences)
                 values (${owner}, ${JSON.stringify({ teamHubAppId: teamApp })}::jsonb)
@@ -263,6 +266,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
     const [unheld] = await x<{ landing: string | null }>(sql`
       select landing_app_id::text as landing from workspaces where id = ${team}`);
     expect(unheld?.landing).toBeNull();
+    await x(sql`update workspaces set bridge_key = null where id = ${team}`);
   });
 
   it('only a Moderator of the workspace sets its landing page, to an app it holds with a green build', async () => {

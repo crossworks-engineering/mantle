@@ -16,6 +16,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -86,6 +87,8 @@ describe.skipIf(!URL)('writers with the bridge off hold their heads (heads check
     await m.systemDb.execute(sqlTag`insert into spaces (id, kind, login_id)
       values (${brain}, 'brain', ${brain}) on conflict (id) do nothing`);
     await m.systemDb.execute(sqlTag`select * from mantle_ws_migrate()`);
+    // A Team as a brain switched before 0286 has it (a new brain has none).
+    await m.systemDb.execute(sqlTag.raw(teamWorkspaceSql(brain)));
     const ws = await rows<{ name: string; id: string }>(
       sqlTag`select name, id::text as id from workspaces where owner_id = ${brain}`,
     );

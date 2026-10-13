@@ -13,11 +13,11 @@
  *  - an app two workspaces beyond Admin hold reads nothing (no scope
  *    expresses "held by every holder" yet); a runner outside the holder
  *    reads nothing; a run at team rules with no brain holder ({ team:
- *    true }) reads Team only;
- *  - fix round 2, L1: an app with no row beyond Admin reads Team (and runs
- *    admin rules); an app whose only row beyond Admin is an archived
- *    workspace's reads nothing (and runs team rules); an id that is not an
- *    app reads nothing.
+ *    true }) reads nothing (it read the built-in Team until 0286);
+ *  - fix round 2, L1: an app with no row beyond Admin reads nothing at team
+ *    rules (Team until 0286; it runs admin rules); an app whose only row
+ *    beyond Admin is an archived workspace's reads nothing (and runs team
+ *    rules); an id that is not an app reads nothing.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/app-run-scope.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -174,18 +174,18 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     expect(out).toMatchObject({ ws: { ws: [] }, team: false, admin: false });
   });
 
-  it('a run at team rules with no brain holder reads the Team workspace only', async () => {
+  it('a run at team rules with no brain holder reads nothing (no workspace is Team’s, 0286)', async () => {
     const out = await run(member, { team: true });
-    expect(out.ws).toMatchObject({ ws: [team] });
-    expect(out).toMatchObject({ team: true, other: false, admin: false });
+    expect(out).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
+    expect(out.titles).toEqual([]);
   });
 
-  it('L1: Admin alone reads Team; an archived holder or an id that is not an app reads nothing', async () => {
+  it('L1: Admin alone, an archived holder or an id that is not an app reads nothing', async () => {
     const rules = async (key: string) => (await content.getAppRuntime(owner, ids[key]!))?.toolRules;
-    // No row beyond Admin at all: team rules read Team, admin rules for an admin.
+    // No row beyond Admin at all: team rules read nothing (Team until 0286),
+    // admin rules for an admin.
     const alone = await run(member, { id: ids.adminApp! });
-    expect(alone.ws).toMatchObject({ ws: [team] });
-    expect(alone).toMatchObject({ team: true, other: false, admin: false });
+    expect(alone).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
     expect(await rules('adminApp')).toBe('admin');
     // Held beyond Admin only by an archived workspace: no fallback to Team.
     const archived = await run(member, { id: ids.archivedApp! });

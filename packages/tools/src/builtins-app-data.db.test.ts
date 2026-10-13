@@ -60,8 +60,17 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     ownerId: anchor,
     surface: { kind: 'team', loginId: member, contactName: 'Pat Member', mcp: mcp(write) },
   });
-  const call = (slug: string, input: Record<string, unknown>, ctx: ToolHandlerContext) =>
-    tools.LOGIN_APP_DATA_TOOLS.find((t) => t.slug === slug)!.handler(input, ctx);
+  // A member's call runs in its login's scope, as its MCP connection runs
+  // every call (loginToolServer): its workspaces are Team (a user, no
+  // Moderator). With no scope a member reaches nothing (0286: it reached
+  // the built-in Team workspace's apps until then).
+  const call = (slug: string, input: Record<string, unknown>, ctx: ToolHandlerContext) => {
+    const run = () => tools.LOGIN_APP_DATA_TOOLS.find((t) => t.slug === slug)!.handler(input, ctx);
+    const surface = ctx.surface as { loginId?: string } | undefined;
+    return surface?.loginId === member
+      ? m.withScope({ kind: 'user', loginId: member, ws: [ws.team], modWs: [] }, run)
+      : run();
+  };
   const out = <T>(r: Awaited<ReturnType<typeof call>>) => {
     if (!r.ok) throw new Error(r.error);
     return r.output as T;
@@ -133,6 +142,8 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
       (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
       (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
       (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, null)`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${ws.team}, ${member}, false)`;
     await app('a team', anchor, { team: 'write' });
     await app('b team mcp off', anchor, { team: 'write', mcp: false });
     await app('c team write off', anchor, { team: 'read' });

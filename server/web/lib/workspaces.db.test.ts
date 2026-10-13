@@ -364,15 +364,16 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
   it('the last Moderator can be neither removed nor demoted', async () => {
     const ws = await create(mem2, 'Max solo');
     await as(mem2);
+    const leave = await call(r.user.DELETE(req('DELETE'), p({ id: ws, loginId: mem2 })));
+    expect(leave.body.code).toBe('last_moderator');
+    // An Admin user can neither demote them (only an Admin user clears a
+    // tick, 0286) nor remove them.
+    await as(owner);
     const demote = await call(
       r.user.PATCH(req('PATCH', { moderator: false }), p({ id: ws, loginId: mem2 })),
     );
     expect(demote.status).toBe(409);
     expect(demote.body.code).toBe('last_moderator');
-    const leave = await call(r.user.DELETE(req('DELETE'), p({ id: ws, loginId: mem2 })));
-    expect(leave.body.code).toBe('last_moderator');
-    // An Admin user cannot remove them either.
-    await as(owner);
     const byAdmin = await call(r.user.DELETE(req('DELETE'), p({ id: ws, loginId: mem2 })));
     expect(byAdmin.body.code).toBe('last_moderator');
     // With a second Moderator (an Admin user ticks it), the first may leave.
@@ -979,8 +980,8 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       await tx.execute(
         sql`delete from item_grants where node_id = ${homed} and workspace_id = ${team}`,
       );
-      await tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
-        values (${homed}, ${admin}, false, true)`);
+      await tx.execute(sql`update item_grants set is_home = true
+        where node_id = ${homed} and workspace_id = ${admin}`);
     });
     const done = await call(r.archive.POST(req('POST'), p({ id: team })));
     expect(done.status, JSON.stringify(done.body)).toBe(200);

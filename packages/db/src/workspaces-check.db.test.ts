@@ -154,15 +154,21 @@ describe.skipIf(!URL)('workspaces:check (plan 7.8)', () => {
 
   it('counts workspaces without a Moderator who can sign in, Admin on its own', async () => {
     const got = await planted(async (tx) => {
-      // No users at all: counted. Admin users moderate the second one.
+      // No users at all: counted. The second has an Admin user who is no
+      // Moderator: counted too (no workspace is Admin-moderated since 0286,
+      // the flag counts for nothing). The third has a Moderator.
       await tx`insert into workspaces (owner_id, name) values (${owner}, 'Empty')`;
       const [led] = await tx<{ id: string }[]>`
         insert into workspaces (owner_id, name, admin_moderated)
         values (${owner}, 'Led', true) returning id`;
       await tx`insert into workspace_users (workspace_id, login_id, moderator)
         values (${led!.id}, ${owner}, false)`;
+      const [ok] = await tx<{ id: string }[]>`
+        insert into workspaces (owner_id, name) values (${owner}, 'Ticked') returning id`;
+      await tx`insert into workspace_users (workspace_id, login_id, moderator)
+        values (${ok!.id}, ${owner}, true)`;
     });
-    expect(got).toEqual({ ...CLEAN, workspacesWithoutModerator: 1 });
+    expect(got).toEqual({ ...CLEAN, workspacesWithoutModerator: 2 });
     // The owner disabled: Admin has no Moderator who can sign in; Team still
     // has the member.
     const adminLess = await planted(async (tx) => {

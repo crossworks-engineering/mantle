@@ -6,10 +6,11 @@
  * a draft. A public link tells nothing about who else runs it: a member with
  * the link and no grant opens it as anyone with the link does.
  *
- * The workspaces of the member: in a workspace scope, the scope's own; with
- * no workspace scope (system work), any workspace beyond Admin
- * (`sharedReadsSql`; the brain's Team workspace until 0286 made it a normal
- * one). The rule is written in every query here,
+ * The workspaces of the member: in a workspace scope, the scope's own. With
+ * no workspace scope (system work) there is no member to ask about, so
+ * nothing is reached (fail closed; it read the built-in Team workspace's
+ * grant until 0286 made Team a normal workspace). Every member path holds
+ * the login's scope (session.ts, loginToolServer, the turn scopes). The rule is written in every query here,
  * not left to row security alone: the db broker runs the app's SQLite on the
  * admin pool (the registry rows it writes are admin), and row security does
  * not reach SQLite.
@@ -30,7 +31,6 @@ import {
   db,
   nodeReadByWorkspace,
   nodes,
-  sharedReadsSql,
   workspaces,
   type AppManifest,
   type BuildRef,
@@ -67,7 +67,7 @@ function wsArray(ws: readonly string[]): SQL {
 export function memberReachSql(): SQL<boolean> {
   const scope = currentWorkspaceScope();
   if (scope) return sql<boolean>`(${nodes.readWs} && ${wsArray(scope.ws)})`;
-  return sharedReadsSql();
+  return sql<boolean>`false`;
 }
 
 /** The member may edit the app (docs/workspaces.md, Apps, Data): a

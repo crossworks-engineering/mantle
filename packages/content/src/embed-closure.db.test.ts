@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -80,6 +81,8 @@ describe.skipIf(!URL)("embeds change no one's access", () => {
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
+    // A Team as a brain switched before 0286 has it (a new brain has none).
+    await x(sql.raw(teamWorkspaceSql(owner)));
     const ws = await x<{ id: string; key: string }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;

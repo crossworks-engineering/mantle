@@ -162,9 +162,20 @@ describe.skipIf(!URL)('apps for members', () => {
 
   const inField = <T>(fn: () => Promise<T>) =>
     m.withScope({ kind: 'user', loginId: member, ws: [ws.field], modWs: [] }, fn);
+  // The member in Team (a user, no Moderator): every member path holds the
+  // login's scope. With none, nothing is reached (0286; it was the built-in
+  // Team workspace until then).
+  const inTeam = <T>(fn: () => Promise<T>) =>
+    m.withScope({ kind: 'user', loginId: member, ws: [ws.team], modWs: [] }, fn);
+
+  it('with no workspace scope a member path reaches nothing (0286: no Team fallback)', async () => {
+    expect(await ma.listMemberApps(anchor)).toEqual([]);
+    expect(await ma.getMemberRunnableApp(anchor, ids.teamRw)).toBeNull();
+    expect([...(await ma.listTeamLevelAppIds(anchor))]).toEqual([]);
+  });
 
   it('lists the apps Team holds with a green published build, by title', async () => {
-    const apps = await ma.listMemberApps(anchor);
+    const apps = await inTeam(() => ma.listMemberApps(anchor));
     expect(apps.map((a) => a.id)).toEqual([ids.teamRo, ids.teamRw]);
     // No level on the card since W5c.
     expect(apps.find((a) => a.id === ids.teamRw)).not.toHaveProperty('audience');
@@ -181,8 +192,8 @@ describe.skipIf(!URL)('apps for members', () => {
   });
 
   it('writes the data only where the grant has Write on', async () => {
-    const rw = await ma.getMemberRunnableApp(anchor, ids.teamRw);
-    const ro = await ma.getMemberRunnableApp(anchor, ids.teamRo);
+    const rw = await inTeam(() => ma.getMemberRunnableApp(anchor, ids.teamRw));
+    const ro = await inTeam(() => ma.getMemberRunnableApp(anchor, ids.teamRo));
     expect(rw).toMatchObject({ writable: true });
     expect(ro).toMatchObject({ writable: false });
     expect(ma.memberMayWriteAppData(rw!)).toBe(true);
@@ -222,15 +233,15 @@ describe.skipIf(!URL)('apps for members', () => {
       // Another workspace than Team: not the member's outside its scope.
       ids.field,
     ]) {
-      expect(await ma.getMemberRunnableApp(anchor, id), id).toBeNull();
+      expect(await inTeam(() => ma.getMemberRunnableApp(anchor, id)), id).toBeNull();
     }
-    const listed = (await ma.listMemberAppsPlaced(anchor)).places.map((p) => p.id);
+    const listed = (await inTeam(() => ma.listMemberAppsPlaced(anchor))).places.map((p) => p.id);
     expect(listed).not.toContain(ids.linkOnly);
     expect(listed).not.toContain(ids.levelOnly);
   });
 
   it('opens a runnable app with its PUBLISHED build and manifest, never a draft', async () => {
-    const app = await ma.getMemberRunnableApp(anchor, ids.teamRw);
+    const app = await inTeam(() => ma.getMemberRunnableApp(anchor, ids.teamRw));
     expect(app).toMatchObject({ id: ids.teamRw, manifest: { toolSlugs: ['note_list'] } });
     expect(app?.publishedBuild.ok).toBe(true);
     expect(Object.keys(app ?? {})).not.toContain('draftBuild');
@@ -248,7 +259,7 @@ describe.skipIf(!URL)('apps for members', () => {
   });
 
   it('gives team chat the data of the apps Team holds only (published or not)', async () => {
-    const reach = await ma.listTeamLevelAppIds(anchor);
+    const reach = await inTeam(() => ma.listTeamLevelAppIds(anchor));
     expect(reach.has(ids.teamRw)).toBe(true);
     expect(reach.has(ids.draftOnly)).toBe(true);
     expect(reach.has(ids.admin)).toBe(false);
@@ -266,7 +277,7 @@ describe.skipIf(!URL)('apps for members', () => {
       await grant(page, ws.team, true, true);
       await m.systemDb.execute(sqlTag`
         insert into node_embeds (from_id, to_id) values (${page}, ${ids.admin})`);
-      expect((await ma.listTeamLevelAppIds(anchor)).has(ids.admin)).toBe(false);
+      expect((await inTeam(() => ma.listTeamLevelAppIds(anchor))).has(ids.admin)).toBe(false);
     } finally {
       await m.systemDb.execute(sqlTag`delete from node_embeds where from_id = ${page}`);
       await m.systemDb.execute(sqlTag`delete from item_grants where node_id = ${page}`);
@@ -275,15 +286,15 @@ describe.skipIf(!URL)('apps for members', () => {
   });
 
   it('honours the pinned home app only while a member may run it', async () => {
-    expect(await ma.resolveMemberHomeApp(anchor, ids.teamRw)).toEqual({
+    expect(await inTeam(() => ma.resolveMemberHomeApp(anchor, ids.teamRw))).toEqual({
       appId: ids.teamRw,
       title: `${tag} b team`,
       icon: null,
       color: null,
     });
-    expect(await ma.resolveMemberHomeApp(anchor, ids.admin)).toBeNull();
-    expect(await ma.resolveMemberHomeApp(anchor, ids.draftOnly)).toBeNull();
-    expect(await ma.resolveMemberHomeApp(anchor, undefined)).toBeNull();
+    expect(await inTeam(() => ma.resolveMemberHomeApp(anchor, ids.admin))).toBeNull();
+    expect(await inTeam(() => ma.resolveMemberHomeApp(anchor, ids.draftOnly))).toBeNull();
+    expect(await inTeam(() => ma.resolveMemberHomeApp(anchor, undefined))).toBeNull();
   });
 
   // Plan R2: an app reads only what every holder reads.

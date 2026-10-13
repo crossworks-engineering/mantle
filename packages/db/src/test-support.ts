@@ -79,6 +79,40 @@ export async function ensureTestAnchor(sql: Sql): Promise<string> {
 }
 
 /**
+ * The SQL of a Team workspace as a brain switched before migration 0286 has
+ * it, for a test that needs a shared workspace beyond Admin: the live
+ * non-Admin workspace named "Team" of `owner` (one the switch kept), else a
+ * new normal one, with every admin and member login of the database (not a
+ * former client) a Moderator, as the switch gave them then. A new brain has
+ * no Team (0286). One statement; it answers one row, `id`. Run it with the
+ * client's raw text (`sql.raw`, `sql.unsafe`).
+ */
+export function teamWorkspaceSql(owner: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(owner)) {
+    throw new Error(`teamWorkspaceSql: not a uuid: ${owner}`);
+  }
+  return `
+    with found as (
+      select w.id from public.workspaces w
+       where w.owner_id = '${owner}' and not w.is_admin and w.archived_at is null
+         and w.name = 'Team'
+       order by w.created_at limit 1),
+    made as (
+      insert into public.workspaces (owner_id, name, description)
+      select '${owner}', 'Team', 'Work shared with the whole team.'
+       where not exists (select 1 from found)
+      returning id),
+    ws as (select id from found union all select id from made),
+    joined as (
+      insert into public.workspace_users (workspace_id, login_id, moderator)
+      select m.id, u.id, true from made m, auth.users u
+       where u.role in ('admin', 'member')
+         and not exists (select 1 from public.archive_client_logins a where a.login_id = u.id)
+      on conflict do nothing)
+    select id::text as id from ws`;
+}
+
+/**
  * Set a login's role. The client role guard trigger (0200) was dropped by
  * 0272 and the role CHECK admits only 'admin' and 'member', so this is a
  * plain UPDATE.

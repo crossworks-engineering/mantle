@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -272,11 +273,8 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     // The member's private workspace and the Team workspace, read in the
     // member's own scope (mantle_ws_kind reads private_workspaces for it).
     const PV = randomUUID();
-    const team = (
-      await x<{ id: string }>(
-        sql`select id::text as id from workspaces where owner_id = ${owner} and name = 'Team' and not is_admin`,
-      )
-    )[0]!.id;
+    // A Team as a brain switched before 0286 has it (a new brain has none).
+    const team = (await x<{ id: string }>(sql.raw(teamWorkspaceSql(owner))))[0]!.id;
     await x(
       sql`insert into workspaces (id, owner_id, name) values (${PV}, ${owner}, 'Mine (only you)')`,
     );
@@ -296,6 +294,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     const kinds = Object.fromEntries(
       scoped.get(ids.note2)!.workspaces.map((w) => [w.id, [w.kind, w.color, w.icon]]),
     );
-    expect(kinds).toEqual({ [PV]: ['private', null, null], [team]: ['team', null, null] });
+    // Team is 'other' since 0286 (no built-in Team kind).
+    expect(kinds).toEqual({ [PV]: ['private', null, null], [team]: ['other', null, null] });
   });
 });

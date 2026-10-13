@@ -238,20 +238,31 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('site_query', ['site_http'])).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('the connector the handler names decides, not a group that lists the tool; off Team it is refused, marked or not, whatever its level', async () => {
+  it('the connector the handler names decides, not a group that lists the tool; off every workspace beyond Admin it is refused, marked or not, whatever its level', async () => {
     // site_admin_only is listed only in an admin-level group, but its
     // handler names the connector Team holds.
     expect((await switchOn('site_admin_only')).ok).toBe(true);
     expect(await verdict('site_admin_only')).toMatchObject({ ok: true, write: false });
     await without(ws.team, async () => {
-      // Its level says team: the level no longer opens it (W5b2).
-      for (const slug of ['site_query', 'site_admin_only']) {
-        expect(await verdict(slug), slug).toMatchObject({
-          ok: false,
-          status: 403,
-          reason: expect.stringMatching(/Team workspace does not hold/),
-        });
-      }
+      // Clients still holds it, Write off (no workspace is Team's since
+      // 0286: any workspace beyond Admin counts): the read runs, the write
+      // (site_query, unmarked) is refused.
+      expect(await verdict('site_admin_only')).toMatchObject({ ok: true, write: false });
+      expect(await verdict('site_query')).toMatchObject({
+        ok: false,
+        status: 403,
+        reason: expect.stringMatching(/no workspace other than Admin holds with Write on/),
+      });
+      await without(ws.clients, async () => {
+        // Its level says team: the level no longer opens it (W5b2).
+        for (const slug of ['site_query', 'site_admin_only']) {
+          expect(await verdict(slug), slug).toMatchObject({
+            ok: false,
+            status: 403,
+            reason: expect.stringMatching(/no workspace other than Admin holds/),
+          });
+        }
+      });
     });
     // And its level does not close it either.
     await setConnectorLevel('admin');

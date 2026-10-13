@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -59,6 +60,8 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: the rollback switch asks for Ad
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
+    // A Team as a brain switched before 0286 has it (a new brain has none).
+    await x(sql.raw(teamWorkspaceSql(owner)));
     const ws = await x<{ id: string; key: string | null }>(sql`
       select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     teamWs = ws.find((w) => w.key === 'team')!.id;

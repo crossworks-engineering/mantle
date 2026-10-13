@@ -41,6 +41,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { teamWorkspaceSql } from '@mantle/db/test-support';
 
 const DB_URL = process.env.MANTLE_TEST_DATABASE_URL;
 const VEC = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
@@ -424,6 +425,8 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
+    // A Team as a brain switched before 0286 has it (a new brain has none).
+    await x(sql.raw(teamWorkspaceSql(owner)));
     const [ws] = await x<{ id: string }>(sql`select id::text as id from workspaces
       where owner_id = ${owner} and is_admin and archived_at is null`);
     const [agent] = await m.systemDb

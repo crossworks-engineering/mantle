@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -184,6 +185,8 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
+    // A Team as a brain switched before 0286 has it (a new brain has none).
+    await x(sql.raw(teamWorkspaceSql(owner)));
     adminWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
         where owner_id = ${owner} and is_admin and archived_at is null`)

@@ -6,8 +6,8 @@
  *  - before the brain is migrated nothing reads as shared (no grants: fail
  *    closed), whatever the levels say;
  *  - after the switch every brain item answers from its grants (read_ws),
- *    and the levels mean nothing: a new item at 'team' is not shared, a
- *    personal-space row is not shared (no grants until W6b);
+ *    and the levels mean nothing: a new item at 'team' is not shared; a
+ *    personal-space row is, by its author's private workspace (W6b);
  *  - the switch keeps a Team that holds something as a normal workspace (no
  *    bridge_key, so mantle_brain_team_ws finds none);
  *  - the grant decides both ways, for Team and for any other workspace.
@@ -123,8 +123,9 @@ describe.skipIf(!URL)('grant reads: a workspace beyond Admin reads from the gran
       embeddedApp: false,
       teamApp: true,
       adminApp: false,
-      // A personal-space row: no grants until W6b.
-      draft: false,
+      // A personal-space row: the spaces fold (W6b) homes it in its
+      // author's private workspace, a workspace beyond Admin.
+      draft: true,
     });
     // A new item at 'team' takes a home (Admin) and nothing from its level.
     await node('newTeamPage', owner, 'page', 'pages', 'team');

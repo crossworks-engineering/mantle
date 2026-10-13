@@ -289,10 +289,12 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
       await x(sql`update workspace_resources set write = false
         where workspace_id = ${team} and type = 'connector' and ref_id = ${A}`);
       try {
-        // ...but a member-built app runs at team rules: the Team rule.
+        // ...but a member-built app runs at team rules: a workspace beyond
+        // Admin must hold it with Write on (Team alone holds A here; the
+        // built-in Team rule until 0286).
         const w = await ownerCall(SLUGS.aWrite);
         expect(w.status).toBe(403);
-        expect(w.body.error).toMatch(/Team workspace does not hold with Write on/);
+        expect(w.body.error).toMatch(/no workspace other than Admin holds with Write on/);
         expect(await ownerCall(SLUGS.aRead)).toMatchObject({ status: 200 });
         expect(h.dispatched).toEqual([SLUGS.aRead]);
       } finally {

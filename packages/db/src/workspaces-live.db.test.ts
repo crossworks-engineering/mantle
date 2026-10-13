@@ -172,11 +172,15 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     const done = await migrate();
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
     expect(done.find((r) => r.subject === 'workspaces')?.n).toBe(2);
+    // Team holds the team items and the member: kept, a normal workspace
+    // (0286: no bridge_key, no admin_moderated).
     const ws = await sql<
-      { id: string; bridge_key: string }[]
-    >`select id, bridge_key from workspaces`;
+      { id: string; bridge_key: string | null; name: string; admin_moderated: boolean }[]
+    >`select id, bridge_key, name, admin_moderated from workspaces`;
     admin = ws.find((w) => w.bridge_key === 'admin')!.id;
-    team = ws.find((w) => w.bridge_key === 'team')!.id;
+    const t = ws.find((w) => w.name === 'Team')!;
+    expect(t).toMatchObject({ bridge_key: null, admin_moderated: false });
+    team = t.id;
     expect((await migrate())[0]).toMatchObject({ section: 'skip', metric: 'already migrated' });
   });
 
@@ -394,16 +398,18 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
         .map((r) => (r.ws === admin ? 'A' : 'T'))
         .sort();
     expect(await where()).toEqual([]);
-    // What POST /api/users does after the insert.
+    // What POST /api/users does after the insert: a member joins nothing
+    // (0286: no Team by itself).
     await sql`select mantle_bridge_login(${z})`;
-    expect(await where()).toEqual(['T']);
+    expect(await where()).toEqual([]);
     await sql`update auth.users set role = 'admin' where id = ${z}`;
-    expect(await where()).toEqual(['T']);
+    expect(await where()).toEqual([]);
+    // An admin joins Admin only.
     await sql`select mantle_bridge_login(${z})`;
-    expect(await where()).toEqual(['A', 'T']);
+    expect(await where()).toEqual(['A']);
     const [e] = await sql<{ n: number }[]>`
       select count(*)::int as n from workspace_events where action = 'bridge.login' and subject->>'login' = ${z}`;
-    expect(e!.n).toBe(2);
+    expect(e!.n).toBe(1);
     await sql`delete from auth.users where id = ${z}`;
     expect(await where()).toEqual([]);
   });
