@@ -7,9 +7,12 @@
  * client sends (Parse or Query), and each round trip: any send after the
  * server last answered on that connection. With prepare off, postgres.js
  * sends a statement with parameters in two steps (Parse and Describe, then
- * Bind and Execute), so it is two round trips. Six paths run through the
+ * Bind and Execute), so it is two round trips. Seven paths run through the
  * real app or the real runtime: tree load, item open, search, chat turn
- * start, MCP tool call, page save.
+ * start, MCP tool call, page save (an Admin user's: the system pool), and a
+ * member's page save, a login write the gateway sends to the write role in
+ * warn and on (A2b2b fix round 1: measured in off, warn and on; its
+ * statements on the write role's connections are counted apart).
  *
  * Pinned, within the build (fix round 2: no hard-coded counts):
  *  - with the check off, no statement sets or reads the actor: the setting,
@@ -52,7 +55,13 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
 }));
 
 type Path =
-  'tree load' | 'item open' | 'search' | 'chat turn start' | 'MCP tool call' | 'page save';
+  | 'tree load'
+  | 'item open'
+  | 'search'
+  | 'chat turn start'
+  | 'MCP tool call'
+  | 'page save'
+  | 'member page save';
 type Count = { statements: number; roundTrips: number };
 
 /**
@@ -61,7 +70,7 @@ type Count = { statements: number; roundTrips: number };
  * gate): a later feature that adds a query to one of these paths changes
  * them, so they are no rule for every build.
  */
-const OFF_BASELINE: Record<Path, Count> = {
+const OFF_BASELINE: Partial<Record<Path, Count>> = {
   'tree load': { statements: 13, roundTrips: 17 },
   'item open': { statements: 9, roundTrips: 12 },
   search: { statements: 16, roundTrips: 22 },
@@ -99,6 +108,8 @@ class WireCounter {
   /** Of those, the ones that only carried the RESET: off the caller's path
    *  (A2b1 audit, Q1). */
   resetRoundTrips = 0;
+  /** Statements sent on the write role's connections (A2b2b). */
+  writeRoleStatements = 0;
   lastAt = 0;
   private server: net.Server | null = null;
   private sockets = new Set<net.Socket>();
@@ -110,6 +121,8 @@ class WireCounter {
       let buf = Buffer.alloc(0);
       let startup = true;
       let serverSpoke = true;
+      /** The login role of this connection (its startup message). */
+      let user = '';
       /** The kind of the statement this connection sent last: a send with
        *  no statement (Bind and Execute of a two-step one) is its. */
       let last: Kind = 'other';
@@ -137,7 +150,11 @@ class WireCounter {
             if (buf.length < len) break;
             const code = buf.readInt32BE(4);
             // An SSL or GSS request comes before the startup message.
-            if (code !== 80877103 && code !== 80877104) startup = false;
+            if (code !== 80877103 && code !== 80877104) {
+              startup = false;
+              const kv = buf.subarray(8, len).toString('utf8').split('\0');
+              for (let i = 0; i + 1 < kv.length; i += 2) if (kv[i] === 'user') user = kv[i + 1]!;
+            }
             buf = buf.subarray(len);
             continue;
           }
@@ -149,8 +166,15 @@ class WireCounter {
           let text: string | null = null;
           if (type === 'Q') text = cstring(body, 0);
           if (type === 'P') text = cstring(body, body.indexOf(0) + 1);
+          // Bind first in a send: the rest of a two-step statement sent
+          // before (its Parse), with whatever is pipelined behind it (the
+          // write role's COMMIT, A2b2b): that statement's kind.
+          if (type === 'B' && kinds.length === 0) kinds.push(last);
           if (text !== null) {
             last = kindOf(text);
+            if (last !== 'noise' && user.startsWith('mantle_write_user')) {
+              this.writeRoleStatements += 1;
+            }
             if (SET_SQL.test(text)) sentSet = true;
             if (RESET_SQL.test(text)) sentReset = true;
             kinds.push(last);
@@ -207,6 +231,7 @@ class WireCounter {
     this.actorRoundTrips = 0;
     this.setRoundTrips = 0;
     this.resetRoundTrips = 0;
+    this.writeRoleStatements = 0;
   }
 
   async stop(): Promise<void> {
@@ -245,6 +270,10 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
   const owner = randomUUID();
   const note = randomUUID();
   const page = randomUUID();
+  /** A member (A2b2b): a Moderator of Team, its page homed there. */
+  const member = randomUUID();
+  const memberPage = randomUUID();
+  let memberCookie = '';
   const tag = `a2rt${randomUUID().slice(0, 6)}`;
   const agentSlug = `${tag}-admin`;
   let saves = 0;
@@ -252,10 +281,10 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
 
-  const call = async (p: string, method = 'GET', body?: unknown) => {
+  const call = async (p: string, method = 'GET', body?: unknown, as = cookie) => {
     const res = await app.request(p, {
       method,
-      headers: { 'content-type': 'application/json', cookie },
+      headers: { 'content-type': 'application/json', cookie: as },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const text = await res.text();
@@ -323,6 +352,20 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
         },
       });
     },
+    'member page save': () => {
+      saves += 1;
+      return call(
+        `/api/pages/${memberPage}/draft`,
+        'PUT',
+        {
+          doc: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: `member ${saves}` }] }],
+          },
+        },
+        memberCookie,
+      );
+    },
   };
 
   /** Wait until the wire is quiet (detached writes land after a path). */
@@ -334,7 +377,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
   };
 
   /** One warm run, then the counted one. */
-  const measure = async (p: Path, mode: 'off' | 'warn') => {
+  const measure = async (p: Path, mode: 'off' | 'warn' | 'on') => {
     process.env.MANTLE_ACTOR_CHECK = mode;
     await PATHS[p]();
     await settle();
@@ -347,6 +390,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       actorRoundTrips: wire.actorRoundTrips,
       setRoundTrips: wire.setRoundTrips,
       resetRoundTrips: wire.resetRoundTrips,
+      writeRoleStatements: wire.writeRoleStatements,
     };
   };
 
@@ -406,8 +450,26 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       values (${page}, ${owner}, 'page', ${`${tag} page`}, 'pages')`);
     await x(sql`insert into pages (node_id, doc)
       values (${page}, '{"type":"doc","content":[]}'::jsonb)`);
+    // The member and its page in Team (A2b2b): its save is a login write.
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
+      values (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
+    const [team] = await x<{ id: string }>(sql`select id::text as id from workspaces
+      where owner_id = ${owner} and bridge_key = 'team' and archived_at is null`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${team!.id}, ${member}, true)
+      on conflict (workspace_id, login_id) do update set moderator = true`);
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+      values (${memberPage}, ${owner}, 'page', ${`${tag} member page`}, 'pages')`);
+    await x(sql`insert into pages (node_id, doc)
+      values (${memberPage}, '{"type":"doc","content":[]}'::jsonb)`);
+    await m.withHeads([memberPage], 'update', async (tx) => {
+      await tx.execute(sql`delete from item_grants where node_id = ${memberPage}`);
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
+                           values (${memberPage}, ${team!.id}, true)`);
+    });
     const tokens = await import('../lib/auth/tokens');
     cookie = `mantle_session=${tokens.buildSessionCookie(owner).value}`;
+    memberCookie = `mantle_session=${tokens.buildSessionCookie(member).value}`;
     const { createApp } = await import('./app');
     app = await createApp();
   }, 240_000);
@@ -426,7 +488,39 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     for (const p of Object.keys(PATHS) as Path[]) {
       const off = await measure(p, 'off');
       const warn = await measure(p, 'warn');
+      // A member's write (A2b2b): on the write role in warn and on (its
+      // statements there counted), never off; on is held to warn's rules.
+      const on = p === 'member page save' ? await measure(p, 'on') : null;
       const off2 = await measure(p, 'off');
+      if (p === 'member page save') {
+        if (off.writeRoleStatements !== 0) failures.push(`${p}: off sent to the write role`);
+        if (warn.writeRoleStatements === 0)
+          failures.push(`${p}: warn sent nothing to the write role`);
+        if (on!.writeRoleStatements === 0) failures.push(`${p}: on sent nothing to the write role`);
+        const own = (st: string) => ACTOR_SQL.test(st);
+        const a = tally(off.statements.filter((st) => !own(st)).map(norm));
+        const c = tally(on!.statements.filter((st) => !own(st)).map(norm));
+        for (const k of new Set([...a.keys(), ...c.keys()])) {
+          if ((a.get(k) ?? 0) !== (c.get(k) ?? 0)) {
+            failures.push(`${p}: on differs from off on ${k.slice(0, 160)}`);
+          }
+        }
+        if (on!.roundTrips - on!.actorRoundTrips !== off.roundTrips) {
+          failures.push(
+            `${p}: on takes ${on!.roundTrips} round trips (${on!.actorRoundTrips} of the actor), ` +
+              `off ${off.roundTrips}`,
+          );
+        }
+        if (on!.setRoundTrips !== 0) {
+          failures.push(`${p}: on sends the SET alone in ${on!.setRoundTrips} round trips`);
+        }
+        rows.push(
+          `| ${p} (on) | | ${on!.statements.length} / ${on!.roundTrips} | ` +
+            `+${on!.statements.length - off.statements.length} / ` +
+            `+${on!.roundTrips - off.roundTrips} (actor ${on!.actorRoundTrips}, SET ${on!.setRoundTrips}; ` +
+            `write role: warn ${warn.writeRoleStatements}, on ${on!.writeRoleStatements} statements) |`,
+        );
+      }
       // A path whose count moved between two off runs is not settled.
       expect(off2.statements.length, `${p}: off is not stable`).toBe(off.statements.length);
       // (1) off: no statement sets or reads the actor.
@@ -466,6 +560,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
       const base = OFF_BASELINE[p];
       if (
         process.env.MANTLE_RT_BASELINE &&
+        base &&
         (off.statements.length > base.statements || off.roundTrips > base.roundTrips)
       ) {
         failures.push(

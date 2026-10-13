@@ -24,6 +24,13 @@
  *  - grants (0279): the home move is one call (manage of the old home and a
  *    Moderator of the new one), and the role writes the derived grant
  *    columns only through the definer.
+ *  - fix round 1: a column or a function denial is an error, never run
+ *    again (H1); in on a gap's rerun keeps the role's checks, one commit
+ *    and one commit hook (M1); a gap caught in a savepoint still reruns
+ *    (L6); writes inside an open write transaction join it and the pool's
+ *    wait is bounded (M2); the visibility confirm reads in the transaction,
+ *    past the scope through the definers (M3); a grant's audit row is held
+ *    to the scope (L5).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a2b2b-write-gateway.db.test.ts
  */
