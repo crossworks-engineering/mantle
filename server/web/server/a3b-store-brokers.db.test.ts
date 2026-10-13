@@ -610,9 +610,12 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       const t = await makeTable('restored', H);
       const p0 = (await tableRow(t)).p!;
       await sys(() => tablesMod.commitTable(owner, t, DOC('second')));
-      // A real-time sweep marks p0 unreferenced.
-      await sweep.sweepStores({ allowMany: true });
+      // A real-time sweep marks p0 unreferenced (a sweep marks only files a
+      // grace period old: p0 is made older).
       const abs0 = path.join(tableRoot, p0);
+      const aged = (Date.now() - 2 * m.STORE_SWEEP_GRACE_MS) / 1000;
+      utimesSync(abs0, aged, aged);
+      await sweep.sweepStores({ allowMany: true });
       expect(m.markedBefore(tableRoot, Date.now() + 1)(abs0)).toBe(true);
       // The restore: its hold first, then the rows (here: this one) name p0.
       const hold = path.join(tableRoot, m.STORE_SWEEP_HOLD_FILE);

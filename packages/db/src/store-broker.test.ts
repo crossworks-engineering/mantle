@@ -440,6 +440,26 @@ describe('sweepOrphans', () => {
     err.mockRestore();
   });
 
+  it('never marks a file younger than the grace period: a stage in flight is never left out of a backup', async () => {
+    root = path.join(dir, 'store-15');
+    put('t/y.r-0.sqlite', 30 * HOUR); // the revision the row names now
+    const old = put('t/y.r-00.sqlite', 30 * HOUR); // an old revision
+    const stage = put('t/y.r-1.sqlite', 0); // a stage whose flip is landing
+    const now = Date.now();
+    const r = await sweepOrphans(spec([{ node: 'y', files: ['t/y.r-0.sqlite'] }]), { now });
+    expect(r.marked).toBe(1); // the old revision only
+    // The stage's flip lands; a dump starts and names it; another flip moves
+    // on before the backup reads the rows: the backup must keep it.
+    const dumpStartedAt = now + 1000;
+    expect(markedBefore(root, dumpStartedAt, dumpStartedAt)(stage)).toBe(false);
+    expect(markedBefore(root, dumpStartedAt, dumpStartedAt)(old)).toBe(true);
+    // A grace period on, unreferenced still, it is marked like any other.
+    const later = await sweepOrphans(spec([{ node: 'y', files: ['t/y.r-0.sqlite'] }]), {
+      now: now + 2 * HOUR,
+    });
+    expect(later.marked).toBe(1);
+  });
+
   it('marks take the time the rows were read, not the run start', async () => {
     root = path.join(dir, 'store-14');
     const old = put('u/e.r-0.sqlite', 30 * HOUR);

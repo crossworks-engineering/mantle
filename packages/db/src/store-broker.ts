@@ -313,7 +313,8 @@ export type SweepOptions = {
    *  files the store holds. The rest are carried, oldest marked first. */
   budget?: number;
   /** Sweep although a restore's hold is in place or a row went back to an
-   *  older revision (the CLI's --allow-many, after a dry run was read). */
+   *  older revision (the CLI's --allow-many: its dry run, `pnpm store:sweep
+   *  --allow-many` without --apply, shows what a run would do). */
   allowMany?: boolean;
 };
 
@@ -356,7 +357,7 @@ function realOrResolved(p: string): string {
 }
 
 /** The sweep's memory beside the store: when it first saw each file
- *  unreferenced (`marks`), and the time of each item's current revision on
+ *  unreferenced, once it was a grace period old (`marks`), and the time of each item's current revision on
  *  its last run (`current`). */
 type SweepState = { marks: Record<string, number>; current: Record<string, number> };
 
@@ -486,7 +487,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     if (held !== null) {
       report.held = new Date(held + STORE_SWEEP_HOLD_MS).toISOString();
       console.warn(
-        `[store-sweep] ${spec.store}: HELD until ${report.held} by a restore (${STORE_SWEEP_HOLD_FILE}): read a dry run, then run it with --allow-many, or remove the hold`,
+        `[store-sweep] ${spec.store}: HELD until ${report.held} by a restore (${STORE_SWEEP_HOLD_FILE}): read the dry run (pnpm -C server/web store:sweep --allow-many, without --apply), then run it with --apply --allow-many, or remove the hold`,
       );
       return report;
     }
@@ -520,7 +521,7 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
       const before = state.current[row.node];
       if (before !== undefined && t < before && !opts.allowMany) {
         return stop(
-          `the row of ${row.node} names ${first}, an older revision than on the last run: a restore? Put a hold (${STORE_SWEEP_HOLD_FILE}) or read a dry run, then run it with --allow-many`,
+          `the row of ${row.node} names ${first}, an older revision than on the last run: a restore? Put a hold (${STORE_SWEEP_HOLD_FILE}), or read the dry run (pnpm -C server/web store:sweep --allow-many, without --apply), then run it with --apply --allow-many`,
         );
       }
       current[row.node] = t;
@@ -556,10 +557,15 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     } catch {
       continue;
     }
+    // Younger than the grace period: a stage that may be in flight (its flip
+    // may land in a moment). Never marked, so a mark always means "a grace
+    // period old and unreferenced" wherever it is read (a backup's
+    // markedBefore among them; A3b fix round 4, L1).
+    if (now - mtime < grace) continue;
     const seen = marks[rel] ?? now;
     if (marks[rel] === undefined) report.marked += 1;
     next[rel] = seen;
-    if (now - seen >= grace && now - mtime >= grace) due.push({ rel, seen });
+    if (now - seen >= grace) due.push({ rel, seen });
   }
   // The run's budget: the oldest marked first; the rest wait for the next
   // run (A3b fix round 2, N1: a busy day never stops the sweep).
