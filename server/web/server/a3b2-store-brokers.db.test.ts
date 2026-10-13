@@ -405,8 +405,7 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
         ),
       );
       // The definer's refusal (42501, detail hidden_rows: a 409 on HTTP).
-      expect((err as { code?: string }).code).toBe('42501');
-      expect((err as { detail?: string }).detail).toBe('hidden_rows');
+      expect(m.isHiddenRowsRefusal(err), String(err)).toBe(true);
       expect(stateOf(filesRoot)).toEqual(before);
       expect(dirsOf(filesRoot)).toEqual(dirs);
       expect((await row(mixed.id))!.p).toBe(mixed.path);
