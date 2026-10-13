@@ -833,9 +833,12 @@ production, and no caller's access changed.
    is unscoped, a process; absent is unknown and fails an Admin step),
    the scope it runs in, its entry's create-home rule, and what the
    narrowers read.
-2. **Bind the caller**, frozen. `currentCaller()` reads it. Work the call
-   starts and does not await (a detached promise, a timer) keeps the
-   caller, as it keeps the actor.
+2. **Bind the caller**: a frozen copy, deep enough for what the steps read
+   (the Admin areas, the scope's workspaces, the facts' lists). The
+   surface's own object is never frozen in place, and its later changes do
+   not reach the call. `currentCaller()` reads it. Work the call starts and
+   does not await (a detached promise, a timer) keeps the caller, as it
+   keeps the actor.
 3. **The declared policy** (`GatePolicy`: effect, Admin step, spends,
    creates, makes items, an actor of its own), from the source registered
    for the ref's kind; none is refused (`unclassified`). A job's reason is
@@ -846,18 +849,30 @@ production, and no caller's access changed.
    knows the write mode, so a call declared a read cannot write an item; a
    read path's own writes stay the named `READ_PATH_WRITES`). A scope no
    call can run in (no workspace, or a malformed one: `turnScopeProblem`,
-   the check `withTurnScope` runs) is refused here, listing and calling
-   alike (`no-scope`).
+   the check `withTurnScope` runs; `withScope` asks the same check in its
+   own words) is refused here, listing and calling alike (`no-scope`, in
+   the words the owner MCP surface says today: one constant,
+   `NO_SCOPE_ERROR`). That surface still lists its tools for a login in no
+   workspace and refuses each call; A5 decides which when MCP lists
+   through the gate.
 4. **Narrow by surface**, in the fixed order `NARROWERS`: the credential's
    read-only switch (the gate's own), a key's areas, a key's or peer's
    risky tools, the member-app rule, spending on the owner's keys (MCP
    connections only: a workspace assistant's turn keeps the member turn
-   ledger), the member turn caps. Each registers from its own package
-   (`registerNarrower`); none adds a step. **Fail closed:** while any of
-   them is not registered, `enterCall` and `gateCheck` throw
-   `GateNotReadyError` before any step. A surface where one does not apply
-   registers an explicit no-op. Registering another function under a
-   taken name, or another source for a taken kind, throws.
+   ledger), the member turn caps. All but the gate's own register from
+   `packages/tools/src/gate-narrowers.ts` (`registerNarrower`), the package
+   every process that dispatches a tool loads; none adds a step. **Fail
+   closed:** while any of them is not registered, `enterCall` and
+   `gateCheck` throw `GateNotReadyError` before any step, and each process
+   entry asks `ensureGateReady()` at boot (server/web, server/api, every
+   worker through `workers/_runner.ts`, the stdio MCP server; pinned by
+   `packages/tools/src/gate-boot.test.ts`), so a missing one stops the
+   boot, not the first call. A surface where one does not apply registers
+   an explicit no-op. Registering another function under a taken name, or
+   another source for a taken kind, throws on purpose. The member-app rule
+   fails closed too: a team-rules app run calls only an `app-tool` ref
+   that carries what `memberAppToolVerdict` said for the call (pinned
+   against it by `packages/tools/src/member-app-parity.test.ts`).
 5. **The Admin step**: the Admin workspace, an Admin area, or a kind of the
    Admin workspace only.
 6. **The create-home intent** (`createHomeIntent`,
@@ -877,12 +892,13 @@ production, and no caller's access changed.
 
 Listing equals calling: `gateCheck` is steps 3 to 5 without running, and a
 tool list shows what it lets through. `@mantle/db` exports only `enterCall`,
-`gateCheck`, `gateLists`, `currentCaller` and the two register functions
-(and the types): no surface runs a step on its own.
+`gateCheck`, `gateLists`, `currentCaller`, the two register functions and
+the boot check `assertGateReady` (and the types): no surface runs a step
+on its own.
 
-The sources and narrowers registered today: `runtime-tool`,
-`sandbox-mcp-tool`, `peer-tool`, the member-app narrower and the turn-caps
-no-op (`packages/tools/src/runtime-policy.ts`), and `mcp-tool` with the
-key, peer and spending narrowers (`packages/mcp-core/src/gate-policy.ts`,
-derived from today's lists; A5 declares the policy on each tool). A
-process that calls the gate loads both packages. A4 adds `route`.
+The sources registered today: `runtime-tool`, `sandbox-mcp-tool` and
+`peer-tool` (`packages/tools/src/runtime-policy.ts`), `app-tool`
+(`packages/tools/src/member-app-tools.ts`), and `mcp-tool`
+(`packages/mcp-core/src/gate-policy.ts`, derived from today's lists; A5
+declares the policy on each tool). Every narrower registers from
+`packages/tools/src/gate-narrowers.ts`. A4 adds `route`.
