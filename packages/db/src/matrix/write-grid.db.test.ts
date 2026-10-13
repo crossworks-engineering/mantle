@@ -90,7 +90,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
   const scope = {} as Record<OracleWriteRole, Scope>;
   /** Edit check misses (warn) and actor misses the triggers reported. */
   const misses: string[] = [];
-  type Item = { id: string; folder: string | null; info?: string; bare?: string };
+  type Item = { id: string; path: string; folder: string | null; info?: string; bare?: string };
   const fx: Record<string, Record<OraclePlacement, Item>> = {};
 
   const kinds = ITEM_KIND_NAMES.filter((t) => ITEM_KINDS[t].class === 'workspace');
@@ -263,8 +263,8 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
           { informational, ownGrants: placement === 'root', bare },
         );
       fx[kind] = {
-        root: { id: await item('root', 1), folder: null },
-        folder: { id: await item('folder', 1), folder },
+        root: { id: await item('root', 1), path: at('root', 1), folder: null },
+        folder: { id: await item('folder', 1), path: at('folder', 1), folder },
       };
       if (kind === 'app') {
         fx[kind]!.root.info = await item('root', 2, true);
@@ -402,14 +402,12 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       case 'createDerived': {
         // A new node in the folder carrying a summary, the extractor's mark
         // and an embedding (fix round 1, M1): a login's lands without them
-        // (the extractor writes them again), the brain's keeps them.
-        const [row] = await tx<
-          { path: string }[]
-        >`select path::text as path from nodes where id = ${id}`;
+        // (the extractor writes them again), the brain's keeps them. The
+        // path from the fixture: a login may not read the item.
         const path =
           kind === 'branch'
-            ? `${row!.path.split('.').slice(0, -1).join('.')}.${tag}d${k++}`
-            : row!.path;
+            ? `${item.path.split('.').slice(0, -1).join('.')}.${tag}d${k++}`
+            : item.path;
         const [made] = await tx<{ forged: boolean }[]>`
           insert into nodes (owner_id, type, title, path, data, embedding)
           values (${login.owner}, ${kind}, ${`${tag} forged ${kind}`}, ${path}::ltree,

@@ -129,7 +129,8 @@ describe.skipIf(!URL)('the actor check trigger covers every content table (arch 
     try {
       await isLocked;
       const started = Date.now();
-      await expect(sql`select mantle_set_actor_check('warn')`).rejects.toMatchObject({
+      // 5 tries (the default is 50 since A3a fix round 1, M2: about 10 s).
+      await expect(sql`select mantle_set_actor_check('warn', 5)`).rejects.toMatchObject({
         code: '55P03',
       });
       // 5 tries, 200 ms apart: about a second, never a wait per table.
