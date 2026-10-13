@@ -109,8 +109,11 @@ for STORE_DIR in "${TABLE_DB_DIR:-$DATA_DIR/table-dbs}" "${APP_DB_DIR:-$DATA_DIR
   case "$STORE_DIR" in
     ./.table-dbs|./.app-dbs) [ -d "$STORE_DIR" ] || continue ;;
   esac
+  # The snapshot folders inside a root keep their own memory (A3b part 2):
+  # it goes too.
   if mkdir -p "$STORE_DIR" 2>/dev/null && touch "$STORE_DIR/.store-sweep-hold" 2>/dev/null \
-     && rm -f "$STORE_DIR/.store-sweep.json"; then
+     && rm -f "$STORE_DIR/.store-sweep.json" "$STORE_DIR/_snapshots/.store-sweep.json" \
+              "$STORE_DIR/accepted-snapshots/.store-sweep.json"; then
     echo "▷ store sweep held for a week: $STORE_DIR/.store-sweep-hold"
   else
     # Not fatal (a data folder this user cannot write): the sweep still

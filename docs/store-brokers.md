@@ -222,7 +222,8 @@ the brokers, the backups and the sweep.
   with `--apply --allow-many`, or remove the hold. ANY
   other restore (a manual `pg_restore`, an untar of a table or app archive)
   must do the same by hand: `touch .store-sweep-hold` and remove
-  `.store-sweep.json` at the store root first.
+  `.store-sweep.json` at the store root first (and in its `_snapshots` and
+  `accepted-snapshots` folders, which keep their own: A3b part 2).
 - **Hard stops (a failure):** the run removes and marks nothing, logs the
   reason and fails the maintenance run.
   - A row naming a file outside the store's root, both sides compared as

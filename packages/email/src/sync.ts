@@ -288,8 +288,9 @@ async function ingestOne(
         throw new DuplicateRaceError(message.providerMsgId);
       }
 
-      // Attachments: upload bytes (content-addressed dedupe in storage),
-      // create one file node per unique sha256, link via email_attachments.
+      // Attachments: their bytes were stored above (content-addressed dedupe
+      // in storage); one file node per unique sha256, linked via
+      // email_attachments to the key stored.
       for (const [i, att] of full.attachments.entries()) {
         const sha256 = hashBuffer(att.content);
         const fileNodeId = await getOrCreateFileNode(tx, {

@@ -54,7 +54,7 @@ docker exec -i "$APP_CONTAINER" sh -c '
   # sweep holds the store for a week, or until a run with --apply --allow-many
   # after its dry run (--allow-many alone) was read.
   touch /data/app-dbs/.store-sweep-hold
-  rm -f /data/app-dbs/.store-sweep.json
+  rm -f /data/app-dbs/.store-sweep.json /data/app-dbs/_snapshots/.store-sweep.json
   tar -tzf "$t" | grep "\.sqlite$" | while IFS= read -r f; do
     rm -f "/data/app-dbs/$f-wal" "/data/app-dbs/$f-shm" "/data/app-dbs/$f-journal"
   done
