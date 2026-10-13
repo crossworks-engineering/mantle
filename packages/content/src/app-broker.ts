@@ -380,7 +380,13 @@ async function repairAppDb(reg: { id: string; storagePath: string }): Promise<vo
         .for('update');
       repairStore(journal, row ? Number(row.seq) : null);
     }),
-  );
+  ).catch((err: unknown) => {
+    // Never fails the app's statement: left for the next access.
+    console.error(
+      `[app-broker] repair of ${reg.storagePath} left for the next access:`,
+      errorMessage(err),
+    );
+  });
 }
 
 /** Ensure the app's DB exists and its declared DDL has been applied (idempotent;

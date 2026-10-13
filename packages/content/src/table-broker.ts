@@ -399,6 +399,8 @@ export async function repairTable(nodeId: string, storagePath: string | null): P
   const publishedAbs = resolveStoragePath(storagePath);
   const journal = tableJournalPath(publishedAbs);
   if (!existsSync(journal)) return;
+  // Never fails the read: a repair that cannot run now (no lock in this
+  // scope, a busy row) is left for the next access, the journal kept.
   await runReadPathWrite('repair:store-broker', () =>
     db.transaction(async (tx) => {
       const [reg] = rowsOf<{ draft_rev: number; draft_data: unknown }>(
@@ -414,7 +416,12 @@ export async function repairTable(nodeId: string, storagePath: string | null): P
         mirrors.delete(draftAbs);
       }
     }),
-  );
+  ).catch((err: unknown) => {
+    console.error(
+      `[table-broker] repair of ${nodeId} left for the next access:`,
+      err instanceof Error ? err.message : err,
+    );
+  });
 }
 
 /** The workbook document types a write takes (re-exported for callers). */
