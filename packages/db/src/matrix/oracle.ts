@@ -249,6 +249,8 @@ export const ORACLE_ACTORS: readonly OracleActor[] = [
 
 /** What a write does to the fixture's item. */
 export type OracleWriteAction =
+  /** Make a new item of the kind where the fixture's item is. */
+  | 'create'
   /** Change its content (its title). */
   | 'edit'
   /** Move it on a board (its rank alone). */
@@ -277,6 +279,7 @@ export type OracleWriteAction =
   | 'history';
 
 export const ORACLE_WRITE_ACTIONS: readonly OracleWriteAction[] = [
+  'create',
   'edit',
   'rank',
   'derived',
@@ -365,6 +368,9 @@ export function expectedWrite(
     default:
       break;
   }
+  // A login's create is the read and create grid's (expectedAccess, with
+  // where it lands): here only the other actor kinds make one.
+  if (action === 'create') return { na: "a login's create: expectedAccess (sql-grid)" };
   if (!readsForWrite(role)) return { allow: false, why: 'not found: it does not read the item' };
   const homeMod = role === 'homeModerator';
   const deny = (why: string): OracleAnswer => ({ allow: false, why });

@@ -290,6 +290,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     }
   });
 
+  let k = 0;
   /** The write a cell makes, on `tx`, for `item`; its rows changed. */
   async function write(
     tx: postgres.TransactionSql,
@@ -300,6 +301,21 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     const id = action === 'appDataInformational' ? item.info! : item.id;
     const count = (r: { count: number }) => r.count;
     switch (action) {
+      case 'create': {
+        // A new item of the kind beside the fixture's (a folder: inside F
+        // or at the kind's root).
+        const [row] = await tx<
+          { path: string }[]
+        >`select path::text as path from nodes where id = ${id}`;
+        const path =
+          kind === 'branch'
+            ? `${row!.path.split('.').slice(0, -1).join('.')}.${tag}n${k++}`
+            : row!.path;
+        return count(
+          await tx`insert into nodes (owner_id, type, title, path)
+                              values (${login.owner}, ${kind}, ${`${tag} new ${kind}`}, ${path}::ltree)`,
+        );
+      }
       case 'edit':
         return count(await tx`update nodes set title = title || ' (edited)' where id = ${id}`);
       case 'rank':
