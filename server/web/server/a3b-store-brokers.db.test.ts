@@ -578,22 +578,23 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(tablesReport.legacy).toContain(path.relative(tableRoot, legacy));
     });
 
-    it("a restore's hold stops the store sweep loudly; nothing removed, nothing marked", async () => {
+    it("a restore's hold holds the store sweep (a done run that says so); nothing removed, nothing marked", async () => {
       const t = await makeTable('held', H);
       const first = await tableRow(t);
       await sys(() => tablesMod.saveTableDraft(owner, t, DOC('a')));
       await sys(() => tablesMod.commitTable(owner, t));
       const hold = path.join(tableRoot, m.STORE_SWEEP_HOLD_FILE);
       writeFileSync(hold, '');
-      const quietly = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const quietly = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         const now = Date.now() + 2 * m.STORE_SWEEP_GRACE_MS;
         for (const at of [now, now + m.STORE_SWEEP_GRACE_MS]) {
           const reports = await sweep.sweepStores({ now: at });
           const r = reports.find((x) => x.store === 'tables')!;
-          expect(r.aborted).toMatch(/hold/);
+          expect(r.aborted).toBeNull();
+          expect(r.held).toMatch(/^\d{4}-/);
           expect(r.removed).toEqual([]);
-          expect(sweep.summariseStoreSweep(reports)).toMatch(/tables: STOPPED/);
+          expect(sweep.summariseStoreSweep(reports)).toMatch(/tables: HELD until/);
         }
         expect(existsSync(path.join(tableRoot, first.p!))).toBe(true);
       } finally {
@@ -603,6 +604,33 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       // Lifted, the old revision goes as before.
       await sweepTwice();
       expect(existsSync(path.join(tableRoot, first.p!))).toBe(false);
+    });
+
+    it('a restore re-points a row at a revision the sweep had marked: a backup during the hold keeps it', async () => {
+      const t = await makeTable('restored', H);
+      const p0 = (await tableRow(t)).p!;
+      await sys(() => tablesMod.commitTable(owner, t, DOC('second')));
+      // A real-time sweep marks p0 unreferenced.
+      await sweep.sweepStores({ allowMany: true });
+      const abs0 = path.join(tableRoot, p0);
+      expect(m.markedBefore(tableRoot, Date.now() + 1)(abs0)).toBe(true);
+      // The restore: its hold first, then the rows (here: this one) name p0.
+      const hold = path.join(tableRoot, m.STORE_SWEEP_HOLD_FILE);
+      writeFileSync(hold, '');
+      try {
+        await x(sql`update tables set storage_path = ${p0} where node_id = ${t}`);
+        // A backup: its dump names p0; a commit lands before the archive.
+        const dumpStartedAt = Date.now() + 1;
+        await sys(() => tablesMod.commitTable(owner, t, DOC('third')));
+        expect((await tableRow(t)).p).not.toBe(p0);
+        const dest = mkdtempSync(path.join(dir, 'table-backup-'));
+        const report = await sys(() => storage.snapshotAllTableDatabases(dest, { dumpStartedAt }));
+        expect(report.failed).toEqual([]);
+        expect(existsSync(path.join(dest, p0))).toBe(true);
+        expect(m.markedBefore(tableRoot, dumpStartedAt)(abs0)).toBe(false);
+      } finally {
+        rmSync(hold, { force: true });
+      }
     });
 
     it("off (both checks off): the refused write of above gives today's result", async () => {
@@ -623,6 +651,42 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
   });
 
   describe('app databases (the app broker)', () => {
+    /** Hold an app's registry row lock for `ms`, as a running seed does. */
+    const holdRowLock = async (a: string, ms: number) => {
+      let locked: () => void = () => {};
+      const isLocked = new Promise<void>((r) => (locked = r));
+      const hold = m.systemDb.transaction(async (tx) => {
+        await tx.execute(sql`select 1 from app_databases where app_node_id = ${a} for update`);
+        locked();
+        await new Promise((r) => setTimeout(r, ms));
+      });
+      await isLocked;
+      // Not the promise itself: an async function would wait for it.
+      return { done: hold };
+    };
+
+    it('app writes waiting out a seed never take the write pool: three wait and land, another login write goes through meanwhile', async () => {
+      const a = await makeApp('pool', H);
+      const t = await makeTable('pool', H);
+      const held = await holdRowLock(a, 5000);
+      const t0 = Date.now();
+      const writes = [1, 2, 3].map((i) =>
+        inRequest(mem, () => appdb.appDbExec(owner, a, `insert into t (v) values ('w${i}')`)),
+      );
+      await new Promise((r) => setTimeout(r, 1000));
+      const t1 = Date.now();
+      expect(
+        await inRequest(mem, () => tablesMod.saveTableDraft(owner, t, DOC('meanwhile'))),
+      ).toMatchObject({ ok: true });
+      const meanwhile = Date.now() - t1;
+      await Promise.all(writes);
+      await held.done;
+      expect(meanwhile).toBeLessThan(1000);
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(4000);
+      const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by v'));
+      expect(rows.map((r) => r.v)).toEqual(['first', 'w1', 'w2', 'w3']);
+    }, 30_000);
+
     it('a caller the database refuses changes nothing on disk (a statement, a seed, a restore)', async () => {
       const a = await makeApp('ro', R);
       const live = (await sys(() => appdb.appDatabasePath(owner, a)))!;
@@ -735,19 +799,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
 
     it("a single statement waits out a seed's row lock (up to about 10 s), then answers busy; nothing written while it waits", async () => {
       const a = await makeApp('busy', H);
-      /** Hold the registry row lock for `ms`, as a running seed does. */
-      const holdFor = async (ms: number) => {
-        let locked: () => void = () => {};
-        const isLocked = new Promise<void>((r) => (locked = r));
-        const hold = m.systemDb.transaction(async (tx) => {
-          await tx.execute(sql`select 1 from app_databases where app_node_id = ${a} for update`);
-          locked();
-          await new Promise((r) => setTimeout(r, ms));
-        });
-        await isLocked;
-        // Not the promise itself: an async function would wait for it.
-        return { done: hold };
-      };
+      const holdFor = (ms: number) => holdRowLock(a, ms);
       // Held 5 s: the statement waits it out and lands after the seed.
       const short = await holdFor(5000);
       const t0 = Date.now();
