@@ -25,6 +25,13 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   slot then timed out on every connect), and a write or a turn-scoped
   query whose connection died while a statement waited behind a described
   one never settled (closeDb, or the request, waited forever).
+- The same patch clears a closed connection's leftovers: the statement
+  that died and its FATAL (the reconnect's first statement on that slot
+  failed with a stale "terminating connection due to administrator
+  command", which a Postgres restart, as v0.300.14's does, puts on every
+  pooled connection that was busy), and a write buffered when the socket
+  closed (every later reconnect of that slot timed out until the process
+  restarted).
 
 ## Unreleased: Postgres max_connections 450
 

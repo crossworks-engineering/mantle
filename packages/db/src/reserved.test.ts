@@ -96,13 +96,23 @@ describe('the lease', () => {
     expect(f.released()).toBe(0);
   });
 
-  it('withLease: a connection error thrown out of fn counts too', async () => {
+  it('withLease: an error fn throws itself says nothing about the connection', async () => {
     const f = fakePool();
     await expect(
       withLease(f.pool, async () => {
         throw err({ code: 'ECONNRESET' });
       }),
     ).rejects.toMatchObject({ code: 'ECONNRESET' });
+    expect(f.released()).toBe(1);
+  });
+
+  it('withLease: a connection error on a watched statement keeps it from the pool', async () => {
+    const f = fakePool(() => err({ code: 'CONNECTION_CLOSED' }));
+    await expect(
+      withLease(f.pool, async (l) => {
+        await l.watch(l.sql.unsafe('select 1'));
+      }),
+    ).rejects.toMatchObject({ code: 'CONNECTION_CLOSED' });
     expect(f.released()).toBe(0);
   });
 

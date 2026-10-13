@@ -28,6 +28,8 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/reserved.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -100,20 +102,54 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
     await admin`select pg_terminate_backend(${pid})`;
   };
 
-  /** The pool answers (on a fresh connection): nothing was written to the
-   *  dead one, and it was not handed back. postgres.js 3.4.9 keeps the FATAL
-   *  a killed statement got (errorResponse is not cleared on close) and
-   *  fails the reconnect's first statement with it: that one stale 57P01 is
-   *  allowed, then the pool must answer. */
+  /** The pool answers its very next statement (on a fresh connection):
+   *  nothing was written to the dead one, it was not handed back, and the
+   *  reconnect carries nothing of it (before the patch, the FATAL a killed
+   *  statement got failed the reconnect's first statement, a stale 57P01). */
   const answers = async (pool: ReturnType<typeof postgres>) => {
-    const first = await pool`select 1 as one`.catch((err: unknown) => err);
-    if (first instanceof Error) {
-      expect(first).toMatchObject({ code: '57P01' });
-      expect(await pool`select 1 as one`).toEqual([{ one: 1 }]);
-    } else {
-      expect(first).toEqual([{ one: 1 }]);
-    }
+    expect(await pool`select 1 as one`).toEqual([{ one: 1 }]);
   };
+
+  it('postgres.js: a close that lands while a write is buffered does not block the reconnect', async () => {
+    // The pool's sockets are ours (postgres.js's `socket` option), so the
+    // test can close one at the exact moment a statement's write waits in
+    // postgres.js's buffer for its setImmediate.
+    const target = new globalThis.URL(scratch.url);
+    let sock: net.Socket | null = null;
+    const pool = postgres(scratch.url, {
+      max: 1,
+      prepare: false,
+      onnotice: () => {},
+      connect_timeout: 3,
+      // @ts-expect-error a runtime option (src/connection.js createSocket) its types omit
+      socket: async () => {
+        const s = net.connect(Number(target.port || 5432), target.hostname);
+        await once(s, 'connect');
+        sock = s;
+        return s;
+      },
+    });
+    try {
+      await answers(pool);
+      const first = sock!;
+      const caught = pool`select 2 as two`.then(
+        () => null,
+        (err: unknown) => err,
+      );
+      // Microtasks only: the statement is sent to its connection and
+      // buffered, and its flush (a setImmediate) has not run.
+      for (let i = 0; i < 10; i += 1) await null;
+      first.destroy();
+      first.emit('close', false);
+      expect(connectionGone(await caught)).toBe(true);
+      // Before the patch the cleared flush timer stayed set: the reconnect's
+      // startup message was never sent (CONNECT_TIMEOUT, for good).
+      await answers(pool);
+      expect(sock).not.toBe(first);
+    } finally {
+      await pool.end({ timeout: 1 });
+    }
+  });
 
   it('postgres.js: releasing a reservation the server ended does not hand it back', async () => {
     const { pool, closes } = onePool();
@@ -233,13 +269,7 @@ describe.skipIf(!URL)('a reserved connection that dies is never handed back', ()
       );
       await expect(write).rejects.toMatchObject({ code: '22012' });
       // The connection ended (a new backend answers), back at the defaults.
-      await until(async () => {
-        try {
-          return (await pidOf(pool)) !== before;
-        } catch {
-          return false;
-        }
-      }, 'a new connection');
+      await until(async () => (await pidOf(pool)) !== before, 'a new connection');
       const [s] = await pool`select current_setting('mantle.actor', true) as a,
                                     pg_catalog.txid_current_if_assigned() as tx`;
       expect(s!.a ?? '').toBe('');

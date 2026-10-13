@@ -566,7 +566,6 @@ export function actorClient(base: PgSql): PgSql {
         // and a connection that may hold the settings ends instead of going
         // back (lease.end: never handed back, nothing sent if it died).
         if (!answered) answer(Promise.reject(err));
-        lease.note(err);
         if (sent) await lease.end();
       } finally {
         lease.release();

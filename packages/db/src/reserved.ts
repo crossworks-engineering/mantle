@@ -11,13 +11,23 @@
  * one more on the reservation) is written to the null socket from a
  * setImmediate, outside every promise: "Cannot read properties of null
  * (reading 'write')", an uncaught exception, in a server a crash.
- * patches/postgres@3.4.9.patch fixes that at the source; this module does
- * not rely on it.
+ *
+ * patches/postgres@3.4.9.patch is REQUIRED; this lease is the second
+ * layer. Only the patch rejects the statements queued on a reservation
+ * when its connection closes (behind a statement with parameters, every
+ * drizzle write: unpatched they never settle), refuses a statement on a
+ * connection that died silently (no statement of the lease saw it, so the
+ * lease cannot know: `end()` would write to the null socket), and keeps a
+ * transaction (`begin`) from writing its ROLLBACK to a dead connection.
+ * The lease adds what the driver cannot know: a connection the caller
+ * ended on purpose is never handed back, and nothing more is sent on one a
+ * statement saw die.
  *
  * The rule: a lease whose connection is gone is never handed back and
- * takes no more statements. It is gone once a statement on it failed with
- * a connection error (connectionGone), or once the caller ended it on
- * purpose (`end`). Not handing it back is safe: postgres.js has already
+ * takes no more statements. It is gone once one of its own statements
+ * (sent through `watch`) failed with a connection error (connectionGone),
+ * or once the caller ended it on purpose (`end`). An error from anything
+ * else (the caller's own code) says nothing about the connection. Not handing it back is safe: postgres.js has already
  * moved a closed connection to its closed queue (and cleared its
  * reservation), and the pool opens a closed connection again when it next
  * needs one.
@@ -82,10 +92,9 @@ export interface Lease<S extends ReservedSql = ReservedSql> {
   readonly sql: S;
   /** True once the connection is gone, or ended on purpose. */
   readonly gone: boolean;
-  /** Await a statement on this lease; a connection error marks it gone. */
+  /** Await a statement on this lease; a connection error marks it gone.
+   *  The only way the lease learns its connection died. */
   watch<T>(statement: PromiseLike<T>): Promise<T>;
-  /** A failure seen on this lease: a connection error marks it gone. */
-  note(err: unknown): void;
   /**
    * End the session on purpose (it may hold settings that must not reach
    * the pool): never handed back. Sends nothing on a connection already
@@ -103,25 +112,25 @@ export async function reserveLease<S extends ReservedSql>(pool: {
   const sql = await pool.reserve();
   let gone = false;
   let released = false;
-  const note = (err: unknown) => {
-    if (connectionGone(err)) gone = true;
-  };
   return {
     sql,
     get gone() {
       return gone;
     },
-    note,
     watch: <T>(statement: PromiseLike<T>) =>
       new Promise<T>((ok, bad) => {
         statement.then(ok, (err: unknown) => {
-          note(err);
+          if (connectionGone(err)) gone = true;
           bad(err);
         });
       }),
     async end() {
       if (gone) return;
       gone = true;
+      // The result is not read: a session may always end itself (the same
+      // role, its own pid), and a failure here means the connection is
+      // already going (its close is what the pool sees). Either way it is
+      // never handed back.
       await Promise.resolve()
         // END_SESSION_SQL, as a literal (the heads lint reads it).
         .then(() => sql.unsafe('rollback; select pg_terminate_backend(pg_backend_pid())').simple())
@@ -135,7 +144,8 @@ export async function reserveLease<S extends ReservedSql>(pool: {
   };
 }
 
-/** Run `fn` on a lease of `pool`; the lease goes back after (when usable). */
+/** Run `fn` on a lease of `pool`; the lease goes back after, when usable.
+ *  Only `fn`'s statements sent through `lease.watch` can mark it gone. */
 export async function withLease<S extends ReservedSql, T>(
   pool: { reserve(): Promise<S> },
   fn: (lease: Lease<S>) => Promise<T>,
@@ -143,9 +153,6 @@ export async function withLease<S extends ReservedSql, T>(
   const lease = await reserveLease(pool);
   try {
     return await fn(lease);
-  } catch (err) {
-    lease.note(err);
-    throw err;
   } finally {
     lease.release();
   }

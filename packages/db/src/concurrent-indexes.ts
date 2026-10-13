@@ -123,14 +123,16 @@ async function buildAll(
                 join pg_namespace s on s.oid = c.relnamespace
                where s.nspname = 'public' and c.relname = ${ix.name}`)
           )[0]?.valid;
-        const was = await valid();
-        if (was) {
-          out[ix.name] = 'present';
-          continue;
-        }
         const drop = () =>
           lease.watch(conn.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS "public"."${ix.name}"`));
+        // The validity check too: a connection that dies during it fails
+        // this index and the rest, like one that dies during the build.
         try {
+          const was = await valid();
+          if (was) {
+            out[ix.name] = 'present';
+            continue;
+          }
           if (was === false) await drop();
           await lease.watch(conn.unsafe(ix.create));
           out[ix.name] = was === false ? 'rebuilt' : 'built';
