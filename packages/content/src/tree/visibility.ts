@@ -18,7 +18,7 @@
  * Embeds do not follow (0261): nothing is ever granted for you.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { currentCreateHome, db, guardRead, itemWriteRefusal, scopeReadsItem } from '@mantle/db';
+import { currentCreateHome, db, itemWriteRefusal, scopeReadsItem } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -84,12 +84,19 @@ function idArray(ids: readonly string[]): SQL {
   )}]::uuid[]`;
 }
 
+/** The grant rows of a folder (workspace_id, write, is_home, excluded),
+ *  through the definer of 0279: the item_grants row rule hides a row of a
+ *  workspace outside the scope, and the confirm names those too. */
+function folderGrants(folder: SQL): SQL {
+  return sql`mantle_folder_grant_rows(${folder})`;
+}
+
 /** The workspaces a folder passes on: its rows not removed there, that an
  *  item of `type` may take. None for no folder (a kind's root). */
 function folderPasses(folder: SQL, type: SQL): SQL {
   return sql`array(
-    select g.workspace_id from item_grants g
-     where g.node_id = ${folder} and not g.excluded
+    select g.workspace_id from ${folderGrants(folder)} g
+     where not g.excluded
        and mantle_grant_kind_ok(${type}, g.workspace_id, true))`;
 }
 
@@ -102,25 +109,28 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
   return sql`array(select distinct x from unnest(
     ${folderPasses(folder, type)} || array[coalesce(
       (select f.home_ws from nodes f
-         join workspaces w on w.id = f.home_ws and w.archived_at is null
-        where f.id = ${folder} and mantle_grant_kind_ok(${type}, f.home_ws)),
-      (select w.id from workspaces w where w.owner_id = ${ownerId} and w.is_admin limit 1))]
+        where f.id = ${folder} and mantle_ws_live(f.home_ws)
+          and mantle_grant_kind_ok(${type}, f.home_ws)),
+      mantle_ws_admin_id(${ownerId}::uuid))]
   ) as s(x) where x is not null)`;
 }
 
 /** The changed rows of `rows` (id, title, gain uuid[], lose uuid[]), named,
  *  the first TREE_VISIBILITY_LIST_MAX by title, with the total. Only the
- *  rows the caller's scope reads (task b6e4a8aa): the list runs on the
+ *  rows the caller's scope reads (task b6e4a8aa): the list may run on the
  *  system pool inside a write, and must not name, or count, an item the
- *  caller cannot open. A new item (id '') is the caller's own. */
-async function listed(write: Via, rows: SQL): Promise<VisibilityDiff> {
-  // Past the scope, on the system pool, inside a write on the write role
-  // (A2b2b): the list names workspaces the caller is not in.
-  const via = guardRead(write);
-  const names = (col: SQL) => sql`(
-    select coalesce(jsonb_agg(jsonb_build_object('wsId', w.id, 'name', w.name)
-                              order by lower(w.name), w.id), '[]'::jsonb)
-      from workspaces w where w.id = any(${col}))`;
+ *  caller cannot open. A new item (id '') is the caller's own.
+ *
+ *  It reads in the write's own transaction (`via`), its changes so far
+ *  included (A2b2b fix round 1, M3). What a scoped read (the write role,
+ *  the workspace role) cannot see goes through the definers of 0279, held
+ *  to the scope: a destination folder's grant rows (folderGrants) and the
+ *  workspaces the scope is not in (mantle_ws_names, mantle_ws_live,
+ *  mantle_ws_admin_id). The grant rows of the items moved and of the
+ *  folders on the way are read as the caller reads them: those diffs run
+ *  before their write, through `db`, never inside a write transaction. */
+async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
+  const names = (col: SQL) => sql`mantle_ws_names(${col})`;
   const found = (await via.execute(sql`
     select r.id::text as id, r.title,
            ${names(sql`r.gain`)} as "alsoVisibleTo",
@@ -326,8 +336,7 @@ export async function newItemDiff(
 ): Promise<VisibilityDiff> {
   const nodeType = TREE_KIND_SPECS[kind].nodeType;
   const set = newItemSet(ownerId, nodeType, destPath);
-  const admin = sql`array(select w.id from workspaces w
-                           where w.owner_id = ${ownerId} and w.is_admin limit 1)`;
+  const admin = sql`array[mantle_ws_admin_id(${ownerId}::uuid)]`;
   const diff = await listed(
     via,
     sql`
@@ -350,7 +359,7 @@ export async function newItemDiff(
  * has Write off), as the insert trigger does (0261).
  */
 async function newItemHome(
-  write: Via,
+  via: Via,
   ownerId: string,
   nodeType: string,
   destPath: string,
@@ -358,17 +367,16 @@ async function newItemHome(
   home?: TreeWorkspaceChange['home'];
   readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
 }> {
-  // Past the scope inside a write on the write role (A2b2b): see listed.
-  const via = guardRead(write);
   const type = sql`${nodeType}::node_type`;
   const folder = sql`mantle_parent_folder(${ownerId}::uuid, ${type}, ${destPath}::ltree)`;
   const created = currentCreateHome();
+  // Workspaces by definer (see listed).
   const live = (ws: SQL) =>
-    sql`(select w.id from workspaces w
-          where w.id = ${ws} and w.archived_at is null and mantle_grant_kind_ok(${type}, w.id))`;
+    sql`(select x.id from (select ${ws} as id) x
+          where mantle_ws_live(x.id) and mantle_grant_kind_ok(${type}, x.id))`;
   // The folder's home through its home grant row (not the raw columns).
   const folderHome = live(
-    sql`(select g.workspace_id from item_grants g where g.node_id = ${folder} and g.is_home)`,
+    sql`(select g.workspace_id from ${folderGrants(folder)} g where g.is_home)`,
   );
   let fallback: SQL = folderHome;
   if (created?.privateWs) {
@@ -383,18 +391,15 @@ async function newItemHome(
   const home = sql`coalesce(
     ${created?.createWs ? live(sql`${created.createWs}::uuid`) : sql`null::uuid`},
     ${fallback},
-    (select w.id from workspaces w where w.owner_id = ${ownerId} and w.is_admin limit 1))`;
+    mantle_ws_admin_id(${ownerId}::uuid))`;
   const [row] = (await via.execute(sql`
     with h as (select ${home} as ws)
-    select (select jsonb_build_object('wsId', w.id, 'name', w.name)
-              from workspaces w, h where w.id = h.ws) as home,
-           coalesce((
-             select jsonb_agg(jsonb_build_object('wsId', w.id, 'name', w.name)
-                              order by lower(w.name), w.id)
-               from item_grants g join workspaces w on w.id = g.workspace_id, h
-              where g.node_id = ${folder} and not g.excluded and not g.write
-                and g.workspace_id <> h.ws
-                and mantle_grant_kind_ok(${type}, g.workspace_id, true)), '[]'::jsonb) as "readOnly"`)) as unknown as Array<{
+    select (select mantle_ws_names(array[h.ws]) -> 0 from h) as home,
+           (select mantle_ws_names(array(
+              select g.workspace_id from ${folderGrants(folder)} g, h
+               where not g.excluded and not g.write
+                 and g.workspace_id <> h.ws
+                 and mantle_grant_kind_ok(${type}, g.workspace_id, true)))) as "readOnly"`)) as unknown as Array<{
     home: TreeWorkspaceChange['home'] | null;
     readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
   }>;

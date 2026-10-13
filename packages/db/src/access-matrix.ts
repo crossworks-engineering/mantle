@@ -466,13 +466,14 @@ export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
 
 /**
  * Tables a login's write transaction still writes that the write role holds
- * no right on (arch A2b2b), each with where: the login write gateway finds
- * such a transaction by its error (a write-role gap), runs it again whole on
- * the system pool as before A2b2b, and logs it (client.ts). A typed or a
- * single raw write to a table outside WRITE_ROLE_TABLES goes to the system
- * pool up front and is no gap. The test suite fails on a gap that is not
- * here (vitest.setup.ts). A3a gives these tables their checks and moves
- * them; the list then shrinks to nothing.
+ * no right on (arch A2b2b), each with where. The ONE list: the login write
+ * gateway (client.ts) runs such a transaction again (a write-role gap) for
+ * these tables only, and the test setup (vitest.setup.ts) fails on any
+ * other denial, both through writeRoleGapTable. Any other "permission
+ * denied" on the role is a bug and stays an error. A typed or a single raw
+ * write to a table outside WRITE_ROLE_TABLES goes to the system pool up
+ * front and is no gap. A3a gives these tables their checks and moves them;
+ * the list then shrinks to nothing.
  */
 export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {
   node_snapshots:
@@ -486,6 +487,26 @@ export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {
   profiles:
     'a login’s own profile row, made on its first read in a savepoint (profile-preferences.ts)',
 };
+
+/** A gap table (WRITE_ROLE_GAP_TABLES) by its name, schema-qualified
+ *  (`public.x`, as rawWriteTarget gives it) or not. All of them are public's. */
+export function isWriteRoleGapTable(name: string): boolean {
+  const m = /^(?:public\.)?([a-z_][a-z0-9_]*)$/.exec(name);
+  return !!m && Object.hasOwn(WRITE_ROLE_GAP_TABLES, m[1]!);
+}
+
+/**
+ * The gap table a denial names, or null: only "permission denied for table
+ * <t>" with <t> in WRITE_ROLE_GAP_TABLES. A column (Postgres names its
+ * table: an item_grants column is not one), a function, a sequence or a
+ * schema denial, and a table not on the list, are null: never run again.
+ */
+export function writeRoleGapTable(denied: string | null): string | null {
+  const t = denied
+    ? /^permission denied for table "?([a-z_][a-z0-9_]*)"?$/.exec(denied)?.[1]
+    : null;
+  return t && isWriteRoleGapTable(t) ? t : null;
+}
 
 /**
  * The functions the write role may run beyond the workspace role's (whose

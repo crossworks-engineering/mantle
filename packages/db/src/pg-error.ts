@@ -94,8 +94,9 @@ const SCOPE_WRITE_REFUSALS = new RegExp(
  * A privilege the role lacks (42501 "permission denied for ..."): a table,
  * a column, a function, a sequence or a schema it holds no grant on. Never
  * a refusal a check or a row rule decided (those carry their own message).
- * The login write gateway (client.ts, arch A2b2b) runs such a write again
- * on the system pool and logs the gap.
+ * The login write gateway (client.ts, arch A2b2b) notes every one, and
+ * runs a write again only for a table of WRITE_ROLE_GAP_TABLES
+ * (writeRoleGapTable, access-matrix.ts): any other is a bug, an error.
  */
 export function isPermissionGap(err: unknown): boolean {
   return permissionGapOf(err) !== null;
@@ -123,7 +124,12 @@ export function isCheckViolation(err: unknown): boolean {
  *  another write held what this one needed. Safe to retry once; never to
  *  show a person as SQL (folder audit review F7). */
 export function isBusy(err: unknown): boolean {
-  if (err instanceof BusyError) return true;
+  // Ours, or one a query builder wrapped (drizzle: the cause).
+  let e: unknown = err;
+  for (let depth = 0; depth < MAX_DEPTH && e && typeof e === 'object'; depth += 1) {
+    if (e instanceof BusyError) return true;
+    e = (e as PgLike).cause;
+  }
   const code = pgErrorCode(err);
   return code === '40P01' || code === '55P03';
 }

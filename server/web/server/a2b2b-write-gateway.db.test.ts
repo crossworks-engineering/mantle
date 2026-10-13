@@ -503,4 +503,300 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     expect(toRo.message).toBe('not allowed to grant to that workspace');
     void adminWs;
   });
+  // ── Fix round 1 ───────────────────────────────────────────────────────────
+
+  /** A note owned by the anchor, homed in `ws`. */
+  const noteIn = async (ws: string, title: string) => {
+    const id = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+                values (${id}, ${owner}, 'note', ${title}, 'notes')`);
+    await homeIn(id, ws);
+    return id;
+  };
+  const failure = (p: Promise<unknown>) =>
+    p.then(
+      () => null,
+      (e: unknown) => e as Error & { code?: string; cause?: unknown },
+    );
+  /** The driver's own error under drizzle's wrapper. */
+  const root = (e: (Error & { cause?: unknown }) | null) =>
+    (e?.cause ?? e) as (Error & { code?: string }) | null;
+  const profilesOf = async (login: string) =>
+    (
+      await x<{ n: number }>(sql`select count(*)::int as n from profiles where user_id = ${login}`)
+    )[0]!.n;
+
+  it('H1: a column or a function the role may not use is an error, never run again', async () => {
+    setMode('warn');
+    m.takeWriteRoleGaps();
+    const by = async () =>
+      (
+        await x<{ by: string | null }>(
+          sql`select granted_by::text as by from item_grants where node_id = ${teamNote} and is_home`,
+        )
+      )[0]?.by ?? null;
+    const before = await by();
+    // A column of a column-limited table (Postgres names the table).
+    const column = await failure(
+      inRequest(mem, () =>
+        m.db.transaction(async (tx) => {
+          await tx.execute(
+            sql`update item_grants set granted_by = ${mem}::uuid where node_id = ${teamNote}`,
+          );
+        }),
+      ),
+    );
+    expect(root(column)?.message).toMatch(/^permission denied for table item_grants/);
+    expect(await by()).toBe(before);
+    // A function the role holds no right on: on the system pool it would
+    // run (and return nothing for a table that is not there).
+    const fn = await failure(
+      inRequest(mem, () =>
+        m.db.transaction(async (tx) => {
+          await tx.execute(
+            sql`select mantle_write_role_sync_table('public.a2b2b_no_such_table', false, null)`,
+          );
+        }),
+      ),
+    );
+    expect(root(fn)?.message).toMatch(
+      /^permission denied for function mantle_write_role_sync_table/,
+    );
+    // Both noted (the suite fails on such a note left behind).
+    expect(m.takeWriteRoleGaps()).toEqual([
+      'permission denied for table item_grants',
+      'permission denied for function mantle_write_role_sync_table',
+    ]);
+  });
+
+  it('M1: in on a gap runs again checked: a refused item write stays refused, nothing commits twice', async () => {
+    setMode('on');
+    m.takeWriteRoleGaps();
+    const roTitle = await titleOf(roNote);
+    const own = await noteIn(team, `${tag} m1 own`);
+    // A gap, then an item write the role refuses: refused in the rerun too.
+    const refused = await failure(
+      inRequest(mem, () =>
+        m.db.transaction(async (tx) => {
+          await tx
+            .insert(m.profiles)
+            .values({ userId: mem, preferences: {} })
+            .onConflictDoNothing();
+          await tx
+            .update(m.nodes)
+            .set({ title: `${tag} m1 a` })
+            .where(eq(m.nodes.id, roNote));
+        }),
+      ),
+    );
+    expect(m.isScopeWriteRefusal(refused), String(refused)).toBe(true);
+    expect(await titleOf(roNote)).toBe(roTitle);
+    // A refused item write (caught in a savepoint), then a gap: the rerun
+    // refuses it again; the rest commits once.
+    let runs = 0;
+    await inRequest(mem, () =>
+      m.db.transaction(async (tx) => {
+        runs += 1;
+        await tx
+          .transaction((sp) =>
+            sp
+              .update(m.nodes)
+              .set({ title: `${tag} m1 b` })
+              .where(eq(m.nodes.id, roNote)),
+          )
+          .catch(() => undefined);
+        await tx.insert(m.profiles).values({ userId: mem, preferences: {} }).onConflictDoNothing();
+        await tx
+          .update(m.nodes)
+          .set({ title: `${tag} m1 own b` })
+          .where(eq(m.nodes.id, own));
+      }),
+    );
+    expect(runs).toBe(2);
+    expect(await titleOf(roNote)).toBe(roTitle);
+    expect(await titleOf(own)).toBe(`${tag} m1 own b`);
+    expect(await profilesOf(mem)).toBe(1);
+    // A system transaction (heads) that creates, registers a commit hook and
+    // meets a gap: one row, one hook, after the checked rerun.
+    let hooks = 0;
+    const title = `${tag} m1 once`;
+    await inRequest(mem, () =>
+      m.withCreateHome({ createWs: team, privateWs: null }, () =>
+        m.withNodeInsertHeads(owner, [{ type: 'note', path: 'notes' }], async (tx) => {
+          await tx
+            .insert(m.nodes)
+            .values({ ownerId: owner, type: 'note', title, path: 'notes', data: {} });
+          await m.afterCommit(() => {
+            hooks += 1;
+          });
+          await tx
+            .insert(m.profiles)
+            .values({ userId: mem, preferences: {} })
+            .onConflictDoNothing();
+        }),
+      ),
+    );
+    expect(hooks).toBe(1);
+    const made = await x<{ home: string }>(
+      sql`select home_ws::text as home from nodes where title = ${title}`,
+    );
+    expect(made.map((r) => r.home)).toEqual([team]);
+    expect(m.takeWriteRoleGaps().every((g) => g === 'permission denied for table profiles')).toBe(
+      true,
+    );
+    m.takeActorMisses();
+  });
+
+  it('L6: a gap caught in a savepoint still runs the transaction again, and is noted', async () => {
+    setMode('warn');
+    m.takeWriteRoleGaps();
+    await x(sql`delete from profiles where user_id = ${mem}`);
+    let runs = 0;
+    await inRequest(mem, () =>
+      m.db.transaction(async (tx) => {
+        runs += 1;
+        await tx
+          .transaction((sp) => sp.insert(m.profiles).values({ userId: mem, preferences: {} }))
+          .catch(() => undefined);
+      }),
+    );
+    expect(runs).toBe(2);
+    expect(await profilesOf(mem)).toBe(1);
+    expect(m.takeWriteRoleGaps()).toEqual(['permission denied for table profiles']);
+  });
+
+  it('M2: a write inside an open write transaction joins it; a pool of 3 never hangs', async () => {
+    setMode('warn');
+    const client = await import('@mantle/db/client');
+    client.setWritePoolWaitForTests(3_000);
+    try {
+      const ids = await Promise.all(
+        Array.from({ length: 6 }, (_, i) => noteIn(team, `${tag} m2 ${i}`)),
+      );
+      // Six at once, each with a top-level write and a system transaction
+      // inside its own: before the fix each took a second connection of 3.
+      const who = await writersOf(() =>
+        Promise.all(
+          ids.map((id, i) =>
+            inRequest(mem, () =>
+              m.db.transaction(async (tx) => {
+                await tx
+                  .update(m.nodes)
+                  .set({ title: `${tag} m2 ${i} a` })
+                  .where(eq(m.nodes.id, id));
+                await m.db
+                  .update(m.nodes)
+                  .set({ title: `${tag} m2 ${i} b` })
+                  .where(eq(m.nodes.id, id));
+                await m.withHeads([id], 'update', (s) =>
+                  s
+                    .update(m.nodes)
+                    .set({ title: `${tag} m2 ${i} c` })
+                    .where(eq(m.nodes.id, id)),
+                );
+              }),
+            ),
+          ),
+        ),
+      );
+      for (const [i, id] of ids.entries()) expect(await titleOf(id)).toBe(`${tag} m2 ${i} c`);
+      expect(who.length).toBeGreaterThan(0);
+      expect(
+        who.every((w) => WRITER.test(w)),
+        who.join(','),
+      ).toBe(true);
+      // The pool held by three open transactions: a fourth write waits at
+      // most the bound, then fails (busy), never hangs.
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      let holding = 0;
+      const holders = ids.slice(0, 3).map((id) =>
+        inRequest(mem, () =>
+          m.db.transaction(async (tx) => {
+            await tx
+              .update(m.nodes)
+              .set({ title: `${tag} m2 held` })
+              .where(eq(m.nodes.id, id));
+            holding += 1;
+            await gate;
+          }),
+        ),
+      );
+      try {
+        for (let i = 0; i < 200 && holding < 3; i += 1) {
+          await new Promise((r) => setTimeout(r, 25));
+        }
+        expect(holding).toBe(3);
+        const t0 = Date.now();
+        const busy = await failure(
+          inRequest(mem, () =>
+            m.db
+              .update(m.nodes)
+              .set({ title: `${tag} m2 late` })
+              .where(eq(m.nodes.id, ids[3]!)),
+          ),
+        );
+        expect(root(busy)).toBeInstanceOf(client.WritePoolBusyError);
+        expect(m.isBusy(busy)).toBe(true);
+        expect(Date.now() - t0).toBeLessThan(8_000);
+      } finally {
+        release();
+        await Promise.all(holders);
+      }
+      expect(await titleOf(ids[3]!)).toBe(`${tag} m2 3 c`);
+    } finally {
+      client.setWritePoolWaitForTests(null);
+    }
+  }, 60_000);
+
+  it('M3: the visibility confirm reads in the write’s own transaction, workspaces past the scope through the definers', async () => {
+    setMode('warn');
+    const tree = await import('@mantle/content/tree');
+    const other = (await call('/api/workspaces', mem2, 'POST', { name: `${tag} Other` })).json
+      .id as string;
+    expect(other).toBeTruthy();
+    const folder = randomUUID();
+    const label = `a2b2bf${randomUUID().slice(0, 6)}`;
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+                values (${folder}, ${owner}, 'branch', ${`${tag} folder`}, ${`pages.${label}`})`);
+    await homeIn(folder, team);
+    await x(sql`insert into item_grants (node_id, workspace_id) values (${folder}, ${other})`);
+    const names = (d: Awaited<ReturnType<typeof tree.newItemDiff>>) =>
+      (d.changes[0]?.alsoVisibleTo ?? []).map((w) => w.name).sort();
+    const [before, after] = await inRequest(mem, () =>
+      m.withHeads([folder], 'update', async (tx) => {
+        // mem is not in Other: named through mantle_ws_names all the same.
+        const d1 = await tree.newItemDiff(tx, owner, 'pages', `pages.${label}`, 'T');
+        await tx.execute(
+          sql`select mantle_grant_change('remove', ${folder}::uuid, ${other}::uuid, false, ${mem}::uuid)`,
+        );
+        // This transaction's own change is seen (guardRead read past it).
+        const d2 = await tree.newItemDiff(tx, owner, 'pages', `pages.${label}`, 'T');
+        return [d1, d2];
+      }),
+    );
+    expect(names(before)).toContain(`${tag} Other`);
+    expect(names(after)).not.toContain(`${tag} Other`);
+    expect(names(after).length).toBeGreaterThan(0);
+  });
+
+  it('L5: a grant’s audit row only in a workspace of the scope, or for an item whose home it manages', async () => {
+    // A workspace mem is not in.
+    const other = (await call('/api/workspaces', mem2, 'POST', { name: `${tag} Elsewhere` })).json
+      .id as string;
+    expect(other).toBeTruthy();
+    const ev = (ws: string, node: string) => (tx: postgres.TransactionSql) =>
+      tx`select mantle_workspace_event(${ws}::uuid, ${mem}::uuid, 'grant.add',
+                                       ${JSON.stringify({ node })}::jsonb)`;
+    // Ro: mem reads it, a workspace of its scope.
+    const inScope = await asWriter(mem, 'on', [roNote], ev(ro, roNote));
+    expect(inScope.code, inScope.message).toBeUndefined();
+    // A workspace outside the scope, for an item mem does not manage.
+    const outside = await asWriter(mem, 'on', [roNote], ev(other, roNote));
+    expect(outside.code).toBe('42501');
+    expect(outside.message).toBe('not allowed to grant to that workspace');
+    // The same workspace for an item whose home (Team) mem manages.
+    const manages = await asWriter(mem, 'on', [teamNote], ev(other, teamNote));
+    expect(manages.code, manages.message).toBeUndefined();
+  });
 });

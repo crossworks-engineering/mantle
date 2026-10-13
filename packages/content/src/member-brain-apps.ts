@@ -19,7 +19,14 @@
  * by the 'app-data' door for exactly that.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { apps, db, withCreateHome, withViewer, type AppManifest } from '@mantle/db';
+import {
+  apps,
+  db,
+  resolveCreateHome,
+  withCreateHome,
+  withViewer,
+  type AppManifest,
+} from '@mantle/db';
 import { createApp, deleteApp, type AppDetail } from './apps';
 import { listDeletedApps, restoreDeletedApp, type DeletedApp } from './app-trash';
 
@@ -172,12 +179,12 @@ export async function listLoginApps(author: MemberAppAuthor): Promise<LoginAppCa
 }
 
 /** The login's private workspace, made on its first need; null when the
- *  brain is not on workspaces or the login cannot have one. */
+ *  brain is not on workspaces or the login cannot have one. Through
+ *  resolveCreateHome, the one path that makes and reads it (the login
+ *  write gateway then seats the login as its Moderator, A2b2b). */
 export async function memberPrivateWorkspace(author: MemberAppAuthor): Promise<string | null> {
-  const rows = (await db.execute(
-    sql`select "public"."mantle_ws_private_workspace"(${author.loginId}::uuid)::text as ws`,
-  )) as unknown as { ws: string | null }[];
-  return rows[0]?.ws ?? null;
+  const home = await resolveCreateHome(author.loginId, { ownWork: true, makePrivate: true });
+  return 'refused' in home ? null : home.privateWs;
 }
 
 /** A new app of the login's, homed in its private workspace, private and

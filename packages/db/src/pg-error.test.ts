@@ -10,6 +10,13 @@ import {
   pgErrorCode,
   withBusyRetry,
 } from './pg-error';
+import {
+  ACCESS_MATRIX,
+  WRITE_ROLE_GAP_TABLES,
+  WRITE_ROLE_TABLES,
+  isWriteRoleGapTable,
+  writeRoleGapTable,
+} from './access-matrix';
 
 /** The shape drizzle 0.45 throws from its query builder: no code on top. */
 function drizzleQueryError(cause: unknown): Error {
@@ -200,5 +207,44 @@ describe('isPermissionGap (arch A2b2b: a right the write role does not hold)', (
         }),
       ),
     ).toBe(false);
+  });
+});
+
+describe('writeRoleGapTable (A2b2b fix round 1, H1: the one rule the gateway runs again by)', () => {
+  it('only "permission denied for table <t>" with <t> a gap table', () => {
+    expect(writeRoleGapTable('permission denied for table node_snapshots')).toBe('node_snapshots');
+    expect(writeRoleGapTable('permission denied for table profiles')).toBe('profiles');
+    expect(isWriteRoleGapTable('public.recall_maps')).toBe(true);
+    expect(isWriteRoleGapTable('auth.profiles')).toBe(false);
+  });
+  it('never a column, function, sequence or schema denial, nor a table off the list', () => {
+    for (const m of [
+      // A column the role may not write: Postgres names the table.
+      'permission denied for table item_grants',
+      'permission denied for table nodes',
+      'permission denied for function mantle_write_role_sync_table',
+      'permission denied for sequence node_snapshots_id_seq',
+      'permission denied for schema auth',
+      'not allowed to edit this item',
+    ]) {
+      expect(writeRoleGapTable(m), m).toBeNull();
+    }
+    expect(writeRoleGapTable(null)).toBeNull();
+  });
+  it('every gap table is a matrix table the write role does not write', () => {
+    const matrix = new Set(ACCESS_MATRIX.map((t) => t.table));
+    for (const t of Object.keys(WRITE_ROLE_GAP_TABLES)) {
+      expect(matrix.has(`public.${t}`), t).toBe(true);
+      expect(WRITE_ROLE_TABLES, t).not.toContain(`public.${t}`);
+    }
+  });
+});
+
+describe('isBusy under a query builder (A2b2b fix round 1, M2)', () => {
+  it('a BusyError drizzle wrapped (the write pool’s bounded wait) is busy', () => {
+    expect(
+      isBusy(drizzleQueryError(new BusyError('The server is busy; try again in a moment.'))),
+    ).toBe(true);
+    expect(isBusy(drizzleQueryError(new Error('other')))).toBe(false);
   });
 });
