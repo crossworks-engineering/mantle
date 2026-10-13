@@ -899,6 +899,20 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
 
 const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The item id a path segment names: the segment decoded, the value the
+ *  handler gets (Hono decodes the path and its params before routing), so
+ *  an encoded id is checked as the id it names. Null when the segment does
+ *  not decode or is not an item id. */
+function itemIdOf(segment: string): string | null {
+  let id: string;
+  try {
+    id = decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+  return ITEM_ID_RE.test(id) ? id : null;
+}
+
 /**
  * A login's write to one item (W6a, plan S1; every login since W6b): allowed
  * only when the login's scope may edit the item (mantle_may_edit: a Moderator of its
@@ -916,7 +930,9 @@ const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * goes on to the handler (its own 404). A read-only snapshot copy (data.snapshot_of) is
  * never edited, by anyone; its author may still delete it (W6b fix round 1,
  * CEO decision 2). A deleted app a login other than the brain's owner
- * deleted is purged by the owner only (CEO decision 1).
+ * deleted is purged by the owner only (CEO decision 1). The item id is
+ * the decoded path segment (itemIdOf); one that is not an item id is the
+ * not-found answer, for every login.
  */
 async function itemWriteGate(
   loginId: string,
@@ -929,11 +945,17 @@ async function itemWriteGate(
   const notFound = () => NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   const path = getRequestContext()?.path;
   const target = path ? routeItemTarget(route, path) : null;
-  if (!target || !ITEM_ID_RE.test(target.id)) return null;
+  if (!target) return null;
   let need = target.need;
   // The rollback switch restores only the read path (W7 integration fix 2,
   // M6): an Admin user's item writes are still checked against its login.
   if (!(await brainOnWorkspacesNow())) return null;
+  // The id the handler gets. A segment that does not decode to an item id
+  // is refused with the not-found answer, never skipped: the check read the
+  // raw segment once, so an encoded id skipped it while the handler got
+  // the decoded one and wrote.
+  const id = itemIdOf(target.id);
+  if (id === null) return notFound();
   let row: { edit: boolean | null; manage: boolean | null } | undefined;
   let readOnlyCopy = false;
   if (target.ref === 'deleted-app') {
@@ -947,7 +969,7 @@ async function itemWriteGate(
       select nullif(s.code->'meta'->>'homeWs', '') as home,
              coalesce((s.code->'meta'->>'keepForOwner')::boolean, false) as held
         from node_snapshots s
-       where s.node_id = ${target.id} and s.node_kind = 'app' and s.trigger = 'pre_delete'
+       where s.node_id = ${id} and s.node_kind = 'app' and s.trigger = 'pre_delete'
          and not exists (select 1 from nodes n where n.id = s.node_id)
        order by s.seq desc limit 1`)) as unknown as { home: string | null; held: boolean }[];
     if (snap.length === 0) return null;
@@ -979,7 +1001,7 @@ async function itemWriteGate(
   } else {
     // The item the route names: the id itself, or through a share or a
     // recall revision (read on the system pool: an id, no content).
-    let nodeId: string | null = target.id;
+    let nodeId: string | null = id;
     if (target.ref === 'share') {
       // An Admin user with the users area may close any link of the brain
       // (docs/workspaces.md: closing only narrows). The handler asks the
@@ -994,7 +1016,7 @@ async function itemWriteGate(
       const r = (await db.execute(
         sql`select s.node_id::text as id, n.type::text as type
               from shares s left join nodes n on n.id = s.node_id
-             where s.id = ${target.id}`,
+             where s.id = ${id}`,
       )) as unknown as { id: string | null; type: string | null }[];
       nodeId = r[0]?.id ?? null;
       // An app's link: home Moderators only (assertMayLink, link-serve.ts).
@@ -1002,7 +1024,7 @@ async function itemWriteGate(
     } else if (target.ref === 'recall-revision') {
       const r = (await db.execute(
         sql`select m.node_id::text as id from recall_revisions v
-              join recall_maps m on m.id = v.map_id where v.id = ${target.id}`,
+              join recall_maps m on m.id = v.map_id where v.id = ${id}`,
       )) as unknown as { id: string | null }[];
       nodeId = r[0]?.id ?? null;
     }
