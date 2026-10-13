@@ -1110,4 +1110,61 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     m.takeWriteRoleGaps();
     m.takeActorMisses();
   });
+  // ── Fix round 4 ───────────────────────────────────────────────────────────
+
+  it('N1 (round 4): a statement of an ended write transaction sends nothing, its SET neither', async () => {
+    setMode('warn');
+    const client = await import('@mantle/db/client');
+    let kept: { execute: (q: ReturnType<typeof sql>) => Promise<unknown> } | null = null;
+    // A write transaction that sends no statement of its own (its SET goes
+    // with the first one), its client kept past its end.
+    await inRequest(mem, () =>
+      m.db.transaction(async (tx) => {
+        kept = tx;
+      }),
+    );
+    const before = client.watchedSendsForTests();
+    const late = await failure(
+      inRequest(mem, async () => kept!.execute(sql`select 1`) as Promise<unknown>),
+    );
+    await sleep(100);
+    expect(root(late)).toBeInstanceOf(client.JoinedWriteEndedError);
+    expect(client.watchedSendsForTests()).toBe(before);
+  });
+
+  it('N2 (round 4): a nested system transaction on the write role is counted once', async () => {
+    setMode('warn');
+    const id = await noteIn(team, `${tag} N2`);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      // 20 joins, the joined system transaction and 10 nested: 31, under 33.
+      await inRequest(mem, () =>
+        m.db.transaction(async () => {
+          for (let i = 0; i < 20; i += 1) {
+            await m.db
+              .update(m.nodes)
+              .set({ title: `${tag} N2 ${i}` })
+              .where(eq(m.nodes.id, id));
+          }
+          await m.withSystemTx(async () => {
+            for (let i = 0; i < 10; i += 1) {
+              await m.withSystemTx((s) =>
+                s
+                  .update(m.nodes)
+                  .set({ title: `${tag} N2 n${i}` })
+                  .where(eq(m.nodes.id, id)),
+              );
+            }
+          });
+        }),
+      );
+      const said = warn.mock.calls
+        .map((c) => String(c[0]))
+        .filter((t) => /savepoints in one|nested calls in one/.test(t));
+      expect(said).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await titleOf(id)).toBe(`${tag} N2 n9`);
+  });
 });

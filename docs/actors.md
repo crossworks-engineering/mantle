@@ -754,6 +754,19 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   the checked rerun (Recall's map lock); the gap writer's attributes are
   set on every migrate; the Admin workspace is named in the confirm; a
   migrate that cannot lock a gap table says to run it again.
+- **Fix round 4 (2026-10-13).** Nothing of an ended write transaction
+  reaches the driver, its settings SET neither; a nested `withSystemTx` on
+  the write role is counted once; the wait for an ended level's joins is
+  capped at 15 s (`WRITE_POOL_WAIT_MS`), then the ROLLBACK goes anyway
+  (nothing of the level can be sent after, and what was sent is ahead of
+  it on the connection), logged.
+- **Rollout: a write left running after its transaction ended now
+  fails.** A same-route write (a top-level `db.insert`, `executeWrite`, a
+  `withSystemTx`) started inside a write transaction that has since ended
+  or failed throws `JoinedWriteEndedError` instead of taking a connection
+  of its own (round 3, A). Such a write was a detached call. After the
+  roll, grep the dev logs for `JoinedWriteEndedError` and fix each caller
+  (await it inside the transaction, or start it after).
 - **The system-only content tables** stay on the system pool: by table up
   front for a single write, by a logged gap for a transaction
   (`WRITE_ROLE_GAP_TABLES`).

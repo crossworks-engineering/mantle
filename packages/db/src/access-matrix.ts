@@ -645,16 +645,6 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
   await syncGapWriterRights(sql);
 }
 
-/**
- * GAP_WRITER_ROLE (A2b2b fix round 2, L2), from WRITE_ROLE_GAP_TABLES: made
- * NOLOGIN when missing (a cluster object, like the viewer roles, so a
- * restore into a fresh cluster gets it back here); every table right
- * revoked, then SELECT, INSERT, UPDATE and DELETE on each gap table, the
- * sequences they draw from, and a permissive row rule on each gap table
- * with row level security (none other: a rule left on a table no longer
- * on the list is dropped). Each row rule change in its own short
- * transaction (lock_timeout 3 s, with retries), as syncWriteRoleRules.
- */
 /** The statement that brings GAP_WRITER_ROLE to its wanted state, every
  *  pass (fix round 3, D): made when missing, its attributes set again
  *  when it exists, as viewerRoleStatements does the viewer roles'. Pure. */
@@ -673,6 +663,17 @@ export function gapWriterRuleLockError(table: string, cause: unknown): Error {
   );
 }
 
+/**
+ * GAP_WRITER_ROLE (A2b2b fix round 2, L2), from WRITE_ROLE_GAP_TABLES: made
+ * when missing and its lock attributes set again on every pass
+ * (gapWriterRoleStatement; a cluster object, like the viewer roles, so a
+ * restore into a fresh cluster gets it back here); every table right
+ * revoked, then SELECT, INSERT, UPDATE and DELETE on each gap table, the
+ * sequences they draw from, and a permissive row rule on each gap table
+ * with row level security (none other: a rule left on a table no longer
+ * on the list is dropped). Each row rule change in its own short
+ * transaction (lock_timeout 3 s, with retries), as syncWriteRoleRules.
+ */
 export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Promise<void> {
   const role = `"${GAP_WRITER_ROLE}"`;
   const gap = Object.keys(WRITE_ROLE_GAP_TABLES).map((t) => `public.${t}`);
