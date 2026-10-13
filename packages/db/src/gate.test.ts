@@ -124,7 +124,9 @@ describe('step 2: bind the caller', () => {
     await enterCall(caller, ref('read'), async () => {
       seen = currentCaller();
     });
-    expect(seen).toBe(caller);
+    // A frozen copy of the caller (fix round 2, L-c), not the object itself.
+    expect(seen).toEqual(caller);
+    expect(seen).not.toBe(caller);
     expect(currentCaller()).toBeNull();
   });
 });
@@ -392,36 +394,38 @@ describe('step 7 and 8: run, then map', () => {
 });
 
 describe('the order of the steps', () => {
+  // The Admin step reads the bound copy (step 2), so it shows by what it
+  // stops: after the narrowers, before the create home and the run.
+  const run = async (holdsAdmin: boolean) => {
+    h.log = [];
+    const r = await enterCall(
+      async () => {
+        h.log.push('resolve');
+        return login({ scope: SCOPE, admin: { holdsAdmin, areas: new Set<string>() } });
+      },
+      { kind: 'ordered', name: 'adminKind' },
+      ok,
+    );
+    return r;
+  };
+
   it('resolve, policy, scope, narrow, Admin, home, run', async () => {
-    const ORDERED = (r: PolicyRef) => {
-      h.log.push('policy');
-      return POLICIES[r.name] ?? null;
-    };
     setup({
       key: () => {
         h.log.push('narrow');
         return null;
       },
     });
-    registerPolicySource('ordered', ORDERED);
-    const caller = login({ scope: SCOPE });
-    const viewed = {
-      ...caller,
-      get admin() {
-        h.log.push('admin');
-        return { holdsAdmin: true, areas: new Set<string>() };
-      },
-    } as GateCaller;
-    const r = await enterCall(
-      async () => {
-        h.log.push('resolve');
-        return viewed;
-      },
-      { kind: 'ordered', name: 'adminKind' },
-      ok,
-    );
-    expect(r.ok).toBe(true);
-    expect(h.log).toEqual(['resolve', 'policy', 'scope:writes', 'narrow', 'admin', 'home', 'run']);
+    registerPolicySource('ordered', (r: PolicyRef) => {
+      h.log.push('policy');
+      return POLICIES[r.name] ?? null;
+    });
+    expect((await run(true)).ok).toBe(true);
+    expect(h.log).toEqual(['resolve', 'policy', 'scope:writes', 'narrow', 'home', 'run']);
+    const refused = await run(false);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.refusal.kind).toBe('admin-kind');
+    expect(h.log).toEqual(['resolve', 'policy', 'scope:writes', 'narrow']);
   });
 });
 
@@ -513,6 +517,42 @@ describe('the bound caller (fix round 1, L6)', () => {
     expect(Object.isFrozen(inside)).toBe(true);
     expect(await detached).toBe(inside);
     expect(currentCaller()).toBeNull();
+  });
+});
+
+describe('the bound caller is a copy (fix round 2, L-c)', () => {
+  it("never freezes the surface's object, and its later changes do not reach the call", async () => {
+    const areas = new Set(['keys']);
+    const keyAreas = ['notes'];
+    const caller = login({
+      admin: { holdsAdmin: true, areas },
+      scope: { ...SCOPE, ws: [W1] },
+      facts: { keyAreas },
+    });
+    let inside: GateCaller | null = null;
+    await enterCall(caller, ref('read'), async () => {
+      inside = currentCaller();
+      // The surface changes its own object while the call runs.
+      areas.add('settings');
+      keyAreas.push('files');
+    });
+    expect(Object.isFrozen(caller)).toBe(false);
+    expect(Object.isFrozen(areas)).toBe(false);
+    expect(Object.isFrozen(keyAreas)).toBe(false);
+    const bound = inside as unknown as GateCaller;
+    expect([...(bound.admin?.areas ?? [])]).toEqual(['keys']);
+    expect(bound.facts?.keyAreas).toEqual(['notes']);
+    expect(Object.isFrozen(bound.admin)).toBe(true);
+    expect(Object.isFrozen(bound.scope)).toBe(true);
+    expect(Object.isFrozen(bound.scope?.ws)).toBe(true);
+    expect(Object.isFrozen(bound.facts)).toBe(true);
+    expect(Object.isFrozen(bound.facts?.keyAreas)).toBe(true);
+    // The Admin areas refuse every change.
+    const bAreas = bound.admin?.areas as Set<string>;
+    expect(() => bAreas.add('x')).toThrow(/frozen/);
+    expect(() => bAreas.delete('keys')).toThrow(/frozen/);
+    expect(() => bAreas.clear()).toThrow(/frozen/);
+    expect(bAreas.has('keys')).toBe(true);
   });
 });
 

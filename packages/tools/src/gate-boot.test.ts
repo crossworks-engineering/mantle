@@ -1,0 +1,141 @@
+/**
+ * The gate is ready in every process that dispatches (arch A3c fix round 2,
+ * M-A). The narrowers register from @mantle/tools (gate-narrowers.ts), the
+ * package server/web, server/api, the workers and the stdio MCP server all
+ * load, so none fails closed for a narrower it never loaded (server/api
+ * does not load @mantle/mcp-core, where three of them used to register).
+ * Each process entry asks ensureGateReady() at boot, so a missing narrower
+ * stops the boot, not the first tool call.
+ *
+ * The entry half is a SOURCE check, as recall-embed-registration.test.ts
+ * is: proving it at runtime would mean booting each server.
+ */
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import {
+  READ_ONLY_CALLER_ERROR,
+  assertGateReady,
+  gateCheck,
+  loginActor,
+  type GateCaller,
+} from '@mantle/db';
+import {
+  GATE_NARROWERS,
+  RISKY_TOOL_ERROR,
+  ensureGateReady,
+  registerGateNarrowers,
+} from './gate-narrowers';
+// Registers the runtime-tool source.
+import './runtime-policy';
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
+const read = (file: string) => readFileSync(join(repoRoot, file), 'utf8');
+
+describe('@mantle/tools alone makes the gate ready', () => {
+  it('registers every narrower but the gate own read-only one', () => {
+    expect(Object.keys(GATE_NARROWERS).sort()).toEqual(
+      ['key', 'member-app', 'peer', 'spending', 'turn-caps'].sort(),
+    );
+    expect(() => assertGateReady()).not.toThrow();
+    // Again at boot: the same functions are a no-op, never a throw.
+    expect(() => registerGateNarrowers()).not.toThrow();
+    expect(() => ensureGateReady()).not.toThrow();
+  });
+
+  it('@mantle/tools never imports @mantle/mcp-core (no cycle)', () => {
+    const manifest = JSON.parse(read('packages/tools/package.json')) as Record<
+      string,
+      Record<string, string> | undefined
+    >;
+    expect(manifest.dependencies?.['@mantle/mcp-core']).toBeUndefined();
+    expect(manifest.devDependencies?.['@mantle/mcp-core']).toBeUndefined();
+    const dir = join(repoRoot, 'packages/tools/src');
+    const importers = readdirSync(dir, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.ts'))
+      .filter((f) =>
+        /from\s+['"]@mantle\/mcp-core|import\(\s*['"]@mantle\/mcp-core/.test(
+          readFileSync(join(dir, f), 'utf8'),
+        ),
+      );
+    expect(importers).toEqual([]);
+  });
+});
+
+describe('the peer narrower without the owner MCP surface rule: fail closed', () => {
+  // @mantle/mcp-core (which registers the rule by a tool's name) is not
+  // loaded here, as in server/api; gate-policy.test.ts pins the rule where
+  // it is loaded against the listing today.
+  const key = (over: Partial<GateCaller> = {}): GateCaller => ({
+    actor: loginActor('00000000-0000-4000-8000-000000000009', 'rw'),
+    via: 'key',
+    admin: null,
+    ...over,
+  });
+  const row = {
+    slug: 'mcp_crm_lookup',
+    handler: { kind: 'mcp', group: 'crm', toolName: 'lookup' },
+    requiresConfirm: false,
+    externalAccess: null,
+    description: '',
+    inputSchema: {},
+  };
+  const ref = { kind: 'runtime-tool', name: row.slug, row };
+
+  it('a key or a peer calls a tool only when the owner named it, and only with Write on', () => {
+    expect(gateCheck(key(), ref)?.message).toBe(RISKY_TOOL_ERROR);
+    expect(gateCheck(key({ via: 'peer' }), ref)?.message).toBe(RISKY_TOOL_ERROR);
+    const named = { riskyAllowed: [row.slug] };
+    expect(gateCheck(key({ facts: named }), ref)).toBeNull();
+    expect(gateCheck(key({ facts: named, write: false }), ref)?.message).toBe(
+      READ_ONLY_CALLER_ERROR,
+    );
+  });
+
+  it("the login's own OAuth and the other callers are not narrowed like a key", () => {
+    expect(gateCheck(key({ via: 'oauth' }), ref)).toBeNull();
+    expect(gateCheck(key({ via: 'turn' }), ref)).toBeNull();
+  });
+});
+
+/** Every process entry that can reach the gate. */
+const ENTRYPOINTS = [
+  { file: 'server/web/server/main.ts', why: 'the HTTP routes and the owner MCP surface' },
+  { file: 'server/api/src/main.ts', why: 'assistant, team and worker turns' },
+  { file: 'server/mcp/src/server.ts', why: 'the stdio MCP server' },
+  { file: 'server/web/workers/_runner.ts', why: 'every worker process boots through it' },
+];
+
+describe('every process entry asks ensureGateReady() at boot', () => {
+  for (const { file, why } of ENTRYPOINTS) {
+    it(`${file} (${why})`, () => {
+      const src = read(file);
+      expect(src, `${file} must call ensureGateReady() at boot`).toMatch(/ensureGateReady\(\);/);
+      expect(src, `${file} must obtain ensureGateReady from the gate's package`).toMatch(
+        /ensureGateReady[^;]*(from|import\()\s*['"]@mantle\/(tools\/gate-narrowers|mcp-core)['"]/,
+      );
+    });
+  }
+
+  it('the worker runner asks it before the worker starts', () => {
+    const src = read('server/web/workers/_runner.ts');
+    const run = src.slice(src.indexOf('function run('));
+    expect(run.indexOf('ensureGateReady();')).toBeGreaterThan(-1);
+    expect(run.indexOf('ensureGateReady();')).toBeLessThan(run.indexOf('await start();'));
+  });
+
+  it('every worker process boots through the runner', () => {
+    const dir = join(repoRoot, 'server/web/workers');
+    const workers = readdirSync(dir).filter(
+      (f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.startsWith('_'),
+    );
+    // Helpers, not processes.
+    const helpers = new Set(['describe-error.ts', 'mask-email.ts']);
+    const processes = workers.filter((f) => !helpers.has(f));
+    expect(processes.length).toBeGreaterThan(0);
+    for (const f of processes) {
+      expect(readFileSync(join(dir, f), 'utf8'), f).toMatch(/\b(runWorker|runQueueWorker)\(/);
+    }
+  });
+});

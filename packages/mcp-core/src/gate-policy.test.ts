@@ -1,9 +1,9 @@
 /**
  * The owner MCP surface through the one gate (arch A3c): for every tool the
  * surface registers and every kind of caller, the gate's listing (steps 3
- * to 5, with the policies and narrowers gate-policy.ts registers) is what
- * preparedAllows lists today, and the call runs exactly when the listing
- * shows it. The contract A5 moves MCP registration onto. No database: each
+ * to 5, with the policies gate-policy.ts registers and the narrowers of
+ * @mantle/tools gate-narrowers.ts) is what preparedAllows lists today, and
+ * the call runs exactly when the listing shows it. The contract A5 moves MCP registration onto. No database: each
  * caller carries the create-home fallback its connection resolved.
  */
 import { describe, expect, it } from 'vitest';
@@ -184,5 +184,16 @@ describe('calling through the gate equals listing', () => {
         }
       }
     }
+  });
+});
+
+describe('one no-workspace refusal (fix round 2, L-a)', () => {
+  it("the gate's no-scope refusal is the owner MCP surface's, in today's words", async () => {
+    const { NO_SCOPE_ERROR } = await import('@mantle/std');
+    const { NO_WORKSPACE_ERROR } = await import('./owner-scope');
+    expect(NO_WORKSPACE_ERROR).toBe(NO_SCOPE_ERROR);
+    expect(NO_WORKSPACE_ERROR).toBe(
+      'This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one.',
+    );
   });
 });

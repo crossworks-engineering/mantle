@@ -10,7 +10,6 @@ import {
   gateCheck,
   loginActor,
   registerNarrower,
-  registerPolicySource,
   systemActor,
   type GateCaller,
   type GatePolicy,
@@ -174,6 +173,11 @@ describe('a tool an app calls: the member-app rule, as memberAppToolVerdict said
     expect(rule(b('alias', 'my_items_list'), true, false)).toBe(
       "The tool 'alias' is not available in team apps.",
     );
+    // A refused slug over another builtin: refused by its slug too (rule 2
+    // checks both, as memberAppToolVerdict does before any lookup).
+    expect(rule(b('my_items_list', 'page_get'), true, false)).toBe(
+      "The tool 'my_items_list' is not available in team apps.",
+    );
     expect(rule(b('web_search'), true, true)).toBe(
       "The tool 'web_search' starts paid model work on every call, so a team app can't use it.",
     );
@@ -210,8 +214,10 @@ describe('through the gate', () => {
   const LOGIN = '00000000-0000-4000-8000-000000000009';
   const runtime = (t: Tool): PolicyRef => ({ kind: 'runtime-tool', name: t.slug, row: t });
 
-  // The MCP surface's narrowers (@mantle/mcp-core) are not loaded here: the
-  // key narrower records the policy the gate looked up, the others pass.
+  // The real narrowers (gate-narrowers.ts) are not loaded here: the key
+  // narrower records the policy the gate looked up, the others pass. The
+  // real ones are proven in gate-narrowers.test.ts and
+  // member-app-parity.test.ts.
   let seen: GatePolicy | null = null;
   beforeAll(() => {
     registerNarrower('key', (_c, policy) => {
@@ -219,7 +225,9 @@ describe('through the gate', () => {
       return null;
     });
     registerNarrower('peer', () => null);
+    registerNarrower('member-app', () => null);
     registerNarrower('spending', () => null);
+    registerNarrower('turn-caps', () => null);
   });
 
   it('the sources are registered: a runtime row, a sandbox tool, a peer tool', () => {
@@ -235,28 +243,6 @@ describe('through the gate', () => {
     expect(policyOf({ kind: 'peer-tool', name: 'x' })).toEqual(peerToolPolicy('x'));
     expect(gateCheck(caller(), { kind: 'runtime-tool', name: 'x' })?.kind).toBe('unclassified');
     expect(gateCheck(caller(), { kind: 'peer-tool', name: '' })?.kind).toBe('unclassified');
-  });
-
-  it('the member-app narrower: a run at team rules calls only what the rule allows', () => {
-    const facts: Record<string, { readOnly: boolean; spends: boolean }> = {
-      page_get: { readOnly: true, spends: false },
-      web_search: { readOnly: true, spends: true },
-    };
-    registerPolicySource('app-tool-test', (r) =>
-      appToolPolicy(
-        row({ kind: 'builtin', ref: r.name }, { slug: r.name }),
-        facts[r.name] ?? null,
-        MEMBER_APP_REFUSED_SLUGS,
-      ),
-    );
-    const team = caller({ via: 'app', facts: { appRules: 'team' } });
-    const adminRules = caller({ via: 'app', facts: { appRules: 'admin' } });
-    const ref = (name: string): PolicyRef => ({ kind: 'app-tool-test', name });
-    expect(gateCheck(team, ref('page_get'))).toBeNull();
-    expect(gateCheck(team, ref('web_search'))?.message).toBe(
-      "The tool 'web_search' starts paid model work on every call, so a team app can't use it.",
-    );
-    expect(gateCheck(adminRules, ref('web_search'))).toBeNull();
   });
 
   function caller(over: Partial<GateCaller> = {}): GateCaller {
