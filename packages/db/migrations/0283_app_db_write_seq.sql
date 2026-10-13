@@ -1,0 +1,14 @@
+-- Workspaces arch A3b, store brokers (docs/store-brokers.md): an app
+-- database's write revision.
+--
+-- The app broker (packages/content/src/app-broker.ts) is the only writer of
+-- an app's SQLite file. Before it touches the file it bumps this column on
+-- the app's registry row, as the caller, and needs exactly one row back: the
+-- statement the database checks (on the write role, the row rules and the
+-- edit check's appdata rule, D6), so a write the database refuses changes
+-- nothing on disk. The same revision goes in the broker's journal beside the
+-- file until the commit; a write whose commit was never seen is repaired on
+-- the broker's next access, the database deciding.
+--
+-- A constant default: no table rewrite. Nothing else reads or writes it.
+ALTER TABLE app_databases ADD COLUMN IF NOT EXISTS write_seq bigint NOT NULL DEFAULT 0;

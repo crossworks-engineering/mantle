@@ -1975,6 +1975,13 @@
       "when": 1790196180000,
       "tag": "0282_subtree_rewrite",
       "breakpoints": true
+    },
+    {
+      "idx": 283,
+      "version": "7",
+      "when": 1790196240000,
+      "tag": "0283_app_db_write_seq",
+      "breakpoints": true
     }
   ]
 }

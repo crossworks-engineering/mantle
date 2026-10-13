@@ -16,8 +16,16 @@ import { copyFile, mkdir, open, rename, rm, stat, utimes, writeFile } from 'node
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, eq, isNull, lt } from 'drizzle-orm';
-import { db, nodes, appDatabases } from '@mantle/db';
+import { and, eq, isNull, lt, sql } from 'drizzle-orm';
+import {
+  brokerTransaction,
+  db,
+  nodes,
+  appDatabases,
+  repairStore,
+  runReadPathWrite,
+  StoreWrite,
+} from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
@@ -294,6 +302,87 @@ async function isRestoring(storagePath: string): Promise<boolean> {
   }
 }
 
+// ── The store broker (workspaces arch A3b, docs/store-brokers.md) ─────────
+//
+// This module is the only writer of an app's SQLite file. Before any write
+// it bumps the registry row's write revision (write_seq, 0283) as the
+// caller and needs exactly one row back: the statement the database checks
+// (the row rules and the edit check's appdata rule on the write role), so a
+// write the database refuses changes nothing on disk.
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The journal of an app's database file, beside it. */
+function appDbJournal(storagePath: string): string {
+  return `${storagePath}.broker`;
+}
+
+/** The checked statement inside a write's transaction: the revision bumped
+ *  as the caller (it takes the row lock), exactly one row. */
+async function bumpWriteSeq(tx: Tx, w: StoreWrite, regId: string): Promise<number> {
+  const row = w.one(
+    await tx
+      .update(appDatabases)
+      .set({ writeSeq: sql`${appDatabases.writeSeq} + 1` })
+      .where(eq(appDatabases.id, regId))
+      .returning({ seq: appDatabases.writeSeq }),
+    'app database',
+  );
+  return Number(row.seq);
+}
+
+/**
+ * The checked statement of a single statement's write (host.db.exec, an MCP
+ * write), on its own: committed before the app's SQL runs, so no transaction
+ * or row lock is held across it (plan 20.3: a broker holds none across a
+ * disk write; an app's statement may run for APP_SQL_TIMEOUT_MS). A
+ * refusal stops it before the file; a statement that then fails leaves
+ * only the revision one higher.
+ */
+async function checkAppDbWrite(regId: string): Promise<void> {
+  new StoreWrite('appdb').one(
+    await db
+      .update(appDatabases)
+      .set({ writeSeq: sql`${appDatabases.writeSeq} + 1` })
+      .where(eq(appDatabases.id, regId))
+      .returning({ seq: appDatabases.writeSeq }),
+    'app database',
+  );
+}
+
+/** Fold an app database's WAL into it, so a copy of the main file is whole. */
+async function checkpointAppDb(file: string): Promise<void> {
+  if (!(await fileExists(file))) return;
+  const h = await openSqlite(file);
+  try {
+    h.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  } finally {
+    h.close();
+  }
+}
+
+/**
+ * Repair on read (A3b): a journal beside the app's file means a write whose
+ * commit was never seen. Under the registry row lock, as
+ * system(repair:store-broker), the database's write_seq decides: the write
+ * committed (tidy), or it did not (a restore's swap is undone; a statement
+ * run in place is kept, it passed its check). One stat when there is none.
+ */
+async function repairAppDb(reg: { id: string; storagePath: string }): Promise<void> {
+  const journal = appDbJournal(reg.storagePath);
+  if (!fs.existsSync(journal)) return;
+  await runReadPathWrite('repair:store-broker', () =>
+    db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ seq: appDatabases.writeSeq })
+        .from(appDatabases)
+        .where(eq(appDatabases.id, reg.id))
+        .for('update');
+      repairStore(journal, row ? Number(row.seq) : null);
+    }),
+  );
+}
+
 /** Ensure the app's DB exists and its declared DDL has been applied (idempotent;
  *  applies only when the manifest schema version is newer than what's recorded).
  *  Refuses an app whose file is gone although it held data (AppDbMissingError),
@@ -306,6 +395,7 @@ export async function ensureAppDatabase(
 ): Promise<AppDbRegistry> {
   const reg = await ensureRegistry(ownerId, appNodeId);
   if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
+  await repairAppDb(reg);
   await assertNotLost(appNodeId, reg);
   if (schema && schema.schemaSql.trim() && schema.schemaVersion > reg.schemaVersion) {
     // Defense in depth: the schema DDL is agent-authored, so it must clear the
@@ -334,33 +424,42 @@ export async function ensureAppDatabase(
  * statement 3 would leave 1-2 committed while the version stays old.
  */
 async function applySchema(reg: AppDbRegistry, schema: AppDbSchema): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [locked] = await tx
-      .select({ schemaVersion: appDatabases.schemaVersion })
-      .from(appDatabases)
-      .where(eq(appDatabases.id, reg.id))
-      .for('update');
-    if (!locked) throw new Error('the app database registry row is gone');
-    if (locked.schemaVersion >= schema.schemaVersion) {
-      reg.schemaVersion = locked.schemaVersion;
-      return;
-    }
-    await mkdir(path.dirname(reg.storagePath), { recursive: true });
-    await runAppSql(reg.storagePath, {
-      sql: schema.schemaSql,
-      mode: 'script',
-      readOnly: false,
-      timeoutMs: APP_SCHEMA_TIMEOUT_MS,
-      userVersion: schema.schemaVersion,
-    });
-    await tx
-      .update(appDatabases)
-      .set({ schemaVersion: schema.schemaVersion, updatedAt: new Date() })
-      .where(
-        and(eq(appDatabases.id, reg.id), lt(appDatabases.schemaVersion, schema.schemaVersion)),
+  await brokerTransaction<Tx, void>(
+    'appdb',
+    (run) => db.transaction(run),
+    async (tx, w) => {
+      const [locked] = await tx
+        .select({ schemaVersion: appDatabases.schemaVersion, seq: appDatabases.writeSeq })
+        .from(appDatabases)
+        .where(eq(appDatabases.id, reg.id))
+        .for('update');
+      if (!locked) throw new Error('the app database registry row is gone');
+      if (locked.schemaVersion >= schema.schemaVersion) {
+        reg.schemaVersion = locked.schemaVersion;
+        return;
+      }
+      // The store broker (A3b): the checked statement, then the file.
+      const seq = await bumpWriteSeq(tx, w, reg.id);
+      w.journalAt(appDbJournal(reg.storagePath), seq, seq - 1);
+      await mkdir(path.dirname(reg.storagePath), { recursive: true });
+      await w.inPlace(reg.storagePath, () =>
+        runAppSql(reg.storagePath, {
+          sql: schema.schemaSql,
+          mode: 'script',
+          readOnly: false,
+          timeoutMs: APP_SCHEMA_TIMEOUT_MS,
+          userVersion: schema.schemaVersion,
+        }),
       );
-    reg.schemaVersion = schema.schemaVersion;
-  });
+      await tx
+        .update(appDatabases)
+        .set({ schemaVersion: schema.schemaVersion, updatedAt: new Date() })
+        .where(
+          and(eq(appDatabases.id, reg.id), lt(appDatabases.schemaVersion, schema.schemaVersion)),
+        );
+      reg.schemaVersion = schema.schemaVersion;
+    },
+  );
 }
 
 /**
@@ -498,6 +597,8 @@ export async function appDbExec(
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
   const bound = await bindViewerParams(sql, params, viewerThunk(ownerId, appNodeId, reg.id, opts));
+  // The store broker (A3b): the checked statement before the file.
+  await checkAppDbWrite(reg.id);
   await mkdir(path.dirname(reg.storagePath), { recursive: true });
   const res = (await runAppSql(reg.storagePath, {
     sql,
@@ -658,15 +759,20 @@ export async function appDbSeedRows(
   // the restored file's sidecars. A restore takes the same lock for its swap,
   // so it waits for the seed; a seed that waited on a restore sees the marker
   // and is refused as busy.
-  const changes = await db.transaction(async (tx) => {
-    await tx
-      .select({ id: appDatabases.id })
-      .from(appDatabases)
-      .where(eq(appDatabases.id, reg.id))
-      .for('update');
-    if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
-    return runAppSqlBatch(reg.storagePath, planSeedStatements(table, columns, rows, opts));
-  });
+  // The store broker (A3b): the checked statement (the revision bump, which
+  // takes the row lock), then the file.
+  const changes = await brokerTransaction<Tx, number[]>(
+    'appdb',
+    (run) => db.transaction(run),
+    async (tx, w) => {
+      const seq = await bumpWriteSeq(tx, w, reg.id);
+      if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
+      w.journalAt(appDbJournal(reg.storagePath), seq, seq - 1);
+      return w.inPlace(reg.storagePath, () =>
+        runAppSqlBatch(reg.storagePath, planSeedStatements(table, columns, rows, opts)),
+      );
+    },
+  );
   // Same best-effort size tracking as appDbExec.
   try {
     const { size } = await stat(reg.storagePath);
@@ -1028,41 +1134,53 @@ export async function restoreAppDatabaseFile(
   await writeFile(marker, String(Date.now()));
   try {
     await new Promise((r) => setTimeout(r, opts.drainMs ?? APP_DB_RESTORE_DRAIN_MS));
-    return await db.transaction(async (tx) => {
-      await tx
-        .select({ id: appDatabases.id })
-        .from(appDatabases)
-        .where(eq(appDatabases.id, reg.id))
-        .for('update');
-      // Fresh marker for the swap itself (a slow drain must not age it out).
-      const now = new Date();
-      await utimes(marker, now, now);
-      const tmp = `${reg.storagePath}.restore-${process.pid}-${Date.now()}`;
-      try {
-        await copyFile(snapshotAbs, tmp);
-        const fh = await open(tmp, 'r+');
-        try {
-          await fh.sync();
-        } finally {
-          await fh.close();
-        }
-        await Promise.all(
-          appDbFiles(reg.storagePath)
-            .slice(1)
-            .map((f) => rm(f, { force: true })),
+    // The store broker (A3b): the checked statement (the revision bump,
+    // which takes the row lock the schema applier and a seed take too),
+    // then the swap; the live file is kept aside until the commit, and put
+    // back if it does not land.
+    return await brokerTransaction<Tx, { bytes: number }>(
+      'appdb',
+      (run) => db.transaction(run),
+      async (tx, w) => {
+        const seq = await bumpWriteSeq(tx, w, reg.id);
+        w.journalAt(appDbJournal(reg.storagePath), seq, seq - 1);
+        // Fresh marker for the swap itself (a slow drain must not age it out).
+        const now = new Date();
+        await utimes(marker, now, now);
+        await checkpointAppDb(reg.storagePath);
+        await w.replace(
+          reg.storagePath,
+          async () => {
+            const tmp = `${reg.storagePath}.restore-${process.pid}-${Date.now()}`;
+            try {
+              await copyFile(snapshotAbs, tmp);
+              const fh = await open(tmp, 'r+');
+              try {
+                await fh.sync();
+              } finally {
+                await fh.close();
+              }
+              await Promise.all(
+                appDbFiles(reg.storagePath)
+                  .slice(1)
+                  .map((f) => rm(f, { force: true })),
+              );
+              await rename(tmp, reg.storagePath);
+            } catch (err) {
+              await rm(tmp, { force: true });
+              throw err;
+            }
+          },
+          { sqlite: true },
         );
-        await rename(tmp, reg.storagePath);
-      } catch (err) {
-        await rm(tmp, { force: true });
-        throw err;
-      }
-      const { size } = await stat(reg.storagePath);
-      await tx
-        .update(appDatabases)
-        .set({ schemaVersion, sizeBytes: size, updatedAt: new Date() })
-        .where(eq(appDatabases.id, reg.id));
-      return { bytes: size };
-    });
+        const { size } = await stat(reg.storagePath);
+        await tx
+          .update(appDatabases)
+          .set({ schemaVersion, sizeBytes: size, updatedAt: new Date() })
+          .where(eq(appDatabases.id, reg.id));
+        return { bytes: size };
+      },
+    );
   } finally {
     await rm(marker, { force: true });
   }

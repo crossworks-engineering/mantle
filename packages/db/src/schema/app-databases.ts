@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { nodes } from './nodes';
 
 /**
@@ -33,6 +42,10 @@ export const appDatabases = pgTable(
      *  migration 0217): host.me().id and :host_me_id are HMAC(viewer_salt,
      *  login or contact id). Server only; NULL until first use. */
     viewerSalt: text('viewer_salt'),
+    /** The app broker's write revision (store brokers, arch A3b, migration
+     *  0283): bumped as the caller before every write of the file, the
+     *  statement the database checks. */
+    writeSeq: bigint('write_seq', { mode: 'number' }).default(0).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
