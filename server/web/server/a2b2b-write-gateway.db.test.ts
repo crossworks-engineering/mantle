@@ -1092,7 +1092,7 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
         arguments: { title: `${tag} map`, enter_when: 'when testing A2b2b in on' },
       })) as Reply;
       expect(made.isError, textOf(made)).not.toBe(true);
-      const slug = (JSON.parse(textOf(made)) as { slug?: string }).slug;
+      const slug = (JSON.parse(textOf(made)) as { map?: string }).map;
       expect(slug, textOf(made)).toBeTruthy();
       const updated = (await c.callTool({
         name: 'recall_map_update',
