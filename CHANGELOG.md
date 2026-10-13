@@ -25,6 +25,18 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   the login's oldest shared workspace; an app run with no holder beyond
   Admin reads nothing; a connector call with no login needs a workspace
   beyond Admin to hold it; the author warnings ask the app's own holders.
+- Removing a Moderator from a workspace is Admin only too, through the same
+  check (owner answer Q2): no remove-and-re-add bypass of the tick. A plain
+  user is removed by a Moderator as before, and anyone may still leave.
+  Jackdaw dims another Moderator's Remove for a Moderator who is not an
+  Admin user.
+- "Shared" has one meaning: a workspace that is neither Admin, nor private,
+  nor a Former user one (`mantle_ws_any_shared`). The app list's MCP reach
+  is right for an Admin user again, also for an app held by a workspace
+  they are not in.
+- `pnpm -C server/web ws:team-check` (read only, numbers only) and
+  `ws:clear-member-ticks --workspace <id|former-team> [--apply]` for the
+  roll: count first, then an Admin user clears the member ticks.
 - Roll notes and what to tell users: [update-prod.md](docs/update-prod.md),
   "Team is a normal workspace".
 
