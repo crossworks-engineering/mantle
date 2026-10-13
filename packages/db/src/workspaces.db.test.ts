@@ -856,6 +856,9 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       // 0285, redefined by 0286 (no 'team' kind): a workspace's kind for its
       // default icon, for a workspace the scope may name; a kind only.
       mantle_ws_kind: ['mantle_view_user'],
+      // 0286 (fix round 1): whether any of the workspaces is shared, for a
+      // workspace the scope may name; a yes or no only.
+      mantle_ws_any_shared: ['mantle_view_user'],
     };
     expect(
       rows

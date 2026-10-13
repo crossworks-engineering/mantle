@@ -134,6 +134,9 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   // for a workspace the scope may name.
   'mantle_ws_kind(uuid)':
     'a workspace’s kind (admin, team, private, other), only one the scope names',
+  // 0286 fix round 1: the one meaning of a shared workspace, a yes or no.
+  'mantle_ws_any_shared(uuid[])':
+    'whether any of the workspaces is shared (not Admin, private or Former user), only one the scope names',
 };
 
 /** Rolls a cell's transaction back after its checks. */
