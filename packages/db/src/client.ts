@@ -1301,13 +1301,14 @@ function boundedBegin(config: unknown[], work: (t: PgSql) => Promise<unknown>): 
   return Promise.race([begun, wait]).finally(() => clearTimeout(timer));
 }
 
-/** A reserved write-pool connection, waiting at most writePoolWaitMs. One
- *  that comes later goes back at once. */
-async function boundedReserve(): Promise<postgres.ReservedSql> {
+/** A write-pool connection as a lease (reserved.ts: back to the pool only
+ *  while usable), waiting at most writePoolWaitMs. One that comes later
+ *  goes back at once, by its lease. */
+async function boundedReserve(): Promise<Lease> {
   checkNestedAcquire();
   let late = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const reserved = writePoolSql().reserve();
+  const reserved = reserveLease(writePoolSql());
   const wait = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       late = true;
@@ -1321,7 +1322,7 @@ async function boundedReserve(): Promise<postgres.ReservedSql> {
     clearTimeout(timer);
     if (late)
       void reserved.then(
-        (c) => c.release(),
+        (lease) => lease.release(),
         () => undefined,
       );
   }
@@ -1377,14 +1378,16 @@ async function writeRoleStatement(
   args: unknown[] | undefined,
   mode: QueryMode,
 ): Promise<unknown> {
-  const conn = await boundedReserve();
+  const lease = await boundedReserve();
   try {
+    const conn = lease.sql;
     // BEGIN and COMMIT are the gateway's own, tagged as the actor's
-    // (a2a-round-trips.db.test.ts counts them apart). Sent in this order.
-    const begin = sendIn(conn.unsafe(`${ACTOR_SQL_TAG} begin`), 'rows');
-    const set = sendIn(conn.unsafe(route.setSql), 'rows');
-    const main = sendIn(conn.unsafe(query, (args ?? []) as never[]), mode);
-    const commit = sendIn(conn.unsafe(`${ACTOR_SQL_TAG} commit`), 'rows');
+    // (a2a-round-trips.db.test.ts counts them apart). Sent in this order,
+    // each watched (a connection error marks the lease gone).
+    const begin = lease.watch(sendIn(conn.unsafe(`${ACTOR_SQL_TAG} begin`), 'rows'));
+    const set = lease.watch(sendIn(conn.unsafe(route.setSql), 'rows'));
+    const main = lease.watch(sendIn(conn.unsafe(query, (args ?? []) as never[]), mode));
+    const commit = lease.watch(sendIn(conn.unsafe(`${ACTOR_SQL_TAG} commit`), 'rows'));
     const out = await Promise.allSettled([begin, set, main, commit]);
     const failed = out.find((r) => r.status === 'rejected');
     if (failed) {
@@ -1395,7 +1398,7 @@ async function writeRoleStatement(
     }
     return (out[2] as PromiseFulfilledResult<unknown>).value;
   } finally {
-    conn.release();
+    lease.release();
   }
 }
 
