@@ -53,6 +53,12 @@ function stateOf(root: string): Record<string, string> {
   return out;
 }
 
+/** The state less SQLite's -wal and -shm files, which a READ opens (the
+ *  repair test reads the table to repair it). */
+function filesOf(state: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(state).filter(([f]) => !/-(wal|shm)$/.test(f)));
+}
+
 const DOC = (v: string) => ({
   columns: [{ id: 'c1', name: 'Name', type: 'text' as const }],
   rows: [{ id: 'r1', cells: { c1: v } }],
@@ -307,7 +313,9 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       // The next read: the database never took it; the disk goes back.
       const read = await sys(() => tablesMod.getTable(owner, t));
       expect(read?.draft?.rows[0]?.cells.c1).toBe('kept draft');
-      expect(stateOf(tableRoot)).toEqual(before);
+      // The very files of before (bytes, mtime: the pre-image itself), no
+      // journal, no pre-image left.
+      expect(filesOf(stateOf(tableRoot))).toEqual(filesOf(before));
       expect(existsSync(draft)).toBe(true);
     });
 
