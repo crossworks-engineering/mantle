@@ -199,6 +199,41 @@ describe.skipIf(!hasManifest)('the item write check reads the decoded item id', 
     }
   });
 
+  // Postgres reads each of these as the same uuid as ITEM, so a handler
+  // that passed one to a uuid column would write that item. The check
+  // takes only the canonical spelling (ITEM_ID_RE): each is refused with
+  // the not-found answer before the handler, for every login, and no
+  // query is asked about it.
+  it('a UUID spelling Postgres accepts but the check does not is refused, never skipped', async () => {
+    state.row = { edit: true, manage: true, copy: false };
+    const hex = ITEM.replace(/-/g, '');
+    const spellings = [
+      // 32 hex digits, no hyphens.
+      hex,
+      // Braces, as sent (the URL parser escapes them) and escaped by hand.
+      `{${ITEM}}`,
+      `%7B${ITEM}%7D`,
+      // Hyphens in other places (groups of eight, as Postgres takes them).
+      `${hex.slice(0, 8)}-${hex.slice(8, 16)}-${hex.slice(16, 24)}-${hex.slice(24)}`,
+      'a0eebc99-9c0b4ef8-bb6d6bb9-bd380a11',
+    ];
+    for (const seg of spellings) {
+      for (const [path, cookie] of [
+        [`/api/pages/${seg}`, memberCookie],
+        [`/api/pages/${seg}`, adminCookie],
+        [`/api/v1/pages/${seg}`, adminCookie],
+        [`/api/pages/${seg}/move`, memberCookie],
+      ] as const) {
+        state.asked = [];
+        const method = path.endsWith('/move') ? 'POST' : 'PATCH';
+        const res = await send(method, path, cookie);
+        expect(res.status, `${method} ${path}`).toBe(404);
+        expect(await res.json(), `${method} ${path}`).toEqual({ ok: false, error: 'not found' });
+        expect(state.asked, `${method} ${path}`).not.toContain(ITEM);
+      }
+    }
+  });
+
   it('a plain id is checked as before', async () => {
     state.row = { edit: true, manage: false, copy: false };
     const ok = await send('PATCH', `/api/pages/${ITEM}`, memberCookie);
