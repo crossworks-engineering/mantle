@@ -18,12 +18,15 @@
   "brainOnWorkspacesCalls": 12,
   "brainOnWorkspacesFiles": 7,
   "adminReadsFiles": 2,
-  "readPathWrites": 9,
-  "store_tabledb_files": 29,
-  "store_objectstore_files": 17,
-  "store_appdb_files": 3,
+  "readPathWrites": 10,
+  "store_tabledb_files": 1,
+  "store_objectstore_files": 5,
+  "store_appdb_files": 5,
   "_notes": {
     "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code.",
-    "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now."
+    "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now. Raised 9 to 10 in A3b: repair:store-broker, a store read that finds a broker journal (a write whose commit was never seen) puts the disk back as the database says (docs/store-brokers.md).",
+    "store_appdb_files": "A3b counts the app database WRITE API (the SQL runner's writing functions) as well as APP_DB_DIR: 3 to 5 is the measure widening (app-package.ts adopts into a temp file; history-files.ts copies snapshots, the snapshot broker of A3b part 2), not a new writer.",
+    "store_tabledb_files": "A3b: the tables write API moved to @mantle/tabledb/write, which only the tables broker imports (29 importers of the whole package before).",
+    "store_objectstore_files": "A3b: the object store write API moved to @mantle/storage/write (17 importers of the whole package before, readers included)."
   }
 }

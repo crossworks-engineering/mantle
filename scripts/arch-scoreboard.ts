@@ -43,9 +43,9 @@ const LABELS: Record<string, string> = {
   brainOnWorkspacesFiles: 'files calling brainOnWorkspacesNow',
   adminReadsFiles: 'files naming MANTLE_ADMIN_READS',
   readPathWrites: 'named writes inside read paths',
-  store_tabledb_files: 'files importing @mantle/tabledb',
-  store_objectstore_files: 'files importing @mantle/storage',
-  store_appdb_files: 'files reaching APP_DB_DIR',
+  store_tabledb_files: 'files reaching the tables write API (A3b)',
+  store_objectstore_files: 'files reaching the object store write API (A3b)',
+  store_appdb_files: 'files reaching the app database write API or APP_DB_DIR (A3b)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with
