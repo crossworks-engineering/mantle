@@ -231,6 +231,8 @@ export {
   isCheckViolation,
   isUniqueViolation,
   isScopeWriteRefusal,
+  editRefusalDetail,
+  type EditRefusalDetail,
   pgConstraint,
   pgErrorCode,
 } from './pg-error';

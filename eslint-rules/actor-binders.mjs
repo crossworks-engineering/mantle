@@ -30,6 +30,8 @@ export function binderSites(text) {
 export const ACTOR_BINDER_PINS = {
   'packages/content/src/kind-root.ts': 1,
   'packages/content/src/pages/read.ts': 1,
+  'packages/content/src/recall.ts': 1,
+  'packages/content/src/shares.ts': 1,
   'packages/content/src/tree/apps-nav.ts': 2,
   'packages/db/src/actor.ts': 4,
   'packages/db/src/client.ts': 3,

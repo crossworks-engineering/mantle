@@ -18,11 +18,12 @@
   "brainOnWorkspacesCalls": 12,
   "brainOnWorkspacesFiles": 7,
   "adminReadsFiles": 2,
-  "readPathWrites": 7,
+  "readPathWrites": 9,
   "store_tabledb_files": 29,
   "store_objectstore_files": 17,
   "store_appdb_files": 3,
   "_notes": {
-    "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code."
+    "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code.",
+    "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now."
   }
 }

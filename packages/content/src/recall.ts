@@ -12,7 +12,14 @@
 
 import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 
-import { db, nodes, recallNodes, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
+import {
+  db,
+  nodes,
+  recallNodes,
+  runReadPathWrite,
+  withDeadlockRetry,
+  withNodeInsertHeads,
+} from '@mantle/db';
 import { getRecallEmbedder } from './embed-bridge';
 import { asKindRootRepair } from './kind-root';
 
@@ -123,6 +130,14 @@ export async function recallFolderCrumbs(
  *  register one — deliberately loud, because the caller is fire-and-forget and
  *  a silent zero here is invisible until recall_match stops finding prompts. */
 export async function embedPendingRecallPrompts(ownerId: string): Promise<number> {
+  // The brain's own work, whoever's call started it (a reader's recall_match
+  // too): a named read-path write, never the caller's write (arch A3a).
+  return runReadPathWrite('backfill:recall-prompt-embeddings', () =>
+    embedPendingRecallPromptsNow(ownerId),
+  );
+}
+
+async function embedPendingRecallPromptsNow(ownerId: string): Promise<number> {
   // Batches of 50 until none are left. A row the embedder skipped, or whose
   // text moved under it, is not asked for twice in one call: `seen` keeps a
   // stubborn row from looping, and the next call (recall_match) retries it.

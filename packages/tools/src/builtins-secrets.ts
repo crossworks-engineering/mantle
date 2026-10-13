@@ -6,7 +6,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { nodes, secrets, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
+import { nodes, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { nodeUrl } from '@mantle/content';
 import { areaSystem } from './admin-gate';
@@ -149,11 +149,11 @@ export const secret_create: BuiltinToolDef = {
           // this node id so an attacker who swaps the bytea column can't
           // replay another secret's ciphertext into this row.
           const sealed = seal(payload, `secret:${row.id}`);
-          await tx.insert(secrets).values({
-            nodeId: row.id,
-            ciphertext: sealed.ciphertext,
-            keyVersion: sealed.keyVersion,
-          });
+          // Through the one definer (arch A3a, 0281): a login's turn holds
+          // no right on the secrets table.
+          await tx.execute(
+            sql`select mantle_secret_put(${row.id}, ${sealed.ciphertext}::bytea, ${sealed.keyVersion})`,
+          );
           return row;
         },
       ),

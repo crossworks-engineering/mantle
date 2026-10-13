@@ -64,9 +64,10 @@ export function isHeadsCheckError(err: unknown): boolean {
  * 1); the create home's refusals (mantle_default_home, 0267); the write
  * role's own checks (0278, 0279: edit, create, grant, a kind change, an
  * app's placement) and its row rule ("new row violates row-level security
- * policy", a row moved out of what the scope reads; arch A2b2b). Matched
- * by message too, so a missing grant (also 42501, isPermissionGap) stays a
- * 500.
+ * policy", a row moved out of what the scope reads; arch A2b2b); the edit
+ * check's (arch A3a, 0280 and 0281), which also carry a detail the mapper
+ * reads (editRefusalDetail). Matched by message too, so a missing grant
+ * (also 42501, isPermissionGap) stays a 500.
  */
 export function isScopeWriteRefusal(err: unknown): boolean {
   const pg = findPgError(err) as (PgLike & { message?: unknown }) | null;
@@ -75,13 +76,34 @@ export function isScopeWriteRefusal(err: unknown): boolean {
   return SCOPE_WRITE_REFUSALS.test(message);
 }
 
+/** The details of the edit check's refusals (plan 5.2): the caller may not
+ *  read the item, may read but not change it, the item is read only
+ *  (Informational), or the caller only reads (a read key, a link, an
+ *  assistant with no user). */
+export type EditRefusalDetail = 'no_read' | 'no_edit' | 'read_only' | 'ro_actor';
+
+const EDIT_REFUSAL_DETAILS: ReadonlySet<string> = new Set([
+  'no_read',
+  'no_edit',
+  'read_only',
+  'ro_actor',
+]);
+
+/** The detail of an edit check refusal (42501 with one of the details
+ *  above, mantle_edit_refuse), else null. */
+export function editRefusalDetail(err: unknown): EditRefusalDetail | null {
+  const pg = findPgError(err) as (PgLike & { detail?: unknown }) | null;
+  if (!pg || pg.code !== '42501' || typeof pg.detail !== 'string') return null;
+  return EDIT_REFUSAL_DETAILS.has(pg.detail) ? (pg.detail as EditRefusalDetail) : null;
+}
+
 /** The messages of the database's own write refusals (isScopeWriteRefusal). */
 const SCOPE_WRITE_REFUSALS = new RegExp(
   '^(' +
     [
       'not allowed to (move this item|add items to that folder|delete this item|change this item' +
         '|share this item|edit this item|create an item in that workspace|grant to that workspace' +
-        '|change the kind of this item)',
+        "|change the kind of this item|change anything|change this app's|write this app's)",
       'placing this app adds a workspace you do not moderate',
       'this kind of item lives in the Admin workspace only',
       'no workspace to create this item in',

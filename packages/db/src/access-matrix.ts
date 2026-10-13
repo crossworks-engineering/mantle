@@ -17,6 +17,7 @@
  * hold nothing, and applyViewerGrants revokes what an old migration grants
  * them on a fresh install.
  */
+import { createHash } from 'node:crypto';
 import type postgres from 'postgres';
 import { LOCK_ATTRS, POOL_ROLES, RETIRED_POOL_ROLES, withRoleRetry } from './viewer-roles';
 import { viewerRoleName } from './viewer';
@@ -70,11 +71,58 @@ export type TableAccess = {
    */
   writeCheck?: { kind: 'self' } | { kind: 'edit' | 'manage'; item: string };
   /**
+   * What the write role must hold beyond the write check, per operation and
+   * column (workspaces arch A3a, plan 5.2), behind mantle.edit_check: off
+   * runs, warn reports, on refuses (docs/edit-check.md). Migrate makes the
+   * triggers (mantle_edit_check_trg, migration 0281) from it:
+   * editCheckTriggers.
+   */
+  editCheck?: EditCheck;
+  /**
    * Columns the database derives (a definer trigger writes them): the write
    * role reads them and never writes them (writeColumnsFor). Needs named
    * `user` columns.
    */
   derived?: readonly string[];
+};
+
+/**
+ * What an operation on a row asks of the row's item (mantle_check_row,
+ * migration 0280): edit (a Moderator of its home, or a grant with Write
+ * on), manage (a Moderator of its home), admin (the scope holds the Admin
+ * workspace: an Admin user), appdata (an app's data: edit, and while the app
+ * is Informational an Admin scope too, owner decision D6), link (a public
+ * link: edit, an app's manage) or link_close (a link closed: link, or an
+ * Admin user with the users area). 'system': only the brain writes it.
+ */
+export type EditNeed = 'edit' | 'manage' | 'admin' | 'appdata' | 'link' | 'link_close';
+
+/** A table's A3a checks (TableAccess.editCheck). Only what the write check
+ *  (writeCheck, 0278) does not already ask. */
+export type EditCheck = {
+  /** The column naming the row's item (a node id), or 'self' on nodes. */
+  item: string;
+  /** The table that names the item: a Recall card's or revision's map_id
+   *  is a recall_maps id, whose node_id is the item. */
+  via?: 'recall_maps';
+  insert?: EditNeed;
+  update?: EditNeed;
+  delete?: EditNeed;
+  /** UPDATE: a change to one of these columns needs this. 'rest': every
+   *  column of the table (read from the catalog at migrate, so a column a
+   *  later migration adds is in it: deny by default) not named in another
+   *  group or in `free`. */
+  columns?: Partial<Record<EditNeed | 'system', readonly string[] | 'rest'>>;
+  /** Columns a change of which needs nothing more than the operation's
+   *  need (kept out of 'rest'). */
+  free?: readonly string[];
+  /** A column whose change TO this value needs nothing more (a narrowing:
+   *  an app lowered to team level, an embedding cleared). On INSERT, a
+   *  value other than this needs its group's need (not for 'system'). */
+  safe?: Readonly<Record<string, string | boolean | null>>;
+  /** nodes: the keys of mantle_node_derived_keys() in data are the brain's:
+   *  a write may clear one, never set or change one. */
+  derivedKeys?: true;
 };
 
 /** The draft columns of the item tables. The workspace role reads them since
@@ -129,9 +177,71 @@ const userOnly = (table: string, writer: Writer = 'admin'): TableAccess => ({
   user: 'all',
 });
 
+/** The nodes columns a login's edit changes (A3a): the write check asks
+ *  edit of each change, the guards keep the derived ones (home_ws,
+ *  read_ws, write_ws, login_id) and a kind never changes on the role. Every
+ *  other column is the brain's (editCheck 'rest'). */
+export const NODE_EDIT_COLUMNS: readonly string[] = [
+  'title',
+  'slug',
+  'data',
+  'path',
+  'parent_id',
+  'tags',
+  'type',
+  'salience',
+  'superseded_by',
+  'superseded_reason',
+  'updated_at',
+  'home_ws',
+  'read_ws',
+  'write_ws',
+  'login_id',
+];
+
+/** An app's code (owner decision D4: a Moderator of its home changes it). */
+export const APP_CODE_COLUMNS: readonly string[] = [
+  'source',
+  'source_text',
+  'draft_source',
+  'draft_updated_at',
+  'manifest',
+  'draft_build',
+  'published_build',
+  'version',
+  'restored_from_seq',
+];
+
+/** An app's switches and author (owner decision D5: Admin users only):
+ *  trust its tools (author_level), MCP access, data read only
+ *  (Informational), and who made it. */
+export const APP_SWITCH_COLUMNS: readonly string[] = [
+  'author_level',
+  'author_ceiling_seen',
+  'mcp_access',
+  'data_read_only',
+  'author_login_id',
+];
+
 export const ACCESS_MATRIX: readonly TableAccess[] = [
   // ── Brain content: what the scope's workspaces hold (0242) ────────────────
-  { table: 'public.nodes', user: 'all', writer: 'content', writeCheck: { kind: 'self' } },
+  {
+    table: 'public.nodes',
+    user: 'all',
+    writer: 'content',
+    writeCheck: { kind: 'self' },
+    // A3a: the columns an edit changes (the write check asks edit; the
+    // guards keep the derived ones); every other column is the brain's
+    // (deny by default), an embedding only cleared; the derived keys of
+    // data only cleared.
+    editCheck: {
+      item: 'self',
+      free: NODE_EDIT_COLUMNS,
+      columns: { system: 'rest' },
+      safe: { embedding: null },
+      derivedKeys: true,
+    },
+  },
   {
     table: 'public.content_chunks',
     user: 'all',
@@ -153,6 +263,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   {
     table: 'public.pages',
     writeCheck: { kind: 'edit', item: 'node_id' },
+    editCheck: { item: 'node_id', delete: 'manage' },
     user: ['node_id', 'doc', 'doc_text', 'version', 'created_at', 'updated_at'],
     drafts: true,
     writer: 'content',
@@ -160,6 +271,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   {
     table: 'public.draws',
     writeCheck: { kind: 'edit', item: 'node_id' },
+    editCheck: { item: 'node_id', delete: 'manage' },
     drafts: true,
     user: [
       'node_id',
@@ -177,6 +289,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   {
     table: 'public.tables',
     writeCheck: { kind: 'edit', item: 'node_id' },
+    editCheck: { item: 'node_id', delete: 'manage' },
     drafts: true,
     user: [
       'node_id',
@@ -195,17 +308,34 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   // Every column since W6a: an Admin user's app screens read them all;
   // drafts only where the user may edit (draftColumn).
+  // A3a: the code needs manage (owner decision D4: a Moderator of the
+  // app's home), the three switches and the author need an Admin user (D5);
+  // lowering the tool level to team is always allowed.
   {
     table: 'public.apps',
     user: 'all',
     writer: 'content',
     writeCheck: { kind: 'edit', item: 'node_id' },
+    editCheck: {
+      item: 'node_id',
+      insert: 'manage',
+      delete: 'manage',
+      columns: { manage: APP_CODE_COLUMNS, admin: APP_SWITCH_COLUMNS },
+      safe: {
+        author_level: 'team',
+        author_ceiling_seen: true,
+        mcp_access: false,
+        data_read_only: false,
+      },
+    },
   },
+  // A3a: an app's data (D6: while Informational is on, Admin users only).
   {
     table: 'public.app_databases',
     user: 'all',
     writer: 'content',
     writeCheck: { kind: 'edit', item: 'app_node_id' },
+    editCheck: { item: 'app_node_id', insert: 'appdata', update: 'appdata', delete: 'manage' },
   },
 
   // ── Personal spaces (Phase 2; folded into the brain in W6b, 0267) ────────
@@ -232,8 +362,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { table: 'public.embedding_config', user: 'all', writer: 'admin' },
   { table: 'public.ai_workers', user: 'all', writer: 'admin' },
   // Its own login's row and the brain's, every row only in an Admin scope
-  // (0266).
-  { table: 'public.profiles', user: 'all', userRule: 'own-login', writer: 'admin' },
+  // (0266). A3a: the write role writes what it reads (a turn notes the
+  // inbound channel and the time zone on the brain's row); no more.
+  { table: 'public.profiles', user: 'all', userRule: 'own-login', writer: 'content' },
   // mantle_brain_id() reads the anchor row; nothing else of a login.
   { table: 'auth.users', user: ['id', 'is_owner', 'created_at'], writer: 'admin' },
 
@@ -270,7 +401,20 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.push_prefs', 'system'),
   none('public.push_subscriptions', 'system'),
   none('public.push_login_prefs', 'system'),
-  userOnly('public.shares', 'system'),
+  // A public link (A3a, plan 5.2): edit of its item, an app's manage;
+  // closing it (revoked_at, or the row deleted) also an Admin user with the
+  // users area. Its view counter is the brain's (a named read-path write).
+  {
+    table: 'public.shares',
+    user: 'all',
+    writer: 'content',
+    editCheck: {
+      item: 'node_id',
+      insert: 'link',
+      delete: 'link_close',
+      columns: { link_close: ['revoked_at'], link: 'rest' },
+    },
+  },
   // Contact shares (0214): the /s layer reads and writes these on the admin
   // pool, for the brain. No viewer role ever does.
   none('public.contact_share_codes', 'system'),
@@ -319,19 +463,45 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.node_embeds', 'content'),
   // Old summaries made before always fold (W2, 0247): admin pool only.
   none('public.node_mixed_summaries', 'content'),
-  userOnly('public.recall_maps', 'admin'),
-  userOnly('public.recall_nodes', 'admin'),
-  // Recall v2: the revision log. Admin pool only, like the other two — the
-  // reader filter for a team agent (R6) runs in the tools against the map's
-  // node under the viewer, never by opening these tables to a viewer role.
-  userOnly('public.recall_revisions', 'admin'),
+  // A Recall map follows its node; its cards and its revision log follow the
+  // map (A3a: the write role writes them, edit of the map's node; a map
+  // deleted, manage). A renamed map's cross-map options in other maps are
+  // the brain's (mantle_recall_retarget, 0281).
+  {
+    table: 'public.recall_maps',
+    user: 'all',
+    writer: 'content',
+    editCheck: { item: 'node_id', insert: 'edit', update: 'edit', delete: 'manage' },
+  },
+  {
+    table: 'public.recall_nodes',
+    user: 'all',
+    writer: 'content',
+    editCheck: { item: 'map_id', via: 'recall_maps', insert: 'edit', update: 'edit', delete: 'edit' },
+  },
+  {
+    table: 'public.recall_revisions',
+    user: 'all',
+    writer: 'content',
+    editCheck: { item: 'map_id', via: 'recall_maps', insert: 'edit', update: 'edit', delete: 'edit' },
+  },
   // Comments (Phase 2): the admin pool only since W8c.
   none('public.node_comments', 'content'),
   none('public.agent_groups'),
   none('public.channels'),
   none('public.curated_models'),
   none('public.prompt_versions'),
-  userOnly('public.node_snapshots', 'admin'),
+  // An item's history (app versions and snapshots, table snapshots), A3a:
+  // edit of the item, on the write role while the item lives (its row rule
+  // follows the node). A deleted app's rows are the brain's (app-trash):
+  // the route asks manage of the stored home, the owner for one another
+  // login deleted (docs/edit-check.md).
+  {
+    table: 'public.node_snapshots',
+    user: 'all',
+    writer: 'content',
+    editCheck: { item: 'node_id', insert: 'edit', update: 'edit', delete: 'edit' },
+  },
   userOnly('public.doc_collections', 'admin'),
   none('public.ingest_rules'),
   none('public.saved_filters'),
@@ -472,21 +642,18 @@ export const WRITE_ROLE_SYSTEM_ONLY: readonly string[] = ACCESS_MATRIX.filter(
  * other denial, both through writeRoleGapTable. Any other "permission
  * denied" on the role is a bug and stays an error. A typed or a single raw
  * write to a table outside WRITE_ROLE_TABLES goes to the system pool up
- * front and is no gap. A3a gives these tables their checks and moves them;
- * the list then shrinks to nothing.
+ * front and is no gap.
+ *
+ * Empty since A3a (docs/edit-check.md): node_snapshots, the Recall tables,
+ * shares and profiles are write tables with their checks (editCheck); a
+ * secret's sealed value goes through mantle_secret_put and a renamed Recall
+ * map's cross-map options through mantle_recall_retarget (0281); an app
+ * table's export rows are written by the brain only, never in a login's
+ * transaction. The mechanism stays (the gateway's rerun, the gap writer
+ * role, the test setup's rule) for a table a later phase finds; with the
+ * list empty nothing reruns and every denial is an error.
  */
-export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {
-  node_snapshots:
-    'an item’s history rows, in the transaction of an app publish, restore or delete, a table snapshot (A3a must)',
-  recall_maps: 'a Recall map, in the transaction of its Recall node (A3a must)',
-  recall_nodes: 'a Recall map’s nodes, with the map (A3a must)',
-  recall_revisions: 'a Recall map’s revision log, with the map',
-  shares: 'a public link, in the transaction that changes its item (A3a must)',
-  secrets: 'a secret’s sealed value, in the transaction of its node (secret_create)',
-  app_table_exports: 'an app table’s export row, with the Table it mirrors into',
-  profiles:
-    'a login’s own profile row, made on its first read in a savepoint (profile-preferences.ts)',
-};
+export const WRITE_ROLE_GAP_TABLES: Readonly<Record<string, string>> = {};
 
 /**
  * The role a gap table's statement runs as in the checked rerun (A2b2b fix
@@ -547,6 +714,10 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a home move in one call (0279): manage of the old home, a Moderator of the new one',
   'public.mantle_workspace_event(uuid,uuid,text,jsonb)':
     'a grant’s audit row (0279): the role holds no right on workspace_events',
+  'public.mantle_recall_retarget(uuid,text,text)':
+    'a renamed Recall map’s cross-map options in every map (0281): the brain’s references',
+  'public.mantle_secret_put(uuid,bytea,integer)':
+    'a secret’s sealed value (0281): the role holds no right on secrets',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the
@@ -569,6 +740,195 @@ export function writeGrantStatements(role: string = viewerRoleName('write')): st
 export function writeCheckArgs(t: TableAccess): string[] | null {
   if (!writeRoleWrites(t) || !t.writeCheck) return null;
   return t.writeCheck.kind === 'self' ? ['self'] : [t.writeCheck.kind, t.writeCheck.item];
+}
+
+/** One trigger of a table's A3a checks: its name and its CREATE statement. */
+export type EditCheckTrigger = { name: string; ddl: string };
+
+/** The read-only refusal (0280): one per item table, made by its migration,
+ *  never by editCheckTriggers. */
+export const EDIT_CHECK_RO_TRIGGER = 'mantle_edit_check_ro';
+
+const IDENT = /^[a-z_][a-z0-9_]*$/;
+const EDIT_NEEDS: ReadonlySet<string> = new Set([
+  'edit',
+  'manage',
+  'admin',
+  'appdata',
+  'link',
+  'link_close',
+  'system',
+]);
+
+function ident(c: string, where: string): string {
+  if (!IDENT.test(c)) throw new Error(`${where}: not a column name: ${c}`);
+  return `"${c}"`;
+}
+
+function safeLiteral(v: string | boolean | null): string {
+  if (v === null) return 'NULL';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (!/^[a-z0-9_]{1,40}$/i.test(v)) throw new Error(`editCheck: not a safe value: ${v}`);
+  return `'${v}'`;
+}
+
+/**
+ * The triggers of `t`'s A3a checks (TableAccess.editCheck), given the
+ * table's columns as the catalog has them (not dropped, not generated).
+ * Pure. Each fires for the write role only, BEFORE the row's write, and
+ * calls mantle_edit_check_trg(need, item, via, mode):
+ *  - mantle_edit_check_<need>: the operations that need it;
+ *  - mantle_edit_check_cols_<need>: an UPDATE of one of its columns (the
+ *    trigger's WHEN: a change, not to the column's safe value);
+ *  - mantle_edit_check_ins_<need>: an INSERT that sets one of its columns
+ *    to something other than the safe value (not for 'system');
+ *  - mantle_edit_check_keys: an UPDATE of nodes.data (the derived keys).
+ * The edit check's switch (mantle_set_edit_check) enables or disables every
+ * trigger named mantle_edit_check_*.
+ */
+export function editCheckTriggers(
+  t: TableAccess,
+  columns: readonly string[],
+): EditCheckTrigger[] {
+  const e = t.editCheck;
+  if (!e || !writeRoleWrites(t)) return [];
+  const where = `editCheck of ${t.table}`;
+  if (e.item !== 'self') ident(e.item, where);
+  const table = quoteTable(t.table);
+  const when = `current_user = 'mantle_write_user'`;
+  const fn = (need: string, mode = '') => {
+    if (!EDIT_NEEDS.has(need)) throw new Error(`${where}: unknown need ${need}`);
+    return `EXECUTE FUNCTION "public"."mantle_edit_check_trg"('${need}', '${e.item}', '${e.via ?? ''}', '${mode}')`;
+  };
+  const have = new Set(columns);
+  const named = (c: string) => {
+    if (!have.has(c)) throw new Error(`${where}: no column ${c} (or it is generated)`);
+    return c;
+  };
+  const out: EditCheckTrigger[] = [];
+
+  // The operations, one trigger per need.
+  const byNeed = new Map<string, string[]>();
+  for (const op of ['insert', 'update', 'delete'] as const) {
+    const need = e[op];
+    if (need) byNeed.set(need, [...(byNeed.get(need) ?? []), op.toUpperCase()]);
+  }
+  for (const [need, ops] of byNeed) {
+    out.push({
+      name: `mantle_edit_check_${need}`,
+      ddl:
+        `CREATE TRIGGER "mantle_edit_check_${need}" BEFORE ${ops.join(' OR ')} ON ${table} ` +
+        `FOR EACH ROW WHEN (${when}) ${fn(need)}`,
+    });
+  }
+
+  // The column groups.
+  const groups = Object.entries(e.columns ?? {}) as [string, readonly string[] | 'rest'][];
+  const listed = new Set<string>([...(e.free ?? []).map(named)]);
+  for (const [, cols] of groups) if (cols !== 'rest') for (const c of cols) listed.add(named(c));
+  const safe = e.safe ?? {};
+  for (const c of Object.keys(safe)) named(c);
+  for (const [need, spec] of groups) {
+    const cols =
+      spec === 'rest' ? columns.filter((c) => !listed.has(c)) : spec.map((c) => named(c));
+    if (cols.length === 0) continue;
+    const changed = cols.map((c) =>
+      Object.hasOwn(safe, c)
+        ? `(OLD.${ident(c, where)} IS DISTINCT FROM NEW.${ident(c, where)} AND NEW.${ident(c, where)} IS DISTINCT FROM ${safeLiteral(safe[c]!)})`
+        : `OLD.${ident(c, where)} IS DISTINCT FROM NEW.${ident(c, where)}`,
+    );
+    out.push({
+      name: `mantle_edit_check_cols_${need}`,
+      ddl:
+        `CREATE TRIGGER "mantle_edit_check_cols_${need}" BEFORE UPDATE OF ` +
+        `${cols.map((c) => ident(c, where)).join(', ')} ON ${table} ` +
+        `FOR EACH ROW WHEN (${when} AND (${changed.join(' OR ')})) ${fn(need)}`,
+    });
+    const insertSafe = need === 'system' ? [] : cols.filter((c) => Object.hasOwn(safe, c));
+    if (insertSafe.length > 0) {
+      out.push({
+        name: `mantle_edit_check_ins_${need}`,
+        ddl:
+          `CREATE TRIGGER "mantle_edit_check_ins_${need}" BEFORE INSERT ON ${table} ` +
+          `FOR EACH ROW WHEN (${when} AND (${insertSafe
+            .map((c) => `NEW.${ident(c, where)} IS DISTINCT FROM ${safeLiteral(safe[c]!)}`)
+            .join(' OR ')})) ${fn(need)}`,
+      });
+    }
+  }
+
+  if (e.derivedKeys) {
+    if (e.item !== 'self') throw new Error(`${where}: derivedKeys is for nodes`);
+    named('data');
+    out.push({
+      name: 'mantle_edit_check_keys',
+      ddl:
+        `CREATE TRIGGER "mantle_edit_check_keys" BEFORE UPDATE OF "data" ON ${table} ` +
+        `FOR EACH ROW WHEN (${when} AND OLD."data" IS DISTINCT FROM NEW."data") ${fn('edit', 'keys')}`,
+    });
+  }
+  for (const x of out) {
+    if (x.name === EDIT_CHECK_RO_TRIGGER) throw new Error(`${where}: ${x.name} is reserved`);
+  }
+  return out;
+}
+
+/** The note a matrix-made edit check trigger carries (COMMENT ON TRIGGER):
+ *  its statement's hash, so a migrate that changes nothing changes no
+ *  trigger. */
+export function editCheckNote(ddl: string): string {
+  return `mantle:edit-check:${createHash('sha256').update(ddl).digest('hex').slice(0, 24)}`;
+}
+
+/**
+ * Bring one table's A3a triggers to the matrix (editCheckTriggers), inside
+ * the caller's transaction (syncWriteRoleRules: lock_timeout 3 s): drop a
+ * matrix-made trigger the matrix no longer wants or that changed, make the
+ * missing ones, each disabled when the box's edit check is off (so off
+ * costs nothing). A table whose triggers match takes no lock. A database
+ * before 0281 is left as it is.
+ */
+async function syncEditChecks(
+  tx: postgres.TransactionSql,
+  table: string,
+  t: TableAccess | undefined,
+  write: boolean,
+): Promise<void> {
+  const [ready] = await tx<{ ok: boolean }[]>`
+    select to_regprocedure('public.mantle_edit_check_trg()') is not null
+       and to_regclass(${table}) is not null as ok`;
+  if (!ready?.ok) return;
+  const cols = await tx<{ c: string }[]>`
+    select a.attname::text as c from pg_attribute a
+     where a.attrelid = ${table}::regclass and a.attnum > 0 and not a.attisdropped
+       and a.attgenerated = '' order by a.attnum`;
+  const want = t && write ? editCheckTriggers(t, cols.map((r) => r.c)) : [];
+  const have = await tx<{ name: string; note: string }[]>`
+    select tg.tgname::text as name, coalesce(obj_description(tg.oid, 'pg_trigger'), '') as note
+      from pg_trigger tg
+     where tg.tgrelid = ${table}::regclass and not tg.tgisinternal
+       and (tg.tgname = 'mantle_edit_check' or tg.tgname like 'mantle\\_edit\\_check\\_%')
+       and tg.tgname <> ${EDIT_CHECK_RO_TRIGGER}`;
+  const wanted = new Map(want.map((w) => [w.name, w]));
+  const rel = quoteTable(table);
+  let off: boolean | null = null;
+  for (const h of have) {
+    const w = wanted.get(h.name);
+    if (w && h.note === editCheckNote(w.ddl)) {
+      wanted.delete(h.name);
+      continue;
+    }
+    await tx.unsafe(`DROP TRIGGER "${h.name}" ON ${rel}`);
+  }
+  for (const w of wanted.values()) {
+    if (off === null) {
+      const [m] = await tx<{ m: string }[]>`select mantle_check_box_mode('edit_check') as m`;
+      off = m?.m === 'off';
+    }
+    await tx.unsafe(w.ddl);
+    await tx.unsafe(`COMMENT ON TRIGGER "${w.name}" ON ${rel} IS '${editCheckNote(w.ddl)}'`);
+    if (off) await tx.unsafe(`ALTER TABLE ${rel} DISABLE TRIGGER "${w.name}"`);
+  }
 }
 
 /**
@@ -753,9 +1113,10 @@ const RETRY_CODES = new Set(['55P03', '40P01']);
 
 /**
  * The write role's row rules and write checks (mantle_write_role_sync_table,
- * 0278), one table per transaction: every write table, every table with a
- * read rule of the workspace role, and every table that still carries a
- * rule or check of the write role (the matrix's schemas, public and auth). Each waits at most 3 s for its lock and
+ * 0278) and its A3a checks (syncEditChecks), one table per transaction:
+ * every write table, every table with a read rule of the workspace role,
+ * and every table that still carries a rule or check of the write role (the
+ * matrix's schemas, public and auth). Each waits at most 3 s for its lock and
  * is tried again (8 times, 1 s apart): a policy change takes its table's
  * ACCESS EXCLUSIVE lock, so it must be short. A table whose rules match
  * takes no lock. A database migrated part way (no sync function yet) is
@@ -773,7 +1134,9 @@ export async function syncWriteRoleRules(sql: ReturnType<typeof postgres>): Prom
     union
     select distinct n.nspname || '.' || c.relname from pg_trigger tg
       join pg_class c on c.oid = tg.tgrelid join pg_namespace n on n.oid = c.relnamespace
-     where tg.tgname = 'mantle_write_check' and n.nspname in ('public', 'auth')`;
+     where (tg.tgname = 'mantle_write_check' or tg.tgname = 'mantle_edit_check'
+            or tg.tgname like 'mantle\\_edit\\_check\\_%')
+       and tg.tgname <> ${EDIT_CHECK_RO_TRIGGER} and n.nspname in ('public', 'auth')`;
   const tables = [...new Set([...WRITE_ROLE_TABLES, ...others.map((r) => r.t)])].sort();
   for (const table of tables) {
     const t = byTable.get(table);
@@ -785,6 +1148,7 @@ export async function syncWriteRoleRules(sql: ReturnType<typeof postgres>): Prom
           sql.begin(async (tx) => {
             await tx.unsafe(`SET LOCAL lock_timeout = '3s'`);
             await tx`select mantle_write_role_sync_table(${table}, ${write}, ${args}::text[])`;
+            await syncEditChecks(tx, table, t, write);
           }),
         );
         break;

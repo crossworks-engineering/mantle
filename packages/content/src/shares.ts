@@ -17,6 +17,7 @@ import {
   db,
   isSnapshotCopy,
   nodes,
+  runReadPathWrite,
   shares,
   SNAPSHOT_COPY_NO_SHARE,
   type Share,
@@ -478,11 +479,15 @@ export async function isRetiredTeamLinkToken(token: string): Promise<boolean> {
  *  replica, a reader role) is caught here: the view is served and not
  *  counted, instead of an unhandled rejection per view. */
 export async function recordShareView(shareId: string): Promise<void> {
+  // The brain's count, not the link's write: a public link writes nothing
+  // (arch A3a, the read-only refusal), so it runs as a named read-path write.
   await bestEffortWrite('a share view counter', () =>
-    db
-      .update(shares)
-      .set({ viewCount: sql`${shares.viewCount} + 1`, lastViewedAt: new Date() })
-      .where(eq(shares.id, shareId)),
+    runReadPathWrite('backfill:link-views', () =>
+      db
+        .update(shares)
+        .set({ viewCount: sql`${shares.viewCount} + 1`, lastViewedAt: new Date() })
+        .where(eq(shares.id, shareId)),
+    ),
   );
 }
 

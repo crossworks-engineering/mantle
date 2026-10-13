@@ -716,17 +716,10 @@ export async function updateRecallMap(
       // A map renamed back to an old slug takes it off its own former list.
       set.formerSlugs = [...new Set([...map.formerSlugs, map.slug])].filter((s) => s !== next);
       // Cross-map options elsewhere point at this map by slug; keep them live.
-      await tx.execute(sql`
-        update ${recallNodes}
-           set options = (
-             select jsonb_agg(
-               case when o->>'targetMap' = ${map.slug}
-                    then jsonb_set(jsonb_set(o, '{targetMap}', to_jsonb(${next}::text)),
-                                   '{targetSlug}', to_jsonb(${next}::text))
-                    else o end)
-               from jsonb_array_elements(options) o)
-         where owner_id = ${ownerId}
-           and options @> ${JSON.stringify([{ targetMap: map.slug }])}::jsonb`);
+      // They sit in other maps, some the caller may not read or edit: the
+      // brain's own references, rewritten by one definer that asks edit of
+      // this map (mantle_recall_retarget, arch A3a).
+      await tx.execute(sql`select mantle_recall_retarget(${map.id}, ${map.slug}, ${next})`);
     }
     // Nothing changed: no version bump and no "no change" revision to clutter
     // the log (or to be offered as a restore that does nothing).

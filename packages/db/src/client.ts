@@ -988,12 +988,19 @@ function noteWriteRoleGap(route: LoginWriteRoute, what: string): void {
   });
 }
 
+/** A word in a statement's text that is one of `names`; never a match when
+ *  there is none (an empty alternation would match everywhere: the gap list
+ *  is empty since A3a). */
+function nameRegExp(names: readonly string[]): RegExp {
+  return names.length === 0 ? /(?!)/ : new RegExp(`\\b(${names.join('|')})\\b`, 'i');
+}
+
 /** The name of a gap table the write role cannot read, in a statement's
  *  text (a read that names one). */
-const GAP_UNREADABLE_NAME = new RegExp(`\\b(${WRITE_ROLE_GAP_UNREADABLE.join('|')})\\b`, 'i');
+const GAP_UNREADABLE_NAME = nameRegExp(WRITE_ROLE_GAP_UNREADABLE);
 
 /** The name of any gap table in a statement's text. */
-const GAP_TABLE_NAME = new RegExp(`\\b(${Object.keys(WRITE_ROLE_GAP_TABLES).join('|')})\\b`, 'i');
+const GAP_TABLE_NAME = nameRegExp(Object.keys(WRITE_ROLE_GAP_TABLES));
 
 /** A row-locking read (FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY
  *  SHARE): it needs UPDATE on the table, which the write role holds on no

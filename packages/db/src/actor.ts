@@ -405,6 +405,10 @@ export const READ_PATH_WRITES = {
     'GET /api/files/files: make the missing files root row (files ops/shared.ts)',
   'backfill:page-block-ids':
     'GET /api/pages/:id: store missing block ids, for a reader who may edit the page (content pages/read.ts)',
+  'backfill:link-views':
+    'GET /s/:token: count a public link’s view (content shares.ts, recordShareView); a link writes nothing itself (arch A3a)',
+  'backfill:recall-prompt-embeddings':
+    'recall_match and every Recall write: embed the brain’s prompt cards that have no vector yet (content recall.ts)',
 } as const;
 
 export type ReadPathWrite = keyof typeof READ_PATH_WRITES;
