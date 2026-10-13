@@ -182,6 +182,26 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     expect(await memberChatAgent(owner)).toBeNull();
     await admin`update workspaces set archived_at = null where id = ${wsId}`;
     expect(await memberChatAgent(owner)).toMatchObject({ slug: 'team-responder' });
+    // A newer workspace of the member with its own assistant: the oldest
+    // workspace's still answers by default; with that one archived, the next.
+    const [ws2] = await admin<Row[]>`
+      insert into workspaces (owner_id, name, created_at)
+      values (${owner}, 'Projects', now() + interval '1 minute') returning id`;
+    const [other] = await admin<Row[]>`
+      insert into agents (owner_id, slug, name, model, system_prompt, role, workspace_id)
+      values (${owner}, 'projects-assistant', 'Projects', 'm', 'p', 'responder', ${ws2!.id as string})
+      returning id`;
+    await admin`insert into workspace_resources (workspace_id, type, ref_id, write)
+                values (${ws2!.id as string}, 'assistant', ${other!.id as string}, true)`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${ws2!.id as string}, ${member}, false)`;
+    expect(await memberChatAgent(owner)).toMatchObject({ slug: 'team-responder' });
+    await admin`update workspaces set archived_at = now() where id = ${wsId}`;
+    expect(await memberChatAgent(owner)).toMatchObject({ slug: 'projects-assistant' });
+    await admin`update workspaces set archived_at = null where id = ${wsId}`;
+    // Not a user of any: none.
+    await admin`delete from workspace_users where login_id = ${member}`;
+    expect(await memberChatAgent(owner)).toBeNull();
   }, 120_000);
 
   it('the client twin no longer ships (W5c): no client-responder, no client-read', async () => {
