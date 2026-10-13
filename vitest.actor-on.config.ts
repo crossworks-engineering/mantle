@@ -20,6 +20,7 @@ export default defineConfig({
       'packages/db/src/workspaces*.db.test.ts',
       'packages/db/src/write-role.db.test.ts',
       'packages/db/src/matrix/**/*.test.ts',
+      'server/web/server/app-draft-scope.db.test.ts',
     ],
     env: { ...base.test?.env, MANTLE_ACTOR_CHECK: 'on' },
   },

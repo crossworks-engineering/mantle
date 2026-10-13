@@ -12,7 +12,12 @@ export default defineConfig({
   ...base,
   test: {
     ...base.test,
-    include: ['packages/db/src/**/*.test.ts', 'server/web/server/*sweep*.test.ts'],
+    include: [
+      'packages/db/src/**/*.test.ts',
+      'server/web/server/*sweep*.test.ts',
+      // A login's locked draft read on the plain system pool (the default).
+      'server/web/server/app-draft-scope.db.test.ts',
+    ],
     env: { ...base.test?.env, MANTLE_ACTOR_CHECK: 'off' },
   },
 });
