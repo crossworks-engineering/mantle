@@ -344,7 +344,7 @@ export async function sweepLegacyTables(batch = 5): Promise<number> {
       // A store broker write (A3b): the draft_rev bump is its check, so an
       // editor open on the table sees a new revision once.
       await withTableWrite(n.ownerId, n.id, async (_tx, locked, t) => {
-        if (locked.storagePath) return; // raced a lazy migration — fine
+        if (locked.storagePath) return; // raced a lazy migration: fine
         await ensureFileBacked(t, { id: n.id, ownerId: n.ownerId, title: n.title }, locked);
       });
       converted++;

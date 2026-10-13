@@ -97,7 +97,7 @@ export async function applyTableOps(
         const publishedAbs = resolveStoragePath(storagePath);
         const draftAbs = await t.ensureDraft(publishedAbs);
         const res = await t.applyOps(draftAbs, ops, coerceCell);
-        // JSONB draft mirror (rollback safety) — only while it fits the window
+        // JSONB draft mirror (rollback safety): only while it fits the window
         // AND stays single-tab (the mirror can't represent tabs); otherwise null
         // and the file is the sole draft carrier.
         const clipped = readDocClipped(draftAbs, MATERIALIZE_MAX);
@@ -170,7 +170,7 @@ export async function saveTableDraft(
       async (tx, locked, t) => {
         let storagePath = locked.storagePath;
         if (!storagePath && workbook) {
-          // A workbook draft has no JSONB mirror — the file is its ONLY
+          // A workbook draft has no JSONB mirror: the file is its ONLY
           // carrier, so a legacy table converts to file-backed before the
           // draft lands.
           storagePath = (await ensureFileBacked(t, { id, ownerId, title: row.title }, locked))
@@ -179,7 +179,7 @@ export async function saveTableDraft(
         if (storagePath) {
           if (!opts.replace) {
             // Whole-doc writes are only legal while the table itself fits the
-            // window — a windowed doc saved whole would truncate the table
+            // window: a windowed doc saved whole would truncate the table
             // (audit finding 5: an exactly-10k clipped doc slipped the
             // row-count guard). Guard against the LARGEST doc this write would
             // clobber: the draft can have grown past the published stats via
@@ -201,7 +201,7 @@ export async function saveTableDraft(
           .update(tables)
           .set({
             // JSONB draft mirror carries single-tab docs only (the legacy
-            // rollback lever can't represent tabs — v2.1 plan decision 2).
+            // rollback lever can't represent tabs: v2.1 plan decision 2).
             draftData: workbook ? null : doc,
             draftUpdatedAt: new Date(),
           })
@@ -289,7 +289,7 @@ export async function commitTable(
       id,
       async (tx, locked, t) => {
         if (!locked.storagePath) {
-          // Legacy JSONB table: its draft (if any) lives in draftData — fall
+          // Legacy JSONB table: its draft (if any) lives in draftData; fall
           // through to the doc path semantics via the mirror.
           const [p] = await tx
             .select({ draft: tables.draftData })
@@ -308,9 +308,9 @@ export async function commitTable(
         // Promote via VACUUM INTO, not a bare rename (audit findings 1+2):
         // the snapshot reads THROUGH the draft's WAL, so frames a concurrent
         // reader kept un-checkpointed are captured (a checkpoint's status is
-        // advisory and a rename moves only the main file — the old path could
+        // advisory and a rename moves only the main file; the old path could
         // silently drop the newest ops). And the published file is REPLACED
-        // atomically, never deleted first — a crash at any step leaves either
+        // atomically, never deleted first: a crash at any step leaves either
         // the old published file or the new one, both complete.
         await t.promote(draftAbs, publishedAbs);
 
@@ -338,7 +338,7 @@ export async function commitTable(
         const clipped = readDocClipped(publishedAbs, MATERIALIZE_MAX);
         const stats = fileStats(publishedAbs);
         // JSONB mirror: single-tab, in-window docs only (the rollback lever
-        // can't represent tabs — v2.1 plan decision 2).
+        // can't represent tabs: v2.1 plan decision 2).
         const mirror = clipped.clipped || stats.tabs.length > 1 ? {} : ensureTableDoc(clipped.doc);
         await tx
           .update(tables)
