@@ -1,17 +1,21 @@
 import type { MiddlewareHandler } from 'hono';
 import {
-  PUBLIC_PATHS,
   RENDER_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   isDetachedDev,
-  isRenderPath,
+  isPublicPath,
   requestOrigin,
 } from '../../lib/auth-constants';
 import { isAccessKey, type AccessKeyGrant } from '../../lib/access-keys';
 import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
-import { registerRouteSource, routeRef } from '../../lib/auth/route-policy';
+import {
+  registerRouteSource,
+  routeRef,
+  spellsPattern,
+  type RouteRow,
+} from '../../lib/auth/route-policy';
 import { runWithRequestContext } from '../request-context';
-import { servedRoute } from '../route-loader';
+import { servedRoute, type ServedRoute } from '../route-loader';
 import { gateAccessKey } from './access-key-gate';
 import { tokenKind, verifySignedToken } from './token-verify';
 import { env } from '@mantle/config';
@@ -46,8 +50,15 @@ import { ensureGateReady } from '@mantle/tools/gate-narrowers';
  * every session guard and the API key checks, and by a call nested inside
  * the request). The credential checks below are step 1, resolving the
  * caller; enterCall binds the caller, looks the row's policy up, narrows,
- * and opens the request slot the guard fills. A request no route answers
- * (a 404, the /s and /print pages: A4 step 2) runs as before.
+ * and opens the request slot the guard fills. Since A4 step 2 the /s page
+ * and the render pages are routes too (registerPages), each run in its own
+ * actor slot. A request no route answers (a 404, a 405, the stubs) runs as
+ * before.
+ *
+ * The credential questions of a routed request are its row's
+ * (gateRouteView): whether it is public, whether it gets CORS, whether the
+ * render cookie opens it. The path checks below answer only a request no
+ * row answers.
  */
 
 /** Byte-serving asset routes whose <img>/<iframe>/download srcs can't carry a
@@ -89,15 +100,6 @@ function isAssetPath(path: string): boolean {
     // client session.
   );
 }
-
-/** The /s sub-paths a client-origin page may call cross-origin (the share
- *  token is the only credential; team links, and the bearer they took, are
- *  retired): the app brokers, plus the view/rows pair. They get the same CORS
- *  treatment as /api/** — and ONLY they: the /s/<token> HTML page and the
- *  remaining sub-paths (a/, evaluate, draw) stay same-origin surfaces with no
- *  CORS headers at all. */
-const SHARE_BROKER_RE =
-  /^\/s\/[^/]+\/(bundle(\/css)?|frame-ticket|tool-broker|db-broker|view|rows)$/;
 
 /** The owner-surface sandbox frame document. Its iframe navigation carries no
  *  cookie (sandboxed, opaque origin) — auth is the seconds-lived `?t=` frame
@@ -162,13 +164,14 @@ function bearerToken(req: Request): string | null {
  * The caller of a routed request (the gate's step 1, A4 step 1): how it
  * came in. The login is not resolved here yet: the session
  * guard resolves it and names it (setRequestActor), so the caller runs as
- * system(http:no-login), the actor the request slot starts as, and its
- * Admin view is unresolved (`admin: null`: the guard's own requireArea
+ * its row's startsAs (system(http:no-login) for a manifest route, the
+ * actor the request slot starts as), and its Admin view is unresolved (`admin: null`: the guard's own requireArea
  * decides, as before). A4 step 3 resolves the login here.
  */
-function httpCaller(via: CallerVia, accessKey?: AccessKeyGrant): GateCaller {
+function httpCaller(row: RouteRow, via: CallerVia, accessKey?: AccessKeyGrant): GateCaller {
+  const startsAs = systemActor(row.startsAs);
   return {
-    actor: systemActor('http:no-login'),
+    actor: startsAs,
     via,
     // A key's write switch. gateAccessKey judged the key's areas and its
     // read-only switch first, on the same row (requestKeyRoute: the row's
@@ -178,8 +181,61 @@ function httpCaller(via: CallerVia, accessKey?: AccessKeyGrant): GateCaller {
     // (gateAccessKey and accessKeyLogin judge the areas).
     ...(accessKey ? { write: accessKey.access === 'read_write' } : {}),
     admin: null,
-    // The request slot (workspaces W6a), opened for the handler.
-    enterScope: (_writes, fn) => runInRequestSlot(fn),
+    // The request slot (workspaces W6a), opened for the handler. A page of
+    // server/pages (the /s page, a render page; A4 step 2) has no session
+    // guard to fill one: it runs in an actor slot of its own, starting as
+    // its row says, as it did before it had a row.
+    enterScope: row.page
+      ? (_writes, fn) => runInActorSlot(startsAs, fn)
+      : (_writes, fn) => runInRequestSlot(fn),
+  };
+}
+
+/** What the gate reads of a request's route (arch A4 step 2). */
+export type GateRouteView = Readonly<{
+  /** The ROUTE_POLICY row that decides, or null: no route answers, or the
+   *  path spells a static segment of its pattern with escapes (see below). */
+  row: RouteRow | null;
+  /** Let in with no credential (the route judges its own). */
+  public: boolean;
+  /** CORS-eligible: any /api request, and the /s routes a client-origin
+   *  page calls cross-origin (the row's pattern: its preflight too). */
+  cors: boolean;
+  /** The render cookie opens it (GET only: the row's renderCookie). */
+  renderCookie: boolean;
+}>;
+
+/**
+ * The gate's credential questions for one request, answered once: by the
+ * row of a routed request, by the path checks for a request no route
+ * answers (one place each: the row is built from the same functions,
+ * route-policy.ts).
+ *
+ * The router matches the path with its percent-escapes decoded, and the
+ * path checks always read it as sent. So the row decides only when the
+ * path as sent spells its pattern (spellsPattern); a path that spells a
+ * static segment with escapes (`/s/x/%76iew`) is answered by the path
+ * checks, as it was before rows decided (pinned by link-render-sweep).
+ */
+export function gateRouteView(
+  route: ServedRoute | null,
+  method: string,
+  path: string,
+): GateRouteView {
+  const isApi = path === '/api' || path.startsWith('/api/');
+  const spelled = route && spellsPattern(route.pattern, path) ? route : null;
+  const row = spelled?.rows.get(method.toUpperCase()) ?? null;
+  if (row) {
+    return { row, public: row.public, cors: isApi || row.cors, renderCookie: row.renderCookie };
+  }
+  return {
+    row: null,
+    public: isPublicPath(path),
+    // A preflight or another method of a /s route with CORS: no row, the
+    // pattern's own answer.
+    cors: isApi || spelled?.cors === true,
+    // Every path the render cookie opens has a row (route-policy.test.ts).
+    renderCookie: false,
   };
 }
 
@@ -202,7 +258,11 @@ function gateHandler(): MiddlewareHandler {
     const path = url.pathname;
 
     const isApi = path === '/api' || path.startsWith('/api/');
-    const corsEligible = isApi || SHARE_BROKER_RE.test(path);
+    // The request's route, found once (A4 step 1), and what the gate reads
+    // of it (A4 step 2).
+    const route = servedRoute(c);
+    const view = gateRouteView(route, req.method, path);
+    const corsEligible = view.cors;
     const origin = corsEligible ? corsOrigin(req, path) : null;
     const withCors = (res: Response) => {
       if (origin) applyCors(res.headers, origin);
@@ -213,8 +273,9 @@ function gateHandler(): MiddlewareHandler {
     // apply CORS to whatever it produced. `accessKey` is set only when the
     // request was let in by an API key (below). A routed request runs
     // through the one gate with its row (found once, here); a refusal of
-    // the gate is answered by the one mapper.
-    const route = servedRoute(c);
+    // the gate is answered by the one mapper. The row the call runs with is
+    // the route's, even where the path checks answered the credential
+    // questions (an escaped path, above).
     const row = route?.rows.get(req.method.toUpperCase()) ?? null;
     const proceed = async (via: CallerVia, accessKey?: AccessKeyGrant) => {
       const refused = await runWithRequestContext(
@@ -230,7 +291,7 @@ function gateHandler(): MiddlewareHandler {
             await next();
             return null;
           }
-          const out = await enterCall(httpCaller(via, accessKey), routeRef(row), () => next());
+          const out = await enterCall(httpCaller(row, via, accessKey), routeRef(row), () => next());
           if (out.ok) return null;
           if (!out.refusal.http) throw out.error;
           return Response.json(out.refusal.http.body, { status: out.refusal.http.status });
@@ -259,7 +320,7 @@ function gateHandler(): MiddlewareHandler {
       }
     }
 
-    const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
+    const isPublic = view.public;
 
     // An inbound API key (`mtlk_`): judged on itself, before any cookie, so
     // a cookie riding along can never widen what the key may do, and before
@@ -277,7 +338,10 @@ function gateHandler(): MiddlewareHandler {
 
     // Old matcher exclusion: image-suffixed paths bypass the gate entirely
     // (static already had its chance; this just falls through to the 404).
-    if (IMAGE_EXT_RE.test(path)) return proceed('public');
+    // A routed request let in this way judged no credential and may not be
+    // public: its via says so ('unjudged'), never 'public', so no later
+    // step reads it as the row's `public`. Its route's guard decides.
+    if (IMAGE_EXT_RE.test(path)) return proceed(isPublic ? 'public' : 'unjudged');
 
     if (isPublic) return proceed('public');
 
@@ -336,10 +400,10 @@ function gateHandler(): MiddlewareHandler {
 
     // The browser sidecar rendering an export carries a render cookie (kind
     // 'r', set on the print origin only). Accepted for the render surfaces and
-    // the byte routes they load, GET only, and never as a session: anywhere
-    // else it is no credential at all. The route re-checks the login and, on
-    // a render surface, the node the cookie names.
-    if (isRenderPath(path) && req.method === 'GET') {
+    // the byte routes they load, GET only (the row's renderCookie), and never
+    // as a session: anywhere else it is no credential at all. The route
+    // re-checks the login and, on a render surface, the node the cookie names.
+    if (view.renderCookie) {
       const r = cookieValue(req, RENDER_COOKIE_NAME);
       if (r && (await verifySignedToken(r, secret)) && tokenKind(r) === 'r') {
         return proceed('token');

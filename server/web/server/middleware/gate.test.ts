@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { gate } from './gate';
+import { registerPages, registerRoutes, type RouteModule } from '../route-loader';
 
 const SECRET = 's'.repeat(48);
 
@@ -25,7 +26,6 @@ function makeApp() {
   app.get('/api/notes', (c) => c.json({ ok: true }));
   app.get('/api/version', (c) => c.json({ v: 'test' })); // PUBLIC_PATHS entry
   app.get('/api/auth/me', (c) => c.json({ me: true })); // public prefix
-  app.get('/api/files/files/f1', (c) => c.json({ bytes: true }));
   app.get('/api/attachments/a1', (c) => c.json({ bytes: true }));
   app.get('/api/export/e1', (c) => c.json({ bytes: true }));
   app.get('/api/admin/space/i1/bytes', (c) => c.json({ bytes: true }));
@@ -41,7 +41,6 @@ function makeApp() {
   app.get('/api/client/space/i1/comments', (c) => c.json({ comments: true }));
   app.get('/api/member/client-requests/i1/bytes', (c) => c.json({ bytes: true }));
   app.get('/api/member/client-requests/i1', (c) => c.json({ item: true }));
-  app.get('/s/tok123/bundle', (c) => c.json({ broker: true }));
   app.get('/api/apps/a1/frame', (c) => c.text('<!doctype html>'));
   app.post('/api/apps/a1/frame', (c) => c.text('nope'));
   app.get('/api/apps/a1/bundle', (c) => c.text('js'));
@@ -51,11 +50,29 @@ function makeApp() {
   app.post('/api/client/apps/a1/db-broker', (c) => c.json({ ok: true }));
   app.get('/api/apps/members/a1/test/frame', (c) => c.text('<!doctype html>'));
   app.get('/settings', (c) => c.text('page'));
-  app.get('/print/pages/p1', (c) => c.text('print page'));
-  app.get('/print/draws/d1', (c) => c.text('print draw'));
-  app.get('/render/draws/d1', (c) => c.text('render draw'));
-  app.get('/api/draws/d1/svg', (c) => c.text('svg'));
-  app.post('/api/files/files/f1', (c) => c.json({ written: true }));
+  // Since A4 step 2 the gate reads a routed request's CORS and render
+  // cookie from its ROUTE_POLICY row: these register as the app does, on
+  // their real patterns, so they carry their real rows.
+  const route = (pattern: string, mod: RouteModule) => ({
+    pattern,
+    methods: Object.keys(mod),
+    catchAll: null,
+    catchAllOptional: false,
+    load: async () => mod,
+  });
+  registerRoutes(app, [
+    route('/api/files/files/:id', {
+      GET: () => Response.json({ bytes: true }),
+      POST: () => Response.json({ written: true }),
+    }),
+    route('/s/:token/bundle', { GET: () => Response.json({ broker: true }) }),
+    route('/api/draws/:id/svg', { GET: () => new Response('svg') }),
+  ]);
+  registerPages(app, [
+    { pattern: '/print/pages/:id', methods: ['GET'], handle: (c) => c.text('print page') },
+    { pattern: '/print/draws/:id', methods: ['GET'], handle: (c) => c.text('print draw') },
+    { pattern: '/render/draws/:id', methods: ['GET'], handle: (c) => c.text('render draw') },
+  ]);
   return app;
 }
 

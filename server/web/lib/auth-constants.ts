@@ -15,26 +15,15 @@ export const SESSION_COOKIE_NAME = 'mantle_session';
  */
 export const RENDER_COOKIE_NAME = 'mantle_render';
 
-/** The render surfaces themselves: the only pages a render cookie opens, each
- *  bound to the node the cookie names. */
-const RENDER_PAGE_RE = /^\/(?:print\/pages|print\/draws|render\/draws)\/[^/]+$/;
-
 /** The byte routes a render surface loads: page images and scene images
  *  (/api/files/files/:id) and embedded drawings (/api/draws/:id/svg). Nothing
- *  else: not the admin private-space bytes, not any JSON API. */
+ *  else: not the admin private-space bytes, not any JSON API. The render
+ *  pages themselves are ROUTE_POLICY rows of class 'render'
+ *  (lib/auth/route-policy.ts); a row's `renderCookie` is what the gate reads. */
 const RENDER_ASSET_RE = /^\/api\/(?:files\/files\/[^/]+|draws\/[^/]+\/svg)$/;
-
-export function isRenderPagePath(path: string): boolean {
-  return RENDER_PAGE_RE.test(path);
-}
 
 export function isRenderAssetPath(path: string): boolean {
   return RENDER_ASSET_RE.test(path);
-}
-
-/** Every path a render cookie is accepted on (GET only; the gate checks). */
-export function isRenderPath(path: string): boolean {
-  return isRenderPagePath(path) || isRenderAssetPath(path);
 }
 
 // `/s` is the public read-only share surface (token-gated, no session). The
@@ -77,6 +66,15 @@ export const PUBLIC_PATHS = [
   // logins Phase 6: their old page URLs redirect to /login BEFORE this gate
   // (server/pages/stubs.ts mountRetiredTeamPages) and the API paths are gone.
 ];
+
+/**
+ * Whether `path` is under PUBLIC_PATHS: the one function that reads the
+ * list. ROUTE_POLICY builds each row's `public` with it; the gate asks it
+ * only for a request no row answers (arch A4 step 2).
+ */
+export function isPublicPath(path: string): boolean {
+  return PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+}
 
 /**
  * Paths whose routes emit their own richer audit events (`user.*`) — the

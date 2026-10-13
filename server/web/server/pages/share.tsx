@@ -1,6 +1,5 @@
-import type { Context, Hono } from 'hono';
+import type { Context } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { runInActorSlot, systemActor } from '@mantle/db';
 import {
   CONTACT_MENU_LIMIT,
   isRetiredClientLinkToken,
@@ -23,6 +22,7 @@ import { FormulaPresenter } from '@mantle/share-ui/formula-presenter';
 import { DrawPresenter } from '@mantle/share-ui/draw-presenter';
 import { escapeHtml, htmlPage, islandDiv, shareShell } from './template';
 import { env } from '@mantle/config';
+import type { PageRoute } from '../route-loader';
 
 /**
  * The public /s/[token] share surface — the port of app/s/[token]/page.tsx.
@@ -280,8 +280,13 @@ async function renderShare(c: Context): Promise<Response> {
   );
 }
 
-export function mountShare(app: Hono): void {
-  // Arch A2a: the page starts as system(http:share-page); the share gate
-  // names the link or the contact once it admits one.
-  app.get('/s/:token', (c) => runInActorSlot(systemActor('http:share-page'), () => renderShare(c)));
-}
+/**
+ * The /s page, registered by the route loader with its ROUTE_POLICY rows
+ * (class 'link', registerPages; arch A4 step 2). The gate runs it through
+ * enterCall as system(http:share-page) (the row's startsAs); the share gate
+ * (gateShareCookie) names the link or the contact once it admits one.
+ * Registered after the manifest's routes, as before.
+ */
+export const SHARE_PAGES: readonly PageRoute[] = [
+  { pattern: '/s/:token', methods: ['GET'], handle: renderShare },
+];

@@ -52,9 +52,13 @@ beforeEach(() => {
 });
 
 const app = async () => {
-  const { mountShare } = await import('./share');
+  // The page as the app serves it: through the gate, with its row (A4 step 2).
+  const { SHARE_PAGES } = await import('./share');
+  const { gate } = await import('../middleware/gate');
+  const { registerPages } = await import('../route-loader');
   const a = new Hono();
-  mountShare(a);
+  a.use('*', gate());
+  registerPages(a, SHARE_PAGES);
   return a;
 };
 

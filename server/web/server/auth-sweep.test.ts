@@ -19,7 +19,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PUBLIC_PATHS } from '../lib/auth-constants';
+import { PUBLIC_PATHS, isPublicPath as isPublic } from '../lib/auth-constants';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifestPath = join(here, 'route-manifest.gen.ts');
@@ -37,10 +37,6 @@ if (!hasManifest) {
 }
 
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
-
-function isPublic(path: string): boolean {
-  return PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
-}
 
 /** Turn a manifest pattern into one concrete request path. */
 function concretePath(pattern: string): string {

@@ -1,6 +1,6 @@
 import type { Context, Hono } from 'hono';
 import { matchedRoutes } from 'hono/route';
-import { buildRoutePolicy, servedMethods, type RouteRow } from '../lib/auth/route-policy';
+import { buildRoutePolicy, linkCors, servedMethods, type RouteRow } from '../lib/auth/route-policy';
 
 /**
  * Registers the generated route manifest (route-manifest.gen.ts) on a Hono
@@ -20,6 +20,10 @@ import { buildRoutePolicy, servedMethods, type RouteRow } from '../lib/auth/rout
  * A4 step 1), built once here; the gate middleware finds them with
  * servedRoute() and runs the handler through enterCall, which opens the
  * request slot. The loader only runs the handler: it is not a second gate.
+ *
+ * The pages of server/pages (the /s page, the render surfaces) register
+ * here too (registerPages, A4 step 2), each with its row: the plan's
+ * "/s links and their brokers, moved into the loader".
  */
 
 type RouteHandler = (
@@ -61,9 +65,15 @@ function restSegments(pathname: string, prefixSegCount: number): string[] {
   });
 }
 
-/** A route handler the loader registered: its ROUTE_POLICY rows by request
- *  method (none for the 405 answer of another method). */
-export type ServedRoute = Readonly<{ rows: ReadonlyMap<string, RouteRow> }>;
+/** A route handler the loader registered: its pattern, its ROUTE_POLICY
+ *  rows by request method (none for the 405 answer of another method), and
+ *  whether the gate gives its pattern CORS (linkCors; every method, the
+ *  preflight too). */
+export type ServedRoute = Readonly<{
+  pattern: string;
+  rows: ReadonlyMap<string, RouteRow>;
+  cors: boolean;
+}>;
 
 const servedBy = new WeakMap<object, ServedRoute>();
 
@@ -132,7 +142,11 @@ export function registerRoutes(
 
       // HEAD is answered by the GET handler (Hono), with its own row.
       const methods = servedMethods({ pattern: entry.pattern, methods: [method] });
-      servedBy.set(handle, { rows: rowsFor(methods) });
+      servedBy.set(handle, {
+        pattern: entry.pattern,
+        rows: rowsFor(methods),
+        cors: linkCors(entry.pattern),
+      });
       app.on(method, entry.pattern, handle);
     }
 
@@ -155,7 +169,47 @@ export function registerRoutes(
         { status: 405, headers: { Allow: allow } },
       );
     };
-    servedBy.set(leftover, { rows: new Map() });
+    servedBy.set(leftover, {
+      pattern: entry.pattern,
+      rows: new Map(),
+      cors: linkCors(entry.pattern),
+    });
     app.all(entry.pattern, leftover);
+  }
+}
+
+/** A page of server/pages: a Hono handler, its pattern and methods. */
+export type PageRoute = Readonly<{
+  pattern: string;
+  methods: readonly string[];
+  handle: (c: Context) => Response | Promise<Response>;
+}>;
+
+/**
+ * Register the pages of server/pages (the /s page, the render surfaces),
+ * each with its ROUTE_POLICY rows (class link or render; a page of another
+ * class throws). The gate finds the row (servedRoute) and runs the page
+ * through enterCall in the page's own actor slot (the row's startsAs), as
+ * the pages did for themselves before A4 step 2. No 405 answer: another
+ * method falls through to the 404, as before.
+ */
+export function registerPages(
+  app: Hono,
+  pages: readonly PageRoute[],
+  policy: ReadonlyMap<string, RouteRow> = buildRoutePolicy(pages, { page: true }),
+): void {
+  for (const page of pages) {
+    for (const method of page.methods) {
+      // One function per method, so each carries its own rows.
+      const handle = (c: Context) => page.handle(c);
+      const rows = new Map(
+        servedMethods({ pattern: page.pattern, methods: [method] }).flatMap((m) => {
+          const row = policy.get(`${m} ${page.pattern}`);
+          return row ? [[m, row] as const] : [];
+        }),
+      );
+      servedBy.set(handle, { pattern: page.pattern, rows, cors: linkCors(page.pattern) });
+      app.on(method, page.pattern, handle);
+    }
   }
 }

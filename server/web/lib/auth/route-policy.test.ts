@@ -11,6 +11,13 @@
  * Also pinned: the gate's policy of every row lets each HTTP caller through
  * steps 3 to 5 (gateCheck), so enterCall refuses no routed request in step
  * 1; the guards still decide, as before.
+ *
+ * A4 step 2: the pages of server/pages (the /s page, the render surfaces)
+ * have rows too and run through enterCall, and the gate reads a routed
+ * request's credential answers from its row (gateRouteView). Pinned: the
+ * same answers as the path checks they replace (the old SHARE_BROKER_RE
+ * and isRenderPath, copied below as they were) and PUBLIC_PATHS, for every
+ * pattern, method and a path spelled with escapes.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -18,6 +25,8 @@ import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  actorSetting,
+  currentActor,
   currentCaller,
   gateCheck,
   hasRequestSlot,
@@ -28,7 +37,7 @@ import {
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { ACCESS_KEY_AREAS, type AccessKeyArea } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, matchApiV1Route } from '../api-v1';
-import { PUBLIC_PATHS } from '../auth-constants';
+import { isPublicPath } from '../auth-constants';
 import { isAnyLoginRoute } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
 import {
@@ -48,9 +57,11 @@ import {
   registerRouteSource,
   requestKeyRoute,
   routeItemTarget,
+  RENDER_PAGES,
   routeRef,
   rowKeyRoute,
   servedMethods,
+  spellsPattern,
   type RouteRow,
 } from './route-policy';
 
@@ -69,10 +80,6 @@ function pathsOf(pattern: string): string[] {
       .replace(/\*$/, 'a/b'),
     pattern.replace(/:[A-Za-z0-9_]+\??/g, 'x').replace(/\*$/, 'z'),
   ];
-}
-
-function isPublicPath(path: string): boolean {
-  return PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
 type Manifest = Array<{ pattern: string; methods: string[] }>;
@@ -148,6 +155,7 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
   it('classes every row (plan 7)', () => {
     for (const row of table.values()) {
       if (row.pattern.startsWith('/s/')) expect(row.class, row.key).toBe('link');
+      else if (RENDER_PAGES.has(row.pattern)) expect(row.class, row.key).toBe('render');
       else if (row.scope) expect(row.class, row.key).toBe(row.scope.kind);
       else if (row.public) expect(row.class, row.key).toBe('public');
       else expect(row.class, row.key).toBe('self');
@@ -186,7 +194,7 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
   it("the gate's policy of every row lets every HTTP caller through steps 3 to 5", () => {
     ensureGateReady();
     registerRouteSource();
-    const vias: CallerVia[] = ['cookie', 'bearer', 'token', 'public', 'key'];
+    const vias: CallerVia[] = ['cookie', 'bearer', 'token', 'public', 'unjudged', 'key'];
     for (const row of table.values()) {
       for (const via of vias) {
         const caller: GateCaller = {
@@ -312,7 +320,7 @@ describe.skipIf(!hasManifest)('the gate middleware finds the row once and enters
   beforeAll(async () => {
     process.env.SESSION_SECRET = 'route-policy-test-secret-that-is-at-least-32-chars';
     const { gate } = await import('../../server/middleware/gate');
-    const { registerRoutes } = await import('../../server/route-loader');
+    const { registerPages, registerRoutes } = await import('../../server/route-loader');
     const seen = async () =>
       Response.json({
         route: currentRoute()?.key ?? null,
@@ -332,6 +340,21 @@ describe.skipIf(!hasManifest)('the gate middleware finds the row once and enters
         load: async () => ({ GET: seen }),
       },
     ]);
+    // The pages of server/pages (A4 step 2): their real patterns, a handler
+    // that reports what it runs in.
+    const page = async () => {
+      const actor = currentActor();
+      return Response.json({
+        route: currentRoute()?.key ?? null,
+        via: currentCaller()?.via ?? null,
+        slot: hasRequestSlot(),
+        actor: actor ? actorSetting(actor) : null,
+      });
+    };
+    registerPages(app, [
+      { pattern: '/s/:token', methods: ['GET'], handle: page },
+      { pattern: '/print/pages/:id', methods: ['GET'], handle: page },
+    ]);
     app.notFound(() =>
       Response.json({ route: currentRoute()?.key ?? null, slot: hasRequestSlot() }),
     );
@@ -349,8 +372,219 @@ describe.skipIf(!hasManifest)('the gate middleware finds the row once and enters
     expect(head.status).toBe(200);
   });
 
+  it('a page runs in the call: its row bound, its own actor slot, no request slot', async () => {
+    const share = await app.request('/s/abc');
+    expect(await share.json()).toEqual({
+      route: 'GET /s/:token',
+      via: 'public',
+      slot: false,
+      actor: 'system:http:share-page',
+    });
+    const cookie = `mantle_render=${(await import('./tokens')).buildRenderToken({
+      ownerId: '33333333-3333-4333-8333-333333333333',
+      actorId: '55555555-5555-4555-8555-555555555555',
+      nodeId: 'n1',
+    })}`;
+    const print = await app.request('/print/pages/n1', { headers: { cookie } });
+    expect(await print.json()).toEqual({
+      route: 'GET /print/pages/:id',
+      via: 'token',
+      slot: false,
+      actor: 'system:http:render',
+    });
+    // No credential: the gate's login redirect, before the page.
+    expect((await app.request('/print/pages/n1')).status).toBe(307);
+  });
+
   it('a request no route answers runs as before: no row, no slot', async () => {
     const res = await app.request('/api/version/nope');
     expect(await res.json()).toEqual({ route: null, slot: false });
+  });
+});
+
+// ── A4 step 2 ───────────────────────────────────────────────────────────────
+
+/** The gate's path checks before A4 step 2, as they were (gate.ts and
+ *  auth-constants.ts at the step 1 head): what the rows must answer. */
+const OLD_SHARE_BROKER_RE =
+  /^\/s\/[^/]+\/(bundle(\/css)?|frame-ticket|tool-broker|db-broker|view|rows)$/;
+const OLD_RENDER_PAGE_RE = /^\/(?:print\/pages|print\/draws|render\/draws)\/[^/]+$/;
+const OLD_RENDER_ASSET_RE = /^\/api\/(?:files\/files\/[^/]+|draws\/[^/]+\/svg)$/;
+
+/** A path that spells the pattern's first static segment with an escape
+ *  (`/s/x` as `/%73/x`), and one with an escape in each later one. */
+function escapedPathsOf(pattern: string): string[] {
+  const concrete = pathsOf(pattern)[1]!;
+  const segs = concrete.split('/');
+  const esc = (seg: string) =>
+    seg && /^[a-z]/.test(seg)
+      ? `%${seg.charCodeAt(0).toString(16).toUpperCase()}${seg.slice(1)}`
+      : seg;
+  const out: string[] = [];
+  for (let i = 1; i < segs.length; i++) {
+    const copy = [...segs];
+    copy[i] = esc(copy[i]!);
+    out.push(copy.join('/'));
+  }
+  return out;
+}
+
+describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate reads the row', () => {
+  let manifest: Manifest;
+  let pages: Array<{ pattern: string; methods: readonly string[] }>;
+  let pageTable: ReadonlyMap<string, RouteRow>;
+  let app: Hono;
+
+  beforeAll(async () => {
+    manifest = (await import('../../server/route-manifest.gen')).routeManifest;
+    const { SHARE_PAGES } = await import('../../server/pages/share');
+    const { PRINT_PAGES } = await import('../../server/pages/print');
+    pages = [...SHARE_PAGES, ...PRINT_PAGES];
+    pageTable = buildRoutePolicy(pages, { page: true });
+    const { gateRouteView } = await import('../../server/middleware/gate');
+    const { registerPages, registerRoutes, servedRoute } =
+      await import('../../server/route-loader');
+    // The app's own routes and pages; the first handler answers what the
+    // gate would read, so no route ever runs.
+    app = new Hono();
+    app.use('*', async (c) => {
+      const path = new URL(c.req.url).pathname;
+      const v = gateRouteView(servedRoute(c), c.req.method, path);
+      // A header, so a HEAD request reads it too.
+      const view = JSON.stringify({
+        row: v.row?.key ?? null,
+        public: v.public,
+        cors: v.cors,
+        renderCookie: v.renderCookie,
+      });
+      return new Response(null, { status: 204, headers: { 'x-view': view } });
+    });
+    registerRoutes(app, manifest as never);
+    registerPages(
+      app,
+      pages.map((p) => ({ ...p, handle: () => new Response(null) })),
+    );
+  });
+
+  it('the /s page is a link row and the render surfaces render rows: pages, in their own slot', () => {
+    expect([...pageTable.keys()].sort()).toEqual(
+      [
+        'GET /s/:token',
+        'HEAD /s/:token',
+        'GET /print/pages/:id',
+        'HEAD /print/pages/:id',
+        'GET /print/draws/:id',
+        'HEAD /print/draws/:id',
+        'GET /render/draws/:id',
+        'HEAD /render/draws/:id',
+      ].sort(),
+    );
+    for (const row of pageTable.values()) {
+      expect(row.page, row.key).toBe(true);
+      expect(row.effect, row.key).toBe('read');
+      expect(row.cors, row.key).toBe(false);
+      if (row.pattern === '/s/:token') {
+        expect(row.class).toBe('link');
+        expect(row.public).toBe(true);
+        expect(row.startsAs).toBe('http:share-page');
+        expect(row.renderCookie).toBe(false);
+      } else {
+        expect(row.class, row.key).toBe('render');
+        expect(row.public, row.key).toBe(false);
+        expect(row.startsAs, row.key).toBe('http:render');
+        expect(row.renderCookie, row.key).toBe(row.method === 'GET');
+      }
+    }
+    const table = buildRoutePolicy(manifest);
+    for (const row of table.values()) {
+      expect(row.page, row.key).toBe(false);
+      expect(row.startsAs, row.key).toBe('http:no-login');
+    }
+  });
+
+  it("the gate's policy of every page row lets every HTTP caller through steps 3 to 5", () => {
+    ensureGateReady();
+    registerRouteSource();
+    for (const row of pageTable.values()) {
+      for (const via of ['cookie', 'bearer', 'token', 'public'] as CallerVia[]) {
+        const caller: GateCaller = {
+          actor: systemActor(row.startsAs),
+          via,
+          admin: null,
+          enterScope: (_w, fn) => fn(),
+        };
+        expect(gateCheck(caller, routeRef(row)), `${via} ${row.key}`).toBeNull();
+      }
+    }
+  });
+
+  it('a page of another class is refused', () => {
+    expect(() =>
+      buildRoutePolicy([{ pattern: '/api/pages', methods: ['GET'] }], { page: true }),
+    ).toThrow(/page of class/);
+  });
+
+  it('spellsPattern: the path as sent spells the pattern', () => {
+    expect(spellsPattern('/s/:token/view', '/s/abc/view')).toBe(true);
+    expect(spellsPattern('/s/:token/view', '/s/a%2Fb/view')).toBe(true);
+    expect(spellsPattern('/s/:token/view', '/s/abc/%76iew')).toBe(false);
+    expect(spellsPattern('/s/:token/view', '/s//view')).toBe(false);
+    expect(spellsPattern('/s/:token/view', '/s/abc/view/x')).toBe(false);
+    expect(spellsPattern('/api/x.y', '/api/xzy')).toBe(false);
+    expect(spellsPattern('/a/*', '/a')).toBe(true);
+    expect(spellsPattern('/a/*', '/a/b/c')).toBe(true);
+    expect(spellsPattern('/a/*', '/ab')).toBe(false);
+  });
+
+  it('public, CORS and the render cookie: the same answers as the path checks they replace', async () => {
+    const paths = new Set<string>([
+      '/s',
+      '/s/x/unknown',
+      '/s/x/a/b/c',
+      '/print',
+      '/print/other',
+      '/print/pages/x/more',
+      '/render/draws',
+      '/api/files/files/a/b',
+      '/api/draws/x/svg/more',
+      '/api/nothing-here',
+      '/login',
+      '/pair',
+      '/app-runtime/x.js',
+    ]);
+    for (const e of [...manifest, ...pages]) {
+      for (const p of pathsOf(e.pattern)) paths.add(p);
+      for (const p of escapedPathsOf(e.pattern)) paths.add(p);
+      paths.add(`${pathsOf(e.pattern)[0]}/extra`);
+    }
+    const diffs: string[] = [];
+    let routed = 0;
+    for (const path of paths) {
+      for (const method of ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS']) {
+        const res = await app.request(path, { method });
+        const got = JSON.parse(res.headers.get('x-view')!) as {
+          row: string | null;
+          public: boolean;
+          cors: boolean;
+          renderCookie: boolean;
+        };
+        if (got.row) routed += 1;
+        const isApi = path === '/api' || path.startsWith('/api/');
+        const want = {
+          public: isPublicPath(path),
+          cors: isApi || OLD_SHARE_BROKER_RE.test(path),
+          renderCookie:
+            method === 'GET' && (OLD_RENDER_PAGE_RE.test(path) || OLD_RENDER_ASSET_RE.test(path)),
+        };
+        const have = { public: got.public, cors: got.cors, renderCookie: got.renderCookie };
+        if (JSON.stringify(have) !== JSON.stringify(want)) {
+          diffs.push(`${method} ${path}: ${JSON.stringify(have)} != ${JSON.stringify(want)}`);
+        }
+      }
+    }
+    expect(diffs).toEqual([]);
+    // The rows answered most of it: the comparison is not of the path
+    // checks against themselves.
+    expect(routed).toBeGreaterThan(1000);
   });
 });

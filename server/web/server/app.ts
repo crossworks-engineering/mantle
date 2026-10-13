@@ -4,7 +4,7 @@ import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
 import { RedirectError } from './http-compat/redirect-error';
 import { scopeRefusalResponse } from './scope-refusal';
 import { gate } from './middleware/gate';
-import { registerRoutes } from './route-loader';
+import { registerPages, registerRoutes } from './route-loader';
 import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
 import { mountRetiredTeamPages } from './pages/stubs';
 
@@ -30,14 +30,15 @@ export async function createApp(): Promise<Hono> {
   registerRoutes(app, routeManifest);
 
   // Render surfaces (after the API routes: /s/:token must not shadow the
-  // /s/:token/* brokers registered from the manifest).
-  const [{ mountShare }, { mountPrint }, { mountStubs }] = await Promise.all([
+  // /s/:token/* brokers registered from the manifest). The /s page and the
+  // render pages register with their ROUTE_POLICY rows, so the gate runs
+  // them through enterCall (arch A4 step 2); the stubs have no row.
+  const [{ SHARE_PAGES }, { PRINT_PAGES }, { mountStubs }] = await Promise.all([
     import('./pages/share'),
     import('./pages/print'),
     import('./pages/stubs'),
   ]);
-  mountShare(app);
-  mountPrint(app);
+  registerPages(app, [...SHARE_PAGES, ...PRINT_PAGES]);
   mountStubs(app);
 
   // NOTE: notFound + onError run OUTSIDE the gate's ALS frame (Hono's compose

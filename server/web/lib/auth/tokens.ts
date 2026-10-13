@@ -180,8 +180,8 @@ export function verifySessionCookie(
 // external image in a printed page handed the anchor's session to that host
 // (audit F01). Now it is its own kind, minted for the ACTING login, set as a
 // cookie on the print origin only, and the gate accepts it for the render
-// surfaces and the byte routes they load, GET only (isRenderPath in
-// lib/auth-constants.ts). The session, asset and bearer verifiers all reject
+// surfaces and the byte routes they load, GET only (the ROUTE_POLICY rows'
+// `renderCookie`, lib/auth/route-policy.ts). The session, asset and bearer verifiers all reject
 // kind 'r', so it is never a session. `n` binds the page it opens: a render
 // cookie for one drawing cannot print another page.
 

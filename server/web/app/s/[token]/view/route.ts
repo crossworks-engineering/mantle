@@ -14,7 +14,7 @@ import { clientIpKey, rateLimit } from '@/lib/rate-limit';
  * active token). Invalid/revoked tokens 404 uniformly. `mode` is always
  * 'public' (team links are retired); kept so the answer keeps its shape.
  *
- * CORS-eligible via SHARE_BROKER_RE — same treatment as the app brokers.
+ * CORS-eligible (its ROUTE_POLICY row, linkCors): same treatment as the app brokers.
  *
  * Pages ship pre-rendered sanitized HTML + toc: renderPageDoc's escaping stays
  * server-side and katex/lowlight stay out of the client bundle. Folders ship

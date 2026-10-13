@@ -57,8 +57,8 @@ export const ACTOR_BINDER_PINS = {
   'server/web/lib/realtime.ts': 2,
   'server/web/lib/runs/execute-item.ts': 1,
   'server/web/server/main.ts': 3,
-  'server/web/server/middleware/gate.ts': 1,
-  'server/web/server/pages/print.ts': 1,
-  'server/web/server/pages/share.tsx': 1,
+  // The gate's own slot, and a page's (the /s page, a render page: A4 step
+  // 2, moved here from server/pages/share.tsx and print.ts).
+  'server/web/server/middleware/gate.ts': 2,
   'server/web/workers/_runner.ts': 1,
 };

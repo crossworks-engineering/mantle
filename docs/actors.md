@@ -44,8 +44,9 @@ From `@mantle/db`:
   runner's own work).
 - `runInActorSlot(initial, fn)`: an entry whose caller is known only later.
   The gate starts each routed request as `system(http:no-login)` (its
-  request slot, opened through enterCall since A4 step 1). The
-  session guard names the login (a read key: `login(ro)`), the share gate
+  request slot, opened through enterCall since A4 step 1), the /s page as
+  `system(http:share-page)` and a render page as `system(http:render)`
+  (their own slots, since A4 step 2). The session guard names the login (a read key: `login(ro)`), the share gate
   names the link or the contact, an Admin area route becomes
   `system(http:admin-area)` and a login's own things `system(http:login-self)`.
 - `asSystem(fn, reason)`: leave the caller's scope for the system pool. The
@@ -306,9 +307,7 @@ queue-work server/web/workers/maintenance.ts system(worker:maintenance)
 queue-work server/web/workers/microsoft-sync.ts system(worker:microsoft-sync)
 queue-work server/web/workers/runs.ts the run's login as it is now, else login(owner)
 request-slot packages/db/src/viewer.ts defines the helper: runInRequestSlot starts a request as system(http:no-login)
-request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate's own lookups (an API key, a token); a routed request's slot, opened by enterCall: system(http:no-login), then what the guard names
-request-slot server/web/server/pages/print.ts system(http:render), then the render cookie's login
-request-slot server/web/server/pages/share.tsx system(http:share-page), then the link or the contact
+request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate's own lookups (an API key, a token); a routed request's slot, opened by enterCall: system(http:no-login), then what the guard names; a page's own slot (A4 step 2): the /s page as system(http:share-page), then the link or the contact the share gate names; a render page as system(http:render), then the render cookie's login
 timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain sleep inside an app database restore
 timeout-loop packages/content/src/app-table-exports.ts the scheduling caller's actor, which the debounce timer carries to the export sync
 timeout-loop packages/db/src/access-matrix.ts the caller's actor (migrate's): the write role sync's retry sleep
@@ -850,8 +849,31 @@ key's areas: the HTTP caller sets no key areas, so the key narrower does
 not run on HTTP. A
 request slot with no row is refused (`unclassified`), never taken for
 outside a request. The handler's request slot is the caller's
-`enterScope`. A request no route answers (a 404, the /s and /print pages)
-runs as before; they move in A4 step 2.
+`enterScope`.
+
+**HTTP, A4 step 2 (no access changed).** The /s page and the render
+surfaces (/print/pages, /print/draws, /render/draws) are ROUTE_POLICY rows
+too, of class `link` and `render`: the route loader registers them
+(`registerPages`, `server/web/server/route-loader.ts`) and the gate runs
+them through `enterCall` like any route. A page has no session guard to
+fill a request slot, so it runs in an actor slot of its own, starting as
+its row's `startsAs`: `system(http:share-page)` for the /s page (the share
+gate then names the link or the contact), `system(http:render)` for a
+render page (the render guard then names the cookie's login). The /s
+brokers keep starting as `system(http:no-login)`: each runs its flood
+limit before the share gate looks the token up, so the gate does not
+resolve the link itself. A page's row is on the request context too, and a
+broker's request slot has its row, so the `unclassified` refusal (a request
+slot with no row) never meets either (`link-render-sweep.test.ts`). For a
+routed request the gate reads its credential answers from the row
+(`gateRouteView`): `public`, `cors` (the /s routes a client page calls
+cross-origin; was `SHARE_BROKER_RE`) and
+`renderCookie` (was `isRenderPath`). The path checks answer only a request
+no route answers, and a routed one whose path spells a static segment with
+escapes (`/s/x/%76iew`: the router decodes it, the checks never did). A
+request no route answers (a 404, a 405, the stubs) runs as before.
+`server/web/server/link-render-sweep.test.ts` pins every /s and /print
+answer on the wire, written on the step 1 code.
 
 1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null

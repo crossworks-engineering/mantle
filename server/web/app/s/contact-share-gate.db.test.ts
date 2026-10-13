@@ -167,9 +167,13 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
     r.asset = (await import('./[token]/a/[fileId]/route')).GET as unknown as Handler;
     r.db = (await import('./[token]/db-broker/route')).POST as unknown as Handler;
     r.tool = (await import('./[token]/tool-broker/route')).POST as unknown as Handler;
-    const { mountShare } = await import('@/server/pages/share');
+    // The page as the app serves it: through the gate, with its row (A4 step 2).
+    const { SHARE_PAGES } = await import('@/server/pages/share');
+    const { gate } = await import('@/server/middleware/gate');
+    const { registerPages } = await import('@/server/route-loader');
     shareApp = new Hono();
-    mountShare(shareApp);
+    shareApp.use('*', gate());
+    registerPages(shareApp, SHARE_PAGES);
 
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);

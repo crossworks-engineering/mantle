@@ -52,7 +52,9 @@ export type AdminView = { holdsAdmin: boolean; areas: ReadonlySet<string> };
 /** How the caller came in. HTTP (A4): `token` is a short-lived signed
  *  token on the one path shape it opens (an asset `?at=`, a frame ticket,
  *  the render cookie); `public` is a public route the gate lets in without
- *  judging a credential (the route judges its own). */
+ *  judging a credential (the route judges its own); `unjudged` is a
+ *  request the gate let in without judging one on a route that is NOT
+ *  public (the image-suffix bypass): never read it as public. */
 export type CallerVia =
   | 'cookie'
   | 'bearer'
@@ -65,7 +67,8 @@ export type CallerVia =
   | 'app'
   | 'process'
   | 'token'
-  | 'public';
+  | 'public'
+  | 'unjudged';
 
 /** The caller, resolved once at step 1. */
 export type GateCaller = Readonly<{

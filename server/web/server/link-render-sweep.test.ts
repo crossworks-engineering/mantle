@@ -31,14 +31,21 @@ const DRAW = '77777777-7777-4777-8777-777777777777';
 const FILE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const CONTACT = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
-const h = vi.hoisted(() => ({ actors: [] as string[] }));
+const h = vi.hoisted(() => ({
+  actors: [] as string[],
+  routes: [] as { what: string; route: string | null; slot: boolean }[],
+}));
 
 /** Note who the current code runs as (the actor the gate, the share gate
- *  or the render guard named). */
+ *  or the render guard named), and the row and request slot it runs in
+ *  (`routes`, outside the snapshot: the step 1 fix round's 'unclassified'
+ *  check, below). */
 async function seen(what: string): Promise<void> {
   const db = await import('@mantle/db');
+  const { currentRoute } = await import('../lib/auth/route-policy');
   const actor = db.currentActor();
   h.actors.push(`${what}: ${actor ? db.actorSetting(actor) : 'none'}`);
+  h.routes.push({ what, route: currentRoute()?.key ?? null, slot: db.hasRequestSlot() });
 }
 
 vi.mock('@mantle/db', async (importOriginal) => ({
@@ -196,8 +203,12 @@ function normal(text: string): string {
   return text.replace(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g, '<signed>');
 }
 
+/** Every answer the two sweeps gave, by label (the check below compares). */
+const swept = new Map<string, unknown>();
+
 async function answer(app: import('hono').Hono, p: Probe) {
   h.actors.length = 0;
+  h.routes.length = 0;
   const res = await app.request(p.path, p.init);
   const headers: Record<string, string> = {};
   res.headers.forEach((v, k) => {
@@ -380,7 +391,8 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       { label: 'image suffix on a non-public route', path: '/api/files/files/x.png' },
     ];
     const answers: Record<string, unknown> = {};
-    for (const p of probes) answers[p.label] = await answer(app, p);
+    for (const p of probes)
+      answers[p.label] = swept.set(p.label, await answer(app, p)).get(p.label);
     expect(answers).toMatchSnapshot();
   });
 
@@ -515,7 +527,62 @@ describe.skipIf(!hasManifest)('the /s and /print sweep (A4 step 2: the same answ
       },
     ];
     const answers: Record<string, unknown> = {};
-    for (const p of probes) answers[p.label] = await answer(app, p);
+    for (const p of probes)
+      answers[p.label] = swept.set(p.label, await answer(app, p)).get(p.label);
     expect(answers).toMatchSnapshot();
+  });
+
+  // A4 step 1 fix round 1 refuses a request slot with no ROUTE_POLICY row
+  // ('unclassified', session.ts guardRoute). The /s page, its brokers and
+  // the render pages are routed since step 2, so each carries its row on
+  // the request context: a page runs in an actor slot (no request slot, no
+  // guard), a broker in a request slot that has its row. Neither can meet
+  // the refusal, and the answers are the sweep's.
+  it("binds a row on every /s and /print request, so 'unclassified' never fires", async () => {
+    const ORIGIN_ONLY = { headers: { origin: ORIGIN } };
+    const render = `mantle_render=${tokens.buildRenderToken({ ownerId: OWNER, actorId: ADMIN, nodeId: PAGE })}`;
+    const cases: {
+      label: string;
+      path: string;
+      init?: RequestInit;
+      route: string;
+      slot: boolean;
+    }[] = [
+      { label: 'page: open link', path: '/s/live', route: 'GET /s/:token', slot: false },
+      { label: 'page: app link', path: '/s/liveapp', route: 'GET /s/:token', slot: false },
+      {
+        label: 'view: open link',
+        path: '/s/live/view',
+        init: ORIGIN_ONLY,
+        route: 'GET /s/:token/view',
+        slot: true,
+      },
+      {
+        label: 'bundle: app link',
+        path: '/s/liveapp/bundle',
+        init: ORIGIN_ONLY,
+        route: 'GET /s/:token/bundle',
+        slot: true,
+      },
+      {
+        label: 'print page: render cookie',
+        path: `/print/pages/${PAGE}`,
+        init: { headers: { cookie: render } },
+        route: 'GET /print/pages/:id',
+        slot: false,
+      },
+    ];
+    for (const c of cases) {
+      const got = await answer(app, c);
+      // The same answer as the sweep (its snapshot is the step 1 code's).
+      expect(swept.has(c.label), c.label).toBe(true);
+      expect(got, c.label).toEqual(swept.get(c.label));
+      expect(got.body, c.label).not.toContain('unclassified');
+      // The handler reached its reads, each with its row on the request.
+      expect(h.routes.length, c.label).toBeGreaterThan(0);
+      for (const r of h.routes) {
+        expect(r, `${c.label}: ${r.what}`).toEqual({ what: r.what, route: c.route, slot: c.slot });
+      }
+    }
   });
 });

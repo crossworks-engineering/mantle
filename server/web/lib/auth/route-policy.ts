@@ -25,6 +25,13 @@
  *    ITEM_MANAGE_WRITES (itemWriteTarget);
  *  - keyArea, aliasOf: API_V1_ROUTES and the v1 alias files.
  *
+ * Step 2 adds the pages of server/pages (the /s page, class 'link'; the
+ * render surfaces, class 'render'): the loader registers them with their
+ * rows (registerPages), so they run through enterCall too. The gate reads
+ * a routed request's credential answers from its row (gateRouteView in the
+ * gate middleware): `public`, the /s brokers' CORS (`cors`, was the gate's
+ * SHARE_BROKER_RE) and the render cookie (`renderCookie`, was isRenderPath).
+ *
  * The content rows come from the kind registry (@mantle/client-types
  * kinds) through those lists: WORKSPACE_ITEM_PREFIXES, CREATE_ROUTES and
  * the member lists are generated from ITEM_KINDS.
@@ -34,7 +41,7 @@ import { registerPolicySource, type GatePolicy, type PolicyRef } from '@mantle/d
 import type { AccessKeyArea } from '../access-keys';
 import { API_V1_ROUTES, matchApiV1Route, type KeyRoute } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
-import { PUBLIC_PATHS } from '../auth-constants';
+import { isPublicPath, isRenderAssetPath } from '../auth-constants';
 import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
 import {
@@ -48,6 +55,39 @@ import {
   type ItemWriteNeed,
   type RouteClass,
 } from './route-scope';
+
+/**
+ * The render surfaces (server/pages/print.ts): the pages a render cookie
+ * opens, each bound to the node the cookie names. Class 'render'.
+ */
+export const RENDER_PAGES: ReadonlySet<string> = new Set([
+  '/print/pages/:id',
+  '/print/draws/:id',
+  '/render/draws/:id',
+]);
+
+/**
+ * The /s routes a client-origin page may call cross-origin (the share token
+ * is the only credential): the app brokers, plus the view/rows pair. They
+ * get the same CORS treatment as /api/** and ONLY they: the /s/<token> page
+ * and the other sub-paths (a/, evaluate, draw, frame, code) are same-origin
+ * surfaces with no CORS headers at all. Was the gate's SHARE_BROKER_RE.
+ */
+const LINK_CORS_PATTERNS: ReadonlySet<string> = new Set([
+  '/s/:token/bundle',
+  '/s/:token/bundle/css',
+  '/s/:token/frame-ticket',
+  '/s/:token/tool-broker',
+  '/s/:token/db-broker',
+  '/s/:token/view',
+  '/s/:token/rows',
+]);
+
+/** Whether a pattern is one of the /s routes with CORS (any method: the
+ *  gate answers their preflight). */
+export function linkCors(pattern: string): boolean {
+  return LINK_CORS_PATTERNS.has(pattern);
+}
 
 /** The class of a route (plan 7). */
 export type RoutePolicyClass = 'public' | 'link' | 'render' | 'self' | 'area' | 'content';
@@ -100,6 +140,20 @@ export type RouteRow = Readonly<{
   keySelf?: boolean;
   /** A v1 row: the route whose handler it re-exports (D3). */
   aliasOf: string | null;
+  /** A /s route a client-origin page may call cross-origin (linkCors). */
+  cors: boolean;
+  /** The render cookie (kind 'r') opens it: a render page or a byte route
+   *  a render page loads, GET only (the HEAD row does not). */
+  renderCookie: boolean;
+  /** A page of server/pages (registerPages), not a handler of the
+   *  manifest: it runs in an actor slot of its own, with no request slot
+   *  (no session guard fills one). */
+  page: boolean;
+  /** The system reason the request's actor slot starts as, before the
+   *  session guard, the share gate or the render guard names the caller:
+   *  http:no-login for a manifest route, http:share-page for the /s page,
+   *  http:render for a render page. */
+  startsAs: string;
   /** The system reason a public route that writes runs as. Null in step 1:
    *  every public write still runs as system(http:no-login), the request
    *  slot's first actor; step 3 names each (plan 7, 20.3). */
@@ -117,10 +171,6 @@ function markedPath(pattern: string): string {
  *  login with it, W8a): each is a stub that answers any login 410 gone
  *  (lib/gone.ts), about the login only. No other list names them. */
 const CLIENT_PORTAL_GONE = '/api/client/';
-
-function isPublicPath(path: string): boolean {
-  return PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
-}
 
 /** The login list that opens `method pattern`; at most one does. */
 function loginsOf(method: string, pattern: string): RouteLogins | null {
@@ -164,6 +214,7 @@ export function buildRouteRow(
   method: string,
   pattern: string,
   served: (key: string) => boolean = () => false,
+  opts: { page?: boolean } = {},
 ): RouteRow {
   const m = method.toUpperCase();
   const key = `${m} ${pattern}`;
@@ -196,15 +247,23 @@ export function buildRouteRow(
   const classLogins = m === 'HEAD' ? loginsOf('GET', pattern) : logins;
   const cls: RoutePolicyClass | null = pattern.startsWith('/s/')
     ? 'link'
-    : (scope?.kind ??
-      (isPublic
-        ? 'public'
-        : classLogins || pattern.startsWith(CLIENT_PORTAL_GONE)
-          ? 'self'
-          : null));
+    : RENDER_PAGES.has(pattern)
+      ? 'render'
+      : (scope?.kind ??
+        (isPublic
+          ? 'public'
+          : classLogins || pattern.startsWith(CLIENT_PORTAL_GONE)
+            ? 'self'
+            : null));
   // A route no list names is refused here, so a new route is classed
   // before it ships (route-policy.test.ts builds every row).
   if (cls === null) throw new Error(`ROUTE_POLICY: ${key} has no class`);
+  // A page is the /s page or a render surface; nothing else is mounted
+  // outside the manifest.
+  const page = opts.page === true;
+  if (page && cls !== 'link' && cls !== 'render') {
+    throw new Error(`ROUTE_POLICY: ${key} is a page of class ${cls}`);
+  }
   const v1 = v1Route(m, pattern);
   return Object.freeze({
     key,
@@ -226,6 +285,10 @@ export function buildRouteRow(
       ? { keyArea: v1.area, keySelf: v1.self === true }
       : {}),
     aliasOf: aliasOf(m, pattern, served),
+    cors: linkCors(pattern),
+    renderCookie: m === 'GET' && (cls === 'render' || isRenderAssetPath(path)),
+    page,
+    startsAs: page ? (cls === 'render' ? 'http:render' : 'http:share-page') : 'http:no-login',
     actor: null,
   });
 }
@@ -240,20 +303,51 @@ export function servedMethods(entry: RouteManifestEntry): string[] {
   return methods.includes('GET') && !methods.includes('HEAD') ? [...methods, 'HEAD'] : methods;
 }
 
-/** ROUTE_POLICY over a manifest: `METHOD pattern` to its row. */
+/** ROUTE_POLICY over a manifest (or, `page`, over the pages of
+ *  server/pages): `METHOD pattern` to its row. */
 export function buildRoutePolicy(
   manifest: readonly RouteManifestEntry[],
+  opts: { page?: boolean } = {},
 ): ReadonlyMap<string, RouteRow> {
   const keys = new Set(manifest.flatMap((e) => servedMethods(e).map((m) => `${m} ${e.pattern}`)));
   const served = (key: string) => keys.has(key);
   const table = new Map<string, RouteRow>();
   for (const entry of manifest) {
     for (const m of servedMethods(entry)) {
-      const row = buildRouteRow(m, entry.pattern, served);
+      const row = buildRouteRow(m, entry.pattern, served, opts);
       table.set(row.key, row);
     }
   }
   return table;
+}
+
+const spelledRe = new Map<string, RegExp>();
+
+/**
+ * Whether `path`, as the request sent it, spells `pattern`: each static
+ * segment literally, a param as one segment, a trailing `*` as the rest.
+ * The router matches the path with its percent-escapes decoded; the gate's
+ * credential checks always read it as sent. A request whose path spells a
+ * static segment with escapes (`/s/x/%76iew`) is routed, but the gate
+ * answers it by the path checks, as before (arch A4 step 2).
+ */
+export function spellsPattern(pattern: string, path: string): boolean {
+  let re = spelledRe.get(pattern);
+  if (!re) {
+    const star = pattern.endsWith('/*');
+    const segs = (star ? pattern.slice(0, -2) : pattern).split('/');
+    const body = segs
+      .map((seg) => {
+        if (/^:[A-Za-z0-9_]+\?$/.test(seg)) {
+          throw new Error(`spellsPattern: an optional param is not spelled here (${pattern})`);
+        }
+        return /^:[A-Za-z0-9_]+$/.test(seg) ? '[^/]+' : seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      })
+      .join('/');
+    re = new RegExp(`^${body}${star ? '(?:/.*)?' : ''}$`);
+    spelledRe.set(pattern, re);
+  }
+  return re.test(path);
 }
 
 // ── The gate's route source and the stored row ──────────────────────────────
