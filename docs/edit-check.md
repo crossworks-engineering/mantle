@@ -1,0 +1,201 @@
+# The edit check: the database checks writes
+
+Workspaces arch plan v2, phase A3a (sections 5.1 to 5.3, 12, 19 and 20.3).
+Migrations 0280 and 0281. The actors a write runs as are in
+[actors.md](./actors.md); the model is [workspaces.md](./workspaces.md).
+
+Every refusal A3a adds goes through one switch, `mantle.edit_check`, with
+three steps: `off`, `warn`, `on`. Every box starts `off`, and `off` is the
+behaviour before A3a exactly: the edit check's triggers are disabled, so a
+write calls none of them.
+
+## The switch
+
+- `select mantle_set_edit_check('warn')` (or `off`, `on`) is the one way to
+  change it, as the superuser that runs migrations (docs/update-prod.md).
+  It sets the database setting and enables or disables every edit check
+  trigger in one transaction, through `mantle_switch_triggers`, the switch
+  `mantle_set_actor_check` uses too (all locks first, `NOWAIT`, 5 tries).
+- `mantle_edit_check_mode()` is the box setting, raised by a session's own
+  value, never lowered (`mantle_check_mode`, the rule of
+  `mantle.heads_check`). The mode is read only on a refusing path, so an
+  allowed write pays nothing for it.
+- `warn` runs the write and raises a NOTICE
+  `mantle actor miss: edit: <what> (refused when the edit check is on)`. The
+  app logs it as an actor miss: `actor_check_misses`, check name
+  `edit: ...`. `on` refuses: SQLSTATE 42501 with a detail the mapper reads
+  (plan 5.2): `no_read`, `no_edit`, `read_only` (an Informational app's
+  data) or `ro_actor`. `editRefusalDetail` (`packages/db/src/pg-error.ts`)
+  reads it; `isScopeWriteRefusal` knows every message, so each is a 403.
+- The edit check bites only where the actor check is `warn` or `on`: its
+  per-table checks fire for the write role (`mantle_write_user`), which
+  takes a write only then, and the read-only refusal reads
+  `mantle.write_mode`, which the app sets only then. Turn the actor check
+  on first.
+- A pooled connection keeps the setting the database had when it opened:
+  restart the app processes after a change.
+
+## The rule, written once
+
+- `mantle_may_edit_in(ws, mod_ws, home, write_ws)` and
+  `mantle_may_manage_in(mod_ws, home)` are the array forms, pure, for a
+  preview that asks about any set of workspaces (plan 5.1).
+  `mantle_may_edit` and `mantle_may_manage` call them with the scope.
+- `mantle_check_row(home, write_ws, read_ws, need, kind, informational)` and
+  `mantle_check_item(node, need)` answer for every table. The needs: `read`,
+  `edit` (a Moderator of the home, or a grant with Write on), `manage` (a
+  Moderator of the home; an Admin scope for an item with no home), `admin`
+  (the scope holds the Admin workspace: an Admin user), `appdata` (edit, and
+  while the app is Informational an Admin user too: D6), `link` (edit; an
+  app: manage) and `link_close` (`link`, or an Admin user with the users
+  area).
+- The write check of the write role (0278, 0279) asks through
+  `mantle_check_row` too. Same answers.
+
+## The checks per table and operation (plan 5.2)
+
+Declared once, on the table's row of `ACCESS_MATRIX`
+(`packages/db/src/access-matrix.ts`, `editCheck`). Migrate makes the
+triggers (`editCheckTriggers`, in `syncWriteRoleRules`): each named
+`mantle_edit_check_<suffix>`, each calling the one function
+`mantle_edit_check_trg(need, item, via, mode)`, each firing for the write
+role only and only for the operations and columns that need more than the
+write check already asks. A trigger's note (its hash) makes a migrate that
+changes nothing change no trigger; a new one follows the box mode.
+
+| Table                                          | INSERT                                             | UPDATE                                                                                                            | DELETE                                   |
+| ---------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| nodes                                          | the create rules (0266, 0278), unchanged           | edit (0278); every column but the edit columns is the brain's; an embedding only cleared; a derived key only cleared | manage (0266), unchanged                 |
+| pages, draws, tables                           | edit (0278)                                        | edit (0278)                                                                                                       | manage                                   |
+| apps                                           | manage (D4); a switch above its safe value: admin   | the code: manage (D4); the switches and the author: admin (D5); the tool level lowered to team: nothing more        | manage                                   |
+| app_databases                                  | appdata (D6)                                       | appdata (D6)                                                                                                      | manage                                   |
+| recall_maps                                    | edit                                               | edit                                                                                                              | manage                                   |
+| recall_nodes, recall_revisions                 | edit of the map                                    | edit of the map                                                                                                   | edit of the map                          |
+| shares                                         | link; a contact share: admin                       | link; closing it (revoked_at): link_close; a contact share: admin                                                 | link_close; a contact share: admin       |
+| node_snapshots                                 | edit of the item                                   | edit of the item                                                                                                  | edit of the item                         |
+| content_chunks, content_chunk_windows, facts   | the write check (0278), unchanged                  |                                                                                                                   |                                          |
+| item_grants                                    | the write check and the grant definers (0279)      |                                                                                                                   |                                          |
+| node_embeds, peer_shares, contact_share_codes, node_comments | the write role holds no right on them: system work only, refused by construction | | |
+
+- **nodes, deny by default.** The edit columns (`NODE_EDIT_COLUMNS`) are
+  the ones a login's edit changes; the derived ones among them (`home_ws`,
+  `read_ws`, `write_ws`, `login_id`) keep their guards. Every other column
+  (read from the catalog at migrate, so a column a later migration adds is
+  in it) is the brain's: a change is refused. An embedding may be cleared
+  (every content edit clears it), never set.
+- **apps.** The code (`APP_CODE_COLUMNS`) needs a Moderator of the app's
+  home (owner decision D4). The switches and the author
+  (`APP_SWITCH_COLUMNS`: trust its tools, MCP access, data read only, who
+  made it) need an Admin user (D5). Lowering the tool level to team, as the
+  author ceiling does, is always allowed. A new app's row is code: manage.
+- **App data** (D6): edit of the app; while Informational is on, an Admin
+  user only. A member's and a contact's app-data writes run as named system
+  work (`asSystem(..., 'app-data')`, the `/s` broker) after the app's own
+  check; the store brokers are A3b.
+- **Links** follow the guide's table: open, change or close a link needs
+  edit (an app: a Moderator of its home); an Admin user with the users area
+  closes any; a contact share needs an Admin user, its home not checked.
+- A row whose item is gone passes: its foreign key or its row rule decides.
+  A cascade's inner rows are not checked (`pg_trigger_depth`; a foreign
+  key's cascade runs as the table's owner): every cascade starts at a
+  checked statement.
+- **A deleted app's history rows** are the brain's: the trash flows run as
+  `system(app-trash)` and the route asks manage of the stored home
+  (`code.meta.homeWs`), or the owner for an app another login deleted
+  (`server/web/lib/auth/session.ts`). On the write role their row rule
+  follows the node, so a deleted item's rows match nothing there. A6 moves
+  the trash reads into the scope.
+
+## The read-only refusal
+
+`mantle_edit_check_ro`, a statement trigger on every item table but
+`node_acl_head` (a heads lock is not a change), `WHEN mantle.write_mode =
+'ro'`, on every session: a read key, an assistant with no user, a public
+link, a peer and a contact share without Can write write nothing (plan
+4.1). It covers the system pool too: `systemUnder` keeps such a caller's
+system work read only. A named read-path write (`READ_PATH_WRITES`,
+`packages/db/src/actor.ts`) runs as `system(<name>)`, read-write, for any
+caller. A3a named two more: a public link's view counter
+(`backfill:link-views`) and the Recall prompt embeddings a reader's
+`recall_match` heals (`backfill:recall-prompt-embeddings`).
+
+## The heads locks filter by the scope
+
+`mantle_lock_heads` and `mantle_lock_heads_more` (and so
+`mantle_lock_heads_nested` and `mantle_lock_subtree_heads`, which call
+them) drop, for a write-role caller (`mantle_caller_is_write_role`: the
+session, or the `role` setting of the per-database login and the checked
+rerun), the ids whose `read_ws && mantle_scope_ws()` is false. Through the
+gate: `warn` reports and locks them all, `on` drops them.
+
+## The derived keys and the presentation keys
+
+- `mantle_node_derived_keys()` lists the keys of `nodes.data` only the brain
+  sets: the extractor's, the refold's, and markers of system work. The same
+  list, with each key's writers, is `DERIVED_KEY_WRITERS`
+  (`packages/db/src/edit-check.ts`); `packages/db/src/edit-check.test.ts`
+  holds each writer to its key and reads the extractor's writes against the
+  list. A non-system write may clear a derived key (an edit invalidates
+  what the brain derived from the old content), never set or change one. An
+  INSERT is not checked: a copy carries its source's keys and the extractor
+  writes them again.
+- `mantle_node_presentation_keys()` is `rank`: a change of it alone needs
+  edit of the item or of its folder (the write check's exemption, plan
+  20.3).
+- The read-only snapshot copy trigger (0267) keeps its own 13 keys, all on
+  the list (pinned). Folding it onto the list would let a copy change keys
+  it may not change today, on every box: that waits for the edit check to
+  be on everywhere.
+
+## The write-role gaps
+
+A3a moved `node_snapshots`, the Recall tables and `shares` to the write role
+with the checks above. A secret's sealed value goes through
+`mantle_secret_put(node, sealed, key_version)` and a renamed Recall map's
+cross-map options through `mantle_recall_retarget(map, old_slug,
+new_slug)`: definers that check only while a scope is set, through the edit
+check's gate, so the role still holds no right on `secrets` and never
+writes another map's cards itself. Two tables stay on
+`WRITE_ROLE_GAP_TABLES`, decided: `profiles` (a login's settings row, not an
+item; a member's turn writes the brain's row today, an owner question) and
+`app_table_exports` (no login transaction writes it; on the list, a flow
+that does keeps the checked rerun instead of a 500). The rerun mechanism
+stays.
+
+## The tests
+
+- `packages/db/src/matrix/write-grid.db.test.ts`, the exit: every
+  workspace kind, placement and write, as each login and each actor kind,
+  at SQL level with both checks on, against the oracle
+  (`packages/db/src/matrix/oracle.ts`, `expectedWrite`, written from the
+  guide). It needs no switch in production code.
+- `packages/db/src/edit-check.db.test.ts`: the switch, `off` / `warn` /
+  `on`, the read-only refusal, the heads filter, the keys and columns, the
+  app switches, contact shares, the definers, migrate's sync, coverage.
+- `pnpm test:edit-on`: the write-path cells with both checks on
+  (`MANTLE_TEST_EDIT_CHECK` switches each scratch database, as an operator
+  switches a box).
+
+## Cost
+
+- `off`: every edit check trigger is disabled; no statement and no round
+  trip is added (`server/web/server/a2a-round-trips.db.test.ts`, also with
+  `MANTLE_RT_BASELINE=1`).
+- `warn` and `on`: the checks run inside triggers, so no statement and no
+  round trip is added either. A page, drawing or table save fires nothing
+  new (only a delete has a check); a node update fires the derived keys'
+  trigger only when `data` changes.
+
+## Known limits
+
+- **The system pool is not checked by the per-table checks.** An Admin
+  user's HTTP write (until A4), the workers and the scripts run there; the
+  TypeScript checks stay for them (and everywhere: none is removed before
+  its database check is on on every box, plan 7 step 4).
+- **The settings are not a credential.** Any role can set
+  `mantle.write_mode`: on the write role a session that sets `rw` skips
+  only the read-only refusal; the per-table checks and the row rules still
+  hold. No caller-shaped SQL reaches Postgres today.
+- **D4 changes what a Write grant may do** with an app's code once the edit
+  check is on: the app's own gate still asks edit, so such a save is a 403
+  from the database. Watch the `edit:` misses in `warn` before `on`.

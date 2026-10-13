@@ -822,6 +822,51 @@ select check_name, count(*) from actor_check_misses
 Going back is `select mantle_set_actor_check('off');` and a restart of the
 app processes: every write is on the system pool again.
 
+## The edit check (arch A3a, migrations 0280 and 0281)
+
+The database checks writes behind its own switch, `mantle.edit_check`:
+`off` (the default, every box after the roll), `warn` or `on`
+([edit-check.md](./edit-check.md)). The roll changes nothing on a box: the
+first migrate after 0281 makes the edit check's triggers (one short
+transaction per table, as for 0278) and leaves them disabled while the box
+is `off`, so a write calls none of them. On a box whose actor check is
+`warn` or `on` the roll also moves the history rows, the Recall tables and
+the public links to the write role (their row rules apply there, as on
+every other item table).
+
+The check only bites where the actor check is `warn` or `on`: set that
+first. Then, as the superuser that runs the migrations, connected to the
+brain's database:
+
+```sql
+select mantle_set_edit_check('warn');  -- off (default), warn, on
+select mantle_edit_check_mode();
+select count(*) filter (where enabled) as enabled, count(*) as triggers
+  from mantle_edit_check_tables();     -- warn, on: all enabled; off: 0
+```
+
+As `mantle_set_actor_check`, it sets the database setting and switches the
+triggers in one transaction, never waits for a lock (5 tries, 200 ms apart,
+then `55P03` with nothing changed), and needs a restart of the app
+processes to reach every pooled connection. Do not use a bare `alter
+database ... set mantle.edit_check`.
+
+In `warn` every write the check would refuse runs and is logged as an actor
+miss whose check name starts with `edit:`. Read them with numbers only:
+
+```sql
+select left(check_name, 40) as what, count(*) from actor_check_misses
+ where check_name like 'edit:%' and at > now() - interval '1 day'
+ group by 1 order by 2 desc;
+```
+
+Expect, until each is decided: a member with a Write grant who changes an
+app's code (owner decision D4: a Moderator of the app's home does), a
+contact share made by a login that is not an Admin user. `on` refuses with
+a 403. Do not set `on` on any box before its `edit:` misses are zero, and
+never on the Pinnacle showcase box before 2026-10-16 (D4 lands after it).
+Going back is `select mantle_set_edit_check('off');` and a restart.
+
 ## Rollback
 
 ```bash

@@ -587,4 +587,48 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     }
     expect(failures).toEqual([]);
   }, 300_000);
+
+  it('the edit check on adds no statement and no round trip (arch A3a)', async () => {
+    const rows: string[] = [];
+    const failures: string[] = [];
+    for (const p of Object.keys(PATHS) as Path[]) {
+      // The actor check as the path runs it on dev: a member's write on the
+      // write role (on), the rest in warn.
+      const mode = p === 'member page save' ? 'on' : 'warn';
+      const before = await measure(p, mode);
+      await x(sql`select mantle_set_edit_check('on')`);
+      let after: Awaited<ReturnType<typeof measure>>;
+      try {
+        after = await measure(p, mode);
+      } finally {
+        await x(sql`select mantle_set_edit_check('off')`);
+      }
+      const a = tally(before.statements.map(norm));
+      const b = tally(after.statements.map(norm));
+      for (const k of new Set([...a.keys(), ...b.keys()])) {
+        if ((a.get(k) ?? 0) !== (b.get(k) ?? 0)) {
+          failures.push(`${p}: the edit check differs on ${k.slice(0, 160)}`);
+        }
+      }
+      if (after.roundTrips !== before.roundTrips) {
+        failures.push(
+          `${p}: ${after.roundTrips} round trips with the edit check on, ${before.roundTrips} off`,
+        );
+      }
+      rows.push(
+        `| ${p} (${mode}) | ${before.statements.length} / ${before.roundTrips} | ` +
+          `${after.statements.length} / ${after.roundTrips} |`,
+      );
+    }
+    if (process.env.MANTLE_RT_REPORT) {
+      console.log(
+        [
+          '| path (actor check) | edit check off | edit check on |',
+          '| --- | --- | --- |',
+          ...rows,
+        ].join('\n'),
+      );
+    }
+    expect(failures).toEqual([]);
+  }, 300_000);
 });

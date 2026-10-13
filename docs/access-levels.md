@@ -59,6 +59,11 @@ pg_trigger where tgname = 'nodes_share_refresh_after'` (1 is right). A
   `packages/db/src/dump-restore.db.test.ts` dumps and restores a migrated
   brain and fails on any statement a restore cannot run;
   `db-restore-run.db.test.ts` runs the script itself.
+- **The check switches after a restore.** A restore leaves
+  `mantle.actor_check` and `mantle.edit_check` off (a dropped database
+  keeps no setting) and puts both checks' triggers in step with that
+  (`scripts/db-restore.sh`); it says how to set them again
+  ([edit-check.md](./edit-check.md)).
 - **Grant drift.** `pnpm -C server/web workspaces:check` compares the
   derived read columns with the grants and reports drift. It reads only.
 - **Backups before a roll.** The updater takes a strict four-part backup

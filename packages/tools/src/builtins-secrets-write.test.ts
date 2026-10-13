@@ -14,7 +14,8 @@
  * metadata insert and NOT in the tool output. The guard arm asserts that a
  * missing title or value inserts nothing at all: not even the lazy root.
  *
- * The DB edge is three `db.insert().values()` chains, stubbed; `seal` is
+ * The DB edge is two `db.insert().values()` chains and one `execute` of
+ * mantle_secret_put (the sealed value, arch A3a), stubbed; `seal` is
  * stubbed so the test does not need a master key. Tag sanitising and the
  * kind fallback are real.
  */
@@ -28,9 +29,15 @@ const valuesFn = vi.fn((_v: unknown) => ({
   returning: vi.fn(async () => insertedRows),
 }));
 
+const executeFn = vi.fn(async (_q: unknown) => [] as unknown[]);
+
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
-  const db = { ...actual.db, insert: vi.fn(() => ({ values: valuesFn })) };
+  const db = {
+    ...actual.db,
+    insert: vi.fn(() => ({ values: valuesFn })),
+    execute: (q: unknown) => executeFn(q),
+  };
   return {
     ...actual,
     db,
@@ -48,7 +55,9 @@ vi.mock('@mantle/content', async (importOriginal) => {
   return { ...actual, nodeUrl: (id: string) => `https://brain.test/n/${id}` };
 });
 
-import { db, nodes, secrets } from '@mantle/db';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { db, nodes } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { SECRET_TOOLS } from './builtins-secrets';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -112,11 +121,17 @@ describe('secret_create', () => {
       ctx,
     );
 
-    // Three inserts, in order: lazy root, metadata row, sealed payload.
+    // Two inserts, in order: lazy root, metadata row; then the sealed
+    // payload through the one definer (the write role holds no right on
+    // the secrets table, arch A3a).
     const targets = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
-    expect(targets).toEqual([nodes, nodes, secrets]);
+    expect(targets).toEqual([nodes, nodes]);
+    expect(executeFn).toHaveBeenCalledTimes(1);
+    const put = new PgDialect().sqlToQuery(executeFn.mock.calls[0]![0] as SQL);
+    expect(put.sql).toContain('mantle_secret_put(');
+    const sealedRow = { nodeId: put.params[0], keyVersion: put.params[2] };
 
-    const [root, meta, sealedRow] = valuesFn.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    const [root, meta] = valuesFn.mock.calls.map((c) => c[0] as Record<string, unknown>);
     expect(root).toMatchObject({ ownerId: 'o1', type: 'branch', path: 'secrets' });
     expect(meta).toMatchObject({
       ownerId: 'o1',
@@ -138,7 +153,7 @@ describe('secret_create', () => {
     // THE property: the plaintext lands nowhere searchable and is not echoed.
     expect(JSON.stringify(root)).not.toContain(PLAINTEXT);
     expect(JSON.stringify(meta)).not.toContain(PLAINTEXT);
-    expect(JSON.stringify(sealedRow)).not.toContain(PLAINTEXT);
+    expect(JSON.stringify(put.params)).not.toContain(PLAINTEXT);
     const out = outputOf(res);
     expect(JSON.stringify(out)).not.toContain(PLAINTEXT);
     expect(out).toMatchObject({ id: NODE_ID, title: 'Safe PIN', kind: 'password' });
@@ -160,5 +175,6 @@ describe('secret_create', () => {
     expect(seal).not.toHaveBeenCalled();
     // Only root + metadata were attempted; the secrets table was never touched.
     expect(vi.mocked(db.insert).mock.calls.map((c) => c[0])).toEqual([nodes, nodes]);
+    expect(executeFn).not.toHaveBeenCalled();
   });
 });

@@ -225,7 +225,11 @@ describe.skipIf(!URL)('the actor check (arch A2a)', () => {
       m.db.execute(sqlTag`select current_setting('mantle.actor', true) as a`),
     )) as unknown as { a: string | null }[];
     expect(read[0]!.a ?? '').toBe('');
-    expect(m.takeActorMisses()).toEqual([]);
+    // A read key's write is the edit check's read-only refusal when a test
+    // config turned it to warn (arch A3a): reported, never an actor miss.
+    const misses = m.takeActorMisses();
+    expect(misses.filter((x) => !x.check.startsWith('edit: '))).toEqual([]);
+    expect(misses.length).toBe(process.env.MANTLE_TEST_EDIT_CHECK === 'warn' ? 1 : 0);
   });
 
   it('a write outside a transaction leaves no setting on the pooled connection (A2b1, Q1)', async () => {

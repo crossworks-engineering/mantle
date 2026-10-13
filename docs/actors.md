@@ -240,7 +240,11 @@ A read request or read tool that writes is named and pinned in
 read-only key. The scoreboard counts them (`readPathWrites`); the count
 only goes down. Today: closing a caller's abandoned traces, the app-nav
 layout and app-marks backfills, a missing kind root or files root, the
-default documentation collections, and a page's missing block ids.
+default documentation collections, a page's missing block ids, and (A3a) a
+public link's view counter and the Recall prompt embeddings a reader's
+`recall_match` heals. With the edit check on, a read-only caller's own
+write is refused ([edit-check.md](./edit-check.md)): a read path that writes
+must be one of these.
 
 ## The process inventory
 
@@ -530,8 +534,8 @@ check off. Both are tagged as the actor's own for the round-trip test.
 - **Tables the role has no right on.** A typed write (`db.insert(table)`)
   or a single raw write to a table outside `WRITE_ROLE_TABLES` goes to the
   system pool before it is sent. Inside a transaction a table of
-  `WRITE_ROLE_GAP_TABLES` (`access-matrix.ts`: `node_snapshots`, the Recall
-  tables, `shares`, `secrets`, `app_table_exports`, `profiles`) is a "gap":
+  `WRITE_ROLE_GAP_TABLES` (`access-matrix.ts`: since A3a only `profiles` and
+  `app_table_exports`, [edit-check.md](./edit-check.md)) is a "gap":
   a statement whose target is one is never sent, and Postgres's own
   `permission denied for table <t>` for one counts too. The transaction
   rolls back whole (a gap the caller caught in a savepoint as well) and runs
@@ -580,7 +584,7 @@ check off. Both are tagged as the actor's own for the round-trip test.
   copy when the transaction fails, so the first attempt leaves nothing; a
   `withSystemTx`'s commit hooks of the failed attempt are dropped, its
   rollback hooks run. The cost: each such flow runs twice while its table
-  is a gap (A3a moves them).
+  is a gap (A3a moved all but `profiles` and `app_table_exports`).
 - **The visibility confirm reads in the write's own transaction.**
   (`packages/content/src/tree/visibility.ts`) It names every workspace a
   change reaches, those the caller is not in too. What a scoped read
@@ -690,7 +694,7 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   and lock any id they get (the write role now runs
   `mantle_lock_subtree_heads` too). The app reads the ids it locks on the
   system pool and never returns them; the lock functions filter by the scope
-  in A3a (below).
+  since A3a ([edit-check.md](./edit-check.md)).
 - **Derived columns** are kept by two ways: column grants (`derived` in the
   matrix, `item_grants.via_folder_id` only) and the guard triggers
   (`nodes.home_ws`, `read_ws`, `write_ws`, the chunk and fact copies). The
@@ -783,14 +787,23 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   A2b2b): 345 of 405 on the full shape (the write role 6), 305 with
   `MANTLE_RUNS` off, 181 on the core shape.
 
-## A3a must
+## Closed in A3a
 
-- **The ro refusal.** An assistant with no user and a public link write
-  nothing (plan 4.1); a write with `mantle.write_mode = ro` is refused in
-  A3a, not before.
-- **Tables that stay on the system pool until A3a:** `recall_maps`,
-  `recall_nodes`, `shares` and `node_snapshots`. They are not `content`
-  tables in `ACCESS_MATRIX`; A3a adds their checks and then moves them.
-- **The heads locks filter by the scope.** In `mantle_lock_heads` and its
-  siblings, when the caller is not the owner role, drop the ids whose
-  `read_ws && mantle_scope_ws()` is false.
+The database checks writes, behind its own switch, `mantle.edit_check`
+(`off`, `warn`, `on`; every box starts `off`): [edit-check.md](./edit-check.md).
+
+- **The read-only refusal.** A write with `mantle.write_mode = ro` is
+  refused on every item table but the heads rows, on every session: an
+  assistant with no user, a public link, a read key, a peer and a contact
+  share without Can write write nothing.
+- **The gap tables.** `node_snapshots`, `recall_maps`, `recall_nodes`,
+  `recall_revisions` and `shares` are write tables with their checks; a
+  secret's sealed value and a renamed map's cross-map options go through
+  definers. `profiles` and `app_table_exports` stay on the gap list,
+  decided.
+- **The heads locks filter by the scope** on the write role, through the
+  edit check's gate.
+- **The per-table checks of plan 5.2**, the derived keys and the
+  presentation key, the array forms of the edit rule, D4 (app code: a
+  Moderator of the home), D5 (the app switches: Admin users) and D6 (app
+  data under Informational: Admin users), all behind the switch.
