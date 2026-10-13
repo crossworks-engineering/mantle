@@ -831,37 +831,58 @@ production, and no caller's access changed.
 1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null
    is unscoped, a process; absent is unknown and fails an Admin step),
-   the scope it runs in, and what the narrowers read.
-2. **Bind the caller.** `currentCaller()` reads it.
+   the scope it runs in, its entry's create-home rule, and what the
+   narrowers read.
+2. **Bind the caller**, frozen. `currentCaller()` reads it. Work the call
+   starts and does not await (a detached promise, a timer) keeps the
+   caller, as it keeps the actor.
 3. **The declared policy** (`GatePolicy`: effect, Admin step, spends,
-   creates, an actor of its own), from the source registered for the
-   ref's kind; none is refused (`unclassified`). A job's reason is the
-   gate's own source (`{ kind: 'job', name: reason }`, `system(reason)`).
-   Then the actor and the scope are bound: the policy's actor if it names
-   one (a public route that writes, a job), else the caller's, **read only
-   for a read** (plan 4.1: the database knows the write mode, so a call
-   declared a read cannot write an item; a read path's own writes stay the
-   named `READ_PATH_WRITES`).
+   creates, makes items, an actor of its own), from the source registered
+   for the ref's kind; none is refused (`unclassified`). A job's reason is
+   the gate's own source (`{ kind: 'job', name: reason }`,
+   `system(reason)`). Then the actor and the scope are bound: the policy's
+   actor if it names one (a public route that writes, a job), else the
+   caller's, **either one read only for a read** (plan 4.1: the database
+   knows the write mode, so a call declared a read cannot write an item; a
+   read path's own writes stay the named `READ_PATH_WRITES`). A scope no
+   call can run in (no workspace, or a malformed one: `turnScopeProblem`,
+   the check `withTurnScope` runs) is refused here, listing and calling
+   alike (`no-scope`).
 4. **Narrow by surface**, in the fixed order `NARROWERS`: the credential's
    read-only switch (the gate's own), a key's areas, a key's or peer's
-   risky tools, the member-app rule, spending on the owner's keys, the
-   member turn caps. Each registers from its own package
-   (`registerNarrower`); none adds a step.
+   risky tools, the member-app rule, spending on the owner's keys (MCP
+   connections only: a workspace assistant's turn keeps the member turn
+   ledger), the member turn caps. Each registers from its own package
+   (`registerNarrower`); none adds a step. **Fail closed:** while any of
+   them is not registered, `enterCall` and `gateCheck` throw
+   `GateNotReadyError` before any step. A surface where one does not apply
+   registers an explicit no-op. Registering another function under a
+   taken name, or another source for a taken kind, throws.
 5. **The Admin step**: the Admin workspace, an Admin area, or a kind of the
    Admin workspace only.
 6. **The create-home intent** (`createHomeIntent`,
-   `packages/db/src/create-home.ts`): for a login's write, with the
-   workspace the call asked for when it creates.
+   `packages/db/src/create-home.ts`), for the login's own actor and only
+   when nothing around named a home. The entry's `CreateHomeRule` says the
+   rest: its `ownWork`; a workspace it asks for on every call (an assistant
+   turn: its own), else the call's own ask, read only when the policy
+   creates; whether reads name a home; whether a refusal refuses or names
+   none (soft); and a memo. The HTTP guard's rule and the assistant turn's
+   are pinned against `createHomeFor` and `turnCreateHome`
+   (`server/web/lib/auth/create-home-parity.test.ts`,
+   `server/web/lib/auth/turn-gate-parity.test.ts`).
 7. **Run.**
 8. **Map** a refusal with the one mapper (`mapAccessError`,
    `packages/std/src/access-error.ts`): the HTTP status and body and the
    tool text, each as the surfaces answer today.
 
 Listing equals calling: `gateCheck` is steps 3 to 5 without running, and a
-tool list shows what it lets through.
+tool list shows what it lets through. `@mantle/db` exports only `enterCall`,
+`gateCheck`, `gateLists`, `currentCaller` and the two register functions
+(and the types): no surface runs a step on its own.
 
-The sources registered today: `runtime-tool`, `sandbox-mcp-tool` and
-`peer-tool` (`packages/tools/src/runtime-policy.ts`: one function per
-runtime tool row type), and `mcp-tool` with the key, peer and spending
-narrowers (`packages/mcp-core/src/gate-policy.ts`, derived from today's
-lists; A5 declares the policy on each tool). A4 adds `route`.
+The sources and narrowers registered today: `runtime-tool`,
+`sandbox-mcp-tool`, `peer-tool`, the member-app narrower and the turn-caps
+no-op (`packages/tools/src/runtime-policy.ts`), and `mcp-tool` with the
+key, peer and spending narrowers (`packages/mcp-core/src/gate-policy.ts`,
+derived from today's lists; A5 declares the policy on each tool). A
+process that calls the gate loads both packages. A4 adds `route`.
