@@ -6,8 +6,8 @@
  * (lib/list-workspaces.ts). One place says how it is read, so every list
  * says the same.
  *
- * The kind comes from mantle_ws_kind (0285), which answers only for a
- * workspace the scope may name. The colour and icon are checked on the way
+ * The kind comes from mantle_ws_kind (0285; no 'team' kind since 0286),
+ * which answers only for a workspace the scope may name. The colour and icon are checked on the way
  * in with the folder's own validators (lib/look-body.ts) and again on the
  * way out: a value no client can draw goes out as null (the default).
  */
@@ -16,7 +16,7 @@ import { isAppTint } from '@mantle/client-types/app-nav';
 import { projectAppIcon } from '@mantle/content-core/app-nav';
 import type { WorkspaceKind, WorkspaceLook } from '@mantle/client-types';
 
-const KINDS: readonly WorkspaceKind[] = ['admin', 'team', 'private', 'other'];
+const KINDS: readonly WorkspaceKind[] = ['admin', 'private', 'other'];
 
 /** The look of the workspace row aliased `w`, as select columns. */
 export const WS_LOOK_COLUMNS = sql`w.color as look_color, w.icon as look_icon,

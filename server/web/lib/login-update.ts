@@ -214,8 +214,9 @@ export async function applyLoginChange(
       if (Object.keys(changes).length > 0) {
         await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
         // The role still names who is an Admin user (until W5c): keep the
-        // Admin and Team rows in step, as the login bridge's trigger did
-        // before W5b2 turned it off (the function stays, 0261).
+        // Admin row in step, as the login bridge's trigger did before W5b2
+        // turned it off (the function stays, 0261; Admin only since 0286:
+        // a role change never touches another workspace's rows).
         if (changes.role !== undefined) {
           await tx.execute(sql`select "public"."mantle_bridge_login"(${targetId}::uuid)`);
         }

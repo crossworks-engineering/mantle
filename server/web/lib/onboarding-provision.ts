@@ -216,8 +216,10 @@ export async function provisionDefaults(
   if (openrouter) {
     seededSpecialists = await seedSpecialistStack(ownerId);
   }
-  // The persona and the team responder now exist: put them on Admin and Team
-  // (a fresh install was migrated at signup, before they existed; W5b1 M-new).
+  // The persona now exists: put it on Admin (a fresh install was migrated at
+  // signup, before it existed; W5b1 M-new). A fresh install has no Team
+  // workspace (0286), so the team responder stays on no workspace until an
+  // Admin user attaches it to one.
   await attachDefaultAssistantsQuietly('onboarding');
 
   return { createdWorkers: created, createdAgent, skipped, seededSpecialists };

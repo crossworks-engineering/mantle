@@ -21,8 +21,10 @@ export const WORKSPACE_AREAS: readonly WorkspaceArea[] = [
   'keys',
 ];
 
-/** What a workspace is, for its default icon: the Admin workspace, the
- *  Team workspace, a login's private workspace, or any other. */
+/** What a workspace is, for its default icon: the Admin workspace, a
+ *  login's private workspace, or any other. 'team' (the built-in Team
+ *  workspace) comes only from a brain before migration 0286: Team is a
+ *  normal workspace since (its icon was set to the one 'team' drew). */
 export type WorkspaceKind = 'admin' | 'team' | 'private' | 'other';
 
 /**
@@ -50,12 +52,13 @@ export type Workspace = WorkspaceLook & {
   assistant: { id: string; name: string } | null;
   /** The Admin workspace: its users manage the brain (requireArea). */
   isAdmin: boolean;
-  /** Admin or Team, the built-in workspaces: they cannot be renamed or
-   *  archived (hide Rename and Archive there). Their connectors are
-   *  attached here like any workspace's since W5b2. */
+  /** The built-in workspace: Admin only since migration 0286 (Team too
+   *  before). It cannot be renamed or archived (hide Rename and Archive
+   *  there). Its connectors are attached here like any workspace's since
+   *  W5b2. */
   builtIn: boolean;
-  /** Every Admin workspace user is a Moderator here (the Team workspace);
-   *  only an Admin user may remove or demote one of them. */
+  /** Always false since migration 0286 (it marked the built-in Team
+   *  workspace, where every Admin workspace user was a Moderator). */
   adminModerated: boolean;
   archived: boolean;
   userCount: number;
@@ -78,9 +81,9 @@ export type WorkspaceUser = {
   name: string | null;
   email: string;
   moderator: boolean;
-  /** A Moderator here because they are an Admin user and the workspace is
-   *  Admin-moderated: nobody may remove or demote them here (409
-   *  admin_kept); they stop being one by leaving the Admin workspace. */
+  /** Always false since migration 0286 (a Moderator of the Admin-moderated
+   *  Team workspace by being an Admin user). Only an Admin user ticks or
+   *  clears Moderator now (403 admin_only for anyone else). */
   adminViaArea: boolean;
   /** Who added them ("Added by NAME on DATE", plan S1): `name` is the
    *  display name or else the email. null when unknown (the adder's login

@@ -13,7 +13,7 @@
  *  - items without a home: brain items with no home workspace (a migrated
  *    brain gives every new item one, 0261);
  *  - workspaces without a Moderator who can sign in (a user ticked
- *    Moderator, or an Admin user where Admin users moderate), and the Admin
+ *    Moderator; no workspace is Admin-moderated since 0286), and the Admin
  *    workspace on its own. Not the workspaces 0264 made: a "Former user"
  *    workspace has no users by design (an Admin user may join it), and a
  *    private workspace has its login alone, disabled or not;
@@ -52,12 +52,7 @@ moderated AS (
          EXISTS (
            SELECT 1 FROM "public"."workspace_users" u
              JOIN auth.users x ON x."id" = u."login_id" AND x."disabled_at" IS NULL
-            WHERE u."workspace_id" = w."id"
-              AND (u."moderator"
-                   OR (w."admin_moderated" AND EXISTS (
-                         SELECT 1 FROM "public"."workspace_users" au
-                           JOIN "public"."workspaces" aw ON aw."id" = au."workspace_id" AND aw."is_admin"
-                          WHERE au."login_id" = u."login_id" AND aw."owner_id" = w."owner_id")))) AS ok
+            WHERE u."workspace_id" = w."id" AND u."moderator") AS ok
     FROM "public"."workspaces" w, b
    WHERE w."owner_id" = b.brain AND w."archived_at" IS NULL
      AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."workspace_id" = w."id")

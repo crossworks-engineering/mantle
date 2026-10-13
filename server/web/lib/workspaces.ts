@@ -1,6 +1,7 @@
 /**
  * Workspace management (workspaces plan page 4887b8e7, phase W5a; sections
- * 1.1, 1.4, 2.4, 15, R7, S1, 18.8, 18.13 Q1 and Q3, 19.5, 21.8, 21.9).
+ * 1.1, 1.4, 2.4, 15, R7, S1, 18.8, 18.13 Q3, 21.8, 21.9; Q1 reversed by the
+ * owner decision of 2026-10-13, migration 0286).
  *
  * Users are flat. Every permission is set on a workspace: its users, each
  * user's Moderator tick, and its resources (one assistant, connectors with a
@@ -17,20 +18,23 @@
  *    add anyone anywhere, themselves included, private workspaces too (S1,
  *    which replaces 17 R7): logged (subject.self) and shown on the screen as
  *    "Added by NAME on DATE".
- *  - A Moderator of a workspace manages its users (add by search, Moderator
- *    tick, remove) and its name, description and look (colour and icon,
- *    task 5edc9149: the same rule as the name).
- *  - Any login may make a workspace (it becomes its only user, a Moderator)
- *    and leave one, except as its last Moderator.
- *  - In the Admin-moderated workspace (Team) an Admin user stays a
- *    Moderator: nobody demotes or removes one there, Admin users and the
- *    user itself included (19.5, 21.8 row 2).
+ *  - A Moderator of a workspace manages its users (add by search, remove)
+ *    and its name, description and look (colour and icon, task 5edc9149:
+ *    the same rule as the name).
+ *  - Only an Admin user ticks or clears Moderator (mayPromote: setModerator,
+ *    and an add with the tick), on every workspace (owner decision
+ *    2026-10-13). Nobody becomes a Moderator by themselves, with one
+ *    exception: any login may make a workspace, and becomes its only user
+ *    and a Moderator. Any login may leave one, except as its last Moderator.
+ *  - The only built-in workspace is Admin: it keeps its name, cannot be
+ *    archived and keeps a Moderator. Team is a workspace like any other
+ *    since 0286 (renamed, archived and moderated by the same rules).
  *
  * A user of the Admin workspace IS an admin login until W5c (adding one or
  * removing one is the same role change the Users screen makes, through
- * applyLoginChange, which keeps the Admin and Team rows in step with the
- * role). Connectors are attached here only: since W5b2 (0261) no level
- * attaches one.
+ * applyLoginChange, which keeps the Admin row in step with the role).
+ * Connectors are attached here only: since W5b2 (0261) no level attaches
+ * one.
  *
  * Every refusal is a WsError: `{ error, code }` with its status. A workspace
  * or login the caller may not see is 404, never 403. Every change writes a
@@ -231,8 +235,6 @@ type WsRow = LookRow & {
   description: string;
   contact_id: string | null;
   is_admin: boolean;
-  admin_moderated: boolean;
-  bridge_key: string | null;
   landing_app_id: string | null;
   archived_at: string | Date | null;
   user_count: number;
@@ -245,8 +247,8 @@ type WsRow = LookRow & {
 
 function wsSelect(caller: WsCaller, where: ReturnType<typeof sql>, lock = false) {
   return sql`
-    select w.id, w.name, w.description, w.contact_id, w.is_admin, w.admin_moderated,
-           w.bridge_key, w.landing_app_id, w.archived_at, ${WS_LOOK_COLUMNS},
+    select w.id, w.name, w.description, w.contact_id, w.is_admin,
+           w.landing_app_id, w.archived_at, ${WS_LOOK_COLUMNS},
            (select count(*)::int from workspace_users u where u.workspace_id = w.id) as user_count,
            (select count(*)::int from workspace_resources r where r.workspace_id = w.id) as resource_count,
            me.login_id is not null as me_member,
@@ -269,8 +271,10 @@ function toWorkspace(r: WsRow): Workspace {
     contactNodeId: r.contact_id,
     assistant: r.agent_id ? { id: r.agent_id, name: r.agent_name ?? '' } : null,
     isAdmin: r.is_admin,
-    builtIn: builtIn(r),
-    adminModerated: r.admin_moderated,
+    // Admin is the one built-in workspace; no workspace is Admin-moderated
+    // since 0286 (both fields stay for older clients).
+    builtIn: r.is_admin,
+    adminModerated: false,
     archived: r.archived_at !== null,
     userCount: r.user_count,
     resourceCount: r.resource_count,
@@ -373,23 +377,17 @@ async function detail(
       name: string | null;
       email: string;
       moderator: boolean;
-      admin_via: boolean;
       added_by: string | null;
       added_by_name: string | null;
       added_at: string | Date;
     }>(
       q,
       sql`select u.login_id, x.display_name as name, x.email, u.moderator,
-                 (w.admin_moderated and exists (
-                    select 1 from workspace_users au
-                      join workspaces aw on aw.id = au.workspace_id and aw.is_admin
-                     where au.login_id = u.login_id and aw.owner_id = w.owner_id)) as admin_via,
                  u.added_by, coalesce(nullif(btrim(b.display_name), ''), b.email) as added_by_name,
                  u.added_at
             from workspace_users u
             join auth.users x on x.id = u.login_id
             left join auth.users b on b.id = u.added_by
-            join workspaces w on w.id = u.workspace_id
            where u.workspace_id = ${id}
            order by lower(coalesce(x.display_name, x.email))`,
     ),
@@ -409,7 +407,9 @@ async function detail(
     name: u.name,
     email: u.email,
     moderator: u.moderator,
-    adminViaArea: u.admin_via,
+    // Nobody is a Moderator by the Admin area since 0286 (kept for older
+    // clients).
+    adminViaArea: false,
     addedBy: u.added_by && u.added_by_name ? { loginId: u.added_by, name: u.added_by_name } : null,
     addedAt: new Date(u.added_at).toISOString(),
   }));
@@ -476,13 +476,14 @@ async function event(
 // ── Create and change ────────────────────────────────────────────────────────
 
 /** Names are not unique (0255, audit M3): a clash with a workspace the
- *  caller cannot see would tell them it exists. Only the names of the Admin
- *  and Team workspaces are reserved, and everybody knows those two. */
+ *  caller cannot see would tell them it exists. Only the name of the Admin
+ *  workspace is reserved, and everybody knows it ("Team" too until 0286:
+ *  it is a name like any other now). */
 const RESERVED = () =>
   new WsError(
     409,
     'reserved_name',
-    'Admin and Team are the names of the built-in workspaces. Pick another name.',
+    'Admin is the name of the built-in Admin workspace. Pick another name.',
   );
 
 function nameError(err: unknown): WsError | null {
@@ -492,21 +493,15 @@ function nameError(err: unknown): WsError | null {
   return null;
 }
 
-/** The reserved names, in code (fix round 2, L-3): for any workspace but
- *  the built-in ones, whatever the built-in ones are called. The index
- *  (0255) is the backstop. */
+/** The reserved name, in code (fix round 2, L-3): for any workspace but
+ *  Admin. The index (0255, 0286) is the backstop. */
 function refuseReservedName(name: string): void {
-  const n = name.trim().toLowerCase();
-  if (n === 'admin' || n === 'team') throw RESERVED();
-}
-
-/** The Admin and Team workspaces (the bridges' rows). */
-function builtIn(w: WsRow): boolean {
-  return w.is_admin || w.bridge_key !== null;
+  if (name.trim().toLowerCase() === 'admin') throw RESERVED();
 }
 
 /** POST /api/workspaces: the maker is its only user and a Moderator (plan
- *  15). Not Admin-moderated: that is the Team workspace only (21.9). */
+ *  15; kept by the owner decision of 2026-10-13: the one way to become a
+ *  Moderator without an Admin user). */
 export async function createWorkspace(
   caller: WsCaller,
   body: { name: string; description?: string },
@@ -538,20 +533,14 @@ export async function createWorkspace(
   return (await getWorkspace(caller, id)).workspace;
 }
 
-/** Whether only Admin users set the look of the built-in workspaces
- *  (Admin, Team): every login moderates Team. An open owner question
- *  (2026-10-13); off = the rename rule. The client's twin is canSetLook. */
-const BUILT_IN_LOOK_ADMIN_ONLY = false;
-
 /**
  * Who may change what a workspace is called and how it looks (task
- * 5edc9149): ONE check for the name, the description and the look. An
- * Admin user (the users area) or a Moderator of it. `look`: the change
- * names the colour or the icon.
+ * 5edc9149): ONE check for the name, the description and the look, the
+ * same for every workspace. An Admin user (the users area) or a Moderator
+ * of it: on Admin, its Moderators are Admin users.
  */
-function mayChangeAbout(seen: Seen, look: boolean): boolean {
-  if (seen.admin) return true;
-  return seen.mod && !(look && BUILT_IN_LOOK_ADMIN_ONLY && builtIn(seen.row));
+function mayChangeAbout(seen: Seen): boolean {
+  return seen.admin || seen.mod;
 }
 
 /** PATCH /api/workspaces/:id. */
@@ -575,15 +564,15 @@ export async function patchWorkspace(
       if (w.archived_at !== null) throw archivedError();
       const look = body.color !== undefined || body.icon !== undefined;
       const own = body.name !== undefined || body.description !== undefined || look;
-      if (own && !mayChangeAbout(seen, look)) {
+      if (own && !mayChangeAbout(seen)) {
         throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
       }
       if (body.name !== undefined && body.name !== w.name) {
-        // The built-in workspaces keep their names (fix round 2, L-3): a
-        // renamed Team would free "Team" for anyone, and a later clash
-        // would tell them it exists.
-        if (builtIn(w)) {
-          throw new WsError(409, 'reserved_name', 'The built-in workspaces keep their names.');
+        // Admin keeps its name (fix round 2, L-3): a renamed Admin would
+        // free "Admin" for anyone, and a later clash would tell them it
+        // exists. Every other workspace, Team too (0286), is renamed.
+        if (w.is_admin) {
+          throw new WsError(409, 'reserved_name', 'The Admin workspace keeps its name.');
         }
         refuseReservedName(body.name);
       }
@@ -812,9 +801,6 @@ function mayArchive(seen: Seen): void {
   if (seen.row.is_admin) {
     throw new WsError(409, 'admin_workspace', 'The Admin workspace cannot be archived.');
   }
-  if (seen.row.bridge_key !== null) {
-    throw new WsError(409, 'built_in', 'Team is a built-in workspace: it cannot be archived.');
-  }
   if (seen.row.archived_at !== null) throw archivedError();
 }
 
@@ -884,7 +870,7 @@ export async function archiveWorkspace(
   return { workspace: toWorkspace({ ...row, archived_at: new Date() }), ...applied };
 }
 
-// ── Users (plan 18.13 Q1 and Q3, R7, 18.8, 19.5) ─────────────────────────────
+// ── Users (plan 18.13 Q3, R7, 18.8; the owner decision of 2026-10-13) ───────
 
 type LoginRow = { id: string; role: string; disabled: boolean };
 
@@ -895,16 +881,6 @@ async function loginOf(q: Exec, loginId: string): Promise<LoginRow | null> {
     sql`select id, role, disabled_at is not null as disabled from auth.users where id = ${loginId}`,
   );
   return r ?? null;
-}
-
-async function isAdminUser(q: Exec, anchorId: string, loginId: string): Promise<boolean> {
-  const [r] = await rows<{ ok: boolean }>(
-    q,
-    sql`select exists (
-          select 1 from workspace_users u join workspaces w on w.id = u.workspace_id
-           where w.owner_id = ${anchorId} and w.is_admin and u.login_id = ${loginId}) as ok`,
-  );
-  return r?.ok === true;
 }
 
 async function userRow(
@@ -940,6 +916,26 @@ function mayManageUsers(seen: Seen): void {
     throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can manage its users.');
   }
   if (seen.row.archived_at !== null) throw archivedError();
+}
+
+/**
+ * Who ticks or clears Moderator (owner decision 2026-10-13): an Admin user
+ * only (the users area), on every workspace, Admin included. The ONE check
+ * for setModerator and for an add with the tick; a Moderator of the
+ * workspace still adds users without it and removes users. Nobody becomes a
+ * Moderator by themselves: the maker of a workspace is the one exception
+ * (createWorkspace), and an admin login joins Admin as one (the login
+ * bridge, mantle_bridge_login).
+ */
+function mayPromote(seen: Seen): void {
+  mayManageUsers(seen);
+  if (!seen.admin) {
+    throw new WsError(
+      403,
+      'admin_only',
+      'Only an Admin user can make someone a Moderator or take the tick away.',
+    );
+  }
 }
 
 /** The Admin-workspace role change behind adding or removing a user there.
@@ -1013,11 +1009,12 @@ async function adminRoleChange(
   }
 }
 
-/** POST /api/workspaces/:id/users. A Moderator adds anyone (Q3); an Admin
- *  user adds anyone anywhere, itself included, private workspaces too (S1):
- *  logged with subject.self and shown as "Added by NAME on DATE". On the
- *  Admin workspace the add is the role change to admin (W5a). In the
- *  Admin-moderated workspace an Admin user is always a Moderator (18.8). */
+/** POST /api/workspaces/:id/users. A Moderator adds anyone (Q3), without
+ *  the Moderator tick; an Admin user adds anyone anywhere, itself included,
+ *  private workspaces too (S1), with or without it (mayPromote): logged
+ *  with subject.self and shown as "Added by NAME on DATE". On the Admin
+ *  workspace the add is the role change to admin (W5a), a Moderator there
+ *  unless the add says otherwise. */
 export async function addUser(
   caller: WsCaller,
   id: string,
@@ -1026,14 +1023,15 @@ export async function addUser(
   // Who may add comes first (audit L1): a caller who may not manage this
   // workspace learns nothing about the login it names.
   const pre = await seeWorkspace(caller, id);
-  mayManageUsers(pre);
+  const gate = body.moderator === true ? mayPromote : mayManageUsers;
+  gate(pre);
   const wid = pre.row.id;
   const target = await loginOf(db, body.loginId);
   if (!target) throw new WsError(404, 'not_found', 'User not found.');
   const self = target.id === caller.loginId;
   const checks = async (q: Exec): Promise<Seen> => {
     const seen = await seeWorkspace(caller, wid, q, true);
-    mayManageUsers(seen);
+    gate(seen);
     if (await userRow(q, wid, target.id)) {
       throw new WsError(409, 'already_user', 'This person is already a user of this workspace.');
     }
@@ -1067,9 +1065,8 @@ export async function addUser(
     return reread(caller, wid);
   }
   await db.transaction(async (tx) => {
-    const seen = await checks(tx);
-    const kept = seen.row.admin_moderated && (await isAdminUser(tx, caller.anchorId, target.id));
-    const moderator = kept || (body.moderator ?? false);
+    await checks(tx);
+    const moderator = body.moderator ?? false;
     await tx.execute(
       sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
           values (${wid}, ${target.id}, ${moderator}, ${caller.loginId})`,
@@ -1079,22 +1076,8 @@ export async function addUser(
   return reread(caller, wid);
 }
 
-/** In the Admin-moderated workspace (Team) an Admin user stays a Moderator
- *  (19.5, 21.8 row 2): nobody demotes or removes one there, Admin users and
- *  the user itself included. They stop being one by leaving the Admin
- *  workspace. */
-async function guardAdminKept(tx: Exec, caller: WsCaller, seen: Seen, loginId: string) {
-  if (!seen.row.admin_moderated) return;
-  if (await isAdminUser(tx, caller.anchorId, loginId)) {
-    throw new WsError(
-      409,
-      'admin_kept',
-      'Admin users always moderate this workspace. They cannot be demoted or removed here.',
-    );
-  }
-}
-
-/** PATCH /api/workspaces/:id/users/:loginId. */
+/** PATCH /api/workspaces/:id/users/:loginId: an Admin user ticks or
+ *  clears Moderator (mayPromote). Never the last Moderator. */
 export async function setModerator(
   caller: WsCaller,
   id: string,
@@ -1105,14 +1088,11 @@ export async function setModerator(
   await db
     .transaction(async (tx) => {
       const seen = await seeWorkspace(caller, wid, tx, true);
-      mayManageUsers(seen);
+      mayPromote(seen);
       const row = UUID_RE.test(loginId) ? await userRow(tx, wid, loginId) : null;
       if (!row) throw new WsError(404, 'not_user', 'This person is not a user of this workspace.');
       if (row.moderator === moderator) return;
-      if (!moderator) {
-        if ((await otherModerators(tx, wid, loginId)) === 0) throw LAST_MOD();
-        await guardAdminKept(tx, caller, seen, loginId);
-      }
+      if (!moderator && (await otherModerators(tx, wid, loginId)) === 0) throw LAST_MOD();
       await tx.execute(
         sql`update workspace_users set moderator = ${moderator}
            where workspace_id = ${wid} and login_id = ${loginId}`,
@@ -1136,9 +1116,8 @@ function lastAdminError(err: unknown): WsError | null {
 }
 
 /** DELETE /api/workspaces/:id/users/:loginId: a Moderator or an Admin user
- *  removes a user; anyone may leave. Never the last Moderator, never an
- *  Admin user from the Admin-moderated workspace. On the Admin workspace it
- *  is the role change to member (W5a). */
+ *  removes a user; anyone may leave. Never the last Moderator. On the Admin
+ *  workspace it is the role change to member (W5a). */
 export async function removeUser(
   caller: WsCaller,
   id: string,
@@ -1154,7 +1133,6 @@ export async function removeUser(
     const row = UUID_RE.test(loginId) ? await userRow(q, wid, loginId) : null;
     if (!row) throw new WsError(404, 'not_user', 'This person is not a user of this workspace.');
     if (row.moderator && (await otherModerators(q, wid, loginId)) === 0) throw LAST_MOD();
-    await guardAdminKept(q, caller, seen, loginId);
   };
   if (pre.row.is_admin) {
     await adminRoleChange(

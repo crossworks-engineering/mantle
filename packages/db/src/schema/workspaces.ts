@@ -46,9 +46,12 @@ export const workspaces = pgTable(
     /** Information only: who this workspace represents. Never a permission. */
     contactId: uuid('contact_id').references(() => nodes.id, { onDelete: 'set null' }),
     isAdmin: boolean('is_admin').notNull().default(false),
-    /** Admin workspace users are Moderators here, kept by trigger. */
+    /** Retired (0286): it marked the old built-in Team workspace, whose
+     *  Admin users were kept as Moderators. False on every workspace; no
+     *  rule reads it. */
     adminModerated: boolean('admin_moderated').notNull().default(false),
-    /** The brain's workspaces the bridges keep ('admin', 'team'; 0250). */
+    /** The workspace the login bridge keeps: 'admin' (0250). 'team' named
+     *  the old built-in Team workspace until 0286 made it a normal one. */
     bridgeKey: text('bridge_key'),
     /** The workspace's home app (0276): its landing page shows it in place
      *  of the Built-in home while the workspace holds the app and its
@@ -71,10 +74,11 @@ export const workspaces = pgTable(
     uniqueIndex('workspaces_bridge_key_uq')
       .on(t.ownerId, t.bridgeKey)
       .where(sql`${t.bridgeKey} is not null`),
-    // Only the Admin and Team names are reserved (0255, W5a audit M3).
+    // Only the Admin name is reserved (0255, W5a audit M3; "Team" too until
+    // 0286).
     uniqueIndex('workspaces_reserved_name_uq')
       .on(t.ownerId, sql`lower(btrim(${t.name}))`)
-      .where(sql`${t.archivedAt} is null and lower(btrim(${t.name})) in ('admin', 'team')`),
+      .where(sql`${t.archivedAt} is null and lower(btrim(${t.name})) = 'admin'`),
     index('workspaces_landing_app_idx')
       .on(t.landingAppId)
       .where(sql`${t.landingAppId} is not null`),

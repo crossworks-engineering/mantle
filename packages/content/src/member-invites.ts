@@ -430,9 +430,10 @@ export async function redeemMemberInvite(
         contactId: invite.contactId,
       });
 
-      // A member is a Moderator of the Team workspace (plan Q1): the login
-      // function of 0251 (its trigger is off since W5b2) adds the row and
-      // logs it.
+      // The login bridge (0251, its trigger off since W5b2) keeps the Admin
+      // row in step with the role: a member joins no workspace (0286; plan
+      // Q1 reversed 2026-10-13). Its private workspace comes the first time
+      // it needs one; an Admin user adds it to any other.
       await tx.execute(sql`select "public"."mantle_bridge_login"(${loginId}::uuid)`);
 
       const marked = await tx

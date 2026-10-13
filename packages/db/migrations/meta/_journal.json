@@ -1996,6 +1996,13 @@
       "when": 1790196360000,
       "tag": "0285_workspace_look",
       "breakpoints": true
+    },
+    {
+      "idx": 286,
+      "version": "7",
+      "when": 1790196420000,
+      "tag": "0286_workspaces_team_normal",
+      "breakpoints": true
     }
   ]
 }
