@@ -97,7 +97,7 @@ export function isHiddenRowsRefusal(err: unknown): boolean {
 }
 
 /** The words a person sees for it (HTTP and the tools). */
-export const HIDDEN_ROWS_MESSAGE = 'This folder holds items you cannot move.';
+export { HIDDEN_ROWS_PUBLIC as HIDDEN_ROWS_MESSAGE } from '@mantle/std';
 
 /** The detail of an edit check refusal (42501 with one of the details
  *  above, mantle_edit_refuse), else null. */

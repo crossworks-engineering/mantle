@@ -814,10 +814,16 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
         await tx`select mantle_lock_subtree_heads(${folder}::uuid, '{}'::uuid[])`;
         const [r] = await tx<{ n: number }[]>`
           select mantle_subtree_rewrite(${L.owner}, ${`notes.${tag}mv`}::ltree, ${`notes.${tag}mv2`}::ltree) as n`;
-        // Every row moved: the folder, the note it reads, the one it cannot.
-        const [h] = await tx<{ n: number }[]>`
-          select mantle_subtree_hidden(${L.owner}, ${`notes.${tag}mv2`}::ltree) as n`;
-        expect(h!.n).toBe(1);
+        // Every row moved: the folder, the note it reads, the one it cannot
+        // (the one rule now refuses the new path: the hidden row is there).
+        await tx`savepoint h`;
+        const here = await tx`
+          select mantle_subtree_refuse_hidden(${L.owner}, ${`notes.${tag}mv2`}::ltree)`.then(
+          () => null,
+          (e: { detail?: string }) => e.detail ?? 'refused',
+        );
+        await tx`rollback to savepoint h`;
+        expect(here).toBe('hidden_rows');
         return { count: r!.n };
       });
     // A rename (the same parent): every row moves, the hidden one too.
@@ -871,6 +877,32 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     expect(await intoWide()).toMatchObject({
       code: '42501',
       message: 'placing this app adds a workspace you do not moderate',
+    });
+    // A rename of that folder (the same parent) asks nothing (N2).
+    expect(
+      await attempt(who.homeMod, async (tx) => {
+        await tx`select mantle_lock_subtree_heads(${box}::uuid, '{}'::uuid[])`;
+        const [r] = await tx<{ n: number }[]>`
+          select mantle_subtree_rewrite(${L.owner}, ${`notes.${tag}box`}::ltree,
+                                        ${`notes.${tag}box9`}::ltree) as n`;
+        return { count: r!.n };
+      }),
+    ).toMatchObject({ rows: 2 });
+    // An app "Removed here" from O: the move does not add O to it, so the
+    // move asks nothing of O, in on (no refusal) and in warn (no miss).
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${app}]::uuid[], 'update')`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write, excluded)
+               values (${app}, ${ws.O}, false, false, true)`;
+    });
+    expect(await intoWide()).toMatchObject({ rows: 2 });
+    await setMode('warn');
+    const warned = await intoWide();
+    expect(warned).toMatchObject({ rows: 2 });
+    expect(editMisses(warned)).toEqual([]);
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${app}]::uuid[], 'update')`;
+      await tx`delete from item_grants where node_id = ${app} and workspace_id = ${ws.O}`;
     });
     await setMode('off');
     expect(await intoWide()).toMatchObject({ rows: 2 });

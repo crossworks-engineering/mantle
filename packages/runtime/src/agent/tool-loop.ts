@@ -994,7 +994,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         if (!outcome.ok && typeof outcome.error === 'string') {
           outcome = {
             ...outcome,
-            error: publicToolError(outcome.error, watched.texts, `tool ${slug}`),
+            error: publicToolError(outcome.error, watched.texts, `tool ${slug}`, watched.errors),
           };
         }
       }

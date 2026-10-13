@@ -474,7 +474,11 @@ async function callConnectorTool(
   }
   logConnectorCall(caller, row, args, write);
   try {
-    const { value: result, texts } = await watchDatabaseErrors(() =>
+    const {
+      value: result,
+      texts,
+      errors,
+    } = await watchDatabaseErrors(() =>
       dispatchTool(row, args ?? {}, {
         ownerId: caller.anchorId,
         surface: {
@@ -490,7 +494,7 @@ async function callConnectorTool(
         content: [
           {
             type: 'text' as const,
-            text: `Error: ${publicToolError(result.error, texts, `mcp ${row.slug}`)}`,
+            text: `Error: ${publicToolError(result.error, texts, `mcp ${row.slug}`, errors)}`,
           },
         ],
         isError: true,

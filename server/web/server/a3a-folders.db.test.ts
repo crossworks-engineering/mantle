@@ -194,6 +194,39 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     onlyHeadsMisses();
   });
 
+  it('a Files folder holding a hidden empty subfolder: the plain delete answers 409 (the one rule, N3); off, the rule never fires (N1)', async () => {
+    const g = await folder('files', `${tag}h`);
+    const gPath = (await pathOf(g))!;
+    const sub = await call('/api/tree/files/folders', mod, 'POST', {
+      parentId: g,
+      name: `${tag}sub`,
+    });
+    expect(sub.status, sub.text.slice(0, 200)).toBe(201);
+    const subId = (sub.json.folder as Json).id as string;
+    await hide(subId);
+    const refused = await call(`/api/files/folders/${g}`, mod, 'DELETE');
+    expect(refused.status, refused.text.slice(0, 200)).toBe(409);
+    expect(refused.json).toMatchObject({
+      error: 'This folder holds items you cannot move.',
+      code: 'hidden_items',
+    });
+    expect(refused.text).not.toContain(`${tag}sub`);
+    // Nothing went: the hidden subfolder is still under the folder.
+    expect((await pathOf(subId))!.startsWith(`${gPath}.`)).toBe(true);
+    // A box whose actor check is off: writes on the system pool, and the
+    // one rule never fires there (the answer is main's: not a 409 of ours).
+    const was = process.env.MANTLE_ACTOR_CHECK;
+    process.env.MANTLE_ACTOR_CHECK = 'off';
+    try {
+      const off = await del('files', g);
+      expect(off.json.code).not.toBe('hidden_items');
+      expect(off.text).not.toContain('This folder holds items you cannot move.');
+    } finally {
+      process.env.MANTLE_ACTOR_CHECK = was;
+    }
+    onlyHeadsMisses();
+  });
+
   it('a Files folder: the rename keeps the hidden file’s row on its disk path; the move and the delete answer 409, nothing moves on disk', async () => {
     const g = await folder('files', `${tag}g`);
     const e = await folder('files', `${tag}e`);

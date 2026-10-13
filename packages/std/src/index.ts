@@ -14,11 +14,13 @@
  * a tool that turned the error into a string reply can still be caught at
  * the surface (publicToolError) without touching every tool.
  */
-let dbErrorWatch: () => { texts: string[] } | undefined = () => undefined;
+let dbErrorWatch: () => { texts: string[]; errors: unknown[] } | undefined = () => undefined;
 
 /** Installed by '@mantle/std/db-watch' (node only), so this file stays free of
  *  node builtins and the browser bundles that import it still build. */
-export function setDatabaseErrorWatch(get: () => { texts: string[] } | undefined): void {
+export function setDatabaseErrorWatch(
+  get: () => { texts: string[]; errors: unknown[] } | undefined,
+): void {
   dbErrorWatch = get;
 }
 
@@ -26,7 +28,10 @@ export function setDatabaseErrorWatch(get: () => { texts: string[] } | undefined
 export function errorMessage(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
   const watch = dbErrorWatch();
-  if (watch && text && isDatabaseError(err)) watch.texts.push(text);
+  if (watch && text && isDatabaseError(err)) {
+    watch.texts.push(text);
+    watch.errors.push(err);
+  }
   return text;
 }
 
@@ -83,6 +88,29 @@ export const DATABASE_ERROR_PUBLIC =
 export function publicErrorMessage(err: unknown, where: string): string {
   if (!isDatabaseError(err)) return err instanceof Error ? err.message : String(err);
   console.error(`[${where}] database error:`, err);
+  return databaseErrorPublic(err);
+}
+
+/** What a person sees when a folder move or delete is refused because the
+ *  folder holds items they cannot read (arch A3a, migration 0282). */
+export const HIDDEN_ROWS_PUBLIC = 'This folder holds items you cannot move.';
+
+/**
+ * THE one mapper of a database error to what a caller outside the server
+ * may read (arch A3a): an item the caller may not read (the edit check's
+ * detail no_read) is "not found" (owner decision D2); a folder that holds
+ * items the caller cannot move (detail hidden_rows) says so in plain words;
+ * any other database error is DATABASE_ERROR_PUBLIC, never its text. Reads
+ * the error and up to three causes below it (drizzle wraps the driver's).
+ */
+export function databaseErrorPublic(err: unknown): string {
+  let e: unknown = err;
+  for (let i = 0; i < 4 && e && typeof e === 'object'; i++) {
+    const o = e as { code?: unknown; detail?: unknown; cause?: unknown };
+    if (o.code === '42501' && o.detail === 'no_read') return 'not found';
+    if (o.code === '42501' && o.detail === 'hidden_rows') return HIDDEN_ROWS_PUBLIC;
+    e = o.cause;
+  }
   return DATABASE_ERROR_PUBLIC;
 }
 
@@ -91,10 +119,17 @@ export function publicErrorMessage(err: unknown, where: string): string {
  * carries a database error's text (one collected by watchDatabaseErrors, or
  * drizzle's "Failed query"), else unchanged. Logged in full under `where`.
  */
-export function publicToolError(text: string, texts: readonly string[], where: string): string {
-  if (!FAILED_QUERY_RE.test(text) && !texts.some((t) => text.includes(t))) return text;
+export function publicToolError(
+  text: string,
+  texts: readonly string[],
+  where: string,
+  errors: readonly unknown[] = [],
+): string {
+  const at = texts.findIndex((t) => text.includes(t));
+  if (!FAILED_QUERY_RE.test(text) && at < 0) return text;
   console.error(`[${where}] database error in a tool reply:`, text);
-  return DATABASE_ERROR_PUBLIC;
+  // The error the reply carries, read by the one mapper (databaseErrorPublic).
+  return at >= 0 ? databaseErrorPublic(errors[at]) : DATABASE_ERROR_PUBLIC;
 }
 
 /** Canonical UUID shape (any version, either case). Postgres accepts both

@@ -276,6 +276,13 @@ export async function deleteFolder(args: {
   if ((folder.data as Record<string, unknown> | null)?.system === true && !args.allowSystem) {
     return { ok: false, reason: 'this folder is made by Mantle and found by its path; it stays' };
   }
+  // Rows below it the caller's scope does not read (a hidden subfolder, a
+  // hidden file): refused (409) first, the one rule in a write transaction
+  // (the login write gateway: the system pool when the actor check is off,
+  // where it never refuses). Again under the lock below.
+  await db.transaction((tx) =>
+    tx.execute(sql`select mantle_subtree_refuse_hidden(${args.ownerId}, ${folder.path}::ltree)`),
+  );
   const counts = await folderCounts(args.ownerId, folder.path);
   if (counts.childFolderCount > 0 || counts.fileCount > 0) {
     return { ok: false, reason: 'folder is not empty — delete its contents first' };
@@ -283,11 +290,13 @@ export async function deleteFolder(args: {
   // Empty in the DB is not empty on disk: a file the watcher refused (a slug
   // clash) or never watches has no row, and the recursive rm below would
   // destroy it unseen. Refuse; OS chaff (._x, .DS_Store, ~, .swp) still goes.
+  // The count only, never the names: a name could be a file the caller
+  // cannot read (arch A3a fix round 3).
   const untracked = await untrackedFilesOnDisk(folder.path);
   if (untracked.length > 0) {
     return {
       ok: false,
-      reason: `folder still holds file(s) on disk that the brain does not track (${untracked.join(', ')}) — move or delete them first`,
+      reason: `folder still holds ${untracked.length} file(s) on disk that the brain does not track — move or delete them first`,
     };
   }
   // Members' drafts and folders in it move up to the parent (never deleted).
@@ -298,13 +307,16 @@ export async function deleteFolder(args: {
   // reads the disk.
   const refused = await withNodeDeleteHeads([args.folderId], async (tx) => {
     await takeShareWriteLock(tx, args.ownerId);
+    await tx.execute(
+      sql`select mantle_subtree_refuse_hidden(${args.ownerId}, ${folder.path}::ltree)`,
+    );
     const again = await folderCounts(args.ownerId, folder.path);
     if (again.childFolderCount > 0 || again.fileCount > 0) {
       return 'folder is not empty — delete its contents first';
     }
     const stray = await untrackedFilesOnDisk(folder.path);
     if (stray.length > 0) {
-      return `folder still holds file(s) on disk that the brain does not track (${stray.join(', ')}) — move or delete them first`;
+      return `folder still holds ${stray.length} file(s) on disk that the brain does not track — move or delete them first`;
     }
     const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
     await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });
@@ -472,7 +484,10 @@ export async function renameFolderById(args: {
       ),
     );
   } catch (err) {
-    await renameFolderOnDisk(newPath, oldPath).catch(() => {});
+    await renameFolderOnDisk(newPath, oldPath).catch((back: unknown) => {
+      // Never swallowed: the directory and its rows now disagree.
+      console.error(`[files] could not move ${newPath} back to ${oldPath} on disk:`, back);
+    });
     throw err;
   }
   return folderById({ ownerId: args.ownerId, folderId: args.folderId });

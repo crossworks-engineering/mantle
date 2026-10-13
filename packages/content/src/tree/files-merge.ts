@@ -202,8 +202,12 @@ export async function deleteFilesFolderMerging(ownerId: string, folderId: string
   let folder = await load();
   // Rows below it the caller's scope does not read would be left behind
   // (the write role's row rules): refused (409) before anything moves on
-  // disk. The one rule, in the database (arch A3a fix round 2).
-  await db.execute(sql`select mantle_subtree_refuse_hidden(${ownerId}, ${folder.path}::ltree)`);
+  // disk. The one rule, in the database, in a write transaction so it
+  // follows the login write gateway: the write role in warn and on, the
+  // system pool (never refused) on a box whose actor check is off.
+  await db.transaction((tx) =>
+    tx.execute(sql`select mantle_subtree_refuse_hidden(${ownerId}, ${folder.path}::ltree)`),
+  );
   const flags = { renameFirst: false };
   let step = await plan(ownerId, folder, treeParentPath(folder.path), folder, flags);
   if (flags.renameFirst) {

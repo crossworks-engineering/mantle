@@ -183,7 +183,11 @@ export function makeRegisterContext(
     // A tool that turned a database error into its reply text never hands
     // that text to the client (workspaces W3): the texts errorMessage gave
     // for database errors during the call are collected and matched.
-    const { value: result, texts } = await watchDatabaseErrors(() =>
+    const {
+      value: result,
+      texts,
+      errors,
+    } = await watchDatabaseErrors(() =>
       def.handler(input, { ownerId: ownerId, surface: callSurface }),
     );
     if (!result.ok) {
@@ -191,7 +195,7 @@ export function makeRegisterContext(
         content: [
           {
             type: 'text' as const,
-            text: `Error: ${publicToolError(result.error, texts, `mcp ${def.slug}`)}`,
+            text: `Error: ${publicToolError(result.error, texts, `mcp ${def.slug}`, errors)}`,
           },
         ],
         isError: true,
