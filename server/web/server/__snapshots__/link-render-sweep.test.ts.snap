@@ -1,0 +1,1199 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /print and /render request as before 1`] = `
+{
+  "admin private bytes: render cookie": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "escaped: page image, render cookie": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "escaped: print page, render cookie": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Fprint%2F%2570ages%2F44444444-4444-4444-8444-444444444444",
+    },
+    "status": 307,
+  },
+  "files deeper: render cookie": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "page image: no credential": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "page image: render cookie": {
+    "actors": [
+      "file bytes: login:rw:55555555-5555-4555-8555-555555555555",
+    ],
+    "body": "png",
+    "headers": {
+      "cache-control": "private, no-store",
+      "content-disposition": "inline; filename*=UTF-8''a.png",
+      "content-length": "3",
+      "content-type": "image/png",
+      "x-content-type-options": "nosniff",
+    },
+    "status": 200,
+  },
+  "page image: render cookie, HEAD": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "page image: render cookie, PATCH": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "pages API: render cookie": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "print draw: no credential": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Fprint%2Fdraws%2F77777777-7777-4777-8777-777777777777",
+    },
+    "status": 307,
+  },
+  "print draw: render cookie": {
+    "actors": [
+      "draw svg: login:rw:55555555-5555-4555-8555-555555555555",
+    ],
+    "body": "html 4997 sha256:76a65eb32bd4b801",
+    "headers": {
+      "content-security-policy": "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "print draw: render cookie for another node": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "/login",
+    },
+    "status": 307,
+  },
+  "print page: Origin": {
+    "actors": [
+      "page 4444: login:rw:55555555-5555-4555-8555-555555555555",
+    ],
+    "body": "html 4944 sha256:168e1132d83d2699",
+    "headers": {
+      "content-security-policy": "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "print page: an API key": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "print page: bad bearer": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "print page: no credential": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Fprint%2Fpages%2F44444444-4444-4444-8444-444444444444",
+    },
+    "status": 307,
+  },
+  "print page: render cookie": {
+    "actors": [
+      "page 4444: login:rw:55555555-5555-4555-8555-555555555555",
+    ],
+    "body": "html 4944 sha256:168e1132d83d2699",
+    "headers": {
+      "content-security-policy": "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "print page: render cookie for another node": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "/login",
+    },
+    "status": 307,
+  },
+  "print page: render cookie, HEAD": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Fprint%2Fpages%2F44444444-4444-4444-8444-444444444444",
+    },
+    "status": 307,
+  },
+  "print page: render cookie, POST": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Fprint%2Fpages%2F44444444-4444-4444-8444-444444444444",
+    },
+    "status": 307,
+  },
+  "print page: render cookie, missing page": {
+    "actors": [
+      "page 0000: login:rw:55555555-5555-4555-8555-555555555555",
+    ],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "print page: render token as the session cookie": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Fprint%2Fpages%2F44444444-4444-4444-8444-444444444444",
+    },
+    "status": 307,
+  },
+  "print page: session": {
+    "actors": [
+      "page 4444: login:rw:55555555-5555-4555-8555-555555555555",
+    ],
+    "body": "html 4944 sha256:168e1132d83d2699",
+    "headers": {
+      "content-security-policy": "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "print page: session, POST": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "render draw: no credential": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Frender%2Fdraws%2F77777777-7777-4777-8777-777777777777",
+    },
+    "status": 307,
+  },
+  "render draw: render cookie": {
+    "actors": [
+      "draw scene: login:rw:55555555-5555-4555-8555-555555555555",
+    ],
+    "body": "html 5010 sha256:d53cfd62e513bba2",
+    "headers": {
+      "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; connect-src 'self' data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data: blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "render draw: render cookie, HEAD": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Frender%2Fdraws%2F77777777-7777-4777-8777-777777777777",
+    },
+    "status": 307,
+  },
+  "unknown print path: no credential": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Fprint%2Fother",
+    },
+    "status": 307,
+  },
+  "unknown print path: render cookie": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2Fprint%2Fpages%2F44444444-4444-4444-8444-444444444444%2Fmore",
+    },
+    "status": 307,
+  },
+  "unknown render path: session": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+}
+`;
+
+exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /s request as before 1`] = `
+{
+  "aggregate: contact, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "aggregate: no such token": {
+    "actors": [],
+    "body": "{"error":"not found"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 404,
+  },
+  "asset: contact, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "asset: no such token": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "asset: not served": {
+    "actors": [
+      "asset: link",
+    ],
+    "body": "Not found",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "asset: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "allow": "GET, HEAD, OPTIONS",
+    },
+    "status": 204,
+  },
+  "bare /s": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "bundle css: app link": {
+    "actors": [
+      "app: link",
+    ],
+    "body": "no css",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "text/plain;charset=UTF-8",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "bundle css: no such token": {
+    "actors": [],
+    "body": "not found",
+    "headers": {
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "bundle css: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "vary": "Origin",
+    },
+    "status": 204,
+  },
+  "bundle: app link": {
+    "actors": [
+      "app: link",
+    ],
+    "body": "no build",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "text/plain;charset=UTF-8",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "bundle: contact, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 401,
+  },
+  "bundle: no such token": {
+    "actors": [],
+    "body": "not found",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "text/plain;charset=UTF-8",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "bundle: note link": {
+    "actors": [],
+    "body": "not found",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "text/plain;charset=UTF-8",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "bundle: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "vary": "Origin",
+    },
+    "status": 204,
+  },
+  "code: GET": {
+    "actors": [],
+    "body": "{"error":"method not allowed"}",
+    "headers": {
+      "allow": "POST, OPTIONS",
+      "content-type": "application/json",
+    },
+    "status": 405,
+  },
+  "code: no such token": {
+    "actors": [],
+    "body": "{"ok":false,"error":"That code was not recognised."}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "code: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "allow": "POST, OPTIONS",
+    },
+    "status": 204,
+  },
+  "code: wrong code": {
+    "actors": [],
+    "body": "{"ok":false,"error":"That code was not recognised."}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "db broker: GET": {
+    "actors": [],
+    "body": "{"error":"method not allowed"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "allow": "POST, OPTIONS",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 405,
+  },
+  "db broker: body over the ceiling": {
+    "actors": [],
+    "body": "{"error":"This request is too large (at most 1 MB).","reason":"body-too-large"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 413,
+  },
+  "db broker: contact, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 401,
+  },
+  "db broker: no such token": {
+    "actors": [],
+    "body": "{"ok":false,"error":"not found"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "db broker: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "vary": "Origin",
+    },
+    "status": 204,
+  },
+  "draw: contact, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "draw: no such token": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "draw: not servable": {
+    "actors": [
+      "draw: link",
+    ],
+    "body": "Not found",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "embedded draw: no such token": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "embedded draw: not allowed": {
+    "actors": [
+      "embedded draw: link",
+    ],
+    "body": "Not found",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "escaped: bundle preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "allow": "GET, HEAD, OPTIONS",
+    },
+    "status": 204,
+  },
+  "escaped: page prefix": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "location": "http://localhost:3000/login?next=%2F%2573%2Flive",
+    },
+    "status": 307,
+  },
+  "escaped: page token": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "html 6107 sha256:80ab5b62f4dba1cc",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "escaped: public API route": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "escaped: view": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "{"mode":"public","view":{"kind":"note","title":"A note","content":"Some **text**."}}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 200,
+  },
+  "evaluate: contact, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "evaluate: no such token": {
+    "actors": [],
+    "body": "{"error":"not found"}",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 404,
+  },
+  "evaluate: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "allow": "POST, OPTIONS",
+    },
+    "status": 204,
+  },
+  "frame ticket: GET": {
+    "actors": [],
+    "body": "{"error":"method not allowed"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "allow": "POST, OPTIONS",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 405,
+  },
+  "frame ticket: app link": {
+    "actors": [
+      "app runtime: link",
+    ],
+    "body": "{"ticket":"<signed>"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 200,
+  },
+  "frame ticket: contact, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 401,
+  },
+  "frame ticket: no such token": {
+    "actors": [],
+    "body": "not found",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "text/plain;charset=UTF-8",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "frame ticket: note link": {
+    "actors": [],
+    "body": "not found",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "text/plain;charset=UTF-8",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "frame ticket: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "vary": "Origin",
+    },
+    "status": 204,
+  },
+  "frame: app link, bad ticket": {
+    "actors": [],
+    "body": "frame ticket required",
+    "headers": {
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 401,
+  },
+  "frame: app link, no ticket": {
+    "actors": [],
+    "body": "frame ticket required",
+    "headers": {
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 401,
+  },
+  "frame: contact, no ticket": {
+    "actors": [],
+    "body": "frame ticket required",
+    "headers": {
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 401,
+  },
+  "frame: no such token": {
+    "actors": [],
+    "body": "not found",
+    "headers": {
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "frame: note link": {
+    "actors": [],
+    "body": "not found",
+    "headers": {
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "frame: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "allow": "GET, HEAD, OPTIONS",
+    },
+    "status": 204,
+  },
+  "image suffix on a non-public route": {
+    "actors": [],
+    "body": "{"error":"unauthorized"}",
+    "headers": {
+      "content-type": "application/json",
+    },
+    "status": 401,
+  },
+  "image suffix under /s": {
+    "actors": [
+      "asset: link",
+    ],
+    "body": "Not found",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/plain;charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "page: a bad bearer rides along": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "html 6107 sha256:80ab5b62f4dba1cc",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "page: an API key rides along": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "html 6107 sha256:80ab5b62f4dba1cc",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "page: app link": {
+    "actors": [
+      "view share-app: link",
+    ],
+    "body": "html 5792 sha256:9aff1122c873cbf3",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "page: contact share, bad cookie": {
+    "actors": [],
+    "body": "html 5771 sha256:2a6881a503045768",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 401,
+  },
+  "page: contact share, cookie": {
+    "actors": [
+      "view share-contact: contact:ro",
+    ],
+    "body": "html 6769 sha256:19d39dd44e0c4a58",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "page: contact share, no cookie": {
+    "actors": [],
+    "body": "html 5771 sha256:2a6881a503045768",
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 401,
+  },
+  "page: expired (not active)": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "page: item gone": {
+    "actors": [
+      "view share-gone: link",
+    ],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "page: no such token": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "page: open link": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "html 6107 sha256:80ab5b62f4dba1cc",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "page: open link, HEAD": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "page: open link, Origin": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "html 6107 sha256:80ab5b62f4dba1cc",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "page: open link, POST": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "page: open link, preflight": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "page: open link, sub path": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "html 6107 sha256:80ab5b62f4dba1cc",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 200,
+  },
+  "page: retired client link": {
+    "actors": [],
+    "body": "html 5163 sha256:7aea7a44d52482a9",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 410,
+  },
+  "page: retired team link": {
+    "actors": [],
+    "body": "html 5403 sha256:b0a8db0b8a61b54f",
+    "headers": {
+      "content-type": "text/html; charset=UTF-8",
+    },
+    "status": 410,
+  },
+  "rows: contact share, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 401,
+  },
+  "rows: no such token": {
+    "actors": [],
+    "body": "{"error":"not found"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "rows: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "vary": "Origin",
+    },
+    "status": 204,
+  },
+  "tool broker: contact, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 401,
+  },
+  "tool broker: no such token": {
+    "actors": [],
+    "body": "{"ok":false,"error":"not found"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "tool broker: note link": {
+    "actors": [],
+    "body": "{"ok":false,"error":"not found"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "tool broker: open link": {
+    "actors": [],
+    "body": "{"ok":false,"error":"This is an open link, which can only use the app’s own data. Members and clients use the app’s tools from their own login."}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 403,
+  },
+  "tool broker: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "vary": "Origin",
+    },
+    "status": 204,
+  },
+  "unknown /s sub path": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "unknown /s sub path, Origin": {
+    "actors": [],
+    "body": "Not found",
+    "headers": {
+      "content-type": "text/plain; charset=UTF-8",
+    },
+    "status": 404,
+  },
+  "view: POST": {
+    "actors": [],
+    "body": "{"error":"method not allowed"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "allow": "GET, HEAD, OPTIONS",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 405,
+  },
+  "view: contact share, cookie": {
+    "actors": [
+      "view share-contact: contact:ro",
+    ],
+    "body": "{"mode":"public","view":{"kind":"note","title":"A note","content":"Some **text**."}}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 200,
+  },
+  "view: contact share, no cookie": {
+    "actors": [],
+    "body": "{"ok":false,"error":"code required"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 401,
+  },
+  "view: item gone": {
+    "actors": [
+      "view share-gone: link",
+    ],
+    "body": "{"error":"not found"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "view: no such token": {
+    "actors": [],
+    "body": "{"error":"not found"}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 404,
+  },
+  "view: open link": {
+    "actors": [
+      "view share-live: link",
+    ],
+    "body": "{"mode":"public","view":{"kind":"note","title":"A note","content":"Some **text**."}}",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "vary": "Origin",
+    },
+    "status": 200,
+  },
+  "view: preflight": {
+    "actors": [],
+    "body": "",
+    "headers": {
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": "https://client.example",
+      "access-control-max-age": "86400",
+      "vary": "Origin",
+    },
+    "status": 204,
+  },
+}
+`;
