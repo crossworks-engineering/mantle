@@ -130,6 +130,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     'a workspace is live, only one the scope may see named through `via`: the confirm',
   'mantle_ws_names(uuid[],uuid)':
     'workspace names, only those the scope may see named through `via`: the confirm',
+  // A workspace's kind for its default icon (0285): a kind only, and only
+  // for a workspace the scope may name.
+  'mantle_ws_kind(uuid)':
+    'a workspace’s kind (admin, team, private, other), only one the scope names',
 };
 
 /** Rolls a cell's transaction back after its checks. */

@@ -10,8 +10,9 @@
  * panel. Every refusal is `{ error, code }` with 400, 403, 404 or 409; an
  * item or workspace the caller may not see answers 404, never 403.
  *
- * Pure: no imports.
+ * Pure: types only (a workspace chip's look comes from ./workspaces).
  */
+import type { WorkspaceLook } from './workspaces';
 
 /** A workspace as the panel names it. */
 export type GrantWorkspaceRef = { wsId: string; name: string };
@@ -189,8 +190,9 @@ export type GrantError = { error: string; code: GrantErrorCode };
 
 // ── Lists (W5b2 contract changes 5 and 14) ───────────────────────────────────
 
-/** A workspace chip on a list row. */
-export type ListWorkspace = { id: string; name: string };
+/** A workspace chip on a list row, with the workspace's look (its colour
+ *  and icon, WorkspaceLook) from a brain that has one. */
+export type ListWorkspace = WorkspaceLook & { id: string; name: string };
 
 /**
  * What the caller may do with an item, and what the item is (W6b fix round

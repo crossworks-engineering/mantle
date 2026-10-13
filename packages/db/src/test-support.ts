@@ -120,10 +120,11 @@ export async function createReadOnlyRole(
     );
   }
   // What the demo's reader is granted besides SELECT (0256): the owner's
-  // app sidebar asks for the Team workspace.
+  // app sidebar asks for the Team workspace; the chips ask each workspace's
+  // kind (0285).
   await withRoleRetry(() =>
     sql.unsafe(
-      `grant execute on function "public"."mantle_brain_team_ws"(), "public"."mantle_brain_id"() to "${name}"`,
+      `grant execute on function "public"."mantle_brain_team_ws"(), "public"."mantle_brain_id"(), "public"."mantle_ws_kind"(uuid) to "${name}"`,
     ),
   );
   const url = new URL(adminUrl);

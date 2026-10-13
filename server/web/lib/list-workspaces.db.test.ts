@@ -7,6 +7,9 @@
  *    of GET /api/tree/:kind and its search, carries `workspaces` (live ones
  *    only, by name; all of them for an Admin user, only the caller's own
  *    for anyone else) and `hasLink` (an open link, not a revoked one);
+ *  - each chip carries its workspace's look (task 5edc9149): colour, icon
+ *    and kind, in a login's scope too; a stored value no client can draw
+ *    goes out as null;
  *  - `?ws=<id>` keeps what that workspace reads and is echoed as `ws`; a
  *    workspace the caller may not name (unknown, archived, not a user of
  *    it, not an id) is 404 `not_found`.
@@ -60,7 +63,9 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     return { status: res.status, body: (await res.json()) as Json };
   };
   const byId = (rows: Json[]) => new Map(rows.map((r) => [r.id as string, r]));
-  const ws = (...pairs: Array<[string, string]>) => pairs.map(([id, name]) => ({ id, name }));
+  // Each chip by id and name; its look (task 5edc9149) is checked on its own.
+  const ws = (...pairs: Array<[string, string]>) =>
+    pairs.map(([id, name]) => expect.objectContaining({ id, name }));
 
   let routes: {
     pages: typeof import('@/app/api/pages/route');
@@ -241,7 +246,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     });
     await grant(ids.alpha, P);
     expect((await lw.workspaceChips(owner, mem, [ids.alpha])).get(ids.alpha)).toEqual({
-      workspaces: ws([P, 'Proj']),
+      workspaces: [{ id: P, name: 'Proj', color: null, icon: null, kind: 'other' }],
       hasLink: false,
       mayEdit: true,
       mayManage: true,
@@ -254,5 +259,43 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     expect(await lw.parseWsFilter(new Request('http://brain.test/api/pages'), owner, mem)).toBe(
       null,
     );
+  });
+
+  it('a chip carries its workspace look, in a login scope too (task 5edc9149)', async () => {
+    await x(sql`update workspaces set color = 'teal', icon = 'lucide:rocket' where id = ${Q}`);
+    expect((await lw.workspaceChips(owner, owner, [ids.note1])).get(ids.note1)!.workspaces).toEqual(
+      [
+        { id: admin, name: 'Admin', color: null, icon: null, kind: 'admin' },
+        { id: Q, name: 'Quay', color: 'teal', icon: 'lucide:rocket', kind: 'other' },
+      ],
+    );
+    // The member's private workspace and the Team workspace, read in the
+    // member's own scope (mantle_ws_kind reads private_workspaces for it).
+    const PV = randomUUID();
+    const team = (
+      await x<{ id: string }>(
+        sql`select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'team'`,
+      )
+    )[0]!.id;
+    await x(
+      sql`insert into workspaces (id, owner_id, name) values (${PV}, ${owner}, 'Mine (only you)')`,
+    );
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values (${PV}, ${mem}, true)
+                on conflict do nothing`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values (${team}, ${mem}, false)
+                on conflict do nothing`);
+    await x(sql`insert into private_workspaces (login_id, workspace_id) values (${mem}, ${PV})
+                on conflict (login_id) do update set workspace_id = excluded.workspace_id`);
+    await grant(ids.note2, PV);
+    await grant(ids.note2, team);
+    // A stored value no client can draw goes out as the default.
+    await x(sql`update workspaces set color = 'mauve', icon = 'not an icon' where id = ${team}`);
+    const scoped = await m.withViewer({ login: mem }, () =>
+      lw.workspaceChips(owner, mem, [ids.note2]),
+    );
+    const kinds = Object.fromEntries(
+      scoped.get(ids.note2)!.workspaces.map((w) => [w.id, [w.kind, w.color, w.icon]]),
+    );
+    expect(kinds).toEqual({ [PV]: ['private', null, null], [team]: ['team', null, null] });
   });
 });

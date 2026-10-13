@@ -54,6 +54,11 @@ export const workspaces = pgTable(
      *  of the Built-in home while the workspace holds the app and its
      *  published build is green. NULL = the Built-in home. */
     landingAppId: uuid('landing_app_id').references(() => nodes.id, { onDelete: 'set null' }),
+    /** The workspace's look (0285), set by whoever may rename it: a tint
+     *  key of the folder palette and an emoji or `lucide:<name>`. NULL =
+     *  the neutral colour and the default icon of its kind. */
+    color: text('color'),
+    icon: text('icon'),
     createdBy: uuid('created_by').references(() => authUsers.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

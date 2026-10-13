@@ -124,20 +124,26 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
     const { status, body } = await list(owner);
     expect(status).toBe(200);
     expect(body.ws).toBeUndefined();
+    // Each chip carries its workspace's look (task 5edc9149): none picked.
+    const look = (kind: string) => ({ color: null, icon: null, kind });
     expect(row(body, 'held')?.workspaces).toEqual([
-      { id: ws.admin, name: 'Admin' },
-      { id: ws.proj, name: 'proj' },
-      { id: ws.quay, name: 'Quay' },
-      { id: ws.team, name: 'Team' },
+      { id: ws.admin, name: 'Admin', ...look('admin') },
+      { id: ws.proj, name: 'proj', ...look('other') },
+      { id: ws.quay, name: 'Quay', ...look('other') },
+      { id: ws.team, name: 'Team', ...look('team') },
     ]);
-    expect(row(body, 'none')?.workspaces).toEqual([{ id: ws.admin, name: 'Admin' }]);
+    expect(row(body, 'none')?.workspaces).toEqual([
+      { id: ws.admin, name: 'Admin', ...look('admin') },
+    ]);
     // No level badge any more.
     expect(row(body, 'held')).not.toHaveProperty('audience');
   });
 
   it('names only the workspaces another caller is a user of', async () => {
     const { body } = await list(plain);
-    expect(row(body, 'held')?.workspaces).toEqual([{ id: ws.proj, name: 'proj' }]);
+    expect(row(body, 'held')?.workspaces).toEqual([
+      { id: ws.proj, name: 'proj', color: null, icon: null, kind: 'other' },
+    ]);
     expect(row(body, 'none')?.workspaces).toEqual([]);
   });
 

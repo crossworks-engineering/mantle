@@ -7,6 +7,7 @@
  * Every refusal is `{ error, code }` with 400, 403, 404 or 409. A workspace
  * or login the caller may not see answers 404, never 403.
  */
+import type { AppTint } from '../app-nav';
 
 /** The Admin areas (plan 1.4). An Admin workspace user has all of them
  *  unless a per-user switch turns one off (none can be switched off yet). */
@@ -20,8 +21,26 @@ export const WORKSPACE_AREAS: readonly WorkspaceArea[] = [
   'keys',
 ];
 
+/** What a workspace is, for its default icon: the Admin workspace, the
+ *  Team workspace, a login's private workspace, or any other. */
+export type WorkspaceKind = 'admin' | 'team' | 'private' | 'other';
+
+/**
+ * A workspace's look (task 5edc9149): on every workspace the brain lists
+ * (this list and screen, /api/shell's switcher list, and the chips of the
+ * lists and the tree). `color` is a tint key of the folder palette, `icon`
+ * an emoji or `lucide:<name>`, the folder vocabulary; null = the default:
+ * the neutral colour, and the client's default icon for `kind`. Absent from
+ * an older brain (read it as null and 'other').
+ */
+export type WorkspaceLook = {
+  color?: AppTint | null;
+  icon?: string | null;
+  kind?: WorkspaceKind;
+};
+
 /** One workspace as a list row and as the head of its screen. */
-export type Workspace = {
+export type Workspace = WorkspaceLook & {
   id: string;
   name: string;
   description: string;
@@ -112,8 +131,11 @@ export type WorkspaceLandingApp = {
   ready: boolean;
 };
 
-/** PATCH /api/workspaces/:id. Name and description: a Moderator or an Admin
- *  user. Contact and assistant: an Admin user (assistant: area
+/** PATCH /api/workspaces/:id. Name, description, colour and icon: a
+ *  Moderator or an Admin user (one rule: whoever may rename it sets its
+ *  look; the built-in workspaces keep their names but take a look). `color`
+ *  is a tint key (APP_TINTS), `icon` an emoji or `lucide:<name>` (400
+ *  `invalid` otherwise); null or '' clears either. Contact and assistant: an Admin user (assistant: area
  *  'assistants'). The landing page (`landingAppId`): a Moderator of this
  *  workspace only, to an app the workspace holds with a green published
  *  build (409 `landing_app_not_held` or `landing_app_not_ready`). `null`
@@ -121,6 +143,8 @@ export type WorkspaceLandingApp = {
 export type WorkspacePatchBody = {
   name?: string;
   description?: string;
+  color?: AppTint | null;
+  icon?: string | null;
   contactNodeId?: string | null;
   assistantId?: string | null;
   landingAppId?: string | null;
@@ -169,7 +193,7 @@ export type WorkspaceResourcePatchBody = { write: boolean };
 
 /** What /api/shell adds for the signed-in login: its live workspaces (for
  *  the switcher) and its Admin areas ([] when it is not an Admin user). */
-export type ShellWorkspace = {
+export type ShellWorkspace = WorkspaceLook & {
   id: string;
   name: string;
   isAdmin: boolean;

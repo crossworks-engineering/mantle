@@ -23,6 +23,9 @@
  *    no grant lands in an archived workspace, even racing the archive;
  *  - user search (Q3): 3 characters, Moderators and Admin users only, an
  *    Admin user pages through everyone;
+ *  - the look (task 5edc9149): colour and icon by whoever may rename, the
+ *    folder's validators, the built-in workspaces too; on the list, the
+ *    screen and the shell, with the kind;
  *  - /api/shell's workspaces and areas.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/workspaces.db.test.ts
@@ -531,6 +534,75 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(ev!.n).toBe(1);
   });
 
+  it('look: colour and icon by whoever may rename it, on every list (task 5edc9149)', async () => {
+    const ws = await create(mem, 'Mia colours');
+    const id = p({ id: ws });
+    const patch = async (body: Json, wsId = id) => call(r.one.PATCH(req('PATCH', body), wsId));
+    // A Moderator sets both; the answer carries them, with the kind.
+    await as(mem);
+    const set = await patch({ color: 'teal', icon: 'lucide:rocket' });
+    expect(set.status).toBe(200);
+    expect(set.body).toMatchObject({ color: 'teal', icon: 'lucide:rocket', kind: 'other' });
+    // The folder's validators: an unknown tint or a word is a 400.
+    for (const body of [{ color: 'mauve' }, { icon: 'rocket' }, { icon: 'lucide:Not Valid' }]) {
+      const bad = await patch(body);
+      expect(bad.status, JSON.stringify(body)).toBe(400);
+      expect(bad.body.code, JSON.stringify(body)).toBe('invalid');
+    }
+    // A plain user of it may not (the rename rule), an outsider sees 404.
+    expect((await addUser(ws, mem2)).status).toBe(200);
+    await as(mem2);
+    expect((await patch({ color: 'red' })).body.code).toBe('forbidden');
+    await as(mem3);
+    expect((await patch({ color: 'red' })).status).toBe(404);
+    // An Admin user who is not a user of it may, as for the name.
+    await as(adm2);
+    expect((await patch({ color: 'pink', icon: '🚀' })).body).toMatchObject({
+      color: 'pink',
+      icon: '🚀',
+    });
+    // null and '' clear (the default look).
+    await as(mem);
+    expect((await patch({ color: null, icon: '' })).body).toMatchObject({
+      color: null,
+      icon: null,
+    });
+    const [ev] = await x<{ n: number }>(sql`select count(*)::int as n from workspace_events
+      where workspace_id = ${ws} and action = 'workspace.update' and subject ? 'color'`);
+    expect(ev!.n).toBe(3);
+    // The built-in workspaces keep their names but take a look: a Team
+    // Moderator sets Team's.
+    const teamLook = await patch({ color: 'green', icon: 'lucide:users' }, p({ id: team }));
+    expect(teamLook.status).toBe(200);
+    expect(teamLook.body).toMatchObject({ color: 'green', kind: 'team' });
+    // On the list, the screen and the shell.
+    await as(owner);
+    const list = (await call(r.root.GET())).body.workspaces as Json[];
+    const look = (wsId: string) => {
+      const w = list.find((x) => x.id === wsId)!;
+      return [w.kind, w.color, w.icon];
+    };
+    expect(look(admin)).toEqual(['admin', null, null]);
+    expect(look(team)).toEqual(['team', 'green', 'lucide:users']);
+    const screen = (await call(r.one.GET(req('GET'), p({ id: team })))).body;
+    expect(screen.workspace).toMatchObject({ kind: 'team', color: 'green' });
+    const { shellWorkspaces } = await import('./workspaces');
+    const shell = await shellWorkspaces({
+      kind: 'member',
+      loginId: mem,
+      anchorId: owner,
+      user: null,
+    });
+    expect(shell.workspaces.find((w) => w.id === team)).toMatchObject({
+      kind: 'team',
+      color: 'green',
+      icon: 'lucide:users',
+    });
+    // Back to the default, so the other tests see Team as it was.
+    await as(mem);
+    expect((await patch({ color: null, icon: null }, p({ id: team }))).status).toBe(200);
+  });
+
   it('the assistant is frozen once it has history', async () => {
     const ws = await create(mem2, 'Max assistant');
     await as(owner);
@@ -795,7 +867,15 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     });
     expect(ownerShell.areas).toEqual(['settings', 'users', 'assistants', 'connectors', 'keys']);
     expect(ownerShell.workspaces.slice(0, 1)).toEqual([
-      { id: admin, name: 'Admin', isAdmin: true, moderator: true },
+      {
+        id: admin,
+        name: 'Admin',
+        isAdmin: true,
+        moderator: true,
+        color: null,
+        icon: null,
+        kind: 'admin',
+      },
     ]);
     const memShell = await shellWorkspaces({
       kind: 'member',

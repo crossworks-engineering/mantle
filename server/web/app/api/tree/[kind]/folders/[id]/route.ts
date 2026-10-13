@@ -4,12 +4,8 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { TREE_FOLDER_NAME_MAX, TREE_SHARE_LEVELS } from '@mantle/client-types/tree';
 import { deleteTreeFolder, notifyTreeChanged, updateTreeFolder } from '@mantle/content/tree';
 import { firstIssue } from '@/lib/zod-issue';
-import {
-  FolderColorBody,
-  FolderIconBody,
-  treeErrorResponse,
-  treeKindOr404,
-} from '@/lib/tree-route';
+import { LookColorBody, LookIconBody } from '@/lib/look-body';
+import { treeErrorResponse, treeKindOr404 } from '@/lib/tree-route';
 
 type Ctx = { params: Promise<{ kind: string; id: string }> };
 
@@ -17,8 +13,8 @@ const Id = z.string().uuid();
 const Patch = z
   .object({
     name: z.string().trim().min(1).max(TREE_FOLDER_NAME_MAX),
-    icon: FolderIconBody,
-    color: FolderColorBody.nullable(),
+    icon: LookIconBody,
+    color: LookColorBody.nullable(),
     /** Move under this folder; null = the top level. */
     parentId: z.string().uuid().nullable(),
     /** Place directly after this sibling; null = first. */

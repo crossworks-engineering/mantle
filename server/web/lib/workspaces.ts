@@ -12,13 +12,14 @@
  * Who may do what:
  *  - An Admin user (a user of the Admin workspace) holds the Admin areas
  *    (requireArea; every area today, per-user switches later). With 'users'
- *    they see every workspace and manage its users, name and contact; with
+ *    they see every workspace and manage its users, name, look and contact; with
  *    'assistants' its assistant; with 'connectors' its connectors. They may
  *    add anyone anywhere, themselves included, private workspaces too (S1,
  *    which replaces 17 R7): logged (subject.self) and shown on the screen as
  *    "Added by NAME on DATE".
  *  - A Moderator of a workspace manages its users (add by search, Moderator
- *    tick, remove) and its name and description.
+ *    tick, remove) and its name, description and look (colour and icon,
+ *    task 5edc9149: the same rule as the name).
  *  - Any login may make a workspace (it becomes its only user, a Moderator)
  *    and leave one, except as its last Moderator.
  *  - In the Admin-moderated workspace (Team) an Admin user stays a
@@ -49,6 +50,7 @@ import {
   lockMoreHeads,
   asSystem,
 } from '@mantle/db';
+import type { AppTint } from '@mantle/client-types/app-nav';
 import type {
   ShellWorkspaces,
   Workspace,
@@ -68,6 +70,7 @@ import { auditLoginMutation, getLoginOr401, type SessionUser } from '@/lib/auth'
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
 import { rateLimit } from '@/lib/rate-limit';
+import { lookOfRow, WS_LOOK_COLUMNS, type LookRow } from '@/lib/workspace-look';
 
 // ── Errors and the caller ────────────────────────────────────────────────────
 
@@ -222,7 +225,7 @@ export async function requireArea(caller: WsCaller, area: WorkspaceArea): Promis
 
 // ── Reading ──────────────────────────────────────────────────────────────────
 
-type WsRow = {
+type WsRow = LookRow & {
   id: string;
   name: string;
   description: string;
@@ -243,7 +246,7 @@ type WsRow = {
 function wsSelect(caller: WsCaller, where: ReturnType<typeof sql>, lock = false) {
   return sql`
     select w.id, w.name, w.description, w.contact_id, w.is_admin, w.admin_moderated,
-           w.bridge_key, w.landing_app_id, w.archived_at,
+           w.bridge_key, w.landing_app_id, w.archived_at, ${WS_LOOK_COLUMNS},
            (select count(*)::int from workspace_users u where u.workspace_id = w.id) as user_count,
            (select count(*)::int from workspace_resources r where r.workspace_id = w.id) as resource_count,
            me.login_id is not null as me_member,
@@ -272,6 +275,7 @@ function toWorkspace(r: WsRow): Workspace {
     userCount: r.user_count,
     resourceCount: r.resource_count,
     me: { member: r.me_member, moderator: r.me_moderator },
+    ...lookOfRow(r),
   };
 }
 
@@ -317,15 +321,17 @@ export async function listWorkspaces(caller: WsCaller): Promise<{ workspaces: Wo
 export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces> {
   const [areas, list] = await Promise.all([
     areasFor(caller),
-    rows<{
-      id: string;
-      name: string;
-      is_admin: boolean;
-      moderator: boolean;
-      private: boolean;
-    }>(
+    rows<
+      LookRow & {
+        id: string;
+        name: string;
+        is_admin: boolean;
+        moderator: boolean;
+        private: boolean;
+      }
+    >(
       db,
-      sql`select w.id, w.name, w.is_admin, u.moderator,
+      sql`select w.id, w.name, w.is_admin, u.moderator, ${WS_LOOK_COLUMNS},
                  exists (select 1 from private_workspaces p
                           where p.workspace_id = w.id and p.login_id = ${caller.loginId}) as private
             from workspaces w
@@ -341,6 +347,7 @@ export async function shellWorkspaces(caller: WsCaller): Promise<ShellWorkspaces
       isAdmin: w.is_admin,
       moderator: w.moderator,
       ...(w.private ? { private: true as const } : {}),
+      ...lookOfRow(w),
     })),
     areas,
   };
@@ -538,6 +545,8 @@ export async function patchWorkspace(
   body: {
     name?: string;
     description?: string;
+    color?: AppTint | null;
+    icon?: string | null;
     contactNodeId?: string | null;
     assistantId?: string | null;
     landingAppId?: string | null;
@@ -548,7 +557,14 @@ export async function patchWorkspace(
       const seen = await seeWorkspace(caller, id, tx, true);
       const w = seen.row;
       if (w.archived_at !== null) throw archivedError();
-      if ((body.name !== undefined || body.description !== undefined) && !seen.mod && !seen.admin) {
+      // One rule for what the workspace is called and how it looks (task
+      // 5edc9149): whoever may rename it sets its colour and icon too.
+      const own =
+        body.name !== undefined ||
+        body.description !== undefined ||
+        body.color !== undefined ||
+        body.icon !== undefined;
+      if (own && !seen.mod && !seen.admin) {
         throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
       }
       if (body.name !== undefined && body.name !== w.name) {
@@ -580,6 +596,8 @@ export async function patchWorkspace(
       if (body.description !== undefined && body.description !== w.description) {
         changed.description = body.description;
       }
+      if (body.color !== undefined && body.color !== w.look_color) changed.color = body.color;
+      if (body.icon !== undefined && body.icon !== w.look_icon) changed.icon = body.icon;
       if (body.contactNodeId !== undefined && body.contactNodeId !== w.contact_id) {
         changed.contactNodeId = body.contactNodeId;
       }
@@ -588,6 +606,8 @@ export async function patchWorkspace(
           sql`update workspaces set
                 name = ${body.name ?? w.name},
                 description = ${body.description ?? w.description},
+                color = ${body.color === undefined ? w.look_color : body.color},
+                icon = ${body.icon === undefined ? w.look_icon : body.icon},
                 contact_id = ${body.contactNodeId === undefined ? w.contact_id : body.contactNodeId},
                 updated_at = now()
               where id = ${w.id}`,

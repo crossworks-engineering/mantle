@@ -4,13 +4,8 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { TREE_FOLDER_NAME_MAX } from '@mantle/client-types/tree';
 import { createTreeFolder, notifyTreeChanged } from '@mantle/content/tree';
 import { firstIssue } from '@/lib/zod-issue';
-import {
-  FolderColorBody,
-  FolderIconBody,
-  ensureTreeRoot,
-  treeErrorResponse,
-  treeKindOr404,
-} from '@/lib/tree-route';
+import { LookColorBody, LookIconBody } from '@/lib/look-body';
+import { ensureTreeRoot, treeErrorResponse, treeKindOr404 } from '@/lib/tree-route';
 
 const Body = z.object({
   /** The folder to create it in; null = the top level. */
@@ -18,8 +13,8 @@ const Body = z.object({
   name: z.string().trim().min(1).max(TREE_FOLDER_NAME_MAX),
   /** Its look from the start (the same values PATCH takes); left out or
    *  null = the default tile. */
-  icon: FolderIconBody.optional(),
-  color: FolderColorBody.nullable().optional(),
+  icon: LookIconBody.optional(),
+  color: LookColorBody.nullable().optional(),
 });
 
 /** POST /api/tree/:kind/folders: create a folder, with its icon and colour

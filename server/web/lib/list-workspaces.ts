@@ -3,7 +3,8 @@
  * contract changes 5 and 14): every row of GET /api/pages and /api/notes,
  * and every item and folder of GET /api/tree/:kind (its search and marks
  * too), carries `workspaces` (the workspaces of its read_ws the caller is a
- * user of; all of them for an Admin user; live ones, by name) and `hasLink`
+ * user of; all of them for an Admin user; live ones, by name, each with its
+ * look: colour, icon and kind, task 5edc9149) and `hasLink`
  * (a live open public link exists). A list asked with `?ws=<id>` keeps only
  * what that workspace reads and echoes the id as a top-level `ws`.
  *
@@ -14,6 +15,7 @@ import { db, sql } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import type { ItemCaps, ListChips, ListWorkspace } from '@mantle/client-types';
 import { NextResponse } from '@/server/http-compat';
+import { WS_LOOK_PAIRS, workspaceLook } from '@/lib/workspace-look';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -107,7 +109,7 @@ export async function workspaceChips(
     with me as (${mine(ownerId, loginId)})
     select n.id::text as id,
            coalesce((
-             select jsonb_agg(jsonb_build_object('id', w.id, 'name', w.name)
+             select jsonb_agg(jsonb_build_object('id', w.id, 'name', w.name, ${WS_LOOK_PAIRS})
                               order by lower(w.name), w.id)
                from workspaces w
               where w.id = any(n.read_ws) and w.owner_id = ${ownerId} and w.archived_at is null
@@ -128,7 +130,12 @@ export async function workspaceChips(
     }
   >;
   for (const r of rows) {
-    out.set(r.id, { workspaces: r.workspaces, hasLink: r.has_link === true, ...capsOf(r) });
+    const workspaces = r.workspaces.map((w) => ({
+      id: w.id,
+      name: w.name,
+      ...workspaceLook(w.color, w.icon, w.kind),
+    }));
+    out.set(r.id, { workspaces, hasLink: r.has_link === true, ...capsOf(r) });
   }
   return out;
 }

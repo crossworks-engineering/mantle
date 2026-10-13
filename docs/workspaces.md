@@ -37,8 +37,14 @@ the phone app, MCP and the HTTP API.
 ## Workspaces and users
 
 Open **Settings > Workspaces**. One screen per workspace holds its name,
-description and contact, its users with their Moderator ticks, its
+description, look and contact, its users with their Moderator ticks, its
 assistant, its connectors and its landing page.
+
+Each workspace has a **look**: a colour and an icon, picked the way a
+folder's are (the same palette and the same icons). The workspace switcher
+shows it, and so do the share marks on the item tree. With no colour or icon
+picked, the workspace shows a neutral colour and the default icon of its
+kind: Admin, Team, a private workspace, or any other.
 
 The workspaces a brain has:
 
@@ -58,8 +64,10 @@ The workspaces a brain has:
 Who may change a workspace:
 
 - **A Moderator** adds users (by a search on name or email), sets or clears
-  the Moderator tick, removes users, edits the name and description, and
-  sets the landing page. A Moderator outside Admin types at least 3 letters
+  the Moderator tick, removes users, edits the name, description and look,
+  and sets the landing page. The look follows the name's rule: whoever may
+  rename a workspace sets its colour and icon. Admin and Team keep their
+  names, but their look can change. A Moderator outside Admin types at least 3 letters
   and sees at most 10 matches.
 - **An Admin user** (with the users area) sees every workspace and may add
   anyone to any workspace, themselves included. The add is logged and the
