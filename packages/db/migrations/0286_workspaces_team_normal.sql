@@ -301,7 +301,7 @@ BEGIN
        AND a."workspace_id" IS NULL;
   RETURN QUERY SELECT * FROM "public"."mantle_ws_reach_diff"() d WHERE d."section" <> 'reach-fail';
 END
-$function$
+$function$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_migrate_bridged"() FROM PUBLIC;
 --> statement-breakpoint
