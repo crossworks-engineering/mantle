@@ -792,13 +792,27 @@ From A2b2b on, web and api send a login's scoped writes (a member's write
 request, an Admin turn) to the write role while the box is `warn` or `on`.
 A box that is `off` runs every write as before: nothing changes there. On a
 `warn` or `on` box each of the two processes opens up to 3 connections as
-`mantle_write_user` (6 of its limit of 20) after the roll. 0279 changes only
-functions: no table lock.
+`mantle_write_user` (6 of its limit of 20) after the roll.
+
+The first migrate with 0279 also makes the gap writer (`mantle_gap_writer`,
+NOLOGIN) and gives each gap table that has row level security a row rule
+for it (`node_snapshots`, `profiles`, `recall_maps`, `recall_nodes`,
+`recall_revisions`, `shares`). Each rule is its own short transaction that
+takes the table's ACCESS EXCLUSIVE lock: it waits at most 3 s and tries 8
+times, 1 s apart, as for 0278. If a table stays busy, migrate exits 1 after
+0279 and its functions are committed, with the message "could not take the
+lock to change the mantle_gap_writer row rule on <table> ... run migrate
+again": run migrate again. It is idempotent; a later run that changes
+nothing takes no table lock. A restore makes `mantle_gap_writer` first
+(`scripts/db-restore.sh`), as the viewer roles.
 
 In `warn`, a write the role refuses on its own checks is logged and runs
-(`actor_check_misses`, as above). A write to a table the role holds no
+(`actor_check_misses`, as above). A write to a gap table the role holds no
 right on runs again on the system pool and is logged as `write-role-gap`;
-read them with numbers only:
+in `on` that rerun is checked (the write role's rules, the gap tables
+written as `mantle_gap_writer`). Any other right the role does not hold is
+a 500 in `warn` and `on`, and a `write-role-gap` row too. Read them with
+numbers only:
 
 ```sql
 select check_name, count(*) from actor_check_misses

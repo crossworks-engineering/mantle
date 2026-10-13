@@ -871,7 +871,9 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
           }
         }),
       );
-      const said = warn.mock.calls.map((c) => String(c[0])).filter((t) => /joined writes/.test(t));
+      const said = warn.mock.calls
+        .map((c) => String(c[0]))
+        .filter((t) => /savepoints in one|nested calls in one/.test(t));
       expect(said).toHaveLength(1);
     } finally {
       warn.mockRestore();
@@ -928,11 +930,184 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     );
     expect(named.via_item).toHaveLength(1);
     expect(named.via_other).toEqual([]);
+    // Round 3: the brain's Admin workspace is named with no folder (a new
+    // item at a kind's root lands there), to a member too.
+    const admin = await inRequest(mem, () =>
+      m.withSystemTx(async (tx) => {
+        const rows = (await tx.execute(
+          sql`select mantle_ws_names(array[${adminWs}::uuid], null) as n`,
+        )) as unknown as { n: unknown[] }[];
+        return rows[0]!.n;
+      }),
+    );
+    expect(admin).toHaveLength(1);
     await m.withHeads([teamNote], 'update', (tx) =>
       tx.execute(
         sql`delete from item_grants where node_id = ${teamNote} and workspace_id = ${elsewhere}`,
       ),
     );
     void tree;
+  });
+  // ── Fix round 3 ───────────────────────────────────────────────────────────
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  for (const mode of ['warn', 'on'] as const) {
+    it(`A (round 3, ${mode}): a transaction that fails while a join runs sends nothing of it after its rollback`, async () => {
+      setMode(mode);
+      const client = await import('@mantle/db/client');
+      m.takeWriteRoleGaps();
+      const id = await noteIn(team, `${tag} A ${mode}`);
+      const before = await titleOf(id);
+      const late: unknown[] = [];
+      let runs = 0;
+      const err = await failure(
+        inRequest(mem, () =>
+          m.db.transaction(async (tx) => {
+            runs += 1;
+            // In on: a gap first, so the work runs again checked (the
+            // system pool's connection).
+            if (mode === 'on' && runs === 1) {
+              await tx
+                .insert(m.profiles)
+                .values({ userId: mem, preferences: {} })
+                .onConflictDoNothing();
+            }
+            await tx
+              .update(m.nodes)
+              .set({ title: `${tag} A outer` })
+              .where(eq(m.nodes.id, id));
+            const join = (async () => {
+              await m.db
+                .update(m.nodes)
+                .set({ title: `${tag} A j1` })
+                .where(eq(m.nodes.id, id));
+              await sleep(200);
+              await m.db
+                .update(m.nodes)
+                .set({ title: `${tag} A j2` })
+                .where(eq(m.nodes.id, id));
+            })();
+            join.catch((e: unknown) => late.push(e));
+            await Promise.all([join, Promise.reject(new Error('a step that is not the database'))]);
+          }),
+        ),
+      );
+      expect(err?.message).toBe('a step that is not the database');
+      expect(runs).toBe(mode === 'on' ? 2 : 1);
+      await sleep(500);
+      // Rolled back, and nothing written after.
+      expect(await titleOf(id)).toBe(before);
+      expect(late).toHaveLength(1);
+      expect(root(late[0] as Error)).toBeInstanceOf(client.JoinedWriteEndedError);
+      m.takeWriteRoleGaps();
+      m.takeActorMisses();
+    });
+  }
+
+  it('C (round 3): a nested transaction beside a join is in line: its rollback leaves the join’s rows', async () => {
+    setMode('warn');
+    const [a, b] = await Promise.all([noteIn(team, `${tag} C a`), noteIn(team, `${tag} C b`)]);
+    await inRequest(mem, () =>
+      m.db.transaction(async (tx) => {
+        const out = await Promise.allSettled([
+          tx.transaction(async (sp) => {
+            await sp
+              .update(m.nodes)
+              .set({ title: `${tag} C inner` })
+              .where(eq(m.nodes.id, a));
+            await sleep(100);
+            throw new Error('the inner one rolls back');
+          }),
+          m.db
+            .update(m.nodes)
+            .set({ title: `${tag} C joined` })
+            .where(eq(m.nodes.id, b)),
+        ]);
+        expect(out.map((o) => o.status)).toEqual(['rejected', 'fulfilled']);
+      }),
+    );
+    expect(await titleOf(a)).toBe(`${tag} C a`);
+    expect(await titleOf(b)).toBe(`${tag} C joined`);
+  });
+
+  it('E (round 3): one savepoint count per transaction, joins and nested system transactions alike', async () => {
+    setMode('warn');
+    const id = await noteIn(team, `${tag} E`);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await inRequest(mem, () =>
+        m.db.transaction(async () => {
+          for (let i = 0; i < 20; i += 1) {
+            await m.db
+              .update(m.nodes)
+              .set({ title: `${tag} E ${i}` })
+              .where(eq(m.nodes.id, id));
+          }
+          await m.withSystemTx(async () => {
+            for (let i = 0; i < 20; i += 1) {
+              await m.withSystemTx((s) =>
+                s
+                  .update(m.nodes)
+                  .set({ title: `${tag} E n${i}` })
+                  .where(eq(m.nodes.id, id)),
+              );
+            }
+          });
+        }),
+      );
+      const said = warn.mock.calls
+        .map((c) => String(c[0]))
+        .filter((t) => /savepoints in one|nested calls in one/.test(t));
+      expect(said).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await titleOf(id)).toBe(`${tag} E n19`);
+  });
+
+  it('B (round 3): a member’s Recall map write over MCP works in on (the map lock runs as the gap writer)', async () => {
+    setMode('on');
+    m.takeWriteRoleGaps();
+    const ls = await import('@mantle/mcp-core');
+    const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+    const { Client } = await import('@modelcontextprotocol/client');
+    const prepared = await ls.prepareCallerTools({
+      role: 'member',
+      anchorId: owner,
+      loginId: mem,
+      via: 'oauth',
+      write: true,
+    });
+    const server = new McpServer({ name: 'test', version: '0' });
+    ls.registerPreparedTools(server, prepared);
+    const [ta, tb] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: 'a2b2b', version: '0' });
+    await Promise.all([server.connect(ta), c.connect(tb)]);
+    type Reply = { isError?: boolean; content?: { text?: string }[] };
+    const textOf = (r: Reply) => (r.content ?? []).map((x) => x.text ?? '').join('\n');
+    try {
+      const made = (await c.callTool({
+        name: 'recall_map_create',
+        arguments: { title: `${tag} map`, enter_when: 'when testing A2b2b in on' },
+      })) as Reply;
+      expect(made.isError, textOf(made)).not.toBe(true);
+      const slug = (JSON.parse(textOf(made)) as { slug?: string }).slug;
+      expect(slug, textOf(made)).toBeTruthy();
+      const updated = (await c.callTool({
+        name: 'recall_map_update',
+        arguments: { map: slug, title: `${tag} map renamed` },
+      })) as Reply;
+      expect(updated.isError, textOf(updated)).not.toBe(true);
+      expect(textOf(updated)).not.toMatch(/permission denied|internal error/i);
+      const [row] = await x<{ title: string }>(
+        sql`select title from recall_maps where slug = ${slug!}`,
+      );
+      expect(row?.title).toBe(`${tag} map renamed`);
+    } finally {
+      await c.close();
+    }
+    m.takeWriteRoleGaps();
+    m.takeActorMisses();
   });
 });

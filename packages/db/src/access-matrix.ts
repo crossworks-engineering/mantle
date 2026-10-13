@@ -18,7 +18,7 @@
  * them on a fresh install.
  */
 import type postgres from 'postgres';
-import { POOL_ROLES, RETIRED_POOL_ROLES, withRoleRetry } from './viewer-roles';
+import { LOCK_ATTRS, POOL_ROLES, RETIRED_POOL_ROLES, withRoleRetry } from './viewer-roles';
 import { viewerRoleName } from './viewer';
 import { kindsWhere, type WorkspaceKind } from '@mantle/client-types/kinds';
 
@@ -655,6 +655,24 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
  * on the list is dropped). Each row rule change in its own short
  * transaction (lock_timeout 3 s, with retries), as syncWriteRoleRules.
  */
+/** The statement that brings GAP_WRITER_ROLE to its wanted state, every
+ *  pass (fix round 3, D): made when missing, its attributes set again
+ *  when it exists, as viewerRoleStatements does the viewer roles'. Pure. */
+export function gapWriterRoleStatement(exists: boolean): string {
+  return `${exists ? 'ALTER' : 'CREATE'} ROLE "${GAP_WRITER_ROLE}" WITH NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
+}
+
+/** The error a gap writer row rule change gives after its last try (fix
+ *  round 3, F): what happened and what to do. */
+export function gapWriterRuleLockError(table: string, cause: unknown): Error {
+  return new Error(
+    `migrate: could not take the lock to change the mantle_gap_writer row rule on ${table} ` +
+      '(8 tries of 3 s each: the table was busy). The migrations are committed (0279 too); ' +
+      'run migrate again: it is idempotent and picks up here.',
+    { cause },
+  );
+}
+
 export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Promise<void> {
   const role = `"${GAP_WRITER_ROLE}"`;
   const gap = Object.keys(WRITE_ROLE_GAP_TABLES).map((t) => `public.${t}`);
@@ -662,11 +680,8 @@ export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Pro
     sql.begin(async (tx) => {
       const [has] = await tx<{ ok: boolean }[]>`
         select exists (select 1 from pg_roles where rolname = ${GAP_WRITER_ROLE}) as ok`;
-      if (!has?.ok) {
-        await tx.unsafe(
-          `CREATE ROLE ${role} WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`,
-        );
-      }
+      // Every pass: a role someone changed by hand gets its lock back.
+      await tx.unsafe(gapWriterRoleStatement(!!has?.ok));
       await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public, auth FROM ${role}`);
       await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, auth FROM ${role}`);
       await tx.unsafe(`GRANT USAGE ON SCHEMA public TO ${role}`);
@@ -723,7 +738,8 @@ export async function syncGapWriterRights(sql: ReturnType<typeof postgres>): Pro
         break;
       } catch (err) {
         const code = (err as { code?: string }).code ?? '';
-        if (attempt >= 8 || !RETRY_CODES.has(code)) throw err;
+        if (!RETRY_CODES.has(code)) throw err;
+        if (attempt >= 8) throw gapWriterRuleLockError(r.t, err);
         await new Promise((res) => setTimeout(res, 1000));
       }
     }

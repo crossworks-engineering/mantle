@@ -52,8 +52,9 @@
 --     - mantle_ws_live(ws, via): the workspace is live (not archived), and
 --     - mantle_ws_names(ids, via): [{wsId, name}], by name: both only for a
 --       workspace the scope holds, one holding a grant on `via` (the
---       destination folder, or the moved item) that the scope reads, or any
---       for an Admin scope (or with no scope set).
+--       destination folder, or the moved item) that the scope reads, the
+--       brain's Admin workspace, or any for an Admin scope (or with no
+--       scope set).
 -- 6. mantle_contact_share_check (a trigger on shares, 0214) runs as its
 --    owner: the checked rerun writes shares as mantle_gap_writer, a role
 --    with rights on the gap tables only (access-matrix.ts).
@@ -541,13 +542,17 @@ REVOKE ALL ON FUNCTION "public"."mantle_workspace_event"(uuid, uuid, text, jsonb
 -- reaches it through `via` (fix round 2, L4): a workspace of the scope, any
 -- for an Admin scope (or with no scope set), or one holding a grant (not
 -- excluded) on `via` itself, a node the scope reads: the destination folder
--- (what a new or moved item gains) or the moved item (what it loses).
+-- (what a new or moved item gains) or the moved item (what it loses). And
+-- the brain's Admin workspace (round 3): where a new item at a kind's root
+-- lands (no folder to name it through); every login knows it is there.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_nameable"(ws uuid, via uuid)
   RETURNS boolean LANGUAGE sql STABLE
   SET search_path = "public", pg_temp AS $$
   SELECT NOT "public"."mantle_scope_active"()
       OR ws = ANY ("public"."mantle_scope_ws"())
       OR "public"."mantle_scope_has_admin"()
+      OR EXISTS (SELECT 1 FROM "public"."workspaces" a
+                  WHERE a."id" = ws AND a."is_admin" AND a."owner_id" = "public"."mantle_brain_id"())
       OR EXISTS (SELECT 1 FROM "public"."item_grants" g
                    JOIN "public"."nodes" n ON n."id" = g."node_id"
                   WHERE g."node_id" = via AND g."workspace_id" = ws AND NOT g."excluded"

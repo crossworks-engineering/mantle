@@ -538,8 +538,10 @@ check off. Both are tagged as the actor's own for the round-trip test.
   once more: in warn on the system pool, as before A2b2b; in on **checked**,
   on the system pool with `SET LOCAL ROLE mantle_write_user` and the same
   scope, every statement as the write role (its row rules and write checks)
-  except a write whose target is a gap table, or a read naming one the
-  write role cannot read at all (`secrets`, `app_table_exports`), which runs
+  except a write whose target is a gap table, a row-locking read (`FOR
+  UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
+  a read naming one the write role cannot read at all (`secrets`,
+  `app_table_exports`), which runs
   as `mantle_gap_writer` (fix round 2) between `set local role` to it and
   the write role set back. That role is NOLOGIN and holds rights on the gap
   tables only (and a row rule that lets it through theirs), made by
@@ -598,14 +600,26 @@ check off. Both are tagged as the actor's own for the round-trip test.
   never on a second connection (3 per process: three such requests at once
   waited on each other for ever). A statement gets its own savepoint (it
   fails alone, as on its own connection); a joined `withSystemTx`'s hooks
-  run when the outer transaction ends. Joins at one level run one after
-  another (fix round 2): two at once would interleave their savepoints, and
-  a rollback to the second would take the first's statement after its
-  caller was told it succeeded. A statement of that level waits for the
-  joins queued before it, and the transaction waits for joins left running
-  before it commits. Each join counts toward `NESTED_SAVEPOINT_WARN` (one
-  warning past 32): postgres.js never releases a savepoint, and releasing
-  would not help, as Postgres keeps a subtransaction's id to the end. So in warn and on such a write
+  run when the outer transaction ends. Every savepoint at one level, a
+  join's or drizzle's nested transaction, runs one after another (fix
+  rounds 2 and 3): two at once would interleave, and a rollback to the
+  second would take the first's statement after its caller was told it
+  succeeded. Each savepoint is a level of its own; a statement of a level
+  waits for the savepoints queued before it (unless it runs inside one),
+  and the transaction waits for joins left running before it commits. When
+  a transaction or a savepoint fails, it ends first: what it left running
+  settles before the ROLLBACK, and any statement of an ended level (or one
+  under it) is refused before it reaches the driver
+  (`JoinedWriteEndedError`), so nothing is sent on a connection after its
+  transaction ended, on the write pool or on the checked rerun's system
+  connection. Refusing a parallel join instead was weighed (round 3): it
+  is not simpler (it still needs the ended-level refusal and the same hooks
+  on every savepoint path) and it would turn a caller's `Promise.all` of
+  writes inside a transaction into an error. Each savepoint counts toward
+  `NESTED_SAVEPOINT_WARN` (one warning past 32; one count per transaction,
+  a nested `withSystemTx`'s too): postgres.js never releases a savepoint,
+  and releasing would not help, as Postgres keeps a subtransaction's id to
+  the end. So in warn and on such a write
   commits and rolls back with the transaction around it (off keeps the old
   separate connection). Any wait for a write-pool connection is bounded
   (15 s, `WritePoolBusyError`, a busy answer, logged); the suite fails on a
@@ -733,6 +747,13 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   workspace's grant row on the item; a workspace is named only through the
   change's own folder or item; the event's subject is the caller's object
   (no unwrap).
+- **Fix round 3 (2026-10-13).** A transaction or savepoint that fails ends
+  first and nothing of it reaches the driver after; drizzle's nested
+  transactions are in line with the joins; one savepoint count per
+  transaction; a row-locking read of a gap table runs as the gap writer in
+  the checked rerun (Recall's map lock); the gap writer's attributes are
+  set on every migrate; the Admin workspace is named in the confirm; a
+  migrate that cannot lock a gap table says to run it again.
 - **The system-only content tables** stay on the system pool: by table up
   front for a single write, by a logged gap for a transaction
   (`WRITE_ROLE_GAP_TABLES`).

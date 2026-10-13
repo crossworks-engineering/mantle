@@ -65,8 +65,9 @@ function retireStatement(role: string, exists = true): string {
  *  counts in the box's worst case (docs/actors.md, "A2b2b must"). */
 export const ROLE_CONNECTION_LIMIT: Readonly<Record<PoolRole, number>> = { user: 30, write: 20 };
 
-/** The attributes that make a viewer role a lock. */
-const LOCK_ATTRS = `NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`;
+/** The attributes that make a viewer role a lock (and the gap writer:
+ *  access-matrix.ts gapWriterRoleStatement). */
+export const LOCK_ATTRS = `NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION`;
 
 /** The statements that bring one LOGIN role to its wanted state. Pure, so a
  *  test can pin the attributes that make the lock a lock. With no master key

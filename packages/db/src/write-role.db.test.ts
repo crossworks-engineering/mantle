@@ -27,6 +27,8 @@ import {
   WRITE_ROLE_FUNCTIONS,
   WRITE_ROLE_SYSTEM_ONLY,
   WRITE_ROLE_TABLES,
+  gapWriterRoleStatement,
+  syncGapWriterRights,
   syncWriteRoleRules,
   writeCheckArgs,
   writeRoleWrites,
@@ -271,6 +273,27 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
   });
 
   // ── Policies ──────────────────────────────────────────────────────────────
+
+  it('the gap writer (A2b2b round 3, D): its lock attributes are set again on every pass', async () => {
+    const stmt = gapWriterRoleStatement(true);
+    for (const attr of ['NOLOGIN', 'NOSUPERUSER', 'NOBYPASSRLS', 'NOINHERIT', 'NOCREATEROLE']) {
+      expect(stmt).toContain(attr);
+    }
+    expect(stmt.startsWith('ALTER ROLE "mantle_gap_writer" WITH')).toBe(true);
+    // Changed by hand: the next pass takes it back.
+    await sql.unsafe('ALTER ROLE "mantle_gap_writer" WITH BYPASSRLS INHERIT');
+    try {
+      await syncGapWriterRights(sql);
+    } finally {
+      const [r] = await sql<{ bypass: boolean; inherit: boolean; login: boolean }[]>`
+        select rolbypassrls as bypass, rolinherit as inherit, rolcanlogin as login
+          from pg_roles where rolname = 'mantle_gap_writer'`;
+      if (r?.bypass || r?.inherit) {
+        await sql.unsafe('ALTER ROLE "mantle_gap_writer" WITH NOBYPASSRLS NOINHERIT');
+      }
+      expect(r).toEqual({ bypass: false, inherit: false, login: false });
+    }
+  });
 
   it('every read rule of the workspace role names the write role, and only SELECT rules do', async () => {
     const rows = await sql<{ t: string; cmd: string; both: boolean }[]>`
