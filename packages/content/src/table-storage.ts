@@ -1,4 +1,4 @@
-import { existsSync, rmSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
@@ -8,7 +8,10 @@ import {
   db,
   draftAllowed,
   nodes,
+  markedBefore,
   readsDrafts,
+  removeSqliteFile,
+  revisionFiles,
   tables,
 } from '@mantle/db';
 import {
@@ -29,14 +32,7 @@ import { ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model'
 import { tableToText } from './table-to-text';
 import { errorMessage } from '@mantle/std';
 import { copySqliteFile, linkHistoryTree } from './history-files';
-import {
-  flipTable,
-  removeWorkbook,
-  stageDoc,
-  stagedTableWrite,
-  tableRevisionFiles,
-  tableRevisionPath,
-} from './table-broker';
+import { flipTable, stageDoc, stagedTableWrite, tableRevisionPath } from './table-broker';
 
 /**
  * File-side plumbing for sqlite-native tables (Tables v2 P1) — the pieces
@@ -229,7 +225,7 @@ export async function ensureFileBacked(node: EnsureFileNode): Promise<void> {
         const dataText = buildTableDataText(pub.abs, doc, node.title);
         return { files, skip: false as const, pubRel, draftRel, pub, dataText };
       } catch (err) {
-        files.forEach(removeWorkbook);
+        files.forEach(removeSqliteFile);
         throw err;
       }
     },
@@ -248,12 +244,6 @@ export async function ensureFileBacked(node: EnsureFileNode): Promise<void> {
  *  or null: THE way a reader finds a table's draft (A3b). */
 export function draftAbsOf(draftPath: string | null | undefined): string | null {
   return draftPath ? resolveStoragePath(draftPath) : null;
-}
-
-/** Remove a workbook file and its WAL/SHM sidecars (draft discard, table
- *  delete, failed-create cleanup). Best-effort by design. */
-export function removeTableFile(abs: string): void {
-  for (const f of [abs, `${abs}-wal`, `${abs}-shm`]) rmSync(f, { force: true });
 }
 
 /** The registry columns a successful file write updates, in drizzle `set`
@@ -390,6 +380,11 @@ export async function sweepLegacyTables(batch = 5): Promise<number> {
  *  authors read their accepted tables from (member-snapshots.ts). */
 export const SNAPSHOT_OWNER = 'accepted-snapshots';
 
+/** A backup's options: `dumpStartedAt` (ms), when the Postgres dump the
+ *  archive goes with started. Given, revisions the sweep had marked
+ *  unreferenced before it are left out; without it, every revision goes. */
+export type SnapshotAllOptions = { dumpStartedAt?: number };
+
 export type TableDbSnapshotReport = {
   snapshotted: { ownerId: string; nodeId: string; bytes: number; draft: boolean }[];
   /** Registry rows whose published file is absent — already-lost data, NOT
@@ -407,7 +402,17 @@ export type TableDbSnapshotReport = {
  * restore). Same contract as snapshotAllAppDatabases: report partial
  * failures loudly, never let a missing file look backed up.
  */
-export async function snapshotAllTableDatabases(destDir: string): Promise<TableDbSnapshotReport> {
+export async function snapshotAllTableDatabases(
+  destDir: string,
+  opts: SnapshotAllOptions = {},
+): Promise<TableDbSnapshotReport> {
+  // Bounded (A3b fix round 2): with the dump's start, a revision the sweep
+  // had already marked unreferenced before it is left out (no restored row
+  // can name it).
+  const leaveOut =
+    opts.dumpStartedAt !== undefined
+      ? markedBefore(tableDbRoot(), opts.dumpStartedAt)
+      : () => false;
   const rows = await db
     .select({
       nodeId: tables.nodeId,
@@ -463,10 +468,11 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
         const dirRel = path.posix.dirname(rel);
         const found = r.snapshot
           ? [resolveStoragePath(rel)].filter((f) => existsSync(f))
-          : tableRevisionFiles(path.dirname(resolveStoragePath(rel)), r.nodeId);
+          : revisionFiles(path.dirname(resolveStoragePath(rel)), r.nodeId, 'tables');
         for (const f of found) {
           if (seen.has(f)) continue;
           seen.add(f);
+          if (f !== abs && !named.some((n) => resolveStoragePath(n) === f) && leaveOut(f)) continue;
           files.push({ abs: f, rel: `${dirRel}/${path.basename(f)}` });
         }
       }

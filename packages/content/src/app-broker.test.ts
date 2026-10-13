@@ -272,7 +272,7 @@ describe('appDbQuery opens the database read-only', () => {
 describe('appDbFiles', () => {
   it('lists the db file plus its journal/WAL/SHM sidecars', () => {
     const base = '/data/app-dbs/owner/app.sqlite';
-    expect(appDbFiles(base)).toEqual([base, `${base}-journal`, `${base}-wal`, `${base}-shm`]);
+    expect(appDbFiles(base)).toEqual([base, `${base}-wal`, `${base}-shm`, `${base}-journal`]);
   });
 });
 

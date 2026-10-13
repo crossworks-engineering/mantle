@@ -27,10 +27,19 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { acceptedSnapshots, db, draws, nodes, pages, spaceItems, tables } from '@mantle/db';
+import {
+  acceptedSnapshots,
+  db,
+  draws,
+  nodes,
+  pages,
+  removeSqliteFile,
+  spaceItems,
+  tables,
+} from '@mantle/db';
 import { diskPathForFile } from '@mantle/files';
 import { relativeStoragePath, resolveStoragePath, snapshotFile } from '@mantle/tabledb';
-import { SNAPSHOT_OWNER, removeTableFile } from './table-storage';
+import { SNAPSHOT_OWNER } from './table-storage';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -168,7 +177,7 @@ export async function writeAcceptedSnapshots(
           const dest = snapshotTableAbs(node.id);
           // VACUUM INTO: a consistent copy even with a WAL beside it.
           snapshotFile(resolveStoragePath(r.storagePath), dest);
-          hooks.onRollback?.push(async () => removeTableFile(dest));
+          hooks.onRollback?.push(async () => removeSqliteFile(dest));
           base.tablePath = relativeStoragePath(SNAPSHOT_TABLE_OWNER, node.id);
         } else {
           base.tableDoc = r.tableData;

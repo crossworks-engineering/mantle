@@ -12,7 +12,15 @@
  * interleave into a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, tables, notifyNodeIngested, oneRow, StoreRefusedError } from '@mantle/db';
+import {
+  db,
+  nodes,
+  tables,
+  notifyNodeIngested,
+  oneRow,
+  removeSqliteFile,
+  StoreRefusedError,
+} from '@mantle/db';
 import { existsSync, statSync } from 'node:fs';
 import {
   MATERIALIZE_MAX,
@@ -44,7 +52,6 @@ import {
   flipTable,
   opsInPlace,
   readTableRow,
-  removeWorkbook,
   revisionBesideRow,
   stageDoc,
   stageDraftCopy,
@@ -150,7 +157,7 @@ export async function applyTableOps(
               const res = stageOps(abs, ops, coerceCell);
               return { files: [abs], res, mirror: draftMirror(abs) };
             } catch (err) {
-              removeWorkbook(abs);
+              removeSqliteFile(abs);
               throw err;
             }
           },
@@ -477,7 +484,7 @@ export async function commitTable(
                 dataText: buildTableDataText(abs, fromDraft ? null : doc, node.title),
               };
             } catch (err) {
-              files.forEach(removeWorkbook);
+              files.forEach(removeSqliteFile);
               throw err;
             }
           },

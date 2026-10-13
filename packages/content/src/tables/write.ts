@@ -10,11 +10,13 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import {
   afterCommit,
-  afterRollback,
+  afterOuterRollback,
   db,
   headsOrSpace,
   inFlipTransaction,
   oneRow,
+  removeSqliteFile,
+  revisionFiles,
   nodes,
   tables,
   withDeadlockRetry,
@@ -39,13 +41,7 @@ import {
 } from '@mantle/content-core/table-model';
 import { buildTableDataText, registryFileColumns } from '../table-storage';
 import { snapshotTableAbs } from '../member-snapshots';
-import {
-  removeWorkbook,
-  stageDoc,
-  stageThenFlipTable,
-  tableRevisionFiles,
-  tableRevisionPath,
-} from '../table-broker';
+import { stageDoc, stageThenFlipTable, tableRevisionPath } from '../table-broker';
 import {
   TABLES_ROOT_LABEL,
   TAB_NAME,
@@ -115,13 +111,13 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
   // committed. A failure inside it removes the file below. Inside a personal
   // space this transaction is only a savepoint: the space transaction can
   // still roll back after it, so the file is removed then too
-  // (afterRollback). JSONB `data`/`data_text` are dual-written through the
+  // (afterOuterRollback). JSONB `data`/`data_text` are dual-written through the
   // transition (rollback = clear storage_path, plan §9).
   // The store broker (A3b, plan 20.3): the workbook is staged under a new
   // revision name no row points at, then the create's transaction inserts
   // the node (the check: exactly one row) and the registry row pointing at
   // it. A failure removes the stage; inside a personal space the space's
-  // rollback does (afterRollback).
+  // rollback does (afterOuterRollback).
   const pubRel = tableRevisionPath(ownerId, id, false);
   return stageThenFlipTable(
     () => {
@@ -176,7 +172,10 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
             });
           }),
       );
-      afterRollback(() => removeWorkbook(staged.abs));
+      // An outer transaction this create joined (a personal space, a
+      // login's open write transaction) may still roll back: the stage goes
+      // with it, never a file no row will name (A3b fix round 2, N6).
+      afterOuterRollback(() => removeSqliteFile(staged.abs));
       return created;
     },
   );
@@ -272,8 +271,8 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
   if (named.length > 0) {
     await afterCommit(() => {
       const dirs = new Set(named.map((p) => path.dirname(resolveStoragePath(p))));
-      for (const d of dirs) tableRevisionFiles(d, id).forEach(removeWorkbook);
-      removeWorkbook(snapshotTableAbs(id));
+      for (const d of dirs) revisionFiles(d, id, 'tables').forEach(removeSqliteFile);
+      removeSqliteFile(snapshotTableAbs(id));
     });
   }
   return true;

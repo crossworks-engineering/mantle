@@ -435,6 +435,10 @@ async function runBackupInner(
       'no runnable pg_dump found. Install a Postgres client at least as new as the server (Docker images ship it; on macOS `brew install libpq`) or set MANTLE_PG_DUMP to the binary.',
     );
   }
+  // When the dump starts: the workbook and app database archives leave out
+  // only the revisions the store sweep had marked unreferenced before it
+  // (A3b fix round 2), so the file every dumped row names is in them.
+  const dumpStartedAt = Date.now();
   const exit = await new Promise<{ code: number | null; stderr: string; spawnErr?: string }>(
     (resolve) => {
       const child = spawn(bin, ['--dbname', databaseUrl, '-Fc', '--no-owner'], {
@@ -488,7 +492,9 @@ async function runBackupInner(
   // the counts land in the status so it can't be silent either.
   let tableDbs: BackupStatus['tableDbs'];
   try {
-    const r = await snapshotAllTableDatabases(path.join(dir, `mantle-table-dbs-${ts}`));
+    const r = await snapshotAllTableDatabases(path.join(dir, `mantle-table-dbs-${ts}`), {
+      dumpStartedAt,
+    });
     tableDbs = {
       snapshotted: r.snapshotted.length,
       missing: r.missing.length,
@@ -512,7 +518,9 @@ async function runBackupInner(
   // before). Loud but non-fatal, counts surfaced in the status.
   let appDbs: BackupStatus['appDbs'];
   try {
-    const r = await snapshotAllAppDatabases(path.join(dir, `mantle-app-dbs-${ts}`));
+    const r = await snapshotAllAppDatabases(path.join(dir, `mantle-app-dbs-${ts}`), {
+      dumpStartedAt,
+    });
     appDbs = {
       snapshotted: r.snapshotted.length,
       missing: r.missing.length,

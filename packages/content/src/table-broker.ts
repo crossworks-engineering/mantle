@@ -23,24 +23,15 @@
  *
  * Server-only (node:fs, node:sqlite).
  */
-import {
-  copyFileSync,
-  existsSync,
-  linkSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { copyFileSync, existsSync, linkSync, mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import {
   db,
   inFlipTransaction,
   oneRow,
+  removeSqliteFile,
   revisionToken,
-  SQLITE_SIDECARS,
-  stageNamedByRow,
   stageThenFlip,
   tables,
 } from '@mantle/db';
@@ -53,7 +44,6 @@ import {
 import {
   resolveStoragePath,
   snapshotFile,
-  tableDbRoot,
   type ApplyResult,
   type CoerceFn,
   type TableOp,
@@ -93,58 +83,17 @@ export function tableRevisionPath(ownerId: string, nodeId: string, draft: boolea
   return `${ownerId}/${nodeId}.r-${revisionToken()}${draft ? '.draft' : ''}.sqlite`;
 }
 
-const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-/** A workbook's file name: `<node>[.r-<token>][.draft].sqlite`. */
-const TABLE_FILE_NAME = new RegExp(`^(${UUID})(\\.r-[0-9a-z]+)?(\\.draft)?\\.sqlite$`);
-
-/** The node a workbook file name belongs to, or null: not a workbook
- *  revision (a sidecar, the history, anything else). */
-export function tableFileNode(name: string): string | null {
-  return TABLE_FILE_NAME.exec(name)?.[1] ?? null;
-}
-
-/** A draft written before A3b (`<node>.draft.sqlite`, no revision token):
- *  the sweep never removes one (it reports it). */
-export function isLegacyDraftName(name: string): boolean {
-  const m = TABLE_FILE_NAME.exec(name);
-  return m !== null && m[2] === undefined && m[3] !== undefined;
-}
-
-/** Every workbook revision of `nodeId` in the folder `dirAbs` (absolute
- *  paths; no sidecars): what a backup keeps (A3b fix round 1, H1: the
- *  revision a dump names may be one a flip has since replaced) and what a
- *  delete removes. */
-export function tableRevisionFiles(dirAbs: string, nodeId: string): string[] {
-  let names: string[];
-  try {
-    names = readdirSync(dirAbs);
-  } catch {
-    return [];
-  }
-  return names.filter((n) => tableFileNode(n) === nodeId).map((n) => path.join(dirAbs, n));
-}
-
-/** A stored path (relative to TABLE_DB_DIR) for an absolute one under it. */
-export function tableRelOf(abs: string): string {
-  return path.relative(path.resolve(tableDbRoot()), abs).split(path.sep).join('/');
-}
-
 /**
  * Stage, then flip, for a table (the store's one way to call the helper):
  * `stage` returns the files it wrote (absolute); a flip known not to have
- * landed removes them, and after any other error they go only when no
- * registry row names one of them (read again as the system).
+ * landed removes them, any other error keeps them (the sweep removes one no
+ * row names).
  */
 export function stageThenFlipTable<S extends { files: string[] }, T>(
   stage: () => S | Promise<S>,
   flip: (staged: S) => Promise<T>,
 ): Promise<T> {
-  return stageThenFlip(
-    stage,
-    flip,
-    (staged) => staged.files.forEach(removeWorkbook),
-    (staged) => stageNamedByRow({ store: 'tables', paths: staged.files.map(tableRelOf) }),
-  );
+  return stageThenFlip(stage, flip, (staged) => staged.files.forEach(removeSqliteFile));
 }
 
 /** A new revision beside the row's published file (its folder: a table
@@ -158,12 +107,6 @@ export function revisionBesideRow(
   const rel = tableRevisionPath(ownerId, nodeId, draft);
   if (!row.storagePath) return rel;
   return `${path.posix.dirname(row.storagePath)}/${path.posix.basename(rel)}`;
-}
-
-/** Remove a workbook and its SQLite sidecars (a stage the flip refused). */
-export function removeWorkbook(abs: string): void {
-  rmSync(abs, { force: true });
-  for (const s of SQLITE_SIDECARS) rmSync(`${abs}${s}`, { force: true });
 }
 
 /** Fold a workbook's WAL into it, so a copy of the main file is whole. */

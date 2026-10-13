@@ -23,9 +23,12 @@ import {
   appDatabases,
   inFlipTransaction,
   isBusy,
+  markedBefore,
   oneRow,
+  removeSqliteFile,
+  revisionFiles,
   revisionToken,
-  stageNamedByRow,
+  SQLITE_SIDECARS,
   stageThenFlip,
 } from '@mantle/db';
 import { env } from '@mantle/config';
@@ -321,8 +324,9 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** The bumped row must still name the file the write read: a restore that
  *  flipped `storage_path` since then (A3b fix round 1, M1) means the write
- *  would land in the replaced file. A busy error: the caller retries and
- *  reads the row again. */
+ *  would land in the replaced file. AppDbRestoringError, a busy error: the
+ *  broker answers 429 with reason 'busy' and the caller (the app, or the
+ *  agent) tries again, reading the row again. */
 function assertSamePath(named: string, read: string): void {
   if (named !== read) throw new AppDbRestoringError();
 }
@@ -344,60 +348,60 @@ async function bumpWriteSeq(tx: Tx, regId: string, storagePath: string): Promise
   return Number(row.seq);
 }
 
-/** How long a single statement's check waits for the registry row lock (a
- *  seed or a schema script holds it for its run, up to
- *  APP_SCHEMA_TIMEOUT_MS): past it, the statement is busy and retried
- *  (A3b fix round 1, M2). */
+/** How long one try of a single statement's check waits for the registry
+ *  row lock (a seed or a schema script holds it for its run, up to
+ *  APP_SCHEMA_TIMEOUT_MS): no transaction or file write is held while it
+ *  waits but its own (A3b fix round 1, M2). */
 export const APP_DB_CHECK_LOCK_TIMEOUT_MS = 2000;
+/** How long a single statement's check keeps trying, in lock waits of
+ *  APP_DB_CHECK_LOCK_TIMEOUT_MS, before it answers busy (A3b fix round 2,
+ *  N2: nothing on the client retries a busy answer, so the server waits out
+ *  a seed of up to this long itself). */
+export const APP_DB_CHECK_RETRY_MS = 10_000;
 
 /**
  * The checked statement of a single statement's write (host.db.exec, an MCP
  * write), on its own: committed before the app's SQL runs, so no transaction
  * or row lock is held across it (an app's statement may run for
  * APP_SQL_TIMEOUT_MS). A refusal stops it before the file; a statement that
- * then fails leaves only the revision one higher. It waits at most
- * APP_DB_CHECK_LOCK_TIMEOUT_MS behind a seed or a schema script
- * (AppSqlBusyError, a 429 the app retries), and refuses a row a restore
- * moved to another file since the caller read it (AppDbRestoringError).
+ * then fails leaves only the revision one higher. Behind a seed or a schema
+ * script it waits in lock waits of APP_DB_CHECK_LOCK_TIMEOUT_MS for up to
+ * APP_DB_CHECK_RETRY_MS, holding nothing between tries; past that it
+ * answers busy (AppSqlBusyError: 429 with reason 'busy', which reaches the
+ * app's code as an error; nothing retries it for the app). A row a restore
+ * moved to another file since the caller read it is refused
+ * (AppDbRestoringError).
  */
-async function checkAppDbWrite(regId: string, storagePath: string): Promise<void> {
-  try {
-    await db.transaction(async (tx) => {
-      await tx.execute(
-        sql`select set_config('lock_timeout', ${`${APP_DB_CHECK_LOCK_TIMEOUT_MS}ms`}, true)`,
-      );
-      await bumpWriteSeq(tx, regId, storagePath);
-    });
-  } catch (err) {
-    if (!(err instanceof AppSqlError) && isBusy(err)) {
-      throw new AppSqlBusyError(
-        "the app's database is busy with a seed or a schema change; try again in a few seconds",
-      );
+async function checkAppDbWrite(
+  regId: string,
+  storagePath: string,
+  opts: { retryMs?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + (opts.retryMs ?? APP_DB_CHECK_RETRY_MS);
+  for (;;) {
+    try {
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('lock_timeout', ${`${APP_DB_CHECK_LOCK_TIMEOUT_MS}ms`}, true)`,
+        );
+        await bumpWriteSeq(tx, regId, storagePath);
+      });
+      return;
+    } catch (err) {
+      if (err instanceof AppSqlError || !isBusy(err)) throw err;
+      if (Date.now() + APP_DB_CHECK_LOCK_TIMEOUT_MS > deadline) {
+        throw new AppSqlBusyError(
+          "the app's database is busy with a seed or a schema change; try again in a few seconds",
+        );
+      }
     }
-    throw err;
   }
-}
-
-/** An app database file's name: `<app>[.r-<token>].sqlite`. */
-const APP_FILE_NAME =
-  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\.r-[0-9a-z]+)?\.sqlite$/;
-
-/** The app a database file name belongs to, or null: not an app database
- *  revision (a sidecar, a restore marker, the history, a trial copy). */
-export function appFileNode(name: string): string | null {
-  return APP_FILE_NAME.exec(name)?.[1] ?? null;
 }
 
 /** Every database revision of `appNodeId` in the folder `dirAbs` (absolute
  *  paths, no sidecars): what a backup keeps (A3b fix round 1, H1). */
 export function appRevisionFiles(dirAbs: string, appNodeId: string): string[] {
-  let names: string[];
-  try {
-    names = fs.readdirSync(dirAbs);
-  } catch {
-    return [];
-  }
-  return names.filter((n) => appFileNode(n) === appNodeId).map((n) => path.join(dirAbs, n));
+  return revisionFiles(dirAbs, appNodeId, 'appdb');
 }
 
 /** A new revision of an app's database file, beside the current one. */
@@ -409,7 +413,8 @@ function appDbRevisionPath(storagePath: string, appNodeId: string): string {
  *  applies only when the manifest schema version is newer than what's recorded).
  *  Refuses an app whose file is gone although it held data (AppDbMissingError),
  *  and one being restored from a snapshot right now (AppDbRestoringError, a
- *  busy error: the brokers answer 429 and the app retries). */
+ *  busy error: the brokers answer 429 with reason 'busy'; the caller tries
+ *  again). */
 export async function ensureAppDatabase(
   ownerId: string,
   appNodeId: string,
@@ -1026,7 +1031,15 @@ export function snapshotDestPath(
  * registry row whose file is gone is reported as `missing` rather than letting
  * openSqlite's self-heal mkdir back up a phantom empty DB.
  */
-export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSnapshotReport> {
+export async function snapshotAllAppDatabases(
+  destDir: string,
+  opts: { dumpStartedAt?: number } = {},
+): Promise<AppDbSnapshotReport> {
+  // Bounded (A3b fix round 2): with the dump's start, a revision the sweep
+  // had already marked unreferenced before it is left out (no restored row
+  // can name it); without it, every revision goes.
+  const leaveOut =
+    opts.dumpStartedAt !== undefined ? markedBefore(appDbRoot(), opts.dumpStartedAt) : () => false;
   const rows = await db
     .select({
       ownerId: appDatabases.ownerId,
@@ -1068,6 +1081,7 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
     // a restore since then flipped the row to a new file while the dump
     // names the old one (the sweep keeps it for a grace period).
     for (const file of appRevisionFiles(path.dirname(r.storagePath), r.appNodeId)) {
+      if (file !== r.storagePath && leaveOut(file)) continue;
       const destFile = snapshotDestPath(destDir, layoutOwner, r.appNodeId, file);
       try {
         await mkdir(path.dirname(destFile), { recursive: true });
@@ -1092,7 +1106,7 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
 /** Every on-disk file SQLite may create for one database: the file itself plus
  *  the rollback-journal / WAL sidecars. We clean all of them on delete. */
 export function appDbFiles(storagePath: string): string[] {
-  return ['', '-journal', '-wal', '-shm'].map((suffix) => `${storagePath}${suffix}`);
+  return [storagePath, ...SQLITE_SIDECARS.map((suffix) => `${storagePath}${suffix}`)];
 }
 
 // ── Snapshots (the file half; app-snapshots.ts keeps the rows) ─────────────
@@ -1207,13 +1221,10 @@ export async function restoreAppDatabaseFile(
         );
         return { bytes: size };
       },
-      (staged) => {
-        for (const f of appDbFiles(staged)) fs.rmSync(f, { force: true });
-      },
-      // A flip that may have committed (a lost acknowledgement): the stage
-      // goes only when no row names it (A3b fix round 1, H2), so a restored
-      // app never points at a removed file while its old one is swept.
-      (staged) => stageNamedByRow({ store: 'appdb', paths: [staged] }),
+      // Only a flip known not to have landed removes the stage; after one
+      // that may have committed it stays (A3b fix rounds 1 and 2, H2, N3),
+      // so a restored app never points at a removed file.
+      removeSqliteFile,
     );
   } finally {
     await rm(marker, { force: true });

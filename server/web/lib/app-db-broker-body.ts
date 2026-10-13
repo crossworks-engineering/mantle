@@ -45,7 +45,9 @@ export type AppDbErrorLog = Omit<AppErrorEntry, 'source' | 'message' | 'status'>
 
 export function appDbErrorResponse(err: unknown, where: string, log?: AppDbErrorLog): NextResponse {
   if (err instanceof AppSqlBusyError) {
-    // A wait, not a fault: the kit retries it, so it is not logged.
+    // A wait, not a fault, so it is not logged. Nothing retries it for the
+    // app (the kit hands reason 'busy' to the app's code): the broker has
+    // already waited (the store check retries for 10 s, A3b fix round 2).
     return NextResponse.json(
       { ok: false, error: err.message, reason: 'busy' },
       { status: 429, headers: { 'retry-after': '1' } },
