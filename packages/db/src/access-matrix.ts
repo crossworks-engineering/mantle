@@ -123,6 +123,10 @@ export type EditCheck = {
   /** nodes: the keys of mantle_node_derived_keys() in data are the brain's:
    *  a write may clear one, never set or change one. */
   derivedKeys?: true;
+  /** shares: a row with a contact_id (a contact share) needs admin instead
+   *  of the operation's or column's need (the guide: "Share it with one
+   *  contact: to be an Admin user, its home is not checked"). */
+  contactAdmin?: true;
 };
 
 /** The draft columns of the item tables. The workspace role reads them since
@@ -413,6 +417,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       insert: 'link',
       delete: 'link_close',
       columns: { link_close: ['revoked_at'], link: 'rest' },
+      contactAdmin: true,
     },
   },
   // Contact shares (0214): the /s layer reads and writes these on the admin
@@ -796,7 +801,8 @@ export function editCheckTriggers(
   if (e.item !== 'self') ident(e.item, where);
   const table = quoteTable(t.table);
   const when = `current_user = 'mantle_write_user'`;
-  const fn = (need: string, mode = '') => {
+  const rowMode = e.contactAdmin ? 'contact' : '';
+  const fn = (need: string, mode = rowMode) => {
     if (!EDIT_NEEDS.has(need)) throw new Error(`${where}: unknown need ${need}`);
     return `EXECUTE FUNCTION "public"."mantle_edit_check_trg"('${need}', '${e.item}', '${e.via ?? ''}', '${mode}')`;
   };

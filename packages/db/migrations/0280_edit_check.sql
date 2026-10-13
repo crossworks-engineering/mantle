@@ -33,7 +33,8 @@
 --    link_close (a link closed: link, or an Admin user with the users
 --    area).
 -- 5. The read-only refusal (plan 4.1): a statement trigger on every item
---    table (the tables of mantle_actor_check_tables()), WHEN
+--    table (the tables of mantle_actor_check_tables(), less node_acl_head:
+--    a heads lock is not a change), WHEN
 --    mantle.write_mode = 'ro': a read key, an assistant with no user, a
 --    public link, a peer and a contact share without can_write write
 --    nothing. Detail ro_actor.
@@ -372,7 +373,11 @@ DO $$
 DECLARE
   t regclass;
 BEGIN
-  FOR t IN SELECT c.tbl FROM "public"."mantle_actor_check_tables"() c LOOP
+  -- Every item table but the heads rows: taking a heads lock (a definer's
+  -- write of node_acl_head) is a lock, not a change of an item, and a read
+  -- path takes one too.
+  FOR t IN SELECT c.tbl FROM "public"."mantle_actor_check_tables"() c
+            WHERE c.tbl <> 'public.node_acl_head'::regclass LOOP
     EXECUTE format('DROP TRIGGER IF EXISTS mantle_edit_check_ro ON %s', t);
     EXECUTE format(
       'CREATE TRIGGER mantle_edit_check_ro BEFORE INSERT OR UPDATE OR DELETE ON %s '

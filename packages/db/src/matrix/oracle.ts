@@ -216,3 +216,192 @@ export function expectedFolderCount(
     folders: box.folders.filter(reads).length,
   };
 }
+
+// ── Writes (workspaces arch A3a) ────────────────────────────────────────────
+
+/**
+ * The write grid's logins: the six above, and two Admin users who are also
+ * users of a workspace the item is granted to (W, with Write on; R, with
+ * Write off), so the rules that ask "an Admin user" meet one who reads the
+ * item ("Being an Admin user is management, not reading").
+ */
+export type OracleWriteRole = OracleRole | 'adminWriteGrant' | 'adminReadGrant';
+
+export const ORACLE_WRITE_ROLES: readonly OracleWriteRole[] = [
+  ...ORACLE_ROLES,
+  'adminWriteGrant',
+  'adminReadGrant',
+];
+
+/** Who a statement runs as (docs/actors.md, the actor kinds). */
+export type OracleActor =
+  | 'login'
+  | 'login-ro'
+  | 'assistant'
+  | 'link'
+  | 'peer'
+  | 'contact-ro'
+  | 'system';
+
+export const ORACLE_ACTORS: readonly OracleActor[] = [
+  'login',
+  'login-ro',
+  'assistant',
+  'link',
+  'peer',
+  'contact-ro',
+  'system',
+];
+
+/** What a write does to the fixture's item. */
+export type OracleWriteAction =
+  /** Change its content (its title). */
+  | 'edit'
+  /** Move it on a board (its rank alone). */
+  | 'rank'
+  /** Set a value only the brain derives (a summary). */
+  | 'derived'
+  /** Delete it. */
+  | 'delete'
+  /** Delete its content row (a page's, a drawing's, a table's). */
+  | 'deleteContent'
+  /** Open a public link to it. */
+  | 'openLink'
+  /** Close its public link. */
+  | 'closeLink'
+  /** Change an app's code (its draft). */
+  | 'appCode'
+  /** Set an app's MCP access switch. */
+  | 'appSwitch'
+  /** Write an app's data. */
+  | 'appData'
+  /** Write the data of an app whose Informational switch is on. */
+  | 'appDataInformational'
+  /** Change a Recall map's card. */
+  | 'recallCard'
+  /** Change an item's history row (an app version, a table snapshot). */
+  | 'history';
+
+export const ORACLE_WRITE_ACTIONS: readonly OracleWriteAction[] = [
+  'edit',
+  'rank',
+  'derived',
+  'delete',
+  'deleteContent',
+  'openLink',
+  'closeLink',
+  'appCode',
+  'appSwitch',
+  'appData',
+  'appDataInformational',
+  'recallCard',
+  'history',
+];
+
+/** The kinds an action applies to (the item has the row it changes). */
+function actionApplies(kind: string, action: OracleWriteAction): boolean {
+  switch (action) {
+    case 'deleteContent':
+      return kind === 'page' || kind === 'draw' || kind === 'table';
+    case 'appCode':
+    case 'appSwitch':
+    case 'appData':
+    case 'appDataInformational':
+      return kind === 'app';
+    case 'recallCard':
+      return kind === 'recall';
+    case 'history':
+      return kind === 'app' || kind === 'table';
+    default:
+      return true;
+  }
+}
+
+function readsForWrite(role: OracleWriteRole): boolean {
+  return role === 'adminWriteGrant' || role === 'adminReadGrant' || readsItem(role as OracleRole);
+}
+
+function editsForWrite(role: OracleWriteRole): boolean {
+  return role === 'adminWriteGrant' || editsItem(role as OracleRole);
+}
+
+function adminForWrite(role: OracleWriteRole): boolean {
+  return role === 'adminWriteGrant' || role === 'adminReadGrant' || isAdminUser(role as OracleRole);
+}
+
+/**
+ * What the guide (docs/workspaces.md, "Items and grants" and "Apps";
+ * docs/actors.md, the actor kinds; the owner's decisions D4 to D6) says a
+ * write may do, at SQL level, in the fixture of expectedAccess:
+ *  - a read key, an assistant with no user, a public link, a peer and a
+ *    contact share without Can write write nothing; system work writes
+ *    what its reason needs;
+ *  - a login changes only an item it reads ("An item the caller may not
+ *    read answers not found");
+ *  - edit its content, its board rank: Moderator of its home, or a grant
+ *    with Write on (the rank: or of its folder; in the fixture the folder's
+ *    grants are the item's);
+ *  - a value only the brain derives (a summary): nobody but the brain;
+ *  - delete it (and its content row): Moderator of its home;
+ *  - open, change or close its link: be able to edit it, an app: Moderator
+ *    of its home; close any public link: an Admin user with the users area;
+ *  - an app's code: a Moderator of its home (D4); its switches: Admin
+ *    users only (D5), on an app they may edit (the switch is a change of
+ *    the app); its data: edit, and while Informational is on nobody
+ *    outside Admin (D6);
+ *  - a Recall card, an item's history row: edit of the item.
+ */
+export function expectedWrite(
+  context: { surface: 'sql'; placement: OraclePlacement; actor: OracleActor },
+  role: OracleWriteRole,
+  kind: string,
+  action: OracleWriteAction,
+): OracleAnswer {
+  if (guideKindClass(kind) !== 'workspace') return { na: 'the grid covers the workspace kinds' };
+  if (!actionApplies(kind, action)) return { na: `${action} is not a change of a ${kind}` };
+  switch (context.actor) {
+    case 'system':
+      return { allow: true };
+    case 'login-ro':
+    case 'assistant':
+    case 'link':
+    case 'peer':
+    case 'contact-ro':
+      return { allow: false, why: 'this caller only reads' };
+    default:
+      break;
+  }
+  if (!readsForWrite(role)) return { allow: false, why: 'not found: it does not read the item' };
+  const homeMod = role === 'homeModerator';
+  const deny = (why: string): OracleAnswer => ({ allow: false, why });
+  switch (action) {
+    case 'edit':
+    case 'rank':
+    case 'recallCard':
+    case 'history':
+    case 'appData':
+      return editsForWrite(role) ? { allow: true } : deny('may not edit it');
+    case 'appDataInformational':
+      return editsForWrite(role) && adminForWrite(role)
+        ? { allow: true }
+        : deny('Informational: nobody outside Admin writes its data');
+    case 'derived':
+      return deny('only the brain sets that value');
+    case 'delete':
+    case 'deleteContent':
+    case 'appCode':
+      return homeMod ? { allow: true } : deny('not a Moderator of its home');
+    case 'openLink':
+      return (kind === 'app' ? homeMod : editsForWrite(role))
+        ? { allow: true }
+        : deny('may not open its link');
+    case 'closeLink':
+      return (kind === 'app' ? homeMod : editsForWrite(role)) || adminForWrite(role)
+        ? { allow: true }
+        : deny('may not close its link');
+    case 'appSwitch':
+      return adminForWrite(role) && editsForWrite(role)
+        ? { allow: true }
+        : deny('an Admin user sets it');
+  }
+}

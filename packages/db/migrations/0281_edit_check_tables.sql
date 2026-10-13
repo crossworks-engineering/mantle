@@ -21,8 +21,11 @@
 --    admin, appdata, link, link_close; 'system': refused, only the brain
 --    changes that column), the column naming the item ('self' on nodes),
 --    the table that names it ('recall_maps' for a Recall card or revision,
---    else ''), and the mode ('keys': the derived keys of nodes.data). A row
---    whose item is gone passes (its foreign key, or the row rule, decides).
+--    else ''), and the mode ('keys': the derived keys of nodes.data;
+--    'contact': a row with a contact_id, a contact share, needs admin
+--    instead: the guide's "Share it with one contact: to be an Admin user,
+--    its home is not checked"). A row whose item is gone passes (its
+--    foreign key, or the row rule, decides).
 --    Every refusal goes through mantle_edit_refuse (0280): off runs, warn
 --    reports, on refuses (42501, detail no_edit, read_only or ro_actor).
 -- 3. The write check (0278, 0279) asks its rights through the one rule
@@ -106,6 +109,11 @@ BEGIN
       format('%s on %s: a column only the brain writes', TG_OP, TG_TABLE_NAME), 'no_edit',
       'not allowed to change this item: only the brain sets that value');
     RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  IF mode = 'contact'
+     AND (to_jsonb(CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END) ->> 'contact_id') IS NOT NULL THEN
+    need := 'admin';
   END IF;
 
   -- The row's item, before and after (a row moved to another item needs
