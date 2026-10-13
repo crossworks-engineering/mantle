@@ -63,6 +63,7 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
     return { status: res.status, body: (await res.json()) as AppListResponse & { code?: string } };
   };
   const row = (body: AppListResponse, key: string) => body.apps.find((a) => a.id === ids[key]);
+  const chip = (id: string, name: string) => expect.objectContaining({ id, name });
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -124,26 +125,23 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
     const { status, body } = await list(owner);
     expect(status).toBe(200);
     expect(body.ws).toBeUndefined();
-    // Each chip carries its workspace's look (task 5edc9149): none picked.
-    const look = (kind: string) => ({ color: null, icon: null, kind });
+    // By id and name: each chip's look (task 5edc9149) is pinned on a
+    // scratch brain (list-workspaces.db.test.ts); this shared database's
+    // brain is not this test's owner.
     expect(row(body, 'held')?.workspaces).toEqual([
-      { id: ws.admin, name: 'Admin', ...look('admin') },
-      { id: ws.proj, name: 'proj', ...look('other') },
-      { id: ws.quay, name: 'Quay', ...look('other') },
-      { id: ws.team, name: 'Team', ...look('team') },
+      chip(ws.admin, 'Admin'),
+      chip(ws.proj, 'proj'),
+      chip(ws.quay, 'Quay'),
+      chip(ws.team, 'Team'),
     ]);
-    expect(row(body, 'none')?.workspaces).toEqual([
-      { id: ws.admin, name: 'Admin', ...look('admin') },
-    ]);
+    expect(row(body, 'none')?.workspaces).toEqual([chip(ws.admin, 'Admin')]);
     // No level badge any more.
     expect(row(body, 'held')).not.toHaveProperty('audience');
   });
 
   it('names only the workspaces another caller is a user of', async () => {
     const { body } = await list(plain);
-    expect(row(body, 'held')?.workspaces).toEqual([
-      { id: ws.proj, name: 'proj', color: null, icon: null, kind: 'other' },
-    ]);
+    expect(row(body, 'held')?.workspaces).toEqual([chip(ws.proj, 'proj')]);
     expect(row(body, 'none')?.workspaces).toEqual([]);
   });
 

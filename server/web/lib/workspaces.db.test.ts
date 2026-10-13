@@ -601,6 +601,18 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     // Back to the default, so the other tests see Team as it was.
     await as(mem);
     expect((await patch({ color: null, icon: null }, p({ id: team }))).status).toBe(200);
+    // mantle_ws_kind answers for this brain's workspaces only (audit L1).
+    const other = randomUUID();
+    const otherWs = randomUUID();
+    await x(sql`insert into auth.users (id, email, password_hash, role)
+      values (${other}, ${email(other, 'other')}, 'x', 'admin')`);
+    await x(sql`insert into spaces (id, kind, login_id) values (${other}, 'brain', ${other})`);
+    await x(sql`insert into workspaces (id, owner_id, name, is_admin)
+      values (${otherWs}, ${other}, 'Other brain', true)`);
+    const kinds = await x<{ mine: string | null; theirs: string | null }>(
+      sql`select mantle_ws_kind(${team}::uuid) as mine, mantle_ws_kind(${otherWs}::uuid) as theirs`,
+    );
+    expect(kinds).toEqual([{ mine: 'team', theirs: null }]);
   });
 
   it('the assistant is frozen once it has history', async () => {

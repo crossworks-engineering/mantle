@@ -538,6 +538,22 @@ export async function createWorkspace(
   return (await getWorkspace(caller, id)).workspace;
 }
 
+/** Whether only Admin users set the look of the built-in workspaces
+ *  (Admin, Team): every login moderates Team. An open owner question
+ *  (2026-10-13); off = the rename rule. The client's twin is canSetLook. */
+const BUILT_IN_LOOK_ADMIN_ONLY = false;
+
+/**
+ * Who may change what a workspace is called and how it looks (task
+ * 5edc9149): ONE check for the name, the description and the look. An
+ * Admin user (the users area) or a Moderator of it. `look`: the change
+ * names the colour or the icon.
+ */
+function mayChangeAbout(seen: Seen, look: boolean): boolean {
+  if (seen.admin) return true;
+  return seen.mod && !(look && BUILT_IN_LOOK_ADMIN_ONLY && builtIn(seen.row));
+}
+
 /** PATCH /api/workspaces/:id. */
 export async function patchWorkspace(
   caller: WsCaller,
@@ -557,14 +573,9 @@ export async function patchWorkspace(
       const seen = await seeWorkspace(caller, id, tx, true);
       const w = seen.row;
       if (w.archived_at !== null) throw archivedError();
-      // One rule for what the workspace is called and how it looks (task
-      // 5edc9149): whoever may rename it sets its colour and icon too.
-      const own =
-        body.name !== undefined ||
-        body.description !== undefined ||
-        body.color !== undefined ||
-        body.icon !== undefined;
-      if (own && !seen.mod && !seen.admin) {
+      const look = body.color !== undefined || body.icon !== undefined;
+      const own = body.name !== undefined || body.description !== undefined || look;
+      if (own && !mayChangeAbout(seen, look)) {
         throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
       }
       if (body.name !== undefined && body.name !== w.name) {

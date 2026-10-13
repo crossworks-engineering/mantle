@@ -135,8 +135,9 @@ export type WorkspaceLandingApp = {
  *  Moderator or an Admin user (one rule: whoever may rename it sets its
  *  look; the built-in workspaces keep their names but take a look). `color`
  *  is a tint key (APP_TINTS), `icon` an emoji or `lucide:<name>` (400
- *  `invalid` otherwise); null or '' clears either. Contact and assistant: an Admin user (assistant: area
- *  'assistants'). The landing page (`landingAppId`): a Moderator of this
+ *  `invalid` otherwise). null clears either; '' clears the icon too (the
+ *  folder field's rule), never the colour. Contact and assistant: an Admin
+ *  user (assistant: area 'assistants'). The landing page (`landingAppId`): a Moderator of this
  *  workspace only, to an app the workspace holds with a green published
  *  build (409 `landing_app_not_held` or `landing_app_not_ready`). `null`
  *  clears (the Built-in home). Answers the updated Workspace. */

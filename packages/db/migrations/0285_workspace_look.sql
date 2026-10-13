@@ -12,9 +12,10 @@
 --    Admin workspace), 'team' (the Team workspace), 'private' (a login's
 --    private workspace) or 'other'. A definer function because a private
 --    workspace is known only by private_workspaces, which the workspace
---    role does not read; it answers only for a workspace the scope may name
---    (one of the scope's, any for an Admin scope or with no scope set, as
---    mantle_ws_nameable without a `via`), else NULL. A kind only: no name,
+--    role does not read; it answers only for a workspace of this brain
+--    (mantle_brain_id) that the scope may name (one of the scope's, any
+--    for an Admin scope or with no scope set, as mantle_ws_nameable
+--    without a `via`), else NULL. A kind only: no name,
 --    no login. The write role takes the right with the workspace role's
 --    (access-matrix.ts, the function rights sync), and the public demo's
 --    reader is granted it too (its owner reads draw the chips). Never
@@ -47,7 +48,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_kind"(ws uuid)
            ELSE 'other'
          END
     FROM "public"."workspaces" w
-   WHERE w."id" = ws
+   WHERE w."id" = ws AND w."owner_id" = "public"."mantle_brain_id"()
      AND (NOT "public"."mantle_scope_active"()
           OR ws = ANY ("public"."mantle_scope_ws"())
           OR "public"."mantle_scope_has_admin"())
