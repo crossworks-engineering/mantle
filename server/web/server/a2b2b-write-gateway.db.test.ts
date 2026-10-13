@@ -1180,19 +1180,17 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
             .update(m.nodes)
             .set({ title: `${tag} N6 outer` })
             .where(eq(m.nodes.id, id));
-          await m.asSystem(
-            () =>
-              m.withSystemTx(async () => {
-                for (let i = 0; i < 40; i += 1) {
-                  await m.withSystemTx((s) =>
-                    s
-                      .update(m.nodes)
-                      .set({ title: `${tag} N6 ${i}` })
-                      .where(eq(m.nodes.id, other)),
-                  );
-                }
-              }),
-            'test',
+          await m.runAsSystem('test:a2b2b', () =>
+            m.withSystemTx(async () => {
+              for (let i = 0; i < 40; i += 1) {
+                await m.withSystemTx((s) =>
+                  s
+                    .update(m.nodes)
+                    .set({ title: `${tag} N6 ${i}` })
+                    .where(eq(m.nodes.id, other)),
+                );
+              }
+            }),
           );
         }),
       );
