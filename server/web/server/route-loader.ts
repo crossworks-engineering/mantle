@@ -2,6 +2,7 @@ import type { Context, Hono } from 'hono';
 import { matchedRoutes } from 'hono/route';
 import {
   buildRoutePolicy,
+  compileSpelling,
   linkCors,
   servedMethods,
   type PageClass,
@@ -116,6 +117,9 @@ export function registerRoutes(
           return row ? [[m, row] as const] : [];
         }),
       );
+    // The gate's spelling test of the pattern (spellsPattern), compiled at
+    // registration: a pattern it cannot spell fails at boot, not per request.
+    compileSpelling(entry.pattern);
     const load = memoize(entry.load);
     const isCatchAll = entry.catchAll !== null;
     // Segment count of the static prefix before the '*' (for rest extraction).
@@ -207,6 +211,7 @@ export function registerPages(
   policy: ReadonlyMap<string, RouteRow> = buildRoutePolicy(pages, { page: cls }),
 ): void {
   for (const page of pages) {
+    compileSpelling(page.pattern);
     for (const method of page.methods) {
       // One function per method, so each carries its own rows.
       const handle = (c: Context) => page.handle(c);

@@ -217,6 +217,9 @@ export function buildRouteRow(
 ): RouteRow {
   const m = method.toUpperCase();
   const key = `${m} ${pattern}`;
+  // The gate's spelling test of the pattern, compiled here so a pattern it
+  // cannot spell fails when the rows are built (at boot).
+  compileSpelling(pattern);
   const scope = routeClass(pattern);
   const logins = loginsOf(m, pattern);
   const effect = isReadRequest(m, pattern) ? 'read' : 'write';
@@ -331,14 +334,14 @@ export function buildRoutePolicy(
 const spelledRe = new Map<string, RegExp>();
 
 /**
- * Whether `path`, as the request sent it, spells `pattern`: each static
- * segment literally, a param as one segment, a trailing `*` as the rest.
- * The router matches the path with its percent-escapes decoded; the gate's
- * credential checks always read it as sent. A request whose path spells a
- * static segment with escapes (`/s/x/%76iew`) is routed, but the gate
- * answers it by the path checks, as before (arch A4 step 2).
+ * The spelling matcher of `pattern` (spellsPattern), compiled once: each
+ * static segment literally, a param as one segment, a trailing `*` as the
+ * rest. It throws on a pattern it cannot spell (an optional param). The
+ * rows of a pattern compile it when they are built (buildRouteRow), and
+ * the route loader compiles every pattern it registers (registerRoutes,
+ * registerPages), so such a pattern fails at boot, never on a request.
  */
-export function spellsPattern(pattern: string, path: string): boolean {
+export function compileSpelling(pattern: string): RegExp {
   let re = spelledRe.get(pattern);
   if (!re) {
     const star = pattern.endsWith('/*');
@@ -354,7 +357,20 @@ export function spellsPattern(pattern: string, path: string): boolean {
     re = new RegExp(`^${body}${star ? '(?:/.*)?' : ''}$`);
     spelledRe.set(pattern, re);
   }
-  return re.test(path);
+  return re;
+}
+
+/**
+ * Whether `path`, as the request sent it, spells `pattern`
+ * (compileSpelling). The router matches the path with its percent-escapes
+ * decoded; the gate's credential checks always read it as sent. A request
+ * whose path spells a static segment with escapes (`/s/x/%76iew`) is
+ * routed, but the gate answers it by the path checks, as before (arch A4
+ * step 2), and a key is not in the API there (requestKeyRoute). The one
+ * place that answers whether the raw path spells a row's pattern.
+ */
+export function spellsPattern(pattern: string, path: string): boolean {
+  return compileSpelling(pattern).test(path);
 }
 
 // ── The gate's route source and the stored row ──────────────────────────────

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
-import { registerRoutes, type RouteEntry } from './route-loader';
+import { buildRouteRow } from '../lib/auth/route-policy';
+import { registerPages, registerRoutes, type RouteEntry } from './route-loader';
 
 type Params = Record<string, string | string[]>;
 
@@ -229,5 +230,38 @@ describe('route loader', () => {
     expect(out.url).toContain('/api/echo?q=1');
     expect(out.body).toEqual({ a: 1 });
     expect(out.ua).toBe('vitest');
+  });
+
+  // The gate's spelling test (spellsPattern) cannot spell an optional
+  // param. Each pattern's matcher is compiled when its rows are built and
+  // when the loader registers it, so such a pattern fails at boot, never as
+  // a 500 on each request (A4 step 2 audit L5).
+  it('a pattern the spelling test cannot spell fails at registration, not per request', async () => {
+    const optional = '/api/notes/:id?';
+    expect(() => buildRouteRow('GET', optional)).toThrow(/optional param/);
+    // No rows handed in (NO_POLICY): the loader's own compile refuses it.
+    expect(() =>
+      registerRoutes(
+        new Hono(),
+        [entry({ pattern: optional, load: async () => ({ GET: echo('GET') }) })],
+        NO_POLICY,
+      ),
+    ).toThrow(/optional param/);
+    expect(() =>
+      registerPages(
+        new Hono(),
+        [{ pattern: '/s/:token?', methods: ['GET'], handle: () => new Response(null) }],
+        'link',
+        NO_POLICY,
+      ),
+    ).toThrow(/optional param/);
+    // A pattern it spells registers, and its requests run as before.
+    const app = new Hono();
+    registerRoutes(
+      app,
+      [entry({ pattern: '/api/notes/:id', load: async () => ({ GET: echo('GET') }) })],
+      NO_POLICY,
+    );
+    expect((await app.request('/api/notes/n1')).status).toBe(200);
   });
 });

@@ -883,7 +883,10 @@ A check on the raw path as sent only filters that row, never picks another:
 the gate's credential view (`gateRouteView`, `byRow`) and the key check
 both ask one question, whether the raw path spells the row's pattern
 (`spellsPattern`), and where it does not, the path checks answer the
-credential questions and a key is not in the API.
+credential questions and a key is not in the API. Each pattern's spelling
+matcher is compiled when its rows are built and when the loader registers
+it (`compileSpelling`), so a pattern the test cannot spell (an optional
+param) fails at boot, never on a request.
 
 1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null
