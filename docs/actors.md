@@ -43,7 +43,8 @@ From `@mantle/db`:
   runs as, then runs `impl` as that actor (`systemEntry(reason)` for the
   runner's own work).
 - `runInActorSlot(initial, fn)`: an entry whose caller is known only later.
-  The route loader starts each request as `system(http:no-login)`. The
+  The gate starts each routed request as `system(http:no-login)` (its
+  request slot, opened through enterCall since A4 step 1). The
   session guard names the login (a read key: `login(ro)`), the share gate
   names the link or the contact, an Admin area route becomes
   `system(http:admin-area)` and a login's own things `system(http:login-self)`.
@@ -305,10 +306,9 @@ queue-work server/web/workers/maintenance.ts system(worker:maintenance)
 queue-work server/web/workers/microsoft-sync.ts system(worker:microsoft-sync)
 queue-work server/web/workers/runs.ts the run's login as it is now, else login(owner)
 request-slot packages/db/src/viewer.ts defines the helper: runInRequestSlot starts a request as system(http:no-login)
-request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate's own lookups (an API key, a token)
+request-slot server/web/server/middleware/gate.ts system(http:gate) for the gate's own lookups (an API key, a token); a routed request's slot, opened by enterCall: system(http:no-login), then what the guard names
 request-slot server/web/server/pages/print.ts system(http:render), then the render cookie's login
 request-slot server/web/server/pages/share.tsx system(http:share-page), then the link or the contact
-request-slot server/web/server/route-loader.ts system(http:no-login), then what the guard names
 timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain sleep inside an app database restore
 timeout-loop packages/content/src/app-table-exports.ts the scheduling caller's actor, which the debounce timer carries to the export sync
 timeout-loop packages/db/src/access-matrix.ts the caller's actor (migrate's): the write role sync's retry sleep
@@ -825,8 +825,23 @@ store writes no disk; file bytes and snapshot files are part 2.
 Plan section 2: every way in runs the same eight steps, in one order,
 through `enterCall(caller, policyRef, fn)` (`packages/db/src/gate.ts`). A3c
 builds the core and proves it; the HTTP routes move onto it in A4, MCP
-registration and dispatch in A5. Until then nothing calls it in
-production, and no caller's access changed.
+registration and dispatch in A5.
+
+**HTTP, A4 step 1 (no access changed).** `ROUTE_POLICY`
+(`server/web/lib/auth/route-policy.ts`) has one row per route of the
+manifest and method: its class, area, who it is open to, read or write,
+whether it creates, the item a write names, a v1 row's key area and alias.
+Each field is folded from the route list that decided it before
+(`route-policy.test.ts` pins every field against its list, for every
+route and method). The route loader builds the rows once; the gate
+middleware finds a request's row once (`servedRoute`) and runs the handler
+through `enterCall` with it, under the `route` policy source. The caller is
+the credential the gate judged (`via`: cookie, bearer, key, token, public);
+its login is still resolved by the session guard, so the caller runs as
+`system(http:no-login)` with `admin: null`, and each session guard reads the
+row from the bound caller (`currentRoute()`), never a list. The handler's
+request slot is the caller's `enterScope`. A request no route answers (a
+404, the /s and /print pages) runs as before; they move in A4 step 2.
 
 1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null
@@ -866,10 +881,9 @@ production, and no caller's access changed.
    `gateCheck` throw `GateNotReadyError` before any step, and each process
    entry asks `ensureGateReady()` at boot (server/web, server/api, every
    worker through `workers/_runner.ts`, the stdio MCP server; pinned by
-   `packages/tools/src/gate-boot.test.ts`). Once the gate has a production
-   caller (`GATE_HAS_PRODUCTION_CALLERS`, set by A4/A5), a missing one stops
-   the boot, not the first call; until then the boot logs it loudly and
-   starts, since every call fails closed anyway. A surface where one does not apply registers
+   `packages/tools/src/gate-boot.test.ts`). The gate has production callers
+   since A4 step 1 (`GATE_HAS_PRODUCTION_CALLERS`): a missing one stops the
+   boot, not the first call. A surface where one does not apply registers
    an explicit no-op. Registering another function under a taken name, or
    another source for a taken kind, throws on purpose. The member-app rule
    fails closed too: a team-rules app run calls only an `app-tool` ref
@@ -903,4 +917,6 @@ The sources registered today: `runtime-tool`, `sandbox-mcp-tool` and
 (`packages/tools/src/member-app-tools.ts`), and `mcp-tool`
 (`packages/mcp-core/src/gate-policy.ts`, derived from today's lists; A5
 declares the policy on each tool). Every narrower registers from
-`packages/tools/src/gate-narrowers.ts`. A4 adds `route`.
+`packages/tools/src/gate-narrowers.ts`. `route`
+(`server/web/lib/auth/route-policy.ts`, A4 step 1) reads the ROUTE_POLICY
+row the ref carries.

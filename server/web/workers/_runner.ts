@@ -103,8 +103,8 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
   });
 
   // The one gate (arch A3c fix round 2, M-A): every narrower registered
-  // before the worker starts, or, once the gate has production callers, it
-  // fails to start (until then it logs loudly; gate-boot.test.ts).
+  // before the worker starts, or it fails to start (the gate has production
+  // callers since A4 step 1; gate-boot.test.ts).
   startWorkerAs(name, async () => {
     ensureGateReady();
     await start();

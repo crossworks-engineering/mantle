@@ -9,11 +9,21 @@ import {
 } from '../../lib/auth-constants';
 import { isAccessKey, type AccessKeyGrant } from '../../lib/access-keys';
 import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
+import { registerRouteSource, routeRef, type RouteRow } from '../../lib/auth/route-policy';
 import { runWithRequestContext } from '../request-context';
+import { servedRoute } from '../route-loader';
 import { gateAccessKey } from './access-key-gate';
 import { tokenKind, verifySignedToken } from './token-verify';
 import { env } from '@mantle/config';
-import { runInActorSlot, systemActor } from '@mantle/db';
+import {
+  enterCall,
+  runInActorSlot,
+  runInRequestSlot,
+  systemActor,
+  type CallerVia,
+  type GateCaller,
+} from '@mantle/db';
+import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 
 /**
  * The session/CORS gate — a faithful port of the old Next Edge middleware.ts.
@@ -28,6 +38,15 @@ import { runInActorSlot, systemActor } from '@mantle/db';
  *  - public/ assets are served before the gate (they're library assets —
  *    fonts, app-runtime, icons — with no user data; the share surface needs
  *    them cookie-less anyway).
+ *
+ * The one gate's HTTP entry (arch plan v2, sections 2 and 7; A4 step 1): a
+ * request a route of the manifest answers runs through enterCall
+ * (@mantle/db gate.ts) with its ROUTE_POLICY row, found here once
+ * (servedRoute). The credential checks below are step 1, resolving the
+ * caller; enterCall binds the caller with the row (currentCaller(), read by
+ * every session guard through currentRoute()), looks the policy up, narrows,
+ * and opens the request slot the guard fills. A request no route answers
+ * (a 404, the /s and /print pages: A4 step 2) runs as before.
  */
 
 /** Byte-serving asset routes whose <img>/<iframe>/download srcs can't carry a
@@ -138,9 +157,38 @@ function bearerToken(req: Request): string | null {
   return m ? m[1]!.trim() : null;
 }
 
+/**
+ * The caller of a routed request (the gate's step 1, A4 step 1): how it
+ * came in, and its row. The login is not resolved here yet: the session
+ * guard resolves it and names it (setRequestActor), so the caller runs as
+ * system(http:no-login), the actor the request slot starts as, and its
+ * Admin view is unresolved (`admin: null`: the guard's own requireArea
+ * decides, as before). A4 step 3 resolves the login here.
+ */
+function httpCaller(row: RouteRow, via: CallerVia, accessKey?: AccessKeyGrant): GateCaller {
+  return {
+    actor: systemActor('http:no-login'),
+    via,
+    // A key's write switch. gateAccessKey judged the key's areas and its
+    // read-only switch first, on the same rows (route-policy.test.ts pins
+    // each v1 row's effect to the key table's access), with the 403 bodies
+    // the API promises; this narrows nothing past it.
+    ...(accessKey ? { write: accessKey.access === 'read_write' } : {}),
+    admin: null,
+    // The request slot (workspaces W6a), opened for the handler.
+    enterScope: (_writes, fn) => runInRequestSlot(fn),
+    facts: { route: row },
+  };
+}
+
 export function gate(): MiddlewareHandler {
+  // The one gate is ready (every narrower registered) before the app takes
+  // a request: main.ts asks it at boot too; this covers an app built
+  // without main (a test).
+  ensureGateReady();
+  registerRouteSource();
   // Arch A2a: the gate's own lookups (an API key, a token) run as
-  // system(http:gate); the route loader starts each handler's own slot.
+  // system(http:gate); enterCall opens each routed handler's own slot.
   const inner = gateHandler();
   return (c, next) => runInActorSlot(systemActor('http:gate'), () => inner(c, next));
 }
@@ -161,12 +209,26 @@ function gateHandler(): MiddlewareHandler {
 
     // Run the downstream handler inside the ambient request context, then
     // apply CORS to whatever it produced. `accessKey` is set only when the
-    // request was let in by an API key (below).
-    const proceed = async (accessKey?: AccessKeyGrant) => {
-      await runWithRequestContext(
+    // request was let in by an API key (below). A routed request runs
+    // through the one gate with its row (found once, here); a refusal of
+    // the gate is answered by the one mapper.
+    const route = servedRoute(c);
+    const row = route?.rows.get(req.method.toUpperCase()) ?? null;
+    const proceed = async (via: CallerVia, accessKey?: AccessKeyGrant) => {
+      const refused = await runWithRequestContext(
         { req, path, method: req.method, ...(accessKey ? { accessKey } : {}) },
-        () => next(),
+        async () => {
+          if (!row) {
+            await next();
+            return null;
+          }
+          const out = await enterCall(httpCaller(row, via, accessKey), routeRef(row), () => next());
+          if (out.ok) return null;
+          if (!out.refusal.http) throw out.error;
+          return Response.json(out.refusal.http.body, { status: out.refusal.http.status });
+        },
       );
+      if (refused) return withCors(refused);
       if (origin) applyCors(c.res.headers, origin);
     };
 
@@ -202,14 +264,14 @@ function gateHandler(): MiddlewareHandler {
     if (isAccessKey(presented) && !isPublic) {
       const res = await gateAccessKey(req, path, presented);
       if ('response' in res) return withCors(res.response);
-      return proceed(res.grant);
+      return proceed('key', res.grant);
     }
 
     // Old matcher exclusion: image-suffixed paths bypass the gate entirely
     // (static already had its chance; this just falls through to the 404).
-    if (IMAGE_EXT_RE.test(path)) return proceed();
+    if (IMAGE_EXT_RE.test(path)) return proceed('public');
 
-    if (isPublic) return proceed();
+    if (isPublic) return proceed('public');
 
     const secret = env('SESSION_SECRET');
     if (!secret || secret.length < 32) {
@@ -229,7 +291,7 @@ function gateHandler(): MiddlewareHandler {
     // session access. Mirrors lib/auth's verify (rejects any `k` on cookies).
     const cookie = cookieValue(req, SESSION_COOKIE_NAME);
     if (cookie && (await verifySignedToken(cookie, secret)) && tokenKind(cookie) === null) {
-      return proceed();
+      return proceed('cookie');
     }
 
     // Mobile companion / detached client: Authorization: Bearer <mobile-token>.
@@ -237,7 +299,7 @@ function gateHandler(): MiddlewareHandler {
     const bearer = bearerToken(req);
     if (bearer) {
       if ((await verifySignedToken(bearer, secret)) && tokenKind(bearer) === 'm') {
-        return proceed();
+        return proceed('bearer');
       }
       // A bearer was presented but is invalid — an API client, not a browser:
       // answer 401 rather than redirect to an HTML login page.
@@ -250,7 +312,7 @@ function gateHandler(): MiddlewareHandler {
     if (isAssetPath(path) && req.method === 'GET') {
       const at = url.searchParams.get('at');
       if (at && (await verifySignedToken(at, secret)) && tokenKind(at) === 'a') {
-        return proceed();
+        return proceed('token');
       }
     }
 
@@ -260,7 +322,7 @@ function gateHandler(): MiddlewareHandler {
     if ((OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path)) && req.method === 'GET') {
       const t = url.searchParams.get('t');
       if (t && (await verifySignedToken(t, secret)) && tokenKind(t) === 'f') {
-        return proceed();
+        return proceed('token');
       }
     }
 
@@ -272,7 +334,7 @@ function gateHandler(): MiddlewareHandler {
     if (isRenderPath(path) && req.method === 'GET') {
       const r = cookieValue(req, RENDER_COOKIE_NAME);
       if (r && (await verifySignedToken(r, secret)) && tokenKind(r) === 'r') {
-        return proceed();
+        return proceed('token');
       }
     }
 
@@ -284,7 +346,7 @@ function gateHandler(): MiddlewareHandler {
     // DB-less detached dev: page navs render (the page gate resolves identity
     // via detachedDevUser); API requests still 401 — the client's data fetches
     // target the REMOTE API. Dev-only, hard-off in production.
-    if (isDetachedDev()) return proceed();
+    if (isDetachedDev()) return proceed('public');
 
     const loginUrl = new URL('/login', requestOrigin(req));
     loginUrl.searchParams.set('next', path);

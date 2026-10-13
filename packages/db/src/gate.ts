@@ -49,9 +49,23 @@ export { AccessError, mapAccessError, type AccessRefusal } from '@mantle/std';
  *  it, and the Admin areas it may do. */
 export type AdminView = { holdsAdmin: boolean; areas: ReadonlySet<string> };
 
-/** How the caller came in. */
+/** How the caller came in. HTTP (A4): `token` is a short-lived signed
+ *  token on the one path shape it opens (an asset `?at=`, a frame ticket,
+ *  the render cookie); `public` is a public route the gate lets in without
+ *  judging a credential (the route judges its own). */
 export type CallerVia =
-  'cookie' | 'bearer' | 'oauth' | 'key' | 'peer' | 'link' | 'contact' | 'turn' | 'app' | 'process';
+  | 'cookie'
+  | 'bearer'
+  | 'oauth'
+  | 'key'
+  | 'peer'
+  | 'link'
+  | 'contact'
+  | 'turn'
+  | 'app'
+  | 'process'
+  | 'token'
+  | 'public';
 
 /** The caller, resolved once at step 1. */
 export type GateCaller = Readonly<{

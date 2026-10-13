@@ -510,6 +510,16 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     expect(seenByA).not.toContain(`${tag} hidden`);
     expect(seenByB).toContain(`${tag} shared`);
     expect(seenByB).not.toContain(`${tag} chat of A`);
+    // A scope of no workspace (a login in none, A4 step 1 pin): withScope
+    // runs it (needsWorkspace false) and it reads nothing, never a refusal.
+    const none = await m.withScope({ kind: 'user', loginId: userA, ws: [], modWs: [] }, async () =>
+      (
+        (await m.db.execute(
+          sqlTag`select title from nodes where title like ${`${tag}%`}`,
+        )) as unknown as { title: string }[]
+      ).map((r) => r.title),
+    );
+    expect(none).toEqual([]);
   });
 
   it('test 10: currentScope reports the scope (system or a workspace scope; no level scope since W8c)', async () => {

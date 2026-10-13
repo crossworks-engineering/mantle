@@ -72,6 +72,11 @@ export type ApiV1Route = {
    *  every area. */
   area: AccessKeyArea | null;
   access: 'read' | 'write';
+  /** The v1 file has its own handler (it narrows a key past the route it
+   *  wraps): not an alias of the route without /v1 (ROUTE_POLICY aliasOf,
+   *  D3). Absent: the file re-exports that route's handler, where there is
+   *  one (route-policy.test.ts reads the files). */
+  own?: true;
 };
 
 const r = (
@@ -79,7 +84,8 @@ const r = (
   pattern: string,
   area: AccessKeyArea | null,
   access: ApiV1Route['access'],
-): ApiV1Route => ({ method, pattern, area, access });
+  own?: 'own',
+): ApiV1Route => ({ method, pattern, area, access, ...(own ? { own: true as const } : {}) });
 
 export const API_V1_ROUTES: readonly ApiV1Route[] = [
   r('GET', '/api/v1/whoami', null, 'read'),
@@ -90,7 +96,7 @@ export const API_V1_ROUTES: readonly ApiV1Route[] = [
   r('GET', '/api/v1/pages', 'pages', 'read'),
   r('POST', '/api/v1/pages', 'pages', 'write'),
   r('GET', '/api/v1/pages/:id', 'pages', 'read'),
-  r('PATCH', '/api/v1/pages/:id', 'pages', 'write'),
+  r('PATCH', '/api/v1/pages/:id', 'pages', 'write', 'own'),
   // Notes.
   r('GET', '/api/v1/notes', 'notes', 'read'),
   r('POST', '/api/v1/notes', 'notes', 'write'),
@@ -104,8 +110,8 @@ export const API_V1_ROUTES: readonly ApiV1Route[] = [
   r('GET', '/api/v1/tables', 'tables', 'read'),
   r('GET', '/api/v1/tables/:id', 'tables', 'read'),
   r('GET', '/api/v1/tables/:id/rows', 'tables', 'read'),
-  r('POST', '/api/v1/tables/:id/rows', 'tables', 'write'),
-  r('PATCH', '/api/v1/tables/:id/rows/:rowId', 'tables', 'write'),
+  r('POST', '/api/v1/tables/:id/rows', 'tables', 'write', 'own'),
+  r('PATCH', '/api/v1/tables/:id/rows/:rowId', 'tables', 'write', 'own'),
   r('POST', '/api/v1/tables/:id/commit', 'tables', 'write'),
   // Files.
   r('GET', '/api/v1/files', 'files', 'read'),

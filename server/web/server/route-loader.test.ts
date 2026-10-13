@@ -10,6 +10,10 @@ function echo(method: string) {
     Response.json({ method, params: await ctx.params });
 }
 
+/** These routes are the loader's, not the app's: no ROUTE_POLICY rows (the
+ *  table and the gate are pinned by route-policy.test.ts and the sweeps). */
+const NO_POLICY = new Map();
+
 function entry(partial: Partial<RouteEntry> & Pick<RouteEntry, 'pattern' | 'load'>): RouteEntry {
   return { methods: ['GET'], catchAll: null, catchAllOptional: false, ...partial };
 }
@@ -17,12 +21,16 @@ function entry(partial: Partial<RouteEntry> & Pick<RouteEntry, 'pattern' | 'load
 describe('route loader', () => {
   it('maps [id] params (decoded) and passes them as a Promise', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({
-        pattern: '/api/tables/:id/export',
-        load: async () => ({ GET: echo('GET') }),
-      }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({
+          pattern: '/api/tables/:id/export',
+          load: async () => ({ GET: echo('GET') }),
+        }),
+      ],
+      NO_POLICY,
+    );
     const res = await app.request('/api/tables/ab%20c/export');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ method: 'GET', params: { id: 'ab c' } });
@@ -30,13 +38,17 @@ describe('route loader', () => {
 
   it('registers multiple methods on one pattern', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({
-        pattern: '/api/notes',
-        methods: ['GET', 'POST'],
-        load: async () => ({ GET: echo('GET'), POST: echo('POST') }),
-      }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({
+          pattern: '/api/notes',
+          methods: ['GET', 'POST'],
+          load: async () => ({ GET: echo('GET'), POST: echo('POST') }),
+        }),
+      ],
+      NO_POLICY,
+    );
     expect((await (await app.request('/api/notes')).json()).method).toBe('GET');
     expect((await (await app.request('/api/notes', { method: 'POST' })).json()).method).toBe(
       'POST',
@@ -45,63 +57,83 @@ describe('route loader', () => {
 
   it('static beats :param when registered in manifest order (Next precedence)', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({ pattern: '/api/files/files', load: async () => ({ GET: echo('list') }) }),
-      entry({ pattern: '/api/files/:id', load: async () => ({ GET: echo('byId') }) }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({ pattern: '/api/files/files', load: async () => ({ GET: echo('list') }) }),
+        entry({ pattern: '/api/files/:id', load: async () => ({ GET: echo('byId') }) }),
+      ],
+      NO_POLICY,
+    );
     expect((await (await app.request('/api/files/files')).json()).method).toBe('list');
     expect((await (await app.request('/api/files/abc')).json()).method).toBe('byId');
   });
 
   it('catch-all [...rest] yields decoded string[] segments', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({
-        pattern: '/wiki/*',
-        catchAll: 'rest',
-        load: async () => ({ GET: echo('GET') }),
-      }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({
+          pattern: '/wiki/*',
+          catchAll: 'rest',
+          load: async () => ({ GET: echo('GET') }),
+        }),
+      ],
+      NO_POLICY,
+    );
     const res = await app.request('/wiki/forum/topic%201/x');
     expect((await res.json()).params).toEqual({ rest: ['forum', 'topic 1', 'x'] });
   });
 
   it('optional catch-all [[...rest]] also matches the bare prefix', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({
-        pattern: '/wiki/*',
-        catchAll: 'rest',
-        catchAllOptional: true,
-        load: async () => ({ GET: echo('GET') }),
-      }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({
+          pattern: '/wiki/*',
+          catchAll: 'rest',
+          catchAllOptional: true,
+          load: async () => ({ GET: echo('GET') }),
+        }),
+      ],
+      NO_POLICY,
+    );
     expect((await (await app.request('/wiki')).json()).params).toEqual({});
     expect((await (await app.request('/wiki/a/b')).json()).params).toEqual({ rest: ['a', 'b'] });
   });
 
   it('required catch-all [...rest] does NOT match the bare prefix (Next parity)', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({
-        pattern: '/files/*',
-        catchAll: 'rest',
-        load: async () => ({ GET: echo('GET') }),
-      }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({
+          pattern: '/files/*',
+          catchAll: 'rest',
+          load: async () => ({ GET: echo('GET') }),
+        }),
+      ],
+      NO_POLICY,
+    );
     expect((await app.request('/files')).status).toBe(404);
     expect((await app.request('/files/a')).status).toBe(200);
   });
 
   it('unexported methods get 405 + Allow; bare OPTIONS gets 204 + Allow (Next parity)', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({
-        pattern: '/api/notes',
-        methods: ['GET', 'POST'],
-        load: async () => ({ GET: echo('GET'), POST: echo('POST') }),
-      }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({
+          pattern: '/api/notes',
+          methods: ['GET', 'POST'],
+          load: async () => ({ GET: echo('GET'), POST: echo('POST') }),
+        }),
+      ],
+      NO_POLICY,
+    );
     const res = await app.request('/api/notes', { method: 'DELETE' });
     expect(res.status).toBe(405);
     expect(res.headers.get('allow')).toBe('GET, POST, HEAD, OPTIONS');
@@ -114,14 +146,18 @@ describe('route loader', () => {
 
   it('the 405 fallback does not shadow overlapping dynamic patterns', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({ pattern: '/api/agents/options', load: async () => ({ GET: echo('options') }) }),
-      entry({
-        pattern: '/api/agents/:id',
-        methods: ['PATCH', 'DELETE'],
-        load: async () => ({ PATCH: echo('patch'), DELETE: echo('del') }),
-      }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({ pattern: '/api/agents/options', load: async () => ({ GET: echo('options') }) }),
+        entry({
+          pattern: '/api/agents/:id',
+          methods: ['PATCH', 'DELETE'],
+          load: async () => ({ PATCH: echo('patch'), DELETE: echo('del') }),
+        }),
+      ],
+      NO_POLICY,
+    );
     // Dynamic route's own methods work…
     expect((await app.request('/api/agents/xyz', { method: 'DELETE' })).status).toBe(200);
     // …the static path 405s methods it doesn't export (Next would too — the
@@ -135,13 +171,17 @@ describe('route loader', () => {
 
   it('answers 405 when the module lacks the method export', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({
-        pattern: '/api/only-get',
-        methods: ['GET', 'POST'], // manifest overclaims; module has GET only
-        load: async () => ({ GET: echo('GET') }),
-      }),
-    ]);
+    registerRoutes(
+      app,
+      [
+        entry({
+          pattern: '/api/only-get',
+          methods: ['GET', 'POST'], // manifest overclaims; module has GET only
+          load: async () => ({ GET: echo('GET') }),
+        }),
+      ],
+      NO_POLICY,
+    );
     expect((await app.request('/api/only-get', { method: 'POST' })).status).toBe(405);
   });
 
@@ -152,7 +192,7 @@ describe('route loader', () => {
       .mockResolvedValue({ GET: echo('GET') });
     const app = new Hono();
     app.onError((err) => Response.json({ error: err.message }, { status: 500 }));
-    registerRoutes(app, [entry({ pattern: '/api/x', load })]);
+    registerRoutes(app, [entry({ pattern: '/api/x', load })], NO_POLICY);
 
     expect((await app.request('/api/x')).status).toBe(500);
     expect((await app.request('/api/x')).status).toBe(200);
@@ -162,20 +202,24 @@ describe('route loader', () => {
 
   it('passes the raw Request through untouched (body, headers, url)', async () => {
     const app = new Hono();
-    registerRoutes(app, [
-      entry({
-        pattern: '/api/echo',
-        methods: ['POST'],
-        load: async () => ({
-          POST: async (req: Request) =>
-            Response.json({
-              url: req.url,
-              body: await req.json(),
-              ua: req.headers.get('user-agent'),
-            }),
+    registerRoutes(
+      app,
+      [
+        entry({
+          pattern: '/api/echo',
+          methods: ['POST'],
+          load: async () => ({
+            POST: async (req: Request) =>
+              Response.json({
+                url: req.url,
+                body: await req.json(),
+                ua: req.headers.get('user-agent'),
+              }),
+          }),
         }),
-      }),
-    ]);
+      ],
+      NO_POLICY,
+    );
     const res = await app.request('/api/echo?q=1', {
       method: 'POST',
       body: JSON.stringify({ a: 1 }),

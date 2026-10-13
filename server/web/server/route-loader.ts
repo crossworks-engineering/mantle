@@ -1,6 +1,6 @@
 import type { Context, Hono } from 'hono';
-import { runInRequestSlot } from '@mantle/db';
-import { getRequestContext } from './request-context';
+import { matchedRoutes } from 'hono/route';
+import { buildRoutePolicy, servedMethods, type RouteRow } from '../lib/auth/route-policy';
 
 /**
  * Registers the generated route manifest (route-manifest.gen.ts) on a Hono
@@ -15,6 +15,11 @@ import { getRequestContext } from './request-context';
  *
  * Modules are imported lazily on first hit and memoized — boot stays fast and
  * a route's import cost is paid once.
+ *
+ * Each route carries its ROUTE_POLICY rows (lib/auth/route-policy.ts, arch
+ * A4 step 1), built once here; the gate middleware finds them with
+ * servedRoute() and runs the handler through enterCall, which opens the
+ * request slot. The loader only runs the handler: it is not a second gate.
  */
 
 type RouteHandler = (
@@ -56,8 +61,45 @@ function restSegments(pathname: string, prefixSegCount: number): string[] {
   });
 }
 
-export function registerRoutes(app: Hono, manifest: RouteEntry[]): void {
+/** A route handler the loader registered: its pattern and its ROUTE_POLICY
+ *  rows by request method (none for the 405 answer of another method). */
+export type ServedRoute = Readonly<{ pattern: string; rows: ReadonlyMap<string, RouteRow> }>;
+
+const servedBy = new WeakMap<object, ServedRoute>();
+
+/**
+ * The route that answers this request, for the gate middleware: the first
+ * handler the loader registered among the ones Hono matched after the
+ * current one (Hono runs them in that order, and the first answers), or
+ * null when no route of the manifest answers (a 404, the /s and /print
+ * pages).
+ */
+export function servedRoute(c: Context): ServedRoute | null {
+  const routes = matchedRoutes(c);
+  for (let i = c.req.routeIndex + 1; i < routes.length; i++) {
+    const served = servedBy.get(routes[i]!.handler);
+    if (served) return served;
+  }
+  return null;
+}
+
+/** Register the manifest's routes, each with its ROUTE_POLICY rows (built
+ *  here from the manifest; a route no list classes throws, so it never
+ *  ships). `policy` is for the loader's own tests, whose routes are not the
+ *  app's. */
+export function registerRoutes(
+  app: Hono,
+  manifest: RouteEntry[],
+  policy: ReadonlyMap<string, RouteRow> = buildRoutePolicy(manifest),
+): void {
   for (const entry of manifest) {
+    const rowsFor = (methods: string[]): ReadonlyMap<string, RouteRow> =>
+      new Map(
+        methods.flatMap((m) => {
+          const row = policy.get(`${m} ${entry.pattern}`);
+          return row ? [[m, row] as const] : [];
+        }),
+      );
     const load = memoize(entry.load);
     const isCatchAll = entry.catchAll !== null;
     // Segment count of the static prefix before the '*' (for rest extraction).
@@ -83,13 +125,14 @@ export function registerRoutes(app: Hono, manifest: RouteEntry[]): void {
         if (typeof handler !== 'function') {
           return Response.json({ error: 'method not allowed' }, { status: 405 });
         }
-        // The request slot (workspaces W6a): the session guard fills it with
-        // the login's scope, which then holds for the rest of the handler.
-        const ctx = getRequestContext();
-        if (ctx) ctx.pattern = entry.pattern;
-        return runInRequestSlot(() => handler(c.req.raw, { params: Promise.resolve(params) }));
+        // The gate opened the request slot (workspaces W6a) through enterCall;
+        // the session guard fills it with the login's scope.
+        return handler(c.req.raw, { params: Promise.resolve(params) });
       };
 
+      // HEAD is answered by the GET handler (Hono), with its own row.
+      const methods = servedMethods({ pattern: entry.pattern, methods: [method] });
+      servedBy.set(handle, { pattern: entry.pattern, rows: rowsFor(methods) });
       app.on(method, entry.pattern, handle);
     }
 
@@ -103,7 +146,7 @@ export function registerRoutes(app: Hono, manifest: RouteEntry[]): void {
       ...(entry.methods.includes('GET') ? ['HEAD'] : []),
       'OPTIONS',
     ].join(', ');
-    app.all(entry.pattern, (c) => {
+    const leftover = (c: Context) => {
       if (c.req.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: { Allow: allow } });
       }
@@ -111,6 +154,8 @@ export function registerRoutes(app: Hono, manifest: RouteEntry[]): void {
         { error: 'method not allowed' },
         { status: 405, headers: { Allow: allow } },
       );
-    });
+    };
+    servedBy.set(leftover, { pattern: entry.pattern, rows: new Map() });
+    app.all(entry.pattern, leftover);
   }
 }

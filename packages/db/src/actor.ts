@@ -136,7 +136,7 @@ const actorSlots = new AsyncLocalStorage<{ actor: Actor }>();
 
 /**
  * Run an entry whose actor is named later (setSlotActor), starting as
- * `initial`: the route loader with system(http:no-login), the /s page.
+ * `initial`: the HTTP gate (its request slot) with system(http:no-login), the /s page.
  * An actor bound around it does not reach in: the entry names its own.
  */
 export function runInActorSlot<T>(initial: Actor, fn: () => T): T {
@@ -194,7 +194,7 @@ export function runWithoutActor<T>(fn: () => T): T {
 }
 
 /** The actor the current code runs as: the nearest binding, else the
- *  entry's slot (an HTTP request: the route loader, the session guard and
+ *  entry's slot (an HTTP request: the gate, the session guard and
  *  the share gate name it), else an operator script's own, else none. */
 export function currentActor(): Actor | null {
   return actorStore.getStore() ?? actorSlots.getStore()?.actor ?? scriptActor();

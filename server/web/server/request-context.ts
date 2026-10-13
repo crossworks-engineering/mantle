@@ -25,10 +25,6 @@ export type RequestContext = {
    *  an `mtlk_` bearer), so the route's login lookup does not check it a
    *  second time. Absent on every other request. */
   accessKey?: AccessKeyGrant;
-  /** The manifest pattern the route loader matched (`/api/pages/:id`),
-   *  set before the handler runs; the session guard classifies the route
-   *  by it (workspaces W6a, lib/auth/route-scope.ts). */
-  pattern?: string;
 };
 
 const store = new AsyncLocalStorage<RequestContext>();

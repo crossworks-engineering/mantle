@@ -67,14 +67,13 @@ import { keyMayCall, matchApiV1Route } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
-  CREATE_ROUTES,
-  isReadRequest,
-  itemWriteTarget,
-  memberMayRead,
-  memberMayWrite,
-  routeClass,
-} from './route-scope';
-import { isAnyLoginRoute } from './any-login-routes';
+  anyLoginRow,
+  currentRoute,
+  memberOpenRead,
+  memberOpenWrite,
+  routeItemTarget,
+  type RouteRow,
+} from './route-policy';
 import {
   SESSION_COOKIE_NAME,
   buildAssetToken,
@@ -269,8 +268,8 @@ export async function getReaderForAsset(
   if (owner.status !== 401) return owner;
   const member = await memberForAsset(req);
   if (member instanceof NextResponse) return owner;
-  const { method, pattern } = routeOfRequest();
-  if (!hasRequestSlot() || !memberMayRead(method, pattern)) return loginRefused('member');
+  const route = currentRoute();
+  if (!hasRequestSlot() || !route || !memberOpenRead(route)) return loginRefused('member');
   await enterLoginScope(member.loginId, requestMode(true));
   return {
     user: {
@@ -293,11 +292,11 @@ export async function getReaderForAsset(
  * request scope, as an owner route a member may read does; only the login's
  * own things ('self': the home pin, its MCP clients, push devices, the live
  * stream) still hold their own rule ('own-rule', their reads about the
- * login itself). Outside the route loader nothing changes.
+ * login itself). Outside a routed request nothing changes.
  */
 async function memberRouteScope(loginId: string): Promise<void> {
-  const { pattern } = routeOfRequest();
-  if (!hasRequestSlot() || pattern === null || routeClass(pattern)?.kind === 'self') {
+  const route = currentRoute();
+  if (!hasRequestSlot() || !route || route.scope?.kind === 'self') {
     noteRequestOwnRule(loginId);
     return;
   }
@@ -717,8 +716,8 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
     // to create, edit and delete them there (W6b, MEMBER_OPEN_WRITES); every
     // other owner route refuses it (member routes use getMemberOr401; the
     // sweeps check both).
-    const { method, pattern } = routeOfRequest();
-    if (!hasRequestSlot()) return loginRefused(res.kind);
+    const route = currentRoute();
+    if (!hasRequestSlot() || !route) return loginRefused(res.kind);
     const login = res.member;
     const user: SessionUser = {
       id: login.anchorId,
@@ -731,18 +730,18 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
       },
     };
     const who: OwnerRouteLogin = { kind: 'member', user, source: res.source, member: res.member };
-    if (memberMayRead(method, pattern)) {
+    if (memberOpenRead(route)) {
       await enterLoginScope(login.loginId, requestMode(true));
       return who;
     }
-    if (!memberMayWrite(method, pattern) || !(await brainOnWorkspacesNow())) {
+    if (!memberOpenWrite(route) || !(await brainOnWorkspacesNow())) {
       return loginRefused(res.kind);
     }
     // Never off for a non-Admin login: the rollback switch is about Admin
     // reads (W6b fix round 1, M1).
-    const refused = await itemWriteGate(login.loginId, method, pattern!, { admin: false });
+    const refused = await itemWriteGate(login.loginId, route, { admin: false });
     if (refused) return refused;
-    const home = await createHomeFor(login.loginId, method, pattern!, true);
+    const home = await createHomeFor(login.loginId, route, true);
     if (home instanceof NextResponse) return home;
     noteRequestCreateHome(home);
     await enterLoginScope(login.loginId, requestMode(true));
@@ -756,13 +755,6 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
 }
 
 // ── The request scope (workspaces W6a, plan 2.4 and T4) ─────────────────────
-
-/** The method and manifest pattern of the current request (pattern null
- *  outside the route loader). */
-function routeOfRequest(): { method: string; pattern: string | null } {
-  const ctx = getRequestContext();
-  return { method: ctx?.method ?? 'GET', pattern: ctx?.pattern ?? null };
-}
 
 /**
  * The W6a rollback switch: MANTLE_ADMIN_READS=system puts an Admin user's
@@ -785,10 +777,14 @@ async function adminReadsOnSystemPoolFor(loginId: string): Promise<boolean> {
   return adminReadsOnSystemPool() && (await loginHoldsAdmin(loginId));
 }
 
-/** The mode of a request scope for the current request. */
+/** The mode of a request scope for the current request: it writes when
+ *  its ROUTE_POLICY row does (outside a routed request, when its method
+ *  is not a GET or a HEAD). */
 function requestMode(drafts: boolean): RequestScopeMode {
-  const { method, pattern } = routeOfRequest();
-  return { writes: !isReadRequest(method, pattern), drafts };
+  const route = currentRoute();
+  if (route) return { writes: route.effect === 'write', drafts };
+  const method = (getRequestContext()?.method ?? 'GET').toUpperCase();
+  return { writes: method !== 'GET' && method !== 'HEAD', drafts };
 }
 
 /** Enter `loginId`'s scope for the rest of the request (no-op when it is
@@ -817,13 +813,13 @@ async function loginHoldsArea(
  * needs its area and runs on the system pool; the login's own things run
  * there too; a READ of brain items enters the login's scope (unless the
  * rollback switch is on); a write stays on the system pool, as before.
- * Outside the route loader (a test calling a handler) nothing changes.
+ * Outside a routed request (a test calling a handler) nothing changes.
  * Returns the refusal, or null to go on.
  */
 async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
-  const { method, pattern } = routeOfRequest();
-  if (!hasRequestSlot() || pattern === null) return null;
-  const cls = routeClass(pattern);
+  const route = currentRoute();
+  if (!hasRequestSlot() || !route) return null;
+  const cls = route.scope;
   // The gate's refusals, answered by the one mapper (arch A3c): no route
   // class is step 3 (no policy), an area the login lacks step 5.
   if (!cls) return accessRefusal(new AccessError('unclassified'));
@@ -838,8 +834,8 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     noteRequestSystem('login-self');
     return null;
   }
-  if (!isReadRequest(method, pattern)) {
-    const refused = await itemWriteGate(loginId, method, pattern, { admin: true });
+  if (route.effect === 'write') {
+    const refused = await itemWriteGate(loginId, route, { admin: true });
     if (refused) return refused;
     noteRequestSystem('admin-write');
     // The login's scope on the request's system transactions (fix round 1,
@@ -850,7 +846,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
       noteRequestWriteScope(await loginScopeFor(loginId));
       // A create lands in the request's workspace (?ws=) when the user
       // moderates it (W6b); without one, as before (the folder, else Admin).
-      const home = await createHomeFor(loginId, method, pattern, false);
+      const home = await createHomeFor(loginId, route, false);
       if (home instanceof NextResponse) return home;
       noteRequestCreateHome(home);
     }
@@ -891,15 +887,15 @@ const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  */
 async function itemWriteGate(
   loginId: string,
-  method: string,
-  pattern: string,
+  route: RouteRow,
   opts: { admin: boolean },
 ): Promise<NextResponse | null> {
+  const method = route.method;
   // What a non-Admin login hears of an item it does not read, existing or
   // not: one answer, so the two cannot be told apart (W7e, audit 2026-10-12).
   const notFound = () => NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   const path = getRequestContext()?.path;
-  const target = path ? itemWriteTarget(method, pattern, path) : null;
+  const target = path ? routeItemTarget(route, path) : null;
   if (!target || !ITEM_ID_RE.test(target.id)) return null;
   let need = target.need;
   // The rollback switch restores only the read path (W7 integration fix 2,
@@ -1036,22 +1032,13 @@ async function itemWriteGate(
  */
 async function createHomeFor(
   loginId: string,
-  method: string,
-  pattern: string,
+  route: RouteRow,
   ownWork: boolean,
 ): Promise<CreateHome | NextResponse> {
   // THE create-home intent (arch A3c): @mantle/db createHomeIntent, shared
   // with assistant turns and MCP.
-  const ctx = getRequestContext();
   const home = await createHomeIntent(
-    ...requestCreateHomeArgs(
-      loginId,
-      method,
-      pattern,
-      ctx?.path ?? null,
-      ctx?.req?.url ?? null,
-      ownWork,
-    ),
+    ...requestCreateHomeArgs(loginId, route, getRequestContext()?.req?.url ?? null, ownWork),
   );
   if ('refused' in home) {
     // Answered by the one mapper: 400 invalid, else 403 workspace, the
@@ -1064,7 +1051,8 @@ async function createHomeFor(
 }
 
 /**
- * What a write request says to its create home (W6b): whether it is a
+ * The create-home intent's arguments for a write request (createHomeFor),
+ * from its ROUTE_POLICY row (`creates`, `makesItems`): whether it is a
  * create route (only then is its `?ws=` read) and whether it may make an
  * item. A write that makes no item (a delete, a pin, an opened mark) never
  * makes the private workspace (W6b fix round 1): its existing one, if any,
@@ -1072,32 +1060,17 @@ async function createHomeFor(
  * move or a copy (fix round 2: such a write may land a new item, and with
  * no private workspace named its home would fall back to the rule before
  * W6b, the folder's home else Admin, so it is not narrowed to the create
- * routes). A4's route rows carry the same two (`creates`, `makesItems`):
- * create-home-parity.test.ts pins the gate's step 6 with them against
- * this.
+ * routes). create-home-parity.test.ts pins the gate's step 6 with the same
+ * two fields against this.
  */
-export function requestCreatePolicy(
-  method: string,
-  pattern: string,
-  path: string | null,
-): { creates: boolean; makesItems: boolean } {
-  const creates = CREATE_ROUTES.has(`${method.toUpperCase()} ${pattern}`);
-  const target = path ? itemWriteTarget(method, pattern, path) : null;
-  return { creates, makesItems: !(method.toUpperCase() === 'DELETE' || target?.need === 'read') };
-}
-
-/** The create-home intent's arguments for a write request (createHomeFor). */
 export function requestCreateHomeArgs(
   loginId: string,
-  method: string,
-  pattern: string,
-  path: string | null,
+  route: Pick<RouteRow, 'creates' | 'makesItems'>,
   url: string | null,
   ownWork: boolean,
 ): Parameters<typeof createHomeIntent> {
-  const { creates, makesItems } = requestCreatePolicy(method, pattern, path);
-  const askedWs = creates && url ? new URL(url).searchParams.get('ws') : null;
-  return [loginId, { from: 'param', ws: askedWs }, { ownWork, makePrivate: makesItems }];
+  const askedWs = route.creates && url ? new URL(url).searchParams.get('ws') : null;
+  return [loginId, { from: 'param', ws: askedWs }, { ownWork, makePrivate: route.makesItems }];
 }
 
 /** A refusal of the gate as its HTTP answer: the one mapper's
@@ -1332,15 +1305,15 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
  * brain data) the request stays on the system pool.
  */
 async function anyLoginScope(res: Resolved): Promise<void> {
-  const { method, pattern } = routeOfRequest();
-  if (!hasRequestSlot() || pattern === null) return;
-  if (!isAnyLoginRoute(method, pattern)) {
+  const route = currentRoute();
+  if (!hasRequestSlot() || !route) return;
+  if (!anyLoginRow(route)) {
     noteRequestSystem('login-self');
     return;
   }
   const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
   if (res.kind === 'admin') {
-    if (!isReadRequest(method, pattern)) return noteRequestSystem('admin-write');
+    if (route.effect === 'write') return noteRequestSystem('admin-write');
     if (await adminReadsOnSystemPoolFor(loginId)) return noteRequestSystem('admin-reads-flag');
     if (!(await brainOnWorkspacesNow())) return noteRequestSystem('not-on-workspaces');
   }

@@ -163,17 +163,17 @@ export function registerGateNarrowers(): void {
 }
 
 /**
- * Whether a production entry runs through enterCall yet. While false (A3c:
- * the gate is built, nothing calls it), a gate that is not ready must not
- * stop a box at boot: enterCall and gateCheck re-assert on every call and
- * fail closed anyway. A4/A5 set this to true with the first production
- * caller, and from then on a gate that is not ready stops the boot.
+ * Whether a production entry runs through enterCall. True since A4 step 1:
+ * every HTTP request a route of the manifest answers runs through it
+ * (server/web gate middleware), so a gate that is not ready stops the boot,
+ * never the first request. (While false, in A3c, nothing called the gate
+ * and a box that was not ready logged it and started.)
  */
-export const GATE_HAS_PRODUCTION_CALLERS = false;
+export const GATE_HAS_PRODUCTION_CALLERS = true;
 
 /** Boot: register every narrower and assert the gate is ready. Each process
- *  main calls it. Throws GateNotReadyError naming what is missing once the
- *  gate has production callers; until then it logs the same error loudly. */
+ *  main calls it. Throws GateNotReadyError naming what is missing (the gate
+ *  has production callers: the process does not start). */
 export function ensureGateReady(): void {
   try {
     registerGateNarrowers();

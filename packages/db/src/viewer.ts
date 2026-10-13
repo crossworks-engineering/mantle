@@ -332,7 +332,7 @@ const store = new AsyncLocalStorage<Scope>();
  *  scope lives in its own slot). Never returned by `active()`. */
 const SYSTEM_EXIT: Scope = Object.freeze({ system: true as const });
 
-/** One slot per HTTP request (workspaces W6a): the route loader opens it
+/** One slot per HTTP request (workspaces W6a): the HTTP gate opens it
  *  around each handler (runInRequestSlot); the session guard fills it
  *  (enterRequestScope) and the scope holds for the rest of the request. */
 const requestSlots = new AsyncLocalStorage<RequestSlot>();
@@ -347,13 +347,14 @@ function active(): Scope | undefined {
 }
 
 /**
- * Run one HTTP handler with a request slot (workspaces W6a). Only the route
- * loader calls this; the session guard fills the slot (enterRequestScope).
+ * Run one HTTP handler with a request slot (workspaces W6a). Only the HTTP
+ * gate calls this, as its caller's enterScope inside enterCall (A4 step 1);
+ * the session guard fills the slot (enterRequestScope).
  */
 export function runInRequestSlot<T>(fn: () => T): T {
   // Arch A2a: a request runs as system(http:no-login) until the session
-  // guard or a share broker names its caller (A4's route rows name it from
-  // the start).
+  // guard or a share broker names its caller (A4 step 3 names it at the
+  // gate).
   return runInActorSlot(systemActor('http:no-login'), () =>
     requestSlots.run({ scope: null, outcome: null, memo: new Map() }, fn),
   );
@@ -366,7 +367,7 @@ export function requestScopeMemo(): Map<string, Promise<WorkspaceScope>> | null 
 }
 
 /**
- * Name who the current request runs as (arch A2a): the route loader starts
+ * Name who the current request runs as (arch A2a): the HTTP gate starts
  * it as system(http:no-login); the session guard or a share gate names the
  * caller once it knows it. No-op outside a request (an actor slot).
  */

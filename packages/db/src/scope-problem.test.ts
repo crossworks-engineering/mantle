@@ -35,6 +35,21 @@ describe('withScope: its own words, as before', () => {
     await expect(withScope(scope(over), never)).rejects.toThrow(new Error(message));
   });
 
+  it('passes no workspace at all (needsWorkspace false: an empty list reads nothing)', async () => {
+    // The check after the workspace one answers, so the empty list itself
+    // was let through; a turn refuses the same scope for having none.
+    await expect(withScope(scope({ ws: [], modWs: [B] }), never)).rejects.toThrow(
+      new Error('withScope: modWs must be a subset of ws'),
+    );
+    expect(turnScopeProblem(scope({ ws: [], modWs: [B] }))).toBe(
+      'withTurnScope: a turn reads at least one workspace',
+    );
+    // The source: withScope asks the one check without the workspace rule.
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./client.ts', import.meta.url), 'utf8');
+    expect(src).toContain("scopeProblem(scope, 'withScope', { needsWorkspace: false })");
+  });
+
   it('cuts a long id at 40 characters, as before', async () => {
     const long = 'x'.repeat(60);
     await expect(withScope(scope({ ws: [long] }), never)).rejects.toThrow(

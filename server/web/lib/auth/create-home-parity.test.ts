@@ -24,7 +24,8 @@ vi.mock('../../../../packages/db/src/create-home', () => ({
 import { loginActor, type GatePolicy } from '@mantle/db';
 import { createHomeStep } from '../../../../packages/db/src/gate';
 import { isReadRequest } from './route-scope';
-import { requestCreateHomeArgs, requestCreatePolicy } from './session';
+import { buildRouteRow, routeGatePolicy } from './route-policy';
+import { requestCreateHomeArgs } from './session';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, '../../server/route-manifest.gen.ts'));
@@ -62,9 +63,12 @@ describe.skipIf(!hasManifest)('step 6 with the HTTP rule equals createHomeFor', 
         for (const ownWork of [true, false]) {
           for (const ws of [null, WS, 'not-an-id', '']) {
             const url = `http://brain.test${path}${ws === null ? '' : `?ws=${ws}`}`;
-            const today = requestCreateHomeArgs(LOGIN, method, e.pattern, path, url, ownWork);
-            const { creates, makesItems } = requestCreatePolicy(method, e.pattern, path);
-            const policy: GatePolicy = { effect: 'write', scope: 'any', creates, makesItems };
+            // The guard and the gate read the same ROUTE_POLICY row (A4 step
+            // 1); the gate's policy is the route source's own.
+            const row = buildRouteRow(method, e.pattern);
+            const today = requestCreateHomeArgs(LOGIN, row, url, ownWork);
+            const policy: GatePolicy = routeGatePolicy(row);
+            expect(policy.effect).toBe('write');
             h.calls = [];
             await createHomeStep(
               { actor: loginActor(LOGIN), via: 'cookie', loginId: LOGIN, createHome: { ownWork } },
