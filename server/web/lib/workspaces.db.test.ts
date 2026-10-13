@@ -459,6 +459,52 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(await userRow(team, adm2)).toEqual({ moderator: true });
   });
 
+  it('only an Admin user removes a Moderator; a plain user by a Moderator; anyone leaves (Q2)', async () => {
+    const ws = await create(mem, 'Mia removes');
+    await as(mem);
+    expect((await addUser(ws, mem2)).status).toBe(200);
+    expect((await addUser(ws, mem3)).status).toBe(200);
+    await as(owner);
+    expect(
+      (await call(r.user.PATCH(req('PATCH', { moderator: true }), p({ id: ws, loginId: mem2 }))))
+        .status,
+    ).toBe(200);
+    // A Moderator who is no Admin user cannot remove another Moderator (the
+    // remove-and-re-add bypass of the tick): 403 admin_only, the row stays.
+    await as(mem);
+    const del = (loginId: string) => call(r.user.DELETE(req('DELETE'), p({ id: ws, loginId })));
+    const refused = await del(mem2);
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('admin_only');
+    expect(await userRow(ws, mem2)).toEqual({ moderator: true });
+    // A plain user: a Moderator removes them as before.
+    expect((await del(mem3)).status).toBe(200);
+    expect(await userRow(ws, mem3)).toBeNull();
+    // A Moderator still leaves, while another Moderator stays...
+    await as(mem2);
+    expect((await del(mem2)).status).toBe(200);
+    expect(await userRow(ws, mem2)).toBeNull();
+    // ...and the last one cannot, with the text that says who can help.
+    await as(mem);
+    const last = await del(mem);
+    expect(last.status).toBe(409);
+    expect(last.body.code).toBe('last_moderator');
+    expect(last.body.error).toBe(
+      'This is the last Moderator of the workspace. An Admin user must make another user a Moderator first.',
+    );
+    // An Admin user removes a Moderator (never the last).
+    await as(mem);
+    expect((await addUser(ws, mem2)).status).toBe(200);
+    await as(owner);
+    expect(
+      (await call(r.user.PATCH(req('PATCH', { moderator: true }), p({ id: ws, loginId: mem2 }))))
+        .status,
+    ).toBe(200);
+    expect((await del(mem2)).status).toBe(200);
+    expect(await userRow(ws, mem2)).toBeNull();
+    expect(await userRow(ws, mem)).toEqual({ moderator: true });
+  });
+
   it('the Admin workspace: adding a user is the admin role, removing it the member role', async () => {
     await as(mem);
     expect((await addUser(admin, mem)).status).toBe(404);

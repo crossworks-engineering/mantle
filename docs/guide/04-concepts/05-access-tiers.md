@@ -23,7 +23,7 @@ You set permissions in two places only: **Settings > Workspaces**, and the **Gra
 
 Admin is the only workspace with rules of its own: it keeps its name and cannot be archived. A brain set up before October 2026 also has a **Team** workspace; it is a workspace like any other now.
 
-Any user may make a new workspace. They become its only user and its Moderator. Only an admin ticks **Moderator** for anyone else.
+Any user may make a new workspace. They become its only user and its Moderator. Only an admin ticks **Moderator** for anyone else, or removes a Moderator from a workspace.
 
 ## Share an item
 

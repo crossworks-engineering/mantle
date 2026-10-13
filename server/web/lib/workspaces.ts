@@ -18,11 +18,12 @@
  *    add anyone anywhere, themselves included, private workspaces too (S1,
  *    which replaces 17 R7): logged (subject.self) and shown on the screen as
  *    "Added by NAME on DATE".
- *  - A Moderator of a workspace manages its users (add by search, remove)
- *    and its name, description and look (colour and icon, task 5edc9149:
- *    the same rule as the name).
+ *  - A Moderator of a workspace manages its users (add by search, remove a
+ *    plain user) and its name, description and look (colour and icon, task
+ *    5edc9149: the same rule as the name).
  *  - Only an Admin user ticks or clears Moderator (mayPromote: setModerator,
- *    and an add with the tick), on every workspace (owner decision
+ *    an add with the tick, and removing a Moderator, owner answer Q2), on
+ *    every workspace (owner decision
  *    2026-10-13). Nobody becomes a Moderator by themselves, with one
  *    exception: any login may make a workspace, and becomes its only user
  *    and a Moderator. Any login may leave one, except as its last Moderator.
@@ -908,7 +909,7 @@ const LAST_MOD = () =>
   new WsError(
     409,
     'last_moderator',
-    'This is the last Moderator of the workspace. Make another user a Moderator first.',
+    'This is the last Moderator of the workspace. An Admin user must make another user a Moderator first.',
   );
 
 function mayManageUsers(seen: Seen): void {
@@ -921,8 +922,9 @@ function mayManageUsers(seen: Seen): void {
 /**
  * Who ticks or clears Moderator (owner decision 2026-10-13): an Admin user
  * only (the users area), on every workspace, Admin included. The ONE check
- * for setModerator and for an add with the tick; a Moderator of the
- * workspace still adds users without it and removes users. Nobody becomes a
+ * for setModerator, an add with the tick and the removal of a Moderator
+ * (owner answer Q2: a removal takes the tick away too); a Moderator of the
+ * workspace still adds users without it and removes plain users. Nobody becomes a
  * Moderator by themselves: the maker of a workspace is the one exception
  * (createWorkspace), and an admin login joins Admin as one (the login
  * bridge, mantle_bridge_login).
@@ -1116,8 +1118,9 @@ function lastAdminError(err: unknown): WsError | null {
 }
 
 /** DELETE /api/workspaces/:id/users/:loginId: a Moderator or an Admin user
- *  removes a user; anyone may leave. Never the last Moderator. On the Admin
- *  workspace it is the role change to member (W5a). */
+ *  removes a plain user; only an Admin user removes a Moderator (mayPromote,
+ *  owner answer Q2); anyone may leave. Never the last Moderator. On the
+ *  Admin workspace it is the role change to member (W5a). */
 export async function removeUser(
   caller: WsCaller,
   id: string,
@@ -1132,6 +1135,10 @@ export async function removeUser(
     else if (seen.row.archived_at !== null) throw archivedError();
     const row = UUID_RE.test(loginId) ? await userRow(q, wid, loginId) : null;
     if (!row) throw new WsError(404, 'not_user', 'This person is not a user of this workspace.');
+    // Removing a Moderator takes their tick away: the same one check as
+    // clearing it (owner answer Q2), or a Moderator could remove another and
+    // add them back without it. Leaving stays open to anyone.
+    if (!self && row.moderator) mayPromote(seen);
     if (row.moderator && (await otherModerators(q, wid, loginId)) === 0) throw LAST_MOD();
   };
   if (pre.row.is_admin) {
