@@ -27,7 +27,7 @@ describe('ops docs match the code', () => {
       /\*\*Restore\*\* \(`scripts\/db-restore\.sh`\) creates the (\w+) roles \(([^)]*)\)/,
     );
     expect(restoreLine, 'the Restore bullet is gone from access-levels.md').toBeTruthy();
-    const words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'];
+    const words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'];
     expect(restoreLine![1]).toBe(words[roles.length]);
     for (const r of roles) expect(restoreLine![2], `${r} not named`).toContain(r);
   });
