@@ -55,7 +55,9 @@ vi.mock('@mantle/db', async () => {
   const update = () => ({
     set: () => ({
       where: () =>
-        Object.assign(Promise.resolve(undefined), { returning: async () => [{ seq: 1 }] }),
+        Object.assign(Promise.resolve(undefined), {
+          returning: async () => [{ seq: 1, storagePath: registryRow.storagePath }],
+        }),
     }),
   });
   return {
@@ -71,8 +73,11 @@ vi.mock('@mantle/db', async () => {
         fn({
           select: () => ({ from: () => ({ where: () => ({ for: async () => [registryRow] }) }) }),
           update,
+          // A single statement's check sets its lock wait first (A3b).
+          execute: async () => [],
         }),
     },
+    isBusy: () => false,
     nodes: {},
     appDatabases: {},
   };

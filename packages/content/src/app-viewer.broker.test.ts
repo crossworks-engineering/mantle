@@ -28,6 +28,17 @@ vi.mock('@mantle/db', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'app-viewer-'));
   h.storagePath = path.join(dir, 'app.sqlite');
   const registryRow = { id: 'reg-1', storagePath: h.storagePath, schemaVersion: 0 };
+  const update = () => ({
+    set: () => ({
+      where: () =>
+        Object.assign(Promise.resolve(undefined), {
+          returning: async () => (
+            h.saltWrites++,
+            [{ salt: SALT, seq: 1, storagePath: registryRow.storagePath }]
+          ),
+        }),
+    }),
+  });
   return {
     // The store broker's helper is the real one (A3b).
     ...(await import('@mantle/db/store-broker')),
@@ -41,15 +52,13 @@ vi.mock('@mantle/db', async () => {
         }),
       }),
       insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
-      update: () => ({
-        set: () => ({
-          where: () =>
-            Object.assign(Promise.resolve(undefined), {
-              returning: async () => (h.saltWrites++, [{ salt: SALT }]),
-            }),
-        }),
-      }),
+      update,
+      // A single statement's check (A3b): its lock wait, then the bump,
+      // which names the file the row points at.
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: async () => [], update }),
     },
+    isBusy: () => false,
     nodes: { t: 'names' },
     authUsers: { t: 'names' },
     appDatabases: {},
