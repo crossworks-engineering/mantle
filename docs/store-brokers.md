@@ -352,6 +352,25 @@ writes each, the second run; main `af5a041a5` against this branch):
 | op batch   | 14.7 / 15.3                | 68.7 / 69.6                 |
 | commit     | 36.1 / 41.4                | 129.5 / 140.8               |
 
+p95 per write, A3b part 2 (2026-10-13, the workstation, a disk folder, as
+the system on the owner's brain, 60 writes each (20 for the 32 MB ones),
+the second round of a run; two runs each, main `de0699c37` against this
+branch):
+
+| Write                        | main (ms)  | A3b part 2 (ms) |
+| ---------------------------- | ---------- | --------------- |
+| file upload, 4 KB            | 6.5, 5.0   | 4.6, 5.1        |
+| file upload, 32 MB           | 34.6, 35.7 | 34.1, 34.8      |
+| file overwrite, 4 KB         | 4.7, 4.5   | 5.0, 5.1        |
+| file overwrite, 32 MB        | 62.9, 64.1 | 66.1, 64.6      |
+| file rename                  | 2.6, 2.8   | 3.4, 3.6        |
+| app snapshot (10,000 rows)   | 6.2, 5.5   | 7.7, 7.1        |
+| table snapshot (10,000 rows) | 8.3, 8.4   | 8.1, 8.1        |
+
+An overwrite adds a hard link and a rename; a rename takes the file's head
+and a checked statement; an app snapshot adds the history lock's second
+short transaction (the copy is outside it now).
+
 ## Tests
 
 - `packages/db/src/store-broker.test.ts`: the helper on plain files (the
