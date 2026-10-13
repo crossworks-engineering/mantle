@@ -104,14 +104,35 @@ export const HIDDEN_ROWS_PUBLIC = 'This folder holds items you cannot move.';
  * the error and up to three causes below it (drizzle wraps the driver's).
  */
 export function databaseErrorPublic(err: unknown): string {
-  let e: unknown = err;
-  for (let i = 0; i < 4 && e && typeof e === 'object'; i++) {
-    const o = e as { code?: unknown; detail?: unknown; cause?: unknown };
-    if (o.code === '42501' && o.detail === 'no_read') return 'not found';
-    if (o.code === '42501' && o.detail === 'hidden_rows') return HIDDEN_ROWS_PUBLIC;
-    e = o.cause;
-  }
+  const pg = findDatabaseError(err);
+  if (pg?.code === '42501' && pg.detail === 'no_read') return 'not found';
+  if (pg?.code === '42501' && pg.detail === 'hidden_rows') return HIDDEN_ROWS_PUBLIC;
   return DATABASE_ERROR_PUBLIC;
+}
+
+/** A Postgres error's fields that callers read. */
+export type DatabaseErrorFields = {
+  code: string;
+  detail?: unknown;
+  message?: unknown;
+  constraint_name?: unknown;
+  cause?: unknown;
+};
+
+/**
+ * THE walk to the database error on a thrown value: the error itself or one
+ * of up to three causes below it (drizzle wraps the driver's), the first
+ * that carries a five-character SQLSTATE. Every reader of a code or a
+ * detail uses it (@mantle/db's pg-error.ts too).
+ */
+export function findDatabaseError(err: unknown): DatabaseErrorFields | null {
+  let e: unknown = err;
+  for (let depth = 0; depth < 4 && e && typeof e === 'object'; depth += 1) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return e as DatabaseErrorFields;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return null;
 }
 
 /**

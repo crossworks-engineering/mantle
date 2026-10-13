@@ -213,14 +213,35 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     expect(refused.text).not.toContain(`${tag}sub`);
     // Nothing went: the hidden subfolder is still under the folder.
     expect((await pathOf(subId))!.startsWith(`${gPath}.`)).toBe(true);
-    // A box whose actor check is off: writes on the system pool, and the
-    // one rule never fires there (the answer is main's: not a 409 of ours).
+    // A box whose actor check is off (round 4, L3): the database's own mode
+    // is off (MANTLE_ACTOR_CHECK can only raise it), every write runs on the
+    // system pool, and the answer is main's exactly: both deletes go
+    // through; the hidden subfolder's row stays where it was (main's
+    // orphan, which the write role's rule now refuses on warn and on).
+    const [box] = await x<{ m: string }>(sql`select mantle_actor_check_box_mode() as m`);
+    expect(box!.m).toBe('off');
     const was = process.env.MANTLE_ACTOR_CHECK;
     process.env.MANTLE_ACTOR_CHECK = 'off';
     try {
-      const off = await del('files', g);
-      expect(off.json.code).not.toBe('hidden_items');
-      expect(off.text).not.toContain('This folder holds items you cannot move.');
+      const subPath = (await pathOf(subId))!;
+      const merged = await del('files', g);
+      expect(merged.status, merged.text.slice(0, 200)).toBe(200);
+      expect(await pathOf(g)).toBeUndefined();
+      expect(await pathOf(subId)).toBe(subPath);
+      // The plain Files route (deleteFolder) the same way.
+      const g2 = await folder('files', `${tag}h2`);
+      const sub2 = await call('/api/tree/files/folders', mod, 'POST', {
+        parentId: g2,
+        name: `${tag}sub2`,
+      });
+      expect(sub2.status, sub2.text.slice(0, 200)).toBe(201);
+      const sub2Id = (sub2.json.folder as Json).id as string;
+      await hide(sub2Id);
+      const sub2Path = (await pathOf(sub2Id))!;
+      const plain = await call(`/api/files/folders/${g2}`, mod, 'DELETE');
+      expect(plain.status, plain.text.slice(0, 200)).toBe(200);
+      expect(await pathOf(g2)).toBeUndefined();
+      expect(await pathOf(sub2Id)).toBe(sub2Path);
     } finally {
       process.env.MANTLE_ACTOR_CHECK = was;
     }

@@ -109,9 +109,11 @@ BEGIN
   END IF;
   -- The apps inside a moved folder (3 above): staged, and skipped off.
   IF moving AND "public"."mantle_scope_active"() AND "public"."mantle_edit_check_mode"() <> 'off' THEN
+    -- The folder it lands in, as the re-derive finds it: none at a tree's
+    -- top level (a kind's root row passes no grants), so nothing is added.
     SELECT p."read_ws" INTO dest_read FROM "public"."nodes" p
      WHERE p."owner_id" = o AND p."type" = 'branch'
-       AND p."path" = subpath(new_path, 0, nlevel(new_path) - 1);
+       AND p."path" = "public"."mantle_parent_folder_path"('branch', new_path);
     IF FOUND AND EXISTS (
       SELECT 1 FROM "public"."nodes" a, unnest(dest_read) AS w
        WHERE a."owner_id" = o AND a."type" = 'app' AND a."path" <@ old_path

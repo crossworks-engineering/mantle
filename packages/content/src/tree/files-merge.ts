@@ -22,7 +22,7 @@
  * it part way: what moved stays moved, and the error says why.
  */
 import { sql } from 'drizzle-orm';
-import { carrySpaceRows, db, takeShareWriteLock } from '@mantle/db';
+import { carrySpaceRows, db, takeShareWriteLock, refuseHiddenRows } from '@mantle/db';
 import {
   dashToLtree,
   deleteFolder as deleteFilesFolder,
@@ -205,9 +205,7 @@ export async function deleteFilesFolderMerging(ownerId: string, folderId: string
   // disk. The one rule, in the database, in a write transaction so it
   // follows the login write gateway: the write role in warn and on, the
   // system pool (never refused) on a box whose actor check is off.
-  await db.transaction((tx) =>
-    tx.execute(sql`select mantle_subtree_refuse_hidden(${ownerId}, ${folder.path}::ltree)`),
-  );
+  await refuseHiddenRows(ownerId, folder.path);
   const flags = { renameFirst: false };
   let step = await plan(ownerId, folder, treeParentPath(folder.path), folder, flags);
   if (flags.renameFirst) {

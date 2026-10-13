@@ -32,6 +32,7 @@ import {
   takeShareWriteLock,
   withDeadlockRetry,
   withNodeMoveHeads,
+  refuseHiddenRows,
 } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
 import { foldedFilePath } from './space-disk';
@@ -280,9 +281,7 @@ export async function moveFolderById(args: {
   // rule, arch A3a): asked first, in a write transaction (the gateway: the
   // system pool, never refused, when the actor check is off), so the disk
   // never moves for nothing. The definer below stays the authority.
-  await db.transaction((tx) =>
-    tx.execute(sql`select mantle_subtree_refuse_hidden(${args.ownerId}, ${oldPath}::ltree)`),
-  );
+  await refuseHiddenRows(args.ownerId, oldPath);
   // Disk first, DB cascade second, disk rollback on DB failure — the exact
   // renameFolderById discipline; the ltree rewrite is the same CASE shape.
   await renameFolderOnDisk(oldPath, newPath);

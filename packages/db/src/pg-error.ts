@@ -12,22 +12,17 @@
  *
  * These helpers walk the error and up to three causes below it.
  */
-const MAX_DEPTH = 4;
+import { findDatabaseError } from '@mantle/std';
 
-/** A five-character SQLSTATE, e.g. '23505'. */
-const SQLSTATE_RE = /^[0-9A-Z]{5}$/;
+/** How deep isBusy looks for a BusyError on the cause chain. */
+const MAX_DEPTH = 4;
 
 type PgLike = { code?: unknown; constraint_name?: unknown; cause?: unknown };
 
-/** The first error on the chain that carries a Postgres SQLSTATE. */
+/** The first error on the chain that carries a Postgres SQLSTATE: the one
+ *  walk, findDatabaseError (@mantle/std), shared with databaseErrorPublic. */
 function findPgError(err: unknown): PgLike | null {
-  let e: unknown = err;
-  for (let depth = 0; depth < MAX_DEPTH && e && typeof e === 'object'; depth += 1) {
-    const code = (e as PgLike).code;
-    if (typeof code === 'string' && SQLSTATE_RE.test(code)) return e as PgLike;
-    e = (e as PgLike).cause;
-  }
-  return null;
+  return findDatabaseError(err) as PgLike | null;
 }
 
 /** The first Postgres SQLSTATE on the error or its cause chain, else null. */

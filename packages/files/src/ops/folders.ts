@@ -28,6 +28,7 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
   withNodeMoveHeads,
+  refuseHiddenRows,
 } from '@mantle/db';
 import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
 import { folderById } from './queries';
@@ -280,9 +281,7 @@ export async function deleteFolder(args: {
   // hidden file): refused (409) first, the one rule in a write transaction
   // (the login write gateway: the system pool when the actor check is off,
   // where it never refuses). Again under the lock below.
-  await db.transaction((tx) =>
-    tx.execute(sql`select mantle_subtree_refuse_hidden(${args.ownerId}, ${folder.path}::ltree)`),
-  );
+  await refuseHiddenRows(args.ownerId, folder.path);
   const counts = await folderCounts(args.ownerId, folder.path);
   if (counts.childFolderCount > 0 || counts.fileCount > 0) {
     return { ok: false, reason: 'folder is not empty — delete its contents first' };
@@ -296,7 +295,7 @@ export async function deleteFolder(args: {
   if (untracked.length > 0) {
     return {
       ok: false,
-      reason: `folder still holds ${untracked.length} file(s) on disk that the brain does not track — move or delete them first`,
+      reason: `folder still holds ${untracked.length} file(s) on disk that the brain does not track; move or delete them first`,
     };
   }
   // Members' drafts and folders in it move up to the parent (never deleted).
@@ -316,7 +315,7 @@ export async function deleteFolder(args: {
     }
     const stray = await untrackedFilesOnDisk(folder.path);
     if (stray.length > 0) {
-      return `folder still holds ${stray.length} file(s) on disk that the brain does not track — move or delete them first`;
+      return `folder still holds ${stray.length} file(s) on disk that the brain does not track; move or delete them first`;
     }
     const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
     await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });

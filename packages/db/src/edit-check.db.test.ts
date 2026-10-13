@@ -907,6 +907,38 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
     await setMode('off');
     expect(await intoWide()).toMatchObject({ rows: 2 });
     await setMode('on');
+    // A folder holding an app moved to the tree's top level (round 4, L1):
+    // a kind's root row passes no grants, so nothing is added: no refusal
+    // in on, no miss in warn.
+    const outer = await folderAt('out');
+    const inner = randomUUID();
+    const app3 = randomUUID();
+    await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${outer}]::uuid[], 'share')`;
+      await tx`insert into nodes (id, owner_id, type, title, path)
+               values (${inner}, ${L.owner}, 'branch', ${`${tag} in`}, ${`notes.${tag}out.${tag}in`}::ltree)`;
+    });
+    await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${inner}]::uuid[], 'share')`;
+      await tx`insert into nodes (id, owner_id, type, title, path)
+               values (${app3}, ${L.owner}, 'app', ${`${tag} inner app`}, ${`notes.${tag}out.${tag}in`}::ltree)`;
+    });
+    const toTop = () =>
+      attempt(who.homeMod, async (tx) => {
+        await tx`select mantle_lock_subtree_heads(${inner}::uuid, '{}'::uuid[])`;
+        const [r] = await tx<{ n: number }[]>`
+          select mantle_subtree_rewrite(${L.owner}, ${`notes.${tag}out.${tag}in`}::ltree,
+                                        ${`notes.${tag}in`}::ltree) as n`;
+        return { count: r!.n };
+      });
+    expect(await toTop()).toMatchObject({ rows: 2 });
+    await setMode('warn');
+    const topWarn = await toTop();
+    expect(topWarn).toMatchObject({ rows: 2 });
+    expect(editMisses(topWarn)).toEqual([]);
+    await setMode('on');
     // Off the write role nothing is hidden.
     const [sys] = await sql<{ n: number }[]>`
       select mantle_subtree_hidden(${L.owner}, ${`notes.${tag}mv`}::ltree) as n`;
