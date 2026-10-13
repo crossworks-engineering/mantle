@@ -30,7 +30,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  teamAssistant: vi.fn(async () => h.team),
+  defaultWorkspaceAssistant: vi.fn(async () => h.team),
   appendThreadMessage: vi.fn(async (row: Record<string, unknown>) => {
     h.appended.push(row);
     return { id: `m${h.appended.length}` };
@@ -53,7 +53,7 @@ describe('runTeamTurn: an early failure', () => {
   it('with no assistant to answer: rethrows, and no thread gets a row', async () => {
     await expect(
       runTeamTurn('owner-1', 'hello there', { loginId: 'login-1', channel: 'web' }),
-    ).rejects.toThrow(/isn't provisioned/);
+    ).rejects.toThrow(/no workspace other than Admin with an enabled assistant/);
     expect(h.appended).toEqual([]);
   });
 

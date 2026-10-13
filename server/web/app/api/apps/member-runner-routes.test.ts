@@ -137,8 +137,9 @@ vi.mock('@mantle/content', async (importOriginal) => {
         : null;
     }),
     loadProfilePreferences: vi.fn(async () => ({ siteName: 'Brain' })),
-    // The Team workspace and its home app (workspaces.landing_app_id).
-    teamWorkspaceId: vi.fn(async () => read('teamWorkspaceId', TEAM)),
+    // The login's first shared workspace (Team on a brain switched before
+    // 0286) and its home app (workspaces.landing_app_id).
+    firstSharedWorkspaceId: vi.fn(async () => read('firstSharedWorkspaceId', TEAM)),
     workspaceLandingAppId: vi.fn(async (_anchor: string, ws: string) =>
       read('workspaceLandingAppId', ws === TEAM ? (h.homeAppId ?? null) : null),
     ),

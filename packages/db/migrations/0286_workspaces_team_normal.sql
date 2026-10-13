@@ -27,10 +27,13 @@
 --    and nobody is made a Moderator of one: an invite and Add login give
 --    a member login no workspace (its private one is made the first time
 --    it needs it). Rows already in Team stay, with their ticks.
--- 4. mantle_ws_migrate (the switch, last 0267): the chain of 0267, then
+-- 4. mantle_ws_migrate (the switch, last 0267): the chain of 0267, with
+--    Team's users as the switch gave them before (every admin and member
+--    login a Moderator: the login bridge did that until now), then
 --    mantle_ws_team_normal(true). The switch still finds Team by its
 --    bridge_key while it runs (the folds of an old brain's team items go
---    there), then Team ends normal, or gone when it holds nothing.
+--    there), then Team ends normal, or gone when it holds nothing but the
+--    admin logins (a new brain: its first owner only).
 -- 5. mantle_ws_kind (0285): no 'team' kind. Team is 'other' (or 'private'
 --    for none). The client keeps 'team' for an older brain.
 -- 6. The reserved name: only "Admin" (workspaces_reserved_name_uq, 0255).
@@ -155,6 +158,19 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate"()
 BEGIN
   RETURN QUERY SELECT * FROM "public"."mantle_ws_migrate_bridged"();
   IF "public"."mantle_ws_skip_reason"() IS NOT NULL THEN RETURN; END IF;
+  -- Team's users as the switch gave them before 0286 (the login bridge
+  -- did it then; it gives Admin only now): every admin and member login a
+  -- Moderator there, so a brain switched now ends as every brain switched
+  -- before (its Moderators keep their ticks, decision 2.a). A new brain's
+  -- Team then holds its admin logins only and is removed below.
+  INSERT INTO "public"."workspace_users" ("workspace_id", "login_id", "moderator")
+  SELECT w."id", u."id", true
+    FROM "public"."workspaces" w, auth.users u
+   WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'team'
+     AND u."role" IN ('admin', 'member')
+     AND NOT EXISTS (SELECT 1 FROM "public"."archive_client_logins" a WHERE a."login_id" = u."id")
+  ON CONFLICT ("workspace_id", "login_id") DO UPDATE SET "moderator" = true
+   WHERE NOT "workspace_users"."moderator";
   PERFORM "public"."mantle_ws_switch_off"();
   RETURN QUERY SELECT 'bridge off'::text, b."step", 'count'::text, b."n"
                  FROM "public"."mantle_ws_bridge_off"() b;

@@ -18,7 +18,7 @@ import { currentScope } from '@mantle/db/viewer';
 
 const h = vi.hoisted(() => ({
   levels: [] as string[],
-  /** The Team workspace's assistant teamAssistant answers, or none. */
+  /** The login's default assistant (defaultWorkspaceAssistant), or none. */
   team: {
     id: 'agent-1',
     slug: 'team-responder',
@@ -119,7 +119,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
       h.appended++;
       return { ...row, id: `m${++n}`, createdAt: new Date() };
     }),
-    teamAssistant: vi.fn(async () => {
+    defaultWorkspaceAssistant: vi.fn(async () => {
       r('team-assistant');
       return h.team;
     }),
@@ -238,7 +238,7 @@ describe('runTeamTurn runs in the agent scope', () => {
   it('control: no assistant on the Team workspace, the turn is refused before anything is read', async () => {
     h.team = null;
     await expect(runTeamTurn('owner-1', 'hello', { loginId: 'login-1' })).rejects.toThrow(
-      /Team workspace has no enabled assistant/,
+      /no workspace other than Admin with an enabled assistant/,
     );
     expect(h.levels).toEqual(['team-assistant:admin']);
     // No assistant, no thread (0269): nothing is recorded.

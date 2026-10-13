@@ -8,7 +8,7 @@
  * - GET settings: no `dashboardTags`, no `teamAgent` (no agent level is read,
  *   W5c); `hubAppId` null and `hubCandidates` empty (the home app is a
  *   workspace setting since task d78e7bde; kept one release for an older
- *   client); `teamAssistant` is the Team workspace's assistant, or null
+ *   client); `teamAssistant` null (no workspace is the members' since 0286)
  *
  * GET requests was removed in W5c (review-gone-routes.test.ts pins its 410).
  *
@@ -22,7 +22,6 @@ const APP = '88888888-8888-4888-8888-888888888888';
 
 const h = vi.hoisted(() => ({
   openRequests: 2,
-  assistant: null as null | { id: string; slug: string; name: string; workspaceId: string },
   agentAccess: vi.fn(),
 }));
 
@@ -36,13 +35,11 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   countOpenTeamRequests: vi.fn(async () => h.openRequests),
   loadProfilePreferences: vi.fn(async () => ({ teamHubAppId: APP, teamHubTags: ['faq'] })),
   isTeamPrivateReadsEnabled: vi.fn(() => false),
-  teamAssistant: vi.fn(async () => h.assistant),
   getAgentAccess: h.agentAccess,
 }));
 
 beforeEach(() => {
   h.openRequests = 2;
-  h.assistant = null;
   h.agentAccess.mockReset();
 });
 
@@ -72,14 +69,8 @@ describe('GET /api/team-admin/settings', () => {
     // nothing to show (kept one release, audit M3).
     expect(body.hubAppId).toBeNull();
     expect(body.hubCandidates).toEqual([]);
+    // No workspace is the members' since 0286: always null.
     expect(body.teamAssistant).toBeNull();
-    h.assistant = { id: 'agent-id', slug: 'helper', name: 'Helper', workspaceId: 'team-ws' };
-    const withOne = (await (await GET()).json()) as Record<string, unknown>;
-    expect(withOne.teamAssistant).toEqual({
-      slug: 'helper',
-      name: 'Helper',
-      workspaceId: 'team-ws',
-    });
     // The team-responder's level is never read.
     expect(h.agentAccess).not.toHaveBeenCalled();
   });

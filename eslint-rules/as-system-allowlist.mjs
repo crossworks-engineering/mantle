@@ -49,7 +49,8 @@ export const AS_SYSTEM_PINS = {
   'packages/tools/src/client-sourced.ts': { count: 5, why: ['client-sourced-check'] },
   'packages/tools/src/dispatch.ts': { count: 3, why: ['connector-binding', 'connector-call'] },
   'packages/tools/src/external-access.ts': {
-    count: 8,
+    // 7 since 0286: the Team workspace lookup went (no workspace is Team's).
+    count: 7,
     why: ['connector-binding', 'workspace-resources'],
   },
   'packages/tools/src/pending-notify.ts': { count: 2, why: ['login-telegram'] },

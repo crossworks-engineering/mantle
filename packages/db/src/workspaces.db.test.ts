@@ -853,6 +853,9 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       // The workspace role only since W8c (0273: the retired roles hold no
       // right).
       mantle_brain_team_ws: ['mantle_view_user'],
+      // 0285, redefined by 0286 (no 'team' kind): a workspace's kind for its
+      // default icon, for a workspace the scope may name; a kind only.
+      mantle_ws_kind: ['mantle_view_user'],
     };
     expect(
       rows

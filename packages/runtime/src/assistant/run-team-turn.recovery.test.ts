@@ -26,7 +26,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
     memoryConfig: { history_limit: 20 },
   };
   const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'innerJoin', 'where', 'limit']) chain[m] = () => chain;
+  for (const m of ['from', 'innerJoin', 'where', 'orderBy', 'limit']) chain[m] = () => chain;
   chain['then'] = (resolve: (v: unknown[]) => void) => resolve([agent]);
   // No "New chat" yet: the thread has no lower bound.
   return { ...actual, db: { select: () => chain }, openChatThread: async () => null };
