@@ -168,7 +168,9 @@ async function printPage(c: Context): Promise<Response> {
  * The route loader registers them with their ROUTE_POLICY rows (class
  * 'render', registerPages; arch A4 step 2), and the gate runs each through
  * enterCall, as system(http:render) (the row's startsAs) until
- * requireOwnerForRender names its login.
+ * requireOwnerForRender names its login. This list is the one place the
+ * render patterns are named: a row is class 'render' because app.ts
+ * registers it from here with that class.
  */
 export const PRINT_PAGES: readonly PageRoute[] = [
   { pattern: '/print/draws/:id', methods: ['GET'], handle: printDraw },

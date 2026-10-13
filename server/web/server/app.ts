@@ -38,7 +38,8 @@ export async function createApp(): Promise<Hono> {
     import('./pages/print'),
     import('./pages/stubs'),
   ]);
-  registerPages(app, [...SHARE_PAGES, ...PRINT_PAGES]);
+  registerPages(app, SHARE_PAGES, 'link');
+  registerPages(app, PRINT_PAGES, 'render');
   mountStubs(app);
 
   // NOTE: notFound + onError run OUTSIDE the gate's ALS frame (Hono's compose

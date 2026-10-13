@@ -57,14 +57,13 @@ import {
 } from './route-scope';
 
 /**
- * The render surfaces (server/pages/print.ts): the pages a render cookie
- * opens, each bound to the node the cookie names. Class 'render'.
+ * The class of a page of server/pages, as the page list says it when the
+ * loader registers it (registerPages): the /s page is 'link', the render
+ * surfaces (server/pages/print.ts PRINT_PAGES, the pages a render cookie
+ * opens, each bound to the node the cookie names) are 'render'. No second
+ * list of the render patterns: the page list is the one.
  */
-export const RENDER_PAGES: ReadonlySet<string> = new Set([
-  '/print/pages/:id',
-  '/print/draws/:id',
-  '/render/draws/:id',
-]);
+export type PageClass = 'link' | 'render';
 
 /**
  * The /s routes a client-origin page may call cross-origin (the share token
@@ -214,7 +213,7 @@ export function buildRouteRow(
   method: string,
   pattern: string,
   served: (key: string) => boolean = () => false,
-  opts: { page?: boolean } = {},
+  opts: { page?: PageClass } = {},
 ): RouteRow {
   const m = method.toUpperCase();
   const key = `${m} ${pattern}`;
@@ -245,25 +244,28 @@ export function buildRouteRow(
   // today's answer; route-policy.test.ts pins it, so a change is
   // deliberate.
   const classLogins = m === 'HEAD' ? loginsOf('GET', pattern) : logins;
-  const cls: RoutePolicyClass | null = pattern.startsWith('/s/')
+  const listed: RoutePolicyClass | null = pattern.startsWith('/s/')
     ? 'link'
-    : RENDER_PAGES.has(pattern)
-      ? 'render'
-      : (scope?.kind ??
-        (isPublic
-          ? 'public'
-          : classLogins || pattern.startsWith(CLIENT_PORTAL_GONE)
-            ? 'self'
-            : null));
+    : (scope?.kind ??
+      (isPublic
+        ? 'public'
+        : classLogins || pattern.startsWith(CLIENT_PORTAL_GONE)
+          ? 'self'
+          : null));
+  // A page's class is its list's (registerPages). A link page is an /s
+  // pattern; a render page is one no list classes, so it can never shadow
+  // a route the lists know. Nothing else is mounted outside the manifest.
+  const pageClass = opts.page ?? null;
+  if (pageClass !== null && listed !== (pageClass === 'link' ? 'link' : null)) {
+    throw new Error(
+      `ROUTE_POLICY: ${key} is a page of class ${pageClass}; the lists class it ${listed ?? 'not at all'}`,
+    );
+  }
+  const cls = pageClass ?? listed;
   // A route no list names is refused here, so a new route is classed
   // before it ships (route-policy.test.ts builds every row).
   if (cls === null) throw new Error(`ROUTE_POLICY: ${key} has no class`);
-  // A page is the /s page or a render surface; nothing else is mounted
-  // outside the manifest.
-  const page = opts.page === true;
-  if (page && cls !== 'link' && cls !== 'render') {
-    throw new Error(`ROUTE_POLICY: ${key} is a page of class ${cls}`);
-  }
+  const page = pageClass !== null;
   const v1 = v1Route(m, pattern);
   return Object.freeze({
     key,
@@ -288,7 +290,12 @@ export function buildRouteRow(
     cors: linkCors(pattern),
     renderCookie: m === 'GET' && (cls === 'render' || isRenderAssetPath(path)),
     page,
-    startsAs: page ? (cls === 'render' ? 'http:render' : 'http:share-page') : 'http:no-login',
+    startsAs:
+      pageClass === 'render'
+        ? 'http:render'
+        : pageClass === 'link'
+          ? 'http:share-page'
+          : 'http:no-login',
     actor: null,
   });
 }
@@ -303,11 +310,11 @@ export function servedMethods(entry: RouteManifestEntry): string[] {
   return methods.includes('GET') && !methods.includes('HEAD') ? [...methods, 'HEAD'] : methods;
 }
 
-/** ROUTE_POLICY over a manifest (or, `page`, over the pages of
- *  server/pages): `METHOD pattern` to its row. */
+/** ROUTE_POLICY over a manifest (or, `page`, over a list of pages of
+ *  server/pages, all of that class): `METHOD pattern` to its row. */
 export function buildRoutePolicy(
   manifest: readonly RouteManifestEntry[],
-  opts: { page?: boolean } = {},
+  opts: { page?: PageClass } = {},
 ): ReadonlyMap<string, RouteRow> {
   const keys = new Set(manifest.flatMap((e) => servedMethods(e).map((m) => `${m} ${e.pattern}`)));
   const served = (key: string) => keys.has(key);

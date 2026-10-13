@@ -68,11 +68,15 @@ function makeApp() {
     route('/s/:token/bundle', { GET: () => Response.json({ broker: true }) }),
     route('/api/draws/:id/svg', { GET: () => new Response('svg') }),
   ]);
-  registerPages(app, [
-    { pattern: '/print/pages/:id', methods: ['GET'], handle: (c) => c.text('print page') },
-    { pattern: '/print/draws/:id', methods: ['GET'], handle: (c) => c.text('print draw') },
-    { pattern: '/render/draws/:id', methods: ['GET'], handle: (c) => c.text('render draw') },
-  ]);
+  registerPages(
+    app,
+    [
+      { pattern: '/print/pages/:id', methods: ['GET'], handle: (c) => c.text('print page') },
+      { pattern: '/print/draws/:id', methods: ['GET'], handle: (c) => c.text('print draw') },
+      { pattern: '/render/draws/:id', methods: ['GET'], handle: (c) => c.text('render draw') },
+    ],
+    'render',
+  );
   return app;
 }
 

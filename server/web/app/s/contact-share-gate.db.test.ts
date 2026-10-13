@@ -173,7 +173,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
     const { registerPages } = await import('@/server/route-loader');
     shareApp = new Hono();
     shareApp.use('*', gate());
-    registerPages(shareApp, SHARE_PAGES);
+    registerPages(shareApp, SHARE_PAGES, 'link');
 
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);

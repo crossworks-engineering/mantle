@@ -58,7 +58,7 @@ const app = async () => {
   const { registerPages } = await import('../route-loader');
   const a = new Hono();
   a.use('*', gate());
-  registerPages(a, SHARE_PAGES);
+  registerPages(a, SHARE_PAGES, 'link');
   return a;
 };
 

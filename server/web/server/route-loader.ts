@@ -1,6 +1,12 @@
 import type { Context, Hono } from 'hono';
 import { matchedRoutes } from 'hono/route';
-import { buildRoutePolicy, linkCors, servedMethods, type RouteRow } from '../lib/auth/route-policy';
+import {
+  buildRoutePolicy,
+  linkCors,
+  servedMethods,
+  type PageClass,
+  type RouteRow,
+} from '../lib/auth/route-policy';
 
 /**
  * Registers the generated route manifest (route-manifest.gen.ts) on a Hono
@@ -186,9 +192,10 @@ export type PageRoute = Readonly<{
 }>;
 
 /**
- * Register the pages of server/pages (the /s page, the render surfaces),
- * each with its ROUTE_POLICY rows (class link or render; a page of another
- * class throws). The gate finds the row (servedRoute) and runs the page
+ * Register a list of pages of server/pages (the /s page, the render
+ * surfaces), each with its ROUTE_POLICY rows, of the class the list is
+ * (`cls`: SHARE_PAGES 'link', PRINT_PAGES 'render'; a page the lists class
+ * otherwise throws). The gate finds the row (servedRoute) and runs the page
  * through enterCall in the page's own actor slot (the row's startsAs), as
  * the pages did for themselves before A4 step 2. No 405 answer: another
  * method falls through to the 404, as before.
@@ -196,7 +203,8 @@ export type PageRoute = Readonly<{
 export function registerPages(
   app: Hono,
   pages: readonly PageRoute[],
-  policy: ReadonlyMap<string, RouteRow> = buildRoutePolicy(pages, { page: true }),
+  cls: PageClass,
+  policy: ReadonlyMap<string, RouteRow> = buildRoutePolicy(pages, { page: cls }),
 ): void {
   for (const page of pages) {
     for (const method of page.methods) {

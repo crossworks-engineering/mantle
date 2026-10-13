@@ -57,7 +57,6 @@ import {
   registerRouteSource,
   requestKeyRoute,
   routeItemTarget,
-  RENDER_PAGES,
   routeRef,
   rowKeyRoute,
   servedMethods,
@@ -154,8 +153,9 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
 
   it('classes every row (plan 7)', () => {
     for (const row of table.values()) {
+      // 'render' is a page's class only (registerPages, PRINT_PAGES).
+      expect(row.class, row.key).not.toBe('render');
       if (row.pattern.startsWith('/s/')) expect(row.class, row.key).toBe('link');
-      else if (RENDER_PAGES.has(row.pattern)) expect(row.class, row.key).toBe('render');
       else if (row.scope) expect(row.class, row.key).toBe(row.scope.kind);
       else if (row.public) expect(row.class, row.key).toBe('public');
       else expect(row.class, row.key).toBe('self');
@@ -384,10 +384,8 @@ describe.skipIf(!hasManifest)('the gate middleware finds the row once and enters
         actor: actor ? actorSetting(actor) : null,
       });
     };
-    registerPages(app, [
-      { pattern: '/s/:token', methods: ['GET'], handle: page },
-      { pattern: '/print/pages/:id', methods: ['GET'], handle: page },
-    ]);
+    registerPages(app, [{ pattern: '/s/:token', methods: ['GET'], handle: page }], 'link');
+    registerPages(app, [{ pattern: '/print/pages/:id', methods: ['GET'], handle: page }], 'render');
     app.notFound(() =>
       Response.json({ route: currentRoute()?.key ?? null, slot: hasRequestSlot() }),
     );
@@ -465,6 +463,7 @@ function escapedPathsOf(pattern: string): string[] {
 describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate reads the row', () => {
   let manifest: Manifest;
   let pages: Array<{ pattern: string; methods: readonly string[] }>;
+  let printPatterns: Set<string>;
   let pageTable: ReadonlyMap<string, RouteRow>;
   let app: Hono;
 
@@ -473,7 +472,12 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
     const { SHARE_PAGES } = await import('../../server/pages/share');
     const { PRINT_PAGES } = await import('../../server/pages/print');
     pages = [...SHARE_PAGES, ...PRINT_PAGES];
-    pageTable = buildRoutePolicy(pages, { page: true });
+    printPatterns = new Set(PRINT_PAGES.map((p) => p.pattern));
+    // Each list with its class, as app.ts registers them.
+    pageTable = new Map([
+      ...buildRoutePolicy(SHARE_PAGES, { page: 'link' }),
+      ...buildRoutePolicy(PRINT_PAGES, { page: 'render' }),
+    ]);
     const { gateRouteView, requestRow } = await import('../../server/middleware/gate');
     const { registerPages, registerRoutes, servedRoute } =
       await import('../../server/route-loader');
@@ -494,9 +498,16 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
       return new Response(null, { status: 204, headers: { 'x-view': view } });
     });
     registerRoutes(app, manifest as never);
+    const stub = () => new Response(null);
     registerPages(
       app,
-      pages.map((p) => ({ ...p, handle: () => new Response(null) })),
+      SHARE_PAGES.map((p) => ({ ...p, handle: stub })),
+      'link',
+    );
+    registerPages(
+      app,
+      PRINT_PAGES.map((p) => ({ ...p, handle: stub })),
+      'render',
     );
   });
 
@@ -552,10 +563,31 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
     }
   });
 
-  it('a page of another class is refused', () => {
+  it('the render rows are the print page list, and only it', () => {
+    for (const row of pageTable.values()) {
+      expect(row.class === 'render', row.key).toBe(printPatterns.has(row.pattern));
+    }
+    expect(printPatterns.size).toBe(3);
+  });
+
+  it('a page the lists class otherwise is refused', () => {
+    // A link page outside /s, a render page on a route the lists class.
     expect(() =>
-      buildRoutePolicy([{ pattern: '/api/pages', methods: ['GET'] }], { page: true }),
-    ).toThrow(/page of class/);
+      buildRoutePolicy([{ pattern: '/api/pages', methods: ['GET'] }], { page: 'link' }),
+    ).toThrow(/page of class link; the lists class it content/);
+    expect(() =>
+      buildRoutePolicy([{ pattern: '/print/x/:id', methods: ['GET'] }], { page: 'link' }),
+    ).toThrow(/page of class link; the lists class it not at all/);
+    expect(() =>
+      buildRoutePolicy([{ pattern: '/api/pages', methods: ['GET'] }], { page: 'render' }),
+    ).toThrow(/page of class render/);
+    expect(() =>
+      buildRoutePolicy([{ pattern: '/s/:token', methods: ['GET'] }], { page: 'render' }),
+    ).toThrow(/page of class render; the lists class it link/);
+    // Off a page list, a pattern no list classes has no class at all.
+    expect(() => buildRoutePolicy([{ pattern: '/print/pages/:id', methods: ['GET'] }])).toThrow(
+      /has no class/,
+    );
   });
 
   it('spellsPattern: the path as sent spells the pattern', () => {
