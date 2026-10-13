@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
-import { BUSY_MESSAGE, BusyError, isBusy, isScopeWriteRefusal } from '@mantle/db';
+import { BUSY_MESSAGE, BusyError, isBusy } from '@mantle/db';
 import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
 import { RedirectError } from './http-compat/redirect-error';
 import { levelConflictResponse } from './level-conflict';
+import { scopeRefusalResponse } from './scope-refusal';
 import { gate } from './middleware/gate';
 import { registerRoutes } from './route-loader';
 import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
@@ -65,15 +66,9 @@ export async function createApp(): Promise<Hono> {
     // The database refused an Admin user's move, create in a folder or
     // delete of an item of a workspace it may not change (W6a fix round 1):
     // a refusal, as the guard's own item check answers it.
-    if (isScopeWriteRefusal(err) && (path === '/api' || path.startsWith('/api/'))) {
-      return Response.json(
-        {
-          error: 'forbidden',
-          reason: 'item-workspace',
-          message: 'You cannot change this item in your workspaces.',
-        },
-        { status: 403 },
-      );
+    if (path === '/api' || path.startsWith('/api/')) {
+      const refusal = scopeRefusalResponse(err);
+      if (refusal) return refusal;
     }
     // A JSON body over its route's ceiling, found while reading (I4).
     if (err instanceof BodyTooLargeError) return bodyTooLargeResponse(err.maxBytes);

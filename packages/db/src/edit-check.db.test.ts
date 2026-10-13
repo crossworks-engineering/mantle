@@ -135,6 +135,10 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
       });
     return out!;
   };
+  const HWgrants = (): [string, boolean, boolean][] => [
+    [ws.H, true, false],
+    [ws.W, false, true],
+  ];
   const editMisses = (r: Result) =>
     r.notices.filter((m) => m.startsWith('mantle actor miss: edit: '));
   const setMode = (m: 'off' | 'warn' | 'on') => sql`select mantle_set_edit_check(${m})`;
@@ -203,10 +207,7 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
         actor: `login:${k === 'owner' ? 'owner' : 'rw'}:${L[k]}`,
       };
     }
-    const HW: [string, boolean, boolean][] = [
-      [ws.H, true, false],
-      [ws.W, false, true],
-    ];
+    const HW = HWgrants();
     n.note = await item('note', HW, { summary: 'the brain’s', rank: 'a0' });
     n.page = await item('page', HW);
     n.app = await item('app', HW);
@@ -623,6 +624,11 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
           select options::text as o from recall_nodes where map_id = ${n.map2}`;
         // Read on another connection: nothing committed yet.
         expect(after!.o).toContain(`${tag}-one`);
+        // The map itself took the new slug in the definer (fix round 1, L1),
+        // its old one kept as a former slug.
+        const [m] = await tx<{ slug: string; former: string[] }[]>`
+          select slug, former_slugs as former from recall_maps where id = ${n.map}`;
+        expect(m).toEqual({ slug: `${tag}-uno`, former: [`${tag}-one`] });
         return { count: r!.n };
       });
     // The Write grant user edits map one; map two is outside its scope.
@@ -632,6 +638,9 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
       detail: 'no_edit',
     });
     expect(await rename(who.member, 'not-its-slug')).toMatchObject({ code: '22023' });
+    // A write-role caller with no scope is refused (fix round 1, L2).
+    const noScope: Who = { ws: [], mod: [], login: '', actor: `login:rw:${L.member}` };
+    expect(await rename(noScope, `${tag}-one`)).toMatchObject({ code: '42501' });
     await setMode('off');
   });
 
@@ -643,6 +652,10 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
         return { count: 1 };
       });
     expect(await put(who.member, n.secret)).toMatchObject({ code: '42501' });
+    // A write-role caller with no scope is refused (fix round 1, L2).
+    expect(
+      await put({ ws: [], mod: [], login: '', actor: `login:rw:${L.owner}` }, n.secret),
+    ).toMatchObject({ code: '42501' });
     expect(await put(who.member, n.note)).toMatchObject({ code: '22023' });
     // The owner, a Moderator of Admin, edits the secret.
     expect(await put(who.owner, n.secret)).toMatchObject({ rows: 1 });
@@ -653,6 +666,170 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
         (tx) => tx`insert into secrets (node_id, ciphertext) values (${n.secret}, '\\x00'::bytea)`,
       ),
     ).toMatchObject({ code: '42501', message: 'permission denied for table secrets' });
+    await setMode('off');
+  });
+
+  // ── Fix round 1 ───────────────────────────────────────────────────────────
+
+  /** A folder at the notes root, homed in H with Write to W. */
+  const folderAt = async (label: string): Promise<string> => {
+    const id = randomUUID();
+    await sql.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`insert into nodes (id, owner_id, type, title, path)
+               values (${id}, ${L.owner}, 'branch', ${`${tag} ${label}`}, ${`notes.${tag}${label}`}::ltree)`;
+    });
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+      await tx`delete from item_grants where node_id = ${id} and via_folder_id is null`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+               values (${id}, ${ws.H}, true, false), (${id}, ${ws.W}, false, true)`;
+    });
+    return id;
+  };
+
+  it('M1: a new node’s brain-only values (derived keys, an embedding) are dropped when on, reported in warn, kept in off and for the brain', async () => {
+    const folder = await folderAt('ins');
+    const make = (p: Who, pool = w) =>
+      attempt(
+        p,
+        async (tx) => {
+          const [row] = await tx<{ summary: boolean; text: boolean; rank: string; emb: boolean }[]>`
+            insert into nodes (owner_id, type, title, path, data, embedding)
+            values (${L.owner}, 'note', ${`${tag} forged`}, ${`notes.${tag}ins`}::ltree,
+                    '{"summary":"forged","text":"forged","extract_completed_at":"2026-01-01","rank":"a1"}'::jsonb,
+                    ${VECTOR}::vector)
+            returning data ? 'summary' as summary, data ? 'text' as text, data->>'rank' as rank,
+                      embedding is not null as emb`;
+          return { count: 1, ...row! } as never;
+        },
+        [folder],
+        pool,
+      );
+    const kept = { summary: true, text: true, rank: 'a1', emb: true };
+    await setMode('off');
+    let r = (await make(who.member)) as Result & Record<string, unknown>;
+    expect(r).toMatchObject({ rows: 1 });
+    expect(editMisses(r)).toEqual([]);
+    await setMode('warn');
+    r = (await make(who.member)) as Result & Record<string, unknown>;
+    expect(editMisses(r).length).toBe(1);
+    await setMode('on');
+    const stripped = await attempt(
+      who.member,
+      async (tx) => {
+        const [row] = await tx<{ summary: boolean; text: boolean; rank: string; emb: boolean }[]>`
+          insert into nodes (owner_id, type, title, path, data, embedding)
+          values (${L.owner}, 'note', ${`${tag} forged`}, ${`notes.${tag}ins`}::ltree,
+                  '{"summary":"forged","text":"forged","extract_completed_at":"2026-01-01","rank":"a1"}'::jsonb,
+                  ${VECTOR}::vector)
+          returning data ? 'summary' as summary, data ? 'text' as text, data->>'rank' as rank,
+                    embedding is not null as emb`;
+        expect(row).toEqual({ summary: false, text: false, rank: 'a1', emb: false });
+        return { count: 1 };
+      },
+      [folder],
+    );
+    expect(stripped).toMatchObject({ rows: 1 });
+    // The brain's own create keeps them.
+    const brain = await attempt(
+      { ws: [], mod: [], login: '', actor: 'system:worker:extract' },
+      async (tx) => {
+        const [row] = await tx<{ summary: boolean; text: boolean; rank: string; emb: boolean }[]>`
+          insert into nodes (owner_id, type, title, path, data, embedding)
+          values (${L.owner}, 'note', ${`${tag} brain`}, ${`notes.${tag}ins`}::ltree,
+                  '{"summary":"s","text":"t","rank":"a1"}'::jsonb, ${VECTOR}::vector)
+          returning data ? 'summary' as summary, data ? 'text' as text, data->>'rank' as rank,
+                    embedding is not null as emb`;
+        expect(row).toEqual(kept);
+        return { count: 1 };
+      },
+      [folder],
+      sql,
+    );
+    expect(brain).toMatchObject({ rows: 1 });
+    await setMode('off');
+  });
+
+  it('M2: the switches take a number of tries; a busy table fails with nothing changed, and the switch goes when it is free', async () => {
+    const hold = postgres(scratch!.url, { max: 1, prepare: false, onnotice: () => {} });
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    let locked: () => void = () => {};
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const holder = hold.begin(async (tx) => {
+      await tx`lock table pages in row exclusive mode`;
+      locked();
+      await held;
+    });
+    await isLocked;
+    await expect(sql`select mantle_set_edit_check('warn', 2)`).rejects.toMatchObject({
+      code: '55P03',
+    });
+    const [m] = await sql<{ m: string; on: number }[]>`
+      select mantle_check_box_mode('edit_check') as m,
+             (select count(*) filter (where enabled)::int from mantle_edit_check_tables()) as on`;
+    expect(m).toEqual({ m: 'off', on: 0 });
+    release();
+    await holder;
+    await hold.end();
+    await sql`select mantle_set_edit_check('warn', 2)`;
+    expect((await sql<{ m: string }[]>`select mantle_edit_check_mode() as m`)[0]!.m).toBe('warn');
+    await setMode('off');
+    // The actor check's setter takes the same (and one argument still works).
+    await sql`select mantle_set_actor_check('off', 3)`;
+    await sql`select mantle_set_actor_check('off')`;
+  });
+
+  it('M3: a folder rename or move takes every row below it, those the mover cannot read too; a delete that would leave them is counted', async () => {
+    await setMode('on');
+    const folder = await folderAt('mv');
+    const seen = await item('note', HWgrants());
+    const hidden = randomUUID();
+    for (const [id, title] of [
+      [seen, 'seen'],
+      [hidden, 'hidden'],
+    ] as const) {
+      await sql.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`select mantle_lock_heads(array[${folder}]::uuid[], 'share')`;
+        if (id === hidden) {
+          await tx`insert into nodes (id, owner_id, type, title, path)
+                   values (${id}, ${L.owner}, 'note', ${`${tag} ${title}`}, ${`notes.${tag}mv`}::ltree)`;
+        } else {
+          await tx`update nodes set path = ${`notes.${tag}mv`}::ltree where id = ${id}`;
+        }
+      });
+    }
+    // The hidden note: homed in O, the folder's grants "Removed here".
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${hidden}]::uuid[], 'update')`;
+      await tx`update item_grants set excluded = true, is_home = false, write = false
+               where node_id = ${hidden}`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home, write)
+               values (${hidden}, ${ws.O}, true, false)`;
+    });
+    const move = (p: Who) =>
+      attempt(p, async (tx) => {
+        await tx`select mantle_lock_subtree_heads(${folder}::uuid, '{}'::uuid[])`;
+        const [r] = await tx<{ n: number }[]>`
+          select mantle_subtree_rewrite(${L.owner}, ${`notes.${tag}mv`}::ltree, ${`notes.${tag}mv2`}::ltree) as n`;
+        // Every row moved: the folder, the note it reads, the one it cannot.
+        const [h] = await tx<{ n: number }[]>`
+          select mantle_subtree_hidden(${L.owner}, ${`notes.${tag}mv2`}::ltree) as n`;
+        expect(h!.n).toBe(1);
+        return { count: r!.n };
+      });
+    expect(await move(who.homeMod)).toMatchObject({ rows: 3 });
+    // A Write grant (no Moderator of the home) moves nothing.
+    expect(await move(who.member)).toMatchObject({
+      code: '42501',
+      message: 'not allowed to move this item',
+    });
+    // Off the write role nothing is hidden.
+    const [sys] = await sql<{ n: number }[]>`
+      select mantle_subtree_hidden(${L.owner}, ${`notes.${tag}mv`}::ltree) as n`;
+    expect(sys!.n).toBe(0);
     await setMode('off');
   });
 

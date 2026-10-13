@@ -11,11 +11,13 @@ write calls none of them.
 
 ## The switch
 
-- `select mantle_set_edit_check('warn')` (or `off`, `on`) is the one way to
-  change it, as the superuser that runs migrations (docs/update-prod.md).
-  It sets the database setting and enables or disables every edit check
-  trigger in one transaction, through `mantle_switch_triggers`, the switch
-  `mantle_set_actor_check` uses too (all locks first, `NOWAIT`, 5 tries).
+- `select mantle_set_edit_check('warn')` (or `off`, `on`; a second
+  argument sets the tries, 50 by default) is the one way to change it, as
+  the superuser that runs migrations (docs/update-prod.md). It sets the
+  database setting and enables or disables every edit check trigger in one
+  transaction. Both setters are `mantle_set_check(setting, mode, tries)`,
+  through one trigger switch, `mantle_switch_triggers` (all locks first,
+  `NOWAIT`, the tries 200 ms apart, then 55P03 with nothing changed).
 - `mantle_edit_check_mode()` is the box setting, raised by a session's own
   value, never lowered (`mantle_check_mode`, the rule of
   `mantle.heads_check`). The mode is read only on a refusing path, so an
@@ -26,7 +28,10 @@ write calls none of them.
   `edit: ...`. `on` refuses: SQLSTATE 42501 with a detail the mapper reads
   (plan 5.2): `no_read`, `no_edit`, `read_only` (an Informational app's
   data) or `ro_actor`. `editRefusalDetail` (`packages/db/src/pg-error.ts`)
-  reads it; `isScopeWriteRefusal` knows every message, so each is a 403.
+  reads it, and the one HTTP mapper (`server/web/server/scope-refusal.ts`)
+  puts it on the wire as `code`: `no_read` is a 404 (`not_found`);
+  `read_only` and `ro_actor` a 403 with reason `read-only`; `no_edit` and
+  the checks before A3a the 403 with reason `item-workspace`, as before.
 - The edit check bites only where the actor check is `warn` or `on`: its
   per-table checks fire for the write role (`mantle_write_user`), which
   takes a write only then, and the read-only refusal reads
@@ -81,6 +86,11 @@ changes nothing change no trigger; a new one follows the box mode.
 | item_grants                                    | the write check and the grant definers (0279)      |                                                                                                                   |                                          |
 | node_embeds, peer_shares, contact_share_codes, node_comments | the write role holds no right on them: system work only, refused by construction | | |
 
+- **nodes, what only the brain sets.** A new node (INSERT) that carries a
+  derived key or an embedding: in `on` they are dropped
+  (`mantle_edit_check_ins_keys`; the extractor writes them again from the
+  item, so a member's copy keeps working), in `warn` reported; a forged
+  summary or vector never reaches retrieval.
 - **nodes, deny by default.** The edit columns (`NODE_EDIT_COLUMNS`) are
   the ones a login's edit changes; the derived ones among them (`home_ws`,
   `read_ws`, `write_ws`, `login_id`) keep their guards. Every other column
@@ -140,16 +150,26 @@ gate: `warn` reports and locks them all, `on` drops them.
   (`packages/db/src/edit-check.ts`); `packages/db/src/edit-check.test.ts`
   holds each writer to its key and reads the extractor's writes against the
   list. A non-system write may clear a derived key (an edit invalidates
-  what the brain derived from the old content), never set or change one. An
-  INSERT is not checked: a copy carries its source's keys and the extractor
-  writes them again.
+  what the brain derived from the old content), never set or change one; a
+  new node's are dropped (above).
 - `mantle_node_presentation_keys()` is `rank`: a change of it alone needs
   edit of the item or of its folder (the write check's exemption, plan
   20.3).
-- The read-only snapshot copy trigger (0267) keeps its own 13 keys, all on
-  the list (pinned). Folding it onto the list would let a copy change keys
-  it may not change today, on every box: that waits for the edit check to
-  be on everywhere.
+- `mantle_node_extractor_keys()` names the 13 keys the extractor writes
+  about a file's bytes: the read-only snapshot copy trigger (0267) now reads
+  it (the same 13, so the same answers), and the derived keys start with
+  it.
+
+## Folders
+
+A folder's rename or move rewrites the path of everything below it. On the
+write role a plain UPDATE would reach only the rows the scope reads and
+leave the rest orphaned under the old path. `mantle_subtree_rewrite(owner,
+old_path, new_path)` (0282) does it as the brain: for a write-role caller
+it asks manage of the folder's home first (the move check asks the same in
+every mode), takes the heads of the rows the scope does not read, and
+moves every row below the folder. A folder delete that would leave rows
+the caller cannot read behind is refused (409, `mantle_subtree_hidden`).
 
 ## The write-role gaps
 
@@ -165,6 +185,15 @@ item; a member's turn writes the brain's row today, an owner question) and
 `app_table_exports` (no login transaction writes it; on the list, a flow
 that does keeps the checked rerun instead of a 500). The rerun mechanism
 stays.
+
+On a box whose actor check is `warn` or `on`, the moved tables' row rules
+apply at once, with the roll, whatever the edit check: they ride the actor
+check's switch. A write to a history row, a Recall map or a link that the
+scope does not read matches no row. So the Admin MCP and the Admin
+assistant (an Admin turn, on the write role) answer "not found" for a
+Recall owner action (prompt confirm, map publish, revision restore, card
+reorder) on a map not granted to Admin; an Admin user's own HTTP request
+stays on the system pool until A4.
 
 ## The tests
 

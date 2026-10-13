@@ -378,13 +378,14 @@ fi
 # The edit check (arch A3a, migration 0280): the same, for its triggers.
 HAS_EDIT_SWITCH=$(q "SELECT to_regprocedure('public.mantle_edit_check_triggers(boolean,integer)') IS NOT NULL" || echo "")
 if [ "$HAS_EDIT_SWITCH" = "t" ]; then
+  EDIT_MODE=$(q "SELECT public.mantle_check_box_mode('edit_check')" || echo "")
   EDIT_SWITCHED=$(q "SELECT public.mantle_edit_check_triggers(public.mantle_check_box_mode('edit_check') <> 'off', 50)" || echo "")
-  if [ -z "$EDIT_SWITCHED" ]; then
+  if [ -z "$EDIT_SWITCHED" ] || [ -z "$EDIT_MODE" ]; then
     echo "⚠ could not put the edit check triggers in step with the box mode: run by hand before the app starts:" >&2
     echo "    SELECT mantle_set_edit_check('off');" >&2
   else
-    echo "▷ mantle.edit_check is off ($EDIT_SWITCHED edit check trigger(s) switched off). If the dump's box"
-    echo "  ran another mode, set it again as this superuser: SELECT mantle_set_edit_check('warn');"
+    echo "▷ mantle.edit_check is $EDIT_MODE ($EDIT_SWITCHED edit check trigger(s) switched to match). If the"
+    echo "  dump's box ran another mode, set it again as this superuser: SELECT mantle_set_edit_check('warn');"
   fi
 fi
 

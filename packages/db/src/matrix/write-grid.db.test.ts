@@ -33,6 +33,7 @@ import {
   ORACLE_ACTORS,
   ORACLE_WRITE_ACTIONS,
   ORACLE_WRITE_ROLES,
+  expectedRefusalDetail,
   expectedWrite,
   guideWorkspaceKinds,
   type OracleActor,
@@ -42,6 +43,9 @@ import {
 } from './oracle';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+/** An embedding: a value only the brain sets. */
+const VECTOR = `[${Array.from({ length: 768 }, () => '0.01').join(',')}]`;
 
 /** Rolls a cell's transaction back after its checks. */
 class Rollback extends Error {}
@@ -86,7 +90,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
   const scope = {} as Record<OracleWriteRole, Scope>;
   /** Edit check misses (warn) and actor misses the triggers reported. */
   const misses: string[] = [];
-  type Item = { id: string; folder: string | null; info?: string };
+  type Item = { id: string; folder: string | null; info?: string; bare?: string };
   const fx: Record<string, Record<OraclePlacement, Item>> = {};
 
   const kinds = ITEM_KIND_NAMES.filter((t) => ITEM_KINDS[t].class === 'workspace');
@@ -111,7 +115,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     parent: string,
     path: string,
     title: string,
-    opts: { informational?: boolean; ownGrants?: boolean } = {},
+    opts: { informational?: boolean; ownGrants?: boolean; bare?: boolean } = {},
   ): Promise<string> => {
     const id = randomUUID();
     const O = login.owner;
@@ -126,7 +130,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       if (kind === 'page') await tx`insert into pages (node_id) values (${id})`;
       if (kind === 'draw') await tx`insert into draws (node_id) values (${id})`;
       if (kind === 'table') await tx`insert into tables (node_id) values (${id})`;
-      if (kind === 'app') {
+      if (kind === 'app' && !opts.bare) {
         await tx`insert into apps (node_id, data_read_only) values (${id}, ${!!opts.informational})`;
         await tx`insert into app_databases (owner_id, app_node_id, storage_path)
                  values (${O}, ${id}, ${`/tmp/${id}.db`})`;
@@ -245,13 +249,18 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
           : placement === 'folder'
             ? folderPath
             : root;
-      const item = async (placement: OraclePlacement, n: number, informational = false) =>
+      const item = async (
+        placement: OraclePlacement,
+        n: number,
+        informational = false,
+        bare = false,
+      ) =>
         makeItem(
           kind,
           placement === 'folder' ? folder : rootRow!.id,
           at(placement, n),
           `${tag} ${placement} ${kind} ${n}`,
-          { informational, ownGrants: placement === 'root' },
+          { informational, ownGrants: placement === 'root', bare },
         );
       fx[kind] = {
         root: { id: await item('root', 1), folder: null },
@@ -260,6 +269,9 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       if (kind === 'app') {
         fx[kind]!.root.info = await item('root', 2, true);
         fx[kind]!.folder.info = await item('folder', 2, true);
+        // An app node with no code row yet (a new app's code: appCreate).
+        fx[kind]!.root.bare = await item('root', 3, false, true);
+        fx[kind]!.folder.bare = await item('folder', 3, false, true);
       }
     }
     // Both checks on, as a box that runs them (the test's own scratch
@@ -297,6 +309,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     kind: string,
     action: OracleWriteAction,
     item: Item,
+    actor: OracleActor,
   ): Promise<number> {
     const id = action === 'appDataInformational' ? item.info! : item.id;
     const count = (r: { count: number }) => r.count;
@@ -362,10 +375,54 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
         return count(await tx`update recall_nodes set body_md = 'changed' where map_id = ${id}`);
       case 'history':
         return count(await tx`update node_snapshots set note = 'changed' where node_id = ${id}`);
+      case 'historyNew':
+        return count(
+          await tx`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor)
+                              values (${login.owner}, ${id}, ${kind}, 2, 'manual', 'owner')`,
+        );
+      case 'historyDelete':
+        return count(await tx`delete from node_snapshots where node_id = ${id}`);
+      case 'recallCardNew':
+        return count(
+          await tx`insert into recall_nodes (owner_id, map_id, slug, kind, title)
+                              values (${login.owner}, ${id}, 'card2', 'card', 'Another card')`,
+        );
+      case 'recallCardDelete':
+        return count(await tx`delete from recall_nodes where map_id = ${id}`);
+      case 'deleteLink':
+        return count(await tx`delete from shares where node_id = ${id}`);
+      case 'appDataDelete':
+        return count(await tx`delete from app_databases where app_node_id = ${id}`);
+      case 'appCreate':
+        return count(
+          await tx`insert into apps (node_id, author_level) values (${item.bare!}, 'team')`,
+        );
+      case 'appLower':
+        return count(await tx`update apps set author_level = 'team' where node_id = ${id}`);
+      case 'createDerived': {
+        // A new node in the folder carrying a summary, the extractor's mark
+        // and an embedding (fix round 1, M1): a login's lands without them
+        // (the extractor writes them again), the brain's keeps them.
+        const [row] = await tx<
+          { path: string }[]
+        >`select path::text as path from nodes where id = ${id}`;
+        const path =
+          kind === 'branch'
+            ? `${row!.path.split('.').slice(0, -1).join('.')}.${tag}d${k++}`
+            : row!.path;
+        const [made] = await tx<{ forged: boolean }[]>`
+          insert into nodes (owner_id, type, title, path, data, embedding)
+          values (${login.owner}, ${kind}, ${`${tag} forged ${kind}`}, ${path}::ltree,
+                  '{"summary":"forged","extract_completed_at":"2026-01-01"}'::jsonb,
+                  ${VECTOR}::vector)
+          returning (data ? 'summary' or data ? 'extract_completed_at' or embedding is not null) as forged`;
+        const keeps = actor === 'system';
+        return made!.forged === keeps ? 1 : keeps ? 98 : 99;
+      }
     }
   }
 
-  type Got = { rows: number } | { refused: string } | { failure: string };
+  type Got = { rows: number } | { refused: string; detail: string | null } | { failure: string };
 
   /** Run one cell; null when it matches the oracle, else why not. */
   async function cell(
@@ -378,15 +435,20 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     const want = expectedWrite({ surface: 'sql', placement, actor }, role, kind, action);
     if ('na' in want) return 'na';
     const item = fx[kind]![placement];
-    const heads = [item.id, ...(action === 'appDataInformational' ? [item.info!] : [])].concat(
-      item.folder ? [item.folder] : [],
-    );
+    const heads = [
+      item.id,
+      ...(action === 'appDataInformational' ? [item.info!] : []),
+      ...(action === 'appCreate' ? [item.bare!] : []),
+    ].concat(item.folder ? [item.folder] : []);
     let got: Got | null = null;
-    const pool = actor === 'system' ? sql : w;
+    // The brain's work and a contact's app data (named system work) run on
+    // the system pool.
+    const onSystemPool = actor === 'system' || actor === 'contact-rw';
+    const pool = onSystemPool ? sql : w;
     try {
       await pool.begin(async (tx) => {
-        if (actor === 'system') {
-          await tx`select set_config('mantle.actor', 'system:test', true),
+        if (onSystemPool) {
+          await tx`select set_config('mantle.actor', ${actor === 'system' ? 'system:test' : 'contact:rw'}, true),
                           set_config('mantle.write_mode', 'rw', true),
                           set_config('mantle.actor_check', 'on', true)`;
         } else {
@@ -405,12 +467,12 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
         await tx`select mantle_lock_heads(${heads}::uuid[], 'update')`;
         try {
           await tx`savepoint cell`;
-          got = { rows: await write(tx, kind, action, item) };
+          got = { rows: await write(tx, kind, action, item, actor) };
         } catch (err) {
           const e = err as { code?: string; detail?: string; message?: string };
           if (e.code === '42501') {
             await tx`rollback to savepoint cell`;
-            got = { refused: e.detail ?? e.message ?? '' };
+            got = { refused: e.detail ?? e.message ?? '', detail: e.detail ?? null };
           } else {
             got = { failure: `error ${e.code ?? '?'}: ${(e.message ?? '').slice(0, 160)}` };
           }
@@ -428,9 +490,15 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
       return g.rows === 1 ? null : `${g.rows} rows changed, the oracle allows one`;
     }
     if ('rows' in g && g.rows !== 0) return `${g.rows} rows changed, the oracle denies`;
-    // A read-only actor is refused by the read-only refusal itself.
-    if (actor !== 'login' && actor !== 'system' && !('refused' in g && g.refused === 'ro_actor')) {
-      return `not refused as a read-only actor (${JSON.stringify(g)})`;
+    // The detail the guide decides (a read-only actor: ro_actor; an
+    // Informational app's data: read_only); any edit check detail is one of
+    // the plan's four.
+    const detail = 'refused' in g ? g.detail : null;
+    const must = expectedRefusalDetail(actor, role, action);
+    if (must && detail !== must)
+      return `refused with ${detail ?? 'no detail'}, the oracle says ${must}`;
+    if (detail !== null && !['no_read', 'no_edit', 'read_only', 'ro_actor'].includes(detail)) {
+      return `an unknown refusal detail ${detail}`;
     }
     return null;
   }
@@ -474,11 +542,12 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     const perKind = ORACLE_WRITE_ROLES.length + ORACLE_ACTORS.length - 1;
     expect(tally.cells).toBe(kinds.length * 2 * ORACLE_WRITE_ACTIONS.length * perKind);
     // Both answers exercised, and every applicable cell counted.
-    // 11 kinds x 2 placements x 14 writes x 14 actors and logins: 4312
-    // cells, 2260 the oracle covers (2052 not applicable: a write a kind
-    // has no row for, a login's create).
-    expect(tally.allowed).toBe(512);
-    expect(tally.denied).toBe(1748);
+    // 11 kinds x 2 placements x 23 writes x 15 actors and logins: 7590
+    // cells, 2976 the oracle covers (4614 not applicable: a write a kind
+    // has no row for, a login's create, a contact's write that is not app
+    // data, a create with forged values at the root).
+    expect(tally.allowed).toBe(730);
+    expect(tally.denied).toBe(2246);
     expect(tally.na + tally.allowed + tally.denied).toBe(tally.cells);
   }, 600_000);
 });

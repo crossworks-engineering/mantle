@@ -117,6 +117,10 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
     WRITE_ROLE_FUNCTIONS['public.mantle_recall_retarget(uuid,text,text)']!,
   'mantle_secret_put(uuid,bytea,integer)':
     WRITE_ROLE_FUNCTIONS['public.mantle_secret_put(uuid,bytea,integer)']!,
+  'mantle_subtree_rewrite(uuid,ltree,ltree)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_subtree_rewrite(uuid,ltree,ltree)']!,
+  'mantle_subtree_hidden(uuid,ltree)':
+    WRITE_ROLE_FUNCTIONS['public.mantle_subtree_hidden(uuid,ltree)']!,
   // The visibility confirm's workspace reads (0279, A2b2b fix round 1 M3):
   // the workspace role's, so the write role's too.
   'mantle_folder_grant_rows(uuid)':

@@ -740,6 +740,10 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
     'a renamed Recall map’s cross-map options in every map (0281): the brain’s references',
   'public.mantle_secret_put(uuid,bytea,integer)':
     'a secret’s sealed value (0281): the role holds no right on secrets',
+  'public.mantle_subtree_rewrite(uuid,ltree,ltree)':
+    'a folder’s rename or move (0282): every row below it, those the scope does not read too',
+  'public.mantle_subtree_hidden(uuid,ltree)':
+    'a folder delete counts the rows below it the scope does not read (0282): refused, never orphaned',
 };
 
 /** The GRANT statements for the write role. Pure. It reads exactly what the
@@ -898,6 +902,19 @@ export function editCheckTriggers(
   if (e.derivedKeys) {
     if (e.item !== 'self') throw new Error(`${where}: derivedKeys is for nodes`);
     named('data');
+    // A new node that carries values only the brain sets: the derived keys,
+    // and the brain's columns whose safe value is null (an embedding). On,
+    // they are dropped (the extractor writes them again); warn reports.
+    const strip = Object.keys(safe).filter((c) => safe[c] === null);
+    for (const c of strip) ident(c, where);
+    out.push({
+      name: 'mantle_edit_check_ins_keys',
+      ddl:
+        `CREATE TRIGGER "mantle_edit_check_ins_keys" BEFORE INSERT ON ${table} ` +
+        `FOR EACH ROW WHEN (${when} AND (coalesce(NEW."data", '{}'::jsonb) ?| "public"."mantle_node_derived_keys"()` +
+        `${strip.map((c) => ` OR NEW.${ident(c, where)} IS NOT NULL`).join('')})) ` +
+        fn('edit', `strip:${strip.join(',')}`),
+    });
     out.push({
       name: 'mantle_edit_check_keys',
       ddl:

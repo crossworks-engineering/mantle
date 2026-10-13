@@ -45,15 +45,22 @@
 --
 -- Re-runnable.
 
--- 1. The keys.
+-- 1. The keys. What the extractor writes about a file's bytes (the read-only
+--    snapshot copy's list of 0267, which may change on a copy; the files'
+--    BYTE_DERIVED_DATA_KEYS), named once and used by both.
+CREATE OR REPLACE FUNCTION "public"."mantle_node_extractor_keys"()
+  RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT ARRAY['extract_skipped', 'extract_completed_at', 'extract_incomplete',
+               'indexing_applied', 'summary', 'summary_model', 'summary_at',
+               'entities', 'text', 'vision_model', 'ocr', 'native_pdf',
+               'schemaDigest']::text[]
+$$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_node_derived_keys"()
   RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-  SELECT ARRAY[
-    -- the extractor (index-writes.ts, gates.ts, images.ts, facts.ts,
-    -- terminal.ts, extractor.ts, extract-heads-park.ts)
-    'extract_skipped', 'extract_completed_at', 'extract_incomplete', 'extract_parked',
-    'indexing_applied', 'summary', 'summary_model', 'summary_at', 'summary_folded',
-    'entities', 'text', 'vision_model', 'ocr', 'native_pdf', 'schemaDigest',
+  SELECT "public"."mantle_node_extractor_keys"() || ARRAY[
+    -- the extractor's own markers (extract-heads-park.ts, index-writes.ts)
+    'extract_parked', 'summary_folded',
     -- the refold (gates.ts, maintenance/refold-embeds.ts)
     'refolded',
     -- markers of system work (email sync, the app-nav backfills, the folds,
@@ -67,6 +74,32 @@ CREATE OR REPLACE FUNCTION "public"."mantle_node_presentation_keys"()
   RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT ARRAY['rank']::text[]
 $$;
+--> statement-breakpoint
+
+-- The read-only snapshot copy (0267's body) on the named list: the same 13
+-- keys, so the same answers.
+CREATE OR REPLACE FUNCTION "public"."mantle_snapshot_copy_node_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  derived text[] := "public"."mantle_node_extractor_keys"();
+BEGIN
+  IF NEW."title" IS DISTINCT FROM OLD."title"
+     OR NEW."slug" IS DISTINCT FROM OLD."slug"
+     OR NEW."tags" IS DISTINCT FROM OLD."tags"
+     OR NEW."type" IS DISTINCT FROM OLD."type"
+     OR NEW."owner_id" IS DISTINCT FROM OLD."owner_id"
+     OR (coalesce(NEW."data", '{}'::jsonb) - derived)
+        IS DISTINCT FROM (coalesce(OLD."data", '{}'::jsonb) - derived) THEN
+    IF "public"."mantle_bypass_verified"() THEN RETURN NEW; END IF;
+    RAISE EXCEPTION 'not allowed to change this item: it is a read-only snapshot copy'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_snapshot_copy_node_trg"() FROM PUBLIC;
 --> statement-breakpoint
 
 -- 2. The per-table checks.
@@ -87,6 +120,20 @@ BEGIN
   -- A cascade's inner rows follow the statement that was checked.
   IF pg_trigger_depth() > 1 THEN
     RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  IF mode LIKE 'strip%' THEN
+    -- A new node (INSERT) carrying values only the brain sets: the derived
+    -- keys of data and the columns after 'strip:' (an embedding). On, they
+    -- are dropped (the extractor writes them again from the item itself, so
+    -- a copy keeps working); warn reports them; the write runs.
+    IF "public"."mantle_edit_refuses"('INSERT on nodes: values only the brain sets (dropped when on)') THEN
+      NEW := jsonb_populate_record(NEW,
+        jsonb_build_object('data', coalesce(NEW."data", '{}'::jsonb) - "public"."mantle_node_derived_keys"())
+        || coalesce((SELECT jsonb_object_agg(c, NULL)
+                       FROM unnest(string_to_array(nullif(split_part(mode, ':', 2), ''), ',')) AS c), '{}'::jsonb));
+    END IF;
+    RETURN NEW;
   END IF;
 
   IF mode = 'keys' THEN
@@ -138,8 +185,9 @@ BEGIN
     IF ok IS NOT NULL AND NOT ok THEN
       PERFORM "public"."mantle_edit_refuse"(
         format('%s on %s: no %s of the item', TG_OP, TG_TABLE_NAME, need),
-        CASE WHEN need = 'appdata' AND "public"."mantle_check_item"(node, 'edit')
-             THEN 'read_only' ELSE 'no_edit' END,
+        CASE WHEN NOT coalesce("public"."mantle_check_item"(node, 'read'), true) THEN 'no_read'
+             WHEN need = 'appdata' AND "public"."mantle_check_item"(node, 'edit') THEN 'read_only'
+             ELSE 'no_edit' END,
         CASE
           WHEN TG_TABLE_NAME = 'shares' THEN 'not allowed to share this item'
           WHEN need = 'appdata' THEN 'not allowed to write this app''s data'
@@ -280,14 +328,27 @@ DECLARE
   n integer;
 BEGIN
   SELECT x."owner_id", x."node_id", x."slug" INTO m FROM "public"."recall_maps" x WHERE x."id" = map;
-  IF NOT FOUND OR m."slug" IS DISTINCT FROM old_slug OR new_slug IS NULL OR new_slug = '' THEN
-    RAISE EXCEPTION 'mantle_recall_retarget: map % does not answer to that slug', map USING ERRCODE = '22023';
+  IF NOT FOUND OR m."slug" IS DISTINCT FROM old_slug OR new_slug IS NULL
+     OR new_slug !~ '^[a-z0-9][a-z0-9-]{0,119}$' OR new_slug = old_slug THEN
+    RAISE EXCEPTION 'mantle_recall_retarget: map % does not answer to that slug, or the new one is not a slug', map
+      USING ERRCODE = '22023';
+  END IF;
+  -- The write role always carries a scope; with none it is refused.
+  IF "public"."mantle_caller_is_write_role"() AND NOT "public"."mantle_scope_active"() THEN
+    RAISE EXCEPTION 'not allowed to change this item' USING ERRCODE = '42501', DETAIL = 'no_edit';
   END IF;
   IF "public"."mantle_scope_active"()
      AND NOT coalesce("public"."mantle_check_item"(m."node_id", 'edit'), false) THEN
     PERFORM "public"."mantle_edit_refuse"('UPDATE on recall_nodes: a renamed map the scope may not edit',
       'no_edit', 'not allowed to change this item');
   END IF;
+  -- The map takes the new slug here, with its old one kept as a former slug,
+  -- so the options rewritten below always name the map's own slug.
+  UPDATE "public"."recall_maps"
+     SET "slug" = new_slug,
+         "former_slugs" = ARRAY(SELECT DISTINCT s FROM unnest("former_slugs" || old_slug) AS s
+                                 WHERE s <> new_slug ORDER BY s)
+   WHERE "id" = map;
   UPDATE "public"."recall_nodes"
      SET "options" = (
        SELECT jsonb_agg(
@@ -310,6 +371,10 @@ CREATE OR REPLACE FUNCTION "public"."mantle_secret_put"(node uuid, sealed bytea,
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n."id" = node AND n."type" = 'secret') THEN
     RAISE EXCEPTION 'mantle_secret_put: % is not a secret', node USING ERRCODE = '22023';
+  END IF;
+  -- The write role always carries a scope; with none it is refused.
+  IF "public"."mantle_caller_is_write_role"() AND NOT "public"."mantle_scope_active"() THEN
+    RAISE EXCEPTION 'not allowed to change this item' USING ERRCODE = '42501', DETAIL = 'no_edit';
   END IF;
   IF "public"."mantle_scope_active"()
      AND NOT coalesce("public"."mantle_check_item"(node, 'edit'), false) THEN

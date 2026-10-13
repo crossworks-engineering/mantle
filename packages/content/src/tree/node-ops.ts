@@ -201,13 +201,12 @@ async function rewriteSubtree(
   oldPath: string,
   newPath: string,
 ): Promise<void> {
-  await tx.execute(sql`
-    update nodes
-       set path = case
-             when path = ${oldPath}::ltree then text2ltree(${newPath})
-             else (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
-           end
-     where owner_id = ${ownerId} and path <@ ${oldPath}::ltree`);
+  // One definer moves every row below the folder, those the caller's scope
+  // does not read too (arch A3a fix round 1): on the write role a plain
+  // UPDATE would leave them behind, orphaned under the old path.
+  await tx.execute(
+    sql`select mantle_subtree_rewrite(${ownerId}, ${oldPath}::ltree, ${newPath}::ltree)`,
+  );
   await carrySpaceRows(tx, ownerId, oldPath, newPath);
 }
 
@@ -402,6 +401,18 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
        for update`)) as unknown as Array<{ path: string }>;
       if (!self || self.path !== p) {
         throw new NodeOpRefusal('conflict', `'${folder.title}' changed meanwhile; try again`);
+      }
+      // Rows below it the caller's scope does not read would be left behind
+      // (the write role's row rules): refused, never orphaned (arch A3a fix
+      // round 1). Always 0 off the write role.
+      const [hidden] = (await tx.execute(
+        sql`select mantle_subtree_hidden(${ownerId}, ${p}::ltree) as n`,
+      )) as unknown as Array<{ n: number }>;
+      if (Number(hidden?.n ?? 0) > 0) {
+        throw new NodeOpRefusal(
+          'conflict',
+          `'${folder.title}' holds items you cannot see; ask a Moderator of their workspace`,
+        );
       }
       // 1. Subfolders that merge: a folder is already at their landing path,
       //    outside the deleted one. Their contents land in it below.

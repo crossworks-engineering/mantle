@@ -235,7 +235,16 @@ export const ORACLE_WRITE_ROLES: readonly OracleWriteRole[] = [
 
 /** Who a statement runs as (docs/actors.md, the actor kinds). */
 export type OracleActor =
-  'login' | 'login-ro' | 'assistant' | 'link' | 'peer' | 'contact-ro' | 'system';
+  | 'login'
+  | 'login-ro'
+  | 'assistant'
+  | 'link'
+  | 'peer'
+  | 'contact-ro'
+  /** A contact share with Can write: its app's data, as named system work
+   *  after the app's own check (the /s broker). */
+  | 'contact-rw'
+  | 'system';
 
 export const ORACLE_ACTORS: readonly OracleActor[] = [
   'login',
@@ -244,6 +253,7 @@ export const ORACLE_ACTORS: readonly OracleActor[] = [
   'link',
   'peer',
   'contact-ro',
+  'contact-rw',
   'system',
 ];
 
@@ -251,6 +261,9 @@ export const ORACLE_ACTORS: readonly OracleActor[] = [
 export type OracleWriteAction =
   /** Make a new item of the kind where the fixture's item is. */
   | 'create'
+  /** Make a new item in the folder carrying values only the brain sets (a
+   *  summary, an embedding): they are dropped for a login (fix round 1). */
+  | 'createDerived'
   /** Change its content (its title). */
   | 'edit'
   /** Move it on a board (its rank alone). */
@@ -265,21 +278,38 @@ export type OracleWriteAction =
   | 'openLink'
   /** Close its public link. */
   | 'closeLink'
+  /** Delete its public link's row. */
+  | 'deleteLink'
   /** Change an app's code (its draft). */
   | 'appCode'
+  /** Make an app's code row (a new app's). */
+  | 'appCreate'
+  /** Lower an app's tool level to team (the author ceiling). */
+  | 'appLower'
   /** Set an app's MCP access switch. */
   | 'appSwitch'
   /** Write an app's data. */
   | 'appData'
   /** Write the data of an app whose Informational switch is on. */
   | 'appDataInformational'
+  /** Delete an app's data row. */
+  | 'appDataDelete'
   /** Change a Recall map's card. */
   | 'recallCard'
+  /** Add a card to a Recall map. */
+  | 'recallCardNew'
+  /** Delete a Recall map's card. */
+  | 'recallCardDelete'
   /** Change an item's history row (an app version, a table snapshot). */
-  | 'history';
+  | 'history'
+  /** Add a history row. */
+  | 'historyNew'
+  /** Delete a history row. */
+  | 'historyDelete';
 
 export const ORACLE_WRITE_ACTIONS: readonly OracleWriteAction[] = [
   'create',
+  'createDerived',
   'edit',
   'rank',
   'derived',
@@ -287,12 +317,20 @@ export const ORACLE_WRITE_ACTIONS: readonly OracleWriteAction[] = [
   'deleteContent',
   'openLink',
   'closeLink',
+  'deleteLink',
   'appCode',
+  'appCreate',
+  'appLower',
   'appSwitch',
   'appData',
   'appDataInformational',
+  'appDataDelete',
   'recallCard',
+  'recallCardNew',
+  'recallCardDelete',
   'history',
+  'historyNew',
+  'historyDelete',
 ];
 
 /** The kinds an action applies to (the item has the row it changes). */
@@ -301,13 +339,20 @@ function actionApplies(kind: string, action: OracleWriteAction): boolean {
     case 'deleteContent':
       return kind === 'page' || kind === 'draw' || kind === 'table';
     case 'appCode':
+    case 'appCreate':
+    case 'appLower':
     case 'appSwitch':
     case 'appData':
     case 'appDataInformational':
+    case 'appDataDelete':
       return kind === 'app';
     case 'recallCard':
+    case 'recallCardNew':
+    case 'recallCardDelete':
       return kind === 'recall';
     case 'history':
+    case 'historyNew':
+    case 'historyDelete':
       return kind === 'app' || kind === 'table';
     default:
       return true;
@@ -356,9 +401,16 @@ export function expectedWrite(
 ): OracleAnswer {
   if (guideKindClass(kind) !== 'workspace') return { na: 'the grid covers the workspace kinds' };
   if (!actionApplies(kind, action)) return { na: `${action} is not a change of a ${kind}` };
+  if (action === 'createDerived' && context.placement !== 'folder') {
+    return { na: 'made in the folder only (a login at the root: expectedAccess)' };
+  }
   switch (context.actor) {
     case 'system':
       return { allow: true };
+    case 'contact-rw':
+      return action === 'appData'
+        ? { allow: true }
+        : { na: 'a contact writes only its app’s data, as named system work' };
     case 'login-ro':
     case 'assistant':
     case 'link':
@@ -378,9 +430,18 @@ export function expectedWrite(
     case 'edit':
     case 'rank':
     case 'recallCard':
+    case 'recallCardNew':
+    case 'recallCardDelete':
     case 'history':
+    case 'historyNew':
+    case 'historyDelete':
     case 'appData':
+    case 'appLower':
       return editsForWrite(role) ? { allow: true } : deny('may not edit it');
+    case 'createDerived':
+      // "To place an item in folder F you may edit F"; what only the brain
+      // sets is dropped (the cell checks it).
+      return editsForWrite(role) ? { allow: true } : deny('may not edit the folder');
     case 'appDataInformational':
       return editsForWrite(role) && adminForWrite(role)
         ? { allow: true }
@@ -390,12 +451,15 @@ export function expectedWrite(
     case 'delete':
     case 'deleteContent':
     case 'appCode':
+    case 'appCreate':
+    case 'appDataDelete':
       return homeMod ? { allow: true } : deny('not a Moderator of its home');
     case 'openLink':
       return (kind === 'app' ? homeMod : editsForWrite(role))
         ? { allow: true }
         : deny('may not open its link');
     case 'closeLink':
+    case 'deleteLink':
       return (kind === 'app' ? homeMod : editsForWrite(role)) || adminForWrite(role)
         ? { allow: true }
         : deny('may not close its link');
@@ -404,4 +468,27 @@ export function expectedWrite(
         ? { allow: true }
         : deny('an Admin user sets it');
   }
+}
+
+/**
+ * The detail a refusal must carry, where the guide decides it (the mapper
+ * reads it, plan 5.2): a caller that only reads, `ro_actor`; an
+ * Informational app's data for a user who may edit the app, `read_only`.
+ * Null: any refusal (a detail of the edit check, or a check before it).
+ */
+export function expectedRefusalDetail(
+  actor: OracleActor,
+  role: OracleWriteRole,
+  action: OracleWriteAction,
+): 'ro_actor' | 'read_only' | null {
+  if (['login-ro', 'assistant', 'link', 'peer', 'contact-ro'].includes(actor)) return 'ro_actor';
+  if (
+    actor === 'login' &&
+    action === 'appDataInformational' &&
+    editsForWrite(role) &&
+    !adminForWrite(role)
+  ) {
+    return 'read_only';
+  }
+  return null;
 }

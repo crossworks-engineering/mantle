@@ -19,9 +19,11 @@
 --    every lock first, in one LOCK TABLE ... NOWAIT, then enables or
 --    disables the named triggers (0277's mantle_actor_check_triggers, made
 --    general; that function now calls it). mantle_edit_check_triggers and
---    mantle_set_edit_check(mode) switch every edit check trigger
+--    mantle_set_edit_check(mode, tries) switch every edit check trigger
 --    (mantle_edit_check, mantle_edit_check_<suffix>) with the box setting,
---    so off costs nothing: its triggers are disabled.
+--    so off costs nothing: its triggers are disabled. Both setters
+--    (mantle_set_actor_check too) are mantle_set_check(setting, mode,
+--    tries): `tries` (50 by default, 200 ms apart) for a busy box.
 -- 4. The rule, written once (plan 5.1): the array forms
 --    mantle_may_edit_in(ws, mod_ws, home, write_ws) and
 --    mantle_may_manage_in(mod_ws, home); mantle_may_edit and
@@ -241,26 +243,52 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
--- The one way to change the box's edit check mode (docs/update-prod.md): it
--- switches the triggers AND sets the database setting (a RESET for off), in
--- one transaction, as mantle_set_actor_check does. Run it as the superuser
--- that runs the migrations. The edit check refuses only what carries an
--- actor and a scope: on a box whose actor check is off it checks nothing.
-CREATE OR REPLACE FUNCTION "public"."mantle_set_edit_check"(mode text)
+-- The one way to change a check's box mode (docs/update-prod.md): it
+-- switches the check's triggers AND sets the database setting (a RESET for
+-- off), in one transaction. `tries`: how many times the switch takes every
+-- lock at once (NOWAIT, 200 ms apart) before it fails with nothing changed
+-- (55P03); a busy box (the extractor's writes, autovacuum) needs more than
+-- a few. Run it as the superuser that runs the migrations. The edit check
+-- refuses only what carries an actor and a scope: on a box whose actor
+-- check is off it checks nothing.
+CREATE OR REPLACE FUNCTION "public"."mantle_set_check"(setting text, mode text, tries integer DEFAULT 50)
   RETURNS text LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
-  IF mode IS NULL OR mode NOT IN ('off', 'warn', 'on') THEN
-    RAISE EXCEPTION 'mantle_set_edit_check: mode must be off, warn or on' USING ERRCODE = '22023';
+  IF setting IS NULL OR setting NOT IN ('actor_check', 'edit_check') THEN
+    RAISE EXCEPTION 'mantle_set_check: actor_check or edit_check' USING ERRCODE = '22023';
   END IF;
-  PERFORM "public"."mantle_edit_check_triggers"(mode <> 'off');
-  IF mode = 'off' THEN
-    EXECUTE format('ALTER DATABASE %I RESET mantle.edit_check', current_database());
+  IF mode IS NULL OR mode NOT IN ('off', 'warn', 'on') THEN
+    RAISE EXCEPTION 'mantle_set_check: mode must be off, warn or on' USING ERRCODE = '22023';
+  END IF;
+  IF setting = 'actor_check' THEN
+    PERFORM "public"."mantle_actor_check_triggers"(mode <> 'off', tries);
   ELSE
-    EXECUTE format('ALTER DATABASE %I SET mantle.edit_check = %L', current_database(), mode);
+    PERFORM "public"."mantle_edit_check_triggers"(mode <> 'off', tries);
+  END IF;
+  IF mode = 'off' THEN
+    EXECUTE format('ALTER DATABASE %I RESET mantle.%s', current_database(), setting);
+  ELSE
+    EXECUTE format('ALTER DATABASE %I SET mantle.%s = %L', current_database(), setting, mode);
   END IF;
   RETURN mode;
 END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_set_edit_check"(mode text, tries integer DEFAULT 50)
+  RETURNS text LANGUAGE sql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT "public"."mantle_set_check"('edit_check', mode, tries)
+$$;
+--> statement-breakpoint
+-- 0277's setter, with the same `tries` (one argument more: the old form is
+-- dropped first, so a call with one argument is not ambiguous).
+DROP FUNCTION IF EXISTS "public"."mantle_set_actor_check"(text);
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_set_actor_check"(mode text, tries integer DEFAULT 50)
+  RETURNS text LANGUAGE sql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT "public"."mantle_set_check"('actor_check', mode, tries)
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_check_triggers_named"(text[]) FROM PUBLIC;
@@ -273,7 +301,11 @@ REVOKE ALL ON FUNCTION "public"."mantle_edit_check_triggers"(boolean, integer) F
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_edit_check_tables"() FROM PUBLIC;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION "public"."mantle_set_edit_check"(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."mantle_set_check"(text, text, integer) FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_set_edit_check"(text, integer) FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_set_actor_check"(text, integer) FROM PUBLIC;
 --> statement-breakpoint
 
 -- 4. The rule, written once. The array forms are pure (no setting read), so
@@ -415,7 +447,8 @@ BEGIN
   END IF;
   SELECT coalesce(array_agg(n."id"), '{}'::uuid[]) INTO dropped
     FROM "public"."nodes" n
-   WHERE n."id" = ANY (ids) AND NOT coalesce(n."read_ws" && "public"."mantle_scope_ws"(), false);
+   WHERE n."id" = ANY (ids)
+     AND NOT "public"."mantle_check_row"(n."home_ws", n."write_ws", n."read_ws", 'read');
   IF cardinality(dropped) = 0 THEN
     RETURN ids;
   END IF;
@@ -465,8 +498,10 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
--- mantle_lock_heads_more (0277) with the filter first; the rest as it was.
-CREATE OR REPLACE FUNCTION "public"."mantle_lock_heads_more"(ids uuid[])
+-- mantle_lock_heads_more (0277) as two: the core, unfiltered, for the
+-- definers that lock what their own check allowed (mantle_subtree_rewrite,
+-- 0282), never open to a role; and the public one, the filter first.
+CREATE OR REPLACE FUNCTION "public"."mantle_lock_heads_more_core"(ids uuid[])
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 DECLARE
@@ -477,7 +512,6 @@ BEGIN
   IF NOT "public"."mantle_heads_taken"() THEN
     RAISE EXCEPTION 'mantle_lock_heads_more: no heads held yet' USING ERRCODE = '55000';
   END IF;
-  ids := "public"."mantle_heads_scope_filter"(ids);
   SELECT coalesce(array_agg(d.x ORDER BY d.x), '{}'::uuid[]) INTO add
     FROM (SELECT u.x FROM unnest(ids) AS u(x) WHERE u.x IS NOT NULL
           EXCEPT
@@ -491,6 +525,19 @@ BEGIN
   PERFORM 1 FROM "public"."node_acl_head" h
     WHERE h."node_id" = ANY (add) ORDER BY h."node_id" FOR UPDATE NOWAIT;
   PERFORM "public"."mantle_heads_set"(held || add, held_upd || add);
+END
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_lock_heads_more_core"(uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_lock_heads_more"(ids uuid[])
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF NOT "public"."mantle_heads_taken"() THEN
+    RAISE EXCEPTION 'mantle_lock_heads_more: no heads held yet' USING ERRCODE = '55000';
+  END IF;
+  PERFORM "public"."mantle_lock_heads_more_core"("public"."mantle_heads_scope_filter"(ids));
 END
 $$;
 --> statement-breakpoint

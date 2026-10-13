@@ -53,6 +53,25 @@ export const DERIVED_KEY_WRITERS: Readonly<Record<string, readonly string[]>> = 
 /** The derived keys, as mantle_node_derived_keys() lists them. */
 export const NODE_DERIVED_KEYS: readonly string[] = Object.keys(DERIVED_KEY_WRITERS);
 
+/** What the extractor writes about a file's bytes (mantle_node_extractor_keys,
+ *  0281): the read-only snapshot copy's list (it may change on a copy) and
+ *  the files' BYTE_DERIVED_DATA_KEYS. A part of NODE_DERIVED_KEYS. */
+export const NODE_EXTRACTOR_KEYS: readonly string[] = [
+  'extract_skipped',
+  'extract_completed_at',
+  'extract_incomplete',
+  'indexing_applied',
+  'summary',
+  'summary_model',
+  'summary_at',
+  'entities',
+  'text',
+  'vision_model',
+  'ocr',
+  'native_pdf',
+  'schemaDigest',
+];
+
 /** The presentation keys of nodes.data (mantle_node_presentation_keys):
  *  a change of these alone needs edit of the item OR of its folder (a
  *  board drag, a sibling rebalance; plan 20.3). */

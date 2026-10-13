@@ -846,10 +846,18 @@ select count(*) filter (where enabled) as enabled, count(*) as triggers
 ```
 
 As `mantle_set_actor_check`, it sets the database setting and switches the
-triggers in one transaction, never waits for a lock (5 tries, 200 ms apart,
-then `55P03` with nothing changed), and needs a restart of the app
-processes to reach every pooled connection. Do not use a bare `alter
-database ... set mantle.edit_check`.
+triggers in one transaction and needs a restart of the app processes to
+reach every pooled connection. It takes every table's lock at once and
+never waits on one: it tries 50 times, 200 ms apart (about 10 s), then
+fails with `55P03` and nothing changed. A second argument sets the tries
+(`select mantle_set_edit_check('warn', 150);`); `mantle_set_actor_check`
+takes the same. On a busy box (the extractor writing, autovacuum after a
+big import) give it more tries; if it still fails, pause the writers for
+the moment of the switch: `docker compose stop worker_files
+worker_maintenance api`, switch, then `docker compose start worker_files
+worker_maintenance api` (the api runs the extract queue; chat pauses with
+it for those seconds). Do not use a bare `alter database ... set
+mantle.edit_check`.
 
 In `warn` every write the check would refuse runs and is logged as an actor
 miss whose check name starts with `edit:`. Read them with numbers only:
@@ -865,7 +873,10 @@ app's code (owner decision D4: a Moderator of the app's home does), a
 contact share made by a login that is not an Admin user. `on` refuses with
 a 403. Do not set `on` on any box before its `edit:` misses are zero, and
 never on the Pinnacle showcase box before 2026-10-16 (D4 lands after it).
-Going back is `select mantle_set_edit_check('off');` and a restart.
+Going back is `select mantle_set_edit_check('off');` and a restart of the
+app processes (web, api, workers, mcp): a pooled connection keeps the
+setting it opened with, and the check reads the higher of the two until
+it is restarted.
 
 ## Rollback
 

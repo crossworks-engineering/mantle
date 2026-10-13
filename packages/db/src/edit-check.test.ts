@@ -19,6 +19,7 @@ import {
 import {
   DERIVED_KEY_WRITERS,
   EXTRACTOR_USER_KEYS,
+  NODE_EXTRACTOR_KEYS,
   NODE_DERIVED_KEYS,
   NODE_PRESENTATION_KEYS,
 } from './edit-check';
@@ -84,8 +85,12 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
   });
 
   it('the SQL list (mantle_node_derived_keys, 0281) is this list', () => {
-    const sql = sqlArrayAfter(migration('0281_edit_check_tables'), 'mantle_node_derived_keys"()');
-    expect([...sql].sort()).toEqual([...NODE_DERIVED_KEYS].sort());
+    const m = migration('0281_edit_check_tables');
+    const extractor = sqlArrayAfter(m, 'mantle_node_extractor_keys"()');
+    expect(extractor).toEqual([...NODE_EXTRACTOR_KEYS]);
+    // The derived keys are the extractor's and the rest.
+    const rest = sqlArrayAfter(m, 'mantle_node_derived_keys"()\n');
+    expect([...extractor, ...rest].sort()).toEqual([...NODE_DERIVED_KEYS].sort());
     const pres = sqlArrayAfter(
       migration('0281_edit_check_tables'),
       'mantle_node_presentation_keys"()',
@@ -99,6 +104,8 @@ describe('the derived keys of nodes.data (A3a, plan 5.2: an inventory, pinned)',
       'mantle_snapshot_copy_node_trg"()',
     );
     expect(copy).toHaveLength(13);
+    // The copy's trigger now reads the named list (0281): the same 13.
+    expect([...copy].sort()).toEqual([...NODE_EXTRACTOR_KEYS].sort());
     const files = read('packages/files/src/ops/files.ts');
     const at = files.indexOf('export const BYTE_DERIVED_DATA_KEYS = [');
     const bytes = [...files.slice(at, files.indexOf('] as const', at)).matchAll(/'([^']+)'/g)].map(
@@ -148,8 +155,16 @@ describe('the edit check triggers from the matrix (editCheckTriggers)', () => {
     const tr = editCheckTriggers(row('public.nodes'), nodeCols, new Set(['embedding']));
     expect(tr.map((t) => t.name).sort()).toEqual([
       'mantle_edit_check_cols_system',
+      'mantle_edit_check_ins_keys',
       'mantle_edit_check_keys',
     ]);
+    // A new node's brain-only values (fix round 1, M1): dropped when on.
+    const ins = tr.find((t) => t.name === 'mantle_edit_check_ins_keys')!.ddl;
+    expect(ins).toContain('BEFORE INSERT ON "public"."nodes"');
+    expect(ins).toContain(
+      `?| "public"."mantle_node_derived_keys"() OR NEW."embedding" IS NOT NULL`,
+    );
+    expect(ins).toContain(`'edit', 'self', '', 'strip:embedding')`);
     const sys = tr.find((t) => t.name === 'mantle_edit_check_cols_system')!.ddl;
     // A column the matrix does not name is in 'rest': refused.
     expect(sys).toContain('"salience_x"');
