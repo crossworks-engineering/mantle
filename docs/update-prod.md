@@ -980,15 +980,21 @@ person, no title and no id):
 ```sql
 begin read only;
 select
-  -- Team Moderators who are not Admin users (the ticks the switch gave)
+  -- Team Moderators who are not Admin users (the ticks the switch gave).
+  -- An Admin user: a live login in the live Admin workspace with the users
+  -- area on (adminUserSql in packages/db/src/admin-user.ts).
   (select count(*) from workspace_users u
      join workspaces t on t.id = u.workspace_id and t.owner_id = mantle_brain_id()
                       and t.bridge_key = 'team'
     where u.moderator
       and not exists (select 1 from workspace_users au
                         join workspaces aw on aw.id = au.workspace_id and aw.is_admin
+                                          and aw.archived_at is null
                                           and aw.owner_id = mantle_brain_id()
-                       where au.login_id = u.login_id)) as team_member_moderators,
+                        join auth.users al on al.id = au.login_id and al.disabled_at is null
+                       where au.login_id = u.login_id
+                         and coalesce(au.limits -> 'areas' ->> 'users', '') <> 'false'))
+    as team_member_moderators,
   -- member-built apps with no live holder workspace beyond Admin
   (select count(*) from apps a
      join nodes n on n.id = a.node_id and n.type = 'app'
@@ -999,7 +1005,8 @@ select
 rollback;
 ```
 
-Note both numbers for the box. If `member_apps_without_holder` is above 0,
+Note both numbers for the box: they are the second and fourth numbers
+`ws:team-check` prints after the roll. If `member_apps_without_holder` is above 0,
 plan the re-share: an Admin user shares each such app with the workspace
 that should run it, right after the roll (before the roll it still runs
 through Team, so nothing is lost while you wait).
@@ -1027,13 +1034,22 @@ the Admin users' ticks, keeps at least one Moderator, never removes a row,
 and writes one `user.moderator` event per change. `--workspace <id>` takes
 any other workspace the same way. A member who should keep moderating Team
 gets the tick back from an Admin user on the workspace screen.
-`ws:team-check` then shows 0 for Team. If it still shows member-built apps
-without a holder, re-share them now.
+`ws:team-check` then shows 0 for Team, or 1 when no Admin user moderates
+Team and the member added first kept the tick (the workspace keeps a
+Moderator); an Admin user can make themselves a Moderator there and clear
+that one too. If it still shows member-built apps without a holder,
+re-share them now.
+
+The command is one-shot: run it once, right after the roll. Run again, it
+clears every tick an Admin user has set since on purpose, as it cannot tell
+those from the ticks the switch gave.
 
 What the operator tells the users of the box: "Team is now a workspace like
-any other. Nobody loses access. From now on only an admin can make someone a
-Moderator or remove one, and new people are added to workspaces by an
-admin."
+any other. Everyone keeps reading what they read. From now on only an admin
+can make someone a Moderator or remove one, and new people are added to
+workspaces by an admin." When `member_apps_without_holder` was above 0, add:
+"An app a member built that no workspace holds stops working until an admin
+shares it with a workspace again." Re-share those apps before you say it.
 
 Check after the roll (read only, numbers only):
 

@@ -31,9 +31,11 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   Jackdaw dims another Moderator's Remove for a Moderator who is not an
   Admin user.
 - "Shared" has one meaning: a workspace that is neither Admin, nor private,
-  nor a Former user one (`mantle_ws_any_shared`). The app list's MCP reach
-  is right for an Admin user again, also for an app held by a workspace
-  they are not in.
+  nor a Former user one (`mantle_ws_any_shared`), and a holder is any live
+  workspace beyond Admin, a private one included (`mantle_ws_any_holder`),
+  both on one class of a workspace (`mantle_ws_class`). The app list's MCP
+  reach asks the holder rule: right for an Admin user again, also for an
+  app held by a workspace they are not in or by a member's private one.
 - `pnpm -C server/web ws:team-check` (read only, numbers only) and
   `ws:clear-member-ticks --workspace <id|former-team> [--apply]` for the
   roll: count first, then an Admin user clears the member ticks.
