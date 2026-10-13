@@ -191,11 +191,12 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     const e = await folder('files', `${tag}e`);
     const gPath = (await pathOf(g))!;
     const body = { parentPath: gPath, filename: `${tag}.txt`, content: 'hidden bytes' };
-    let up = await call('/api/files/files', owner, 'POST', body);
+    let up = await call('/api/files/files', mod, 'POST', body);
+    // The Moderator of the folder's home files it (the owner is not in H).
     // Filing into a shared folder asks first (who will see it), as the UI
     // does.
     if (up.status === 409 && up.json.error === 'visibility') {
-      up = await call('/api/files/files', owner, 'POST', {
+      up = await call('/api/files/files', mod, 'POST', {
         ...body,
         confirm: true,
         seen: up.json.total,
