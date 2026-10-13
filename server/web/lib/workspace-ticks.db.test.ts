@@ -10,6 +10,8 @@
  *    writes one user.moderator event per change (no actor, `by`), and
  *    keeps a Moderator when no Admin user moderates the workspace;
  *  - it refuses the Admin workspace, an archived one and an unknown id;
+ *  - "Admin user" is adminUserSql, mayPromote's rule: a disabled Admin
+ *    login or one whose users area is off is no Admin user (fix round 2);
  *  - the counts after the clear are 0, and a second run clears nothing.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/workspace-ticks.db.test.ts
@@ -188,5 +190,42 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
       sql`select count(*)::int as n from workspace_users where workspace_id = ${ws!.id}`,
     );
     expect(n!.n).toBe(3);
+  });
+
+  it('a disabled Admin login, or one with the users area off, is no Admin user here (fix round 2, L1)', async () => {
+    const off = randomUUID();
+    const noUsers = randomUUID();
+    // Admin logins: the login bridge makes each a user of Admin.
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
+      (${off}, ${email(off)}, 'x', false, 'admin'),
+      (${noUsers}, ${email(noUsers)}, 'x', false, 'admin')`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
+      (${admin}, ${off}, true), (${admin}, ${noUsers}, true)
+      on conflict (workspace_id, login_id) do nothing`);
+    expect(await tick(admin, off)).toBe(true);
+    expect(await tick(admin, noUsers)).toBe(true);
+    await x(sql`update auth.users set disabled_at = now() where id = ${off}`);
+    await x(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
+      where workspace_id = ${admin} and login_id = ${noUsers}`);
+    const [ws] = await x<{ id: string }>(sql`insert into workspaces (owner_id, name)
+      values (${owner}, 'Crew') returning id::text as id`);
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator, added_at) values
+      (${ws!.id}, ${mem3}, true, now() - interval '3 days'),
+      (${ws!.id}, ${off}, true, now() - interval '2 days'),
+      (${ws!.id}, ${noUsers}, true, now() - interval '1 day')`);
+    // Neither counts as the Admin Moderator that would let the clear take
+    // every member tick: the member added first keeps it.
+    expect(await t.clearMemberTicks(ws!.id, false)).toEqual({
+      ok: true,
+      applied: false,
+      moderators: 3,
+      adminModerators: 0,
+      cleared: 2,
+      keptForLastModerator: 1,
+    });
+    await t.clearMemberTicks(ws!.id, true);
+    expect(await tick(ws!.id, mem3)).toBe(true);
+    expect(await tick(ws!.id, off)).toBe(false);
+    expect(await tick(ws!.id, noUsers)).toBe(false);
   });
 });

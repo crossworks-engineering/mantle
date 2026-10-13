@@ -5,7 +5,7 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { PgTable, getTableConfig, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import postgres from 'postgres';
 import * as schema from './schema/index';
-import { liveHolderBeyondAdminSql } from './grant-reads';
+import { holderWorkspacesSql } from './grant-reads';
 import { env, envFlag } from '@mantle/config';
 import {
   currentScopeTx,
@@ -2952,7 +2952,7 @@ async function appRunHolders(app: AppRunFor): Promise<string[]> {
   const [row] = (await getAdminDb().execute(
     sqlTag`select coalesce(array(
                     select w.id::text from workspaces w
-                     where ${liveHolderBeyondAdminSql('w', 'n')}
+                     where w.id = any(n.read_ws) and ${holderWorkspacesSql(sqlTag`array[w.id]`)}
                      order by w.id), '{}') as live
              from nodes n
             where n.id = ${app.id} and n.type = 'app'`,

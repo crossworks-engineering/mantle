@@ -25,9 +25,9 @@ import { nodes } from './schema/index';
 /**
  * Any of the workspace ids `ws` (a uuid[] expression) is a shared workspace:
  * not Admin, not private, not a Former user one (mantle_ws_any_shared,
- * 0286, a definer: the workspace role reads neither record table). The ONE
- * copy of the rule: the grant reads below and firstSharedWorkspaceId
- * (member-apps.ts) ask it.
+ * 0286, on mantle_ws_class, the one class of a workspace: a definer, the
+ * workspace role reads neither record table; this brain's workspaces only).
+ * The grant reads below and firstSharedWorkspaceId (member-apps.ts) ask it.
  */
 export function sharedWorkspacesSql(ws: SQL): SQL<boolean> {
   return sql<boolean>`coalesce("public"."mantle_ws_any_shared"(${ws}), false)`;
@@ -47,17 +47,20 @@ export function sharedReadsAliasSql(alias: string): SQL<boolean> {
 }
 
 /**
- * Workspace `ws` (a raw alias of `workspaces`) is a live holder beyond Admin
- * of node `n` (a raw alias of `nodes`): it reads the node, is not Admin and
- * is not archived. The app run's holders (appRunHolders, client.ts) and the
- * 0286 roll count of member-built apps with none (server/web
- * lib/workspace-ticks.ts) ask this one rule. A private workspace holds too:
- * its user runs the app there.
+ * Any of the workspace ids `ws` (a uuid[] expression) is a live holder
+ * beyond Admin: live, and not Admin; a private or Former user workspace
+ * holds too, its user runs and reaches the item there (mantle_ws_any_holder,
+ * 0286, on the same class as sharedWorkspacesSql). An app run's holders
+ * (appRunHolders, client.ts), an app's MCP reach (app-nav.ts) and the 0286
+ * roll count of member-built apps with none (server/web
+ * lib/workspace-ticks.ts) ask this one rule.
  */
-export function liveHolderBeyondAdminSql(ws: string, n: string): SQL<boolean> {
-  for (const a of [ws, n]) {
-    if (!/^[a-z_][a-z0-9_]*$/i.test(a)) throw new Error(`liveHolderBeyondAdminSql: bad alias ${a}`);
-  }
-  const w = sql.raw(ws);
-  return sql<boolean>`(${w}.id = any(${sql.raw(n)}.read_ws) and not ${w}.is_admin and ${w}.archived_at is null)`;
+export function holderWorkspacesSql(ws: SQL): SQL<boolean> {
+  return sql<boolean>`coalesce("public"."mantle_ws_any_holder"(${ws}), false)`;
+}
+
+/** A live holder beyond Admin reads the row, over `nodes` as drizzle names
+ *  it: someone outside Admin reaches it. */
+export function holderReadsSql(): SQL<boolean> {
+  return holderWorkspacesSql(sql`${nodes.readWs}`);
 }

@@ -4,9 +4,11 @@
  * clears the member ticks right after it (the UI, or the command below).
  *
  * - teamCheckCounts (pnpm -C server/web ws:team-check): read only, numbers
- *   only, no names, emails, titles or ids. The same two counts are a plain
- *   SQL block in docs/update-prod.md that runs on a box before the roll
- *   (the older image has neither this file nor 0286); keep the two in step.
+ *   only, no names, emails, titles or ids. Its second and fourth counts
+ *   (the former Team's member Moderators, member-built apps with no holder)
+ *   are a plain SQL block in docs/update-prod.md that runs on a box before
+ *   the roll (the older image has neither this file nor 0286); keep the
+ *   two in step.
  * - clearMemberTicks (pnpm -C server/web ws:clear-member-ticks): one
  *   workspace, dry run by default, counts only. With apply it clears the
  *   Moderator tick of every user who is not an Admin user, keeps at least
@@ -14,14 +16,17 @@
  *   (user.moderator), with no actor and `by` naming the command. It never
  *   removes a row.
  *
- * "Admin user" is a user of the brain's Admin workspace (the one rule of
- * server/web/lib/workspaces.ts). "The former Team" is the workspace 0286
+ * "Admin user" is adminUserSql (@mantle/db): a live login in the brain's
+ * Admin workspace holding the users area, the rule mayPromote applies to its
+ * caller (server/web/lib/workspaces.ts), so a disabled Admin login, or one
+ * whose users area is off, never counts as the Admin Moderator that lets
+ * the clear take every member tick. "The former Team" is the workspace 0286
  * made normal (its workspace.update row says so), or on a box before the
  * roll the one with bridge_key 'team'. Both run on the system pool: the
  * operator's process, system(script:<file>) (docs/actors.md).
  */
 import { sql } from 'drizzle-orm';
-import { db, liveHolderBeyondAdminSql } from '@mantle/db';
+import { adminUserSql, db, holderReadsSql, nodes, sharedWorkspacesSql } from '@mantle/db';
 
 /** What `by` says on each workspace_events row the clear writes. */
 export const CLEAR_TICKS_BY = 'ws:clear-member-ticks';
@@ -35,13 +40,6 @@ const FORMER_TEAM_SQL = sql`(
                       where e.workspace_id = w.id and e.action = 'workspace.update'
                         and e.subject->>'by' = 'migration 0286'))
    order by w.created_at limit 1)`;
-
-/** A login that is a user of the brain's Admin workspace. */
-const isAdminUser = (login: ReturnType<typeof sql>) => sql`exists (
-  select 1 from workspace_users au
-    join workspaces aw on aw.id = au.workspace_id and aw.is_admin
-                      and aw.owner_id = mantle_brain_id()
-   where au.login_id = ${login})`;
 
 export type TeamCheckCounts = {
   /** 1 when the brain has the former Team workspace, else 0. */
@@ -65,17 +63,16 @@ export async function teamCheckCounts(): Promise<TeamCheckCounts> {
       (select count(*) from t where t.id is not null)::int as former_team,
       (select count(*) from workspace_users u, t
         where u.workspace_id = t.id and u.moderator
-          and not ${isAdminUser(sql`u.login_id`)})::int as former_team_member_moderators,
+          and not ${adminUserSql(sql`u.login_id`)})::int as former_team_member_moderators,
       (select count(*) from workspace_users u
          join workspaces w on w.id = u.workspace_id and w.owner_id = mantle_brain_id()
                           and w.archived_at is null
-        where u.moderator and "public"."mantle_ws_any_shared"(array[w.id])
-          and not ${isAdminUser(sql`u.login_id`)})::int as shared_member_moderators,
+        where u.moderator and ${sharedWorkspacesSql(sql`array[w.id]`)}
+          and not ${adminUserSql(sql`u.login_id`)})::int as shared_member_moderators,
       (select count(*) from apps a
-         join nodes n on n.id = a.node_id and n.type = 'app'
-        where a.author_level = 'team' and n.owner_id = mantle_brain_id()
-          and not exists (select 1 from workspaces w
-                           where ${liveHolderBeyondAdminSql('w', 'n')}))::int as member_apps_without_holder
+         join ${nodes} on ${nodes.id} = a.node_id and ${nodes.type} = 'app'
+        where a.author_level = 'team' and ${nodes.ownerId} = mantle_brain_id()
+          and not ${holderReadsSql()})::int as member_apps_without_holder
   `)) as unknown as Array<{
     former_team: number;
     former_team_member_moderators: number;
@@ -134,7 +131,7 @@ export async function clearMemberTicks(
     if (ws.is_admin) return { ok: false, reason: 'admin_workspace' } as const;
     if (ws.archived) return { ok: false, reason: 'archived' } as const;
     const mods = (await tx.execute(sql`
-      select u.login_id::text as login, ${isAdminUser(sql`u.login_id`)} as admin
+      select u.login_id::text as login, ${adminUserSql(sql`u.login_id`)} as admin
         from workspace_users u
        where u.workspace_id = ${ws.id} and u.moderator
        order by u.added_at, u.login_id`)) as unknown as Array<{ login: string; admin: boolean }>;

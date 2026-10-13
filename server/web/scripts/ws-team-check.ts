@@ -9,8 +9,10 @@
  *
  * Before the roll the box runs the older image, which has no such command:
  * run the SQL block of docs/update-prod.md ("Team is a normal workspace")
- * there instead; it gives the same two first numbers. Exits 0 whatever it
- * finds: it reports, it does not gate. lib/workspace-ticks.ts has the rule.
+ * there instead; it gives this command's second and fourth numbers (the
+ * former Team's member Moderators, member-built apps with no holder). Exits
+ * 0 whatever it finds: it reports, it does not gate. lib/workspace-ticks.ts
+ * has the rule.
  */
 import { env } from '@mantle/config';
 import { closeDb } from '@mantle/db';

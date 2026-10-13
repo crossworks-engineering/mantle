@@ -13,7 +13,9 @@
  *    bridge_key, so mantle_brain_team_ws finds none);
  *  - the grant decides both ways, for Team and for any other workspace;
  *  - a Former user workspace shares nothing; in a scope, a workspace the
- *    scope names, or any when it holds Admin (mantle_ws_any_shared).
+ *    scope names, or any when it holds Admin (mantle_ws_any_shared);
+ *  - one class (mantle_ws_class) under the kind, "shared" and "holder",
+ *    for this brain's workspaces only.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/grant-reads.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -183,9 +185,45 @@ describe.skipIf(!URL)('grant reads: a shared workspace reads from the grants alo
     expect(await inScope([team])).toBe(false);
     expect(await inScope([other!.id])).toBe(true);
     expect(await inScope([adm!.id])).toBe(true);
-    // The system pool (no scope): any workspace.
+    // The system pool (no scope): any workspace of this brain.
     const [sys] = await sql<{ s: boolean }[]>`
       select mantle_ws_any_shared(array[${other!.id}::uuid]) as s`;
     expect(sys!.s).toBe(true);
+  });
+
+  it('one class under the kind, shared and holder; this brain only (fix round 2, L2, M1)', async () => {
+    const team = await teamId();
+    const [gone] = await sql<{ id: string }[]>`
+      select id::text as id from workspaces where owner_id = ${owner} and name = 'Former user'`;
+    const [priv] = await sql<{ id: string }[]>`
+      select workspace_id::text as id from private_workspaces where login_id = ${member}`;
+    const [adm] = await sql<{ id: string }[]>`
+      select id::text as id from workspaces where owner_id = ${owner} and is_admin`;
+    // A workspace of another brain in the same database.
+    const stranger = randomUUID();
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner)
+      values (${stranger}, 's@example.invalid', 'x', 'admin', false)`;
+    const [theirs] = await sql<{ id: string }[]>`
+      insert into workspaces (owner_id, name) values (${stranger}, 'Theirs') returning id::text as id`;
+    const ask = async (ws: string) => {
+      const [r] = await sql<
+        { kind: string | null; shared: boolean; holder: boolean }[]
+      >`select mantle_ws_kind(${ws}::uuid) as kind,
+               mantle_ws_any_shared(array[${ws}::uuid]) as shared,
+               mantle_ws_any_holder(array[${ws}::uuid]) as holder`;
+      return r!;
+    };
+    expect(await ask(team)).toEqual({ kind: 'other', shared: true, holder: true });
+    // A Former user workspace draws the plain icon, is not shared, holds.
+    expect(await ask(gone!.id)).toEqual({ kind: 'other', shared: false, holder: true });
+    expect(await ask(priv!.id)).toEqual({ kind: 'private', shared: false, holder: true });
+    expect(await ask(adm!.id)).toEqual({ kind: 'admin', shared: false, holder: false });
+    // Another brain's workspace: no kind, not shared, no holder.
+    expect(await ask(theirs!.id)).toEqual({ kind: null, shared: false, holder: false });
+    // An archived workspace holds nothing.
+    const [old] = await sql<{ id: string }[]>`
+      insert into workspaces (owner_id, name, archived_at) values (${owner}, 'Old', now())
+      returning id::text as id`;
+    expect((await ask(old!.id)).holder).toBe(false);
   });
 });

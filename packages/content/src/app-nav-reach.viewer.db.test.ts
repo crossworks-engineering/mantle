@@ -4,12 +4,18 @@
  * request scope as the route runs it (fix round 1 of "Team is a normal
  * workspace", 0286):
  *
- *  - an app a shared workspace holds reaches someone, even a workspace the
- *    Admin user is not in (the scope holds Admin: mantle_ws_any_shared
- *    answers for it; the plain workspaces row rule would not);
- *  - an app only Admin holds, or only a private or Former user workspace,
- *    reaches nobody (the one meaning of shared);
+ *  - an app a live workspace beyond Admin holds reaches someone, even a
+ *    workspace the Admin user is not in (the scope holds Admin:
+ *    mantle_ws_any_holder answers for it; the plain workspaces row rule
+ *    would not);
+ *  - a private or Former user workspace holds too (fix round 2, M1): the
+ *    member's MCP reaches an app their private workspace holds
+ *    (memberReachSql), so the pill says so; over-reporting is the safe side;
+ *  - an app only Admin holds, or only an archived workspace, reaches nobody;
  *  - MCP off, or no green published build: no reach.
+ *
+ * On a scratch database of its own: the class of a workspace counts this
+ * brain's only (mantle_brain_id, the anchor here).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/app-nav-reach.viewer.db.test.ts
  */
@@ -20,11 +26,13 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
   type Db = typeof import('@mantle/db');
+  type Ts = typeof import('@mantle/db/test-support');
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: Db;
   let nav: typeof import('./app-nav');
   let sqlTag: typeof import('drizzle-orm').sql;
   const tag = `navreach-${randomUUID().slice(0, 8)}`;
-  // A brain of this test's own (test files run in parallel).
+  // The brain of this test's scratch database.
   const anchor = randomUUID();
   const member = randomUUID();
   const ws = {
@@ -33,6 +41,7 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     field: randomUUID(),
     priv: randomUUID(),
     gone: randomUUID(),
+    old: randomUUID(),
   };
   const ids = {
     team: randomUUID(),
@@ -40,6 +49,7 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     admin: randomUUID(),
     priv: randomUUID(),
     gone: randomUUID(),
+    archived: randomUUID(),
     mcpOff: randomUUID(),
     unpublished: randomUUID(),
   };
@@ -59,7 +69,9 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     );
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     // ONE key for every viewer DB test: roles are cluster-wide (28P01).
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
@@ -70,9 +82,9 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
 
     await m.systemDb.execute(sqlTag`
-      insert into auth.users (id, email, password_hash, role) values
-        (${anchor}, ${`${tag}-admin@example.invalid`}, 'x', 'admin'),
-        (${member}, ${`${tag}-mem@example.invalid`}, 'x', 'member')`);
+      insert into auth.users (id, email, password_hash, role, is_owner) values
+        (${anchor}, ${`${tag}-admin@example.invalid`}, 'x', 'admin', true),
+        (${member}, ${`${tag}-mem@example.invalid`}, 'x', 'member', false)`);
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
     await m.systemDb.execute(sqlTag`
@@ -81,7 +93,8 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
         (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
         (${ws.field}, ${anchor}, ${`${tag} Field`}, false, null),
         (${ws.priv}, ${anchor}, ${`${tag} Private`}, false, null),
-        (${ws.gone}, ${anchor}, ${`${tag} Former user`}, false, null)`);
+        (${ws.gone}, ${anchor}, ${`${tag} Former user`}, false, null),
+        (${ws.old}, ${anchor}, ${`${tag} Old`}, false, null)`);
     await m.systemDb.execute(sqlTag`
       insert into private_workspaces (login_id, workspace_id) values (${member}, ${ws.priv})`);
     await m.systemDb.execute(sqlTag`
@@ -105,26 +118,25 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     await grant(ids.field, ws.field);
     await grant(ids.priv, ws.priv);
     await grant(ids.gone, ws.gone);
+    await grant(ids.archived, ws.old);
+    await m.systemDb.execute(
+      sqlTag`update workspaces set archived_at = now() where id = ${ws.old}`,
+    );
     await grant(ids.mcpOff, ws.field);
     await grant(ids.unpublished, ws.field);
   }, 60_000);
 
   afterAll(async () => {
-    await m.systemDb.execute(sqlTag`
-      delete from item_grants where node_id in (select id from nodes where owner_id = ${anchor})`);
-    await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${anchor}`);
-    await m.systemDb.execute(sqlTag`delete from workspaces where owner_id = ${anchor}`);
-    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${anchor}, ${member})`);
-    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${anchor}, ${member})`);
-    await m.closeDb();
-  }, 60_000);
+    await m?.closeDb();
+    await scratch?.drop();
+  });
 
   const reachOf = (items: Awaited<ReturnType<typeof nav.listAppNavItems>>) =>
     Object.fromEntries(
       items.map((a) => [Object.entries(ids).find(([, id]) => id === a.id)![0], a.mcpReach]),
     );
 
-  it('reports the reach of an app held by a workspace the Admin user is not in', async () => {
+  it('reports the reach of an app held by a workspace the Admin user is not in, a private one too', async () => {
     const items = await m.withScope(
       { kind: 'user', loginId: anchor, ws: [ws.admin, ws.team], modWs: [ws.admin] },
       () => nav.listAppNavItems(anchor),
@@ -133,8 +145,10 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
       team: true,
       field: true,
       admin: false,
-      priv: false,
-      gone: false,
+      // A private or Former user workspace holds: its user reaches it.
+      priv: true,
+      gone: true,
+      archived: false,
       mcpOff: false,
       unpublished: false,
     });
@@ -145,8 +159,9 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
       team: true,
       field: true,
       admin: false,
-      priv: false,
-      gone: false,
+      priv: true,
+      gone: true,
+      archived: false,
     });
   });
 

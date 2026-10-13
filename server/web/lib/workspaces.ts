@@ -927,7 +927,9 @@ function mayManageUsers(seen: Seen): void {
  * workspace still adds users without it and removes plain users. Nobody becomes a
  * Moderator by themselves: the maker of a workspace is the one exception
  * (createWorkspace), and an admin login joins Admin as one (the login
- * bridge, mantle_bridge_login).
+ * bridge, mantle_bridge_login). "An Admin user" here is the caller's users
+ * area (areasFor); adminUserSql (@mantle/db) is the same rule as SQL, for a
+ * login other than the caller (the 0286 roll's tick commands).
  */
 function mayPromote(seen: Seen): void {
   mayManageUsers(seen);

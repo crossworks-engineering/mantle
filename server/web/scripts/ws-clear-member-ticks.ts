@@ -16,6 +16,10 @@
  * this command. Runs as system(script:ws-clear-member-ticks)
  * (docs/actors.md). Numbers only.
  *
+ * One-shot: run it once, right after the roll. Run again, it clears every
+ * tick an Admin user has set since on purpose (it cannot tell those from the
+ * ticks the switch gave).
+ *
  * Exit codes: 0 done · 1 crash or a bad argument · 2 refused (no such
  * workspace, the Admin workspace, an archived one).
  */

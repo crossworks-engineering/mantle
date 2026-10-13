@@ -39,17 +39,17 @@
 --    for none). The client keeps 'team' for an older brain.
 -- 6. The reserved name: only "Admin" (workspaces_reserved_name_uq, 0255).
 --    "Team" is a name like any other.
--- 7. mantle_ws_any_shared(ws[]): the one meaning of "a shared workspace",
---    now that Team is not the answer: any of `ws` is neither Admin, nor a
---    login's private workspace, nor a Former user workspace. The grant
---    reads (sharedReadsSql) and the first shared workspace of a login
---    (firstSharedWorkspaceId) both ask it. Definer, as mantle_ws_kind: the
---    workspace role reads neither private_workspaces nor
---    former_user_workspaces. On a scope it answers only for a workspace the
---    scope may name (one of the scope's, or any when the scope holds Admin,
---    the rule of mantle_folder_grant_rows, 0279), so an Admin user's app
---    list tells the reach of an app held by a workspace they are not in; on
---    the system pool any. A yes or no only, never a name.
+-- 7. One class of a workspace, mantle_ws_class(ws): admin, private,
+--    former (a Former user workspace) or other, for a workspace of this
+--    brain the caller may name (one of the scope's, or any when the scope
+--    holds Admin, the rule of mantle_folder_grant_rows, 0279; on the system
+--    pool any of this brain). Definer, as mantle_ws_kind was: the workspace
+--    role reads neither private_workspaces nor former_user_workspaces. On it:
+--    mantle_ws_kind (its icon kind), mantle_ws_any_shared(ws[]) ("shared":
+--    of class other; the grant reads and firstSharedWorkspaceId ask it),
+--    and mantle_ws_any_holder(ws[]) (a live holder beyond Admin, private and
+--    Former user ones included: an app's MCP reach). Yes or no only, never
+--    a name.
 --
 -- The functions that still read bridge_key = 'team' (the bridges, the
 -- switch's folds, mantle_brain_team_ws, mantle_ws_attach_assistants) find
@@ -347,14 +347,20 @@ $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_migrate"() FROM PUBLIC;
 --> statement-breakpoint
--- A workspace's kind for its default icon (0285): no 'team' any more.
-CREATE OR REPLACE FUNCTION "public"."mantle_ws_kind"(ws uuid)
+-- The one class of a workspace (7): 'admin', 'private', 'former' (a Former
+-- user workspace) or 'other', for a workspace of this brain the caller may
+-- name; null for any other id. Every reader below asks it, so the kinds and
+-- "shared" and "holder" never disagree. Not granted to any role: only the
+-- definers below call it.
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_class"(ws uuid)
   RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
   SELECT CASE
            WHEN w."is_admin" THEN 'admin'
            WHEN EXISTS (SELECT 1 FROM "public"."private_workspaces" p
                          WHERE p."workspace_id" = w."id") THEN 'private'
+           WHEN EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f
+                         WHERE f."workspace_id" = w."id") THEN 'former'
            ELSE 'other'
          END
     FROM "public"."workspaces" w
@@ -364,27 +370,48 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_kind"(ws uuid)
           OR "public"."mantle_scope_has_admin"())
 $$;
 --> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_ws_class"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+-- A workspace's kind for its default icon (0285): no 'team' any more. The
+-- class, with a Former user workspace drawn as 'other' (the plain icon):
+-- the client knows no 'former' kind.
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_kind"(ws uuid)
+  RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT CASE c WHEN 'former' THEN 'other' ELSE c END
+    FROM "public"."mantle_ws_class"(ws) AS c
+$$;
+--> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_ws_kind"(uuid) FROM PUBLIC;
 --> statement-breakpoint
--- The one meaning of "a shared workspace" (7).
+-- The one meaning of "a shared workspace" (7): any of `ws` is of class
+-- 'other'.
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_any_shared"(ws uuid[])
   RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM "public"."workspaces" w
-     WHERE w."id" = ANY (ws) AND NOT w."is_admin"
-       AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p
-                        WHERE p."workspace_id" = w."id")
-       AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f
-                        WHERE f."workspace_id" = w."id")
-       AND (NOT "public"."mantle_scope_active"()
-            OR w."id" = ANY ("public"."mantle_scope_ws"())
-            OR "public"."mantle_scope_has_admin"()))
+  SELECT EXISTS (SELECT 1 FROM unnest(ws) AS i(id)
+                  WHERE "public"."mantle_ws_class"(i."id") = 'other')
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_ws_any_shared"(uuid[]) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION "public"."mantle_ws_any_shared"(uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+-- A live holder beyond Admin (7): any of `ws` is live and not Admin; a
+-- private or Former user workspace holds too (its user runs and reaches
+-- the item there). The rule of an app run's holders (appRunHolders,
+-- liveHolderBeyondAdminSql), for a reader in a scope: an app's MCP reach.
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_any_holder"(ws uuid[])
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM "public"."workspaces" w
+                  WHERE w."id" = ANY (ws) AND w."archived_at" IS NULL
+                    AND "public"."mantle_ws_class"(w."id") <> 'admin')
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_ws_any_holder"(uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_ws_any_holder"(uuid[]) TO "mantle_view_user";
 --> statement-breakpoint
 -- The public demo's SELECT-only reader serves owner reads: the same, as it
 -- got mantle_ws_kind (0285).
@@ -392,6 +419,7 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'demo_reader') THEN
     GRANT EXECUTE ON FUNCTION "public"."mantle_ws_any_shared"(uuid[]) TO demo_reader;
+    GRANT EXECUTE ON FUNCTION "public"."mantle_ws_any_holder"(uuid[]) TO demo_reader;
   END IF;
 END
 $$;

@@ -23,11 +23,13 @@ export {
   ActorMissingError,
   SYSTEM_REASON_RE,
 } from './actor';
+export { adminUserSql } from './admin-user';
 export {
   sharedReadsSql,
   sharedReadsAliasSql,
   sharedWorkspacesSql,
-  liveHolderBeyondAdminSql,
+  holderWorkspacesSql,
+  holderReadsSql,
 } from './grant-reads';
 export {
   GRANT_DRIFT_SQL,

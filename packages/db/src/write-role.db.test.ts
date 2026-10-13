@@ -137,6 +137,8 @@ const DEFINERS_THE_WRITE_ROLE_RUNS: Readonly<Record<string, string>> = {
   // 0286 fix round 1: the one meaning of a shared workspace, a yes or no.
   'mantle_ws_any_shared(uuid[])':
     'whether any of the workspaces is shared (not Admin, private or Former user), only one the scope names',
+  'mantle_ws_any_holder(uuid[])':
+    'whether any of the workspaces is a live holder beyond Admin, only one the scope names: a yes or no',
 };
 
 /** Rolls a cell's transaction back after its checks. */
