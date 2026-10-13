@@ -9,16 +9,25 @@
  * names the workspace the item landed in (`landedIn`).
  *
  * The wrapper sits between the scope (owner-scope.ts: each call already runs
- * in the login's scope, gated) and the tool: it reads `workspace`, checks it
- * against the scope (refused unless the caller moderates it), and runs the
- * tool under withCreateHome, which the system transactions of the create
- * set as mantle.create_ws / mantle.private_ws. Nothing here grants: it only
- * names a place, and the database's create checks still run.
+ * in the login's scope, gated) and the tool: it reads `workspace`, asks THE
+ * create-home intent (@mantle/db createHomeIntent, arch A3c: the one
+ * function the web routes and assistant turns ask too) where the create
+ * lands (refused unless the caller moderates the workspace it names), and
+ * runs the tool under withCreateHome, which the system transactions of the
+ * create set as mantle.create_ws / mantle.private_ws. Nothing here grants:
+ * it only names a place, and the database's create checks still run.
  */
 import type { McpServer } from '@modelcontextprotocol/server';
-import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
-import { db, nodes, withCreateHome, workspaces, workspaceUsers } from '@mantle/db';
-import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
+import {
+  createHomeIntent,
+  db,
+  nodes,
+  withCreateHome,
+  workspaces,
+  type CreateHome,
+} from '@mantle/db';
+import { ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
 import { CREATE_TOOL_SLUGS } from '@mantle/tools';
 
 /**
@@ -41,9 +50,9 @@ export const ADMIN_KIND_CREATE_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'location_save',
 ]);
 
-/** The refusal of an Admin-only kind's create outside Admin. */
-export const ADMIN_KIND_CREATE_ERROR =
-  'This kind of item (a contact, a journal entry, a saved place) lives in the Admin workspace only, and you are not a user of it. Make a note or a page instead.';
+/** The refusal of an Admin-only kind's create outside Admin: the one
+ *  mapper's words (@mantle/std access-error.ts, arch A3c). */
+export { ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
 
 /** The refusal of a create by a user outside Admin who is in no workspace
  *  (W7b fix round 2): it has no private workspace, so an item it made would
@@ -114,58 +123,6 @@ export function withWorkspaceArg(schema: unknown): unknown {
 /** A refusal reply. */
 function refusal(text: string) {
   return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
-}
-
-/** The workspaces `loginId` may name, from the call's scope (or, outside
- *  one, its own user rows): id, name, Moderator. */
-async function namable(
-  loginId: string,
-): Promise<{ id: string; name: string; moderator: boolean }[]> {
-  const scope = currentWorkspaceScope();
-  if (scope) {
-    if (scope.ws.length === 0) return [];
-    const mod = new Set(scope.modWs);
-    const rows = await db
-      .select({ id: workspaces.id, name: workspaces.name })
-      .from(workspaces)
-      .where(and(inArray(workspaces.id, [...scope.ws]), isNull(workspaces.archivedAt)));
-    return rows.map((r) => ({ ...r, moderator: mod.has(r.id) }));
-  }
-  return db
-    .select({
-      id: workspaces.id,
-      name: workspaces.name,
-      moderator: workspaceUsers.moderator,
-    })
-    .from(workspaceUsers)
-    .innerJoin(workspaces, eq(workspaces.id, workspaceUsers.workspaceId))
-    .where(and(eq(workspaceUsers.loginId, loginId), isNull(workspaces.archivedAt)));
-}
-
-/** The workspace `asked` names for `loginId`, checked: one it moderates.
- *  A string is the refusal. */
-export async function resolveCreateWorkspace(
-  loginId: string,
-  asked: string,
-): Promise<{ id: string; name: string } | string> {
-  const want = asked.trim();
-  if (!want) return 'workspace is empty: pass a workspace id or name from workspaces_list.';
-  const list = await namable(loginId);
-  const byId = UUID_RE.test(want) ? list.filter((w) => w.id === want.toLowerCase()) : [];
-  const hits = byId.length
-    ? byId
-    : list.filter((w) => w.name.trim().toLowerCase() === want.toLowerCase());
-  if (hits.length === 0) {
-    return `You are not in a workspace "${want.slice(0, 100)}". List yours with workspaces_list and pass one you moderate.`;
-  }
-  if (hits.length > 1) {
-    return `More than one of your workspaces is called "${want.slice(0, 100)}": pass its id from workspaces_list.`;
-  }
-  const ws = hits[0]!;
-  if (!ws.moderator) {
-    return `You are not a Moderator of ${ws.name}, so you cannot create in it. Pass a workspace whose moderator is true in workspaces_list, or leave workspace out.`;
-  }
-  return { id: ws.id, name: ws.name };
 }
 
 /** The item ids a create's reply names: an `…id` / `…Id` field at the top
@@ -247,6 +204,12 @@ async function withLanding(reply: unknown, since: Date): Promise<unknown> {
   return { ...r, content: [...r.content, { type: 'text', text: `Landed in workspace: ${names}` }] };
 }
 
+/** Whether a create home names a place (a workspace asked, or the private
+ *  fallback): one that names neither leaves the database's own default. */
+function homeNamed(home: CreateHome): boolean {
+  return home.createWs !== null || home.privateWs !== null;
+}
+
 /** What the wrapper needs of the connection. */
 export type CreateHomeOpts = {
   /** The login of the connection. */
@@ -302,7 +265,10 @@ export function createHomeServer(server: McpServer, opts: CreateHomeOpts): McpSe
             const plain = cb as (args: unknown, extra: unknown) => Promise<unknown>;
             return fn.call(target, name, config, async (args: unknown, extra: unknown) => {
               if (ADMIN_KIND_CREATE_TOOL_SLUGS.has(name)) return refusal(ADMIN_KIND_CREATE_ERROR);
-              return withCreateHome({ createWs: null, privateWs }, () => plain(args, extra));
+              // The same intent, nothing asked: the private fallback.
+              const home = await createHomeIntent(opts.loginId, null, { privateWs });
+              if ('refused' in home) return refusal(home.message);
+              return withCreateHome(home, () => plain(args, extra));
             });
           }
           const handler = cb as (args: unknown, extra: unknown) => Promise<unknown>;
@@ -312,18 +278,17 @@ export function createHomeServer(server: McpServer, opts: CreateHomeOpts): McpSe
             const input = { ...((args ?? {}) as Record<string, unknown>) };
             const asked = input[WORKSPACE_ARG];
             delete input[WORKSPACE_ARG];
-            let createWs: string | null = null;
-            if (typeof asked === 'string' && asked.trim() !== '') {
-              const ws = await resolveCreateWorkspace(opts.loginId, asked);
-              if (typeof ws === 'string') return refusal(ws);
-              createWs = ws.id;
-            }
+            // THE create-home intent (arch A3c), with the fallback this
+            // connection resolved when it connected.
+            const home = await createHomeIntent(
+              opts.loginId,
+              { from: 'argument', workspace: asked },
+              { privateWs },
+            );
+            if ('refused' in home) return refusal(home.message);
             const since = new Date(Date.now() - 1000);
             const run = () => handler(input, extra);
-            const reply =
-              createWs || privateWs
-                ? await withCreateHome({ createWs, privateWs }, run)
-                : await run();
+            const reply = homeNamed(home) ? await withCreateHome(home, run) : await run();
             return withLanding(reply, since);
           });
         };

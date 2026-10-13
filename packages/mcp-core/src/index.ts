@@ -17,7 +17,6 @@ export {
   WORKSPACE_ARG,
   createHomeServer,
   replyItemIds,
-  resolveCreateWorkspace,
   withWorkspaceArg,
 } from './create-home';
 export {

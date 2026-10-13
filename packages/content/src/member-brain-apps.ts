@@ -21,8 +21,8 @@
 import { and, eq, sql } from 'drizzle-orm';
 import {
   apps,
+  createHomeIntent,
   db,
-  resolveCreateHome,
   withCreateHome,
   withViewer,
   type AppManifest,
@@ -180,10 +180,10 @@ export async function listLoginApps(author: MemberAppAuthor): Promise<LoginAppCa
 
 /** The login's private workspace, made on its first need; null when the
  *  brain is not on workspaces or the login cannot have one. Through
- *  resolveCreateHome, the one path that makes and reads it (the login
+ *  createHomeIntent, the one path that makes and reads it (the login
  *  write gateway then seats the login as its Moderator, A2b2b). */
 export async function memberPrivateWorkspace(author: MemberAppAuthor): Promise<string | null> {
-  const home = await resolveCreateHome(author.loginId, { ownWork: true, makePrivate: true });
+  const home = await createHomeIntent(author.loginId, null, { ownWork: true, makePrivate: true });
   return 'refused' in home ? null : home.privateWs;
 }
 

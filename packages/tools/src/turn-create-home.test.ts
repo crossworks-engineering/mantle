@@ -11,46 +11,46 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@mantle/db', () => ({
   currentCreateHome: vi.fn(() => null),
-  resolveCreateHome: vi.fn(),
+  createHomeIntent: vi.fn(),
 }));
 vi.mock('@mantle/db/viewer', () => ({ currentWorkspaceScope: () => h.scope }));
 
-import { resolveCreateHome } from '@mantle/db';
+import { createHomeIntent } from '@mantle/db';
 import { turnCreateHome } from './turn-create-home';
 
 beforeEach(() => {
-  vi.mocked(resolveCreateHome).mockReset();
+  vi.mocked(createHomeIntent).mockReset();
   h.scope = { kind: 'assistant', loginId: 'l1', ws: ['w1'], modWs: [] };
 });
 
 describe('turnCreateHome', () => {
   it('does not keep a database error: the next call resolves again', async () => {
-    vi.mocked(resolveCreateHome).mockRejectedValueOnce(new Error('db down'));
+    vi.mocked(createHomeIntent).mockRejectedValueOnce(new Error('db down'));
     expect(await turnCreateHome(false)).toBeNull();
-    vi.mocked(resolveCreateHome).mockResolvedValueOnce({ createWs: null, privateWs: 'p1' });
+    vi.mocked(createHomeIntent).mockResolvedValueOnce({ createWs: null, privateWs: 'p1' });
     expect(await turnCreateHome(false)).toEqual({ createWs: null, privateWs: 'p1' });
-    expect(resolveCreateHome).toHaveBeenCalledTimes(2);
+    expect(createHomeIntent).toHaveBeenCalledTimes(2);
   });
 
   it('makes the private workspace only for a create, then keeps the home', async () => {
-    vi.mocked(resolveCreateHome).mockResolvedValueOnce({ createWs: null, privateWs: null });
+    vi.mocked(createHomeIntent).mockResolvedValueOnce({ createWs: null, privateWs: null });
     expect(await turnCreateHome(false)).toEqual({ createWs: null, privateWs: null });
-    expect(resolveCreateHome).toHaveBeenLastCalledWith('l1', {
-      askedWs: 'w1',
-      ownWork: 'auto',
-      makePrivate: false,
-    });
+    expect(createHomeIntent).toHaveBeenLastCalledWith(
+      'l1',
+      { from: 'assistant', ws: 'w1' },
+      { ownWork: 'auto', makePrivate: false },
+    );
     // A second read keeps it; a create asks again, making it.
     expect(await turnCreateHome(false)).toEqual({ createWs: null, privateWs: null });
-    vi.mocked(resolveCreateHome).mockResolvedValueOnce({ createWs: null, privateWs: 'p1' });
+    vi.mocked(createHomeIntent).mockResolvedValueOnce({ createWs: null, privateWs: 'p1' });
     expect(await turnCreateHome(true)).toEqual({ createWs: null, privateWs: 'p1' });
-    expect(resolveCreateHome).toHaveBeenLastCalledWith('l1', {
-      askedWs: 'w1',
-      ownWork: 'auto',
-      makePrivate: true,
-    });
+    expect(createHomeIntent).toHaveBeenLastCalledWith(
+      'l1',
+      { from: 'assistant', ws: 'w1' },
+      { ownWork: 'auto', makePrivate: true },
+    );
     expect(await turnCreateHome(true)).toEqual({ createWs: null, privateWs: 'p1' });
-    expect(resolveCreateHome).toHaveBeenCalledTimes(2);
+    expect(createHomeIntent).toHaveBeenCalledTimes(2);
   });
 
   it('names no home outside an assistant turn that names a login', async () => {
@@ -61,6 +61,6 @@ describe('turnCreateHome', () => {
       h.scope = scope;
       expect(await turnCreateHome(true)).toBeNull();
     }
-    expect(resolveCreateHome).not.toHaveBeenCalled();
+    expect(createHomeIntent).not.toHaveBeenCalled();
   });
 });

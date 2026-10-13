@@ -28,7 +28,7 @@ import {
   enterRequestScope,
   hasRequestSlot,
   loginScopeFor,
-  resolveCreateHome,
+  createHomeIntent,
   brainOnWorkspacesNow,
   withViewer,
   noteRequestSystem,
@@ -42,6 +42,7 @@ import {
   type CreateHome,
   type RequestScopeMode,
 } from '@mantle/db';
+import { AccessError, mapAccessError } from '@mantle/std';
 import {
   loadAnchorId,
   loadBearerToken,
@@ -1065,15 +1066,20 @@ async function createHomeFor(
   const reqPath = getRequestContext()?.path;
   const target = reqPath ? itemWriteTarget(method, pattern, reqPath) : null;
   const makePrivate = !(method.toUpperCase() === 'DELETE' || target?.need === 'read');
-  // The one rule, shared with assistant turns (A0): @mantle/db resolveCreateHome.
-  const home = await resolveCreateHome(loginId, { askedWs, ownWork, makePrivate });
+  // THE create-home intent (arch A3c): @mantle/db createHomeIntent, shared
+  // with assistant turns and MCP.
+  const home = await createHomeIntent(
+    loginId,
+    { from: 'param', ws: askedWs },
+    { ownWork, makePrivate },
+  );
   if ('refused' in home) {
-    return home.refused === 'invalid'
-      ? NextResponse.json({ error: 'invalid', message: home.message }, { status: 400 })
-      : NextResponse.json(
-          { error: 'forbidden', reason: 'workspace', message: home.message },
-          { status: 403 },
-        );
+    // Answered by the one mapper (@mantle/std mapAccessError): 400 invalid,
+    // else 403 workspace, the bodies as before.
+    const refusal = mapAccessError(
+      new AccessError(home.refused === 'invalid' ? 'invalid' : 'workspace', home.message),
+    )!.http!;
+    return NextResponse.json(refusal.body, { status: refusal.status });
   }
   return home;
 }

@@ -31,8 +31,8 @@ import {
   auditLog,
   brainOnWorkspacesNow,
   db,
+  createHomeIntent,
   loginScopeFor,
-  resolveCreateHome,
   scopeHasArea,
   scopeHoldsAdmin,
   withTurnScope,
@@ -289,10 +289,14 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
     // The create rule's fallback for a user outside Admin (the W6b route
     // rule): made with the login, so only once it is in a workspace.
     if (!view.holdsAdmin && (await loginScopeFor(caller.loginId)).ws.length > 0) {
-      // The route rule's own read (@mantle/db resolveCreateHome): it makes
-      // the private workspace when there is none, and the login write
-      // gateway knows the pair from it (arch A2b2b).
-      const home = await resolveCreateHome(caller.loginId, { ownWork: true, makePrivate: true });
+      // THE create-home intent's fallback (@mantle/db createHomeIntent, arch
+      // A3c), once per connection: it makes the private workspace when
+      // there is none, and the login write gateway knows the pair from it
+      // (arch A2b2b). Each create then asks the same function with it.
+      const home = await createHomeIntent(caller.loginId, null, {
+        ownWork: true,
+        makePrivate: true,
+      });
       privateWs = 'refused' in home ? null : home.privateWs;
     }
   }

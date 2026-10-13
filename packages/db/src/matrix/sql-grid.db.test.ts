@@ -148,7 +148,7 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
          where u.login_id = ${id}`;
       const admin = s!.ws.includes(ws.admin);
       // A login outside Admin creates with its private workspace as the
-      // fallback (resolveCreateHome); made now, as its first create would.
+      // fallback (createHomeIntent); made now, as its first create would.
       const priv = admin
         ? ''
         : (

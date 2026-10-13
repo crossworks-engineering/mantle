@@ -67,8 +67,6 @@ export {
   lockMoreHeads,
   withDeadlockRetry,
   loginScopeFor,
-  resolveCreateHome,
-  type CreateHomeRefusal,
   loginScopeColumns,
   seedLoginScope,
   brainOnWorkspacesNow,
@@ -151,6 +149,12 @@ export {
   type RequestOutcome,
 } from './viewer';
 export { ensureViewerRoles } from './viewer-roles';
+export {
+  createHomeIntent,
+  type CreateAsk,
+  type CreateFallback,
+  type CreateHomeRefusal,
+} from './create-home';
 
 export { draftColumn, draftAllowed } from './draft-read';
 export {

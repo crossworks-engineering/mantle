@@ -1,9 +1,9 @@
 /**
  * Where an assistant turn's creates land (workspaces arch A0; F12): the
- * home rule of docs/workspaces.md ("Where a new item lands"), through the
- * function the web routes use (@mantle/db resolveCreateHome), so a create
- * made from a tool in a turn lands where the same login's create from the
- * web would.
+ * home rule of docs/workspaces.md ("Where a new item lands"), through THE
+ * create-home intent the web routes and MCP use (@mantle/db
+ * createHomeIntent, arch A3c), so a create made from a tool in a turn lands
+ * where the same login's create from the web would.
  *
  *  - Every assistant's turn, the Admin assistant's too: the assistant's
  *    workspace is the current one. When the login the turn answers
@@ -17,8 +17,8 @@
  * per turn scope: the private workspace is made at most once.
  */
 import {
+  createHomeIntent,
   currentCreateHome,
-  resolveCreateHome,
   type CreateHome,
   type WorkspaceScope,
 } from '@mantle/db';
@@ -52,13 +52,13 @@ export async function turnCreateHome(creates: boolean): Promise<CreateHome | nul
   // The turn's current workspace: the assistant's own (one rule for every
   // assistant, CEO answer 2026-10-12).
   const askedWs = scope.ws.length === 1 ? scope.ws[0]! : null;
-  let home: Awaited<ReturnType<typeof resolveCreateHome>>;
+  let home: Awaited<ReturnType<typeof createHomeIntent>>;
   try {
-    home = await resolveCreateHome(scope.loginId, {
-      askedWs,
-      ownWork: 'auto',
-      makePrivate: creates,
-    });
+    home = await createHomeIntent(
+      scope.loginId,
+      { from: 'assistant', ws: askedWs },
+      { ownWork: 'auto', makePrivate: creates },
+    );
   } catch {
     return null;
   }
