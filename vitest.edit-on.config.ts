@@ -17,6 +17,8 @@ export default defineConfig({
       'packages/db/src/edit-check*.test.ts',
       'packages/db/src/a2b-nested-tx.db.test.ts',
       'server/web/server/a3a-folders.db.test.ts',
+      // A3b: the store brokers (it sets both checks on itself, too).
+      'server/web/server/a3b-store-brokers.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },
