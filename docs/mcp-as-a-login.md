@@ -130,7 +130,9 @@ tables, apps, formulas, tasks, events, Recall maps and their from-file and
 copy variants) takes an
 optional `workspace`: the id or name of a workspace the caller moderates
 (`workspaces_list` shows them with `moderator`). A workspace it does not
-moderate, or is not in, is refused. Without one the item lands by the route
+moderate, or is not in, is refused (the one create-home intent,
+`createHomeIntent` in `packages/db/src/create-home.ts`, the same function
+the web routes and assistant turns ask). Without one the item lands by the route
 rule (W6b, `mantle_default_home`): the folder's workspace when it is made in
 a folder the caller may edit, else the caller's private workspace, and for a
 user of the Admin workspace the folder's workspace else Admin. Every create

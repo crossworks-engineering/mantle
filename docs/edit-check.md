@@ -27,9 +27,11 @@ write calls none of them.
   app logs it as an actor miss: `actor_check_misses`, check name
   `edit: ...`. `on` refuses: SQLSTATE 42501 with a detail the mapper reads
   (plan 5.2): `no_read`, `no_edit`, `read_only` (an Informational app's
-  data) or `ro_actor`. `editRefusalDetail` (`packages/db/src/pg-error.ts`)
-  reads it, and the one HTTP mapper (`server/web/server/scope-refusal.ts`)
-  puts it on the wire as `code`: `no_read` is a 404 (`not_found`);
+  data) or `ro_actor`. `editRefusalDetail` (`packages/std/src/access-error.ts`,
+  re-exported by `@mantle/db`) reads it, the one mapper (`mapAccessError`,
+  same file, arch A3c) turns it into each surface's answer, and the HTTP
+  layer (`server/web/server/scope-refusal.ts`) puts it on the wire as
+  `code`: `no_read` is a 404 (`not_found`);
   `read_only` and `ro_actor` a 403 with reason `read-only`; `no_edit` and
   the checks before A3a the 403 with reason `item-workspace`, as before.
 - The edit check bites only where the actor check is `warn` or `on`: its
@@ -193,9 +195,9 @@ actor check is off answers exactly as before. It is not staged by
 `mantle.edit_check`: it fixes orphans the write role made. A Files delete
 names no file it refuses for (a count only).
 
-The tools say the same words (`databaseErrorPublic`, the one mapper in
-`@mantle/std`, on every tool exit: a thrown error and a tool's own error
-reply alike).
+The tools say the same words (`databaseErrorPublic`, the tool text of the
+one mapper `mapAccessError` in `@mantle/std`, on every tool exit: a thrown
+error and a tool's own error reply alike).
 
 In `warn`, a rename over rows the caller cannot read logs one actor miss
 whose check name starts `edit: heads lock:` (the heads `on` would drop at
@@ -279,8 +281,8 @@ stays on the system pool until A4.
   its database check is on on every box, plan 7 step 4).
 - **The tools** (MCP, the assistant's tool loop) answer `not found` for a
   `no_read` refusal (D2) and "This folder holds items you cannot move."
-  for a folder's 409 (`databaseErrorPublic` in `packages/std/src/index.ts`,
-  on every exit); every other database error stays the one public
+  for a folder's 409 (`databaseErrorPublic`, the tool text of
+  `mapAccessError` in `packages/std/src/access-error.ts`, on every exit); every other database error stays the one public
   message.
 - **The settings are not a credential.** Any role can set
   `mantle.write_mode`: on the write role a session that sets `rw` skips

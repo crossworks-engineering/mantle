@@ -528,8 +528,9 @@ check off. Both are tagged as the actor's own for the round-trip test.
 
 - **The create home's Moderator seat.** A login's scope is read once per
   request or turn, often before its first create made its private
-  workspace. `resolveCreateHome` notes each login's private workspace as it
-  reads it on the system pool; the gateway adds it to the write scope (as a
+  workspace. The create-home intent (`createHomeIntent`, A3c; its fallback
+  `createHomeFallback`) notes each login's private workspace as it reads it
+  on the system pool; the gateway adds it to the write scope (as a
   workspace and a Moderator one) when the write's create home lands there.
   No query on the write's path.
 - **Tables the role has no right on.** A typed write (`db.insert(table)`)
@@ -715,7 +716,7 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   0266 checks on the write role" above): only the role's own new checks are
   staged.
 - **The create home's Moderator seat is in the scope**: the gateway adds the
-  login's private workspace, read by `resolveCreateHome` (above).
+  login's private workspace, read by `createHomeIntent` (above).
 - **The creates that are the brain's.** Every kind's root folder is made as
   `system(repair:kind-root)` through `kind-root.ts` (the Admin-only kind
   rule: open above).
@@ -743,7 +744,7 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   on the rerun is checked (above). M2: writes join an open write
   transaction; a bounded wait. M3: the confirm reads in its own transaction
   through definers (`guardRead` is gone). L2: a member app's private
-  workspace comes from `resolveCreateHome`. L5: `mantle_workspace_event`
+  workspace comes from `createHomeIntent` (then `resolveCreateHome`). L5: `mantle_workspace_event`
   is held to the scope. L6: a gap caught in a savepoint still runs the
   transaction again and is logged.
 - **Fix round 2 (2026-10-13).** Joins run one after another and count
@@ -818,3 +819,49 @@ revision name, one short transaction checks the row as the caller (exactly
 one row; none is a 404) and points it there, one sweep removes what no row
 points at. The tables, app databases and app builds are brokered; the docs
 store writes no disk; file bytes and snapshot files are part 2.
+
+## The one gate (A3c)
+
+Plan section 2: every way in runs the same eight steps, in one order,
+through `enterCall(caller, policyRef, fn)` (`packages/db/src/gate.ts`). A3c
+builds the core and proves it; the HTTP routes move onto it in A4, MCP
+registration and dispatch in A5. Until then nothing calls it in
+production, and no caller's access changed.
+
+1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
+   credential's write switch, what its scope holds of Admin (`admin`: null
+   is unscoped, a process; absent is unknown and fails an Admin step),
+   the scope it runs in, and what the narrowers read.
+2. **Bind the caller.** `currentCaller()` reads it.
+3. **The declared policy** (`GatePolicy`: effect, Admin step, spends,
+   creates, an actor of its own), from the source registered for the
+   ref's kind; none is refused (`unclassified`). A job's reason is the
+   gate's own source (`{ kind: 'job', name: reason }`, `system(reason)`).
+   Then the actor and the scope are bound: the policy's actor if it names
+   one (a public route that writes, a job), else the caller's, **read only
+   for a read** (plan 4.1: the database knows the write mode, so a call
+   declared a read cannot write an item; a read path's own writes stay the
+   named `READ_PATH_WRITES`).
+4. **Narrow by surface**, in the fixed order `NARROWERS`: the credential's
+   read-only switch (the gate's own), a key's areas, a key's or peer's
+   risky tools, the member-app rule, spending on the owner's keys, the
+   member turn caps. Each registers from its own package
+   (`registerNarrower`); none adds a step.
+5. **The Admin step**: the Admin workspace, an Admin area, or a kind of the
+   Admin workspace only.
+6. **The create-home intent** (`createHomeIntent`,
+   `packages/db/src/create-home.ts`): for a login's write, with the
+   workspace the call asked for when it creates.
+7. **Run.**
+8. **Map** a refusal with the one mapper (`mapAccessError`,
+   `packages/std/src/access-error.ts`): the HTTP status and body and the
+   tool text, each as the surfaces answer today.
+
+Listing equals calling: `gateCheck` is steps 3 to 5 without running, and a
+tool list shows what it lets through.
+
+The sources registered today: `runtime-tool`, `sandbox-mcp-tool` and
+`peer-tool` (`packages/tools/src/runtime-policy.ts`: one function per
+runtime tool row type), and `mcp-tool` with the key, peer and spending
+narrowers (`packages/mcp-core/src/gate-policy.ts`, derived from today's
+lists; A5 declares the policy on each tool). A4 adds `route`.
