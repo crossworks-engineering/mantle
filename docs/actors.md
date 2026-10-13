@@ -756,10 +756,19 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   migrate that cannot lock a gap table says to run it again.
 - **Fix round 4 (2026-10-13).** Nothing of an ended write transaction
   reaches the driver, its settings SET neither; a nested `withSystemTx` on
-  the write role is counted once; the wait for an ended level's joins is
-  capped at 15 s (`WRITE_POOL_WAIT_MS`), then the ROLLBACK goes anyway
-  (nothing of the level can be sent after, and what was sent is ahead of
-  it on the connection), logged.
+  the write role is counted once (only when that system transaction is the
+  write transaction itself: a system-pool one inside a live write
+  transaction counts its own, round 5).
+- **Known LOW (2026-10-13): a failed write transaction waits for its joins,
+  uncapped.** When a write transaction or a savepoint fails, it waits for
+  the joins it left running before its ROLLBACK (or `rollback to`). A join
+  stuck in JS (a joined `withSystemTx` awaiting a fetch) or on a database
+  lock holds its write-pool connection until it settles. A cap was tried
+  (round 4) and reverted (round 5): after it the connection went back to
+  the pool while postgres.js could still send that savepoint's own
+  `rollback to` on it, into whatever transaction it served next. The
+  follow-up (task 907c6793: a busy flag per level instead of the join
+  queue) removes it.
 - **Rollout: a write left running after its transaction ended now
   fails.** A same-route write (a top-level `db.insert`, `executeWrite`, a
   `withSystemTx`) started inside a write transaction that has since ended

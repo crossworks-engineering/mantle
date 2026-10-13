@@ -1167,4 +1167,41 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
     }
     expect(await titleOf(id)).toBe(`${tag} N2 n9`);
   });
+  it('N6 (round 5): a system-pool transaction inside a live write transaction counts its own nested calls', async () => {
+    setMode('warn');
+    const id = await noteIn(team, `${tag} N6`);
+    // Another row for the system transaction: the outer one holds `id`'s lock.
+    const other = await noteIn(team, `${tag} N6 other`);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await inRequest(mem, () =>
+        m.db.transaction(async (tx) => {
+          await tx
+            .update(m.nodes)
+            .set({ title: `${tag} N6 outer` })
+            .where(eq(m.nodes.id, id));
+          await m.asSystem(
+            () =>
+              m.withSystemTx(async () => {
+                for (let i = 0; i < 40; i += 1) {
+                  await m.withSystemTx((s) =>
+                    s
+                      .update(m.nodes)
+                      .set({ title: `${tag} N6 ${i}` })
+                      .where(eq(m.nodes.id, other)),
+                  );
+                }
+              }),
+            'test',
+          );
+        }),
+      );
+      const said = warn.mock.calls
+        .map((c) => String(c[0]))
+        .filter((t) => /nested calls in one/.test(t));
+      expect(said).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

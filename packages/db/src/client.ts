@@ -1109,30 +1109,6 @@ export function watchedSendsForTests(): number {
   return watchedSends;
 }
 
-/**
- * Wait for what an ended level left running, at most WRITE_POOL_WAIT_MS
- * (round 4, N3). After that its ROLLBACK goes anyway: nothing of the level
- * reaches the driver any more (the ended check), and a statement already
- * sent is ahead of the ROLLBACK on the connection, so the connection is
- * handed back clean. A wait that runs out is logged.
- */
-async function settleEnded(joins: Promise<void>): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const gaveUp = await Promise.race([
-    joins.then(() => false),
-    new Promise<boolean>((r) => {
-      timer = setTimeout(() => r(true), WRITE_POOL_WAIT_MS);
-      timer.unref?.();
-    }),
-  ]);
-  clearTimeout(timer);
-  if (gaveUp) {
-    console.error(
-      `[db] login write gateway: a failed write transaction's joins still ran after ${WRITE_POOL_WAIT_MS} ms; rolled back without them`,
-    );
-  }
-}
-
 /** Whether `level` or a level above it has ended. */
 function levelEnded(level: WriteTx): boolean {
   for (let l: WriteTx | null = level; l; l = l.parent) if (l.done) return true;
@@ -1190,7 +1166,9 @@ function joinWriteTx(open: WriteTx, work: (sp: PgSql) => unknown): Promise<unkno
           // Ended first: what it left running settles, refused, before the
           // rollback to this savepoint.
           child.done = true;
-          await settleEnded(child.joins);
+          // Uncapped (round 5, N5): every savepoint scope under it must
+          // finish before its own `rollback to` goes.
+          await child.joins;
           throw err;
         } finally {
           child.done = true;
@@ -1550,7 +1528,9 @@ async function writeTxOf(
           // refused before the driver, before postgres.js sends the
           // ROLLBACK and hands the connection back.
           tx.done = true;
-          await settleEnded(tx.joins);
+          // Uncapped (round 5, N5): a capped wait let postgres.js send a
+          // late `rollback to` on a connection already handed on.
+          await tx.joins;
           if (tx.gap && gapTableOf(err) === null) {
             throw new WriteRoleGapError(tx.gap, { cause: err });
           }
@@ -1942,10 +1922,13 @@ async function nestedSystemTx<T>(
     saves: outer.nest.saves,
   };
   // Counted once (round 4, N2): on the write role its savepoint goes
-  // through joinWriteTx, which counts it in the same count.
+  // through joinWriteTx, which counts it in the same count. Only when this
+  // system transaction is that write transaction (round 5, N6): a system
+  // pool one inside a live write transaction counts its own.
   const onRole = openWriteTx.getStore();
-  if (!onRole || levelEnded(onRole)) outer.nest.saves.n += 1;
-  if ((!onRole || levelEnded(onRole)) && outer.nest.saves.n === NESTED_SAVEPOINT_WARN + 1) {
+  const countedByJoin = !!onRole && !levelEnded(onRole) && onRole.saves === outer.nest.saves;
+  if (!countedByJoin) outer.nest.saves.n += 1;
+  if (!countedByJoin && outer.nest.saves.n === NESTED_SAVEPOINT_WARN + 1) {
     console.warn(
       `[db] withSystemTx: more than ${NESTED_SAVEPOINT_WARN} nested calls in one transaction ` +
         '(a nested write in a loop?): past 64 subtransactions that write, every snapshot ' +
