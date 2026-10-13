@@ -215,9 +215,11 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     expect((await pathOf(subId))!.startsWith(`${gPath}.`)).toBe(true);
     // A box whose actor check is off (round 4, L3): the database's own mode
     // is off (MANTLE_ACTOR_CHECK can only raise it), every write runs on the
-    // system pool, and the answer is main's exactly: both deletes go
-    // through; the hidden subfolder's row stays where it was (main's
-    // orphan, which the write role's rule now refuses on warn and on).
+    // system pool, and the answer is main's exactly (the same code path; the
+    // new rule's pre-check is a no-op there): the folder's own count sees
+    // the subfolder, so both deletes are refused as "not empty" (the merge
+    // delete 409, the plain route 400), never our hidden-items refusal, and
+    // nothing moves.
     const [box] = await x<{ m: string }>(sql`select mantle_actor_check_box_mode() as m`);
     expect(box!.m).toBe('off');
     const was = process.env.MANTLE_ACTOR_CHECK;
@@ -225,8 +227,10 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     try {
       const subPath = (await pathOf(subId))!;
       const merged = await del('files', g);
-      expect(merged.status, merged.text.slice(0, 200)).toBe(200);
-      expect(await pathOf(g)).toBeUndefined();
+      expect(merged.status, merged.text.slice(0, 200)).toBe(409);
+      expect(merged.text).toContain('folder is not empty');
+      expect(merged.json.code).not.toBe('hidden_items');
+      expect(await pathOf(g)).toBe(gPath);
       expect(await pathOf(subId)).toBe(subPath);
       // The plain Files route (deleteFolder) the same way.
       const g2 = await folder('files', `${tag}h2`);
@@ -239,8 +243,9 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
       await hide(sub2Id);
       const sub2Path = (await pathOf(sub2Id))!;
       const plain = await call(`/api/files/folders/${g2}`, mod, 'DELETE');
-      expect(plain.status, plain.text.slice(0, 200)).toBe(200);
-      expect(await pathOf(g2)).toBeUndefined();
+      expect(plain.status, plain.text.slice(0, 200)).toBe(400);
+      expect(plain.text).toContain('folder is not empty');
+      expect(await pathOf(g2)).toBeDefined();
       expect(await pathOf(sub2Id)).toBe(sub2Path);
     } finally {
       process.env.MANTLE_ACTOR_CHECK = was;
