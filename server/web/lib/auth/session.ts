@@ -1040,27 +1040,18 @@ async function createHomeFor(
   pattern: string,
   ownWork: boolean,
 ): Promise<CreateHome | NextResponse> {
-  let askedWs: string | null = null;
-  if (CREATE_ROUTES.has(`${method.toUpperCase()} ${pattern}`)) {
-    const req = getRequestContext()?.req;
-    askedWs = req ? new URL(req.url).searchParams.get('ws') : null;
-  }
-  // A write that makes no item (a delete, a pin, an opened mark) never
-  // makes the private workspace (W6b fix round 1): its existing one, if
-  // any, else none. Any other write may make it: a create, and also an
-  // edit, a move or a copy (fix round 2: the contract says so; such a write
-  // may land a new item, and with no private workspace named its home would
-  // fall back to the rule before W6b, the folder's home else Admin, so it
-  // is not narrowed to the create routes).
-  const reqPath = getRequestContext()?.path;
-  const target = reqPath ? itemWriteTarget(method, pattern, reqPath) : null;
-  const makePrivate = !(method.toUpperCase() === 'DELETE' || target?.need === 'read');
   // THE create-home intent (arch A3c): @mantle/db createHomeIntent, shared
   // with assistant turns and MCP.
+  const ctx = getRequestContext();
   const home = await createHomeIntent(
-    loginId,
-    { from: 'param', ws: askedWs },
-    { ownWork, makePrivate },
+    ...requestCreateHomeArgs(
+      loginId,
+      method,
+      pattern,
+      ctx?.path ?? null,
+      ctx?.req?.url ?? null,
+      ownWork,
+    ),
   );
   if ('refused' in home) {
     // Answered by the one mapper: 400 invalid, else 403 workspace, the
@@ -1070,6 +1061,43 @@ async function createHomeFor(
     );
   }
   return home;
+}
+
+/**
+ * What a write request says to its create home (W6b): whether it is a
+ * create route (only then is its `?ws=` read) and whether it may make an
+ * item. A write that makes no item (a delete, a pin, an opened mark) never
+ * makes the private workspace (W6b fix round 1): its existing one, if any,
+ * else none. Any other write may make it: a create, and also an edit, a
+ * move or a copy (fix round 2: such a write may land a new item, and with
+ * no private workspace named its home would fall back to the rule before
+ * W6b, the folder's home else Admin, so it is not narrowed to the create
+ * routes). A4's route rows carry the same two (`creates`, `makesItems`):
+ * create-home-parity.test.ts pins the gate's step 6 with them against
+ * this.
+ */
+export function requestCreatePolicy(
+  method: string,
+  pattern: string,
+  path: string | null,
+): { creates: boolean; makesItems: boolean } {
+  const creates = CREATE_ROUTES.has(`${method.toUpperCase()} ${pattern}`);
+  const target = path ? itemWriteTarget(method, pattern, path) : null;
+  return { creates, makesItems: !(method.toUpperCase() === 'DELETE' || target?.need === 'read') };
+}
+
+/** The create-home intent's arguments for a write request (createHomeFor). */
+export function requestCreateHomeArgs(
+  loginId: string,
+  method: string,
+  pattern: string,
+  path: string | null,
+  url: string | null,
+  ownWork: boolean,
+): Parameters<typeof createHomeIntent> {
+  const { creates, makesItems } = requestCreatePolicy(method, pattern, path);
+  const askedWs = creates && url ? new URL(url).searchParams.get('ws') : null;
+  return [loginId, { from: 'param', ws: askedWs }, { ownWork, makePrivate: makesItems }];
 }
 
 /** A refusal of the gate as its HTTP answer: the one mapper's
