@@ -889,17 +889,31 @@ and `app_databases.write_seq`, with no table rewrite.
   restore's database take a new name with each revision
   (`<node>.r-<token>.sqlite`); the row names the current one. Old names stay
   valid while a row points at them.
-- **The nightly sweep** (maintenance task `store-sweep`) removes the files no
-  row points at, once they have been unreferenced on two runs an hour apart.
+- **The nightly sweep** (maintenance task `store-sweep`) removes an old
+  revision only: a file of a table or app whose row names ANOTHER file that
+  is on disk, once it has been unreferenced on two runs an hour apart.
   Until then they take disk: a commit of a large table holds two copies for
-  about a day. `pnpm -C server/web store:sweep` shows what is due;
-  `--apply` removes it.
-- **Backups and restores.** The table and app database backups name each
-  copy after the file its row points at, so `scripts/app-dbs-restore.sh` and
-  the table restore put files back where the rows say. Restore Postgres
-  first, then the files, as before: a file backup taken BEFORE the dump can
-  lack a revision the dump's rows name (the sanity checks report a missing
-  workbook).
+  about a day. It never removes a file whose item has no row (a deleted
+  item's, an app's from long ago: reported), a draft from before the roll
+  (`<node>.draft.sqlite`: reported), nor any file of an item whose row names
+  a file that is missing. It removes NOTHING in a store, and the run shows
+  failed, when a row names a file outside the store's folder (the
+  maintenance container must mount `app-dbs`: the compose file of this
+  release does), when no row names any file (a wrong database), or when
+  more than 50 files (or 10% of the store, past 10 files) would go at once.
+  `pnpm -C server/web store:sweep` shows what is due and what is kept;
+  `--apply` removes it; `--apply --allow-many` lifts the per-run limit once
+  the dry run reads right.
+- **Backups and restores.** The backup runs `pg_dump` first, then the app
+  databases, then the table workbooks, while the brain keeps writing. A
+  write that lands in between moves a row to a NEW file after the dump
+  recorded the old one, so each archive holds EVERY revision of each table
+  and app database on disk, not only the one the row names at archive time:
+  the old revision is still there (the sweep keeps it for at least an
+  hour), so the file the dump's row names is in the archive. Restore
+  Postgres first, then the files, as before; the extra revisions the
+  restored rows do not name are the sweep's. Until the sweep has run, an
+  archive is larger by the revisions it has not removed yet.
 
 ## Rollback
 
@@ -933,6 +947,19 @@ matches the schema. Never roll back below:
   a roll (above); pinning the tag by hand does not ask. Check first:
   `docker exec mantle_pg psql -U postgres -d postgres -Atc "select count(*)
 from auth.users where role = 'client'"`.
+
+- **The store brokers release (arch A3b, migration 0283) is not a safe
+  rollback floor to cross.** An older image does not read `tables.draft_path`:
+  every draft saved since the roll (named `<node>.r-<token>.draft.sqlite`)
+  is invisible to it, and its next save writes a draft beside the published
+  file that the newer image never reads. It also treats the published file a
+  row names as its own to change, where this release keeps each revision
+  unchanged (a commit's history entry may be a hard link to it). Before
+  pinning an older tag: commit or discard every open table draft (`select
+  count(*) from tables where draft_path is not null` must be 0), and expect
+  app restores made since the roll to stay where they are (the older image
+  follows `storage_path` and reads them). If drafts were lost, restore the
+  pre-roll backup (the dump and the table and app database archives) instead.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.
