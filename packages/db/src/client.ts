@@ -1145,15 +1145,15 @@ export async function brokerLockTx<T>(
 ): Promise<T> {
   const sql = rawAdminSql();
   const ms = Math.max(1, Math.floor(lockTimeoutMs));
-  return runWithoutActor(() =>
-    sql.begin(async (t) => {
-      await t.unsafe(`set local lock_timeout = '${ms}ms'`);
-      return fn(
-        async (text, params = []) =>
-          (await t.unsafe(text, params as never[])) as unknown as Record<string, unknown>[],
-      );
-    }),
-  ) as Promise<T>;
+  // The raw client: no actor, no scope, no caller transaction to join (it
+  // only reads and locks a row).
+  return sql.begin(async (t) => {
+    await t.unsafe(`set local lock_timeout = '${ms}ms'`);
+    return fn(
+      async (text, params = []) =>
+        (await t.unsafe(text, params as never[])) as unknown as Record<string, unknown>[],
+    );
+  }) as Promise<T>;
 }
 
 /** A write transaction's state (WriteTx), or a savepoint's under `parent`.
