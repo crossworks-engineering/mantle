@@ -211,7 +211,7 @@ describe.skipIf(!DB_URL)('A8 cells: folder counts are the caller’s', () => {
     // The member's Team seat would not change a cell (nothing is granted to
     // Team); taken out so its scope is exactly S.
     await x(sql`delete from workspace_users u using workspaces w
-      where w.id = u.workspace_id and w.bridge_key = 'team' and u.login_id = ${login.member}`);
+      where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin and u.login_id = ${login.member}`);
     // Both Admin users sit in Admin (the switch seats admin rows).
     const seated = await x<{ n: number }>(sql`select count(*)::int as n
       from workspace_users u join workspaces w on w.id = u.workspace_id and w.is_admin

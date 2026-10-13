@@ -72,7 +72,7 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
     ids.helper = helperId;
     await sys(sql`select * from mantle_ws_migrate()`);
     const ws = await sys<{ key: string; id: string }>(
-      sql`select bridge_key as key, id::text as id from workspaces where owner_id = ${owner}`,
+      sql`select (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key, id::text as id from workspaces where owner_id = ${owner}`,
     );
     team = ws.find((w) => w.key === 'team')!.id;
     await sys(sql`update agents set workspace_id = ${team} where id = ${agentId}`);

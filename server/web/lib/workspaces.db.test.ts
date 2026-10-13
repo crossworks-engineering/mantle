@@ -8,12 +8,15 @@
  *  - who may add whom: a Moderator adds anyone, a plain user nobody (asked
  *    before the login is looked up), an Admin user anyone, itself included,
  *    private workspaces too (S1), logged and shown as "Added by";
- *  - names: only Admin and Team are reserved; a name clash with a workspace
- *    the caller cannot see is allowed (audit M3);
+ *  - names: only Admin is reserved (Team too until 0286); a name clash
+ *    with a workspace the caller cannot see is allowed (audit M3);
  *  - the last Moderator can be neither removed nor demoted;
- *  - in the Admin-moderated workspace an Admin user stays a Moderator:
- *    nobody demotes or removes one (19.5, 21.8 row 2); an Admin user's
- *    self-add there is a Moderator (18.8);
+ *  - only an Admin user ticks or clears Moderator (owner decision
+ *    2026-10-13, 0286): a Moderator who is not one gets 403 admin_only on
+ *    setModerator and on an add with the tick; the maker of a workspace is
+ *    its Moderator; Team's Moderators keep their ticks from the switch;
+ *  - Team is a normal workspace (0286): renamed, given a look, archived
+ *    like any (refused while it is an item's home), no Admin user kept;
  *  - the Admin workspace's users are the admin logins (the role change, its
  *    owner and self rules, its checks inside the change, its audit row);
  *  - the assistant is frozen once it has history; resources need the area;
@@ -182,7 +185,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       (${agentA}, ${owner}, 'w5a-a', 'Assistant A', 'm', 'p', 'responder'),
       (${agentB}, ${owner}, 'w5a-b', 'Assistant B', 'm', 'p', 'responder')`);
     const ws = await x<{ id: string; key: string }>(sql`
-      select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
+      select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
     admin = ws.find((w) => w.key === 'admin')!.id;
     r = await routes();
@@ -199,14 +202,14 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const all = await call(r.root.GET());
     const names = (all.body.workspaces as Json[]).map((w) => w.name);
     expect(names).toEqual(expect.arrayContaining(['Admin', 'Team', 'Moe private']));
-    // builtIn: Admin and Team only (fix round 3), on the list and the screen.
+    // builtIn: Admin only (Team too until 0286), on the list and the screen.
     const builtIn = Object.fromEntries(
       (all.body.workspaces as Json[]).map((w) => [w.name as string, w.builtIn]),
     );
-    expect(builtIn).toMatchObject({ Admin: true, Team: true, 'Moe private': false });
+    expect(builtIn).toMatchObject({ Admin: true, Team: false, 'Moe private': false });
     for (const [id, want] of [
       [admin, true],
-      [team, true],
+      [team, false],
       [mine, false],
     ] as const) {
       const one = await call(r.one.GET(req('GET'), p({ id })));
@@ -215,9 +218,11 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     await as(mem);
     const memList = (await call(r.root.GET())).body.workspaces as Json[];
     expect(memList.map((w) => w.name)).toEqual(['Team']);
-    expect(memList[0]!.builtIn).toBe(true);
+    expect(memList[0]!.builtIn).toBe(false);
+    // The switch made every member a Team Moderator before 0286: the tick
+    // stays (decision 2.a) until an Admin user clears it.
     expect(memList[0]!.me).toEqual({ member: true, moderator: true });
-    expect(memList[0]!.adminModerated).toBe(true);
+    expect(memList[0]!.adminModerated).toBe(false);
     await as(mem3);
     const own = (await call(r.one.GET(req('GET'), p({ id: mine })))).body;
     expect((own.workspace as Json).adminModerated).toBe(false);
@@ -291,14 +296,14 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     await x(sql`insert into auth.users (id, email, password_hash, role)
       values (${gone}, ${email(gone, 'gone')}, 'x', 'member')`);
     const empty = await create(gone, 'Former user');
-    expect((await addUser(empty, mem, true)).status).toBe(200);
+    expect((await addUser(empty, mem)).status).toBe(200);
     await x(sql`delete from auth.users where id = ${gone}`);
     await as(adm2);
     const screen = (await call(r.one.GET(req('GET'), p({ id: empty })))).body;
     expect((screen.users as Json[])[0]).toMatchObject({ loginId: mem, addedBy: null });
   });
 
-  it('names: only Admin and Team are reserved; a hidden name never clashes (audit M3)', async () => {
+  it('names: only Admin is reserved; a hidden name never clashes (audit M3)', async () => {
     // A private workspace the member cannot see...
     await create(mem2, 'Secret plans');
     // ...does not stop the member using its name (a 409 would tell them it
@@ -306,10 +311,10 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const twin = await create(mem, 'secret PLANS');
     await as(mem);
     expect((await call(r.one.GET(req('GET'), p({ id: twin })))).status).toBe(200);
-    // The two reserved names, any case and spacing, for anyone.
+    // The reserved name, any case and spacing, for anyone.
     for (const [who, name] of [
-      [mem, 'Team'],
-      [mem, ' team '],
+      [mem, 'Admin'],
+      [mem, ' admin '],
       [owner, 'ADMIN'],
     ] as const) {
       await as(who);
@@ -317,35 +322,43 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       expect(out.status, name).toBe(409);
       expect(out.body.code, name).toBe('reserved_name');
     }
+    // "Team" is a name like any other since 0286.
+    await as(mem2);
+    const team2 = await call(r.root.POST(req('POST', { name: ' team ' })));
+    expect(team2.status).toBe(201);
+    expect((team2.body as Json).builtIn).toBe(false);
   });
 
-  it('names: the built-in workspaces keep theirs; no other may take one (fix round 2, L-3)', async () => {
-    // A Team Moderator cannot rename Team (then "Team" would be free to
-    // take, and a later clash would tell who took it)...
+  it('names: Admin keeps its name and no other may take it; Team renames (fix round 2, L-3; 0286)', async () => {
+    // A Team Moderator renames Team like any workspace (0286)...
     await as(mem);
     const team1 = await call(r.one.PATCH(req('PATCH', { name: 'Staff' }), p({ id: team })));
-    expect(team1.status).toBe(409);
-    expect(team1.body.code).toBe('reserved_name');
-    // ...but may change its description, and resend its own name.
+    expect(team1.status).toBe(200);
+    expect((team1.body as Json).name).toBe('Staff');
+    // ...and back, with a description.
     const desc = await call(
       r.one.PATCH(req('PATCH', { name: 'Team', description: 'Everyone' }), p({ id: team })),
     );
     expect(desc.status).toBe(200);
     expect((desc.body as Json).name).toBe('Team');
-    // An Admin user cannot rename Admin either.
+    // An Admin user cannot rename Admin.
     await as(owner);
     const admin1 = await call(r.one.PATCH(req('PATCH', { name: 'Owners' }), p({ id: admin })));
     expect(admin1.body.code).toBe('reserved_name');
-    // Any other workspace: never a reserved name, in any case or spacing.
+    // Any other workspace: never "Admin", in any case or spacing; "Team" is
+    // free.
     const mine = await create(mem3, 'Moe renames');
-    for (const name of ['Admin', ' TEAM ']) {
+    for (const name of ['Admin', ' ADMIN ']) {
       const out = await call(r.one.PATCH(req('PATCH', { name }), p({ id: mine })));
       expect(out.status, name).toBe(409);
       expect(out.body.code, name).toBe('reserved_name');
     }
+    expect((await call(r.one.PATCH(req('PATCH', { name: 'TEAM' }), p({ id: mine })))).status).toBe(
+      200,
+    );
     const [names] = await x<{ n: number }>(sql`select count(*)::int as n from workspaces
-      where owner_id = ${owner} and lower(btrim(name)) in ('admin', 'team')`);
-    expect(names!.n).toBe(2);
+      where owner_id = ${owner} and lower(btrim(name)) = 'admin'`);
+    expect(names!.n).toBe(1);
   });
 
   it('the last Moderator can be neither removed nor demoted', async () => {
@@ -362,56 +375,94 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     await as(owner);
     const byAdmin = await call(r.user.DELETE(req('DELETE'), p({ id: ws, loginId: mem2 })));
     expect(byAdmin.body.code).toBe('last_moderator');
-    // With a second Moderator, the first may leave.
+    // With a second Moderator (an Admin user ticks it), the first may leave.
     await as(mem2);
-    expect((await addUser(ws, mem3, true)).status).toBe(200);
+    expect((await addUser(ws, mem3)).status).toBe(200);
+    await as(owner);
+    expect(
+      (await call(r.user.PATCH(req('PATCH', { moderator: true }), p({ id: ws, loginId: mem3 }))))
+        .status,
+    ).toBe(200);
+    await as(mem2);
     const ok = await call(r.user.DELETE(req('DELETE'), p({ id: ws, loginId: mem2 })));
     expect(ok.status).toBe(200);
     expect(await userRow(ws, mem2)).toBeNull();
     expect(await userRow(ws, mem3)).toEqual({ moderator: true });
   });
 
-  it('Team: an Admin user stays a Moderator, for everyone (19.5, 21.8 row 2, audit L4)', async () => {
-    const id = p({ id: team, loginId: adm2 });
-    // A member, another Admin user, and the Admin user itself: all refused.
-    for (const who of [mem, owner, adm2]) {
-      await as(who);
-      const demote = await call(r.user.PATCH(req('PATCH', { moderator: false }), id));
-      expect(demote.status, who).toBe(409);
-      expect(demote.body.code, who).toBe('admin_kept');
-      const remove = await call(r.user.DELETE(req('DELETE'), id));
-      expect(remove.status, who).toBe(409);
-      expect(remove.body.code, who).toBe('admin_kept');
-    }
-    expect(await userRow(team, adm2)).toEqual({ moderator: true });
+  it('only an Admin user ticks or clears Moderator, Team included (0286, decision 3.a)', async () => {
+    const tick = (wsId: string, loginId: string, moderator: boolean) =>
+      call(r.user.PATCH(req('PATCH', { moderator }), p({ id: wsId, loginId })));
+    // A Team Moderator who is no Admin user (the switch ticked them): neither
+    // way, for anyone, and their own tick and every row stay as they are.
     await as(mem);
-    const screen = (await call(r.one.GET(req('GET'), p({ id: team })))).body;
-    const ada = (screen.users as Json[]).find((u) => u.loginId === adm2)!;
-    expect(ada.adminViaArea).toBe(true);
-    // A member may still manage another member there.
-    expect(
-      (await call(r.user.PATCH(req('PATCH', { moderator: false }), p({ id: team, loginId: mem3 }))))
-        .status,
-    ).toBe(200);
+    for (const [loginId, moderator] of [
+      [mem3, false],
+      [adm2, false],
+      [mem, false],
+    ] as const) {
+      const out = await tick(team, loginId, moderator);
+      expect(out.status, loginId).toBe(403);
+      expect(out.body.code, loginId).toBe('admin_only');
+      expect(out.body.error, loginId).toBe(
+        'Only an Admin user can make someone a Moderator or take the tick away.',
+      );
+    }
+    expect(await userRow(team, mem3)).toEqual({ moderator: true });
+    expect(await userRow(team, mem)).toEqual({ moderator: true });
+    // The maker of a workspace is its Moderator, and still may not tick.
+    const own = await create(mem, 'Mia ticks');
+    await as(mem);
+    expect((await addUser(own, mem2)).status).toBe(200);
+    expect((await tick(own, mem2, true)).body.code).toBe('admin_only');
+    const withTick = await addUser(own, mem3, true);
+    expect(withTick.status).toBe(403);
+    expect(withTick.body.code).toBe('admin_only');
+    expect(await userRow(own, mem3)).toBeNull();
+    // An Admin user ticks and clears, in Team and in any workspace (the
+    // review of decision 2.a), and adds with the tick.
+    await as(owner);
+    expect((await tick(team, mem3, false)).status).toBe(200);
     expect(await userRow(team, mem3)).toEqual({ moderator: false });
+    expect((await tick(own, mem2, true)).status).toBe(200);
+    expect(await userRow(own, mem2)).toEqual({ moderator: true });
+    expect((await addUser(own, mem3, true)).status).toBe(200);
+    expect(await userRow(own, mem3)).toEqual({ moderator: true });
+    const [ev] = await x<{ subject: Json }>(sql`select subject from workspace_events
+      where workspace_id = ${own} and action = 'user.moderator'`);
+    expect(ev!.subject).toEqual({ login: mem2, moderator: true });
   });
 
-  it('Team: an Admin user who adds itself is a Moderator (18.8)', async () => {
-    // Off Team by hand (the login bridge put every admin there).
-    await x(sql`delete from workspace_users where workspace_id = ${team} and login_id = ${adm2}`);
-    await as(adm2);
-    const out = await addUser(team, adm2, false);
-    expect(out.status).toBe(200);
+  it('Team keeps no Admin user (0286): demoted and removed like anyone', async () => {
+    const id = p({ id: team, loginId: adm2 });
     expect(await userRow(team, adm2)).toEqual({ moderator: true });
+    const screen0 = (await call(r.one.GET(req('GET'), p({ id: team })))).body;
+    const ada0 = (screen0.users as Json[]).find((u) => u.loginId === adm2)!;
+    expect(ada0.adminViaArea).toBe(false);
+    // An Admin user clears another Admin user's tick there.
+    await as(owner);
+    expect((await call(r.user.PATCH(req('PATCH', { moderator: false }), id))).status).toBe(200);
+    expect(await userRow(team, adm2)).toEqual({ moderator: false });
+    // A Moderator removes them, and an Admin user adds itself back: not a
+    // Moderator unless asked (no 18.8 rule any more).
+    await as(mem);
+    expect((await call(r.user.DELETE(req('DELETE'), id))).status).toBe(200);
+    expect(await userRow(team, adm2)).toBeNull();
+    await as(adm2);
+    expect((await addUser(team, adm2)).status).toBe(200);
+    expect(await userRow(team, adm2)).toEqual({ moderator: false });
     const [ev] = await x<{ subject: Json }>(sql`select subject from workspace_events
       where workspace_id = ${team} and action = 'user.add' and subject->>'login' = ${adm2}`);
-    expect(ev!.subject).toEqual({ login: adm2, moderator: true, self: true });
+    expect(ev!.subject).toEqual({ login: adm2, moderator: false, self: true });
+    expect((await call(r.user.PATCH(req('PATCH', { moderator: true }), id))).status).toBe(200);
+    expect(await userRow(team, adm2)).toEqual({ moderator: true });
   });
 
   it('the Admin workspace: adding a user is the admin role, removing it the member role', async () => {
     await as(mem);
     expect((await addUser(admin, mem)).status).toBe(404);
     await as(owner);
+    const teamRowBefore = await userRow(team, mem2);
     h.audits.length = 0;
     const add = await addUser(admin, mem2);
     expect(add.status).toBe(200);
@@ -432,8 +483,8 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     ]);
     expect(await roleOf(mem2)).toBe('admin');
     expect(await userRow(admin, mem2)).toEqual({ moderator: true });
-    // The login bridge keeps them in Team as a Moderator.
-    expect(await userRow(team, mem2)).toEqual({ moderator: true });
+    // The login bridge keeps the Admin row only: Team's is as it was (0286).
+    expect(await userRow(team, mem2)).toEqual(teamRowBefore);
     h.audits.length = 0;
     const remove = await call(r.user.DELETE(req('DELETE'), p({ id: admin, loginId: mem2 })));
     expect(remove.status).toBe(200);
@@ -517,7 +568,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     await as(mem);
     const id = p({ id: ws });
     expect((await call(r.one.PATCH(req('PATCH', { name: 'Mia renamed' }), id))).status).toBe(200);
-    expect((await call(r.one.PATCH(req('PATCH', { name: 'Team' }), id))).body.code).toBe(
+    expect((await call(r.one.PATCH(req('PATCH', { name: 'Admin' }), id))).body.code).toBe(
       'reserved_name',
     );
     expect((await call(r.one.PATCH(req('PATCH', { assistantId: agentA }), id))).body.code).toBe(
@@ -570,11 +621,13 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const [ev] = await x<{ n: number }>(sql`select count(*)::int as n from workspace_events
       where workspace_id = ${ws} and action = 'workspace.update' and subject ? 'color'`);
     expect(ev!.n).toBe(3);
-    // The built-in workspaces keep their names but take a look: a Team
-    // Moderator sets Team's.
-    const teamLook = await patch({ color: 'green', icon: 'lucide:users' }, p({ id: team }));
+    // Team's look by the same rule (0286: no built-in switch): a Team
+    // Moderator sets it. The switch kept the icon the old 'team' kind drew.
+    const teamLook = await patch({ color: 'green' }, p({ id: team }));
     expect(teamLook.status).toBe(200);
-    expect(teamLook.body).toMatchObject({ color: 'green', kind: 'team' });
+    expect(teamLook.body).toMatchObject({ color: 'green', icon: 'lucide:users', kind: 'other' });
+    // Admin's look: its Moderators, who are Admin users; a member sees 404.
+    expect((await patch({ color: 'red' }, p({ id: admin }))).status).toBe(404);
     // On the list, the screen and the shell.
     await as(owner);
     const list = (await call(r.root.GET())).body.workspaces as Json[];
@@ -583,9 +636,15 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       return [w.kind, w.color, w.icon];
     };
     expect(look(admin)).toEqual(['admin', null, null]);
-    expect(look(team)).toEqual(['team', 'green', 'lucide:users']);
+    expect(look(team)).toEqual(['other', 'green', 'lucide:users']);
     const screen = (await call(r.one.GET(req('GET'), p({ id: team })))).body;
-    expect(screen.workspace).toMatchObject({ kind: 'team', color: 'green' });
+    expect(screen.workspace).toMatchObject({ kind: 'other', color: 'green' });
+    // An Admin user (Admin's Moderator) sets Admin's look, and clears it.
+    expect((await patch({ color: 'blue' }, p({ id: admin }))).body).toMatchObject({
+      color: 'blue',
+      kind: 'admin',
+    });
+    expect((await patch({ color: null }, p({ id: admin }))).status).toBe(200);
     const { shellWorkspaces } = await import('./workspaces');
     const shell = await shellWorkspaces({
       kind: 'member',
@@ -594,13 +653,13 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       user: null,
     });
     expect(shell.workspaces.find((w) => w.id === team)).toMatchObject({
-      kind: 'team',
+      kind: 'other',
       color: 'green',
       icon: 'lucide:users',
     });
-    // Back to the default, so the other tests see Team as it was.
+    // Back to how the switch left it, so the other tests see Team as it was.
     await as(mem);
-    expect((await patch({ color: null, icon: null }, p({ id: team }))).status).toBe(200);
+    expect((await patch({ color: null }, p({ id: team }))).status).toBe(200);
     // mantle_ws_kind answers for this brain's workspaces only (audit L1).
     const other = randomUUID();
     const otherWs = randomUUID();
@@ -612,7 +671,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const kinds = await x<{ mine: string | null; theirs: string | null }>(
       sql`select mantle_ws_kind(${team}::uuid) as mine, mantle_ws_kind(${otherWs}::uuid) as theirs`,
     );
-    expect(kinds).toEqual([{ mine: 'team', theirs: null }]);
+    expect(kinds).toEqual([{ mine: 'other', theirs: null }]);
   });
 
   it('the assistant is frozen once it has history', async () => {
@@ -703,7 +762,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect((await call(r.archive.POST(req('POST'), p({ id: admin })))).body.code).toBe(
       'admin_workspace',
     );
-    expect((await call(r.archive.POST(req('POST'), p({ id: team })))).body.code).toBe('built_in');
     const ws = await create(mem, 'Mia archive');
     // The note is shared here (not its home); a second item is "removed
     // here" (an exclusion row).
@@ -898,5 +956,34 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(memShell.areas).toEqual([]);
     expect(memShell.workspaces.map((w) => w.name)).toContain('Team');
     expect(memShell.workspaces.some((w) => w.isAdmin)).toBe(false);
+  });
+
+  it('Team archives like any workspace (0286): refused while an item has its home there', async () => {
+    // An item homed in Team.
+    const homed = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+      values (${homed}, ${owner}, 'note', 'a Team note', 'notes')`);
+    await m.withHeads([homed], 'update', async (tx) => {
+      await tx.execute(
+        sql`update item_grants set is_home = false where node_id = ${homed} and is_home`,
+      );
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
+        values (${homed}, ${team}, false, true)`);
+    });
+    await as(mem);
+    const held = await call(r.archive.POST(req('POST'), p({ id: team })));
+    expect(held.status).toBe(409);
+    expect(held.body.code).toBe('workspace_holds_items');
+    // Moved home again (to Admin), Team archives: a Moderator of it may.
+    await m.withHeads([homed], 'update', async (tx) => {
+      await tx.execute(
+        sql`delete from item_grants where node_id = ${homed} and workspace_id = ${team}`,
+      );
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
+        values (${homed}, ${admin}, false, true)`);
+    });
+    const done = await call(r.archive.POST(req('POST'), p({ id: team })));
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect((done.body.workspace as Json).archived).toBe(true);
   });
 });

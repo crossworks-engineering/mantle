@@ -319,7 +319,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
     const ws = await x<{ id: string; admin: boolean; key: string | null }>(sql`
-      select id::text, is_admin as admin, bridge_key as key from workspaces
+      select id::text, is_admin as admin, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces
        where owner_id = ${owner} and archived_at is null`);
     adminWs = ws.find((w) => w.admin)!.id;
     teamWs = ws.find((w) => w.key === 'team')!.id;

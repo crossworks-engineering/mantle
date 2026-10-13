@@ -45,7 +45,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     return { scratch, sql };
   }
 
-  it('the first owner gets Admin and Team, plain grants and a home for every item; a second run and a boot change nothing', async () => {
+  it('the first owner gets Admin (no Team since 0286), plain grants and a home for every item; a second run and a boot change nothing', async () => {
     const { scratch, sql } = await brain();
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -57,12 +57,16 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     expect(res.ok).toBe(true);
     const owner = (res as { id: string }).id;
 
+    // A new brain has no Team workspace (owner decision 2026-10-13): the
+    // switch made one, found it held nothing, and removed it with its events.
     const ws = await sql<{ key: string; admin: boolean }[]>`
       select bridge_key as key, is_admin as admin from workspaces order by bridge_key`;
-    expect(ws).toEqual([
-      { key: 'admin', admin: true },
-      { key: 'team', admin: false },
-    ]);
+    expect(ws).toEqual([{ key: 'admin', admin: true }]);
+    expect(
+      Number(
+        (await sql`select count(*) as n from workspace_events where workspace_id is null`)[0]!.n,
+      ),
+    ).toBe(0);
     const users = await sql<{ key: string }[]>`
       select w.bridge_key as key from workspace_users u join workspaces w on w.id = u.workspace_id
        where u.login_id = ${owner} order by 1`;
@@ -94,7 +98,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     expect(again).toEqual([
       { section: 'skip', subject: 'workspaces', metric: 'already migrated', n: 1 },
     ]);
-    expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(2);
+    expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(1);
 
     // Fix round 2, M-new: onboarding makes the assistants after the signup
     // migrated the brain; the step after the manifest seed attaches them.
@@ -118,8 +122,8 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     expect(await wm.attachDefaultAssistants()).toBe(1);
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
     // A brain whose admin opened it before W7b (levels are frozen since
-    // 0268, so the fixture sets it past the freeze): the attach puts it on
-    // Team.
+    // 0268, so the fixture sets it past the freeze): with no Team (0286),
+    // the attach puts it nowhere; an Admin user attaches it to a workspace.
     const [tr] = await sql<{ id: string }[]>`
       select id from agents where owner_id = ${owner} and slug = 'team-responder'`;
     const setLevel = (level: string) =>
@@ -128,33 +132,16 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
         await tx`update agents set audience = ${level} where id = ${tr!.id}`;
       });
     await setLevel('team');
-    expect(await wm.attachDefaultAssistants()).toBe(1);
-    expect(await assistants()).toEqual([
-      { key: 'admin', slug: 'persona-test' },
-      { key: 'team', slug: 'team-responder' },
-    ]);
     expect(await wm.attachDefaultAssistants()).toBe(0);
+    expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
     // Each attach is logged on its workspace (audit nit).
     expect(
       await sql`
         select w.bridge_key as key, e.subject->>'by' as by from workspace_events e
           join workspaces w on w.id = e.workspace_id
          where e.action = 'resource.add' order by 1`,
-    ).toEqual([
-      { key: 'admin', by: 'attach' },
-      { key: 'team', by: 'attach' },
-    ]);
-    // L3 went with the levels (W7b): nothing raises an assistant's level,
-    // and its tools in a Team turn are the scope's (adminOnly groups out).
-    // L1: a Moderator takes Team's assistant off. Neither a boot nor a level
-    // change puts it back.
-    const [team] = await sql<{ id: string }[]>`select id from workspaces where bridge_key = 'team'`;
-    const { patchWorkspace } = await import('./workspaces');
-    await patchWorkspace({ kind: 'admin', loginId: owner, anchorId: owner, user: null }, team!.id, {
-      assistantId: null,
-    });
-    expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
-    expect(await wm.attachDefaultAssistants()).toBe(0);
+    ).toEqual([{ key: 'admin', by: 'attach' }]);
+    // A boot changes nothing either.
     await wm.migrateWorkspacesQuietly('boot');
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
     await setLevel('admin');

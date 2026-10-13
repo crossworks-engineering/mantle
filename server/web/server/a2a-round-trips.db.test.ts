@@ -454,7 +454,7 @@ describe.skipIf(!DB_URL)('A2a: the actor check adds no round trip when off', () 
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
     const [team] = await x<{ id: string }>(sql`select id::text as id from workspaces
-      where owner_id = ${owner} and bridge_key = 'team' and archived_at is null`);
+      where owner_id = ${owner} and name = 'Team' and not is_admin and archived_at is null`);
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${team!.id}, ${member}, true)
       on conflict (workspace_id, login_id) do update set moderator = true`);

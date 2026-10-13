@@ -143,7 +143,7 @@ describe.skipIf(!URL)('the Team assistant outside a chat turn runs in Team (M2)'
     // The workspaces go live: the team responder becomes Team's assistant.
     await x(sqlTag`select * from mantle_ws_migrate()`);
     const [ws] = await x<{ id: string }>(
-      sqlTag`select id::text as id from workspaces where owner_id = ${ownerId} and bridge_key = 'team'`,
+      sqlTag`select id::text as id from workspaces where owner_id = ${ownerId} and name = 'Team' and not is_admin`,
     );
     team = ws!.id;
     const [agent] = await x<{ ws: string | null }>(

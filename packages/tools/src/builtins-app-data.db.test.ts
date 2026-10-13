@@ -131,8 +131,8 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
       (${anchor}, 'brain', ${anchor}), (${other}, 'brain', ${other})`;
     await admin`insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
       (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
-      (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team'),
-      (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, 'team')`;
+      (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
+      (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, null)`;
     await app('a team', anchor, { team: 'write' });
     await app('b team mcp off', anchor, { team: 'write', mcp: false });
     await app('c team write off', anchor, { team: 'read' });

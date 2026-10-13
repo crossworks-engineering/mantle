@@ -87,7 +87,7 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
     }
     await x(sqlTag`select * from mantle_ws_migrate()`);
     const [ws] = (await x(
-      sqlTag`select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'team'`,
+      sqlTag`select id::text as id from workspaces where owner_id = ${owner} and name = 'Team' and not is_admin`,
     )) as unknown as { id: string }[];
     team = ws!.id;
 

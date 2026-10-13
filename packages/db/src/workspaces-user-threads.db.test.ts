@@ -101,7 +101,7 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
     teamWs = (
       await sql<
         Row[]
-      >`select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'team'`
+      >`select id::text as id from workspaces where owner_id = ${owner} and name = 'Team' and not is_admin`
     )[0]!.id as string;
     for (const [ws, login] of [
       [adminWs, admin2],

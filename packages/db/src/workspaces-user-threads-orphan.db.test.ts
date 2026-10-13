@@ -45,7 +45,7 @@ describe.skipIf(!URL)('0269: an orphaned team row folds into the Team workspace'
     teamWs = String(
       (
         await sql`select id::text as id from workspaces
-                  where owner_id = ${owner} and bridge_key = 'team'`
+                  where owner_id = ${owner} and name = 'Team' and not is_admin`
       )[0]!.id,
     );
     await sql`insert into workspace_users (workspace_id, login_id, moderator)

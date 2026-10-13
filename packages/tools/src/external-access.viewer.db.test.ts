@@ -160,7 +160,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await exec(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, 'Admin', true, 'admin'),
-        (${ws.team}, ${anchor}, 'Team', false, 'team'),
+        (${ws.team}, ${anchor}, 'Team', false, null),
         (${ws.clients}, ${anchor}, ${`${tag} Clients`}, false, null)`);
     await exec(sqlTag`
       insert into workspace_users (workspace_id, login_id, moderator) values

@@ -116,7 +116,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
     const wsRows = await x<{ id: string; key: string }>(sql`
-      select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
+      select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = wsRows.find((r) => r.key === 'team')!.id;
     admin = wsRows.find((r) => r.key === 'admin')!.id;
     await x(sql`update workspace_users set moderator = (login_id = ${mod})

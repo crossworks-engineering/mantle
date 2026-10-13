@@ -155,7 +155,7 @@ describe.skipIf(!URL)('workspace landing pages (task d78e7bde)', () => {
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
     const ws = await x<{ id: string; key: string | null; is_admin: boolean }>(sql`
-      select id::text as id, bridge_key as key, is_admin from workspaces where owner_id = ${owner}`);
+      select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key, is_admin from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
     adminWs = ws.find((w) => w.is_admin)!.id;
     const tokensMod = await import('../lib/auth/tokens');

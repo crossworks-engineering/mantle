@@ -165,7 +165,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
     const ws = await x<{ id: string; key: string }>(sql`
-      select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
+      select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     team = ws.find((w) => w.key === 'team')!.id;
     admin = ws.find((w) => w.key === 'admin')!.id;
     await x(sql`insert into workspaces (id, owner_id, name) values

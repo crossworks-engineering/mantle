@@ -184,7 +184,7 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
     }
     await x(sql`select * from mantle_ws_migrate()`);
     const [teamRow] = await x<{ id: string }>(sql`
-      select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'team'`);
+      select id::text as id from workspaces where owner_id = ${owner} and name = 'Team' and not is_admin`);
     team = teamRow!.id;
     // The app the brokers run: a brain item homed in Team (its one holder).
     const APP = '77777777-7777-4777-8777-777777777777';

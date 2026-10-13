@@ -62,7 +62,7 @@ describe.skipIf(!URL)('0272: a brain not on workspaces that had a client', () =>
   const rowsOf = async (login: string) =>
     (
       await sql<{ key: string | null }[]>`
-        select w.bridge_key as key from workspace_users u
+        select (case when w.is_admin then 'admin' when w.name = 'Team' then 'team' end) as key from workspace_users u
           join workspaces w on w.id = u.workspace_id
          where u.login_id = ${login} order by 1`
     ).map((r) => r.key);
@@ -218,7 +218,7 @@ describe.skipIf(!URL)('0272: a brain already on workspaces with a client in a wo
     ws.team = String(
       (
         await sql`select id::text as id from workspaces
-                  where owner_id = ${owner} and bridge_key = 'team'`
+                  where owner_id = ${owner} and name = 'Team' and not is_admin`
       )[0]!.id,
     );
     ws.ops = String(

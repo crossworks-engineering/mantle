@@ -208,7 +208,7 @@ describe.skipIf(!URL)('A3a write grid: every workspace kind and write, as each a
     }
     // As the read grid: the members' Team seats would change no cell.
     await sql`delete from workspace_users u using workspaces w
-               where w.id = u.workspace_id and w.bridge_key = 'team'
+               where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin
                  and u.login_id in (${L.homeModerator}, ${L.writeGrant}, ${L.readGrant}, ${L.outsider})`;
     for (const who of [L.admin, L.adminWriteGrant, L.adminReadGrant]) {
       const seat = await sql`select 1 from workspace_users

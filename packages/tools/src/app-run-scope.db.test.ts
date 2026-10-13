@@ -108,7 +108,7 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     }
     await sys(sqlTag`select * from mantle_ws_migrate()`);
     const ws = (await sys(
-      sqlTag`select bridge_key as key, id::text as id from workspaces where owner_id = ${owner}`,
+      sqlTag`select (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key, id::text as id from workspaces where owner_id = ${owner}`,
     )) as unknown as { key: string; id: string }[];
     team = ws.find((w) => w.key === 'team')!.id;
     // Another workspace: the member is in it, the owner is not. It holds

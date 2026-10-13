@@ -222,7 +222,9 @@ describe.skipIf(!URL)('the authors’ snapshot copies of accepted items (W6b, S3
     const pageCopy = (await copyOf(page)).copy!;
     const noteCopy = (await copyOf(note)).copy!;
     const team = (
-      await sql<{ id: string }[]>`select id::text as id from workspaces where bridge_key = 'team'`
+      await sql<
+        { id: string }[]
+      >`select id::text as id from workspaces where name = 'Team' and not is_admin`
     )[0]!.id;
     const refused = async (q: PromiseLike<unknown>) => {
       await expect(Promise.resolve(q)).rejects.toMatchObject({ code: '42501' });

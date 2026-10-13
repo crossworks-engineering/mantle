@@ -89,7 +89,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     await exec(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
-        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team')`);
+        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null)`);
     await m.withHeads([appId], 'update', (tx) =>
       tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write, is_home) values
         (${appId}, ${ws.admin}, false, true), (${appId}, ${ws.team}, true, false)`),

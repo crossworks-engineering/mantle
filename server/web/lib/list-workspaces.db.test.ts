@@ -274,7 +274,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     const PV = randomUUID();
     const team = (
       await x<{ id: string }>(
-        sql`select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'team'`,
+        sql`select id::text as id from workspaces where owner_id = ${owner} and name = 'Team' and not is_admin`,
       )
     )[0]!.id;
     await x(

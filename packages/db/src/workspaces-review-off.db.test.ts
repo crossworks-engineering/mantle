@@ -386,7 +386,7 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
         users: { login: string; moderator: boolean }[];
       }[]
     >`
-      select p.login_id::text as login, w.name, w.bridge_key as key, w.is_admin as admin,
+      select p.login_id::text as login, w.name, (case when w.is_admin then 'admin' when w.name = 'Team' then 'team' end) as key, w.is_admin as admin,
              w.created_by::text as by,
              (select coalesce(json_agg(json_build_object('login', u.login_id, 'moderator', u.moderator)), '[]')
                 from workspace_users u where u.workspace_id = w.id) as users
@@ -404,7 +404,7 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
     // No display name: the email's local part.
     expect(rows.find((r) => r.login === disabled)!.name).toBe('ro-d (only you)');
     const former = await sql<{ name: string; users: number; key: string | null }[]>`
-      select w.name, w.bridge_key as key,
+      select w.name, (case when w.is_admin then 'admin' when w.name = 'Team' then 'team' end) as key,
              (select count(*)::int from workspace_users u where u.workspace_id = w.id) as users
         from former_user_workspaces f join workspaces w on w.id = f.workspace_id`;
     // One per former user (L2): the deleted member's and the deleted admin's;
@@ -1017,7 +1017,9 @@ describe.skipIf(!URL)('an accepted item kept in Team gets no snapshot copy (0264
       (${member}, 'rt-m@example.invalid', 'x', 'member', false)`;
     await sql`select * from mantle_ws_migrate_locked()`;
     team = (
-      await sql<{ id: string }[]>`select id::text as id from workspaces where bridge_key = 'team'`
+      await sql<
+        { id: string }[]
+      >`select id::text as id from workspaces where name = 'Team' and not is_admin`
     )[0]!.id;
     for (const [k, author] of [
       ['teamKept', null],

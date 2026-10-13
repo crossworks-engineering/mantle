@@ -104,7 +104,7 @@ describe.skipIf(!URL)('the informational switch writes no grant (contract 36)', 
     await m.systemDb.execute(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
-        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team'),
+        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
         (${ws.field}, ${anchor}, ${`${tag} Field`}, false, null)`);
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience) values

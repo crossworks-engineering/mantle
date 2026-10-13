@@ -58,9 +58,9 @@ describe.skipIf(!URL)('sharedViaFolder', () => {
     await m.db.execute(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${owner}, ${`${tag} Admin`}, true, 'admin'),
-        (${ws.team}, ${owner}, ${`${tag} Team`}, false, 'team'),
+        (${ws.team}, ${owner}, ${`${tag} Team`}, false, null),
         (${ws.field}, ${owner}, ${`${tag} Field`}, false, null),
-        (${ws.otherTeam}, ${other}, ${`${tag} Other`}, false, 'team')`);
+        (${ws.otherTeam}, ${other}, ${`${tag} Other`}, false, null)`);
   }, 60_000);
 
   afterAll(async () => {

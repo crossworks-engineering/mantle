@@ -251,6 +251,13 @@ describe.skipIf(!URL)('member invites', () => {
         is_owner: false,
         disabled_at: null,
       });
+      // It joins no workspace by itself (0286: no Team, and nobody becomes a
+      // Moderator but by an Admin user): its private one comes when needed.
+      expect(
+        await admin<
+          Row[]
+        >`select workspace_id from workspace_users where login_id = ${out!.loginId}`,
+      ).toEqual([]);
       const row = await inviteRow(invite.id);
       expect(row.redeemed_at).not.toBeNull();
       expect(row.redeemed_login_id).toBe(out!.loginId);

@@ -43,7 +43,7 @@ describe.skipIf(!URL)('othersCanRead from the grants and live links', () => {
     await q(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
-        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team')`);
+        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null)`);
     await q(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${contact}, ${anchor}, 'contact', ${`${tag} contact`}, 'contacts', 'admin'),

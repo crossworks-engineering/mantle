@@ -130,7 +130,7 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
     const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate()`;
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
     const ws = await sql<{ id: string; key: string }[]>`
-      select id::text as id, bridge_key as key from workspaces`;
+      select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces`;
     admin = ws.find((w) => w.key === 'admin')!.id;
     team = ws.find((w) => w.key === 'team')!.id;
     await sql.begin(async (tx) => {
@@ -475,7 +475,7 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
       expect(Number((await f`select count(*) as n from item_grants where bridge`)[0]!.n)).toBe(0);
       const [d] = await f<{ via: string | null }[]>`
         select g.via_folder_id::text as via from item_grants g
-          join workspaces w on w.id = g.workspace_id and w.bridge_key = 'team'
+          join workspaces w on w.id = g.workspace_id and w.name = 'Team' and not w.is_admin
          where g.node_id = ${inFolder}`;
       expect(d!.via).toBe(folder);
       const c = parseWorkspacesCheck((await f.unsafe(WORKSPACES_CHECK_SQL))[0] as never);

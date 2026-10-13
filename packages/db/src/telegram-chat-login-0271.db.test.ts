@@ -88,7 +88,7 @@ describe.skipIf(!URL)('0271: a Telegram chat belongs to a user', () => {
     ws.team = String(
       (
         await sql`select id::text as id from workspaces
-                  where owner_id = ${owner} and bridge_key = 'team'`
+                  where owner_id = ${owner} and name = 'Team' and not is_admin`
       )[0]!.id,
     );
     // The anchor is a user of Team; Ops is a workspace it is not in.

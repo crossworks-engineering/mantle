@@ -88,9 +88,9 @@ describe.skipIf(!URL)('apps for members', () => {
     await m.systemDb.execute(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
-        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team'),
+        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null),
         (${ws.field}, ${anchor}, ${`${tag} Field`}, false, null),
-        (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, 'team'),
+        (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, null),
         (${ws.own}, ${anchor}, ${`${tag} Own`}, false, null)`);
     // The levels mean nothing now: every app carries 'team', none is read
     // by it.

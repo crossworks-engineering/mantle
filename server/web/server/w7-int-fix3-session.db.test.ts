@@ -60,7 +60,7 @@ describe.skipIf(!URL)('W7 integration fix 3, L1: the rollback switch asks for Ad
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
     const ws = await x<{ id: string; key: string | null }>(sql`
-      select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
+      select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces where owner_id = ${owner}`);
     teamWs = ws.find((w) => w.key === 'team')!.id;
     adminWs = ws.find((w) => w.key === 'admin')!.id;
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)

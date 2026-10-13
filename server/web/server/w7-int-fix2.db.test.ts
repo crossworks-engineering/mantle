@@ -197,7 +197,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     )[0]!.id;
     teamWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
-        where owner_id = ${owner} and bridge_key = 'team'`)
+        where owner_id = ${owner} and name = 'Team' and not is_admin`)
     )[0]!.id;
     for (const login of [maker, firer]) {
       await x(sql`insert into workspace_users (workspace_id, login_id, moderator)

@@ -268,7 +268,7 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${H}, ${mem}, true), (${R}, ${mem}, false)`);
     await x(sql`delete from workspace_users u using workspaces w
-                 where w.id = u.workspace_id and w.bridge_key = 'team' and u.login_id = ${mem}`);
+                 where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin and u.login_id = ${mem}`);
     // A commit that fails after the work (this scratch database only): a
     // deferred trigger on the stores' rows, armed by a row in a3b2_fail.
     await x(sql`create table a3b2_fail (on_ boolean)`);

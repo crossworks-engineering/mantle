@@ -83,7 +83,7 @@ describe.skipIf(!URL)('workspaces:check (plan 7.8)', () => {
     const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate()`;
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
     const ws = await sql<{ id: string; key: string }[]>`
-      select id::text as id, bridge_key as key from workspaces`;
+      select id::text as id, (case when is_admin then 'admin' when name = 'Team' then 'team' end) as key from workspaces`;
     admin = ws.find((w) => w.key === 'admin')!.id;
     team = ws.find((w) => w.key === 'team')!.id;
   }, 180_000);

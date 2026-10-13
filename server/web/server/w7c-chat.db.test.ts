@@ -213,7 +213,7 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     )[0]!.id;
     teamWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
-        where owner_id = ${owner} and bridge_key = 'team' and archived_at is null`)
+        where owner_id = ${owner} and name = 'Team' and not is_admin and archived_at is null`)
     )[0]!.id;
     for (const [ws, login] of [
       [adminWs, adminB],

@@ -85,6 +85,7 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
   const days = (iso: string) => (Date.parse(iso) - Date.now()) / 86_400_000;
 
   let madeAgent: string | null = null;
+  let teamWs: string | null = null;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -104,24 +105,22 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
       (${guesser}, ${emailOf('guesser')}, ${hash}, 'member', 'Gus Guesser'),
       (${noted}, ${emailOf('noted')}, ${hash}, 'member', 'Nia Noted'),
       (${maker}, ${emailOf('maker')}, ${hash}, 'member', 'Max Maker')`;
-    // The key-made notice lands in the login's own thread with the Team
-    // workspace's assistant (0269, W7c): make sure the brain has one.
+    // The key-made notice lands in the login's own thread with its default
+    // assistant (0269, W7c; defaultWorkspaceAssistant since 0286): a
+    // workspace of its own with one, the member a user of it.
     const [team] = await sql<Row[]>`
-      insert into workspaces (owner_id, name, bridge_key) values (${anchor}, 'Team', 'team')
-      on conflict (owner_id, bridge_key) where bridge_key is not null do update set name = workspaces.name
+      insert into workspaces (owner_id, name) values (${anchor}, ${`${tag} Team`})
       returning id::text as id`;
-    const teamWs = String(team!.id);
-    const held = await sql<Row[]>`select ref_id from workspace_resources
-      where workspace_id = ${teamWs} and type = 'assistant'`;
-    if (held.length === 0) {
-      const [agent] = await sql<Row[]>`
-        insert into agents (owner_id, slug, name, model, system_prompt, workspace_id)
-        values (${anchor}, ${`${tag}-team`}, 'Team assistant', 'test/model', 'x', ${teamWs})
-        returning id::text as id`;
-      madeAgent = String(agent!.id);
-      await sql`insert into workspace_resources (workspace_id, type, ref_id, write)
-        values (${teamWs}, 'assistant', ${madeAgent}, true)`;
-    }
+    teamWs = String(team!.id);
+    const [agent] = await sql<Row[]>`
+      insert into agents (owner_id, slug, name, model, system_prompt, workspace_id)
+      values (${anchor}, ${`${tag}-team`}, 'Team assistant', 'test/model', 'x', ${teamWs})
+      returning id::text as id`;
+    madeAgent = String(agent!.id);
+    await sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+      values (${teamWs}, 'assistant', ${madeAgent}, true)`;
+    await sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${teamWs}, ${noted}, false)`;
     // A long key needs the Admin workspace's keys area (W8a). On a brain
     // the workspaces migration ran on, the admins become users of its Admin
     // workspace; on one it skipped, an admin login holds every area.
@@ -146,8 +145,13 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     await sql`delete from assistant_messages where login_id in ${sql(all)}`;
     if (madeAgent) {
       await sql`delete from workspace_resources where ref_id = ${madeAgent}`;
+      await sql`delete from assistant_messages where agent_id = ${madeAgent}`.catch(
+        () => undefined,
+      );
+      await sql`delete from chat_threads where agent_id = ${madeAgent}`.catch(() => undefined);
       await sql`delete from agents where id = ${madeAgent}`;
     }
+    if (teamWs) await sql`delete from workspaces where id = ${teamWs}`.catch(() => undefined);
     await sql`delete from audit_log where detail->>'loginId' in ${sql(all)}`;
     await sql`delete from oauth_access_tokens where actor_id in ${sql(all)}`;
     if (oauthClientsMade.length) {

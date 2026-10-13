@@ -257,7 +257,7 @@ describe.skipIf(!URL)('personal spaces fold into the brain (0267)', () => {
 
   it('moves every item into the brain with exactly the grants its home names', async () => {
     const admin = await ws('is_admin');
-    const team = await ws(`bridge_key = 'team'`);
+    const team = await ws(`name = 'Team' and not is_admin`);
     const mine = (await privateOf(member))!;
     const [former] = await sql<{ id: string }[]>`
       select workspace_id::text as id from former_user_workspaces where former_key = ${spaces.gone!}`;

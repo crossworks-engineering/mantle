@@ -85,7 +85,7 @@ describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {
     await exec(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${owner}, 'Admin', true, 'admin'),
-        (${ws.team}, ${owner}, 'Team', false, 'team'),
+        (${ws.team}, ${owner}, 'Team', false, null),
         (${ws.proj}, ${owner}, 'proj', false, null),
         (${ws.quay}, ${owner}, 'Quay', false, null),
         (${ws.otherBrain}, ${other}, 'Other', false, null)`);

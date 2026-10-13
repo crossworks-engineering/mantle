@@ -132,7 +132,7 @@ describe.skipIf(!URL)('A8 SQL grid: read and create (A1 slice)', () => {
     // The members' Team seats would not change a cell (nothing is granted to
     // Team); they are taken out so each scope is exactly the fixture's.
     await sql`delete from workspace_users u using workspaces w
-               where w.id = u.workspace_id and w.bridge_key = 'team'
+               where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin
                  and u.login_id in (${L.homeModerator}, ${L.writeGrant}, ${L.readGrant}, ${L.outsider})`;
     // The admin user must be an Admin user: the switch seats admin rows.
     const adminSeat = await sql`select 1 from workspace_users

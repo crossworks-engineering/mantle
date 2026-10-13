@@ -192,7 +192,7 @@ describe.skipIf(!URL)('the edit check (arch A3a)', () => {
       }
     }
     await sql`delete from workspace_users u using workspaces w
-               where w.id = u.workspace_id and w.bridge_key = 'team'
+               where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin
                  and u.login_id in (${L.homeMod}, ${L.member}, ${L.outsider})`;
     for (const k of Object.keys(L) as (keyof typeof L)[]) {
       const [s] = await sql<{ ws: string[]; mod: string[] }[]>`

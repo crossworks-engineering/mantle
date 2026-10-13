@@ -188,7 +188,7 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     )[0]!.id;
     teamWs = (
       await x<{ id: string }>(sql`select id::text from workspaces
-        where owner_id = ${owner} and bridge_key = 'team'`)
+        where owner_id = ${owner} and name = 'Team' and not is_admin`)
     )[0]!.id;
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${adminWs}, ${admin2}, false)

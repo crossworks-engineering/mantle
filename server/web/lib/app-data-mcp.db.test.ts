@@ -136,7 +136,7 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     await sql`select * from mantle_ws_migrate()`;
     team = (
       await sql<{ id: string }[]>`select id::text as id from workspaces
-        where owner_id = ${anchor} and bridge_key = 'team'`
+        where owner_id = ${anchor} and name = 'Team' and not is_admin`
     )[0]!.id;
     await sql`insert into workspace_users (workspace_id, login_id) values (${team}, ${member})
       on conflict do nothing`;

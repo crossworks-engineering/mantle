@@ -253,7 +253,9 @@ describe.skipIf(!URL)('the Apps launcher folders for members', () => {
     team = (
       (await m.systemDb.execute(sqlTag`
         select id::text as id from workspaces
-         where owner_id = ${brain} and bridge_key = 'team'`)) as unknown as { id: string }[]
+         where owner_id = ${brain} and name = 'Team' and not is_admin`)) as unknown as {
+        id: string;
+      }[]
     )[0]!.id;
     await tree.ensureKindRoot(brain, 'apps');
     await tree.ensureKindRoot(brain, 'notes');

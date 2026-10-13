@@ -148,7 +148,7 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
                 values (${H}, ${mod}, true)`);
     await x(sql`delete from workspace_users u using workspaces w
-                 where w.id = u.workspace_id and w.bridge_key = 'team' and u.login_id = ${mod}`);
+                 where w.id = u.workspace_id and w.name = 'Team' and not w.is_admin and u.login_id = ${mod}`);
     const tokens = await import('../lib/auth/tokens');
     cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
     const { createApp } = await import('./app');
