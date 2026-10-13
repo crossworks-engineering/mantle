@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ log: [] as string[] }));
 
-vi.mock('./client', () => ({
+vi.mock('./client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./client')>()),
   withTurnScope: vi.fn(
     async (_scope: unknown, fn: () => Promise<unknown>, o?: { writes?: boolean }) => {
       h.log.push(`scope:${o?.writes ? 'writes' : 'reads'}`);
@@ -28,6 +29,7 @@ import { currentActor, loginActor, systemActor, type Actor } from './actor';
 import { withTurnScope } from './client';
 import { createHomeIntent } from './create-home';
 import {
+  GateNotReadyError,
   NARROWERS,
   READ_ONLY_CALLER_ERROR,
   currentCaller,
@@ -39,12 +41,15 @@ import {
   resetGateRegistry,
   type GateCaller,
   type GatePolicy,
+  type Narrower,
+  type NarrowerName,
   type PolicyRef,
 } from './gate';
 import { currentCreateHome, type WorkspaceScope } from './viewer';
 
 const LOGIN = '55555555-5555-4555-8555-555555555555';
-const SCOPE: WorkspaceScope = { kind: 'user', loginId: LOGIN, ws: ['w1'], modWs: ['w1'] };
+const W1 = '11111111-1111-4111-8111-111111111111';
+const SCOPE: WorkspaceScope = { kind: 'user', loginId: LOGIN, ws: [W1], modWs: [W1] };
 
 const POLICIES: Record<string, GatePolicy> = {
   read: { effect: 'read', scope: 'any' },
@@ -73,9 +78,19 @@ const ok = async () => {
   return 'done';
 };
 
-beforeEach(() => {
+const TEST_SOURCE = (r: PolicyRef) => POLICIES[r.name] ?? null;
+const NOOP: Narrower = () => null;
+
+/** A fresh registry: the test source, and every narrower (a no-op unless
+ *  the test gives its own). */
+function setup(over: Partial<Record<NarrowerName, Narrower>> = {}): void {
   resetGateRegistry();
-  registerPolicySource('test', (r) => POLICIES[r.name] ?? null);
+  registerPolicySource('test', TEST_SOURCE);
+  for (const n of NARROWERS) if (n !== 'read-only') registerNarrower(n, over[n] ?? NOOP);
+}
+
+beforeEach(() => {
+  setup();
   h.log = [];
   vi.mocked(createHomeIntent).mockClear();
   vi.mocked(withTurnScope).mockClear();
@@ -198,20 +213,21 @@ describe('step 4: narrow by surface', () => {
 
   it('the narrowers run in their fixed order, whatever order they registered in', async () => {
     const order: string[] = [];
+    const over: Partial<Record<NarrowerName, Narrower>> = {};
     for (const name of ['turn-caps', 'spending', 'member-app', 'peer', 'key'] as const) {
-      registerNarrower(name, () => {
+      over[name] = () => {
         order.push(name);
         return null;
-      });
+      };
     }
+    setup(over);
     await enterCall(login(), ref('read'), ok);
     expect(order).toEqual(NARROWERS.filter((n) => n !== 'read-only'));
   });
 
   it('the first refusal stops the call and the later narrowers', async () => {
     const later = vi.fn(() => null);
-    registerNarrower('key', () => 'not in this key area');
-    registerNarrower('spending', later);
+    setup({ key: () => 'not in this key area', spending: later });
     const r = await enterCall(login(), ref('read'), ok);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.refusal.toolText).toBe('not in this key area');
@@ -220,11 +236,12 @@ describe('step 4: narrow by surface', () => {
   });
 
   it('a narrower reads the caller, the policy and the ref', () => {
-    registerNarrower('peer', (c, p, r) =>
-      c.via === 'peer' && p.fields?.risky && !(c.facts?.risky as string[]).includes(r.name)
-        ? 'risky'
-        : null,
-    );
+    setup({
+      peer: (c, p, r) =>
+        c.via === 'peer' && p.fields?.risky && !(c.facts?.risky as string[]).includes(r.name)
+          ? 'risky'
+          : null,
+    });
     registerPolicySource('t2', () => ({ effect: 'read', scope: 'any', fields: { risky: true } }));
     const peer = login({ via: 'peer', facts: { risky: ['allowed'] } });
     expect(gateLists(peer, { kind: 't2', name: 'allowed' })).toBe(true);
@@ -376,14 +393,17 @@ describe('step 7 and 8: run, then map', () => {
 
 describe('the order of the steps', () => {
   it('resolve, policy, scope, narrow, Admin, home, run', async () => {
-    registerPolicySource('ordered', (r) => {
+    const ORDERED = (r: PolicyRef) => {
       h.log.push('policy');
       return POLICIES[r.name] ?? null;
+    };
+    setup({
+      key: () => {
+        h.log.push('narrow');
+        return null;
+      },
     });
-    registerNarrower('key', () => {
-      h.log.push('narrow');
-      return null;
-    });
+    registerPolicySource('ordered', ORDERED);
     const caller = login({ scope: SCOPE });
     const viewed = {
       ...caller,
@@ -407,12 +427,11 @@ describe('the order of the steps', () => {
 
 describe('listing equals calling', () => {
   it('for every caller and policy, the call runs exactly when the listing shows it', async () => {
-    registerNarrower('key', (c, _p, r) =>
-      c.via === 'key' && r.name === 'keys' ? 'not in this key area' : null,
-    );
-    registerNarrower('spending', (c, p) =>
-      p.spends === 'ownerKey' && c.admin && !c.admin.holdsAdmin ? 'spends the owner keys' : null,
-    );
+    setup({
+      key: (c, _p, r) => (c.via === 'key' && r.name === 'keys' ? 'not in this key area' : null),
+      spending: (c, p) =>
+        p.spends === 'ownerKey' && c.admin && !c.admin.holdsAdmin ? 'spends the owner keys' : null,
+    });
     registerPolicySource('spend', () => ({ effect: 'read', scope: 'any', spends: 'ownerKey' }));
     const callers: GateCaller[] = [
       login(),
@@ -441,5 +460,159 @@ describe('listing equals calling', () => {
       }
     }
     expect(cells).toBe(callers.length * refs.length);
+  });
+});
+
+describe('fail closed: every narrower registered (fix round 1, M1)', () => {
+  it('a missing narrower stops listing and calling, before any step', async () => {
+    resetGateRegistry();
+    registerPolicySource('test', TEST_SOURCE);
+    for (const n of ['key', 'peer', 'spending', 'turn-caps'] as const) registerNarrower(n, NOOP);
+    expect(() => gateCheck(login(), ref('read'))).toThrow(GateNotReadyError);
+    expect(() => gateCheck(login(), ref('read'))).toThrow(/member-app/);
+    const resolve = vi.fn(async () => login());
+    await expect(enterCall(resolve, ref('read'), ok)).rejects.toThrow(GateNotReadyError);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(h.log).toEqual([]);
+    registerNarrower('member-app', NOOP);
+    expect(gateCheck(login(), ref('read'))).toBeNull();
+  });
+});
+
+describe('registration (fix round 1, L3)', () => {
+  it('the same function again is a no-op; another under a taken name is refused', () => {
+    expect(() => registerPolicySource('test', TEST_SOURCE)).not.toThrow();
+    expect(() => registerPolicySource('test', () => null)).toThrow(/has a source already/);
+    expect(() => registerNarrower('key', NOOP)).not.toThrow();
+    expect(() => registerNarrower('key', () => null)).toThrow(/has a narrower already/);
+    expect(() => registerPolicySource('job', () => null)).toThrow();
+  });
+});
+
+describe('a read runs read only, the policy own actor too (fix round 1, L5)', () => {
+  it('a read policy that names an actor runs it read only', async () => {
+    const READ_AS = () =>
+      ({ effect: 'read', scope: 'any', actor: systemActor('http:public-read') }) as GatePolicy;
+    registerPolicySource('pubread', READ_AS);
+    let seen: Actor | null = null;
+    await enterCall(login(), { kind: 'pubread', name: 'x' }, async () => {
+      seen = currentActor();
+    });
+    expect(seen).toEqual({ kind: 'system', reason: 'http:public-read', mode: 'ro' });
+  });
+});
+
+describe('the bound caller (fix round 1, L6)', () => {
+  it('is frozen, and a detached promise keeps it', async () => {
+    let inside: GateCaller | null = null;
+    let detached: Promise<GateCaller | null> = Promise.resolve(null);
+    await enterCall(login(), ref('read'), async () => {
+      inside = currentCaller();
+      detached = new Promise((resolve) => setTimeout(() => resolve(currentCaller()), 5));
+    });
+    expect(Object.isFrozen(inside)).toBe(true);
+    expect(await detached).toBe(inside);
+    expect(currentCaller()).toBeNull();
+  });
+});
+
+describe('a scope no call can run in (fix round 1, L7)', () => {
+  it('lists nothing and calls nothing, with the same refusal; the scope is never entered', async () => {
+    const empty = login({ scope: { ...SCOPE, ws: [], modWs: [] } });
+    const junk = login({ scope: { ...SCOPE, ws: ['w1'], modWs: [] } });
+    for (const c of [empty, junk]) {
+      for (const p of ['read', 'write']) {
+        const listed = gateCheck(c, ref(p));
+        expect(listed?.kind, p).toBe('no-scope');
+        const called = await enterCall(c, ref(p), ok);
+        expect(called.ok).toBe(false);
+        if (!called.ok) expect(called.refusal.toolText).toBe(listed?.message);
+      }
+    }
+    expect(gateCheck(empty, ref('read'))?.message).toMatch(/user of no workspace/);
+    expect(withTurnScope).not.toHaveBeenCalled();
+    expect(h.log).not.toContain('run');
+    // A surface that enters its own scope answers for it.
+    const own = login({ scope: { ...SCOPE, ws: [] }, enterScope: (_w, fn) => fn() });
+    expect(gateCheck(own, ref('read'))).toBeNull();
+  });
+});
+
+describe('step 6 rules (fix round 1, M2)', () => {
+  const TURN_WS = '22222222-2222-4222-8222-222222222222';
+
+  it('an entry that asks on every call asks for reads and writes alike', async () => {
+    const memo = {};
+    const turn = login({
+      via: 'turn',
+      createHome: {
+        ownWork: 'auto',
+        askEvery: { from: 'assistant', ws: TURN_WS },
+        reads: true,
+        soft: true,
+        memo,
+      },
+    });
+    vi.mocked(createHomeIntent).mockResolvedValueOnce({ createWs: null, privateWs: null });
+    await enterCall(turn, ref('read'), ok);
+    expect(createHomeIntent).toHaveBeenLastCalledWith(
+      LOGIN,
+      { from: 'assistant', ws: TURN_WS },
+      { ownWork: 'auto', makePrivate: false },
+    );
+    // Kept for a read; a write asks again, making the private workspace.
+    await enterCall(turn, ref('read'), ok);
+    expect(createHomeIntent).toHaveBeenCalledTimes(1);
+    await enterCall(turn, ref('write'), ok);
+    expect(createHomeIntent).toHaveBeenLastCalledWith(
+      LOGIN,
+      { from: 'assistant', ws: TURN_WS },
+      { ownWork: 'auto', makePrivate: true },
+    );
+    // Final now: kept for every later call.
+    await enterCall(turn, ref('create'), ok);
+    expect(createHomeIntent).toHaveBeenCalledTimes(2);
+  });
+
+  it('soft: a refusal or an error names no home and the call runs', async () => {
+    const turn = login({ createHome: { ownWork: 'auto', soft: true } });
+    vi.mocked(createHomeIntent).mockResolvedValueOnce({ refused: 'not-member', message: 'no' });
+    let home: unknown = 'unset';
+    const r1 = await enterCall(turn, ref('create'), async () => {
+      home = currentCreateHome();
+    });
+    expect(r1.ok).toBe(true);
+    expect(home).toBeNull();
+    vi.mocked(createHomeIntent).mockRejectedValueOnce(new Error('db down'));
+    expect((await enterCall(turn, ref('create'), ok)).ok).toBe(true);
+  });
+
+  it('a hard entry refuses; its ownWork reaches the fallback', async () => {
+    const http = login({ createHome: { ownWork: false } });
+    vi.mocked(createHomeIntent).mockRejectedValueOnce(new Error('db down'));
+    await expect(enterCall(http, ref('create'), ok)).rejects.toThrow('db down');
+    await enterCall(http, ref('remove'), ok);
+    expect(createHomeIntent).toHaveBeenLastCalledWith(LOGIN, null, {
+      ownWork: false,
+      makePrivate: false,
+    });
+  });
+
+  it('only the login own actor names a home; never over one named around it', async () => {
+    const assistantActor = login({ actor: { kind: 'assistant', agentId: null } });
+    const otherLogin = login({ actor: loginActor('66666666-6666-4666-8666-666666666666') });
+    await enterCall(assistantActor, ref('create'), ok);
+    await enterCall(otherLogin, ref('create'), ok);
+    await enterCall(login({ loginId: null }), ref('create'), ok);
+    expect(createHomeIntent).not.toHaveBeenCalled();
+    const { withCreateHome } = await import('./viewer');
+    let home: unknown = null;
+    await withCreateHome({ createWs: W1, privateWs: null }, () =>
+      enterCall(login(), ref('create'), async () => {
+        home = currentCreateHome();
+      }),
+    );
+    expect(createHomeIntent).not.toHaveBeenCalled();
+    expect(home).toEqual({ createWs: W1, privateWs: null });
   });
 });

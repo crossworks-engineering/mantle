@@ -2275,16 +2275,8 @@ export async function withTurnScope<T>(
   fn: () => Promise<T>,
   opts: { writes?: boolean } = {},
 ): Promise<T> {
-  if (scope.loginId !== null && !UUID_RE.test(scope.loginId)) {
-    throw new Error('withTurnScope: loginId must be a uuid');
-  }
-  uuidArrayLiteral(scope.ws, 'withTurnScope ws');
-  uuidArrayLiteral(scope.modWs, 'withTurnScope modWs');
-  if (scope.ws.length === 0) throw new Error('withTurnScope: a turn reads at least one workspace');
-  const inWs = new Set(scope.ws);
-  if (scope.modWs.some((id) => !inWs.has(id))) {
-    throw new Error('withTurnScope: modWs must be a subset of ws');
-  }
+  const problem = turnScopeProblem(scope);
+  if (problem) throw new Error(problem);
   const frozen: WorkspaceScope = Object.freeze({
     kind: scope.kind,
     loginId: scope.loginId,
@@ -2300,6 +2292,30 @@ export async function withTurnScope<T>(
     fn,
     opts.writes ? Object.freeze({ writes: true, drafts: true }) : undefined,
   );
+}
+
+/**
+ * Why withTurnScope refuses `scope`, or null: a login id or a workspace id
+ * that is not a uuid, no workspace at all, or a Moderator workspace the
+ * scope does not read. The one check: withTurnScope throws it, and the gate
+ * (gate.ts) asks it before it lists or calls, so listing equals calling.
+ */
+export function turnScopeProblem(scope: WorkspaceScope): string | null {
+  if (scope.loginId !== null && !UUID_RE.test(scope.loginId)) {
+    return 'withTurnScope: loginId must be a uuid';
+  }
+  for (const [ids, what] of [
+    [scope.ws, 'withTurnScope ws'],
+    [scope.modWs, 'withTurnScope modWs'],
+  ] as const) {
+    for (const id of ids) {
+      if (!UUID_RE.test(id)) return `${what}: not a uuid: ${String(id).slice(0, 40)}`;
+    }
+  }
+  if (scope.ws.length === 0) return 'withTurnScope: a turn reads at least one workspace';
+  const inWs = new Set(scope.ws);
+  if (scope.modWs.some((id) => !inWs.has(id))) return 'withTurnScope: modWs must be a subset of ws';
+  return null;
 }
 
 /** The transaction handle `db.transaction` gives its callback. */

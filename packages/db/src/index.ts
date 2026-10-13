@@ -150,17 +150,12 @@ export {
 } from './viewer';
 export { ensureViewerRoles } from './viewer-roles';
 export {
-  NARROWERS,
   READ_ONLY_CALLER_ERROR,
-  adminStep,
-  callActor,
-  createHomeStep,
+  GateNotReadyError,
   currentCaller,
   enterCall,
   gateCheck,
   gateLists,
-  lookupPolicy,
-  narrowStep,
   registerNarrower,
   registerPolicySource,
   AccessError,
@@ -169,6 +164,7 @@ export {
   type AdminView,
   type CallInput,
   type CallerVia,
+  type CreateHomeRule,
   type GateCaller,
   type GatePolicy,
   type GateResult,

@@ -84,6 +84,7 @@ export {
   HIDDEN_ROWS_PUBLIC,
   LEVEL_CONFLICT_MESSAGE,
   NO_POLICY_ERROR,
+  NO_SCOPE_ERROR,
   adminAreaError,
   editRefusalDetail,
   findDatabaseError,

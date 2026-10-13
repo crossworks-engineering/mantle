@@ -25,6 +25,9 @@ export type AccessKind =
   | 'unauthorized'
   /** Step 3: no declared policy for what is called. */
   | 'unclassified'
+  /** Step 3: the caller's scope is one no call can run in (no workspace
+   *  at all, or a malformed one). */
+  | 'no-scope'
   /** Step 4: a surface narrowed the call away (a key's areas or access, a
    *  peer's Write switch or risky tools, the member-app rules, spending on
    *  the owner's keys). */
@@ -52,6 +55,10 @@ export function adminAreaError(area: string): string {
 /** The refusal of an Admin-only kind's create outside Admin. */
 export const ADMIN_KIND_CREATE_ERROR =
   'This kind of item (a contact, a journal entry, a saved place) lives in the Admin workspace only, and you are not a user of it. Make a note or a page instead.';
+
+/** The refusal of a caller whose scope reads no workspace. */
+export const NO_SCOPE_ERROR =
+  'This login is a user of no workspace on this brain, so it reads nothing here. Ask an admin to add it to one.';
 
 /** The refusal of a call nothing declared a policy for (plan rule 3). */
 export const NO_POLICY_ERROR = 'This is not open: nothing declares who may call it.';
@@ -82,6 +89,8 @@ function defaultMessage(kind: AccessKind, area: string | null): string {
       return 'unauthorized';
     case 'unclassified':
       return NO_POLICY_ERROR;
+    case 'no-scope':
+      return NO_SCOPE_ERROR;
     case 'narrowed':
       return 'This connection may not call this.';
     case 'admin':
@@ -259,6 +268,7 @@ function gateHttp(err: AccessError): AccessHttp {
     case 'admin':
     case 'admin-kind':
     case 'narrowed':
+    case 'no-scope':
       return { status: 403, body: { error: 'forbidden', reason: err.kind, message: err.message } };
     case 'workspace':
       return {
@@ -273,6 +283,7 @@ function gateHttp(err: AccessError): AccessHttp {
 const GATE_CODES: Record<AccessKind, string> = {
   unauthorized: 'unauthorized',
   unclassified: 'unclassified',
+  'no-scope': 'forbidden',
   narrowed: 'forbidden',
   admin: 'area',
   'admin-kind': 'area',

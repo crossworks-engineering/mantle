@@ -39,9 +39,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { AccessError, isAccessError, mapAccessError, type AccessRefusal } from '@mantle/std';
 import { runAsActor, systemActor, SYSTEM_REASON_RE, type Actor } from './actor';
-import { withTurnScope } from './client';
+import { turnScopeProblem, withTurnScope } from './client';
 import { createHomeIntent, type CreateAsk, type CreateFallback } from './create-home';
-import { withCreateHome, type CreateHome, type WorkspaceScope } from './viewer';
+import { currentCreateHome, withCreateHome, type CreateHome, type WorkspaceScope } from './viewer';
 
 export { AccessError, mapAccessError, type AccessRefusal } from '@mantle/std';
 
@@ -80,9 +80,31 @@ export type GateCaller = Readonly<{
   /** The create home's fallback (step 6), when the surface resolved it
    *  already (an MCP connection, once when it connects). */
   createFallback?: CreateFallback;
+  /** How this entry names a create home (step 6). Absent: the generic
+   *  rule (ownWork 'auto', writes only, a refusal refuses). */
+  createHome?: CreateHomeRule;
   /** What the surface narrowers read (a key's areas, the risky tools a
    *  peer may call, an app run's rules). Opaque here. */
   facts?: Readonly<Record<string, unknown>>;
+}>;
+
+/** How an entry names a create home (step 6, createHomeStep). */
+export type CreateHomeRule = Readonly<{
+  /** The fallback's ownWork: true for a login outside Admin (its private
+   *  workspace), false for an Admin user, 'auto' to ask the database. */
+  ownWork: boolean | 'auto';
+  /** The workspace this entry asks for on every call (an assistant turn:
+   *  the assistant's own; null: none), instead of the call's own ask. */
+  askEvery?: CreateAsk | null;
+  /** Reads name a home too: the one the entry has, never made (an
+   *  assistant turn). */
+  reads?: boolean;
+  /** A refusal or a database error names no home, and the database's own
+   *  create checks decide, instead of refusing the call (an assistant turn). */
+  soft?: boolean;
+  /** Keep the home for the life of this object once final (an assistant
+   *  turn: its scope; the private workspace is made at most once). */
+  memo?: object;
 }>;
 
 /** The Admin step of a policy (step 5). */
@@ -145,17 +167,27 @@ const sources = new Map<string, PolicySource>();
 const narrowers = new Map<NarrowerName, Narrower>();
 
 /** Register the policy source of one kind of ref (A4: 'route'; A5:
- *  'tool'; @mantle/tools: 'runtime-tool'). A second registration of the
- *  same kind replaces the first (a module loaded again in development). */
+ *  'tool'; @mantle/tools: 'runtime-tool'). The same source again is a no-op
+ *  (a module loaded twice); another source under a kind that has one is
+ *  refused, never a silent replacement. */
 export function registerPolicySource(kind: string, source: PolicySource): void {
   if (kind === 'job') throw new Error("registerPolicySource: 'job' is the gate's own");
+  const had = sources.get(kind);
+  if (had === source) return;
+  if (had) throw new Error(`registerPolicySource: '${kind}' has a source already`);
   sources.set(kind, source);
 }
 
-/** Register one narrower at its place in NARROWERS. */
+/** Register one narrower at its place in NARROWERS. The same narrower
+ *  again is a no-op; another under a taken name is refused. A surface where
+ *  a narrower does not apply registers it as an explicit no-op: the gate
+ *  refuses to run while any is missing (assertNarrowers). */
 export function registerNarrower(name: NarrowerName, narrower: Narrower): void {
   if (!NARROWERS.includes(name)) throw new Error(`registerNarrower: unknown narrower ${name}`);
   if (name === 'read-only') throw new Error("registerNarrower: 'read-only' is the gate's own");
+  const had = narrowers.get(name);
+  if (had === narrower) return;
+  if (had) throw new Error(`registerNarrower: '${name}' has a narrower already`);
   narrowers.set(name, narrower);
 }
 
@@ -163,6 +195,25 @@ export function registerNarrower(name: NarrowerName, narrower: Narrower): void {
 export function resetGateRegistry(): void {
   sources.clear();
   narrowers.clear();
+}
+
+/** Thrown while a narrower of NARROWERS is not registered: the process did
+ *  not load the package that registers it. Not a refusal: the gate does not
+ *  run at all (fail closed), and the surface answers its own error. */
+export class GateNotReadyError extends Error {
+  constructor(missing: readonly string[]) {
+    super(
+      `the gate is not ready: no narrower registered for ${missing.join(', ')} ` +
+        '(load @mantle/mcp-core and @mantle/tools, or register an explicit no-op)',
+    );
+    this.name = 'GateNotReadyError';
+  }
+}
+
+/** Fail closed: every narrower of NARROWERS but the gate's own registered. */
+function assertNarrowers(): void {
+  const missing = NARROWERS.filter((n) => n !== 'read-only' && !narrowers.has(n));
+  if (missing.length > 0) throw new GateNotReadyError(missing);
 }
 
 /** A job's policy: its system reason (plan 4.3). A reason that is not one
@@ -190,11 +241,27 @@ export function lookupPolicy(ref: PolicyRef): GatePolicy {
   return policy;
 }
 
+/** Step 3: the caller's scope can be entered (turnScopeProblem, the check
+ *  withTurnScope runs): asked before listing as before calling, so a scope
+ *  no call can run in lists nothing. A surface that enters its own scope
+ *  (`enterScope`) answers for its own: it throws an AccessError, mapped. */
+export function scopeStep(caller: GateCaller): void {
+  if (caller.enterScope || !caller.scope) return;
+  const problem = turnScopeProblem(caller.scope);
+  if (problem) {
+    throw new AccessError(
+      'no-scope',
+      caller.scope.ws.length === 0 ? undefined : 'This caller has no scope a call can run in.',
+    );
+  }
+}
+
 /** Step 4: the surface narrowers, in their order. */
 export function narrowStep(caller: GateCaller, policy: GatePolicy, ref: PolicyRef): void {
   for (const name of NARROWERS) {
     const narrower = name === 'read-only' ? readOnlyNarrower : narrowers.get(name);
-    const refused = narrower?.(caller, policy, ref) ?? null;
+    if (!narrower) throw new GateNotReadyError([name]);
+    const refused = narrower(caller, policy, ref);
     if (refused !== null) throw new AccessError('narrowed', refused);
   }
 }
@@ -223,11 +290,14 @@ export function adminStep(caller: GateCaller, policy: GatePolicy): void {
 /**
  * Steps 3 to 5 for `ref`, without binding or running (plan 2: listing
  * equals calling): the refusal enterCall would meet before step 6, or
- * null. What a tool list shows is what this lets through.
+ * null. What a tool list shows is what this lets through. Throws
+ * GateNotReadyError while a narrower is not registered (fail closed).
  */
 export function gateCheck(caller: GateCaller, ref: PolicyRef): AccessError | null {
+  assertNarrowers();
   try {
     const policy = lookupPolicy(ref);
+    scopeStep(caller);
     narrowStep(caller, policy, ref);
     adminStep(caller, policy);
     return null;
@@ -242,12 +312,8 @@ export function gateLists(caller: GateCaller, ref: PolicyRef): boolean {
   return gateCheck(caller, ref) === null;
 }
 
-/** The actor a call runs as (step 3): the policy's, else the caller's,
- *  read only for a read (plan 4.1: a call declared a read cannot write). */
-export function callActor(caller: GateCaller, policy: GatePolicy): Actor {
-  if (policy.actor) return policy.actor;
-  const actor = caller.actor;
-  if (policy.effect === 'write') return actor;
+/** `actor`, read only (plan 4.1: a call declared a read cannot write). */
+function readOnlyActor(actor: Actor): Actor {
   switch (actor.kind) {
     case 'login':
       return actor.mode === 'ro' ? actor : Object.freeze({ ...actor, mode: 'ro' as const });
@@ -260,22 +326,81 @@ export function callActor(caller: GateCaller, policy: GatePolicy): Actor {
   }
 }
 
-/** Step 6: where the call's creates land, or null (no login, or a read
- *  that makes nothing). A refusal is an AccessError. */
+/** The actor a call runs as (step 3): the policy's, else the caller's,
+ *  either read only for a read. */
+export function callActor(caller: GateCaller, policy: GatePolicy): Actor {
+  const actor = policy.actor ?? caller.actor;
+  return policy.effect === 'write' ? actor : readOnlyActor(actor);
+}
+
+/** A kept create home (a CreateHomeRule's memo): `final` when no later
+ *  call of the entry changes it. */
+type KeptHome = { home: CreateHome; final: boolean };
+const keptHomes = new WeakMap<object, KeptHome>();
+
+/** The generic entry: the database answers 'auto' (a login outside Admin
+ *  falls back to its private workspace), a read names no home, a refusal
+ *  refuses the call. */
+const DEFAULT_HOME_RULE: CreateHomeRule = Object.freeze({ ownWork: 'auto' as const });
+
+/**
+ * Step 6: where the call's creates land, or null. Only for a login's own
+ * actor (a process, a link, an assistant with no user name none), and only
+ * when nothing around has named a home already (an outer call's, the
+ * request's). The entry's rule (CreateHomeRule) says the rest:
+ *
+ *  - the asked workspace: the entry's own for every call (an assistant
+ *    turn: its workspace), else the call's own, read only when the policy
+ *    creates (an HTTP create route's ?ws=, an MCP create's argument);
+ *  - a write names a home, its private workspace made unless the policy
+ *    says it makes no item (a delete); a read names one only where the
+ *    entry says (a turn: the one it has, never made);
+ *  - a refusal refuses the call, or (soft) names no home and leaves the
+ *    database's own create checks to decide;
+ *  - kept for the entry (memo) once final.
+ *
+ * Today's two entries, pinned by tests: the HTTP guard (createHomeFor:
+ * ownWork by the login, refusal hard) and the assistant turn
+ * (turnCreateHome: askEvery, reads, soft, memo per turn scope).
+ */
 export async function createHomeStep(
   caller: GateCaller,
   policy: GatePolicy,
   ask: CreateAsk | null,
 ): Promise<CreateHome | null> {
-  if (!caller.loginId || caller.actor.kind !== 'login') return null;
-  if (!policy.creates && policy.effect !== 'write') return null;
+  const loginId = caller.loginId ?? null;
+  if (!loginId) return null;
+  const actor = caller.actor;
+  if (actor.kind !== 'login' || actor.loginId !== loginId.toLowerCase()) return null;
+  if (currentCreateHome()) return null;
+  const rule = caller.createHome ?? DEFAULT_HOME_RULE;
+  const writes = policy.effect === 'write';
+  if (!writes && !policy.creates && !rule.reads) return null;
+  const makePrivate = writes && policy.makesItems !== false;
+  const kept = rule.memo ? keptHomes.get(rule.memo) : undefined;
+  if (kept && (kept.final || !makePrivate)) return kept.home;
+  const asked = rule.askEvery !== undefined ? rule.askEvery : policy.creates ? ask : null;
   const fallback: CreateFallback = caller.createFallback ?? {
-    ownWork: 'auto',
-    makePrivate: policy.effect === 'write' && policy.makesItems !== false,
+    ownWork: rule.ownWork,
+    makePrivate,
   };
-  const home = await createHomeIntent(caller.loginId, policy.creates ? ask : null, fallback);
+  let home: Awaited<ReturnType<typeof createHomeIntent>>;
+  try {
+    home = await createHomeIntent(loginId, asked, fallback);
+  } catch (err) {
+    // A database error is not kept: the next call resolves again.
+    if (rule.soft) return null;
+    throw err;
+  }
   if ('refused' in home) {
+    if (rule.soft) return null;
     throw new AccessError(home.refused === 'invalid' ? 'invalid' : 'workspace', home.message);
+  }
+  if (rule.memo) {
+    keptHomes.set(rule.memo, {
+      home,
+      final: makePrivate || home.createWs !== null || home.privateWs !== null,
+    });
   }
   return home;
 }
@@ -285,7 +410,9 @@ export async function createHomeStep(
 const callerStore = new AsyncLocalStorage<GateCaller>();
 
 /** The caller the current code serves (bound at step 2), or null outside
- *  enterCall. Handlers read this; they never check access themselves. */
+ *  enterCall. Handlers read this; they never check access themselves. Work
+ *  the call starts and does not await (a detached promise, a timer) keeps
+ *  it, as it keeps the actor. */
 export function currentCaller(): GateCaller | null {
   return callerStore.getStore() ?? null;
 }
@@ -310,7 +437,8 @@ function enterScope<T>(caller: GateCaller, writes: boolean, fn: () => Promise<T>
  * `caller` is the resolved caller, or the step-1 resolver (null: no caller,
  * refused). A refusal of any step, and one the database raises while `fn`
  * runs, comes back mapped (`ok: false`); any other error is thrown, to the
- * surface's own error path.
+ * surface's own error path. Throws GateNotReadyError, before any step,
+ * while a narrower is not registered (fail closed).
  */
 export async function enterCall<T>(
   caller: GateCaller | (() => Promise<GateCaller | null>),
@@ -318,22 +446,25 @@ export async function enterCall<T>(
   fn: () => Promise<T>,
   input: CallInput = {},
 ): Promise<GateResult<T>> {
+  assertNarrowers();
   try {
     // 1. Resolve the caller.
     const resolved = typeof caller === 'function' ? await caller() : caller;
     if (!resolved) throw new AccessError('unauthorized');
-    // 2. Bind the caller.
-    return await callerStore.run(resolved, async () => {
+    // 2. Bind the caller, frozen: nothing the call runs changes who it is.
+    const bound = Object.isFrozen(resolved) ? resolved : Object.freeze(resolved);
+    return await callerStore.run(bound, async () => {
       // 3. The declared policy; then the actor and the scope it implies.
       const policy = lookupPolicy(ref);
+      scopeStep(bound);
       const writes = policy.effect === 'write';
-      return runAsActor(callActor(resolved, policy), () =>
-        enterScope(resolved, writes, async () => {
+      return runAsActor(callActor(bound, policy), () =>
+        enterScope(bound, writes, async () => {
           // 4. Narrow by surface. 5. The Admin step.
-          narrowStep(resolved, policy, ref);
-          adminStep(resolved, policy);
+          narrowStep(bound, policy, ref);
+          adminStep(bound, policy);
           // 6. The create-home intent.
-          const home = await createHomeStep(resolved, policy, input.ask ?? null);
+          const home = await createHomeStep(bound, policy, input.ask ?? null);
           // 7. Run.
           const value = home ? await withCreateHome(home, fn) : await fn();
           return { ok: true as const, value };
