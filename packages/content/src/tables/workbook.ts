@@ -9,7 +9,7 @@
 import { existsSync } from 'node:fs';
 import { fileStats, resolveStoragePath, type WorkbookStats } from '@mantle/tabledb';
 import type { TableDoc, WorkbookDoc } from '@mantle/content-core/table-model';
-import { draftAbsFor } from '../table-storage';
+import { draftAbsOf } from '../table-storage';
 import { TAB_NAME } from './shared';
 
 /** A workbook (multi-tab) write shape, vs a bare single-tab doc. */
@@ -29,9 +29,9 @@ export function guardSingleTabWrite(tabCount: number): void {
 }
 
 /** Stats of a workbook file, or null when it is unreadable/absent. */
-export function statsOrNull(absPath: string): WorkbookStats | null {
+export function statsOrNull(absPath: string | null): WorkbookStats | null {
   try {
-    return existsSync(absPath) ? fileStats(absPath) : null;
+    return absPath && existsSync(absPath) ? fileStats(absPath) : null;
   } catch {
     return null;
   }
@@ -41,25 +41,26 @@ export function statsOrNull(absPath: string): WorkbookStats | null {
  *  one exists (registry stats only see the published file — a tab added by
  *  an import/draft op is invisible there; audit: a bare PUT could silently
  *  destroy draft-only tabs), else the published count from the locked row. */
-export function effectiveTabCount(
-  locked: { tabCount: number | null } | null,
-  storagePath: string | null,
-): number {
-  if (storagePath) {
-    const draftStats = statsOrNull(draftAbsFor(storagePath));
-    if (draftStats) return draftStats.tabs.length;
-  }
-  return locked?.tabCount ?? 1;
+export function effectiveTabCount(row: {
+  tabCount: number | null;
+  draftPath: string | null;
+}): number {
+  const draftStats = statsOrNull(draftAbsOf(row.draftPath));
+  if (draftStats) return draftStats.tabs.length;
+  return row.tabCount ?? 1;
 }
 
 /** First tab's display name in draft-then-published order — bare-doc rebuilds
  *  must keep it (audit: the whole-doc fallback renamed "Inventory" back to
  *  'Sheet1', flipping the shape hash and forcing a re-summarize). */
-export function effectiveTabName(storagePath: string | null): string {
-  if (storagePath) {
+export function effectiveTabName(row: {
+  storagePath: string | null;
+  draftPath: string | null;
+}): string {
+  if (row.storagePath) {
     const name =
-      statsOrNull(draftAbsFor(storagePath))?.tabs[0]?.name ??
-      statsOrNull(resolveStoragePath(storagePath))?.tabs[0]?.name;
+      statsOrNull(draftAbsOf(row.draftPath))?.tabs[0]?.name ??
+      statsOrNull(resolveStoragePath(row.storagePath))?.tabs[0]?.name;
     if (name) return name;
   }
   return TAB_NAME;

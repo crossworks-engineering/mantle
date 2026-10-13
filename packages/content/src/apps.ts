@@ -19,8 +19,8 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
-  brokerTransaction,
   db,
+  oneRow,
   executeWrite,
   nodes,
   apps,
@@ -863,35 +863,33 @@ export async function setDraftBuild(
   opts: {
     builtFrom?: AppSource;
     /** Store the bundle (the app build broker, packages/tools
-     *  app-build-stage.ts): run after the row's checked write, inside its
-     *  transaction (arch A3b), so a build the database refuses stores
-     *  nothing. */
+     *  app-build-stage.ts): the stage, run BEFORE the row's one short
+     *  transaction (arch A3b, plan 20.3). The bundle is content-addressed
+     *  and named by the ref: until the row points at it no reader asks for
+     *  it, and a refused or stale build leaves an object nothing points at. */
     store?: () => Promise<void>;
   } = {},
 ): Promise<boolean | 'stale'> {
-  const done = await brokerTransaction<DbTx, boolean | 'stale'>(
-    'appbuild',
-    (run) => db.transaction(run),
-    async (tx, w) => {
-      const app = await lockAppRow(tx, ownerId, id);
-      if (!app) return false;
-      if (opts.builtFrom && codeHash(app.draft ?? app.source) !== codeHash(opts.builtFrom)) {
-        return 'stale' as const;
-      }
-      // The checked statement (a store broker, A3b): the app's code row, as
-      // the caller, exactly one row; then the bundle.
-      w.one(
-        await tx
-          .update(apps)
-          .set({ draftBuild: build, updatedAt: new Date() })
-          .where(eq(apps.nodeId, id))
-          .returning({ id: apps.nodeId }),
-        'app',
-      );
-      if (opts.store) await w.external(opts.store);
-      return true;
-    },
-  );
+  if (opts.store) await opts.store();
+  const done = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (opts.builtFrom && codeHash(app.draft ?? app.source) !== codeHash(opts.builtFrom)) {
+      return 'stale' as const;
+    }
+    // The flip (a store broker, A3b): the app's code row, as the caller,
+    // exactly one row, pointed at the staged bundle.
+    oneRow(
+      'appbuild',
+      await tx
+        .update(apps)
+        .set({ draftBuild: build, updatedAt: new Date() })
+        .where(eq(apps.nodeId, id))
+        .returning({ id: apps.nodeId }),
+      'app',
+    );
+    return true as const;
+  });
   // The app list shows whether each app can be previewed.
   if (done === true) void notifyAppNavChanged(ownerId);
   return done;

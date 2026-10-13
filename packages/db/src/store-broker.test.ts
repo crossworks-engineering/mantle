@@ -1,58 +1,32 @@
 /**
- * The store brokers' one helper (arch A3b, store-broker.ts), on plain files:
- * the order (no disk before the checked row), the undo inside the
- * transaction, the journal a failed commit leaves and the repair on read,
- * the database deciding. The per-store DB tests are store-brokers.db.test.ts
- * (server/web/server).
+ * The store brokers' one helper (arch A3b, plan 20.3, store-broker.ts), on
+ * plain files: the one-row check, stage then flip (a flip that throws takes
+ * its stage with it), and the one sweep (never a live file, never before a
+ * grace period, two runs apart, a SQLite file's sidecars with it). The
+ * per-store DB tests are server/web/server/a3b-store-brokers.db.test.ts.
  */
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import {
   StoreRefusedError,
-  StoreWrite,
-  brokerTransaction,
-  readStoreJournal,
-  repairStore,
+  oneRow,
+  revisionToken,
+  stageThenFlip,
+  sweepOrphans,
 } from './store-broker';
 import { editRefusalDetail, isScopeWriteRefusal } from './pg-error';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'store-broker-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-let n = 0;
-const fresh = () => path.join(dir, `f${++n}`);
-const read = (f: string) => (existsSync(f) ? readFileSync(f, 'utf8') : null);
-/** A whole-file replace, as the stores do it: a new file renamed over. */
-const replaceWith = (f: string, text: string) => () => {
-  writeFileSync(`${f}.tmp`, text);
-  renameSync(`${f}.tmp`, f);
-};
-/** A transaction that commits. */
-const commits = <T>(run: (tx: null) => Promise<T>) => run(null);
-/** A transaction whose work succeeds and whose COMMIT fails. */
-const commitFails = async <T>(run: (tx: null) => Promise<T>): Promise<T> => {
-  await run(null);
-  throw new Error('commit failed');
-};
-const listed = () => readdirSync(dir).sort();
-
 describe('the checked statement', () => {
   it('needs exactly one row; none or two is the edit check refusal (a 404 everywhere)', () => {
-    const w = new StoreWrite('tables');
     for (const rows of [[], [1, 2]]) {
       let err: unknown;
       try {
-        w.one(rows, 'table');
+        oneRow('tables', rows, 'table');
       } catch (e) {
         err = e;
       }
@@ -60,208 +34,96 @@ describe('the checked statement', () => {
       expect(isScopeWriteRefusal(err)).toBe(true);
       expect(editRefusalDetail(err)).toBe('no_read');
     }
-    expect(new StoreWrite('tables').one([7], 'table')).toBe(7);
+    expect(oneRow('tables', [7], 'table')).toBe(7);
   });
 
-  it('no disk step runs before it, nor before the journal', async () => {
-    const f = fresh();
-    const w = new StoreWrite('tables');
-    await expect(w.create(f, () => writeFileSync(f, 'x'))).rejects.toThrow(/before the/);
-    w.one([1], 'table');
-    await expect(w.inPlace(f, () => writeFileSync(f, 'x'))).rejects.toThrow(/before the/);
-    expect(() => w.remove(f)).not.toThrow(); // nothing there: nothing to do
-    await expect(w.external(() => 1)).resolves.toBe(1);
+  it('revision tokens are unique and sort by time', () => {
+    const a = revisionToken();
+    const b = revisionToken();
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^[0-9a-z]+$/);
+  });
+});
+
+describe('stageThenFlip', () => {
+  it('a flip that lands keeps the stage', async () => {
+    const f = path.join(dir, 'kept');
+    const out = await stageThenFlip(
+      () => (writeFileSync(f, 'new'), f),
+      async () => 'flipped',
+      (s) => rmSync(s, { force: true }),
+    );
+    expect(out).toBe('flipped');
+    expect(existsSync(f)).toBe(true);
+  });
+
+  it('a refused flip removes its stage and throws the refusal', async () => {
+    const f = path.join(dir, 'refused');
+    await expect(
+      stageThenFlip(
+        () => (writeFileSync(f, 'new'), f),
+        async () => oneRow('tables', [], 'table'),
+        (s) => rmSync(s, { force: true }),
+      ),
+    ).rejects.toBeInstanceOf(StoreRefusedError);
     expect(existsSync(f)).toBe(false);
   });
 });
 
-describe('brokerTransaction', () => {
-  it('a commit keeps the new file and leaves no journal and no pre-image', async () => {
-    const f = fresh();
-    writeFileSync(f, 'old');
-    const before = listed();
-    await brokerTransaction('tables', commits, async (_tx, w) => {
-      w.one([1], 'table');
-      w.journalAt(`${f}.broker`, 2, 1);
-      await w.replace(f, replaceWith(f, 'new'));
-    });
-    expect(read(f)).toBe('new');
-    expect(listed()).toEqual(before);
+describe('sweepOrphans', () => {
+  const HOUR = 3_600_000;
+  let root = path.join(dir, 'store');
+  const put = (rel: string, ageMs: number) => {
+    const abs = path.join(root, rel);
+    mkdirSync(path.dirname(abs), { recursive: true });
+    writeFileSync(abs, rel);
+    const t = (Date.now() - ageMs) / 1000;
+    utimesSync(abs, t, t);
+    return abs;
+  };
+  const spec = (live: string[]) => ({
+    store: 'tables' as const,
+    root,
+    owns: (rel: string) => rel.endsWith('.sqlite') && !rel.startsWith('_'),
+    live: async () => new Set(live),
   });
 
-  it('a failure after the disk write undoes it inside the transaction', async () => {
-    const f = fresh();
-    const made = fresh();
-    const gone = fresh();
-    writeFileSync(f, 'old');
-    writeFileSync(gone, 'keep me');
-    const before = listed();
-    await expect(
-      brokerTransaction('tables', commits, async (_tx, w) => {
-        w.one([1], 'table');
-        w.journalAt(`${f}.broker`, 2, 1);
-        await w.replace(f, replaceWith(f, 'new'));
-        await w.create(made, () => writeFileSync(made, 'made'));
-        w.remove(gone);
-        throw new Error('a later statement failed');
-      }),
-    ).rejects.toThrow('a later statement failed');
-    expect(read(f)).toBe('old');
-    expect(read(made)).toBeNull();
-    expect(read(gone)).toBe('keep me');
-    expect(listed()).toEqual(before);
+  it('removes an old unreferenced file only on a run a grace period after it first saw it', async () => {
+    root = path.join(dir, 'store-1');
+    const live = put('o/a.r-1.sqlite', 3 * HOUR);
+    const old = put('o/a.r-0.sqlite', 3 * HOUR);
+    put('o/a.r-0.sqlite-wal', 3 * HOUR);
+    const history = put('_snapshots/o/a/x.sqlite', 3 * HOUR);
+    const other = put('o/notes.txt', 3 * HOUR);
+    const now = Date.now();
+    const first = await sweepOrphans(spec(['o/a.r-1.sqlite']), { now });
+    expect(first.removed).toEqual([]);
+    expect(first.marked).toBe(1);
+    // Too soon: still kept.
+    expect((await sweepOrphans(spec(['o/a.r-1.sqlite']), { now: now + 1000 })).removed).toEqual([]);
+    // A stage made just before the next run: still in flight.
+    const fresh = put('o/a.r-2.sqlite', -HOUR + 1000);
+    // A grace period later: the old revision goes, with its sidecar; the
+    // stage is younger than the grace period.
+    const later = await sweepOrphans(spec(['o/a.r-1.sqlite']), { now: now + HOUR });
+    expect(later.removed).toEqual(['o/a.r-0.sqlite']);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(`${old}-wal`)).toBe(false);
+    for (const kept of [live, fresh, history, other]) expect(existsSync(kept)).toBe(true);
   });
 
-  it('a refused check writes nothing at all', async () => {
-    const f = fresh();
-    writeFileSync(f, 'old');
-    const before = listed();
-    await expect(
-      brokerTransaction('tables', commits, async (_tx, w) => {
-        w.one([], 'table');
-        await w.replace(f, replaceWith(f, 'new'));
-      }),
-    ).rejects.toBeInstanceOf(StoreRefusedError);
-    expect(read(f)).toBe('old');
-    expect(listed()).toEqual(before);
-  });
-
-  it('a commit that fails leaves the journal; the repair trusts the database', async () => {
-    const f = fresh();
-    writeFileSync(f, 'old');
-    const write = () =>
-      brokerTransaction('tables', commitFails, async (_tx, w) => {
-        w.one([1], 'table');
-        w.journalAt(`${f}.broker`, 6, 5);
-        await w.replace(f, replaceWith(f, 'new'));
-      });
-    await expect(write()).rejects.toThrow('commit failed');
-    expect(read(f)).toBe('new'); // the disk is ahead
-    expect(readStoreJournal(`${f}.broker`)).toMatchObject({ rev: '6', prev: '5' });
-    // The database never took revision 6: the old file comes back.
-    expect(repairStore(`${f}.broker`, 5)).toBe('undone');
-    expect(read(f)).toBe('old');
-    expect(existsSync(`${f}.broker`)).toBe(false);
-    expect(listed().filter((x) => x.startsWith(path.basename(f)))).toEqual([path.basename(f)]);
-
-    // Again, and this time the database did take it (a commit whose answer
-    // was lost): the new file stays, the pre-image goes.
-    await expect(write()).rejects.toThrow('commit failed');
-    expect(repairStore(`${f}.broker`, 6)).toBe('committed');
-    expect(read(f)).toBe('new');
-    expect(listed().filter((x) => x.startsWith(path.basename(f)))).toEqual([path.basename(f)]);
-    // Nothing left: the fast path.
-    expect(repairStore(`${f}.broker`, 6)).toBe('clean');
-  });
-
-  it('the next write repairs a journal a failed one left, under its own lock', async () => {
-    const f = fresh();
-    writeFileSync(f, 'v1');
-    await expect(
-      brokerTransaction('tables', commitFails, async (_tx, w) => {
-        w.one([1], 'table');
-        w.journalAt(`${f}.broker`, 2, 1);
-        await w.replace(f, replaceWith(f, 'lost'));
-      }),
-    ).rejects.toThrow();
-    // The database still holds 1: the next write's check bumps to 2 again.
-    await brokerTransaction('tables', commits, async (_tx, w) => {
-      w.one([1], 'table');
-      w.journalAt(`${f}.broker`, 2, 1);
-      expect(read(f)).toBe('v1'); // repaired before this write's disk
-      await w.replace(f, replaceWith(f, 'v2'));
-    });
-    expect(read(f)).toBe('v2');
-    expect(existsSync(`${f}.broker`)).toBe(false);
-  });
-
-  it('a create that never committed is removed; a delete that never committed comes back', async () => {
-    const made = fresh();
-    await expect(
-      brokerTransaction('tables', commitFails, async (_tx, w) => {
-        w.inserted({ id: 1 }, 'table');
-        w.journalAt(`${made}.broker`, 0, null);
-        await w.create(made, () => writeFileSync(made, 'new table'));
-      }),
-    ).rejects.toThrow();
-    expect(repairStore(`${made}.broker`, null)).toBe('undone');
-    expect(read(made)).toBeNull();
-
-    const kept = fresh();
-    writeFileSync(kept, 'still here');
-    await expect(
-      brokerTransaction('tables', commitFails, async (_tx, w) => {
-        w.one([1], 'table');
-        w.journalAt(`${kept}.broker`, null, 4);
-        w.remove(kept);
-      }),
-    ).rejects.toThrow();
-    expect(read(kept)).toBeNull();
-    expect(repairStore(`${kept}.broker`, 4)).toBe('undone');
-    expect(read(kept)).toBe('still here');
-  });
-
-  it('an in-place write is kept (it passed its check) unless the store rebuilds it', async () => {
-    const f = fresh();
-    writeFileSync(f, 'a');
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const write = () =>
-      brokerTransaction('appdb', commitFails, async (_tx, w) => {
-        w.one([1], 'app database');
-        w.journalAt(`${f}.broker`, 3, 2);
-        await w.inPlace(f, () => writeFileSync(f, 'a+b'));
-      });
-    await expect(write()).rejects.toThrow();
-    expect(repairStore(`${f}.broker`, 2)).toBe('kept');
-    expect(read(f)).toBe('a+b');
-    await expect(write()).rejects.toThrow();
-    expect(
-      repairStore(`${f}.broker`, 2, {
-        inPlace: (_j, target) => {
-          writeFileSync(target, 'a');
-          return true;
-        },
-      }),
-    ).toBe('undone');
-    expect(read(f)).toBe('a');
-    warn.mockRestore();
-  });
-
-  it('never rolls the disk back over a newer revision', async () => {
-    const f = fresh();
-    writeFileSync(f, 'old');
-    await expect(
-      brokerTransaction('tables', commitFails, async (_tx, w) => {
-        w.one([1], 'table');
-        w.journalAt(`${f}.broker`, 2, 1);
-        await w.replace(f, replaceWith(f, 'new'));
-      }),
-    ).rejects.toThrow();
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(repairStore(`${f}.broker`, 9)).toBe('kept');
-    warn.mockRestore();
-    expect(read(f)).toBe('new');
-    expect(existsSync(`${f}.broker`)).toBe(false);
-  });
-
-  it('a retried transaction starts a fresh write', async () => {
-    const f = fresh();
-    writeFileSync(f, 'old');
-    let tries = 0;
-    const retries = async <T>(run: (tx: null) => Promise<T>): Promise<T> => {
-      try {
-        return await run(null);
-      } catch {
-        return run(null);
-      }
-    };
-    await brokerTransaction('tables', retries, async (_tx, w) => {
-      w.one([1], 'table');
-      w.journalAt(`${f}.broker`, 2, 1);
-      await w.replace(f, replaceWith(f, `try ${++tries}`));
-      if (tries === 1) throw new Error('deadlock');
-    });
-    expect(read(f)).toBe('try 2');
-    expect(existsSync(`${f}.broker`)).toBe(false);
+  it('never removes a file a row points at again (a flip back), and a dry run removes nothing', async () => {
+    root = path.join(dir, 'store-2');
+    const f = put('p/b.r-9.sqlite', 3 * HOUR);
+    const now = Date.now();
+    await sweepOrphans(spec([]), { now });
+    expect((await sweepOrphans(spec(['p/b.r-9.sqlite']), { now: now + 2 * HOUR })).removed).toEqual(
+      [],
+    );
+    // Unreferenced again: it starts its grace period over.
+    expect((await sweepOrphans(spec([]), { now: now + 3 * HOUR })).removed).toEqual([]);
+    const dry = await sweepOrphans(spec([]), { now: now + 5 * HOUR, dryRun: true });
+    expect(dry.removed).toEqual(['p/b.r-9.sqlite']);
+    expect(existsSync(f)).toBe(true);
   });
 });

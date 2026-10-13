@@ -5,12 +5,13 @@
  * O it does not read at all. For each store a broker has:
  *
  *  - a refused caller changes NOTHING on disk: every file under the store's
- *    root keeps its bytes, its mtime, and the list stays the same;
- *  - an allowed caller writes the database and the disk in step (the
- *    revision moved, the file written, no journal left);
- *  - repair on read: a commit that fails after the disk write (a deferred
- *    trigger here) leaves the disk ahead; the broker's next access trusts
- *    the database and puts the disk back;
+ *    root keeps its bytes, its mtime, and the list stays the same (the
+ *    stage it made goes with the refusal);
+ *  - an allowed caller writes the row and the disk in step (plan 20.3: the
+ *    row points at the new revision; readers follow the row);
+ *  - a crash between stage and flip leaves the old revision live and the
+ *    stage for the sweep; a commit that fails (a deferred trigger here)
+ *    takes its stage with it; the sweep removes what no row points at;
  *  - off (both checks off, as NATREF, Astron and prod): the same writes
  *    give today's results.
  *
@@ -72,6 +73,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
   let broker: typeof import('@mantle/content/table-broker');
   let appdb: typeof import('@mantle/content/app-broker');
   let content: typeof import('@mantle/content');
+  let sweep: typeof import('@mantle/content/store-sweep');
   let dir = '';
   let tableRoot = '';
   let appRoot = '';
@@ -116,10 +118,6 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       return err;
     }
   };
-  const draftRev = async (id: string) =>
-    Number(
-      (await x<{ r: number }>(sql`select draft_rev as r from tables where node_id = ${id}`))[0]?.r,
-    );
   const writeSeq = async (app: string) =>
     Number(
       (
@@ -168,6 +166,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
     broker = await import('@mantle/content/table-broker');
     appdb = await import('@mantle/content/app-broker');
     content = await import('@mantle/content');
+    sweep = await import('@mantle/content/store-sweep');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${mem}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
@@ -221,13 +220,26 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
+  /** Two sweeps a grace period apart, as the nightly worker runs them. */
+  const sweepTwice = async () => {
+    const now = Date.now() + 2 * m.STORE_SWEEP_GRACE_MS;
+    await sweep.sweepStores({ now });
+    return sweep.sweepStores({ now: now + m.STORE_SWEEP_GRACE_MS });
+  };
+  const tableRow = async (id: string) =>
+    (
+      await x<{ p: string | null; d: string | null; r: number }>(
+        sql`select storage_path as p, draft_path as d, draft_rev as r from tables where node_id = ${id}`,
+      )
+    )[0]!;
+
   describe('tables (the tables broker)', () => {
     it('a caller the database refuses (reads, cannot edit) changes nothing on disk', async () => {
       const t = await makeTable('ro', R);
       // A draft to discard and to replace, the owner's.
       await sys(() => tablesMod.saveTableDraft(owner, t, DOC('owner draft')));
       const before = stateOf(tableRoot);
-      const rev = await draftRev(t);
+      const row = await tableRow(t);
       const writes: [string, () => Promise<unknown>][] = [
         ['draft save', () => tablesMod.saveTableDraft(owner, t, DOC('member'))],
         [
@@ -244,91 +256,121 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       for (const [what, write] of writes) {
         const err = await errorOf(inRequest(mem, write));
         expect(m.isScopeWriteRefusal(err), `${what}: ${String(err)}`).toBe(true);
+        // The stage it made went with the refusal: the very same files.
         expect(stateOf(tableRoot), what).toEqual(before);
       }
-      expect(await draftRev(t)).toBe(rev);
+      expect(await tableRow(t)).toEqual(row);
     });
 
-    it('a caller that does not read the table: no row, no disk step at all', async () => {
+    it('a caller that does not read the table: no stage, no row', async () => {
       const t = await makeTable('hidden', O);
       const before = stateOf(tableRoot);
-      const rev = await draftRev(t);
-      const ran = vi.fn();
-      const out = await inRequest(mem, () => broker.withTableWrite(owner, t, async () => ran()));
-      expect(out).toBeNull();
-      expect(ran).not.toHaveBeenCalled();
+      const row = await tableRow(t);
       expect(await inRequest(mem, () => tablesMod.saveTableDraft(owner, t, DOC('x')))).toBeNull();
+      expect(await inRequest(mem, () => tablesMod.commitTable(owner, t, DOC('x')))).toBeNull();
+      // The flip itself, as the member: no row is a refusal (a 404).
+      const err = await errorOf(
+        inRequest(mem, () => broker.flipTable(t, row.r, { draftData: null })),
+      );
+      expect(err).toBeInstanceOf(m.StoreRefusedError);
       expect(stateOf(tableRoot)).toEqual(before);
-      expect(await draftRev(t)).toBe(rev);
+      expect(await tableRow(t)).toEqual(row);
     });
 
-    it('an allowed caller writes the database and the disk in step', async () => {
+    it('an allowed caller writes the row and the disk in step; readers follow the row', async () => {
       const t = await makeTable('team', H);
-      const rev = await draftRev(t);
+      const first = await tableRow(t);
       const saved = await inRequest(mem, () => tablesMod.saveTableDraft(owner, t, DOC('mine')));
-      expect(saved).toEqual({ ok: true, draftRev: rev + 1 });
-      expect(await draftRev(t)).toBe(rev + 1);
-      const draft = path.join(tableRoot, owner, `${t}.draft.sqlite`);
-      expect(existsSync(draft)).toBe(true);
+      expect(saved).toEqual({ ok: true, draftRev: first.r + 1 });
+      const afterSave = await tableRow(t);
+      expect(afterSave.d).toMatch(/\.r-[0-9a-z]+\.draft\.sqlite$/);
+      expect(existsSync(path.join(tableRoot, afterSave.d!))).toBe(true);
+      // An op batch on an existing draft: in place (the exception).
       const ops = await inRequest(mem, () =>
         tablesMod.applyTableOps(
           owner,
           t,
           [{ op: 'cell_set', rowId: 'r1', columnId: 'c1', value: 'mine 2' }] as never,
-          { ifRev: rev + 1 },
+          { ifRev: first.r + 1 },
         ),
       );
-      expect(ops).toMatchObject({ ok: true, draftRev: rev + 2 });
+      expect(ops).toMatchObject({ ok: true, draftRev: first.r + 2 });
+      expect((await tableRow(t)).d).toBe(afterSave.d);
       const stale = await inRequest(mem, () =>
-        tablesMod.saveTableDraft(owner, t, DOC('stale'), { ifRev: rev }),
+        tablesMod.saveTableDraft(owner, t, DOC('stale'), { ifRev: first.r }),
       );
-      expect(stale).toEqual({ ok: false, conflict: true, currentRev: rev + 2 });
-      expect(await draftRev(t)).toBe(rev + 2);
+      expect(stale).toEqual({ ok: false, conflict: true, currentRev: first.r + 2 });
+      const read = await inRequest(mem, () => tablesMod.getTable(owner, t));
+      expect(read?.draft?.rows[0]?.cells.c1).toBe('mine 2');
       const committed = await inRequest(mem, () => tablesMod.commitTable(owner, t));
       expect(committed?.data.rows[0]?.cells.c1).toBe('mine 2');
-      expect(existsSync(draft)).toBe(false);
-      expect(await draftRev(t)).toBe(rev + 3);
-      expect(Object.keys(stateOf(tableRoot)).filter((f) => /\.(broker|pre-)/.test(f))).toEqual([]);
+      const afterCommit = await tableRow(t);
+      expect(afterCommit.d).toBeNull();
+      expect(afterCommit.p).not.toBe(first.p);
+      expect(afterCommit.r).toBe(first.r + 3);
       // A commit with no draft writes nothing and moves no revision.
       expect(await errorOf(inRequest(mem, () => tablesMod.commitTable(owner, t)))).toMatchObject({
         message: expect.stringContaining('no draft'),
       });
-      expect(await draftRev(t)).toBe(rev + 3);
+      expect((await tableRow(t)).r).toBe(first.r + 3);
+      // The sweep: the old published file and the old draft go, the live
+      // revision stays, the history copy of the old version stays.
+      const oldPub = path.join(tableRoot, first.p!);
+      const oldDraft = path.join(tableRoot, afterSave.d!);
+      expect(existsSync(oldPub)).toBe(true);
+      await sweepTwice();
+      expect(existsSync(oldPub)).toBe(false);
+      expect(existsSync(oldDraft)).toBe(false);
+      expect(existsSync(path.join(tableRoot, afterCommit.p!))).toBe(true);
+      expect(
+        Object.keys(stateOf(path.join(tableRoot, '_snapshots'))).some((f) => f.includes(t)),
+      ).toBe(true);
     });
 
-    it('repair on read: a commit that fails after the disk write; the next read trusts the database', async () => {
-      const t = await makeTable('repair', H);
+    it('a crash between stage and flip: the old revision stays live, the sweep takes the stage', async () => {
+      const t = await makeTable('crash', H);
       await sys(() => tablesMod.saveTableDraft(owner, t, DOC('kept draft')));
-      const draft = path.join(tableRoot, owner, `${t}.draft.sqlite`);
+      const row = await tableRow(t);
+      // The stage of a save that never flipped (a crash).
+      const rel = broker.tableRevisionPath(owner, t, true);
+      broker.stageDoc(rel, DOC('lost') as never, { nodeId: t, ownerId: owner });
+      const staged = path.join(tableRoot, rel);
+      expect(existsSync(staged)).toBe(true);
+      const read = await sys(() => tablesMod.getTable(owner, t));
+      expect(read?.draft?.rows[0]?.cells.c1).toBe('kept draft');
+      expect(await tableRow(t)).toEqual(row);
+      await sweepTwice();
+      expect(existsSync(staged)).toBe(false);
+      expect(existsSync(path.join(tableRoot, row.d!))).toBe(true);
+      expect(existsSync(path.join(tableRoot, row.p!))).toBe(true);
+    });
+
+    it('a commit that fails after the stage: the stage goes, the old revision stays live', async () => {
+      const t = await makeTable('fail', H);
+      await sys(() => tablesMod.saveTableDraft(owner, t, DOC('kept draft')));
       const before = stateOf(tableRoot);
-      const rev = await draftRev(t);
+      const row = await tableRow(t);
       await failCommits(true);
       const err = await errorOf(sys(() => tablesMod.saveTableDraft(owner, t, DOC('lost'))));
       expect(String(err)).toMatch(/the commit fails/);
       await failCommits(false);
-      // The disk is ahead: the new draft is there, with its journal.
-      expect(stateOf(tableRoot)).not.toEqual(before);
-      expect(existsSync(`${path.join(tableRoot, owner, `${t}.sqlite`)}.broker`)).toBe(true);
-      expect(await draftRev(t)).toBe(rev);
-      // The next read: the database never took it; the disk goes back.
+      expect(filesOf(stateOf(tableRoot))).toEqual(filesOf(before));
+      expect(await tableRow(t)).toEqual(row);
       const read = await sys(() => tablesMod.getTable(owner, t));
       expect(read?.draft?.rows[0]?.cells.c1).toBe('kept draft');
-      // The very files of before (bytes, mtime: the pre-image itself), no
-      // journal, no pre-image left.
-      expect(filesOf(stateOf(tableRoot))).toEqual(filesOf(before));
-      expect(existsSync(draft)).toBe(true);
     });
 
     it("off (both checks off): the refused write of above gives today's result", async () => {
       const t = await makeTable('off', R);
-      const rev = await draftRev(t);
+      const rev = (await tableRow(t)).r;
       await setChecks('off');
       try {
         const saved = await inRequest(mem, () => tablesMod.saveTableDraft(owner, t, DOC('off')));
         expect(saved).toEqual({ ok: true, draftRev: rev + 1 });
-        expect(existsSync(path.join(tableRoot, owner, `${t}.draft.sqlite`))).toBe(true);
         const read = await sys(() => tablesMod.getTable(owner, t));
         expect(read?.draft?.rows[0]?.cells.c1).toBe('off');
+        const committed = await inRequest(mem, () => tablesMod.commitTable(owner, t));
+        expect(committed?.data.rows[0]?.cells.c1).toBe('off');
       } finally {
         await setChecks('on');
       }
@@ -336,13 +378,17 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
   });
 
   describe('app databases (the app broker)', () => {
-    it('a caller the database refuses changes nothing on disk', async () => {
+    it('a caller the database refuses changes nothing on disk (a statement, a seed, a restore)', async () => {
       const a = await makeApp('ro', R);
+      const live = (await sys(() => appdb.appDatabasePath(owner, a)))!;
+      const snap = path.join(dir, `${a}.snap.sqlite`);
+      copyFileSync(live, snap);
       const before = stateOf(appRoot);
       const seq = await writeSeq(a);
       const writes: [string, () => Promise<unknown>][] = [
         ['exec', () => appdb.appDbExec(owner, a, "insert into t (v) values ('member')")],
         ['seed', () => appdb.appDbSeedRows(owner, a, 't', [{ v: 'member' }])],
+        ['restore', () => appdb.restoreAppDatabaseFile(owner, a, snap, 0, { drainMs: 0 })],
       ];
       for (const [what, write] of writes) {
         const err = await errorOf(inRequest(mem, write));
@@ -350,6 +396,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
         expect(stateOf(appRoot), what).toEqual(before);
       }
       expect(await writeSeq(a)).toBe(seq);
+      expect(await sys(() => appdb.appDatabasePath(owner, a))).toBe(live);
     });
 
     it('an allowed caller writes the database and the disk in step', async () => {
@@ -361,25 +408,41 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(rows.map((r) => r.v)).toEqual(['first', 'member']);
     });
 
-    it('repair on read: a restore whose commit fails is undone on the next access', async () => {
-      const a = await makeApp('repair', H);
+    it('a restore stages a new revision and flips the row; the sweep takes the old file', async () => {
+      const a = await makeApp('restore', H);
       const live = (await sys(() => appdb.appDatabasePath(owner, a)))!;
       const snap = path.join(dir, `${a}.snap.sqlite`);
       copyFileSync(live, snap);
       await sys(() => appdb.appDbExec(owner, a, "insert into t (v) values ('after the snapshot')"));
-      const seq = await writeSeq(a);
+      await inRequest(mem, () => appdb.restoreAppDatabaseFile(owner, a, snap, 0, { drainMs: 0 }));
+      const next = (await sys(() => appdb.appDatabasePath(owner, a)))!;
+      expect(next).not.toBe(live);
+      expect(next).toMatch(/\.r-[0-9a-z]+\.sqlite$/);
+      const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by rowid'));
+      expect(rows.map((r) => r.v)).toEqual(['first']);
+      expect(existsSync(live)).toBe(true);
+      await sweepTwice();
+      expect(existsSync(live)).toBe(false);
+      expect(existsSync(next)).toBe(true);
+    });
+
+    it('a restore whose commit fails: the stage goes, the old file stays live', async () => {
+      const a = await makeApp('restore fails', H);
+      const live = (await sys(() => appdb.appDatabasePath(owner, a)))!;
+      const snap = path.join(dir, `${a}.snap.sqlite`);
+      copyFileSync(live, snap);
+      await sys(() => appdb.appDbExec(owner, a, "insert into t (v) values ('after the snapshot')"));
+      const before = filesOf(stateOf(appRoot));
       await failCommits(true);
       const err = await errorOf(
         sys(() => appdb.restoreAppDatabaseFile(owner, a, snap, 0, { drainMs: 0 })),
       );
       expect(String(err)).toMatch(/the commit fails/);
       await failCommits(false);
-      expect(existsSync(`${live}.broker`)).toBe(true);
-      expect(await writeSeq(a)).toBe(seq);
+      expect(filesOf(stateOf(appRoot))).toEqual(before);
+      expect(await sys(() => appdb.appDatabasePath(owner, a))).toBe(live);
       const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by rowid'));
       expect(rows.map((r) => r.v)).toEqual(['first', 'after the snapshot']);
-      expect(existsSync(`${live}.broker`)).toBe(false);
-      expect(readdirSync(path.dirname(live)).filter((f) => f.includes('.pre-'))).toEqual([]);
     });
 
     it("off (both checks off): the refused write of above gives today's result", async () => {
@@ -405,18 +468,27 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       ok: true as const,
     });
     const sha = () => createHash('sha256').update(randomUUID()).digest('hex');
+    const buildOf = async (a: string) =>
+      (
+        await x<{ s: string | null }>(
+          sql`select draft_build->>'sha256' as s from apps where node_id = ${a}`,
+        )
+      )[0]?.s ?? null;
 
-    it('a caller the database refuses (a Write grant, no Moderator: D4) stores nothing', async () => {
+    it('a caller the database refuses (a Write grant, no Moderator: D4): the row never names the stage', async () => {
       const a = await makeApp('build ro', R);
+      const before = await buildOf(a);
       const store = vi.fn(async () => {});
       const err = await errorOf(
         inRequest(mem, () => content.setDraftBuild(owner, a, ref(sha()), { store })),
       );
       expect(m.isScopeWriteRefusal(err), String(err)).toBe(true);
-      expect(store).not.toHaveBeenCalled();
+      // The stage ran before the flip (plan 20.3); no reader is pointed at it.
+      expect(store).toHaveBeenCalledTimes(1);
+      expect(await buildOf(a)).toBe(before);
     });
 
-    it('an allowed caller (a Moderator) records the ref and stores the bundle in its transaction', async () => {
+    it('an allowed caller (a Moderator): stage, then the row points at it', async () => {
       const a = await makeApp('build team', H);
       const s = sha();
       const store = vi.fn(async () => {});
@@ -424,24 +496,23 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
         true,
       );
       expect(store).toHaveBeenCalledTimes(1);
-      const [row] = await x<{ s: string }>(
-        sql`select draft_build->>'sha256' as s from apps where node_id = ${a}`,
-      );
-      expect(row?.s).toBe(s);
+      expect(await buildOf(a)).toBe(s);
     });
 
     it("off (both checks off): today's result", async () => {
       const a = await makeApp('build off', R);
-      const store = vi.fn(async () => {});
+      const s = sha();
       await setChecks('off');
       try {
         expect(
-          await inRequest(mem, () => content.setDraftBuild(owner, a, ref(sha()), { store })),
+          await inRequest(mem, () =>
+            content.setDraftBuild(owner, a, ref(s), { store: async () => {} }),
+          ),
         ).toBe(true);
       } finally {
         await setChecks('on');
       }
-      expect(store).toHaveBeenCalledTimes(1);
+      expect(await buildOf(a)).toBe(s);
     });
   });
 });

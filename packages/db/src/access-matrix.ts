@@ -136,7 +136,7 @@ export type EditCheck = {
 export const DRAFT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   'public.pages': ['draft_doc', 'draft_updated_at', 'draft_rev'],
   'public.draws': ['draft_scene', 'draft_updated_at', 'draft_rev'],
-  'public.tables': ['draft_data', 'draft_updated_at', 'draft_rev'],
+  'public.tables': ['draft_data', 'draft_updated_at', 'draft_rev', 'draft_path'],
   'public.apps': ['draft_source', 'draft_updated_at', 'draft_build'],
 };
 

@@ -9,8 +9,12 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import {
+  afterCommit,
+  afterRollback,
   db,
   headsOrSpace,
+  oneRow,
+  stageThenFlip,
   nodes,
   tables,
   withDeadlockRetry,
@@ -22,7 +26,6 @@ import {
   TableTooLargeError,
   importMaxRows,
   publishedPath,
-  relativeStoragePath,
 } from '@mantle/tabledb';
 import {
   ensureTableDoc,
@@ -34,7 +37,7 @@ import {
   type TableVisibility,
 } from '@mantle/content-core/table-model';
 import { buildTableDataText, registryFileColumns, SNAPSHOT_OWNER } from '../table-storage';
-import { withTableCreate, withTableDelete } from '../table-broker';
+import { removeWorkbook, stageDoc, tableRevisionPath } from '../table-broker';
 import {
   TABLES_ROOT_LABEL,
   TAB_NAME,
@@ -45,9 +48,6 @@ import {
   ensureRoot,
   tabsFromStats,
 } from './shared';
-
-/** The transaction a heads wrapper hands its work. */
-type HeadsTx = Parameters<Parameters<typeof headsOrSpace>[1]>[0];
 
 export type CreateTableInput = {
   title: string;
@@ -109,65 +109,60 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
   // still roll back after it, so the file is removed then too
   // (afterRollback). JSONB `data`/`data_text` are dual-written through the
   // transition (rollback = clear storage_path, plan §9).
-  const publishedAbs = publishedPath(ownerId, id);
-  // Heads first (workspaces plan U1): the folder the table lands in. No
-  // retry: the transaction writes the workbook file. The store broker (A3b):
-  // the node's INSERT is the check, then the file, then the registry row; a
-  // failure (or, inside a personal space, the space's rollback) removes the
-  // file again.
-  return withTableCreate<ReturnType<typeof detailOf>, HeadsTx>(
-    ownerId,
-    id,
-    (run) =>
-      headsOrSpace<ReturnType<typeof detailOf>>(
+  // The store broker (A3b, plan 20.3): the workbook is staged under a new
+  // revision name no row points at, then the create's transaction inserts
+  // the node (the check: exactly one row) and the registry row pointing at
+  // it. A failure removes the stage; inside a personal space the space's
+  // rollback does (afterRollback).
+  const pubRel = tableRevisionPath(ownerId, id, false);
+  return stageThenFlip(
+    () => stageDoc(pubRel, workbook ?? data, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true }),
+    async (staged) => {
+      // Heads first (workspaces plan U1): the folder the table lands in.
+      const created = await headsOrSpace<ReturnType<typeof detailOf>>(
         (f) => withNodeInsertHeads(ownerId, [{ type: 'table', path: TABLES_ROOT_LABEL }], f),
-        run,
-      ),
-    // @heads-held: runs inside the open above (headsOrSpace, withNodeInsertHeads).
-    async (tx, t, checkInsert) => {
-      const node = checkInsert(
-        (
-          await tx
-            .insert(nodes)
-            .values({
-              id,
-              ownerId,
-              type: 'table',
-              title: input.title.trim().slice(0, 200) || 'Untitled table',
-              path: TABLES_ROOT_LABEL,
-              data: {
-                visibility: 'private',
-                ...(input.icon ? { icon: input.icon } : {}),
-                ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
-                ...(input.description?.trim() ? { description: input.description.trim() } : {}),
-                ...(input.brainDepth ? { brain_depth: input.brainDepth } : {}),
-              },
-              tags: dedupeTags(input.tags ?? []),
-            })
-            .returning()
-        )[0],
+        async (tx) => {
+          const node = oneRow(
+            'tables',
+            await tx
+              .insert(nodes)
+              .values({
+                id,
+                ownerId,
+                type: 'table',
+                title: input.title.trim().slice(0, 200) || 'Untitled table',
+                path: TABLES_ROOT_LABEL,
+                data: {
+                  visibility: 'private',
+                  ...(input.icon ? { icon: input.icon } : {}),
+                  ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
+                  ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+                  ...(input.brainDepth ? { brain_depth: input.brainDepth } : {}),
+                },
+                tags: dedupeTags(input.tags ?? []),
+              })
+              .returning(),
+            'table',
+          );
+          await tx.insert(tables).values({
+            nodeId: node.id,
+            // JSONB mirror only while it fits the window AND stays
+            // single-tab; beyond either, the file is the sole carrier.
+            data: !workbook && data.rows.length <= MATERIALIZE_MAX ? data : {},
+            dataText: buildTableDataText(staged.abs, workbook ? null : data, node.title),
+            ...registryFileColumns(staged.res, pubRel),
+          });
+          return detailOf(node, data, null, {
+            totalRows,
+            tabs: tabsFromStats(staged.res.stats),
+            tabId: staged.res.stats.tabs[0]?.tabId,
+          });
+        },
       );
-      const res = await t.writeDoc(publishedAbs, workbook ?? data, {
-        nodeId: id,
-        ownerId,
-        tabName: TAB_NAME,
-        fts: true,
-      });
-      await tx.insert(tables).values({
-        nodeId: node.id,
-        // JSONB mirror only while it fits the window AND stays single-tab;
-        // beyond either, the file is the sole carrier (a multi-hundred-MB
-        // blob mirrors nothing useful, and the mirror can't represent tabs).
-        data: !workbook && data.rows.length <= MATERIALIZE_MAX ? data : {},
-        dataText: buildTableDataText(publishedAbs, workbook ? null : data, node.title),
-        ...registryFileColumns(res, relativeStoragePath(ownerId, id)),
-      });
-      return detailOf(node, data, null, {
-        totalRows,
-        tabs: tabsFromStats(res.stats),
-        tabId: res.stats.tabs[0]?.tabId,
-      });
+      afterRollback(() => removeWorkbook(staged.abs));
+      return created;
     },
+    (staged) => removeWorkbook(staged.abs),
   );
 }
 
@@ -212,7 +207,12 @@ export async function updateTable(
   if (!row) return null;
 
   const [p] = await db
-    .select({ data: tables.data, draft: tables.draftData, storagePath: tables.storagePath })
+    .select({
+      data: tables.data,
+      draft: tables.draftData,
+      storagePath: tables.storagePath,
+      draftPath: tables.draftPath,
+    })
     .from(tables)
     .where(eq(tables.nodeId, id))
     .limit(1);
@@ -233,20 +233,22 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
   // read-only snapshot copy may be deleted (W6b fix round 2, M-1): only the
   // app-bound check, never the copy check of assertTableWritable.
   await assertTableNotAppBound(id);
-  // `tables` row cascades. The store broker (A3b): the delete of exactly
-  // one node is the check; the workbook files are moved aside inside it and
-  // dropped once it commits (inside a personal space, once the space
-  // commits), or put back if it does not: a failed delete never leaves a
-  // registry row pointing at removed files. A member author's copy of the
-  // accepted version (audit F07) goes too: its row went with the node.
-  await withTableDelete<HeadsTx>(
-    ownerId,
-    id,
-    row.storagePath,
-    row.storagePath ? [publishedPath(SNAPSHOT_OWNER, id)] : [],
-    (run) => headsOrSpace((f) => withDeadlockRetry(() => withNodeDeleteHeads([id], f)), run),
-    // @heads-held: runs inside the open above (headsOrSpace, withNodeDeleteHeads).
-    (tx) => tx.delete(nodes).where(eq(nodes.id, id)).returning({ id: nodes.id }),
+  // `tables` row cascades. The store broker (A3b, plan 20.3): the delete of
+  // exactly one node is the check; its workbook revisions are then files no
+  // row points at, which the sweep removes (store-sweep.ts). A member
+  // author's copy of the accepted version (audit F07) goes once the delete
+  // commits: its row went with the node.
+  await headsOrSpace(
+    (f) => withDeadlockRetry(() => withNodeDeleteHeads([id], f)),
+    async (tx) =>
+      oneRow(
+        'tables',
+        await tx.delete(nodes).where(eq(nodes.id, id)).returning({ id: nodes.id }),
+        'table',
+      ),
   );
+  if (row.storagePath) {
+    await afterCommit(() => removeWorkbook(publishedPath(SNAPSHOT_OWNER, id)));
+  }
   return true;
 }

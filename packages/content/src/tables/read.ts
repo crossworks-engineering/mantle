@@ -8,8 +8,7 @@
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
 import { fileStats, resolveStoragePath } from '@mantle/tabledb';
-import { draftAbsFor } from '../table-storage';
-import { repairTable } from '../table-broker';
+import { draftAbsOf } from '../table-storage';
 import { db, draftAllowed, draftColumn, emailAttachmentSql, nodes, tables } from '@mantle/db';
 import type { TableRow, TableDetail, TableSort } from '@mantle/content-core/table-model';
 import { countsFromRegistry, detailOf, docsOf, rowOf, tabsFromStats } from './shared';
@@ -124,6 +123,9 @@ export async function getTable(
       // edit (draftColumn: the rule is in the query, W6a).
       draft: askedPublished ? sql<null>`null` : draftColumn<unknown>(tables.draftData),
       storagePath: tables.storagePath,
+      // The draft the row points at (store brokers, A3b), under the draft
+      // columns' rule.
+      draftPath: askedPublished ? sql<null>`null` : draftColumn<string>(tables.draftPath),
       draftRev: askedPublished ? sql<null>`null` : draftColumn<number>(tables.draftRev),
       stats: tables.stats,
     })
@@ -132,10 +134,6 @@ export async function getTable(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return null;
-  // Repair on read (arch A3b): a write whose commit was never seen left a
-  // journal; the database decides before the files are read. One existsSync
-  // when there is none.
-  await repairTable(id, row.storagePath);
   // An Admin user with Read only, or a reader below admin: the published
   // table, and no draft file from disk (W6a fix round 1, H1).
   const published = askedPublished || row.draftOk !== true;
@@ -143,8 +141,8 @@ export async function getTable(
   // draft must show), else registry stats (published, no file open needed).
   let tabs = row.storagePath ? tabsFromStats(row.stats) : undefined;
   if (row.storagePath && !published) {
-    const draftAbs = draftAbsFor(row.storagePath);
-    if (existsSync(draftAbs)) {
+    const draftAbs = draftAbsOf(row.draftPath);
+    if (draftAbs && existsSync(draftAbs)) {
       try {
         tabs = tabsFromStats(fileStats(draftAbs)) ?? tabs;
       } catch {

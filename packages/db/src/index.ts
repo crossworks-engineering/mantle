@@ -304,17 +304,17 @@ export {
 export { VAULT_PAIR_MAKER_NO_KEYS, vaultPairRunRefusal } from './vault-pair';
 export { refuseHiddenRows } from './hidden-rows';
 export {
+  SQLITE_SIDECARS,
   STORE_NAMES,
   STORE_REFUSED_MESSAGE,
+  STORE_SWEEP_GRACE_MS,
   StoreRefusedError,
-  StoreWrite,
-  brokerTransaction,
-  readStoreJournal,
-  repairStore,
-  type InPlaceRepair,
-  type RepairOutcome,
-  type StoreJournal,
+  oneRow,
+  relativeTo,
+  revisionToken,
+  stageThenFlip,
+  sweepOrphans,
   type StoreName,
-  type StoreRev,
-  type StoreWriteOptions,
+  type SweepReport,
+  type SweepSpec,
 } from './store-broker';

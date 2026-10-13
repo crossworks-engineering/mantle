@@ -21,7 +21,7 @@ import {
 import { existsSync } from 'node:fs';
 import { readsDrafts } from '@mantle/db/viewer';
 import { tableSqlSurface } from '@mantle/content/table-storage';
-import { draftPathFor, readRowById, type TableOp } from '@mantle/tabledb';
+import { readRowById, type TableOp } from '@mantle/tabledb';
 import type { ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { notFound } from '../errors';
@@ -122,8 +122,9 @@ export async function windowFile(ownerId: string, tableId: string): Promise<stri
   // The row's rule (draftAllowed): below admin, and for an Admin user's
   // scope on a table it may not edit, the published file only (W6a).
   if (!readsDrafts() || !surface.draftOk) return surface.abs;
-  const draftAbs = draftPathFor(surface.abs);
-  return existsSync(draftAbs) ? draftAbs : surface.abs;
+  // The draft the row points at (store brokers, A3b).
+  const draftAbs = surface.draftAbs;
+  return draftAbs && existsSync(draftAbs) ? draftAbs : surface.abs;
 }
 
 /** Row-existence check that works past the materialize window: the clipped

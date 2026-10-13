@@ -39,6 +39,7 @@ import { purgeExpiredDeletedApps, sweepAppFileLeftovers } from '@mantle/content/
 import { purgeOrphanTableHistory } from '@mantle/content/table-snapshots';
 import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { runFilesStagedReap, summariseFilesStagedReap } from './files-staged-reap';
+import { summariseStoreSweep, sweepStores } from '@mantle/content/store-sweep';
 import { reapActorMisses, summariseActorMissesReap } from './actor-misses-reap';
 import { errorMessage } from '@mantle/std';
 
@@ -163,6 +164,8 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
       ? 'nothing to purge'
       : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s), ${left} leftover work file(s)`;
   },
+  // Arch A3b: the store files no row points at (old revisions, stages).
+  'store-sweep': async () => summariseStoreSweep(await sweepStores()),
   // W8b fix round 1: the staging files a crash left beside a file create.
   'files-staged-reap': async () => summariseFilesStagedReap(await runFilesStagedReap()),
   // Arch A2a: actor check miss rows older than 14 days.

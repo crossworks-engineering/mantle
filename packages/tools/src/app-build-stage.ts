@@ -8,16 +8,17 @@
  * A failed build never overwrites the last good preview: a BuildRef is
  * recorded on success only; the errors come back for the caller to show.
  *
- * The app build store's broker (workspaces arch A3b, docs/store-brokers.md):
- * the only writer of app bundles to the object store. The bundle is stored
- * AFTER the app row's checked write (setDraftBuild: the draft_build update,
- * as the caller, exactly one row), inside its transaction: a build the
- * database refuses (D4: the code needs a Moderator of the app's home) stores
- * nothing. If the commit then fails, the stored bundle stays without a row
- * pointing at it. That is left on purpose (team apps follow-up): bundles are
+ * The app build store's broker (workspaces arch A3b, plan 20.3,
+ * docs/store-brokers.md): the only writer of app bundles to the object
+ * store. The bundle is the stage: stored under its content address, which
+ * no app row names yet; then setDraftBuild's one short transaction checks
+ * the app row as the caller (the draft_build update, exactly one row; D4:
+ * the code needs a Moderator of the app's home) and points it there. A
+ * refused or stale build leaves an object nothing points at. Bundles are
  * content-addressed and shared by every app whose build is byte-identical,
- * so removing one could break another app; an unreferenced bundle costs
- * only its bytes, and the next identical build reuses it.
+ * so no sweep removes them (an object may be another app's, or an email's
+ * or a file's with the same bytes); an unreferenced bundle costs only its
+ * bytes, and the next identical build reuses it.
  */
 import { getApp, setDraftBuild, workingSource } from '@mantle/content';
 import { buildApp, loadRuntimeExports, type BuildMessage } from '@mantle/app-build';
@@ -79,7 +80,7 @@ export async function buildAndStageApp(
       },
       {
         builtFrom: source,
-        // After the row's check, inside its transaction (A3b).
+        // The stage, before the row's flip (A3b, plan 20.3).
         store: async () => {
           await putContent(js, 'application/javascript');
           if (css) await putContent(css, 'text/css');

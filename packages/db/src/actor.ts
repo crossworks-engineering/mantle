@@ -407,8 +407,6 @@ export const READ_PATH_WRITES = {
     'GET /api/pages/:id: store missing block ids, for a reader who may edit the page (content pages/read.ts)',
   'backfill:link-views':
     'GET /s/:token: count a public link’s view (content shares.ts, recordShareView); a link writes nothing itself (arch A3a)',
-  'repair:store-broker':
-    'a table read or write that finds a store broker journal (arch A3b): the database decides, the disk follows (content table-broker.ts, docs/store-brokers.md)',
   'backfill:recall-prompt-embeddings':
     'recall_match and every Recall write: embed the brain’s prompt cards that have no vector yet (content recall.ts)',
 } as const;

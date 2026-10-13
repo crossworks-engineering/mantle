@@ -186,6 +186,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL and file removal, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron and the script.',
   },
   {
+    slug: 'store-sweep',
+    title: 'Remove store files no row points at',
+    description:
+      "Removes the table workbooks and app database files no row points at any more: the old revision a save, a commit or a restore replaced, a staged revision whose write never landed (refused, or cut off by a crash), and a deleted table's files. A file goes only once it has been unreferenced on two runs an hour or more apart and is an hour old or more, so a write in flight and a reader that has just opened the old revision are never cut off. Never a file a row points at, never the history (_snapshots) or the accepted copies.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: true,
+    script: 'scripts/store-sweep.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'File removal and one read of the registry rows, no model, no extraction; idempotent, a no-op once clean. The rule lives in @mantle/content/store-sweep (sweepStores) over the one helper (sweepOrphans, @mantle/db store-broker.ts), shared by the cron and the script (arch A3b, docs/store-brokers.md).',
+  },
+  {
     slug: 'files-staged-reap',
     title: 'Remove staging files a crash left in Files',
     description:

@@ -46,6 +46,9 @@ export const tables = pgTable('tables', {
   // Draft etag: bumped on every draft write batch; the UI autosave presents it
   // so a stale debounced doc can't overwrite newer agent ops.
   draftRev: integer('draft_rev').default(0).notNull(),
+  /** The draft workbook's current revision, relative to TABLE_DB_DIR; null
+   *  when there is no draft (store brokers, arch A3b, migration 0283). */
+  draftPath: text('draft_path'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

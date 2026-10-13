@@ -16,12 +16,9 @@ import {
   MATERIALIZE_MAX,
   TableFileMissingError,
   describeWorkbook,
-  draftPathFor,
   profileFile,
   profileToText,
-  publishedPath,
   readDocClipped,
-  relativeStoragePath,
   resolveStoragePath,
   tableDbRoot,
   type WorkbookStats,
@@ -32,7 +29,13 @@ import { ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model'
 import { tableToText } from './table-to-text';
 import { errorMessage } from '@mantle/std';
 import { copySqliteFile, linkHistoryTree } from './history-files';
-import { withTableWrite, type TableWrite } from './table-broker';
+import {
+  flipTable,
+  removeWorkbook,
+  stageDoc,
+  stagedTableWrite,
+  tableRevisionPath,
+} from './table-broker';
 
 /**
  * File-side plumbing for sqlite-native tables (Tables v2 P1) — the pieces
@@ -125,6 +128,7 @@ export type LoadedDocs = {
  *  draft file just means "no uncommitted edits". */
 export function loadDocsFromFile(
   storagePath: string,
+  draftPath: string | null,
   opts: { tabId?: string; publishedOnly?: boolean } = {},
 ): LoadedDocs {
   const abs = resolveStoragePath(storagePath);
@@ -144,7 +148,8 @@ export function loadDocsFromFile(
       throw err;
     }
   }
-  const draftAbs = draftPathFor(abs);
+  // The draft the row points at (store brokers, A3b): none, no draft.
+  const draftAbs = draftAbsOf(draftPath);
   // A commit in the other process can consume the draft between the exists
   // check and the open — that's "no draft now", not an error (audit finding 7).
   // Below admin the draft is never read (member logins): a Library reader, a
@@ -159,7 +164,7 @@ export function loadDocsFromFile(
   // Without that answer it reads the published workbook (W6a fix round 1).
   const mayReadDraft =
     opts.publishedOnly === false || (!opts.publishedOnly && !currentWorkspaceScope());
-  if (mayReadDraft && readsDrafts() && existsSync(draftAbs)) {
+  if (mayReadDraft && readsDrafts() && draftAbs && existsSync(draftAbs)) {
     try {
       draftClipped = readDocClipped(draftAbs, MATERIALIZE_MAX, opts.tabId);
     } catch (err) {
@@ -177,66 +182,70 @@ export function loadDocsFromFile(
 }
 
 type EnsureFileNode = { id: string; ownerId: string; title: string };
-type EnsureLocked = { storagePath: string | null } | null;
 
 /**
- * Lazy migration (P4, plan §9): make a legacy JSONB table file-backed, under
- * the registry lock the caller already holds. Builds the published file from
- * `data`, migrates a pending `draftData` into `.draft.sqlite` IN THE SAME
- * STEP (stranding drafts was the data-loss hole), verifies row counts, and
- * updates the registry. No-op when already file-backed.
+ * Lazy migration (P4, plan section 9): make a legacy JSONB table
+ * file-backed. A store broker write (A3b, plan 20.3): the published
+ * workbook from `data`, and a pending `draftData` as the draft IN THE SAME
+ * STEP (stranding drafts was the data-loss hole), staged under new revision
+ * names and row-count verified; then one short transaction checks the row
+ * (still JSONB, at the revision read) and points it at them. No-op when
+ * already file-backed. The table's revision moves by one.
  */
-export async function ensureFileBacked(
-  t: TableWrite,
-  node: EnsureFileNode,
-  locked: EnsureLocked,
-): Promise<{ storagePath: string; migrated: boolean }> {
-  const tx = t.tx;
-  // A null lock means the caller holds no registry row (gone, or hidden by a
-  // personal space's frozen rule): rebuilding the published file from JSONB
-  // then would overwrite the real workbook. Refuse loudly.
-  if (!locked) throw new Error(`ensureFileBacked without a locked registry row for ${node.id}`);
-  if (locked.storagePath) return { storagePath: locked.storagePath, migrated: false };
-  const [row] = await tx
-    .select({ data: tables.data, draftData: tables.draftData })
-    .from(tables)
-    .where(eq(tables.nodeId, node.id))
-    .limit(1);
-  const doc = ensureTableDoc(row?.data ?? { columns: [], rows: [] });
-  const publishedAbs = publishedPath(node.ownerId, node.id);
-  const res = await t.writeDoc(publishedAbs, doc, {
-    nodeId: node.id,
-    ownerId: node.ownerId,
-    fts: true,
-  });
-  const back = readDocClipped(publishedAbs, 0);
-  if (back.total !== doc.rows.length) {
-    // The broker's undo removes the file this write made.
-    throw new Error(
-      `table migration verify failed for ${node.id}: file has ${back.total} rows, JSONB has ${doc.rows.length} — kept on the JSONB path`,
-    );
-  }
-  if (row?.draftData != null) {
-    const draftDoc = ensureTableDoc(row.draftData);
-    await t.writeDoc(draftPathFor(publishedAbs), draftDoc, {
-      nodeId: node.id,
-      ownerId: node.ownerId,
-    });
-  }
-  const storagePath = relativeStoragePath(node.ownerId, node.id);
-  await tx
-    .update(tables)
-    .set({
-      dataText: buildTableDataText(publishedAbs, doc, node.title),
-      ...registryFileColumns(res, storagePath),
-    })
-    .where(eq(tables.nodeId, node.id));
-  return { storagePath, migrated: true };
+export async function ensureFileBacked(node: EnsureFileNode): Promise<void> {
+  await stagedTableWrite(
+    node.id,
+    {},
+    async (row) => {
+      if (row.storagePath) return { files: [] as string[], skip: true as const };
+      const [reg] = await db
+        .select({ data: tables.data, draftData: tables.draftData })
+        .from(tables)
+        .where(eq(tables.nodeId, node.id))
+        .limit(1);
+      const doc = ensureTableDoc(reg?.data ?? { columns: [], rows: [] });
+      const pubRel = tableRevisionPath(node.ownerId, node.id, false);
+      const files: string[] = [];
+      try {
+        const pub = stageDoc(pubRel, doc, { nodeId: node.id, ownerId: node.ownerId, fts: true });
+        files.push(pub.abs);
+        const back = readDocClipped(pub.abs, 0);
+        if (back.total !== doc.rows.length) {
+          throw new Error(
+            `table migration verify failed for ${node.id}: file has ${back.total} rows, JSONB has ${doc.rows.length}; kept on the JSONB path`,
+          );
+        }
+        let draftRel: string | null = null;
+        if (reg?.draftData != null) {
+          draftRel = tableRevisionPath(node.ownerId, node.id, true);
+          files.push(
+            stageDoc(draftRel, ensureTableDoc(reg.draftData), {
+              nodeId: node.id,
+              ownerId: node.ownerId,
+            }).abs,
+          );
+        }
+        return { files, skip: false as const, pubRel, draftRel, pub, doc };
+      } catch (err) {
+        files.forEach(removeWorkbook);
+        throw err;
+      }
+    },
+    async (row, s) => {
+      if (s.skip) return;
+      await flipTable(node.id, row.draftRev, {
+        dataText: buildTableDataText(s.pub.abs, s.doc, node.title),
+        ...registryFileColumns(s.pub.res, s.pubRel),
+        ...(s.draftRel ? { draftPath: s.draftRel } : {}),
+      });
+    },
+  );
 }
 
-/** Absolute draft path for a registry storage_path. */
-export function draftAbsFor(storagePath: string): string {
-  return draftPathFor(resolveStoragePath(storagePath));
+/** The absolute path of the draft a row points at (`tables.draft_path`),
+ *  or null: THE way a reader finds a table's draft (A3b). */
+export function draftAbsOf(draftPath: string | null | undefined): string | null {
+  return draftPath ? resolveStoragePath(draftPath) : null;
 }
 
 /** Remove a workbook file and its WAL/SHM sidecars (draft discard, table
@@ -266,9 +275,18 @@ export function registryFileColumns(
 export async function tableSqlSurface(
   ownerId: string,
   nodeId: string,
-): Promise<{ abs: string; tabs: WorkbookTabRef[]; draftOk: boolean } | null> {
+): Promise<{
+  abs: string;
+  draftAbs: string | null;
+  tabs: WorkbookTabRef[];
+  draftOk: boolean;
+} | null> {
   const [row] = await db
-    .select({ storagePath: tables.storagePath, draftOk: draftAllowed() })
+    .select({
+      storagePath: tables.storagePath,
+      draftPath: tables.draftPath,
+      draftOk: draftAllowed(),
+    })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(and(eq(tables.nodeId, nodeId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
@@ -277,7 +295,13 @@ export async function tableSqlSurface(
   const abs = resolveStoragePath(row.storagePath);
   // draftOk: whether the caller may read the draft workbook (draftAllowed:
   // mantle_may_edit in a workspace scope, false below admin, W6a).
-  return { abs, tabs: describeWorkbook(abs), draftOk: row.draftOk === true };
+  return {
+    abs,
+    // The draft the row points at (A3b), only where the caller may read it.
+    draftAbs: row.draftOk === true ? draftAbsOf(row.draftPath) : null,
+    tabs: describeWorkbook(abs),
+    draftOk: row.draftOk === true,
+  };
 }
 
 /** How many leading rows land in dataText — list-ILIKE routing for
@@ -341,12 +365,9 @@ export async function sweepLegacyTables(batch = 5): Promise<number> {
   let converted = 0;
   for (const n of legacy) {
     try {
-      // A store broker write (A3b): the draft_rev bump is its check, so an
-      // editor open on the table sees a new revision once.
-      await withTableWrite(n.ownerId, n.id, async (_tx, locked, t) => {
-        if (locked.storagePath) return; // raced a lazy migration: fine
-        await ensureFileBacked(t, { id: n.id, ownerId: n.ownerId, title: n.title }, locked);
-      });
+      // A store broker write (A3b): its flip moves the table's revision, so
+      // an editor open on the table sees a new revision once.
+      await ensureFileBacked({ id: n.id, ownerId: n.ownerId, title: n.title });
       converted++;
     } catch (err) {
       // A failing table must not wedge the sweep — log and let the next tick
@@ -384,7 +405,12 @@ export type TableDbSnapshotReport = {
  */
 export async function snapshotAllTableDatabases(destDir: string): Promise<TableDbSnapshotReport> {
   const rows = await db
-    .select({ nodeId: tables.nodeId, ownerId: nodes.ownerId, storagePath: tables.storagePath })
+    .select({
+      nodeId: tables.nodeId,
+      ownerId: nodes.ownerId,
+      storagePath: tables.storagePath,
+      draftPath: tables.draftPath,
+    })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(and(isNotNull(tables.storagePath)));
@@ -398,7 +424,7 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
     .where(isNotNull(acceptedSnapshots.tablePath));
   const all = [
     ...rows.map((r) => ({ ...r, snapshot: false })),
-    ...snaps.map((r) => ({ ...r, ownerId: SNAPSHOT_OWNER, snapshot: true })),
+    ...snaps.map((r) => ({ ...r, draftPath: null, ownerId: SNAPSHOT_OWNER, snapshot: true })),
   ];
 
   const report: TableDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
@@ -429,12 +455,14 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
       report.missing.push({ nodeId: r.nodeId, storagePath });
       continue;
     }
+    // The revisions the row points at (A3b), under their own names.
+    const draftAbs = draftAbsOf(r.draftPath);
     for (const [file, draft] of [
       [abs, false],
-      [draftPathFor(abs), true],
+      [draftAbs ?? '', true],
     ] as const) {
       if (draft && r.snapshot) continue;
-      if (draft && !existsSync(file)) continue;
+      if (draft && (!file || !existsSync(file))) continue;
       try {
         // The live layout (<owner>/<node>.sqlite as storage_path records it),
         // so a restore drops the file where storage_path points: a table

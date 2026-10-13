@@ -3,7 +3,6 @@ import { and, eq } from 'drizzle-orm';
 import { db, draftAllowed, nodes, tables } from '@mantle/db';
 import {
   distinctColumnValues,
-  draftPathFor,
   listRowsWindow,
   queryRowsWindow,
   resolveStoragePath,
@@ -29,7 +28,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // draftOk: whether this caller may read the draft (W6a: the rule is in
   // the query, mantle_may_edit in a workspace scope; false below admin).
   const [row] = await db
-    .select({ storagePath: tables.storagePath, draftOk: draftAllowed() })
+    .select({
+      storagePath: tables.storagePath,
+      draftPath: tables.draftPath,
+      draftOk: draftAllowed(),
+    })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(and(eq(tables.nodeId, id), eq(nodes.ownerId, user.id), eq(nodes.type, 'table')))
@@ -53,10 +56,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const tabId = url.searchParams.get('tab') ?? undefined;
 
   const publishedAbs = resolveStoragePath(row.storagePath);
-  const draftAbs = draftPathFor(publishedAbs);
+  // The draft the row points at (store brokers, A3b).
+  const draftAbs = row.draftPath ? resolveStoragePath(row.draftPath) : null;
   // A caller who may not edit the table reads the published file, whatever
   // it asks for (a member with Read, an Admin user with Read only).
-  const file = wantDraft && row.draftOk === true && existsSync(draftAbs) ? draftAbs : publishedAbs;
+  const file =
+    wantDraft && row.draftOk === true && draftAbs && existsSync(draftAbs) ? draftAbs : publishedAbs;
   try {
     // Distinct values of one column — the option list a reference column's
     // editor offers (?distinct=<columnId>, optional ?prefix= typeahead).

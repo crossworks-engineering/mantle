@@ -29,14 +29,20 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, nodeSnapshots, nodes, tables } from '@mantle/db';
+import { db, nodeSnapshots, nodes, StoreRefusedError, tables } from '@mantle/db';
 import { currentSpaceScope, isSystemScope } from '@mantle/db/viewer';
-import { draftPathFor, resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
+import { resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import type { TableSnapshot } from '@mantle/client-types';
 import { copySqliteFile } from './history-files';
 import { envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 import { withTableRegistryLock } from './table-storage';
-import { withTableWrite, type TableWrite } from './table-broker';
+import {
+  flipTable,
+  stageCopy,
+  stagedTableWrite,
+  stageHistoryLink,
+  tableRevisionPath,
+} from './table-broker';
 import { assertTableWritable } from './tables/shared';
 import type { AppHistoryActor } from './apps';
 
@@ -86,38 +92,47 @@ function historyWritable(): boolean {
   return isSystemScope() && currentSpaceScope() === null;
 }
 
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** A commit's history copy, staged before the commit's flip. */
+export type StagedCommitSnapshot = { id: string; rel: string; abs: string };
+
 /**
- * Keep the published workbook a commit is about to replace, inside the
- * commit's transaction and registry lock. Returns the kept file (the caller
- * removes it if the commit then fails), or null when nothing was kept: no
- * published file yet, or a commit the history does not record.
+ * Stage the history copy of the published workbook a commit is about to
+ * replace (plan 20.3: before the commit's one short transaction): a hard
+ * link, else a copy, under the history folder. Null when nothing is kept:
+ * no published file yet, or a commit the history does not record. The
+ * commit removes it if its flip does not land; the row goes in with the
+ * flip (recordCommitSnapshot).
  */
-export async function keepCommitSnapshot(
-  t: TableWrite,
-  opts: {
-    ownerId: string;
-    tableId: string;
-    publishedAbs: string;
-    actor?: AppHistoryActor;
-    note?: string | null;
-  },
-): Promise<string | null> {
+export function stageCommitSnapshot(opts: {
+  ownerId: string;
+  tableId: string;
+  publishedAbs: string;
+}): StagedCommitSnapshot | null {
   if (!historyWritable() || !existsSync(opts.publishedAbs)) return null;
-  const tx = t.tx;
-  const [reg] = await tx
-    .select({ version: tables.version })
-    .from(tables)
-    .where(eq(tables.nodeId, opts.tableId))
-    .limit(1);
   const id = randomUUID();
   const rel = snapshotRelPath(opts.ownerId, opts.tableId, id);
   const abs = snapshotAbsPath(rel);
-  // A step of the commit's broker write (A3b), after its check: a hard
-  // link (else a copy) of the file at rest under the lock, removed again
-  // when the commit does not land.
-  await t.keepCopy(opts.publishedAbs, abs);
+  stageHistoryLink(opts.publishedAbs, abs);
+  return { id, rel, abs };
+}
+
+/** The staged copy's history row, inside the commit's flip. `version`: the
+ *  table's version before the commit (the one the copy holds). */
+export async function recordCommitSnapshot(
+  tx: DbTx,
+  staged: StagedCommitSnapshot,
+  opts: {
+    ownerId: string;
+    tableId: string;
+    version: number | null;
+    actor?: AppHistoryActor;
+    note?: string | null;
+  },
+): Promise<void> {
   await insertNodeSnapshot(tx, {
-    id,
+    id: staged.id,
     ownerId: opts.ownerId,
     nodeId: opts.tableId,
     nodeKind: 'table',
@@ -125,11 +140,10 @@ export async function keepCommitSnapshot(
     note: opts.note?.trim().slice(0, 500) || null,
     actor: opts.actor ?? 'owner',
     code: null,
-    dbPath: rel,
-    dbBytes: statSync(abs).size,
-    schemaVersion: reg?.version ?? null,
+    dbPath: staged.rel,
+    dbBytes: statSync(staged.abs).size,
+    schemaVersion: opts.version,
   });
-  return abs;
 }
 
 /** Drop this table's commit entries past the newest
@@ -361,33 +375,39 @@ export async function restoreTableSnapshot(
     throw new TableSnapshotRefusedError(`v${entry.seq}'s workbook file is missing on the server`);
   }
   const source = entry.abs;
-  // The store broker (A3b): the draft_rev bump is the lock and the check, as
-  // the caller, before the draft is replaced.
-  const done = await withTableWrite(ownerId, tableId, async (tx, locked, t) => {
-    if (!locked.storagePath) {
-      throw new TableSnapshotRefusedError('this table has no workbook file to restore into');
-    }
-    const draftAbs = draftPathFor(resolveStoragePath(locked.storagePath));
-    const [reg] = await tx
-      .select({ draftData: tables.draftData })
-      .from(tables)
-      .where(eq(tables.nodeId, tableId))
-      .limit(1);
-    const hasDraft = existsSync(draftAbs) || (reg?.draftData ?? null) !== null;
-    if (hasDraft && !opts.discardDraft) throw new TableRestoreDraftError();
-    // The copy lands beside the draft, the old draft's sidecars go (SQLite
-    // would replay a stale WAL into the new file), then one rename.
-    await t.restoreDraft(source, draftAbs);
-    await tx
-      .update(tables)
-      .set({
+  // The store broker (A3b, plan 20.3): the copy is staged as a new draft
+  // revision, then one short transaction checks the row (at the revision
+  // read) and points the draft at it.
+  const done = await stagedTableWrite(
+    tableId,
+    {},
+    async (row) => {
+      if (!row.storagePath) {
+        throw new TableSnapshotRefusedError('this table has no workbook file to restore into');
+      }
+      const [reg] = await db
+        .select({ draftData: tables.draftData })
+        .from(tables)
+        .where(eq(tables.nodeId, tableId))
+        .limit(1);
+      const hasDraft = row.draftPath !== null || (reg?.draftData ?? null) !== null;
+      if (hasDraft && !opts.discardDraft) throw new TableRestoreDraftError();
+      const rel = tableRevisionPath(ownerId, tableId, true);
+      return { files: [stageCopy(source, rel)], rel };
+    },
+    async (row, s) => {
+      await flipTable(tableId, row.draftRev, {
         // The file is the draft's only carrier (the JSONB mirror cannot hold
         // a workbook; a stale one would shadow the restore).
+        draftPath: s.rel,
         draftData: null,
         draftUpdatedAt: new Date(),
-      })
-      .where(eq(tables.nodeId, tableId));
-    return true;
+      });
+      return true;
+    },
+  ).catch((err: unknown) => {
+    if (err instanceof StoreRefusedError) return null;
+    throw err;
   });
   if (!done) return null;
   const { abs: _abs, ...restored } = entry;

@@ -25,6 +25,7 @@
     "./table-to-text": "./src/table-to-text.ts",
     "./table-storage": "./src/table-storage.ts",
     "./table-broker": "./src/table-broker.ts",
+    "./store-sweep": "./src/store-sweep.ts",
     "./formula-to-text": "./src/formula-to-text.ts",
     "./formulas": "./src/formulas.ts",
     "./calculate": "./src/calculate.ts",

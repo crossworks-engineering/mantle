@@ -179,7 +179,13 @@ export function tabsFromStats(stats: unknown): TableTabInfo[] | undefined {
   return s.tabs.map((t) => ({ id: t.tabId, name: t.name, rows: t.rows, columns: t.columns }));
 }
 
-export type DocsRow = { storagePath: string | null; data: unknown; draft: unknown };
+export type DocsRow = {
+  storagePath: string | null;
+  /** The draft the row points at (A3b); absent or null: no draft file. */
+  draftPath?: string | null;
+  data: unknown;
+  draft: unknown;
+};
 
 /** Published + draft docs for a registry row: workbook file when file-backed
  *  (draft-first callers get both), JSONB otherwise. `tabId` picks the tab to
@@ -195,7 +201,10 @@ export function docsOf(
   docClipped: boolean;
 } {
   if (row.storagePath) {
-    const loaded = loadDocsFromFile(row.storagePath, { tabId, publishedOnly: opts.publishedOnly });
+    const loaded = loadDocsFromFile(row.storagePath, row.draftPath ?? null, {
+      tabId,
+      publishedOnly: opts.publishedOnly,
+    });
     return {
       data: loaded.data,
       draft: loaded.draft,

@@ -17,15 +17,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
-import {
-  brokerTransaction,
-  db,
-  nodes,
-  appDatabases,
-  repairStore,
-  runReadPathWrite,
-  StoreWrite,
-} from '@mantle/db';
+import { db, nodes, appDatabases, oneRow, revisionToken, stageThenFlip } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
@@ -304,23 +296,23 @@ async function isRestoring(storagePath: string): Promise<boolean> {
 
 // ── The store broker (workspaces arch A3b, docs/store-brokers.md) ─────────
 //
-// This module is the only writer of an app's SQLite file. Before any write
-// it bumps the registry row's write revision (write_seq, 0283) as the
-// caller and needs exactly one row back: the statement the database checks
-// (the row rules and the edit check's appdata rule on the write role), so a
-// write the database refuses changes nothing on disk.
+// This module is the only writer of an app's SQLite file. Every write runs
+// the statement the database checks first, as the caller: the registry
+// row's write revision (write_seq, 0283) bumped, exactly one row (the row
+// rules and the edit check's appdata rule on the write role), so a write the
+// database refuses changes nothing on disk. A restore replaces the whole
+// file: staged under a new revision name, then one short transaction checks
+// the row and points it there (plan 20.3); the old file is the sweep's.
+// The app's SQL (a statement, a seed, a schema script) runs in place: the
+// owner's exception to 20.3, a copy per statement would cost a whole file.
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** The journal of an app's database file, beside it. */
-function appDbJournal(storagePath: string): string {
-  return `${storagePath}.broker`;
-}
-
 /** The checked statement inside a write's transaction: the revision bumped
  *  as the caller (it takes the row lock), exactly one row. */
-async function bumpWriteSeq(tx: Tx, w: StoreWrite, regId: string): Promise<number> {
-  const row = w.one(
+async function bumpWriteSeq(tx: Tx, regId: string): Promise<number> {
+  const row = oneRow(
+    'appdb',
     await tx
       .update(appDatabases)
       .set({ writeSeq: sql`${appDatabases.writeSeq} + 1` })
@@ -334,13 +326,13 @@ async function bumpWriteSeq(tx: Tx, w: StoreWrite, regId: string): Promise<numbe
 /**
  * The checked statement of a single statement's write (host.db.exec, an MCP
  * write), on its own: committed before the app's SQL runs, so no transaction
- * or row lock is held across it (plan 20.3: a broker holds none across a
- * disk write; an app's statement may run for APP_SQL_TIMEOUT_MS). A
- * refusal stops it before the file; a statement that then fails leaves
- * only the revision one higher.
+ * or row lock is held across it (an app's statement may run for
+ * APP_SQL_TIMEOUT_MS). A refusal stops it before the file; a statement that
+ * then fails leaves only the revision one higher.
  */
 async function checkAppDbWrite(regId: string): Promise<void> {
-  new StoreWrite('appdb').one(
+  oneRow(
+    'appdb',
     await db
       .update(appDatabases)
       .set({ writeSeq: sql`${appDatabases.writeSeq} + 1` })
@@ -350,43 +342,9 @@ async function checkAppDbWrite(regId: string): Promise<void> {
   );
 }
 
-/** Fold an app database's WAL into it, so a copy of the main file is whole. */
-async function checkpointAppDb(file: string): Promise<void> {
-  if (!(await fileExists(file))) return;
-  const h = await openSqlite(file);
-  try {
-    h.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-  } finally {
-    h.close();
-  }
-}
-
-/**
- * Repair on read (A3b): a journal beside the app's file means a write whose
- * commit was never seen. Under the registry row lock, as
- * system(repair:store-broker), the database's write_seq decides: the write
- * committed (tidy), or it did not (a restore's swap is undone; a statement
- * run in place is kept, it passed its check). One stat when there is none.
- */
-async function repairAppDb(reg: { id: string; storagePath: string }): Promise<void> {
-  const journal = appDbJournal(reg.storagePath);
-  if (!fs.existsSync(journal)) return;
-  await runReadPathWrite('repair:store-broker', () =>
-    db.transaction(async (tx) => {
-      const [row] = await tx
-        .select({ seq: appDatabases.writeSeq })
-        .from(appDatabases)
-        .where(eq(appDatabases.id, reg.id))
-        .for('update');
-      repairStore(journal, row ? Number(row.seq) : null);
-    }),
-  ).catch((err: unknown) => {
-    // Never fails the app's statement: left for the next access.
-    console.error(
-      `[app-broker] repair of ${reg.storagePath} left for the next access:`,
-      errorMessage(err),
-    );
-  });
+/** A new revision of an app's database file, beside the current one. */
+function appDbRevisionPath(storagePath: string, appNodeId: string): string {
+  return path.join(path.dirname(storagePath), `${appNodeId}.r-${revisionToken()}.sqlite`);
 }
 
 /** Ensure the app's DB exists and its declared DDL has been applied (idempotent;
@@ -401,7 +359,6 @@ export async function ensureAppDatabase(
 ): Promise<AppDbRegistry> {
   const reg = await ensureRegistry(ownerId, appNodeId);
   if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
-  await repairAppDb(reg);
   await assertNotLost(appNodeId, reg);
   if (schema && schema.schemaSql.trim() && schema.schemaVersion > reg.schemaVersion) {
     // Defense in depth: the schema DDL is agent-authored, so it must clear the
@@ -430,42 +387,36 @@ export async function ensureAppDatabase(
  * statement 3 would leave 1-2 committed while the version stays old.
  */
 async function applySchema(reg: AppDbRegistry, schema: AppDbSchema): Promise<void> {
-  await brokerTransaction<Tx, void>(
-    'appdb',
-    (run) => db.transaction(run),
-    async (tx, w) => {
-      const [locked] = await tx
-        .select({ schemaVersion: appDatabases.schemaVersion, seq: appDatabases.writeSeq })
-        .from(appDatabases)
-        .where(eq(appDatabases.id, reg.id))
-        .for('update');
-      if (!locked) throw new Error('the app database registry row is gone');
-      if (locked.schemaVersion >= schema.schemaVersion) {
-        reg.schemaVersion = locked.schemaVersion;
-        return;
-      }
-      // The store broker (A3b): the checked statement, then the file.
-      const seq = await bumpWriteSeq(tx, w, reg.id);
-      w.journalAt(appDbJournal(reg.storagePath), seq, seq - 1);
-      await mkdir(path.dirname(reg.storagePath), { recursive: true });
-      await w.inPlace(reg.storagePath, () =>
-        runAppSql(reg.storagePath, {
-          sql: schema.schemaSql,
-          mode: 'script',
-          readOnly: false,
-          timeoutMs: APP_SCHEMA_TIMEOUT_MS,
-          userVersion: schema.schemaVersion,
-        }),
+  await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ schemaVersion: appDatabases.schemaVersion })
+      .from(appDatabases)
+      .where(eq(appDatabases.id, reg.id))
+      .for('update');
+    if (!locked) throw new Error('the app database registry row is gone');
+    if (locked.schemaVersion >= schema.schemaVersion) {
+      reg.schemaVersion = locked.schemaVersion;
+      return;
+    }
+    // The store broker (A3b): the checked statement, then the script in
+    // place (the app SQL exception), under the row lock a restore takes too.
+    await bumpWriteSeq(tx, reg.id);
+    await mkdir(path.dirname(reg.storagePath), { recursive: true });
+    await runAppSql(reg.storagePath, {
+      sql: schema.schemaSql,
+      mode: 'script',
+      readOnly: false,
+      timeoutMs: APP_SCHEMA_TIMEOUT_MS,
+      userVersion: schema.schemaVersion,
+    });
+    await tx
+      .update(appDatabases)
+      .set({ schemaVersion: schema.schemaVersion, updatedAt: new Date() })
+      .where(
+        and(eq(appDatabases.id, reg.id), lt(appDatabases.schemaVersion, schema.schemaVersion)),
       );
-      await tx
-        .update(appDatabases)
-        .set({ schemaVersion: schema.schemaVersion, updatedAt: new Date() })
-        .where(
-          and(eq(appDatabases.id, reg.id), lt(appDatabases.schemaVersion, schema.schemaVersion)),
-        );
-      reg.schemaVersion = schema.schemaVersion;
-    },
-  );
+    reg.schemaVersion = schema.schemaVersion;
+  });
 }
 
 /**
@@ -756,34 +707,23 @@ export async function appDbSeedRows(
   // (the revision bump, which takes the lock) comes first, before the file
   // is even read.
   let columns: string[] = [];
-  const changes = await brokerTransaction<Tx, number[]>(
-    'appdb',
-    (run) => db.transaction(run),
-    async (tx, w) => {
-      const seq = await bumpWriteSeq(tx, w, reg.id);
-      if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
-      w.journalAt(appDbJournal(reg.storagePath), seq, seq - 1);
-      if (!(await fileExists(reg.storagePath))) {
-        await w.create(reg.storagePath, async () => (await openSqlite(reg.storagePath)).close(), {
-          sqlite: true,
-        });
-      }
-      const read = (q: string) =>
-        runAppSql(reg.storagePath, { sql: q, mode: 'all', readOnly: true }) as Promise<DbRows>;
-      columns = (await read(`PRAGMA table_info("${table}")`)).map((c) => String(c.name));
-      if (!columns.length) {
-        const known = (
-          await read(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-          )
-        ).map((t) => String(t.name));
-        throw seedTableError(table, known);
-      }
-      return w.inPlace(reg.storagePath, () =>
-        runAppSqlBatch(reg.storagePath, planSeedStatements(table, columns, rows, opts)),
-      );
-    },
-  );
+  const changes = await db.transaction(async (tx) => {
+    await bumpWriteSeq(tx, reg.id);
+    if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
+    if (!(await fileExists(reg.storagePath))) (await openSqlite(reg.storagePath)).close();
+    const read = (q: string) =>
+      runAppSql(reg.storagePath, { sql: q, mode: 'all', readOnly: true }) as Promise<DbRows>;
+    columns = (await read(`PRAGMA table_info("${table}")`)).map((c) => String(c.name));
+    if (!columns.length) {
+      const known = (
+        await read(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+      ).map((t) => String(t.name));
+      throw seedTableError(table, known);
+    }
+    return runAppSqlBatch(reg.storagePath, planSeedStatements(table, columns, rows, opts));
+  });
   // Same best-effort size tracking as appDbExec.
   try {
     const { size } = await stat(reg.storagePath);
@@ -998,8 +938,19 @@ export type AppDbSnapshotReport = {
 /** Where an app's snapshot lands under destDir — mirrors the live layout
  *  (<destDir>/<owner>/<app>.sqlite) so a restore drops straight back into
  *  APP_DB_DIR without any path rewriting. */
-export function snapshotDestPath(destDir: string, ownerId: string, appNodeId: string): string {
-  return path.join(destDir, ownerId, `${appNodeId}.sqlite`);
+export function snapshotDestPath(
+  destDir: string,
+  ownerId: string,
+  appNodeId: string,
+  storagePath?: string,
+): string {
+  // The file's own name (a revision a restore flipped to, A3b), so the
+  // restore script puts it back where storage_path points.
+  return path.join(
+    destDir,
+    ownerId,
+    storagePath ? path.basename(storagePath) : `${appNodeId}.sqlite`,
+  );
 }
 
 /**
@@ -1055,7 +1006,7 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
       !live.startsWith('..') && path.dirname(live) !== '.' && !path.dirname(live).includes(path.sep)
         ? path.dirname(live)
         : r.ownerId;
-    const destFile = snapshotDestPath(destDir, layoutOwner, r.appNodeId);
+    const destFile = snapshotDestPath(destDir, layoutOwner, r.appNodeId, r.storagePath);
     try {
       await mkdir(path.dirname(destFile), { recursive: true });
       await rm(destFile, { force: true }); // VACUUM INTO refuses an existing target
@@ -1145,51 +1096,54 @@ export async function restoreAppDatabaseFile(
   await writeFile(marker, String(Date.now()));
   try {
     await new Promise((r) => setTimeout(r, opts.drainMs ?? APP_DB_RESTORE_DRAIN_MS));
-    // The store broker (A3b): the checked statement (the revision bump,
-    // which takes the row lock the schema applier and a seed take too),
-    // then the swap; the live file is kept aside until the commit, and put
-    // back if it does not land.
-    return await brokerTransaction<Tx, { bytes: number }>(
-      'appdb',
-      (run) => db.transaction(run),
-      async (tx, w) => {
-        const seq = await bumpWriteSeq(tx, w, reg.id);
-        w.journalAt(appDbJournal(reg.storagePath), seq, seq - 1);
-        // Fresh marker for the swap itself (a slow drain must not age it out).
-        const now = new Date();
-        await utimes(marker, now, now);
-        await checkpointAppDb(reg.storagePath);
-        await w.replace(
-          reg.storagePath,
-          async () => {
-            const tmp = `${reg.storagePath}.restore-${process.pid}-${Date.now()}`;
-            try {
-              await copyFile(snapshotAbs, tmp);
-              const fh = await open(tmp, 'r+');
-              try {
-                await fh.sync();
-              } finally {
-                await fh.close();
-              }
-              await Promise.all(
-                appDbFiles(reg.storagePath)
-                  .slice(1)
-                  .map((f) => rm(f, { force: true })),
-              );
-              await rename(tmp, reg.storagePath);
-            } catch (err) {
-              await rm(tmp, { force: true });
-              throw err;
-            }
-          },
-          { sqlite: true },
-        );
-        const { size } = await stat(reg.storagePath);
-        await tx
-          .update(appDatabases)
-          .set({ schemaVersion, sizeBytes: size, updatedAt: new Date() })
-          .where(eq(appDatabases.id, reg.id));
+    // The store broker (A3b, plan 20.3): the snapshot is staged as a new
+    // revision of the file (no row points at it), then one short transaction
+    // checks the row as the caller (the revision bump, which takes the row
+    // lock the schema applier and a seed hold) and points it at the stage.
+    // The old file, and its sidecars, are the sweep's.
+    const next = appDbRevisionPath(reg.storagePath, appNodeId);
+    return await stageThenFlip(
+      async () => {
+        try {
+          await copyFile(snapshotAbs, next);
+          const fh = await open(next, 'r+');
+          try {
+            await fh.sync();
+          } finally {
+            await fh.close();
+          }
+          return next;
+        } catch (err) {
+          await rm(next, { force: true });
+          throw err;
+        }
+      },
+      async (staged) => {
+        const { size } = await stat(staged);
+        await db.transaction(async (tx) => {
+          // Fresh marker for the flip itself (a slow drain must not age it out).
+          const now = new Date();
+          await utimes(marker, now, now);
+          oneRow(
+            'appdb',
+            await tx
+              .update(appDatabases)
+              .set({
+                storagePath: staged,
+                writeSeq: sql`${appDatabases.writeSeq} + 1`,
+                schemaVersion,
+                sizeBytes: size,
+                updatedAt: new Date(),
+              })
+              .where(eq(appDatabases.id, reg.id))
+              .returning({ id: appDatabases.id }),
+            'app database',
+          );
+        });
         return { bytes: size };
+      },
+      (staged) => {
+        for (const f of appDbFiles(staged)) fs.rmSync(f, { force: true });
       },
     );
   } finally {
