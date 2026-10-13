@@ -891,29 +891,38 @@ and `app_databases.write_seq`, with no table rewrite.
   valid while a row points at them.
 - **The nightly sweep** (maintenance task `store-sweep`) removes an old
   revision only: a file of a table or app whose row names ANOTHER file that
-  is on disk, once it has been unreferenced on two runs an hour apart.
-  Until then they take disk: a commit of a large table holds two copies for
-  about a day. It never removes a file whose item has no row (a deleted
-  item's, an app's from long ago: reported), a draft from before the roll
-  (`<node>.draft.sqlite`: reported), nor any file of an item whose row names
-  a file that is missing. It removes NOTHING in a store, and the run shows
-  failed, when a row names a file outside the store's folder (the
+  is on disk, once it has been unreferenced on two runs an hour apart. With
+  the nightly run that is the second night: until then they take disk (a
+  commit of a large table holds two copies for up to about two days). Each
+  run removes at most the larger of 500 files and half a store, the oldest
+  first; the rest go on the next nights ("deferred", not a failure). It
+  never removes a file whose item has no row (a deleted item's, an app's
+  from long ago: reported), a draft from before the roll
+  (`<node>.draft.sqlite`: reported for ever once its table is committed;
+  remove one by hand after checking no row's `draft_path` names it), nor
+  any file of an item whose row names a file that is missing. It removes
+  NOTHING in a store, and the run shows failed, for a week after a restore
+  (below), when a row names a file outside the store's folder (the
   maintenance container must mount `app-dbs`: the compose file of this
-  release does), when no row names any file (a wrong database), or when
-  more than 50 files (or 10% of the store, past 10 files) would go at once.
+  release does), or when no row names any file (a wrong database).
   `pnpm -C server/web store:sweep` shows what is due and what is kept;
-  `--apply` removes it; `--apply --allow-many` lifts the per-run limit once
-  the dry run reads right.
+  `--apply` removes it.
 - **Backups and restores.** The backup runs `pg_dump` first, then the app
   databases, then the table workbooks, while the brain keeps writing. A
   write that lands in between moves a row to a NEW file after the dump
-  recorded the old one, so each archive holds EVERY revision of each table
-  and app database on disk, not only the one the row names at archive time:
-  the old revision is still there (the sweep keeps it for at least an
-  hour), so the file the dump's row names is in the archive. Restore
-  Postgres first, then the files, as before; the extra revisions the
-  restored rows do not name are the sweep's. Until the sweep has run, an
-  archive is larger by the revisions it has not removed yet.
+  recorded the old one, so each archive holds, besides the files the rows
+  name, every revision the sweep had not yet marked unreferenced when the
+  dump started: the old revision is still there (the sweep keeps it for at
+  least an hour), so the file the dump's row names is in the archive.
+  Restore Postgres first, then the files, as before.
+- **After a restore the sweep is held.** `scripts/db-restore.sh` (at
+  `$MANTLE_DATA_DIR/table-dbs` and `app-dbs`, where they exist) and
+  `scripts/app-dbs-restore.sh` write `.store-sweep-hold` at the store root:
+  restored rows may name older revisions than the files on disk, and the
+  sweep would read the newer ones as old revisions. The nightly sweep stops
+  (the run shows failed) for a week. Once the restored files are checked,
+  read `pnpm -C server/web store:sweep`, then run it with
+  `--apply --allow-many`, or remove the hold files.
 
 ## Rollback
 
