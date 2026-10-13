@@ -1093,15 +1093,12 @@ function watchTx(t: PgSql, tx: WriteTx): PgSql {
     apply(target, thisArg, args: unknown[]) {
       const strings = args[0] as TemplateStringsArray | undefined;
       const call = () =>
-        Promise.resolve(
-          Reflect.apply(
-            target as unknown as (...a: unknown[]) => unknown,
-            thisArg,
-            args,
-          ) as PromiseLike<unknown>,
-        );
+        Reflect.apply(target as unknown as (...a: unknown[]) => unknown, thisArg, args);
+      // Not a statement (a helper: identifiers, values): as it is.
       if (!Array.isArray(strings) || !('raw' in strings)) return call();
-      return statement(strings.join('$1'), call);
+      return lazyQuery((mode) =>
+        statement(strings.join('$1'), () => sendIn(call() as QueryLike, mode)),
+      );
     },
     get(target, prop, receiver) {
       if (prop === 'unsafe') {
