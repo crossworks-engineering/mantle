@@ -39,7 +39,7 @@
 import type { WorkspaceArea } from '@mantle/client-types';
 import { registerPolicySource, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea } from '../access-keys';
-import { API_V1_ROUTES, matchApiV1Route, type KeyRoute } from '../api-v1';
+import { API_V1_ROUTES, type KeyRoute } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { isPublicPath, isRenderAssetPath } from '../auth-constants';
 import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
@@ -415,21 +415,16 @@ export function rowKeyRoute(row: RouteRow | null): KeyRoute | null {
 
 /**
  * What an API key is held to on a request: the row's (rowKeyRoute), where
- * the RAW path names the same v1 route (matchApiV1Route), else null (not
- * in the API: the 404). Hono decodes the path before routing, so an
- * encoded spelling (`/api/v1/%73earch`) finds the search row; before A4 a
- * key was judged on the raw path, where such a spelling names no v1 route,
- * and that answer stays. The gate (gateAccessKey) and the guard
- * (accessKeyLogin) both ask this.
+ * the RAW path spells the row's pattern (spellsPattern), else null (not in
+ * the API: the 404). Hono decodes the path before routing, so an encoded
+ * spelling (`/api/v1/%73earch`) finds the search row; before A4 a key was
+ * judged on the raw path, where such a spelling names no v1 route, and
+ * that answer stays. The raw path only filters the row: it never picks
+ * another (docs/actors.md, "the routed row is the request's only row").
+ * The gate (gateAccessKey) and the guard (accessKeyLogin) both ask this.
  */
-export function requestKeyRoute(
-  row: RouteRow | null,
-  method: string,
-  rawPath: string,
-): KeyRoute | null {
-  const raw = matchApiV1Route(method, rawPath);
-  if (!raw || !row || raw.pattern !== row.pattern) return null;
-  return rowKeyRoute(row);
+export function requestKeyRoute(row: RouteRow | null, rawPath: string): KeyRoute | null {
+  return row && spellsPattern(row.pattern, rawPath) ? rowKeyRoute(row) : null;
 }
 
 /** The item a write request names, from its row and path (what

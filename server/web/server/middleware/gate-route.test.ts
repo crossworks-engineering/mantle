@@ -202,6 +202,18 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
     expect(await json(write)).toMatchObject({ error: 'forbidden', reason: 'key-read-only' });
   });
 
+  it('an API key on a trailing slash: no row answers it, so not in the API', async () => {
+    // The one spelling the key table reads (matchApiV1Route takes `/?$`)
+    // and the spelling test does not: the router is strict, so no row
+    // answers it and requestKeyRoute never meets it (route-policy.test.ts).
+    const auth = { authorization: 'Bearer mtlk_test_secret' };
+    for (const path of ['/api/v1/pages/', `/api/v1/pages/${OWNER}/`]) {
+      const res = await app.request(path, { headers: auth });
+      expect(res.status, path).toBe(404);
+      expect(await json(res), path).toEqual({ error: 'not found' });
+    }
+  });
+
   it('the guard holds a key to the raw path too (accessKeyLogin)', async () => {
     const { getOwnerOr401 } = await import('../../lib/auth/session');
     const { buildRouteRow } = await import('../../lib/auth/route-policy');

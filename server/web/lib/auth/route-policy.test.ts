@@ -261,10 +261,7 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
             if (onRow !== byPath) diffs.push(`${what}: row ${onRow}, keyMayCall ${byPath}`);
             // What the gate and the guard ask (the row where the raw path
             // names it): the same answer on a plain path.
-            const onRequest = keyMayCall(
-              { access, areas },
-              requestKeyRoute(row, row.method, path),
-            ).ok;
+            const onRequest = keyMayCall({ access, areas }, requestKeyRoute(row, path)).ok;
             if (onRequest !== byPath) {
               diffs.push(`${what}: request ${onRequest}, keyMayCall ${byPath}`);
             }
@@ -278,6 +275,42 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     // Off the key table no key is let in (not in the API).
     expect(rowKeyRoute(table.get('GET /api/version')!)).toBeNull();
     expect(rowKeyRoute(null)).toBeNull();
+  });
+
+  // requestKeyRoute asks the one spelling test (spellsPattern) where fix
+  // round 2 asked the key table (matchApiV1Route named the row's pattern).
+  // The same answer on every row, for every spelling a request routed to
+  // it can have: plain, a static segment escaped, a param escaped, and a
+  // longer path. A trailing slash is the one spelling the key table read
+  // and the spelling test does not, and no row answers it (the router is
+  // strict): gate-route.test.ts pins that on the wire.
+  it("requestKeyRoute: the spelling test answers fix round 2's key-table test, on every row", () => {
+    const roundTwo = (row: RouteRow, rawPath: string) => {
+      const raw = matchApiV1Route(row.method, rawPath);
+      return raw && raw.pattern === row.pattern ? rowKeyRoute(row) : null;
+    };
+    const diffs: string[] = [];
+    let keyed = 0;
+    for (const row of table.values()) {
+      const spellings = [
+        ...pathsOf(row.pattern),
+        ...escapedPathsOf(row.pattern),
+        `${pathsOf(row.pattern)[0]}/extra`,
+      ];
+      for (const path of spellings) {
+        const want = roundTwo(row, path);
+        const got = requestKeyRoute(row, path);
+        if (JSON.stringify(got) !== JSON.stringify(want)) {
+          diffs.push(`${row.key} @${path}: ${JSON.stringify(got)} != ${JSON.stringify(want)}`);
+        }
+        if (got) keyed += 1;
+      }
+      expect(requestKeyRoute(row, `${pathsOf(row.pattern)[0]}/`), row.key).toBeNull();
+    }
+    expect(diffs).toEqual([]);
+    // Most v1 rows were let in on a plain spelling: not null against null.
+    expect(keyed).toBeGreaterThan(API_V1_ROUTES.length);
+    expect(requestKeyRoute(null, '/api/v1/pages')).toBeNull();
   });
 
   it('M3 (owner question for A4 step 4): HEAD of an any-login GET is open to Admin only', () => {
@@ -441,7 +474,7 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
     const { PRINT_PAGES } = await import('../../server/pages/print');
     pages = [...SHARE_PAGES, ...PRINT_PAGES];
     pageTable = buildRoutePolicy(pages, { page: true });
-    const { gateRouteView } = await import('../../server/middleware/gate');
+    const { gateRouteView, requestRow } = await import('../../server/middleware/gate');
     const { registerPages, registerRoutes, servedRoute } =
       await import('../../server/route-loader');
     // The app's own routes and pages; the first handler answers what the
@@ -449,10 +482,11 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
     app = new Hono();
     app.use('*', async (c) => {
       const path = new URL(c.req.url).pathname;
-      const v = gateRouteView(servedRoute(c), c.req.method, path);
+      const route = servedRoute(c);
+      const v = gateRouteView(route, requestRow(route, c.req.method), path);
       // A header, so a HEAD request reads it too.
       const view = JSON.stringify({
-        row: v.row?.key ?? null,
+        byRow: v.byRow,
         public: v.public,
         cors: v.cors,
         renderCookie: v.renderCookie,
@@ -563,12 +597,12 @@ describe.skipIf(!hasManifest)('A4 step 2: the pages have rows, and the gate read
       for (const method of ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS']) {
         const res = await app.request(path, { method });
         const got = JSON.parse(res.headers.get('x-view')!) as {
-          row: string | null;
+          byRow: boolean;
           public: boolean;
           cors: boolean;
           renderCookie: boolean;
         };
-        if (got.row) routed += 1;
+        if (got.byRow) routed += 1;
         const isApi = path === '/api' || path.startsWith('/api/');
         const want = {
           public: isPublicPath(path),

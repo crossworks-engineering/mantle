@@ -58,7 +58,8 @@ import { ensureGateReady } from '@mantle/tools/gate-narrowers';
  * The credential questions of a routed request are its row's
  * (gateRouteView): whether it is public, whether it gets CORS, whether the
  * render cookie opens it. The path checks below answer only a request no
- * row answers.
+ * row answers. The routed row is the request's only row (requestRow): a
+ * check on the raw path as sent only filters it, never picks another.
  */
 
 /** Byte-serving asset routes whose <img>/<iframe>/download srcs can't carry a
@@ -191,11 +192,27 @@ function httpCaller(row: RouteRow, via: CallerVia, accessKey?: AccessKeyGrant): 
   };
 }
 
+/**
+ * The request's ROUTE_POLICY row: its route's row for the method, or null
+ * (no route answers, or the route answers the method only with its 405).
+ *
+ * The one rule (arch A4; docs/actors.md): this ROUTED row is the request's
+ * only row. enterCall runs with it, the request context carries it
+ * (currentRoute()), the key scope (requestKeyRoute) and the item a write
+ * names (routeItemTarget) read it. A check on the raw path as sent (the
+ * credential view below, requestKeyRoute) only FILTERS this row: it may
+ * decide the row does not answer, never pick a different one.
+ */
+export function requestRow(route: ServedRoute | null, method: string): RouteRow | null {
+  return route?.rows.get(method.toUpperCase()) ?? null;
+}
+
 /** What the gate reads of a request's route (arch A4 step 2). */
 export type GateRouteView = Readonly<{
-  /** The ROUTE_POLICY row that decides, or null: no route answers, or the
-   *  path spells a static segment of its pattern with escapes (see below). */
-  row: RouteRow | null;
+  /** The request's row answered the questions below: there is one, and
+   *  the path as sent spells its pattern. False: the path checks did (no
+   *  row, or a path that spells a static segment with escapes). */
+  byRow: boolean;
   /** Let in with no credential (the route judges its own). */
   public: boolean;
   /** CORS-eligible: any /api request, and the /s routes a client-origin
@@ -207,33 +224,38 @@ export type GateRouteView = Readonly<{
 
 /**
  * The gate's credential questions for one request, answered once: by the
- * row of a routed request, by the path checks for a request no route
- * answers (one place each: the row is built from the same functions,
- * route-policy.ts).
+ * request's row (requestRow) for a routed request, by the path checks for
+ * a request no route answers (one place each: the row is built from the
+ * same functions, route-policy.ts).
  *
  * The router matches the path with its percent-escapes decoded, and the
- * path checks always read it as sent. So the row decides only when the
+ * path checks always read it as sent. So the row answers only when the
  * path as sent spells its pattern (spellsPattern); a path that spells a
  * static segment with escapes (`/s/x/%76iew`) is answered by the path
- * checks, as it was before rows decided (pinned by link-render-sweep).
+ * checks, as it was before rows decided (pinned by link-render-sweep). The
+ * spelling test filters the row; the request keeps it either way.
  */
 export function gateRouteView(
   route: ServedRoute | null,
-  method: string,
+  row: RouteRow | null,
   path: string,
 ): GateRouteView {
   const isApi = path === '/api' || path.startsWith('/api/');
-  const spelled = route && spellsPattern(route.pattern, path) ? route : null;
-  const row = spelled?.rows.get(method.toUpperCase()) ?? null;
-  if (row) {
-    return { row, public: row.public, cors: isApi || row.cors, renderCookie: row.renderCookie };
+  const spelled = route !== null && spellsPattern(route.pattern, path);
+  if (row && spelled) {
+    return {
+      byRow: true,
+      public: row.public,
+      cors: isApi || row.cors,
+      renderCookie: row.renderCookie,
+    };
   }
   return {
-    row: null,
+    byRow: false,
     public: isPublicPath(path),
     // A preflight or another method of a /s route with CORS: no row, the
     // pattern's own answer.
-    cors: isApi || spelled?.cors === true,
+    cors: isApi || (spelled && route.cors),
     // Every path the render cookie opens has a row (route-policy.test.ts).
     renderCookie: false,
   };
@@ -258,10 +280,12 @@ function gateHandler(): MiddlewareHandler {
     const path = url.pathname;
 
     const isApi = path === '/api' || path.startsWith('/api/');
-    // The request's route, found once (A4 step 1), and what the gate reads
-    // of it (A4 step 2).
+    // The request's route and its row, found once (A4 step 1), and what
+    // the gate reads of them (A4 step 2). `row` is the request's only row
+    // (requestRow): the view and the key check only filter it.
     const route = servedRoute(c);
-    const view = gateRouteView(route, req.method, path);
+    const row = requestRow(route, req.method);
+    const view = gateRouteView(route, row, path);
     const corsEligible = view.cors;
     const origin = corsEligible ? corsOrigin(req, path) : null;
     const withCors = (res: Response) => {
@@ -272,11 +296,10 @@ function gateHandler(): MiddlewareHandler {
     // Run the downstream handler inside the ambient request context, then
     // apply CORS to whatever it produced. `accessKey` is set only when the
     // request was let in by an API key (below). A routed request runs
-    // through the one gate with its row (found once, here); a refusal of
-    // the gate is answered by the one mapper. The row the call runs with is
-    // the route's, even where the path checks answered the credential
-    // questions (an escaped path, above).
-    const row = route?.rows.get(req.method.toUpperCase()) ?? null;
+    // through the one gate with its row (found once, above); a refusal of
+    // the gate is answered by the one mapper. The call runs with that row
+    // even where the path checks answered the credential questions (an
+    // escaped path: view.byRow false).
     const proceed = async (via: CallerVia, accessKey?: AccessKeyGrant) => {
       const refused = await runWithRequestContext(
         {

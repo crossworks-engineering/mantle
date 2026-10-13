@@ -842,9 +842,9 @@ request context, not on the bound caller, so a call nested inside the
 request with a caller of its own (an MCP tool, a turn) still reads it; each
 session guard and both API key checks (the gate's `gateAccessKey`, the
 guard's `accessKeyLogin`) read the row (`currentRoute()`), never a list.
-A key is judged on the row only where the raw path names the same v1 route
-(`requestKeyRoute`): Hono decodes the path before routing, and an encoded
-spelling stays a 404 for a key, as before A4. Those two checks judge a
+A key is judged on the row only where the raw path spells the row's
+pattern (`requestKeyRoute`): Hono decodes the path before routing, and an
+encoded spelling stays a 404 for a key, as before A4. Those two checks judge a
 key's areas: the HTTP caller sets no key areas, so the key narrower does
 not run on HTTP. A
 request slot with no row is refused (`unclassified`), never taken for
@@ -874,6 +874,16 @@ escapes (`/s/x/%76iew`: the router decodes it, the checks never did). A
 request no route answers (a 404, a 405, the stubs) runs as before.
 `server/web/server/link-render-sweep.test.ts` pins every /s and /print
 answer on the wire, written on the step 1 code.
+
+**The routed row is the request's only row.** The row the router found
+for the request's method (`requestRow` in the gate middleware) is the one
+`enterCall` runs with and the one on the request context; the key scope
+(`requestKeyRoute`) and the item a write names (`routeItemTarget`) read it.
+A check on the raw path as sent only filters that row, never picks another:
+the gate's credential view (`gateRouteView`, `byRow`) and the key check
+both ask one question, whether the raw path spells the row's pattern
+(`spellsPattern`), and where it does not, the path checks answer the
+credential questions and a key is not in the API.
 
 1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null

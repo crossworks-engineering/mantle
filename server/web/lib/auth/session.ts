@@ -526,7 +526,7 @@ async function accessKeyLogin(): Promise<Resolved | null | undefined> {
   const grant = ctx?.accessKey;
   if (!ctx || !grant) return null;
   if (!isApiV1Path(ctx.path)) return null;
-  if (!keyMayCall(grant, requestKeyRoute(currentRoute(), ctx.method, ctx.path)).ok) return null;
+  if (!keyMayCall(grant, requestKeyRoute(currentRoute(), ctx.path)).ok) return null;
   const resolved = await resolvedFor(grant.login, 'api');
   // Arch A2a: a read key's request runs as login(ro).
   if (resolved) nameRequestLogin(resolved, grant.access === 'read_write' ? 'rw' : 'ro');
