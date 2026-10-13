@@ -1029,9 +1029,102 @@ type WriteTx = {
   /** The hooks of a withSystemTx joined to it (joinedSystemTx): run when
    *  this transaction commits or rolls back. */
   hooks: TxHooks;
+  /** Joins at this level, one after another (fix round 2, M1): settles
+   *  when the last one queued has. */
+  joins: Promise<void>;
+  /** Joins queued or running at this level: a statement of this level
+   *  waits for them (a savepoint between a statement and its answer would
+   *  take the statement with it when it rolls back). */
+  inFlight: number;
+  /** Savepoints of joins in the whole transaction (NESTED_SAVEPOINT_WARN). */
+  saves: { n: number };
+  /** The level this join is a savepoint of; null for the transaction. */
+  parent: WriteTx | null;
 };
 
 const openWriteTx = new AsyncLocalStorage<WriteTx>();
+
+/** A write transaction's state (WriteTx), or a join's, under `parent`. */
+function newWriteTx(route: LoginWriteRoute, checked: boolean, parent: WriteTx | null): WriteTx {
+  return {
+    route,
+    checked,
+    t: null,
+    done: false,
+    gap: null,
+    hooks: newTxHooks(),
+    joins: Promise.resolve(),
+    inFlight: 0,
+    saves: parent ? parent.saves : { n: 0 },
+    parent,
+  };
+}
+
+/** A join that found its transaction ended: a write left running after
+ *  its transaction's work returned (a detached call). */
+export class JoinedWriteEndedError extends Error {
+  constructor() {
+    super('login write gateway: a write joined a transaction that had ended (a detached call?)');
+    this.name = 'JoinedWriteEndedError';
+  }
+}
+
+/**
+ * Run `work` in a savepoint of `open` (M2; fix round 2, M1): joins at one
+ * level run one after another, never two savepoints at once (concurrent
+ * ones would interleave: a rollback to the second would take the first's
+ * statement with it after its caller was told it succeeded). Each counts
+ * toward NESTED_SAVEPOINT_WARN with the transaction's other joins. postgres.js
+ * never releases a savepoint, and a released one would not help: Postgres
+ * keeps a subtransaction's id until the top transaction ends. A join's own
+ * joins and its hooks are its own; its hooks join `open`'s when it succeeds.
+ */
+function joinWriteTx(open: WriteTx, work: (sp: PgSql) => unknown): Promise<unknown> {
+  open.inFlight += 1;
+  const run = open.joins.then(async () => {
+    if (open.done) throw new JoinedWriteEndedError();
+    open.saves.n += 1;
+    if (open.saves.n === NESTED_SAVEPOINT_WARN + 1) {
+      console.warn(
+        `[db] login write gateway: more than ${NESTED_SAVEPOINT_WARN} joined writes in one ` +
+          'transaction (a top-level write in a loop?): past 64 subtransactions that write, ' +
+          'every snapshot on the box gets slower (docs/actors.md)',
+      );
+    }
+    const child = newWriteTx(open.route, open.checked, open);
+    try {
+      const out = await (
+        open.t as unknown as { savepoint: (fn: (sp: PgSql) => unknown) => Promise<unknown> }
+      ).savepoint((sp) => {
+        child.t = sp;
+        return openWriteTx.run(child, async () => {
+          try {
+            const value = await work(sp);
+            await child.joins;
+            return value;
+          } finally {
+            child.done = true;
+          }
+        });
+      });
+      open.hooks.commit.push(...child.hooks.commit);
+      open.hooks.rollback.push(...child.hooks.rollback);
+      return out;
+    } catch (err) {
+      child.done = true;
+      await runTxHooks(child.hooks.rollback, 'rollback');
+      throw err;
+    }
+  });
+  const settled = run.finally(() => {
+    open.inFlight -= 1;
+  });
+  open.joins = settled.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 /** The open write transaction a write of `route` joins (M2): same actor,
  *  scope and create home, its work still running. */
@@ -1064,6 +1157,15 @@ function watchTx(t: PgSql, tx: WriteTx): PgSql {
       throw err;
     });
   const statement = (text: string, send: () => Promise<unknown>): Promise<unknown> => {
+    // A statement of a level with joins in flight goes after them (M1);
+    // never the gateway's own (the SET a join's savepoint waits for).
+    const level = openWriteTx.getStore();
+    if (level && level.inFlight > 0 && !text.startsWith(ACTOR_SQL_TAG)) {
+      return level.joins.then(() => direct(text, send));
+    }
+    return direct(text, send);
+  };
+  const direct = (text: string, send: () => Promise<unknown>): Promise<unknown> => {
     if (!tx.checked) {
       const target = rawWriteTarget(text);
       if (target !== null && isWriteRoleGapTable(target)) {
@@ -1315,6 +1417,8 @@ async function writeTxOf(
         tx.t = client;
         try {
           const value = await work(client);
+          // Joins left running (not awaited) finish inside it.
+          await tx.joins;
           if (tx.gap) throw new WriteRoleGapError(tx.gap);
           return value;
         } catch (err) {
@@ -1341,14 +1445,7 @@ async function writeTxOf(
  *  trip. */
 function writeRoleBegin(route: LoginWriteRoute, args: unknown[]): Promise<unknown> {
   const work = args[args.length - 1] as (t: PgSql) => unknown;
-  const tx: WriteTx = {
-    route,
-    checked: false,
-    t: null,
-    done: false,
-    gap: null,
-    hooks: newTxHooks(),
-  };
+  const tx = newWriteTx(route, false, null);
   return writeTxOf(tx, route.setSql, (w) => boundedBegin(args.slice(0, -1), w), work);
 }
 
@@ -1363,14 +1460,7 @@ function writeRoleBegin(route: LoginWriteRoute, args: unknown[]): Promise<unknow
  */
 function checkedBegin(route: LoginWriteRoute, args: unknown[]): Promise<unknown> {
   const work = args[args.length - 1] as (t: PgSql) => unknown;
-  const tx: WriteTx = {
-    route,
-    checked: true,
-    t: null,
-    done: false,
-    gap: null,
-    hooks: newTxHooks(),
-  };
+  const tx = newWriteTx(route, true, null);
   return writeTxOf(
     tx,
     checkedSettingsSql(route),
@@ -1380,12 +1470,9 @@ function checkedBegin(route: LoginWriteRoute, args: unknown[]): Promise<unknown>
 }
 
 /** A transaction (begin's arguments) joined to an open write transaction
- *  (M2): a savepoint of it, watched as it is. */
+ *  (M2): a savepoint of it, watched as it is (joinWriteTx). */
 function joinedBegin(open: WriteTx, args: unknown[]): Promise<unknown> {
-  const work = args[args.length - 1] as (t: PgSql) => unknown;
-  return (
-    open.t as unknown as { savepoint: (fn: (sp: PgSql) => unknown) => Promise<unknown> }
-  ).savepoint(work);
+  return joinWriteTx(open, args[args.length - 1] as (t: PgSql) => unknown);
 }
 
 /** One statement joined to an open write transaction (M2), in a savepoint
