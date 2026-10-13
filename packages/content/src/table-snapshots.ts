@@ -26,17 +26,17 @@
  * Server-only (node:fs): import via '@mantle/content/table-snapshots'.
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, renameSync, rmSync, statSync } from 'node:fs';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { existsSync, rmSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodeSnapshots, nodes, tables } from '@mantle/db';
 import { currentSpaceScope, isSystemScope } from '@mantle/db/viewer';
 import { draftPathFor, resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import type { TableSnapshot } from '@mantle/client-types';
-import { copySqliteFile, linkOrCopy } from './history-files';
+import { copySqliteFile } from './history-files';
 import { envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
-import { removeTableFile, withTableRegistryLock } from './table-storage';
+import { withTableRegistryLock } from './table-storage';
+import { withTableWrite, type TableWrite } from './table-broker';
 import { assertTableWritable } from './tables/shared';
 import type { AppHistoryActor } from './apps';
 
@@ -66,8 +66,6 @@ export class TableRestoreDraftError extends Error {
   }
 }
 
-type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 function snapshotRelPath(ownerId: string, tableId: string, snapshotId: string): string {
   return path.join('_snapshots', ownerId, tableId, `${snapshotId}.sqlite`);
 }
@@ -95,7 +93,7 @@ function historyWritable(): boolean {
  * published file yet, or a commit the history does not record.
  */
 export async function keepCommitSnapshot(
-  tx: DbTx,
+  t: TableWrite,
   opts: {
     ownerId: string;
     tableId: string;
@@ -105,6 +103,7 @@ export async function keepCommitSnapshot(
   },
 ): Promise<string | null> {
   if (!historyWritable() || !existsSync(opts.publishedAbs)) return null;
+  const tx = t.tx;
   const [reg] = await tx
     .select({ version: tables.version })
     .from(tables)
@@ -113,28 +112,23 @@ export async function keepCommitSnapshot(
   const id = randomUUID();
   const rel = snapshotRelPath(opts.ownerId, opts.tableId, id);
   const abs = snapshotAbsPath(rel);
-  await mkdir(path.dirname(abs), { recursive: true });
-  // Another filesystem, or links refused: an async copy (the file is at rest
-  // under the lock, its WAL checkpointed by the commit that wrote it).
-  await linkOrCopy(opts.publishedAbs, abs);
-  try {
-    await insertNodeSnapshot(tx, {
-      id,
-      ownerId: opts.ownerId,
-      nodeId: opts.tableId,
-      nodeKind: 'table',
-      trigger: 'commit',
-      note: opts.note?.trim().slice(0, 500) || null,
-      actor: opts.actor ?? 'owner',
-      code: null,
-      dbPath: rel,
-      dbBytes: statSync(abs).size,
-      schemaVersion: reg?.version ?? null,
-    });
-  } catch (err) {
-    rmSync(abs, { force: true });
-    throw err;
-  }
+  // A step of the commit's broker write (A3b), after its check: a hard
+  // link (else a copy) of the file at rest under the lock, removed again
+  // when the commit does not land.
+  await t.keepCopy(opts.publishedAbs, abs);
+  await insertNodeSnapshot(tx, {
+    id,
+    ownerId: opts.ownerId,
+    nodeId: opts.tableId,
+    nodeKind: 'table',
+    trigger: 'commit',
+    note: opts.note?.trim().slice(0, 500) || null,
+    actor: opts.actor ?? 'owner',
+    code: null,
+    dbPath: rel,
+    dbBytes: statSync(abs).size,
+    schemaVersion: reg?.version ?? null,
+  });
   return abs;
 }
 
@@ -367,8 +361,9 @@ export async function restoreTableSnapshot(
     throw new TableSnapshotRefusedError(`v${entry.seq}'s workbook file is missing on the server`);
   }
   const source = entry.abs;
-  const done = await withTableRegistryLock(tableId, async (tx, locked) => {
-    if (!locked) return false;
+  // The store broker (A3b): the draft_rev bump is the lock and the check, as
+  // the caller, before the draft is replaced.
+  const done = await withTableWrite(ownerId, tableId, async (tx, locked, t) => {
     if (!locked.storagePath) {
       throw new TableSnapshotRefusedError('this table has no workbook file to restore into');
     }
@@ -382,14 +377,7 @@ export async function restoreTableSnapshot(
     if (hasDraft && !opts.discardDraft) throw new TableRestoreDraftError();
     // The copy lands beside the draft, the old draft's sidecars go (SQLite
     // would replay a stale WAL into the new file), then one rename.
-    const tmp = `${draftAbs}.restore-${randomUUID().slice(0, 8)}`;
-    try {
-      await copyFile(source, tmp);
-      removeTableFile(draftAbs);
-      renameSync(tmp, draftAbs);
-    } finally {
-      rmSync(tmp, { force: true });
-    }
+    await t.restoreDraft(source, draftAbs);
     await tx
       .update(tables)
       .set({
@@ -397,7 +385,6 @@ export async function restoreTableSnapshot(
         // a workbook; a stale one would shadow the restore).
         draftData: null,
         draftUpdatedAt: new Date(),
-        draftRev: sql`${tables.draftRev} + 1`,
       })
       .where(eq(tables.nodeId, tableId));
     return true;

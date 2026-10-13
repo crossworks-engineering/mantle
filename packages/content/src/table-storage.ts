@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
+import { existsSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
@@ -17,7 +17,6 @@ import {
   TableFileMissingError,
   describeWorkbook,
   draftPathFor,
-  openTableFile,
   profileFile,
   profileToText,
   publishedPath,
@@ -25,7 +24,6 @@ import {
   relativeStoragePath,
   resolveStoragePath,
   tableDbRoot,
-  writeDocFile,
   type WorkbookStats,
   type WorkbookTabRef,
 } from '@mantle/tabledb';
@@ -34,6 +32,7 @@ import { ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model'
 import { tableToText } from './table-to-text';
 import { errorMessage } from '@mantle/std';
 import { copySqliteFile, linkHistoryTree } from './history-files';
+import { withTableWrite, type TableWrite } from './table-broker';
 
 /**
  * File-side plumbing for sqlite-native tables (Tables v2 P1) — the pieces
@@ -177,44 +176,8 @@ export function loadDocsFromFile(
   };
 }
 
-/**
- * Ensure a draft workbook file exists (first edit copies published → draft,
- * plan §4) and return its absolute path. The copy is a plain file copy of the
- * checkpointed published file with FTS shadows STRIPPED — drafts never carry
- * shadows (column ops would fight the triggers; promote rebuilds them).
- * Caller holds the registry lock.
- */
-export function ensureDraftFile(publishedAbs: string): string {
-  const draftAbs = draftPathFor(publishedAbs);
-  if (existsSync(draftAbs)) return draftAbs;
-  // Checkpoint so the copy sees every committed page, then copy + strip.
-  const pub = openTableFile(publishedAbs);
-  try {
-    pub.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-  } finally {
-    pub.close();
-  }
-  copyFileSync(publishedAbs, draftAbs);
-  const draft = openTableFile(draftAbs);
-  try {
-    const tabs = draft.prepare(`SELECT physical_table FROM _tabs`).all();
-    for (const t of tabs) {
-      const pt = String(t.physical_table);
-      draft.exec(`DROP TRIGGER IF EXISTS ${pt}_fts_ai`);
-      draft.exec(`DROP TRIGGER IF EXISTS ${pt}_fts_ad`);
-      draft.exec(`DROP TRIGGER IF EXISTS ${pt}_fts_au`);
-      draft.exec(`DROP TABLE IF EXISTS ${pt}_fts`);
-    }
-    draft.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-  } finally {
-    draft.close();
-  }
-  return draftAbs;
-}
-
 type EnsureFileNode = { id: string; ownerId: string; title: string };
 type EnsureLocked = { storagePath: string | null } | null;
-type EnsureTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Lazy migration (P4, plan §9): make a legacy JSONB table file-backed, under
@@ -224,10 +187,11 @@ type EnsureTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * updates the registry. No-op when already file-backed.
  */
 export async function ensureFileBacked(
-  tx: EnsureTx,
+  t: TableWrite,
   node: EnsureFileNode,
   locked: EnsureLocked,
 ): Promise<{ storagePath: string; migrated: boolean }> {
+  const tx = t.tx;
   // A null lock means the caller holds no registry row (gone, or hidden by a
   // personal space's frozen rule): rebuilding the published file from JSONB
   // then would overwrite the real workbook. Refuse loudly.
@@ -240,21 +204,24 @@ export async function ensureFileBacked(
     .limit(1);
   const doc = ensureTableDoc(row?.data ?? { columns: [], rows: [] });
   const publishedAbs = publishedPath(node.ownerId, node.id);
-  const res = writeDocFile(publishedAbs, doc, {
+  const res = await t.writeDoc(publishedAbs, doc, {
     nodeId: node.id,
     ownerId: node.ownerId,
     fts: true,
   });
   const back = readDocClipped(publishedAbs, 0);
   if (back.total !== doc.rows.length) {
-    removeTableFile(publishedAbs);
+    // The broker's undo removes the file this write made.
     throw new Error(
       `table migration verify failed for ${node.id}: file has ${back.total} rows, JSONB has ${doc.rows.length} — kept on the JSONB path`,
     );
   }
   if (row?.draftData != null) {
     const draftDoc = ensureTableDoc(row.draftData);
-    writeDocFile(draftPathFor(publishedAbs), draftDoc, { nodeId: node.id, ownerId: node.ownerId });
+    await t.writeDoc(draftPathFor(publishedAbs), draftDoc, {
+      nodeId: node.id,
+      ownerId: node.ownerId,
+    });
   }
   const storagePath = relativeStoragePath(node.ownerId, node.id);
   await tx
@@ -374,9 +341,11 @@ export async function sweepLegacyTables(batch = 5): Promise<number> {
   let converted = 0;
   for (const n of legacy) {
     try {
-      await withTableRegistryLock(n.id, async (tx, locked) => {
-        if (!locked || locked.storagePath) return; // raced a lazy migration — fine
-        await ensureFileBacked(tx, { id: n.id, ownerId: n.ownerId, title: n.title }, locked);
+      // A store broker write (A3b): the draft_rev bump is its check, so an
+      // editor open on the table sees a new revision once.
+      await withTableWrite(n.ownerId, n.id, async (_tx, locked, t) => {
+        if (locked.storagePath) return; // raced a lazy migration — fine
+        await ensureFileBacked(t, { id: n.id, ownerId: n.ownerId, title: n.title }, locked);
       });
       converted++;
     } catch (err) {

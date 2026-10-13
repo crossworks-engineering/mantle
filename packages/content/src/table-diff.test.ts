@@ -2,13 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import {
-  applyOpsToFile,
-  readDocFile,
-  writeDocFile,
-  type CellValue,
-  type TableOp,
-} from '@mantle/tabledb';
+import { readDocFile, type CellValue, type TableOp } from '@mantle/tabledb';
+import { applyOpsToFile, writeDocFile } from '@mantle/tabledb/write';
 import { diffTableDocs, type TableDoc } from '@mantle/content-core/table-model';
 
 function doc(): TableDoc {

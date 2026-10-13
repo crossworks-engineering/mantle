@@ -17,7 +17,6 @@ export {
   shapeHashOf,
   shapeHashOfFile,
   snapshotFile,
-  writeDocFile,
 } from './engine';
 export type {
   ClippedDoc,
@@ -42,7 +41,6 @@ export {
 } from './sql-runner';
 export type { SqlRunResult } from './sql-runner';
 
-export { applyOpsToFile, finalizePublishedFile } from './ops';
 export type { ApplyResult, CoerceFn, TableOp } from './ops';
 
 export {
@@ -56,7 +54,7 @@ export {
 } from './window';
 export type { QueryWindowResult, RowWindow } from './window';
 
-export { TableFileMissingError, openTableFile } from './sqlite';
+export { TableFileMissingError } from './sqlite';
 export type { OpenOptions, SqliteDb } from './sqlite';
 
 export {
