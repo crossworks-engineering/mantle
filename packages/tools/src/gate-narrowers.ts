@@ -162,11 +162,29 @@ export function registerGateNarrowers(): void {
   }
 }
 
-/** Boot: register every narrower and assert the gate is ready. Throws
- *  GateNotReadyError naming what is missing; each process main calls it. */
+/**
+ * Whether a production entry runs through enterCall yet. While false (A3c:
+ * the gate is built, nothing calls it), a gate that is not ready must not
+ * stop a box at boot: enterCall and gateCheck re-assert on every call and
+ * fail closed anyway. A4/A5 set this to true with the first production
+ * caller, and from then on a gate that is not ready stops the boot.
+ */
+export const GATE_HAS_PRODUCTION_CALLERS = false;
+
+/** Boot: register every narrower and assert the gate is ready. Each process
+ *  main calls it. Throws GateNotReadyError naming what is missing once the
+ *  gate has production callers; until then it logs the same error loudly. */
 export function ensureGateReady(): void {
-  registerGateNarrowers();
-  assertGateReady();
+  try {
+    registerGateNarrowers();
+    assertGateReady();
+  } catch (err) {
+    if (GATE_HAS_PRODUCTION_CALLERS) throw err;
+    console.error(
+      '[gate] NOT READY at boot (the gate has no production caller yet, so the process starts):',
+      err,
+    );
+  }
 }
 
 registerGateNarrowers();

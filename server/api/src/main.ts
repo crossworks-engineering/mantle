@@ -81,8 +81,9 @@ process.on('unhandledRejection', (reason) => {
 });
 
 async function main(): Promise<void> {
-  // The one gate (arch A3c fix round 2, M-A): every narrower registered, or
-  // the boot fails here, not at the first tool call of a turn.
+  // The one gate (arch A3c fix round 2, M-A): every narrower registered, or,
+  // once the gate has production callers, the boot fails here, not at the
+  // first tool call of a turn (until then it logs loudly).
   // gate-boot.test.ts pins this call in every process entry.
   ensureGateReady();
   // Liveness: the api runner exposes no HTTP port (DBOS 5 has no admin

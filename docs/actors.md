@@ -866,8 +866,10 @@ production, and no caller's access changed.
    `gateCheck` throw `GateNotReadyError` before any step, and each process
    entry asks `ensureGateReady()` at boot (server/web, server/api, every
    worker through `workers/_runner.ts`, the stdio MCP server; pinned by
-   `packages/tools/src/gate-boot.test.ts`), so a missing one stops the
-   boot, not the first call. A surface where one does not apply registers
+   `packages/tools/src/gate-boot.test.ts`). Once the gate has a production
+   caller (`GATE_HAS_PRODUCTION_CALLERS`, set by A4/A5), a missing one stops
+   the boot, not the first call; until then the boot logs it loudly and
+   starts, since every call fails closed anyway. A surface where one does not apply registers
    an explicit no-op. Registering another function under a taken name, or
    another source for a taken kind, throws on purpose. The member-app rule
    fails closed too: a team-rules app run calls only an `app-tool` ref
