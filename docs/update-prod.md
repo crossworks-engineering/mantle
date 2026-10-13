@@ -907,7 +907,8 @@ and `app_databases.write_seq`, with no table rewrite.
   maintenance container must mount `app-dbs`: the compose file of this
   release does), when no row names any file (a wrong database), or when a
   row names an older revision than on the last run (a restore that put no
-  hold down: read the dry run, then `--apply --allow-many`).
+  hold down: read the dry run `pnpm -C server/web store:sweep --allow-many`,
+  then `--apply --allow-many`).
   `pnpm -C server/web store:sweep` shows what is due and what is kept;
   `--apply` removes it.
 - **Backups and restores.** The backup runs `pg_dump` first, then the app
@@ -928,9 +929,11 @@ and `app_databases.write_seq`, with no table rewrite.
   week keeps every revision. ANY other restore (a manual `pg_restore`, an
   untar of `mantle-table-dbs-<ts>.tgz`) must do the same by hand first:
   `touch <root>/.store-sweep-hold` and `rm <root>/.store-sweep.json` for
-  each store root. Once the restored files are checked, read
-  `pnpm -C server/web store:sweep`, then run it with `--apply --allow-many`,
-  or remove the hold files.
+  each store root (`db-restore.sh` honours `TABLE_DB_DIR` and `APP_DB_DIR`
+  when set). Once the restored files are checked, read the dry run
+  `pnpm -C server/web store:sweep --allow-many` (no `--apply`; without
+  `--allow-many` a held store only says HELD), then run it with
+  `--apply --allow-many`, or remove the hold files.
 
 ## Rollback
 

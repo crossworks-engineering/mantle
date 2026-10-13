@@ -148,8 +148,10 @@ the brokers, the backups and the sweep.
   any file does). Restored rows may name OLDER revisions than the files on
   disk, which would read as old revisions to remove. While the hold is
   younger than a week the store is HELD: nothing removed or marked, the
-  report says `HELD until <date>`, and the maintenance run is done. Run it
-  with `--allow-many` after a dry run was read, or remove the hold. ANY
+  report says `HELD until <date>`, and the maintenance run is done. Read
+  its dry run first (`pnpm -C server/web store:sweep --allow-many`, with no
+  `--apply`: a dry run without `--allow-many` only says HELD), then run it
+  with `--apply --allow-many`, or remove the hold. ANY
   other restore (a manual `pg_restore`, an untar of a table or app archive)
   must do the same by hand: `touch .store-sweep-hold` and remove
   `.store-sweep.json` at the store root first.
@@ -163,7 +165,8 @@ the brokers, the backups and the sweep.
   - A row whose current file (the first column of `STORE_FILE_COLUMNS`) is
     an OLDER revision than the one it named on the last run: revision
     tokens sort by time, and only a restore moves a row back (one that put
-    down no hold). Unless `--allow-many`, after a dry run was read.
+    down no hold). Unless `--allow-many`: read its dry run
+    (`store:sweep --allow-many`), then `--apply --allow-many`.
 - A file goes only once it has been unreferenced on two runs a grace period
   (`STORE_SWEEP_GRACE_MS`, an hour) apart and is older than the grace
   period: a stage in flight, a reader that resolved the old revision just
