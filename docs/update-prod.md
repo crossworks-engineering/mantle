@@ -939,9 +939,9 @@ and `app_databases.write_seq`, with no table rewrite.
 
 Owner decision 2026-10-13: the only built-in workspace with rules of its own
 is Admin. This is a rule change, not a staged check: it applies the moment a
-box rolls, whatever `MANTLE_ACTOR_CHECK` and `MANTLE_EDIT_CHECK` say, so a
-box that runs both off (NATREF, Astron, prod) gets it in full. Roll NATREF
-only after the Pinnacle showcase, with the owner's go.
+box rolls, whatever `MANTLE_ACTOR_CHECK` and `MANTLE_EDIT_CHECK` say, so the
+boxes running both checks off get it in full. Do not roll the showcase box
+until after the showcase, and only with the owner's go.
 
 What migration 0286 does on a box (one statement per brain, under a 30 s
 lock wait, re-runnable):
@@ -950,36 +950,97 @@ lock wait, re-runnable):
   ticks, assistant, connectors and landing page are untouched. It loses its
   built-in mark (`bridge_key` and `admin_moderated` cleared) and gets the
   icon it already showed (`lucide:users`) when none was picked. One
-  `workspace_events` row (`workspace.update`, no actor) records it.
+  `workspace_events` row (`workspace.update`, no actor, `by` "migration
+  0286") records it.
 - **New logins join no Team.** An invite or **Add login** gives a member
   login no workspace (its private one comes when needed); an admin login
-  joins Admin as a Moderator, as before.
-- **Only Admin users tick Moderator**, on every workspace: a Moderator who
-  is not an Admin user can no longer make someone a Moderator or take the
-  tick away (403 `admin_only`); they still add and remove users. The maker
-  of a new workspace is still its Moderator.
+  joins Admin as a Moderator, as before. The login bridge no longer removes
+  Team rows either: a login that stops being an admin or a member keeps
+  them.
+- **Only Admin users tick Moderator, or remove a Moderator**, on every
+  workspace: a Moderator who is not an Admin user can no longer make
+  someone a Moderator, take the tick away, or remove another Moderator
+  (403 `admin_only`); they still add users and remove plain users, and
+  anyone may leave. The maker of a new workspace is still its Moderator.
 - **Team renames and archives like any workspace** (archive is still
   refused while an item has its home there), and its look follows the
   rename rule. Only "Admin" stays a reserved name.
 - A member who chats without naming an assistant gets the assistant of
   their oldest workspace beyond Admin that has one: Team's on such a box,
   so nothing changes there.
+- **A member-built app with no holder beyond Admin reads nothing** after
+  the roll (it read Team until now). The count below finds them; the fix is
+  to share each one with a workspace again (its Grant Access panel).
+
+### Before the roll: count (read only, numbers only)
+
+The box still runs the older image, so run this in psql (it names no
+person, no title and no id):
+
+```sql
+begin read only;
+select
+  -- Team Moderators who are not Admin users (the ticks the switch gave)
+  (select count(*) from workspace_users u
+     join workspaces t on t.id = u.workspace_id and t.owner_id = mantle_brain_id()
+                      and t.bridge_key = 'team'
+    where u.moderator
+      and not exists (select 1 from workspace_users au
+                        join workspaces aw on aw.id = au.workspace_id and aw.is_admin
+                                          and aw.owner_id = mantle_brain_id()
+                       where au.login_id = u.login_id)) as team_member_moderators,
+  -- member-built apps with no live holder workspace beyond Admin
+  (select count(*) from apps a
+     join nodes n on n.id = a.node_id and n.type = 'app'
+    where a.author_level = 'team' and n.owner_id = mantle_brain_id()
+      and not exists (select 1 from workspaces w
+                       where w.id = any(n.read_ws) and not w.is_admin
+                         and w.archived_at is null)) as member_apps_without_holder;
+rollback;
+```
+
+Note both numbers for the box. If `member_apps_without_holder` is above 0,
+plan the re-share: an Admin user shares each such app with the workspace
+that should run it, right after the roll (before the roll it still runs
+through Team, so nothing is lost while you wait).
+
+### Right after the roll: clear the member ticks
+
+The same counts, from the new image, where the operator commands run
+(plus the Moderators over every shared workspace):
+
+```bash
+pnpm -C server/web ws:team-check
+```
+
+Then an Admin user clears the Moderator tick of every Team user who should
+only read and use Team (every member had it since the workspaces switch).
+Either on **Settings > Workspaces > Team**, one row at a time, or in one go:
+
+```bash
+pnpm -C server/web ws:clear-member-ticks --workspace former-team           # dry run: counts
+pnpm -C server/web ws:clear-member-ticks --workspace former-team --apply   # clear them
+```
+
+The command clears the tick of every user who is not an Admin user, keeps
+the Admin users' ticks, keeps at least one Moderator, never removes a row,
+and writes one `user.moderator` event per change. `--workspace <id>` takes
+any other workspace the same way. A member who should keep moderating Team
+gets the tick back from an Admin user on the workspace screen.
+`ws:team-check` then shows 0 for Team. If it still shows member-built apps
+without a holder, re-share them now.
 
 What the operator tells the users of the box: "Team is now a workspace like
 any other. Nobody loses access. From now on only an admin can make someone a
-Moderator, and new people are added to workspaces by an admin." Then an
-Admin user reviews Team's users on **Settings > Workspaces > Team** and
-clears the Moderator tick of anyone who should only read and use Team
-(every member had it since the workspaces switch).
+Moderator or remove one, and new people are added to workspaces by an
+admin."
 
-Check after the roll (read only):
+Check after the roll (read only, numbers only):
 
 ```sql
-select name, bridge_key, admin_moderated, icon from workspaces where not is_admin
- and lower(name) = 'team';
--- one row: Team, null, false, lucide:users (or the icon picked before)
-select count(*) from workspace_users u join workspaces w on w.id = u.workspace_id
- where lower(w.name) = 'team' and u.moderator;   -- the same count as before the roll
+select count(*) from workspaces where not is_admin and bridge_key is not null;  -- 0
+select count(*) from workspace_events
+ where action = 'workspace.update' and subject->>'by' = 'migration 0286';        -- 1 (0 on a brain with no Team)
 ```
 
 Rolling the image back alone leaves Team normal, and the older image finds

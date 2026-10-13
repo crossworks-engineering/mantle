@@ -71,16 +71,20 @@ The workspaces a brain has:
 Who may change a workspace:
 
 - **A Moderator** adds users (by a search on name or email), removes
-  users, edits the name, description and look, and sets the landing page.
+  users who are not Moderators, edits the name, description and look, and
+  sets the landing page.
   The look follows the name's rule: whoever may rename a workspace sets its
   colour and icon, on every workspace. Admin keeps its name, but its look
   can change (its Moderators are Admin users). A Moderator outside Admin
   types at least 3 letters and sees at most 10 matches.
 - **Only an Admin user** (with the users area) sets or clears the
-  Moderator tick, on any workspace, and adds a user with the tick (owner
-  decision 2026-10-13, migration 0286). A Moderator who is not an Admin
-  user adds users without it; the screen shows the tick switched off,
-  with "Only an Admin user can change the Moderator tick." The brain
+  Moderator tick, on any workspace, adds a user with the tick, and removes
+  a Moderator (owner decision 2026-10-13, migration 0286; removing is the
+  same check, so a Moderator cannot remove another and add them back
+  without the tick). A Moderator who is not an Admin user adds users
+  without it; the screen shows the tick switched off, with "Only an Admin
+  user can change the Moderator tick.", and another Moderator's Remove
+  dimmed, with "Only an Admin user can remove a Moderator." The brain
   answers 403 `admin_only` to anyone else.
 - **An Admin user** (with the users area) sees every workspace and may add
   anyone to any workspace, themselves included. The add is logged and the
@@ -90,8 +94,9 @@ Who may change a workspace:
   Moderator. That is the only membership the brain gives by itself (until
   0286 every new login also joined Team as a Moderator, plan Q1). Any
   other workspace needs a Moderator or an Admin user to add the user.
-- **Any user** may leave a workspace. Nobody removes or demotes the last
-  Moderator.
+- **Any user** may leave a workspace, a Moderator too. Nobody removes or
+  demotes the last Moderator: "An Admin user must make another user a
+  Moderator first."
 - **Archiving** a workspace (a Moderator of it, or an Admin user) removes
   its grants from the items granted to it. The confirm lists the counts
   first. It is refused while any item still has its home there: move those
@@ -450,6 +455,14 @@ The users of the Admin workspace manage the brain through five areas:
   the login's own workspaces: a member's chat with no assistant named goes
   to the assistant of its oldest workspace beyond Admin that has one, and
   the old member home route answers its oldest shared workspace.
+  "Shared" means one thing everywhere: a workspace that is neither Admin,
+  nor a private one, nor a Former user one (`mantle_ws_any_shared`, used
+  by the grant reads and that route).
+- **The login bridge no longer touches Team** (0286). A login that stops
+  being an admin or a member keeps its rows in Team, and in every workspace
+  other than Admin; only its Admin row follows its role. A later
+  conversion of logins (a client set up again as a workspace, say) removes
+  those rows itself, on the workspace screen or by hand.
 
 Clients may come back later as ordinary workspaces, set up by hand: a
 workspace with its users in it, like any other.

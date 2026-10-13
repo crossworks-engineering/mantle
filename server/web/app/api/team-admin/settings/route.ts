@@ -1,9 +1,12 @@
 /**
  * Owner-only backing API for the brain's member settings (once the Team
  * admin surface's). GET returns the read posture. PATCH flips the
- * `teamPrivateReads` switch (whether an assistant of a workspace other than
- * Admin may read the owner's email and journal on a member's behalf, in a
- * turn whose scope holds Admin). `teamAssistant` is null since 0286: Team is
+ * `teamPrivateReads` switch. It has no effect on any workspace turn today:
+ * an assistant of a workspace other than Admin never runs as the Admin
+ * assistant (run-team-turn.ts), mail and journal entries live in the Admin
+ * workspace only (mantle_grant_kind_ok, 0241) and their read tools are
+ * Admin only (team-read-admin). The guide says so (team-admin.md), and the
+ * client's words with it. `teamAssistant` is null since 0286: Team is
  * a normal workspace, and each workspace's screen names its own assistant
  * (a member with no assistant named chats with defaultWorkspaceAssistant's
  * pick). The member home app designation left with per-workspace landing
