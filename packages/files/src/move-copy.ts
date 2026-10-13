@@ -48,6 +48,7 @@ import {
   notAFilesFolder,
 } from './paths';
 import { reconcileFilesIndexing } from './indexing';
+import { rowNow } from './ops/shared';
 import {
   createFolder,
   callerSeesNode,
@@ -55,7 +56,6 @@ import {
   fileNameTaken,
   folderById,
   readFileById,
-  rowNow,
   upsertFile,
   type FileRow,
   type FolderRow,

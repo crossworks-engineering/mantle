@@ -19,7 +19,7 @@
  *     don't need a disk round-trip.
  */
 
-export { ensureFilesRootBranch, rowNow, type FolderRow, type FileRow } from './ops/shared';
+export { ensureFilesRootBranch, type FolderRow, type FileRow } from './ops/shared';
 export {
   upsertFile,
   readFileById,
