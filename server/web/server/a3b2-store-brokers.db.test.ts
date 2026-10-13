@@ -135,7 +135,7 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
                            values (${id}, ${ws}, true)
                            on conflict (node_id, workspace_id)
-                           do update set is_home = true, excluded = false`);
+                           do update set is_home = true, excluded = false, via_folder_id = null`);
     });
   };
   /** A real SQLite file (a workbook copy) at `abs`. */
