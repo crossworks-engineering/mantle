@@ -19,6 +19,8 @@ export default defineConfig({
       'server/web/server/a3a-folders.db.test.ts',
       // A3b: the store brokers (it sets both checks on itself, too).
       'server/web/server/a3b-store-brokers.db.test.ts',
+      // A3b part 2: the files and snapshot stores.
+      'server/web/server/a3b2-store-brokers.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },

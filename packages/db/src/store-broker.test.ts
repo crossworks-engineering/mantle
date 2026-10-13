@@ -6,7 +6,8 @@
  * period, two runs apart, a SQLite file's sidecars with it; never a file
  * whose node has no row or whose row's file is missing, never a legacy
  * draft; a stop on a row outside the root, on no row at all, on too many). The
- * per-store DB tests are server/web/server/a3b-store-brokers.db.test.ts.
+ * per-store DB tests are server/web/server/a3b-store-brokers.db.test.ts and
+ * a3b2-store-brokers.db.test.ts (part 2).
  */
 import {
   existsSync,

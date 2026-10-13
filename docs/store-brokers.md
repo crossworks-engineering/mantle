@@ -388,7 +388,7 @@ writes each, the second run; main `af5a041a5` against this branch):
   outside the root; the store root's hold; no stop while a tombstone names
   a file).
 - `server/web/server/a3b2-store-brokers.db.test.ts` (A3b part 2), both
-  checks on: per store a refused caller changes nothing on disk (files: an
+  checks on (also in `pnpm test:edit-on`): per store a refused caller changes nothing on disk (files: an
   overwrite, a rename, a file move, a folder rename and move, a delete;
   snapshots: an app snapshot, a table snapshot, a delete), an allowed
   caller writes row and disk in step, a folder move with hidden rows still
