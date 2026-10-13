@@ -354,7 +354,7 @@ worker-shell server/web/workers/telegram-poll.ts system(worker:channel-poll)
 | A page's block-id backfill (a detached promise)                             | `packages/content/src/pages/read.ts`                                       | `system(backfill:page-block-ids)`                                                                                                                                                                  |
 | The audit row of a connector call on a login's MCP (a detached promise)     | `packages/mcp-core/src/login-surface.ts`                                   | `system(audit-log)`                                                                                                                                                                                |
 | Operator scripts                                                            | `server/web/scripts/*`, `maintain`, any `scripts/` file run as the process | `system(script:<file name>)`, from the process's main file (`scriptActor` in `packages/db/src/actor.ts`)                                                                                           |
-| Clearing member Moderator ticks (0286 roll)                                 | `server/web/scripts/ws-clear-member-ticks.ts` (`lib/workspace-ticks.ts`)   | `system(script:ws-clear-member-ticks)`, from the main file (`scriptActor`); each `user.moderator` event it writes has no `actor_id` and `by` "ws:clear-member-ticks"; `ws:team-check` reads only |
+| Clearing member Moderator ticks (0286 roll)                                 | `server/web/scripts/ws-clear-member-ticks.ts` (`lib/workspace-ticks.ts`)   | `system(script:ws-clear-member-ticks)`, from the main file (`scriptActor`); each `user.moderator` event it writes has no `actor_id` and `by` "ws:clear-member-ticks"; `ws:team-check` reads only   |
 | Hand psql                                                                   | the box                                                                    | `mantle_operator_actor('reason')` first                                                                                                                                                            |
 | Migrations                                                                  | `packages/db/src/migrate.ts`                                               | `system(migration)`, set on each migration's transaction                                                                                                                                           |
 
@@ -545,7 +545,7 @@ check off. Both are tagged as the actor's own for the round-trip test.
   on the system pool with `SET LOCAL ROLE mantle_write_user` and the same
   scope, every statement as the write role (its row rules and write checks)
   except a write whose target is a gap table, a row-locking read (`FOR
-  UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
+UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
   a read naming one the write role cannot read at all (`secrets`,
   `app_table_exports`), which runs
   as `mantle_gap_writer` (fix round 2) between `set local role` to it and
@@ -725,7 +725,7 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   `mantle_workspace_event` (0279).
 - **The refusal messages.** `isScopeWriteRefusal` knows 0278's and 0279's
   write check messages, the row rule's own (`new row violates row-level
-  security policy`) and `mantle_default_home`'s, so each is a 403
+security policy`) and `mantle_default_home`'s, so each is a 403
   (`pg-error.test.ts`). A missing grant (`isPermissionGap`) is not.
 - **One helper for the manage rule** (0279): `mantle_may_manage_home`
   (manage of the home, or Admin when there is none), `mantle_may_add_to_folder`
@@ -838,10 +838,15 @@ middleware finds a request's row once (`servedRoute`) and runs the handler
 through `enterCall` with it, under the `route` policy source. The caller is
 the credential the gate judged (`via`: cookie, bearer, key, token, public);
 its login is still resolved by the session guard, so the caller runs as
-`system(http:no-login)` with `admin: null`, and each session guard reads the
-row from the bound caller (`currentRoute()`), never a list. The handler's
-request slot is the caller's `enterScope`. A request no route answers (a
-404, the /s and /print pages) runs as before; they move in A4 step 2.
+`system(http:no-login)` with `admin: null`. The gate sets the row on the
+request context, not on the bound caller, so a call nested inside the
+request with a caller of its own (an MCP tool, a turn) still reads it; each
+session guard and both API key checks (the gate's `gateAccessKey`, the
+guard's `accessKeyLogin`) read the row (`currentRoute()`), never a list. A
+request slot with no row is refused (`unclassified`), never taken for
+outside a request. The handler's request slot is the caller's
+`enterScope`. A request no route answers (a 404, the /s and /print pages)
+runs as before; they move in A4 step 2.
 
 1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null
@@ -881,9 +886,9 @@ request slot is the caller's `enterScope`. A request no route answers (a
    `gateCheck` throw `GateNotReadyError` before any step, and each process
    entry asks `ensureGateReady()` at boot (server/web, server/api, every
    worker through `workers/_runner.ts`, the stdio MCP server; pinned by
-   `packages/tools/src/gate-boot.test.ts`). The gate has production callers
-   since A4 step 1 (`GATE_HAS_PRODUCTION_CALLERS`): a missing one stops the
-   boot, not the first call. A surface where one does not apply registers
+   `packages/tools/src/gate-boot.test.ts`). `ensureGateReady()` registers
+   them and asserts: a missing one throws and stops the boot, not the first
+   call (every routed HTTP request runs through the gate since A4 step 1). A surface where one does not apply registers
    an explicit no-op. Registering another function under a taken name, or
    another source for a taken kind, throws on purpose. The member-app rule
    fails closed too: a team-rules app run calls only an `app-tool` ref
