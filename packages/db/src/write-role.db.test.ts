@@ -34,6 +34,7 @@ import {
   writeRoleWrites,
 } from './access-matrix';
 import { createMigratedScratchDatabase } from './test-support';
+import { withRoleRetry } from './viewer-roles';
 import { viewerDatabaseUrl, viewerRolePassword } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -280,8 +281,9 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
       expect(stmt).toContain(attr);
     }
     expect(stmt.startsWith('ALTER ROLE "mantle_gap_writer" WITH')).toBe(true);
-    // Changed by hand: the next pass takes it back.
-    await sql.unsafe('ALTER ROLE "mantle_gap_writer" WITH BYPASSRLS INHERIT');
+    // Changed by hand: the next pass takes it back. A cluster role: other
+    // test files migrate at once ("tuple concurrently updated"), so retried.
+    await withRoleRetry(() => sql.unsafe('ALTER ROLE "mantle_gap_writer" WITH BYPASSRLS INHERIT'));
     try {
       await syncGapWriterRights(sql);
     } finally {
@@ -289,7 +291,9 @@ describe.skipIf(!URL)('the write role (arch A2b2a)', () => {
         select rolbypassrls as bypass, rolinherit as inherit, rolcanlogin as login
           from pg_roles where rolname = 'mantle_gap_writer'`;
       if (r?.bypass || r?.inherit) {
-        await sql.unsafe('ALTER ROLE "mantle_gap_writer" WITH NOBYPASSRLS NOINHERIT');
+        await withRoleRetry(() =>
+          sql.unsafe('ALTER ROLE "mantle_gap_writer" WITH NOBYPASSRLS NOINHERIT'),
+        );
       }
       expect(r).toEqual({ bypass: false, inherit: false, login: false });
     }
