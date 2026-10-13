@@ -900,11 +900,14 @@ and `app_databases.write_seq`, with no table rewrite.
   from long ago: reported), a draft from before the roll
   (`<node>.draft.sqlite`: reported for ever once its table is committed;
   remove one by hand after checking no row's `draft_path` names it), nor
-  any file of an item whose row names a file that is missing. It removes
-  NOTHING in a store, and the run shows failed, for a week after a restore
-  (below), when a row names a file outside the store's folder (the
+  any file of an item whose row names a file that is missing. For a week
+  after a restore (below) it holds a store: nothing removed, the run done
+  and saying `HELD until <date>`. It removes NOTHING in a store, and the run
+  shows failed, when a row names a file outside the store's folder (the
   maintenance container must mount `app-dbs`: the compose file of this
-  release does), or when no row names any file (a wrong database).
+  release does), when no row names any file (a wrong database), or when a
+  row names an older revision than on the last run (a restore that put no
+  hold down: read the dry run, then `--apply --allow-many`).
   `pnpm -C server/web store:sweep` shows what is due and what is kept;
   `--apply` removes it.
 - **Backups and restores.** The backup runs `pg_dump` first, then the app
@@ -916,13 +919,18 @@ and `app_databases.write_seq`, with no table rewrite.
   least an hour), so the file the dump's row names is in the archive.
   Restore Postgres first, then the files, as before.
 - **After a restore the sweep is held.** `scripts/db-restore.sh` (at
-  `$MANTLE_DATA_DIR/table-dbs` and `app-dbs`, where they exist) and
-  `scripts/app-dbs-restore.sh` write `.store-sweep-hold` at the store root:
+  `$MANTLE_DATA_DIR/table-dbs` and `app-dbs`, made if missing) and
+  `scripts/app-dbs-restore.sh` write `.store-sweep-hold` at the store root
+  and remove `.store-sweep.json` there, before they restore anything:
   restored rows may name older revisions than the files on disk, and the
-  sweep would read the newer ones as old revisions. The nightly sweep stops
-  (the run shows failed) for a week. Once the restored files are checked,
-  read `pnpm -C server/web store:sweep`, then run it with
-  `--apply --allow-many`, or remove the hold files.
+  sweep would read the newer ones as old revisions. The nightly sweep holds
+  the store for a week (a done run that says HELD), and a backup in that
+  week keeps every revision. ANY other restore (a manual `pg_restore`, an
+  untar of `mantle-table-dbs-<ts>.tgz`) must do the same by hand first:
+  `touch <root>/.store-sweep-hold` and `rm <root>/.store-sweep.json` for
+  each store root. Once the restored files are checked, read
+  `pnpm -C server/web store:sweep`, then run it with `--apply --allow-many`,
+  or remove the hold files.
 
 ## Rollback
 

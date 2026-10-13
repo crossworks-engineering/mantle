@@ -62,10 +62,13 @@ where a copy per write would cost a whole file:
   check is inside it, first, and the bump returns the file the row names
   now. A restore takes the same lock, and a copy per seed would lose the
   single statements running meanwhile without the restore's drain. A single
-  statement's check does not queue behind the seed: it waits for the lock
-  in tries of `APP_DB_CHECK_LOCK_TIMEOUT_MS` (2 s), holding nothing between
-  tries, for up to `APP_DB_CHECK_RETRY_MS` (10 s), so it lands after a
-  seed of up to about 10 s. Past that it answers busy (`AppSqlBusyError`:
+  statement's check does not queue behind the seed: each try waits at most
+  `APP_DB_CHECK_LOCK_TIMEOUT_MS` (200 ms) for the lock, then gives its
+  pooled connection back and pauses `APP_DB_CHECK_RETRY_PAUSE_MS` (500 ms)
+  outside any transaction, for up to `APP_DB_CHECK_RETRY_MS` (10 s) in all:
+  it lands after a seed of up to about 10 s, and a few app writes waiting
+  never hold the write pool the other logins' writes need. Past that it
+  answers busy (`AppSqlBusyError`:
   the brokers' 429 with reason `busy`). Nothing retries a busy answer for
   the app: the kit hands it to the app's code as an error, so the server
   does the waiting.
@@ -138,25 +141,36 @@ the brokers, the backups and the sweep.
   next run and reported (`deferred`), never a failure: a busy day (every
   commit leaves two old files, an app table export's sync two per sync) is
   removed over the following nights.
-- **When it removes nothing (a stop):** the run removes nothing, marks
-  nothing, logs the reason and fails the maintenance run.
-  - A restore's hold: `scripts/db-restore.sh` and
-    `scripts/app-dbs-restore.sh` write `.store-sweep-hold` at each store
-    root they restore into. Restored rows may name OLDER revisions than the
-    files on disk, which would read as old revisions to remove. While the
-    hold is younger than a week the sweep stops, unless run with
-    `--allow-many` after a dry run was read (or the hold is removed).
+- **Held after a restore (not a failure):** `scripts/db-restore.sh` and
+  `scripts/app-dbs-restore.sh` write `.store-sweep-hold` at each store root,
+  and remove the sweep's memory (`.store-sweep.json`) there, BEFORE they
+  restore anything (the root is made if missing, so the hold lands before
+  any file does). Restored rows may name OLDER revisions than the files on
+  disk, which would read as old revisions to remove. While the hold is
+  younger than a week the store is HELD: nothing removed or marked, the
+  report says `HELD until <date>`, and the maintenance run is done. Run it
+  with `--allow-many` after a dry run was read, or remove the hold. ANY
+  other restore (a manual `pg_restore`, an untar of a table or app archive)
+  must do the same by hand: `touch .store-sweep-hold` and remove
+  `.store-sweep.json` at the store root first.
+- **Hard stops (a failure):** the run removes and marks nothing, logs the
+  reason and fails the maintenance run.
   - A row naming a file outside the store's root, both sides compared as
     real paths (a root reached through a symlink, a row's absolute path
     written under another spelling).
   - A store holding files while no row names any (a wrong or empty
     `DATABASE_URL`).
+  - A row whose current file (the first column of `STORE_FILE_COLUMNS`) is
+    an OLDER revision than the one it named on the last run: revision
+    tokens sort by time, and only a restore moves a row back (one that put
+    down no hold). Unless `--allow-many`, after a dry run was read.
 - A file goes only once it has been unreferenced on two runs a grace period
   (`STORE_SWEEP_GRACE_MS`, an hour) apart and is older than the grace
   period: a stage in flight, a reader that resolved the old revision just
   before a flip, and the revision a running backup's dump names are never
-  cut off. The runs it has seen are kept in `.store-sweep.json` at the
-  store's root. With the nightly run, an old revision goes on the second
+  cut off. A mark takes the time the rows were read, not the run's start.
+  The marks, and each item's current revision for the stop above, are kept
+  in `.store-sweep.json` at the store's root. With the nightly run, an old revision goes on the second
   night after it was replaced: up to about two days.
 - A SQLite file's `-wal`, `-shm` and `-journal` go with it. Idempotent;
   plain files and one read of the rows: no model, no extraction, no notify.
@@ -174,12 +188,15 @@ its node in the folders its row names), each under its own name in its own
 folder: the files the rows name now, and every other revision the sweep
 had NOT marked unreferenced before the dump started (`markedBefore`; the
 dump's start goes to the backup scripts as an argument). A flip never
-points a row back at an old revision, so a file marked before the dump
-was unreferenced when the dump ran, and no restored row names it; the
-revision the dump names is still on disk (the sweep's grace period) and is
-in the archive. Without the dump's start every revision goes. After a
-restore, the revisions the restored rows do not name are the sweep's, once
-the restore's hold is lifted.
+points a row back at an old revision, except a restore, so a file marked
+before the dump was unreferenced when the dump ran; the revision the dump
+names is still on disk (the sweep's grace period) and is in the archive.
+While a restore's hold is in place a backup leaves nothing out (the
+restore pointed rows back at revisions the old memory may have marked; the
+restore scripts also remove that memory). The rows' files come from the
+same spec as the sweep's (`storeRows`). Without the dump's start every
+revision goes. After a restore, the revisions the restored rows do not
+name are the sweep's, once the restore's hold is lifted.
 
 ## The lint
 
@@ -205,9 +222,9 @@ for every box:
   large table holds two copies for up to about two days).
 - **The nightly sweep** reports, and never removes, files of items with no
   row and drafts from before A3b; a busy day's old revisions are removed
-  over the next nights (a per-run budget, never a failure); it stops a
-  store's run (and fails the maintenance run) for a week after a restore,
-  and on the hard stops above.
+  over the next nights (a per-run budget, never a failure); it holds a
+  store for a week after a restore (a done run that says HELD), and stops
+  (failing the maintenance run) on the hard stops above.
 - **Backups** also hold the revisions replaced since the last sweep run
   (not yet marked), until the sweep has removed them.
 - **A busy app statement** waits out a seed or schema script for up to
@@ -245,8 +262,9 @@ writes each, the second run; main `af5a041a5` against this branch):
   and the sidecar remover; the sweep: never a live file, never before the
   grace period, two runs apart, sidecars, never a file whose item has no
   row or whose row's file is missing, never a legacy draft, real paths, a
-  busy day carried over runs, the restore hold, the hard stops; what a
-  backup may leave out).
+  busy day carried over runs, the restore hold, the hard stops (an older
+  revision among them), marks at the rows' read time; what a backup may
+  leave out, and nothing while a hold is in place).
 - `server/web/server/a3b-store-brokers.db.test.ts`: per store, with both
   checks on (also in `pnpm test:edit-on`): a refused caller changes nothing
   on disk (bytes, mtime, file list, less the `-wal` and `-shm` a read of the
@@ -256,7 +274,9 @@ writes each, the second run; main `af5a041a5` against this branch):
   stage for the sweep as one that committed and then threw keeps it, a
   table created in an outer transaction that rolls back leaves no stage,
   the sweep removes the old revisions and keeps what it must, a restore's
-  hold stops it, a backup taken while a flip lands restores the dump's
+  hold holds it, a backup during a hold keeps a revision a restore pointed
+  a row back at, app writes waiting out a seed leave the write pool to
+  another login's write, a backup taken while a flip lands restores the dump's
   revision, a restored draft and the backup keep a folded table's folder, a
   missing legacy draft is no draft, an app write whose row a restore moved
   writes neither file, a single statement waits out a 5 s seed and answers
