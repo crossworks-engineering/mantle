@@ -303,3 +303,18 @@ export {
 } from './item-rights';
 export { VAULT_PAIR_MAKER_NO_KEYS, vaultPairRunRefusal } from './vault-pair';
 export { refuseHiddenRows } from './hidden-rows';
+export {
+  STORE_NAMES,
+  STORE_REFUSED_MESSAGE,
+  StoreRefusedError,
+  StoreWrite,
+  brokerTransaction,
+  readStoreJournal,
+  repairStore,
+  type InPlaceRepair,
+  type RepairOutcome,
+  type StoreJournal,
+  type StoreName,
+  type StoreRev,
+  type StoreWriteOptions,
+} from './store-broker';
