@@ -29,12 +29,7 @@ import { createReadStream, promises as fs } from 'node:fs';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { acceptedSnapshots, db, draws, nodes, pages, spaceItems, tables } from '@mantle/db';
 import { diskPathForFile } from '@mantle/files';
-import {
-  publishedPath,
-  relativeStoragePath,
-  resolveStoragePath,
-  snapshotFile,
-} from '@mantle/tabledb';
+import { relativeStoragePath, resolveStoragePath, snapshotFile } from '@mantle/tabledb';
 import { SNAPSHOT_OWNER, removeTableFile } from './table-storage';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -46,7 +41,7 @@ export const SNAPSHOT_TABLE_OWNER = SNAPSHOT_OWNER;
 
 /** Where one accepted table's workbook copy lives. */
 export function snapshotTableAbs(nodeId: string): string {
-  return publishedPath(SNAPSHOT_TABLE_OWNER, nodeId);
+  return resolveStoragePath(relativeStoragePath(SNAPSHOT_TABLE_OWNER, nodeId));
 }
 
 /** A brain file's bytes on disk, hashed. Cached by path, size and mtime so

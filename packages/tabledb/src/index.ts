@@ -57,14 +57,7 @@ export type { QueryWindowResult, RowWindow } from './window';
 export { TableFileMissingError } from './sqlite';
 export type { OpenOptions, SqliteDb } from './sqlite';
 
-export {
-  draftPath,
-  draftPathFor,
-  publishedPath,
-  relativeStoragePath,
-  resolveStoragePath,
-  tableDbRoot,
-} from './paths';
+export { relativeStoragePath, resolveStoragePath, tableDbRoot } from './paths';
 
 export type {
   AggregateKind,

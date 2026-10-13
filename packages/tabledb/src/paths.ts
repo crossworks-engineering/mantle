@@ -4,9 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { env } from '@mantle/config';
 
 /**
- * Storage layout: one sqlite workbook file per Table node —
- *   ${TABLE_DB_DIR}/<ownerId>/<nodeId>.sqlite          (published)
- *   ${TABLE_DB_DIR}/<ownerId>/<nodeId>.draft.sqlite    (working copy)
+ * Storage layout: sqlite workbook files per Table node, under
+ *   ${TABLE_DB_DIR}/<ownerId>/<nodeId>.r-<token>[.draft].sqlite
+ * (a new name per revision since the store brokers, A3b; files from before
+ * keep <nodeId>.sqlite and <nodeId>.draft.sqlite). The registry row names a
+ * table's files (tables.storage_path, tables.draft_path): readers resolve
+ * them through it (@mantle/content table-storage.ts draftAbsOf), never by
+ * deriving a name here.
  *
  * TABLE_DB_DIR is /data/table-dbs in prod (bind-mounted into web AND api —
  * both processes execute tool handlers). When unset (bare full-stack dev) we
@@ -57,22 +61,6 @@ function safeSegment(id: string, label: string): string {
   return id;
 }
 
-export function publishedPath(ownerId: string, nodeId: string, root = tableDbRoot()): string {
-  return path.join(
-    root,
-    safeSegment(ownerId, 'ownerId'),
-    `${safeSegment(nodeId, 'nodeId')}.sqlite`,
-  );
-}
-
-export function draftPath(ownerId: string, nodeId: string, root = tableDbRoot()): string {
-  return path.join(
-    root,
-    safeSegment(ownerId, 'ownerId'),
-    `${safeSegment(nodeId, 'nodeId')}.draft.sqlite`,
-  );
-}
-
 /** The registry's storage_path holds a ROOT-RELATIVE published path (e.g.
  *  "<owner>/<node>.sqlite") so a box can relocate TABLE_DB_DIR without a data
  *  migration. Resolve it under the current root, refusing traversal. */
@@ -87,10 +75,4 @@ export function resolveStoragePath(storagePath: string, root = tableDbRoot()): s
 
 export function relativeStoragePath(ownerId: string, nodeId: string): string {
   return `${safeSegment(ownerId, 'ownerId')}/${safeSegment(nodeId, 'nodeId')}.sqlite`;
-}
-
-/** Draft file sits beside the published file: same name + .draft.sqlite. */
-export function draftPathFor(publishedAbs: string): string {
-  if (!publishedAbs.endsWith('.sqlite')) throw new Error('tabledb: expected a .sqlite path');
-  return `${publishedAbs.slice(0, -'.sqlite'.length)}.draft.sqlite`;
 }

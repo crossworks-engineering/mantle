@@ -8,6 +8,7 @@ import {
   resolveStoragePath,
 } from '@mantle/tabledb';
 import { existsSync } from 'node:fs';
+import { draftAbsOf } from '@mantle/content/table-storage';
 import { getOwnerOr401 } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 
@@ -56,8 +57,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const tabId = url.searchParams.get('tab') ?? undefined;
 
   const publishedAbs = resolveStoragePath(row.storagePath);
-  // The draft the row points at (store brokers, A3b).
-  const draftAbs = row.draftPath ? resolveStoragePath(row.draftPath) : null;
+  // The draft the row points at (store brokers, A3b): THE resolver.
+  const draftAbs = draftAbsOf(row.draftPath);
   // A caller who may not edit the table reads the published file, whatever
   // it asks for (a member with Read, an Admin user with Read only).
   const file =
