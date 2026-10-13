@@ -533,7 +533,7 @@ export async function commitTable(
     }
   } catch (err) {
     if (err instanceof NoDraftError) {
-      return Promise.reject(new Error('no draft to commit — the table is already published'));
+      return Promise.reject(new Error('no draft to commit: the table is already published'));
     }
     if (err instanceof StoreRefusedError) return null;
     throw err;

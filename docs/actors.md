@@ -812,8 +812,8 @@ The database checks writes, behind its own switch, `mantle.edit_check`
 
 The store brokers: the database checks a write before its disk changes
 ([store-brokers.md](./store-brokers.md)). One broker per store, one helper
-for the order (`packages/db/src/store-broker.ts`): the checked statement as
-the caller, exactly one row (none is a 404), then the disk with a journal,
-undone if the transaction fails, repaired on the next access if its commit
-was never seen. The tables, app databases and app builds are brokered; the
-docs store writes no disk; file bytes and snapshot files are part 2.
+(`packages/db/src/store-broker.ts`), plan 20.3: the bytes staged under a new
+revision name, one short transaction checks the row as the caller (exactly
+one row; none is a 404) and points it there, one sweep removes what no row
+points at. The tables, app databases and app builds are brokered; the docs
+store writes no disk; file bytes and snapshot files are part 2.

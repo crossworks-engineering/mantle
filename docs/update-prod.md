@@ -878,6 +878,29 @@ app processes (web, api, workers, mcp): a pooled connection keeps the
 setting it opened with, and the check reads the higher of the two until
 it is restarted.
 
+## Store brokers (arch A3b, migration 0283)
+
+Nothing to switch: the roll changes how the brain writes table workbooks and
+app database restores ([store-brokers.md](./store-brokers.md)). Migration
+0283 adds `tables.draft_path` (it points every unsaved draft at its file)
+and `app_databases.write_seq`, with no table rewrite.
+
+- **New file names.** From the roll on, a table's workbooks and an app
+  restore's database take a new name with each revision
+  (`<node>.r-<token>.sqlite`); the row names the current one. Old names stay
+  valid while a row points at them.
+- **The nightly sweep** (maintenance task `store-sweep`) removes the files no
+  row points at, once they have been unreferenced on two runs an hour apart.
+  Until then they take disk: a commit of a large table holds two copies for
+  about a day. `pnpm -C server/web store:sweep` shows what is due;
+  `--apply` removes it.
+- **Backups and restores.** The table and app database backups name each
+  copy after the file its row points at, so `scripts/app-dbs-restore.sh` and
+  the table restore put files back where the rows say. Restore Postgres
+  first, then the files, as before: a file backup taken BEFORE the dump can
+  lack a revision the dump's rows name (the sanity checks report a missing
+  workbook).
+
 ## Rollback
 
 ```bash
