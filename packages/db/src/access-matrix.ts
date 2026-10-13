@@ -616,12 +616,21 @@ function quoteTable(table: string): string {
 }
 
 /** The GRANT statements for the workspace role (`mantle_view_user`). Pure. */
-export function userGrantStatements(role: string = viewerRoleName('user')): string[] {
+/** Whether a table's column exists now: grants name only those (a test
+ *  database migrated up to an older migration lacks a newer column, A3b). */
+export type ColumnExists = (table: string, column: string) => boolean;
+
+export function userGrantStatements(
+  role: string = viewerRoleName('user'),
+  has: ColumnExists = () => true,
+): string[] {
   const out: string[] = [];
   for (const t of ACCESS_MATRIX) {
     const read = userReadFor(t);
     if (read === 'none') continue;
-    const cols = read === 'all' ? '' : ` (${read.map((c) => `"${c}"`).join(', ')})`;
+    const named = read === 'all' ? null : read.filter((c) => has(t.table, c));
+    if (named && named.length === 0) continue;
+    const cols = named === null ? '' : ` (${named.map((c) => `"${c}"`).join(', ')})`;
     out.push(`GRANT SELECT${cols} ON ${quoteTable(t.table)} TO "${role}"`);
   }
   return out;
@@ -751,12 +760,17 @@ export const WRITE_ROLE_FUNCTIONS: Readonly<Record<string, string>> = {
  *  WRITE_ROLE_TABLES: INSERT and UPDATE on the columns it reads less the
  *  derived ones (writeColumnsFor), DELETE. Sequences: see
  *  applyViewerGrants. */
-export function writeGrantStatements(role: string = viewerRoleName('write')): string[] {
-  const out = userGrantStatements(role);
+export function writeGrantStatements(
+  role: string = viewerRoleName('write'),
+  has: ColumnExists = () => true,
+): string[] {
+  const out = userGrantStatements(role, has);
   for (const t of ACCESS_MATRIX.filter(writeRoleWrites)) {
     const write = writeColumnsFor(t);
     if (write === 'none') continue;
-    const cols = write === 'all' ? '' : ` (${write.map((c) => `"${c}"`).join(', ')})`;
+    const named = write === 'all' ? null : write.filter((c) => has(t.table, c));
+    if (named && named.length === 0) continue;
+    const cols = named === null ? '' : ` (${named.map((c) => `"${c}"`).join(', ')})`;
     out.push(`GRANT INSERT${cols}, UPDATE${cols}, DELETE ON ${quoteTable(t.table)} TO "${role}"`);
   }
   return out;
@@ -1022,8 +1036,16 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
       await tx.unsafe(`REVOKE ALL ON SCHEMA public, auth FROM ${retired}`);
       await tx.unsafe(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, auth FROM ${writer}`);
       await tx.unsafe(`GRANT USAGE ON SCHEMA public, auth TO ${live}`);
-      for (const stmt of userGrantStatements()) await tx.unsafe(stmt);
-      for (const stmt of writeGrantStatements()) await tx.unsafe(stmt);
+      // The columns that exist now: a database migrated up to an older
+      // migration (a test's) lacks a newer column the matrix names.
+      const cols = (await tx.unsafe(
+        `select table_schema || '.' || table_name as t, column_name as c
+           from information_schema.columns where table_schema in ('public', 'auth')`,
+      )) as unknown as { t: string; c: string }[];
+      const present = new Set(cols.map((r) => `${r.t}.${r.c}`));
+      const has: ColumnExists = (table, column) => present.has(`${table}.${column}`);
+      for (const stmt of userGrantStatements(undefined, has)) await tx.unsafe(stmt);
+      for (const stmt of writeGrantStatements(undefined, has)) await tx.unsafe(stmt);
       // The sequences a write to those tables draws from (a serial or
       // identity column), read from the catalog.
       const seqs = await tx<{ seq: string }[]>`

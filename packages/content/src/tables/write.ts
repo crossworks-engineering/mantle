@@ -21,12 +21,7 @@ import {
   withNodeDeleteHeads,
   withNodeInsertHeads,
 } from '@mantle/db';
-import {
-  MATERIALIZE_MAX,
-  TableTooLargeError,
-  importMaxRows,
-  publishedPath,
-} from '@mantle/tabledb';
+import { MATERIALIZE_MAX, TableTooLargeError, importMaxRows, publishedPath } from '@mantle/tabledb';
 import {
   ensureTableDoc,
   ensureWorkbookDoc,

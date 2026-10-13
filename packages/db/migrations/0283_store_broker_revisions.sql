@@ -17,7 +17,9 @@
 --    the statement runs, in place); a restore flips storage_path to a new
 --    file.
 --
--- Constant defaults: no table rewrite.
+-- Constant defaults: no table rewrite. Both locks first, in one statement
+-- (a migration that alters several tables never waits holding one).
+LOCK TABLE public.tables, public.app_databases IN ACCESS EXCLUSIVE MODE;
 ALTER TABLE tables ADD COLUMN IF NOT EXISTS draft_path text;
 UPDATE tables
    SET draft_path = regexp_replace(storage_path, '\.sqlite$', '.draft.sqlite')
