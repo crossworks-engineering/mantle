@@ -26,7 +26,8 @@ import {
   type GateCaller,
 } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
-import { API_V1_ROUTES, matchApiV1Route } from '../api-v1';
+import { ACCESS_KEY_AREAS, type AccessKeyArea } from '../access-keys';
+import { API_V1_ROUTES, keyMayCall, matchApiV1Route } from '../api-v1';
 import { PUBLIC_PATHS } from '../auth-constants';
 import { isAnyLoginRoute } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
@@ -47,6 +48,7 @@ import {
   registerRouteSource,
   routeItemTarget,
   routeRef,
+  rowKeyRoute,
   servedMethods,
   type RouteRow,
 } from './route-policy';
@@ -192,11 +194,100 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
           ...(via === 'key' ? { write: row.effect === 'write' } : {}),
           admin: null,
           enterScope: (_w, fn) => fn(),
-          facts: { route: row },
         };
         expect(gateCheck(caller, routeRef(row)), `${via} ${row.key}`).toBeNull();
       }
     }
+  });
+
+  it('whoami is the one v1 row about the key itself (keySelf)', () => {
+    for (const row of table.values()) {
+      if (!row.pattern.startsWith('/api/v1/')) {
+        expect('keySelf' in row, row.key).toBe(false);
+        continue;
+      }
+      expect(row.keySelf, row.key).toBe(row.pattern === '/api/v1/whoami');
+    }
+    expect(table.get('GET /api/v1/whoami')?.keySelf).toBe(true);
+    expect(table.get('HEAD /api/v1/whoami')?.keySelf).toBe(true);
+  });
+
+  it("an API key: the gate's key narrower and the row answer what keyMayCall answers by path, on every v1 row", () => {
+    ensureGateReady();
+    registerRouteSource();
+    const areaSets: (readonly AccessKeyArea[] | null)[] = [
+      null,
+      [],
+      ['pages'],
+      ['search'],
+      ['files', 'search'],
+      ['tasks', 'notes', 'tables'],
+      ['calendar', 'contacts', 'journal'],
+      [...ACCESS_KEY_AREAS],
+    ];
+    const v1 = [...table.values()].filter((r) => r.pattern.startsWith('/api/v1/'));
+    const diffs: string[] = [];
+    let checked = 0;
+    for (const row of v1) {
+      for (const areas of areaSets) {
+        for (const access of ['read', 'read_write'] as const) {
+          const caller: GateCaller = {
+            actor: systemActor('http:no-login'),
+            via: 'key',
+            write: access === 'read_write',
+            admin: null,
+            enterScope: (_w, fn) => fn(),
+            facts: { keyAreas: areas },
+          };
+          const gate = gateCheck(caller, routeRef(row)) === null;
+          const onRow = keyMayCall({ access, areas }, rowKeyRoute(row)).ok;
+          for (const path of pathsOf(row.pattern)) {
+            const byPath = keyMayCall({ access, areas }, matchApiV1Route(row.method, path)).ok;
+            const what = `${row.key} @${path} ${access} ${JSON.stringify(areas)}`;
+            if (gate !== byPath) diffs.push(`${what}: gate ${gate}, keyMayCall ${byPath}`);
+            if (onRow !== byPath) diffs.push(`${what}: row ${onRow}, keyMayCall ${byPath}`);
+            checked += 1;
+          }
+        }
+      }
+    }
+    expect(diffs).toEqual([]);
+    expect(checked).toBeGreaterThan(500);
+    // Off the key table no key is let in (not in the API).
+    expect(rowKeyRoute(table.get('GET /api/version')!)).toBeNull();
+    expect(rowKeyRoute(null)).toBeNull();
+  });
+
+  it('M3 (owner question for A4 step 4): HEAD of an any-login GET is open to Admin only', () => {
+    // Today's answer, pinned so a change is deliberate: HEAD has the GET's
+    // class; the owner routes a login outside Admin may read open their
+    // HEAD too (memberMayRead reads HEAD as GET), but the any-login, chat,
+    // Telegram and member lists name GET only, so such a HEAD row has
+    // logins null and is open to Admin only.
+    const byGet = new Map<string, number>();
+    for (const row of table.values()) {
+      if (row.method !== 'HEAD') continue;
+      const get = table.get(`GET ${row.pattern}`)!;
+      expect(row.class, row.key).toBe(get.class);
+      if (get.logins === null || get.logins === 'owner') {
+        expect(row.logins, row.key).toBe(get.logins);
+        continue;
+      }
+      expect(row.logins, row.key).toBeNull();
+      expect(row.open, row.key).toBe('admin');
+      byGet.set(get.logins, (byGet.get(get.logins) ?? 0) + 1);
+    }
+    expect(byGet.get('any')).toBeGreaterThan(0);
+    // The audit's case: an any-login GET of class 'self' whose HEAD is
+    // class 'self', logins null, open 'admin'.
+    const selfHeads = [...table.values()].filter(
+      (r) =>
+        r.method === 'HEAD' &&
+        r.class === 'self' &&
+        table.get(`GET ${r.pattern}`)?.logins === 'any',
+    );
+    expect(selfHeads.length).toBeGreaterThan(0);
+    for (const r of selfHeads) expect(r, r.key).toMatchObject({ logins: null, open: 'admin' });
   });
 });
 
