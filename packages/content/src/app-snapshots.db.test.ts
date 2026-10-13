@@ -50,7 +50,10 @@ describe.skipIf(!URL)('app history on Postgres', () => {
   const sweepHistory = async () => {
     const { snapshotSweepSpecs } = await import('./store-sweep');
     const spec = snapshotSweepSpecs().find((x) => x.label === 'appsnap')!;
-    return m.sweepOrphans(spec, { now: Date.now() + 2 * m.STORE_SWEEP_GRACE_MS, allowMany: true });
+    return m.sweepOrphans(spec, {
+      now: Date.now() + m.STORE_TOMBSTONE_GRACE_MS + m.STORE_SWEEP_GRACE_MS,
+      allowMany: true,
+    });
   };
 
   beforeAll(async () => {

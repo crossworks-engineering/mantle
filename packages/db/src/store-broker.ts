@@ -355,16 +355,18 @@ export async function storeRows(store: SweptStore): Promise<SweepRow[]> {
 
 /** The tombstones of a snapshot store (migration 0284: a file a deleted or
  *  re-pointed row named), as stored (relative to the store's base), with
- *  when its row went (ms). Read on the caller's handle (the system pool). */
+ *  how long ago its row went (ms), on the database's clock (no skew with
+ *  this process's: fix round 1, L5). Read on the caller's handle (the
+ *  system pool). */
 export async function storeTombstones(
   store: 'appsnap' | 'tablesnap' | 'accepted',
-): Promise<{ path: string; at: number }[]> {
+): Promise<{ path: string; ageMs: number }[]> {
   const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
   const rows = (await db.execute(
-    sql`select path, (extract(epoch from created_at) * 1000)::float8 as at
+    sql`select path, (extract(epoch from (now() - created_at)) * 1000)::float8 as age
           from store_tombstones where store = ${store}`,
-  )) as unknown as { path: string; at: number }[];
-  return rows.map((r) => ({ path: String(r.path), at: Number(r.at) }));
+  )) as unknown as { path: string; age: number }[];
+  return rows.map((r) => ({ path: String(r.path), ageMs: Number(r.age) }));
 }
 
 /** Clear the tombstones of files the sweep removed (or found gone). */
@@ -400,6 +402,11 @@ export function revisionTime(name: string): number {
  *  its readers finish (a reader that resolved it before the flip). */
 export const STORE_SWEEP_GRACE_MS = 60 * 60 * 1000;
 
+/** How long a tombstoned file stays after its row went (A3b part 2, fix
+ *  round 1, M2): longer than any backup runs, so a backup whose Postgres
+ *  dump still names the row finds the file when it links the history. */
+export const STORE_TOMBSTONE_GRACE_MS = 24 * 60 * 60 * 1000;
+
 /** A row of a store, as the sweep reads it: its node and the files it
  *  names (relative to the store's root, or absolute); `columns`, when
  *  given, the files by STORE_FILE_COLUMNS column, the first the item's
@@ -421,9 +428,15 @@ export type SweepSpec = {
    *  inside another store's root (a snapshot folder): that root. */
   holdRoot?: string;
   /** Files a deleted or re-pointed row named (migration 0284), absolute,
-   *  with when the row went (ms): such a file goes a grace period later,
-   *  while no row names it, though its item has no row. */
-  tombstones?: () => Promise<readonly { abs: string; at: number }[]>;
+   *  with how long ago the row went (ms, the database's clock): such a file
+   *  goes STORE_TOMBSTONE_GRACE_MS later, while no row names it, though its
+   *  item has no row. */
+  tombstones?: () => Promise<readonly { abs: string; ageMs: number }[]>;
+  /** False: a store holding files that no row and no tombstone names is
+   *  reported, never a hard stop (the snapshot folders: files from before
+   *  0284 with every row gone; nothing there can go without a row or a
+   *  tombstone anyway). Default true. */
+  stopWhenNoRows?: boolean;
   /** Clear the tombstones of files removed or found gone (absolute). */
   forget?: (abs: readonly string[]) => Promise<void>;
   /** Remove a folder the sweep emptied (up to the root): the snapshot
@@ -561,8 +574,6 @@ export function markedBefore(
   root: string,
   before: number,
   now: number = Date.now(),
-  /** Where a restore puts its hold, when not at `root` (SweepSpec). */
-  holdRoot?: string,
 ): (abs: string) => boolean {
   let realRoot: string;
   try {
@@ -571,7 +582,6 @@ export function markedBefore(
     return () => false;
   }
   if (holdSince(realRoot, now) !== null) return () => false;
-  if (holdRoot && holdSince(holdRoot, now) !== null) return () => false;
   const { marks } = readState(realRoot);
   return (abs) => {
     const seen = marks[relativeTo(realRoot, realOrResolved(abs))];
@@ -700,12 +710,21 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
   }
   // The tombstones (0284), as paths relative to the real root; one outside
   // it never lets anything go.
-  const tombs = new Map<string, { abs: string; at: number }>();
+  // Each tombstone's age at `now` (a run told another time shifts it).
+  const shift = now - Date.now();
+  const tombs = new Map<string, { abs: string; age: number }>();
   for (const t of spec.tombstones ? await spec.tombstones() : []) {
     const rel = relativeTo(root, realOrResolved(t.abs));
-    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) tombs.set(rel, t);
+    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) {
+      tombs.set(rel, { abs: t.abs, age: t.ageMs + shift });
+    }
   }
-  if (owned.length > 0 && referenced.size === 0 && !owned.some((f) => tombs.has(f))) {
+  if (
+    spec.stopWhenNoRows !== false &&
+    owned.length > 0 &&
+    referenced.size === 0 &&
+    !owned.some((f) => tombs.has(f))
+  ) {
     return stop(
       `${owned.length} store files and no row names any: is this the right database and root?`,
     );
@@ -744,8 +763,11 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
     // period old and unreferenced" wherever it is read (a backup's
     // markedBefore among them; A3b fix round 4, L1).
     if (now - mtime < grace) continue;
-    // A tombstoned file counts as unreferenced since its row went.
-    const seen = Math.min(marks[rel] ?? now, tomb?.at ?? now);
+    // A tombstoned file waits a day after its row went, whatever rule lets
+    // it go (fix round 1, M2: a backup's dump may name the row), then counts
+    // as unreferenced since then.
+    if (tomb && tomb.age < STORE_TOMBSTONE_GRACE_MS) continue;
+    const seen = Math.min(marks[rel] ?? now, tomb ? now - tomb.age : now);
     if (marks[rel] === undefined) report.marked += 1;
     next[rel] = seen;
     if (now - seen >= grace) due.push({ rel, seen });
@@ -771,10 +793,10 @@ export async function sweepOrphans(spec: SweepSpec, opts: SweepOptions = {}): Pr
   }
   if (!opts.dryRun) {
     writeState(root, { marks: next, current });
-    // Tombstones whose file is gone (removed now, or before), a grace
-    // period old: cleared.
+    // Tombstones whose file is gone (removed now, or before), past their
+    // day: cleared.
     const done = [...tombs]
-      .filter(([rel, t]) => now - t.at >= grace && !existsSync(join(root, rel)))
+      .filter(([rel, t]) => t.age >= STORE_TOMBSTONE_GRACE_MS && !existsSync(join(root, rel)))
       .map(([, t]) => t.abs);
     if (done.length && spec.forget) {
       try {

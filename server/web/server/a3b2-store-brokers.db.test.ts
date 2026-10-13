@@ -212,7 +212,10 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
   };
   /** The sweep a grace period on, past the per-run limit. */
   const sweepLater = () =>
-    sweep.sweepStores({ now: Date.now() + 2 * m.STORE_SWEEP_GRACE_MS, allowMany: true });
+    sweep.sweepStores({
+      now: Date.now() + m.STORE_TOMBSTONE_GRACE_MS + m.STORE_SWEEP_GRACE_MS,
+      allowMany: true,
+    });
   const report = (all: Awaited<ReturnType<typeof sweepLater>>, label: string) =>
     all.find((r) => r.label === label)!;
 
@@ -542,6 +545,14 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       // never removed.
       await x(sql`insert into store_tombstones (store, path, created_at)
                   values ('appsnap', ${r!.p}, now() - interval '3 hours')`);
+      // A tombstone two hours old stays (a backup's dump may still name the
+      // row: fix round 1, M2); a day on it goes.
+      const early = await sweep.sweepStores({
+        now: Date.now() + 2 * m.STORE_SWEEP_GRACE_MS,
+        allowMany: true,
+      });
+      expect(report(early, 'appsnap').removed).toEqual([]);
+      expect(existsSync(goneAbs)).toBe(true);
       const all = await sweepLater();
       expect(report(all, 'appsnap').removed).toContain(
         path.relative(path.join(appRoot, '_snapshots'), goneAbs),

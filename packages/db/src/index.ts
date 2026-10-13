@@ -315,6 +315,7 @@ export {
   STORE_SWEEP_HOLD_FILE,
   STORE_SWEEP_HOLD_MS,
   STORE_SWEEP_STATE_FILE,
+  STORE_TOMBSTONE_GRACE_MS,
   StoreRefusedError,
   flipNeverLanded,
   flipRolledBack,

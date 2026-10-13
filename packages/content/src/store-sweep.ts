@@ -85,6 +85,9 @@ export function snapshotSweepSpecs(): SweepSpec[] {
       holdRoot: base,
       nodeOf,
       pruneEmptyDirs: label !== 'accepted',
+      // Files from before 0284 whose rows are all gone are reported, never
+      // a nightly failure (fix round 1, L9).
+      stopWhenNoRows: false,
       rows: async () =>
         (await storeRows(label)).map((r) => ({
           ...r,
@@ -95,7 +98,7 @@ export function snapshotSweepSpecs(): SweepSpec[] {
         (await storeTombstones(label)).map((t) => {
           const abs = path.resolve(base, t.path);
           stored.set(abs, t.path);
-          return { abs, at: t.at };
+          return { abs, ageMs: t.ageMs };
         }),
       forget: (abs) =>
         forgetTombstones(
