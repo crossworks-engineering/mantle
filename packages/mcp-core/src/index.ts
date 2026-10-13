@@ -38,3 +38,10 @@ export {
   type McpLoginRole,
   type PreparedCallerTools,
 } from './login-surface';
+export {
+  KEY_AREA_ERROR,
+  OWNER_KEYS_ERROR,
+  RISKY_TOOL_ERROR,
+  mcpGateCaller,
+  mcpToolPolicy,
+} from './gate-policy';
