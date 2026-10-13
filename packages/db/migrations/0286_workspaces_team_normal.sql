@@ -312,6 +312,13 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_migrate"()
   SET search_path = "public", pg_temp AS $$
 #variable_conflict use_column
 BEGIN
+  -- A brain already on workspaces: nothing to do (the chain below is for
+  -- the switch only; its proofs read Team by the bridge key 0286 clears).
+  IF EXISTS (SELECT 1 FROM "public"."workspaces" w
+              WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'admin') THEN
+    RETURN QUERY SELECT 'skip'::text, 'workspaces'::text, 'already migrated'::text, 1::bigint;
+    RETURN;
+  END IF;
   RETURN QUERY SELECT * FROM "public"."mantle_ws_migrate_bridged"();
   IF "public"."mantle_ws_skip_reason"() IS NOT NULL THEN RETURN; END IF;
   PERFORM "public"."mantle_ws_switch_off"();

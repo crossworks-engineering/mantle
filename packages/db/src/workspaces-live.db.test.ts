@@ -260,6 +260,9 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     let fails: string[] = [];
     await sql
       .begin(async (tx) => {
+        // The proof as it runs at the switch, while Team carries its bridge
+        // key (0286 clears it after the switch; rolled back below).
+        await tx`update workspaces set bridge_key = 'team' where id = ${team}`;
         // A Team grant the level does not give (the reach diff compares
         // with the levels frozen at the switch).
         await tx`insert into item_grants (node_id, workspace_id) values (${ids.adminPage!}, ${team})`;
