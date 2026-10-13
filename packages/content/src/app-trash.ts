@@ -9,7 +9,6 @@
  *
  * Server-only (node:fs): import via '@mantle/content/app-trash'.
  */
-import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
@@ -23,7 +22,6 @@ import {
 import { tableDbRoot } from '@mantle/tabledb';
 import { appDbRoot, restoreAppDatabaseFile } from './app-broker';
 import { sweepCrashLeftovers } from './history-files';
-import { removeSnapshotFiles } from './app-snapshots';
 import { dropUnfinishedApp } from './app-package';
 import { notifyAppNavChanged } from './app-nav';
 
@@ -209,19 +207,15 @@ export async function restoreDeletedApp(
   return { id: app.id, title: app.title };
 }
 
-/** Remove a deleted app's history rows and snapshot files. */
+/** Remove a deleted app's history rows. Their snapshot files are the store
+ *  sweep's: each row's trigger records its file (store_tombstones, 0284),
+ *  removed a grace period later while no row names it (A3b part 2). A
+ *  member app moved to the brain keeps its member-era files where they
+ *  were; they go the same way, by each row's own path. */
 async function purgeOne(ownerId: string, appId: string): Promise<void> {
-  const gone = await db
+  await db
     .delete(nodeSnapshots)
-    .where(and(eq(nodeSnapshots.ownerId, ownerId), eq(nodeSnapshots.nodeId, appId)))
-    .returning({ dbPath: nodeSnapshots.dbPath });
-  // By each row's own path too: a member app moved to the brain (Accept, or
-  // an admin delete) keeps its member-era files under the member's space.
-  await removeSnapshotFiles(gone.map((g) => g.dbPath));
-  await rm(path.join(appDbRoot(), '_snapshots', ownerId, appId), {
-    recursive: true,
-    force: true,
-  });
+    .where(and(eq(nodeSnapshots.ownerId, ownerId), eq(nodeSnapshots.nodeId, appId)));
 }
 
 /** Delete a deleted app for good, now. False when it is not in the trash.

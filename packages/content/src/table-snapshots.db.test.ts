@@ -53,6 +53,14 @@ describe.skipIf(!URL)('table history on Postgres', () => {
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
+  /** The store sweep over the table history folder, a grace period on (A3b
+   *  part 2: a deleted or pruned entry's file goes there, by its tombstone). */
+  const sweepHistory = async () => {
+    const { snapshotSweepSpecs } = await import('./store-sweep');
+    const spec = snapshotSweepSpecs().find((x) => x.label === 'tablesnap')!;
+    return m.sweepOrphans(spec, { now: Date.now() + 2 * m.STORE_SWEEP_GRACE_MS, allowMany: true });
+  };
+
   const grid = (...names: string[]) =>
     tableDocFromGrid({ columns: [{ name: 'Item', type: 'text' }], rows: names.map((n) => [n]) });
 
@@ -144,6 +152,13 @@ describe.skipIf(!URL)('table history on Postgres', () => {
 
     const file = await hist.tableSnapshotFile(owner, id, manual!.id);
     expect(await hist.deleteTableSnapshot(owner, id, manual!.id)).toBe(true);
+    // The row goes now, the file with the store sweep (A3b part 2).
+    expect(existsSync(file!.path)).toBe(true);
+    expect(
+      await admin`select 1 from store_tombstones where store = 'tablesnap'
+                    and path = ${path.relative(dir, file!.path)}`,
+    ).toHaveLength(1);
+    await sweepHistory();
     expect(existsSync(file!.path)).toBe(false);
     expect(await hist.deleteTableSnapshot(owner, id, manual!.id)).toBe(false);
   });
@@ -168,6 +183,7 @@ describe.skipIf(!URL)('table history on Postgres', () => {
       expect(commits.reduce((n, e) => n + (e.bytes ?? 0), 0)).toBeLessThanOrEqual(1024 * 1024);
     }
     expect(commits[0]!.seq).toBe(4);
+    await sweepHistory();
     const { readdirSync } = await import('node:fs');
     expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(commits.length);
   });
@@ -200,6 +216,7 @@ describe.skipIf(!URL)('table history on Postgres', () => {
     const r = await hist.purgeOrphanTableHistory();
     expect(r.tables).toBeGreaterThanOrEqual(1);
     expect(await admin`select 1 from node_snapshots where node_id = ${id}`).toHaveLength(0);
+    await sweepHistory();
     expect(existsSync(path.join(dir, '_snapshots', owner, id))).toBe(false);
   });
 });

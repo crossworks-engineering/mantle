@@ -27,9 +27,9 @@ export const STORE_PINS = {
     // An imported package's data, checked into a TEMP file
     // (adoptAppDbFile); the store write is the broker's restore.
     'packages/content/src/app-package.ts',
-    // Snapshot copies of app databases (copyAppDbFile): the snapshot
-    // store, A3b part 2.
-    'packages/content/src/history-files.ts',
+    // THE snapshot store's broker (A3b part 2): snapshot and accepted
+    // copies (copyAppDbFile), staged before the row that names them.
+    'packages/content/src/snapshot-broker.ts',
     // The trash sweep's description names the directory.
     'server/web/lib/maintenance/registry.ts',
   ],

@@ -19,14 +19,13 @@
  * '@mantle/content/app-snapshots'.
  */
 import { randomUUID } from 'node:crypto';
-import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
 import {
-  afterCommit,
-  afterRollback,
+  appDatabases,
   apps,
   db,
+  inFlipTransaction,
   nodeSnapshots,
   nodes,
   type AppSnapshotCode,
@@ -45,6 +44,7 @@ import {
   snapshotAppDatabase,
 } from './app-broker';
 import { lockAppHistory } from './app-history-lock';
+import { SnapshotNotRecorded, stageThenFlipSnapshot } from './snapshot-broker';
 import { scheduleAppTableExportSync } from './app-table-exports';
 import { codeHash, envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 
@@ -256,104 +256,143 @@ async function usedSnapshotBytes(
   return Number(row?.n ?? 0);
 }
 
-/** Take a snapshot while the caller holds the app's history lock. Without
- *  `lockTx` its row commits at once, in its own transaction (a restore's
- *  undo snapshot must outlive a restore that fails after it). With
- *  `lockTx`, every read and the row's insert run on the lock's own
- *  transaction and the row commits with it: nothing under the lock takes a
- *  second connection (M1 audit, low 4; the pool rule of the API keys audit,
- *  N1), which matters now that a member's MCP write can take a snapshot. */
-async function snapshotLocked(
+type SnapshotOpts = {
+  trigger: AppSnapshotTrigger;
+  actor: AppHistoryActor;
+  actorLoginId?: string | null;
+  note?: string | null;
+  requireData?: boolean;
+  withData?: boolean;
+  codeOnlyWhenLost?: boolean;
+};
+
+/** A snapshot's database copy, staged before its row (the snapshot
+ *  broker): its id, its paths, and the file it was copied from. */
+type StagedAppSnapshot = {
+  id: string;
+  rel: string;
+  abs: string | null;
+  data: { bytes: number; schemaVersion: number; storagePath: string } | null;
+  lost: boolean;
+};
+
+/** Past the owner's (or the member's) snapshot budget: refused. */
+async function assertSnapshotBudget(ownerId: string, opts: SnapshotOpts, q: Q): Promise<void> {
+  if (opts.trigger !== 'manual') return;
+  const member = opts.actor === 'member';
+  const used = await usedSnapshotBytes(ownerId, member, q, opts.actorLoginId);
+  const max = maxSnapshotBytes();
+  if (used >= max) {
+    throw new AppSnapshotBudgetError(Math.round(used / 1048576), Math.round(max / 1048576), {
+      member,
+    });
+  }
+}
+
+/** Stage a snapshot's database copy (the snapshot broker, A3b part 2): a
+ *  new file under the snapshot's own id, outside any transaction. */
+async function stageAppSnapshot(
   ownerId: string,
   appId: string,
-  opts: {
-    trigger: AppSnapshotTrigger;
-    actor: AppHistoryActor;
-    actorLoginId?: string | null;
-    note?: string | null;
-    requireData?: boolean;
-    withData?: boolean;
-    codeOnlyWhenLost?: boolean;
-  },
-  lockTx?: DbTx,
-  /** Told the copy's path once the database copy is written: a caller
-   *  whose transaction commits the row later removes the file if that
-   *  commit fails (Phase 1 re-audit, low 1). */
-  onFile?: (abs: string) => void,
-): Promise<AppSnapshot | null> {
-  const q: Q = lockTx ?? db;
-  const code = await currentCode(ownerId, appId, q);
-  if (!code) return null;
-  if (opts.trigger === 'manual') {
-    const member = opts.actor === 'member';
-    const used = await usedSnapshotBytes(ownerId, member, q, opts.actorLoginId);
-    const max = maxSnapshotBytes();
-    if (used >= max) {
-      throw new AppSnapshotBudgetError(Math.round(used / 1048576), Math.round(max / 1048576), {
-        member,
-      });
-    }
-  }
+  opts: SnapshotOpts,
+): Promise<StagedAppSnapshot> {
   const id = randomUUID();
   const rel = snapshotRelPath(ownerId, appId, id);
   const abs = snapshotAbsPath(rel);
-  let data: Awaited<ReturnType<typeof snapshotAppDatabase>> = null;
+  let data: StagedAppSnapshot['data'] = null;
   let lost = false;
   if (opts.withData !== false) {
     try {
-      data = await snapshotAppDatabase(ownerId, appId, abs, q);
-      if (data) onFile?.(abs);
+      data = await snapshotAppDatabase(ownerId, appId, abs);
     } catch (err) {
       if (!(err instanceof AppDbMissingError) || !opts.codeOnlyWhenLost) throw err;
       lost = true;
     }
   }
-  if (!data && opts.requireData) return null;
+  return { id, rel, abs: data ? abs : null, data, lost };
+}
+
+/** The staged snapshot's row, inside the flip (under the app's history
+ *  lock): the code as it stands, the copy's path and size. Refused (not
+ *  recorded) when a restore moved the app's database to another file since
+ *  the copy was taken. */
+async function recordAppSnapshot(
+  tx: DbTx,
+  ownerId: string,
+  appId: string,
+  opts: SnapshotOpts,
+  staged: StagedAppSnapshot,
+): Promise<AppSnapshot | null> {
+  const code = await currentCode(ownerId, appId, tx);
+  if (!code) return null;
+  await assertSnapshotBudget(ownerId, opts, tx);
+  if (staged.data) {
+    const [reg] = await tx
+      .select({ storagePath: appDatabases.storagePath })
+      .from(appDatabases)
+      .where(and(eq(appDatabases.appNodeId, appId), eq(appDatabases.ownerId, ownerId)))
+      .limit(1);
+    if (reg?.storagePath !== staged.data.storagePath) throw new SnapshotNotRecorded('moved');
+  }
   const note = [
     opts.note?.trim().slice(0, 440),
-    lost ? '(code only: the live database file was lost)' : null,
+    staged.lost ? '(code only: the live database file was lost)' : null,
   ]
     .filter(Boolean)
     .join(' ');
-  const insert = (tx: DbTx) =>
-    insertNodeSnapshot(tx, {
-      id,
-      ownerId,
-      nodeId: appId,
-      nodeKind: 'app',
-      trigger: opts.trigger,
-      note: note || null,
-      actor: opts.actor,
-      actorLoginId: opts.actorLoginId ?? null,
-      code,
-      sourceHash: codeHash(code.source),
-      dbPath: data ? rel : null,
-      dbBytes: data?.bytes ?? null,
-      schemaVersion: data?.schemaVersion ?? null,
-    });
-  try {
-    const row = lockTx ? await insert(lockTx) : await db.transaction(insert);
-    return {
-      ...toSummary({
-        ...row,
-        fileCount: Object.keys(code.source.files).length,
-        sourceBytes: Object.values(code.source.files).reduce(
-          (n, f) => n + Buffer.byteLength(f, 'utf8'),
-          0,
-        ),
-        hasDraft: code.draft !== null,
-      }),
-    };
-  } catch (err) {
-    await rm(abs, { force: true });
-    throw err;
-  }
+  const row = await insertNodeSnapshot(tx, {
+    id: staged.id,
+    ownerId,
+    nodeId: appId,
+    nodeKind: 'app',
+    trigger: opts.trigger,
+    note: note || null,
+    actor: opts.actor,
+    actorLoginId: opts.actorLoginId ?? null,
+    code,
+    sourceHash: codeHash(code.source),
+    dbPath: staged.data ? staged.rel : null,
+    dbBytes: staged.data?.bytes ?? null,
+    schemaVersion: staged.data?.schemaVersion ?? null,
+  });
+  return {
+    ...toSummary({
+      ...row,
+      fileCount: Object.keys(code.source.files).length,
+      sourceBytes: Object.values(code.source.files).reduce(
+        (n, f) => n + Buffer.byteLength(f, 'utf8'),
+        0,
+      ),
+      hasDraft: code.draft !== null,
+    }),
+  };
+}
+
+/** A snapshot with this trigger taken at or after `since`. */
+async function snapshotSince(
+  q: Q,
+  appId: string,
+  trigger: AppSnapshotTrigger,
+  since: Date,
+): Promise<boolean> {
+  const [recent] = await q
+    .select({ id: nodeSnapshots.id })
+    .from(nodeSnapshots)
+    .where(
+      and(
+        eq(nodeSnapshots.nodeId, appId),
+        eq(nodeSnapshots.trigger, trigger),
+        gte(nodeSnapshots.createdAt, since),
+      ),
+    )
+    .limit(1);
+  return recent !== undefined;
 }
 
 /** Drop this app's automatic snapshots past the newest APP_SNAPSHOT_AUTO_KEEP,
  *  and past APP_SNAPSHOT_AUTO_MAX_MB of copies (the newest stays whatever
- *  its size; the owner's own and the versions are never pruned), files after
- *  the rows. The `pre_mcp_write` ones are their own line
+ *  its size; the owner's own and the versions are never pruned). Rows only:
+ *  each row's trigger records its file for the store sweep (A3b part 2). The `pre_mcp_write` ones are their own line
  *  (APP_SNAPSHOT_MCP_KEEP, APP_SNAPSHOT_MCP_MAX_MB): an MCP write prunes
  *  only them, and never counts against the others (M1 audit, medium 2).
  *  One statement under the app's history lock, on the lock's transaction:
@@ -361,25 +400,12 @@ async function snapshotLocked(
  *  removes. */
 async function pruneAutoSnapshots(appId: string, trigger: AppSnapshotTrigger): Promise<void> {
   const mcp = MCP_TRIGGERS.includes(trigger);
-  const gone = await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     await lockAppHistory(tx, appId);
     return mcp
       ? pruneHistoryRows(appId, MCP_TRIGGERS, APP_SNAPSHOT_MCP_KEEP, maxMcpSnapshotBytes(), tx)
       : pruneHistoryRows(appId, AUTO_TRIGGERS, APP_SNAPSHOT_AUTO_KEEP, maxAutoSnapshotBytes(), tx);
   });
-  await removeSnapshotFiles(gone);
-}
-
-/** Remove snapshot database files by their row paths (best effort). */
-export async function removeSnapshotFiles(paths: (string | null)[]): Promise<void> {
-  for (const rel of paths) {
-    if (!rel) continue;
-    try {
-      await rm(snapshotAbsPath(rel), { force: true });
-    } catch (err) {
-      console.error('[app-snapshots] could not remove a snapshot file:', err);
-    }
-  }
 }
 
 /**
@@ -415,60 +441,64 @@ export async function createAppSnapshot(
   } = {},
 ): Promise<AppSnapshot | null> {
   const trigger = opts.trigger ?? 'manual';
-  // The row commits with the lock's transaction: if that commit fails after
-  // the copy was written, the copy goes too (no orphan under _snapshots).
-  let copied: string | null = null;
-  const snap = await db
-    .transaction(async (tx) => {
-      await lockAppHistory(tx, appId);
-      if (opts.onlyIfNoneSince) {
-        const [recent] = await tx
-          .select({ id: nodeSnapshots.id })
-          .from(nodeSnapshots)
-          .where(
-            and(
-              eq(nodeSnapshots.nodeId, appId),
-              eq(nodeSnapshots.trigger, trigger),
-              gte(nodeSnapshots.createdAt, opts.onlyIfNoneSince),
-            ),
-          )
-          .limit(1);
-        if (recent) return null;
-      }
-      return snapshotLocked(
-        ownerId,
-        appId,
-        {
-          trigger,
-          actor: opts.actor ?? 'owner',
-          actorLoginId: opts.actorLoginId ?? null,
-          note: opts.note,
-          requireData: opts.requireData === true,
-          withData: opts.withData !== false,
-          codeOnlyWhenLost: opts.codeOnlyWhenLost === true,
+  const o: SnapshotOpts = {
+    trigger,
+    actor: opts.actor ?? 'owner',
+    actorLoginId: opts.actorLoginId ?? null,
+    note: opts.note,
+    requireData: opts.requireData === true,
+    withData: opts.withData !== false,
+    codeOnlyWhenLost: opts.codeOnlyWhenLost === true,
+  };
+  // Cheap answers before any copy (each asked again in the flip, under the
+  // app's history lock): not this owner's app, a snapshot already taken
+  // since, past the budget.
+  if (!(await currentCode(ownerId, appId))) return null;
+  if (opts.onlyIfNoneSince && (await snapshotSince(db, appId, trigger, opts.onlyIfNoneSince))) {
+    return null;
+  }
+  await assertSnapshotBudget(ownerId, o, db);
+  // The snapshot broker (A3b part 2, plan 20.3): the database copy is
+  // staged first, outside any transaction (it used to be taken inside the
+  // history lock's transaction, held across the whole copy); then one short
+  // transaction under the lock writes the row naming it. A copy of a file a
+  // restore replaced meanwhile is taken again (twice at most).
+  let snap: AppSnapshot | null;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      snap = await stageThenFlipSnapshot(
+        async () => {
+          const staged = await stageAppSnapshot(ownerId, appId, o);
+          if (!staged.data && o.requireData) throw new SnapshotNotRecorded('not_needed');
+          return staged;
         },
-        tx,
-        (abs) => {
-          copied = abs;
-        },
+        (staged) =>
+          db.transaction((tx) =>
+            inFlipTransaction(async () => {
+              await lockAppHistory(tx, appId);
+              if (
+                opts.onlyIfNoneSince &&
+                (await snapshotSince(tx, appId, trigger, opts.onlyIfNoneSince))
+              ) {
+                throw new SnapshotNotRecorded('not_needed');
+              }
+              return recordAppSnapshot(tx, ownerId, appId, o, staged);
+            }),
+          ),
       );
-    })
-    .catch(async (err: unknown) => {
-      // Never mask the original error with a failed clean-up (M2, low 7).
-      if (copied) await rm(copied, { force: true }).catch(() => undefined);
+      break;
+    } catch (err) {
+      if (err instanceof SnapshotNotRecorded) {
+        if (err.why === 'moved' && attempt < 3) continue;
+        if (err.why === 'not_needed') return null;
+      }
       throw err;
-    });
-  // Inside a caller's transaction (a member's app change, withSystemTx) the
-  // row above only reached a savepoint: if that transaction rolls back
-  // later, the copy goes with it (team apps follow-up). Outside one, this
-  // does nothing: the row has committed.
-  const kept = copied as string | null;
-  if (kept) afterRollback(() => rm(kept, { force: true }));
+    }
+  }
   if (snap && trigger !== 'manual') await pruneAutoSnapshots(appId, trigger);
   return snap;
 }
 
-/** The app's history, newest first: versions and snapshots, without code. */
 export async function listAppSnapshots(
   ownerId: string,
   appId: string,
@@ -557,7 +587,9 @@ export async function setAppSnapshotNote(
 }
 
 /** Delete a snapshot and its database copy. A version (what a publish made
- *  live) stays: it is the app's history. False when it is not there. */
+ *  live) stays: it is the app's history. False when it is not there. The
+ *  row goes now; its trigger records the copy, which the store sweep
+ *  removes a grace period later (A3b part 2). */
 export async function deleteAppSnapshot(
   ownerId: string,
   appId: string,
@@ -573,8 +605,7 @@ export async function deleteAppSnapshot(
   const gone = await db
     .delete(nodeSnapshots)
     .where(eq(nodeSnapshots.id, snapshotId))
-    .returning({ dbPath: nodeSnapshots.dbPath });
-  await removeSnapshotFiles(gone.map((g) => g.dbPath));
+    .returning({ id: nodeSnapshots.id });
   return gone.length > 0;
 }
 
@@ -659,9 +690,9 @@ export async function deleteMemberAppSnapshot(
     await tx.delete(nodeSnapshots).where(eq(nodeSnapshots.id, snapshotId));
     return row;
   });
+  // The copy is the store sweep's: the row's trigger recorded it (A3b part
+  // 2), so a delete that rolls back (inside a caller's transaction) keeps it.
   if (!gone) return null;
-  const rel = gone.dbPath;
-  await afterCommit(() => removeSnapshotFiles([rel]));
   return { id: gone.id, seq: gone.seq, freedBytes: Number(gone.dbBytes ?? 0) };
 }
 

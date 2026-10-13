@@ -8,12 +8,12 @@
  */
 import { copyFile, link, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
-import { copyAppDbFile } from './app-sql-runner';
 
 /** A file a writer is still making (a snapshot copy before its rename, a
- *  restore's temp file): never part of the history. */
+ *  restore's temp file), or the store sweep's memory of the folder
+ *  (`.store-sweep.json`, A3b part 2): never part of the history. */
 function isPartial(name: string): boolean {
-  return name.includes('.tmp-') || name.includes('.restore-');
+  return name.includes('.tmp-') || name.includes('.restore-') || name.startsWith('.store-sweep');
 }
 
 function errCode(err: unknown): string | undefined {
@@ -76,16 +76,6 @@ export async function linkHistoryTree(
   };
   await walk(src, dest);
   return counts;
-}
-
-/**
- * A consistent copy of a SQLite file (a table workbook) at `dest`: VACUUM
- * INTO in a SQL child (copyAppDbFile), off the event loop. Replaces `dest`.
- */
-export async function copySqliteFile(src: string, dest: string): Promise<void> {
-  await mkdir(path.dirname(dest), { recursive: true });
-  await rm(dest, { force: true }); // VACUUM INTO refuses an existing target
-  await copyAppDbFile(src, dest);
 }
 
 /** A work file a crash can leave behind: a schema trial copy, a restore's

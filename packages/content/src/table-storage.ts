@@ -32,7 +32,8 @@ import {
 import { ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model';
 import { tableToText } from './table-to-text';
 import { errorMessage } from '@mantle/std';
-import { copySqliteFile, linkHistoryTree } from './history-files';
+import { linkHistoryTree } from './history-files';
+import { copySqliteFile } from './snapshot-broker';
 import { flipTable, stageDoc, stagedTableWrite, tableRevisionPath } from './table-broker';
 
 /**
@@ -476,9 +477,11 @@ export async function snapshotAllTableDatabases(
       files = [];
       for (const rel of named) {
         const dirRel = path.posix.dirname(rel);
-        const found = r.snapshot
-          ? [resolveStoragePath(rel)].filter((f) => existsSync(f))
-          : revisionFiles(path.dirname(resolveStoragePath(rel)), r.nodeId, 'tables');
+        // An accepted copy too (A3b part 2: each a revision name, staged
+        // before its row): every copy of the table there, the one the dump
+        // names among them (the sweep removes the old ones a grace period
+        // after their tombstone).
+        const found = revisionFiles(path.dirname(resolveStoragePath(rel)), r.nodeId, 'tables');
         for (const f of found) {
           if (seen.has(f)) continue;
           seen.add(f);

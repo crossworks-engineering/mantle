@@ -26,16 +26,16 @@
  * Server-only (node:fs): import via '@mantle/content/table-snapshots'.
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, rmSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, nodeSnapshots, nodes, StoreRefusedError, tables } from '@mantle/db';
+import { db, inFlipTransaction, nodeSnapshots, nodes, StoreRefusedError, tables } from '@mantle/db';
 import { currentSpaceScope, isSystemScope } from '@mantle/db/viewer';
 import { resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import type { TableSnapshot } from '@mantle/client-types';
-import { copySqliteFile } from './history-files';
+import { copySqliteFile, SnapshotNotRecorded, stageThenFlipSnapshot } from './snapshot-broker';
 import { envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
-import { withTableRegistryLock } from './table-storage';
+
 import {
   flipTable,
   revisionBesideRow,
@@ -148,28 +148,17 @@ export async function recordCommitSnapshot(
 
 /** Drop this table's commit entries past the newest
  *  TABLE_SNAPSHOT_COMMIT_KEEP, and past TABLE_HISTORY_MAX_MB of files (the
- *  newest stays whatever its size; each kept version is a whole workbook),
- *  files after the rows. One statement: an entry a commit adds meanwhile is
- *  never removed. */
+ *  newest stays whatever its size; each kept version is a whole workbook).
+ *  One statement: an entry a commit adds meanwhile is never removed. Rows
+ *  only: each row's trigger records its file for the store sweep (A3b part
+ *  2, store_tombstones). */
 export async function pruneTableCommitSnapshots(tableId: string): Promise<void> {
-  const gone = await pruneHistoryRows(
+  await pruneHistoryRows(
     tableId,
     ['commit'],
     TABLE_SNAPSHOT_COMMIT_KEEP,
     envMbBytes('TABLE_HISTORY_MAX_MB', TABLE_HISTORY_DEFAULT_MAX_MB),
   );
-  removeFiles(gone);
-}
-
-function removeFiles(paths: (string | null)[]): void {
-  for (const rel of paths) {
-    if (!rel) continue;
-    try {
-      rmSync(snapshotAbsPath(rel), { force: true });
-    } catch (err) {
-      console.error('[table-snapshots] could not remove a snapshot file:', err);
-    }
-  }
 }
 
 /** Built on use, not at import: a test that stands in for @mantle/db need
@@ -315,42 +304,70 @@ export async function createTableSnapshot(
       `snapshots already hold ${Math.round(usedBytes / 1048576)} MB of the ${Math.round(maxSnapshotBytes() / 1048576)} MB allowed (APP_SNAPSHOT_MAX_MB): delete old ones first (table_snapshot_delete)`,
     );
   }
-  const storagePath = table.storagePath;
-  return withTableRegistryLock(tableId, async (tx) => {
-    const publishedAbs = resolveStoragePath(storagePath);
-    if (!existsSync(publishedAbs)) {
-      throw new TableSnapshotRefusedError("the table's workbook file is missing on the server");
-    }
-    const [reg] = await tx
-      .select({ version: tables.version })
-      .from(tables)
-      .where(eq(tables.nodeId, tableId))
-      .limit(1);
-    const id = randomUUID();
-    const rel = snapshotRelPath(ownerId, tableId, id);
-    const abs = snapshotAbsPath(rel);
-    // In a SQL child, off the event loop (apps audit 2026-10-02, item 14).
-    await copySqliteFile(publishedAbs, abs);
+  // The snapshot broker (A3b part 2, plan 20.3): the copy is staged first,
+  // outside any transaction (it used to be taken inside the registry
+  // lock's transaction, held across the whole copy); then one short
+  // transaction locks the registry row, checks it still names the file
+  // copied (a commit may have replaced it meanwhile: taken again, twice at
+  // most) and writes the history row naming the copy.
+  let storagePath = table.storagePath;
+  for (let attempt = 1; ; attempt++) {
+    const from = storagePath;
     try {
-      const row = await insertNodeSnapshot(tx, {
-        id,
-        ownerId,
-        nodeId: tableId,
-        nodeKind: 'table',
-        trigger: 'manual',
-        note: opts.note?.trim().slice(0, 500) || null,
-        actor: opts.actor ?? 'owner',
-        code: null,
-        dbPath: rel,
-        dbBytes: statSync(abs).size,
-        schemaVersion: reg?.version ?? null,
-      });
-      return toSummary(row);
+      return await stageThenFlipSnapshot(
+        async () => {
+          const publishedAbs = resolveStoragePath(from);
+          if (!existsSync(publishedAbs)) {
+            throw new TableSnapshotRefusedError(
+              "the table's workbook file is missing on the server",
+            );
+          }
+          const id = randomUUID();
+          const rel = snapshotRelPath(ownerId, tableId, id);
+          const abs = snapshotAbsPath(rel);
+          // In a SQL child, off the event loop (apps audit 2026-10-02, item 14).
+          const bytes = await copySqliteFile(publishedAbs, abs);
+          return { id, rel, abs, bytes };
+        },
+        (st) =>
+          db.transaction((tx) =>
+            inFlipTransaction(async () => {
+              const [reg] = await tx
+                .select({ version: tables.version, storagePath: tables.storagePath })
+                .from(tables)
+                .where(eq(tables.nodeId, tableId))
+                .for('update')
+                .limit(1);
+              if (!reg) throw new StoreRefusedError('snapshots', 'table', 0);
+              if (reg.storagePath !== from) throw new SnapshotNotRecorded('moved');
+              const row = await insertNodeSnapshot(tx, {
+                id: st.id,
+                ownerId,
+                nodeId: tableId,
+                nodeKind: 'table',
+                trigger: 'manual',
+                note: opts.note?.trim().slice(0, 500) || null,
+                actor: opts.actor ?? 'owner',
+                code: null,
+                dbPath: st.rel,
+                dbBytes: st.bytes,
+                schemaVersion: reg.version ?? null,
+              });
+              return toSummary(row);
+            }),
+          ),
+      );
     } catch (err) {
-      rmSync(abs, { force: true });
+      if (err instanceof SnapshotNotRecorded && attempt < 3) {
+        const again = await ownedTable(ownerId, tableId);
+        if (!again?.storagePath) return null;
+        storagePath = again.storagePath;
+        continue;
+      }
+      if (err instanceof StoreRefusedError) return null;
       throw err;
     }
-  });
+  }
 }
 
 /**
@@ -416,7 +433,9 @@ export async function restoreTableSnapshot(
   return { restored };
 }
 
-/** Delete an entry and its file. False when it is not there. */
+/** Delete an entry and its file. False when it is not there. The row goes
+ *  now; its trigger records the file, which the store sweep removes a grace
+ *  period later (A3b part 2). */
 export async function deleteTableSnapshot(
   ownerId: string,
   tableId: string,
@@ -432,8 +451,7 @@ export async function deleteTableSnapshot(
         eq(nodeSnapshots.nodeKind, 'table'),
       ),
     )
-    .returning({ dbPath: nodeSnapshots.dbPath });
-  removeFiles(gone.map((g) => g.dbPath));
+    .returning({ id: nodeSnapshots.id });
   return gone.length > 0;
 }
 
@@ -459,14 +477,13 @@ export async function purgeOrphanTableHistory(
     node_id: string;
   }[];
   if (opts.dryRun) return { tables: rows.length };
+  // Rows only: each row's trigger records its file, which the store sweep
+  // removes a grace period later (A3b part 2, store_tombstones); a file
+  // there that no row ever named stays, reported.
   for (const r of rows) {
     await db
       .delete(nodeSnapshots)
       .where(and(eq(nodeSnapshots.ownerId, r.owner_id), eq(nodeSnapshots.nodeId, r.node_id)));
-    rmSync(path.join(tableDbRoot(), '_snapshots', r.owner_id, r.node_id), {
-      recursive: true,
-      force: true,
-    });
   }
   return { tables: rows.length };
 }

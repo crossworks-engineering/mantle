@@ -44,6 +44,14 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     schemaSql: 'CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT);',
     schemaVersion: 1,
   };
+  /** The store sweep over the app history folder, a grace period on (A3b
+   *  part 2: a deleted, pruned or purged snapshot's file goes there, by its
+   *  tombstone). */
+  const sweepHistory = async () => {
+    const { snapshotSweepSpecs } = await import('./store-sweep');
+    const spec = snapshotSweepSpecs().find((x) => x.label === 'appsnap')!;
+    return m.sweepOrphans(spec, { now: Date.now() + 2 * m.STORE_SWEEP_GRACE_MS, allowMany: true });
+  };
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -279,6 +287,9 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     const snap = await snaps.createAppSnapshot(owner, id);
     const file = (await snaps.appSnapshotFile(owner, id, snap!.id))!.path;
     expect(await snaps.deleteAppSnapshot(owner, id, snap!.id)).toBe(true);
+    // The row goes now, the file with the store sweep (A3b part 2).
+    expect(existsSync(file)).toBe(true);
+    await sweepHistory();
     expect(existsSync(file)).toBe(false);
   });
 
@@ -321,7 +332,9 @@ describe.skipIf(!URL)('app history on Postgres', () => {
         auto.some((e) => e.id === s!.id),
         s!.trigger,
       ).toBe(true);
-    // Every kept row has its file; no removed row left one behind.
+    // Every kept row has its file; no removed row left one behind once the
+    // store sweep has run (A3b part 2: a pruned row's file goes there).
+    await sweepHistory();
     const { readdirSync } = await import('node:fs');
     expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(auto.length);
   });
@@ -473,6 +486,7 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     await apps.deleteApp(owner, b);
     expect(await trash.purgeDeletedApp(owner, a)).toBe(true);
     expect(await snaps.listAppSnapshots(owner, a)).toEqual([]);
+    await sweepHistory();
     expect(existsSync(path.join(dir, '_snapshots', owner, a))).toBe(false);
 
     const later = new Date(Date.now() + (trash.APP_TRASH_DAYS + 1) * 86_400_000);

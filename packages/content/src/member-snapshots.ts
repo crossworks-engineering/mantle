@@ -9,9 +9,11 @@
  *  - page: the committed document; note: its text;
  *  - drawing: the committed scene, its saved SVG and its image refs;
  *  - table: a copy of the published workbook (VACUUM INTO) under
- *    TABLE_DB_DIR/accepted-snapshots/<id>.sqlite, which the table backup
- *    takes with the rest (table-storage.ts); a table with no workbook keeps
- *    its document;
+ *    TABLE_DB_DIR/accepted-snapshots/<id>.r-<token>.sqlite (the snapshot
+ *    broker, A3b part 2: staged under a new name before the row names it;
+ *    the copy a new one replaces, and a deleted item's, are the store
+ *    sweep's), which the table backup takes with the rest
+ *    (table-storage.ts); a table with no workbook keeps its document;
  *  - file: its sha256, name, type and size only. The bytes stay the brain's
  *    and are served to the author only while the brain file still has
  *    exactly those bytes (`acceptedFileUnchanged`).
@@ -31,14 +33,16 @@ import {
   acceptedSnapshots,
   db,
   draws,
+  inFlipTransaction,
   nodes,
   pages,
-  removeSqliteFile,
+  revisionToken,
   spaceItems,
   tables,
 } from '@mantle/db';
 import { diskPathForFile } from '@mantle/files';
-import { relativeStoragePath, resolveStoragePath, snapshotFile } from '@mantle/tabledb';
+import { relativeStoragePath, resolveStoragePath } from '@mantle/tabledb';
+import { copySqliteFile, SnapshotNotRecorded, stageThenFlipSnapshot } from './snapshot-broker';
 import { SNAPSHOT_OWNER } from './table-storage';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -48,9 +52,17 @@ export type AcceptedSnapshot = typeof acceptedSnapshots.$inferSelect;
 /** The owner segment the workbook copies live under, inside TABLE_DB_DIR. */
 export const SNAPSHOT_TABLE_OWNER = SNAPSHOT_OWNER;
 
-/** Where one accepted table's workbook copy lives. */
+/** Where one accepted table's workbook copy lived before A3b part 2 (one
+ *  name per table, overwritten in place); a copy now has a revision name
+ *  (`acceptedRevisionPath`) and is found through its row. */
 export function snapshotTableAbs(nodeId: string): string {
   return resolveStoragePath(relativeStoragePath(SNAPSHOT_TABLE_OWNER, nodeId));
+}
+
+/** A new accepted copy's path, relative to TABLE_DB_DIR. */
+function acceptedRevisionPath(nodeId: string): string {
+  if (!/^[A-Za-z0-9-]+$/.test(nodeId)) throw new Error('accepted snapshot: unsafe id for a path');
+  return `${SNAPSHOT_TABLE_OWNER}/${nodeId}.r-${revisionToken()}.sqlite`;
 }
 
 /** A brain file's bytes on disk, hashed. Cached by path, size and mtime so
@@ -91,8 +103,12 @@ function brainFileAbs(node: { path: unknown; title: string; data: unknown }): st
 /**
  * Record the snapshot of every item in `ids` that is accepted and member
  * authored (its `space_items` row says `accepted`), read on `tx` after the
- * move: the version the brain just got. A table's workbook is copied now
- * (`onRollback` removes the copy again). A file keeps the name in
+ * move: the version the brain just got. A table's workbook copy was staged
+ * before the transaction (`staged`: the snapshot broker, A3b part 2); a
+ * table whose row names another workbook than the one copied, or none
+ * staged, is not recorded (SnapshotNotRecorded: the caller takes the copy
+ * again). The copy a row named before is the store sweep's (its trigger
+ * records it). A file keeps the name in
  * `fileNames` when Accept passes one: its name as filed, before the brain
  * folder made it unique (audit L7), else its name now. Replaces an earlier
  * snapshot of the same item, keeping its accept time.
@@ -102,7 +118,7 @@ export async function writeAcceptedSnapshots(
   brainId: string,
   ids: string[],
   hooks: {
-    onRollback?: (() => Promise<unknown>)[];
+    staged?: ReadonlyMap<string, { rel: string; from: string }>;
     fileNames?: ReadonlyMap<string, string>;
   } = {},
 ): Promise<number> {
@@ -174,11 +190,9 @@ export async function writeAcceptedSnapshots(
       case 'table': {
         base.version = r.tableVersion;
         if (r.storagePath) {
-          const dest = snapshotTableAbs(node.id);
-          // VACUUM INTO: a consistent copy even with a WAL beside it.
-          snapshotFile(resolveStoragePath(r.storagePath), dest);
-          hooks.onRollback?.push(async () => removeSqliteFile(dest));
-          base.tablePath = relativeStoragePath(SNAPSHOT_TABLE_OWNER, node.id);
+          const st = hooks.staged?.get(node.id);
+          if (!st || st.from !== r.storagePath) throw new SnapshotNotRecorded('moved');
+          base.tablePath = st.rel;
         } else {
           base.tableDoc = r.tableData;
         }
@@ -218,37 +232,65 @@ export async function writeAcceptedSnapshots(
  * not an accepted brain item any more.
  */
 export async function snapshotOf(brainId: string, id: string): Promise<AcceptedSnapshot | null> {
-  const [snap] = await db
-    .select()
-    .from(acceptedSnapshots)
-    .where(eq(acceptedSnapshots.nodeId, id))
-    .limit(1);
+  const read = async () =>
+    (await db.select().from(acceptedSnapshots).where(eq(acceptedSnapshots.nodeId, id)).limit(1))[0];
+  const snap = await read();
   if (snap && !snap.pending) return snap;
-  const onRollback: (() => Promise<unknown>)[] = [];
-  try {
-    return await db.transaction(async (tx) => {
-      // One completion at a time per item: two first reads must not copy the
-      // same workbook over each other.
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${`accepted-snapshot:${id}`}, 0))`,
+  // The snapshot broker (A3b part 2, plan 20.3): a table's workbook copy is
+  // staged first, under a new name, outside any transaction (it used to be
+  // copied over the one name inside it); then one short transaction writes
+  // the row naming it. A table committed meanwhile is copied again (twice
+  // at most).
+  for (let attempt = 1; ; attempt++) {
+    const [t] = await db
+      .select({ type: nodes.type, storagePath: tables.storagePath })
+      .from(nodes)
+      .leftJoin(tables, eq(tables.nodeId, nodes.id))
+      .where(and(eq(nodes.id, id), eq(nodes.ownerId, brainId)))
+      .limit(1);
+    const from = t?.type === 'table' ? (t.storagePath ?? null) : null;
+    try {
+      return await stageThenFlipSnapshot(
+        async () => {
+          if (!from) return { abs: null, rel: null };
+          const rel = acceptedRevisionPath(id);
+          const abs = resolveStoragePath(rel);
+          // VACUUM INTO: a consistent copy even with a WAL beside it.
+          await copySqliteFile(resolveStoragePath(from), abs);
+          return { abs, rel };
+        },
+        (st) =>
+          db.transaction((tx) =>
+            inFlipTransaction(async () => {
+              // One completion at a time per item.
+              await tx.execute(
+                sql`select pg_advisory_xact_lock(hashtextextended(${`accepted-snapshot:${id}`}, 0))`,
+              );
+              const [again] = await tx
+                .select()
+                .from(acceptedSnapshots)
+                .where(eq(acceptedSnapshots.nodeId, id))
+                .limit(1);
+              if (again && !again.pending) throw new SnapshotNotRecorded('not_needed');
+              await writeAcceptedSnapshots(tx, brainId, [id], {
+                staged: st.rel && from ? new Map([[id, { rel: st.rel, from }]]) : undefined,
+              });
+              const [done] = await tx
+                .select()
+                .from(acceptedSnapshots)
+                .where(eq(acceptedSnapshots.nodeId, id))
+                .limit(1);
+              return done ?? null;
+            }),
+          ),
       );
-      const [again] = await tx
-        .select()
-        .from(acceptedSnapshots)
-        .where(eq(acceptedSnapshots.nodeId, id))
-        .limit(1);
-      if (again && !again.pending) return again;
-      await writeAcceptedSnapshots(tx, brainId, [id], { onRollback });
-      const [done] = await tx
-        .select()
-        .from(acceptedSnapshots)
-        .where(eq(acceptedSnapshots.nodeId, id))
-        .limit(1);
-      return done ?? null;
-    });
-  } catch (err) {
-    for (const fn of onRollback) await fn().catch(() => {});
-    throw err;
+    } catch (err) {
+      if (err instanceof SnapshotNotRecorded) {
+        if (err.why === 'not_needed') return (await read()) ?? null;
+        if (attempt < 3) continue;
+      }
+      throw err;
+    }
   }
 }
 
