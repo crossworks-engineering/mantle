@@ -336,7 +336,8 @@ export async function newItemDiff(
 ): Promise<VisibilityDiff> {
   const nodeType = TREE_KIND_SPECS[kind].nodeType;
   const set = newItemSet(ownerId, nodeType, destPath);
-  const admin = sql`array[mantle_ws_admin_id(${ownerId}::uuid)]`;
+  // Empty when the brain has no Admin workspace (as the old array(select ...)).
+  const admin = sql`array_remove(array[mantle_ws_admin_id(${ownerId}::uuid)], null)`;
   const diff = await listed(
     via,
     sql`
