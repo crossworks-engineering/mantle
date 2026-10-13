@@ -187,6 +187,10 @@ staged by `mantle.edit_check`: it fixes orphans the write role made, so it
 applies on any box where login writes run on the write role (the actor
 check `warn` or `on`), from the roll.
 
+In `warn`, a rename over rows the caller cannot read logs one
+`edit: heads lock` miss (the heads `on` would drop; the rewrite then takes
+them itself): expected.
+
 The move check also holds every app inside a moved folder to the placement
 rule its root had (a new holder needs a Moderator of it). That one is new
 and staged: `off` moves as before, `warn` reports, `on` refuses.

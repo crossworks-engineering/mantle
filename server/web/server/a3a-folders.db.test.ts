@@ -105,6 +105,13 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     return id;
   };
   const sys = <T>(fn: () => Promise<T>) => m.asSystem(fn, 'test');
+  /** With the edit check in warn (MANTLE_TEST_EDIT_CHECK), the subtree heads
+   *  lock reports the hidden rows' heads it would drop in on (the rewrite then
+   *  takes them itself): expected, and the only miss allowed here. */
+  const onlyHeadsMisses = () => {
+    const other = m.takeActorMisses().filter((x) => !x.check.startsWith('edit: heads lock:'));
+    expect(other).toEqual([]);
+  };
 
   beforeAll(async () => {
     const ts: Ts = await import('@mantle/db/test-support');
@@ -184,6 +191,7 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     const newPath = (await pathOf(src))!;
     expect(newPath).not.toBe(srcPath);
     expect(await pathOf(hidden)).toBe(newPath);
+    onlyHeadsMisses();
   });
 
   it('a Files folder: the rename keeps the hidden file’s row on its disk path; the move and the delete answer 409, nothing moves on disk', async () => {
@@ -229,5 +237,6 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     expect(newPath).not.toBe(gPath);
     expect(await pathOf(file)).toBe(newPath);
     expect(await bytes()).toBe('hidden bytes');
+    onlyHeadsMisses();
   });
 });
