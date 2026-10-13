@@ -354,8 +354,9 @@ async function bumpWriteSeq(tx: Tx, regId: string, storagePath: string): Promise
  *  APP_SCHEMA_TIMEOUT_MS). Short: a try holds a pooled connection while it
  *  waits (A3b fix round 3, F2). */
 export const APP_DB_CHECK_LOCK_TIMEOUT_MS = 200;
-/** The pause between tries, OUTSIDE any transaction: no connection is
- *  held while the statement waits for a seed to end. */
+/** The pause between tries (plus 0 to 50 ms of jitter), OUTSIDE any
+ *  transaction: no connection is held while the statement waits for a
+ *  seed to end. */
 export const APP_DB_CHECK_RETRY_PAUSE_MS = 500;
 /** How long a single statement's check keeps trying before it answers
  *  busy (A3b fix round 2, N2: nothing on the client retries a busy answer,
@@ -400,7 +401,9 @@ async function checkAppDbWrite(
           "the app's database is busy with a seed or a schema change; try again in a few seconds",
         );
       }
-      await sleep(Math.min(APP_DB_CHECK_RETRY_PAUSE_MS, left));
+      // A little jitter, so writes waiting on the same seed do not try in
+      // step (A3b fix round 4).
+      await sleep(Math.min(APP_DB_CHECK_RETRY_PAUSE_MS + Math.floor(Math.random() * 51), left));
     }
   }
 }
