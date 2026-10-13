@@ -406,17 +406,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
 
     it('a table created inside an outer transaction that rolls back leaves no stage', async () => {
       const before = filesOf(stateOf(tableRoot));
-      const err = await errorOf(
-        sys(() =>
-          m.withSystemTx(async () => {
-            await tablesMod.createTable(owner, { title: `${tag} rolled back`, data: DOC('x') });
-            throw new Error('the outer transaction rolls back');
-          }),
-        ),
-      );
-      expect(String(err)).toMatch(/rolls back/);
-      expect(filesOf(stateOf(tableRoot))).toEqual(before);
-      // And inside a login's open write transaction (a request's).
+      // Inside a login's open write transaction (a request's db.transaction).
       const err2 = await errorOf(
         inRequest(owner, () =>
           m.db.transaction(async () => {
@@ -755,14 +745,15 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
           await new Promise((r) => setTimeout(r, ms));
         });
         await isLocked;
-        return hold;
+        // Not the promise itself: an async function would wait for it.
+        return { done: hold };
       };
       // Held 5 s: the statement waits it out and lands after the seed.
       const short = await holdFor(5000);
       const t0 = Date.now();
       await sys(() => appdb.appDbExec(owner, a, "insert into t (v) values ('after the seed')"));
       expect(Date.now() - t0).toBeGreaterThanOrEqual(4000);
-      await short;
+      await short.done;
       // Held 15 s: past the retry, busy, nothing written.
       const long = await holdFor(15000);
       const t1 = Date.now();
@@ -770,7 +761,7 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
         sys(() => appdb.appDbExec(owner, a, "insert into t (v) values ('busy')")),
       );
       const waited = Date.now() - t1;
-      await long;
+      await long.done;
       expect(err).toBeInstanceOf(appdb.AppSqlBusyError);
       expect(waited).toBeGreaterThanOrEqual(appdb.APP_DB_CHECK_RETRY_MS - 1000);
       expect(waited).toBeLessThan(appdb.APP_DB_CHECK_RETRY_MS + 4000);

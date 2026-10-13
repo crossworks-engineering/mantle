@@ -214,13 +214,17 @@ export const STORE_FILE_COLUMNS = {
 export async function storeRows(store: RevisionStore): Promise<SweepRow[]> {
   const [{ db }, { sql }] = await Promise.all([import('./client'), import('drizzle-orm')]);
   const spec = STORE_FILE_COLUMNS[store];
-  const cols = spec.files.map((c) => `"${c}"`).join(', ');
+  // One column per file (never a SQL array: a null element would come back
+  // as the text NULL).
+  const cols = spec.files.map((c, i) => `"${c}" as f${i}`).join(', ');
   const rows = (await db.execute(
-    sql.raw(`select "${spec.node}"::text as node, array[${cols}] as files from "${spec.table}"`),
-  )) as unknown as { node: string; files: (string | null)[] }[];
+    sql.raw(`select "${spec.node}"::text as node, ${cols} from "${spec.table}"`),
+  )) as unknown as Record<string, string | null>[];
   return rows.map((r) => ({
-    node: r.node,
-    files: (r.files ?? []).filter((f): f is string => typeof f === 'string' && f.length > 0),
+    node: String(r.node),
+    files: spec.files
+      .map((_, i) => r[`f${i}`])
+      .filter((f): f is string => typeof f === 'string' && f.length > 0),
   }));
 }
 
