@@ -46,6 +46,7 @@ import {
   memberOpenRead,
   memberOpenWrite,
   registerRouteSource,
+  requestKeyRoute,
   routeItemTarget,
   routeRef,
   rowKeyRoute,
@@ -246,6 +247,15 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
             const what = `${row.key} @${path} ${access} ${JSON.stringify(areas)}`;
             if (gate !== byPath) diffs.push(`${what}: gate ${gate}, keyMayCall ${byPath}`);
             if (onRow !== byPath) diffs.push(`${what}: row ${onRow}, keyMayCall ${byPath}`);
+            // What the gate and the guard ask (the row where the raw path
+            // names it): the same answer on a plain path.
+            const onRequest = keyMayCall(
+              { access, areas },
+              requestKeyRoute(row, row.method, path),
+            ).ok;
+            if (onRequest !== byPath) {
+              diffs.push(`${what}: request ${onRequest}, keyMayCall ${byPath}`);
+            }
             checked += 1;
           }
         }

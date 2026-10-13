@@ -125,6 +125,12 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
       { pattern: '/api/notes', methods: ['GET'], load: async () => ({ GET: report }) },
       { pattern: '/api/v1/pages', methods: ['GET'], load: async () => ({ GET: report }) },
       { pattern: '/api/v1/notes', methods: ['GET'], load: async () => ({ GET: report }) },
+      { pattern: '/api/v1/search', methods: ['GET'], load: async () => ({ GET: report }) },
+      {
+        pattern: '/api/v1/pages/:id',
+        methods: ['GET', 'PATCH'],
+        load: async () => ({ GET: report, PATCH: report }),
+      },
       { pattern: '/api/files/files/:id', methods: ['GET'], load: async () => ({ GET: report }) },
       { pattern: '/api/changelog', methods: ['GET'], load: async () => ({ GET: nested }) },
     ].map((r) => ({ catchAll: null, catchAllOptional: false, ...r }));
@@ -169,6 +175,55 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
     expect(none.status).toBe(404);
     // Off /api/v1 a key is no credential.
     expect((await app.request('/api/notes', { headers: auth })).status).toBe(401);
+  });
+
+  it("an API key on an encoded v1 spelling: main's answer, judged on the raw path (fix round 2)", async () => {
+    // Hono decodes the path before routing, so each of these finds a row;
+    // a key is judged where the raw path names the same v1 route, as before
+    // A4 (matchApiV1Route on the raw path).
+    const auth = { authorization: 'Bearer mtlk_test_secret' };
+    // An encoded segment in the route's name: not in the API, the 404 and
+    // its body, whether the key's areas hold the route (pages) or not
+    // (search), never the handler or a 403.
+    for (const path of ['/api/v1/pag%65s', '/api/v1/%73earch', '/api/v1/%70ages/x']) {
+      const res = await app.request(path, { headers: auth });
+      expect(res.status, path).toBe(404);
+      expect(await json(res), path).toEqual({ error: 'not found' });
+    }
+    // An encoded UUID in the id segment: the raw path names the route, so
+    // the key is judged on it as before. A read key in the pages area
+    // reads; it does not write (key-read-only).
+    const id = `%31${OWNER.slice(1)}`;
+    const read = await app.request(`/api/v1/pages/${id}`, { headers: auth });
+    expect(read.status).toBe(200);
+    expect(await json(read)).toMatchObject({ route: 'GET /api/v1/pages/:id', via: 'key' });
+    const write = await app.request(`/api/v1/pages/${id}`, { method: 'PATCH', headers: auth });
+    expect(write.status).toBe(403);
+    expect(await json(write)).toMatchObject({ error: 'forbidden', reason: 'key-read-only' });
+  });
+
+  it('the guard holds a key to the raw path too (accessKeyLogin)', async () => {
+    const { getOwnerOr401 } = await import('../../lib/auth/session');
+    const { buildRouteRow } = await import('../../lib/auth/route-policy');
+    const path = '/api/v1/pag%65s';
+    const req = new Request(`http://x${path}`, {
+      headers: { authorization: 'Bearer mtlk_test_secret' },
+    });
+    const ctx = {
+      req,
+      path,
+      method: 'GET',
+      accessKey: GRANT as never,
+      route: buildRouteRow('GET', '/api/v1/pages'),
+    };
+    // A key the gate let in on an encoded spelling (it does not) is no
+    // login here: the 401. (Not the detached-dev login, which comes first.)
+    delete process.env.MANTLE_DETACHED_DEV;
+    const res = await runWithRequestContext(ctx, () => getOwnerOr401()).finally(() => {
+      process.env.MANTLE_DETACHED_DEV = '1';
+    });
+    expect(res).toBeInstanceOf(Response);
+    expect((res as Response).status).toBe(401);
   });
 
   it('an asset token: the row, via token, the request slot open', async () => {
