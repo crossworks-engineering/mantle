@@ -38,6 +38,7 @@ import {
   type ScopeArea,
   type WorkspaceScope,
 } from '@mantle/db';
+import { ADMIN_ONLY_ERROR, adminAreaError } from '@mantle/std';
 
 /**
  * Tools that read the owner's own history or the run machinery (workspaces
@@ -151,14 +152,11 @@ export function adminGateLists(
   return !area || view.areas.has(area);
 }
 
-/** The refusal of an adminOnly tool outside the Admin workspace. */
-export const ADMIN_ONLY_ERROR =
-  'This tool belongs to the Admin workspace; it does not run in this workspace.';
-
-/** The refusal of an Admin-area tool for a scope without that area. */
-export function adminAreaError(area: ScopeArea): string {
-  return `This tool manages the brain's ${area}: it runs only for a user of the Admin workspace whose ${area} area is on.`;
-}
+/** The refusals of an adminOnly tool outside the Admin workspace and of an
+ *  Admin-area tool for a scope without that area: the words of the one
+ *  mapper (@mantle/std access-error.ts, arch A3c), said the same by the
+ *  gate. */
+export { ADMIN_ONLY_ERROR, adminAreaError } from '@mantle/std';
 
 /** Whether `text` is one of the gate's refusals (the sweep reads it). */
 export function isAdminGateRefusal(text: string): boolean {

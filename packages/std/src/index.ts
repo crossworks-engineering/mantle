@@ -14,6 +14,8 @@
  * a tool that turned the error into a string reply can still be caught at
  * the surface (publicToolError) without touching every tool.
  */
+import { DATABASE_ERROR_PUBLIC, mapAccessError } from './access-error';
+
 let dbErrorWatch: () => { texts: string[]; errors: unknown[] } | undefined = () => undefined;
 
 /** Installed by '@mantle/std/db-watch' (node only), so this file stays free of
@@ -74,9 +76,28 @@ export function isDatabaseError(err: unknown): boolean {
   return false;
 }
 
-/** What a caller outside the server may read of a database error. */
-export const DATABASE_ERROR_PUBLIC =
-  'the database could not run this request (the details are in the server log)';
+export {
+  ADMIN_KIND_CREATE_ERROR,
+  ADMIN_ONLY_ERROR,
+  AccessError,
+  DATABASE_ERROR_PUBLIC,
+  HIDDEN_ROWS_PUBLIC,
+  LEVEL_CONFLICT_MESSAGE,
+  NO_POLICY_ERROR,
+  adminAreaError,
+  editRefusalDetail,
+  findDatabaseError,
+  isAccessError,
+  isHiddenRowsRefusal,
+  isLevelConflict,
+  isScopeWriteRefusal,
+  mapAccessError,
+  type AccessHttp,
+  type AccessKind,
+  type AccessRefusal,
+  type DatabaseErrorFields,
+  type EditRefusalDetail,
+} from './access-error';
 
 /**
  * The message of `err` for a caller outside the server (a tool reply, an MCP
@@ -91,48 +112,16 @@ export function publicErrorMessage(err: unknown, where: string): string {
   return databaseErrorPublic(err);
 }
 
-/** What a person sees when a folder move or delete is refused because the
- *  folder holds items they cannot read (arch A3a, migration 0282). */
-export const HIDDEN_ROWS_PUBLIC = 'This folder holds items you cannot move.';
-
 /**
- * THE one mapper of a database error to what a caller outside the server
- * may read (arch A3a): an item the caller may not read (the edit check's
- * detail no_read) is "not found" (owner decision D2); a folder that holds
- * items the caller cannot move (detail hidden_rows) says so in plain words;
- * any other database error is DATABASE_ERROR_PUBLIC, never its text. Reads
- * the error and up to three causes below it (drizzle wraps the driver's).
+ * What a tool says for a database error: the tool text of THE one mapper
+ * (mapAccessError, access-error.ts; arch A3c). An item the caller may not
+ * read (the edit check's detail no_read) is "not found" (owner decision
+ * D2); a folder that holds items the caller cannot move (detail
+ * hidden_rows) says so in plain words; any other database error is
+ * DATABASE_ERROR_PUBLIC, never its text.
  */
 export function databaseErrorPublic(err: unknown): string {
-  const pg = findDatabaseError(err);
-  if (pg?.code === '42501' && pg.detail === 'no_read') return 'not found';
-  if (pg?.code === '42501' && pg.detail === 'hidden_rows') return HIDDEN_ROWS_PUBLIC;
-  return DATABASE_ERROR_PUBLIC;
-}
-
-/** A Postgres error's fields that callers read. */
-export type DatabaseErrorFields = {
-  code: string;
-  detail?: unknown;
-  message?: unknown;
-  constraint_name?: unknown;
-  cause?: unknown;
-};
-
-/**
- * THE walk to the database error on a thrown value: the error itself or one
- * of up to three causes below it (drizzle wraps the driver's), the first
- * that carries a five-character SQLSTATE. Every reader of a code or a
- * detail uses it (@mantle/db's pg-error.ts too).
- */
-export function findDatabaseError(err: unknown): DatabaseErrorFields | null {
-  let e: unknown = err;
-  for (let depth = 0; depth < 4 && e && typeof e === 'object'; depth += 1) {
-    const code = (e as { code?: unknown }).code;
-    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return e as DatabaseErrorFields;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return null;
+  return mapAccessError(err)?.toolText ?? DATABASE_ERROR_PUBLIC;
 }
 
 /**

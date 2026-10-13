@@ -1,60 +1,39 @@
 /**
- * The answer to a write the database refused (isScopeWriteRefusal): one
- * mapper for the HTTP routes. The edit check (arch A3a, docs/edit-check.md)
- * adds a detail, read here into the wire's `code` (plan 10: the shape stays
- * { error, reason, message }, a stable code is added):
- *  - no_read: the caller does not read the item: 404, as any item it may
- *    not read (owner decision D2);
- *  - read_only (an Informational app's data) and ro_actor (a caller that
- *    only reads): 403, reason read-only;
- *  - no_edit, or no detail (the workspace checks before A3a): 403, reason
- *    item-workspace, as before (jackdaw's "Add yourself" keys on it).
+ * The HTTP answer to a refusal (arch plan v2, section 10; A3c): what THE
+ * one mapper (mapAccessError, @mantle/std access-error.ts) says, as a
+ * Response. The one place the HTTP layer turns a refusal into an answer
+ * (server/app.ts onError):
+ *
+ *  - a database refusal on /api (the workspace and edit checks): the edit
+ *    check's detail read into the wire's `code` (no_read: 404; read_only
+ *    and ro_actor: 403 read-only; no_edit or no detail: 403
+ *    item-workspace, as before; a folder that holds items the caller
+ *    cannot move: 409);
+ *  - a viewer level conflict: 403 level-conflict on /api, a plain 403 on a
+ *    page (it folded the level-conflict mapper in, A3c);
+ *  - a refusal of the gate (AccessError, @mantle/db gate.ts): its body.
+ *
+ * Anything else is no refusal: null, and the caller's own error path runs
+ * (busy: 409; else the opaque 500).
  */
-import {
-  HIDDEN_ROWS_MESSAGE,
-  editRefusalDetail,
-  isHiddenRowsRefusal,
-  isScopeWriteRefusal,
-} from '@mantle/db';
+import { LEVEL_CONFLICT_MESSAGE, mapAccessError } from '@mantle/std';
 
-export function scopeRefusalResponse(err: unknown): Response | null {
-  if (!isScopeWriteRefusal(err)) return null;
-  // A folder move or delete that would leave rows the caller cannot read
-  // behind (0282): a conflict, in plain words, naming nothing hidden.
-  if (isHiddenRowsRefusal(err)) {
-    return Response.json(
-      { error: HIDDEN_ROWS_MESSAGE, reason: 'hidden-items', code: 'hidden_items' },
-      { status: 409 },
-    );
+/** Whether `path` is an API path (JSON answers). */
+function isApiPath(path: string): boolean {
+  return path === '/api' || path.startsWith('/api/');
+}
+
+export function scopeRefusalResponse(err: unknown, path: string = '/api/'): Response | null {
+  const refusal = mapAccessError(err);
+  if (!refusal?.http) return null;
+  if (!isApiPath(path)) {
+    // A page (the share page, print): only a level conflict answers there,
+    // in plain text; a database refusal stays the page's own error.
+    if (refusal.kind !== 'level-conflict') return null;
+    return new Response(LEVEL_CONFLICT_MESSAGE, {
+      status: 403,
+      headers: { 'content-type': 'text/plain' },
+    });
   }
-  const detail = editRefusalDetail(err);
-  if (detail === 'no_read') {
-    return Response.json(
-      { error: 'not found', reason: 'not-found', code: 'not_found', message: 'Not found.' },
-      { status: 404 },
-    );
-  }
-  if (detail === 'read_only' || detail === 'ro_actor') {
-    return Response.json(
-      {
-        error: 'forbidden',
-        reason: 'read-only',
-        code: detail,
-        message:
-          detail === 'read_only'
-            ? 'This app is Informational: its data is read only.'
-            : 'This caller only reads: it cannot change anything.',
-      },
-      { status: 403 },
-    );
-  }
-  return Response.json(
-    {
-      error: 'forbidden',
-      reason: 'item-workspace',
-      code: 'forbidden',
-      message: 'You cannot change this item in your workspaces.',
-    },
-    { status: 403 },
-  );
+  return Response.json(refusal.http.body, { status: refusal.http.status });
 }

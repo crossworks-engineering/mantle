@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { BUSY_MESSAGE, BusyError, isBusy } from '@mantle/db';
 import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
 import { RedirectError } from './http-compat/redirect-error';
-import { levelConflictResponse } from './level-conflict';
 import { scopeRefusalResponse } from './scope-refusal';
 import { gate } from './middleware/gate';
 import { registerRoutes } from './route-loader';
@@ -59,17 +58,12 @@ export async function createApp(): Promise<Hono> {
       return c.redirect(err.location, err.status);
     }
     const path = new URL(c.req.url).pathname;
-    // A client scope meeting public-level work (or the reverse): a refusal,
-    // not a crash (client logins, audit A5).
-    const refused = levelConflictResponse(err, path);
-    if (refused) return refused;
-    // The database refused an Admin user's move, create in a folder or
-    // delete of an item of a workspace it may not change (W6a fix round 1):
-    // a refusal, as the guard's own item check answers it.
-    if (path === '/api' || path.startsWith('/api/')) {
-      const refusal = scopeRefusalResponse(err);
-      if (refusal) return refusal;
-    }
+    // A refusal, never a crash, read by the one mapper (arch A3c): the
+    // database refused a write of an item the caller may not change (W6a
+    // fix round 1, A3a), a client scope met public-level work or the
+    // reverse (client logins, audit A5), or the gate refused the call.
+    const refusal = scopeRefusalResponse(err, path);
+    if (refusal) return refusal;
     // A JSON body over its route's ceiling, found while reading (I4).
     if (err instanceof BodyTooLargeError) return bodyTooLargeResponse(err.maxBytes);
     // Another write held the same rows (a deadlock broken, a lock timeout):

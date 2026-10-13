@@ -1,5 +1,7 @@
-/** The one mapper of a database refusal to the wire (arch A3a, plan 10). */
+/** The one mapper of a refusal to the wire (arch A3a and A3c, plan 10). */
 import { describe, expect, it } from 'vitest';
+import { ViewerLevelConflictError } from '@mantle/db/viewer';
+import { AccessError } from '@mantle/std';
 import { scopeRefusalResponse } from './scope-refusal';
 
 const refusal = (message: string, detail?: string) =>
@@ -44,5 +46,73 @@ describe('scopeRefusalResponse', () => {
   it('anything else is not a refusal', () => {
     expect(scopeRefusalResponse(new Error('boom'))).toBeNull();
     expect(scopeRefusalResponse(refusal('permission denied for table secrets'))).toBeNull();
+  });
+});
+
+describe('a viewer level conflict (folded in from level-conflict.ts, A3c)', () => {
+  it('is a 403 with a reason code on /api, never the opaque 500', async () => {
+    const res = scopeRefusalResponse(new ViewerLevelConflictError('client', 'public'), '/api/x');
+    expect(res?.status).toBe(403);
+    expect(await res!.json()).toEqual({
+      error: 'forbidden',
+      reason: 'level-conflict',
+      message: 'This is not available at your access level.',
+    });
+  });
+
+  it('is a plain 403 on a page', async () => {
+    const res = scopeRefusalResponse(new ViewerLevelConflictError('public', 'client'), '/s/x');
+    expect(res?.status).toBe(403);
+    expect(res?.headers.get('content-type')).toBe('text/plain');
+    expect(await res!.text()).toBe('This is not available at your access level.');
+  });
+
+  it('a database refusal on a page is the page own error, as before', () => {
+    const err = Object.assign(new Error('not allowed to move this item'), { code: '42501' });
+    expect(scopeRefusalResponse(err, '/s/x')).toBeNull();
+    expect(scopeRefusalResponse(err, '/print/x')).toBeNull();
+  });
+
+  it('leaves every other error alone', () => {
+    expect(scopeRefusalResponse(new Error('boom'), '/api/x')).toBeNull();
+    expect(scopeRefusalResponse('nope', '/api/x')).toBeNull();
+  });
+});
+
+describe('a refusal of the gate (AccessError) on /api', () => {
+  it('answers the bodies the guards answer today', async () => {
+    const cases: [AccessError, number, Record<string, unknown>][] = [
+      [new AccessError('unauthorized'), 401, { error: 'unauthorized' }],
+      [
+        new AccessError('unclassified'),
+        403,
+        { error: 'forbidden', reason: 'unclassified-route', message: 'This route is not open.' },
+      ],
+      [
+        new AccessError('area', undefined, { area: 'users' }),
+        403,
+        {
+          error: 'forbidden',
+          reason: 'area',
+          area: 'users',
+          message: 'You cannot manage this part of the brain.',
+        },
+      ],
+      [
+        new AccessError('workspace', 'You are not in that workspace.'),
+        403,
+        { error: 'forbidden', reason: 'workspace', message: 'You are not in that workspace.' },
+      ],
+      [
+        new AccessError('invalid', 'ws must be a workspace id.'),
+        400,
+        { error: 'invalid', message: 'ws must be a workspace id.' },
+      ],
+    ];
+    for (const [err, status, body] of cases) {
+      const res = scopeRefusalResponse(err)!;
+      expect(res.status, err.kind).toBe(status);
+      expect(await res.json(), err.kind).toEqual(body);
+    }
   });
 });
