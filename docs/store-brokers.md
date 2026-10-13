@@ -55,10 +55,19 @@ transaction (a name the watcher ignores). A flip known not to have landed
 puts the disk back (the rename back; an overwrite's old bytes, kept under a
 staging name by a hard link until the flip settles); after any other error
 the database is asked where the row is, and the disk is put back only when
-it never landed (left as it is, logged, when the row cannot be read). Inside
-an outer transaction the disk goes back if that one rolls back
-(`afterOuterRollback`), and the old bytes stay until it commits
-(`afterOuterCommit`). A crash between the rename and the COMMIT (a
+it never landed (left as it is, logged, when the row cannot be read). An
+overwrite's old bytes go back only inside one short transaction that holds
+the row's lock (`SELECT ... FOR UPDATE`), while the row does not name the
+new bytes and the file still holds them: a write that landed after this
+one's transaction let the row go is never undone, and the old bytes are
+then left to the staged-leftover sweep (fix round 1, M1). Inside an outer
+transaction the disk goes back if that one rolls back
+(`afterOuterRollback`; rollback hooks run newest first, so two renames of
+one file go back last first), and the old bytes stay until it commits
+(`afterOuterCommit`). The files watcher waits 2 s before it believes an
+unlink (a flip that is put back puts the file back within milliseconds;
+deleting its row meanwhile and making it again would lose its id, grants
+and passages). A crash between the rename and the COMMIT (a
 microsecond window, after the check passed) leaves the new bytes in place
 and the old ones under a staging name: the watcher adopts the bytes on disk,
 as it adopts any edit made there, and the staged-leftover sweep
@@ -145,7 +154,8 @@ where a copy per write would cost a whole file:
   the database refused had moved the file (and the watcher could read the
   old path's unlink before the row moved). A file or folder delete is the
   checked DELETE (exactly one row: a delete the row rules left at none is
-  refused, 404) and removes the bytes once it has committed, as before. A
+  refused, 404) and removes the bytes once it has committed (inside an
+  outer transaction, once that one has: `afterOuterCommit`). A
   create was already staged and placed inside its insert (W8b). A folded
   member file's bytes stay in its space (named by its id): its rename and
   move change the row only. Email attachments' bytes are stored before the
@@ -189,13 +199,18 @@ the brokers, the backups and the sweep.
   replaced, a stage a crash, a refused flip or a failed commit left.
 - **A tombstoned file** (the snapshot store, A3b part 2): a file a deleted
   or re-pointed row named, recorded by the row's trigger
-  (`store_tombstones`, 0284), goes a grace period after its row went, while
+  (`store_tombstones`, 0284), goes a day after its row went
+  (`STORE_TOMBSTONE_GRACE_MS`, 24 h, measured on the database's clock:
+  longer than any backup, so a backup whose dump still names the row finds
+  the file), while
   no row names it (a restore that brought the row back keeps it), within
   the run's budget and under the same holds and stops; its folder goes when
   it empties, and the tombstone once its file is gone. Tombstones live with
   the rows, so a restore brings back exactly the tombstones of the rows it
-  does not bring back. A store holding files and no row is no hard stop
-  while a tombstone names one of them.
+  does not bring back. A path named again and dropped again starts its day
+  over. A snapshot folder holding files that no row and no tombstone names
+  (files from before 0284 whose rows are all gone) is reported, never a
+  hard stop: nothing there can go without a row or a tombstone.
 - **What it never removes, only reports:** a file whose item has no row (a
   deleted item's, a create that never landed, an app's file from before
   A3b; it may be the only copy), every file of an item whose row names a
@@ -203,7 +218,17 @@ the brokers, the backups and the sweep.
   (`<node>.draft.sqlite`). A legacy draft stays for ever once its table has
   been committed: the dry run (`pnpm -C server/web store:sweep`) lists each
   one ("kept, a draft from before A3b"); an operator who has checked that
-  no row's `draft_path` names it removes it by hand.
+  no row's `draft_path` names it removes it by hand, or with the leftovers
+  command below.
+- **Leftovers, by an operator only** (A3b part 2 fix round 1): what a run
+  only reports (an item's file with no row and no tombstone, a legacy
+  draft; never a file of an item whose row's file is missing) is listed by
+  `pnpm -C server/web store:sweep --report-orphans <list-file>`
+  (`<store part>`, a tab, the path under its root, one per line). After
+  review, with the lines that must stay deleted, `store:sweep
+--remove-orphans <list-file>` says what would go, and with `--apply`
+  removes it: each only while the stores still report it as a leftover and
+  once it is an hour old. The nightly sweep never does this.
 - **How much per run:** at most the larger of 500 files and half the files
   the store holds, the oldest marked first. The rest are carried to the
   next run and reported (`deferred`), never a failure: a busy day (every
@@ -273,7 +298,7 @@ name are the sweep's, once the restore's hold is lifted.
 The snapshot store (A3b part 2): the history folders are hard-linked whole
 (`linkHistoryTree`, the sweep's memory left out), so a backup holds every
 snapshot file on disk, the ones whose rows were deleted after the dump
-began among them (the sweep keeps a tombstoned file a grace period). Every
+began among them (the sweep keeps a tombstoned file a day). Every
 accepted copy of a table goes too (`revisionFiles`), the one the dump names
 and the ones a newer copy replaced since.
 
@@ -324,8 +349,8 @@ for every box:
   refused move's unlink and add. A delete a row rule left at none answers
   not found and keeps the bytes.
 - **Snapshots** (A3b part 2). A deleted, pruned or purged snapshot's file
-  stays on disk until the next nightly sweep a grace period later (up to
-  about a day; the budgets count rows, so they free at once). A purge no
+  stays on disk for 24 h after its row went, until the first nightly sweep
+  past that (the budgets count rows, so they free at once). A purge no
   longer removes files under an app's or table's history folder that no
   row ever named: the sweep reports them. A snapshot whose file a restore
   or commit replaced while it was copied is copied again. Email
@@ -403,9 +428,9 @@ short transaction (the copy is outside it now).
   refusal never touches the disk; place runs once on a retry; a failed
   commit the database says never landed puts the disk back; a lost
   acknowledgement keeps it), and the tombstone rule (a tombstoned file goes
-  a grace period after its row, never while a row names it, never one
-  outside the root; the store root's hold; no stop while a tombstone names
-  a file).
+  a day after its row, by the database's age, never while a row names it,
+  never one outside the root; the store root's hold; no stop while a
+  tombstone names a file, nor for a snapshot folder with neither).
 - `server/web/server/a3b2-store-brokers.db.test.ts` (A3b part 2), both
   checks on (also in `pnpm test:edit-on`): per store a refused caller changes nothing on disk (files: an
   overwrite, a rename, a file move, a folder rename and move, a delete;
@@ -414,6 +439,11 @@ short transaction (the copy is outside it now).
   answers 409 with nothing moved, a failed commit puts the files tree back
   and keeps a snapshot's stage (reported, never removed), a crash between
   stage and flip leaves the old bytes live and the stage for the
-  staged-leftover sweep, a tombstoned file goes and a named one stays, an
-  accepted copy's old revision goes by its tombstone, a backup holds every
-  file a dumped row names, and the off cells give today's results.
+  staged-leftover sweep, a tombstoned file stays two hours on and goes a
+  day on and a named one stays, an accepted copy's old revision goes by its
+  tombstone, a backup holds every file a dumped row names, the off cells
+  give today's results; and (fix round 1) a failed overwrite never puts
+  its old bytes over a write that landed after it, two renames inside an
+  outer transaction that rolls back go back last first, a delete inside
+  one keeps its bytes, and the leftovers are listed and removed only by
+  the deliberate command.
