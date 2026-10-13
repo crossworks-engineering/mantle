@@ -35,11 +35,13 @@ import {
   copyFileSync,
   existsSync,
   linkSync,
+  mkdirSync,
   readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { dirname } from 'node:path';
 import { afterCommit, afterRollback } from './viewer';
 
 /** The six stores of plan section 6. */
@@ -139,6 +141,9 @@ function finalizeSteps(steps: readonly Step[]): void {
 }
 
 function writeJournal(path: string, journal: StoreJournal): void {
+  // The store's folder may be new (a table's first file): made after the
+  // check, like everything this write puts on disk.
+  mkdirSync(dirname(path), { recursive: true });
   // Whole or not at all: a crash mid-write leaves a .tmp, never half a
   // journal.
   const tmp = `${path}.${journal.token}.tmp`;

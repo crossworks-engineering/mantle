@@ -741,26 +741,15 @@ export async function appDbSeedRows(
 ): Promise<AppDbSeedResult> {
   if (!isSeedTableName(table)) throw seedTableError(table, null);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  if (!(await fileExists(reg.storagePath))) (await openSqlite(reg.storagePath)).close();
-  const read = (sql: string) =>
-    runAppSql(reg.storagePath, { sql, mode: 'all', readOnly: true }) as Promise<DbRows>;
-  const columns = (await read(`PRAGMA table_info("${table}")`)).map((c) => String(c.name));
-  if (!columns.length) {
-    const known = (
-      await read(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
-    ).map((t) => String(t.name));
-    throw seedTableError(table, known);
-  }
   // Under the registry row lock (apps audit 2026-10-02, item 2). A seed may
   // run for APP_SCHEMA_TIMEOUT_MS, far past a restore's drain: without the
   // lock it could commit into the old file's WAL, and its close could remove
   // the restored file's sidecars. A restore takes the same lock for its swap,
   // so it waits for the seed; a seed that waited on a restore sees the marker
-  // and is refused as busy.
-  // The store broker (A3b): the checked statement (the revision bump, which
-  // takes the row lock), then the file.
+  // and is refused as busy. The store broker (A3b): the checked statement
+  // (the revision bump, which takes the lock) comes first, before the file
+  // is even read.
+  let columns: string[] = [];
   const changes = await brokerTransaction<Tx, number[]>(
     'appdb',
     (run) => db.transaction(run),
@@ -768,6 +757,22 @@ export async function appDbSeedRows(
       const seq = await bumpWriteSeq(tx, w, reg.id);
       if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
       w.journalAt(appDbJournal(reg.storagePath), seq, seq - 1);
+      if (!(await fileExists(reg.storagePath))) {
+        await w.create(reg.storagePath, async () => (await openSqlite(reg.storagePath)).close(), {
+          sqlite: true,
+        });
+      }
+      const read = (q: string) =>
+        runAppSql(reg.storagePath, { sql: q, mode: 'all', readOnly: true }) as Promise<DbRows>;
+      columns = (await read(`PRAGMA table_info("${table}")`)).map((c) => String(c.name));
+      if (!columns.length) {
+        const known = (
+          await read(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+          )
+        ).map((t) => String(t.name));
+        throw seedTableError(table, known);
+      }
       return w.inPlace(reg.storagePath, () =>
         runAppSqlBatch(reg.storagePath, planSeedStatements(table, columns, rows, opts)),
       );
