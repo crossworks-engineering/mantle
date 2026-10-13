@@ -39,6 +39,17 @@
 --    for none). The client keeps 'team' for an older brain.
 -- 6. The reserved name: only "Admin" (workspaces_reserved_name_uq, 0255).
 --    "Team" is a name like any other.
+-- 7. mantle_ws_any_shared(ws[]): the one meaning of "a shared workspace",
+--    now that Team is not the answer: any of `ws` is neither Admin, nor a
+--    login's private workspace, nor a Former user workspace. The grant
+--    reads (sharedReadsSql) and the first shared workspace of a login
+--    (firstSharedWorkspaceId) both ask it. Definer, as mantle_ws_kind: the
+--    workspace role reads neither private_workspaces nor
+--    former_user_workspaces. On a scope it answers only for a workspace the
+--    scope may name (one of the scope's, or any when the scope holds Admin,
+--    the rule of mantle_folder_grant_rows, 0279), so an Admin user's app
+--    list tells the reach of an app held by a workspace they are not in; on
+--    the system pool any. A yes or no only, never a name.
 --
 -- The functions that still read bridge_key = 'team' (the bridges, the
 -- switch's folds, mantle_brain_team_ws, mantle_ws_attach_assistants) find
@@ -354,6 +365,36 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_kind"(ws uuid)
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION "public"."mantle_ws_kind"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+-- The one meaning of "a shared workspace" (7).
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_any_shared"(ws uuid[])
+  RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM "public"."workspaces" w
+     WHERE w."id" = ANY (ws) AND NOT w."is_admin"
+       AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p
+                        WHERE p."workspace_id" = w."id")
+       AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f
+                        WHERE f."workspace_id" = w."id")
+       AND (NOT "public"."mantle_scope_active"()
+            OR w."id" = ANY ("public"."mantle_scope_ws"())
+            OR "public"."mantle_scope_has_admin"()))
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION "public"."mantle_ws_any_shared"(uuid[]) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_ws_any_shared"(uuid[]) TO "mantle_view_user";
+--> statement-breakpoint
+-- The public demo's SELECT-only reader serves owner reads: the same, as it
+-- got mantle_ws_kind (0285).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'demo_reader') THEN
+    GRANT EXECUTE ON FUNCTION "public"."mantle_ws_any_shared"(uuid[]) TO demo_reader;
+  END IF;
+END
+$$;
 --> statement-breakpoint
 -- Only "Admin" is reserved (0255 reserved "Admin" and "Team").
 DROP INDEX IF EXISTS "public"."workspaces_reserved_name_uq";

@@ -1,16 +1,19 @@
 /**
- * "Does a workspace beyond Admin read this item" (sharedReadsSql, the grants
- * alone since W5b2 / 0261; any workspace beyond Admin since 0286, when Team
- * became a normal workspace), on a scratch database of its own. Checked:
+ * "Does a shared workspace read this item" (sharedReadsSql, the grants
+ * alone since W5b2 / 0261; any shared workspace since 0286, when Team
+ * became a normal workspace: not Admin, not private, not a Former user
+ * one), on a scratch database of its own. Checked:
  *
  *  - before the brain is migrated nothing reads as shared (no grants: fail
  *    closed), whatever the levels say;
  *  - after the switch every brain item answers from its grants (read_ws),
- *    and the levels mean nothing: a new item at 'team' is not shared; a
- *    personal-space row is, by its author's private workspace (W6b);
+ *    and the levels mean nothing: a new item at 'team' is not shared; nor
+ *    is a personal-space row, held by its author's private workspace (W6b);
  *  - the switch keeps a Team that holds something as a normal workspace (no
  *    bridge_key, so mantle_brain_team_ws finds none);
- *  - the grant decides both ways, for Team and for any other workspace.
+ *  - the grant decides both ways, for Team and for any other workspace;
+ *  - a Former user workspace shares nothing; in a scope, a workspace the
+ *    scope names, or any when it holds Admin (mantle_ws_any_shared).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/grant-reads.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -23,7 +26,7 @@ import { createMigratedScratchDatabase } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('grant reads: a workspace beyond Admin reads from the grants alone', () => {
+describe.skipIf(!URL)('grant reads: a shared workspace reads from the grants alone', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let sql: ReturnType<typeof postgres>;
   const owner = randomUUID();
@@ -124,8 +127,9 @@ describe.skipIf(!URL)('grant reads: a workspace beyond Admin reads from the gran
       teamApp: true,
       adminApp: false,
       // A personal-space row: the spaces fold (W6b) homes it in its
-      // author's private workspace, a workspace beyond Admin.
-      draft: true,
+      // author's private workspace, which shares nothing (fix round 1: the
+      // one meaning of shared).
+      draft: false,
     });
     // A new item at 'team' takes a home (Admin) and nothing from its level.
     await node('newTeamPage', owner, 'page', 'pages', 'team');
@@ -147,5 +151,41 @@ describe.skipIf(!URL)('grant reads: a workspace beyond Admin reads from the gran
        where n.id = ${ids.email!} and w.owner_id = ${owner} and w.is_admin`;
     expect(e!.only_admin).toBe(true);
     expect((await reads()).email).toBe(false);
+  });
+
+  it('one meaning of shared: no private or Former user workspace; a scope names its own, or any with Admin', async () => {
+    const team = await teamId();
+    // The author's private workspace holds the draft: not shared.
+    expect((await reads()).draft).toBe(false);
+    // A Former user workspace shares nothing either.
+    const [gone] = await sql<{ id: string }[]>`
+      insert into workspaces (owner_id, name) values (${owner}, 'Former user') returning id::text as id`;
+    await node('formerPage', owner, 'page', 'pages', 'admin');
+    await grant(ids.formerPage!, gone!.id, true);
+    expect((await reads()).formerPage).toBe(true);
+    await sql`insert into former_user_workspaces (former_key, workspace_id)
+      values (${randomUUID()}, ${gone!.id})`;
+    expect((await reads()).formerPage).toBe(false);
+    // In a scope: a workspace the scope names, or any of this brain when the
+    // scope holds Admin (an Admin user's app list, mcpReach); never one a
+    // member's scope does not name.
+    const [other] = await sql<{ id: string }[]>`
+      select id::text as id from workspaces where owner_id = ${owner} and name = 'Projects'`;
+    const [adm] = await sql<{ id: string }[]>`
+      select id::text as id from workspaces where owner_id = ${owner} and is_admin`;
+    const inScope = (ws: string[]) =>
+      sql.begin(async (tx) => {
+        await tx`select set_config('mantle.ws', ${`{${ws.join(',')}}`}, true)`;
+        const [r] = await tx<{ s: boolean }[]>`
+          select mantle_ws_any_shared(array[${other!.id}::uuid]) as s`;
+        return r!.s;
+      });
+    expect(await inScope([team])).toBe(false);
+    expect(await inScope([other!.id])).toBe(true);
+    expect(await inScope([adm!.id])).toBe(true);
+    // The system pool (no scope): any workspace.
+    const [sys] = await sql<{ s: boolean }[]>`
+      select mantle_ws_any_shared(array[${other!.id}::uuid]) as s`;
+    expect(sys!.s).toBe(true);
   });
 });

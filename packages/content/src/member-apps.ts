@@ -31,6 +31,7 @@ import {
   db,
   nodeReadByWorkspace,
   nodes,
+  sharedWorkspacesSql,
   workspaces,
   type AppManifest,
   type BuildRef,
@@ -281,8 +282,9 @@ export async function workspaceLandingAppId(anchorId: string, ws: string): Promi
 }
 
 /** The login's first shared workspace, read where the caller runs (in a
- *  login's scope, its own workspaces): the oldest live one that is neither
- *  Admin nor a private one, else null. What GET /api/member/home answers for
+ *  login's scope, its own workspaces): the oldest live one that is shared
+ *  (sharedWorkspacesSql: neither Admin, nor private, nor a Former user
+ *  one), else null. What GET /api/member/home answers for
  *  an app older than per-workspace landing pages; on a brain switched
  *  before 0286 that is the Team workspace, which holds the old brain-wide
  *  member home app (0276). No workspace is special: it is only the oldest. */
@@ -293,9 +295,8 @@ export async function firstSharedWorkspaceId(anchorId: string): Promise<string |
     .where(
       and(
         eq(workspaces.ownerId, anchorId),
-        eq(workspaces.isAdmin, false),
         isNull(workspaces.archivedAt),
-        sql`"public"."mantle_ws_kind"(${workspaces.id}) = 'other'`,
+        sharedWorkspacesSql(sql`array[${workspaces.id}]`),
       ),
     )
     .orderBy(asc(workspaces.createdAt), asc(workspaces.id))
