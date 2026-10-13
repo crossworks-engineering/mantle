@@ -16,6 +16,7 @@ export default defineConfig({
       ...(onBase.test?.include ?? []),
       'packages/db/src/edit-check*.test.ts',
       'packages/db/src/a2b-nested-tx.db.test.ts',
+      'server/web/server/a3a-folders.db.test.ts',
     ],
     env: { ...onBase.test?.env, MANTLE_TEST_EDIT_CHECK: 'on' },
   },
