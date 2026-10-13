@@ -9,8 +9,9 @@ import {
   verifyAccessKey,
   type AccessKeyGrant,
 } from '../../lib/access-keys';
-import { keyMayCall, matchApiV1Route } from '../../lib/api-v1';
+import { keyMayCall } from '../../lib/api-v1';
 import { requestMetaFrom } from '../../lib/audit';
+import { rowKeyRoute, type RouteRow } from '../../lib/auth/route-policy';
 import { clientIp, clientIpKey } from '../../lib/rate-limit';
 
 /**
@@ -23,8 +24,10 @@ import { clientIp, clientIpKey } from '../../lib/rate-limit';
  * Order on /api/v1: the failed-try budget of this address and key prefix
  * (only failures count, so a valid key is never locked out by someone
  * else's bad keys), then the key (shape, hash in constant time, revoke,
- * expiry, login), then the key's own rate budget, then its scope
- * (lib/api-v1.ts: the route's area, read or write). Only a key that passes
+ * expiry, login), then the key's own rate budget, then its scope on the
+ * request's ROUTE_POLICY row (`row`, the one the gate middleware found:
+ * the v1 table's area and access as the row carries them, keyMayCall in
+ * lib/api-v1.ts; no row: not in the API). Only a key that passes
  * every step is handed on (`grant`): the request context carries it, and
  * the route's login lookup (lib/auth/session.ts) takes a key from there
  * and nowhere else.
@@ -37,6 +40,7 @@ export async function gateAccessKey(
   req: Request,
   path: string,
   token: string,
+  row: RouteRow | null,
 ): Promise<{ grant: AccessKeyGrant } | { response: Response }> {
   const ip = clientIp(req);
   // The budgets key on the /64 for IPv6 (M2 audit N1); the last-use stamp
@@ -63,17 +67,17 @@ export async function gateAccessKey(
   const limit = rateLimitAccessKey(grant, 'v1');
   if (!limit.ok) return { response: tooMany(limit.retryAfterSec) };
 
-  // The key's scope against the v1 table. A path that is not in the table
-  // is a 404: it is not part of the API a key can call.
-  const route = matchApiV1Route(req.method, path);
-  const scope = keyMayCall(grant, route);
+  // The key's scope on the request's row. A request whose row the key
+  // table does not list (or that no route answers) is a 404: it is not
+  // part of the API a key can call.
+  const scope = keyMayCall(grant, rowKeyRoute(row));
   if (!scope.ok) {
     if (scope.reason === 'not-in-api') return { response: notFound() };
     auditKeyRefusal({ keyId: grant.id, reason: scope.reason, ...meta() });
     return { response: outOfScope(scope.reason) };
   }
   // Search embeds the query on every call: a smaller budget of its own.
-  if (route?.pattern === '/api/v1/search') {
+  if (row?.pattern === '/api/v1/search') {
     const search = rateLimitKeySearch(grant.id);
     if (!search.ok) return { response: tooMany(search.retryAfterSec) };
   }

@@ -63,7 +63,7 @@ import { auditFireAndForget, requestMeta } from '../audit';
 import { lockOauthActor } from '../oauth-lock';
 import { auditPeersUnbound, unbindPeersActingAs } from '../peer-unbind';
 import { isAccessKey, isApiV1Path, lockLoginKeys } from '../access-keys';
-import { keyMayCall, matchApiV1Route } from '../api-v1';
+import { keyMayCall } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
@@ -72,6 +72,7 @@ import {
   memberOpenRead,
   memberOpenWrite,
   routeItemTarget,
+  rowKeyRoute,
   type RouteRow,
 } from './route-policy';
 import {
@@ -248,8 +249,7 @@ async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | n
 export async function getMemberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
   const member = await memberForAsset(req);
   if (member instanceof NextResponse) return member;
-  await memberRouteScope(member.loginId);
-  return member;
+  return (await memberRouteScope(member.loginId)) ?? member;
 }
 
 /**
@@ -268,8 +268,9 @@ export async function getReaderForAsset(
   if (owner.status !== 401) return owner;
   const member = await memberForAsset(req);
   if (member instanceof NextResponse) return owner;
-  const route = currentRoute();
-  if (!hasRequestSlot() || !route || !memberOpenRead(route)) return loginRefused('member');
+  const route = guardRoute();
+  if (route === UNROUTED) return unroutedRefusal();
+  if (route === OUTSIDE || !memberOpenRead(route)) return loginRefused('member');
   await enterLoginScope(member.loginId, requestMode(true));
   return {
     user: {
@@ -292,15 +293,18 @@ export async function getReaderForAsset(
  * request scope, as an owner route a member may read does; only the login's
  * own things ('self': the home pin, its MCP clients, push devices, the live
  * stream) still hold their own rule ('own-rule', their reads about the
- * login itself). Outside a routed request nothing changes.
+ * login itself). Outside a request slot nothing changes; a request slot
+ * with no row is refused (guardRoute). Returns the refusal, or null.
  */
-async function memberRouteScope(loginId: string): Promise<void> {
-  const route = currentRoute();
-  if (!hasRequestSlot() || !route || route.scope?.kind === 'self') {
+async function memberRouteScope(loginId: string): Promise<NextResponse | null> {
+  const route = guardRoute();
+  if (route === UNROUTED) return unroutedRefusal();
+  if (route === OUTSIDE || route.scope?.kind === 'self') {
     noteRequestOwnRule(loginId);
-    return;
+    return null;
   }
   await enterLoginScope(loginId, requestMode(true));
+  return null;
 }
 
 async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
@@ -507,9 +511,10 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
  * without the gate's grant (a public prefix such as /api/auth, or a path
  * shape the gate lets through) has no key login at all.
  *
- * The scope guard runs again here (audit item 1), so a `source: 'api'`
- * login exists only for a /api/v1 route the key may call: the route's
- * area, and a write only for a read_write key. Every gate below
+ * The scope guard runs again here (audit item 1), on the request's
+ * ROUTE_POLICY row (rowKeyRoute, as the gate judged it), so a
+ * `source: 'api'` login exists only for a /api/v1 route the key may call:
+ * the route's area, and a write only for a read_write key. Every gate below
  * (getOwnerOr401, getMemberOr401, getLoginOr401) resolves
  * through this, so none can hand a read key a write route.
  */
@@ -521,7 +526,7 @@ async function accessKeyLogin(): Promise<Resolved | null | undefined> {
   const grant = ctx?.accessKey;
   if (!ctx || !grant) return null;
   if (!isApiV1Path(ctx.path)) return null;
-  if (!keyMayCall(grant, matchApiV1Route(ctx.method, ctx.path)).ok) return null;
+  if (!keyMayCall(grant, rowKeyRoute(currentRoute())).ok) return null;
   const resolved = await resolvedFor(grant.login, 'api');
   // Arch A2a: a read key's request runs as login(ro).
   if (resolved) nameRequestLogin(resolved, grant.access === 'read_write' ? 'rw' : 'ro');
@@ -716,8 +721,9 @@ export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextRe
     // to create, edit and delete them there (W6b, MEMBER_OPEN_WRITES); every
     // other owner route refuses it (member routes use getMemberOr401; the
     // sweeps check both).
-    const route = currentRoute();
-    if (!hasRequestSlot() || !route) return loginRefused(res.kind);
+    const route = guardRoute();
+    if (route === UNROUTED) return unroutedRefusal();
+    if (route === OUTSIDE) return loginRefused(res.kind);
     const login = res.member;
     const user: SessionUser = {
       id: login.anchorId,
@@ -777,6 +783,31 @@ async function adminReadsOnSystemPoolFor(loginId: string): Promise<boolean> {
   return adminReadsOnSystemPool() && (await loginHoldsAdmin(loginId));
 }
 
+/** No request slot: a test calling a handler, a worker (guardRoute). */
+const OUTSIDE = 'outside';
+/** A request slot with no ROUTE_POLICY row (guardRoute). */
+const UNROUTED = 'unrouted';
+
+/**
+ * The ROUTE_POLICY row a session guard serves (A4 step 1 fix round 1, M1):
+ * the routed request's row (currentRoute(): on the request context, so a
+ * call nested inside the request with a caller of its own still reads
+ * it); OUTSIDE when no request slot is open, where nothing changes;
+ * UNROUTED when a request slot is open with no row. Only the gate opens a
+ * slot, always with its row, so UNROUTED is refused ('unclassified', fail
+ * closed: unroutedRefusal), never taken for outside a request.
+ */
+function guardRoute(): RouteRow | typeof OUTSIDE | typeof UNROUTED {
+  if (!hasRequestSlot()) return OUTSIDE;
+  return currentRoute() ?? UNROUTED;
+}
+
+/** The refusal of a request slot with no row: no policy (the gate's step
+ *  3), answered by the one mapper. */
+function unroutedRefusal(): NextResponse {
+  return accessRefusal(new AccessError('unclassified'));
+}
+
 /** The mode of a request scope for the current request: it writes when
  *  its ROUTE_POLICY row does (outside a routed request, when its method
  *  is not a GET or a HEAD). */
@@ -813,12 +844,14 @@ async function loginHoldsArea(
  * needs its area and runs on the system pool; the login's own things run
  * there too; a READ of brain items enters the login's scope (unless the
  * rollback switch is on); a write stays on the system pool, as before.
- * Outside a routed request (a test calling a handler) nothing changes.
- * Returns the refusal, or null to go on.
+ * Outside a request slot (a test calling a handler) nothing changes; a
+ * request slot with no row is refused (guardRoute). Returns the refusal,
+ * or null to go on.
  */
 async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
-  const route = currentRoute();
-  if (!hasRequestSlot() || !route) return null;
+  const route = guardRoute();
+  if (route === UNROUTED) return unroutedRefusal();
+  if (route === OUTSIDE) return null;
   const cls = route.scope;
   // The gate's refusals, answered by the one mapper (arch A3c): no route
   // class is step 3 (no policy), an area the login lacks step 5.
@@ -1116,8 +1149,7 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   }
   // A member route that reads brain items runs in the login's request scope
   // (W7e); one about the login's own things holds its own rule (W6a).
-  await memberRouteScope(res.member.loginId);
-  return res.member;
+  return (await memberRouteScope(res.member.loginId)) ?? res.member;
 }
 
 /**
@@ -1204,7 +1236,8 @@ export async function getLoginOr401(): Promise<
 > {
   const res = await resolveLogin();
   if (!res) return accessRefusal(new AccessError('unauthorized'));
-  await anyLoginScope(res);
+  const refused = await anyLoginScope(res);
+  if (refused) return refused;
   switch (res.kind) {
     case 'admin':
       return {
@@ -1259,7 +1292,8 @@ export type ChatLogin = {
 export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
   const res = await resolveLogin();
   if (!res) return accessRefusal(new AccessError('unauthorized'));
-  await anyLoginScope(res);
+  const refused = await anyLoginScope(res);
+  if (refused) return refused;
   if (res.kind === 'admin') {
     await auditMutation(res.user);
     return {
@@ -1302,22 +1336,32 @@ export async function getChatLoginOr401(): Promise<ChatLogin | NextResponse> {
  * on the owner routes); those libraries hold their rule in their own SQL
  * and leave the scope by name (asSystem 'rule-in-query'). Anywhere else
  * (sign-out, change password, OAuth consent: the login's own row, never
- * brain data) the request stays on the system pool.
+ * brain data) the request stays on the system pool. Outside a request
+ * slot nothing changes; a request slot with no row is refused
+ * (guardRoute). Returns the refusal, or null.
  */
-async function anyLoginScope(res: Resolved): Promise<void> {
-  const route = currentRoute();
-  if (!hasRequestSlot() || !route) return;
+async function anyLoginScope(res: Resolved): Promise<NextResponse | null> {
+  const route = guardRoute();
+  if (route === UNROUTED) return unroutedRefusal();
+  if (route === OUTSIDE) return null;
   if (!anyLoginRow(route)) {
     noteRequestSystem('login-self');
-    return;
+    return null;
   }
   const loginId = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
   if (res.kind === 'admin') {
-    if (route.effect === 'write') return noteRequestSystem('admin-write');
-    if (await adminReadsOnSystemPoolFor(loginId)) return noteRequestSystem('admin-reads-flag');
-    if (!(await brainOnWorkspacesNow())) return noteRequestSystem('not-on-workspaces');
+    if (route.effect === 'write') return noteSystem('admin-write');
+    if (await adminReadsOnSystemPoolFor(loginId)) return noteSystem('admin-reads-flag');
+    if (!(await brainOnWorkspacesNow())) return noteSystem('not-on-workspaces');
   }
   await enterLoginScope(loginId, requestMode(res.kind === 'admin'));
+  return null;
+}
+
+/** noteRequestSystem, then go on (null: no refusal). */
+function noteSystem(reason: Parameters<typeof noteRequestSystem>[0]): null {
+  noteRequestSystem(reason);
+  return null;
 }
 
 /**

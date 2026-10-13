@@ -2,9 +2,11 @@
  * ROUTE_POLICY (workspaces arch plan v2, section 7; A4 step 1): one row per
  * route of the manifest and method, the one place the HTTP pipeline reads
  * what a route is. The route loader builds the rows once, when it
- * registers a route; the gate middleware finds the row of a request once
- * and hands it to enterCall (@mantle/db gate.ts), and every session guard
- * reads it from the bound caller (currentRoute()), never the route lists.
+ * registers a route; the gate middleware finds the row of a request once,
+ * sets it on the request context and hands it to enterCall (@mantle/db
+ * gate.ts). Every session guard and the API key checks (the gate's
+ * gateAccessKey, the guard's accessKeyLogin) read the row
+ * (currentRoute()), never the route lists.
  *
  * Step 1 is no behaviour change: each field is folded from the list that
  * decided it before, by the same functions, so every answer is what it
@@ -28,9 +30,10 @@
  * the member lists are generated from ITEM_KINDS.
  */
 import type { WorkspaceArea } from '@mantle/client-types';
-import { currentCaller, registerPolicySource, type GatePolicy, type PolicyRef } from '@mantle/db';
+import { registerPolicySource, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea } from '../access-keys';
-import { API_V1_ROUTES } from '../api-v1';
+import { API_V1_ROUTES, type KeyRoute } from '../api-v1';
+import { getRequestContext } from '../../server/request-context';
 import { PUBLIC_PATHS } from '../auth-constants';
 import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
@@ -88,9 +91,13 @@ export type RouteRow = Readonly<{
   /** A write that may make an item (its private workspace may be made). */
   makesItems: boolean;
   item: RouteItem | null;
-  /** The area an API key needs (an /api/v1 row): null for a route about
-   *  the key itself or open only to a key with every area; absent off v1. */
+  /** The area an API key needs (an /api/v1 row of the key table): null
+   *  for a route open only to a key with every area, or about the key
+   *  itself (keySelf); absent off the key table. */
   keyArea?: AccessKeyArea | null;
+  /** An /api/v1 row about the key itself (whoami, API_V1_ROUTES `self`):
+   *  every key may call it, whatever its areas. Absent off the key table. */
+  keySelf?: boolean;
   /** A v1 row: the route whose handler it re-exports (D3). */
   aliasOf: string | null;
   /** The system reason a public route that writes runs as. Null in step 1:
@@ -180,7 +187,12 @@ export function buildRouteRow(
   const isPublic = isPublicPath(path);
   // HEAD is answered by the GET handler, so it has GET's class. Its
   // `logins` stay what the lists say of HEAD (none name it: an any-login
-  // GET's HEAD is not an any-login route today).
+  // GET's HEAD is not an any-login route today), so such a HEAD row is
+  // class 'self' with logins null and open 'admin': a login outside Admin
+  // gets the GET's answer refused on HEAD. OPEN OWNER QUESTION for A4 step
+  // 4 (fix round 1, M3): should HEAD take GET's logins too? Step 1 keeps
+  // today's answer; route-policy.test.ts pins it, so a change is
+  // deliberate.
   const classLogins = m === 'HEAD' ? loginsOf('GET', pattern) : logins;
   const cls: RoutePolicyClass | null = pattern.startsWith('/s/')
     ? 'link'
@@ -208,7 +220,11 @@ export function buildRouteRow(
     creates: CREATE_ROUTES.has(key),
     makesItems: !(m === 'DELETE' || target?.need === 'read'),
     item,
-    ...(pattern.startsWith('/api/v1/') ? { keyArea: v1?.area ?? null } : {}),
+    // A v1 pattern the key table does not list has none: no key calls it
+    // (api-v1.test.ts pins the table to the route files).
+    ...(pattern.startsWith('/api/v1/') && v1
+      ? { keyArea: v1.area, keySelf: v1.self === true }
+      : {}),
     aliasOf: aliasOf(m, pattern, served),
     actor: null,
   });
@@ -257,6 +273,7 @@ export function routeGatePolicy(row: RouteRow): GatePolicy {
       class: row.class,
       open: row.open,
       ...(row.keyArea !== undefined ? { keyArea: row.keyArea } : {}),
+      ...(row.keySelf ? { keySelf: true } : {}),
     }),
   });
 }
@@ -281,11 +298,25 @@ export function registerRouteSource(): void {
 }
 
 /** The ROUTE_POLICY row of the current request, as the gate middleware
- *  found it and bound it with the caller; null outside a routed request
- *  (a test calling a handler, a worker). The session guards read this. */
+ *  found it and set it on the request context (fix round 1, M1: on the
+ *  request, not the bound caller, so a call nested inside the request with
+ *  a caller of its own still reads it); null outside a routed request (a
+ *  test calling a handler, a worker). The session guards read this, and
+ *  refuse a request slot that has no row (session.ts guardRoute). */
 export function currentRoute(): RouteRow | null {
-  const row = currentCaller()?.facts?.route as RouteRow | undefined;
-  return row ?? null;
+  return getRequestContext()?.route ?? null;
+}
+
+/** What an API key is held to on a row (keyMayCall): the v1 table's entry
+ *  as the row carries it, or null off the table (not part of the API a key
+ *  can call). The row's effect is the table's access (route-policy.test.ts). */
+export function rowKeyRoute(row: RouteRow | null): KeyRoute | null {
+  if (!row || row.keyArea === undefined) return null;
+  return {
+    access: row.effect,
+    area: row.keyArea,
+    ...(row.keySelf ? { self: true as const } : {}),
+  };
 }
 
 /** The item a write request names, from its row and path (what

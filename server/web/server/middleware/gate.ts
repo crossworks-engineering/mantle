@@ -9,7 +9,7 @@ import {
 } from '../../lib/auth-constants';
 import { isAccessKey, type AccessKeyGrant } from '../../lib/access-keys';
 import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
-import { registerRouteSource, routeRef, type RouteRow } from '../../lib/auth/route-policy';
+import { registerRouteSource, routeRef } from '../../lib/auth/route-policy';
 import { runWithRequestContext } from '../request-context';
 import { servedRoute } from '../route-loader';
 import { gateAccessKey } from './access-key-gate';
@@ -42,9 +42,10 @@ import { ensureGateReady } from '@mantle/tools/gate-narrowers';
  * The one gate's HTTP entry (arch plan v2, sections 2 and 7; A4 step 1): a
  * request a route of the manifest answers runs through enterCall
  * (@mantle/db gate.ts) with its ROUTE_POLICY row, found here once
- * (servedRoute). The credential checks below are step 1, resolving the
- * caller; enterCall binds the caller with the row (currentCaller(), read by
- * every session guard through currentRoute()), looks the policy up, narrows,
+ * (servedRoute) and set on the request context (currentRoute(), read by
+ * every session guard and the API key checks, and by a call nested inside
+ * the request). The credential checks below are step 1, resolving the
+ * caller; enterCall binds the caller, looks the row's policy up, narrows,
  * and opens the request slot the guard fills. A request no route answers
  * (a 404, the /s and /print pages: A4 step 2) runs as before.
  */
@@ -159,25 +160,24 @@ function bearerToken(req: Request): string | null {
 
 /**
  * The caller of a routed request (the gate's step 1, A4 step 1): how it
- * came in, and its row. The login is not resolved here yet: the session
+ * came in. The login is not resolved here yet: the session
  * guard resolves it and names it (setRequestActor), so the caller runs as
  * system(http:no-login), the actor the request slot starts as, and its
  * Admin view is unresolved (`admin: null`: the guard's own requireArea
  * decides, as before). A4 step 3 resolves the login here.
  */
-function httpCaller(row: RouteRow, via: CallerVia, accessKey?: AccessKeyGrant): GateCaller {
+function httpCaller(via: CallerVia, accessKey?: AccessKeyGrant): GateCaller {
   return {
     actor: systemActor('http:no-login'),
     via,
     // A key's write switch. gateAccessKey judged the key's areas and its
-    // read-only switch first, on the same rows (route-policy.test.ts pins
-    // each v1 row's effect to the key table's access), with the 403 bodies
-    // the API promises; this narrows nothing past it.
+    // read-only switch first, on the same row (rowKeyRoute: the row's
+    // effect, pinned to the key table's access by route-policy.test.ts),
+    // with the 403 bodies the API promises; this narrows nothing past it.
     ...(accessKey ? { write: accessKey.access === 'read_write' } : {}),
     admin: null,
     // The request slot (workspaces W6a), opened for the handler.
     enterScope: (_writes, fn) => runInRequestSlot(fn),
-    facts: { route: row },
   };
 }
 
@@ -216,13 +216,19 @@ function gateHandler(): MiddlewareHandler {
     const row = route?.rows.get(req.method.toUpperCase()) ?? null;
     const proceed = async (via: CallerVia, accessKey?: AccessKeyGrant) => {
       const refused = await runWithRequestContext(
-        { req, path, method: req.method, ...(accessKey ? { accessKey } : {}) },
+        {
+          req,
+          path,
+          method: req.method,
+          ...(accessKey ? { accessKey } : {}),
+          ...(row ? { route: row } : {}),
+        },
         async () => {
           if (!row) {
             await next();
             return null;
           }
-          const out = await enterCall(httpCaller(row, via, accessKey), routeRef(row), () => next());
+          const out = await enterCall(httpCaller(via, accessKey), routeRef(row), () => next());
           if (out.ok) return null;
           if (!out.refusal.http) throw out.error;
           return Response.json(out.refusal.http.body, { status: out.refusal.http.status });
@@ -262,7 +268,7 @@ function gateHandler(): MiddlewareHandler {
     // route's login lookup takes no key (lib/auth/session.ts).
     const presented = bearerToken(req);
     if (isAccessKey(presented) && !isPublic) {
-      const res = await gateAccessKey(req, path, presented);
+      const res = await gateAccessKey(req, path, presented, row);
       if ('response' in res) return withCors(res.response);
       return proceed('key', res.grant);
     }

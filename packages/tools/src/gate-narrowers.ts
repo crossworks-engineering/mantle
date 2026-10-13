@@ -59,11 +59,15 @@ function mcpConnection(caller: GateCaller): boolean {
 }
 
 /** A key's areas (null: every area): the policy's key area must be one of
- *  them (a policy with none is open only to an all-areas key). The tools'
- *  policies carry their key area; A4's route rows carry their own. */
+ *  them (a policy with none is open only to an all-areas key). A policy
+ *  about the key itself (`keySelf`: the whoami route) is open to every
+ *  key, as keyMayCall answers (server/web lib/api-v1.ts; pinned against it
+ *  for every v1 row by route-policy.test.ts). The tools' policies carry
+ *  their key area; A4's route rows carry their own. */
 const keyNarrower: Narrower = (caller, policy) => {
   const areas = (caller.facts?.keyAreas ?? null) as readonly string[] | null;
   if (!narrowedCaller(caller) || areas === null) return null;
+  if (policy.fields?.keySelf === true) return null;
   const area = (policy.fields?.keyArea ?? null) as string | null;
   return area !== null && areas.includes(area) ? null : KEY_AREA_ERROR;
 };
@@ -162,29 +166,14 @@ export function registerGateNarrowers(): void {
   }
 }
 
-/**
- * Whether a production entry runs through enterCall. True since A4 step 1:
- * every HTTP request a route of the manifest answers runs through it
- * (server/web gate middleware), so a gate that is not ready stops the boot,
- * never the first request. (While false, in A3c, nothing called the gate
- * and a box that was not ready logged it and started.)
- */
-export const GATE_HAS_PRODUCTION_CALLERS = true;
-
 /** Boot: register every narrower and assert the gate is ready. Each process
- *  main calls it. Throws GateNotReadyError naming what is missing (the gate
- *  has production callers: the process does not start). */
+ *  main calls it. Throws GateNotReadyError naming what is missing: every
+ *  HTTP request a route of the manifest answers runs through enterCall
+ *  (A4 step 1), so a gate that is not ready stops the boot, never the first
+ *  request. */
 export function ensureGateReady(): void {
-  try {
-    registerGateNarrowers();
-    assertGateReady();
-  } catch (err) {
-    if (GATE_HAS_PRODUCTION_CALLERS) throw err;
-    console.error(
-      '[gate] NOT READY at boot (the gate has no production caller yet, so the process starts):',
-      err,
-    );
-  }
+  registerGateNarrowers();
+  assertGateReady();
 }
 
 registerGateNarrowers();

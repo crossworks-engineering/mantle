@@ -49,8 +49,8 @@ const { embedBatch } = await import('@mantle/embeddings');
 registerRecallEmbedder(embedBatch);
 
 // The one gate (arch A3c fix round 2, M-A): every narrower registered, or
-// the process stops here at boot, not at its first request (the gate has
-// production callers since A4 step 1: every routed request). AWAITED like
+// the process stops here at boot, not at its first request (every routed
+// request runs through the gate since A4 step 1). AWAITED like
 // the imports above (env first). gate-boot.test.ts pins this call in every
 // process entry.
 const { ensureGateReady } = await import('@mantle/tools/gate-narrowers');

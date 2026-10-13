@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AccessKeyGrant } from '../lib/access-keys';
+import type { RouteRow } from '../lib/auth/route-policy';
 
 /**
  * Per-request ambient context for the Hono server.
@@ -25,6 +26,13 @@ export type RequestContext = {
    *  an `mtlk_` bearer), so the route's login lookup does not check it a
    *  second time. Absent on every other request. */
   accessKey?: AccessKeyGrant;
+  /** The request's ROUTE_POLICY row (arch A4 step 1), set once by the gate
+   *  middleware for a request a route of the manifest answers. It lives on
+   *  the request, not on the bound caller, so a call nested inside the
+   *  request (an MCP tool, an assistant turn: enterCall with a caller of its
+   *  own) still reads it (currentRoute()). Absent on a request no route
+   *  answers (a 404, the /s and /print pages). */
+  route?: RouteRow;
 };
 
 const store = new AsyncLocalStorage<RequestContext>();

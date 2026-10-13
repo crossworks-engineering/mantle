@@ -61,9 +61,9 @@ function restSegments(pathname: string, prefixSegCount: number): string[] {
   });
 }
 
-/** A route handler the loader registered: its pattern and its ROUTE_POLICY
- *  rows by request method (none for the 405 answer of another method). */
-export type ServedRoute = Readonly<{ pattern: string; rows: ReadonlyMap<string, RouteRow> }>;
+/** A route handler the loader registered: its ROUTE_POLICY rows by request
+ *  method (none for the 405 answer of another method). */
+export type ServedRoute = Readonly<{ rows: ReadonlyMap<string, RouteRow> }>;
 
 const servedBy = new WeakMap<object, ServedRoute>();
 
@@ -132,7 +132,7 @@ export function registerRoutes(
 
       // HEAD is answered by the GET handler (Hono), with its own row.
       const methods = servedMethods({ pattern: entry.pattern, methods: [method] });
-      servedBy.set(handle, { pattern: entry.pattern, rows: rowsFor(methods) });
+      servedBy.set(handle, { rows: rowsFor(methods) });
       app.on(method, entry.pattern, handle);
     }
 
@@ -155,7 +155,7 @@ export function registerRoutes(
         { status: 405, headers: { Allow: allow } },
       );
     };
-    servedBy.set(leftover, { pattern: entry.pattern, rows: new Map() });
+    servedBy.set(leftover, { rows: new Map() });
     app.all(entry.pattern, leftover);
   }
 }

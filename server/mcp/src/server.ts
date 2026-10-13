@@ -37,7 +37,8 @@ import { connectStdioAs, stdioOwnerActor } from './stdio-actor';
 registerRecallEmbedder(embedBatch);
 
 // The one gate (arch A3c fix round 2, M-A): every narrower registered, or
-// the server stops here at boot, not at its first tool call.
+// the server stops here at boot (ensureGateReady throws), not at its first
+// tool call.
 // gate-boot.test.ts pins this call in every process entry.
 ensureGateReady();
 

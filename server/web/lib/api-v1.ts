@@ -68,10 +68,14 @@ export type ApiV1Route = {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** The pattern as the route manifest writes it (`:id` for a segment). */
   pattern: string;
-  /** null = about the login only (whoami), or open only to a key with
+  /** null = about the key itself (`self`), or open only to a key with
    *  every area. */
   area: AccessKeyArea | null;
   access: 'read' | 'write';
+  /** About the key itself (whoami): every key may call it, whatever its
+   *  areas. The route's ROUTE_POLICY row carries it (keySelf), so the
+   *  gate's key narrower answers what keyMayCall answers. */
+  self?: true;
   /** The v1 file has its own handler (it narrows a key past the route it
    *  wraps): not an alias of the route without /v1 (ROUTE_POLICY aliasOf,
    *  D3). Absent: the file re-exports that route's handler, where there is
@@ -84,11 +88,18 @@ const r = (
   pattern: string,
   area: AccessKeyArea | null,
   access: ApiV1Route['access'],
-  own?: 'own',
-): ApiV1Route => ({ method, pattern, area, access, ...(own ? { own: true as const } : {}) });
+  own?: 'own' | 'self',
+): ApiV1Route => ({
+  method,
+  pattern,
+  area,
+  access,
+  ...(own === 'own' ? { own: true as const } : {}),
+  ...(own === 'self' ? { self: true as const } : {}),
+});
 
 export const API_V1_ROUTES: readonly ApiV1Route[] = [
-  r('GET', '/api/v1/whoami', null, 'read'),
+  r('GET', '/api/v1/whoami', null, 'read', 'self'),
   // Search and any item by id.
   r('GET', '/api/v1/search', 'search', 'read'),
   r('GET', '/api/v1/nodes/:id', null, 'read'),
@@ -134,7 +145,9 @@ const compiled = API_V1_ROUTES.map((route) => ({
   re: new RegExp(`^${route.pattern.replace(/:[A-Za-z]+/g, '[^/]+')}/?$`),
 }));
 
-/** The v1 route a request names, or null. HEAD is looked up as GET. */
+/** The v1 route a request names by its path, or null. HEAD is looked up
+ *  as GET. The gate and the guard judge a key on the request's ROUTE_POLICY
+ *  row (rowKeyRoute), never by path; the tests hold the rows to this. */
 export function matchApiV1Route(method: string, path: string): ApiV1Route | null {
   const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
   for (const { route, re } of compiled) if (route.method === m && re.test(path)) return route;
@@ -143,20 +156,24 @@ export function matchApiV1Route(method: string, path: string): ApiV1Route | null
 
 export type KeyScopeRefusal = 'not-in-api' | 'key-area' | 'key-read-only';
 
+/** What keyMayCall reads of a v1 route: a table entry, or the same as a
+ *  ROUTE_POLICY row carries it (route-policy.ts rowKeyRoute). */
+export type KeyRoute = Pick<ApiV1Route, 'access' | 'area' | 'self'>;
+
 /** Whether an API key may call this v1 route: the route is in the table,
  *  its area is one of the key's (or the key has all), and a write needs a
  *  read_write key. This only narrows: the login's own rights still decide
  *  past it (plan 7.5). */
 export function keyMayCall(
   grant: Pick<AccessKeyGrant, 'access' | 'areas'>,
-  route: ApiV1Route | null,
+  route: KeyRoute | null,
 ): { ok: true } | { ok: false; reason: KeyScopeRefusal } {
   if (!route) return { ok: false, reason: 'not-in-api' };
   if (route.access === 'write' && grant.access !== 'read_write') {
     return { ok: false, reason: 'key-read-only' };
   }
-  // whoami is about the key itself: every key may ask it.
-  if (route.pattern === '/api/v1/whoami') return { ok: true };
+  // A route about the key itself (whoami): every key may ask it.
+  if (route.self) return { ok: true };
   if (grant.areas === null) return { ok: true };
   if (route.area === null || !grant.areas.includes(route.area)) {
     return { ok: false, reason: 'key-area' };
