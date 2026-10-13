@@ -72,21 +72,18 @@ describe.skipIf(!URL)('the app list MCP reach, in an Admin user scope', () => {
     const ts: Ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
-    // ONE key for every viewer DB test: roles are cluster-wide (28P01).
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     nav = await import('./app-nav');
     sqlTag = (await import('drizzle-orm')).sql;
-    const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
-      .$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-
+    // The viewer roles: the global setup brings them up once (cluster-wide).
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, is_owner) values
         (${anchor}, ${`${tag}-admin@example.invalid`}, 'x', 'admin', true),
         (${member}, ${`${tag}-mem@example.invalid`}, 'x', 'member', false)`);
     await m.systemDb.execute(sqlTag`
-      insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
+      insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
+      on conflict (id) do nothing`);
     await m.systemDb.execute(sqlTag`
       insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
         (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),

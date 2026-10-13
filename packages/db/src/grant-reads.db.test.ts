@@ -203,6 +203,8 @@ describe.skipIf(!URL)('grant reads: a shared workspace reads from the grants alo
     const stranger = randomUUID();
     await sql`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${stranger}, 's@example.invalid', 'x', 'admin', false)`;
+    await sql`insert into spaces (id, kind, login_id) values (${stranger}, 'brain', ${stranger})
+      on conflict (id) do nothing`;
     const [theirs] = await sql<{ id: string }[]>`
       insert into workspaces (owner_id, name) values (${stranger}, 'Theirs') returning id::text as id`;
     const ask = async (ws: string) => {
