@@ -44,6 +44,7 @@ import { waitForOwner } from '@mantle/db';
 import { runWorker } from './_runner';
 import { describeError } from './describe-error';
 import { env } from '@mantle/config';
+import { sleep } from '@mantle/std';
 
 // Resolved at startup via waitForOwner — ALLOWED_USER_ID when set, else the sole
 // auth.users row. Left undefined until then so a fresh install boots and idles
@@ -120,11 +121,19 @@ async function handleUpsert(absPath: string): Promise<void> {
   }
 }
 
+/** How long an unlink waits before it is believed (A3b part 2 fix round 1,
+ *  L4): a rename, move or overwrite whose commit failed puts the file back
+ *  within milliseconds (store-broker.ts flipThenPlace); deleting its row in
+ *  between and making it again on the add would lose its id, grants, tags
+ *  and passages (a folder move: the whole subtree's). */
+const UNLINK_SETTLE_MS = 2_000;
+
 async function handleUnlink(absPath: string): Promise<void> {
   try {
     if (!shouldSync(absPath)) return;
     const loc = ltreeForDiskPath(absPath);
     if (!loc) return;
+    await sleep(UNLINK_SETTLE_MS);
     // Back already (a move undone, a quick replace): nothing was deleted.
     if (
       await fs.stat(absPath).then(

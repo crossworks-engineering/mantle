@@ -669,6 +669,22 @@ describe.skipIf(!URL)('A3b part 2: the files and snapshot stores, both checks on
       const all = await sweepLater();
       expect(report(all, 'appsnap').noRow).toContain(added[0]);
       expect(existsSync(path.join(appRoot, '_snapshots', added[0]!))).toBe(true);
+      // The operator's leftovers (fix round 1): listed, then removed only by
+      // a deliberate run, and only what is still a leftover.
+      const listed = await sweep.reportedLeftovers();
+      expect(listed).toContainEqual({ label: 'appsnap', rel: added[0] });
+      const named = Object.keys(before).find((k) => k.endsWith('.sqlite'))!;
+      const wanted = sweep.parseLeftovers(`# reviewed\nappsnap\t${added[0]}\nappsnap\t${named}\n`);
+      const later = Date.now() + 2 * m.STORE_SWEEP_GRACE_MS;
+      const dry = await sweep.removeLeftovers(wanted, { now: later });
+      expect(dry.removed).toEqual([{ label: 'appsnap', rel: added[0] }]);
+      expect(dry.skipped).toEqual([{ label: 'appsnap', rel: named, why: 'not a leftover now' }]);
+      expect(existsSync(path.join(appRoot, '_snapshots', added[0]!))).toBe(true);
+      // Too young without the clock moved on: kept.
+      expect((await sweep.removeLeftovers(wanted, { apply: true })).removed).toEqual([]);
+      await sweep.removeLeftovers(wanted, { apply: true, now: later });
+      expect(existsSync(path.join(appRoot, '_snapshots', added[0]!))).toBe(false);
+      expect(existsSync(path.join(appRoot, '_snapshots', named))).toBe(true);
       quietly.mockRestore();
     });
 

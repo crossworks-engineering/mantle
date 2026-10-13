@@ -17,11 +17,14 @@
  *
  * Server-only (node:fs).
  */
+import { statSync } from 'node:fs';
 import path from 'node:path';
 import {
   forgetTombstones,
   isLegacyDraftName,
+  removeSqliteFile,
   revisionNode,
+  STORE_SWEEP_GRACE_MS,
   storeRows,
   storeTombstones,
   sweepOrphans,
@@ -144,6 +147,92 @@ export async function sweepStores(opts: StoreSweepOptions = {}): Promise<SweepRe
   }
   for (const spec of snapshotSweepSpecs()) out.push(await sweepOrphans(spec, opts));
   return out;
+}
+
+// ── The operator's leftovers (A3b part 2 fix round 1) ──────────────────
+
+/** A file the sweep only reports and never removes: an item's file with no
+ *  row (and no tombstone), or a table draft from before A3b. One per line,
+ *  `<store part>\t<path under its root>`: what `store:sweep
+ *  --report-orphans` writes and `--remove-orphans <file>` reads back. A
+ *  file of an item whose row names a missing file is never listed: it may
+ *  be the copy a repair needs. */
+export type Leftover = { label: string; rel: string };
+
+function sweptRoots(): Map<string, string> {
+  const roots = storeRoots();
+  const out = new Map<string, string>([
+    ['tables', roots.tables],
+    ['appdb', roots.appdb],
+  ]);
+  for (const spec of snapshotSweepSpecs()) out.set(spec.label!, spec.root);
+  return out;
+}
+
+/** The leftovers every store reports now (a dry run, past a hold). */
+export async function reportedLeftovers(): Promise<Leftover[]> {
+  const out: Leftover[] = [];
+  for (const r of await sweepStores({ dryRun: true, allowMany: true })) {
+    for (const rel of [...r.noRow, ...r.legacy]) out.push({ label: r.label, rel });
+  }
+  return out;
+}
+
+/** Parse a leftovers list (blank lines and `#` comments skipped). */
+export function parseLeftovers(text: string): Leftover[] {
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'))
+    .map((l) => {
+      const [label, ...rest] = l.split('\t');
+      return { label: label ?? '', rel: rest.join('\t') };
+    });
+}
+
+/**
+ * Remove leftovers an operator listed after reviewing them (never run by
+ * the nightly sweep): each only while the stores still report it as a
+ * leftover now (a row named since, or a tombstone, takes it off the list),
+ * and only once it is a grace period old (a stage in flight is younger).
+ * A dry run (`apply` false) says what would go. Returns what went and what
+ * was skipped, with why.
+ */
+export async function removeLeftovers(
+  wanted: readonly Leftover[],
+  opts: { apply?: boolean; now?: number } = {},
+): Promise<{ removed: Leftover[]; skipped: (Leftover & { why: string })[] }> {
+  const now = opts.now ?? Date.now();
+  const still = new Set((await reportedLeftovers()).map((l) => `${l.label}\t${l.rel}`));
+  const roots = sweptRoots();
+  const removed: Leftover[] = [];
+  const skipped: (Leftover & { why: string })[] = [];
+  for (const l of wanted) {
+    const root = roots.get(l.label);
+    if (!root) {
+      skipped.push({ ...l, why: 'no such store' });
+      continue;
+    }
+    if (!still.has(`${l.label}\t${l.rel}`)) {
+      skipped.push({ ...l, why: 'not a leftover now' });
+      continue;
+    }
+    const abs = path.join(root, l.rel);
+    let mtime: number;
+    try {
+      mtime = statSync(abs).mtimeMs;
+    } catch {
+      skipped.push({ ...l, why: 'gone' });
+      continue;
+    }
+    if (now - mtime < STORE_SWEEP_GRACE_MS) {
+      skipped.push({ ...l, why: 'younger than the grace period' });
+      continue;
+    }
+    if (opts.apply) removeSqliteFile(abs);
+    removed.push(l);
+  }
+  return { removed, skipped };
 }
 
 /** One line for a maintenance run row. */

@@ -23,13 +23,29 @@
  * file is missing, and table drafts from before A3b (`<node>.draft.sqlite`,
  * kept for ever: check no row names one, then remove it by hand).
  *
+ * Leftovers (A3b part 2 fix round 1): what a run only reports (an item's
+ * file with no row and no tombstone; a table draft from before A3b) is
+ * never removed by the sweep. After reviewing it, an operator removes it:
+ *   pnpm store:sweep --report-orphans [list-file]   # write the list (stdout without a file)
+ *   pnpm store:sweep --remove-orphans list-file     # DRY RUN of that list
+ *   pnpm store:sweep --remove-orphans list-file --apply
+ * Edit the list down to what may go first. Each listed file goes only while
+ * the stores still report it as a leftover and once it is an hour old.
+ *
  * Exit codes: 0 done (a store a restore holds says HELD) · 1 crash · 2 a
  * hard stop (nothing removed there; the line says why: a row outside the
  * root, no row naming any file, a row back on an older revision).
  */
 import { env } from '@mantle/config';
 import { closeDb } from '@mantle/db';
-import { summariseStoreSweep, sweepStores } from '@mantle/content/store-sweep';
+import { readFileSync, writeFileSync } from 'node:fs';
+import {
+  parseLeftovers,
+  removeLeftovers,
+  reportedLeftovers,
+  summariseStoreSweep,
+  sweepStores,
+} from '@mantle/content/store-sweep';
 
 if (!env('DATABASE_URL')) {
   console.error('store-sweep: DATABASE_URL must be set');
@@ -40,14 +56,47 @@ const args = process.argv.slice(2);
 const apply = args.includes('--apply');
 const allowMany = args.includes('--allow-many');
 
+/** The value after `flag`, unless it is another flag. */
+function valueOf(flag: string): string | undefined {
+  const i = args.indexOf(flag);
+  const v = i >= 0 ? args[i + 1] : undefined;
+  return v && !v.startsWith('--') ? v : undefined;
+}
+
 async function main() {
+  if (args.includes('--report-orphans')) {
+    const list = await reportedLeftovers();
+    const text =
+      '# store leftovers (reported, never removed by the sweep): <store part>\t<path>\n' +
+      '# review; delete the lines that must stay; then --remove-orphans <this file>\n' +
+      list.map((l) => `${l.label}\t${l.rel}`).join('\n') +
+      '\n';
+    const out = valueOf('--report-orphans');
+    if (out) {
+      writeFileSync(out, text);
+      console.log(`[store-sweep] ${list.length} leftovers listed in ${out}`);
+    } else process.stdout.write(text);
+    return;
+  }
+  if (args.includes('--remove-orphans')) {
+    const file = valueOf('--remove-orphans');
+    if (!file) throw new Error('--remove-orphans needs the reviewed list file');
+    const r = await removeLeftovers(parseLeftovers(readFileSync(file, 'utf8')), { apply });
+    for (const l of r.removed)
+      console.log(`  ${apply ? 'removed' : 'would remove'}: ${l.label} ${l.rel}`);
+    for (const l of r.skipped) console.log(`  kept (${l.why}): ${l.label} ${l.rel}`);
+    console.log(
+      `[store-sweep] leftovers: ${r.removed.length} ${apply ? 'removed' : 'would go (dry run: add --apply)'}, ${r.skipped.length} kept`,
+    );
+    return;
+  }
   const r = await sweepStores({ dryRun: !apply, allowMany });
   console.log(`[store-sweep] ${summariseStoreSweep(r, !apply)}`);
   for (const s of r) {
-    for (const f of s.noRow) console.log(`  kept, no row: ${s.store} ${f}`);
+    for (const f of s.noRow) console.log(`  kept, no row: ${s.label} ${f}`);
     for (const f of s.rowFileMissing)
-      console.log(`  kept, a row's file is missing: ${s.store} ${f}`);
-    for (const f of s.legacy) console.log(`  kept, a draft from before A3b: ${s.store} ${f}`);
+      console.log(`  kept, a row's file is missing: ${s.label} ${f}`);
+    for (const f of s.legacy) console.log(`  kept, a draft from before A3b: ${s.label} ${f}`);
   }
   if (r.some((s) => s.aborted)) process.exitCode = 2;
 }

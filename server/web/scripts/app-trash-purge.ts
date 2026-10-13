@@ -1,14 +1,16 @@
 /**
  * Purge deleted apps past their 30 days in the trash (apps first-class plan,
- * Phase 3), the history of deleted tables (Phase 4), and the work files a
- * crash left in the app and table folders: the CLI face of
- * the `app-trash-purge` maintenance sweep. The rule
- * lives in @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the
- * cron worker and this script. Plain SQL and file removal, no model.
+ * Phase 3), the history rows of deleted tables (Phase 4), and the work files
+ * a crash left in the app and table folders: the CLI face of the
+ * `app-trash-purge` maintenance sweep. The rule lives in
+ * @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron
+ * worker and this script. Plain SQL and file removal, no model. The
+ * snapshot files of the rows it removes go with the store sweep a day later
+ * (their tombstones; arch A3b part 2, docs/store-brokers.md).
  *
  * Usage:
  *   pnpm app-trash:purge           # DRY RUN: counts only, removes nothing
- *   pnpm app-trash:purge --apply   # remove the history and snapshot files
+ *   pnpm app-trash:purge --apply   # remove the history rows and work files
  */
 
 import { env } from '@mantle/config';

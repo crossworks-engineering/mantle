@@ -31,39 +31,6 @@ export async function ensureRoot(): Promise<string> {
   return root;
 }
 
-/**
- * Write a file under a folder. Returns sha256 + size + absolute path so
- * the caller can persist metadata. Throws on collision unless overwrite=true.
- */
-export async function writeFile(
-  parentLtreePath: string,
-  filename: string,
-  bytes: Buffer,
-  opts: { overwrite?: boolean } = {},
-): Promise<{ path: string; sha256: string; size: number }> {
-  const filePath = diskPathForFile(parentLtreePath, filename);
-  if (!filePath) {
-    throw new Error(`writeFile: cannot resolve disk path for ${parentLtreePath}/${filename}`);
-  }
-  // Make sure the parent exists.
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  if (!opts.overwrite) {
-    try {
-      await fs.access(filePath);
-      throw new Error(`writeFile: '${filename}' already exists in this folder`);
-    } catch (err) {
-      // ENOENT = good, file doesn't exist yet. Re-throw anything else.
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        // The 'already exists' Error we just threw will land here too.
-        if (err instanceof Error && err.message.includes('already exists')) throw err;
-      }
-    }
-  }
-  await fs.writeFile(filePath, bytes);
-  const sha256 = createHash('sha256').update(bytes).digest('hex');
-  return { path: filePath, sha256, size: bytes.byteLength };
-}
-
 // ─── Staged creates: write beside, place after the row ──────────────────────
 //
 // A create writes its bytes under a temporary name in the file's own folder
@@ -581,7 +548,7 @@ export function spoolDir(): string {
 /**
  * Stream `source` into a spool file, hashing and counting as it goes. Rejects
  * with `UploadTooLargeError` (and removes the partial file) the moment the
- * byte count passes `maxBytes`. Resolves with what `adoptSpooled` needs.
+ * byte count passes `maxBytes`. Resolves with what `stageSpooled` needs.
  */
 export async function spoolUpload(
   source: Readable,
@@ -640,45 +607,6 @@ export async function spoolUpload(
  *  every error path: the spool must never keep a stray `.part` around. */
 export async function discardSpooled(spooled: SpooledUpload): Promise<void> {
   await fs.unlink(spooled.tempPath).catch(() => {});
-}
-
-/**
- * Move a spooled upload into its folder. Same contract as `writeFile`
- * (collision check unless `overwrite`, returns path + sha256 + size) but the
- * bytes never pass through memory. On any failure the spool file is removed.
- */
-export async function adoptSpooled(
-  parentLtreePath: string,
-  filename: string,
-  spooled: SpooledUpload,
-  opts: { overwrite?: boolean } = {},
-): Promise<{ path: string; sha256: string; size: number }> {
-  try {
-    const filePath = diskPathForFile(parentLtreePath, filename);
-    if (!filePath) {
-      throw new Error(`adoptSpooled: cannot resolve disk path for ${parentLtreePath}/${filename}`);
-    }
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    if (!opts.overwrite) {
-      const exists = await fs
-        .access(filePath)
-        .then(() => true)
-        .catch(() => false);
-      if (exists) throw new Error(`adoptSpooled: '${filename}' already exists in this folder`);
-    }
-    try {
-      await fs.rename(spooled.tempPath, filePath);
-    } catch (err) {
-      // Spool and folder on different mounts (EXDEV): copy, then drop the spool.
-      if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err;
-      await fs.copyFile(spooled.tempPath, filePath);
-      await fs.unlink(spooled.tempPath);
-    }
-    return { path: filePath, sha256: spooled.sha256, size: spooled.size };
-  } catch (err) {
-    await discardSpooled(spooled);
-    throw err;
-  }
 }
 
 /** Delete spool files older than `maxAgeMs` (default 2 h): residue from a

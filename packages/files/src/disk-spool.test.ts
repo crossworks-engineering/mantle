@@ -52,30 +52,19 @@ describe('spoolUpload', () => {
   });
 });
 
-describe('adoptSpooled', () => {
-  it('moves the spool into the folder and reports the same hash', async () => {
-    const { spoolUpload, adoptSpooled } = await disk();
+describe('stageSpooled', () => {
+  it('moves the spool beside its name (a staging name), the same hash; placing puts it under the name', async () => {
+    const { spoolUpload, stageSpooled, placeStaged } = await disk();
     const { diskPathForFile } = await paths();
     const bytes = Buffer.from('hello spool');
     const spooled = await spoolUpload(Readable.from([bytes]), { maxBytes: 1024 });
-    const written = await adoptSpooled('files.inbox', 'hello.txt', spooled);
-    expect(written.path).toBe(diskPathForFile('files.inbox', 'hello.txt'));
-    expect(written.sha256).toBe(spooled.sha256);
-    expect(written.size).toBe(bytes.length);
-    expect(await readFile(written.path, 'utf8')).toBe('hello spool');
+    const staged = await stageSpooled('files.inbox', 'hello.txt', spooled);
+    expect(staged.finalPath).toBe(diskPathForFile('files.inbox', 'hello.txt'));
+    expect(staged.sha256).toBe(spooled.sha256);
+    expect(staged.size).toBe(bytes.length);
     await expect(stat(spooled.tempPath)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('refuses a collision without overwrite and discards the spool', async () => {
-    const { spoolUpload, adoptSpooled } = await disk();
-    const first = await spoolUpload(Readable.from([Buffer.from('one')]), { maxBytes: 1024 });
-    await adoptSpooled('files.inbox', 'dup.txt', first);
-    const second = await spoolUpload(Readable.from([Buffer.from('two')]), { maxBytes: 1024 });
-    await expect(adoptSpooled('files.inbox', 'dup.txt', second)).rejects.toThrow(/already exists/);
-    await expect(stat(second.tempPath)).rejects.toMatchObject({ code: 'ENOENT' });
-    const third = await spoolUpload(Readable.from([Buffer.from('three')]), { maxBytes: 1024 });
-    const written = await adoptSpooled('files.inbox', 'dup.txt', third, { overwrite: true });
-    expect(await readFile(written.path, 'utf8')).toBe('three');
+    await placeStaged(staged);
+    expect(await readFile(staged.finalPath, 'utf8')).toBe('hello spool');
   });
 });
 

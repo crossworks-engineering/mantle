@@ -67,7 +67,6 @@ export {
 export {
   ensureRoot,
   ensureDir,
-  writeFile,
   readFile,
   deleteFile,
   renameFile,
@@ -79,7 +78,6 @@ export {
   untrackedFilesOnDisk,
   spoolUpload,
   discardSpooled,
-  adoptSpooled,
   sweepSpool,
   sweepStagedLeftovers,
   STAGED_LEFTOVER_NAME,

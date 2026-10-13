@@ -272,7 +272,7 @@ type StagedAppSnapshot = {
   id: string;
   rel: string;
   abs: string | null;
-  data: { bytes: number; schemaVersion: number; storagePath: string } | null;
+  data: { bytes: number; schemaVersion: number; storagePath: string; writeSeq: number } | null;
   lost: boolean;
 };
 
@@ -313,26 +313,40 @@ async function stageAppSnapshot(
 }
 
 /** The staged snapshot's row, inside the flip (under the app's history
- *  lock): the code as it stands, the copy's path and size. Refused (not
- *  recorded) when a restore moved the app's database to another file since
- *  the copy was taken. */
+ *  lock): the code as it stands, the copy's path and size. Not recorded
+ *  (taken again) when the app's database moved on since the copy: a restore
+ *  put another file in place, a schema change ran, or (unless
+ *  `allowWrites`, the last try) a write landed, so the code read now could
+ *  be newer than the data copied (fix round 1, L6). */
 async function recordAppSnapshot(
   tx: DbTx,
   ownerId: string,
   appId: string,
   opts: SnapshotOpts,
   staged: StagedAppSnapshot,
+  allowWrites: boolean,
 ): Promise<AppSnapshot | null> {
   const code = await currentCode(ownerId, appId, tx);
   if (!code) return null;
   await assertSnapshotBudget(ownerId, opts, tx);
   if (staged.data) {
     const [reg] = await tx
-      .select({ storagePath: appDatabases.storagePath })
+      .select({
+        storagePath: appDatabases.storagePath,
+        schemaVersion: appDatabases.schemaVersion,
+        writeSeq: sql<number>`${appDatabases.writeSeq}::float8`,
+      })
       .from(appDatabases)
       .where(and(eq(appDatabases.appNodeId, appId), eq(appDatabases.ownerId, ownerId)))
       .limit(1);
-    if (reg?.storagePath !== staged.data.storagePath) throw new SnapshotNotRecorded('moved');
+    if (
+      !reg ||
+      reg.storagePath !== staged.data.storagePath ||
+      reg.schemaVersion !== staged.data.schemaVersion ||
+      (!allowWrites && Number(reg.writeSeq) !== staged.data.writeSeq)
+    ) {
+      throw new SnapshotNotRecorded('moved');
+    }
   }
   const note = [
     opts.note?.trim().slice(0, 440),
@@ -482,7 +496,10 @@ export async function createAppSnapshot(
               ) {
                 throw new SnapshotNotRecorded('not_needed');
               }
-              return recordAppSnapshot(tx, ownerId, appId, o, staged);
+              // The last try takes the copy though writes landed since
+              // (a consistent copy, a few writes older than the code read
+              // now): a busy app still gets its snapshot.
+              return recordAppSnapshot(tx, ownerId, appId, o, staged, attempt >= 3);
             }),
           ),
       );

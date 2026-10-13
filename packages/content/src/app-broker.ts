@@ -832,17 +832,23 @@ async function lookupAppDatabase(
   ownerId: string,
   appNodeId: string,
   q: Pick<typeof db, 'select'> = db,
-): Promise<{ storagePath: string; schemaVersion: number; sizeBytes: number } | null> {
+): Promise<{
+  storagePath: string;
+  schemaVersion: number;
+  sizeBytes: number;
+  writeSeq: number;
+} | null> {
   const [row] = await q
     .select({
       storagePath: appDatabases.storagePath,
       schemaVersion: appDatabases.schemaVersion,
       sizeBytes: appDatabases.sizeBytes,
+      writeSeq: sql<number>`${appDatabases.writeSeq}::float8`,
     })
     .from(appDatabases)
     .where(and(eq(appDatabases.appNodeId, appNodeId), eq(appDatabases.ownerId, ownerId)))
     .limit(1);
-  return row ?? null;
+  return row ? { ...row, writeSeq: Number(row.writeSeq) } : null;
 }
 
 /**
@@ -1144,7 +1150,12 @@ export async function snapshotAppDatabase(
   /** The caller's transaction (a snapshot under the app's history lock):
    *  the registry read runs on it, never on a second connection. */
   q: Pick<typeof db, 'select'> = db,
-): Promise<{ bytes: number; schemaVersion: number; storagePath: string } | null> {
+): Promise<{
+  bytes: number;
+  schemaVersion: number;
+  storagePath: string;
+  writeSeq: number;
+} | null> {
   const reg = await lookupAppDatabase(ownerId, appNodeId, q);
   if (!reg) return null;
   await assertNotLost(appNodeId, reg);
@@ -1161,7 +1172,12 @@ export async function snapshotAppDatabase(
   const { size } = await stat(destAbs);
   // The file the copy was taken of: a snapshot's flip checks the row still
   // names it (a restore may have flipped it meanwhile; A3b part 2).
-  return { bytes: size, schemaVersion: reg.schemaVersion, storagePath: reg.storagePath };
+  return {
+    bytes: size,
+    schemaVersion: reg.schemaVersion,
+    storagePath: reg.storagePath,
+    writeSeq: reg.writeSeq,
+  };
 }
 
 /** How long a restore waits, after its marker is down, for statements that

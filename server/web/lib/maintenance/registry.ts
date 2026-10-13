@@ -174,7 +174,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'app-trash-purge',
     title: 'Purge deleted apps',
     description:
-      "Removes deleted apps past their 30 days in Recently deleted: the app's history rows and its snapshot files (APP_DB_DIR/_snapshots). Until then the app can be restored with its id, code and data. Also clears the history of apps deleted before the trash existed, and of deleted tables (TABLE_DB_DIR/_snapshots), 30 days after its newest row, and the work files a crash left in APP_DB_DIR and TABLE_DB_DIR (schema trial copies, restore and snapshot temp files) after an hour.",
+      "Removes deleted apps past their 30 days in Recently deleted: the app's history rows. Until then the app can be restored with its id, code and data. Also clears the history rows of apps deleted before the trash existed, and of deleted tables, 30 days after the newest row, and the work files a crash left in APP_DB_DIR and TABLE_DB_DIR (schema trial copies, restore and snapshot temp files) after an hour. The snapshot files of the rows it removes are not removed here: each row's removal records its file (a tombstone), and the store-sweep removes it a day later (arch A3b part 2).",
     kind: 'recurring',
     status: 'live',
     cost: 'sql',
@@ -183,13 +183,13 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'server/web',
     applyFlag: '--apply',
     notes:
-      'Plain SQL and file removal, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron and the script.',
+      'Plain SQL, and removal of crash work files, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron and the script.',
   },
   {
     slug: 'store-sweep',
     title: 'Remove store files no row points at',
     description:
-      "Removes the old revisions of table workbooks and app database files: the file a save, a commit or a restore replaced, and a staged revision whose write never landed (refused, or cut off by a crash), only for an item whose row names another file that is on disk. A file goes only once it has been unreferenced on two runs an hour or more apart and is an hour old or more, so a write in flight and a reader that has just opened the old revision are never cut off. Never a file a row points at, never a file whose item has no row (a deleted item's, an app's from long ago: reported), never a draft from before the change (reported), never the history (_snapshots) or the accepted copies. Each run removes at most the larger of 500 files and half a store, the oldest first; the rest wait for the next run (deferred, not a failure). For a week after a restore (db-restore.sh or app-dbs-restore.sh write a hold) a store is HELD: nothing removed, the run done and saying so (read its dry run, the script with --allow-many and no --apply, then run it with --apply --allow-many). A store stops with nothing removed, and the run fails, when a row names a file outside its folder, when no row names any file, or when a row names an older revision than on the last run (a restore no hold announced).",
+      "Removes the old revisions of table workbooks and app database files: the file a save, a commit or a restore replaced, and a staged revision whose write never landed (refused, or cut off by a crash), only for an item whose row names another file that is on disk. A file goes only once it has been unreferenced on two runs an hour or more apart and is an hour old or more, so a write in flight and a reader that has just opened the old revision are never cut off. Never a file a row points at, never a file whose item has no row (a deleted item's, an app's from long ago: reported), never a draft from before the change (reported), never the work files. The history (_snapshots, app and table) and the accepted table copies are swept too (arch A3b part 2): a snapshot file goes a day after its row was deleted, pruned or purged (the tombstone its row left), while no row names it; a file with neither a row nor a tombstone is only reported, and so is a folder whose rows are all gone (never a failure). Each run removes at most the larger of 500 files and half a store, the oldest first; the rest wait for the next run (deferred, not a failure). For a week after a restore (db-restore.sh or app-dbs-restore.sh write a hold) a store is HELD: nothing removed, the run done and saying so (read its dry run, the script with --allow-many and no --apply, then run it with --apply --allow-many). A store stops with nothing removed, and the run fails, when a row names a file outside its folder, when no row names any file, or when a row names an older revision than on the last run (a restore no hold announced).",
     kind: 'recurring',
     status: 'live',
     cost: 'io',
