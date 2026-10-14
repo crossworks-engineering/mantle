@@ -111,6 +111,7 @@ export {
   InputError,
   defineDomainError,
   domainErrorAnswer,
+  itemErrorText,
   type DomainAnswer,
   type DomainErrorRow,
 } from './domain-errors';

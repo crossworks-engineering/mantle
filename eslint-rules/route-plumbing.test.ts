@@ -109,6 +109,31 @@ describe('no-error-text-replies', () => {
       ),
     ).toBe(0);
     expect(errorTextReplies('try { a(); } catch (err) { throw err; }')).toBe(0);
+    // Fix round 1 (L5): the shapes the first heuristic missed. A route's own
+    // json() helper, a bad(...) reply helper, an HTML page, an `error:` in a
+    // list the reply carries.
+    expect(
+      errorTextReplies(
+        'try { a(); } catch (err) { return json({ ok: false, message: errorMessage(err) }); }',
+      ),
+    ).toBe(1);
+    expect(errorTextReplies('try { a(); } catch (err) { return bad(errorMessage(err)); }')).toBe(1);
+    expect(
+      errorTextReplies(
+        'try { a(); } catch (err) { const msg = errorMessage(err); return htmlPage(t, esc(msg), false); }',
+      ),
+    ).toBe(1);
+    expect(
+      errorTextReplies(
+        "try { a(); } catch (err) { failed.push({ id, error: err instanceof Error ? err.message : 'x' }); }",
+      ),
+    ).toBe(1);
+    // The one helper for a failed item is not the error's text.
+    expect(
+      errorTextReplies(
+        "try { a(); } catch (err) { failed.push({ id, error: itemErrorText(err, 'w', 'failed') }); }",
+      ),
+    ).toBe(0);
     // Every named file says why: public by design, or waiting on the client.
     expect(
       Object.values(ERROR_TEXT_ALLOW).every(

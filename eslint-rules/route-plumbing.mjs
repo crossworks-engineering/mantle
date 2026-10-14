@@ -91,6 +91,11 @@ export const ERROR_TEXT_ALLOW = Object.freeze({
   'server/web/app/api/mcp-connectors/[slug]/oauth/start/route.ts': UPSTREAM,
   'server/web/app/api/openapi-connectors/[slug]/sync/route.ts': UPSTREAM,
   'server/web/app/api/openapi-connectors/preview/route.ts': UPSTREAM,
+  'server/web/app/api/mcp-connectors/oauth/callback/route.ts':
+    "PUBLIC: the authorization server's answer (a refused grant, a failed token exchange, the tool listing after it) on the page the owner's browser lands on, which the owner set up and fixes from this text",
+  'server/web/app/api/apps/import/route.ts':
+    "PUBLIC: SQLite's text about the owner's own schema script (bad(...)), which says where to fix it",
+  'server/web/app/api/network/key/route.ts': OK_FALSE,
   'server/web/app/api/mcp-status/route.ts':
     "PUBLIC: the health check reports why the box's own public MCP URL could not be reached (the proxy, TLS, DNS)",
   'server/web/app/api/push/reset/route.ts':
@@ -148,10 +153,12 @@ function catchBlocks(code) {
 /**
  * The catch blocks of `code` (comments stripped) that put the caught
  * error's text in a reply (fold 2): a statement that builds a reply (a
- * `.json(`, a `Response`, a redirect, a `body:`) and carries the error's
- * message (`err.message`, `errorMessage(err)`, `String(err)`, `${err}`) or
- * a name made of it. A text heuristic, for the counts; logging is not a
- * reply.
+ * `json(` or `.json(`, a `Response`, a redirect, a `body:`, a `return` of
+ * anything, such as a route's own `bad(...)` or HTML page helper, or an
+ * `error:` or `message:` field, such as an item of a `failed` list the
+ * reply carries; fix round 1, L5) and carries the error's message
+ * (`err.message`, `errorMessage(err)`, `String(err)`, `${err}`) or a name
+ * made of it. A text heuristic, for the counts; logging is not a reply.
  */
 export function errorTextReplies(code) {
   let n = 0;
@@ -166,7 +173,8 @@ export function errorTextReplies(code) {
         new RegExp(`(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*[^;]*?${msg.source}`, 'g'),
       ),
     ].map((x) => x[1]);
-    const reply = /(\.json\(|new Response\(|Response\.json\(|[Rr]edirect\w*\(|body\s*:)/;
+    const reply =
+      /(\bjson\(|new Response\(|[Rr]edirect\w*\(|\bbody\s*:|\breturn\b|\b(?:error|message)\s*:)/;
     const statements = b.split(/(?<=;)/);
     const carries = (s) => msg.test(s) || made.some((x) => new RegExp(`\\b${x}\\b`).test(s));
     if (statements.some((s) => reply.test(s) && carries(s))) n += 1;

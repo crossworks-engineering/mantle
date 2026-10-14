@@ -77,6 +77,20 @@ export function domainErrorAnswer(err: unknown): DomainAnswer | null {
 }
 
 /**
+ * What a reply says for one item of a batch that failed (an entry of a
+ * `failed` list the route answers with its other results): a domain error's
+ * public text, as the route would answer it alone; anything else is a
+ * fault, logged under `where`, and the item says `fallback` (A10 part 2
+ * fix round 1, L5). A route never puts a caught error's text there itself.
+ */
+export function itemErrorText(err: unknown, where: string, fallback: string): string {
+  const domain = domainErrorAnswer(err);
+  if (domain) return domain.toolText;
+  console.error(`[${where}] item failed:`, err);
+  return fallback;
+}
+
+/**
  * A value the caller sent that the domain refuses, with a message that
  * says which (a date that is not a date, a contact with no name). Thrown
  * by a domain function where its own check runs; the caller hears 400 and

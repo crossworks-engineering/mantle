@@ -6,7 +6,7 @@ import { getAiWorker, updateAiWorker } from '@/lib/ai-workers';
 import { AGENT_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { buildComboDiff, COMBO_DEFS } from '@/lib/model-combos';
 import { loadComboContext } from '@/lib/model-combos-context';
-import { errorMessage } from '@mantle/std';
+import { itemErrorText } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 
@@ -76,7 +76,16 @@ export async function POST(req: Request) {
       }
       applied.push(t.id);
     } catch (err) {
-      failed.push({ id: t.id, error: errorMessage(err) });
+      // A domain refusal says its text; a fault is logged and the item says
+      // so (fix round 1, L5), never the error's own text.
+      failed.push({
+        id: t.id,
+        error: itemErrorText(
+          err,
+          'model-combos/apply',
+          'Could not apply the change. The details are in the server log.',
+        ),
+      });
     }
   }
   return NextResponse.json({ combo: def.key, applied, skipped, failed });

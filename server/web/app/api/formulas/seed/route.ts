@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { FORMULA_SEED, SEED_TAG } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
+import { itemErrorText } from '@mantle/std';
 import { createFormula, listFormulaSpecIds } from '@/lib/formulas';
 
 /**
@@ -34,8 +35,17 @@ export async function POST() {
       await createFormula(user.id, { spec: seed.spec, title: seed.title, tags: [...seed.tags] });
       created.push(seed.slug);
     } catch (err) {
-      // One malformed seed must not deny the owner the other four.
-      failed.push({ slug: seed.slug, error: err instanceof Error ? err.message : 'failed' });
+      // One malformed seed must not deny the owner the other four. A spec
+      // the schema refuses (FormulaSpecError) says its text; a fault is
+      // logged and the item says so (fix round 1, L5).
+      failed.push({
+        slug: seed.slug,
+        error: itemErrorText(
+          err,
+          'formulas/seed',
+          'Could not create this formula. The details are in the server log.',
+        ),
+      });
     }
   }
 

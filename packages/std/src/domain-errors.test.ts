@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ConflictError,
   DOMAIN_ERRORS,
   InputError,
   defineDomainError,
   domainErrorAnswer,
+  itemErrorText,
 } from './domain-errors';
 import { publicErrorMessage } from './index';
 
@@ -55,5 +56,15 @@ describe('the domain error table', () => {
     expect(publicErrorMessage(new InputError('entry_date must be a valid date'), 'test')).toBe(
       'entry_date must be a valid date',
     );
+  });
+
+  it("a failed item of a batch says a domain error's text, a fault the fallback (fix round 1, L5)", () => {
+    expect(itemErrorText(new InputError('bad spec'), 'test', 'failed')).toBe('bad spec');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(itemErrorText(new Error('relation "x" does not exist'), 'test', 'failed')).toBe(
+      'failed',
+    );
+    expect(log).toHaveBeenCalledOnce();
+    log.mockRestore();
   });
 });
