@@ -3143,7 +3143,8 @@ connector write a turn used to list and queue for the owner's approval
   the owner's decision (fix round 1, LOW-1):** such a write used to be
   listed to a member turn and, when the model called it, queued for the
   owner's approval; it is now hidden from that turn, so it is never
-  queued.
+  queued. Decided in step 6d (owner decision 1a, below): it is offered
+  again only when its call waits for approval anyway.
 - `responder_turn_input` and the persona description list through the
   same function, on the owner's web surface since fix round 1 (LOW-4), so
   only the connector cells apply to them.
@@ -3298,3 +3299,135 @@ summarizer, `summarize_text`) fence it as the live turn does
 the egress tables and the background prompts recorded before, compared
 after, every changed cell named. Pins: `mantle-egress/no-bare-fetch` and
 the scoreboard's `bareFetchSites` (12 to 5).
+
+## Registries, the tool call audit, owner decision 1a (A5 step 6d)
+
+Plan sections 29 and 30; gateway survey findings 14 and 6.
+
+**Survey 14: the tool-name registries move onto the definitions.** Every
+per-tool list keyed by name outside the policies is gone:
+
+- `WRITE_RULES` (`client-sourced-rules.ts`, 185 entries): each builtin
+  write declares its client-sourced rule on its policy (`clientSourced`,
+  the shapes in `client-sourced-rule.ts`); a lowering tool is the lowering
+  rule and a create's `createsIn` path is a destination the guard checks.
+  Proof: `packages/tools/src/client-sourced-rules.oracle.test.ts` holds
+  main's `WRITE_RULES` and dispatch, and the guard's verdict equals main's
+  for every builtin, input shape and stub database answer (over 50,000
+  cases).
+- `USAGE_TIERS` (deferred selection): each definition carries its
+  `usageTier`; the retired `recall_window` is dropped. Proof:
+  `packages/tools/src/selection/deferred.usage.test.ts` holds main's list:
+  the prior equals it but `recall_window`, so every search ranks as before.
+- The heartbeat tools (three copies: `fire.ts`, the responder affordance
+  list, the manifest's known externals): one definition field
+  (`heartbeat`), each list read off it in its old order, so the sent tool
+  lists are byte for byte (`packages/runtime/src/heartbeats/tools.test.ts`).
+- `TOOL_FLOWS` names `app-data-mcp` (tables flow); a manifest test fails
+  for any group the manifest ships that no flow names.
+- `TEAM_RESPONDER_SLUG` has one source (the runtime's).
+
+Pins: `toolPolicyLists` 1, `toolPolicyListFiles` 1, `toolPolicyEntries` 4
+(`scripts/arch-scoreboard.pins.json`): the one list left is the
+content-core contract list
+(`packages/content-core/src/profile-projections.ts`), kept by design. The
+deferred core (`selection/core.ts`) stays out of the count, as in 6a.
+
+**Survey 6: one audit row for every tool write, on every surface.** The
+gate writes it (`packages/db/src/call-audit.ts`, from `enterCall`). A call
+of a tool kind (`tool`, `runtime-tool`, `mcp-tool`: the spec
+`packages/tools/src/call-audit.ts` registers with the narrowers) runs in an
+audit frame; after it ran, a call whose policy writes and whose result
+succeeded leaves one `api.write` row: method `TOOL` (or `MCP` on an MCP
+connection, path `/api/mcp` over HTTP), the login (its email; else the
+actor kind and entry), the request's ip and user agent in the web server,
+and `detail` with the tool, the builtin it runs, the row kind, the entry,
+the via, the surface, the item ids it named or made (at most 20), the
+writes nested in it (at most 50) and a peer or OAuth client id. Fire and
+forget (`callAuditsSettled` for tests); off until a process starts it
+(`startCallAudit` in every process entry, pinned by `gate-boot.test.ts`;
+off in detached dev).
+
+- Reads, refusals and failed results leave none.
+- A write nested in another audited call (a recipe's step, a delegated
+  agent's call, `pending_approve` running the call it approves) is named
+  in the outer call's `detail.nested`, never a row of its own: one call,
+  one row. A recipe row writes only through its steps; a recipe of reads
+  leaves none.
+- No surface writes twice. An API key's MCP call keeps the row its route
+  writes (`auditMcpKeyCall`, unchanged): the gate writes none for a key. A
+  login's MCP connector call keeps its `mcp.connector.*` row
+  (`markCallAudited`): the gate writes none for it. `tool.external_access`
+  (opening or closing a tool) is not a call. An HTTP route's own
+  `api.write` row (`auditMutation`, `auditsAsWrite`) is unchanged: it
+  records the request (its method and path, no tool); the gate's row
+  records the tool write the request caused, so a dev console run or an app
+  broker write leaves the route's row and one tool row.
+
+The table (tool-call rows, `api.write` naming a tool; a real note read with
+`note_get` and written with `note_update`, real handlers:
+`server/web/server/a5-call-audit.db.test.ts`, which runs the before column
+with the gate's row off; `packages/tools/src/call-audit.test.ts` runs every
+dispatch entry with a sink):
+
+| entry                | before: read | before: write | after: read | after: write                  |
+| -------------------- | ------------ | ------------- | ----------- | ----------------------------- |
+| web turn             | 0            | 0             | 0           | 1                             |
+| Telegram turn        | 0            | 0             | 0           | 1                             |
+| heartbeat (its turn) | 0            | 0             | 0           | 1                             |
+| run item             | 0            | 0             | 0           | 1                             |
+| recipe step          | 0            | 0             | 0           | 1 (the recipe's row names it) |
+| pending approval     | 0            | 0             | 0           | 1                             |
+| app broker           | 0            | 0             | 0           | 1                             |
+| dev console          | 0            | 0             | 0           | 1                             |
+| MCP OAuth login      | 0            | 0             | 0           | 1                             |
+| MCP stdio            | 0            | 0             | 0           | 1                             |
+| MCP key              | 0            | 1 (route)     | 0           | 1 (route, unchanged; gate 0)  |
+
+Volume: one row per successful tool write, about half a kilobyte each (the
+detail is capped). A brain already wrote a row per mutating HTTP request;
+an agent that writes in a loop (`table_row_add` per row) now writes a row
+per call, where a batch tool (`table_rows_add`) writes one. Nothing prunes
+`audit_log`; a box that writes heavily should watch its size.
+
+**Owner decision 1a (plan section 30).** Since 6a a connector write the
+turn's scope may not make itself (the connector's Write tick off in its
+workspace, or the login not a Moderator there) was hidden. Now it is
+offered only when its call waits for approval anyway: a `requires_confirm`
+tool, or any write of a loop whose turn is client-sourced already when it
+lists (`queuesWrites`, from the loop's taint). Queued, the row carries
+`pending_tool_calls.elevated` (migration 0287, `{"elevated": true,
+"reason": ...}`, set by the server, never by the model) saying the
+approver runs it with Admin rights; the pending summary (`/api/pending`,
+`pending_list`, `pending_get`), the Telegram card and the model's queued
+message say so. A call that would run directly stays hidden and refused.
+Only the write rule is lifted (`elevatedConnectorFacts`): a link scope, a
+connector the scope does not hold and a stale mark are refused as before.
+The listing (`turnListedTools`) and the queue-time check
+(`turnCallRefusal`'s `queue`) read the same lifted caller, so a waiting call
+is offered exactly when it queues (`packages/tools/src/turn-listing.test.ts`,
+`packages/runtime/src/agent/tool-loop.test.ts`). The approved call meets
+the gate again in the approver's scope: an approver who may not make the
+write (the asking login itself, from its own Telegram card) is refused when
+it runs.
+
+Snapshots: `dispatch-parity`, the MCP `tools-list` matrix and `mcp-calls`,
+`tool-policy-snapshot` and `app-broker-parity` are byte-identical. The 1a
+listing cells are new rows of the turn listing tests (a `requires_confirm`
+connector write: offered to a member turn that is no Moderator, or whose
+connector's Write tick is off); the existing cells (`crm_lookup`, no
+confirm: hidden) are unchanged.
+
+Jackdaw follow-up: the pending card should show `elevated.reason` (an
+Admin rights badge) and, for an approver who may not run it, say that an
+Admin user must approve.
+
+**What is left.**
+
+- **Step 6b, after W9, per release:** delete a tool's `policy.items` only
+  when its database check exists with a test and `mantle.edit_check` is on
+  on every box of the release.
+- **Step 6c, the approval re-check:** re-check the originating scope when
+  a pending call is approved; the pending row must carry the scope whole
+  (its moderator set and Admin view), a migration.
+- **Egress as a gate concept** (owner decision 2b): not in this step.
