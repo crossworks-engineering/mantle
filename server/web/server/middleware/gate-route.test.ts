@@ -214,7 +214,7 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
     }
   });
 
-  it('the guard holds a key to the raw path too (accessKeyLogin)', async () => {
+  it('outside a routed request the login lookup holds a key to the raw path too (keyOnRow)', async () => {
     const { getOwnerOr401 } = await import('../../lib/auth/session');
     const { buildRouteRow } = await import('../../lib/auth/route-policy');
     const path = '/api/v1/pag%65s';
@@ -237,6 +237,18 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
     expect(res).toBeInstanceOf(Response);
     expect((res as Response).status).toBe(401);
   });
+
+  it('through the full pipeline (runRoute, A4 step 3a): a key on an encoded v1 spelling never reaches a guard', async () => {
+    // The key is judged once, on the row (keyOnRow): the gate answers an
+    // encoded spelling "not in the API", with the real app and its real
+    // handlers behind it, so no guard is asked to let the key's login in.
+    const { runRoute } = await import('../run-route');
+    for (const path of ['/api/v1/pag%65s', '/api/v1/%73earch', '/api/v1/%70ages/x']) {
+      const res = await runRoute({ key: 'mtlk_test_secret' }, 'GET', path);
+      expect(res.status, path).toBe(404);
+      expect(await json(res), path).toEqual({ error: 'not found' });
+    }
+  }, 60_000);
 
   it('an asset token: the row, via token, the request slot open', async () => {
     const at = mint({ uid: OWNER, k: 'a', exp: exp() });

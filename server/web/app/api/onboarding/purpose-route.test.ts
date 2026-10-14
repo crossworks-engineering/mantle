@@ -8,8 +8,10 @@
  * other than the brain owner is refused with a 403 and nothing is saved (W7
  * integration fix 4).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PURPOSE_MAX_CHARS } from '@mantle/client-types/purpose-limits';
+import { runRoute } from '@/server/run-route';
+import { standInLogin } from '@/server/run-route-stand-ins';
 
 const OWNER = '33333333-3333-4333-8333-333333333333';
 const OTHER = '44444444-4444-4444-8444-444444444444';
@@ -20,13 +22,20 @@ const h = vi.hoisted(() => ({
   actor: '',
 }));
 
-vi.mock('@/lib/auth', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => ({
-    id: OWNER,
-    email: 'owner@example.invalid',
-    actor: { id: h.actor, email: 'login@example.invalid', displayName: null, isOwner: false },
-  })),
+// Through the full pipeline (runRoute, A4 step 3a): the gate finds the
+// stood-in login's session and the guard reads it. Both logins hold the
+// settings area (the route's).
+vi.mock(
+  '@/lib/auth/login-row',
+  async () => (await import('@/server/run-route-stand-ins')).loginRowStandIn,
+);
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
+}));
+vi.mock('@/lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/workspaces')>()),
+  requireArea: async () => true,
 }));
 
 vi.mock('@/lib/onboarding-provision', async (importOriginal) => ({
@@ -45,22 +54,18 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   }),
 }));
 
+beforeAll(() => {
+  standInLogin({ id: OWNER, role: 'admin', isOwner: true });
+  standInLogin({ id: OTHER, role: 'admin' });
+});
+
 beforeEach(() => {
   h.saved = [];
   h.personas = [];
   h.actor = OWNER;
 });
 
-const send = async (body: Record<string, unknown>) => {
-  const { POST } = await import('./route');
-  return POST(
-    new Request('https://brain.example.invalid/api/onboarding', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
-  );
-};
+const send = (body: Record<string, unknown>) => runRoute(h.actor, 'POST', '/api/onboarding', body);
 const post = (purpose: string) => send({ action: 'purpose', archetype: 'personal', purpose });
 const persona = {
   action: 'persona',
