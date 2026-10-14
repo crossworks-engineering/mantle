@@ -48,6 +48,7 @@ const LABELS: Record<string, string> = {
   store_tabledb_files: 'files reaching the tables write API (A3b)',
   store_objectstore_files: 'files reaching the object store write API (A3b)',
   store_appdb_files: 'files reaching the app database write API or APP_DB_DIR (A3b)',
+  bareFetchSites: 'bare fetch( sites in tools, calendar, content (A10 part 1)',
 };
 
 /** Numbers that may go up without failing: the route counts grow with

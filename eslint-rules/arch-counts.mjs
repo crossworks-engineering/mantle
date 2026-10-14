@@ -417,6 +417,31 @@ export function storesReached(text) {
   return Object.keys(STORES).filter((k) => STORES[k].test.test(code));
 }
 
+// ── egress (A10 part 1) ─────────────────────────────────────────────────────
+
+/** The packages whose fetches take outside URLs (eslint-rules/no-bare-fetch.mjs
+ *  sweeps the same ones). */
+export const BARE_FETCH_PACKAGES = [
+  'packages/tools/src/',
+  'packages/calendar/src/',
+  'packages/content/src/',
+];
+
+/** Bare fetch call sites in `text` (comments exempt): `fetch(` not reached
+ *  through an object, and `globalThis.fetch(`. No space before the paren
+ *  (Prettier writes calls that way), so prose in a string ("pages to fetch
+ *  (each…") is not a call. */
+export function bareFetchSites(text) {
+  const code = stripComments(text);
+  let n = 0;
+  for (const m of code.matchAll(/(^|[^.\w$])fetch\(|\bglobalThis\.fetch\(/g)) {
+    const before = code.slice(Math.max(0, m.index - 12), m.index + (m[1]?.length ?? 0));
+    if (/function\s*$/.test(before)) continue;
+    n += 1;
+  }
+  return n;
+}
+
 // ── pinned-count rules ──────────────────────────────────────────────────────
 
 /** The repo-relative path of `filename` (absolute or relative), from the
@@ -502,6 +527,7 @@ export function measure(root) {
   let bowCalls = 0;
   let bowFiles = 0;
   let adminReadsFiles = 0;
+  const bareFetch = {};
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
@@ -548,6 +574,10 @@ export function measure(root) {
       bowFiles += 1;
     }
     if (namesAdminReads(text)) adminReadsFiles += 1;
+    if (BARE_FETCH_PACKAGES.some((p) => f.startsWith(p))) {
+      const n = bareFetchSites(text);
+      if (n) bareFetch[f] = n;
+    }
   }
   const sum = (o, k) => Object.values(o).reduce((a, v) => a + (k ? v[k] : v), 0);
   const reasons = new Set(Object.values(asSystem).flatMap((v) => v.reasons));
@@ -575,8 +605,9 @@ export function measure(root) {
       brainOnWorkspacesFiles: bowFiles,
       adminReadsFiles,
       readPathWrites: readPathWrites(root).length,
+      bareFetchSites: sum(bareFetch),
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
-    perFile: { asSystem, rawAcl, toolLists, routeLists, kinds, stores, liveUnguardedFiles },
+    perFile: { asSystem, rawAcl, toolLists, routeLists, kinds, stores, liveUnguardedFiles, bareFetch },
   };
 }

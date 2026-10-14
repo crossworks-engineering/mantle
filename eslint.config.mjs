@@ -23,6 +23,7 @@ import mantleActorSettersPlugin from './eslint-rules/actor-setters.mjs';
 import mantleNoModelInTxPlugin from './eslint-rules/no-model-in-transaction.mjs';
 import mantleOwnerCallerPlugin from './eslint-rules/owner-caller-imports.mjs';
 import mantleNoGuardCallsPlugin from './eslint-rules/no-guard-calls.mjs';
+import mantleEgressPlugin from './eslint-rules/no-bare-fetch.mjs';
 
 export default tseslint.config(
   {
@@ -249,6 +250,15 @@ export default tseslint.config(
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-guards': mantleNoGuardCallsPlugin },
     rules: { 'mantle-guards/no-guard-calls': 'error' },
+  },
+  {
+    // One egress fetch (A10 part 1, docs/egress.md): the packages that fetch
+    // outside URLs (tools, calendar, content) call no bare fetch( outside
+    // the fixed-host files the rule file lists with their reasons.
+    files: ['packages/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    plugins: { 'mantle-egress': mantleEgressPlugin },
+    rules: { 'mantle-egress/no-bare-fetch': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.
