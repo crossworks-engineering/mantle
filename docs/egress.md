@@ -42,7 +42,9 @@ stay free of node builtins). On top of the platform fetch:
 - **`allowLan`, per caller config.** A linked peer brain or a local model on
   a private or tailnet address is legitimate. `allowLan` lets RFC 1918,
   loopback, CGNAT (Tailscale) and unique local IPv6 through and still
-  refuses link-local (the metadata address lives there), "this network",
+  refuses link-local (the metadata address lives there), the cloud metadata
+  addresses that sit inside the private ranges (Alibaba `100.100.100.200`,
+  Oracle `192.0.0.192`, AWS IPv6 `fd00:ec2::254`), "this network",
   multicast and reserved space. A name that does not resolve is left to the
   platform's connect, as before.
 

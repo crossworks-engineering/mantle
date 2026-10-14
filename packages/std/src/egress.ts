@@ -20,8 +20,10 @@
  * `allowLan` is the caller's config, not the URL's: a linked peer brain or a
  * local model on a private or tailnet address is legitimate. It lets the
  * private ranges (RFC 1918, loopback, CGNAT, unique local IPv6) through and
- * still refuses link-local (the cloud metadata address lives there),
- * "this network", multicast and reserved space.
+ * still refuses link-local (the cloud metadata address lives there), the
+ * cloud metadata addresses inside the private ranges (Alibaba's
+ * 100.100.100.200, Oracle's 192.0.0.192, AWS's fd00:ec2::254), "this
+ * network", multicast and reserved space.
  *
  * Residual (unchanged from the guard this replaces): a TOCTOU between the
  * DNS check and the platform's own connect (DNS rebinding). Pinning the
@@ -105,6 +107,8 @@ function isAlwaysBlockedIpv4(n: number): boolean {
   return (
     inCidr4(n, '0.0.0.0', 8) || // "this network"
     inCidr4(n, '169.254.0.0', 16) || // link-local + cloud metadata
+    inCidr4(n, '100.100.100.200', 32) || // Alibaba Cloud metadata (inside CGNAT)
+    inCidr4(n, '192.0.0.192', 32) || // Oracle Cloud metadata (inside 192.0.0.0/24)
     inCidr4(n, '224.0.0.0', 4) || // multicast
     inCidr4(n, '240.0.0.0', 4) // reserved
   );
@@ -186,6 +190,9 @@ function zeroes(b: Uint8Array, from: number, to: number): boolean {
   return true;
 }
 
+/** The AWS IPv6 metadata address, fd00:ec2::254. */
+const AWS_METADATA_V6 = [0xfd, 0, 0x0e, 0xc2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02, 0x54];
+
 function isBlockedIpv6(ip: string, allowLan: boolean): boolean {
   const b = ipv6ToBytes(ip);
   if (!b) return true;
@@ -213,6 +220,7 @@ function isBlockedIpv6(ip: string, allowLan: boolean): boolean {
   if (b[0] === 0xfe && (b[1]! & 0xc0) === 0x80) return true; // fe80::/10 link-local
   if (b[0] === 0xfe && (b[1]! & 0xc0) === 0xc0) return true; // fec0::/10 site-local (deprecated)
   if (b[0] === 0xff) return true; // ff00::/8 multicast
+  if (AWS_METADATA_V6.every((x, i) => b[i] === x)) return true; // fd00:ec2::254, inside fc00::/7
   if ((b[0]! & 0xfe) === 0xfc) return !allowLan; // fc00::/7 unique-local
   return false;
 }

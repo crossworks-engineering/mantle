@@ -83,6 +83,31 @@ describe('isBlockedIp', () => {
     }
   });
 
+  it('refuses the cloud metadata addresses inside the private ranges, even for a LAN caller', async () => {
+    for (const ip of [
+      '100.100.100.200',
+      '192.0.0.192',
+      'fd00:ec2::254',
+      '::ffff:100.100.100.200',
+    ]) {
+      expect(isBlockedIp(ip), ip).toBe(true);
+      expect(isBlockedIp(ip, { allowLan: true }), ip).toBe(true);
+    }
+    // Their neighbours stay LAN space.
+    for (const ip of ['100.100.100.199', '192.0.0.191', 'fd00:ec2::253']) {
+      expect(isBlockedIp(ip, { allowLan: true }), ip).toBe(false);
+    }
+    for (const u of [
+      'http://100.100.100.200/latest/meta-data/',
+      'http://192.0.0.192/opc/v2/instance/',
+      'http://[fd00:ec2::254]/latest/meta-data/',
+    ]) {
+      await expect(assertEgressUrl(u, { allowLan: true }), u).rejects.toBeInstanceOf(
+        EgressRefusedError,
+      );
+    }
+  });
+
   it('fails closed on input that is no IP', () => {
     expect(isBlockedIp('nope')).toBe(true);
     expect(isBlockedIp('nope', { allowLan: true })).toBe(true);
