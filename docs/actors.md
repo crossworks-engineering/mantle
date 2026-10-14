@@ -1367,11 +1367,16 @@ update routes.
 - **The moved writes** are pinned per cell: the sweep keeps the audit rows
   a request writes and the create home the pipeline's answer named, and
   records them for every moved cell of a write in
-  `__snapshots__/a4-guard-sweep-moved-writes.txt` (3559 cells).
+  `__snapshots__/a4-guard-sweep-moved-writes.txt` (3607 cells). A write
+  is what the audit hook takes for one (`auditsAsWrite`, route-scope.ts):
+  a mutating method, or a row whose effect is a write.
 - **The connector OAuth callbacks** (`GET /api/mcp-connectors/oauth/callback`,
   `GET /api/microsoft/oauth/callback`, and their HEADs) are writes
   (`WRITE_GETS`, route-scope.ts): they store the tokens they are given.
-  They are not public and run as the login their guard names.
+  They are not public and run as the login their guard names. Their row's
+  effect makes them audited too: an Admin user's callback writes the
+  `api.write` row (fix round: before, the audit hook went by the method
+  and wrote none).
 - **The Telegram chat rows** (`TELEGRAM_LOGIN_ROUTES` and the HEADs their
   GET handler answers) are class `self`, in no area (`rowScope`,
   route-policy.ts), like the assistant chat rows: their own gate

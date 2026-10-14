@@ -16,6 +16,7 @@ import {
   MEMBER_OPEN_WRITES,
   READ_POSTS,
   WRITE_GETS,
+  auditsAsWrite,
   isReadRequest,
   memberMayRead,
   memberMayWrite,
@@ -111,6 +112,26 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
       expect(isReadRequest('HEAD', pattern), key).toBe(false);
       expect(routeClass(pattern), key).toEqual({ kind: 'area', area: 'connectors' });
     }
+  });
+
+  it('audits a write by its method or its row (A4 step 3b part 4 fix round)', () => {
+    // The api.write audit row: a mutating method, or a row whose effect is
+    // a write (an OAuth callback's GET and HEAD). A READ_POSTS row keeps
+    // the row its method always wrote; outside a routed request, the method.
+    const effect = (m: string, p: string) => (isReadRequest(m, p) ? 'read' : 'write');
+    for (const key of WRITE_GETS) {
+      const pattern = key.split(' ')[1]!;
+      expect(auditsAsWrite('GET', effect('GET', pattern)), key).toBe(true);
+      expect(auditsAsWrite('HEAD', effect('HEAD', pattern)), key).toBe(true);
+      expect(auditsAsWrite('GET', null), key).toBe(false);
+    }
+    for (const key of READ_POSTS) {
+      const [method, pattern] = key.split(' ') as [string, string];
+      expect(auditsAsWrite(method, effect(method, pattern)), key).toBe(true);
+    }
+    expect(auditsAsWrite('GET', effect('GET', '/api/pages'))).toBe(false);
+    expect(auditsAsWrite('OPTIONS', null)).toBe(false);
+    expect(auditsAsWrite('patch', null)).toBe(true);
   });
 });
 

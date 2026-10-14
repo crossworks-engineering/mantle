@@ -77,6 +77,7 @@ import {
   routeItemTarget,
   type RouteRow,
 } from './route-policy';
+import { auditsAsWrite } from './route-scope';
 import {
   SESSION_COOKIE_NAME,
   buildAssetToken,
@@ -1167,16 +1168,18 @@ export async function getOwnerOr401(): Promise<SessionUser | NextResponse> {
 
 /**
  * Audit hook, shared by both `getOwnerOr401` variants — which every /api/**
- * route calls first. For mutating methods (learned from the middleware-injected
- * x-mantle-method/-path headers, which clients can't spoof) it fire-and-forgets
- * a generic `api.write` row recording who did what — unless the route logs its
- * own richer event (`AUDIT_SELF_LOGGED_PATHS`). Reads (GET/HEAD) aren't logged.
+ * route calls first. For a write (learned from the middleware-injected
+ * x-mantle-method/-path headers, which clients can't spoof, and the routed
+ * request's row: auditsAsWrite) it fire-and-forgets a generic `api.write`
+ * row recording who did what — unless the route logs its own richer event
+ * (`AUDIT_SELF_LOGGED_PATHS`). Reads aren't logged; a GET whose row is a
+ * write (a connector's OAuth callback, WRITE_GETS) is.
  */
 async function auditMutation(user: SessionUser, skip?: (path: string) => boolean): Promise<void> {
   const h = await headers();
   const method = (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase();
   const path = h.get(MANTLE_PATH_HEADER) ?? '';
-  const mutating = method !== '' && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+  const mutating = auditsAsWrite(method, currentRoute()?.effect ?? null);
   if (!mutating || isAuditSelfLogged(path) || skip?.(path)) return;
   // A write made with an API key names the key (never its secret).
   const key = getRequestContext()?.accessKey;

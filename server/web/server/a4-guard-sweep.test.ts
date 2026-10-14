@@ -374,6 +374,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
 
 import { SESSION_COOKIE_NAME, RENDER_COOKIE_NAME } from '../lib/auth-constants';
 import { KEY_TOKENS } from './a4-guard-sweep.keys';
+import { auditsAsWrite, isReadRequest } from '../lib/auth/route-scope';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -412,9 +413,11 @@ function legacy(answer: string): string {
 /** The cells whose guard entry moved to the pipeline, as driven: sweep and
  *  cell to its answer. */
 const moved = new Map<string, string>();
-/** The moved cells of a write (a method other than GET and HEAD), to what
- *  the request wrote on the side: its audit rows, and the create home the
- *  pipeline's answer named (A4 step 3b part 4). */
+/** The moved cells of a write (auditsAsWrite, as the audit hook decides:
+ *  a mutating method, or a row whose effect is a write, so a connector's
+ *  OAuth callback GET and HEAD too), to what the request wrote on the side:
+ *  its audit rows, and the create home the pipeline's answer named (A4 step
+ *  3b part 4). */
 const movedWrites = new Map<string, string>();
 /**
  * The owner's decision of 2026-10-14 (docs/actors.md, A4 step 3b part 4):
@@ -436,7 +439,8 @@ function noteMoved(sweep: string, cell: string, answer: string): string {
   }
   if (answer.includes('[pipeline:')) {
     moved.set(`${sweep} ${cell}`, answer);
-    if (!/^(GET|HEAD) /.test(cell)) {
+    const [method = '', pattern = ''] = cell.split(' ');
+    if (auditsAsWrite(method, isReadRequest(method, pattern) ? 'read' : 'write')) {
       movedWrites.set(
         `${sweep} ${cell}`,
         `audits=${JSON.stringify(sweepState.audits)} home=${sweepState.home ?? '-'}`,

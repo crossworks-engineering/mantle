@@ -192,6 +192,20 @@ export function isReadRequest(method: string, pattern: string | null): boolean {
 }
 
 /**
+ * Whether a request writes the generic `api.write` audit row
+ * (session.ts auditMutation) as a write: a mutating method, or a row whose
+ * effect is a write (`effect`, the request's ROUTE_POLICY row inside a
+ * routed request, else null). The row's effect adds the WRITE_GETS (a
+ * connector's OAuth callback stores tokens on a GET or HEAD); a READ_POSTS
+ * row keeps the audit row its method always wrote.
+ */
+export function auditsAsWrite(method: string, effect: 'read' | 'write' | null): boolean {
+  const m = method.toUpperCase();
+  const byMethod = m !== '' && m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS';
+  return byMethod || effect === 'write';
+}
+
+/**
  * The content prefixes of the workspace kinds (the kind registry,
  * @mantle/client-types/kinds, workspaces arch A1): a kind of the workspace
  * class with an item route. Each has the same five item routes: list, read,
