@@ -37,6 +37,8 @@ const h = vi.hoisted(() => ({
   runsEnabled: true,
   claimResult: true,
   compiled: null as unknown,
+  /** runStateUntrusted's answer (A5 step 6a, carried L4). */
+  untrustedState: false,
   apiKey: 'sk-test' as string | null,
   adapter: { providerId: 'openrouter' } as unknown,
   loopReply: 'The run finished. Here is what happened.',
@@ -103,6 +105,8 @@ vi.mock('@mantle/runs', () => ({
   claimResume: (...a: unknown[]) => h.claimResume(...a),
   compileRunState: async () => h.compiled,
   renderRunStateText: () => 'RUN STATE TEXT',
+  // A state with third-party content is fenced (A5 step 6a, carried L4).
+  runStateUntrusted: () => h.untrustedState,
   // Prompt construction moved into @mantle/runs (audit-prompt.ts) and has its
   // own pure tests; here it only needs to produce a string.
   buildAuditSection: async () => 'AUDIT SECTION',
@@ -118,6 +122,7 @@ vi.mock('@mantle/telegram', () => ({
 }));
 
 vi.mock('@mantle/runtime/agent', () => ({
+  fenceRetrieved: (body: string) => `[FENCED]${body}[/FENCED]`,
   buildChatMessages: () => [],
   loadConversationContext: async (a: unknown) => {
     h.contextArgs.push(a);
@@ -221,6 +226,7 @@ beforeEach(() => {
   h.loopReply = 'The run finished. Here is what happened.';
   h.sendOk = true;
   h.seq = [];
+  h.untrustedState = false;
   h.logs = [];
   h.contextArgs = [];
   h.assembleArgs = [];
@@ -297,6 +303,24 @@ describe('runs resume turn — claim ordering and the happy path', () => {
       'claim_resume',
       'record_outbound',
     ]);
+  });
+
+  it('fences a run state that holds third-party content (A5 step 6a, carried L4)', async () => {
+    // The loop reads the prompt through its context loader (inboundText).
+    h.runResponderLoop = vi.fn(async (o: unknown) => {
+      await (o as { loadContext: () => Promise<unknown> }).loadContext();
+      return { reply: h.loopReply, toolCalls: [] };
+    });
+    const promptOf = () =>
+      String((h.contextArgs[h.contextArgs.length - 1] as { inboundText?: string }).inboundText);
+    seedHappyPath();
+    await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
+    expect(promptOf()).toContain('RUN STATE TEXT');
+    expect(promptOf()).not.toContain('[FENCED]');
+    seedHappyPath();
+    h.untrustedState = true;
+    await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
+    expect(promptOf()).toContain('[FENCED]RUN STATE TEXT[/FENCED]');
   });
 
   it('records the outbound turn once, on the web channel by default', async () => {

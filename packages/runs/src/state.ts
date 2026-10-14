@@ -34,6 +34,10 @@ export type CompiledRunItem = {
   label: string;
   /** One-line outcome for terminal items (truncated result / failure). */
   outcome?: string;
+  /** Its result is third-party content (A5 step 6a, carried L4: a tool
+   *  whose result the tool loop fences, stored with the item): a model that
+   *  reads the run state reads it fenced as data (runStateUntrusted). */
+  untrusted?: true;
   sideEffecting?: boolean;
   costMicroUsd: number;
   /** Rolled-up cost of the subtree (groups) or own cost (leaves). */
@@ -169,6 +173,9 @@ export async function compileRunState(db: Db, runId: string): Promise<CompiledRu
       position: item.position,
       label: labelFor(item),
       outcome: outcomeFor(item),
+      ...((item.result as Record<string, unknown> | null)?.untrusted === true
+        ? { untrusted: true as const }
+        : {}),
       ...(item.sideEffecting ? { sideEffecting: true } : {}),
       costMicroUsd: own,
       subtreeCostMicroUsd: subtree,
@@ -209,6 +216,16 @@ export async function compileRunState(db: Db, runId: string): Promise<CompiledRu
     tree,
     totals: { items: items.length, byState, costMicroUsd: tree?.subtreeCostMicroUsd ?? 0 },
   };
+}
+
+/** Whether any item of a compiled run holds third-party content (A5 step
+ *  6a, carried L4): a model that reads its state reads it fenced as data
+ *  (run_state and run_plan answer `untrusted`, the resume turn fences the
+ *  state it puts in its prompt). */
+export function runStateUntrusted(compiled: CompiledRun): boolean {
+  const walk = (item: CompiledRunItem | null | undefined): boolean =>
+    !!item && (item.untrusted === true || (item.children ?? []).some(walk));
+  return walk(compiled.tree);
 }
 
 /** Render a compiled run as indented text — the resume prompt / `run_state`

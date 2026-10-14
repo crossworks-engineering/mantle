@@ -29,6 +29,7 @@ import {
   ItemCapError,
   listWorkerAgents,
   renderRunStateText,
+  runStateUntrusted,
   SealedGroupError,
   type AuditFinding,
   type PlanGroup,
@@ -743,6 +744,9 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       ctx.step?.setMeta({ run_id: runId });
       return {
         ok: true,
+        // A state that holds third-party content is fenced as data (A5 step
+        // 6a, carried L4; a fresh run holds none yet, a resumed tree may).
+        ...(compiled && runStateUntrusted(compiled) ? { untrusted: true } : {}),
         output: {
           run_id: runId,
           root_item_id: rootItemId,
@@ -877,7 +881,13 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         if (!run) return notFound('run', String(input.run_id), 'run_state');
         const compiled = await compileRunState(db, run.id);
         if (!compiled) return notFound('run', run.id, 'run_state');
-        return { ok: true, output: { text: renderRunStateText(compiled), ...compiled } };
+        // A state that holds third-party content (an item's result the tool
+        // loop fences) is fenced as data too (A5 step 6a, carried L4).
+        return {
+          ok: true,
+          output: { text: renderRunStateText(compiled), ...compiled },
+          ...(runStateUntrusted(compiled) ? { untrusted: true } : {}),
+        };
       }
       const limit =
         typeof input.limit === 'number' && input.limit >= 1 && input.limit <= 50

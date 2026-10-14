@@ -65,13 +65,19 @@ import {
   isPanelAudit,
   isRunsEnabled,
   renderRunStateText,
+  runStateUntrusted,
   RUNS_RESUME_TURN_WORKFLOW,
   type RunsResumeTurnInput,
   type RunsResumeTurnResult,
 } from '@mantle/runs';
 import { pairedChatOf, sendMessage } from '@mantle/telegram';
 import type { ToolHandlerContext } from '@mantle/tools';
-import { buildChatMessages, loadConversationContext, recordTurn } from '@mantle/runtime/agent';
+import {
+  buildChatMessages,
+  fenceRetrieved,
+  loadConversationContext,
+  recordTurn,
+} from '@mantle/runtime/agent';
 import {
   assembleResponderTurn,
   resolveAssistantAgent,
@@ -196,7 +202,11 @@ export async function runsResumeTurnImpl(
         return { resumed: false, outcome: 'precondition' };
       }
 
-      const stateText = renderRunStateText(compiled);
+      // A run whose items returned third-party content (A5 step 6a, carried
+      // L4): the state is fenced as data, as the tool loop fences a result.
+      const stateText = runStateUntrusted(compiled)
+        ? fenceRetrieved(renderRunStateText(compiled))
+        : renderRunStateText(compiled);
       const promptText = auditMode
         ? `[Mantle runner] Background run "${run.title}" needs an AUDIT verdict.\n\n` +
           `Compiled run state (the ground truth — do not rely on remembered progress):\n\n` +

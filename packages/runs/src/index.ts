@@ -49,6 +49,7 @@ export {
 export {
   compileRunState,
   renderRunStateText,
+  runStateUntrusted,
   type CompiledRun,
   type CompiledRunItem,
 } from './state';

@@ -1,5 +1,6 @@
 export {
   buildChatMessages,
+  fenceRetrieved,
   buildAttachmentContextText,
   flattenChatMessagesForAdapter,
   type HistoryTurn,

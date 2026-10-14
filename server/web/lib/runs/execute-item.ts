@@ -29,6 +29,7 @@ import {
   builtinPolicy,
   dispatchTool,
   policyRunItemBanned,
+  policyUntrusted,
   runCaller,
   loadAgentGrant,
   NO_AGENT_RUN_SLUG,
@@ -295,10 +296,16 @@ async function runResolved(
   };
 
   if (result.ok) {
+    // Third-party content (A5 step 6a, carried L4): a tool whose result the
+    // tool loop fences (its policy's `outside.untrusted`, or dispatch's
+    // provenance flag on an http, connector or recipe result) is stored
+    // with the mark, so a model that later reads the run state reads it
+    // fenced (runStateUntrusted).
+    const untrusted = result.untrusted === true || policyUntrusted(builtinPolicy(slug));
     const { actions } = await completeItem(db, {
       itemId: item.id,
       state: 'done',
-      result: capOutput(result.output),
+      result: { ...capOutput(result.output), ...(untrusted ? { untrusted: true } : {}) },
       ...accounting,
     });
     return { claimed: true, actions };
