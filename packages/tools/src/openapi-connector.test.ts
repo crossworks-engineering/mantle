@@ -24,6 +24,9 @@ vi.mock('@mantle/api-keys', () => ({
 
 import type { Tool, ToolGroupIntegration } from '@mantle/db';
 import { dispatchTool } from './dispatch';
+import { runCaller } from './gate-callers';
+// The one gate's narrowers and pre-run checks (every call runs through it).
+import './gate-narrowers';
 import { compileOperations, parseOpenapiDocument } from './openapi-spec';
 import { fetchSpecText, planOpenapiSync } from './openapi-sync';
 
@@ -156,7 +159,11 @@ describe('openapi connector against an in-process spec server', () => {
     // GET with the path filled, the optional query param OMITTED (dropped,
     // not sent as a literal brace string), and the vault credential attached.
     const getRow = bySlug.get('openapi_petstore_getpet')!;
-    const getRes = await dispatchTool(getRow, { petId: 42 }, { ownerId: OWNER });
+    const getRes = await dispatchTool(
+      getRow,
+      { petId: 42 },
+      { ownerId: OWNER, caller: runCaller() },
+    );
     expect(getRes.ok).toBe(true);
     let call = seen.pop()!;
     expect(call.method).toBe('GET');
@@ -164,13 +171,21 @@ describe('openapi connector against an in-process spec server', () => {
     expect(call.auth).toBe('live-key-9');
 
     // Same GET with the optional param present.
-    await dispatchTool(getRow, { petId: 7, verbose: true }, { ownerId: OWNER });
+    await dispatchTool(
+      getRow,
+      { petId: 7, verbose: true },
+      { ownerId: OWNER, caller: runCaller() },
+    );
     call = seen.pop()!;
     expect(call.url).toBe('/pets/7?verbose=true');
 
     // POST: spread body fields ride the spillover as the JSON body.
     const postRow = bySlug.get('openapi_petstore_addpet')!;
-    const postRes = await dispatchTool(postRow, { name: 'Rex', age: 3 }, { ownerId: OWNER });
+    const postRes = await dispatchTool(
+      postRow,
+      { name: 'Rex', age: 3 },
+      { ownerId: OWNER, caller: runCaller() },
+    );
     expect(postRes.ok).toBe(true);
     call = seen.pop()!;
     expect(call.method).toBe('POST');

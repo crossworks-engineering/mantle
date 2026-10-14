@@ -77,7 +77,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
-    tools = await import('@mantle/tools');
+    tools = turnCallDispatch(await import('@mantle/tools'));
     rt = await import('@mantle/runtime/agent');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${`go-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin'),
@@ -344,3 +344,14 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     });
   });
 });
+
+/** The tools module with each dispatchTool call named an assistant turn's
+ *  caller unless it names its own (every entry names one since A5 step 3b;
+ *  these calls stand for a turn's, as they always did). */
+function turnCallDispatch<T extends typeof import('@mantle/tools')>(tools: T): T {
+  return {
+    ...tools,
+    dispatchTool: (...[tool, input, ctx, depth]: Parameters<T['dispatchTool']>) =>
+      tools.dispatchTool(tool, input, { caller: tools.turnCaller(), ...ctx }, depth),
+  };
+}

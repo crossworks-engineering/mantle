@@ -191,7 +191,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
       }),
     );
     m = await import('@mantle/db');
-    t = await import('@mantle/tools');
+    t = turnCallDispatch(await import('@mantle/tools'));
     rt = await import('@mantle/runtime/agent');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
@@ -606,3 +606,14 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
     expect(outbound).toEqual([]);
   });
 });
+
+/** The tools module with each dispatchTool call named an assistant turn's
+ *  caller unless it names its own (every entry names one since A5 step 3b;
+ *  these calls stand for a turn's, as they always did). */
+function turnCallDispatch<T extends typeof import('@mantle/tools')>(tools: T): T {
+  return {
+    ...tools,
+    dispatchTool: (...[tool, input, ctx, depth]: Parameters<T['dispatchTool']>) =>
+      tools.dispatchTool(tool, input, { caller: tools.turnCaller(), ...ctx }, depth),
+  };
+}

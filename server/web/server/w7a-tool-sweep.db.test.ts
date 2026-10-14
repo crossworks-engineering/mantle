@@ -284,7 +284,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
       vi.fn(async () => new Response('offline in the W7a sweep', { status: 503 })),
     );
     m = await import('@mantle/db');
-    t = await import('@mantle/tools');
+    t = turnCallDispatch(await import('@mantle/tools'));
     rt = await import('@mantle/runtime/agent');
     const hb = await import('@mantle/runtime/heartbeats');
     hb.registerHeartbeatTools();
@@ -708,3 +708,14 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     expect(mcpNotRefused).toEqual([]);
   }, 600_000);
 });
+
+/** The tools module with each dispatchTool call named an assistant turn's
+ *  caller unless it names its own (every entry names one since A5 step 3b;
+ *  these calls stand for a turn's, as they always did). */
+function turnCallDispatch<T extends typeof import('@mantle/tools')>(tools: T): T {
+  return {
+    ...tools,
+    dispatchTool: (...[tool, input, ctx, depth]: Parameters<T['dispatchTool']>) =>
+      tools.dispatchTool(tool, input, { caller: tools.turnCaller(), ...ctx }, depth),
+  };
+}

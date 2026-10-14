@@ -106,7 +106,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     process.env.APP_DB_DIR = join(dir, 'apps');
     process.env.MANTLE_FILES_ROOT = join(dir, 'files');
     m = await import('@mantle/db');
-    tools = await import('./index');
+    tools = turnCallDispatch(await import('./index'));
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin'),
       (${mod}, ${`${tag}-m@example.invalid`}, 'x', false, 'member'),
@@ -365,3 +365,14 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
     expect(await createIn(admin, adm2, [], folder!.id), 'adm2').toBe(team);
   });
 });
+
+/** The tools module with each dispatchTool call named an assistant turn's
+ *  caller unless it names its own (every entry names one since A5 step 3b;
+ *  these calls stand for a turn's, as they always did). */
+function turnCallDispatch<T extends typeof import('./index')>(tools: T): T {
+  return {
+    ...tools,
+    dispatchTool: (...[tool, input, ctx, depth]: Parameters<T['dispatchTool']>) =>
+      tools.dispatchTool(tool, input, { caller: tools.turnCaller(), ...ctx }, depth),
+  };
+}

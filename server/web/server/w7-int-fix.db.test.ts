@@ -195,7 +195,7 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     );
     m = await import('@mantle/db');
     c = await import('@mantle/content');
-    t = await import('@mantle/tools');
+    t = turnCallDispatch(await import('@mantle/tools'));
     rt = await import('@mantle/runtime/agent');
     hbs = await import('@mantle/runtime/heartbeats');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
@@ -558,3 +558,14 @@ describe.skipIf(!URL)('W7 integration fix', () => {
     ).rejects.toThrow(/not another login/);
   });
 });
+
+/** The tools module with each dispatchTool call named an assistant turn's
+ *  caller unless it names its own (every entry names one since A5 step 3b;
+ *  these calls stand for a turn's, as they always did). */
+function turnCallDispatch<T extends typeof import('@mantle/tools')>(tools: T): T {
+  return {
+    ...tools,
+    dispatchTool: (...[tool, input, ctx, depth]: Parameters<T['dispatchTool']>) =>
+      tools.dispatchTool(tool, input, { caller: tools.turnCaller(), ...ctx }, depth),
+  };
+}

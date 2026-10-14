@@ -20,6 +20,9 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 import type { Tool } from '@mantle/db';
 import { ADMIN_ONLY_TOOL_SLUGS, TOOL_ADMIN_AREAS } from './admin-gate';
 import { dispatchTool } from './dispatch';
+import { runCaller } from './gate-callers';
+// The one gate's narrowers and pre-run checks (every call runs through it).
+import './gate-narrowers';
 import { MEMBER_APP_REFUSED_SLUGS } from './member-app-tools';
 import { getBuiltin, registerBuiltin } from './registry';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -71,7 +74,11 @@ describe('the policy views', () => {
 });
 
 describe("a builtin row named with another builtin's slug", () => {
-  const CTX = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } } as ToolHandlerContext;
+  const CTX = {
+    ownerId: 'o1',
+    surface: { kind: 'owner', via: 'mcp' },
+    caller: runCaller(),
+  } as ToolHandlerContext;
   const row = (slug: string, ref: string) =>
     ({ slug, handler: { kind: 'builtin', ref } }) as unknown as Tool;
 

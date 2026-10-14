@@ -104,6 +104,9 @@ import {
 import { dispatchViaBridge } from './dispatch-bridge';
 import { paramsOf } from './test-support';
 import { dispatchTool } from './dispatch';
+import { turnCaller } from './gate-callers';
+// The one gate's narrowers and pre-run checks (every call runs through it).
+import './gate-narrowers';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -114,7 +117,9 @@ const docsSet = TOOLSMITH_TOOLS.find((t) => t.slug === 'api_docs_set')!;
 const recipeCreate = TOOLSMITH_TOOLS.find((t) => t.slug === 'recipe_tool_create')!;
 const recipeTest = TOOLSMITH_TOOLS.find((t) => t.slug === 'recipe_tool_test')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// A turn's call (every entry names its caller since A5 step 3b): the
+// real dispatcher a test runs nests in it.
+const ctx: ToolHandlerContext = { ownerId: 'o1', caller: turnCaller() };
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
 
@@ -478,7 +483,7 @@ describe('api_tool_test', () => {
     expect(dispatchViaBridge).toHaveBeenCalledWith(
       stored,
       { q: 'Cape Town' },
-      { ownerId: 'o1', step: undefined },
+      { ownerId: 'o1', step: undefined, caller: turnCaller() },
     );
     const out = outputOf(res);
     expect(out).toMatchObject({ slug: 'geo', test_passed: true, response: { lat: 1 } });
@@ -739,7 +744,7 @@ describe('recipe_tool_test', () => {
     expect(dispatchViaBridge).toHaveBeenCalledWith(
       stored,
       { note_id: 'n1' },
-      { ownerId: 'o1', step: undefined },
+      { ownerId: 'o1', step: undefined, caller: turnCaller() },
     );
     expect(outputOf(res)).toMatchObject({ test_passed: true, response: { lat: 1 } });
 

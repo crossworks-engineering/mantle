@@ -126,7 +126,7 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
   }, 60_000);
 
   it('no tool fails on a read rule or a lost scope', async () => {
-    const { BUILTIN_TOOLS, dispatchTool } = await import('@mantle/tools');
+    const { BUILTIN_TOOLS, dispatchTool, turnCaller } = await import('@mantle/tools');
     const none = '00000000-0000-4000-8000-000000000000';
     const page = ids.page ?? none;
     const table = ids.table ?? none;
@@ -184,6 +184,8 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
           dispatchTool(row, inputs[slug] ?? {}, {
             ownerId: owner,
             surface: { kind: 'team', loginId: member, privateReads: false },
+            // As a turn calls it (every entry names its caller, A5 step 3b).
+            caller: turnCaller(),
           }),
         );
         outcome = res.ok ? 'ok' : `error: ${res.error}`;

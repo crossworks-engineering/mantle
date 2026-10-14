@@ -176,7 +176,7 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
     g.__mantleDb = undefined;
     g.__mantleSql = trapped(postgres(scratch.url, { max: 10, prepare: false }));
     m = await import('@mantle/db');
-    t = await import('@mantle/tools');
+    t = turnCallDispatch(await import('@mantle/tools'));
     rt = await import('@mantle/runtime/agent');
     (await import('@mantle/runtime/heartbeats')).registerHeartbeatTools();
     const x = (q: ReturnType<typeof sql>) => m.systemDb.execute(q);
@@ -399,3 +399,14 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
     expect(hits.length).toBe(1);
   });
 });
+
+/** The tools module with each dispatchTool call named an assistant turn's
+ *  caller unless it names its own (every entry names one since A5 step 3b;
+ *  these calls stand for a turn's, as they always did). */
+function turnCallDispatch<T extends typeof import('@mantle/tools')>(tools: T): T {
+  return {
+    ...tools,
+    dispatchTool: (...[tool, input, ctx, depth]: Parameters<T['dispatchTool']>) =>
+      tools.dispatchTool(tool, input, { caller: tools.turnCaller(), ...ctx }, depth),
+  };
+}

@@ -46,9 +46,12 @@ vi.mock('./ssrf-guard', () => ({ assertFetchableUrl: async () => {} }));
 import type { Tool } from '@mantle/db';
 import { clearClientCredentialsCache } from './oauth2-client-credentials';
 import { dispatchTool } from './dispatch';
+import { runCaller } from './gate-callers';
+// The one gate's narrowers and pre-run checks (every call runs through it).
+import './gate-narrowers';
 import type { ToolHandlerContext } from './types';
 
-const CTX = { ownerId: 'o1' } as ToolHandlerContext;
+const CTX = { ownerId: 'o1', caller: runCaller() } as ToolHandlerContext;
 
 let tokenServer: Server;
 let api: Server;

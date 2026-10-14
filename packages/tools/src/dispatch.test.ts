@@ -23,9 +23,12 @@ vi.mock('@mantle/api-keys', () => ({ getApiKey: async () => null }));
 
 import type { Tool } from '@mantle/db';
 import { dispatchTool } from './dispatch';
+import { runCaller } from './gate-callers';
+// The one gate's narrowers and pre-run checks (every call runs through it).
+import './gate-narrowers';
 import type { ToolHandlerContext } from './types';
 
-const CTX = { ownerId: 'o1' } as ToolHandlerContext;
+const CTX = { ownerId: 'o1', caller: runCaller() } as ToolHandlerContext;
 
 function shellTool(cmd: string): Tool {
   return { slug: 'test_shell', handler: { kind: 'shell', cmd } } as unknown as Tool;

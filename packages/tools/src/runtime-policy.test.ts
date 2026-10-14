@@ -33,6 +33,7 @@ import {
   shellToolPolicy,
 } from './runtime-policy';
 import { dispatchTool } from './dispatch';
+import { runCaller } from './gate-callers';
 
 const MCP: ToolHandler = { kind: 'mcp', group: 'crm', toolName: 'lookup' };
 const HTTP: ToolHandler = { kind: 'http', url: 'https://api.example.test/v1/{q}', method: 'GET' };
@@ -203,19 +204,6 @@ describe('a tool an app calls: the member-app rule, as memberAppToolVerdict said
   });
 });
 
-describe('no runtime tool runs without a policy', () => {
-  it('dispatch refuses a row whose handler kind no function knows', async () => {
-    const res = await dispatchTool(
-      row({ kind: 'ftp' } as unknown as ToolHandler),
-      {},
-      {
-        ownerId: '00000000-0000-4000-8000-000000000002',
-      },
-    );
-    expect(res).toEqual({ ok: false, error: NO_RUNTIME_POLICY_ERROR });
-  });
-});
-
 describe('through the gate', () => {
   const LOGIN = '00000000-0000-4000-8000-000000000009';
   const runtime = (t: Tool): PolicyRef => ({ kind: 'runtime-tool', name: t.slug, row: t });
@@ -309,5 +297,14 @@ describe('through the gate', () => {
     // A read-only key lists a marked connector tool, not an unmarked one.
     expect(gateCheck(caller({ write: false }), runtime(marked(MCP)))).toBeNull();
     expect(gateCheck(caller({ write: false }), runtime(row(MCP)))?.kind).toBe('narrowed');
+  });
+
+  it('dispatch refuses a row whose handler kind no function knows', async () => {
+    const res = await dispatchTool(
+      row({ kind: 'ftp' } as unknown as ToolHandler),
+      {},
+      { ownerId: '00000000-0000-4000-8000-000000000002', caller: runCaller() },
+    );
+    expect(res).toEqual({ ok: false, error: NO_RUNTIME_POLICY_ERROR });
   });
 });

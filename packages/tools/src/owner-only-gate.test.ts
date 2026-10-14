@@ -17,7 +17,7 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   pre: vi.fn(async () => null),
@@ -31,6 +31,8 @@ vi.mock('./resolve', () => ({ resolveTool: h.resolveTool, resolveTools: vi.fn() 
 
 import type { Tool } from '@mantle/db';
 import { dispatchTool } from './dispatch';
+import { runCaller } from './gate-callers';
+import { ensureGateReady } from './gate-narrowers';
 import { getBuiltin, listBuiltins, registerBuiltin } from './registry';
 import { PAGE_TOOLS } from './builtins-pages';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
@@ -131,8 +133,13 @@ const OWNER: Array<[string, Surface]> = [
 const row = (slug: string) =>
   ({ slug, handler: { kind: 'builtin', ref: slug }, requiresConfirm: false }) as unknown as Tool;
 
+/** Every entry names its caller since A5 step 3b: a run item's here (the
+ *  surface, not the caller, is what the owner-only check reads). */
+beforeAll(() => ensureGateReady());
+
 const ctxFor = (surface: Surface): ToolHandlerContext => ({
   ownerId: 'o1',
+  caller: runCaller(),
   ...(surface ? { surface } : {}),
 });
 

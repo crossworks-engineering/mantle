@@ -186,7 +186,7 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     );
     m = await import('@mantle/db');
     c = await import('@mantle/content');
-    t = await import('@mantle/tools');
+    t = turnCallDispatch(await import('@mantle/tools'));
     rt = await import('@mantle/runtime/agent');
     hbs = await import('@mantle/runtime/heartbeats');
     hbs.registerHeartbeatTools();
@@ -559,3 +559,14 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
     expect(JSON.stringify(tested.ok ? tested.output : null)).toContain('"test_passed":true');
   });
 });
+
+/** The tools module with each dispatchTool call named an assistant turn's
+ *  caller unless it names its own (every entry names one since A5 step 3b;
+ *  these calls stand for a turn's, as they always did). */
+function turnCallDispatch<T extends typeof import('@mantle/tools')>(tools: T): T {
+  return {
+    ...tools,
+    dispatchTool: (...[tool, input, ctx, depth]: Parameters<T['dispatchTool']>) =>
+      tools.dispatchTool(tool, input, { caller: tools.turnCaller(), ...ctx }, depth),
+  };
+}
