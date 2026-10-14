@@ -2055,3 +2055,12 @@ masked caller):
   main answered such a write from the database's edit check; the HTTP item
   gate (`itemWriteGate`) answered it first, as it does now, and the step 4
   section still said the pre-check answered 400.
+- **A call nested in a /api/v1 route call** names its own entry,
+  `api-v1-nested` (via `process`, `nestedToolCaller`,
+  `packages/tools/src/gate-callers.ts`): it answers a throw or a database
+  refusal as the call's text, which the outer handler reads, as a run's
+  nested call does; only the route's own call throws on to `app.onError`.
+  Before, a nested call kept `api-v1` and threw past the outer handler. No
+  tool the v1 routes run (`table_rows_add`, `table_row_update`) nests
+  today, so no answer changes
+  (`packages/tools/src/dispatch-api-v1-nested.test.ts`).

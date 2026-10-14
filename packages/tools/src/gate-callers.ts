@@ -65,7 +65,8 @@ import {
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 
 /** The dispatch entries. */
-export type ToolCallerEntry = 'turn' | 'run' | 'pending' | 'owner-web' | 'mcp' | 'api-v1';
+export type ToolCallerEntry =
+  'turn' | 'run' | 'pending' | 'owner-web' | 'mcp' | 'api-v1' | 'api-v1-nested';
 
 /** An entry's caller, as ToolHandlerContext carries it. */
 export type ToolCaller = Readonly<{
@@ -112,6 +113,12 @@ export function apiV1Caller(): ToolCaller {
   return API_V1;
 }
 
+/** A call nested in a /api/v1 route's call (A5 step 5): the same process
+ *  caller under its own entry, so it reads a nested refusal or throw as
+ *  the call's text for the outer handler, as a run's nested call does;
+ *  only the route's own call answers through app.onError. */
+const API_V1_NESTED: ToolCaller = Object.freeze({ entry: 'api-v1-nested', via: 'process' });
+
 /** The MCP vias (the login's own OAuth, a key, a peer, and stdio). */
 const MCP_VIAS: ReadonlySet<CallerVia> = new Set<CallerVia>(['oauth', 'key', 'peer', 'stdio']);
 
@@ -134,9 +141,12 @@ export function mcpVia(caller: { via: CallerVia }): boolean {
  * Toolsmith's tests). An MCP call's nested calls are the connection's, less
  * the call's own parts: its workspace argument, its pre-run check (the key
  * email guard, a connector's own check) and the refusal of its creates (the
- * database decides a nested create, as before).
+ * database decides a nested create, as before). A /api/v1 route's nested
+ * calls name their own entry (API_V1_NESTED): only the route's own call
+ * throws on to app.onError (A5 step 5).
  */
 export function nestedToolCaller(caller: ToolCaller): ToolCaller {
+  if (caller.entry === 'api-v1') return API_V1_NESTED;
   if (caller.entry !== 'mcp' || !caller.gate) return caller;
   const { preRun: _preRun, ...gate } = caller.gate;
   const rule = gate.createHome;
