@@ -17,6 +17,8 @@
  *     tag, or a wall of junk via a crafted error body.
  */
 
+import { stripFenceMarkers } from '@mantle/std';
+
 export type NotFoundResult = { ok: false; error: string };
 
 /**
@@ -40,10 +42,6 @@ export function notFound(kind: string, id: string, lookup: string): NotFoundResu
  *  endpoint can't flood the turn through the error path. */
 const MAX_ERROR_LEN = 2000;
 
-/** Matches fakes of the retrieved-content fence markers used by
- *  agent-runtime's `fenceRetrieved` — keep in sync with messages.ts. */
-const FENCE_MARKER_RE = /\[(?:BEGIN|END) RETRIEVED CONTENT[^\]]*\]/gi;
-
 /** Role/turn-framing tags a crafted error body could use to pose as
  *  conversation structure rather than data. Covers XML-style (`<system>`,
  *  `</assistant>`) and ChatML pipe-style (`<|im_start|>`). */
@@ -66,7 +64,8 @@ const BRACKET_MARKER_RE = /\[\s*(?:system|user|assistant|tool|developer)\s*\]/gi
 export function sanitizeToolError(msg: string): string {
   if (!msg) return msg;
   let s = msg;
-  s = s.replace(FENCE_MARKER_RE, '[marker removed]');
+  // The fence's own defang (@mantle/std, A10 part 1): one marker pattern.
+  s = stripFenceMarkers(s);
   s = s.replace(ROLE_TAG_RE, '');
   s = s.replace(BRACKET_MARKER_RE, '[external marker removed]');
   s = s.replace(/```+/g, '');

@@ -176,3 +176,12 @@ export function sleep(ms: number): Promise<void> {
 export function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
+
+export {
+  BACKGROUND_FENCE_NOTE,
+  FENCE_CLOSE,
+  FENCE_OPEN,
+  fenceRetrieved,
+  stripFenceMarkers,
+  withFenceNote,
+} from './fence';
