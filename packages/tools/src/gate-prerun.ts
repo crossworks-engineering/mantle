@@ -93,10 +93,12 @@ export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
     return errorMessage(err);
   }
   if (!refused) return null;
-  // A /api/v1 route: before it ran through dispatch the handler's write met
-  // the database's edit check, which app.onError answers (403
-  // item-workspace, or 404 for an item the scope does not read). The same
-  // refusal, thrown, gets the same status and body from the one mapper.
+  // A /api/v1 route: its HTTP item gate (itemWriteGate) refuses such a
+  // write first, with its own 403 or 404; one that got past it met the
+  // database's edit check at the handler's write before the route ran
+  // through dispatch, which app.onError answers (403 item-workspace, or 404
+  // for an item the scope does not read). The same refusal, thrown, gets
+  // the same status and body from the one mapper.
   if (ctx.entry === 'api-v1' && refused.detail) throw editCheckRefusalError(refused.detail);
   return refused.message;
 };

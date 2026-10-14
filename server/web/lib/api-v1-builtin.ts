@@ -9,8 +9,11 @@
  * judged. A refusal (the tool's, or a gate step's) is the tool's own
  * teaching message, answered as 400; but an item the edit check refuses
  * (the gate's item pre-check, or the database) goes on to app.onError as
- * the database's refusal, its 403 item-workspace or 404 as before the route
- * ran through dispatch (A5 step 4 fix round 2). An error the handler or a check
+ * the database's refusal, its 403 item-workspace or 404 (A5 step 4 fix
+ * round 2). The request's HTTP item gate (itemWriteGate, lib/auth/session.ts)
+ * answers such a write first, with its own 403 or 404, as on main; the
+ * pre-check answers one that got past it, as the handler's write met the
+ * edit check on main. An error the handler or a check
  * throws is thrown on, to app.onError, which answers it as before the route
  * ran through dispatch (A5 step 4 fix round 1, M1): an edit check refusal
  * its 403 or 404, a database or any other error the opaque 500, never its

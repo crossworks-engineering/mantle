@@ -5,9 +5,13 @@
  * opaque 500, an edit check refusal its 403 or 404. Never a 400 that reads
  * the error's text out (the SQL, its params). A handler's own refusal (it
  * returns, never throws) stays the route's 400. And a table the gate's item
- * pre-check refuses (fix round 2) answers as the database's edit check did
- * before: 403 item-workspace for one the scope reads but may not change,
- * 404 for one it does not read, the same bodies.
+ * pre-check refuses (fix round 2) answers as the database's edit check
+ * answers a write: 403 item-workspace for one the scope reads but may not
+ * change, 404 for one it does not read, the same bodies. (In the running
+ * app the HTTP item gate, itemWriteGate in lib/auth/session.ts, answers
+ * such a write first with its own 403 or 404, on main and now; the
+ * pre-check answers only one that got past it. This file stands the HTTP
+ * gate aside to pin the pre-check's answer.)
  *
  * The routes run behind the app's own error answer (server/app-error.ts);
  * the session, the key's hidden items and the two tools' handlers are
@@ -224,9 +228,10 @@ describe.each([
   });
 });
 
-/** What main (v0.300.31 and before) answered for a write to a table the
- *  key's scope reads but may not change: the handler's write met the
- *  database's edit check, 42501 no_edit, which app.onError answers. */
+/** What the database's edit check answers for a write to a table the
+ *  key's scope reads but may not change (42501 no_edit, through
+ *  app.onError): on main a write the HTTP item gate let through met it at
+ *  the handler's write; now the pre-check throws it first. */
 const ITEM_WORKSPACE = {
   error: 'forbidden',
   reason: 'item-workspace',

@@ -1971,10 +1971,15 @@ the catch in `addTool`, `preparedAllows`, the connector filter of
   through dispatch (fix round 1, M1): an edit check refusal its 403 or 404,
   a database or any other error the opaque 500, never a 400 that reads the
   error's text. A refusal (the tool's, a gate step's) stays the tool's 400
-  (`server/web/lib/api-v1-builtin.test.ts`). One answer is new and stays:
-  an item the owner's scope reads but may not change is refused by the item
-  pre-check in its words (400), where the handler's write met the edit
-  check's 403 before.
+  (`server/web/lib/api-v1-builtin.test.ts`). An item the edit check would
+  refuse is answered by the HTTP item gate first (`itemWriteGate`,
+  `server/web/lib/auth/session.ts`: its own 403 or 404), on main and now;
+  one that gets past it (a right lost between the gate and the call) is
+  refused by the item pre-check, which throws the database's refusal for
+  this entry (fix round 2), so `app.onError` answers it as the edit check
+  answers a write: 403 item-workspace, or 404 for an item the scope does
+  not read. Never the pre-check's words as a 400 (step 5, LOW-A/B: this
+  line said 400 until then).
 - **A definition's call names its ask and its owner** (fix round 1,
   LOW-1): the gate gets a create's `workspace` argument and the owner the
   pre-run checks read, as a builtin's call does; no definition creates or
@@ -2044,3 +2049,9 @@ masked caller):
   throws in the one mapper's words (`thrownToolDatabaseError`), as
   `folder_rename` and `file_rename` do since step 4 fix round 1; any other
   error keeps its text (`packages/mcp-core/src/mcp-defs-errors.test.ts`).
+- **LOW-A/B.** Comments only: the /api/v1 item refusal comments
+  (`server/web/lib/api-v1-builtin.ts`, its test,
+  `packages/tools/src/gate-prerun.ts` and the step 4 section above) said
+  main answered such a write from the database's edit check; the HTTP item
+  gate (`itemWriteGate`) answered it first, as it does now, and the step 4
+  section still said the pre-check answered 400.
