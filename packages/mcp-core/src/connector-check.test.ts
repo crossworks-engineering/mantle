@@ -141,3 +141,41 @@ describe('end to end: an unscoped read-only key or peer calls a marked connector
     });
   }
 });
+
+describe("a connector call leaves its own mcp.connector row, never the gate's too (A5 step 6d fix round 1)", () => {
+  it('a login writing through a connector tool: the connector row, and no gate row', async () => {
+    const { startCallAudit, stopCallAudit } = await import('@mantle/db');
+    const rows: unknown[] = [];
+    startCallAudit({ sink: (r) => rows.push(r) });
+    try {
+      type Handler = (args: unknown, extra: unknown) => Promise<unknown>;
+      const handlers = new Map<string, Handler>();
+      const server = {
+        registerTool: (name: string, _c: unknown, cb: Handler) => void handlers.set(name, cb),
+      };
+      // An unmarked connector tool writes; the login's own OAuth writes.
+      registerPreparedTools(
+        server as never,
+        {
+          kind: 'owner',
+          caller: { ...caller('oauth', true), areas: null },
+          view: null,
+          privateWs: null,
+          connectors: [list],
+        } as never,
+      );
+      const asSystemCalls = vi.mocked((await import('@mantle/db')).asSystem);
+      asSystemCalls.mockClear();
+      const reply = await handlers.get(list.slug)!({ q: 'acme' }, {});
+      expect((reply as { isError?: boolean }).isError ?? false).toBe(false);
+      const reasons = asSystemCalls.mock.calls.map((c) => c[1]);
+      // The connector's own row (mcp.connector.write), then the remote call.
+      expect(reasons).toContain('audit-log');
+      expect(reasons).toContain('connector-call');
+      // The gate wrote none: markCallAudited set the call's frame flag.
+      expect(rows).toEqual([]);
+    } finally {
+      stopCallAudit();
+    }
+  });
+});

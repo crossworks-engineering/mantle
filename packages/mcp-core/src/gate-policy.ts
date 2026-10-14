@@ -109,11 +109,13 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller | null 
     facts: Object.freeze({
       keyAreas: caller.areas ?? null,
       riskyAllowed: caller.riskyAllowed ?? [],
-      // What a tool write's audit row names (A5 step 6d, call-audit.ts; a
-      // key's call is audited by its route, not the gate).
+      // What a tool write's audit row names (A5 step 6d, call-audit.ts),
+      // and whether the route writes the call's row itself (`byRoute`: an
+      // API key's call, auditMcpKeyCall), so the gate writes none.
       audit: Object.freeze({
         peerId: caller.peerId ?? null,
         oauthClientId: caller.oauthClientId ?? null,
+        ...(caller.via === 'key' ? { byRoute: true } : {}),
       }),
     }),
   });

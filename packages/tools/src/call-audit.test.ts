@@ -23,6 +23,7 @@ import {
 
 const LOGIN = '0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a';
 const MADE = '0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b';
+const APPROVER = '0c0c0c0c-0c0c-4c0c-8c0c-0c0c0c0c0c0c';
 
 const row = (slug: string, handler?: unknown) =>
   ({ slug, handler: handler ?? { kind: 'builtin', ref: slug } }) as unknown as Tool;
@@ -86,6 +87,25 @@ beforeAll(() => {
       return inner.ok ? { ok: true, output: { ran: true } } : inner;
     }),
   );
+  // pending_approve over MCP: the approved call runs inside it.
+  registerBuiltin(
+    probe('audit_probe_approve', 'write', async (_input, ctx) => {
+      const inner = await dispatchTool(
+        row('audit_probe_write'),
+        {},
+        {
+          ...ctx,
+          caller: pendingCaller({ approver: APPROVER }),
+        },
+      );
+      return inner.ok ? { ok: true, output: { approved: true } } : inner;
+    }),
+  );
+  // A routine write of internal state (heartbeat_update_state's policy).
+  registerBuiltin({
+    ...probe('audit_probe_state', 'write', async () => ({ ok: true, output: {} })),
+    policy: { effect: 'write', spends: 'none', scope: 'any', auditRow: false },
+  });
   startCallAudit({ sink: (r) => rows.push(r) });
 });
 
@@ -109,6 +129,8 @@ const mcpGate = (via: 'oauth' | 'key' | 'stdio' | 'peer'): GateCaller =>
       audit: Object.freeze({
         peerId: via === 'peer' ? 'p1' : null,
         oauthClientId: via === 'oauth' ? 'c1' : null,
+        // A key's route writes its call's row (mcpGateCaller says so).
+        ...(via === 'key' ? { byRoute: true } : {}),
       }),
     }),
   });
@@ -137,7 +159,12 @@ const ENTRIES: Array<{
     writeRows: 1,
   },
   { name: 'run item', caller: () => runCaller(), writeRows: 1 },
-  { name: 'pending approval', caller: () => pendingCaller(), surface: WEB, writeRows: 1 },
+  {
+    name: 'pending approval',
+    caller: () => pendingCaller({ approver: APPROVER }),
+    surface: WEB,
+    writeRows: 1,
+  },
   {
     name: 'app broker (member app)',
     caller: (slug) => appBrokerCaller(TEAM!, allowed(slug)),
@@ -271,5 +298,42 @@ describe('one audit row for every tool write, on every surface (A5 step 6d)', ()
     } finally {
       startCallAudit({ sink: (r) => rows.push(r) });
     }
+  });
+
+  it('an approved call names its approver on every path: its own row, or the outer row of pending_approve (fix round 1)', async () => {
+    const web = await call(
+      ENTRIES.find((e) => e.name === 'pending approval')!,
+      row('audit_probe_write'),
+    );
+    expect(web.rows.map((r) => r.detail)).toEqual([
+      expect.objectContaining({ tool: 'audit_probe_write', entry: 'pending', approver: APPROVER }),
+    ]);
+    const mcp = await call(
+      ENTRIES.find((e) => e.name === 'MCP OAuth login')!,
+      row('audit_probe_approve'),
+    );
+    expect(mcp.rows.map((r) => r.detail)).toEqual([
+      expect.objectContaining({
+        tool: 'audit_probe_approve',
+        nested: ['audit_probe_write'],
+        approver: APPROVER,
+      }),
+    ]);
+    // Any other call names none.
+    const turn = await call(ENTRIES[0]!, row('audit_probe_write'));
+    expect(turn.rows[0]!.detail).not.toHaveProperty('approver');
+  });
+
+  it('a write whose policy says it is routine internal state (`auditRow: false`) leaves none (fix round 1)', async () => {
+    for (const entry of ENTRIES) {
+      const res = await call(entry, row('audit_probe_state'));
+      expect(res.ok, entry.name).toBe(true);
+      expect(res.rows, entry.name).toEqual([]);
+    }
+  });
+
+  it("a key's call leaves none from the gate, its nested writes and all: its route wrote the row", async () => {
+    const key = ENTRIES.find((e) => e.name === 'MCP key')!;
+    expect((await call(key, row('audit_probe_outer'))).rows).toEqual([]);
   });
 });

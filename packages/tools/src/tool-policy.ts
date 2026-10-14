@@ -158,6 +158,12 @@ export type ToolPolicy = Readonly<{
    *  contract's list for the client, names the same tools (a test pins
    *  it). */
   privateCorpus?: true;
+  /** Its write is routine internal state, not a change anyone reads or
+   *  shares (heartbeat_update_state: a heartbeat's own scratch state, once
+   *  per fire): the gate's tool call audit writes no row for it (A5 step 6d
+   *  fix round 1, call-audit.ts), so `audit_log`, which nothing prunes, does
+   *  not grow per fire. Never on a write of content, sharing or access. */
+  auditRow?: false;
 }>;
 
 /** The gate's policy of a builtin (plan 23.2): its effect, Admin step,

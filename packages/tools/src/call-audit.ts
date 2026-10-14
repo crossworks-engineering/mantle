@@ -7,9 +7,12 @@
  * surface (`mcp-tool`). An app broker's `app-tool` ref is the judgement
  * around the call's own ref, so it is not audited itself.
  *
- * An API key's MCP call keeps the row its route writes (the gate writes
- * none for it), and an MCP connector call its `mcp.connector.*` row
- * (markCallAudited), so no call has two.
+ * An API key's MCP call keeps the row its route writes (its caller says so:
+ * `facts.audit.byRoute`), and an MCP connector call its `mcp.connector.*`
+ * row (markCallAudited): both set the one frame flag the gate reads, so no
+ * call has two. A /api/v1 route's call writes the route's own row (the
+ * request) and the gate's (the tool write), as the dev console and an app
+ * broker do.
  *
  * The row: the login (its email; else the actor's kind and the entry), the
  * method (`MCP` on an MCP connection, else `TOOL`) and `/api/mcp` for an
@@ -85,10 +88,6 @@ function entryOf(via: string): string {
 
 function describe(call: AuditedCall): AuditRowParts | null {
   const via = call.caller.via;
-  // An API key's MCP call: its route writes the call's row before the call
-  // runs (server/web lib/mcp-auth.ts auditMcpKeyCall, unchanged since M2
-  // audit F6), so the gate writes none: one row per call.
-  if (via === 'key') return null;
   const entry = entryOf(via);
   const builtin = builtinOf(call.ref);
   const name = toolName(call.ref);
@@ -114,6 +113,8 @@ function describe(call: AuditedCall): AuditRowParts | null {
     ...(succeeded(call.value) ? {} : { ok: false }),
     ...(ids.peerId ? { peerId: ids.peerId } : {}),
     ...(ids.oauthClientId ? { oauthClientId: ids.oauthClientId } : {}),
+    // An approved call's approver (notes), here or in the outer call's row.
+    ...call.notes,
   };
   const actor = call.caller.actor;
   return {
@@ -124,17 +125,36 @@ function describe(call: AuditedCall): AuditRowParts | null {
   };
 }
 
+/** What a call notes for its row: an approved pending call names its
+ *  approver (A5 step 6d fix round 1), on every path that approves (the
+ *  web, MCP `pending_approve`, a Telegram tap). The row's actor is whose
+ *  rights the call ran with: its asker's, or for an elevated call its
+ *  approver's. */
+function notes(): Record<string, unknown> | null {
+  const caller = currentToolCaller();
+  if (caller?.entry !== 'pending' || !caller.approval) return null;
+  return { approver: caller.approval.approver };
+}
+
+/** Whether a call's own run is a write the row records: not a recipe row
+ *  (it writes only through its steps), and not a builtin whose policy says
+ *  its write is routine internal state (`auditRow: false`, A5 step 6d fix
+ *  round 1: heartbeat_update_state, once per heartbeat fire). */
+function writesItself(ref: AuditedCall['ref']): boolean {
+  if (ref.kind === 'runtime-tool') {
+    return (ref.row as { handler?: { kind?: unknown } } | undefined)?.handler?.kind !== 'recipe';
+  }
+  const builtin = builtinOf(ref);
+  return !builtin || namedToolPolicy(builtin)?.policy.auditRow !== false;
+}
+
 /** The spec (one object, so registering it again is a no-op). */
 export const TOOL_CALL_AUDIT: CallAuditSpec = Object.freeze({
   kinds: Object.freeze(['tool', 'runtime-tool', 'mcp-tool']),
   succeeded,
-  // A recipe row writes only through its steps (each nested in its row).
-  writesItself: (ref: AuditedCall['ref']) =>
-    !(
-      ref.kind === 'runtime-tool' &&
-      (ref.row as { handler?: { kind?: unknown } } | undefined)?.handler?.kind === 'recipe'
-    ),
+  writesItself,
   label: (call: Pick<AuditedCall, 'ref' | 'input'>) => toolName(call.ref),
+  notes,
   describe,
 });
 

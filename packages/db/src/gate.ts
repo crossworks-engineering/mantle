@@ -806,13 +806,17 @@ async function callSteps<T>(
           // A tool call (A5 step 6d): its write leaves one audit row
           // (call-audit.ts), from here, after it ran.
           if (!fn || !auditsKind(ref.kind)) return steps();
-          return inCallAuditFrame(steps, (res) => ({
-            caller: bound,
-            ref,
-            policy,
-            input,
-            value: res?.value ?? null,
-          }));
+          // A surface that writes the call's row itself says so on its
+          // caller (`facts.audit.byRoute`: an API key's MCP route), as a
+          // connector call marks it from inside (markCallAudited): one
+          // frame flag, the gate writes none for either.
+          const byRoute =
+            (bound.facts?.audit as { byRoute?: unknown } | undefined)?.byRoute === true;
+          return inCallAuditFrame(
+            steps,
+            (res) => ({ caller: bound, ref, policy, input, value: res?.value ?? null }),
+            { audited: byRoute },
+          );
         }),
       );
     });
