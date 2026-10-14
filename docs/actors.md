@@ -2245,3 +2245,26 @@ scope, then holds.
   asserts a listed builtin reaches its handler and a hidden tool is refused
   by the gate in its words. `turn-listing.test.ts` names the member's
   hidden classes exactly too.
+
+**Carried to A5 step 6** (from the step 5 audit; no change here):
+
+- **L1.** The owner-only surface check (`dispatchGated`'s `ownerOnly`
+  test in `packages/tools/src/dispatch.ts`) and the connector checks in
+  `dispatchMcp` sit outside the gate, so listing and calling can disagree:
+  an ownerOnly tool of scope `any` (`tree_folders`) is listed for a
+  non-owner surface and refused at dispatch. Move both into gate
+  narrowers.
+- **L4.** `telegram_pending`'s untrusted mark is never read on MCP (the
+  surface fences no result), and a run's items are stored without an
+  untrusted flag.
+- **L5.** The heartbeat egress gate covers builtins by slug only
+  (`HEARTBEAT_EGRESS_SLUGS`), never a runtime row; a run ignores egress.
+  Release note: each new egress mark (step 5's five, fix round 1's
+  `web_map`) parks that tool on an unattended heartbeat fire on a box with
+  `heartbeatEgressGate` on.
+- **M2, at approval.** The gate now refuses a call before it is queued,
+  in the queuing loop's scope; the approval itself still runs in the
+  approver's scope (`approvePendingCall`, `pendingCaller`). Re-checking
+  the originating scope there needs the row to carry it whole (its
+  workspace and login are stamped, 0250, but not the scope's moderator
+  set or its Admin view); no migration was added in this round.
