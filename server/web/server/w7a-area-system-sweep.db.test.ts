@@ -157,14 +157,18 @@ describe.skipIf(!URL)('the systemWhole tools touch no item on the system pool', 
         const url = String(req ? req.url : input);
         // The sandbox daemon: 200 with a body every route reads.
         if (url.startsWith('http://sandboxd.invalid/')) return Response.json(SANDBOXD_BODY);
-        // The linked brain: its MCP endpoint, and its federation routes.
-        if (url.startsWith('http://peer.invalid/api/mcp')) {
+        // The linked brain: its MCP endpoint, and its federation routes. An
+        // address literal from the documentation range (TEST-NET-1): the
+        // egress fetch resolves a name before it connects and refuses one
+        // that does not resolve (A10 part 1 fix round 1), and a literal asks
+        // no DNS.
+        if (url.startsWith('http://192.0.2.10/api/mcp')) {
           if ((req?.method ?? 'POST') !== 'POST') return new Response(null, { status: 405 });
           const raw = req ? await req.clone().text() : String(init?.body ?? '');
           const msg = JSON.parse(raw || '{}') as Parameters<typeof mcpReply>[0];
           return mcpReply(msg);
         }
-        if (url.startsWith('http://peer.invalid/')) {
+        if (url.startsWith('http://192.0.2.10/')) {
           return Response.json({ nodes: [], count: 0, chunks: [], node: { id: 'n1' } });
         }
         return new Response('{"error":"offline in the sweep"}', { status: 503 });
@@ -225,7 +229,7 @@ describe.skipIf(!URL)('the systemWhole tools touch no item on the system pool', 
       () =>
         c.createPeer(owner, {
           displayName: `${tag} peer`,
-          baseUrl: 'http://peer.invalid',
+          baseUrl: 'http://192.0.2.10',
           outboundToken: 'w7a-peer-token',
         }),
       'test',
