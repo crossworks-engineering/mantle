@@ -3213,3 +3213,10 @@ with no verdict, or an allowed one for another tool, is refused
 already had; their answers are unchanged
 (`server/web/lib/__snapshots__/app-broker-parity.json`).
 `packages/tools/src/dispatch-app-run.test.ts`.
+
+**LOW-3, one rule for the owner's surface.** The tool loop kept its own
+copy of `isOwnerSurface`; it now passes its surface to `turnListedTools`,
+which reads it with `surface.ts` `isOwnerSurface`, as `turnCallRefusal`
+reads the call's (the loop's masking reads the same function, from the new
+`@mantle/tools/surface` subpath). `packages/tools/src/turn-listing.test.ts`
+asks the listing and the refusal on the same surface.

@@ -81,6 +81,7 @@ import { itemNoRightError, loginActor, runAsActor, type Tool } from '@mantle/db'
 import { BUILTIN_TOOLS, ensureGateReady, turnCallRefusal, turnListedTools } from './index';
 import { NO_RUNTIME_POLICY_ERROR } from './runtime-policy';
 import { OWNER_ONLY_ERROR } from './surface';
+import type { TurnListingFacts } from './turn-listing';
 
 const OWNER = '99999999-9999-4999-8999-999999999999';
 const LOGIN = '55555555-5555-4555-8555-555555555555';
@@ -121,15 +122,13 @@ const ROWS = [...BUILTIN_TOOLS.map((d) => builtinRow(d.slug)), ...RUNTIME, NO_PO
 async function listedIn(
   scope: Record<string, unknown>,
   view: { holdsAdmin: boolean; areas: Set<string> },
-  ownerSurface = true,
+  surface: TurnListingFacts['surface'] = { kind: 'web' },
 ): Promise<string[]> {
   h.scope = scope;
   h.view = view;
   try {
     return (
-      await runAsActor(loginActor(LOGIN), () =>
-        turnListedTools(ROWS, { ownerId: OWNER, ownerSurface }),
-      )
+      await runAsActor(loginActor(LOGIN), () => turnListedTools(ROWS, { ownerId: OWNER, surface }))
     ).map((t) => t.slug);
   } finally {
     h.scope = null;
@@ -186,8 +185,10 @@ describe('the turn listing is the gate listing (A5 step 5, pick B)', () => {
   it('off the owner surface an owner-only tool is not listed (A5 step 6a, carried L1)', async () => {
     const owner = { kind: 'assistant', loginId: LOGIN, ws: [ADMIN_WS], modWs: [ADMIN_WS] };
     const view = { holdsAdmin: true, areas: new Set(AREAS) };
-    const onOwner = new Set(await listedIn(owner, view, true));
-    const offOwner = new Set(await listedIn(owner, view, false));
+    const onOwner = new Set(await listedIn(owner, view, { kind: 'web' }));
+    const offOwner = new Set(
+      await listedIn(owner, view, { kind: 'team', privateReads: false } as never),
+    );
     const hidden = [...onOwner].filter((s) => !offOwner.has(s)).sort();
     // Exactly the owner-only builtins, tree_folders among them (scope any:
     // listed before and refused at dispatch).
@@ -284,7 +285,9 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
         [{ kind: 'web' } as never, true],
         [team, false],
       ] as const) {
-        const listed = new Set(await listedIn(scope, view(), ownerSurface));
+        // The same surface the call is asked on (one rule, fix round 1,
+        // LOW-3).
+        const listed = new Set(await listedIn(scope, view(), surface));
         for (const row of ROWS) {
           const refused = await refusalIn(scope, view(), row, surface);
           expect(refused === null, `${row.slug} ${String(ownerSurface)}`).toBe(

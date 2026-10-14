@@ -51,6 +51,9 @@ import {
   type TurnTaint,
 } from '@mantle/tools/client-sourced';
 import { toolCreatesNodes } from '@mantle/tools/client-sourced-rules';
+// The gate's one rule for the owner's surfaces, from its own subpath so the
+// loop's tests that fake @mantle/tools still read it (fix round 1, LOW-3).
+import { isOwnerSurface } from '@mantle/tools/surface';
 import { type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact, ToolModelImage } from '@mantle/tools';
 import {
@@ -532,10 +535,11 @@ export async function resolveAgentTools(ownerId: string, slugs: string[]): Promi
 export async function loopToolRows(
   ownerId: string,
   tools: readonly Tool[],
-  /** Whether the loop's surface is the owner's (the loop knows it; a caller
-   *  describing a turn it does not run leaves it out): an owner-only tool is
-   *  not listed off it (A5 step 6a, carried L1). */
-  opts: { ownerSurface?: boolean } = {},
+  /** The loop's surface (the loop knows it; a caller describing a turn it
+   *  does not run leaves it out): an owner-only tool is not listed off the
+   *  owner's (A5 step 6a, carried L1), by the gate's one rule
+   *  (isOwnerSurface, fix round 1, LOW-3). */
+  opts: { surface?: ToolLoopArgs['surface'] } = {},
 ): Promise<Tool[]> {
   const listed = await turnListedTools(tools, { ownerId, ...opts });
   if (listed.length === 0 || listed.some((t) => t.slug === 'read_result')) return listed;
@@ -616,13 +620,6 @@ export function withCatalogBlock(initial: readonly ChatMessage[], block: string)
   return out;
 }
 
-/** The owner's own surfaces (isOwnerSurface in @mantle/tools, kept here so
- *  the loop's tests that fake that module still see it). */
-function ownerSurface(surface: ToolLoopArgs['surface']): boolean {
-  const kind = surface?.kind;
-  return kind === 'web' || kind === 'telegram' || kind === 'owner';
-}
-
 /**
  * The tool loop, in the agent's scope (withAgentScope): its workspace, or
  * its caller's scope for a helper.
@@ -651,9 +648,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // always `read_result` when the agent has any tools, so a spilled
   // (oversized) result is never a dead end — even if the operator didn't add
   // it to the agent's allowlist. It's a read-only system capability.
-  const loopTools = await loopToolRows(args.ownerId, args.tools, {
-    ownerSurface: ownerSurface(args.surface),
-  });
+  const loopTools = await loopToolRows(args.ownerId, args.tools, { surface: args.surface });
   if (args.recordToolCount) setTraceData({ tool_count: loopTools.length });
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
   const allToolDefs = await buildToolsForModel(loopTools, {
@@ -1018,7 +1013,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // read failed, the log keeps the detail.
       // The one masking (@mantle/tools tool-error-mask.ts, A5 step 3a).
       let outcome =
-        isUnscoped() && ownerSurface(args.surface)
+        isUnscoped() && isOwnerSurface(args.surface)
           ? await execute()
           : await maskToolDatabaseErrors(`tool ${slug}`, execute);
       // Deferred loading: a model may call a catalog tool by name without

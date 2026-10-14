@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./client-sourced": "./src/client-sourced.ts",
     "./client-sourced-rules": "./src/client-sourced-rules.ts",
+    "./surface": "./src/surface.ts",
     "./gate-narrowers": "./src/gate-narrowers.ts"
   },
   "scripts": {

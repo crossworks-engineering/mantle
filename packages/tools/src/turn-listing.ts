@@ -60,9 +60,14 @@ function callerKey(tool: Tool, policy: GatePolicy): string {
 }
 
 /** What a loop's listing knows of its turn (A5 step 6a, carried L1): its
- *  owner, and whether its surface is the owner's (absent: not known, and an
- *  owner-only tool is not narrowed by it here). */
-export type TurnListingFacts = Readonly<{ ownerId?: string; ownerSurface?: boolean }>;
+ *  owner, and its surface, read by isOwnerSurface as turnCallRefusal reads
+ *  the call's (fix round 1, LOW-3: one rule). No `surface` key: not known,
+ *  and an owner-only tool is not narrowed by it here; a `surface` key that
+ *  holds undefined is a missing surface, never the owner's. */
+export type TurnListingFacts = Readonly<{
+  ownerId?: string;
+  surface?: ToolHandlerContext['surface'];
+}>;
 
 /** The tools of `tools` a tool loop in the current scope may call,
  *  in their order. */
@@ -72,13 +77,17 @@ export async function turnListedTools<T extends Tool>(
 ): Promise<T[]> {
   const callers = new Map<string, GateCaller>();
   const out: T[] = [];
+  const known = {
+    ...(facts.ownerId !== undefined ? { ownerId: facts.ownerId } : {}),
+    ...('surface' in facts ? { ownerSurface: isOwnerSurface(facts.surface) } : {}),
+  };
   for (const tool of tools) {
     const asked = gateRefOf(tool);
     if (!asked) continue;
     const key = callerKey(tool, asked.policy);
     let caller = callers.get(key);
     if (!caller) {
-      caller = await gateCallerFor(turnCaller(), asked.policy, false, { ...facts, row: tool });
+      caller = await gateCallerFor(turnCaller(), asked.policy, false, { ...known, row: tool });
       callers.set(key, caller);
     }
     if (gateLists(caller, asked.ref)) out.push(tool);
