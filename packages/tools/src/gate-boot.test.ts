@@ -43,7 +43,7 @@ const read = (file: string) => readFileSync(join(repoRoot, file), 'utf8');
 describe('@mantle/tools alone makes the gate ready', () => {
   it('registers every narrower but the gate own read-only one', () => {
     expect(Object.keys(GATE_NARROWERS).sort()).toEqual(
-      ['key', 'member-app', 'peer', 'spending', 'turn-caps'].sort(),
+      ['owner-only', 'key', 'member-app', 'peer', 'spending', 'turn-caps', 'connector'].sort(),
     );
     expect(() => assertGateReady()).not.toThrow();
     // Again at boot: the same functions are a no-op, never a throw.

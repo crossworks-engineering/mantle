@@ -523,12 +523,21 @@ export async function resolveAgentTools(ownerId: string, slugs: string[]): Promi
  * and a run's worker turn all run through runToolLoopInScope, in the agent's
  * scope, and so list exactly what dispatch (turnCaller) would call. The
  * filter keeps the allowlist's order, so the sent array (and the cached
- * prefix) changes once per agent and scope, then holds. Shared with
+ * prefix) changes once per agent and scope, then holds. Since A5 step 6a an
+ * owner-only tool off the owner's surface and a connector the scope may not
+ * call are not listed either (the gate's narrowers). Shared with
  * `describeResponderTurnInput`, so the tool list it reports is the list the
  * model is sent. Call it in the agent's scope.
  */
-export async function loopToolRows(ownerId: string, tools: readonly Tool[]): Promise<Tool[]> {
-  const listed = await turnListedTools(tools);
+export async function loopToolRows(
+  ownerId: string,
+  tools: readonly Tool[],
+  /** Whether the loop's surface is the owner's (the loop knows it; a caller
+   *  describing a turn it does not run leaves it out): an owner-only tool is
+   *  not listed off it (A5 step 6a, carried L1). */
+  opts: { ownerSurface?: boolean } = {},
+): Promise<Tool[]> {
+  const listed = await turnListedTools(tools, { ownerId, ...opts });
   if (listed.length === 0 || listed.some((t) => t.slug === 'read_result')) return listed;
   const rr = await resolveReadResultTool(ownerId);
   return rr ? [...listed, rr] : listed;
@@ -642,7 +651,9 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // always `read_result` when the agent has any tools, so a spilled
   // (oversized) result is never a dead end — even if the operator didn't add
   // it to the agent's allowlist. It's a read-only system capability.
-  const loopTools = await loopToolRows(args.ownerId, args.tools);
+  const loopTools = await loopToolRows(args.ownerId, args.tools, {
+    ownerSurface: ownerSurface(args.surface),
+  });
   if (args.recordToolCount) setTraceData({ tool_count: loopTools.length });
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
   const allToolDefs = await buildToolsForModel(loopTools, {

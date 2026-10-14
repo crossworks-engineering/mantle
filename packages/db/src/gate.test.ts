@@ -232,7 +232,15 @@ describe('step 4: narrow by surface', () => {
   it('the narrowers run in their fixed order, whatever order they registered in', async () => {
     const order: string[] = [];
     const over: Partial<Record<NarrowerName, Narrower>> = {};
-    for (const name of ['turn-caps', 'spending', 'member-app', 'peer', 'key'] as const) {
+    for (const name of [
+      'connector',
+      'turn-caps',
+      'spending',
+      'member-app',
+      'peer',
+      'key',
+      'owner-only',
+    ] as const) {
       over[name] = () => {
         order.push(name);
         return null;
@@ -495,7 +503,9 @@ describe('fail closed: every narrower registered (fix round 1, M1)', () => {
   it('a missing narrower stops listing and calling, before any step', async () => {
     resetGateRegistry();
     registerPolicySource('test', TEST_SOURCE);
-    for (const n of ['key', 'peer', 'spending', 'turn-caps'] as const) registerNarrower(n, NOOP);
+    for (const n of ['owner-only', 'key', 'peer', 'spending', 'turn-caps', 'connector'] as const) {
+      registerNarrower(n, NOOP);
+    }
     for (const c of PRE_RUN_CHECKS) registerPreRunCheck(c, NOOP_CHECK);
     expect(() => gateCheck(login(), ref('read'))).toThrow(GateNotReadyError);
     expect(() => gateCheck(login(), ref('read'))).toThrow(/member-app/);

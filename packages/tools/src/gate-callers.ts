@@ -64,9 +64,11 @@ import {
   type GateCaller,
   type GatePolicy,
   type ScopeArea,
+  type Tool,
   type WorkspaceScope,
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { connectorScopeFacts } from './connector-scope';
 
 /** The dispatch entries. */
 export type ToolCallerEntry =
@@ -245,15 +247,30 @@ async function readAdminView(
 
 let warnedNoActor = false;
 
+/** What a call (or a listing) tells the gate caller beyond its entry, for
+ *  the narrowers (A5 step 6a, carried L1): whether its surface is the
+ *  owner's (the owner-only narrower: absent, the listing does not know it
+ *  and the narrower says nothing), and, for a connector row, its owner and
+ *  the row (the connector narrower's resource rows). */
+export type GateCallFacts = Readonly<{
+  ownerSurface?: boolean;
+  ownerId?: string;
+  row?: Tool;
+}>;
+
 /**
  * The gate caller of one call of `caller`'s entry, for a tool with
  * `policy` (null: none, refused at step 3). `builtin`: the call may name a
- * create home (a runtime row names none).
+ * create home (a runtime row names none). `call`: what the narrowers read
+ * of the call (GateCallFacts); an MCP connection names its whole caller,
+ * whose own rules judge an owner-only tool (its surface is the owner's) and
+ * a connector (its pre-run check).
  */
 export async function gateCallerFor(
   caller: ToolCaller,
   policy: GatePolicy | null,
   builtin: boolean,
+  call: GateCallFacts = {},
 ): Promise<GateCaller> {
   // An MCP call: the connection named its whole caller (its actor, its
   // scope and how it enters it, its Admin view, its create home rule).
@@ -277,11 +294,23 @@ export async function gateCallerFor(
     admin = await readAdminView(ws, gate, area);
   }
   const turnScope = ws?.kind === 'assistant' && ws.loginId ? ws : null;
+  // A connector row in a workspace scope: what the connector narrower
+  // reads (connector-scope.ts), loaded here, where a call and a listing
+  // both build their caller.
+  const connector =
+    ws && call.row && call.ownerId && policy?.fields?.mark !== undefined
+      ? await connectorScopeFacts(call.ownerId, call.row, ws)
+      : null;
+  const facts = {
+    ...(call.ownerSurface !== undefined ? { ownerSurface: call.ownerSurface } : {}),
+    ...(connector ? { connector } : {}),
+  };
   return {
     actor,
     via: caller.via,
     loginId: ws?.loginId ?? gate?.loginId ?? null,
     ...(admin !== undefined ? { admin } : {}),
     createHome: builtin && turnScope ? turnHomeRule(turnScope) : null,
+    ...(Object.keys(facts).length > 0 ? { facts } : {}),
   };
 }

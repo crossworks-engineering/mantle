@@ -11,9 +11,12 @@
  *      tool row's, a job's system reason); no entry: refused. Then bind the
  *      actor it implies (a public write route's or a job's named system
  *      actor; read only for a read) and the caller's scope.
- *   4. Narrow by surface: the read-only switch of the credential, a key's
- *      areas, a peer's risky tools, the member-app rules, spending on the
- *      owner's keys, the member turn caps.
+ *   4. Narrow by surface: an owner-only tool off the owner's surface, the
+ *      read-only switch of the credential, a key's areas, a peer's risky
+ *      tools, the member-app rules, spending on the owner's keys, the
+ *      member turn caps, a connector the scope does not hold (A5 step 6a:
+ *      the owner-only and connector checks dispatch made before and after
+ *      the gate are narrowers, so a listing reads them too).
  *   5. The Admin step, when the policy names one: the Admin workspace, an
  *      Admin area, or a kind of the Admin workspace only.
  *   6. The create-home intent, when the call may make an item
@@ -198,12 +201,14 @@ export type Narrower = (caller: GateCaller, policy: GatePolicy, ref: PolicyRef) 
 
 /** The narrowers, in their fixed order (step 4). */
 export const NARROWERS = [
+  'owner-only',
   'read-only',
   'key',
   'peer',
   'member-app',
   'spending',
   'turn-caps',
+  'connector',
 ] as const;
 export type NarrowerName = (typeof NARROWERS)[number];
 

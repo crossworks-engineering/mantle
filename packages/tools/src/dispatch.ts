@@ -21,15 +21,15 @@ import {
   type ViewerLevel,
 } from '@mantle/db';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
+import { connectorToolPolicy, LINK_NO_CONNECTORS, loginConnectorRefused } from './external-access';
 import {
-  connectorResources,
-  connectorToolPolicy,
-  LINK_NO_CONNECTORS,
-  loginConnectorRefused,
-} from './external-access';
+  CONNECTOR_STALE_MARK_ERROR,
+  connectorScopeFacts,
+  connectorScopeRefusal,
+} from './connector-scope';
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
 import { getApiKey } from '@mantle/api-keys';
-import { builtinRowSlugError, getBuiltin, getBuiltinHandler } from './registry';
+import { builtinRowSlugError, getBuiltinHandler } from './registry';
 import {
   applyInputDefaults,
   buildHttpRequest,
@@ -54,7 +54,7 @@ import { isMcpManagedSecretService } from './mcp-oauth';
 import { builtinPolicy, policyUntrusted } from './tool-policy';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 import { registerToolDispatcher } from './dispatch-bridge';
-import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
+import { isOwnerSurface } from './surface';
 import { runGated } from './admin-gate';
 import { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool-gate-policy';
 import {
@@ -159,6 +159,13 @@ function keyOrPeer(caller: ToolCaller): boolean {
   return caller.via === 'key' || caller.via === 'peer';
 }
 
+/** What a call tells the gate caller beyond its entry (A5 step 6a): whether
+ *  its surface is the owner's (the owner-only narrower) and its owner (the
+ *  connector narrower's resource rows). */
+function callFacts(ctx: ToolHandlerContext): { ownerSurface: boolean; ownerId: string } {
+  return { ownerSurface: isOwnerSurface(ctx.surface), ownerId: ctx.ownerId };
+}
+
 /**
  * One call through the gate (A5 step 3a; see dispatchTool). What it answers
  * is what dispatch answered before, word for word (dispatch-parity.test.ts):
@@ -202,10 +209,9 @@ async function dispatchGated(
     const clash = builtinRowSlugError(tool.slug, h.ref);
     if (clash) return { ok: false, error: clash };
     // Owner-only tools refuse anyone but the owner before any other work
-    // (client logins C4): a team or MISSING surface is not the owner.
-    if (getBuiltin(h.ref)?.ownerOnly && !isOwnerSurface(ctx.surface)) {
-      return { ok: false, error: OWNER_ONLY_ERROR };
-    }
+    // (client logins C4): a team or MISSING surface is not the owner. The
+    // gate's first narrower since A5 step 6a (owner-only), from the call's
+    // surface (`ownerSurface`), so a listing reads the same rule.
     const toolRef = builtinToolRef(h.ref, tool.slug);
     const policy = builtinToolGatePolicy(toolRef);
     // An MCP call is called as the surface lists it (listing equals
@@ -214,7 +220,7 @@ async function dispatchGated(
     let thrown: { err: unknown } | null = null;
     try {
       const res = await enterCall(
-        await gateCallerFor(caller, policy, true),
+        await gateCallerFor(caller, policy, true, callFacts(ctx)),
         ref,
         async (): Promise<ToolHandlerResult | null> => {
           try {
@@ -263,7 +269,7 @@ async function dispatchGated(
   const ref = Object.freeze({ kind: 'runtime-tool', name: tool.slug, row: tool });
   let thrown: { err: unknown } | null = null;
   const res = await enterCall(
-    await gateCallerFor(caller, runtimeToolPolicy(tool), false),
+    await gateCallerFor(caller, runtimeToolPolicy(tool), false, { ...callFacts(ctx), row: tool }),
     ref,
     async (): Promise<ToolHandlerResult | null> => {
       try {
@@ -368,9 +374,7 @@ export function connectorMarkRefusal(
   tool: Tool,
   input: Record<string, unknown>,
 ): string | null {
-  if (mark === 'stale') {
-    return 'This connector tool changed after an admin marked it read-only; it runs again once an admin marks it again.';
-  }
+  if (mark === 'stale') return CONNECTOR_STALE_MARK_ERROR;
   if (mark !== 'read') return null;
   const extra = undeclaredToolArgs(tool.inputSchema, input);
   if (extra.length === 0) return null;
@@ -380,29 +384,27 @@ export function connectorMarkRefusal(
 /** Why a connector call is refused in a workspace turn scope (W4b, plan
  *  section 6), or null: the connector must be a resource of the scope's
  *  workspace; a tool not marked read-only needs that resource's Write on AND
- *  the asking login a Moderator there; a stale mark is refused. */
+ *  the asking login a Moderator there; a stale mark is refused
+ *  (connector-scope.ts). Since A5 step 6a the gate's connector narrower
+ *  judges that, before the call runs, for every entry but an owner MCP
+ *  connection, so here only a call's arguments are left: a tool marked
+ *  read-only takes only the inputs it was marked with. An MCP connection
+ *  keeps the whole rule here, after its own pre-run check
+ *  (loginConnectorRefused), as that surface always answered. */
 async function connectorScopeRefused(
   ctx: ToolHandlerContext,
-  groupSlug: string,
   tool: Tool,
   input: Record<string, unknown>,
 ): Promise<string | null> {
   const scope = currentWorkspaceScope();
   if (!scope) return null;
-  // A link scope holds no workspace (W5b2): no connector reaches it.
-  if (scope.kind === 'link') return LINK_NO_CONNECTORS;
-  const held = await connectorResources(ctx.ownerId, groupSlug, scope.ws);
-  if (held.length === 0) {
-    return "This connector is not one of this workspace's resources, so its tools do not run here.";
-  }
   const { fields } = connectorToolPolicy(tool);
-  const marked = connectorMarkRefusal(fields.mark, tool, input);
-  if (marked !== null || fields.mark === 'read') return marked;
-  const mod = new Set(scope.modWs);
-  if (!held.some((r) => r.write && mod.has(r.workspaceId))) {
-    return 'This connector tool can change data: it needs the connector’s Write switched on in this workspace, and the person asking to be a Moderator here.';
+  if (ctx.caller?.entry === 'mcp') {
+    const facts = await connectorScopeFacts(ctx.ownerId, tool, scope);
+    const refused = facts ? connectorScopeRefusal(facts, fields.mark) : null;
+    if (refused !== null) return refused;
   }
-  return null;
+  return fields.mark === 'read' ? connectorMarkRefusal(fields.mark, tool, input) : null;
 }
 
 /**
@@ -484,7 +486,7 @@ async function dispatchMcp(
   // 2026-10-08), so an unmarked tool is refused there.
   const refused =
     (await connectorCallRefused(ctx, group.slug, tool, input)) ??
-    (await connectorScopeRefused(ctx, group.slug, tool, input)) ??
+    (await connectorScopeRefused(ctx, tool, input)) ??
     // The connector's key goes to its URL only while the login that paired
     // them holds the keys area (W7a fix round 4, secret-ref-gate.ts).
     (await vaultPairRunRefusal(group.configuredBy, ctx.ownerId, !!mcpPairing(mcp).key));

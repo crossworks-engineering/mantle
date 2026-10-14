@@ -224,6 +224,8 @@ describe('through the gate', () => {
     registerNarrower('member-app', () => null);
     registerNarrower('spending', () => null);
     registerNarrower('turn-caps', () => null);
+    registerNarrower('owner-only', () => null);
+    registerNarrower('connector', () => null);
     // The pre-run checks (A5 step 3a): run by a call, never by a listing.
     registerPreRunCheck('item-precheck', async () => null);
     registerPreRunCheck('key-shared-content', async () => null);

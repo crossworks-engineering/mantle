@@ -21,7 +21,9 @@
  *
  * `fields.systemWhole`: a tool whose policy says `systemWhole` (by the
  * row's slug or its ref), which dispatch runs whole on the system pool
- * after the area check (runGated).
+ * after the area check (runGated). `fields.ownerOnly`: the builtin (by its
+ * ref) is owner-only, which the gate's owner-only narrower reads (A5 step
+ * 6a).
  *
  * A row's slug is matched as well as its ref because a row may rename a
  * builtin; one named with ANOTHER builtin's slug never runs
@@ -83,6 +85,8 @@ export function builtinToolGatePolicy(ref: PolicyRef): GatePolicy | null {
     fields: Object.freeze({
       ...base.fields,
       ...(systemWhole ? { systemWhole: true } : {}),
+      // The owner-only narrower reads it (A5 step 6a, carried L1).
+      ...(def.ownerOnly === true ? { ownerOnly: true } : {}),
     }),
   });
 }

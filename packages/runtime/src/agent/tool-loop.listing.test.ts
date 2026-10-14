@@ -38,6 +38,19 @@ vi.mock('@mantle/tracing', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/tracing')>()),
   setTraceData: (patch: Record<string, unknown>) => h.traceData.push(patch),
 }));
+// The connector's resource rows (A5 step 6a, carried L1: the connector
+// narrower reads them): a resource of every workspace with its Write tick,
+// so only a Moderator there may call its write.
+vi.mock('../../../tools/src/external-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../tools/src/external-access')>()),
+  connectorGroupOf: async (_owner: string, row: { handler: { group?: string } }) => ({
+    id: 'g',
+    slug: row.handler.group,
+    usable: true,
+  }),
+  connectorResources: async (_owner: string, _group: string, ws: readonly string[]) =>
+    ws.map((workspaceId) => ({ workspaceId, write: true })),
+}));
 vi.mock('@mantle/tools', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/tools')>()),
   getDynamicSchema: () => null,
@@ -160,6 +173,11 @@ const MEMBER_VIEW = () => ({ holdsAdmin: false, areas: new Set<string>() });
 const OWNER_SCOPE = { kind: 'assistant', loginId: LOGIN, ws: [ADMIN_WS], modWs: [ADMIN_WS] };
 const OWNER_VIEW = () => ({ holdsAdmin: true, areas: new Set(AREAS) });
 
+/** The owner-only builtins: none is listed on a loop whose surface is not
+ *  the owner's (A5 step 6a, carried L1; dispatch refused each call). None of
+ *  the three loops here runs on the owner's surface. */
+const OWNER_ONLY = BUILTIN_TOOLS.filter((d) => d.ownerOnly).map((d) => d.slug);
+
 /** The builtins a scope outside Admin is refused by the gate's scope step. */
 const ADMIN_ONLY = BUILTIN_TOOLS.filter((d) => {
   const s = d.policy.scope;
@@ -185,20 +203,33 @@ describe('every tool loop lists only what the gate lets it call (A5 step 5 fix r
   for (const [name, extra] of Object.entries(LOOPS)) {
     it(`${name} in a member scope outside Admin is not sent an Admin-only, area, admin-kind or shell tool`, async () => {
       const tools = new Set(await sentIn(MEMBER, MEMBER_VIEW(), extra));
-      for (const slug of [...ADMIN_ONLY, 'shell_echo', 'odd']) {
+      // The connector's write row too: the member is no Moderator (A5 step
+      // 6a, carried L1: before, it was sent and dispatch refused it).
+      for (const slug of [...ADMIN_ONLY, ...OWNER_ONLY, 'shell_echo', 'odd', 'crm_lookup']) {
         expect(tools.has(slug), slug).toBe(false);
       }
-      for (const slug of ['note_create', 'search_nodes', 'crm_lookup', 'api_get', 'a_recipe']) {
+      for (const slug of ['note_create', 'search_nodes', 'api_get', 'a_recipe']) {
         expect(tools.has(slug), slug).toBe(true);
       }
       expect(tools.has('read_result')).toBe(true);
     });
 
-    it(`${name} in the owner's scope is sent every tool with a policy, in the grant's order`, async () => {
+    it(`${name} in the owner's scope is sent every tool with a policy but the owner-only ones, in the grant's order`, async () => {
       const tools = await sentIn(OWNER_SCOPE, OWNER_VIEW(), extra);
-      expect(tools).toEqual(ROWS.filter((r) => r !== NO_POLICY).map((r) => r.slug));
+      expect(tools).toEqual(
+        ROWS.filter((r) => r !== NO_POLICY && !OWNER_ONLY.includes(r.slug)).map((r) => r.slug),
+      );
     });
   }
+
+  it("a loop on the owner's own surface is sent the owner-only tools too (A5 step 6a)", async () => {
+    const tools = await sentIn(OWNER_SCOPE, OWNER_VIEW(), {
+      ...LOOPS['a delegated child turn'],
+      surface: { kind: 'web', loginId: LOGIN },
+    });
+    expect(tools).toEqual(ROWS.filter((r) => r !== NO_POLICY).map((r) => r.slug));
+    expect(tools).toContain('tree_folders');
+  });
 
   it('the sent list is the same bytes for the same agent and scope (the cache resets once)', async () => {
     const a = await sentIn(MEMBER, MEMBER_VIEW(), LOOPS['a heartbeat fire']);

@@ -52,6 +52,19 @@ vi.mock('../../db/src/item-rights', async (importOriginal) => {
 });
 // A precondition's node lookup reads the database: every id names a node
 // of the kind the tool asks for.
+// The connector's resource rows (A5 step 6a, carried L1: the connector
+// narrower reads them): the connector is a resource of every workspace,
+// with its Write tick, so a Moderator there may call a write.
+vi.mock('./external-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./external-access')>()),
+  connectorGroupOf: async (_owner: string, row: { handler: { group?: string } }) => ({
+    id: 'g',
+    slug: row.handler.group,
+    usable: true,
+  }),
+  connectorResources: async (_owner: string, _group: string, ws: readonly string[]) =>
+    ws.map((workspaceId) => ({ workspaceId, write: true })),
+}));
 vi.mock('./preconditions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./preconditions')>()),
   checkToolPreconditions: async () => null,
@@ -101,11 +114,16 @@ const ROWS = [...BUILTIN_TOOLS.map((d) => builtinRow(d.slug)), ...RUNTIME, NO_PO
 async function listedIn(
   scope: Record<string, unknown>,
   view: { holdsAdmin: boolean; areas: Set<string> },
+  ownerSurface = true,
 ): Promise<string[]> {
   h.scope = scope;
   h.view = view;
   try {
-    return (await runAsActor(loginActor(LOGIN), () => turnListedTools(ROWS))).map((t) => t.slug);
+    return (
+      await runAsActor(loginActor(LOGIN), () =>
+        turnListedTools(ROWS, { ownerId: OWNER, ownerSurface }),
+      )
+    ).map((t) => t.slug);
   } finally {
     h.scope = null;
   }
@@ -124,7 +142,7 @@ describe('the turn listing is the gate listing (A5 step 5, pick B)', () => {
     expect(listed).toEqual(ROWS.filter((r) => r !== NO_POLICY).map((r) => r.slug));
   });
 
-  it('a member turn in a workspace that is not Admin hides exactly the Admin-only, admin-kind, Admin-area and shell tools', async () => {
+  it('a member turn in a workspace that is not Admin hides exactly the Admin-only, admin-kind, Admin-area, shell and unwritable connector tools', async () => {
     const listed = new Set(
       await listedIn(
         { kind: 'assistant', loginId: LOGIN, ws: [TEAM_WS], modWs: [] },
@@ -136,8 +154,7 @@ describe('the turn listing is the gate listing (A5 step 5, pick B)', () => {
     const hiddenBuiltins = BUILTIN_TOOLS.filter((d) => !listed.has(d.slug));
     // Every hidden builtin is of one of the three Admin classes, and every
     // builtin of those classes is hidden. (An ownerOnly tool of scope `any`
-    // is listed: its owner-surface check sits at dispatch, outside the gate,
-    // carried to step 6 as L1.)
+    // is listed: the turn's surface is the owner's here.)
     expect(new Set(hiddenBuiltins.map((d) => scopeOf(d.policy.scope)))).toEqual(
       new Set(['admin', 'admin-kind', 'area']),
     );
@@ -148,9 +165,32 @@ describe('the turn listing is the gate listing (A5 step 5, pick B)', () => {
     for (const slug of ['model_pool_list', 'contact_create', 'journal_create', 'location_save']) {
       expect(listed.has(slug), slug).toBe(false);
     }
-    // Of the runtime rows: the shell row (Q2) and the row with no policy.
-    expect(RUNTIME.filter((r) => !listed.has(r.slug)).map((r) => r.slug)).toEqual(['shell_echo']);
+    // Of the runtime rows: the connector's write row (its connector holds
+    // Write, but the member is no Moderator: A5 step 6a, carried L1, where
+    // before it was listed and dispatch refused it), the shell row (Q2) and
+    // the row with no policy.
+    expect(RUNTIME.filter((r) => !listed.has(r.slug)).map((r) => r.slug)).toEqual([
+      'crm_lookup',
+      'shell_echo',
+    ]);
     expect(listed.has('odd')).toBe(false);
+  });
+
+  it('off the owner surface an owner-only tool is not listed (A5 step 6a, carried L1)', async () => {
+    const owner = { kind: 'assistant', loginId: LOGIN, ws: [ADMIN_WS], modWs: [ADMIN_WS] };
+    const view = { holdsAdmin: true, areas: new Set(AREAS) };
+    const onOwner = new Set(await listedIn(owner, view, true));
+    const offOwner = new Set(await listedIn(owner, view, false));
+    const hidden = [...onOwner].filter((s) => !offOwner.has(s)).sort();
+    // Exactly the owner-only builtins, tree_folders among them (scope any:
+    // listed before and refused at dispatch).
+    expect(hidden).toEqual(
+      BUILTIN_TOOLS.filter((d) => d.ownerOnly)
+        .map((d) => d.slug)
+        .sort(),
+    );
+    expect(hidden).toContain('tree_folders');
+    expect([...offOwner].filter((s) => !onOwner.has(s))).toEqual([]);
   });
 });
 
@@ -214,15 +254,23 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
     expect(await refusalIn(member, memberView(), builtinRow('note_create'))).toBeNull();
   });
 
-  it('the refusal agrees with the listing for every tool, in both scopes', async () => {
+  it('the refusal agrees with the listing for every tool, in both scopes and on both surfaces', async () => {
+    const team = { kind: 'team', privateReads: false } as never;
     for (const [scope, view] of [
       [member, memberView],
       [owner, ownerView],
     ] as const) {
-      const listed = new Set(await listedIn(scope, view()));
-      for (const row of ROWS) {
-        const refused = await refusalIn(scope, view(), row);
-        expect(refused === null, row.slug).toBe(listed.has(row.slug));
+      for (const [surface, ownerSurface] of [
+        [{ kind: 'web' } as never, true],
+        [team, false],
+      ] as const) {
+        const listed = new Set(await listedIn(scope, view(), ownerSurface));
+        for (const row of ROWS) {
+          const refused = await refusalIn(scope, view(), row, surface);
+          expect(refused === null, `${row.slug} ${String(ownerSurface)}`).toBe(
+            listed.has(row.slug),
+          );
+        }
       }
     }
   });

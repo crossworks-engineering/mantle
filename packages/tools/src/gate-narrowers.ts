@@ -25,6 +25,8 @@ import {
   type PolicyRef,
 } from '@mantle/db';
 import { registerPreRunChecks } from './gate-prerun';
+import { connectorScopeRefusal, type ConnectorScopeFacts } from './connector-scope';
+import { OWNER_ONLY_ERROR } from './surface';
 // The `tool` source (a builtin called through dispatch, A5 step 3a) and the
 // runtime rows' sources, registered with the narrowers in every process.
 import './tool-gate-policy';
@@ -156,6 +158,41 @@ const spendingNarrower: Narrower = (caller, policy) =>
     ? OWNER_KEYS_ERROR
     : null;
 
+/**
+ * An owner-only tool off the owner's surface (client logins C4; A5 step 6a,
+ * carried L1): the policy says `ownerOnly` (the `tool` source, by the
+ * builtin's handler ref), and the call's surface is not the owner's (a team
+ * or contact surface, or none: `facts.ownerSurface` false, set by
+ * gateCallerFor from the call or the loop that lists). Before step 6a
+ * dispatch refused it before the gate, so a tool loop listed it and the
+ * call was refused; first in the order, it answers the same calls in the
+ * same words. A caller that does not say (an MCP connection, whose surface
+ * is the owner's) is not narrowed.
+ */
+const ownerOnlyNarrower: Narrower = (caller, policy) =>
+  policy.fields?.ownerOnly === true && caller.facts?.ownerSurface === false
+    ? OWNER_ONLY_ERROR
+    : null;
+
+/**
+ * A connector tool the workspace scope may not call (W4b; A5 step 6a,
+ * carried L1): connector-scope.ts connectorScopeRefusal, on what
+ * gateCallerFor loaded for the row (`facts.connector`: the scope's resource
+ * rows for its group, its Moderator workspaces). Last in the order: before
+ * step 6a dispatch judged it after the gate. A caller with no such facts (an
+ * MCP connection: its own pre-run check and dispatch judge it; outside a
+ * workspace scope) is not narrowed here.
+ */
+const connectorNarrower: Narrower = (caller, policy, ref) => {
+  const facts = caller.facts?.connector as ConnectorScopeFacts | undefined;
+  const mark = policy.fields?.mark;
+  if (!facts || ref.kind !== 'runtime-tool') return null;
+  if (mark !== 'read' && mark !== 'write' && mark !== 'stale') return null;
+  const row = ref.row as { handler?: { group?: unknown } } | undefined;
+  if (row?.handler?.group !== facts.group) return null;
+  return connectorScopeRefusal(facts, mark);
+};
+
 /** The member turn caps: an explicit no-op until A5. TODO(A5): the caps
  *  are the member turn ledger (claimMemberTurn, a daily count and tokens
  *  per member turn, packages/content/src/member-turn-ledger.ts), claimed
@@ -166,11 +203,13 @@ const turnCapsNarrower: Narrower = () => null;
 /** Every narrower of NARROWERS but the gate's own read-only one. */
 export const GATE_NARROWERS: Readonly<Record<Exclude<NarrowerName, 'read-only'>, Narrower>> =
   Object.freeze({
+    'owner-only': ownerOnlyNarrower,
     key: keyNarrower,
     peer: peerNarrower,
     'member-app': memberAppNarrower,
     spending: spendingNarrower,
     'turn-caps': turnCapsNarrower,
+    connector: connectorNarrower,
   });
 
 /** Register every narrower and the pre-run checks (gate-prerun.ts; the
