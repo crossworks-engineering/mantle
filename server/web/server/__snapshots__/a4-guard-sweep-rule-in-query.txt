@@ -35,176 +35,206 @@ q26 500 content-type=application/json  [getLoginOr401 ok {"email":"admin-5555@ex
 q27 500 content-type=application/json  [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 q28 500 content-type=application/json  [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
+# answers on main (before the change; kept by hand: the sweep reads them back and holds
+# each cell to its main answer with actor= and out= masked, so a -u rerun cannot
+# accept any other change on these rows)
+o1 401 content-type=application/json cache-control=no-store {"error":"unauthorized"}
+o2 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"admin-3333@example.invalid","kind":"admin","loginId":"33333333-3333-4333-8333-333333333333","sessionEpoch":0,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=user:false]
+o3 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=user:false]
+o4 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"admin-4444@example.invalid","kind":"admin","loginId":"44444444-4444-4444-8444-444444444444","sessionEpoch":0,"source":"web","user.actor":{"id":"44444444-4444-4444-8444-444444444444","email":"admin-4444@example.invalid","displayName":"admin 4444","isOwner":false},"user.email":"admin-4444@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=user:false]
+o5 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"web"} actor=system:rule-in-query out=user:false]
+o6 500 content-type=application/json {"error":"internal error"} [touch 00000001] [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=user:false]
+o7 500 content-type=application/json {"error":"internal error"} [touch 00000002] [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"mobile"} actor=system:rule-in-query out=user:false]
+o8 401 content-type=application/json {"error":"unauthorized"} [getLoginOr401 R401 {"error":"unauthorized"} actor=system:rule-in-query out=-]
+o9 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"admin-3333@example.invalid","kind":"admin","loginId":"33333333-3333-4333-8333-333333333333","sessionEpoch":0,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:admin-write]
+o10 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:admin-write]
+o11 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"admin-4444@example.invalid","kind":"admin","loginId":"44444444-4444-4444-8444-444444444444","sessionEpoch":0,"source":"web","user.actor":{"id":"44444444-4444-4444-8444-444444444444","email":"admin-4444@example.invalid","displayName":"admin 4444","isOwner":false},"user.email":"admin-4444@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:admin-write]
+o12 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"web"} actor=system:rule-in-query out=user:true]
+o13 500 content-type=application/json {"error":"internal error"} [touch 00000001] [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:admin-write]
+o14 500 content-type=application/json {"error":"internal error"} [touch 00000002] [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"mobile"} actor=system:rule-in-query out=user:true]
+o15 401 content-type=application/json cache-control=no-store 
+o16 500 content-type=application/json  [getLoginOr401 ok {"email":"admin-3333@example.invalid","kind":"admin","loginId":"33333333-3333-4333-8333-333333333333","sessionEpoch":0,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:login-self]
+o17 500 content-type=application/json  [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"web","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:login-self]
+o18 500 content-type=application/json  [getLoginOr401 ok {"email":"admin-4444@example.invalid","kind":"admin","loginId":"44444444-4444-4444-8444-444444444444","sessionEpoch":0,"source":"web","user.actor":{"id":"44444444-4444-4444-8444-444444444444","email":"admin-4444@example.invalid","displayName":"admin 4444","isOwner":false},"user.email":"admin-4444@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:login-self]
+o19 500 content-type=application/json  [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"web"} actor=system:rule-in-query out=system:login-self]
+o20 500 content-type=application/json  [touch 00000001] [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"mobile","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:login-self]
+o21 500 content-type=application/json  [touch 00000002] [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"mobile"} actor=system:rule-in-query out=system:login-self]
+o22 401 content-type=application/json  [getLoginOr401 R401 {"error":"unauthorized"} actor=system:rule-in-query out=-]
+o23 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=user:false]
+o24 500 content-type=application/json {"error":"internal error"} [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=system:rule-in-query out=user:false]
+o25 500 content-type=application/json  [getLoginOr401 ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=system:rule-in-query out=system:login-self]
+o26 500 content-type=application/json  [getLoginOr401 ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=system:rule-in-query out=system:login-self]
+
 # cells: 172
-first GET /api/access-keys none=q1
-first GET /api/access-keys owner-cookie=q2
-first GET /api/access-keys admin-cookie=q3
-first GET /api/access-keys limited-cookie=q4
-first GET /api/access-keys member-cookie=q5
-first GET /api/access-keys admin-bearer=q6
-first GET /api/access-keys member-bearer=q7
-first GET /api/access-keys revoked-bearer=q8
-first GET /api/access-keys key-read=q1
-first GET /api/access-keys key-write=q1
-first GET /api/access-keys key-read-area=q1
-first GET /api/access-keys key-write-area=q1
-first GET /api/access-keys key-member=q1
-first GET /api/access-keys asset-admin=q1
-first GET /api/access-keys asset-member=q1
-first GET /api/access-keys render=q1
-first GET /api/access-keys frame-ticket=q1
-first POST /api/access-keys none=q1
-first POST /api/access-keys owner-cookie=q9
-first POST /api/access-keys admin-cookie=q10
-first POST /api/access-keys limited-cookie=q11
-first POST /api/access-keys member-cookie=q12
-first POST /api/access-keys admin-bearer=q13
-first POST /api/access-keys member-bearer=q14
-first POST /api/access-keys revoked-bearer=q8
-first POST /api/access-keys key-read=q1
-first POST /api/access-keys key-write=q1
-first POST /api/access-keys key-read-area=q1
-first POST /api/access-keys key-write-area=q1
-first POST /api/access-keys key-member=q1
-first HEAD /api/access-keys none=q15
-first HEAD /api/access-keys owner-cookie=q16
-first HEAD /api/access-keys admin-cookie=q17
-first HEAD /api/access-keys limited-cookie=q18
-first HEAD /api/access-keys member-cookie=q19
-first HEAD /api/access-keys admin-bearer=q20
-first HEAD /api/access-keys member-bearer=q21
-first HEAD /api/access-keys revoked-bearer=q22
-first HEAD /api/access-keys key-read=q15
-first HEAD /api/access-keys key-write=q15
-first HEAD /api/access-keys key-read-area=q15
-first HEAD /api/access-keys key-write-area=q15
-first HEAD /api/access-keys key-member=q15
-first DELETE /api/access-keys/:id none=q1
-first DELETE /api/access-keys/:id owner-cookie=q9
-first DELETE /api/access-keys/:id admin-cookie=q10
-first DELETE /api/access-keys/:id limited-cookie=q11
-first DELETE /api/access-keys/:id member-cookie=q12
-first DELETE /api/access-keys/:id admin-bearer=q13
-first DELETE /api/access-keys/:id member-bearer=q14
-first DELETE /api/access-keys/:id revoked-bearer=q8
-first DELETE /api/access-keys/:id key-read=q1
-first DELETE /api/access-keys/:id key-write=q1
-first DELETE /api/access-keys/:id key-read-area=q1
-first DELETE /api/access-keys/:id key-write-area=q1
-first DELETE /api/access-keys/:id key-member=q1
-first GET /api/shell none=q1
-first GET /api/shell owner-cookie=q2
-first GET /api/shell admin-cookie=q3
-first GET /api/shell limited-cookie=q4
-first GET /api/shell member-cookie=q5
-first GET /api/shell admin-bearer=q6
-first GET /api/shell member-bearer=q7
-first GET /api/shell revoked-bearer=q8
-first GET /api/shell key-read=q1
-first GET /api/shell key-write=q1
-first GET /api/shell key-read-area=q1
-first GET /api/shell key-write-area=q1
-first GET /api/shell key-member=q1
-first GET /api/shell asset-admin=q1
-first GET /api/shell asset-member=q1
-first GET /api/shell render=q1
-first GET /api/shell frame-ticket=q1
-first HEAD /api/shell none=q15
-first HEAD /api/shell owner-cookie=q16
-first HEAD /api/shell admin-cookie=q17
-first HEAD /api/shell limited-cookie=q18
-first HEAD /api/shell member-cookie=q19
-first HEAD /api/shell admin-bearer=q20
-first HEAD /api/shell member-bearer=q21
-first HEAD /api/shell revoked-bearer=q22
-first HEAD /api/shell key-read=q15
-first HEAD /api/shell key-write=q15
-first HEAD /api/shell key-read-area=q15
-first HEAD /api/shell key-write-area=q15
-first HEAD /api/shell key-member=q15
-first GET /api/v1/whoami none=q1
-first GET /api/v1/whoami owner-cookie=q2
-first GET /api/v1/whoami admin-cookie=q3
-first GET /api/v1/whoami limited-cookie=q4
-first GET /api/v1/whoami member-cookie=q5
-first GET /api/v1/whoami admin-bearer=q6
-first GET /api/v1/whoami member-bearer=q7
-first GET /api/v1/whoami revoked-bearer=q8
-first GET /api/v1/whoami key-read=q23
-first GET /api/v1/whoami key-write=q24
-first GET /api/v1/whoami key-read-area=q23
-first GET /api/v1/whoami key-write-area=q24
-first GET /api/v1/whoami key-member=q25
-first GET /api/v1/whoami asset-admin=q1
-first GET /api/v1/whoami asset-member=q1
-first GET /api/v1/whoami render=q1
-first GET /api/v1/whoami frame-ticket=q1
-first HEAD /api/v1/whoami none=q15
-first HEAD /api/v1/whoami owner-cookie=q16
-first HEAD /api/v1/whoami admin-cookie=q17
-first HEAD /api/v1/whoami limited-cookie=q18
-first HEAD /api/v1/whoami member-cookie=q19
-first HEAD /api/v1/whoami admin-bearer=q20
-first HEAD /api/v1/whoami member-bearer=q21
-first HEAD /api/v1/whoami revoked-bearer=q22
-first HEAD /api/v1/whoami key-read=q26
-first HEAD /api/v1/whoami key-write=q27
-first HEAD /api/v1/whoami key-read-area=q26
-first HEAD /api/v1/whoami key-write-area=q27
-first HEAD /api/v1/whoami key-member=q28
-more GET /api/access-keys disabled-cookie=q8
-more GET /api/access-keys bumped-cookie=q8
-more GET /api/access-keys gone-cookie=q8
-more GET /api/access-keys rotated-bearer=q8
-more GET /api/access-keys expired-bearer=q8
-more GET /api/access-keys key-unknown=q1
-more GET /api/access-keys key-revoked=q1
-more POST /api/access-keys disabled-cookie=q8
-more POST /api/access-keys bumped-cookie=q8
-more POST /api/access-keys gone-cookie=q8
-more POST /api/access-keys rotated-bearer=q8
-more POST /api/access-keys expired-bearer=q8
-more POST /api/access-keys key-unknown=q1
-more POST /api/access-keys key-revoked=q1
-more HEAD /api/access-keys disabled-cookie=q22
-more HEAD /api/access-keys bumped-cookie=q22
-more HEAD /api/access-keys gone-cookie=q22
-more HEAD /api/access-keys rotated-bearer=q22
-more HEAD /api/access-keys expired-bearer=q22
-more HEAD /api/access-keys key-unknown=q15
-more HEAD /api/access-keys key-revoked=q15
-more DELETE /api/access-keys/:id disabled-cookie=q8
-more DELETE /api/access-keys/:id bumped-cookie=q8
-more DELETE /api/access-keys/:id gone-cookie=q8
-more DELETE /api/access-keys/:id rotated-bearer=q8
-more DELETE /api/access-keys/:id expired-bearer=q8
-more DELETE /api/access-keys/:id key-unknown=q1
-more DELETE /api/access-keys/:id key-revoked=q1
-more GET /api/shell disabled-cookie=q8
-more GET /api/shell bumped-cookie=q8
-more GET /api/shell gone-cookie=q8
-more GET /api/shell rotated-bearer=q8
-more GET /api/shell expired-bearer=q8
-more GET /api/shell key-unknown=q1
-more GET /api/shell key-revoked=q1
-more HEAD /api/shell disabled-cookie=q22
-more HEAD /api/shell bumped-cookie=q22
-more HEAD /api/shell gone-cookie=q22
-more HEAD /api/shell rotated-bearer=q22
-more HEAD /api/shell expired-bearer=q22
-more HEAD /api/shell key-unknown=q15
-more HEAD /api/shell key-revoked=q15
-more GET /api/v1/whoami disabled-cookie=q8
-more GET /api/v1/whoami bumped-cookie=q8
-more GET /api/v1/whoami gone-cookie=q8
-more GET /api/v1/whoami rotated-bearer=q8
-more GET /api/v1/whoami expired-bearer=q8
-more GET /api/v1/whoami key-unknown=q1
-more GET /api/v1/whoami key-revoked=q1
-more HEAD /api/v1/whoami disabled-cookie=q22
-more HEAD /api/v1/whoami bumped-cookie=q22
-more HEAD /api/v1/whoami gone-cookie=q22
-more HEAD /api/v1/whoami rotated-bearer=q22
-more HEAD /api/v1/whoami expired-bearer=q22
-more HEAD /api/v1/whoami key-unknown=q15
-more HEAD /api/v1/whoami key-revoked=q15
+first GET /api/access-keys none=q1 main=o1
+first GET /api/access-keys owner-cookie=q2 main=o2
+first GET /api/access-keys admin-cookie=q3 main=o3
+first GET /api/access-keys limited-cookie=q4 main=o4
+first GET /api/access-keys member-cookie=q5 main=o5
+first GET /api/access-keys admin-bearer=q6 main=o6
+first GET /api/access-keys member-bearer=q7 main=o7
+first GET /api/access-keys revoked-bearer=q8 main=o8
+first GET /api/access-keys key-read=q1 main=o1
+first GET /api/access-keys key-write=q1 main=o1
+first GET /api/access-keys key-read-area=q1 main=o1
+first GET /api/access-keys key-write-area=q1 main=o1
+first GET /api/access-keys key-member=q1 main=o1
+first GET /api/access-keys asset-admin=q1 main=o1
+first GET /api/access-keys asset-member=q1 main=o1
+first GET /api/access-keys render=q1 main=o1
+first GET /api/access-keys frame-ticket=q1 main=o1
+first POST /api/access-keys none=q1 main=o1
+first POST /api/access-keys owner-cookie=q9 main=o9
+first POST /api/access-keys admin-cookie=q10 main=o10
+first POST /api/access-keys limited-cookie=q11 main=o11
+first POST /api/access-keys member-cookie=q12 main=o12
+first POST /api/access-keys admin-bearer=q13 main=o13
+first POST /api/access-keys member-bearer=q14 main=o14
+first POST /api/access-keys revoked-bearer=q8 main=o8
+first POST /api/access-keys key-read=q1 main=o1
+first POST /api/access-keys key-write=q1 main=o1
+first POST /api/access-keys key-read-area=q1 main=o1
+first POST /api/access-keys key-write-area=q1 main=o1
+first POST /api/access-keys key-member=q1 main=o1
+first HEAD /api/access-keys none=q15 main=o15
+first HEAD /api/access-keys owner-cookie=q16 main=o16
+first HEAD /api/access-keys admin-cookie=q17 main=o17
+first HEAD /api/access-keys limited-cookie=q18 main=o18
+first HEAD /api/access-keys member-cookie=q19 main=o19
+first HEAD /api/access-keys admin-bearer=q20 main=o20
+first HEAD /api/access-keys member-bearer=q21 main=o21
+first HEAD /api/access-keys revoked-bearer=q22 main=o22
+first HEAD /api/access-keys key-read=q15 main=o15
+first HEAD /api/access-keys key-write=q15 main=o15
+first HEAD /api/access-keys key-read-area=q15 main=o15
+first HEAD /api/access-keys key-write-area=q15 main=o15
+first HEAD /api/access-keys key-member=q15 main=o15
+first DELETE /api/access-keys/:id none=q1 main=o1
+first DELETE /api/access-keys/:id owner-cookie=q9 main=o9
+first DELETE /api/access-keys/:id admin-cookie=q10 main=o10
+first DELETE /api/access-keys/:id limited-cookie=q11 main=o11
+first DELETE /api/access-keys/:id member-cookie=q12 main=o12
+first DELETE /api/access-keys/:id admin-bearer=q13 main=o13
+first DELETE /api/access-keys/:id member-bearer=q14 main=o14
+first DELETE /api/access-keys/:id revoked-bearer=q8 main=o8
+first DELETE /api/access-keys/:id key-read=q1 main=o1
+first DELETE /api/access-keys/:id key-write=q1 main=o1
+first DELETE /api/access-keys/:id key-read-area=q1 main=o1
+first DELETE /api/access-keys/:id key-write-area=q1 main=o1
+first DELETE /api/access-keys/:id key-member=q1 main=o1
+first GET /api/shell none=q1 main=o1
+first GET /api/shell owner-cookie=q2 main=o2
+first GET /api/shell admin-cookie=q3 main=o3
+first GET /api/shell limited-cookie=q4 main=o4
+first GET /api/shell member-cookie=q5 main=o5
+first GET /api/shell admin-bearer=q6 main=o6
+first GET /api/shell member-bearer=q7 main=o7
+first GET /api/shell revoked-bearer=q8 main=o8
+first GET /api/shell key-read=q1 main=o1
+first GET /api/shell key-write=q1 main=o1
+first GET /api/shell key-read-area=q1 main=o1
+first GET /api/shell key-write-area=q1 main=o1
+first GET /api/shell key-member=q1 main=o1
+first GET /api/shell asset-admin=q1 main=o1
+first GET /api/shell asset-member=q1 main=o1
+first GET /api/shell render=q1 main=o1
+first GET /api/shell frame-ticket=q1 main=o1
+first HEAD /api/shell none=q15 main=o15
+first HEAD /api/shell owner-cookie=q16 main=o16
+first HEAD /api/shell admin-cookie=q17 main=o17
+first HEAD /api/shell limited-cookie=q18 main=o18
+first HEAD /api/shell member-cookie=q19 main=o19
+first HEAD /api/shell admin-bearer=q20 main=o20
+first HEAD /api/shell member-bearer=q21 main=o21
+first HEAD /api/shell revoked-bearer=q22 main=o22
+first HEAD /api/shell key-read=q15 main=o15
+first HEAD /api/shell key-write=q15 main=o15
+first HEAD /api/shell key-read-area=q15 main=o15
+first HEAD /api/shell key-write-area=q15 main=o15
+first HEAD /api/shell key-member=q15 main=o15
+first GET /api/v1/whoami none=q1 main=o1
+first GET /api/v1/whoami owner-cookie=q2 main=o2
+first GET /api/v1/whoami admin-cookie=q3 main=o3
+first GET /api/v1/whoami limited-cookie=q4 main=o4
+first GET /api/v1/whoami member-cookie=q5 main=o5
+first GET /api/v1/whoami admin-bearer=q6 main=o6
+first GET /api/v1/whoami member-bearer=q7 main=o7
+first GET /api/v1/whoami revoked-bearer=q8 main=o8
+first GET /api/v1/whoami key-read=q23 main=o23
+first GET /api/v1/whoami key-write=q24 main=o23
+first GET /api/v1/whoami key-read-area=q23 main=o23
+first GET /api/v1/whoami key-write-area=q24 main=o23
+first GET /api/v1/whoami key-member=q25 main=o24
+first GET /api/v1/whoami asset-admin=q1 main=o1
+first GET /api/v1/whoami asset-member=q1 main=o1
+first GET /api/v1/whoami render=q1 main=o1
+first GET /api/v1/whoami frame-ticket=q1 main=o1
+first HEAD /api/v1/whoami none=q15 main=o15
+first HEAD /api/v1/whoami owner-cookie=q16 main=o16
+first HEAD /api/v1/whoami admin-cookie=q17 main=o17
+first HEAD /api/v1/whoami limited-cookie=q18 main=o18
+first HEAD /api/v1/whoami member-cookie=q19 main=o19
+first HEAD /api/v1/whoami admin-bearer=q20 main=o20
+first HEAD /api/v1/whoami member-bearer=q21 main=o21
+first HEAD /api/v1/whoami revoked-bearer=q22 main=o22
+first HEAD /api/v1/whoami key-read=q26 main=o25
+first HEAD /api/v1/whoami key-write=q27 main=o25
+first HEAD /api/v1/whoami key-read-area=q26 main=o25
+first HEAD /api/v1/whoami key-write-area=q27 main=o25
+first HEAD /api/v1/whoami key-member=q28 main=o26
+more GET /api/access-keys disabled-cookie=q8 main=o8
+more GET /api/access-keys bumped-cookie=q8 main=o8
+more GET /api/access-keys gone-cookie=q8 main=o8
+more GET /api/access-keys rotated-bearer=q8 main=o8
+more GET /api/access-keys expired-bearer=q8 main=o8
+more GET /api/access-keys key-unknown=q1 main=o1
+more GET /api/access-keys key-revoked=q1 main=o1
+more POST /api/access-keys disabled-cookie=q8 main=o8
+more POST /api/access-keys bumped-cookie=q8 main=o8
+more POST /api/access-keys gone-cookie=q8 main=o8
+more POST /api/access-keys rotated-bearer=q8 main=o8
+more POST /api/access-keys expired-bearer=q8 main=o8
+more POST /api/access-keys key-unknown=q1 main=o1
+more POST /api/access-keys key-revoked=q1 main=o1
+more HEAD /api/access-keys disabled-cookie=q22 main=o22
+more HEAD /api/access-keys bumped-cookie=q22 main=o22
+more HEAD /api/access-keys gone-cookie=q22 main=o22
+more HEAD /api/access-keys rotated-bearer=q22 main=o22
+more HEAD /api/access-keys expired-bearer=q22 main=o22
+more HEAD /api/access-keys key-unknown=q15 main=o15
+more HEAD /api/access-keys key-revoked=q15 main=o15
+more DELETE /api/access-keys/:id disabled-cookie=q8 main=o8
+more DELETE /api/access-keys/:id bumped-cookie=q8 main=o8
+more DELETE /api/access-keys/:id gone-cookie=q8 main=o8
+more DELETE /api/access-keys/:id rotated-bearer=q8 main=o8
+more DELETE /api/access-keys/:id expired-bearer=q8 main=o8
+more DELETE /api/access-keys/:id key-unknown=q1 main=o1
+more DELETE /api/access-keys/:id key-revoked=q1 main=o1
+more GET /api/shell disabled-cookie=q8 main=o8
+more GET /api/shell bumped-cookie=q8 main=o8
+more GET /api/shell gone-cookie=q8 main=o8
+more GET /api/shell rotated-bearer=q8 main=o8
+more GET /api/shell expired-bearer=q8 main=o8
+more GET /api/shell key-unknown=q1 main=o1
+more GET /api/shell key-revoked=q1 main=o1
+more HEAD /api/shell disabled-cookie=q22 main=o22
+more HEAD /api/shell bumped-cookie=q22 main=o22
+more HEAD /api/shell gone-cookie=q22 main=o22
+more HEAD /api/shell rotated-bearer=q22 main=o22
+more HEAD /api/shell expired-bearer=q22 main=o22
+more HEAD /api/shell key-unknown=q15 main=o15
+more HEAD /api/shell key-revoked=q15 main=o15
+more GET /api/v1/whoami disabled-cookie=q8 main=o8
+more GET /api/v1/whoami bumped-cookie=q8 main=o8
+more GET /api/v1/whoami gone-cookie=q8 main=o8
+more GET /api/v1/whoami rotated-bearer=q8 main=o8
+more GET /api/v1/whoami expired-bearer=q8 main=o8
+more GET /api/v1/whoami key-unknown=q1 main=o1
+more GET /api/v1/whoami key-revoked=q1 main=o1
+more HEAD /api/v1/whoami disabled-cookie=q22 main=o22
+more HEAD /api/v1/whoami bumped-cookie=q22 main=o22
+more HEAD /api/v1/whoami gone-cookie=q22 main=o22
+more HEAD /api/v1/whoami rotated-bearer=q22 main=o22
+more HEAD /api/v1/whoami expired-bearer=q22 main=o22
+more HEAD /api/v1/whoami key-unknown=q15 main=o15
+more HEAD /api/v1/whoami key-revoked=q15 main=o15

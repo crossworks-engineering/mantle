@@ -551,6 +551,99 @@ function noteMoved(sweep: string, cell: string, answer: string): string {
   return legacy(answer);
 }
 
+/** An answer with the actor and the request outcome the sweep notes after
+ *  a guard's or the pipeline's answer masked (`actor=… out=…`): what the
+ *  owner decisions 1a and 2a changed, and nothing else may. */
+function maskActor(answer: string): string {
+  return answer.replace(/\bactor=\S+ out=[^\]\s]+/g, 'actor=* out=*');
+}
+
+/** The header of the main answers in a decision file (decisionFile). */
+const MAIN_ANSWERS = '# answers on main';
+
+/**
+ * A decision file of A4 hand batch A (the owner decisions 1a and 2a,
+ * docs/actors.md): every cell of the decided rows (`cells`, sweep and cell
+ * to its answer as the recorded files spell it), and, kept beside each, its
+ * answer on main before the change (`main=`). The main answers are written
+ * by hand once and read back from the file on every run, never taken from
+ * the run: the test holds the set of cells to the set kept, and each
+ * cell's answer to its main answer with the actor and the request outcome
+ * masked (maskActor), BEFORE it compares the file. So a rerun with `-u`
+ * records the cells as driven but cannot accept a changed status, header,
+ * body or log line on these rows: the check fails first, and the main
+ * answers are carried over as they were.
+ */
+async function decisionFile(
+  file: string,
+  cells: ReadonlyMap<string, string>,
+  prefix: string,
+  header: readonly string[],
+): Promise<void> {
+  expect(cells.size, file).toBeGreaterThan(0);
+  const path = join(here, '__snapshots__', file);
+  const kept = existsSync(path) ? readFileSync(path, 'utf8').split('\n') : [];
+  const mainTable = new Map<string, string>();
+  const mainOf = new Map<string, string>();
+  let inMain = false;
+  for (const line of kept) {
+    if (line.startsWith(MAIN_ANSWERS)) {
+      inMain = true;
+      continue;
+    }
+    if (inMain && line.startsWith('#')) continue;
+    if (line === '') inMain = false;
+    const answer = inMain ? /^(o\d+) (.*)$/.exec(line) : null;
+    if (answer) mainTable.set(answer[1]!, answer[2]!);
+    const cell = /^(\S+ \S+ \S+ \S+)=\w+ main=(o\d+)$/.exec(line);
+    if (cell) {
+      const main = mainTable.get(cell[2]!);
+      expect(main, `${file}: ${cell[1]} names a main answer the file does not keep`).toBeDefined();
+      mainOf.set(cell[1]!, main!);
+    }
+  }
+  // Every cell of the decided rows has its main answer kept, and no other.
+  expect([...cells.keys()].sort(), `${file}: the cells kept with a main answer`).toEqual(
+    [...mainOf.keys()].sort(),
+  );
+  // Each differs from main in the actor and the request outcome only.
+  for (const [cell, answer] of cells) {
+    expect(maskActor(answer), `${file}: ${cell} against its answer on main`).toBe(
+      maskActor(mainOf.get(cell)!),
+    );
+  }
+  const ids = new Map<string, string>();
+  const mainIds = new Map<string, string>();
+  const idOf = (table: Map<string, string>, p: string, answer: string) => {
+    let id = table.get(answer);
+    if (!id) {
+      id = `${p}${table.size + 1}`;
+      table.set(answer, id);
+    }
+    return id;
+  };
+  const lines = [...cells].map(
+    ([cell, answer]) =>
+      `${cell}=${idOf(ids, prefix, answer)} main=${idOf(mainIds, 'o', mainOf.get(cell)!)}`,
+  );
+  await expect(
+    [
+      ...header,
+      '# answers',
+      ...[...ids].map(([answer, id]) => `${id} ${answer}`),
+      '',
+      `${MAIN_ANSWERS} (before the change; kept by hand: the sweep reads them back and holds`,
+      '# each cell to its main answer with actor= and out= masked, so a -u rerun cannot',
+      '# accept any other change on these rows)',
+      ...[...mainIds].map(([answer, id]) => `${id} ${answer}`),
+      '',
+      `# cells: ${cells.size}`,
+      ...lines,
+      '',
+    ].join('\n'),
+  ).toMatchFileSnapshot(`./__snapshots__/${file}`);
+}
+
 /** The headers a client reads. */
 const HEADERS = [
   'content-type',
@@ -911,34 +1004,17 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
     // answer is the gate's (system:http:no-login for a refusal, the login
     // for a login let through), no longer system:rule-in-query. The
     // recorded files hold these cells as driven now; this file names them,
-    // one line each, as the recorded files spell them.
-    expect(ruleInQueryCells.size).toBeGreaterThan(0);
-    const answers = new Map<string, string>();
-    const lines = [...ruleInQueryCells].map(([cell, answer]) => {
-      let id = answers.get(answer);
-      if (!id) {
-        id = `q${answers.size + 1}`;
-        answers.set(answer, id);
-      }
-      return `${cell}=${id}`;
-    });
-    await expect(
-      [
-        '# the owner decision of 2026-10-14, 1a: the any-login handlers of the four',
-        '# ruleInQuery files read the login before they leave the request scope by name',
-        "# (asSystem 'rule-in-query'). The actor noted after the login's answer was",
-        '# system:rule-in-query (the guard ran inside the exit); the gate answers outside',
-        '# it: a refusal is noted as system:http:no-login, a login let through as the',
-        '# login. Status, headers, body and the request outcome are unchanged. Every',
-        '# other cell is as recorded on main.',
-        '# answers',
-        ...[...answers].map(([answer, id]) => `${id} ${answer}`),
-        '',
-        `# cells: ${ruleInQueryCells.size}`,
-        ...lines,
-        '',
-      ].join('\n'),
-    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-rule-in-query.txt');
+    // one line each, as the recorded files spell them, each held to its
+    // answer on main (decisionFile).
+    await decisionFile('a4-guard-sweep-rule-in-query.txt', ruleInQueryCells, 'q', [
+      '# the owner decision of 2026-10-14, 1a: the any-login handlers of the four',
+      '# ruleInQuery files read the login before they leave the request scope by name',
+      "# (asSystem 'rule-in-query'). The actor noted after the login's answer was",
+      '# system:rule-in-query (the guard ran inside the exit); the gate answers outside',
+      '# it: a refusal is noted as system:http:no-login, a login let through as the',
+      '# login. Status, headers, body and the request outcome are unchanged. Every',
+      '# other cell is as recorded on main.',
+    ]);
   });
 
   it("records the HEAD cells that take their GET's logins (the owner decision 2a, A4 hand batch A)", async () => {
@@ -946,33 +1022,16 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
     // the login's answer runs under the login's own rule, as on its GET,
     // where it ran on the system pool (login-self). The recorded files hold
     // these cells as driven now; this file names them, one line each, as
-    // the recorded files spell them.
-    expect(headLoginCells.size).toBeGreaterThan(0);
-    const answers = new Map<string, string>();
-    const lines = [...headLoginCells].map(([cell, answer]) => {
-      let id = answers.get(answer);
-      if (!id) {
-        id = `h${answers.size + 1}`;
-        answers.set(answer, id);
-      }
-      return `${cell}=${id}`;
-    });
-    await expect(
-      [
-        "# the owner decision of 2026-10-14, 2a (open question M3): a HEAD row has its GET's",
-        '# logins. The HEADs of the any-login, chat and Telegram GET rows ran the GET handler',
-        '# on the system pool (login-self) for every login; they run under its own rule now,',
-        '# as the GET does. Only the actor and the request outcome noted after the',
-        "# login's answer changed; status, headers and body are as recorded. Every other",
-        '# cell is as recorded on main.',
-        '# answers',
-        ...[...answers].map(([answer, id]) => `${id} ${answer}`),
-        '',
-        `# cells: ${headLoginCells.size}`,
-        ...lines,
-        '',
-      ].join('\n'),
-    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-head-logins.txt');
+    // the recorded files spell them, each held to its answer on main
+    // (decisionFile).
+    await decisionFile('a4-guard-sweep-head-logins.txt', headLoginCells, 'h', [
+      "# the owner decision of 2026-10-14, 2a (open question M3): a HEAD row has its GET's",
+      '# logins. The HEADs of the any-login, chat and Telegram GET rows ran the GET handler',
+      '# on the system pool (login-self) for every login; they run under its own rule now,',
+      '# as the GET does. Only the actor and the request outcome noted after the',
+      "# login's answer changed; status, headers and body are as recorded. Every other",
+      '# cell is as recorded on main.',
+    ]);
   });
 
   it('records what each moved write did on the side (A4 step 3b part 4)', async () => {

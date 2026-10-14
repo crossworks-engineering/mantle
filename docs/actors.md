@@ -1821,6 +1821,25 @@ cells, the owner decision's file and the guard writes baseline (every
 moved write cell held to the guard path's audit rows and create home). The
 moved snapshot holds 11863 cells (8777 after part 5) and 171 answers
 (117); the moved writes file 4951 cells (3775) and 881 answers (743).
+Correction (fix round 1): 48 cells already in the moved snapshot did
+change, the 2a change on rows moved in part 5: the HEADs of the 6
+assistant chat rows (/api/assistant/conversations, messages, stream,
+thread, threads, threads/:id) and the 2 Telegram rows
+(/api/telegram/my-chats, moderated-chats), 6 credentials each in the
+first sweep, the actor and the request outcome only (the same cells as in
+the 2a file). An earlier version of this section said no moved cell
+changed.
+
+Since fix round 1 the two decision files are held mechanically, not only
+recorded: each cell line keeps its answer on main (`main=`, a table under
+`# answers on main`, written once from the recorded files on main and
+never from a run), and the sweep holds the set of cells to the set kept
+and each answer to its main answer with `actor=… out=…` masked before it
+compares the file (`decisionFile`, a4-guard-sweep.test.ts). A rerun with
+`-u` records the cells as driven but fails on any other change on those
+rows (the 172 and 340 cells of the two files; 190 of them differ from
+main, 106 for 1a and 107 for 2a with 23 in both, and only there). The two
+files changed only by the main answers they now keep.
 
 Rows carrying a caller: 742 owner, 90 login, 26 chat, 85 member, 2
 session (945 of 1043; 689 after part 5).
