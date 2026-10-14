@@ -150,28 +150,47 @@ function foldChar(n: string): string {
   return (look ?? n).toLowerCase();
 }
 
+/** One character's part of the skeleton: NFKC-normalised on its own
+ *  (fullwidth and styled letters and brackets to plain ones), invisible
+ *  characters dropped, the rest folded (foldChar). */
+function skeletonPart(ch: string): string {
+  if (INVISIBLE_RE.test(ch)) return '';
+  let part = '';
+  for (const n of ch.normalize('NFKC')) {
+    if (!INVISIBLE_RE.test(n)) part += foldChar(n);
+  }
+  return part;
+}
+
 /**
- * The text as the marker check reads it, with a map back: each character
- * NFKC-normalised on its own (fullwidth and styled letters and brackets to
- * plain ones), invisible characters dropped, then folded (foldChar). `at[i]` is the index in `text` of the character
- * that gave `skeleton[i]`.
+ * The text as the marker check reads it, with a map back: each character's
+ * skeletonPart, worked out once per distinct character. `at[i]` is the
+ * index in `text` of the character that gave `skeleton[i]`.
  */
-function skeletonOf(text: string): { skeleton: string; at: number[] } {
-  let skeleton = '';
-  const at: number[] = [];
+function skeletonOf(text: string): { skeleton: string; at: Int32Array } {
+  const parts = new Map<string, string>();
+  const pieces: string[] = [];
+  let at = new Int32Array(text.length + 16);
+  let n = 0;
   let i = 0;
   for (const ch of text) {
-    if (!INVISIBLE_RE.test(ch)) {
-      for (const n of ch.normalize('NFKC')) {
-        if (INVISIBLE_RE.test(n)) continue;
-        const folded = foldChar(n);
-        skeleton += folded;
-        for (let k = 0; k < folded.length; k++) at.push(i);
+    let part = parts.get(ch);
+    if (part === undefined) {
+      part = skeletonPart(ch);
+      parts.set(ch, part);
+    }
+    if (part !== '') {
+      pieces.push(part);
+      if (n + part.length > at.length) {
+        const grown = new Int32Array(Math.max(at.length * 2, n + part.length));
+        grown.set(at);
+        at = grown;
       }
+      for (let k = 0; k < part.length; k++) at[n++] = i;
     }
     i += ch.length;
   }
-  return { skeleton, at };
+  return { skeleton: pieces.join(''), at: at.subarray(0, n) };
 }
 
 const MARKER_REMOVED = '[marker removed]';
@@ -185,11 +204,70 @@ function plainSkeleton(text: string): string {
   return text.toLowerCase().replace(/[(<{]/g, '[').replace(/[)>}]/g, ']');
 }
 
+/**
+ * The pre-screen (fix round 2, L7): every marker's skeleton holds
+ * RETRIEVED, separators, CONTENT. The loose fold finds that core with the
+ * runtime's own native passes (NFKD on the whole text, the invisible
+ * characters and every combining mark dropped, lowercased) and a pattern
+ * whose letters also take their look-alikes, so a text without it skips
+ * the skeleton, which is walked character by character. The loose fold
+ * reads at least every core the skeleton reads (fence.test.ts checks every
+ * code point), so the pre-screen never hides a marker; it may let a text
+ * through that the skeleton then clears.
+ */
+const LOOSE_DROP_RE = /[\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0]+/gu;
+
+/** Small letters that are not their capital's lowercase yet uppercase to
+ *  a look-alike (the old Cyrillic forms, U+1C80 to U+1C88). The soundness
+ *  test in fence.test.ts names any other. */
+const UPPERCASE_KIN = '\u1c80\u1c81\u1c82\u1c83\u1c84\u1c85\u1c86\u1c87\u1c88';
+
+/** The characters the loose fold may show for one skeleton letter: the
+ *  letter and its look-alikes, as they are, lowercased, and their kin. */
+function looseLetter(letter: string): string {
+  const chars = new Set([letter]);
+  for (const [k, v] of Object.entries(CONFUSABLES)) {
+    if (v !== letter) continue;
+    chars.add(k);
+    chars.add(k.toLowerCase());
+  }
+  for (const kin of UPPERCASE_KIN) {
+    if (CONFUSABLES[kin.toUpperCase()] === letter) chars.add(kin);
+  }
+  return `[${[...chars].join('')}]`;
+}
+
+/** The separators the core may hold, on the loose fold (dashes are not
+ *  folded there, so every dash counts). */
+const LOOSE_SEPARATOR = '[\\s_\\-.:/\\p{Pd}]';
+
+const LOOSE_CORE_RE = new RegExp(
+  [...'retrieved'].map(looseLetter).join('') +
+    `${LOOSE_SEPARATOR}*` +
+    [...'content'].map(looseLetter).join(''),
+  'u',
+);
+
+/** The text on the loose fold (above). */
+function looseFold(text: string): string {
+  return text.normalize('NFKD').replace(LOOSE_DROP_RE, '').toLowerCase();
+}
+
+/** For the pre-screen's soundness test: the two folds and the loose
+ *  pattern's pieces. Not part of the package's surface. */
+export const fenceFoldsForTest = { skeletonPart, looseFold, looseLetter, LOOSE_SEPARATOR };
+
+/** How many texts the defang walked character by character, for the test
+ *  that pins the pre-screen's saving. */
+export const fenceWork = { skeletons: 0 };
+
 /** `text` with every fence marker in it defanged, spelled exactly or with
  *  its case, spacing, brackets or letters disguised. Text without one comes
  *  back unchanged, byte for byte. */
 export function stripFenceMarkers(text: string): string {
   const plain = PLAIN_RE.test(text);
+  if (!plain && !LOOSE_CORE_RE.test(looseFold(text))) return text;
+  if (!plain) fenceWork.skeletons++;
   const { skeleton, at } = plain ? { skeleton: plainSkeleton(text), at: null } : skeletonOf(text);
   const spans: Array<[number, number]> = [];
   for (const m of skeleton.matchAll(FENCE_MARKER_RE)) {

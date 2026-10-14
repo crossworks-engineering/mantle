@@ -271,6 +271,18 @@ still caught and prose that names the words is left alone. Text without a
 marker comes back byte for byte, so the live turn's prompts are unchanged
 for normal text.
 
+The skeleton is walked character by character, so a pre-screen runs first
+(fix round 2, L7): every marker's skeleton holds RETRIEVED, separators,
+CONTENT, and a loose fold finds that core with the runtime's native passes
+(NFKD on the whole text, invisible characters and combining marks dropped,
+lowercased) and a pattern whose letters also take their look-alikes. A
+text without the core comes back untouched without the walk: a 5.4 MB
+non-ASCII tool result went from about 2.5 s to about 60 ms. The loose fold
+reads at least every core the skeleton reads, checked for every code point
+in `packages/std/src/fence.test.ts`, so the pre-screen never hides a
+marker; a text that passes it is walked as before, once per distinct
+character.
+
 The skeleton is a defang, not a proof: it cannot catch every paraphrase or
 every script that can draw a look-alike letter. So the two paths lean on
 different second lines:
