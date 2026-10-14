@@ -353,7 +353,7 @@ worker-shell server/web/workers/telegram-poll.ts system(worker:channel-poll)
 | A page's block-id backfill (a detached promise)                             | `packages/content/src/pages/read.ts`                                       | `system(backfill:page-block-ids)`                                                                                                                                                                  |
 | The audit row of a connector call on a login's MCP (a detached promise)     | `packages/mcp-core/src/login-surface.ts`                                   | `system(audit-log)`                                                                                                                                                                                |
 | Operator scripts                                                            | `server/web/scripts/*`, `maintain`, any `scripts/` file run as the process | `system(script:<file name>)`, from the process's main file (`scriptActor` in `packages/db/src/actor.ts`)                                                                                           |
-| Clearing member Moderator ticks (0286 roll)                                 | `server/web/scripts/ws-clear-member-ticks.ts` (`lib/workspace-ticks.ts`)   | `system(script:ws-clear-member-ticks)`, from the main file (`scriptActor`); each `user.moderator` event it writes has no `actor_id` and `by` "ws:clear-member-ticks"; `ws:team-check` reads only |
+| Clearing member Moderator ticks (0286 roll)                                 | `server/web/scripts/ws-clear-member-ticks.ts` (`lib/workspace-ticks.ts`)   | `system(script:ws-clear-member-ticks)`, from the main file (`scriptActor`); each `user.moderator` event it writes has no `actor_id` and `by` "ws:clear-member-ticks"; `ws:team-check` reads only   |
 | Hand psql                                                                   | the box                                                                    | `mantle_operator_actor('reason')` first                                                                                                                                                            |
 | Migrations                                                                  | `packages/db/src/migrate.ts`                                               | `system(migration)`, set on each migration's transaction                                                                                                                                           |
 
@@ -544,7 +544,7 @@ check off. Both are tagged as the actor's own for the round-trip test.
   on the system pool with `SET LOCAL ROLE mantle_write_user` and the same
   scope, every statement as the write role (its row rules and write checks)
   except a write whose target is a gap table, a row-locking read (`FOR
-  UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
+UPDATE`, `FOR SHARE` and kin, which need UPDATE) naming any gap table, or
   a read naming one the write role cannot read at all (`secrets`,
   `app_table_exports`), which runs
   as `mantle_gap_writer` (fix round 2) between `set local role` to it and
@@ -724,7 +724,7 @@ Open, each an owner question (A2b2b keeps today's working behaviour):
   `mantle_workspace_event` (0279).
 - **The refusal messages.** `isScopeWriteRefusal` knows 0278's and 0279's
   write check messages, the row rule's own (`new row violates row-level
-  security policy`) and `mantle_default_home`'s, so each is a 403
+security policy`) and `mantle_default_home`'s, so each is a 403
   (`pg-error.test.ts`). A missing grant (`isPermissionGap`) is not.
 - **One helper for the manage rule** (0279): `mantle_may_manage_home`
   (manage of the home, or Admin when there is none), `mantle_may_add_to_folder`
@@ -841,7 +841,8 @@ its login is still resolved by the session guard, so the caller runs as
 request context, not on the bound caller, so a call nested inside the
 request with a caller of its own (an MCP tool, a turn) still reads it; each
 session guard and both API key checks (the gate's `gateAccessKey`, the
-guard's `accessKeyLogin`) read the row (`currentRoute()`), never a list.
+login lookup's `findKeyLogin` since step 3a, both through `keyOnRow`) read
+the row (`currentRoute()`), never a list.
 A key is judged on the row only where the raw path spells the row's
 pattern (`requestKeyRoute`): Hono decodes the path before routing, and an
 encoded spelling stays a 404 for a key, as before A4. Those two checks judge a
@@ -913,11 +914,23 @@ each read applies what its own lookup applied before (a device token's
 last-used stamp, a rotated token's reuse check, the actor named on the
 request slot), so a route that reads two guards stamps twice, as it did.
 What changed: a login's row is read once per request, not once per guard
-call, so a second guard call in a request that ended its own sessions sees
-the login the request started with. Outside a routed request (a test
-calling a handler, a script) and inside a call nested in one with a caller
-of its own, each read finds the login afresh: today's behaviour. A find
-that fails (the database) is not kept: the guard asks again, as before.
+call. A request that changes a login forgets what it found
+(`forgetRequestLogins`, audit L1): `endLoginSessions` (sign out
+everywhere, a password change or reset, a stolen token presented again),
+`updateLogin` after its commit (a role change, a disable), and the revoke
+of a key or a device token the request may have come in on. A later guard
+read in the same request, or work it started and did not await, finds the
+login afresh and sees the change, as each guard call did before; the gate's
+Admin view of the row's area is not read again. The scope the request
+entered stays (a second guard enters the same one, as before). Outside a
+routed request (a test calling a handler, a script) and inside a call
+nested in one with a caller of its own, each read finds the login afresh:
+today's behaviour. A find that fails (the database) is not kept: the first
+guard read answers with the gate's failure, so the request looks the login
+up once, as before (audit L4); a read after it asks again. The sandbox
+frame documents (`GET /api/apps/:id/frame`, `GET
+/api/member/apps/:id/frame`, and their HEADs) read no guard: the gate finds
+no login for them (L4).
 
 The request still runs as its row's first actor (`system(http:no-login)`)
 until a guard reads the login, so a route that reads no guard runs as it
@@ -937,8 +950,9 @@ handlers never ask the area: `GET`/`POST /api/updates/check` and `GET
 /api/updates/status` (class settings, read by `getSessionUser`) answer any
 Admin user, and the Telegram chat routes (class connectors, open to every
 login through `TELEGRAM_LOGIN_ROUTES`) are served by `getChatLoginOr401`.
-Refusing at the gate would change those 13 answers; step 3b decides them
-with the codemod.
+Refusing at the gate would change those 13 answers (nine rows: GET and
+POST `/api/updates/check`, GET `/api/updates/status`, and the six Telegram
+chat rows; 13 cells with the HEADs); step 3b decides them with the codemod.
 
 An API key is judged on a row in one place (`keyOnRow`, route-policy.ts):
 the gate's `gateAccessKey` answers its refusal, and the login lookup lets a
@@ -953,7 +967,32 @@ recorded on v0.300.28 before the change and unchanged after it: every
 route of the manifest and every page, every method, seventeen kinds of
 credential, and per request its status, the headers a client reads, a
 refusal's body and, per guard call, the guard's answer, the actor after it
-and the scope it entered.
+and the scope it entered. Its second sweep (audit L2,
+`__snapshots__/a4-guard-sweep-more.txt`, also recorded on v0.300.28) adds
+seven credentials (a disabled login's cookie, a cookie from before an
+epoch bump, a deleted login's cookie, a rotated device token presented
+again, a device token past its expiry, an unknown and a revoked key) and
+drives again, with the guard's item and scope reads stood in, the 391
+cells of the first sweep where a guard threw for want of a database: none
+still does.
+
+**Step 3b must-dos (from the 3a audit, L5).**
+
+- The connector OAuth callbacks are classed `effect: read` but write (they
+  store the connector's tokens). Step 3b classes them as writes, with the
+  actor they write as, before the gate refuses by effect.
+- The Telegram chat rows are class `connectors` and open to every login
+  (`TELEGRAM_LOGIN_ROUTES`, served by `getChatLoginOr401`). Enforcing the
+  row's area at the gate would refuse an Admin user with no connectors area
+  while letting a member in. Step 3b gives them a class that says what they
+  are (a login's own chats, a Moderator's bot chats) before the gate
+  refuses by area.
+- **Owner question:** `GET /api/updates/status` and `POST
+/api/updates/check` answer any Admin user today though their row names
+  the settings area. The auditor suggests requiring settings for those two
+  and keeping `GET /api/updates/check` open to any Admin user as a
+  carve-out; the builder suggested a class of their own for all three. The
+  owner decides before step 3b enforces the area.
 
 1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null

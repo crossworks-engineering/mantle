@@ -65,8 +65,8 @@ function mcpConnection(caller: GateCaller): boolean {
  *  caller by hand). The tools' policies carry their key area; A4's route
  *  rows carry their own, but on HTTP this narrows nothing yet: the gate's
  *  HTTP caller (server/web gate.ts httpCaller) sets no `facts.keyAreas`,
- *  so a key's areas there are judged by gateAccessKey and accessKeyLogin
- *  (keyMayCall), not here. */
+ *  so a key's areas there are judged by gateAccessKey and the login
+ *  lookup's findKeyLogin (both keyOnRow, keyMayCall), not here. */
 const keyNarrower: Narrower = (caller, policy) => {
   const areas = (caller.facts?.keyAreas ?? null) as readonly string[] | null;
   if (!narrowedCaller(caller) || areas === null) return null;

@@ -5,8 +5,8 @@
  * registers a route; the gate middleware finds the row of a request once,
  * sets it on the request context and hands it to enterCall (@mantle/db
  * gate.ts). Every session guard and the API key checks (the gate's
- * gateAccessKey, the guard's accessKeyLogin) read the row
- * (currentRoute()), never the route lists.
+ * gateAccessKey, the login lookup's findKeyLogin, both through keyOnRow)
+ * read the row (currentRoute()), never the route lists.
  *
  * Step 1 is no behaviour change: each field is folded from the list that
  * decided it before, by the same functions, so every answer is what it
@@ -382,9 +382,10 @@ export function spellsPattern(pattern: string, path: string): boolean {
 // ── The gate's route source and the stored row ──────────────────────────────
 
 /** A row's declared policy (the gate's step 3). The Admin step names the
- *  row's area: the gate refuses an Admin login without it (A4 step 3a, the
- *  view the gate resolved); for every other caller the view is null and
- *  the session guard decides, as before. A public row that writes names
+ *  row's area, but the gate does not refuse with it yet: the HTTP caller
+ *  is unscoped (`admin: null`), and the session guard decides from the
+ *  Admin view the gate resolved (adminRouteGate), as before (A4 step 3a;
+ *  step 3b makes it the gate's refusal). A public row that writes names
  *  the actor it runs as. */
 export function routeGatePolicy(row: RouteRow): GatePolicy {
   return Object.freeze({
@@ -452,7 +453,8 @@ export function rowKeyRoute(row: RouteRow | null): KeyRoute | null {
  * judged on the raw path, where such a spelling names no v1 route, and
  * that answer stays. The raw path only filters the row: it never picks
  * another (docs/actors.md, "the routed row is the request's only row").
- * The gate (gateAccessKey) and the guard (accessKeyLogin) both ask this.
+ * The gate (gateAccessKey) and the login lookup (findKeyLogin) both ask
+ * this, through keyOnRow.
  */
 export function requestKeyRoute(row: RouteRow | null, rawPath: string): KeyRoute | null {
   return row && spellsPattern(row.pattern, rawPath) ? rowKeyRoute(row) : null;

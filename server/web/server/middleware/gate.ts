@@ -202,8 +202,11 @@ function httpCaller(
     ...(accessKey ? { write: accessKey.access === 'read_write' } : {}),
     // Unscoped for step 5: the guard decides (adminRouteGate, reading the
     // Admin view the gate resolved, login.admin in the facts). Not the
-    // gate's refusal yet: two area rows' handlers never ask the area
-    // (docs/actors.md, A4 step 3a).
+    // gate's refusal yet: nine area rows (13 cells: GET, POST and HEAD
+    // /api/updates/check, GET and HEAD /api/updates/status, and the
+    // Telegram chat rows: the bot block, unpair, moderated chats, my chats,
+    // pair) have handlers that never ask the area (docs/actors.md, A4 step
+    // 3a).
     admin: null,
     createHome: null,
     facts: login.facts,

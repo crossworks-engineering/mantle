@@ -257,7 +257,7 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
 
   // The key narrower is driven here with the areas set on the caller by
   // hand: the HTTP caller (gate.ts httpCaller) sets none, so on HTTP it
-  // does not run and gateAccessKey and accessKeyLogin judge the areas.
+  // does not run and gateAccessKey and findKeyLogin judge the areas (keyOnRow).
   // This pins it for when a step sets them.
   it("an API key: the gate's key narrower and the row answer what keyMayCall answers by path, on every v1 row", () => {
     ensureGateReady();
