@@ -39,7 +39,10 @@ import {
   loginActor,
   adminReadsOnSystemPool as dbAdminReadsOnSystemPool,
   loginHoldsAdmin,
+  currentCaller,
+  type AdminView,
   type CreateHome,
+  type GateCaller,
   type RequestScopeMode,
 } from '@mantle/db';
 import { AccessError, mapAccessError } from '@mantle/std';
@@ -62,16 +65,15 @@ import {
 import { auditFireAndForget, requestMeta } from '../audit';
 import { lockOauthActor } from '../oauth-lock';
 import { auditPeersUnbound, unbindPeersActingAs } from '../peer-unbind';
-import { isAccessKey, isApiV1Path, lockLoginKeys } from '../access-keys';
-import { keyMayCall } from '../api-v1';
+import { isAccessKey, lockLoginKeys } from '../access-keys';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
   anyLoginRow,
   currentRoute,
+  keyOnRow,
   memberOpenRead,
   memberOpenWrite,
-  requestKeyRoute,
   routeItemTarget,
   type RouteRow,
 } from './route-policy';
@@ -187,28 +189,9 @@ async function ownerForAsset(req: Request): Promise<SessionUser | NextResponse> 
   if (user) return user;
   const at = new URL(req.url).searchParams.get('at');
   if (at) {
-    const claims = verifyAssetToken(at);
-    // The signature proves the server minted this for `uid`; the route scopes to
-    // it. No DB lookup — the token is short-lived and email isn't needed here.
-    // Byte-serving is GET-only, so the synthetic actor never reaches the
-    // mutation/audit choke point. `act` names the LOGIN the token was minted
-    // for, so per-login asset routes (the profile photo) can address that
-    // row; absent, the actor is the anchor itself — the pre-claim behavior.
-    if (claims) {
-      // The login the token was minted for (`act`, else the anchor itself)
-      // must still be a usable ADMIN on the same session epoch. Members are
-      // never minted one; this closes a revoked, demoted or signed-out
-      // login's 2-hour window too.
-      const row = await loadLoginRow(claims.act ?? claims.uid);
-      if (!row || row.role !== 'admin' || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
-        return accessRefusal(new AccessError('unauthorized'));
-      }
-      return {
-        id: claims.uid,
-        email: '',
-        actor: { id: claims.act ?? claims.uid, email: '', displayName: null, isOwner: false },
-      };
-    }
+    const asset = await requestLogins().ownerAsset(req.url);
+    if (asset === 'refused') return accessRefusal(new AccessError('unauthorized'));
+    if (asset) return asset;
   }
   // The browser sidecar rendering an export: the render cookie, on the byte
   // routes a render surface loads (page images, scene images, embedded
@@ -222,12 +205,52 @@ async function ownerForAsset(req: Request): Promise<SessionUser | NextResponse> 
 }
 
 /**
- * The admin a render cookie (kind 'r', lib/auth/tokens.ts) was minted for,
- * and the node it may open. The login is re-read: a disabled or demoted
- * login's cookie stops at once, and a cookie naming another brain's anchor
- * never matches. Null when the request carries no valid render cookie.
+ * The admin an `?at=` asset token in `url` names (findOwnerAsset), with no
+ * effect: null when the URL carries no valid token, 'refused' when its
+ * login may not use it.
+ *
+ * The signature proves the server minted this for `uid`; the route scopes
+ * to it. Byte-serving is GET-only, so the synthetic actor never reaches the
+ * mutation/audit choke point. `act` names the LOGIN the token was minted
+ * for, so per-login asset routes (the profile photo) can address that row;
+ * absent, the actor is the anchor itself (the pre-claim behavior).
  */
+async function findOwnerAsset(url: string): Promise<SessionUser | 'refused' | null> {
+  const at = new URL(url).searchParams.get('at');
+  const claims = at ? verifyAssetToken(at) : null;
+  if (!claims) return null;
+  // The login the token was minted for (`act`, else the anchor itself)
+  // must still be a usable ADMIN on the same session epoch. Members are
+  // never minted one; this closes a revoked, demoted or signed-out login's
+  // 2-hour window too.
+  const row = await loadLoginRow(claims.act ?? claims.uid);
+  if (!row || row.role !== 'admin' || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
+    return 'refused';
+  }
+  return {
+    id: claims.uid,
+    email: '',
+    actor: { id: claims.act ?? claims.uid, email: '', displayName: null, isOwner: false },
+  };
+}
+
+/** The admin a render cookie names and the node it may open
+ *  (findRender), the request's actor named after it. */
 async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | null> {
+  const found = await requestLogins().render();
+  // Arch A2a: the render runs as the login the cookie names.
+  if (found) setRequestActor(loginActor(found.user.actor.id, 'rw'));
+  return found;
+}
+
+/**
+ * The admin a render cookie (kind 'r', lib/auth/tokens.ts) was minted for,
+ * and the node it may open, with no effect. The login is re-read: a
+ * disabled or demoted login's cookie stops at once, and a cookie naming
+ * another brain's anchor never matches. Null when the request carries no
+ * valid render cookie.
+ */
+async function findRender(): Promise<{ user: SessionUser; nodeId: string } | null> {
   const value = (await cookies()).get(RENDER_COOKIE_NAME)?.value;
   const claims = value ? verifyRenderToken(value) : null;
   if (!claims) return null;
@@ -235,8 +258,6 @@ async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | n
   if (!row || row.role !== 'admin' || !loginUsable(row)) return null;
   const user = await sessionUserFor(row);
   if (!user || user.id !== claims.uid) return null;
-  // Arch A2a: the render runs as the login the cookie names.
-  setRequestActor(loginActor(user.actor.id, 'rw'));
   return { user, nodeId: claims.n };
 }
 
@@ -310,70 +331,107 @@ async function memberRouteScope(loginId: string): Promise<NextResponse | null> {
 async function memberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
   const res = await resolveLogin();
   if (res?.kind === 'member') return res.member;
-  const at = new URL(req.url).searchParams.get('at');
-  const claims = at ? verifyAssetToken(at) : null;
-  if (claims?.act) {
-    const row = await loadLoginRow(claims.act);
-    if (row && row.role === 'member' && loginUsable(row) && row.sessionEpoch === claims.ep) {
-      const resolved = await resolvedFor(row, 'web');
-      if (resolved?.kind === 'member' && resolved.member.anchorId === claims.uid) {
-        return resolved.member;
-      }
-    }
-  }
-  return accessRefusal(new AccessError('unauthorized'));
+  const member = await requestLogins().memberAsset(req.url);
+  return member ?? accessRefusal(new AccessError('unauthorized'));
 }
 
+/** The member an `?at=` asset token in `url` was minted for (the member
+ *  shell mints it with `act` = the login), with no effect, or null. The
+ *  login is re-read, so a disabled or demoted login's token stops at once. */
+async function findMemberAsset(url: string): Promise<MemberCaller | null> {
+  const at = new URL(url).searchParams.get('at');
+  const claims = at ? verifyAssetToken(at) : null;
+  if (!claims?.act) return null;
+  const row = await loadLoginRow(claims.act);
+  if (!row || row.role !== 'member' || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
+    return null;
+  }
+  const resolved = await resolvedFor(row, 'web');
+  return resolved?.kind === 'member' && resolved.member.anchorId === claims.uid
+    ? resolved.member
+    : null;
+}
+
+/** A device token a refresh replaced, presented again (reuse detection). */
+type RotatedToken = { jti: string; userId: string; rotatedTo: string };
+
+/** What a device token (`Authorization: Bearer <mobile-token>`) resolves
+ *  to (findBearer), with no effect: the login and the token's id, the
+ *  token to stamp as used, a rotated token presented again. */
+type FoundBearer = Readonly<{
+  resolved: Resolved | null;
+  jti: string | null;
+  touch: string | null;
+  rotated: RotatedToken | null;
+}>;
+
+const NO_BEARER: FoundBearer = Object.freeze({
+  resolved: null,
+  jti: null,
+  touch: null,
+  rotated: null,
+});
+
 /**
- * Resolve the login from an `Authorization: Bearer <mobile-token>` header:
- * verify the signature, confirm the row is present/unrevoked/unexpired and
- * names the same login, bump last_used_at. Returns null on any failure.
+ * Resolve the login from an `Authorization: Bearer <mobile-token>` header,
+ * with no effect: verify the signature, confirm the row is
+ * present/unrevoked/unexpired and names the same login. applyBearer then
+ * stamps the token as used, or runs the reuse check of a rotated one.
  *
  * A token that carries a session epoch (`ep`) is also held to it: once the
  * login's epoch moves on (sign out, End sessions, disable, a role change)
  * the token is dead, as a cookie is.
  */
-async function getBearerLogin(): Promise<Resolved | null> {
-  return (await bearerLogin())?.resolved ?? null;
-}
-
-/** getBearerLogin, plus the device token's id (the cookie upgrade binds the
- *  cookie it mints to it). */
-async function bearerLogin(): Promise<{ resolved: Resolved; jti: string } | null> {
+async function findBearer(): Promise<FoundBearer> {
   const token = bearerFromHeader((await headers()).get('authorization'));
-  if (!token) return null;
+  if (!token) return NO_BEARER;
   const claims = verifyMobileToken(token);
-  if (!claims) return null;
+  if (!claims) return NO_BEARER;
 
   const tok = await loadBearerToken(claims.jti);
-  if (!tok || tok.userId !== claims.uid) return null;
+  if (!tok || tok.userId !== claims.uid) return NO_BEARER;
   if (tok.revokedAt) {
     // A token a refresh replaced, presented on an ordinary route: when its
     // successor has been used, this is the stolen-from copy (the app holds
-    // only the newest), on whatever route it shows up.
-    if (tok.rotatedTo) {
-      const h = await headers();
-      await presentRotatedToken(
-        { jti: claims.jti, userId: tok.userId, rotatedTo: tok.rotatedTo },
-        {
-          method: (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase(),
-          path: h.get(MANTLE_PATH_HEADER) ?? '',
-          meta: await requestMeta(),
-        },
-      );
-    }
-    return null;
+    // only the newest), on whatever route it shows up (applyBearer).
+    return tok.rotatedTo
+      ? { ...NO_BEARER, rotated: { jti: claims.jti, userId: tok.userId, rotatedTo: tok.rotatedTo } }
+      : NO_BEARER;
   }
-  if (tok.expiresAt.getTime() <= Date.now()) return null;
+  if (tok.expiresAt.getTime() <= Date.now()) return NO_BEARER;
 
   const row = await loadLoginRow(claims.uid);
-  if (!row || !loginUsable(row)) return null;
-  if (claims.ep !== undefined && claims.ep !== row.sessionEpoch) return null;
-
-  await touchBearerToken(claims.jti);
+  if (!row || !loginUsable(row)) return NO_BEARER;
+  if (claims.ep !== undefined && claims.ep !== row.sessionEpoch) return NO_BEARER;
 
   const resolved = await resolvedFor(row, 'mobile');
-  return resolved ? { resolved, jti: claims.jti } : null;
+  return { resolved, jti: resolved ? claims.jti : null, touch: claims.jti, rotated: null };
+}
+
+/** The effects of a found device token, each time a guard reads it: the
+ *  reuse check of a rotated token (which may end the login's sessions), or
+ *  the last_used_at stamp. */
+async function applyBearerEffects(found: {
+  touch: string | null;
+  rotated: RotatedToken | null;
+}): Promise<void> {
+  if (found.rotated) {
+    const h = await headers();
+    await presentRotatedToken(found.rotated, {
+      method: (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase(),
+      path: h.get(MANTLE_PATH_HEADER) ?? '',
+      meta: await requestMeta(),
+    });
+  }
+  if (found.touch) await touchBearerToken(found.touch);
+}
+
+/** The device token's login and its id (the cookie upgrade binds the
+ *  cookie it mints to it), its effects applied. */
+async function bearerLogin(): Promise<{ resolved: Resolved; jti: string } | null> {
+  const found = await requestLogins().bearer();
+  await applyBearerEffects(found);
+  return found.resolved && found.jti ? { resolved: found.resolved, jti: found.jti } : null;
 }
 
 /** Most refreshes a cookie's device token can have gone through and still
@@ -501,8 +559,9 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
 }
 
 /**
- * The login an inbound API key (`mtlk_`) acts as. `undefined` when the
- * request carries no key; null when it carries one that is not let in.
+ * The login an inbound API key (`mtlk_`) acts as, found with no effect.
+ * `undefined` when the request carries no key; no login when it carries one
+ * that is not let in.
  *
  * A key is taken ONLY from the request context, where the gate leaves it
  * after every check passed (server/middleware/access-key-gate.ts: the
@@ -512,46 +571,70 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
  * shape the gate lets through) has no key login at all.
  *
  * The scope guard runs again here (audit item 1), on the request's
- * ROUTE_POLICY row and raw path (requestKeyRoute, as the gate judged it), so a
- * `source: 'api'` login exists only for a /api/v1 route the key may call:
- * the route's area, and a write only for a read_write key. Every gate below
- * (getOwnerOr401, getMemberOr401, getLoginOr401) resolves
- * through this, so none can hand a read key a write route.
+ * ROUTE_POLICY row (keyOnRow, the one judgment of a key on a row, the
+ * gate's own), so a `source: 'api'` login exists only for a /api/v1 route
+ * the key may call: the route's area, and a write only for a read_write
+ * key. Every gate below (getOwnerOr401, getMemberOr401, getLoginOr401)
+ * resolves through this, so none can hand a read key a write route. On a
+ * routed request the gate finds it once (resolveHttpLogin), on the row it
+ * judged the key on.
  */
-async function accessKeyLogin(): Promise<Resolved | null | undefined> {
+async function findKeyLogin(): Promise<FoundLogin | undefined> {
   const h = await headers();
   const token = bearerFromHeader(h.get('authorization'));
   if (!isAccessKey(token)) return undefined;
   const ctx = getRequestContext();
   const grant = ctx?.accessKey;
-  if (!ctx || !grant) return null;
-  if (!isApiV1Path(ctx.path)) return null;
-  if (!keyMayCall(grant, requestKeyRoute(currentRoute(), ctx.path)).ok) return null;
+  if (!ctx || !grant || !keyOnRow(grant, currentRoute(), ctx.path).ok) return NO_LOGIN;
   const resolved = await resolvedFor(grant.login, 'api');
   // Arch A2a: a read key's request runs as login(ro).
-  if (resolved) nameRequestLogin(resolved, grant.access === 'read_write' ? 'rw' : 'ro');
-  return resolved;
+  return { ...NO_LOGIN, resolved, mode: grant.access === 'read_write' ? 'rw' : 'ro' };
 }
 
 /** Name the request's actor (arch A2a, plan 4.1): the login the guard
  *  resolved, read-write unless a read key. The guard's later notes keep it
  *  (an Admin write) or replace it (an area route: system). */
 function nameRequestLogin(res: Resolved, mode: 'rw' | 'ro'): void {
-  const id = res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
-  setRequestActor(loginActor(id, mode));
+  setRequestActor(loginActor(resolvedLoginId(res), mode));
 }
 
-/** Resolve the calling login, admin or member, cookie first then bearer. */
-async function resolveLogin(): Promise<Resolved | null> {
+/** The login a resolved caller is. */
+function resolvedLoginId(res: Resolved): string {
+  return res.kind === 'admin' ? res.user.actor.id : res.member.loginId;
+}
+
+/**
+ * What a request's login credential resolves to (findLogin), with no
+ * effect: the login, the mode the guard names its actor in (null: it names
+ * none, the detached-dev login), and the device token's effects
+ * (applyBearerEffects).
+ */
+type FoundLogin = Readonly<{
+  resolved: Resolved | null;
+  mode: 'rw' | 'ro' | null;
+  touch: string | null;
+  rotated: RotatedToken | null;
+}>;
+
+const NO_LOGIN: FoundLogin = Object.freeze({
+  resolved: null,
+  mode: null,
+  touch: null,
+  rotated: null,
+});
+
+/** Find the calling login, admin or member, cookie first then bearer, with
+ *  no effect (applyLogin applies them). `bearer` finds the device token. */
+async function findLogin(bearer: () => Promise<FoundBearer>): Promise<FoundLogin> {
   // DB-less dev: a detached frontend has no local Postgres, so the configured
   // remote identity stands in for the cookie→authUsers lookup. Always an
   // admin. No-op in prod.
   const dev = detachedDevUser();
-  if (dev) return { kind: 'admin', user: dev, source: 'web', epoch: 0 };
+  if (dev) return { ...NO_LOGIN, resolved: { kind: 'admin', user: dev, source: 'web', epoch: 0 } };
 
   // An API key is judged on itself, never with the cookie: a key presented
   // where keys are not accepted is no login at all.
-  const key = await accessKeyLogin();
+  const key = await findKeyLogin();
   if (key !== undefined) return key;
 
   const c = (await cookies()).get(SESSION_COOKIE_NAME);
@@ -565,17 +648,201 @@ async function resolveLogin(): Promise<Resolved | null> {
       const deviceOk = !data.dj || (await cookieDeviceAlive(data.dj, data.uid));
       if (row && loginUsable(row) && row.sessionEpoch === data.ep && deviceOk) {
         const resolved = await resolvedFor(row, 'web');
-        if (resolved) {
-          nameRequestLogin(resolved, 'rw');
-          return resolved;
-        }
+        if (resolved) return { ...NO_LOGIN, resolved, mode: 'rw' };
       }
     }
   }
   // Mobile companion: Authorization: Bearer <mobile-token>.
-  const bearer = await getBearerLogin();
-  if (bearer) nameRequestLogin(bearer, 'rw');
-  return bearer;
+  const found = await bearer();
+  return {
+    resolved: found.resolved,
+    mode: found.resolved ? 'rw' : null,
+    touch: found.touch,
+    rotated: found.rotated,
+  };
+}
+
+/** A found login's effects, each time a guard reads it (as each guard call
+ *  resolved the login before A4 step 3a): the device token's, then the
+ *  request's actor named. */
+async function applyLogin(found: FoundLogin): Promise<Resolved | null> {
+  await applyBearerEffects(found);
+  if (found.resolved && found.mode) nameRequestLogin(found.resolved, found.mode);
+  return found.resolved;
+}
+
+/** Resolve the calling login, admin or member, cookie first then bearer:
+ *  the request's login (the gate found it once, A4 step 3a), its effects
+ *  applied. */
+async function resolveLogin(): Promise<Resolved | null> {
+  return applyLogin(await requestLogins().login());
+}
+
+// ── The request's logins, found once (arch A4 step 3a) ──────────────────────
+
+/** Keep `p` until it fails: a failed find is asked again next time. */
+function keepUntilFailed<T>(p: Promise<T>, drop: () => void): Promise<T> {
+  p.catch(drop);
+  return p;
+}
+
+/**
+ * Every credential a request carries, each found once and kept for the
+ * request: the login (findLogin: a key, the session cookie, a device
+ * token), the device token on its own (the cookie upgrade), an `?at=`
+ * asset token (admin or member) and the render cookie. Finding has no
+ * effect; each guard read applies the effects it applied before (applyLogin,
+ * applyBearerEffects, renderCaller), so a guard answers as it did when it
+ * resolved the login itself. A failed find is not kept: the next read asks
+ * again, as a guard did.
+ *
+ * The gate makes one for each routed request and binds it on the caller
+ * (resolveHttpLogin); requestLogins() reads it. Outside a routed request
+ * (a test calling a handler, a script) each read makes a fresh one: the
+ * guards resolve as before.
+ */
+export class RequestLogins {
+  #login: Promise<FoundLogin> | null = null;
+  #bearer: Promise<FoundBearer> | null = null;
+  #render: Promise<{ user: SessionUser; nodeId: string } | null> | null = null;
+  readonly #owner = new Map<string, Promise<SessionUser | 'refused' | null>>();
+  readonly #member = new Map<string, Promise<MemberCaller | null>>();
+
+  login(): Promise<FoundLogin> {
+    return (this.#login ??= keepUntilFailed(
+      findLogin(() => this.bearer()),
+      () => (this.#login = null),
+    ));
+  }
+
+  bearer(): Promise<FoundBearer> {
+    return (this.#bearer ??= keepUntilFailed(findBearer(), () => (this.#bearer = null)));
+  }
+
+  render(): Promise<{ user: SessionUser; nodeId: string } | null> {
+    return (this.#render ??= keepUntilFailed(findRender(), () => (this.#render = null)));
+  }
+
+  ownerAsset(url: string): Promise<SessionUser | 'refused' | null> {
+    return RequestLogins.#kept(this.#owner, url, findOwnerAsset);
+  }
+
+  memberAsset(url: string): Promise<MemberCaller | null> {
+    return RequestLogins.#kept(this.#member, url, findMemberAsset);
+  }
+
+  static #kept<T>(map: Map<string, Promise<T>>, url: string, find: (url: string) => Promise<T>) {
+    let p = map.get(url);
+    if (!p) {
+      p = keepUntilFailed(find(url), () => map.delete(url));
+      map.set(url, p);
+    }
+    return p;
+  }
+}
+
+/** The key the gate binds the request's logins under, in the caller's
+ *  facts. */
+const HTTP_LOGINS = 'httpLogins';
+/** The key of the Admin view of the row's area the gate resolved for the
+ *  login (resolveHttpLogin), in the caller's facts. */
+const HTTP_ADMIN = 'httpAdmin';
+
+/** The request's logins, as the gate bound them on the caller; a fresh set
+ *  outside a routed request (and inside a call nested in one with a caller
+ *  of its own), where the guards resolve as before. */
+function requestLogins(): RequestLogins {
+  return boundLogins(currentCaller()) ?? new RequestLogins();
+}
+
+/** The logins bound on `caller` by the gate, or null. */
+function boundLogins(caller: GateCaller | null): RequestLogins | null {
+  const bound = caller?.facts?.[HTTP_LOGINS];
+  return bound instanceof RequestLogins ? bound : null;
+}
+
+/** What the gate binds on a routed request's caller (resolveHttpLogin). */
+export type HttpLogin = Readonly<{
+  logins: RequestLogins;
+  /** The login the request's credential resolved to, when the gate judged
+   *  one and it resolved; else null (a public row: its guard finds the
+   *  login on first read). */
+  loginId: string | null;
+  role: 'admin' | 'member' | null;
+  /** The mode its actor is named in (a read key: ro). */
+  mode: 'rw' | 'ro' | null;
+  /** What the login holds of the row's Admin area (the Admin step's
+   *  answer, read by adminRouteGate), for an Admin login on a row that
+   *  manages an area; else null (the guard asks requireArea itself). */
+  admin: AdminView | null;
+  /** The facts the caller carries: the logins and the Admin view, under
+   *  their keys. */
+  facts: Readonly<Record<string, unknown>>;
+}>;
+
+/**
+ * The gate's step 1 for a routed request (arch A4 step 3a): the request's
+ * logins, and, where the gate judged a credential (a row that is not
+ * public), the login found once now, with what it holds of the row's Admin
+ * area. The same functions the guards read, so the two cannot drift. A
+ * public row judges its own credential: its login is found on the first
+ * guard read, once. A find that fails (the database) is left for the guard
+ * to ask again, as before.
+ */
+export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
+  const logins = new RequestLogins();
+  const none = {
+    logins,
+    loginId: null,
+    role: null,
+    mode: null,
+    admin: null,
+    facts: Object.freeze({ [HTTP_LOGINS]: logins }),
+  } as const;
+  if (row.public) return none;
+  let found: FoundLogin;
+  try {
+    found = await logins.login();
+  } catch {
+    return none;
+  }
+  const res = found.resolved;
+  if (!res) return none;
+  const loginId = resolvedLoginId(res);
+  let admin: AdminView | null = null;
+  // The Admin step's answer for an Admin login on a row that manages an
+  // area: requireArea's, as adminRouteGate asked it. The view holds the
+  // row's area or nothing; adminRouteGate refuses a login without it
+  // ('area', whether or not it is in the Admin workspace: the guard's
+  // rule). Not yet the gate's refusal: see docs/actors.md, A4 step 3a.
+  if (row.area && res.kind === 'admin') {
+    try {
+      const holds = await loginHoldsArea(loginId, row.area);
+      admin = { holdsAdmin: true, areas: new Set(holds ? [row.area] : []) };
+    } catch {
+      admin = null;
+    }
+  }
+  return {
+    logins,
+    loginId,
+    role: res.kind,
+    mode: found.mode,
+    admin,
+    facts: Object.freeze({ [HTTP_LOGINS]: logins, ...(admin ? { [HTTP_ADMIN]: admin } : {}) }),
+  };
+}
+
+/** Whether `loginId` holds `area`: the Admin view the gate resolved for
+ *  this login on this row, else requireArea's answer (loginHoldsArea). */
+async function holdsArea(
+  loginId: string,
+  area: import('@mantle/client-types').WorkspaceArea,
+): Promise<boolean> {
+  const caller = currentCaller();
+  const view = boundLogins(caller) ? (caller?.facts?.[HTTP_ADMIN] as AdminView | undefined) : null;
+  if (view && caller?.loginId === loginId) return view.areas.has(area);
+  return loginHoldsArea(loginId, area);
 }
 
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),
@@ -857,7 +1124,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
   // class is step 3 (no policy), an area the login lacks step 5.
   if (!cls) return accessRefusal(new AccessError('unclassified'));
   if (cls.kind === 'area') {
-    if (!(await loginHoldsArea(loginId, cls.area))) {
+    if (!(await holdsArea(loginId, cls.area))) {
       return accessRefusal(new AccessError('area', undefined, { area: cls.area }));
     }
     noteRequestSystem('area');

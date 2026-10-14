@@ -21,12 +21,16 @@ import { tokenKind, verifySignedToken } from './token-verify';
 import { env } from '@mantle/config';
 import {
   enterCall,
+  loginActor,
   runInActorSlot,
   runInRequestSlot,
   systemActor,
+  withRequestScopeMemo,
   type CallerVia,
   type GateCaller,
+  type WorkspaceScope,
 } from '@mantle/db';
+import { resolveHttpLogin, type HttpLogin } from '../../lib/auth/session';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 
 /**
@@ -49,8 +53,11 @@ import { ensureGateReady } from '@mantle/tools/gate-narrowers';
  * (servedRoute) and set on the request context (currentRoute(), read by
  * every session guard and the API key checks, and by a call nested inside
  * the request). The credential checks below are step 1, resolving the
- * caller; enterCall binds the caller, looks the row's policy up, narrows,
- * and opens the request slot the guard fills. Since A4 step 2 the /s page
+ * caller, and since A4 step 3a step 1 also finds its login, once
+ * (resolveHttpLogin, lib/auth/session.ts): enterCall binds the caller with
+ * it (currentCaller(): the login, its role and actor, the request's
+ * logins every session guard now reads), looks the row's policy up,
+ * narrows, and opens the request slot the guard fills. Since A4 step 2 the /s page
  * and the render pages are routes too (registerPages), each run in its own
  * actor slot. A request no route answers (a 404, a 405, the stubs) runs as
  * before.
@@ -162,33 +169,52 @@ function bearerToken(req: Request): string | null {
 }
 
 /**
- * The caller of a routed request (the gate's step 1, A4 step 1): how it
- * came in. The login is not resolved here yet: the session
- * guard resolves it and names it (setRequestActor), so the caller runs as
- * its row's startsAs (system(http:no-login) for a manifest route, the
- * actor the request slot starts as), and its Admin view is unresolved (`admin: null`: the guard's own requireArea
- * decides, as before). A4 step 3 resolves the login here.
+ * The caller of a routed request (the gate's step 1; A4 step 3a resolves
+ * its login here). `login` is what the gate found (resolveHttpLogin,
+ * session.ts: the same functions every session guard reads): the login,
+ * its role and actor, what it holds of the row's Admin area (step 5), and
+ * the request's logins bound in the facts, which each guard reads
+ * (currentCaller()). The request slot still starts as the row says
+ * (system(http:no-login) for a manifest route; a public write row's
+ * named actor, the same) and the guard names the login on it when it
+ * reads it, as before: a route that reads no guard runs as it did. Step 6
+ * names no create home (createHome null): the guard does, on its rules.
  */
-function httpCaller(row: RouteRow, via: CallerVia, accessKey?: AccessKeyGrant): GateCaller {
-  const startsAs = systemActor(row.startsAs);
+function httpCaller(
+  row: RouteRow,
+  via: CallerVia,
+  login: HttpLogin,
+  memo: Map<string, Promise<WorkspaceScope>>,
+  accessKey?: AccessKeyGrant,
+): GateCaller {
+  const startsAs = systemActor(row.actor ?? row.startsAs);
   return {
-    actor: startsAs,
+    actor: login.loginId && login.mode ? loginActor(login.loginId, login.mode) : startsAs,
     via,
+    loginId: login.loginId,
+    role: login.role,
     // A key's write switch. gateAccessKey judged the key's areas and its
-    // read-only switch first, on the same row (requestKeyRoute: the row's
+    // read-only switch first, on the same row (keyOnRow: the row's
     // effect, pinned to the key table's access by route-policy.test.ts),
     // with the 403 bodies the API promises; this narrows nothing past it.
     // No `facts.keyAreas`: the gate's key narrower does not run on HTTP
-    // (gateAccessKey and accessKeyLogin judge the areas).
+    // (gateAccessKey and the login lookup judge the areas, keyOnRow).
     ...(accessKey ? { write: accessKey.access === 'read_write' } : {}),
+    // Unscoped for step 5: the guard decides (adminRouteGate, reading the
+    // Admin view the gate resolved, login.admin in the facts). Not the
+    // gate's refusal yet: two area rows' handlers never ask the area
+    // (docs/actors.md, A4 step 3a).
     admin: null,
-    // The request slot (workspaces W6a), opened for the handler. A page of
-    // server/pages (the /s page, a render page; A4 step 2) has no session
-    // guard to fill one: it runs in an actor slot of its own, starting as
-    // its row says, as it did before it had a row.
+    createHome: null,
+    facts: login.facts,
+    // The request slot (workspaces W6a), opened for the handler with the
+    // memo the login lookup seeded. A page of server/pages (the /s page, a
+    // render page; A4 step 2) has no session guard to fill one: it runs in
+    // an actor slot of its own, starting as its row says, as it did before
+    // it had a row.
     enterScope: row.page
       ? (_writes, fn) => runInActorSlot(startsAs, fn)
-      : (_writes, fn) => runInRequestSlot(fn),
+      : (_writes, fn) => runInRequestSlot(fn, { memo, startsAs }),
   };
 }
 
@@ -314,7 +340,15 @@ function gateHandler(): MiddlewareHandler {
             await next();
             return null;
           }
-          const out = await enterCall(httpCaller(row, via, accessKey), routeRef(row), () => next());
+          // Step 1: the login, found once for the request (A4 step 3a),
+          // its read seeding the memo the request slot is opened with.
+          const memo = new Map<string, Promise<WorkspaceScope>>();
+          const login = await withRequestScopeMemo(memo, () => resolveHttpLogin(row));
+          const out = await enterCall(
+            httpCaller(row, via, login, memo, accessKey),
+            routeRef(row),
+            () => next(),
+          );
           if (out.ok) return null;
           if (!out.refusal.http) throw out.error;
           return Response.json(out.refusal.http.body, { status: out.refusal.http.status });

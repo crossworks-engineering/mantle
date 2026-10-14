@@ -126,6 +126,7 @@ export {
   type CurrentScope,
   type TurnStamp,
   runInRequestSlot,
+  withRequestScopeMemo,
   hasRequestSlot,
   enterRequestScope,
   noteRequestSystem,

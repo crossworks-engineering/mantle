@@ -78,6 +78,9 @@ export type GateCaller = Readonly<{
   via: CallerVia;
   /** The login acting, when there is one. */
   loginId?: string | null;
+  /** The login's role (admin, member), when there is one (an HTTP
+   *  request's, resolved by the gate since A4 step 3a). */
+  role?: string | null;
   /** The credential's write switch (a key's access, a peer's Write, an
    *  OAuth grant narrowed to reads). Absent: writes. */
   write?: boolean;
@@ -98,8 +101,10 @@ export type GateCaller = Readonly<{
    *  already (an MCP connection, once when it connects). */
   createFallback?: CreateFallback;
   /** How this entry names a create home (step 6). Absent: the generic
-   *  rule (ownWork 'auto', writes only, a refusal refuses). */
-  createHome?: CreateHomeRule;
+   *  rule (ownWork 'auto', writes only, a refusal refuses). Null: the entry
+   *  names it itself, and step 6 names none (an HTTP request: the session
+   *  guard asks createHomeIntent on its own rules until A4 step 3b). */
+  createHome?: CreateHomeRule | null;
   /** What the surface narrowers read (a key's areas, the risky tools a
    *  peer may call, an app run's rules). Opaque here. */
   facts?: Readonly<Record<string, unknown>>;
@@ -395,7 +400,7 @@ export async function createHomeStep(
   ask: CreateAsk | null,
 ): Promise<CreateHome | null> {
   const loginId = caller.loginId ?? null;
-  if (!loginId) return null;
+  if (!loginId || caller.createHome === null) return null;
   const actor = caller.actor;
   if (actor.kind !== 'login' || actor.loginId !== loginId.toLowerCase()) return null;
   if (currentCreateHome()) return null;

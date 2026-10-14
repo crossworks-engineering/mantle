@@ -888,6 +888,73 @@ matcher is compiled when its rows are built and when the loader registers
 it (`compileSpelling`), so a pattern the test cannot spell (an optional
 param) fails at boot, never on a request.
 
+**HTTP, A4 step 3a (no access changed).** The gate resolves the login,
+once per routed request, and the session guards read it. Step 1 of a
+routed request (`resolveHttpLogin`, `server/web/lib/auth/session.ts`)
+makes the request's logins (`RequestLogins`): each credential the guards
+read (the login: an API key, the session cookie, a device token; the
+device token on its own, for the cookie upgrade; an `?at=` asset token,
+admin or member; the render cookie) is found once, with no effect, by the
+functions the guards ran before, and kept for the request. Where the gate
+judged a credential (a row that is not public), the login is found now and
+bound on the caller: `loginId`, `role`, its actor (`login(rw)`, a read key
+`login(ro)`), the request's logins in its facts, and, for an Admin login on
+a row that manages an area, what it holds of that area (requireArea's
+answer). A public row judges its own credential: its login is found on the
+first guard read, once. The login's read seeds the login's scope into the
+memo the request slot is opened with (`withRequestScopeMemo`), so the guard
+looks nothing up twice.
+
+Every guard (`getOwnerOr401` and its variants, `getMemberOr401`,
+`getLoginOr401`, `getChatLoginOr401`, `getCookieUpgradeLoginOr401`, the
+three `*ForAsset` guards, `getSessionUser`, `requireOwner*`) keeps its name,
+its signature and its answers, and reads the bound logins (`currentCaller()`):
+each read applies what its own lookup applied before (a device token's
+last-used stamp, a rotated token's reuse check, the actor named on the
+request slot), so a route that reads two guards stamps twice, as it did.
+What changed: a login's row is read once per request, not once per guard
+call, so a second guard call in a request that ended its own sessions sees
+the login the request started with. Outside a routed request (a test
+calling a handler, a script) and inside a call nested in one with a caller
+of its own, each read finds the login afresh: today's behaviour. A find
+that fails (the database) is not kept: the guard asks again, as before.
+
+The request still runs as its row's first actor (`system(http:no-login)`)
+until a guard reads the login, so a route that reads no guard runs as it
+did; the bound caller's actor is the login's. A public row that writes
+names the actor it runs as (`row.actor`, plan 7 and 20.3): the one it ran
+as before, `system(http:no-login)`, on every such row (signup, invite
+accept, sign in, the token routes, OAuth, the /s brokers; the connector
+OAuth callbacks and the onboarding seed are not public and run as the login
+their guard names). Step 3 binds it (`routeGatePolicy`) and the request
+slot starts as it. Step 6 names no create home on HTTP (`createHome: null`):
+the guard does, on its own rules, until step 3b.
+
+The Admin step's answer is resolved at the gate, but the gate does not
+refuse with it yet (`admin: null` on the HTTP caller): the owner guards
+read it (`adminRouteGate`, `holdsArea`). The sweep found area rows whose
+handlers never ask the area: `GET`/`POST /api/updates/check` and `GET
+/api/updates/status` (class settings, read by `getSessionUser`) answer any
+Admin user, and the Telegram chat routes (class connectors, open to every
+login through `TELEGRAM_LOGIN_ROUTES`) are served by `getChatLoginOr401`.
+Refusing at the gate would change those 13 answers; step 3b decides them
+with the codemod.
+
+An API key is judged on a row in one place (`keyOnRow`, route-policy.ts):
+the gate's `gateAccessKey` answers its refusal, and the login lookup lets a
+key's login in only where it passes (it was `accessKeyLogin`'s second check
+by path). `runRoute(login, method, path, body)`
+(`server/web/server/run-route.ts`) runs one request through the full
+pipeline (the gate, the row, enterCall, the guard, the handler) for a login
+id's session cookie, an API key or nobody; a test with no database stands
+its logins in with `server/web/server/run-route-stand-ins.ts`. The proof
+that nothing on the wire changed is `server/web/server/a4-guard-sweep.test.ts`,
+recorded on v0.300.28 before the change and unchanged after it: every
+route of the manifest and every page, every method, seventeen kinds of
+credential, and per request its status, the headers a client reads, a
+refusal's body and, per guard call, the guard's answer, the actor after it
+and the scope it entered.
+
 1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null
    is unscoped, a process; absent is unknown and fails an Admin step),

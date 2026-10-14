@@ -37,9 +37,9 @@
  * the member lists are generated from ITEM_KINDS.
  */
 import type { WorkspaceArea } from '@mantle/client-types';
-import { registerPolicySource, type GatePolicy, type PolicyRef } from '@mantle/db';
-import type { AccessKeyArea } from '../access-keys';
-import { API_V1_ROUTES, type KeyRoute } from '../api-v1';
+import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
+import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
+import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { isPublicPath, isRenderAssetPath } from '../auth-constants';
 import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
@@ -153,9 +153,14 @@ export type RouteRow = Readonly<{
    *  http:no-login for a manifest route, http:share-page for the /s page,
    *  http:render for a render page. */
   startsAs: string;
-  /** The system reason a public route that writes runs as. Null in step 1:
-   *  every public write still runs as system(http:no-login), the request
-   *  slot's first actor; step 3 names each (plan 7, 20.3). */
+  /** The system reason a public route that writes runs as (plan 7, 20.3),
+   *  null on every other row (it runs as its caller). A4 step 3a names the
+   *  actor each runs as today: the request slot's first actor,
+   *  system(http:no-login), until a guard or a share gate names a caller
+   *  (signup, invite accept, sign in, the token routes, OAuth, the /s
+   *  brokers). The OAuth callbacks of a connector and the onboarding seed
+   *  are not public: they run as the login their guard names. The gate's
+   *  step 3 binds it (routeGatePolicy) and the request slot starts as it. */
   actor: string | null;
 }>;
 
@@ -270,6 +275,12 @@ export function buildRouteRow(
   if (cls === null) throw new Error(`ROUTE_POLICY: ${key} has no class`);
   const page = pageClass !== null;
   const v1 = v1Route(m, pattern);
+  const startsAs =
+    pageClass === 'render'
+      ? 'http:render'
+      : pageClass === 'link'
+        ? 'http:share-page'
+        : 'http:no-login';
   return Object.freeze({
     key,
     method: m,
@@ -293,13 +304,8 @@ export function buildRouteRow(
     cors: linkCors(pattern),
     renderCookie: m === 'GET' && (cls === 'render' || isRenderAssetPath(path)),
     page,
-    startsAs:
-      pageClass === 'render'
-        ? 'http:render'
-        : pageClass === 'link'
-          ? 'http:share-page'
-          : 'http:no-login',
-    actor: null,
+    startsAs,
+    actor: isPublic && effect === 'write' ? startsAs : null,
   });
 }
 
@@ -376,12 +382,14 @@ export function spellsPattern(pattern: string, path: string): boolean {
 // ── The gate's route source and the stored row ──────────────────────────────
 
 /** A row's declared policy (the gate's step 3). The Admin step names the
- *  row's area; in step 1 the HTTP caller's Admin view is not resolved yet
- *  (null: the session guard still runs requireArea), so the guard decides,
- *  as before. */
+ *  row's area: the gate refuses an Admin login without it (A4 step 3a, the
+ *  view the gate resolved); for every other caller the view is null and
+ *  the session guard decides, as before. A public row that writes names
+ *  the actor it runs as. */
 export function routeGatePolicy(row: RouteRow): GatePolicy {
   return Object.freeze({
     effect: row.effect,
+    ...(row.actor ? { actor: systemActor(row.actor) } : {}),
     scope: row.area ? { area: row.area } : 'any',
     creates: row.creates,
     makesItems: row.makesItems,
@@ -448,6 +456,23 @@ export function rowKeyRoute(row: RouteRow | null): KeyRoute | null {
  */
 export function requestKeyRoute(row: RouteRow | null, rawPath: string): KeyRoute | null {
   return row && spellsPattern(row.pattern, rawPath) ? rowKeyRoute(row) : null;
+}
+
+/**
+ * The one judgment of an API key on a request's row (arch A4 step 3a):
+ * keyMayCall on what the row holds a key to where the raw path spells its
+ * pattern (requestKeyRoute). The gate (gateAccessKey) answers its refusal;
+ * the login lookup (session.ts findKeyLogin) lets a key's login in only
+ * where it passes. A row off the key table, or a path that is not its
+ * spelling, is not in the API ('not-in-api'), and so is every path off
+ * /api/v1 (only /api/v1 rows are on the table).
+ */
+export function keyOnRow(
+  grant: Pick<AccessKeyGrant, 'access' | 'areas'>,
+  row: RouteRow | null,
+  rawPath: string,
+): ReturnType<typeof keyMayCall> {
+  return keyMayCall(grant, requestKeyRoute(row, rawPath));
 }
 
 /** The item a write request names, from its row and path (what

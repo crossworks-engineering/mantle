@@ -57,6 +57,7 @@ import {
   registerRouteSource,
   requestKeyRoute,
   routeItemTarget,
+  routeGatePolicy,
   routeRef,
   rowKeyRoute,
   servedMethods,
@@ -206,6 +207,39 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
         };
         expect(gateCheck(caller, routeRef(row)), `${via} ${row.key}`).toBeNull();
       }
+    }
+  });
+
+  it('A4 step 3a: a public row that writes names the actor it runs as today; no other row does', () => {
+    const named: string[] = [];
+    for (const row of table.values()) {
+      if (row.public && row.effect === 'write') {
+        // The request slot's first actor, until a guard or a share gate
+        // names a caller: what each ran as before it had a name.
+        expect(row.actor, row.key).toBe('http:no-login');
+        expect(row.actor, row.key).toBe(row.startsAs);
+        expect(routeGatePolicy(row).actor, row.key).toEqual(systemActor('http:no-login'));
+        named.push(row.key);
+      } else {
+        expect(row.actor, row.key).toBeNull();
+        expect(routeGatePolicy(row).actor, row.key).toBeUndefined();
+      }
+    }
+    // Signup, invite accept, sign in, the token routes, OAuth, the /s
+    // brokers among them.
+    for (const key of [
+      'POST /api/auth/signup',
+      'POST /api/auth/invite/accept',
+      'POST /api/auth/login',
+      'POST /api/oauth/token',
+      'POST /s/:token/db-broker',
+    ]) {
+      expect(named, key).toContain(key);
+    }
+    // Not public: the connector OAuth callbacks and the onboarding seed run
+    // as the login their guard names.
+    for (const key of ['GET /api/mcp-connectors/oauth/callback', 'POST /api/onboarding']) {
+      expect(table.get(key)?.actor, key).toBeNull();
     }
   });
 

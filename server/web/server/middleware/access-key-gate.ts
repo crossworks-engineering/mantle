@@ -9,9 +9,8 @@ import {
   verifyAccessKey,
   type AccessKeyGrant,
 } from '../../lib/access-keys';
-import { keyMayCall } from '../../lib/api-v1';
 import { requestMetaFrom } from '../../lib/audit';
-import { requestKeyRoute, type RouteRow } from '../../lib/auth/route-policy';
+import { keyOnRow, type RouteRow } from '../../lib/auth/route-policy';
 import { clientIp, clientIpKey } from '../../lib/rate-limit';
 
 /**
@@ -72,7 +71,7 @@ export async function gateAccessKey(
   // table does not list (or that no route answers), or whose raw path
   // does not spell the row's pattern (an encoded spelling:
   // requestKeyRoute), is a 404: it is not part of the API a key can call.
-  const scope = keyMayCall(grant, requestKeyRoute(row, path));
+  const scope = keyOnRow(grant, row, path);
   if (!scope.ok) {
     if (scope.reason === 'not-in-api') return { response: notFound() };
     auditKeyRefusal({ keyId: grant.id, reason: scope.reason, ...meta() });

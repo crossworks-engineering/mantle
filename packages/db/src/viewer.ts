@@ -351,19 +351,40 @@ function active(): Scope | undefined {
  * gate calls this, as its caller's enterScope inside enterCall (A4 step 1);
  * the session guard fills the slot (enterRequestScope).
  */
-export function runInRequestSlot<T>(fn: () => T): T {
+export function runInRequestSlot<T>(
+  fn: () => T,
+  opts: { memo?: Map<string, Promise<WorkspaceScope>>; startsAs?: Actor } = {},
+): T {
   // Arch A2a: a request runs as system(http:no-login) until the session
-  // guard or a share broker names its caller (A4 step 3 names it at the
-  // gate).
-  return runInActorSlot(systemActor('http:no-login'), () =>
-    requestSlots.run({ scope: null, outcome: null, memo: new Map() }, fn),
+  // guard or a share broker names its caller. A4 step 3a: the gate passes
+  // the row's actor (the same system(http:no-login) for every manifest
+  // route) and the memo its login lookup seeded (withRequestScopeMemo).
+  return runInActorSlot(opts.startsAs ?? systemActor('http:no-login'), () =>
+    requestSlots.run({ scope: null, outcome: null, memo: opts.memo ?? new Map() }, fn),
   );
+}
+
+/** A request's memo before its slot opens (arch A4 step 3a). */
+const pendingMemos = new AsyncLocalStorage<Map<string, Promise<WorkspaceScope>>>();
+
+/**
+ * Run `fn` with `memo` as the request's memo of built scopes, before its
+ * request slot opens (arch A4 step 3a): the gate finds the request's login
+ * (whose read seeds the login's scope, seedLoginScope) before enterCall
+ * opens the slot, and hands the same memo to the slot (runInRequestSlot),
+ * so the guard looks nothing up twice.
+ */
+export function withRequestScopeMemo<T>(
+  memo: Map<string, Promise<WorkspaceScope>>,
+  fn: () => T,
+): T {
+  return pendingMemos.run(memo, fn);
 }
 
 /** The current request's memo of built scopes (withViewer), or null
  *  outside a request. */
 export function requestScopeMemo(): Map<string, Promise<WorkspaceScope>> | null {
-  return requestSlots.getStore()?.memo ?? null;
+  return requestSlots.getStore()?.memo ?? pendingMemos.getStore() ?? null;
 }
 
 /**
