@@ -1083,35 +1083,120 @@ scoreboard); files with a guard call 334 to 311; a route file that reads
 the caller counts as guarded (live routes calling no guard stays 65), and
 the scoreboard counts the reads (29 in 23 files, may grow).
 
+**HTTP, A4 step 3b part 2 (no answer changed).** The part 1 re-audit's
+low findings, the two readers left, and the codemod's second batch.
+
+- **The generator** (`server/web/scripts/route-callers.ts`) refuses a
+  reading handler whose parameters run code: a default value
+  (`GET(req, ctx, x = audit())`, `GET(req, { params = sideFx() })`) or a
+  computed key runs before the first statement, so before the read, and is
+  refused like code before the read unless the handler is marked as a hand
+  case. A handler that runs a reading handler of its own file (POST's
+  `return GET(req)`) reads what that one reads, as a wrapped handler of
+  another route file does: its row carries the caller (before, POST's row
+  had none and GET's read threw, a 500). Running it with code first,
+  passing it on, or running it from a helper is refused.
+- **The loader** (`server/web/server/route-loader.ts`) takes an owner
+  answer the gate threw off the request before it loads the handler, and
+  throws it only where a handler runs. Where none runs (a stale manifest
+  naming a method the module lacks: the 405; the bare prefix of a
+  catch-all: the 404) no guard ran before either, and that answer stands
+  with the gate's CORS headers (before: a 500 without them).
+- **The import rule** (`eslint-rules/owner-caller-imports.mjs`) reads a
+  template literal key with no expression in it as a literal
+  (``auth[`ownerCaller`]``), and runs on every script file under
+  server/web (.mts, .cts, .js, .jsx, .mjs and .cjs too), tests aside.
+- **The readers** of the other two owner answers:
+  `ownerCallerWithSource()` (what `getOwnerOr401WithSource` answers: the
+  owner and how the request authenticated) and `ownerCallerWithLogin()`
+  (what `getOwnerOr401WithLogin` answers: also the login's kind, `member`
+  set for a member). Each projects the one answer the gate gave, with no
+  lookup and no effect, and throws where the pipeline answered no owner,
+  as `ownerCaller()` does; they are in the one list. No handler reads them
+  yet: every handler that calls those two guards writes (the app brokers
+  and frame ticket, batch 3; a user's password, batch 4).
+
+Batch 2, the content reads: the GET handlers of the content read rows
+(class content, open to Admin users, or to logins through the owner list),
+each the standard two lines of `getOwnerOr401` as its first statement and
+no parameter with a default value: 57 handlers in 57 route files (the
+activity feed, the Apps sidebar, the apps: list, deleted, one, bundle and
+its stylesheet, export, snapshots and a snapshot's download; contacts:
+list, one, its shares; the docs reader and a doc; draws: list and one; the
+entity candidates; events, formulas, journal, notes, pages and tasks: list
+and one; the files list and the folders list and one; home; the mention
+search; a node and its history; a page's backlinks and descendant count;
+recall maps: list, one, its revisions, a card; search; shares: list and
+all; tables: list, one, rows, export, history and a revision's download;
+the tree of a kind, its marks, search and tags). With their HEADs and the
+16 /api/v1 rows that re-export them (the generator follows), 146 rows carry
+`caller: 'owner'`. Tests that stand in the owner guard and call a
+converted GET directly stand in its reader the same way.
+
+Left from batch 2's rows, each for the hand batch: `GET /api/draws/:id/svg`
+and `GET /api/files/files/:id` (`getReaderForAsset`; the v1 file and its
+download wrapper go with the latter), `GET /api/export/:id`
+(`getOwnerForAsset`), the five `/api/apps/members` 410 stubs (`gone()`),
+and `GET /api/apps/:id/frame` (the sandbox frame, which reads no guard).
+The one read POST of the content rows, `POST /api/formulas/:id/evaluate`,
+goes with batch 3: its guard answers it as a write (the audit row runs by
+method).
+
+The proof is the guard sweep: both recorded files are byte for byte. The
+moved snapshot (`__snapshots__/a4-guard-sweep-moved.txt`) holds 2326 cells
+(468 after part 1; 1401 of the first sweep, 925 of the more-credentials
+sweep) and 28 answers (14 after part 1). The 14 new ones, for GET and
+HEAD: an Admin user's content read running as its login in its own scope
+(`login(rw)`, the scope entered: the anchor, an Admin user and one with no
+area by cookie, an Admin user by device token, stamped once); a member's
+open read running as the member in its scope (by cookie and by device
+token); a read key's read as `login(ro)`. A member on an Admin-only read
+gets the gate's 403 `member-login` and a credential with no login its 401,
+answers part 1 already recorded. Each has the status, headers, body,
+owner, actor and scope the guard gave. The sweep now stops a handler at
+any reader of the one list; a batch that converts a
+`getOwnerOr401WithSource` or `getOwnerOr401WithLogin` call must name its
+rows' moved entries by the guard each replaced (the recorded files check
+the name) and log the projection its reader reads.
+
+Pins: guard calls 439 to 382, still a ceiling; files with a guard call 311
+to 286; reads of the caller 29 to 86, in 23 to 80 files; live routes
+calling no guard stays 65.
+
 **Step 3b, what is left** (the batches by row class; the sweep held equal
 after each, its moved entries recorded):
 
-2. Content reads: the owner rows of class content that read (Admin users'
-   scope, a member's open reads). The same `caller: 'owner'` and reader;
-   `getOwnerOr401WithSource` and `getOwnerOr401WithLogin` need readers of
-   their own projections (`ownerCallerWithSource()`,
-   `ownerCallerWithLogin()`).
-3. Content writes: the item a write names and the create home, already
-   inside the owner guard's answer; the sweep's second file drives them
-   with the reads stood in. The /api/v1 wrappers with code before their
-   call (pages PATCH: a key's 404 and 403 before `patchPage`; files
-   download) fail the generator once their base route reads: each is
-   checked by hand and marked, or waits for the hand batch.
+3. Content writes: the owner rows of class content that write, and the
+   read POST `formulas/:id/evaluate`. The item a write names and the create
+   home are already inside the owner guard's answer; the sweep's second
+   file drives them with the reads stood in. The handlers of
+   `getOwnerOr401WithLogin` (the app db and tool brokers, the frame
+   ticket) read `ownerCallerWithLogin()`; the sweep names their moved
+   entries by that guard. Two /api/v1 wrappers run code before their call
+   and fail the generator once their base route reads:
+   `PATCH /api/v1/pages/:id` (a key's 404 and 403 before `patchPage`) and
+   `GET /api/v1/files/:id/download` (it rewrites the request to
+   `?raw=1`; its base is an asset route of the hand batch). Their base
+   handlers stay on their guards and the two go to the hand batch, unless
+   each is checked by hand and marked `// route-callers: hand case`.
 4. Area rows, with the gate refusing: the owner guard's area refusal
-   moves to the gate with its answer. The 13 cells whose handlers never
-   ask the area (`/api/updates/check`, `/api/updates/status`, the
-   Telegram chat rows) wait for the owner question above and the must-dos.
+   moves to the gate with its answer (`POST /api/users/:id/password` reads
+   `ownerCallerWithSource()`). The 13 cells whose handlers never ask the
+   area (`/api/updates/check`, `/api/updates/status`, the Telegram chat
+   rows) wait for the owner question above and the must-dos.
 5. Member, any-login and chat routes: answer steps and readers of their
    own (`getMemberOr401`, `getLoginOr401`, `getChatLoginOr401`); the
    must-dos above (the Telegram chat rows' class, the OAuth callbacks'
    effect) land with this batch.
 6. Hand cases: `oauth/authorize`, `auth/logout`, `auth/change-password`,
    `updates/check` (two) and `updates/status`; the asset guards
-   (`getOwnerForAsset`, `getReaderForAsset`, `getMemberForAsset`);
+   (`getOwnerForAsset`, `getReaderForAsset`, `getMemberForAsset`: among
+   them the draw svg, the file bytes and the export of batch 2's rows);
    `getCookieUpgradeLoginOr401`; `lib/gone.ts`; `lib/workspaces.ts`; the
    public rows that read the login (whoami, logout, sso, pair, OAuth
-   consent); the two turn routes with a flag check first; the 13 area
-   cells. Then `getOwnerOr401` goes and the count is 0 (A4 exit).
+   consent); the two turn routes with a flag check first; the two v1
+   wrappers above; the 13 area cells. Then `getOwnerOr401` goes and the
+   count is 0 (A4 exit).
 
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):
