@@ -5,6 +5,7 @@ import {
   handlerCallers,
   handlerGone,
   handlerReads,
+  handlerSwitches,
   type HandlerCallers,
 } from './route-callers';
 
@@ -589,5 +590,68 @@ describe('the gone stubs (A4 hand batch A)', () => {
   it('holds the same kinds as lib/gone.ts', async () => {
     const { GONE_CALLERS: lib } = await import('../lib/gone');
     expect({ ...GONE_CALLERS }).toEqual({ ...lib });
+  });
+});
+
+describe('the switches a route file declares (A4 hand batch A fix round 1)', () => {
+  const ROUTE = `import { ownerCaller } from '@/lib/auth';
+    export async function POST() { return Response.json(ownerCaller()); }
+    export async function GET() { return Response.json(ownerCaller()); }`;
+  const sw = (src: string, follow?: Parameters<typeof handlerSwitches>[2]) =>
+    handlerSwitches(src, 'a/route.ts', follow);
+
+  it('reads each method to its switch, as const or satisfies', () => {
+    expect(
+      sw(`${ROUTE} export const routeSwitches = { POST: 'not-production' } as const;`),
+    ).toEqual({ POST: 'not-production' });
+    expect(
+      sw(
+        `${ROUTE} export const routeSwitches = { GET: 'turn-streaming', 'POST': 'turn-streaming' } as const satisfies RouteSwitches;`,
+      ),
+    ).toEqual({ GET: 'turn-streaming', POST: 'turn-streaming' });
+    expect(sw(ROUTE)).toEqual({});
+  });
+
+  it('refuses a declaration it cannot read', () => {
+    const bad: Array<[string, RegExp]> = [
+      [`export let routeSwitches = { POST: 'not-production' };`, /let or var/],
+      [`export const routeSwitches = make();`, /not an object literal/],
+      [`const base = {}; export const routeSwitches = { ...base };`, /written out/],
+      [`export const routeSwitches = { [m]: 'not-production' };`, /is no method/],
+      [`export const routeSwitches = { FETCH: 'not-production' };`, /is no method/],
+      [`export const routeSwitches = { POST: 'nightly' };`, /names no switch/],
+      [`const s = 'not-production'; export const routeSwitches = { POST: s };`, /names no switch/],
+      [
+        `export const routeSwitches = { POST: 'not-production', POST: 'turn-streaming' };`,
+        /named twice/,
+      ],
+      [`export const routeSwitches = { PUT: 'not-production' };`, /does not export/],
+      [`const s = { POST: 'not-production' }; export { s as routeSwitches };`, /exported by name/],
+      [`export { routeSwitches } from '../other/route';`, /exported by name/],
+      [`export function routeSwitches() { return {}; }`, /is a function/],
+    ];
+    for (const [src, msg] of bad) expect(() => sw(`${ROUTE} ${src}`), src).toThrow(msg);
+  });
+
+  it('refuses a switched handler taken from another route file without its switch', () => {
+    const follow = (spec: string) =>
+      spec === '../dev/route' ? ({ POST: 'not-production' } as const) : null;
+    for (const src of [
+      `export { POST } from '../dev/route';`,
+      `import { POST as run } from '../dev/route'; export async function POST(r: Request) { return run(r); }`,
+      `export * from '../dev/route';`,
+      `import * as dev from '../dev/route'; export const POST = dev.POST;`,
+    ]) {
+      expect(() => sw(src, follow), src).toThrow(/under a switch|served under not-production/);
+    }
+    // Declared here too: served under the same switch.
+    expect(
+      sw(
+        `export { POST } from '../dev/route'; export const routeSwitches = { POST: 'not-production' } as const;`,
+        follow,
+      ),
+    ).toEqual({ POST: 'not-production' });
+    // A file that takes an unswitched handler is free.
+    expect(sw(`export { GET } from '../dev/route';`, follow)).toEqual({});
   });
 });

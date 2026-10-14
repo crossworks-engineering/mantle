@@ -1018,7 +1018,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
   it('the switched rows answer every credential as their flag-first handlers did (hand batch A)', async () => {
     // The turn stream and cancel (MANTLE_TURN_STREAMING) and the dev tool
     // (never in production) checked their switch before their guard. The
-    // gate answers the switch now, before the caller (ROUTE_SWITCHES), and
+    // gate answers the switch now, before the caller (the switch each
+    // route file declares, read from the generated manifest here, so the
+    // rows are served as the app serves them), and
     // the handlers read ownerCaller() first. Proof per credential: with the
     // switch on, the reader and the guard answer alike; with it off, every
     // credential the gate let reach the handler (the marker app, a handler
@@ -1028,11 +1030,16 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const { registerRoutes } = await import('../route-loader');
     const session = await import('../../lib/auth/session');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
+    const { routeManifest } = await import('../route-manifest.gen');
     const rows = [
-      { pattern: '/api/assistant/turn/:turnId/cancel', methods: ['POST'] },
-      { pattern: '/api/assistant/turn/:turnId/stream', methods: ['GET'] },
-      { pattern: '/api/dev-tools/queue-approval', methods: ['POST'] },
-    ];
+      '/api/assistant/turn/:turnId/cancel',
+      '/api/assistant/turn/:turnId/stream',
+      '/api/dev-tools/queue-approval',
+    ].map((pattern) => {
+      const e = routeManifest.find((x) => x.pattern === pattern)!;
+      expect(e.switches, pattern).toBeDefined();
+      return { pattern, methods: [...e.methods], switches: e.switches };
+    });
     const MARK = 299;
     const build = (kind: 'reads' | 'guard' | 'mark') => {
       const app = new Hono();

@@ -16,7 +16,14 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handlerCallers, handlerGone, type HandlerCallers } from './route-callers';
+import {
+  handlerCallers,
+  handlerGone,
+  handlerSwitches,
+  type HandlerCallers,
+  type HandlerSwitches,
+} from './route-callers';
+import { ROUTE_SWITCH_NAMES } from '../lib/auth/route-switches';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(webRoot, 'app');
@@ -35,6 +42,9 @@ type Entry = {
   /** Each method exported as a retired route's 410 stub (`gone(kind)`,
    *  lib/gone.ts; A4 hand batch A): its row is a gone row. */
   gone: string[];
+  /** Each method to the switch its route file declares (`routeSwitches`,
+   *  lib/auth/route-switches.ts; A4 hand batch A): its rows' switch. */
+  switches: HandlerSwitches;
   /** Name of the catch-all param when the pattern ends in /*, else null. */
   catchAll: string | null;
   /** Whether a catch-all also matches the bare prefix ([[...x]] optional form). */
@@ -95,6 +105,33 @@ function readsOf(absFile: string, seen: Set<string> = new Set()): HandlerCallers
   return reads;
 }
 
+/** The route file `spec` names from `absFile`, if it names one (a
+ *  relative route file); else null. */
+function routeFileAt(absFile: string, spec: string): string | null {
+  if (!spec.startsWith('.')) return null;
+  const base = resolve(dirname(absFile), spec);
+  const target = ['.ts', '.tsx'].map((x) => base + x).find((f) => existsSync(f));
+  return target && /\/route\.tsx?$/.test(target) ? target : null;
+}
+
+/** Each method to the switch it is served under, per route file
+ *  (route-callers.ts handlerSwitches), following the handlers a file takes
+ *  from another route file. */
+const switchesMemo = new Map<string, HandlerSwitches>();
+function switchesOf(absFile: string, seen: Set<string> = new Set()): HandlerSwitches {
+  const memo = switchesMemo.get(absFile);
+  if (memo) return memo;
+  if (seen.has(absFile)) throw new Error(`[gen-route-manifest] import cycle at ${absFile}`);
+  seen.add(absFile);
+  const rel = relative(webRoot, absFile).split('\\').join('/');
+  const switches = handlerSwitches(readFileSync(absFile, 'utf8'), rel, (spec) => {
+    const target = routeFileAt(absFile, spec);
+    return target ? switchesOf(target, seen) : null;
+  });
+  switchesMemo.set(absFile, switches);
+  return switches;
+}
+
 function toEntry(absFile: string): Entry {
   const rel = relative(appDir, dirname(absFile)).split('\\').join('/');
   const rawSegs = rel === '' ? [] : rel.split('/');
@@ -124,6 +161,7 @@ function toEntry(absFile: string): Entry {
     methods: exportedMethods(src),
     reads: readsOf(absFile),
     gone: handlerGone(src, relative(webRoot, absFile).split('\\').join('/')),
+    switches: switchesOf(absFile),
     catchAll,
     catchAllOptional,
     segments,
@@ -169,6 +207,7 @@ const lines = entries.map(
     `catchAll: ${JSON.stringify(e.catchAll)}, catchAllOptional: ${e.catchAllOptional}, ` +
     (Object.keys(e.reads).length > 0 ? `reads: ${JSON.stringify(e.reads)}, ` : '') +
     (e.gone.length > 0 ? `gone: ${JSON.stringify(e.gone)}, ` : '') +
+    (Object.keys(e.switches).length > 0 ? `switches: ${JSON.stringify(e.switches)}, ` : '') +
     // Extensionless specifier: tsc (bundler resolution) rejects explicit .ts
     // imports without allowImportingTsExtensions; tsx resolves both fine.
     `load: () => import(${JSON.stringify('../' + e.file.replace(/\.tsx?$/, ''))}) },`,
@@ -187,6 +226,9 @@ export type ManifestEntry = {
   reads?: Record<string, 'owner' | 'member' | 'login' | 'chat' | 'session'>;
   /** Each method exported as a retired route's 410 stub (lib/gone.ts). */
   gone?: string[];
+  /** Each method to the switch its route file declares
+   *  (lib/auth/route-switches.ts). */
+  switches?: Record<string, ${ROUTE_SWITCH_NAMES.map((n) => `'${n}'`).join(' | ')}>;
   load: () => Promise<RouteModule>;
 };
 

@@ -3,6 +3,7 @@ import { ownerCaller } from '@/lib/auth';
 import { publishTurnCancel } from '@mantle/turn-stream';
 import { markTurnSuperseded } from '@mantle/runtime/agent';
 import { UUID_RE } from '@mantle/std';
+import type { RouteSwitches } from '@/lib/auth/route-switches';
 
 /**
  * POST /api/assistant/turn/[turnId]/cancel — stop an in-flight streamed turn.
@@ -29,10 +30,11 @@ import { UUID_RE } from '@mantle/std';
  *
  * **Flagged:** 404s while `MANTLE_TURN_STREAMING` is off (cancellation only
  * matters when the non-blocking streaming path is on). The gate answers it,
- * before the caller (the row's switch, route-policy.ts ROUTE_SWITCHES; A4
- * hand batch A): every credential gets the 404 while it is off, as when
- * this handler checked it first.
+ * before the caller (the switch declared below, `routeSwitches`,
+ * lib/auth/route-switches.ts; A4 hand batch A): every credential gets the
+ * 404 while it is off, as when this handler checked it first.
  */
+export const routeSwitches = { POST: 'turn-streaming' } as const satisfies RouteSwitches;
 
 type CancelBody = {
   supersede?: { inboundId?: unknown; outboundId?: unknown; newTurnId?: unknown };

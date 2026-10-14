@@ -61,6 +61,7 @@ import {
   ADMIN_OPEN_ROWS,
   routeGatePolicy,
   routeRef,
+  routeSwitchedOff,
   rowKeyRoute,
   servedMethods,
   spellsPattern,
@@ -441,6 +442,65 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     );
     // Every other row is no gone row.
     expect(table.get('GET /api/shell')?.gone).toBe(false);
+  });
+
+  it('a switched route (A4 hand batch A fix round 1): the switch its route file declares, on its rows', () => {
+    // Found by the route FILE, not by a pattern kept here: a route moved to
+    // another URL keeps its file's declaration, and this test still finds
+    // its rows. The dev tool must never be served in production.
+    const text = readFileSync(join(webRoot, 'server/route-manifest.gen.ts'), 'utf8');
+    const patternOf = (file: string) => {
+      const m = new RegExp(
+        `pattern: "([^"]+)"[^\\n]*import\\("\\.\\./${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\)`,
+      ).exec(text);
+      expect(m, file).not.toBeNull();
+      return m![1]!;
+    };
+    const queue = patternOf('app/api/dev-tools/queue-approval/route');
+    const row = table.get(`POST ${queue}`);
+    expect(row, queue).toBeDefined();
+    expect(row!.switch).toBe('not-production');
+    // The streamed turn's stream (and its HEAD) and its cancel.
+    const stream = patternOf('app/api/assistant/turn/[turnId]/stream/route');
+    const cancel = patternOf('app/api/assistant/turn/[turnId]/cancel/route');
+    expect(table.get(`GET ${stream}`)?.switch).toBe('turn-streaming');
+    expect(table.get(`HEAD ${stream}`)?.switch).toBe('turn-streaming');
+    expect(table.get(`POST ${cancel}`)?.switch).toBe('turn-streaming');
+    // No other row is switched.
+    const switched = [...table.values()].filter((r) => r.switch !== null).map((r) => r.key);
+    expect(switched.sort()).toEqual(
+      [`GET ${stream}`, `HEAD ${stream}`, `POST ${cancel}`, `POST ${queue}`].sort(),
+    );
+    // Off: the gate's answer, the handler's words.
+    const before = process.env.NODE_ENV;
+    try {
+      (process.env as Record<string, string>).NODE_ENV = 'production';
+      expect(routeSwitchedOff(row!)).toEqual({
+        status: 404,
+        body: { error: 'not available in production' },
+      });
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = before;
+    }
+    expect(routeSwitchedOff(row!)).toBeNull();
+  });
+
+  it('a switch is refused at boot where it guards no served row, or names no switch', () => {
+    const entry = { pattern: '/api/dev-tools/queue-approval', methods: ['POST'] };
+    expect(buildRoutePolicy([{ ...entry, switches: { POST: 'not-production' } }]).size).toBe(1);
+    // A method the route does not export (a HEAD the GET answers included).
+    expect(() => buildRoutePolicy([{ ...entry, switches: { GET: 'not-production' } }])).toThrow(
+      /declares a switch for GET, which it does not serve/,
+    );
+    const stream = { pattern: '/api/assistant/turn/:turnId/stream', methods: ['GET'] };
+    expect(() => buildRoutePolicy([{ ...stream, switches: { HEAD: 'turn-streaming' } }])).toThrow(
+      /declares a switch for HEAD, which it does not serve/,
+    );
+    expect(() =>
+      buildRoutePolicy([
+        { ...entry, switches: { POST: 'nightly' as unknown as 'not-production' } },
+      ]),
+    ).toThrow(/served under nightly, which is no switch/);
   });
 
   it("M3, the owner's decision 2a (2026-10-14): a HEAD row has its GET's logins", () => {

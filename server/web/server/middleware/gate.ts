@@ -361,7 +361,7 @@ function gateHandler(): MiddlewareHandler {
         }
         // A row served under a switch that is off (A4 hand batch A): the
         // route's own off answer, where its handler gave it, first, before
-        // any guard (ROUTE_SWITCHES, route-policy.ts).
+        // any guard (the switch its route file declares, RouteRow.switch).
         const off = routeSwitchedOff(row);
         if (off) return Response.json(off.body, { status: off.status });
         // Step 1: the login, found once for the request (A4 step 3a),

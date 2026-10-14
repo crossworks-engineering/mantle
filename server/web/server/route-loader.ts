@@ -8,6 +8,7 @@ import {
   type PageClass,
   type RouteCaller,
   type RouteRow,
+  type RouteSwitch,
 } from '../lib/auth/route-policy';
 import { getRequestContext } from './request-context';
 
@@ -55,6 +56,9 @@ export type RouteEntry = {
   /** Each method exported as a retired route's 410 stub (`gone(kind)`,
    *  lib/gone.ts; A4 hand batch A): their rows are gone rows. */
   gone?: readonly string[];
+  /** Each method to the switch its route file declares (`routeSwitches`,
+   *  lib/auth/route-switches.ts; A4 hand batch A): their rows' switch. */
+  switches?: Readonly<Record<string, RouteSwitch>>;
   load: () => Promise<RouteModule>;
 };
 

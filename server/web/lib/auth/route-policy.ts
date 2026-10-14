@@ -42,6 +42,7 @@ import { env } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
+import type { RouteSwitch } from './route-switches';
 import { getRequestContext } from '../../server/request-context';
 import { isPublicPath, isRenderAssetPath } from '../auth-constants';
 import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
@@ -198,9 +199,10 @@ export type RouteRow = Readonly<{
    *  stub's as before; the any-login answer writes no audit row on a stub
    *  (none was written: getLoginOr401 without `audit`). */
   gone: boolean;
-  /** The switch the route is served under (ROUTE_SWITCHES, A4 hand batch
-   *  A): while it is off the gate answers the route's own off answer
-   *  before the login's (routeSwitchedOff). Null: always served. */
+  /** The switch the route is served under, as its route file declares it
+   *  (`routeSwitches`, route-switches.ts; A4 hand batch A): while it is off
+   *  the gate answers the route's own off answer before the login's
+   *  (routeSwitchedOff). Null: always served. */
   switch: RouteSwitch | null;
   /** The system reason a public route that writes runs as (plan 7, 20.3),
    *  null on every other row (it runs as its caller). A4 step 3a names the
@@ -304,8 +306,13 @@ function rowScope(
  * and every answer stays: a member, a revoked token or an Admin user
  * without the row's area still gets the off answer while the switch is
  * off. Each to its check and its off answer, the handler's words.
+ *
+ * A route declares its switch in its own file (`routeSwitches`,
+ * route-switches.ts), read into the manifest by the generator, so the
+ * declaration moves with the handler; buildRoutePolicy refuses one that
+ * names a method the route does not serve, or no switch here.
  */
-export type RouteSwitch = 'turn-streaming' | 'not-production';
+export type { RouteSwitch } from './route-switches';
 const SWITCHES: Readonly<
   Record<RouteSwitch, Readonly<{ on: () => boolean; status: 404; error: string }>>
 > = {
@@ -318,12 +325,6 @@ const SWITCHES: Readonly<
     status: 404,
     error: 'not available in production',
   },
-};
-/** `METHOD pattern` to its switch (a HEAD row takes its GET's). */
-const ROUTE_SWITCHES: Readonly<Record<string, RouteSwitch>> = {
-  'POST /api/assistant/turn/:turnId/cancel': 'turn-streaming',
-  'GET /api/assistant/turn/:turnId/stream': 'turn-streaming',
-  'POST /api/dev-tools/queue-approval': 'not-production',
 };
 
 /** The off answer of a row whose switch is off now, else null. */
@@ -343,7 +344,14 @@ export function buildRouteRow(
   method: string,
   pattern: string,
   served: (key: string) => boolean = () => false,
-  opts: { page?: PageClass; reads?: RouteCaller | null; gone?: boolean } = {},
+  opts: {
+    page?: PageClass;
+    reads?: RouteCaller | null;
+    gone?: boolean;
+    /** The switch the route file declares for the method (a HEAD the GET
+     *  handler answers: its GET's). */
+    switch?: RouteSwitch | null;
+  } = {},
 ): RouteRow {
   const m = method.toUpperCase();
   const key = `${m} ${pattern}`;
@@ -411,6 +419,10 @@ export function buildRouteRow(
   // called, whatever list the row is in now (RouteRow.gone).
   const gone = opts.gone === true;
   if (gone && !caller) throw new Error(`ROUTE_POLICY: ${key} is a gone stub with no caller kind`);
+  const routeSwitch = opts.switch ?? null;
+  if (routeSwitch !== null && !Object.hasOwn(SWITCHES, routeSwitch)) {
+    throw new Error(`ROUTE_POLICY: ${key} is served under ${routeSwitch}, which is no switch`);
+  }
   if (
     caller &&
     (pageClass !== null ||
@@ -461,7 +473,7 @@ export function buildRouteRow(
     page,
     caller,
     gone,
-    switch: ROUTE_SWITCHES[`${m === 'HEAD' ? 'GET' : m} ${pattern}`] ?? null,
+    switch: routeSwitch,
     startsAs,
     actor: isPublic && effect === 'write' ? startsAs : null,
   });
@@ -476,6 +488,9 @@ export type RouteManifestEntry = Readonly<{
   reads?: Readonly<Record<string, RouteCaller>>;
   /** Each method exported as a retired route's 410 stub (gone rows). */
   gone?: readonly string[];
+  /** Each method to the switch its route file declares (`routeSwitches`,
+   *  route-switches.ts): its rows' `switch`. */
+  switches?: Readonly<Record<string, RouteSwitch>>;
 }>;
 
 /** The methods a manifest entry is called with: its own, and HEAD where
@@ -497,6 +512,16 @@ export function buildRoutePolicy(
   for (const entry of manifest) {
     const reads = entry.reads ?? {};
     const gone = new Set(entry.gone ?? []);
+    const switches = entry.switches ?? {};
+    // A switch declared for a method the route does not export would guard
+    // nothing: refused at boot, as a row no list classes is.
+    for (const m of Object.keys(switches)) {
+      if (!entry.methods.includes(m)) {
+        throw new Error(
+          `ROUTE_POLICY: ${entry.pattern} declares a switch for ${m}, which it does not serve`,
+        );
+      }
+    }
     for (const m of servedMethods(entry)) {
       // HEAD is answered by the GET handler: it reads what GET reads.
       const as = m === 'HEAD' && !entry.methods.includes('HEAD') ? 'GET' : m;
@@ -505,6 +530,7 @@ export function buildRoutePolicy(
         ...opts,
         reads: read,
         gone: gone.has(as),
+        switch: switches[as] ?? null,
       });
       table.set(row.key, row);
     }

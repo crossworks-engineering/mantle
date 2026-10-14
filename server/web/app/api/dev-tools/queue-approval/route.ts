@@ -8,9 +8,10 @@
  *
  * Gated to non-production: in prod this would let any authenticated request
  * queue an arbitrary tool approval, so it 404s there, to every credential:
- * the gate answers it first, before the caller (the row's switch,
- * route-policy.ts ROUTE_SWITCHES; A4 hand batch A). The genuine prod check
- * is a real chat turn / heartbeat fire against the live bot.
+ * the gate answers it first, before the caller (the switch declared below,
+ * `routeSwitches`, lib/auth/route-switches.ts; A4 hand batch A). The
+ * genuine prod check is a real chat turn / heartbeat fire against the live
+ * bot.
  */
 
 import { NextResponse } from '@/server/http-compat';
@@ -19,6 +20,10 @@ import { db, pendingToolCalls } from '@mantle/db';
 import { notifyPendingCreated } from '@mantle/tools';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
+import type { RouteSwitches } from '@/lib/auth/route-switches';
+
+/** Never served in production: the gate answers 404 there, first. */
+export const routeSwitches = { POST: 'not-production' } as const satisfies RouteSwitches;
 
 const Body = z.object({
   // A real, enabled tool so the approve path can actually dispatch it.

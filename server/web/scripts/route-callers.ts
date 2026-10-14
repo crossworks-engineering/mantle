@@ -60,6 +60,12 @@ import {
   SESSION_GUARDS,
 } from '../../../eslint-rules/session-guards.mjs';
 import type { RouteCaller } from '../lib/auth/route-policy';
+import {
+  ROUTE_SWITCH_NAMES,
+  ROUTE_SWITCHES_EXPORT,
+  isRouteSwitch,
+  type RouteSwitch,
+} from '../lib/auth/route-switches';
 
 /** The readers and the session guards: the one list
  *  (eslint-rules/session-guards.mjs). */
@@ -589,6 +595,141 @@ export function handlerGone(src: string, file: string): string[] {
     throw new Error(`${file}:${line + 1}: ${msg}`);
   };
   return Object.keys(goneOf(methods, imported, fail)).sort();
+}
+
+/** Each method of a route file to the switch it is served under
+ *  (route-switches.ts). */
+export type HandlerSwitches = Readonly<Record<string, RouteSwitch>>;
+
+/**
+ * The switches a route file declares (route-switches.ts, A4 hand batch A):
+ * `export const routeSwitches = { POST: 'not-production' }` (with `as
+ * const` or `satisfies RouteSwitches`), each method the file exports to a
+ * switch, read into the manifest so the declaration moves with the handler.
+ * Refused (the generator fails): the export in any other form (let or
+ * var, not an object literal, a spread, a computed or non-method key, a
+ * value that is not a switch's name in a string literal, `export { x as
+ * routeSwitches }`, a re-export), a switch for a method the file does not
+ * export, and a handler taken from another route file served under a
+ * switch there (`follow`, as in handlerCallers) while this file's methods
+ * do not all declare the same switch: the handler would be served here
+ * with the switch off.
+ */
+export function handlerSwitches(
+  src: string,
+  file: string,
+  follow?: (specifier: string) => HandlerSwitches | null,
+): HandlerSwitches {
+  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
+  const fail = (node: ts.Node, msg: string): never => {
+    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+    throw new Error(`${file}:${line + 1}: ${msg}`);
+  };
+  const NAME = ROUTE_SWITCHES_EXPORT;
+  const exported = new Set<string>();
+  const out: Record<string, RouteSwitch> = {};
+  let declared: ts.Node | null = null;
+  /** Each name taken from another module: [node, specifier, its name there]. */
+  const taken: Array<[ts.Node, string, string]> = [];
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name && hasModifier(st, ts.SyntaxKind.ExportKeyword)) {
+      if (st.name.text === NAME)
+        fail(st, `${NAME} is a function: declare it as export const ${NAME} = { ... }`);
+      if (HTTP_METHODS.has(st.name.text)) exported.add(st.name.text);
+    } else if (ts.isVariableStatement(st) && hasModifier(st, ts.SyntaxKind.ExportKeyword)) {
+      for (const d of st.declarationList.declarations) {
+        if (!ts.isIdentifier(d.name)) continue;
+        if (HTTP_METHODS.has(d.name.text)) exported.add(d.name.text);
+        if (d.name.text !== NAME) continue;
+        declared = d;
+        if ((st.declarationList.flags & ts.NodeFlags.Const) === 0) {
+          fail(d, `${NAME} is declared with let or var: declare it with const`);
+        }
+        const obj = d.initializer ? bare(d.initializer) : undefined;
+        if (!obj || !ts.isObjectLiteralExpression(obj)) {
+          fail(d, `${NAME} is not an object literal: each method to its switch's name`);
+        }
+        for (const p of (obj as ts.ObjectLiteralExpression).properties) {
+          if (!ts.isPropertyAssignment(p)) {
+            fail(p, `${NAME}: each entry is a method to its switch's name, written out`);
+          }
+          const a = p as ts.PropertyAssignment;
+          const key =
+            ts.isIdentifier(a.name) || ts.isStringLiteral(a.name) ? a.name.text : undefined;
+          if (!key || !HTTP_METHODS.has(key))
+            fail(a.name, `${NAME}: ${a.name.getText(sf)} is no method`);
+          if (Object.hasOwn(out, key!)) fail(a.name, `${NAME}: ${key} is named twice`);
+          const v = bare(a.initializer);
+          if (!ts.isStringLiteralLike(v) || !isRouteSwitch(v.text)) {
+            fail(
+              a.initializer,
+              `${NAME}: ${key} names no switch (${ROUTE_SWITCH_NAMES.join(', ')})`,
+            );
+          }
+          out[key!] = (v as ts.StringLiteralLike).text as RouteSwitch;
+        }
+      }
+    } else if (ts.isExportDeclaration(st)) {
+      const spec =
+        st.moduleSpecifier && ts.isStringLiteral(st.moduleSpecifier)
+          ? st.moduleSpecifier.text
+          : null;
+      if (!st.exportClause) {
+        if (spec && Object.keys(follow?.(spec) ?? {}).length > 0) {
+          fail(st, `takes all of ${spec}, whose handlers are served under a switch: name them`);
+        }
+        continue;
+      }
+      if (!ts.isNamedExports(st.exportClause)) continue;
+      for (const el of st.exportClause.elements) {
+        if (el.name.text === NAME) {
+          fail(
+            el,
+            `${NAME} is exported by name: declare it here as export const ${NAME} = { ... }`,
+          );
+        }
+        if (HTTP_METHODS.has(el.name.text)) exported.add(el.name.text);
+        if (spec) taken.push([el, spec, (el.propertyName ?? el.name).text]);
+      }
+    } else if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
+      const spec = st.moduleSpecifier.text;
+      const bindings = st.importClause?.namedBindings;
+      if (st.importClause?.name) taken.push([st.importClause, spec, 'default']);
+      if (bindings && ts.isNamespaceImport(bindings)) {
+        if (Object.keys(follow?.(spec) ?? {}).length > 0) {
+          fail(
+            bindings,
+            `imports all of ${spec}, whose handlers are served under a switch: name them`,
+          );
+        }
+      } else if (bindings && ts.isNamedImports(bindings)) {
+        for (const el of bindings.elements) {
+          taken.push([el, spec, (el.propertyName ?? el.name).text]);
+        }
+      }
+    }
+  }
+  if (declared) {
+    for (const m of Object.keys(out)) {
+      if (!exported.has(m)) fail(declared, `${NAME}: ${m} is a method this file does not export`);
+    }
+  }
+  // A handler served under a switch in its own route file, taken here: it
+  // keeps the switch on every method of this file (any of them may run it).
+  for (const [node, spec, name] of taken) {
+    const there = follow?.(spec)?.[name];
+    if (!there) continue;
+    for (const m of exported) {
+      if (out[m] !== there) {
+        fail(
+          node,
+          `takes ${name} from ${spec}, served under ${there} there: declare ${NAME} = { ${m}: '${there}' } here too`,
+        );
+      }
+    }
+  }
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
 /**

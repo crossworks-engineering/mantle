@@ -1532,11 +1532,11 @@ handlers; the two of `/api/auth/pair` are public rows, which no kind may
 read): 27 handlers in 24 route files.
 
 - **Member** (`memberCaller()`): 10 handlers in 8 files: `GET
-  /api/member/home`, `GET /api/member/mcp`, `DELETE
-  /api/member/mcp/clients/:id`, `POST /api/member/push/connect`, `GET` and
+/api/member/home`, `GET /api/member/mcp`, `DELETE
+/api/member/mcp/clients/:id`, `POST /api/member/push/connect`, `GET` and
   `PUT /api/member/push/preferences`, `GET` and `POST
-  /api/member/push/subscriptions`, `DELETE
-  /api/member/push/subscriptions/:id`, `GET /api/member/realtime`. With
+/api/member/push/subscriptions`, `DELETE
+/api/member/push/subscriptions/:id`, `GET /api/member/realtime`. With
   their HEADs, 15 rows carry `caller: 'member'`.
 - **Chat** (`chatLoginCaller()`): 17 handlers in 16 files: the assistant
   chat rows (`conversations`, `messages`, `read`, `stream`, `thread`,
@@ -1546,7 +1546,7 @@ read): 27 handlers in 24 route files.
   With their HEADs, 25 rows carry `caller: 'chat'`.
 - **Any login**: none. Every any-login handler reads its guard inside a
   wrapper, not as its first statement: `ruleInQuery(handleGET)` (`GET
-  /api/shell`, `GET /api/v1/whoami`, `GET` and `POST /api/access-keys`,
+/api/shell`, `GET /api/v1/whoami`, `GET` and `POST /api/access-keys`,
   `DELETE /api/access-keys/:id`) and the workspace and grants helpers
   (`workspaceCaller()` in `server/web/lib/workspaces.ts`, behind `wsRoute`
   and `grantsRoute`, 17 route files). The answer step and `loginCaller()`
@@ -1633,7 +1633,7 @@ gate could do each once:
    reader replaced, and the test holds each to the guard path's record, by
    cell, before it compares the file: a lost or a doubled row fails.
    `gate-caller.test.ts` serves `POST /api/workspaces` and `POST
-   /api/grants/move` through `loginCaller()` and through
+/api/grants/move` through `loginCaller()` and through
    `workspaceCaller()`, comparing the answer, the audit rows and the stamp.
 2. **Fold the audit** into the `login` answer step: it writes
    `auditLoginMutation`'s row, and the same commit deletes the hand call
@@ -1643,7 +1643,7 @@ gate could do each once:
    system pool after the answer: a gate that leaves the scope it entered
    for a whole class of rows is a second, wider exit. Restructure instead:
    the five any-login handlers of the four `ruleInQuery` files (`GET
-   /api/auth/whoami`, the fifth file, is a public row and goes with the
+/api/auth/whoami`, the fifth file, is a public row and goes with the
    public rows) become
    `const login = loginCaller(); return asSystem(() => handle(login), 'rule-in-query');`
    (the read before the exit, the exit as narrow as it is now), and the
@@ -1651,7 +1651,7 @@ gate could do each once:
    it in (`workspaceCaller()` becomes a projection of it, with no guard).
 4. **The one recorded change**: the refusal actor of those four
    `ruleInQuery` files (`GET /api/shell`, `GET /api/v1/whoami`, `GET` and `POST
-   /api/access-keys`, `DELETE /api/access-keys/:id`), `system:rule-in-query`
+/api/access-keys`, `DELETE /api/access-keys/:id`), `system:rule-in-query`
    to `system:http:no-login`, now that the refusal is the gate's. Record it
    as an explicit sweep change (a file of its own naming those cells, as
    the owner decision's is), so the two recorded files change there and
@@ -1676,17 +1676,17 @@ the guards it does not:
 
 - the any-login rows (`getLoginOr401` in a wrapper): `GET /api/shell`,
   `GET /api/v1/whoami`, `GET` and `POST /api/access-keys`, `DELETE
-  /api/access-keys/:id` (`ruleInQuery`), and `server/web/lib/workspaces.ts`
+/api/access-keys/:id` (`ruleInQuery`), and `server/web/lib/workspaces.ts`
   `workspaceCaller()` (the workspace and grants rows, `POST
-  /api/workspaces/:id/archive` among them): the gateway lens and the
+/api/workspaces/:id/archive` among them): the gateway lens and the
   recommended plan above;
 - `POST /api/assistant/turn` (`getChatLoginOr401` after a response helper
   it declares first);
 - the public rows that read the login (`getLoginOr401`): `GET
-  /api/auth/whoami`, `POST /api/auth/logout`, `POST
-  /api/auth/change-password`, `POST /api/auth/pair` and `GET
-  /api/auth/pair/:id`, `oauth/authorize` (the consent), and `POST
-  /api/auth/sso` (`getCookieUpgradeLoginOr401`);
+/api/auth/whoami`, `POST /api/auth/logout`, `POST
+/api/auth/change-password`, `POST /api/auth/pair` and `GET
+/api/auth/pair/:id`, `oauth/authorize` (the consent), and `POST
+/api/auth/sso` (`getCookieUpgradeLoginOr401`);
 - the asset guards (`getOwnerForAsset`, `getReaderForAsset`,
   `getMemberForAsset`: the draw svg, the file bytes, the export of batch
   2's rows and `GET /api/attachments/:id`);
@@ -1700,7 +1700,7 @@ the guards it does not:
 - `GET /api/apps/:id/frame` and `GET /api/member/apps/:id/frame` (the
   frame documents, which read no guard);
 - `PATCH /api/pages/:id` with its v1 wrapper, and `GET
-  /api/v1/files/:id/download` with its base.
+/api/v1/files/:id/download` with its base.
 
 Then `getOwnerOr401` goes and the count is 0 (A4 exit).
 
@@ -1741,7 +1741,7 @@ banner.
 - **The gone stubs**: the 144 `gone()` handlers in 125 route files (62
   owner, 47 member, 35 any) call no guard. The gateway lens chose one
   mechanism over a reader in each stub: the generator reads `export const
-  GET = gone('owner', ...)` as a handler that reads the caller of the
+GET = gone('owner', ...)` as a handler that reads the caller of the
   stub's kind (`GONE_CALLERS`, scripts/route-callers.ts; `any` is the
   any-login caller) and marks the method in the manifest (`gone`). Its
   row is a gone row (`RouteRow.gone`) with that caller, so the gate's one
@@ -1760,8 +1760,15 @@ banner.
   before their guard, so while the switch is off a member, a revoked token
   or an Admin user without the dev tool's settings area got the 404, not a
   refusal. Moving the flag after the read would change that, so the switch
-  is the row's (`ROUTE_SWITCHES`, `RouteRow.switch`, a HEAD takes its
-  GET's) and the gate answers its off answer first (`routeSwitchedOff`,
+  is the row's (`RouteRow.switch`, a HEAD the GET handler answers takes
+  its GET's), declared in the route file beside its handler (`export const
+routeSwitches = { POST: 'not-production' }`, lib/auth/route-switches.ts;
+  fix round 1: it was a string-keyed map in route-policy.ts, which a
+  rename would have left behind), read into the manifest by the generator
+  (route-callers.ts `handlerSwitches`, which refuses any other form and a
+  switched handler taken by another route file without its switch), and
+  buildRoutePolicy refuses at boot a switch for a method the route does
+  not serve. The gate answers its off answer first (`routeSwitchedOff`,
   in the gate middleware, before the login's answer and the Admin step),
   in the handler's words; the handlers read `ownerCaller()` first. POST
   /api/assistant/turn declared a response helper (a closure with no

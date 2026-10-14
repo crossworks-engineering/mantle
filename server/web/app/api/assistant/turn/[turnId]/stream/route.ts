@@ -3,6 +3,7 @@ import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { ownerCaller } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
 import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content';
+import type { RouteSwitches } from '@/lib/auth/route-switches';
 
 /**
  * GET /api/assistant/turn/[turnId]/stream — Server-Sent Events for ONE in-flight
@@ -30,6 +31,10 @@ import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content
  * durable message row stays the source of truth for the final answer regardless.
  */
 
+/** Served under MANTLE_TURN_STREAMING: the gate answers 404 first while it
+ *  is off (lib/auth/route-switches.ts; A4 hand batch A). */
+export const routeSwitches = { GET: 'turn-streaming' } as const satisfies RouteSwitches;
+
 export async function GET(
   req: Request,
   ctx: { params: Promise<{ turnId: string }> },
@@ -38,8 +43,8 @@ export async function GET(
   // expired bearer gets a clean 401 (not an HTML redirect) rather than an
   // empty event stream. The flag is the row's switch: while
   // MANTLE_TURN_STREAMING is off the gate answers 404 first, before the
-  // caller, and the endpoint simply doesn't exist (route-policy.ts
-  // ROUTE_SWITCHES; A4 hand batch A).
+  // caller, and the endpoint simply doesn't exist (`routeSwitches` above;
+  // A4 hand batch A).
   const owner = ownerCaller();
 
   // Per-brain gate: if this owner turned live thinking off in Settings → Profile,
