@@ -15,7 +15,8 @@
  *  - switch-over code (brainOnWorkspacesNow calls, MANTLE_ADMIN_READS);
  *  - store write API importers (the disk stores of plan section 6);
  *  - route files that read their request body directly (A10 part 2, fold
- *    1), outside and inside the named list (route-plumbing.mjs).
+ *    1), and that put a caught error's text in a reply (fold 2), outside
+ *    and inside the named lists (route-plumbing.mjs).
  *
  * Comment lines never count. Product files only: packages/, server/,
  * scripts/; no tests, migrations, archive or build folders (a route segment
@@ -25,7 +26,12 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CALLER_READERS, SESSION_GUARDS } from './session-guards.mjs';
-import { BODY_READ_ALLOW, directBodyReads } from './route-plumbing.mjs';
+import {
+  BODY_READ_ALLOW,
+  ERROR_TEXT_ALLOW,
+  directBodyReads,
+  errorTextReplies,
+} from './route-plumbing.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -533,6 +539,8 @@ export function measure(root) {
   const bareFetch = {};
   const bodyReadFiles = [];
   const bodyReadAllowed = [];
+  const errorTextFiles = [];
+  const errorTextAllowed = [];
   for (const f of files) {
     const text = readRepoFile(root, f);
     if (text === null) continue;
@@ -553,8 +561,12 @@ export function measure(root) {
     for (const s of storesReached(text)) stores[s].push(f);
     if (isRouteFile(f)) {
       routeFiles += 1;
-      if (directBodyReads(stripComments(text))) {
+      const code = stripComments(text);
+      if (directBodyReads(code)) {
         (BODY_READ_ALLOW[f] ? bodyReadAllowed : bodyReadFiles).push(f);
+      }
+      if (errorTextReplies(code)) {
+        (ERROR_TEXT_ALLOW[f] ? errorTextAllowed : errorTextFiles).push(f);
       }
       if (f.startsWith('server/web/app/api/')) apiRouteFiles += 1;
       const gone = isGoneStub(text);
@@ -616,6 +628,8 @@ export function measure(root) {
       bareFetchSites: sum(bareFetch),
       routeBodyReadFiles: bodyReadFiles.length,
       routeBodyReadAllowed: bodyReadAllowed.length,
+      routeErrorTextFiles: errorTextFiles.length,
+      routeErrorTextAllowed: errorTextAllowed.length,
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
     perFile: {
@@ -629,6 +643,8 @@ export function measure(root) {
       bareFetch,
       bodyReadFiles,
       bodyReadAllowed,
+      errorTextFiles,
+      errorTextAllowed,
     },
   };
 }

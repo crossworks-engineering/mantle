@@ -24,6 +24,8 @@
   "bareFetchSites": 5,
   "routeBodyReadFiles": 0,
   "routeBodyReadAllowed": 9,
+  "routeErrorTextFiles": 0,
+  "routeErrorTextAllowed": 72,
   "store_tabledb_files": 1,
   "store_objectstore_files": 4,
   "store_appdb_files": 5,

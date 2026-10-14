@@ -39,6 +39,94 @@ export const BODY_READ_ALLOW = Object.freeze({
     'reads the raw text to check two fields for an API key, then hands the same bytes to the page route, which reads them with readJson',
 });
 
+/**
+ * no-error-text-replies (fold 2, one error answer): a route never puts a
+ * caught error's text in its reply. It throws, and app.onError answers:
+ * a domain error by the one table (@mantle/std domain-errors.ts: its
+ * status and public text, the same a tool says), a refusal by the one
+ * mapper, anything else with the opaque 500 and a log line. 86 route files
+ * did on main; fold 2 moved the first tranche (the named examples, the
+ * isScopeWriteRefusal re-throws, the treeErrorResponse catches). The files
+ * still doing it are named here: none may be added, and the list only
+ * shrinks (eslint-rules/arch-lints.test.ts holds it to the files that
+ * still do). A message that is deliberately public gets its own reason.
+ */
+const NOT_YET = 'not yet moved: fold 2 continues (docs/request-plumbing.md)';
+export const ERROR_TEXT_ALLOW = Object.freeze({
+  'server/web/app/api/agents/[id]/telegram/chats/route.ts': NOT_YET,
+  'server/web/app/api/agents/[id]/telegram/route.ts': NOT_YET,
+  'server/web/app/api/agents/[id]/test/chat/route.ts': NOT_YET,
+  'server/web/app/api/agents/route.ts': NOT_YET,
+  'server/web/app/api/ai-workers/[id]/test/chat/route.ts': NOT_YET,
+  'server/web/app/api/ai-workers/[id]/test/decision/route.ts': NOT_YET,
+  'server/web/app/api/ai-workers/[id]/test/document/route.ts': NOT_YET,
+  'server/web/app/api/ai-workers/[id]/test/image/route.ts': NOT_YET,
+  'server/web/app/api/ai-workers/[id]/test/stt/route.ts': NOT_YET,
+  'server/web/app/api/ai-workers/[id]/test/tts/route.ts': NOT_YET,
+  'server/web/app/api/ai-workers/[id]/test/vision/route.ts': NOT_YET,
+  'server/web/app/api/ai-workers/route.ts': NOT_YET,
+  'server/web/app/api/apps/[id]/draft/route.ts': NOT_YET,
+  'server/web/app/api/apps/[id]/duplicate/route.ts': NOT_YET,
+  'server/web/app/api/apps/[id]/export/route.ts': NOT_YET,
+  'server/web/app/api/apps/[id]/format/route.ts': NOT_YET,
+  'server/web/app/api/apps/[id]/publish/route.ts': NOT_YET,
+  'server/web/app/api/apps/[id]/snapshots/[sid]/restore/route.ts': NOT_YET,
+  'server/web/app/api/apps/[id]/snapshots/[sid]/route.ts': NOT_YET,
+  'server/web/app/api/apps/[id]/snapshots/route.ts': NOT_YET,
+  'server/web/app/api/apps/deleted/[id]/restore/route.ts': NOT_YET,
+  'server/web/app/api/apps/import-package/route.ts': NOT_YET,
+  'server/web/app/api/assistant/transcribe/route.ts': NOT_YET,
+  'server/web/app/api/assistant/turn/route.ts': NOT_YET,
+  'server/web/app/api/config/adopt-all/route.ts': NOT_YET,
+  'server/web/app/api/config/adopt/route.ts': NOT_YET,
+  'server/web/app/api/dev-tools/mcp/route.ts': NOT_YET,
+  'server/web/app/api/dev-tools/proxy/route.ts': NOT_YET,
+  'server/web/app/api/docs/collections/[id]/route.ts': NOT_YET,
+  'server/web/app/api/docs/collections/all/route.ts': NOT_YET,
+  'server/web/app/api/docs/collections/route.ts': NOT_YET,
+  'server/web/app/api/embedding/rebuild/route.ts': NOT_YET,
+  'server/web/app/api/embedding/route.ts': NOT_YET,
+  'server/web/app/api/embedding/test/route.ts': NOT_YET,
+  'server/web/app/api/export/[id]/route.ts': NOT_YET,
+  'server/web/app/api/files/files/route.ts': NOT_YET,
+  'server/web/app/api/formulas/[id]/evaluate/route.ts': NOT_YET,
+  'server/web/app/api/heartbeats/[id]/fire/route.ts': NOT_YET,
+  'server/web/app/api/heartbeats/[id]/route.ts': NOT_YET,
+  'server/web/app/api/heartbeats/route.ts': NOT_YET,
+  'server/web/app/api/keys/route.ts': NOT_YET,
+  'server/web/app/api/mcp-connectors/[slug]/oauth/start/route.ts': NOT_YET,
+  'server/web/app/api/mcp-connectors/[slug]/sync/route.ts': NOT_YET,
+  'server/web/app/api/mcp-connectors/route.ts': NOT_YET,
+  'server/web/app/api/mcp-status/route.ts': NOT_YET,
+  'server/web/app/api/model-pools/route.ts': NOT_YET,
+  'server/web/app/api/openapi-connectors/[slug]/sync/route.ts': NOT_YET,
+  'server/web/app/api/openapi-connectors/preview/route.ts': NOT_YET,
+  'server/web/app/api/openapi-connectors/route.ts': NOT_YET,
+  'server/web/app/api/pdf-passwords/route.ts': NOT_YET,
+  'server/web/app/api/peers/route.ts': NOT_YET,
+  'server/web/app/api/pending/[id]/route.ts': NOT_YET,
+  'server/web/app/api/profile/route.ts': NOT_YET,
+  'server/web/app/api/push/reset/route.ts': NOT_YET,
+  'server/web/app/api/runners/[id]/route.ts': NOT_YET,
+  'server/web/app/api/settings/worker-groups/route.ts': NOT_YET,
+  'server/web/app/api/shares/contacts/route.ts': NOT_YET,
+  'server/web/app/api/skills/route.ts': NOT_YET,
+  'server/web/app/api/studio/prose/route.ts': NOT_YET,
+  'server/web/app/api/studio/reset/route.ts': NOT_YET,
+  'server/web/app/api/studio/sandbox/route.ts': NOT_YET,
+  'server/web/app/api/tables/[id]/draft-ops/route.ts': NOT_YET,
+  'server/web/app/api/tables/[id]/draft/route.ts': NOT_YET,
+  'server/web/app/api/tables/[id]/export/route.ts': NOT_YET,
+  'server/web/app/api/tables/[id]/history/[sid]/restore/route.ts': NOT_YET,
+  'server/web/app/api/tables/[id]/history/route.ts': NOT_YET,
+  'server/web/app/api/tables/[id]/import/route.ts': NOT_YET,
+  'server/web/app/api/tables/[id]/rows/route.ts': NOT_YET,
+  'server/web/app/api/tool-groups/route.ts': NOT_YET,
+  'server/web/app/api/tools/[id]/route.ts': NOT_YET,
+  'server/web/app/api/tools/route.ts': NOT_YET,
+  'server/web/app/api/users/[id]/agent/route.ts': NOT_YET,
+});
+
 const READERS = new Set(['json', 'text', 'formData', 'arrayBuffer', 'blob']);
 
 /** The repo-relative path of `filename` under server/web, or null. */
@@ -169,4 +257,36 @@ export const noDirectBodyReads = {
   },
 };
 
-export default { rules: { 'no-direct-body-reads': noDirectBodyReads } };
+export const noErrorTextReplies = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        "A route never puts a caught error's text in its reply: it throws, and app.onError answers (A10 part 2).",
+    },
+    messages: {
+      text: "This catch puts the caught error's text in a reply. Throw it: app.onError answers a domain error by the one table (@mantle/std domain-errors.ts) and anything else with the opaque 500. A message that is deliberately public is named with its reason in eslint-rules/route-plumbing.mjs ERROR_TEXT_ALLOW.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const file = context.filename;
+    if (!isRoutePath(file) || /\.test\.[cm]?[jt]sx?$/.test(file)) return {};
+    if (ERROR_TEXT_ALLOW[webPath(file)]) return {};
+    const source = context.sourceCode ?? context.getSourceCode();
+    return {
+      CatchClause(node) {
+        if (errorTextReplies(source.getText(node))) {
+          context.report({ node, messageId: 'text' });
+        }
+      },
+    };
+  },
+};
+
+export default {
+  rules: {
+    'no-direct-body-reads': noDirectBodyReads,
+    'no-error-text-replies': noErrorTextReplies,
+  },
+};

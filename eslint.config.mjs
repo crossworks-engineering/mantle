@@ -274,7 +274,12 @@ export default tseslint.config(
     files: ['server/web/app/**/route.ts'],
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-plumbing': mantleRoutePlumbingPlugin },
-    rules: { 'mantle-plumbing/no-direct-body-reads': 'error' },
+    rules: {
+      'mantle-plumbing/no-direct-body-reads': 'error',
+      // A route never puts a caught error's text in a reply: it throws and
+      // app.onError answers (fold 2). The files not yet moved are named.
+      'mantle-plumbing/no-error-text-replies': 'error',
+    },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

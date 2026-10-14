@@ -156,6 +156,15 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect([...got.perFile.bodyReadAllowed].sort()).toEqual(Object.keys(BODY_READ_ALLOW).sort());
   });
 
+  it("no-error-text-replies (A10 part 2): no route puts a caught error's text in a reply outside the named list", async () => {
+    // Throw; app.onError answers (the one table, or the opaque 500). The
+    // named files still do (fold 2 continues): the list only shrinks.
+    const { ERROR_TEXT_ALLOW } = await import('./route-plumbing.mjs');
+    expect(got.perFile.errorTextFiles).toEqual([]);
+    expect(got.numbers.routeErrorTextFiles).toBe(0);
+    expect([...got.perFile.errorTextAllowed].sort()).toEqual(Object.keys(ERROR_TEXT_ALLOW).sort());
+  });
+
   it('every live route that reads no caller is a public row (A4 exit)', async () => {
     // An /api/v1 alias reads where the handler it takes reads (the count
     // follows it); what is left judges its own credential and reads no

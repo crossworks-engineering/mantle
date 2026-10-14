@@ -4,9 +4,12 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain-JS rule module, no types shipped.
 import {
   BODY_READ_ALLOW,
+  ERROR_TEXT_ALLOW,
   directBodyReads,
+  errorTextReplies,
   isRoutePath,
   noDirectBodyReads,
+  noErrorTextReplies,
 } from './route-plumbing.mjs';
 
 /**
@@ -72,6 +75,68 @@ describe('no-direct-body-reads', () => {
           code: 'export async function POST(req: Request) { return req.body; }',
           filename: route,
           errors: [{ messageId: 'read' }],
+        },
+      ],
+    });
+  });
+});
+
+/**
+ * no-error-text-replies (A10 part 2, fold 2): a route never puts a caught
+ * error's text in its reply; it throws and app.onError answers. The files
+ * fold 2 has not moved yet are named.
+ */
+describe('no-error-text-replies', () => {
+  it('counts a catch that replies with the error text, not one that logs it', () => {
+    expect(
+      errorTextReplies(
+        'try { a(); } catch (err) { return NextResponse.json({ error: (err as Error).message }, { status: 400 }); }',
+      ),
+    ).toBe(1);
+    expect(
+      errorTextReplies(
+        'try { a(); } catch (e) { const msg = errorMessage(e); return NextResponse.json({ error: msg }); }',
+      ),
+    ).toBe(1);
+    expect(
+      errorTextReplies(
+        'try { a(); } catch (e) { return settingsRedirect(req, { error: (e as Error).message.slice(0, 200) }); }',
+      ),
+    ).toBe(1);
+    expect(
+      errorTextReplies(
+        "try { a(); } catch (err) { console.error('[x]', errorMessage(err)); return NextResponse.json({ error: 'failed' }, { status: 500 }); }",
+      ),
+    ).toBe(0);
+    expect(errorTextReplies('try { a(); } catch (err) { throw err; }')).toBe(0);
+    expect(
+      Object.values(ERROR_TEXT_ALLOW).every((r) => typeof r === 'string' && r.length > 0),
+    ).toBe(true);
+  });
+
+  const tester = new RuleTester({
+    languageOptions: { parser: tseslint.parser, ecmaVersion: 2022, sourceType: 'module' },
+  });
+  const route = '/r/server/web/app/api/notes/route.ts';
+
+  it('allows a throw and a fixed reply; refuses the error text in a reply', () => {
+    tester.run('no-error-text-replies', noErrorTextReplies, {
+      valid: [
+        { code: 'try { await a(); } catch (err) { throw err; }', filename: route },
+        {
+          code: "try { await a(); } catch (err) { console.error(err); return NextResponse.json({ error: 'failed' }); }",
+          filename: route,
+        },
+        {
+          code: 'try { await a(); } catch (err) { return NextResponse.json({ error: errorMessage(err) }); }',
+          filename: '/r/server/web/lib/x.ts',
+        },
+      ],
+      invalid: [
+        {
+          code: 'try { await a(); } catch (err) { return NextResponse.json({ error: errorMessage(err) }, { status: 400 }); }',
+          filename: route,
+          errors: [{ messageId: 'text' }],
         },
       ],
     });
