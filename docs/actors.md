@@ -2048,6 +2048,14 @@ caller) stand in nothing now; they are left as they are.
   an Admin user no longer active) is the handler's 401, an invalid ticket
   or none is the gate's 401 before the handler. runRoute takes a raw body
   (`rawBody`, a form) for the consent POST.
+- **An answer taken at the read is awaited, and the owner one never in a
+  try.** owner-caller-imports.mjs now holds a route file's call of a reader
+  answered at the read (`publicLoginCaller`, `cookieUpgradeCaller`,
+  `ownerCallerAtRead`: READER_ANSWERS `atRead`) to an `await` where it is
+  made, and refuses `ownerCallerAtRead()` inside a try block, where a catch
+  could swallow its thrown refusal and run the handler with no owner. POST
+  /api/auth/sso hands `handleOwnerSso` an `async () => await
+cookieUpgradeCaller()`.
 
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):

@@ -1,7 +1,7 @@
 import { RuleTester } from 'eslint';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain-JS rule module, no types shipped.
-import { isApiRouteFile, isExempt, rule } from './owner-caller-imports.mjs';
+import { AT_READ_READERS, isApiRouteFile, isExempt, rule } from './owner-caller-imports.mjs';
 
 /**
  * ownerCaller is imported by its own name, only in an app/api route file
@@ -154,6 +154,102 @@ describe('owner-caller-imports', () => {
           code: "const { loginCaller } = await import('@/lib/auth');",
           filename: lib,
           errors: [{ messageId: 'member' }],
+        },
+      ],
+    });
+  });
+
+  it('an answer taken at the read is awaited where it is called, and the owner one never in a try (fix round 1, L3)', () => {
+    expect([...AT_READ_READERS].sort()).toEqual([
+      'cookieUpgradeCaller',
+      'ownerCallerAtRead',
+      'publicLoginCaller',
+    ]);
+    const pub = '/r/server/web/app/api/auth/logout/route.ts';
+    const page = '/r/server/web/app/api/pages/[id]/route.ts';
+    const imp = (name: string) => `import { ${name} } from '@/lib/auth';\n`;
+    tester.run('owner-caller-imports', rule, {
+      valid: [
+        { code: `${imp('publicLoginCaller')}const l = await publicLoginCaller();`, filename: pub },
+        {
+          code: `${imp('publicLoginCaller')}const l = await publicLoginCaller({ audit: true });`,
+          filename: pub,
+        },
+        {
+          code: `${imp('cookieUpgradeCaller')}f(req, async () => await cookieUpgradeCaller());`,
+          filename: pub,
+        },
+        {
+          code: `${imp('ownerCallerAtRead')}async function PATCH() { const u = await ownerCallerAtRead(); }`,
+          filename: page,
+        },
+        // A try whose block does not hold the read.
+        {
+          code: `${imp('ownerCallerAtRead')}async function PATCH() { const u = await ownerCallerAtRead(); try { f(); } catch {} }`,
+          filename: page,
+        },
+        {
+          code: `${imp('ownerCallerAtRead')}async function PATCH() { try { f(); } finally { await ownerCallerAtRead(); } }`,
+          filename: page,
+        },
+        // The other readers may sit in a try (their answer is no refusal).
+        {
+          code: `${imp('publicLoginCaller')}try { await publicLoginCaller(); } catch {}`,
+          filename: pub,
+        },
+        // A reader answered before the handler is not awaited.
+        {
+          code: "import { ownerCaller } from '@/lib/auth';\nconst u = ownerCaller();",
+          filename: page,
+        },
+        // Outside a route file the import rule reports, not this one.
+        {
+          code: 'const l = publicLoginCaller();',
+          filename: '/r/server/web/app/api/auth/logout/route.test.ts',
+        },
+      ],
+      invalid: [
+        {
+          code: `${imp('publicLoginCaller')}const l = publicLoginCaller();`,
+          filename: pub,
+          errors: [{ messageId: 'notAwaited' }],
+        },
+        {
+          code: `${imp('publicLoginCaller')}publicLoginCaller().then((l) => l);`,
+          filename: pub,
+          errors: [{ messageId: 'notAwaited' }],
+        },
+        {
+          code: `${imp('cookieUpgradeCaller')}f(req, () => cookieUpgradeCaller());`,
+          filename: pub,
+          errors: [{ messageId: 'notAwaited' }],
+        },
+        {
+          code: `${imp('ownerCallerAtRead')}const u = ownerCallerAtRead();`,
+          filename: page,
+          errors: [{ messageId: 'notAwaited' }],
+        },
+        {
+          code: `${imp('ownerCallerAtRead')}await ownerCallerAtRead().catch(() => null);`,
+          filename: page,
+          errors: [{ messageId: 'notAwaited' }],
+        },
+        {
+          code: `${imp('ownerCallerAtRead')}async function PATCH() { try { const u = await ownerCallerAtRead(); } catch { return null; } }`,
+          filename: page,
+          errors: [{ messageId: 'inTry' }],
+        },
+        // Nested in the try block, a function boundary between them.
+        {
+          code: `${imp('ownerCallerAtRead')}async function PATCH() { try { await (async () => { if (x) { await ownerCallerAtRead(); } })(); } catch {} }`,
+          filename: page,
+          errors: [{ messageId: 'inTry' }],
+        },
+        // Both at once.
+        {
+          code: `${imp('ownerCallerAtRead')}try { ownerCallerAtRead(); } catch {}`,
+          filename: page,
+          errors: [{ messageId: 'notAwaited' }, { messageId: 'inTry' }],
         },
       ],
     });

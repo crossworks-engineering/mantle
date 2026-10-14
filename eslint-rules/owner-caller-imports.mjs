@@ -18,6 +18,19 @@
  *    `auth['ownerCaller']`, a template literal key with no expression) or
  *    destructured (`const { ownerCaller } = await import(...)`).
  *
+ *
+ * A4 hand batch B fix round 1 (L3): a reader answered at the read
+ * (READER_ANSWERS `atRead`: publicLoginCaller, cookieUpgradeCaller,
+ * ownerCallerAtRead) runs the gate's answer when it is called, so in a
+ * route file
+ *
+ *  - its call is awaited where it is made (`await publicLoginCaller()`): a
+ *    promise left unawaited is a login that is always there, and a refusal
+ *    no one sees;
+ *  - ownerCallerAtRead is never called inside a try block: its refusal is
+ *    thrown (RouteRefusal) for the app to answer, and a catch could swallow
+ *    it and run the handler with no owner.
+ *
  * It runs on every script file under server/web (.ts, .tsx, .mts, .cts,
  * .js, .jsx, .mjs, .cjs; eslint.config.mjs), tests aside.
  *
@@ -27,9 +40,25 @@
  * to build (route-policy.ts buildRouteRow): the reader is read only where
  * the gate answered its kind.
  */
-import { CALLER_READERS } from './session-guards.mjs';
+import { CALLER_READERS, READER_ANSWERS } from './session-guards.mjs';
 
 const READERS = new Set(CALLER_READERS);
+/** The readers answered at the read: each call is awaited where it is made. */
+export const AT_READ_READERS = new Set(
+  Object.entries(READER_ANSWERS)
+    .filter(([, a]) => a.atRead === true)
+    .map(([name]) => name),
+);
+/** The readers whose refusal is thrown at the read: never inside a try. */
+export const THROWING_AT_READ = new Set(['ownerCallerAtRead']);
+
+/** Whether `node` sits in the protected block of a try statement. */
+function inTryBlock(node) {
+  for (let child = node, n = node.parent; n; child = n, n = n.parent) {
+    if (n.type === 'TryStatement' && n.block === child) return true;
+  }
+  return false;
+}
 const READER_MODULES = new Set(['@/lib/auth', '@/lib/auth/session']);
 
 /** Whether `filename` is a route file under server/web/app/api. */
@@ -77,6 +106,10 @@ export const rule = {
         '{{name}} is not re-exported: a route handler imports it from @/lib/auth (A4 step 3b).',
       member:
         'Do not read {{name}} off an object: import it by name in the route file and call it (A4 step 3b).',
+      notAwaited:
+        'Await {{name}}() where it is called: it runs the answer the gate took at the read (A4 hand batch B).',
+      inTry:
+        '{{name}}() throws its refusal for the app to answer: do not call it inside a try block, where a catch could swallow it (A4 hand batch B).',
     },
     schema: [],
   },
@@ -85,6 +118,17 @@ export const rule = {
     if (isExempt(file)) return {};
     const route = isApiRouteFile(file);
     return {
+      CallExpression(node) {
+        if (!route || node.callee.type !== 'Identifier') return;
+        const name = node.callee.name;
+        if (!AT_READ_READERS.has(name)) return;
+        if (node.parent.type !== 'AwaitExpression') {
+          context.report({ node, messageId: 'notAwaited', data: { name } });
+        }
+        if (THROWING_AT_READ.has(name) && inTryBlock(node)) {
+          context.report({ node, messageId: 'inTry', data: { name } });
+        }
+      },
       ImportSpecifier(node) {
         const name = nameOf(node.imported);
         if (!READERS.has(name)) return;

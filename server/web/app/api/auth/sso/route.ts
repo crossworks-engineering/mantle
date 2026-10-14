@@ -8,5 +8,7 @@ import { cookieUpgradeCaller } from '@/lib/auth';
 import { handleOwnerSso } from '@/lib/owner-sso';
 
 export async function POST(req: Request) {
-  return handleOwnerSso(req, () => cookieUpgradeCaller());
+  // Awaited where it is called (owner-caller-imports): the read runs the
+  // answer the gate took, once handleOwnerSso asks for it.
+  return handleOwnerSso(req, async () => await cookieUpgradeCaller());
 }
