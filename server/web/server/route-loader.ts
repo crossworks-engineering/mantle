@@ -131,6 +131,16 @@ export function registerRoutes(
 
     for (const method of entry.methods) {
       const handle = async (c: Context) => {
+        // The owner answer threw at the gate (arch A4 step 3b): taken off
+        // the request first, and thrown below in the handler's place,
+        // where the handler's guard threw it before, for onError (which
+        // keeps the gate's CORS headers). Where no handler runs (the bare
+        // prefix's 404, a stale manifest's 405) no guard ran before
+        // either: that answer stands, with its CORS headers, and the
+        // error goes with the guard that never ran.
+        const ctx = getRequestContext();
+        const pending = ctx?.callerError;
+        if (pending) delete ctx.callerError;
         let params: Record<string, string | string[]> = {};
         if (isCatchAll) {
           // Hono's `/x/*` also matches the bare `/x`. Next semantics:
@@ -149,14 +159,7 @@ export function registerRoutes(
         if (typeof handler !== 'function') {
           return Response.json({ error: 'method not allowed' }, { status: 405 });
         }
-        // The owner answer threw at the gate (arch A4 step 3b): thrown
-        // here, where the handler's guard threw it before, for onError.
-        const ctx = getRequestContext();
-        const pending = ctx?.callerError;
-        if (pending) {
-          delete ctx.callerError;
-          throw pending.error;
-        }
+        if (pending) throw pending.error;
         // The gate opened the request slot (workspaces W6a) through enterCall;
         // the session guard fills it with the login's scope.
         return handler(c.req.raw, { params: Promise.resolve(params) });

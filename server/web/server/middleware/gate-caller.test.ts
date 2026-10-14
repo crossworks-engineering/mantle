@@ -281,6 +281,52 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
   });
 
+  it('a stale manifest names a handler the module lacks: 405 with CORS, as the guard gave', async () => {
+    // The manifest says PUT reads the caller; the module (changed since)
+    // exports no PUT. No handler runs, so no guard ran before either: the
+    // loader's 405 stands, with its CORS headers, though the answer threw.
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const session = await import('../../lib/auth/session');
+    const apps = [true, false].map((read) => {
+      const app = new Hono();
+      app.use('*', gate());
+      registerRoutes(app, [
+        {
+          pattern: '/api/profile',
+          methods: ['GET', 'PUT'],
+          catchAll: null,
+          catchAllOptional: false,
+          ...(read ? { reads: ['GET', 'PUT'] } : {}),
+          load: async () => ({ GET: async () => Response.json(session.ownerCaller()) }),
+        },
+      ]);
+      app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
+      return app;
+    });
+    process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example';
+    counts.auditThrows = new Error('database down');
+    try {
+      const headers = { ...creds[1]!.headers(), origin: 'https://client.example' };
+      const answers = [];
+      for (const app of apps) {
+        const res = await app.request('/api/profile', { method: 'PUT', headers });
+        answers.push({
+          status: res.status,
+          body: await res.text(),
+          cors: [...res.headers.entries()].filter(([k]) => k.startsWith('access-control-')),
+        });
+      }
+      const [a, b] = answers;
+      expect(a).toEqual(b);
+      expect(a!.status).toBe(405);
+      expect(a!.cors).toContainEqual(['access-control-allow-origin', 'https://client.example']);
+    } finally {
+      counts.auditThrows = null;
+      delete process.env.MANTLE_API_CORS_ORIGINS;
+    }
+  });
+
   it('a device token is stamped once, by the pipeline', async () => {
     const res = await drive(pipeline, 'GET', '/api/profile', creds[5]!.headers());
     expect(res.status).toBe(200);
