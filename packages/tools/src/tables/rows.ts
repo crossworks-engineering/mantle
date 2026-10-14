@@ -9,7 +9,7 @@ import { queryRowsWindow, type TableOp } from '@mantle/tabledb';
 import type { BuiltinToolDef } from '../types';
 import { str } from '../coerce';
 import { notFound } from '../errors';
-import { errorMessage } from '@mantle/std';
+import { publicErrorMessage } from '@mantle/std';
 import {
   CELLS_HINT,
   DRAFT_REVIEW_HINT,
@@ -86,7 +86,7 @@ export const table_row_add: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorMessage(err, 'table_row_add') };
     }
   },
 };
@@ -173,7 +173,7 @@ export const table_rows_add: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorMessage(err, 'table_rows_add') };
     }
   },
 };
@@ -399,7 +399,7 @@ export const table_rows_upsert: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorMessage(err, 'table_rows_upsert') };
     }
   },
 };
@@ -465,7 +465,7 @@ export const table_row_update: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorMessage(err, 'table_row_update') };
     }
   },
 };
@@ -521,7 +521,7 @@ export const table_row_delete: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorMessage(err, 'table_row_delete') };
     }
   },
 };
@@ -590,7 +590,7 @@ export const table_cell_set: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorMessage(err, 'table_cell_set') };
     }
   },
 };

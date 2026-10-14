@@ -2022,3 +2022,19 @@ Two answers changed on purpose, outside a refusal's text: a key's
 `api.write` audit row is written only for a tool its connection lists
 (`preparedLists`), where a name the surface never had could leave one; and
 the actor of a call, as above.
+
+## The owner's behaviour changes (A5 step 5)
+
+Plan section 23.3, step 5, and the owner's answers b b b (section 22). Each
+change below is its own commit with its own test.
+
+**Carried LOWs from the step 4 re-audit** (no behaviour change for a
+masked caller):
+
+- **LOW-C.** The row tools (`packages/tools/src/tables/rows.ts`) answer a
+  database error that `applyTableOps` throws (a deadlock, a lock timeout)
+  in the one mapper's words (`publicErrorMessage`), for every caller; an
+  error that is not the database's keeps its text. Before, the /api/v1
+  rows routes, which run no masking of their own, answered its "Failed
+  query ... params" as their 400 body
+  (`packages/tools/src/builtins-tables-rows-db-error.test.ts`).
