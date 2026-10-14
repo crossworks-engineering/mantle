@@ -997,18 +997,111 @@ still does.
   carve-out; the builder suggested a class of their own for all three. The
   owner decides before step 3b enforces the area.
 
-1. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
+**HTTP, A4 step 3b part 1 (no answer changed).** The codemod's
+prerequisite and its first batch. A route file reads the caller the
+pipeline answers instead of calling a guard:
+
+    const owner = ownerCaller();
+
+- **The row says so, from the code.** A ROUTE_POLICY row has `caller`:
+  `'owner'` where the route file's handler for the method reads
+  `ownerCaller()` (a HEAD row has its GET's), else null. The manifest
+  generator reads that from each route file with the TypeScript parser
+  (`server/web/scripts/route-callers.ts`, the manifest's `reads`), never
+  from a list kept by hand. It refuses a handler that reads the caller and
+  also calls a session guard (the guard's effects would run twice) and a
+  read outside an exported handler. A row the owner guard does not serve
+  (public, link, render, a page, the any-login, chat, Telegram and member
+  lists) cannot carry it: its rows fail to build.
+- **The gate answers it.** On such a row the gate runs the owner guard's
+  answer once, in the request slot `enterCall` opened, before the handler
+  (`answerRouteCaller`, `server/web/lib/auth/session.ts`): the actor named
+  and a device token stamped, the system reason noted or the scope
+  entered, the item a write names checked, the create home named, the
+  audit row of a write. It is the function the guard runs
+  (`getOwnerOr401WithLogin`), so the two answer alike. A refusal is the
+  gate's answer and the handler does not run; otherwise the answer is kept
+  on the request's logins and `ownerCaller()` reads it, with no lookup and
+  no effect. `ownerCaller()` throws where the pipeline answered no owner (a
+  row with no `caller`, a call nested in the request with a caller of its
+  own, outside a routed request: a test goes through `runRoute`). A request
+  that changes its login after the gate answered (a forget) keeps the
+  answer: a converted handler reads it once, at its start.
+- **The guards stay.** A row with no `caller` is answered by its handler's
+  guard, as before, so the batches land one at a time.
+  `server/web/server/middleware/gate-caller.test.ts` serves the same rows
+  through both paths and compares, for eight credentials, the status,
+  body, owner, actor, scope, audit row and device token stamp.
+
+Batch 1, the self rows (class self, the owner guard's): 29 handlers in 23
+files, each the standard two lines `const x = await getOwnerOr401(); if (x
+instanceof NextResponse) return x;` as its first statement: `/api/profile`
+and its brand and preference writers, `/api/push` (connect, preferences,
+reset, subscriptions), `/api/realtime`, `/api/health`, `/api/changelog`,
+`/api/help/:topic`, the turn stage poll and the turn suggestion. Their 39
+rows (with the HEADs) carry `caller: 'owner'`. Left for the hand batch:
+POST cancel and GET stream of `/api/assistant/turn/:turnId` (a flag check
+runs first: a refusal at the gate would answer 401 where they answer 404),
+GET `/api/profile/photo` (`getOwnerForAsset`), and the eight
+`/api/admin/space` 410 stubs (`gone()`).
+
+The proof is the guard sweep: both recorded files are byte for byte. A
+moved entry is logged where it now runs, at the gate (`pipeline:owner`),
+and the recorded files compare it under the guard it replaced
+(`getOwnerOr401`, the one call the codemod converts). The entries as
+logged are recorded in `__snapshots__/a4-guard-sweep-moved.txt`: 468 cells
+(273 of the first sweep, 195 of the more-credentials sweep), 14 answers:
+for GET and HEAD, an Admin login's owner (the anchor, an Admin user, one
+with no area; by cookie and by device token, stamped once) with the
+request on the system pool as `login-self`; a member's 403 `member-login`
+(by cookie and by device token) running as the member; a 401 for a
+credential that resolves to no login. Each has the status, headers, body,
+owner, actor and scope the guard gave.
+
+Pins: guard calls 468 to 439, now a ceiling (the lint and the
+scoreboard); files with a guard call 334 to 311; a route file that reads
+the caller counts as guarded (live routes calling no guard stays 65), and
+the scoreboard counts the reads (29 in 23 files, may grow).
+
+**Step 3b, what is left** (the batches by row class; the sweep held equal
+after each, its moved entries recorded):
+
+2. Content reads: the owner rows of class content that read (Admin users'
+   scope, a member's open reads). The same `caller: 'owner'` and reader;
+   `getOwnerOr401WithSource` and `getOwnerOr401WithLogin` need readers of
+   their own projections (`ownerCallerWithSource()`,
+   `ownerCallerWithLogin()`).
+3. Content writes: the item a write names and the create home, already
+   inside the owner guard's answer; the sweep's second file drives them
+   with the reads stood in.
+4. Area rows, with the gate refusing: the owner guard's area refusal
+   moves to the gate with its answer. The 13 cells whose handlers never
+   ask the area (`/api/updates/check`, `/api/updates/status`, the
+   Telegram chat rows) wait for the owner question above and the must-dos.
+5. Member, any-login and chat routes: answer steps and readers of their
+   own (`getMemberOr401`, `getLoginOr401`, `getChatLoginOr401`); the
+   must-dos above (the Telegram chat rows' class, the OAuth callbacks'
+   effect) land with this batch.
+6. Hand cases: `oauth/authorize`, `auth/logout`, `auth/change-password`,
+   `updates/check` (two) and `updates/status`; the asset guards
+   (`getOwnerForAsset`, `getReaderForAsset`, `getMemberForAsset`);
+   `getCookieUpgradeLoginOr401`; `lib/gone.ts`; `lib/workspaces.ts`; the
+   public rows that read the login (whoami, logout, sso, pair, OAuth
+   consent); the two turn routes with a flag check first; the 13 area
+   cells. Then `getOwnerOr401` goes and the count is 0 (A4 exit).
+
+7. **Resolve the caller** (`GateCaller`): its actor, how it came in, the
    credential's write switch, what its scope holds of Admin (`admin`: null
    is unscoped, a process; absent is unknown and fails an Admin step),
    the scope it runs in, its entry's create-home rule, and what the
    narrowers read.
-2. **Bind the caller**: a frozen copy, deep enough for what the steps read
+8. **Bind the caller**: a frozen copy, deep enough for what the steps read
    (the Admin areas, the scope's workspaces, the facts' lists). The
    surface's own object is never frozen in place, and its later changes do
    not reach the call. `currentCaller()` reads it. Work the call starts and
    does not await (a detached promise, a timer) keeps the caller, as it
    keeps the actor.
-3. **The declared policy** (`GatePolicy`: effect, Admin step, spends,
+9. **The declared policy** (`GatePolicy`: effect, Admin step, spends,
    creates, makes items, an actor of its own), from the source registered
    for the ref's kind; none is refused (`unclassified`). A job's reason is
    the gate's own source (`{ kind: 'job', name: reason }`,
@@ -1024,49 +1117,49 @@ still does.
    `NO_SCOPE_ERROR`). That surface still lists its tools for a login in no
    workspace and refuses each call; A5 decides which when MCP lists
    through the gate.
-4. **Narrow by surface**, in the fixed order `NARROWERS`: the credential's
-   read-only switch (the gate's own), a key's areas, a key's or peer's
-   risky tools, the member-app rule, spending on the owner's keys (MCP
-   connections only: a workspace assistant's turn keeps the member turn
-   ledger), the member turn caps. All but the gate's own register from
-   `packages/tools/src/gate-narrowers.ts` (`registerNarrower`), the package
-   every process that dispatches a tool loads; none adds a step. **Fail
-   closed:** while any of them is not registered, `enterCall` and
-   `gateCheck` throw `GateNotReadyError` before any step, and each process
-   entry asks `ensureGateReady()` at boot (server/web, server/api, every
-   worker through `workers/_runner.ts`, the stdio MCP server; pinned by
-   `packages/tools/src/gate-boot.test.ts`). `ensureGateReady()` registers
-   them and asserts: a missing one throws and stops the boot, not the first
-   call (every routed HTTP request runs through the gate since A4 step 1). A surface where one does not apply registers
-   an explicit no-op. Registering another function under a taken name, or
-   another source for a taken kind, throws on purpose. The member-app rule
-   fails closed too: a team-rules app run calls only an `app-tool` ref
-   that carries what `memberAppToolVerdict` said for the call (pinned
-   against it by `packages/tools/src/member-app-parity.test.ts`).
-5. **The Admin step**: the Admin workspace, an Admin area, or a kind of the
-   Admin workspace only.
-   **The pre-run slot** (A5 step 3a), between steps 5 and 6, in
-   enterCall only (never gateCheck: it reads the call's arguments): the
-   checks of `PRE_RUN_CHECKS` in their fixed order, `item-precheck` then
-   `key-shared-content`, registered from
-   `packages/tools/src/gate-prerun.ts` (missing ones fail closed, as the
-   narrowers). A refusal is the kind `item`, in the check's own words, and
-   comes before the create home: a refused call never makes a private
-   workspace.
-6. **The create-home intent** (`createHomeIntent`,
-   `packages/db/src/create-home.ts`), for the login's own actor and only
-   when nothing around named a home. The entry's `CreateHomeRule` says the
-   rest: its `ownWork`; a workspace it asks for on every call (an assistant
-   turn: its own), else the call's own ask, read only when the policy
-   creates; whether reads name a home; whether a refusal refuses or names
-   none (soft); and a memo. The HTTP guard's rule and the assistant turn's
-   are pinned against `createHomeFor` and `turnCreateHome`
-   (`server/web/lib/auth/create-home-parity.test.ts`,
-   `server/web/lib/auth/turn-gate-parity.test.ts`).
-7. **Run.**
-8. **Map** a refusal with the one mapper (`mapAccessError`,
-   `packages/std/src/access-error.ts`): the HTTP status and body and the
-   tool text, each as the surfaces answer today.
+10. **Narrow by surface**, in the fixed order `NARROWERS`: the credential's
+    read-only switch (the gate's own), a key's areas, a key's or peer's
+    risky tools, the member-app rule, spending on the owner's keys (MCP
+    connections only: a workspace assistant's turn keeps the member turn
+    ledger), the member turn caps. All but the gate's own register from
+    `packages/tools/src/gate-narrowers.ts` (`registerNarrower`), the package
+    every process that dispatches a tool loads; none adds a step. **Fail
+    closed:** while any of them is not registered, `enterCall` and
+    `gateCheck` throw `GateNotReadyError` before any step, and each process
+    entry asks `ensureGateReady()` at boot (server/web, server/api, every
+    worker through `workers/_runner.ts`, the stdio MCP server; pinned by
+    `packages/tools/src/gate-boot.test.ts`). `ensureGateReady()` registers
+    them and asserts: a missing one throws and stops the boot, not the first
+    call (every routed HTTP request runs through the gate since A4 step 1). A surface where one does not apply registers
+    an explicit no-op. Registering another function under a taken name, or
+    another source for a taken kind, throws on purpose. The member-app rule
+    fails closed too: a team-rules app run calls only an `app-tool` ref
+    that carries what `memberAppToolVerdict` said for the call (pinned
+    against it by `packages/tools/src/member-app-parity.test.ts`).
+11. **The Admin step**: the Admin workspace, an Admin area, or a kind of the
+    Admin workspace only.
+    **The pre-run slot** (A5 step 3a), between steps 5 and 6, in
+    enterCall only (never gateCheck: it reads the call's arguments): the
+    checks of `PRE_RUN_CHECKS` in their fixed order, `item-precheck` then
+    `key-shared-content`, registered from
+    `packages/tools/src/gate-prerun.ts` (missing ones fail closed, as the
+    narrowers). A refusal is the kind `item`, in the check's own words, and
+    comes before the create home: a refused call never makes a private
+    workspace.
+12. **The create-home intent** (`createHomeIntent`,
+    `packages/db/src/create-home.ts`), for the login's own actor and only
+    when nothing around named a home. The entry's `CreateHomeRule` says the
+    rest: its `ownWork`; a workspace it asks for on every call (an assistant
+    turn: its own), else the call's own ask, read only when the policy
+    creates; whether reads name a home; whether a refusal refuses or names
+    none (soft); and a memo. The HTTP guard's rule and the assistant turn's
+    are pinned against `createHomeFor` and `turnCreateHome`
+    (`server/web/lib/auth/create-home-parity.test.ts`,
+    `server/web/lib/auth/turn-gate-parity.test.ts`).
+13. **Run.**
+14. **Map** a refusal with the one mapper (`mapAccessError`,
+    `packages/std/src/access-error.ts`): the HTTP status and body and the
+    tool text, each as the surfaces answer today.
 
 Listing equals calling: `gateCheck` is steps 3 to 5 without running, and a
 tool list shows what it lets through. `@mantle/db` exports only `enterCall`,

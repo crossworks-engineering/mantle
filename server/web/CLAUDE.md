@@ -15,7 +15,10 @@ What is here:
   request without a credential unless the path is in `PUBLIC_PATHS`
   (`lib/auth-constants.ts`); every handler then re-authenticates with
   `getOwnerOr401()` (owner), `getMemberOr401()` (member login) or
-  `resolveActiveShareByToken()` (an open share link, `/s/<token>`). `server/web/server/auth-sweep.test.ts` drives
+  `resolveActiveShareByToken()` (an open share link, `/s/<token>`). Since
+  A4 step 3b an owner route reads the caller the gate answered instead,
+  `const owner = ownerCaller()`, and calls no guard; the guard calls are
+  pinned as a ceiling (`docs/actors.md`, A4 step 3b). `server/web/server/auth-sweep.test.ts` drives
   every route credential-less and pins that contract. Bodies are validated
   with zod; report the first problem with `firstIssue()` (`lib/zod-issue.ts`).
   Errors: throw and let `app.onError` answer an opaque 500, or return a
