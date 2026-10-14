@@ -13,7 +13,7 @@
   "goneStubs": 133,
   "guardCalls": 0,
   "guardCallFiles": 0,
-  "liveRoutesWithoutGuard": 38,
+  "liveRoutesWithoutGuard": 20,
   "callerReads": 508,
   "callerReadFiles": 364,
   "kindLists": 6,

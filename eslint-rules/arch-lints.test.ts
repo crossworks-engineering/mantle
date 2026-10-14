@@ -35,7 +35,6 @@ import {
   rule as storeBrokersRule,
 } from './store-brokers.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
-import { GUARD_CALL_PIN } from './no-guard-calls.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
 import { ACTOR_SETTER_PATTERN, rule as actorSettersRule } from './actor-setters.mjs';
 import { AS_SYSTEM_OTHER_REASONS, AS_SYSTEM_TURN_REASONS } from '../packages/db/src/viewer';
@@ -141,10 +140,28 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(found).toEqual({});
   });
 
-  it('no-guard-calls (a ceiling since A4 step 3b): the guard calls in route files', () => {
-    // The codemod takes them down batch by batch; a new owner route reads
-    // the caller the pipeline answers. Lower the pin with each batch.
-    expect(got.numbers.guardCalls).toBeLessThanOrEqual(GUARD_CALL_PIN);
+  it('no-guard-calls (a hard ban since A4 exit): no route file calls a guard', () => {
+    // Every route reads the caller the gate answered (A4 hand batch B); the
+    // ESLint rule (no-guard-calls.mjs) bans any guard outside session.ts.
+    expect(got.numbers.guardCalls).toBe(0);
+    expect(got.numbers.guardCallFiles).toBe(0);
+  });
+
+  it('every live route that reads no caller is a public row (A4 exit)', async () => {
+    // An /api/v1 alias reads where the handler it takes reads (the count
+    // follows it); what is left judges its own credential and reads no
+    // login: each is a public path the gate lets in.
+    const { isPublicPath } = await import('../server/web/lib/auth-constants');
+    const left = got.perFile.liveUnguardedFiles as string[];
+    expect(left.length).toBe(got.numbers.liveRoutesWithoutGuard);
+    const notPublic = left.filter((f) => {
+      const path = f
+        .replace(/^server\/web\/app/, '')
+        .replace(/\/route\.tsx?$/, '')
+        .replace(/\[[^\]]+\]/g, '00000000-0000-4000-8000-000000000000');
+      return !isPublicPath(path);
+    });
+    expect(notPublic).toEqual([]);
   });
 });
 
@@ -201,7 +218,7 @@ describe('the counters', () => {
 
   it('count guard calls and know a route file', () => {
     expect(
-      guardCalls('const u = await getOwnerOr401();\n// getMemberOr401()\ngetLoginOr401();'),
+      guardCalls('const u = await getChatLoginOr401();\n// getMemberOr401()\ngetLoginOr401();'),
     ).toBe(2);
     expect(callerReads('const u = ownerCaller();\n// ownerCaller()\ngetOwnerOr401();')).toBe(1);
     expect(isRouteFile('server/web/app/api/pages/route.ts')).toBe(true);

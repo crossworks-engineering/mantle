@@ -101,7 +101,13 @@ describe.skipIf(!hasManifest)('the item write check reads the decoded item id', 
     adminCookie = `mantle_session=${buildSessionCookie(ADMIN_ID).value}`;
     const { gate } = await import('./gate');
     const { registerRoutes } = await import('../route-loader');
-    const { getOwnerOr401 } = await import('../../lib/auth/session');
+    // What getOwnerOr401 answered before it went (A4 exit): the owner
+    // guard's user.
+    const { getOwnerOr401WithLogin } = await import('../../lib/auth/session');
+    const getOwnerOr401 = async () => {
+      const got = await getOwnerOr401WithLogin();
+      return got instanceof Response ? got : got.user;
+    };
     // The handler: the session guard, then what it was handed.
     const handler = async (_req: Request, ctx: { params: Promise<Record<string, unknown>> }) => {
       const owner = await getOwnerOr401();

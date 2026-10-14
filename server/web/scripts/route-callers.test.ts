@@ -67,14 +67,14 @@ describe('handlerReads', () => {
 
   it('refuses a handler that reads it and calls a guard too', () => {
     const src = `
-      import { ownerCaller, getOwnerOr401 } from '@/lib/auth';
+      import { ownerCaller, getOwnerOr401WithLogin } from '@/lib/auth';
       export async function GET() {
         const a = ownerCaller();
-        const b = await getOwnerOr401();
+        const b = await getOwnerOr401WithLogin();
         return Response.json({ a, b });
       }
     `;
-    expect(() => handlerReads(src, 'a/route.ts')).toThrow(/also calls getOwnerOr401/);
+    expect(() => handlerReads(src, 'a/route.ts')).toThrow(/also calls getOwnerOr401WithLogin/);
   });
 
   it('refuses a read outside an exported handler', () => {
@@ -198,10 +198,10 @@ describe('handlerReads', () => {
         export async function POST(req: Request) { return run(req); }`),
     ).toThrow(/GET\(\) outside an exported handler/);
     expect(() =>
-      reads(`import { ownerCaller, getOwnerOr401 } from '@/lib/auth';
+      reads(`import { ownerCaller, getOwnerOr401WithLogin } from '@/lib/auth';
         export async function GET(req: Request) { const o = ownerCaller(); return Response.json(o); }
-        export async function POST(req: Request) { return GET(req); await getOwnerOr401(); }`),
-    ).toThrow(/POST reads the pipeline's caller and also calls getOwnerOr401/);
+        export async function POST(req: Request) { return GET(req); await getOwnerOr401WithLogin(); }`),
+    ).toThrow(/POST reads the pipeline's caller and also calls getOwnerOr401WithLogin/);
   });
 
   it('resolves a name to its binding: a parameter or local that shadows a handler is not it', () => {
@@ -276,15 +276,15 @@ describe('handlerReads', () => {
       /calls ownerCaller\(\) with no import/,
     ],
     aliasedGuardWithRead: [
-      `import { ownerCaller, getOwnerOr401 as g } from '@/lib/auth';
+      `import { ownerCaller, getOwnerOr401WithLogin as g } from '@/lib/auth';
        export async function PUT() { const u = ownerCaller(); const v = await g(); return Response.json({ u, v }); }`,
-      /also calls getOwnerOr401/,
+      /also calls getOwnerOr401WithLogin/,
     ],
     aliasedGuardBesideRead: [
-      `import { ownerCaller, getOwnerOr401 as g } from '@/lib/auth';
+      `import { ownerCaller, getOwnerOr401WithLogin as g } from '@/lib/auth';
        export async function PUT() { const u = ownerCaller(); return Response.json(u); }
        export async function GET() { const v = await g(); return Response.json(v); }`,
-      /imports getOwnerOr401 as g beside a read/,
+      /imports getOwnerOr401WithLogin as g beside a read/,
     ],
     namespaceImport: [
       `import * as auth from '@/lib/auth';
@@ -340,22 +340,22 @@ describe('handlerReads', () => {
       /GET reads the caller but is not a plain function/,
     ],
     hocInlineGuardOutside: [
-      `import { ownerCaller, getOwnerOr401 } from '@/lib/auth';
-       const withAuth = (h: any) => async (r: Request) => { await getOwnerOr401(); return h(r); };
+      `import { ownerCaller, getOwnerOr401WithLogin } from '@/lib/auth';
+       const withAuth = (h: any) => async (r: Request) => { await getOwnerOr401WithLogin(); return h(r); };
        export const GET = withAuth(async () => { const u = ownerCaller(); return Response.json(u); });`,
       /GET reads the caller but is not a plain function/,
     ],
     guardInHelperCalledByReader: [
-      `import { ownerCaller, getOwnerOr401 } from '@/lib/auth';
-       async function helper() { return getOwnerOr401(); }
+      `import { ownerCaller, getOwnerOr401WithLogin } from '@/lib/auth';
+       async function helper() { return getOwnerOr401WithLogin(); }
        export async function GET() { const u = ownerCaller(); await helper(); return Response.json(u); }`,
-      /calls getOwnerOr401 outside an exported handler/,
+      /calls getOwnerOr401WithLogin outside an exported handler/,
     ],
     guardRefBesideRead: [
-      `import { ownerCaller, getOwnerOr401 } from '@/lib/auth';
-       const g = getOwnerOr401;
+      `import { ownerCaller, getOwnerOr401WithLogin } from '@/lib/auth';
+       const g = getOwnerOr401WithLogin;
        export async function GET() { const u = ownerCaller(); return Response.json(u); }`,
-      /names getOwnerOr401 other than in a call/,
+      /names getOwnerOr401WithLogin other than in a call/,
     ],
     exportDefault: [
       `${IMPORT}

@@ -336,11 +336,32 @@ export function callerReads(text) {
 }
 
 /** Whether a route file is a retired route's 410 stub: it answers through
- *  lib/gone.ts (gone(), goneResponse(), goneForMemberAsset()), which logs
- *  each hit. A raw 410 for a missing resource is not a stub (A0 fix round
- *  2, L-8). */
+ *  lib/gone.ts (gone(), goneResponse()), which logs each hit. A raw 410 for
+ *  a missing resource is not a stub (A0 fix round 2, L-8). */
 export function isGoneStub(text) {
-  return /\bgone(?:Response|ForMemberAsset)?\s*\(/.test(stripComments(text));
+  return /\bgone(?:Response)?\s*\(/.test(stripComments(text));
+}
+
+/**
+ * The route files a route file takes a handler from (an /api/v1 alias:
+ * `export { GET } from '../../notes/route'`, or `import { GET as base }
+ * from '...'`), repo-relative: each relative specifier naming a route file.
+ * A4 hand batch B: such a file reads the caller where the handler it takes
+ * reads it (the manifest generator follows it the same way), so it is no
+ * live route calling no guard.
+ */
+export function routesTaken(text, path) {
+  const dir = path.split('/').slice(0, -1);
+  const out = [];
+  for (const m of stripComments(text).matchAll(/\bfrom\s+'(\.{1,2}\/[^']*\/route)'/g)) {
+    const parts = [...dir];
+    for (const seg of m[1].split('/')) {
+      if (seg === '..') parts.pop();
+      else if (seg !== '.') parts.push(seg);
+    }
+    out.push(`${parts.join('/')}.ts`);
+  }
+  return out;
 }
 
 // ── switch-over ─────────────────────────────────────────────────────────────
@@ -466,6 +487,7 @@ export function measure(root) {
   let guards = 0;
   let guardFiles = 0;
   let liveUnguarded = 0;
+  const liveUnguardedFiles = [];
   let reads = 0;
   let readFiles = 0;
   let bowCalls = 0;
@@ -500,7 +522,16 @@ export function measure(root) {
       reads += r;
       if (r) readFiles += 1;
       if (g) guardFiles += 1;
-      else if (!r && !gone && f.startsWith('server/web/app/api/')) liveUnguarded += 1;
+      else if (!r && !gone && f.startsWith('server/web/app/api/')) {
+        // An alias reads where the handler it takes reads (A4 hand batch B).
+        const taken = routesTaken(text, f).some(
+          (t) => callerReads(readRepoFile(root, t) ?? '') > 0,
+        );
+        if (!taken) {
+          liveUnguarded += 1;
+          liveUnguardedFiles.push(f);
+        }
+      }
     }
     const b = brainOnWorkspacesCalls(text);
     if (b) {
@@ -537,6 +568,6 @@ export function measure(root) {
       readPathWrites: readPathWrites(root).length,
       ...Object.fromEntries(Object.entries(stores).map(([k, v]) => [`store_${k}_files`, v.length])),
     },
-    perFile: { asSystem, rawAcl, toolLists, routeLists, kinds, stores },
+    perFile: { asSystem, rawAcl, toolLists, routeLists, kinds, stores, liveUnguardedFiles },
   };
 }

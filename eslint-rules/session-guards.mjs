@@ -23,11 +23,7 @@ export const SESSION_GUARDS = Object.freeze([
   'getReaderForAsset',
   'getSessionUserWithSource',
   'getSessionUser',
-  'requireOwner',
   'requireOwnerForRender',
-  'requireOwnerWithSource',
-  'getOwnerOr401',
-  'getOwnerOr401WithSource',
   'getOwnerOr401WithLogin',
   'getMemberOr401',
   'getLoginOr401',
@@ -53,8 +49,9 @@ export const SESSION_GUARDS = Object.freeze([
  *    login a public row reads (getLoginOr401, getCookieUpgradeLoginOr401)
  *    and the owner of a row whose handler runs a key's checks first.
  *  - `guard`: the guard the reader replaced, whose answer it projects, as
- *    the guard sweep's recorded files name it (getOwnerOr401 since it went:
- *    RETIRED_GUARDS); null for the frame ticket, which replaced no guard
+ *    the guard sweep's recorded files name it (getOwnerOr401 and
+ *    getOwnerOr401WithSource since they went: RETIRED_GUARDS); null for
+ *    the frame ticket, which replaced no guard
  *    (the frame documents read none: the sweep logs no entry for it).
  *  - `entry`: the name the guard sweep logs the pipeline's answer under.
  *  - `atRead`: the gate binds the answer and the handler's first read runs
@@ -129,9 +126,11 @@ export const READER_ANSWERS = Object.freeze({
  * The guards session.ts no longer has, which a reader still names
  * (READER_ANSWERS `guard`): the guard sweep's recorded files spell the
  * answers of their rows under that name. getOwnerOr401 went at A4 exit
- * (A4 hand batch B): every route reads the caller the pipeline answers.
+ * with getOwnerOr401WithSource (A4 hand batch B): every route reads the
+ * caller the pipeline answers. requireOwner and requireOwnerWithSource went
+ * too: nothing called them, and no reader names them.
  */
-export const RETIRED_GUARDS = Object.freeze([]);
+export const RETIRED_GUARDS = Object.freeze(['getOwnerOr401', 'getOwnerOr401WithSource']);
 
 /** The readers' names (READER_ANSWERS). */
 export const CALLER_READERS = Object.freeze(Object.keys(READER_ANSWERS));

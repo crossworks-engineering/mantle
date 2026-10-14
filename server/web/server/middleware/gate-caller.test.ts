@@ -3,7 +3,7 @@
  * real gate and route loader with real manifest patterns and stub
  * handlers. Each route is served twice, by two apps: one whose handler
  * reads the pipeline's answer (ownerCaller(), the row's `caller`), one
- * whose handler calls the guard (getOwnerOr401), as before. For every
+ * whose handler calls the guard (getOwnerOr401's answer), as before. For every
  * credential both give the same answer: the status and body, the owner,
  * the actor the request runs as, what was done with its scope, the audit
  * row of a write, the device token's stamp. Only where it runs differs: a
@@ -23,6 +23,14 @@ import { actorSetting, currentActor, currentCreateHome, currentRequestOutcome } 
 import { NextResponse } from '../http-compat';
 import type { RouteEntry } from '../route-loader';
 import type { RouteCaller } from '../../lib/auth/route-policy';
+
+/** What getOwnerOr401 answered before it went (A4 exit): the owner guard's
+ *  user, or its refusal. */
+async function ownerGuard(): Promise<import('../../lib/auth/session').SessionUser | Response> {
+  const { getOwnerOr401WithLogin } = await import('../../lib/auth/session');
+  const got = await getOwnerOr401WithLogin();
+  return got instanceof Response ? got : got.user;
+}
 
 const ADMIN = '55555555-5555-4555-8555-555555555555';
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
@@ -193,7 +201,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     };
     const guards = async () => {
       counts.handled += 1;
-      const owner = await session.getOwnerOr401();
+      const owner = await ownerGuard();
       if (owner instanceof Response) return owner;
       return Response.json(seen(owner));
     };
@@ -683,7 +691,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
               PUT: async () => {
                 counts.handled++;
                 if (read) return Response.json(session.ownerCaller());
-                const owner = await session.getOwnerOr401();
+                const owner = await ownerGuard();
                 return owner instanceof Response ? owner : Response.json(owner);
               },
             }),
@@ -741,7 +749,15 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const session = await import('../../lib/auth/session');
     const onError = () => Response.json({ error: 'internal error' }, { status: 500 });
     const pairs: Array<[name: string, read: () => unknown, guard: () => Promise<unknown>]> = [
-      ['WithSource', session.ownerCallerWithSource, session.getOwnerOr401WithSource],
+      [
+        'WithSource',
+        session.ownerCallerWithSource,
+        // What getOwnerOr401WithSource answered before it went (A4 exit).
+        async () => {
+          const got = await session.getOwnerOr401WithLogin();
+          return got instanceof Response ? got : { user: got.user, source: got.source };
+        },
+      ],
       ['WithLogin', session.ownerCallerWithLogin, session.getOwnerOr401WithLogin],
     ];
     for (const [name, read, guard] of pairs) {
@@ -1049,7 +1065,7 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         counts.handled += 1;
         if (kind === 'mark') return new Response(null, { status: MARK });
         if (kind === 'reads') return Response.json(seen(session.ownerCaller()));
-        const owner = await session.getOwnerOr401();
+        const owner = await ownerGuard();
         return owner instanceof Response ? owner : Response.json(seen(owner));
       };
       registerRoutes(

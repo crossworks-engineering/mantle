@@ -37,6 +37,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { actorSetting, currentActor, currentCaller, enterCall, systemActor } from '@mantle/db';
 import type { RouteEntry } from '../route-loader';
 
+/** What getOwnerOr401 answered before it went (A4 exit): the owner guard's
+ *  user, or its refusal. */
+async function ownerGuard(): Promise<import('../../lib/auth/session').SessionUser | Response> {
+  const { getOwnerOr401WithLogin } = await import('../../lib/auth/session');
+  const got = await getOwnerOr401WithLogin();
+  return got instanceof Response ? got : got.user;
+}
+
 const ADMIN = '55555555-5555-4555-8555-555555555555';
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const MEMBER = '22222222-2222-4222-8222-222222222222';
@@ -180,7 +188,7 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     const unread = async () => Response.json(seen());
     const twice = async () => {
       const before = seen();
-      const a = await session.getOwnerOr401();
+      const a = await ownerGuard();
       const b = await session.getLoginOr401();
       return Response.json({
         before,
@@ -194,14 +202,14 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
         { actor: systemActor('test:nested'), via: 'process', admin: null },
         { kind: 'job', name: 'test:nested' },
         async () => {
-          const owner = await session.getOwnerOr401();
+          const owner = await ownerGuard();
           return owner instanceof Response ? owner.status : owner.actor.id;
         },
       );
       return Response.json(out.ok ? { nested: out.value } : { refused: out.refusal.http });
     };
     const area = async () => {
-      const owner = await session.getOwnerOr401();
+      const owner = await ownerGuard();
       return owner instanceof Response ? owner : Response.json({ ok: true, ...seen() });
     };
     const guard = async () => {
@@ -233,11 +241,11 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     // An Admin login made a member on an area row: the gate's Admin view of
     // the area is not read again; the owner guard refuses the member.
     const demotes = async () => {
-      const a = await session.getOwnerOr401();
+      const a = await ownerGuard();
       const first = a instanceof Response ? a.status : a.actor.id;
       counts.roles.set(ADMIN, 'member');
       session.forgetRequestLogins();
-      const b = await session.getOwnerOr401();
+      const b = await ownerGuard();
       return Response.json({
         first,
         second: b instanceof Response ? b.status : b.actor.id,
@@ -248,11 +256,11 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     // change, not a role change): the gate's Admin view of the area is not
     // read again; holdsArea asks requireArea (re-audit L-a).
     const unareas = async () => {
-      const a = await session.getOwnerOr401();
+      const a = await ownerGuard();
       const first = a instanceof Response ? a.status : a.actor.id;
       counts.arealess.add(ADMIN);
       session.forgetRequestLogins();
-      const b = await session.getOwnerOr401();
+      const b = await ownerGuard();
       return Response.json({
         first,
         second: b instanceof Response ? b.status : b.actor.id,

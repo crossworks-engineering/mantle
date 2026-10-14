@@ -123,7 +123,7 @@ export type Actor = {
 /**
  * `id`/`email` keep their historical role as "whose data" — `id` is ALWAYS the
  * anchor account's id (all content is keyed to it), so the 280+ existing
- * `getOwnerOr401().id` call sites keep querying the one brain no matter who is
+ * `ownerCaller().id` call sites keep querying the one brain no matter who is
  * logged in. `email` is the ACTOR's (display + audit surfaces). Anything
  * login-personal (own password, audit attribution) must use `actor.id`.
  */
@@ -178,7 +178,7 @@ type Resolved =
  * (cookie/bearer) first; failing that, accepts a valid `?at=` asset token in the
  * URL — the one place a browser-native `src` can convey auth. Owner-scoped: the
  * route still scopes the lookup to the returned id, so a token for user X only
- * reaches X's bytes. Returns a 401 JSON `Response` like `getOwnerOr401`.
+ * reaches X's bytes. Returns a 401 JSON `Response` like the owner guard.
  */
 export async function getOwnerForAsset(req: Request): Promise<SessionUser | NextResponse> {
   const user = await ownerForAsset(req);
@@ -578,7 +578,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
  * ROUTE_POLICY row (keyOnRow, the one judgment of a key on a row, the
  * gate's own), so a `source: 'api'` login exists only for a /api/v1 route
  * the key may call: the route's area, and a write only for a read_write
- * key. Every gate below (getOwnerOr401, getMemberOr401, getLoginOr401)
+ * key. Every gate below (getOwnerOr401WithLogin, getMemberOr401, getLoginOr401)
  * resolves through this, so none can hand a read key a write route. On a
  * routed request the gate finds it once (resolveHttpLogin), on the row it
  * judged the key on.
@@ -1194,7 +1194,8 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
 
 /**
  * The owner the pipeline answered for this request (answerRouteCaller):
- * what getOwnerOr401 answers, read from the bound caller, with no lookup
+ * the owner guard's user (getOwnerOr401WithLogin, which replaced
+ * getOwnerOr401 at A4 exit), read from the bound caller, with no lookup
  * and no effect (the gate did both). A handler reads it in place of the
  * guard:
  *
@@ -1202,7 +1203,7 @@ async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse
  *
  * There is no refusal to return: the gate refused before the handler ran.
  * It throws where the pipeline answered no owner: a row with no `caller`
- * (its handler must call a guard), or another kind's; a call nested in the
+ * (the generator did not see the read), or another kind's; a call nested in the
  * request with a caller of its own; outside a routed request (a test
  * calling a handler goes through runRoute). Fail closed: never a login
  * nobody checked.
@@ -1212,8 +1213,8 @@ export function ownerCaller(): SessionUser {
 }
 
 /**
- * What getOwnerOr401WithSource answers (the owner and how the request
- * authenticated), read from the pipeline's answer as ownerCaller() reads
+ * The owner guard's owner and how the request authenticated (what the
+ * retired getOwnerOr401WithSource answered), read from the pipeline's answer as ownerCaller() reads
  * it: no lookup, no effect, and the same throw where the pipeline answered
  * no owner. A handler reads it in place of the guard:
  *
@@ -1365,7 +1366,7 @@ export async function cookieUpgradeCaller(): Promise<CookieUpgradeLogin | null> 
 /**
  * The owner of a row whose handler runs checks of its own before it reads
  * the owner (A4 hand batch B: PATCH /api/pages/:id, whose /api/v1 wrapper
- * holds an API key to its rules first): what getOwnerOr401 answered, taken
+ * holds an API key to its rules first): the owner guard's user, taken
  * at this read, with its effects (the item a write names checked, the
  * audit row) where the guard had them. A refusal is thrown (RouteRefusal)
  * and answered by the app as the guard's was returned: the handler goes no
@@ -1459,18 +1460,11 @@ function redirect(to: string): never {
   throw new RedirectError(to);
 }
 
-/** Gate for protected pages. Redirects to /login if no session. */
-export async function requireOwner(): Promise<SessionUser> {
-  const user = await getSessionUser();
-  if (!user) redirect('/login');
-  return user;
-}
-
 /**
  * Gate for the render surfaces (/print/pages, /print/draws, /render/draws).
  * An admin session opens them as before; otherwise the render cookie the
  * browser sidecar carries, and only for the node that cookie names. Redirects
- * to /login like requireOwner.
+ * to /login.
  */
 export async function requireOwnerForRender(nodeId: string): Promise<SessionUser> {
   const user = await getSessionUser();
@@ -1480,36 +1474,10 @@ export async function requireOwnerForRender(nodeId: string): Promise<SessionUser
   redirect('/login');
 }
 
-/** Like `requireOwner()` but also reports how the request authenticated, so the
- *  caller can tag the turn's ConversationChannel ('web' vs 'mobile'). */
-export async function requireOwnerWithSource(): Promise<{ user: SessionUser; source: AuthSource }> {
-  const res = await getSessionUserWithSource();
-  if (!res) redirect('/login');
-  return res;
-}
-
 /**
- * Owner gate for JSON API routes (the mobile companion). Unlike
- * `requireOwner()`, which `redirect()`s to /login — a 307 to an HTML page,
- * wrong for a programmatic client — this returns a 401 JSON response the caller
- * returns as-is:
- *
- *     const owner = await getOwnerOr401();
- *     if (owner instanceof NextResponse) return owner;
- *     // owner: SessionUser
- *
- * A revoked or expired bearer slips past the stateless gate (revocation is
- * enforced here in the Node layer), so this is where it's caught — now as a
- * clean 401 instead of a redirect.
- */
-export async function getOwnerOr401(): Promise<SessionUser | NextResponse> {
-  const res = await getOwnerOr401WithSource();
-  return res instanceof NextResponse ? res : res.user;
-}
-
-/**
- * Audit hook, shared by both `getOwnerOr401` variants — which every /api/**
- * route calls first. For a write (learned from the middleware-injected
+ * Audit hook of the session guards (the owner guard, the member, any-login
+ * and chat guards, the cookie upgrade), which the gate runs for every row
+ * that reads a caller. For a write (learned from the middleware-injected
  * x-mantle-method/-path headers, which clients can't spoof, and the routed
  * request's row: auditsAsWrite) it fire-and-forgets a generic `api.write`
  * row recording who did what — unless the route logs its own richer event
@@ -1540,23 +1508,6 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
   });
 }
 
-/**
- * Like `getOwnerOr401()` but also reports how the request authenticated
- * ('web' cookie vs 'mobile' bearer), for routes that tag a turn's
- * ConversationChannel. The 401-instead-of-redirect contract is what an API
- * route needs (vs `requireOwnerWithSource()`, which redirects):
- *
- *     const auth = await getOwnerOr401WithSource();
- *     if (auth instanceof NextResponse) return auth;
- *     const { user, source } = auth;
- */
-export async function getOwnerOr401WithSource(): Promise<
-  { user: SessionUser; source: AuthSource } | NextResponse
-> {
-  const got = await getOwnerOr401WithLogin();
-  return got instanceof NextResponse ? got : { user: got.user, source: got.source };
-}
-
 /** What getOwnerOr401WithLogin answers: the login's kind, and `member` set
  *  exactly when it is a member. */
 export type OwnerRouteLogin =
@@ -1564,9 +1515,14 @@ export type OwnerRouteLogin =
   | { kind: 'member'; user: SessionUser; source: AuthSource; member: MemberCaller };
 
 /**
- * getOwnerOr401WithSource, plus WHO the login is: its `kind`, and `member`
- * set for a member on an owner route open to it (W7e: the app runner routes
- * run a member at the team rules, an Admin user at the app's).
+ * The owner guard (A4 exit: the gate runs it for an owner row,
+ * answerRouteCaller; a handler reads ownerCaller() and its projections): the
+ * owner, how the request authenticated ('web' cookie, 'mobile' bearer,
+ * 'api' key), and WHO the login is: its `kind`, and `member` set for a
+ * member on an owner route open to it (W7e: the app runner routes run a
+ * member at the team rules, an Admin user at the app's). A refusal is a 401
+ * JSON response, never a redirect: a revoked or expired bearer slips past
+ * the stateless gate check and is caught here.
  */
 export async function getOwnerOr401WithLogin(): Promise<OwnerRouteLogin | NextResponse> {
   const res = await resolveLogin();

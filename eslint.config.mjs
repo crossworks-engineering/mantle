@@ -22,6 +22,7 @@ import mantleStoreBrokersPlugin from './eslint-rules/store-brokers.mjs';
 import mantleActorSettersPlugin from './eslint-rules/actor-setters.mjs';
 import mantleNoModelInTxPlugin from './eslint-rules/no-model-in-transaction.mjs';
 import mantleOwnerCallerPlugin from './eslint-rules/owner-caller-imports.mjs';
+import mantleNoGuardCallsPlugin from './eslint-rules/no-guard-calls.mjs';
 
 export default tseslint.config(
   {
@@ -239,6 +240,15 @@ export default tseslint.config(
     ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-caller': mantleOwnerCallerPlugin },
     rules: { 'mantle-caller/owner-caller-imports': 'error' },
+  },
+  {
+    // No session guard is called outside session.ts (workspaces arch A4
+    // exit): a route reads the caller the gate answered for its row. The
+    // render pages keep their own redirecting guard (named in the rule).
+    files: ['server/web/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { 'mantle-guards': mantleNoGuardCallsPlugin },
+    rules: { 'mantle-guards/no-guard-calls': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

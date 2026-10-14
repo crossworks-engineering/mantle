@@ -34,6 +34,14 @@ import { currentRoute } from '../../lib/auth/route-policy';
 import { runWithRequestContext } from '../request-context';
 import type { RouteEntry } from '../route-loader';
 
+/** What getOwnerOr401 answered before it went (A4 exit): the owner guard's
+ *  user, or its refusal. */
+async function ownerGuard(): Promise<import('../../lib/auth/session').SessionUser | Response> {
+  const { getOwnerOr401WithLogin } = await import('../../lib/auth/session');
+  const got = await getOwnerOr401WithLogin();
+  return got instanceof Response ? got : got.user;
+}
+
 const GRANT = vi.hoisted(() => ({
   id: 'key-1',
   prefix: 'mtlk_test',
@@ -100,7 +108,7 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
     process.env.MANTLE_API_TOKEN = `${b64url(Buffer.from(JSON.stringify({ uid: OWNER })))}.x`;
     const { gate } = await import('./gate');
     const { registerRoutes } = await import('../route-loader');
-    const { getOwnerOr401 } = await import('../../lib/auth/session');
+    const getOwnerOr401 = ownerGuard;
     const report = async () => Response.json(seen());
     // A call nested inside the request with a caller of its own, then the
     // session guard inside it.
@@ -215,7 +223,7 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
   });
 
   it('outside a routed request the login lookup holds a key to the raw path too (keyOnRow)', async () => {
-    const { getOwnerOr401 } = await import('../../lib/auth/session');
+    const getOwnerOr401 = ownerGuard;
     const { buildRouteRow } = await import('../../lib/auth/route-policy');
     const path = '/api/v1/pag%65s';
     const req = new Request(`http://x${path}`, {
@@ -281,7 +289,8 @@ describe.skipIf(!hasManifest)('the gate middleware runs a routed request with it
   });
 
   it('a request slot with no row is refused; outside a slot nothing changes', async () => {
-    const { getOwnerOr401, getLoginOr401 } = await import('../../lib/auth/session');
+    const getOwnerOr401 = ownerGuard;
+    const { getLoginOr401 } = await import('../../lib/auth/session');
     const req = new Request('http://x/api/changelog');
     const ctx = { req, path: '/api/changelog', method: 'GET' };
     const inSlot = await runWithRequestContext(ctx, () =>
