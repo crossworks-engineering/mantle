@@ -2038,3 +2038,9 @@ masked caller):
   rows routes, which run no masking of their own, answered its "Failed
   query ... params" as their 400 body
   (`packages/tools/src/builtins-tables-rows-db-error.test.ts`).
+- **LOW-D.** The four responder definitions (`ask_responder`,
+  `ask_as_responder`, `responder_turn_input`, `responder_turn_record` in
+  `packages/mcp-core/src/mcp-defs.ts`) reply a database error the runtime
+  throws in the one mapper's words (`thrownToolDatabaseError`), as
+  `folder_rename` and `file_rename` do since step 4 fix round 1; any other
+  error keeps its text (`packages/mcp-core/src/mcp-defs-errors.test.ts`).

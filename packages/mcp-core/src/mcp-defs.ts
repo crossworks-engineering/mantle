@@ -619,7 +619,7 @@ async function askResponder(
       empty_reply_substituted: res.emptyReplySubstituted,
     });
   } catch (err) {
-    const msg = errorMessage(err);
+    const msg = thrownToolDatabaseError(`mcp ${a.toolName}`, err) ?? errorMessage(err);
     return {
       content: [{ type: 'text' as const, text: `${a.toolName} failed: ${msg}` }],
       isError: true,
@@ -691,7 +691,7 @@ const ASK_AS_RESPONDER = mcpTool({
           advisory: p.advisory,
         });
       } catch (err) {
-        const msg = errorMessage(err);
+        const msg = thrownToolDatabaseError('mcp ask_as_responder', err) ?? errorMessage(err);
         return {
           content: [{ type: 'text' as const, text: `ask_as_responder failed: ${msg}` }],
           isError: true,
@@ -775,7 +775,7 @@ const RESPONDER_TURN_INPUT = mcpTool({
           differences: res.differences,
         });
       } catch (err) {
-        const msg = errorMessage(err);
+        const msg = thrownToolDatabaseError('mcp responder_turn_input', err) ?? errorMessage(err);
         return {
           content: [{ type: 'text' as const, text: `responder_turn_input failed: ${msg}` }],
           isError: true,
@@ -832,7 +832,7 @@ const RESPONDER_TURN_RECORD = mcpTool({
           trace_id: res.traceId,
         });
       } catch (err) {
-        const msg = errorMessage(err);
+        const msg = thrownToolDatabaseError('mcp responder_turn_record', err) ?? errorMessage(err);
         return {
           content: [{ type: 'text' as const, text: `responder_turn_record failed: ${msg}` }],
           isError: true,
