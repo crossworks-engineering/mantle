@@ -58,6 +58,7 @@ import {
 import { toolInputSchema } from './register/tool-input';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
 import { withModelImages } from './register/model-images';
+import { refusalReply } from './refusal-reply';
 import { WORKSPACE_ARG, withLanding, withWorkspaceArg } from './create-home';
 // The `mcp-tool` policy source the listing and the calls read.
 import './gate-policy';
@@ -115,10 +116,9 @@ export type McpToolEntry =
   /** A connector row of the login's workspaces, run on `surface`. */
   | { kind: 'connector'; row: Tool; surface: ToolSurface };
 
-/** An MCP reply that refuses the call. */
-export function refusalReply(text: string) {
-  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
-}
+// An MCP reply that refuses the call (its own module: no import cycle with
+// gate-policy.ts).
+export { refusalReply } from './refusal-reply';
 
 // ── response hygiene ─────────────────────────────────────────────────────────
 // MCP tool results are serialised straight into the model's context, so they
@@ -287,7 +287,12 @@ export function registerGatedTool(
               return null;
             }
           },
-          { args: input },
+          // Its `workspace` argument (a create's, at step 6) and the owner
+          // the pre-run checks read (the item pre-check, a key's change to
+          // shared content), as a builtin's call names them (fix round 1,
+          // LOW-1): no definition creates or changes shared content today,
+          // and one that does keeps both.
+          { args: input, ask, context: { ownerId } },
         );
         if (thrown) throw (thrown as { err: unknown }).err;
         if (!res.ok) return refusalReply(res.refusal.toolText);

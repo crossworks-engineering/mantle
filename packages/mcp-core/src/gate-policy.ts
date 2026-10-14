@@ -33,7 +33,8 @@ import { UUID_RE } from '@mantle/std';
 import { mcpToolPolicyOf } from './mcp-policy';
 import { NO_WORKSPACE_CREATE_ERROR } from './create-home';
 import { mcpAdminView, mcpScopeEntry } from './mcp-scope';
-import { refusalReply, type McpGate } from './gated-tools';
+import type { McpGate } from './gated-tools';
+import { refusalReply } from './refusal-reply';
 import type { PreparedCallerTools } from './login-surface';
 
 /**
