@@ -39,9 +39,10 @@ import {
   withAgentViewer,
   loopToolRows,
   type ChatMessage,
+  type ToolLoopArgs,
 } from '../agent';
 import { STABLE_PREFIX } from '../agent/messages';
-import { loadContextStep } from './responder-loop';
+import { loadContextStep, responderTurnTaint } from './responder-loop';
 import {
   buildSimulatedMessages,
   prepareSimulatedTurn,
@@ -200,10 +201,23 @@ export async function describeResponderTurnInput(
         agent,
         async () => {
           // The surface the simulated turn runs on (run-sim-turn.ts), so the
-          // list reported is the list that turn sends (fix round 1, LOW-4).
-          const rows = await loopToolRows(ownerId, assembled.allowedTools, {
-            surface: opts.loginId ? { kind: 'web', loginId: opts.loginId } : { kind: 'web' },
+          // list reported is the list that turn sends (fix round 1, LOW-4),
+          // and its taint as that turn derives it (no conversation mark, the
+          // client text its context names: responderTurnTaint), so a
+          // client-sourced turn is reported with what it is offered (A5
+          // step 6d fix round 1).
+          const surface: ToolLoopArgs['surface'] = opts.loginId
+            ? { kind: 'web', loginId: opts.loginId }
+            : { kind: 'web' };
+          const taint = await responderTurnTaint({
+            ownerId,
+            agentId: agent.id,
+            surface,
+            conversation: false,
+            context: ctx,
+            persist: false,
           });
+          const rows = await loopToolRows(ownerId, assembled.allowedTools, { surface, taint });
           setTraceData({ tool_count: rows.length });
           return buildToolsForModel(rows, { ownerId, delegateTo: assembled.delegateTo });
         },

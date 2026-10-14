@@ -32,6 +32,7 @@ import { loadProfilePreferences } from '@mantle/content';
 import { loopToolRows, withAgentViewer } from '../agent';
 import { resolveAssistantAgent } from './run-turn';
 import { assembleResponderTurn } from './assemble-turn';
+import { responderTurnTaint } from './responder-loop';
 
 export type DescribeResponderPersonaOptions = {
   /** Which responder to describe. Omit → the web-default responder. */
@@ -109,10 +110,23 @@ export async function describeResponderPersona(
     // turn call in its own scope, plus read_result (loopToolRows, the list
     // the loop sends), on the surface the responder's turn runs on: the
     // owner's web, as runSimulatedResponderTurn runs it (fix round 1,
-    // LOW-4).
+    // LOW-4), with the taint its next turn starts with (the conversation's
+    // mark: responderTurnTaint, never written back here), so a
+    // client-sourced conversation is described with what it is offered (A5
+    // step 6d fix round 1).
     toolSlugs: (
-      await withAgentViewer(agent, () =>
-        loopToolRows(ownerId, assembled.allowedTools, { surface: { kind: 'web' } }),
+      await withAgentViewer(agent, async () =>
+        loopToolRows(ownerId, assembled.allowedTools, {
+          surface: { kind: 'web' },
+          taint: await responderTurnTaint({
+            ownerId,
+            agentId: agent.id,
+            surface: { kind: 'web' },
+            conversation: true,
+            context: null,
+            persist: false,
+          }),
+        }),
       )
     )
       .map((t) => t.slug)

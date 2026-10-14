@@ -545,16 +545,18 @@ export async function loopToolRows(
    *  sent. */
   opts: {
     surface: ToolLoopArgs['surface'];
-    /** Every write of the loop waits for approval (its turn is
-     *  client-sourced already): a connector write it may not make itself
-     *  is offered too (owner decision 1a, A5 step 6d). */
-    queuesWrites?: boolean;
+    /** The turn's taint (plan N18): a client-sourced turn's writes all wait
+     *  for approval, so a connector write it may not make itself is offered
+     *  too (owner decision 1a, A5 step 6d). The loop passes its own; what
+     *  describes a turn passes the one the turn would start with
+     *  (responderTurnTaint), so listing equals calling (fix round 1). */
+    taint?: Pick<TurnTaint, 'clientSourced'>;
   },
 ): Promise<Tool[]> {
   const listed = await turnListedTools(tools, {
     ownerId,
     surface: opts.surface,
-    ...(opts.queuesWrites ? { queuesWrites: true } : {}),
+    ...(opts.taint?.clientSourced === true ? { queuesWrites: true } : {}),
   });
   if (listed.length === 0 || listed.some((t) => t.slug === 'read_result')) return listed;
   const rr = await resolveReadResultTool(ownerId);
@@ -664,7 +666,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // it to the agent's allowlist. It's a read-only system capability.
   const loopTools = await loopToolRows(args.ownerId, args.tools, {
     surface: args.surface,
-    queuesWrites: taint.clientSourced === true,
+    taint,
   });
   if (args.recordToolCount) setTraceData({ tool_count: loopTools.length });
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));

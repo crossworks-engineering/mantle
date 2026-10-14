@@ -40,6 +40,7 @@ import {
   loadConversationTaint,
   newTurnTaint,
   taintFromText,
+  type TurnTaint,
 } from '@mantle/tools/client-sourced';
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
@@ -224,6 +225,43 @@ export function runResponderLoop(opts: RunResponderLoopOptions): Promise<Respond
   });
 }
 
+/**
+ * The taint a responder turn starts with (plan N18, I9): its conversation's
+ * mark (unless `conversation` is false: a simulated turn keeps none), then
+ * the client-written text its retrieval context names. The one place it is
+ * derived: the turn itself, and what describes the turn's tool list
+ * (describeResponderTurnInput, describeResponderPersona), so a client-sourced
+ * turn's listing (loopToolRows' `taint`) is described as it is sent (A5
+ * step 6d fix round 1). `persist: false` (a description): a mark found is
+ * never written back to the conversation.
+ */
+export async function responderTurnTaint(o: {
+  ownerId: string;
+  agentId: string;
+  surface: ToolLoopArgs['surface'];
+  conversation: boolean;
+  context: Pick<ConversationContext, 'facts' | 'contentHits' | 'chunkHits'> | null;
+  persist?: false;
+}): Promise<TurnTaint> {
+  const taint = o.conversation
+    ? await loadConversationTaint(o.ownerId, conversationTaintKey(o.agentId, o.surface))
+    : newTurnTaint();
+  if (o.persist === false) delete taint.conversation;
+  if (o.context) {
+    await taintFromText(
+      taint,
+      o.ownerId,
+      [
+        ...o.context.facts.map((f) => f.sourceNodeId ?? ''),
+        ...o.context.contentHits.map((c) => c.nodeId),
+        ...o.context.chunkHits.map((c) => c.nodeId),
+      ].join(' '),
+      'context',
+    );
+  }
+  return taint;
+}
+
 async function runResponderLoopAtLevel(
   opts: RunResponderLoopOptions,
 ): Promise<ResponderLoopResult> {
@@ -244,20 +282,13 @@ async function runResponderLoopAtLevel(
   // is still in its history. Client-written text in the retrieval context (a
   // reviewed client request is indexed like any task) marks the turn before
   // any tool runs (plan N18), and renews the conversation's mark.
-  const taint =
-    opts.conversationTaint === false
-      ? newTurnTaint()
-      : await loadConversationTaint(opts.ownerId, conversationTaintKey(agent.id, opts.surface));
-  await taintFromText(
-    taint,
-    opts.ownerId,
-    [
-      ...ctx.facts.map((f) => f.sourceNodeId ?? ''),
-      ...ctx.contentHits.map((c) => c.nodeId),
-      ...ctx.chunkHits.map((c) => c.nodeId),
-    ].join(' '),
-    'context',
-  );
+  const taint = await responderTurnTaint({
+    ownerId: opts.ownerId,
+    agentId: agent.id,
+    surface: opts.surface,
+    conversation: opts.conversationTaint !== false,
+    context: ctx,
+  });
 
   // The caller resolved the agent's key; it goes to the agent's base URL only
   // while the login that paired them holds the keys area (W7a fix round 5).

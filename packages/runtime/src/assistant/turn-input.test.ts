@@ -29,6 +29,9 @@ const h = vi.hoisted(() => ({
   getChatAdapter: vi.fn(),
   loopOverrides: {} as Record<string, number>,
   traceData: [] as Record<string, unknown>[],
+  /** The taint responderTurnTaint gives, and what it was asked. */
+  taint: { clientSourced: false } as { clientSourced: boolean; via?: string },
+  taintArgs: [] as any[],
 }));
 
 vi.mock('./run-turn', () => ({ resolveAssistantAgent: vi.fn(async () => h.agent) }));
@@ -51,6 +54,10 @@ vi.mock('@mantle/tracing', () => ({
 }));
 vi.mock('./responder-loop', () => ({
   runResponderLoop: vi.fn(),
+  responderTurnTaint: vi.fn(async (o: unknown) => {
+    h.taintArgs.push(o);
+    return h.taint;
+  }),
   loadContextStep: vi.fn(async (load: () => Promise<unknown>, input: unknown) => {
     h.stepCalls.push(input);
     return load();
@@ -141,6 +148,8 @@ beforeEach(() => {
   h.traceData = [];
   h.viewerAgents = [];
   h.loopOverrides = {};
+  h.taint = { clientSourced: false };
+  h.taintArgs = [];
   h.recordTurn.mockClear();
   h.getApiKeyById.mockClear();
   h.getChatAdapter.mockClear();
@@ -207,11 +216,35 @@ describe('describeResponderTurnInput', () => {
     // Listed on the surface the simulated turn runs on, so an owner-only
     // tool is listed exactly as that turn lists it (fix round 1, LOW-4).
     const { loopToolRows } = await import('../agent');
-    expect(vi.mocked(loopToolRows).mock.calls.at(-1)?.[2]).toEqual({ surface: { kind: 'web' } });
+    expect(vi.mocked(loopToolRows).mock.calls.at(-1)?.[2]).toEqual({
+      surface: { kind: 'web' },
+      taint: { clientSourced: false },
+    });
     await describeResponderTurnInput('owner-1', { message: 'hi', loginId: 'l1' });
     expect(vi.mocked(loopToolRows).mock.calls.at(-1)?.[2]).toEqual({
       surface: { kind: 'web', loginId: 'l1' },
+      taint: { clientSourced: false },
     });
+  });
+
+  it('(c) a client-sourced turn is listed with its taint, derived as the simulated turn derives it (A5 step 6d fix round 1)', async () => {
+    h.taint = { clientSourced: true, via: 'context' };
+    await describeResponderTurnInput('owner-1', { message: 'hi' });
+    const { loopToolRows } = await import('../agent');
+    // The same taint object the turn's one derivation gave: its writes all
+    // wait, so the listing offers what that turn is offered.
+    expect(vi.mocked(loopToolRows).mock.calls.at(-1)?.[2]?.taint).toBe(h.taint);
+    // As the simulated turn derives it: no conversation mark, the client
+    // text its retrieval context names, nothing written back.
+    expect(h.taintArgs).toEqual([
+      expect.objectContaining({
+        ownerId: 'owner-1',
+        agentId: 'agent-1',
+        conversation: false,
+        persist: false,
+        context: expect.objectContaining({ chunkHits: [{}] }),
+      }),
+    ]);
   });
 
   it('(d) keeps the cache marks and reports the loop settings', async () => {
