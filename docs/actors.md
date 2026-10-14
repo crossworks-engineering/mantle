@@ -1556,7 +1556,8 @@ connector rows and every key and peer caller.
   the snapshot's.
 
 **Owner decisions.** `PEER_RISKY_TOOL_PREFIXES` and `AREA_PREFIXES` stay
-until A5 step 4, with the family sweep above. The responder-names gap is
+until A5 step 4, with the family sweep above (both are kept past step 4:
+they answer a name no policy table holds, a connector's tool or no tool). The responder-names gap is
 closed by LOW-1.
 
 **Must do in A5 step 3a or 4 (LOW-4).** In a process without mcp-core a
@@ -1747,8 +1748,35 @@ the catch in `addTool`, `preparedAllows`, the connector filter of
   Admin user; refused for a login in no workspace; the rollback switch's
   gate scope for an Admin user that holds Admin now. Inside it the actor
   is the gate's: a read tool runs as login(ro), so its system work stays
-  read only. On the rollback switch a call now runs as the login (it ran
-  as the request's system(http:no-login) on the system pool before).
+  read only.
+- **Every HTTP MCP call runs as the login** (fix round 1, M2), not only on
+  the rollback switch: the gate's `callActor` (`gate-policy.ts`
+  `mcpGateCaller`) gives a write tool login(rw) and a read tool login(ro),
+  where before step 4 every call ran as the request's
+  system(http:no-login). Inside the login's turn scope (`withTurnScope`,
+  writes on) a write goes to the write role, with the per-table edit check
+  where the box's actor check is on (dev), and a read's system work stays
+  read only (`systemUnder`). On the rollback switch the call runs as the
+  login on the system pool, under the gate scope. The owner's decision
+  (fix round 1): the rollback switch keeps MCP running as the login
+  (option a); it restores only the old read path, never the old actor.
+  `server/web/server/a5-mcp-writes-smoke.db.test.ts` proves it on a real
+  database with the actor check and the edit check on, through
+  `registerPreparedTools`: for an Admin OAuth rw login and a member rw
+  login granted Write, a builtin create and write (`note_create`,
+  `note_update`), the definitions (`folder_rename`, `folder_describe`,
+  `file_rename`), `responder_turn_record` (the Admin user), a connector's
+  write row (the member, a Moderator of the connector's workspace), and the
+  reads that write on the side as login(ro): `read_result` in query mode
+  (its chunks), `page_get` on a page with no block ids (the backfill),
+  `recall_match` (a prompt's missing vector) and `app_data_query`. The same
+  file run on main (v0.300.32) gives the same outcome for every call: no
+  MCP write changed outcome. A member's folder rename with Write but not
+  manage is refused on both (the subtree rewrite asks manage, 0282); its
+  reply carried the SQL and its params on both, and now reads the one
+  mapper's words (`mcp-defs.ts` folder_rename and file_rename). A peer read
+  is not run (it needs a second brain; its last-contact stamp is
+  best-effort).
 - **The create home** is gate step 6 with the MCP rule
   (`mcpCreateHomeRule`): the fallback the connection resolved
   (`createFallback`), `first` (step 6 runs before the pre-run checks: it
@@ -1784,11 +1812,25 @@ the catch in `addTool`, `preparedAllows`, the connector filter of
 - **The /api/v1 builtin routes** (`server/web/lib/api-v1-builtin.ts`) run
   their builtin through dispatch as `apiV1Caller()` (via `process`: the
   request's own gate judged the key), so the gate's item pre-check runs
-  for them too.
+  for them too. An error the handler or a pre-run check throws goes on to
+  `app.onError` (`server/web/server/app-error.ts`), as before the route ran
+  through dispatch (fix round 1, M1): an edit check refusal its 403 or 404,
+  a database or any other error the opaque 500, never a 400 that reads the
+  error's text. A refusal (the tool's, a gate step's) stays the tool's 400
+  (`server/web/lib/api-v1-builtin.test.ts`). One answer is new and stays:
+  an item the owner's scope reads but may not change is refused by the item
+  pre-check in its words (400), where the handler's write met the edit
+  check's 403 before.
+- **A definition's call names its ask and its owner** (fix round 1,
+  LOW-1): the gate gets a create's `workspace` argument and the owner the
+  pre-run checks read, as a builtin's call does; no definition creates or
+  changes shared content today (`packages/mcp-core/src/gated-tools.test.ts`).
 - **The app data reads' provisioning** (`app_data_schema`,
   `app_data_query`: the registry row, its schema, the viewer salt in
-  `app_databases`) is a named read-path write, `repair:app-db`
-  (`packages/tools/src/builtins-app-data.readpath.test.ts` pins the actor
+  `app_databases`) is a named read-path write, `repair:app-db`: only the
+  provisioning, never the caller's SQL (fix round 1, LOW-4: the app
+  broker's `provision` wrapper)
+  (`packages/tools/src/builtins-app-data.readpath.test.ts` pins both actors
   under a read-only login; `server/web/server/a5-app-data-read-only.db.test.ts`
   runs both reads on a member's read-only OAuth connection with the actor
   and edit checks on, an app nobody used yet, and the same provisioning
@@ -1816,7 +1858,9 @@ its own commit): the connection's caller names the scope it read
 its scope to it even when the caller enters its own (`scopeStep`), so
 tools/list is empty and every call is an unknown tool. The server
 instructions say why (`MCP_NO_WORKSPACE_INSTRUCTIONS`: the no-scope words,
-then that the connection lists no tools). Before, such a login listed
+then that the connection lists no tools). A login that loses its last
+workspace mid-session lists nothing on its next request, so its next call
+is the SDK's "Tool X not found", not the no-workspace words. Before, such a login listed
 every tool and each call was refused with the same words. Only those cells
 of the snapshot changed (`login-surface.test.ts` pins it).
 
