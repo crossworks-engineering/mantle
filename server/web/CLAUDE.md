@@ -28,8 +28,13 @@ What is here:
   handler to `ownerCaller()`, or back, regenerate and restart, or its row
   keeps the old answer (a read the gate did not answer throws; a guard on
   a row it answered runs twice). `server/web/server/auth-sweep.test.ts` drives
-  every route credential-less and pins that contract. Bodies are validated
-  with zod; report the first problem with `firstIssue()` (`lib/zod-issue.ts`).
+  every route credential-less and pins that contract. A body is read with
+  `readBody(req, Schema)` (the parsed data, or the one 400 with the first
+  problem) or `readJson(req)` (`lib/read-body.ts`), never `req.json()` (a
+  lint error outside the named files of `eslint-rules/route-plumbing.mjs`);
+  the route loader caps every read at the route's ceiling
+  (`docs/request-plumbing.md`). Report a problem of your own with
+  `firstIssue()` (`lib/zod-issue.ts`).
   Errors: throw and let `app.onError` answer an opaque 500, or return a
   4xx with `{ error }`; never echo `err.message` to the client.
 - **`lib/**`** — the HTTP-side domain adapters (agents, heartbeats, runs,

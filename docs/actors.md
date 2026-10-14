@@ -819,6 +819,12 @@ one row; none is a 404) and points it there, one sweep removes what no row
 points at. The tables, app databases and app builds are brokered; the docs
 store writes no disk; file bytes and snapshot files are part 2.
 
+## Request plumbing (A10 part 2)
+
+How a route reads its body (one reader, capped at the route's ceiling by
+the loader) and how an error becomes its answer: [request-plumbing.md](request-plumbing.md),
+with the sweep that proves each move and the pins that hold it.
+
 ## The one gate (A3c)
 
 Plan section 2: every way in runs the same eight steps, in one order,
