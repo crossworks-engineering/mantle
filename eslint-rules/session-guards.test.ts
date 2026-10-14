@@ -27,7 +27,7 @@ describe('session-guards', () => {
     const entries = new Set<string>();
     for (const [reader, { caller, guard, entry }] of Object.entries(READER_ANSWERS)) {
       expect(SESSION_GUARDS, reader).toContain(guard);
-      expect(['owner', 'member', 'login', 'chat'], reader).toContain(caller);
+      expect(['owner', 'member', 'login', 'chat', 'session'], reader).toContain(caller);
       expect(entry, reader).toMatch(new RegExp(`^pipeline:${caller}[A-Za-z]*$`));
       entries.add(entry);
     }
@@ -36,5 +36,6 @@ describe('session-guards', () => {
     expect(READER_ANSWERS.memberCaller?.guard).toBe('getMemberOr401');
     expect(READER_ANSWERS.loginCaller?.guard).toBe('getLoginOr401');
     expect(READER_ANSWERS.chatLoginCaller?.guard).toBe('getChatLoginOr401');
+    expect(READER_ANSWERS.sessionUserCaller?.guard).toBe('getSessionUser');
   });
 });

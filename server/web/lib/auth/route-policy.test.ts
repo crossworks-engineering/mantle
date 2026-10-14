@@ -249,8 +249,14 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       const row = table.get(key)!;
       expect(row.class, key).toBe('self');
       expect(row.area, key).toBeNull();
-      expect(row.caller, key).toBeNull();
+      // The gate answers the session user (any Admin user, or null: A4
+      // hand batch A); the handler answers a null as before.
+      expect(row.caller, key).toBe('session');
     }
+    // Only a carve-out's row may read the session user.
+    expect(() =>
+      buildRouteRow('GET', '/api/updates/status', () => false, { reads: 'session' }),
+    ).toThrow(/does not serve its row/);
     // The status poll and the forced check need the settings area, and the
     // gate answers it (their handlers read the caller).
     for (const key of [

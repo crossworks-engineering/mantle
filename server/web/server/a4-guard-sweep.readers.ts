@@ -59,7 +59,18 @@ function readerOf(file: string, method: string): string {
       throw new Error(`a4-guard-sweep.readers: ${file} ${method} is a gone stub of no kind`);
     return reader;
   }
-  const called = CALLER_READERS.filter((r) => new RegExp(`\\b${r}\\(`).test(text));
+  const calls = (src: string) => CALLER_READERS.filter((r) => new RegExp(`\\b${r}\\(`).test(src));
+  // The method's own handler first (a file whose handlers read two kinds:
+  // GET /api/updates/check's session user beside its POST's owner, A4
+  // hand batch A): from its declaration to the next export.
+  const at = new RegExp(`export (?:async )?function ${method}\\b`).exec(text);
+  if (at) {
+    const rest = text.slice(at.index + 1);
+    const end = rest.search(/\nexport /);
+    const own = calls(end < 0 ? rest : rest.slice(0, end));
+    if (own.length === 1) return own[0]!;
+  }
+  const called = calls(text);
   if (called.length === 1) return called[0]!;
   if (called.length > 1) {
     throw new Error(

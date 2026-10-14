@@ -4,14 +4,15 @@
  * mount never hammers the GitHub API.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getSessionUser, ownerCaller } from '@/lib/auth';
+import { ownerCaller, sessionUserCaller } from '@/lib/auth';
 import { checkForUpdate } from '@/lib/updates';
 
 /** The cached release check: open to every Admin user, whatever its areas
  *  (the owner's carve-out, 2026-10-14: its row is the login's own,
- *  route-policy.ts ADMIN_OPEN_ROWS). */
+ *  route-policy.ts ADMIN_OPEN_ROWS). The gate answers the session user
+ *  (getSessionUser: an Admin user, or null; A4 hand batch A). */
 export async function GET() {
-  const user = await getSessionUser();
+  const user = sessionUserCaller();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   return NextResponse.json(await checkForUpdate(false));
 }

@@ -1015,7 +1015,8 @@ type PipelineAnswer =
   | Readonly<{ caller: 'owner'; owner: OwnerRouteLogin }>
   | Readonly<{ caller: 'member'; member: MemberCaller }>
   | Readonly<{ caller: 'login'; login: AnyLogin }>
-  | Readonly<{ caller: 'chat'; chat: ChatLogin }>;
+  | Readonly<{ caller: 'chat'; chat: ChatLogin }>
+  | Readonly<{ caller: 'session'; user: SessionUser | null }>;
 
 /**
  * The gate's step for a row whose handler reads the caller the pipeline
@@ -1076,6 +1077,11 @@ async function guardAnswer(
       const chat = await getChatLoginOr401();
       return chat instanceof NextResponse ? chat : { caller, chat };
     }
+    case 'session':
+      // Any Admin user, or null (A4 hand batch A): never a refusal, the
+      // handler answers a null as it did (the rows open to every Admin
+      // user, ADMIN_OPEN_ROWS).
+      return { caller, user: await getSessionUser() };
   }
 }
 
@@ -1157,12 +1163,29 @@ export function chatLoginCaller(): ChatLogin {
   return { ...pipelineAnswer('chatLoginCaller', 'chat').chat };
 }
 
+/**
+ * The session user the pipeline answered for this request (A4 hand batch
+ * A): what getSessionUser answers, any Admin user or null (a member, no
+ * login), on a row open to every Admin user (route-policy.ts
+ * ADMIN_OPEN_ROWS), read from the pipeline's answer as ownerCaller() reads
+ * the owner: no lookup, no effect, and a throw where the pipeline answered
+ * no session user. The gate refuses nothing for it: the handler answers a
+ * null, as it did after the guard.
+ *
+ *     const user = sessionUserCaller();
+ *     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+ */
+export function sessionUserCaller(): SessionUser | null {
+  return pipelineAnswer('sessionUserCaller', 'session').user;
+}
+
 /** What the pipeline answers for each caller kind, in a reader's refusal. */
 const ANSWERED: Readonly<Record<RouteCaller, string>> = {
   owner: 'owner',
   member: 'member',
   login: 'login',
   chat: 'chat login',
+  session: 'session user',
 };
 
 /** The guard's answer the pipeline gave (answerRouteCaller) for a row of

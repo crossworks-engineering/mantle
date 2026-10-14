@@ -184,7 +184,7 @@ export type ManifestEntry = {
   catchAllOptional: boolean;
   /** Each method whose handler reads the caller the pipeline answers, to
    *  the caller kind its reader reads. */
-  reads?: Record<string, 'owner' | 'member' | 'login' | 'chat'>;
+  reads?: Record<string, 'owner' | 'member' | 'login' | 'chat' | 'session'>;
   /** Each method exported as a retired route's 410 stub (lib/gone.ts). */
   gone?: string[];
   load: () => Promise<RouteModule>;

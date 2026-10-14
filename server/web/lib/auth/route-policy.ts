@@ -109,8 +109,10 @@ export type RouteItem = Readonly<{ need: ItemWriteNeed; ref: ItemRef; seg: numbe
  *  'member': the member guard's (getMemberOr401), on the member list;
  *  'login': the any-login guard's (getLoginOr401), on the any-login list;
  *  'chat': the chat guard's (getChatLoginOr401), on the chat and Telegram
- *  lists (A4 step 3b part 5). */
-export type RouteCaller = 'owner' | 'member' | 'login' | 'chat';
+ *  lists (A4 step 3b part 5); 'session': the session user's
+ *  (getSessionUser: any Admin user, or null, never a refusal), on the rows
+ *  open to every Admin user (ADMIN_OPEN_ROWS, A4 hand batch A). */
+export type RouteCaller = 'owner' | 'member' | 'login' | 'chat' | 'session';
 
 /** The login lists whose rows each caller kind's guard serves (null: the
  *  owner rows open to Admin only). The owner guard serves the owner rows
@@ -121,6 +123,9 @@ const CALLER_LOGINS: Readonly<Record<RouteCaller, ReadonlyArray<RouteLogins | nu
   member: ['member'],
   login: ['any'],
   chat: ['chat', 'telegram'],
+  // The session user's guard serves only the named carve-outs open to
+  // every Admin user (ADMIN_OPEN_ROWS, checked in buildRouteRow).
+  session: [],
 };
 
 /** One ROUTE_POLICY row: one method of one manifest pattern. */
@@ -411,7 +416,9 @@ export function buildRouteRow(
     (pageClass !== null ||
       isPublic ||
       (caller === 'owner' && scope === null) ||
-      (!gone && !CALLER_LOGINS[caller].includes(classLogins)))
+      (caller === 'session'
+        ? !ADMIN_OPEN_ROWS.has(`${m === 'HEAD' ? 'GET' : m} ${pattern}`)
+        : !gone && !CALLER_LOGINS[caller].includes(classLogins)))
   ) {
     throw new Error(
       `ROUTE_POLICY: ${key} reads the ${caller} caller, but the ${caller} guard does not serve its row`,

@@ -44,7 +44,9 @@ export const SESSION_GUARDS = Object.freeze([
  *    RouteCaller): the gate runs that kind's guard for the row. The owner
  *    guard serves the owner rows (self, content, area); the member guard
  *    the member list; the any-login guard the any-login list; the chat
- *    guard the chat and Telegram lists (A4 step 3b part 5).
+ *    guard the chat and Telegram lists (A4 step 3b part 5); the session
+ *    user's guard (getSessionUser: any Admin user, or null) the rows open to
+ *    every Admin user (route-policy.ts ADMIN_OPEN_ROWS, A4 hand batch A).
  *  - `guard`: the guard the reader replaced, whose answer it projects.
  *  - `entry`: the name the guard sweep logs the pipeline's answer under.
  */
@@ -70,6 +72,11 @@ export const READER_ANSWERS = Object.freeze({
     caller: 'chat',
     guard: 'getChatLoginOr401',
     entry: 'pipeline:chat',
+  }),
+  sessionUserCaller: Object.freeze({
+    caller: 'session',
+    guard: 'getSessionUser',
+    entry: 'pipeline:session',
   }),
 });
 

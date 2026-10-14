@@ -360,12 +360,15 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
       }
     });
   // The handler's read of it (any reader of the one list): the handler
-  // goes no further, as after a guard that let a login through.
+  // goes no further, as after a guard that let a login through. A read of
+  // no login (sessionUserCaller(): getSessionUser's null, A4 hand batch A)
+  // goes on, as after a guard that answered null.
   const { CALLER_READERS: READERS } = await import('../../../eslint-rules/session-guards.mjs');
   for (const name of READERS) {
     const read = real[name] as () => unknown;
     wrapped[name] = () => {
-      read();
+      const value = read();
+      if (value === null) return value;
       throw new SweepStop();
     };
   }
