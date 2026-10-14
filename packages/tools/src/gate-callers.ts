@@ -90,6 +90,11 @@ export type ToolCaller = Readonly<{
    *  call under the one masking (maskToolDatabaseErrors). An MCP via masks
    *  too, by its via (mcpVia). */
   masks?: boolean;
+  /** An app broker's call (entry `app`): the rules its verdict judged it
+   *  at (app-tool-level.ts AppCallRules: a run's level, or a contact
+   *  share's). Dispatch runs the allowed call on its `app-tool` ref with
+   *  them (A5 step 6a, carried LOW-2), as appToolRefusal asks a refused one. */
+  appRules?: 'admin' | 'team' | 'contact';
 }>;
 
 const TURN: ToolCaller = Object.freeze({ entry: 'turn', via: 'turn' });
@@ -140,7 +145,8 @@ type AppBrokerSurface = Readonly<{ kind: string }>;
 
 /**
  * An app's tool call through a broker (A5 step 3b): via `contact` on a
- * contact share's surface, else `app`. The broker answers the result to a
+ * contact share's surface, else `app`, with the rules its verdict judged it
+ * at (`appRules`). The broker answers the result to a
  * browser as it is, so a database error's text is masked for every surface
  * but the owner's own web (an app the Admin workspace alone holds), which
  * reads it as before (A5 step 5 fix round 1, M3: the rule the ungated path
@@ -151,6 +157,9 @@ export function appBrokerCaller(surface: AppBrokerSurface): ToolCaller {
     entry: 'app',
     via: surface.kind === 'contact' ? 'contact' : 'app',
     masks: surface.kind !== 'web',
+    // The rules the broker judged at, by the surface appToolScope gave it:
+    // the owner's web for admin rules, a contact share's, else team rules.
+    appRules: surface.kind === 'web' ? 'admin' : surface.kind === 'contact' ? 'contact' : 'team',
   });
 }
 

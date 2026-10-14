@@ -12,8 +12,10 @@
 import { and, eq } from 'drizzle-orm';
 import {
   asSystem,
+  currentActor,
   db,
   enterCall,
+  type GateCaller,
   lowerLevel,
   toolGroups,
   type Tool,
@@ -29,7 +31,14 @@ import {
 } from './connector-scope';
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
 import { getApiKey } from '@mantle/api-keys';
-import { builtinRowSlugError, getBuiltinHandler } from './registry';
+import {
+  builtinRowSlugError,
+  getBuiltinHandler,
+  isBuiltinReadOnly,
+  isBuiltinSpending,
+} from './registry';
+// The `app-tool` policy source (an app broker's call, A5 step 6a).
+import './member-app-tools';
 import {
   applyInputDefaults,
   buildHttpRequest,
@@ -136,7 +145,13 @@ export async function dispatchTool(
   // handler dispatches): the same caller, less an MCP call's own parts.
   const nested = nestedToolCaller(caller);
   const call = { ...ctx, caller: nested };
-  const run = () => withToolCaller(nested, () => dispatchGated(caller, tool, input, call, depth));
+  const gated = () => withToolCaller(nested, () => dispatchGated(caller, tool, input, call, depth));
+  // An app broker's call, not one nested in a call: its `app-tool` ref first
+  // (A5 step 6a, carried LOW-2), as a refused call's is asked.
+  const run =
+    caller.entry === 'app' && currentToolCaller() === null
+      ? () => appToolRun(caller, tool, gated)
+      : gated;
   // A caller outside the server never reads a database error's text (W3):
   // the one masking (tool-error-mask.ts). An MCP connection by its via; an
   // app tool broker below the owner's own web (A5 step 5 fix round 1, M3)
@@ -146,6 +161,56 @@ export async function dispatchTool(
     return maskToolDatabaseErrors(`${maskLabel(caller)} ${tool.slug}`, run);
   }
   return run();
+}
+
+/**
+ * An app broker's allowed call (A5 step 6a, carried LOW-2), judged by the
+ * one gate on its `app-tool` ref, which carries the verdict that allowed it
+ * (`ok`: the broker refused every other call before dispatch, through
+ * appToolRefusal on the same ref) and the rules it was judged at
+ * (`facts.appRules`): the member-app narrower judges the run it lets
+ * through by the rule it refuses with. Then the call runs through the gate
+ * on its own ref (the tool's policy, the Admin step, the item pre-check),
+ * as before. Nothing changes for an allowed call: its verdict allowed it,
+ * and the outer caller names no scope, no Admin step and no create home. A
+ * throw goes on to the broker, past the outer gate's mapper, as before.
+ */
+async function appToolRun(
+  caller: ToolCaller,
+  tool: Tool,
+  run: () => Promise<ToolHandlerResult>,
+): Promise<ToolHandlerResult> {
+  const h = tool.handler as ToolHandler;
+  const builtin =
+    h.kind === 'builtin'
+      ? { readOnly: isBuiltinReadOnly(h.ref), spends: isBuiltinSpending(h.ref) }
+      : null;
+  const ref = Object.freeze({
+    kind: 'app-tool',
+    name: tool.slug,
+    verdict: Object.freeze({ ok: true as const, tool }),
+    row: tool,
+    ...(builtin ? { builtin: Object.freeze(builtin) } : {}),
+  });
+  const outer: GateCaller = {
+    actor: currentActor(),
+    via: caller.via,
+    admin: null,
+    createHome: null,
+    facts: { appRules: caller.appRules ?? 'team' },
+  };
+  let thrown: { err: unknown } | null = null;
+  const res = await enterCall(outer, ref, async (): Promise<ToolHandlerResult | null> => {
+    try {
+      return await run();
+    } catch (err) {
+      thrown = { err };
+      return null;
+    }
+  });
+  if (thrown) throw (thrown as { err: unknown }).err;
+  if (!res.ok) return { ok: false, error: res.refusal.toolText };
+  return res.value ?? { ok: false, error: 'the tool gave no result' };
 }
 
 /** The masking's log label of a caller's call (as before step 3b). */
