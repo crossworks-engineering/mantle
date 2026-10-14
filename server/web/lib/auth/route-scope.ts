@@ -174,10 +174,21 @@ export function routeClass(pattern: string): RouteClass | null {
 /** POST routes that only read: scoped like a GET. */
 export const READ_POSTS: ReadonlySet<string> = new Set(['POST /api/formulas/:id/evaluate']);
 
-/** Whether `method pattern` only reads: GET, HEAD, or a READ_POSTS entry. */
+/** GET routes that write (A4 step 3b must-do, the 3a audit's L5): a
+ *  connector's OAuth callback stores the tokens it was given (the browser
+ *  lands on it with a GET). Each runs as the login its guard names. Their
+ *  HEAD runs the GET handler, so it writes too. */
+export const WRITE_GETS: ReadonlySet<string> = new Set([
+  'GET /api/mcp-connectors/oauth/callback',
+  'GET /api/microsoft/oauth/callback',
+]);
+
+/** Whether `method pattern` only reads: GET, HEAD, or a READ_POSTS entry;
+ *  never a WRITE_GETS route. */
 export function isReadRequest(method: string, pattern: string | null): boolean {
   const m = method.toUpperCase();
-  return m === 'GET' || m === 'HEAD' || (pattern !== null && READ_POSTS.has(`${m} ${pattern}`));
+  if (m === 'GET' || m === 'HEAD') return pattern === null || !WRITE_GETS.has(`GET ${pattern}`);
+  return pattern !== null && READ_POSTS.has(`${m} ${pattern}`);
 }
 
 /**

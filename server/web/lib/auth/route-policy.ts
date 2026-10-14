@@ -16,7 +16,7 @@
  *
  *  - class, scope, area: ROUTE_PREFIXES (routeClass), PUBLIC_PATHS, the
  *    /s link routes and the login lists;
- *  - effect: READ_POSTS (isReadRequest);
+ *  - effect: READ_POSTS and WRITE_GETS (isReadRequest);
  *  - open, logins: MEMBER_OPEN_READS, MEMBER_OPEN_WRITES, ANY_LOGIN_ROUTES,
  *    CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES and MEMBER_ROUTES;
  *  - creates, makesItems: CREATE_ROUTES and the item target (what

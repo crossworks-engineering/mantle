@@ -210,6 +210,19 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     }
   });
 
+  it('A4 step 3b: a connector OAuth callback is a write, run as the login its guard names', () => {
+    for (const pattern of ['/api/mcp-connectors/oauth/callback', '/api/microsoft/oauth/callback']) {
+      for (const method of ['GET', 'HEAD']) {
+        const row = table.get(`${method} ${pattern}`)!;
+        expect(row.effect, row.key).toBe('write');
+        expect(row.public, row.key).toBe(false);
+        expect(row.actor, row.key).toBeNull();
+        expect(row.area, row.key).toBe('connectors');
+        expect(routeGatePolicy(row).effect, row.key).toBe('write');
+      }
+    }
+  });
+
   it('A4 step 3a: a public row that writes names the actor it runs as today; no other row does', () => {
     const named: string[] = [];
     for (const row of table.values()) {

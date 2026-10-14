@@ -15,6 +15,7 @@ import {
   MEMBER_OPEN_READS,
   MEMBER_OPEN_WRITES,
   READ_POSTS,
+  WRITE_GETS,
   isReadRequest,
   memberMayRead,
   memberMayWrite,
@@ -97,6 +98,18 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
       const [method, pattern] = key.split(' ') as [string, string];
       expect(isReadRequest(method, pattern)).toBe(true);
       expect(routeClass(pattern)).toEqual({ kind: 'content' });
+    }
+    // A connector's OAuth callback writes (it stores the tokens), on its
+    // GET and the HEAD the GET handler answers (A4 step 3b must-do).
+    expect([...WRITE_GETS].sort()).toEqual([
+      'GET /api/mcp-connectors/oauth/callback',
+      'GET /api/microsoft/oauth/callback',
+    ]);
+    for (const key of WRITE_GETS) {
+      const pattern = key.split(' ')[1]!;
+      expect(isReadRequest('GET', pattern), key).toBe(false);
+      expect(isReadRequest('HEAD', pattern), key).toBe(false);
+      expect(routeClass(pattern), key).toEqual({ kind: 'area', area: 'connectors' });
     }
   });
 });
