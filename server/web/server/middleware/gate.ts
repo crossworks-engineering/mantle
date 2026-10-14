@@ -14,7 +14,7 @@ import {
   spellsPattern,
   type RouteRow,
 } from '../../lib/auth/route-policy';
-import { runWithRequestContext } from '../request-context';
+import { runWithRequestContext, type RequestContext } from '../request-context';
 import { servedRoute, type ServedRoute } from '../route-loader';
 import { gateAccessKey } from './access-key-gate';
 import { tokenKind, verifySignedToken } from './token-verify';
@@ -333,42 +333,54 @@ function gateHandler(): MiddlewareHandler {
     // even where the path checks answered the credential questions (an
     // escaped path: view.byRow false).
     const proceed = async (via: CallerVia, accessKey?: AccessKeyGrant) => {
-      const refused = await runWithRequestContext(
-        {
-          req,
-          path,
-          method: req.method,
-          ...(accessKey ? { accessKey } : {}),
-          ...(row ? { route: row } : {}),
-        },
-        async () => {
-          if (!row) {
+      const ctx: RequestContext = {
+        req,
+        path,
+        method: req.method,
+        ...(accessKey ? { accessKey } : {}),
+        ...(row ? { route: row } : {}),
+      };
+      const refused = await runWithRequestContext(ctx, async () => {
+        if (!row) {
+          await next();
+          return null;
+        }
+        // Step 1: the login, found once for the request (A4 step 3a),
+        // its read seeding the memo the request slot is opened with.
+        const memo = new Map<string, Promise<WorkspaceScope>>();
+        const login = await withRequestScopeMemo(memo, () => resolveHttpLogin(row));
+        const out = await enterCall(
+          httpCaller(row, via, login, memo, accessKey),
+          routeRef(row),
+          async () => {
+            // A row whose handler reads the caller the pipeline answers
+            // (row.caller, A4 step 3b): the owner guard's answer, given
+            // here once in the request slot, its effects with it; a
+            // refusal is the gate's answer and the handler does not run.
+            let refused: Response | null = null;
+            try {
+              refused = await answerRouteCaller(row);
+            } catch (error) {
+              // An error the answer throws (the database down, busy) is
+              // thrown where the guard threw it before the codemod: in
+              // the handler's place (route-loader.ts takes it from the
+              // request), so the app's onError answers it and the
+              // response keeps its CORS headers, as it did. The handler
+              // does not run.
+              ctx.callerError = { error };
+            }
+            if (refused) return refused;
             await next();
+            // Nothing took it (no handler of the manifest answered):
+            // thrown here, never dropped.
+            if (ctx.callerError) throw ctx.callerError.error;
             return null;
-          }
-          // Step 1: the login, found once for the request (A4 step 3a),
-          // its read seeding the memo the request slot is opened with.
-          const memo = new Map<string, Promise<WorkspaceScope>>();
-          const login = await withRequestScopeMemo(memo, () => resolveHttpLogin(row));
-          const out = await enterCall(
-            httpCaller(row, via, login, memo, accessKey),
-            routeRef(row),
-            async () => {
-              // A row whose handler reads the caller the pipeline answers
-              // (row.caller, A4 step 3b): the owner guard's answer, given
-              // here once in the request slot, its effects with it; a
-              // refusal is the gate's answer and the handler does not run.
-              const refused = await answerRouteCaller(row);
-              if (refused) return refused;
-              await next();
-              return null;
-            },
-          );
-          if (out.ok) return out.value;
-          if (!out.refusal.http) throw out.error;
-          return Response.json(out.refusal.http.body, { status: out.refusal.http.status });
-        },
-      );
+          },
+        );
+        if (out.ok) return out.value;
+        if (!out.refusal.http) throw out.error;
+        return Response.json(out.refusal.http.body, { status: out.refusal.http.status });
+      });
       if (refused) return withCors(refused);
       if (origin) applyCors(c.res.headers, origin);
     };

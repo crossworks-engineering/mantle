@@ -33,6 +33,11 @@ export type RequestContext = {
    *  own) still reads it (currentRoute()). Absent on a request no route
    *  answers (a 404, the /s and /print pages). */
   route?: RouteRow;
+  /** An error the owner answer threw at the gate (arch A4 step 3b): the
+   *  route loader throws it in the handler's place, where the guard threw
+   *  it before, so the app's onError answers it and the gate's CORS headers
+   *  stay on the response. Set by the gate only; taken once. */
+  callerError?: { error: unknown };
 };
 
 const store = new AsyncLocalStorage<RequestContext>();

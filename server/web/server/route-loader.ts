@@ -8,6 +8,7 @@ import {
   type PageClass,
   type RouteRow,
 } from '../lib/auth/route-policy';
+import { getRequestContext } from './request-context';
 
 /**
  * Registers the generated route manifest (route-manifest.gen.ts) on a Hono
@@ -147,6 +148,14 @@ export function registerRoutes(
         const handler = mod[method] as RouteHandler | undefined;
         if (typeof handler !== 'function') {
           return Response.json({ error: 'method not allowed' }, { status: 405 });
+        }
+        // The owner answer threw at the gate (arch A4 step 3b): thrown
+        // here, where the handler's guard threw it before, for onError.
+        const ctx = getRequestContext();
+        const pending = ctx?.callerError;
+        if (pending) {
+          delete ctx.callerError;
+          throw pending.error;
         }
         // The gate opened the request slot (workspaces W6a) through enterCall;
         // the session guard fills it with the login's scope.
