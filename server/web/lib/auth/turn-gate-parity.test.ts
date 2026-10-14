@@ -18,6 +18,12 @@
  *  - Step 6 with the turn's rule (askEvery its workspace, reads, soft,
  *    memo per turn scope) equals turnCreateHome, call by call.
  *
+ * Since A5 step 3a dispatch runs a turn's call through the gate (ref kind
+ * `tool`, the turn's gate caller): the last block runs dispatchTool itself,
+ * for every built-in and every scope, and holds its Admin refusals to
+ * adminToolGate's and its create homes to turnCreateHome's. The handlers
+ * are stubs that report the home they ran under.
+ *
  * No database: the scope, the Admin view and the create-home intent are
  * stubbed.
  */
@@ -44,6 +50,20 @@ vi.mock('../../../../packages/db/src/client', async (importOriginal) => ({
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
 }));
+vi.mock('../../../../packages/tools/src/registry', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../../packages/tools/src/registry')>();
+  return {
+    ...real,
+    // Every handler is a stub: it reports the home it ran under.
+    getBuiltinHandler: (slug: string) =>
+      real.getBuiltinHandler(slug)
+        ? async () => {
+            const { currentCreateHome } = await import('@mantle/db');
+            return { ok: true, output: { ran: slug, home: currentCreateHome() } };
+          }
+        : null,
+  };
+});
 vi.mock('../../../../packages/db/src/create-home', () => ({
   /** A model of the intent: the asked workspace when moderated, the
    *  private one made when asked to. */
@@ -71,11 +91,20 @@ vi.mock('../../../../packages/db/src/create-home', () => ({
 import {
   gateCheck,
   loginActor,
+  runAsActor,
   withCreateHome,
   type GateCaller,
   type WorkspaceScope,
 } from '@mantle/db';
-import { BUILTIN_TOOLS, ITEM_WRITE_TARGETS, adminToolGate } from '@mantle/tools';
+import {
+  BUILTIN_TOOLS,
+  ITEM_WRITE_TARGETS,
+  adminToolGate,
+  dispatchTool,
+  turnCaller as entryTurnCaller,
+  type ToolHandlerContext,
+} from '@mantle/tools';
+import type { Tool } from '@mantle/db';
 import { createHomeStep } from '../../../../packages/db/src/gate';
 import { turnCreateHome } from '../../../../packages/tools/src/turn-create-home';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS } from '@mantle/mcp-core';
@@ -256,4 +285,86 @@ describe('step 6 with the turn rule equals turnCreateHome', () => {
       if (sc.name === 'read-only workspace') expect(JSON.stringify(today)).toContain(P);
     });
   }
+});
+
+describe('dispatch itself, on the turn path (A5 step 3a)', () => {
+  const OWNER = '99999999-9999-4999-8999-999999999999';
+  const row = (slug: string): Tool =>
+    ({
+      slug,
+      ownerId: OWNER,
+      handler: { kind: 'builtin', ref: slug },
+      requiresConfirm: false,
+      inputSchema: { type: 'object', properties: {} },
+    }) as unknown as Tool;
+  const ctx = (): ToolHandlerContext => ({
+    ownerId: OWNER,
+    surface: { kind: 'web', loginId: LOGIN },
+    caller: entryTurnCaller(),
+  });
+
+  it('refuses exactly what adminToolGate refused, in its words, for every built-in and scope', async () => {
+    const views = [
+      { holdsAdmin: false, areas: new Set<string>() },
+      { holdsAdmin: true, areas: new Set<string>(AREAS) },
+      { holdsAdmin: true, areas: new Set<string>(['settings']) },
+      { holdsAdmin: true, areas: new Set<string>() },
+    ];
+    let refused = 0;
+    for (const view of views) {
+      h.view = view;
+      for (const def of BUILTIN_TOOLS) {
+        h.scope = { kind: 'assistant', loginId: LOGIN, ws: [W1], modWs: [W1] };
+        h.member = [W1];
+        h.moderated = [W1];
+        const today = await adminToolGate(def.slug, { ref: def.slug, ownerOnly: def.ownerOnly });
+        const res = await dispatchTool(row(def.slug), {}, ctx());
+        if ('refused' in today) {
+          refused += 1;
+          expect(res, def.slug).toEqual({ ok: false, error: today.refused });
+        } else {
+          expect(res.ok ? null : res.error, def.slug).toBeNull();
+        }
+      }
+    }
+    expect(refused).toBeGreaterThan(0);
+  });
+
+  it('names the home turnCreateHome names, call by call', async () => {
+    const write = BUILTIN_TOOLS.find((d) => d.slug === 'note_create')!;
+    const read = BUILTIN_TOOLS.find((d) => d.slug === 'page_list')!;
+    expect(write.policy.effect).toBe('write');
+    expect(read.policy.effect).toBe('read');
+    for (const sc of SCENARIOS) {
+      const steps = sc.steps.map((s) => (Array.isArray(s) ? s : [s, null])) as [
+        Step,
+        'error' | 'refused' | null,
+      ][];
+      const today = await run(sc, 'today');
+      h.calls = [];
+      h.privateWs = sc.privateWs ?? null;
+      h.member = sc.member ?? [];
+      h.moderated = sc.moderated ?? [];
+      h.scope = { ...sc.scope };
+      h.view = { holdsAdmin: true, areas: new Set(AREAS) };
+      const homes: unknown[] = [];
+      for (const [step, inject] of steps) {
+        h.next = inject;
+        // A turn runs as the login it answers (its scope's actor).
+        const call = () =>
+          runAsActor(loginActor(LOGIN), () =>
+            dispatchTool(row(step === 'write' ? write.slug : read.slug), {}, ctx()),
+          );
+        const res = sc.outer
+          ? await withCreateHome({ createWs: W2, privateWs: null }, call)
+          : await call();
+        expect(res.ok, sc.name).toBe(true);
+        homes.push(res.ok ? (res.output as { home: unknown }).home : null);
+      }
+      const named = (today[0] as unknown[]).map((home) =>
+        sc.outer ? { createWs: W2, privateWs: null } : home,
+      );
+      expect([homes, h.calls], sc.name).toEqual([named, today[1]]);
+    }
+  });
 });

@@ -38,6 +38,9 @@ const h = vi.hoisted(() => ({
   meta: [] as unknown[],
   ran: [] as unknown[],
   held: [] as { workspaceId: string; write: boolean }[],
+  /** Outside the hash (A5 step 3a only): the gate caller and the write
+   *  mode each handler ran with. */
+  seen: [] as { slug: string; via: string | null; mode: string | null }[],
 }));
 
 vi.mock('../../db/src/viewer', async (importOriginal) => {
@@ -147,6 +150,11 @@ vi.mock('./registry', async (importOriginal) => {
               slug,
               home: db.currentCreateHome(),
               system: actor?.kind === 'system' ? actor.reason : null,
+            });
+            h.seen.push({
+              slug,
+              via: db.currentCaller()?.via ?? null,
+              mode: actor ? db.writeModeOf(actor) : null,
             });
             return input.__throw
               ? Promise.reject(new Error(`handler threw: ${slug}`))
@@ -429,5 +437,21 @@ describe('dispatch parity with main (A5 step 3a)', () => {
     expect(JSON.stringify(whole)).toContain('admin-area');
     const odd = await call('owner-turn', RUNTIME_ROWS.unknown!, {});
     expect(JSON.stringify(odd)).toContain('no access policy');
+  });
+
+  it('runs every builtin through the gate, a read read only (A5 step 3a)', async () => {
+    for (const kind of ['owner-turn', 'run', 'pending', 'recipe-step'] as const) {
+      for (const def of BUILTIN_TOOLS) {
+        h.seen = [];
+        await call(kind, builtinRow(def.slug), {});
+        const seen = h.seen.find((s) => s.slug === def.slug);
+        // Refused before it ran (an owner-only tool on no owner surface, a
+        // confirm-gated recipe step): nothing to see.
+        if (!seen) continue;
+        expect(seen.via, `${kind} ${def.slug}`).toBe(kind === 'owner-turn' ? 'turn' : seen.via);
+        expect(seen.via, `${kind} ${def.slug}`).not.toBeNull();
+        expect(seen.mode, `${kind} ${def.slug}`).toBe(def.policy.effect === 'read' ? 'ro' : 'rw');
+      }
+    }
   });
 });
