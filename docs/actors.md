@@ -1759,7 +1759,7 @@ there (low round, LOW-3).
   else adminOnly by `isAdminOnlyTool`, else none), so gate step 5 refuses
   what dispatch refused, in its words. A create of an Admin-only kind is
   not refused there (the `mcp-tool` source's `admin-kind`): on a turn the
-  database refuses that row, as before. A runtime row is
+  database refuses that row, as before (until step 5, below). A runtime row is
   `{ kind: 'runtime-tool', row }`; step 3 refuses one with no policy, in
   `NO_RUNTIME_POLICY_ERROR`'s words.
 - **The caller.** Built per call from the state the entry set already: the
@@ -2110,3 +2110,16 @@ Every surface that reads the tool text follows: a masked turn, an MCP
 reply (`maskToolDatabaseErrors`, `thrownToolDatabaseError`) and a row
 tool's caught error (LOW-C). The HTTP bodies do not change
 (`packages/std/src/access-error.test.ts` pins both, byte for byte).
+
+**An Admin-only kind's create from a turn is refused at the gate.** The
+`tool` ref's policy (`builtinToolGatePolicy`,
+`packages/tools/src/tool-gate-policy.ts`) keeps the builtin's declared
+`admin-kind` scope, as the `mcp-tool` source does: a turn's
+`contact_create`, `journal_create` or `location_save` in a scope that does
+not hold Admin is refused at gate step 5, in `ADMIN_KIND_CREATE_ERROR`'s
+words (the MCP surface's), before the handler runs and before any private
+workspace is made. Before, the handler ran and the database refused the
+row it wrote. Of `dispatch-parity.json` only those three tools changed, and
+of their cases only the member turn's
+(`server/web/lib/auth/turn-gate-parity.test.ts` pins the text, the parity
+test's non-vacuous case the order).

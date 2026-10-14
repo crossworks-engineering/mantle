@@ -104,6 +104,7 @@ import {
   turnCaller as entryTurnCaller,
   type ToolHandlerContext,
 } from '@mantle/tools';
+import { ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
 import type { Tool } from '@mantle/db';
 import { createHomeStep } from '../../../../packages/db/src/gate';
 import { turnCreateHome } from '../../../../packages/tools/src/turn-create-home';
@@ -311,6 +312,7 @@ describe('dispatch itself, on the turn path (A5 step 3a)', () => {
       { holdsAdmin: true, areas: new Set<string>() },
     ];
     let refused = 0;
+    let adminKind = 0;
     for (const view of views) {
       h.view = view;
       for (const def of BUILTIN_TOOLS) {
@@ -319,6 +321,16 @@ describe('dispatch itself, on the turn path (A5 step 3a)', () => {
         h.moderated = [W1];
         const today = await adminToolGate(def.slug, { ref: def.slug, ownerOnly: def.ownerOnly });
         const res = await dispatchTool(row(def.slug), {}, ctx());
+        // A5 step 5: a create of an Admin-only kind (contact_create,
+        // journal_create, location_save) is refused at the gate outside
+        // Admin, in the MCP surface's words, before the handler runs; before,
+        // adminToolGate let it through and the database refused the row.
+        if (def.policy.scope === 'admin-kind' && !view.holdsAdmin) {
+          adminKind += 1;
+          expect('refused' in today, def.slug).toBe(false);
+          expect(res, def.slug).toEqual({ ok: false, error: ADMIN_KIND_CREATE_ERROR });
+          continue;
+        }
         if ('refused' in today) {
           refused += 1;
           expect(res, def.slug).toEqual({ ok: false, error: today.refused });
@@ -328,6 +340,11 @@ describe('dispatch itself, on the turn path (A5 step 3a)', () => {
       }
     }
     expect(refused).toBeGreaterThan(0);
+    expect(adminKind).toBe(3);
+    // The MCP surface's words, pinned.
+    expect(ADMIN_KIND_CREATE_ERROR).toBe(
+      'This kind of item (a contact, a journal entry, a saved place) lives in the Admin workspace only, and you are not a user of it. Make a note or a page instead.',
+    );
   });
 
   it('names the home turnCreateHome names, call by call', async () => {

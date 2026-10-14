@@ -9,9 +9,12 @@
  *    area;
  *  - else adminOnly (isAdminOnlyTool: the policy, a responder write the MCP
  *    surface defines, an ownerOnly tool not in OWNER_ONLY_IN_SCOPE): Admin;
- *  - else none. A create of a kind of the Admin workspace only (`admin-kind`,
- *    the `mcp-tool` source's) is not refused here: on the turn path the
- *    database refuses that row, as before A5 (turn-gate-parity.test.ts).
+ *  - else a create of a kind of the Admin workspace only (`admin-kind`:
+ *    contact_create, journal_create, location_save), as the `mcp-tool`
+ *    source declares it: a turn outside Admin is refused at the gate, in
+ *    ADMIN_KIND_CREATE_ERROR's words, before the handler runs (A5 step 5),
+ *    where before the database refused the row the handler wrote;
+ *  - else none.
  *
  * `fields.systemWhole`: an AREA_SYSTEM_TOOLS tool, which dispatch runs whole
  * on the system pool after the area check (runGated, by slug or ref).
@@ -45,7 +48,13 @@ export function builtinToolGatePolicy(ref: PolicyRef): GatePolicy | null {
   const systemWhole = AREA_SYSTEM_TOOLS.has(slug) || AREA_SYSTEM_TOOLS.has(ref.name);
   return Object.freeze({
     ...base,
-    scope: area ? Object.freeze({ area }) : isAdminOnlyTool(slug, opts) ? 'admin' : 'any',
+    scope: area
+      ? Object.freeze({ area })
+      : isAdminOnlyTool(slug, opts)
+        ? 'admin'
+        : base.scope === 'admin-kind'
+          ? 'admin-kind'
+          : 'any',
     fields: Object.freeze({
       ...base.fields,
       ...(systemWhole ? { systemWhole: true } : {}),

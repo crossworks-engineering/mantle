@@ -443,6 +443,11 @@ describe('dispatch parity with main (A5 step 3a)', () => {
     expect(JSON.stringify(odd)).toContain('no access policy');
     // A5 step 5 (owner decision Q2 b): a shell tool runs only for a user of
     // the Admin workspace; the member turn's cell is the one that changed.
+    // A5 step 5: an Admin-only kind's create is refused at the gate outside
+    // Admin, before the handler runs and before any private workspace.
+    const contact = await call('member-turn', builtinRow('contact_create'), {});
+    expect(JSON.stringify(contact)).toContain('lives in the Admin workspace only');
+    expect(JSON.stringify(contact)).toContain('"ran":[],"intents":[]');
     const shell = await call('member-turn', RUNTIME_ROWS.shell!, { q: 'x' });
     expect(JSON.stringify(shell)).toContain('it does not run in this workspace');
     const ownShell = await call('owner-turn', RUNTIME_ROWS.shell!, { q: 'x' });
