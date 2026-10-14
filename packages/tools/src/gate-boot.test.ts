@@ -190,6 +190,12 @@ describe('every process entry asks ensureGateReady() at boot', () => {
     });
   }
 
+  it('every process entry starts the tool call audit (A5 step 6d)', () => {
+    for (const { file } of ENTRYPOINTS) {
+      expect(read(file), `${file} must call startCallAudit at boot`).toMatch(/startCallAudit\(/);
+    }
+  });
+
   it('the worker runner asks it before the worker starts', () => {
     const src = read('server/web/workers/_runner.ts');
     const run = src.slice(src.indexOf('function run('));

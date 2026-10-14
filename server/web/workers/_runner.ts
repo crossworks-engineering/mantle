@@ -24,7 +24,7 @@
 import { PgBoss } from 'pg-boss';
 import { startProcessHeartbeat } from '@mantle/content';
 import { env } from '@mantle/config';
-import { runAsSystem } from '@mantle/db';
+import { runAsSystem, startCallAudit } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 
 /** How long pg-boss may take to finish in-flight jobs. */
@@ -107,6 +107,8 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
   // gate-boot.test.ts).
   startWorkerAs(name, async () => {
     ensureGateReady();
+    // One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts).
+    startCallAudit();
     await start();
   })
     .then(() => console.log(`[${name}] worker up.`))

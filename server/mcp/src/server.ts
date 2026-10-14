@@ -21,7 +21,7 @@
  * package script; this entry just trusts `process.env`.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
-import { authUsers, db, resolveSingleOwnerId, runAsSystem } from '@mantle/db';
+import { authUsers, db, resolveSingleOwnerId, runAsSystem, startCallAudit } from '@mantle/db';
 import { buildMantleMcpServer, ensureGateReady } from '@mantle/mcp-core';
 import { registerRecallEmbedder } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
@@ -41,6 +41,8 @@ registerRecallEmbedder(embedBatch);
 // tool call.
 // gate-boot.test.ts pins this call in every process entry.
 ensureGateReady();
+// One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts).
+startCallAudit();
 
 // Resolve the owner: ALLOWED_USER_ID when set (validated as a UUID inside
 // resolveSingleOwnerId), else the sole auth.users row — so a self-hosted setup

@@ -56,6 +56,22 @@ registerRecallEmbedder(embedBatch);
 const { ensureGateReady } = await import('@mantle/tools/gate-narrowers');
 ensureGateReady();
 
+// One audit row for every tool write (A5 step 6d, @mantle/db call-audit.ts): an
+// assistant turn's, an app broker's, the dev console's, a login's own MCP
+// writes, with the request's ip and user agent. Off in detached dev (no local
+// database), as the route audit is.
+const { startCallAudit } = await import('@mantle/db');
+const { getRequestContext } = await import('./request-context');
+const { requestMetaFrom } = await import('../lib/audit');
+const { isDetachedDev } = await import('../lib/auth-constants');
+startCallAudit({
+  enabled: !isDetachedDev(),
+  meta: () => {
+    const ctx = getRequestContext();
+    return ctx ? requestMetaFrom(ctx.req) : null;
+  },
+});
+
 const { serve } = await import('@hono/node-server');
 const { createApp } = await import('./app');
 
