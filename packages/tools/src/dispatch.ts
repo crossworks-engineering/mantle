@@ -16,7 +16,6 @@ import {
   enterCall,
   lowerLevel,
   toolGroups,
-  withCreateHome,
   type Tool,
   type ToolHandler,
   type ViewerLevel,
@@ -31,7 +30,6 @@ import {
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
 import { getApiKey } from '@mantle/api-keys';
 import { builtinRowSlugError, getBuiltin, getBuiltinHandler } from './registry';
-import { checkToolPreconditions } from './preconditions';
 import {
   applyInputDefaults,
   buildHttpRequest,
@@ -57,9 +55,7 @@ import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 import { registerToolDispatcher } from './dispatch-bridge';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
-import { adminToolGate, runGated } from './admin-gate';
-import { toolItemWriteRefusal } from './item-write-gate';
-import { turnCreateHome } from './turn-create-home';
+import { runGated } from './admin-gate';
 import { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool-gate-policy';
 import {
   currentToolCaller,
@@ -84,17 +80,25 @@ const HTTP_TIMEOUT_MS_DEFAULT = 15_000;
 // Admin MCP surface gates its calls with them too).
 export { ADMIN_ONLY_ERROR, ADMIN_ONLY_TOOL_SLUGS } from './admin-gate';
 
+/** The answer to a call that names no caller (A5 step 3b): every entry
+ *  names one (dispatch-entries.test.ts sweeps them), so none is a bug at
+ *  the entry, and the call is refused, as the gate refuses a caller it
+ *  cannot resolve (step 1), never run with dispatch's own checks. */
+export const NO_TOOL_CALLER_ERROR =
+  'This tool call names no caller, so it does not run (a bug at its entry: report it to an admin).';
+
+let warnedNoCaller = false;
+
 /**
- * Run one tool call. An entry that names its caller (ctx.caller: an
- * assistant turn, a run item, a pending approval; gate-callers.ts), and a
- * call nested in one (a recipe's step, a tool a handler dispatches), runs
- * through the one gate (@mantle/db enterCall, workspaces arch A5 step 3a):
- * the tool's declared policy, the narrowers, the Admin step, the pre-run
- * checks, the create home, then the handler. The owner MCP surface names
- * its connection's whole caller (mcpToolCaller, A5 step 4) and the /api/v1
- * builtin routes theirs (apiV1Caller). The entries that do not name one yet
- * (the app tool brokers and the dev console: A5 step 3b) run the checks
- * below in dispatch, as before (dispatch-entries.test.ts pins which).
+ * Run one tool call. Every entry names its caller (ctx.caller: an assistant
+ * turn, a run item, a pending approval, the owner MCP surface, a /api/v1
+ * route, an app tool broker, the dev console; gate-callers.ts), and a call
+ * nested in one (a recipe's step, a tool a handler dispatches) reuses it:
+ * each runs through the one gate (@mantle/db enterCall, workspaces arch A5
+ * steps 3a, 3b and 4): the tool's declared policy, the narrowers, the
+ * Admin step, the pre-run checks, the create home, then the handler. A call
+ * that names none is refused (NO_TOOL_CALLER_ERROR): there is no ungated
+ * path since A5 step 3b.
  */
 export async function dispatchTool(
   tool: Tool,
@@ -104,33 +108,33 @@ export async function dispatchTool(
   depth = 0,
 ): Promise<ToolHandlerResult> {
   const caller = ctx.caller ?? currentToolCaller();
-  if (caller) {
-    // What a call nested in this one reuses (a recipe's steps, a tool a
-    // handler dispatches): the same caller, less an MCP call's own parts.
-    const nested = nestedToolCaller(caller);
-    const call = { ...ctx, caller: nested };
-    const run = () => withToolCaller(nested, () => dispatchGated(caller, tool, input, call, depth));
-    // An MCP connection never reads a database error's text (W3): the one
-    // masking (tool-error-mask.ts). A turn masks in the tool loop. Nor does
-    // a call nested in a /api/v1 route call (A5 step 5 fix round 1, L3):
-    // a process call, but its text is what the outer handler hands the
-    // route, which answers it as its 400 body.
-    if (mcpVia(caller)) return maskToolDatabaseErrors(`mcp ${tool.slug}`, run);
-    if (caller.entry === 'api-v1-nested') {
-      return maskToolDatabaseErrors(`api-v1 nested ${tool.slug}`, run);
+  if (!caller) {
+    if (!warnedNoCaller) {
+      warnedNoCaller = true;
+      console.error(`[tools] a tool call named no caller (${tool.slug}): refused`);
     }
-    return run();
+    return { ok: false, error: NO_TOOL_CALLER_ERROR };
   }
-  // The entries that name no caller yet (A5 step 3b moves them): an app
-  // tool broker answers the result to a browser as it is, so a database
-  // error's text (SQL, params) is masked in the one mapper's words, for
-  // every surface but the owner's own web (the dev console, an app the
-  // Admin workspace alone holds), which reads it as before (A5 step 5 fix
-  // round 1, M3).
-  const ungated = () => dispatchUngated(tool, input, ctx, depth);
-  return ctx.surface?.kind === 'web'
-    ? ungated()
-    : maskToolDatabaseErrors(`ungated ${tool.slug}`, ungated);
+  // What a call nested in this one reuses (a recipe's steps, a tool a
+  // handler dispatches): the same caller, less an MCP call's own parts.
+  const nested = nestedToolCaller(caller);
+  const call = { ...ctx, caller: nested };
+  const run = () => withToolCaller(nested, () => dispatchGated(caller, tool, input, call, depth));
+  // A caller outside the server never reads a database error's text (W3):
+  // the one masking (tool-error-mask.ts). An MCP connection by its via; an
+  // app tool broker below the owner's own web (A5 step 5 fix round 1, M3)
+  // and a call nested in a /api/v1 route call (L3) by their caller's
+  // `masks`. A turn masks in the tool loop.
+  if (mcpVia(caller) || caller.masks === true) {
+    return maskToolDatabaseErrors(`${maskLabel(caller)} ${tool.slug}`, run);
+  }
+  return run();
+}
+
+/** The masking's log label of a caller's call (as before step 3b). */
+function maskLabel(caller: ToolCaller): string {
+  if (mcpVia(caller)) return 'mcp';
+  return caller.entry === 'api-v1-nested' ? 'api-v1 nested' : `${caller.entry} broker`;
 }
 
 /** Whether `caller` is a key or a peer: it never confirms for the owner. */
@@ -280,76 +284,6 @@ function dispatchRuntime(
   if (h.kind === 'recipe') return dispatchRecipe(h, input, ctx, depth);
   if (h.kind === 'mcp') return dispatchMcp(h, input, ctx, tool);
   return Promise.resolve({ ok: false, error: `unknown handler kind` });
-}
-
-/**
- * dispatchTool for an entry that names no caller yet (the app tool brokers
- * and the dev console until A5 step 3b): the checks run here, in the order
- * the gate runs them. Deleted when the last of those entries names its
- * caller.
- */
-async function dispatchUngated(
-  tool: Tool,
-  input: Record<string, unknown>,
-  ctx: ToolHandlerContext,
-  depth: number,
-): Promise<ToolHandlerResult> {
-  const h = tool.handler as ToolHandler;
-  if (h.kind === 'builtin') {
-    const fn = getBuiltinHandler(h.ref);
-    if (!fn) {
-      return {
-        ok: false,
-        error: `builtin handler '${h.ref}' not registered in this process`,
-      };
-    }
-    // A builtin row named with another builtin's slug runs nothing (A5): a
-    // check that matches the row's slug as well as its ref would read it as
-    // both tools.
-    const clash = builtinRowSlugError(tool.slug, h.ref);
-    if (clash) return { ok: false, error: clash };
-    const def = getBuiltin(h.ref);
-    // Owner-only tools refuse anyone but the owner before any other work
-    // (client logins C4): a team or MISSING surface is not the owner.
-    if (def?.ownerOnly && !isOwnerSurface(ctx.surface)) {
-      return { ok: false, error: OWNER_ONLY_ERROR };
-    }
-    // adminOnly (W4b, plan 5.4): an ownerOnly or adminOnly tool runs in a
-    // workspace scope only when that scope holds the Admin workspace; an
-    // Admin-area tool only when the scope may do that area, and then still
-    // in the scope, except the system-table tools (W7a fix round 1, H1,
-    // admin-gate.ts).
-    const gate = await adminToolGate(tool.slug, { ref: h.ref, ownerOnly: def?.ownerOnly });
-    if ('refused' in gate) return { ok: false, error: gate.refused };
-    try {
-      // Declared referential preconditions run first — a call aimed at a
-      // missing or wrong-type node gets a uniform teaching error before any
-      // handler work (see preconditions.ts).
-      const pre = def?.preconditions;
-      if (pre && pre.length > 0) {
-        const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
-        if (failure) return failure;
-      }
-      // A write to an item checks the scope may make it (W7a fix round 1,
-      // M2): the item routes' rule, asked before any write.
-      const refused = await toolItemWriteRefusal(tool.slug, input, ctx.ownerId, h.ref, ctx);
-      if (refused) return { ok: false, error: refused };
-      // What it makes lands by the home rule, as the same login's create
-      // from the web would (A0, turn-create-home.ts).
-      // Any tool that is not readOnly may make an item (export_node,
-      // sandbox_export and the like, not only the listed creates), so it may
-      // make the login's private workspace (A0 fix round 3, M-a).
-      const home = await turnCreateHome(def?.readOnly !== true);
-      const run = () => runGated(gate, () => fn(input, ctx));
-      return await (home ? withCreateHome(home, run) : run());
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) };
-    }
-  }
-  // No runtime tool runs without a policy (arch A3c, plan section 8): one
-  // function per row type gives it (runtime-policy.ts).
-  if (!runtimeToolPolicy(tool)) return { ok: false, error: NO_RUNTIME_POLICY_ERROR };
-  return dispatchRuntime(h, tool, input, ctx, depth);
 }
 
 /** Text cap on an MCP result before the normal inline/spill machinery —

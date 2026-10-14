@@ -40,6 +40,7 @@ import {
 } from '@/lib/auth';
 import { getAppRuntime, recordAppAccess, recordAppError } from '@mantle/content';
 import {
+  appBrokerCaller,
   appToolLevel,
   appToolRefusal,
   appToolScope,
@@ -167,9 +168,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     { id },
   );
   // An app the Admin workspace alone holds runs as the owner's web surface
-  // (system work); any other in the app's scope (AppRunFor).
+  // (system work); any other in the app's scope (AppRunFor). Through the
+  // one gate as the app's broker (A5 step 3b).
   const run = () =>
-    dispatchTool(verdict.tool, parsed.data.input, { ownerId: user.id, surface: scope.surface });
+    dispatchTool(verdict.tool, parsed.data.input, {
+      ownerId: user.id,
+      surface: scope.surface,
+      caller: appBrokerCaller(scope.surface),
+    });
   const result = await (scope.viewer === 'admin' ? run() : withViewer(scope.actsFor, run));
   if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);

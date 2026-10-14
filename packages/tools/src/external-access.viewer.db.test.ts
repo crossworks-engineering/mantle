@@ -103,7 +103,8 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     ta = await import('./external-access');
     level = await import('./app-tool-level');
     crud = await import('./crud');
-    dispatch = await import('./dispatch');
+    dispatch = brokerCallDispatch(await import('./dispatch'), await import('./gate-callers'));
+    await import('./gate-narrowers');
     builtins = await import('./builtins');
     sqlTag = (await import('drizzle-orm')).sql;
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
@@ -954,3 +955,23 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     }
   });
 });
+
+/** The dispatch module with each dispatchTool call named an app broker's
+ *  caller for the surface it passes, unless it names its own (every entry
+ *  names one since A5 step 3b; these calls stand for a broker's: a database
+ *  error's text masked off the owner's web, as before). */
+function brokerCallDispatch(
+  real: typeof import('./dispatch'),
+  callers: typeof import('./gate-callers'),
+): typeof import('./dispatch') {
+  return {
+    ...real,
+    dispatchTool: (tool, input, ctx, depth) =>
+      real.dispatchTool(
+        tool,
+        input,
+        { caller: callers.appBrokerCaller(ctx.surface ?? { kind: 'none' }), ...ctx },
+        depth,
+      ),
+  };
+}

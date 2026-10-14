@@ -36,6 +36,7 @@ import { memberMayWriteAppData, recordAppAccess, recordAppError } from '@mantle/
 import { appDbExec, appDbQuery } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import {
+  appBrokerCaller,
   appToolLevel,
   appToolRefusal,
   appToolScope,
@@ -285,8 +286,13 @@ export async function memberToolBroker(
       id: app.id,
     },
   );
+  // Through the one gate as the app's broker (A5 step 3b).
   const run = () =>
-    dispatchTool(verdict.tool, input, { ownerId: member.anchorId, surface: scope.surface });
+    dispatchTool(verdict.tool, input, {
+      ownerId: member.anchorId,
+      surface: scope.surface,
+      caller: appBrokerCaller(scope.surface),
+    });
   const result = await asSystem(
     () => (scope.viewer === 'admin' ? run() : withViewer(scope.actsFor, run)),
     'app-data',

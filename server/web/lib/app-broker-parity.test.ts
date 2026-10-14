@@ -9,6 +9,14 @@
  * the system pool or not, and each remote call (a connector's server, an
  * http tool's fetch).
  *
+ * One cell changed on purpose when the brokers and the dev console moved
+ * onto the gate (A5 step 3b), and only it: `mode`, the write mode of a call
+ * whose policy is a read, `rw` to `ro`. The gate runs a read read only
+ * (enterCall's step 3, callActor: plan 4.1), as it has for an assistant
+ * turn, a run item and a pending approval since A5 step 3a; the actor
+ * itself (who the call runs as) is the one bound at the broker's entry, as
+ * before. Every other cell is as it was (docs/actors.md, A5 step 3b).
+ *
  * The entries: the shared link broker (a contact share), a member's run of
  * an app (the owner route with a member login, lib/app-runner.ts), an
  * admin's run of an app the Admin workspace alone holds (admin rules), an
@@ -58,6 +66,8 @@ const h = vi.hoisted(() => ({
   /** What one case recorded. */
   audit: [] as Array<[string, unknown]>,
   touches: [] as unknown[],
+  /** Outside the snapshot: the gate caller each run was bound to. */
+  gated: [] as Array<string | null>,
   viewers: [] as unknown[],
 }));
 
@@ -210,6 +220,7 @@ vi.mock('../../../packages/tools/src/safe-fetch', () => ({
   safeFetch: async (url: string) => {
     const db = await import('@mantle/db');
     const actor = db.currentActor();
+    h.gated.push(db.currentCaller()?.via ?? null);
     h.touches.push({
       remote: 'http',
       url: String(url),
@@ -234,6 +245,7 @@ vi.mock('../../../packages/tools/src/registry', async (importOriginal) => {
         ? async (input: Record<string, unknown>) => {
             const db = await import('@mantle/db');
             const actor = db.currentActor();
+            h.gated.push(db.currentCaller()?.via ?? null);
             h.touches.push({
               ran: slug,
               input,
@@ -481,6 +493,7 @@ const adminRequestScope = () => ({
 async function call(entry: Entry, c: ToolCase): Promise<unknown> {
   h.audit = [];
   h.touches = [];
+  h.gated = [];
   h.viewers = [];
   h.dbErr = c.dbErr === true;
   h.login = 'admin';
@@ -568,5 +581,24 @@ describe('app broker parity (A5 step 3b)', () => {
     expect(remote).toContain('"remote":"http"');
     const conn = JSON.stringify(await call('member app', CASES[10]!));
     expect(conn).toContain('"remote":"mcp"');
+  });
+
+  it('every run is bound to the gate, as its entry names it (A5 step 3b)', async () => {
+    const expected: Record<Entry, string> = {
+      'shared link (contact)': 'contact',
+      'member app': 'app',
+      'owner app, Admin only (admin rules)': 'app',
+      'owner app, another workspace holds it (team rules)': 'app',
+      'dev console': 'cookie',
+    };
+    for (const entry of ENTRIES) {
+      let runs = 0;
+      for (const c of CASES) {
+        await call(entry, c);
+        runs += h.gated.length;
+        for (const via of h.gated) expect(via, `${entry}: ${c.name}`).toBe(expected[entry]);
+      }
+      expect(runs, entry).toBeGreaterThan(0);
+    }
   });
 });

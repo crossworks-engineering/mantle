@@ -27,6 +27,7 @@ import { withViewer } from '@mantle/db';
 import { liveServedIds } from '@/lib/shares';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
 import {
+  appBrokerCaller,
   appToolRefusal,
   contactAppToolVerdict,
   dispatchTool,
@@ -108,10 +109,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   // A link reads no workspace, only what it serves (plan 8.1, R6), never a
   // snapshot copy (W6b fix round 3, L-1).
   const served = [...(await liveServedIds(share))];
+  // Through the one gate as the share's broker (A5 step 3b).
   const result = await withViewer({ link: { served } }, () =>
     dispatchTool(verdict.tool, input, {
       ownerId: share.ownerId,
       surface: { kind: 'contact', contactId, shareId: share.id },
+      caller: appBrokerCaller({ kind: 'contact' }),
     }),
   );
   return NextResponse.json(result);

@@ -186,6 +186,7 @@ export {
   resolveTools,
   dispatchTool,
   connectorMarkRefusal,
+  NO_TOOL_CALLER_ERROR,
   ADMIN_ONLY_ERROR,
   ADMIN_ONLY_TOOL_SLUGS,
 } from './dispatch';
@@ -246,6 +247,7 @@ export {
 } from './gate-narrowers';
 export {
   apiV1Caller,
+  appBrokerCaller,
   currentToolCaller,
   mcpToolCaller,
   mcpVia,

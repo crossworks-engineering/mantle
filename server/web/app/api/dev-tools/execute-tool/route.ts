@@ -12,7 +12,7 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { dispatchTool, resolveTool } from '@mantle/tools';
+import { dispatchTool, ownerWebCaller, resolveTool } from '@mantle/tools';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -45,6 +45,8 @@ export async function POST(req: Request) {
     // The signed-in login (A0 fix round 2, L-6): a tool that checks the
     // caller (a link) sees it.
     surface: { kind: 'web', loginId: user.actor.id },
+    // Through the one gate as the owner's own web call (A5 step 3b).
+    caller: ownerWebCaller(),
   });
   const durationMs = Math.round(performance.now() - t0);
   if (result.ok) {

@@ -1,11 +1,11 @@
 /**
- * Every dispatch entry names its caller (workspaces arch A5 step 3a): a
- * static sweep of the product code for each call of dispatchTool and of
- * dispatchViaBridge (under any local name), which must pass a `caller` in
- * its context, so the call runs through the one gate (enterCall). A call
- * that names none runs dispatch's own checks, as before step 3a: only the
- * entries listed below, each with the step that moves it, and the list
- * only shrinks.
+ * Every dispatch entry names its caller (workspaces arch A5 steps 3a and
+ * 3b): a static sweep of the product code for each call of dispatchTool and
+ * of dispatchViaBridge (under any local name), which must pass a `caller` in
+ * its context, so the call runs through the one gate (enterCall). Since A5
+ * step 3b no entry names none (the app tool brokers and the dev console
+ * moved): a call that names no caller is refused (NO_TOOL_CALLER_ERROR), and
+ * the list of entries that may stays empty.
  *
  * A builtin's handler called directly (`def.handler(...)`, or the function
  * getBuiltinHandler gives) skips dispatch and so the gate. The second sweep
@@ -23,13 +23,17 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 
-/** The entries that name no caller yet, and the step that moves each. */
-const NO_CALLER_YET: Readonly<Record<string, string>> = {
-  'server/web/lib/app-runner.ts': 'A5 step 3b: the app host call broker',
-  'server/web/app/api/apps/[id]/tool-broker/route.ts': 'A5 step 3b: the app tool broker',
-  'server/web/app/s/[token]/tool-broker/route.ts': 'A5 step 3b: the shared app tool broker',
-  'server/web/app/api/dev-tools/execute-tool/route.ts': 'A5 step 3b: the dev console',
-};
+/** The entries that name no caller yet (none since A5 step 3b: the app
+ *  tool brokers and the dev console were the last). */
+const NO_CALLER_YET: Readonly<Record<string, string>> = {};
+
+/** The entries A5 step 3b moved onto the gate: each names its caller now. */
+const MOVED_IN_STEP_3B: readonly string[] = [
+  'server/web/lib/app-runner.ts',
+  'server/web/app/api/apps/[id]/tool-broker/route.ts',
+  'server/web/app/s/[token]/tool-broker/route.ts',
+  'server/web/app/api/dev-tools/execute-tool/route.ts',
+];
 
 /** The direct handler calls that are no entry: dispatch itself, and a
  *  definition's wrapper that calls the definition it wraps. */
@@ -155,7 +159,8 @@ describe('every dispatch entry names its caller (A5 step 3a)', () => {
       // A5 step 4: the owner MCP surface and the /api/v1 builtin routes.
       'packages/mcp-core/src/gated-tools.ts',
       'server/web/lib/api-v1-builtin.ts',
-      ...Object.keys(NO_CALLER_YET),
+      // A5 step 3b: the app tool brokers and the dev console.
+      ...MOVED_IN_STEP_3B,
     ]) {
       expect(files.has(file), file).toBe(true);
     }
@@ -166,6 +171,18 @@ describe('every dispatch entry names its caller (A5 step 3a)', () => {
       .filter((s) => !s.caller && !(s.file in NO_CALLER_YET))
       .map((s) => `${s.file}: ${s.args.replace(/\s+/g, ' ').slice(0, 80)}`);
     expect(missing).toEqual([]);
+  });
+
+  it('no entry names no caller any more (A5 step 3b)', () => {
+    expect(Object.keys(NO_CALLER_YET)).toEqual([]);
+    for (const file of MOVED_IN_STEP_3B) {
+      const here = sites.filter((s) => s.file === file);
+      expect(here.length, file).toBeGreaterThan(0);
+      expect(
+        here.every((s) => s.caller),
+        file,
+      ).toBe(true);
+    }
   });
 
   it('lists only entries that still name none (the list only shrinks)', () => {

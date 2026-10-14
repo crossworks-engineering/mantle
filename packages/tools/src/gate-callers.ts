@@ -15,6 +15,10 @@
  *  - pendingCaller: an approved pending call (pending.ts).
  *  - ownerWebCaller: the owner's own web call of a tool (the dev console,
  *    A5 step 3b).
+ *  - appBrokerCaller: an app's host.tools.call() through a broker (A5 step
+ *    3b): the shared link broker (a contact surface), an app run by a
+ *    member or an admin (a team or the owner's web surface). The broker
+ *    judged the call by its verdict first (appToolRefusal, app-tool-level.ts).
  *  - mcpToolCaller: a call on the owner MCP surface (A5 step 4): the
  *    connection names its whole gate caller (@mantle/mcp-core
  *    gate-policy.ts), and dispatch runs the call as it, with the
@@ -66,7 +70,7 @@ import { currentWorkspaceScope } from '@mantle/db/viewer';
 
 /** The dispatch entries. */
 export type ToolCallerEntry =
-  'turn' | 'run' | 'pending' | 'owner-web' | 'mcp' | 'api-v1' | 'api-v1-nested';
+  'turn' | 'run' | 'pending' | 'owner-web' | 'app' | 'mcp' | 'api-v1' | 'api-v1-nested';
 
 /** An entry's caller, as ToolHandlerContext carries it. */
 export type ToolCaller = Readonly<{
@@ -79,6 +83,11 @@ export type ToolCaller = Readonly<{
   /** An MCP call: the workspace its create asks for (its `workspace`
    *  argument). The call's own: a call nested in it asks none. */
   ask?: CreateAsk | null;
+  /** The entry hands the call's text to someone outside the server who
+   *  must never read a database error's (SQL, params): dispatch runs the
+   *  call under the one masking (maskToolDatabaseErrors). An MCP via masks
+   *  too, by its via (mcpVia). */
+  masks?: boolean;
 }>;
 
 const TURN: ToolCaller = Object.freeze({ entry: 'turn', via: 'turn' });
@@ -116,8 +125,32 @@ export function apiV1Caller(): ToolCaller {
 /** A call nested in a /api/v1 route's call (A5 step 5): the same process
  *  caller under its own entry, so it reads a nested refusal or throw as
  *  the call's text for the outer handler, as a run's nested call does;
- *  only the route's own call answers through app.onError. */
-const API_V1_NESTED: ToolCaller = Object.freeze({ entry: 'api-v1-nested', via: 'process' });
+ *  only the route's own call answers through app.onError. Its text is the
+ *  route's 400 body, so a database error's is masked (fix round 1, L3). */
+const API_V1_NESTED: ToolCaller = Object.freeze({
+  entry: 'api-v1-nested',
+  via: 'process',
+  masks: true,
+});
+
+/** The surface an app broker passes (appToolScope, the share broker's). */
+type AppBrokerSurface = Readonly<{ kind: string }>;
+
+/**
+ * An app's tool call through a broker (A5 step 3b): via `contact` on a
+ * contact share's surface, else `app`. The broker answers the result to a
+ * browser as it is, so a database error's text is masked for every surface
+ * but the owner's own web (an app the Admin workspace alone holds), which
+ * reads it as before (A5 step 5 fix round 1, M3: the rule the ungated path
+ * ran, now the entry's).
+ */
+export function appBrokerCaller(surface: AppBrokerSurface): ToolCaller {
+  return Object.freeze({
+    entry: 'app',
+    via: surface.kind === 'contact' ? 'contact' : 'app',
+    masks: surface.kind !== 'web',
+  });
+}
 
 /** The MCP vias (the login's own OAuth, a key, a peer, and stdio). */
 const MCP_VIAS: ReadonlySet<CallerVia> = new Set<CallerVia>(['oauth', 'key', 'peer', 'stdio']);
