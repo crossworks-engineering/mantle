@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { assertMayLink, checkServeList } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { createShare, getActiveShareForNode, linkRefusal, SERVE_MAX } from '@/lib/shares';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -11,8 +11,7 @@ import { firstIssue } from '@/lib/zod-issue';
  *  link never shares sub-pages); both stay on the wire for clients from
  *  before the pages tree. */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const nodeId = new URL(req.url).searchParams.get('nodeId');
   if (!nodeId) return NextResponse.json({ error: 'nodeId required' }, { status: 400 });
   const share = await getActiveShareForNode(user.id, nodeId);

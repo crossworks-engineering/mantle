@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import {
   deleteFolder,
   folderById,
@@ -44,8 +44,7 @@ const PatchBody = z.union([
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });

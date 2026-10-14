@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import { deleteTable, getTable, updateTable } from '@/lib/tables';
 import { firstIssue } from '@/lib/zod-issue';
@@ -14,8 +14,7 @@ const PatchBody = z.object({
 });
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   // An email attachment's table is not found for a key without Search (T4).
   if ((await hiddenFromKey(user.id, [id])).size > 0) {

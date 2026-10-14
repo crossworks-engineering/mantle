@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from '@/lib/files';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -12,8 +12,7 @@ const ListQuery = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   await ensureFilesRootBranch(user.id);
   const url = new URL(req.url);
   const parsed = ListQuery.safeParse(Object.fromEntries(url.searchParams));

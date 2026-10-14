@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /**
  * DEPRECATED (folder phase 7): pages do not nest, so a page never has pages
@@ -8,7 +8,6 @@ import { getOwnerOr401 } from '@/lib/auth';
  * delete) keeps working.
  */
 export async function GET(_req: Request, _ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   return NextResponse.json({ count: 0 });
 }

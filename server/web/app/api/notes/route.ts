@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { callerMayReadEmail } from '@/lib/api-v1';
 import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import { countNotes, createNote, isDigestTag, listNoteTags, listNotes } from '@/lib/notes';
@@ -26,8 +26,7 @@ const CreateBody = z.object({
  * they are in no workspace) and is echoed as `ws`.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const sp = new URL(req.url).searchParams;
   const ws = await parseWsFilter(req, user.id, user.actor.id);
   if (ws instanceof Response) return ws;

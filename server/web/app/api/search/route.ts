@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { parseSearchQuery } from '@mantle/client-types/search-query';
 import { resolveSupersededTargets, searchChunks, searchNodes } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
@@ -13,8 +13,7 @@ import { nodeUrl } from '@mantle/content';
  * needs the embedding, so an embed failure there is a 503.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   const parsed = parseSearchQuery(new URL(req.url).searchParams);
   if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });

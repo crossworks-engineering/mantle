@@ -10,7 +10,7 @@ import { rm } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { AppDbMissingError } from '@mantle/content/app-broker';
 import {
   appPackageFileName,
@@ -19,8 +19,7 @@ import {
 } from '@mantle/content/app-package';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const withData = new URL(req.url).searchParams.get('data') !== '0';
   const file = await appPackageTempPath('.mantleapp');

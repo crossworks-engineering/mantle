@@ -41,6 +41,12 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     email: 'admin@example.invalid',
     actor: { id: h.owner, email: 'admin@example.invalid', displayName: null, isOwner: true },
   })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({
+    id: h.owner,
+    email: 'admin@example.invalid',
+    actor: { id: h.owner, email: 'admin@example.invalid', displayName: null, isOwner: true },
+  })),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

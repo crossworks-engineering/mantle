@@ -22,6 +22,12 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     email: 'o@example.invalid',
     actor: { id: h.login, email: 'o@example.invalid', displayName: 'Admin', isOwner: true },
   })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({
+    id: h.owner,
+    email: 'o@example.invalid',
+    actor: { id: h.login, email: 'o@example.invalid', displayName: 'Admin', isOwner: true },
+  })),
 }));
 
 describe.skipIf(!URL)('GET /api/apps: workspace chips, hasLink and ?ws', () => {

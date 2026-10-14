@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { deleteJournal, getJournal, updateJournal } from '@/lib/journal';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -15,8 +15,7 @@ const PatchBody = z.object({
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const row = await getJournal(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });

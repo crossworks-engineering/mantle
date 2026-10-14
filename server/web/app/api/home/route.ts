@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { parseWsFilter } from '@/lib/list-workspaces';
 import { landingName, workspaceHome } from '@/lib/landing';
 
@@ -16,8 +16,7 @@ import { landingName, workspaceHome } from '@/lib/landing';
  * (route-scope.ts), and a member reaches it through MEMBER_OPEN_READS.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const ws = await parseWsFilter(req, user.id, user.actor.id);
   if (ws instanceof Response) return ws;
   return NextResponse.json(

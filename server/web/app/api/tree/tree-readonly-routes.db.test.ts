@@ -25,6 +25,11 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     id: h.owner,
     actor: { id: h.owner, displayName: 'Admin' },
   })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({
+    id: h.owner,
+    actor: { id: h.owner, displayName: 'Admin' },
+  })),
 }));
 
 describe.skipIf(!URL)('the owner tree routes as a role with SELECT only', () => {

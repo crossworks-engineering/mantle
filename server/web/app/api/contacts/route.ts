@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { countContacts, createContact, listContacts } from '@/lib/contacts';
 import { enqueueBackfills } from '@mantle/email';
 import { recordIngest } from '@mantle/tracing';
@@ -28,8 +28,7 @@ const CreateBody = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const opts = {

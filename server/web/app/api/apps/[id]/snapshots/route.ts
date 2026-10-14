@@ -6,7 +6,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { getAppRuntime } from '@mantle/content';
 import {
@@ -16,8 +16,7 @@ import {
 } from '@mantle/content/app-snapshots';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   if (!(await getAppRuntime(user.id, id))) {
     return NextResponse.json({ error: 'app not found' }, { status: 404 });

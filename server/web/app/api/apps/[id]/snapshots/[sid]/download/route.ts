@@ -9,13 +9,12 @@ import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
 import { appSnapshotFile } from '@mantle/content/app-snapshots';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; sid: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id, sid } = await ctx.params;
   const [app, file] = await Promise.all([
     getAppRuntime(user.id, id),

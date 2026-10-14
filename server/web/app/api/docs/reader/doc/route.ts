@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getReaderDoc } from '@/lib/docs-reader';
 
 /**
@@ -8,8 +8,7 @@ import { getReaderDoc } from '@/lib/docs-reader';
  * covering traversal/hidden paths) → 404.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const sp = new URL(req.url).searchParams;
   const collection = sp.get('collection') ?? '';
   const relPath = sp.get('path') ?? '';

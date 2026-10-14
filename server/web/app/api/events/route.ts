@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { parseWsFilter } from '@/lib/list-workspaces';
 import { countEvents, createEvent, listEvents } from '@/lib/events';
 import { firstIssue } from '@/lib/zod-issue';
@@ -27,8 +27,7 @@ const CreateBody = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   // `?ws=<id>` keeps only what that workspace reads (as the notes and apps
   // lists do), echoed as `ws`; a workspace the login cannot see is 404.
   const ws = await parseWsFilter(req, user.id, user.actor.id);

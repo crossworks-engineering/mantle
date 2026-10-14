@@ -4,7 +4,7 @@
  * `?ws=<id>` keeps the apps that workspace holds (lib/list-workspaces.ts).
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401, loginIsAdmin } from '@/lib/auth';
+import { getOwnerOr401, loginIsAdmin, ownerCaller } from '@/lib/auth';
 import { AppMetaFields } from '@/lib/app-meta';
 import { createApp, listApps, countApps, notifyAppNavChanged, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
@@ -15,8 +15,7 @@ import type { AppListResponse, AppListRow } from '@mantle/client-types';
 const PAGE_SIZE = 50;
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const filter = await parseWsFilter(req, user.id, user.actor.id);
   if (filter instanceof Response) return filter;

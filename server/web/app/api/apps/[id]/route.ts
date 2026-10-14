@@ -10,7 +10,7 @@ import { NextResponse } from '@/server/http-compat';
 import { cappedOne } from '@/lib/list-workspaces';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
-import { getOwnerOr401, loginIsAdmin } from '@/lib/auth';
+import { getOwnerOr401, loginIsAdmin, ownerCaller } from '@/lib/auth';
 import { APP_DESCRIPTION_MAX } from '@/lib/app-meta';
 import {
   getApp,
@@ -22,8 +22,7 @@ import {
 import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const app = await getApp(user.id, id);
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });

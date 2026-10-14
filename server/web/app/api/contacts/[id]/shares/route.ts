@@ -13,13 +13,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { listContactSharesForAdmin, revokeAllContactShares } from '@mantle/content';
 import type { ContactSharesPage, ContactSharesRevokedAll } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { getContact } from '@/lib/contacts';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   if (!(await getContact(user.id, id))) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });

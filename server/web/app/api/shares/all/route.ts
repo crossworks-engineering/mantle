@@ -1,13 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { listActiveShares } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /** GET /api/shares/all → every ACTIVE share the owner has, newest first — the
  *  "what is exposed right now" registry (every live link is public). No
  *  `level` since workspaces W5b2: a link does not follow a level. */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const shares = await listActiveShares(user.id);
   return NextResponse.json({
     shares: shares.map((s) => ({

@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { goneResponse } from '@/lib/gone';
 import { APP_NAV_LAYOUT_RETIRED, loadAppNavView } from '@mantle/content';
 
@@ -17,8 +17,7 @@ import { APP_NAV_LAYOUT_RETIRED, loadAppNavView } from '@mantle/content';
  * an older client can show, rather than written somewhere nothing reads.
  */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   return NextResponse.json(await loadAppNavView(user.id, user.actor.id));
 }
 

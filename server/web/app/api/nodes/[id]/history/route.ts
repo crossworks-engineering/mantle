@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { loadNodeBiography } from '@/lib/node-biography';
 
 /**
@@ -8,8 +8,7 @@ import { loadNodeBiography } from '@/lib/node-biography';
  * existence doesn't leak.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const view = await loadNodeBiography(user.id, id);
   if (!view) return NextResponse.json({ error: 'Node not found.' }, { status: 404 });

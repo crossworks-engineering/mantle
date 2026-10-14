@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { capped } from '@/lib/list-workspaces';
 import { callerMayConfirm, callerMayReadEmail } from '@/lib/api-v1';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
@@ -34,8 +34,7 @@ const ListQuery = z.union([
 ]);
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   await ensureFilesRootBranch(user.id);
   const url = new URL(req.url);
   const parsed = ListQuery.safeParse(Object.fromEntries(url.searchParams));

@@ -16,5 +16,8 @@
  *
  * 468 -> 439 (A4 step 3b part 1, batch 1, the self rows): 29 getOwnerOr401
  * calls in 23 route files became reads of the caller the pipeline answers.
+ *
+ * 439 -> 382 (A4 step 3b part 2, batch 2, the content reads): 57 GET
+ * handlers' getOwnerOr401 calls in 57 route files became reads.
  */
-export const GUARD_CALL_PIN = 439;
+export const GUARD_CALL_PIN = 382;

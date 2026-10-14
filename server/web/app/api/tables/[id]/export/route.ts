@@ -6,7 +6,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /**
  * Raw .sqlite download (P3) — the workbook file IS the interchange format.
@@ -14,8 +14,7 @@ import { getOwnerOr401 } from '@/lib/auth';
  * writes), not the live file. Committed data only; drafts are not exported.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const [row] = await db
     .select({ storagePath: tables.storagePath, title: nodes.title })

@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getReaderNav } from '@/lib/docs-reader';
 
 /**
@@ -9,7 +9,6 @@ import { getReaderNav } from '@/lib/docs-reader';
  * /api/docs/reader/doc?collection=…&path=….
  */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   return NextResponse.json({ nav: await getReaderNav(user.id) });
 }

@@ -5,7 +5,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import {
   AppSnapshotRefusedError,
@@ -17,8 +17,7 @@ import {
 type Ctx = { params: Promise<{ id: string; sid: string }> };
 
 export async function GET(_req: Request, ctx: Ctx) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id, sid } = await ctx.params;
   const snap = await getAppSnapshot(user.id, id, sid);
   if (!snap) return NextResponse.json({ error: 'not found' }, { status: 404 });

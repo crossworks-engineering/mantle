@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { TREE_SEARCH_MAX, TREE_TAG_MAX } from '@mantle/client-types/tree';
 import { searchTree } from '@mantle/content/tree';
 import { treeKindOr404 } from '@/lib/tree-route';
@@ -21,8 +21,7 @@ const Query = z.object({
  *  (the A to Z view), no folders. `ws` and `tag` (TreeFilter) narrow the
  *  items; a filtered search has no folders. `ws` is echoed back. */
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
   if (kind instanceof Response) return kind;
   const parsed = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));

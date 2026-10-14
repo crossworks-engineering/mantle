@@ -8,7 +8,7 @@ import {
   deleteRecallCard,
   putRecallCard,
 } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { getRecallCardDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
@@ -41,8 +41,7 @@ const Card = z.object({
 
 /** The card with its body — what the editor opens. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; card: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id, card } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const found = await getRecallCardDetail(user.id, id, card);

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { TREE_SORTS } from '@mantle/client-types/tree';
 import { loadTreeFolder } from '@mantle/content/tree';
 import { ensureTreeRoot, privateRootItems, treeKindOr404 } from '@/lib/tree-route';
@@ -21,8 +21,7 @@ const Query = z.object({
  *  private items come first. `ws` keeps only the items that workspace reads
  *  (no private items) and is echoed back. */
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
   if (kind instanceof Response) return kind;
   const parsed = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));

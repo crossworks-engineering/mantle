@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { capped } from '@/lib/list-workspaces';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, ownerCaller } from '@/lib/auth';
 import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countDraws,
@@ -31,8 +31,7 @@ const CreateBody = z.object({
 /** The /draw list: flat, paginated, sorted (no nesting — a whiteboard list,
  *  not a tree). Always returns tag facet counts, mirroring /api/pages. */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const sp = new URL(req.url).searchParams;
 
   const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1', 10) || 1);
