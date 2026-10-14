@@ -58,6 +58,7 @@ import {
 import { deleteApiKey, getApiKey, listApiKeys, setApiKey } from '@mantle/api-keys';
 import { microsoftAuthority, resolveOAuthConfig } from '@mantle/microsoft';
 import { errorMessage } from '@mantle/std';
+import { egressFetch } from '@mantle/std/egress';
 import { assertFetchableUrl } from './ssrf-guard';
 
 /** Vault labels under service = the connector's group slug. */
@@ -136,12 +137,8 @@ export async function clearMcpOAuthSecrets(store: McpOAuthStore): Promise<void> 
  *  the authorization server may be a different host than the MCP endpoint, so
  *  every URL is checked, and redirects are refused — token requests carry
  *  credentials that must not travel to a third host. */
-export const mcpOAuthFetch: typeof fetch = async (input, init) => {
-  const url =
-    typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-  await assertFetchableUrl(url);
-  return fetch(input, { ...init, redirect: 'error' });
-};
+export const mcpOAuthFetch: typeof fetch = (input, init) =>
+  egressFetch(input, init, { redirect: 'error', guard: assertFetchableUrl });
 
 /**
  * The OAuth fetch, remembering the FIRST error an endpoint answers with. On

@@ -46,6 +46,7 @@ import { getSttAdapter } from '@mantle/voice';
 import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
+import { EgressRefusedError, egressFetch } from '@mantle/std/egress';
 import { assertFetchableUrl } from './ssrf-guard';
 import { notFound } from './errors';
 import { resolveDefaultWorker } from './builtins-workers';
@@ -99,14 +100,35 @@ type TranscriptSource = `captions:${'manual' | 'auto'}` | `stt:${string}`;
 
 // ─── the tool ──────────────────────────────────────────────────────
 
-/** Vet a video link before the media sidecar sees it: null when it may go,
- *  else the refusal. Exported for the egress proof table
- *  (builtins-egress-proof.test.ts). */
+/** How long the redirect walk may take before the link goes to the sidecar
+ *  unwalked (as before A10 part 1). */
+const REDIRECT_WALK_TIMEOUT_MS = 10_000;
+
+/**
+ * Vet a video link before the media sidecar sees it: null when it may go,
+ * else the refusal. The link is checked, then its redirects are walked
+ * through the one egress fetch (A10 part 1), every hop checked and no body
+ * read: the sidecar re-checks only the first host and yt-dlp follows
+ * redirects itself, so a public link that redirects into private or
+ * metadata space is refused here. Anything else the walk meets (a timeout,
+ * a refused connection, too many redirects) is the sidecar's to report, as
+ * before. Exported for the egress proof table (egress-proof.test.ts).
+ */
 export async function vetVideoUrl(url: string): Promise<string | null> {
   try {
     await assertFetchableUrl(url);
   } catch (err) {
     return errorMessage(err);
+  }
+  try {
+    const res = await egressFetch(
+      url,
+      { method: 'GET' },
+      { guard: assertFetchableUrl, timeoutMs: REDIRECT_WALK_TIMEOUT_MS },
+    );
+    await res.body?.cancel().catch(() => {});
+  } catch (err) {
+    if (err instanceof EgressRefusedError) return errorMessage(err);
   }
   return null;
 }

@@ -1,0 +1,49 @@
+{
+ "federation client (peer_query)": {
+  "public host": {
+   "answer": "ok, 1 nodes",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "ok, 1 nodes",
+   "reached": [
+    "10.0.0.5"
+   ]
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "ok, 1 nodes",
+   "reached": [
+    "inside.test"
+   ]
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: Could not reach Linked brain (https://meta-redirect.test): refusing to fetch a private/internal address (169.254.169.254)",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "ok, 1 nodes",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "error: Could not reach Linked brain (https://huge.test): response body is over the 33554432-byte cap",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "stopped at 32 MB"
+  },
+  "slow server": {
+   "answer": "error: Could not reach Linked brain (https://slow.test): This operation was aborted (after 15 s)",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ }
+}

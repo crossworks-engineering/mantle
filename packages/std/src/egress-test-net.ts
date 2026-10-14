@@ -293,3 +293,24 @@ export function cellError(err: unknown): string {
   const m = err instanceof Error ? err.message : String(err);
   return `error: ${m.slice(0, 160)}`;
 }
+
+/** A table: caller row → cell → result. */
+export type EgressTable = Record<string, Record<string, EgressCellResult>>;
+
+/** The changes a move names, per row and cell: the fields of the cell's
+ *  result that differ after it. */
+export type NamedChanges = Record<string, Record<string, Partial<EgressCellResult>>>;
+
+/** `before` with the named changes applied: what the table must be after
+ *  the move, and nothing else. */
+export function withNamedChanges(before: EgressTable, changes: NamedChanges): EgressTable {
+  const out: EgressTable = JSON.parse(JSON.stringify(before)) as EgressTable;
+  for (const [row, cells] of Object.entries(changes)) {
+    for (const [cell, patch] of Object.entries(cells)) {
+      const r = out[row]?.[cell];
+      if (!r) throw new Error(`named change for an unknown cell: ${row} / ${cell}`);
+      out[row]![cell] = { ...r, ...patch };
+    }
+  }
+  return out;
+}

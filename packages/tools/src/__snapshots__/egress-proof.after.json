@@ -1,0 +1,305 @@
+{
+ "web_fetch": {
+  "public host": {
+   "answer": "status 200, 23 chars",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "error: refusing to fetch a private/internal address (10.0.0.5)",
+   "reached": []
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "error: refusing to fetch inside.test — it resolves to a private/internal address",
+   "reached": []
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: refusing to fetch a private/internal address (169.254.169.254)",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "status 200, 23 chars",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "status 200, 5242880 chars",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "stopped at 5 MB"
+  },
+  "slow server": {
+   "answer": "error: timed out (after 25 s)",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ },
+ "http API tool (safeFetch)": {
+  "public host": {
+   "answer": "status 200, 23 bytes",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "error: refusing to fetch a private/internal address (10.0.0.5)",
+   "reached": []
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "error: refusing to fetch inside.test — it resolves to a private/internal address",
+   "reached": []
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: refusing to fetch a private/internal address (169.254.169.254)",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "status 200, 23 bytes",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "status 200, 34603008 bytes",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "whole body"
+  },
+  "slow server": {
+   "answer": "error: timed out (after 30 s)",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ },
+ "OpenAPI spec fetch": {
+  "public host": {
+   "answer": "23 chars",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "error: refusing to fetch a private/internal address (10.0.0.5)",
+   "reached": []
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "error: refusing to fetch inside.test — it resolves to a private/internal address",
+   "reached": []
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: refusing to fetch a private/internal address (169.254.169.254)",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "23 chars",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "error: the spec exceeds the 5 MB cap — point the connector at a trimmed or per-section spec (many large APIs publish one per product area)",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "stopped at 5 MB"
+  },
+  "slow server": {
+   "answer": "still waiting after 600 s",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ },
+ "MCP connector": {
+  "public host": {
+   "answer": "status 200, 23 bytes",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "error: refusing to fetch a private/internal address (10.0.0.5)",
+   "reached": []
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "error: refusing to fetch inside.test — it resolves to a private/internal address",
+   "reached": []
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: fetch failed",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "error: fetch failed",
+   "reached": [
+    "cross-redirect.test"
+   ],
+   "authorizationAtOtherHost": "other host not reached"
+  },
+  "oversized body": {
+   "answer": "status 200, 34603008 bytes",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "whole body"
+  },
+  "slow server": {
+   "answer": "still waiting after 600 s",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ },
+ "MCP connector OAuth endpoints": {
+  "public host": {
+   "answer": "status 200, 23 bytes",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "error: refusing to fetch a private/internal address (10.0.0.5)",
+   "reached": []
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "error: refusing to fetch inside.test — it resolves to a private/internal address",
+   "reached": []
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: fetch failed",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "error: fetch failed",
+   "reached": [
+    "cross-redirect.test"
+   ],
+   "authorizationAtOtherHost": "other host not reached"
+  },
+  "oversized body": {
+   "answer": "status 200, 34603008 bytes",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "whole body"
+  },
+  "slow server": {
+   "answer": "still waiting after 600 s",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ },
+ "peer MCP transport": {
+  "public host": {
+   "answer": "status 200, 23 bytes",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "status 200, 23 bytes",
+   "reached": [
+    "10.0.0.5"
+   ]
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "status 200, 23 bytes",
+   "reached": [
+    "inside.test"
+   ]
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: refusing to fetch a private/internal address (169.254.169.254)",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "status 200, 23 bytes",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "status 200, 34603008 bytes",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "whole body"
+  },
+  "slow server": {
+   "answer": "still waiting after 600 s",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ },
+ "video_ingest link check": {
+  "public host": {
+   "answer": "handed to the media sidecar",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "error: refusing to fetch a private/internal address (10.0.0.5)",
+   "reached": []
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "error: refusing to fetch inside.test — it resolves to a private/internal address",
+   "reached": []
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: refusing to fetch a private/internal address (169.254.169.254)",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "handed to the media sidecar",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "handed to the media sidecar",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "stopped at 0 MB"
+  },
+  "slow server": {
+   "answer": "handed to the media sidecar (after 10 s)",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ }
+}

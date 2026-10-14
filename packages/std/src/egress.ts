@@ -281,13 +281,11 @@ export async function egressFetch(
   if (opts.timeoutMs !== undefined) {
     // The deadline covers the body read too, so it stays armed after the
     // headers arrive; unref'd, it never holds the process open, and firing
-    // after a finished read aborts nothing.
+    // after a finished read aborts nothing. A plain abort, so the error reads
+    // as the callers' own timers read before the fold ("This operation was
+    // aborted").
     const ctrl = new AbortController();
-    const ms = opts.timeoutMs;
-    const timer = setTimeout(
-      () => ctrl.abort(new DOMException(`timed out after ${ms} ms`, 'TimeoutError')),
-      ms,
-    );
+    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs);
     (timer as { unref?: () => void }).unref?.();
     signal = signal ? AbortSignal.any([signal, ctrl.signal]) : ctrl.signal;
   }

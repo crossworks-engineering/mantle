@@ -11,8 +11,12 @@
  */
 import { getOutboundToken, listPeers, markPeerContacted, type PeerRow } from './peers';
 import { errorMessage } from '@mantle/std';
+import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
 
 const FETCH_TIMEOUT_MS = 15_000;
+/** The largest federation reply read: a granted node's whole content fits
+ *  well inside it. */
+const PEER_MAX_BYTES = 32 * 1024 * 1024;
 
 export type PeerClientResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -47,19 +51,29 @@ async function callPeer(
   path: string,
   init: { method: string; body?: unknown },
 ): Promise<{ ok: true; json: unknown } | { ok: false; error: string }> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${peer.baseUrl}${path}`, {
-      method: init.method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    // The one egress fetch (A10 part 1, docs/egress.md). allowLan: the owner
+    // may link a brain on a private or tailnet address, and that keeps
+    // working; every hop is still checked, so a redirect into link-local
+    // space (the cloud metadata address) is refused, the token is dropped
+    // on a hop to another origin, and a reply over PEER_MAX_BYTES is not
+    // read.
+    const res = await egressFetch(
+      `${peer.baseUrl}${path}`,
+      {
+        method: init.method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       },
-      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-      signal: ctrl.signal,
+      { allowLan: true, secrets: [token], timeoutMs: FETCH_TIMEOUT_MS, maxBytes: PEER_MAX_BYTES },
+    );
+    const json = await res.json().catch((err: unknown) => {
+      if (err instanceof EgressTooLargeError) throw err;
+      return {};
     });
-    const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = (json as { error?: string })?.error ?? `HTTP ${res.status}`;
       return { ok: false, error: `${peer.displayName} returned ${res.status}: ${msg}` };
@@ -68,8 +82,6 @@ async function callPeer(
   } catch (err) {
     const m = errorMessage(err);
     return { ok: false, error: `Could not reach ${peer.displayName} (${peer.baseUrl}): ${m}` };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

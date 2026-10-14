@@ -21,6 +21,7 @@ import {
 } from '@modelcontextprotocol/client';
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
+import { egressFetch } from '@mantle/std/egress';
 import { assertFetchableUrl } from './ssrf-guard';
 import { scrubSecrets } from './http-template';
 import { dbMcpOAuthStore, loadMcpOAuthTokens, runtimeMcpOAuthProvider } from './mcp-oauth';
@@ -90,17 +91,16 @@ const SSE_GET_HEADERS_TIMEOUT_MS = 5_000;
  *  and following one could carry the auth header to an attacker's host.
  *  Exported for the egress proof table (builtins-egress-proof.test.ts). */
 export const mcpConnectorFetch: typeof fetch = async (input, init) => {
-  const url =
-    typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-  await assertFetchableUrl(url);
-
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
   const accept =
     new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get(
       'accept',
     ) ?? '';
   const isSseGet = method === 'GET' && accept.includes('text/event-stream');
-  if (!isSseGet) return fetch(input, { ...init, redirect: 'error' });
+  // The one egress fetch (A10 part 1): the address check on the request's
+  // URL, and any redirect refused (redirect 'error').
+  const egress = { redirect: 'error', guard: assertFetchableUrl } as const;
+  if (!isSseGet) return egressFetch(input, init, egress);
 
   // Headers-only timeout: abort while waiting for headers, never after — the
   // timer is cleared the moment the response resolves, so a healthy SSE
@@ -115,7 +115,7 @@ export const mcpConnectorFetch: typeof fetch = async (input, init) => {
   if (upstream?.aborted) ctrl.abort(upstream.reason);
   else upstream?.addEventListener('abort', () => ctrl.abort(upstream.reason), { once: true });
   try {
-    return await fetch(input, { ...init, redirect: 'error', signal: ctrl.signal });
+    return await egressFetch(input, { ...init, signal: ctrl.signal }, egress);
   } finally {
     clearTimeout(timer);
   }

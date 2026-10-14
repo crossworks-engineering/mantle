@@ -182,7 +182,7 @@ describe('egressFetch', () => {
     install();
     vi.useFakeTimers();
     const p = egressFetch('https://slow.test/', {}, { timeoutMs: 5_000 });
-    const settled = expect(p).rejects.toThrow(/timed out after 5000 ms/);
+    const settled = expect(p).rejects.toThrow(/This operation was aborted/);
     await vi.advanceTimersByTimeAsync(5_001);
     await settled;
   });

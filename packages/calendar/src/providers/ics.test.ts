@@ -14,6 +14,13 @@ import type { CalEvent } from '../types';
  */
 
 vi.mock('@mantle/crypto', () => ({ open: () => 'https://feed.example/cal.ics' }));
+// The feed goes through the egress fetch (A10 part 1), whose address check
+// resolves the host: the feed's host is a public address here. The egress
+// cells themselves are egress-proof.test.ts.
+vi.mock('node:dns/promises', () => {
+  const lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+  return { lookup, default: { lookup } };
+});
 
 import { icsProvider } from './ics';
 
@@ -32,7 +39,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 /** Serve this ICS body as the feed for the next pull. */
 function feed(body: string) {
-  fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => body } as Response);
+  fetchMock.mockImplementation(async () => new Response(body, { status: 200 }));
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -259,7 +266,7 @@ describe('icsProvider.pull — failure containment', () => {
   });
 
   it('rejects when the feed fetch is non-2xx', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 404, text: async () => '' } as Response);
+    fetchMock.mockImplementation(async () => new Response('', { status: 404 }));
     await expect(icsProvider.pull(account, undefined)).rejects.toThrow(/404/);
   });
 });

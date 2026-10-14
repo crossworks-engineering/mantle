@@ -32,7 +32,7 @@
  * pipeline are real.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => {
   const selectQueue: unknown[][] = [];
@@ -632,6 +632,14 @@ describe('synthesize_speech', () => {
 /* ────────────────────────────── video_ingest ───────────────────────────── */
 
 describe('video_ingest', () => {
+  // The link's redirect walk (A10 part 1) reaches the link through the
+  // platform fetch: here a public page that answers without a redirect. The
+  // walk's cells are egress-proof.test.ts.
+  beforeEach(() => {
+    vi.stubGlobal('fetch', async () => new Response('a video page', { status: 200 }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
   it('refuses the team surface before even checking the sidecar', async () => {
     expect(errorOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, TEAM_CTX))).toMatch(
       /owner-side tool/,

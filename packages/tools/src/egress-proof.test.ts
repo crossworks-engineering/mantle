@@ -7,8 +7,12 @@
  * body, a slow server). DNS and the platform fetch are a fake network
  * (@mantle/std/egress-test-net); everything above them is the real code.
  *
- * Recorded on the sources before the move (__snapshots__/egress-proof.before.json).
+ * Record, move, compare: the table was recorded on the sources before the
+ * move (__snapshots__/egress-proof.before.json, never rewritten) and must
+ * equal it after the move but for the NAMED changes below; the table after
+ * the move is __snapshots__/egress-proof.after.json.
  */
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock(
@@ -16,7 +20,13 @@ vi.mock(
   async () => (await import('@mantle/std/egress-test-net')).testNetDnsModule,
 );
 
-import { cellError, runEgressRow } from '@mantle/std/egress-test-net';
+import {
+  cellError,
+  runEgressRow,
+  withNamedChanges,
+  type EgressTable,
+  type NamedChanges,
+} from '@mantle/std/egress-test-net';
 import { web_fetch } from './toolsmith/web-fetch';
 import { safeFetch } from './safe-fetch';
 import { fetchSpecText } from './openapi-sync';
@@ -126,14 +136,48 @@ const ROWS: Record<string, (base: string) => Promise<string>> = {
   },
 };
 
+const META_REFUSED = 'error: refusing to fetch a private/internal address (169.254.169.254)';
+
+/** Every cell the move changes, and why. Any other difference fails. */
+const NAMED: NamedChanges = {
+  // The streamed cap: the same first 5 MB of text, the rest never read.
+  web_fetch: { 'oversized body': { oversizedRead: 'stopped at 5 MB' } },
+  // The linked peer's MCP endpoint keeps private and tailnet addresses
+  // (allowLan) but a redirect into link-local space is refused.
+  'peer MCP transport': {
+    'redirect to 169.254.169.254': { answer: META_REFUSED, reached: ['meta-redirect.test'] },
+  },
+  // The redirect walk before the sidecar: it reaches the link itself (no
+  // body read), and a redirect into private or metadata space is refused.
+  // Anything else still goes to the sidecar, after at most 10 s.
+  'video_ingest link check': {
+    'public host': { reached: ['public.test'] },
+    'redirect to 169.254.169.254': { answer: META_REFUSED, reached: ['meta-redirect.test'] },
+    'redirect to another host with Authorization': {
+      reached: ['cross-redirect.test', 'other.test'],
+      authorizationAtOtherHost: 'not sent',
+    },
+    'oversized body': { reached: ['huge.test'], oversizedRead: 'stopped at 0 MB' },
+    'slow server': { answer: 'handed to the media sidecar (after 10 s)', reached: ['slow.test'] },
+  },
+};
+
 describe('egress proof table: @mantle/tools callers', () => {
-  it('answers each cell as recorded', { timeout: 120_000 }, async () => {
-    const table: Record<string, unknown> = {};
-    for (const [name, call] of Object.entries(ROWS)) {
-      table[name] = await runEgressRow(OK_TEXT, 'text/plain', call, hooks);
-    }
-    await expect(JSON.stringify(table, null, 1) + '\n').toMatchFileSnapshot(
-      './__snapshots__/egress-proof.before.json',
-    );
-  });
+  it(
+    'answers each cell as before the move, but for the named changes',
+    { timeout: 120_000 },
+    async () => {
+      const table: EgressTable = {};
+      for (const [name, call] of Object.entries(ROWS)) {
+        table[name] = await runEgressRow(OK_TEXT, 'text/plain', call, hooks);
+      }
+      const before = JSON.parse(
+        readFileSync(new URL('./__snapshots__/egress-proof.before.json', import.meta.url), 'utf8'),
+      ) as EgressTable;
+      expect(table).toEqual(withNamedChanges(before, NAMED));
+      await expect(JSON.stringify(table, null, 1) + '\n').toMatchFileSnapshot(
+        './__snapshots__/egress-proof.after.json',
+      );
+    },
+  );
 });

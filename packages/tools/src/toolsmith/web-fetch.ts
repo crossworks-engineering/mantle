@@ -74,12 +74,18 @@ export const web_fetch: BuiltinToolDef = {
       // guardedFetch blocks private/loopback/link-local/metadata targets and
       // re-checks each redirect hop, so an injected agent can't turn web_fetch
       // into an SSRF probe of internal services or the cloud-metadata endpoint.
-      const res = await guardedFetch(url, {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: { 'user-agent': 'mantle-toolsmith/1.0 (+self-hosted assistant)' },
-      });
-      const buf = Buffer.from(await res.arrayBuffer());
-      const clipped = buf.subarray(0, FETCH_MAX_BYTES);
+      // The body is read up to FETCH_MAX_BYTES and no further (A10 part 1):
+      // the same first bytes as before, without holding the rest.
+      const res = await guardedFetch(
+        url,
+        {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          headers: { 'user-agent': 'mantle-toolsmith/1.0 (+self-hosted assistant)' },
+        },
+        5,
+        { maxBytes: FETCH_MAX_BYTES, overflow: 'truncate' },
+      );
+      const clipped = Buffer.from(await res.arrayBuffer());
       const contentType = res.headers.get('content-type') ?? '';
       let text: string;
       if (/html/i.test(contentType)) {

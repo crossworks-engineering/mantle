@@ -18,20 +18,14 @@
  * on every redirect target before connecting.
  */
 
+import { egressFetch } from '@mantle/std/egress';
 import { assertFetchableUrl } from './ssrf-guard';
 
-const MAX_REDIRECTS = 5;
-
-/** Stripped by name on a cross-origin hop, matching standard fetch behavior. */
-const CROSS_ORIGIN_STRIP = new Set(['authorization', 'cookie', 'proxy-authorization']);
-
-function headerRecord(init: HeadersInit | undefined): Record<string, string> {
-  if (!init) return {};
-  if (init instanceof Headers) return Object.fromEntries(init.entries());
-  if (Array.isArray(init)) return Object.fromEntries(init);
-  return { ...init };
-}
-
+/** The one egress fetch (@mantle/std/egress, A10 part 1) with this path's
+ *  secrets: every hop guarded, secret-bearing headers dropped across
+ *  origins, 303 and POST-on-301/302 downgraded to GET as the platform does.
+ *  No deadline or byte cap of its own: the caller's `init.signal` is the
+ *  deadline, and the readers cap what they read (as before the fold). */
 export async function safeFetch(
   url: string,
   init: RequestInit,
@@ -40,39 +34,5 @@ export async function safeFetch(
   // servers; every production caller takes the default real egress guard.
   guard: (u: string) => Promise<void> = assertFetchableUrl,
 ): Promise<Response> {
-  const carriers = secretValues.filter((s) => s.length > 0);
-  let currentUrl = url;
-  let method = (init.method ?? 'GET').toUpperCase();
-  let headers = headerRecord(init.headers);
-  let body = init.body;
-
-  for (let hop = 0; ; hop++) {
-    await guard(currentUrl);
-    const res = await fetch(currentUrl, { ...init, method, headers, body, redirect: 'manual' });
-    if (res.status < 300 || res.status >= 400) return res;
-
-    const location = res.headers.get('location');
-    if (!location) return res; // 3xx without a target — hand it back unchanged
-    if (hop >= MAX_REDIRECTS) throw new Error(`too many redirects (>${MAX_REDIRECTS})`);
-
-    const next = new URL(location, currentUrl);
-    if (next.origin !== new URL(currentUrl).origin) {
-      headers = Object.fromEntries(
-        Object.entries(headers).filter(
-          ([k, v]) =>
-            !CROSS_ORIGIN_STRIP.has(k.toLowerCase()) && !carriers.some((s) => v.includes(s)),
-        ),
-      );
-    }
-
-    // Method/body downgrade, matching the platform: 303 always → GET; a 301/302
-    // on POST downgrades to GET. 307/308 preserve method and body.
-    if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
-      method = 'GET';
-      body = undefined;
-      headers = Object.fromEntries(Object.entries(headers).filter(([k]) => !/^content-/i.test(k)));
-    }
-
-    currentUrl = next.toString();
-  }
+  return egressFetch(url, init, { secrets: secretValues, guard });
 }

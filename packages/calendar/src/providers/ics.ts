@@ -15,6 +15,7 @@
  */
 import * as ICALns from 'ical.js';
 import { open } from '@mantle/crypto';
+import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
 import type { CalendarAccount } from '@mantle/db';
 import type { CalEvent, CalendarProvider, CalendarPull } from '../types';
 
@@ -35,19 +36,29 @@ function feedUrl(account: CalendarAccount): string {
   return open(account.feedUrlEnc, account.id);
 }
 
+/**
+ * The feed through the one egress fetch (A10 part 1, docs/egress.md): the
+ * URL is one an owner pasted, so every hop is checked (a feed or a redirect
+ * into private or metadata space is refused) and the body is read up to
+ * MAX_FEED_BYTES and no further.
+ */
 async function fetchFeed(url: string): Promise<string> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  // webcal:// is just https for iCal feeds.
+  const httpUrl = url.replace(/^webcal:\/\//i, 'https://');
+  const res = await egressFetch(
+    httpUrl,
+    {},
+    { timeoutMs: FETCH_TIMEOUT_MS, maxBytes: MAX_FEED_BYTES },
+  );
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error(`feed fetch ${res.status}`);
+  }
   try {
-    // webcal:// is just https for iCal feeds.
-    const httpUrl = url.replace(/^webcal:\/\//i, 'https://');
-    const res = await fetch(httpUrl, { signal: ctrl.signal, redirect: 'follow' });
-    if (!res.ok) throw new Error(`feed fetch ${res.status}`);
-    const text = await res.text();
-    if (text.length > MAX_FEED_BYTES) throw new Error('feed too large');
-    return text;
-  } finally {
-    clearTimeout(timer);
+    return await res.text();
+  } catch (err) {
+    if (err instanceof EgressTooLargeError) throw new Error('feed too large', { cause: err });
+    throw err;
   }
 }
 

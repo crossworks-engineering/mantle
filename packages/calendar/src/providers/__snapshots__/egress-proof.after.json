@@ -1,0 +1,45 @@
+{
+ "calendar ICS feed": {
+  "public host": {
+   "answer": "pulled, 0 events",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "error: refusing to fetch a private/internal address (10.0.0.5)",
+   "reached": []
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "error: refusing to fetch inside.test — it resolves to a private/internal address",
+   "reached": []
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: refusing to fetch a private/internal address (169.254.169.254)",
+   "reached": [
+    "meta-redirect.test"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "pulled, 0 events",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "error: feed too large",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "stopped at 12 MB"
+  },
+  "slow server": {
+   "answer": "error: This operation was aborted (after 30 s)",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ }
+}

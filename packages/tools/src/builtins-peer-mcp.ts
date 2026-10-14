@@ -16,6 +16,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { markPeerContacted, peerCallTarget } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import { errorMessage } from '@mantle/std';
+import { egressFetch } from '@mantle/std/egress';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { boolOpt, str, strOpt } from './coerce';
 import { FILE_ID_PRE } from './builtins-common';
@@ -28,9 +29,14 @@ const RESULT_TEXT_CAP = 80_000;
  *  64 MB for an owner's file_upload). */
 const COPY_MAX_BYTES = 48 * 1024 * 1024;
 
-/** The fetch the peer's MCP transport runs on. Exported for the egress
- *  proof table (builtins-egress-proof.test.ts). */
-export const peerMcpFetch: typeof fetch = (input, init) => fetch(input, init);
+/** The fetch the peer's MCP transport runs on: the one egress fetch (A10
+ *  part 1) with `allowLan`, because the owner may link a brain on a private
+ *  or tailnet address. Every hop is checked, so a redirect to link-local
+ *  space (the cloud metadata address) is refused, and Authorization is
+ *  dropped on a hop to another origin. Exported for the egress proof table
+ *  (egress-proof.test.ts). */
+export const peerMcpFetch: typeof fetch = (input, init) =>
+  egressFetch(input, init, { allowLan: true });
 
 type PeerSession = { client: Client; peerName: string; close: () => Promise<void> };
 
