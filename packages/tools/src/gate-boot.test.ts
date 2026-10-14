@@ -29,6 +29,10 @@ import {
 } from './gate-narrowers';
 // Registers the runtime-tool source.
 import './runtime-policy';
+// Fills the builtin policy table.
+import './registry';
+import { ADMIN_ONLY_TOOL_SLUGS, isAdminOnlyTool } from './admin-gate';
+import { MCP_SURFACE_POLICIES } from './mcp-surface-policies';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = (file: string) => readFileSync(join(repoRoot, file), 'utf8');
@@ -60,6 +64,20 @@ describe('@mantle/tools alone makes the gate ready', () => {
         ),
       );
     expect(importers).toEqual([]);
+  });
+
+  it("knows the MCP surface's own policies: the two responder writes are Admin only (A5 step 2 fix round 1, LOW-1)", () => {
+    // No @mantle/mcp-core here (the test above): the surface table is the
+    // leaf mcp-surface-policies.ts, loaded by tool-policy.ts in every
+    // process, so server/api refuses them outside Admin as it did before A5.
+    expect(Object.keys(MCP_SURFACE_POLICIES)).toHaveLength(16);
+    for (const slug of ['responder_turn_input', 'responder_turn_record']) {
+      expect(ADMIN_ONLY_TOOL_SLUGS.has(slug), slug).toBe(true);
+      expect(isAdminOnlyTool(slug), slug).toBe(true);
+    }
+    for (const slug of ['ask_responder', 'ask_as_responder', 'search']) {
+      expect(ADMIN_ONLY_TOOL_SLUGS.has(slug), slug).toBe(false);
+    }
   });
 });
 

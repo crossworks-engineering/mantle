@@ -516,8 +516,10 @@ type SetAlgebra = Record<
   (other: unknown) => unknown
 >;
 
-/** The bound caller's copy of a Set: a read-only view (LOW-3). */
-function frozenSet<T>(values: Iterable<T>): ReadonlySet<T> {
+/** A read-only view over a private copy of `values` (LOW-3): the bound
+ *  caller's Sets, and a fixed list kept as a Set elsewhere (A5 step 2 fix
+ *  round 1, LOW-2: the owner MCP surface's views of its definitions). */
+export function readOnlySetView<T>(values: Iterable<T>): ReadonlySet<T> {
   return new ReadOnlySetView(values) as unknown as ReadonlySet<T>;
 }
 
@@ -525,7 +527,8 @@ function frozenSet<T>(values: Iterable<T>): ReadonlySet<T> {
  *  view already read only is copied too: no one holds its private Set). */
 function frozenValue(v: unknown): unknown {
   if (Array.isArray(v)) return Object.freeze([...v]);
-  if (v instanceof Set || v instanceof ReadOnlySetView) return frozenSet(v as Iterable<unknown>);
+  if (v instanceof Set || v instanceof ReadOnlySetView)
+    return readOnlySetView(v as Iterable<unknown>);
   return v;
 }
 
@@ -545,7 +548,10 @@ function frozenCaller(c: GateCaller): GateCaller {
     ...c,
     ...(c.admin
       ? {
-          admin: Object.freeze({ holdsAdmin: c.admin.holdsAdmin, areas: frozenSet(c.admin.areas) }),
+          admin: Object.freeze({
+            holdsAdmin: c.admin.holdsAdmin,
+            areas: readOnlySetView(c.admin.areas),
+          }),
         }
       : {}),
     ...(c.scope

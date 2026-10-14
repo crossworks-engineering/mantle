@@ -161,6 +161,7 @@ export {
   registerPolicySource,
   AccessError,
   mapAccessError,
+  readOnlySetView,
   type AccessRefusal,
   type AdminView,
   type CallInput,

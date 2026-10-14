@@ -18,12 +18,14 @@
  * The gate (@mantle/db gate.ts) reads a tool's policy as a GatePolicy:
  * toGatePolicy, which the owner MCP surface registers as its `mcp-tool`
  * source (A5 step 2). The surface's own hand-written tools are definitions
- * with a policy too (@mantle/mcp-core mcp-defs.ts), loaded here as the
- * surface table (loadSurfaceTools) for the views that name them.
+ * with a policy too (@mantle/mcp-core mcp-defs.ts); their policies are the
+ * leaf mcp-surface-policies.ts, loaded here as the surface table in every
+ * process, for the views that name them.
  */
 import type { ItemKind } from '@mantle/client-types/kinds';
 import type { GatePolicy, ItemNeed, ScopeArea } from '@mantle/db';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+import { MCP_SURFACE_POLICIES } from './mcp-surface-policies';
 
 /** The Admin step of a tool (gate step 5). */
 export type ToolScope =
@@ -248,59 +250,25 @@ export type SurfaceToolDef = Readonly<{
   optIn?: BuiltinToolDef['optIn'];
 }>;
 
-const SURFACE = new Map<string, SurfaceToolDef>();
-let surfaceDefs: readonly SurfaceToolDef[] | null = null;
-
-/** The MCP surface only (mcp-defs.ts, at load): its own definitions, for
- *  the views that name them (ADMIN_ONLY_TOOL_SLUGS: the responder tools
- *  that write into the owner's conversation) and its own lists. The same
- *  table again is a no-op; another throws, on purpose: two tables would
- *  make which one decides an accident of import order. */
-export function loadSurfaceTools(defs: readonly SurfaceToolDef[]): void {
-  if (surfaceDefs === defs) return;
-  const names = defs.map((d) => d.slug);
-  if (new Set(names).size !== names.length) throw new Error('loadSurfaceTools: a name twice');
-  // The same names again: the module loaded twice (a test's fresh module
-  // graph), its definitions replace the old. Other names: refused.
-  if (surfaceDefs && names.join() !== surfaceDefs.map((d) => d.slug).join()) {
-    throw new Error('loadSurfaceTools: another surface table is loaded already');
-  }
-  SURFACE.clear();
-  for (const def of defs) SURFACE.set(def.slug, def);
-  surfaceDefs = defs;
-  version += 1;
-}
-
-/** Whether the surface table is loaded (a process that serves MCP). */
-export function surfaceToolsLoaded(): boolean {
-  return surfaceDefs !== null;
-}
-
-/** The surface's own definition named `slug`, or null. */
-export function surfaceTool(slug: string): SurfaceToolDef | null {
-  return SURFACE.get(slug) ?? null;
-}
-
-/** Thrown when a view that needs the surface table is read before it
- *  loaded. */
-export class SurfaceTableNotLoadedError extends Error {
-  constructor() {
-    super('a surface tool view was read before the MCP definitions loaded (mcp-defs.ts)');
-    this.name = 'SurfaceTableNotLoadedError';
-  }
-}
+/** The MCP surface's own tools, by name and policy (mcp-surface-policies.ts),
+ *  loaded in every process (A5 step 2 fix round 1, LOW-1): a view that
+ *  names them (ADMIN_ONLY_TOOL_SLUGS: the responder tools that write into
+ *  the owner's conversation) says the same with or without mcp-core. */
+const SURFACE: ReadonlyMap<string, SurfaceToolDef> = new Map(
+  Object.entries(MCP_SURFACE_POLICIES).map(([slug, policy]) => [
+    slug,
+    Object.freeze({ slug, policy }),
+  ]),
+);
 
 // ── Views ───────────────────────────────────────────────────────────────────
 
 const READ_ONLY_VIEW = 'a tool policy view is read only: change the policy on the definition';
 
 /** Which surface definitions a view holds besides the builtins: those
- *  `pick` holds for (a name a builtin has is the builtin's), and whether the
- *  view needs the surface table loaded (fail closed) or reads none while
- *  it is not (a process that serves no MCP). */
+ *  `pick` holds for (a name a builtin has is the builtin's). */
 export type SurfaceViewOpts = Readonly<{
   surface?: (p: ToolPolicy, def: SurfaceToolDef) => boolean;
-  requireSurface?: boolean;
   /** Names that are no tool's (said where the view is). */
   also?: readonly string[];
 }>;
@@ -308,10 +276,6 @@ export type SurfaceViewOpts = Readonly<{
 /** A view's options, fixed: `also` copied. */
 function frozenOpts(opts: SurfaceViewOpts): SurfaceViewOpts {
   return Object.freeze({ ...opts, ...(opts.also ? { also: Object.freeze([...opts.also]) } : {}) });
-}
-
-function assertSurface(opts: SurfaceViewOpts): void {
-  if (opts.requireSurface && !surfaceDefs) throw new SurfaceTableNotLoadedError();
 }
 
 /** `also`, the slugs whose policy `pick` holds, then the surface's own
@@ -337,7 +301,6 @@ class PolicySlugSet extends Set<string> {
   }
   #fresh(): void {
     assertLoaded();
-    assertSurface(this.opts);
     if (this.#at === version) return;
     Set.prototype.clear.call(this);
     for (const s of slugsWhere(this.pick, this.opts)) Set.prototype.add.call(this, s);
@@ -391,7 +354,6 @@ class PolicySlugMap<V> extends Map<string, V> {
   }
   #fresh(): void {
     assertLoaded();
-    if (this.opts.requireSurface && !surfaceDefs) throw new SurfaceTableNotLoadedError();
     if (this.#at === version) return;
     Map.prototype.clear.call(this);
     for (const def of TABLE.values()) {
@@ -463,7 +425,6 @@ export function policySlugSet(
 /** What a map view reads of the surface's own definitions (SurfaceViewOpts). */
 export type SurfaceMapOpts<V> = Readonly<{
   surface?: (p: ToolPolicy, def: SurfaceToolDef) => V | undefined;
-  requireSurface?: boolean;
 }>;
 
 /** slug -> `value` of each builtin's policy (undefined: not in the map), as
@@ -486,7 +447,6 @@ export function policySlugList(
   let at = -1;
   const fresh = () => {
     assertLoaded();
-    assertSurface(fixed);
     if (at === version) return;
     target.length = 0;
     target.push(...slugsWhere(pick, fixed));

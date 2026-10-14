@@ -53,13 +53,13 @@ import { policyAdminOnly, policySlugMap, policySlugSet } from './tool-policy';
  * A view of the tool policy table (tool-policy.ts, A5): the builtins whose
  * policy is adminOnly (scope `admin`, or an area marked adminOnly) and that
  * are not ownerOnly (those are adminOnly by OWNER_ONLY_IN_SCOPE), plus the
- * MCP surface's own definitions that are adminOnly (@mantle/mcp-core
- * mcp-defs.ts, A5 step 2: the two responder tools that write into the
- * owner's conversation), in a process that serves MCP. Since W7b every login
- * has the owner MCP surface (workspaces plan 7.4): the owner's own approvals
- * queue, profile clock, assistant conversation and retrieval eval stay
- * Admin; so does a shell on the server (run_terminal, the settings area
- * too, W7a fix round 1, M3), never any Admin-role login.
+ * MCP surface's own definitions that are adminOnly (A5 step 2: the two
+ * responder tools that write into the owner's conversation), whose policies
+ * every process loads (mcp-surface-policies.ts, fix round 1). Since W7b
+ * every login has the owner MCP surface (workspaces plan 7.4): the owner's
+ * own approvals queue, profile clock, assistant conversation and retrieval
+ * eval stay Admin; so does a shell on the server (run_terminal, the
+ * settings area too, W7a fix round 1, M3), never any Admin-role login.
  */
 export const ADMIN_ONLY_TOOL_SLUGS: ReadonlySet<string> = policySlugSet(
   (p, def) => def.ownerOnly !== true && policyAdminOnly(p),

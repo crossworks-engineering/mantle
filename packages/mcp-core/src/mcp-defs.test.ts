@@ -2,19 +2,22 @@
  * The hand-written MCP tools as definitions (A5 step 2, mcp-defs.ts): each
  * carries a policy of the declared shape; the eleven that share a builtin's
  * name carry the builtin's policy, with the arguments its item checks name
- * mapped to the MCP twin's own; the table is the surface's (the Admin gate
- * reads the two responder writes from it); and registration reads it.
+ * mapped to the MCP twin's own; each takes its policy from the surface table
+ * (@mantle/tools mcp-surface-policies.ts, where the Admin gate reads the two
+ * responder writes); and registration reads the definitions.
  */
 import { describe, expect, it } from 'vitest';
 import {
   ADMIN_ONLY_TOOL_SLUGS,
+  MCP_SURFACE_POLICIES,
   getBuiltin,
-  surfaceTool,
-  surfaceToolsLoaded,
+  type McpSurfaceSlug,
   type ToolPolicy,
 } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
 import { MCP_TOOL_DEFS, mcpDefinition } from './mcp-defs';
+import { mcpDefinitionSet } from './mcp-policy';
+import { MCP_HANDWRITTEN_READ_ONLY } from './login-surface';
 
 /** Per twin, an MCP argument name and the builtin's for the same thing,
  *  where they differ. None does today for an argument a policy names (the
@@ -71,6 +74,10 @@ describe('the MCP definitions (A5 step 2)', () => {
       }
       expect(Object.isFrozen(d), d.slug).toBe(true);
       expect(Object.isFrozen(d.policy), d.slug).toBe(true);
+      if (Array.isArray(d.policy.items)) {
+        expect(Object.isFrozen(d.policy.items), d.slug).toBe(true);
+        for (const t of d.policy.items) expect(Object.isFrozen(t), d.slug).toBe(true);
+      }
     }
   });
 
@@ -87,9 +94,17 @@ describe('the MCP definitions (A5 step 2)', () => {
     }
   });
 
-  it("is the surface's table: the Admin gate holds the two responder writes", () => {
-    expect(surfaceToolsLoaded()).toBe(true);
-    for (const d of MCP_TOOL_DEFS) expect(surfaceTool(d.slug), d.slug).toBe(d);
+  it('takes each policy from the surface table by name; the Admin gate holds the two responder writes', () => {
+    // The same names, each definition holding the table's own policy object
+    // (fix round 1, LOW-1: @mantle/tools loads the table in every process;
+    // packages/tools/src/admin-gate.test.ts pins the Admin gate without
+    // this package).
+    expect(MCP_TOOL_DEFS.map((d) => d.slug).sort()).toEqual(
+      Object.keys(MCP_SURFACE_POLICIES).sort(),
+    );
+    for (const d of MCP_TOOL_DEFS) {
+      expect(d.policy, d.slug).toBe(MCP_SURFACE_POLICIES[d.slug as McpSurfaceSlug]);
+    }
     expect(ADMIN_ONLY_TOOL_SLUGS.has('responder_turn_input')).toBe(true);
     expect(ADMIN_ONLY_TOOL_SLUGS.has('responder_turn_record')).toBe(true);
     expect(ADMIN_ONLY_TOOL_SLUGS.has('ask_responder')).toBe(false);
@@ -114,6 +129,26 @@ describe('the MCP definitions (A5 step 2)', () => {
         ).toHaveLength(1);
         expect(descriptions.get(d.slug), d.slug).toBe(mcpDefinition(d.slug)!.description);
       }
+    }
+  });
+
+  it("a view of the definitions is read only, Set.prototype's add too (fix round 1, LOW-2)", () => {
+    const reads = MCP_TOOL_DEFS.filter((d) => d.policy.effect === 'read').map((d) => d.slug);
+    for (const view of [
+      MCP_HANDWRITTEN_READ_ONLY,
+      mcpDefinitionSet((d) => d.policy.effect === 'read'),
+    ]) {
+      expect(view).not.toBeInstanceOf(Set);
+      expect(() => Set.prototype.add.call(view as Set<string>, 'page_delete')).toThrow(TypeError);
+      expect(() => Set.prototype.delete.call(view as Set<string>, 'search')).toThrow(TypeError);
+      expect(() => Set.prototype.clear.call(view as Set<string>)).toThrow(TypeError);
+      expect(() => (view as Set<string>).add('page_delete')).toThrow(TypeError);
+      expect(Object.isFrozen(view)).toBe(true);
+      // Still read like a Set, and nothing changed.
+      expect([...view].sort()).toEqual([...reads].sort());
+      expect(view.size).toBe(reads.length);
+      expect(view.has('search')).toBe(true);
+      expect(view.has('page_delete')).toBe(false);
     }
   });
 });

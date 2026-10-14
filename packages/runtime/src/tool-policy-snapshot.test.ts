@@ -79,10 +79,8 @@ const LISTS: Record<string, readonly string[]> = {
     'pending_reject',
     'recall_eval',
     'replay_window',
-    // responder_turn_input and responder_turn_record were here: since A5
-    // step 2 they are the MCP surface's own definitions (@mantle/mcp-core
-    // mcp-defs.ts), in this view where that surface is loaded, which this
-    // package is not. mcp-core's surface-lists.json pins the whole view.
+    'responder_turn_input',
+    'responder_turn_record',
     'run_append',
     'run_audit',
     'run_cancel',

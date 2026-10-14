@@ -6,9 +6,15 @@
  * surface's order it registers) and its body, moved here as it was.
  * Registration reads this table (registerMcpTools, from register/*.ts), and
  * the surface's own lists are views of it and of the builtin policy table
- * (mcp-policy.ts). Loaded into @mantle/tools' surface table at load, so the
- * Admin gate knows the two responder tools that write into the owner's
- * conversation (ADMIN_ONLY_TOOL_SLUGS).
+ * (mcp-policy.ts).
+ *
+ * Each definition takes its policy by its name from @mantle/tools
+ * mcp-surface-policies.ts (fix round 1, LOW-1): that leaf is the surface
+ * table every process loads, so the Admin gate knows the two responder
+ * tools that write into the owner's conversation (ADMIN_ONLY_TOOL_SLUGS)
+ * with or without this package loaded. A name here with no policy there
+ * does not type-check; mcp-defs.test.ts pins that the two hold the same
+ * names.
  *
  * Eleven share a name with a builtin and keep their own schema and reply
  * shape (no-duplicate-tools.test.ts says why); their policy is the
@@ -16,17 +22,16 @@
  * `search` (the surface's name for search_nodes) and the four responder
  * tools.
  */
-
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import {
+  MCP_SURFACE_POLICIES,
   SEARCH_TOOLS,
-  loadSurfaceTools,
   toolItemWriteRefusal,
   type BuiltinToolDef,
+  type McpSurfaceSlug,
   type SurfaceToolDef,
-  type ToolPolicy,
 } from '@mantle/tools';
 import {
   getPage,
@@ -71,13 +76,13 @@ export type McpToolDef = SurfaceToolDef &
     register: (ctx: McpRegisterContext) => void;
   }>;
 
-/** A definition, typed by its own shape. */
+/** A definition, typed by its own shape, with the policy its name has
+ *  (MCP_SURFACE_POLICIES). */
 function mcpTool<S extends z.ZodRawShape>(def: {
-  slug: string;
+  slug: McpSurfaceSlug;
   group: McpToolGroup;
   description: string;
   shape: S;
-  policy: ToolPolicy;
   optIn?: BuiltinToolDef['optIn'];
   /** The body: the handler for one connection. */
   handler: (ctx: McpRegisterContext) => ToolCallback<ShapeSchema<S>>;
@@ -85,7 +90,7 @@ function mcpTool<S extends z.ZodRawShape>(def: {
   const { handler, ...rest } = def;
   return Object.freeze({
     ...rest,
-    policy: Object.freeze(def.policy),
+    policy: MCP_SURFACE_POLICIES[def.slug],
     register: (ctx: McpRegisterContext) =>
       addTool(ctx.server, def.slug, def.description, def.shape, handler(ctx)),
   });
@@ -103,7 +108,6 @@ const TREE_LIST = mcpTool({
   group: 'search',
   description: 'List children of a branch in the Mantle tree. Pass no path for top-level branches.',
   shape: { path: z.string().optional() },
-  policy: { effect: 'read', spends: 'none', scope: 'any' },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ path }) => {
@@ -185,7 +189,6 @@ const SEARCH = mcpTool({
     since: z.string().datetime().optional(),
     limit: z.number().int().min(1).max(200).optional(),
   },
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'search' },
   handler: (ctx) => {
     const { callBuiltin } = ctx;
     const search_nodes = searchNodesBuiltin();
@@ -208,13 +211,6 @@ const FOLDER_DESCRIBE = mcpTool({
     folder_id: z.string().uuid().optional(),
     path: z.string().optional(),
     description: z.string().max(2000),
-  },
-  policy: {
-    effect: 'write',
-    spends: 'none',
-    scope: 'any',
-    items: [{ param: 'folder_id', need: 'edit' }],
-    keyArea: 'files',
   },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
@@ -256,13 +252,6 @@ const FOLDER_RENAME = mcpTool({
     folder_id: z.string().uuid().optional(),
     path: z.string().optional(),
     new_name: z.string().min(1).max(64),
-  },
-  policy: {
-    effect: 'write',
-    spends: 'none',
-    scope: 'any',
-    items: [{ param: 'folder_id', need: 'edit' }],
-    keyArea: 'files',
   },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
@@ -306,7 +295,6 @@ const FILE_READ = mcpTool({
   description:
     'Read a file by id. For text files returns the content as a utf-8 string; for binaries returns base64-encoded bytes (only call this on small files).',
   shape: { file_id: z.string().uuid() },
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ file_id }) => {
@@ -332,7 +320,6 @@ const FILE_GET = mcpTool({
   description:
     "Fetch a file's metadata by id without loading bytes. Useful for resolving a uuid surfaced by search before deciding what to do with it.",
   shape: { file_id: z.string().uuid() },
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ file_id }) => {
@@ -351,13 +338,6 @@ const FILE_RENAME = mcpTool({
   description:
     'Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. `huntsman-report` → `customerx-report`).',
   shape: { file_id: z.string().uuid(), new_stem: z.string().min(1).max(200) },
-  policy: {
-    effect: 'write',
-    spends: 'none',
-    scope: 'any',
-    items: [{ param: 'file_id', need: 'edit' }],
-    keyArea: 'files',
-  },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ file_id, new_stem }) => {
@@ -393,7 +373,6 @@ const PAGE_LIST = mcpTool({
     query: z.string().optional(),
     tag: z.string().optional(),
   },
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages', keyEmail: true },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ query, tag }) => {
@@ -408,7 +387,6 @@ const PAGE_GET = mcpTool({
   group: 'pages',
   description: 'Get a single page by id, including its full ProseMirror/TipTap document.',
   shape: { id: z.string() },
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ id }) => {
@@ -434,7 +412,6 @@ const TABLE_LIST = mcpTool({
     query: z.string().optional(),
     tag: z.string().optional(),
   },
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables', keyEmail: true },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ query, tag }) => {
@@ -450,7 +427,6 @@ const TABLE_GET = mcpTool({
   description:
     'Get a single table by id: its columns and a window of rows (formula columns resolved). `offset`/`limit` page large grids.',
   shape: { id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ id, offset, limit }) => {
@@ -479,7 +455,6 @@ const TABLE_ROWS_LIST = mcpTool({
   description:
     "Windowed snapshot of a table's rows — each a stable id + short per-cell text. Page via offset/limit.",
   shape: { table_id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ table_id, offset, limit }) => {
@@ -667,15 +642,6 @@ const ASK_RESPONDER = mcpTool({
     max_iterations: z.number().int().min(1).max(30).optional(),
     include_tool_calls: z.boolean().optional(),
   },
-  // A turn of the responder, on the owner's keys; it writes into the owner's
-  // tools' world (its tools execute), so a key or a peer needs it named.
-  policy: {
-    effect: 'write',
-    spends: 'ownerKey',
-    startsModelWork: true,
-    scope: 'any',
-    peerRisky: true,
-  },
   handler: (ctx) => async (a) => askResponder(ctx, { ...a, toolName: 'ask_responder' }),
 });
 
@@ -697,7 +663,6 @@ const ASK_AS_RESPONDER = mcpTool({
     agent_slug: z.string().optional(),
     read_only: z.boolean().optional(),
   },
-  policy: { effect: 'write', spends: 'ownerKey', scope: 'any', peerRisky: true },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     return async ({ agent_slug, read_only }) => {
@@ -755,8 +720,6 @@ const RESPONDER_TURN_INPUT = mcpTool({
     schemas_for: z.array(z.string()).optional(),
     omit_cached: z.boolean().optional(),
   },
-  // It reads the owner's conversation and writes a trace: Admin only.
-  policy: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     const threadLogin = threadLoginOf(ctx);
@@ -834,8 +797,6 @@ const RESPONDER_TURN_RECORD = mcpTool({
     input_trace_id: z.string().optional(),
     tools_used: z.array(z.string()).optional(),
   },
-  // Writes into the owner's conversation as one of their agents: Admin only.
-  policy: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
     const threadLogin = threadLoginOf(ctx);
@@ -918,5 +879,3 @@ export function registerMcpTools(ctx: McpRegisterContext, group: McpToolGroup): 
     def.register(ctx);
   }
 }
-
-loadSurfaceTools(MCP_TOOL_DEFS);

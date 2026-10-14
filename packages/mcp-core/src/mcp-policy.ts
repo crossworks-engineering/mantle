@@ -12,6 +12,7 @@
  * functions answer it by its family as before (familyKeyArea, and
  * login-surface.ts familyPeerRisky), never as a tool with a policy.
  */
+import { readOnlySetView } from '@mantle/db';
 import { builtinPolicy, policySlugSet, type SurfaceToolDef, type ToolPolicy } from '@mantle/tools';
 import { familyKeyArea, type KeyArea } from './key-scope';
 import { MCP_TOOL_DEFS, mcpDefinition, type McpToolDef } from './mcp-defs';
@@ -29,18 +30,15 @@ export function mcpToolPolicyOf(name: string): ToolPolicy | null {
 export function mcpPolicySet(
   pick: (p: ToolPolicy, def: SurfaceToolDef) => boolean,
 ): ReadonlySet<string> {
-  return policySlugSet(pick, { surface: pick, requireSurface: true });
+  return policySlugSet(pick, { surface: pick });
 }
 
 /** The names of the hand-written MCP definitions `pick` holds for, as a
- *  read-only Set (the table is fixed at load). */
+ *  read-only view (the table is fixed at load): not a Set, so
+ *  `Set.prototype.add.call` cannot change it either (fix round 1, LOW-2;
+ *  @mantle/db readOnlySetView, the gate's own). */
 export function mcpDefinitionSet(pick: (def: McpToolDef) => boolean): ReadonlySet<string> {
-  const set = new Set(MCP_TOOL_DEFS.filter(pick).map((d) => d.slug));
-  const refuse = () => {
-    throw new TypeError('a tool policy view is read only: change the policy on the definition');
-  };
-  for (const key of ['add', 'delete', 'clear']) Object.defineProperty(set, key, { value: refuse });
-  return Object.freeze(set);
+  return readOnlySetView(MCP_TOOL_DEFS.filter(pick).map((d) => d.slug));
 }
 
 /** The area a tool belongs to (its policy's `keyArea`), or null (open only

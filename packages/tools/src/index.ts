@@ -14,16 +14,12 @@ export { checkToolPreconditions, type NodeTypeLookup } from './preconditions';
 
 export {
   PolicyTableNotLoadedError,
-  SurfaceTableNotLoadedError,
   builtinPolicy,
-  loadSurfaceTools,
   policyAdminOnly,
   policyLowers,
   policySlugList,
   policySlugMap,
   policySlugSet,
-  surfaceTool,
-  surfaceToolsLoaded,
   toGatePolicy,
   type SurfaceMapOpts,
   type SurfaceToolDef,
@@ -34,6 +30,8 @@ export {
   type ToolPolicy,
   type ToolScope,
 } from './tool-policy';
+
+export { MCP_SURFACE_POLICIES, type McpSurfaceSlug } from './mcp-surface-policies';
 
 export {
   registerBuiltin,
