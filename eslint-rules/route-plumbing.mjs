@@ -62,6 +62,53 @@ export function directBodyReads(code) {
   return (code.match(re) ?? []).length;
 }
 
+/** The catch blocks of `code` (comments stripped): the caught name and
+ *  the block's text. */
+function catchBlocks(code) {
+  const out = [];
+  const re = /\bcatch\s*\(\s*([A-Za-z_$][\w$]*)\s*(?::[^)]*)?\)\s*\{/g;
+  let m;
+  while ((m = re.exec(code))) {
+    let depth = 1;
+    let i = re.lastIndex;
+    for (; i < code.length && depth; i++) {
+      if (code[i] === '{') depth += 1;
+      else if (code[i] === '}') depth -= 1;
+    }
+    out.push({ name: m[1], body: code.slice(re.lastIndex, i - 1) });
+  }
+  return out;
+}
+
+/**
+ * The catch blocks of `code` (comments stripped) that put the caught
+ * error's text in a reply (fold 2): a statement that builds a reply (a
+ * `.json(`, a `Response`, a redirect, a `body:`) and carries the error's
+ * message (`err.message`, `errorMessage(err)`, `String(err)`, `${err}`) or
+ * a name made of it. A text heuristic, for the counts; logging is not a
+ * reply.
+ */
+export function errorTextReplies(code) {
+  let n = 0;
+  for (const { name, body } of catchBlocks(code)) {
+    const b = body.replace(/console\.\w+\([^;]*\);/g, '');
+    const v = name.replace(/\$/g, '\\$');
+    const msg = new RegExp(
+      `(\\b${v}\\.message\\b|errorMessage\\(\\s*${v}\\s*\\)|String\\(\\s*${v}\\s*\\)|\\(\\s*${v}\\s+as\\s+[^)]*\\)\\.message|\\$\\{\\s*${v}\\s*\\})`,
+    );
+    const made = [
+      ...b.matchAll(
+        new RegExp(`(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*[^;]*?${msg.source}`, 'g'),
+      ),
+    ].map((x) => x[1]);
+    const reply = /(\.json\(|new Response\(|Response\.json\(|[Rr]edirect\w*\(|body\s*:)/;
+    const statements = b.split(/(?<=;)/);
+    const carries = (s) => msg.test(s) || made.some((x) => new RegExp(`\\b${x}\\b`).test(s));
+    if (statements.some((s) => reply.test(s) && carries(s))) n += 1;
+  }
+  return n;
+}
+
 /** Whether the parameter `p` is a handler's request. */
 function isRequestParam(p) {
   const id = p.type === 'AssignmentPattern' ? p.left : p;

@@ -1,0 +1,3 @@
+# A10 part 2 fold 2: the cells that answer otherwise than before the move, each
+# with its named kind (changeKind, a10-error-sweep.test.ts), its answer before and
+# now. Every other cell of a10-error-sweep.txt answers byte for byte as recorded.
