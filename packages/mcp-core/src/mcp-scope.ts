@@ -51,8 +51,11 @@ export const NOT_ON_WORKSPACES_ERROR =
 /** The refusal when the login holds no workspace at all: the gate's own
  *  no-scope refusal (@mantle/std NO_SCOPE_ERROR, one constant, in the
  *  words this surface has always said). Since A5 step 4 such a login lists
- *  no tools at all (owner decision A); a call still says this if the login
- *  lost its last workspace after it listed. */
+ *  no tools at all (owner decision A) and the connection's instructions
+ *  say why (login-surface.ts MCP_NO_WORKSPACE_INSTRUCTIONS). A login that
+ *  loses its last workspace mid-session does not read these words on its
+ *  next call: each HTTP request lists afresh, so the tool is not registered
+ *  and the SDK answers "Tool X not found" (fix round 1, LOW-2). */
 export const NO_WORKSPACE_ERROR = NO_SCOPE_ERROR;
 
 /** The login's scope now, or null on a brain not on workspaces (the one

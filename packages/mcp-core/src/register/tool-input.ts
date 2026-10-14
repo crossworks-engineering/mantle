@@ -13,7 +13,6 @@
  */
 
 import { z } from 'zod';
-import { databaseErrorPublic } from '@mantle/std';
 import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 export type ShapeSchema<S extends z.ZodRawShape> = StandardSchemaWithJSON<
@@ -35,12 +34,4 @@ export function toolInputSchema<S extends z.ZodRawShape>(shape: S): ShapeSchema<
       jsonSchema: { input: advertised, output: advertised },
     },
   };
-}
-
-/** What a tool says for a database error: the one mapper
- *  (databaseErrorPublic, @mantle/std), the same on every exit. A thrown one
- *  is answered by the one registration (gated-tools.ts, through
- *  @mantle/tools thrownToolDatabaseError) since A5 step 4. */
-export function toolDatabaseError(err: unknown): string {
-  return databaseErrorPublic(err);
 }

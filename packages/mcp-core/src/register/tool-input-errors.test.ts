@@ -16,9 +16,8 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 }));
 
 import { z } from 'zod';
-import { DATABASE_ERROR_PUBLIC, errorMessage } from '@mantle/std';
+import { DATABASE_ERROR_PUBLIC, databaseErrorPublic, errorMessage } from '@mantle/std';
 import { registerBuiltin, type BuiltinToolDef } from '@mantle/tools';
-import { toolDatabaseError } from './tool-input';
 import { makeRegisterContext } from './context';
 import { registerGatedTool } from '../gated-tools';
 import { defaultMcpGate } from '../gate-policy';
@@ -136,10 +135,10 @@ describe('the one mapper on every tool exit (arch A3a fix round 3, N4)', () => {
       cause,
     });
 
-  it('toolDatabaseError: no_read is not found (D2), a folder holding hidden items says so, the rest is masked', () => {
-    expect(toolDatabaseError(wrapped(refused('no_read')))).toBe('not found');
-    expect(toolDatabaseError(wrapped(hidden()))).toBe('This folder holds items you cannot move.');
-    expect(toolDatabaseError(refused('no_edit'))).toBe(DATABASE_ERROR_PUBLIC);
+  it('the one mapper (databaseErrorPublic): no_read is not found (D2), a folder holding hidden items says so, the rest is masked', () => {
+    expect(databaseErrorPublic(wrapped(refused('no_read')))).toBe('not found');
+    expect(databaseErrorPublic(wrapped(hidden()))).toBe('This folder holds items you cannot move.');
+    expect(databaseErrorPublic(refused('no_edit'))).toBe(DATABASE_ERROR_PUBLIC);
   });
 
   it('a thrown refusal (the one registration) answers the mapped words', async () => {

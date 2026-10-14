@@ -125,9 +125,9 @@ export const PEER_RISKY_TOOL_SLUGS: ReadonlySet<string> = mcpPolicySet((p) => p.
  *  and other peers (egress to a third brain on this brain's credentials).
  *  Every tool of these families declares `peerRisky` on its policy; the
  *  family answers only a name no policy table holds (familyPeerRisky).
- *  Kept until A5 step 4 (owner decision, step 2 fix round 1): the family
- *  sweep (tool-policy-sweep.test.ts) reads it to hold every declared tool
- *  of a family to `peerRisky`. */
+ *  Kept past A5 step 4 for that answer (a connector's tool, a name that is
+ *  no tool); the family sweep (tool-policy-sweep.test.ts) reads it too, to
+ *  hold every declared tool of a family to `peerRisky`. */
 export const PEER_RISKY_TOOL_PREFIXES: readonly string[] = [
   'telegram_',
   'sandbox_',
