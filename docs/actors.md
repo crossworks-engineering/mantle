@@ -1008,11 +1008,14 @@ pipeline answers instead of calling a guard:
   `ownerCaller()` (a HEAD row has its GET's), else null. The manifest
   generator reads that from each route file with the TypeScript parser
   (`server/web/scripts/route-callers.ts`, the manifest's `reads`), never
-  from a list kept by hand. It refuses a handler that reads the caller and
-  also calls a session guard (the guard's effects would run twice) and a
-  read outside an exported handler. A row the owner guard does not serve
-  (public, link, render, a page, the any-login, chat, Telegram and member
-  lists) cannot carry it: its rows fail to build.
+  from a list kept by hand. It follows a handler a route file takes from
+  another route file (the /api/v1 files re-export, import or wrap their
+  base route's). It refuses a handler that reads the caller and also calls
+  a session guard (the guard's effects would run twice) and a read outside
+  an exported handler. A row the owner guard does not serve (public, link,
+  render, a page, the any-login, chat, Telegram and member lists) cannot
+  carry it, nor a catch-all route (its bare prefix may be the loader's
+  404): their rows fail to build.
 - **The gate answers it.** On such a row the gate runs the owner guard's
   answer once, in the request slot `enterCall` opened, before the handler
   (`answerRouteCaller`, `server/web/lib/auth/session.ts`): the actor named
