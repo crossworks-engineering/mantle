@@ -121,7 +121,18 @@ export type AppDbCaller = {
   /** A write that may change rows only, never the schema (an MCP write,
    *  team apps Phase 1): the SQL child's data-only authorizer. */
   dataOnly?: boolean;
+  /** Runs the provisioning a read does first (the registry row, the
+   *  declared schema, the viewer salt) and nothing else: a read on a
+   *  read-only actor names it a read-path write here (@mantle/tools
+   *  app_data_query, A5 step 4 fix round 1, LOW-4), never the caller's own
+   *  SQL. */
+  provision?: <T>(fn: () => Promise<T>) => Promise<T>;
 };
+
+/** A caller's provisioning wrapper, or a plain call. */
+function provisioner(opts: { provision?: AppDbCaller['provision'] }) {
+  return opts.provision ?? (<T>(fn: () => Promise<T>) => fn());
+}
 
 /** Minimal structural type for the bits of node:sqlite we use (keeps us
  *  independent of whether @types/node ships the declarations yet). */
@@ -600,8 +611,10 @@ export async function appDbQuery(
   opts: AppDbCaller = {},
 ): Promise<DbRows> {
   assertSafe(sql);
-  const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  const bound = await bindViewerParams(sql, params, viewerThunk(ownerId, appNodeId, reg.id, opts));
+  const provision = provisioner(opts);
+  const reg = await provision(() => ensureAppDatabase(ownerId, appNodeId, schema));
+  const viewer = viewerThunk(ownerId, appNodeId, reg.id, opts);
+  const bound = await bindViewerParams(sql, params, viewer && (() => provision(viewer)));
   // A read-only open never creates the file. On an app's very first query
   // (no declared DDL applied, nothing written yet) provision the empty DB
   // with a normal open first, so the read-only open has a file to attach.
@@ -932,9 +945,10 @@ function quoteIdent(name: string): string {
 export async function appDbTableDetails(
   ownerId: string,
   appNodeId: string,
-  opts: { callerKey?: string; schema?: AppDbSchema } = {},
+  opts: { callerKey?: string; schema?: AppDbSchema; provision?: AppDbCaller['provision'] } = {},
 ): Promise<{ schemaVersion: number; tables: AppDbTableDetail[] }> {
-  if (opts.schema) await ensureAppDatabase(ownerId, appNodeId, opts.schema);
+  const schema = opts.schema;
+  if (schema) await provisioner(opts)(() => ensureAppDatabase(ownerId, appNodeId, schema));
   const reg = await lookupAppDatabase(ownerId, appNodeId);
   if (!reg) return { schemaVersion: 0, tables: [] };
   if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();

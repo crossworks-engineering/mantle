@@ -7,13 +7,19 @@
  * under a read-only login stays read only (systemUnder), so the database
  * would refuse the provisioning. It is a named read-path write
  * (READ_PATH_WRITES 'repair:app-db'): it runs as its own system actor,
- * which writes, whoever reads. Pinned here by the actor the provisioning
- * runs as, called as a read-only login.
+ * which writes, whoever reads. Only the provisioning (fix round 1, LOW-4):
+ * the read itself, the caller's SQL, stays read only. Pinned here by the
+ * actors the provisioning and the read run as, called as a read-only login.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { READ_PATH_WRITES, currentActor, loginActor, runAsActor, type Actor } from '@mantle/db';
 
-const h = vi.hoisted(() => ({ actors: [] as (Actor | null)[] }));
+const h = vi.hoisted(() => ({
+  provision: [] as (Actor | null)[],
+  read: [] as (Actor | null)[],
+}));
+
+type Provision = <T>(fn: () => Promise<T>) => Promise<T>;
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -28,12 +34,21 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 }));
 vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  appDbTableDetails: async () => {
-    h.actors.push(currentActor());
+  appDbTableDetails: async (_o: string, _a: string, opts: { provision?: Provision }) => {
+    await opts.provision!(async () => h.provision.push(currentActor()));
+    h.read.push(currentActor());
     return { schemaVersion: 2, tables: [] };
   },
-  appDbQuery: async () => {
-    h.actors.push(currentActor());
+  appDbQuery: async (
+    _o: string,
+    _a: string,
+    _sql: string,
+    _p: unknown[],
+    _s: unknown,
+    opts: { provision?: Provision },
+  ) => {
+    await opts.provision!(async () => h.provision.push(currentActor()));
+    h.read.push(currentActor());
     return [];
   },
 }));
@@ -60,8 +75,9 @@ describe('the app data reads name their provisioning (A5 step 4)', () => {
     expect(app_data_query.policy.effect).toBe('read');
   });
 
-  it('runs as system(app-data) that writes, under a read-only login', async () => {
-    h.actors = [];
+  it('provisions as system(repair:app-db) that writes; the read stays read only', async () => {
+    h.provision = [];
+    h.read = [];
     const ro = loginActor(LOGIN, 'ro');
     const schema = await runAsActor(ro, () => app_data_schema.handler({ app_id: APP }, ctx));
     expect(schema.ok, JSON.stringify(schema)).toBe(true);
@@ -69,10 +85,16 @@ describe('the app data reads name their provisioning (A5 step 4)', () => {
       app_data_query.handler({ app_id: APP, sql: 'select 1' }, ctx),
     );
     expect(query.ok, JSON.stringify(query)).toBe(true);
-    expect(h.actors).toHaveLength(2);
-    for (const actor of h.actors) {
-      // system(app-data), not narrowed to read only by the login(ro) around it.
-      expect(actor).toEqual({ kind: 'system', reason: 'app-data' });
+    expect(h.provision).toHaveLength(2);
+    expect(h.read).toHaveLength(2);
+    for (const actor of h.provision) {
+      // The named read-path write, not narrowed by the login(ro) around it.
+      expect(actor).toEqual({ kind: 'system', reason: 'repair:app-db' });
+    }
+    for (const actor of h.read) {
+      // The read itself (the caller's SQL): system(app-data), read only
+      // under the login(ro) it runs for.
+      expect(actor).toMatchObject({ kind: 'system', reason: 'app-data', mode: 'ro' });
     }
     // Without the name, the same system work under login(ro) is read only.
     const { systemUnder } = await import('@mantle/db');

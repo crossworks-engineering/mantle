@@ -66,6 +66,13 @@ const NOT_FOUND =
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** An app data read's provisioning (its database's registry row, its
+ *  declared schema, its viewer salt) as the named read-path write
+ *  `repair:app-db` (A5 step 4): only that, never the read itself. */
+function provisionAppDb<T>(fn: () => Promise<T>): Promise<T> {
+  return runReadPathWrite('repair:app-db', fn);
+}
+
 /** The longest statement these tools take, and the most bound values. */
 export const APP_DATA_SQL_MAX = 100_000;
 export const APP_DATA_PARAMS_MAX = 1000;
@@ -277,17 +284,17 @@ export const app_data_schema: BuiltinToolDef = {
       const app = await reach(ctx, who, appId);
       if (!app) return { ok: false, error: NOT_FOUND };
       // A read that provisions the app's database (its registry row, its
-      // declared schema): a named read-path write (A5 step 4), so a read
-      // on a read-only actor still brings the app up.
-      const details = await runReadPathWrite('repair:app-db', () =>
-        asSystem(
-          () =>
-            appDbTableDetails(ctx.ownerId, app.id, {
-              callerKey: callerKey(who),
-              schema: app.manifest.sqlite,
-            }),
-          'app-data',
-        ),
+      // declared schema): that provisioning, and only it, is a named
+      // read-path write (A5 step 4; fix round 1, LOW-4), so a read on a
+      // read-only actor still brings the app up.
+      const details = await asSystem(
+        () =>
+          appDbTableDetails(ctx.ownerId, app.id, {
+            callerKey: callerKey(who),
+            schema: app.manifest.sqlite,
+            provision: provisionAppDb,
+          }),
+        'app-data',
       );
       recordAppAccess({
         ownerId: ctx.ownerId,
@@ -362,16 +369,17 @@ export const app_data_query: BuiltinToolDef = {
       });
       try {
         // The query provisions the app's database and its viewer salt
-        // first: a named read-path write (A5 step 4), as app_data_schema.
-        const rows = await runReadPathWrite('repair:app-db', () =>
-          asSystem(
-            () =>
-              appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
-                callerKey: callerKey(who),
-                viewer: viewerOf(who),
-              }),
-            'app-data',
-          ),
+        // first: that provisioning, never the caller's SQL, is a named
+        // read-path write (A5 step 4; fix round 1, LOW-4), as
+        // app_data_schema.
+        const rows = await asSystem(
+          () =>
+            appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
+              callerKey: callerKey(who),
+              viewer: viewerOf(who),
+              provision: provisionAppDb,
+            }),
+          'app-data',
         );
         ctx.step?.setOutput({ rows: rows.length });
         return { ok: true, output: { rows, row_count: rows.length, note: DATA_NOTE } };
