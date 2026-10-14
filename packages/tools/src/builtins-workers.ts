@@ -40,7 +40,7 @@ import { registerDynamicSchema } from './dynamic-schema';
 import { notFound } from './errors';
 import { str, strOpt, numOpt as num } from './coerce';
 import { resolveImageParams } from './image-params';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, fenceRetrieved, withFenceNote } from '@mantle/std';
 
 // ─── shared helpers ────────────────────────────────────────────────
 
@@ -438,8 +438,12 @@ export function buildSummarizeTextInput(
   const system =
     workerSystemPrompt?.trim() ||
     `You are a precise summarizer. Output a clean ${maxWords}-word summary in the same language as the source. No preamble, no closing remarks — just the summary.`;
-  const user = focus ? `${source}\n\n---\n\nFocus the summary on: ${focus}` : source;
-  return { system, user };
+  // The source may be anyone's text (an email, a page, a document): fenced,
+  // its forged markers defanged; the focus is the caller's own ask and stays
+  // outside (A10 part 1).
+  const fenced = fenceRetrieved(source);
+  const user = focus ? `${fenced}\n\n---\n\nFocus the summary on: ${focus}` : fenced;
+  return { system: withFenceNote(system), user };
 }
 
 const summarize_text: BuiltinToolDef = {

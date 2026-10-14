@@ -7,6 +7,7 @@
 
 import { getDefaultWorker, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
 import { step } from '@mantle/tracing';
+import { fenceRetrieved, stripFenceMarkers, withFenceNote } from '@mantle/std';
 import {
   chatWithFailover,
   recordChatUsage,
@@ -102,7 +103,7 @@ export async function probeExtractionModel(ownerId: string): Promise<void> {
 
 /**
  * The extractor's model input: its system prompt and the node's title, type
- * and body (the first 8000 characters). Pure, so the prompt can be pinned
+ * and body (the first 8000 characters, fenced as untrusted). Pure, so the prompt can be pinned
  * (background-prompts.test.ts).
  */
 export function buildExtractorInput(
@@ -117,9 +118,13 @@ export function buildExtractorInput(
     node.type === 'table'
       ? 'This is a structured data table (its column profile and leading rows follow). Describe what the table contains, what each column means, and what questions it can answer.\n\n'
       : '';
+  // The node's text came from outside (an email, a fetched page, an upload,
+  // other people's words): fenced, its forged markers defanged, and the
+  // system prompt says what the fence means (A10 part 1). The title sits
+  // outside the fence, defanged.
   return {
-    system: workerSystemPrompt || DEFAULT_EXTRACTOR_PROMPT,
-    user: `Title: ${node.title}\nType: ${node.type}\n\n${tableHint}Body:\n${body.slice(0, 8000)}`,
+    system: withFenceNote(workerSystemPrompt || DEFAULT_EXTRACTOR_PROMPT),
+    user: `Title: ${stripFenceMarkers(node.title)}\nType: ${node.type}\n\n${tableHint}Body:\n${fenceRetrieved(body.slice(0, 8000))}`,
   };
 }
 

@@ -39,6 +39,7 @@ import {
   type SummarizerParams,
 } from '@mantle/db';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
+import { fenceRetrieved } from '@mantle/std';
 import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/content/tree';
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import {
@@ -113,6 +114,10 @@ export function buildSummarizerMessages(
       return `#${i + 1} [${t.createdAt.toISOString()}] ${who}: ${t.text}`;
     })
     .join('\n');
+  // The transcript carries other people's words and tool output: fenced,
+  // its forged markers defanged (A10 part 1). buildChatMessages already ends
+  // the system prompt with the standing data-boundary rule that explains the
+  // fence (renderPersonaPrompt), so no note is added here.
   return buildChatMessages({
     model: worker.model,
     provider: worker.provider,
@@ -122,7 +127,7 @@ export function buildSummarizerMessages(
     digests: [],
     contentHits: [],
     history: [],
-    newUserText: transcript,
+    newUserText: fenceRetrieved(transcript),
   });
 }
 export async function summarizeAgentConversation(ownerId: string, agentId: string): Promise<void> {
