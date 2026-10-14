@@ -15,7 +15,11 @@
  *    before (outside the bound caller);
  *  - an Admin login on an area row: the gate resolves what it holds of the
  *    area, and the guard answers from it (requireArea is asked once);
- *  - a public row that writes binds its named actor (row.actor).
+ *  - a public row that writes binds its named actor (row.actor);
+ *  - a request that ends a login's sessions, or changes its role or
+ *    switch, finds the login afresh on its next guard read (audit L1);
+ *  - a frame document's row finds no login, and a find that fails is
+ *    answered to the first guard read, not asked again (audit L4).
  *
  * No database: the login rows come from a stand-in that counts its reads.
  */
@@ -31,6 +35,8 @@ const ADMIN = '55555555-5555-4555-8555-555555555555';
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const MEMBER = '22222222-2222-4222-8222-222222222222';
 const LIMITED = '44444444-4444-4444-8444-444444444444';
+/** A login whose row cannot be read (the database is down). */
+const FAILING = '66666666-6666-4666-8666-666666666666';
 
 const counts = vi.hoisted(() => ({
   loginRows: 0,
@@ -38,6 +44,12 @@ const counts = vi.hoisted(() => ({
   touches: 0,
   areas: 0,
   bearers: new Map<string, { userId: string; revokedAt: Date | null; expiresAt: Date }>(),
+  // What a request changed on a login row (L1): its epoch, role, switch.
+  epochs: new Map<string, number>(),
+  roles: new Map<string, 'admin' | 'member'>(),
+  disabled: new Set<string>(),
+  // The login endLoginSessions is ending, while the stand-in db runs it.
+  ending: null as string | null,
 }));
 
 vi.mock('../../lib/auth/login-row', () => {
@@ -46,14 +58,15 @@ vi.mock('../../lib/auth/login-row', () => {
     email: `${role}@example.invalid`,
     isOwner,
     displayName: null,
-    role,
+    role: counts.roles.get(id) ?? role,
     contactId: null,
-    disabledAt: null,
-    sessionEpoch: 0,
+    disabledAt: counts.disabled.has(id) ? new Date(0) : null,
+    sessionEpoch: counts.epochs.get(id) ?? 0,
   });
   return {
     loadLoginRow: async (id: string) => {
       counts.loginRows += 1;
+      if (id === FAILING) throw new Error('the database is down');
       if (id === ANCHOR) return row(ANCHOR, 'admin', true);
       if (id === ADMIN || id === LIMITED) return row(id, 'admin');
       if (id === MEMBER) return row(MEMBER, 'member');
@@ -71,11 +84,38 @@ vi.mock('../../lib/auth/login-row', () => {
   };
 });
 
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/db')>()),
-  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
-  brainOnWorkspacesNow: async () => true,
-}));
+vi.mock('@mantle/db', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@mantle/db')>();
+  // endLoginSessions' statements (no keys ended), stood in: the epoch bump
+  // on auth.users returns the new epoch; the rest change nothing here.
+  const chain = (result: () => unknown[]) => {
+    const c = {
+      set: () => c,
+      where: () => c,
+      returning: async () => result(),
+      then: (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
+        Promise.resolve(result()).then(ok, ko),
+    };
+    return c;
+  };
+  const bump = () => {
+    const id = counts.ending;
+    if (!id) return [];
+    const epoch = (counts.epochs.get(id) ?? 0) + 1;
+    counts.epochs.set(id, epoch);
+    return [{ epoch }];
+  };
+  const tx = {
+    update: (table: unknown) => chain(table === orig.authUsers ? bump : () => []),
+    delete: () => chain(() => []),
+  };
+  return {
+    ...orig,
+    db: { transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) },
+    loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+    brainOnWorkspacesNow: async () => true,
+  };
+});
 vi.mock('../../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/workspaces')>()),
   requireArea: async (caller: { loginId: string }) => {
@@ -151,6 +191,46 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
       const owner = await session.getOwnerOr401();
       return owner instanceof Response ? owner : Response.json({ ok: true, ...seen() });
     };
+    const guard = async () => {
+      const r = await session.getLoginOr401();
+      return r instanceof Response ? r.status : r.loginId;
+    };
+    // A request that ends its own login's sessions (sign out everywhere, a
+    // password change): the next guard read finds the dead cookie.
+    const ends = async () => {
+      const first = await guard();
+      if (typeof first === 'string') {
+        counts.ending = first;
+        try {
+          await session.endLoginSessions(first);
+        } finally {
+          counts.ending = null;
+        }
+      }
+      return Response.json({ first, second: await guard() });
+    };
+    // A request that disables its login (updateLogin forgets after its
+    // commit; the stand-in changes the row, then forgets as it does).
+    const disables = async () => {
+      const first = await guard();
+      if (typeof first === 'string') counts.disabled.add(first);
+      session.forgetRequestLogins();
+      return Response.json({ first, second: await guard() });
+    };
+    // An Admin login made a member on an area row: the gate's Admin view of
+    // the area is not read again; the owner guard refuses the member.
+    const demotes = async () => {
+      const a = await session.getOwnerOr401();
+      const first = a instanceof Response ? a.status : a.actor.id;
+      counts.roles.set(ADMIN, 'member');
+      session.forgetRequestLogins();
+      const b = await session.getOwnerOr401();
+      return Response.json({
+        first,
+        second: b instanceof Response ? b.status : b.actor.id,
+        reason: b instanceof Response ? ((await b.json()) as { reason?: string }).reason : null,
+      });
+    };
     const routes: RouteEntry[] = [
       // Real manifest patterns: registerRoutes builds their real rows.
       { pattern: '/api/notes', methods: ['GET'], load: async () => ({ GET: twice }) },
@@ -161,6 +241,12 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
       // A public row that reads the session (sign out), and one that writes.
       { pattern: '/api/auth/whoami', methods: ['GET'], load: async () => ({ GET: twice }) },
       { pattern: '/api/auth/signup', methods: ['POST'], load: async () => ({ POST: unread }) },
+      // Rows whose handler changes a login, then reads a guard again (L1).
+      { pattern: '/api/profile', methods: ['PUT'], load: async () => ({ PUT: ends }) },
+      { pattern: '/api/auth/logout', methods: ['POST'], load: async () => ({ POST: disables }) },
+      { pattern: '/api/users/:id', methods: ['PATCH'], load: async () => ({ PATCH: demotes }) },
+      // A frame document: its handler reads no guard (L4).
+      { pattern: '/api/apps/:id/frame', methods: ['GET'], load: async () => ({ GET: unread }) },
     ].map((r) => ({ catchAll: null, catchAllOptional: false, ...r }));
     app = new Hono();
     app.use('*', gate());
@@ -176,6 +262,9 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     counts.bearerRows = 0;
     counts.touches = 0;
     counts.areas = 0;
+    counts.epochs.clear();
+    counts.roles.clear();
+    counts.disabled.clear();
   });
 
   const json = async (res: Response) => (await res.json()) as Record<string, unknown>;
@@ -266,5 +355,56 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     const member = await app.request('/api/users', { headers: { cookie: cookieFor(MEMBER) } });
     expect(member.status).toBe(403);
     expect(await json(member)).toMatchObject({ reason: 'member-login' });
+  });
+
+  it('a guard read after the request ends its sessions sees the login afresh (L1)', async () => {
+    const res = await app.request('/api/profile', {
+      method: 'PUT',
+      headers: { cookie: cookieFor(MEMBER) },
+    });
+    // The cookie's epoch is the old one: the second read refuses it, as a
+    // guard that looked the login up itself did before step 3a.
+    expect(await json(res)).toEqual({ first: MEMBER, second: 401 });
+    expect(counts.epochs.get(MEMBER)).toBe(1);
+    expect(counts.loginRows).toBe(2);
+  });
+
+  it('a guard read after the request disables its login sees it disabled (L1)', async () => {
+    const res = await app.request('/api/auth/logout', {
+      method: 'POST',
+      headers: { authorization: bearerFor(MEMBER) },
+    });
+    expect(await json(res)).toEqual({ first: MEMBER, second: 401 });
+    // The device token is found afresh too.
+    expect(counts.bearerRows).toBe(2);
+  });
+
+  it('an Admin login demoted in the request: the owner guard reads the new role (L1)', async () => {
+    const res = await app.request(`/api/users/${MEMBER}`, {
+      method: 'PATCH',
+      headers: { cookie: cookieFor(ADMIN) },
+    });
+    expect(await json(res)).toEqual({ first: ADMIN, second: 403, reason: 'member-login' });
+  });
+
+  it('a frame document finds no login: its handler reads none (L4)', async () => {
+    const res = await app.request(`/api/apps/${MEMBER}/frame`, {
+      headers: { cookie: cookieFor(ADMIN) },
+    });
+    expect(await json(res)).toEqual({
+      via: 'cookie',
+      loginId: null,
+      role: null,
+      callerActor: 'system:http:no-login',
+      actor: 'system:http:no-login',
+    });
+    expect(counts.loginRows).toBe(0);
+  });
+
+  it("a find that fails is the first guard read's answer, not asked again (L4)", async () => {
+    const res = await app.request('/api/notes', { headers: { cookie: cookieFor(FAILING) } });
+    // The guard throws what the gate's find threw, as its own lookup did.
+    expect(res.status).toBe(500);
+    expect(counts.loginRows).toBe(1);
   });
 });
