@@ -2591,3 +2591,73 @@ itself (it does not, so a policy lookup reads no database).
 **What is left.** The A5 step 6 carry (L1, L4, L5, M2 at approval, above)
 is unchanged. The `.db` sweeps now run their calls through the gate as the
 callers they stand for, so a read there runs read only; CI runs them.
+
+### Step 3b fix round 1
+
+- **A real handler under the read-only rule (MEDIUM-1).** The parity proof
+  runs recorder handlers, so it cannot see what `ro` does to a real one.
+  `server/web/server/a5-read-tools-ro.db.test.ts` runs every builtin whose
+  policy is a read (the policy table's, `listReadOnlyBuiltinSlugs`), with
+  its real handler and the real pre-run checks, on a migrated scratch
+  database with the actor check and the edit check on, through the dev
+  console's caller (`ownerWebCaller()`, the owner's web surface, in the
+  owner's request scope) and an app broker's at admin rules
+  (`appBrokerCaller(web)`) and team rules (`appBrokerCaller(team)`, in the
+  app's viewer scope, as the broker enters it), plus a recipe whose steps
+  are reads (a nested step runs through the gate as the recipe's caller,
+  read only). Arguments are made from each schema, with ids of items seeded
+  first; a call may fail on its own terms, never as a read-only actor's
+  write (42501 `ro_actor`). Two passes: edit check `on` (no answer, and no
+  database error a handler turned into text, is the refusal) and `warn`
+  (the refusal is a notice, so a handler that swallows the error is caught
+  too). A read builtin of the test's own that writes an item is the
+  control, caught directly and as a recipe's step in both passes. A real
+  read tool caught there is a read-path write to name or move, never one
+  to list so the test passes. The parity proof also compares the real
+  preconditions in one case (`checkToolPreconditions` not stood in: a
+  `page_update` whose id names an item the caller may not change answers
+  the precondition's words, before the item rights), recorded on the
+  baseline commit's sources and equal after the change.
+- **The app caller and the surface agree (LOW-1).** `appBrokerCaller`
+  reads `masks` off the surface it is given, while dispatch runs on
+  `ctx.surface`. `dispatchTool` refuses an app caller that unmasks (made
+  for the owner's web) on any other surface or on none
+  (`APP_CALLER_SURFACE_ERROR`), never running it unmasked
+  (`dispatch-broker-mask.test.ts`).
+- **appToolRefusal can throw (LOW-3).** `GateNotReadyError` (a narrower
+  or pre-run check not registered) and an error that is no access refusal
+  go up through the broker as a 500: a misconfigured or failing process,
+  never a caller's call. Said in its comment.
+- **No tool path reads the session (LOW-4).** Inside a gated tool call
+  `currentCaller()` is the tool's gate caller, so the session readers of
+  `server/web/lib/auth` would throw or answer for the wrong caller.
+  `packages/tools/src/tool-paths-no-session.test.ts`: no package source
+  imports `@/lib/auth` or any module of server/web, and no server/web
+  module registers a builtin handler. A hook server/web hands a package at
+  boot is no import and is not seen; none reads the session today.
+
+**Carried to A5 step 6** (from the step 3b audit; no change here):
+
+- **LOW-2.** `gateCallerFor` sets no `facts.appRules` for an app broker's
+  allowed call, so the member-app narrower passes every allowed run (the
+  broker's verdict judged it first, and `appToolRefusal` sets the rules
+  for a refusal only). In step 6, run the allowed call on the `app-tool`
+  ref carrying the verdict, with `appRules`, so the gate judges the run
+  it lets through by the same rule it refuses with.
+- **A future `withViewer` fold into `GateCaller.enterScope`** (the gateway
+  lens above). `scopeActor` (`packages/db/src/viewer.ts`, the workspace
+  scope's actor) binds `login(member, 'rw')` for a login scope whose outer
+  actor is not that login. Entered inside the gate, after step 3 bound the
+  read-only actor, it would rebind a read-write one and undo the read-only
+  rule. Enter the scope before the gate binds the call's actor (as the
+  brokers do today: `withViewer` outside `dispatchTool`), or keep a
+  read-only outer actor's mode in `scopeActor`.
+
+**Carried to A8** (the matrix):
+
+- **LOW-5.** `setDrawSvg` (`@mantle/content`, called from
+  `server/web/lib/draw-snapshot.ts`) writes a draw's cached SVG from two
+  reads, `GET /api/draws/:id/svg` and
+  `GET /api/export/:id`, and is not a named read-path write
+  (`READ_PATH_WRITES`). Name it (or move it to a worker) with the A8
+  read-path matrix.
