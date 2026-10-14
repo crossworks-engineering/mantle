@@ -4,7 +4,10 @@
  * it did before the route ran through dispatch: a database error is the
  * opaque 500, an edit check refusal its 403 or 404. Never a 400 that reads
  * the error's text out (the SQL, its params). A handler's own refusal (it
- * returns, never throws) stays the route's 400.
+ * returns, never throws) stays the route's 400. And a table the gate's item
+ * pre-check refuses (fix round 2) answers as the database's edit check did
+ * before: 403 item-workspace for one the scope reads but may not change,
+ * 404 for one it does not read, the same bodies.
  *
  * The routes run behind the app's own error answer (server/app-error.ts);
  * the session, the key's hidden items and the two tools' handlers are
@@ -14,6 +17,7 @@ import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureGateReady, getBuiltin, registerBuiltin, type BuiltinToolDef } from '@mantle/tools';
 import { AccessError } from '@mantle/std';
+import { itemNoRightError, itemNotInScopeError, READ_ONLY_COPY_ERROR } from '@mantle/db';
 import { answerAppError } from '@/server/app-error';
 import { POST } from '@/app/api/v1/tables/[id]/rows/route';
 import { PATCH } from '@/app/api/v1/tables/[id]/rows/[rowId]/route';
@@ -25,6 +29,7 @@ const h = vi.hoisted(() => ({
   fail: null as unknown,
   refuse: null as string | null,
   preFail: null as unknown,
+  item: null as { message: string; detail: 'no_read' | 'no_edit' | null } | null,
 }));
 
 // The tools' preconditions (a table id names a table) read the database:
@@ -35,6 +40,15 @@ vi.mock('../../../packages/tools/src/preconditions', async (importOriginal) => (
     if (h.preFail) throw h.preFail;
     return null;
   },
+}));
+
+// The gate's item pre-check (gate-prerun.ts) asks the scope what the write
+// may do to the table: stood in, to refuse as the scope's check refuses (a
+// table the scope reads but may not change, one it does not read).
+vi.mock('../../../packages/tools/src/item-write-gate', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  toolItemWriteRefusal: async () => h.item?.message ?? null,
+  toolItemWriteRefusalOf: async () => h.item,
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -115,10 +129,12 @@ async function answer(
   fail: unknown,
   refuse: string | null = null,
   preFail: unknown = null,
+  item: typeof h.item = null,
 ): Promise<{ status: number; body: Record<string, unknown>; text: string }> {
   h.fail = fail;
   h.refuse = refuse;
   h.preFail = preFail;
+  h.item = item;
   const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   try {
     const res = await send();
@@ -129,6 +145,7 @@ async function answer(
     h.fail = null;
     h.refuse = null;
     h.preFail = null;
+    h.item = null;
   }
 }
 
@@ -201,3 +218,62 @@ describe.each([
     expect(res.body).toEqual({ error: 'Table not found' });
   });
 });
+
+/** What main (v0.300.31 and before) answered for a write to a table the
+ *  key's scope reads but may not change: the handler's write met the
+ *  database's edit check, 42501 no_edit, which app.onError answers. */
+const ITEM_WORKSPACE = {
+  error: 'forbidden',
+  reason: 'item-workspace',
+  code: 'forbidden',
+  message: 'You cannot change this item in your workspaces.',
+};
+/** And for a table it does not read: 42501 no_read, the 404. */
+const NOT_FOUND = {
+  error: 'not found',
+  reason: 'not-found',
+  code: 'not_found',
+  message: 'Not found.',
+};
+
+describe.each([
+  ['POST /api/v1/tables/:id/rows', post],
+  ['PATCH /api/v1/tables/:id/rows/:rowId', patch],
+])(
+  '%s: the item pre-check refuses as the database did before dispatch (A5 step 4 fix round 2)',
+  (_name, send) => {
+    it('a table the scope reads but may not change is 403 item-workspace, its exact body', async () => {
+      const res = await answer(send, null, null, null, {
+        message: itemNoRightError(TABLE, 'edit'),
+        detail: 'no_edit',
+      });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(ITEM_WORKSPACE);
+    });
+
+    it('a read-only copy is the same 403 item-workspace', async () => {
+      const res = await answer(send, null, null, null, {
+        message: READ_ONLY_COPY_ERROR,
+        detail: 'no_edit',
+      });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(ITEM_WORKSPACE);
+    });
+
+    it('a table the scope does not read is 404, its exact body', async () => {
+      const res = await answer(send, null, null, null, {
+        message: itemNotInScopeError(TABLE),
+        detail: 'no_read',
+      });
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual(NOT_FOUND);
+    });
+
+    it('a refusal with no edit check detail stays the 400 in its words', async () => {
+      const message = 'Item id {x} is not written as a uuid is.';
+      const res = await answer(send, null, null, null, { message, detail: null });
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: message });
+    });
+  },
+);
