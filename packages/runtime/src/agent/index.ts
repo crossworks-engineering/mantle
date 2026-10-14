@@ -19,7 +19,7 @@ export {
   runToolLoop,
   resolveAgentTools,
   buildToolsForModel,
-  withReadResultTool,
+  loopToolRows,
   DEFAULT_MAX_ITERATIONS,
   summarizeToolOutcomes,
   resolveToolValidationMode,

@@ -29,6 +29,8 @@
  */
 
 import { loadProfilePreferences } from '@mantle/content';
+import { turnListedTools } from '@mantle/tools';
+import { withAgentViewer } from '../agent';
 import { resolveAssistantAgent } from './run-turn';
 import { assembleResponderTurn } from './assemble-turn';
 
@@ -104,7 +106,11 @@ export async function describeResponderPersona(
       .filter(Boolean)
       .join('\n\n'),
     skills: assembled.attachedSkills.map((s) => ({ slug: s.slug, name: s.name })),
-    toolSlugs: assembled.allowedTools.map((t) => t.slug).sort(),
+    // What the real loop would list: the grant the gate lets the agent's
+    // turn call in its own scope (as loopToolRows decides it).
+    toolSlugs: (await withAgentViewer(agent, () => turnListedTools(assembled.allowedTools)))
+      .map((t) => t.slug)
+      .sort(),
     delegateTo: assembled.delegateTo,
     readOnly: opts.readOnly === true,
     advisory: ADVISORY,

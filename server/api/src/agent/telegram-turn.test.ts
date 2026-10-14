@@ -350,9 +350,6 @@ vi.mock('@mantle/voice', () => ({
 vi.mock('@mantle/tools', () => ({
   registerAgentInvoker: vi.fn(),
   seedBuiltinTools: vi.fn(async () => ({ inserted: 0, updated: 0 })),
-  // The gate's turn listing (A5 step 5, pick B): proven in
-  // packages/tools/src/turn-listing.test.ts.
-  turnListedTools: vi.fn(async (rows: unknown[]) => rows),
 }));
 vi.mock('@mantle/runtime/heartbeats', () => ({
   buildOpenHeartbeatContext: () => '',

@@ -41,6 +41,9 @@ let dispatchToolImpl: (
 const insertedPendingArgs: Array<Record<string, unknown>> = [];
 
 vi.mock('@mantle/tools', async () => ({
+  // The gate's listing (A5 step 5, pick B; loopToolRows): proven against
+  // the real gate in tool-loop.listing.test.ts; here it lists the grant.
+  turnListedTools: async <T>(rows: readonly T[]) => [...rows],
   // The validator + error sanitizer are pure (no DB/runtime deps), so the
   // loop tests exercise the REAL implementations — mocking them would let
   // the wiring drift undetected.

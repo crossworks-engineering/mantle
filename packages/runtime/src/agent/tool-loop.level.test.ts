@@ -22,6 +22,12 @@ function where(): string {
 }
 
 vi.mock('@mantle/tools', async () => ({
+  // The gate's listing (A5 step 5, pick B): asked in the agent's scope,
+  // where dispatch calls (loopToolRows).
+  turnListedTools: vi.fn(async <T>(rows: readonly T[]) => {
+    h.levels.push(`list:${where()}`);
+    return [...rows];
+  }),
   validateToolArgs: (
     await vi.importActual<typeof import('../../../tools/src/validate-args')>(
       '../../../tools/src/validate-args',
@@ -162,6 +168,7 @@ describe('runToolLoop runs in the agent scope', () => {
     });
     expect(res.reply).toBe('done');
     expect(h.levels).toEqual([
+      'list:assistant(ws-team)',
       'model:assistant(ws-team)',
       'dispatch:assistant(ws-team)',
       'model:assistant(ws-team)',
@@ -171,6 +178,6 @@ describe('runToolLoop runs in the agent scope', () => {
 
   it('control: a helper answering no login is system work', async () => {
     await run({ agentId: 'a1', agentSlug: 'saskia' });
-    expect(h.levels).toEqual(['model:admin', 'dispatch:admin', 'model:admin']);
+    expect(h.levels).toEqual(['list:admin', 'model:admin', 'dispatch:admin', 'model:admin']);
   });
 });

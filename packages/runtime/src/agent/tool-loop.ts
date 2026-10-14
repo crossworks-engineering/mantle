@@ -36,6 +36,7 @@ import {
   toolSourceOf,
   unwrapUseTool,
   maskToolDatabaseErrors,
+  turnListedTools,
   TOOL_SEARCH_SLUG,
   USE_TOOL_SLUG,
   type DeferredToolset,
@@ -509,14 +510,24 @@ export async function resolveAgentTools(ownerId: string, slugs: string[]): Promi
   return resolveTools(ownerId, slugs);
 }
 
-/** The loop's tool rows: the agent's allowlist plus `read_result`, which is
- *  always offered when the agent has any tools (see runToolLoopInScope). Shared
- *  with `describeResponderTurnInput`, so the tool list it reports is the list
- *  the model is sent. */
-export async function withReadResultTool(ownerId: string, tools: Tool[]): Promise<Tool[]> {
-  if (tools.length === 0 || tools.some((t) => t.slug === 'read_result')) return tools;
+/**
+ * The loop's tool rows: of the agent's allowlist, only the tools the one gate
+ * lets this loop call in the scope it runs in (A5 step 5, owner pick B,
+ * turnListedTools), plus `read_result`, which is always offered when the
+ * agent has any tools (see runToolLoopInScope). The one place a loop's
+ * listing is decided: an assistant turn, a delegated child, a heartbeat fire
+ * and a run's worker turn all run through runToolLoopInScope, in the agent's
+ * scope, and so list exactly what dispatch (turnCaller) would call. The
+ * filter keeps the allowlist's order, so the sent array (and the cached
+ * prefix) changes once per agent and scope, then holds. Shared with
+ * `describeResponderTurnInput`, so the tool list it reports is the list the
+ * model is sent. Call it in the agent's scope.
+ */
+export async function loopToolRows(ownerId: string, tools: readonly Tool[]): Promise<Tool[]> {
+  const listed = await turnListedTools(tools);
+  if (listed.length === 0 || listed.some((t) => t.slug === 'read_result')) return listed;
   const rr = await resolveReadResultTool(ownerId);
-  return rr ? [...tools, rr] : tools;
+  return rr ? [...listed, rr] : listed;
 }
 
 /**
@@ -623,10 +634,11 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const maxIters = args.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const taint = args.taint ?? newTurnTaint();
   const handling = resolveResultHandling(args.resultHandling);
-  // Always offer `read_result` when the agent has any tools, so a spilled
+  // Only what the one gate lets this loop call here (loopToolRows), and
+  // always `read_result` when the agent has any tools, so a spilled
   // (oversized) result is never a dead end — even if the operator didn't add
   // it to the agent's allowlist. It's a read-only system capability.
-  const loopTools = await withReadResultTool(args.ownerId, args.tools);
+  const loopTools = await loopToolRows(args.ownerId, args.tools);
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
   const allToolDefs = await buildToolsForModel(loopTools, {
     ownerId: args.ownerId,

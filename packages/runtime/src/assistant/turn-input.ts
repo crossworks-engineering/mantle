@@ -14,7 +14,7 @@
  *
  * It runs the sim's read path (`prepareSimulatedTurn`: agent pick, retrieval,
  * assembly) and its message builder (`buildSimulatedMessages`), then the tool
- * loop's own tool-list step (`withReadResultTool` + `buildToolsForModel`).
+ * loop's own tool-list step (`loopToolRows` + `buildToolsForModel`).
  * Nothing is forked, so the payload is the turn's input byte for byte. Then
  * it stops: no chat call, no tool run, nothing written to the conversation
  * store. One trace is opened (kind 'manual'), so the retrieval snapshot is on
@@ -37,7 +37,7 @@ import {
   DEFAULT_MAX_ITERATIONS,
   buildToolsForModel,
   withAgentViewer,
-  withReadResultTool,
+  loopToolRows,
   type ChatMessage,
 } from '../agent';
 import { STABLE_PREFIX } from '../agent/messages';
@@ -198,7 +198,7 @@ export async function describeResponderTurnInput(
       const tools = await withAgentViewer(
         agent,
         async () =>
-          buildToolsForModel(await withReadResultTool(ownerId, assembled.allowedTools), {
+          buildToolsForModel(await loopToolRows(ownerId, assembled.allowedTools), {
             ownerId,
             delegateTo: assembled.delegateTo,
           }),

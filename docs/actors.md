@@ -1218,9 +1218,9 @@ findings, and the codemod's third batch.
   name to its binding with the TypeScript binder (a program of the one
   file, nothing resolved), not by its text: a parameter, a local or a catch
   variable that shadows a handler of the file (`POST(req, GET) { return
-  GET(); }`) or a reading handler it imports is its own binding, and is
+GET(); }`) or a reading handler it imports is its own binding, and is
   neither a run of that handler nor a wrap of it. A name in a type (`type T
-  = typeof GET`) runs nothing and is no use of a name; `typeof GET` in a
+= typeof GET`) runs nothing and is no use of a name; `typeof GET` in a
   value still is.
 - **The loader**: a catch-all entry whose row carries the caller (only a
   hand-built policy can make one: `buildRoutePolicy` refuses it) and whose
@@ -1323,7 +1323,7 @@ after each, its moved entries recorded):
    moves to the gate with its answer (`POST /api/users/:id/password` reads
    `ownerCallerWithSource()`). The owner decided the question above on
    2026-10-14: `GET` and `HEAD /api/updates/status` and `POST
-   /api/updates/check` require the settings area, as their rows say;
+/api/updates/check` require the settings area, as their rows say;
    `GET /api/updates/check` stays open to any Admin user. The Telegram
    chat rows wait for batch 5's must-do.
 5. Member, any-login, chat and Telegram routes: answer steps and readers
@@ -1358,10 +1358,10 @@ update routes.
   key, one without the notes area, a member's; with and without `?ws=`), an
   item the login may edit but not manage, `POST /api/pages/:id/move`,
   `DELETE /api/shares/:id` (a page's and an app's link), `POST
-  /api/recall/revisions/:id/restore`, `DELETE /api/apps/deleted/:id` (no
+/api/recall/revisions/:id/restore`, `DELETE /api/apps/deleted/:id` (no
   home stored, a home managed or not, deleted by someone other than the
   owner, no snapshot) and an app's data write (`POST
-  /api/apps/:id/db-broker`: the gate's part is the app read; D6's
+/api/apps/:id/db-broker`: the gate's part is the app read; D6's
   Informational switch is the database's, after it), each with the encoded
   id and the ids that are no item id.
 - **The moved writes** are pinned per cell: the sweep keeps the audit rows
@@ -1383,7 +1383,7 @@ update routes.
   (`getChatLoginOr401`) never asks an area, and the gate's area check
   would refuse an Admin user without the connectors area while letting a
   member in. The owner routes under `/api/telegram` (`PATCH
-  /api/telegram/chats/:id`) stay connectors rows. Their answers are
+/api/telegram/chats/:id`) stay connectors rows. Their answers are
   unchanged; batch 5 gives them a reader.
 
 **The gate's Admin step.** On a row whose handler reads the pipeline's
@@ -1476,7 +1476,7 @@ entries recorded):
    stubs, `/api/mcp-logins` and its tokens, the `/api/team-admin` clients,
    hub app, member chats, member items, needs-you, notify, requests and
    submissions stubs); `lib/workspaces.ts` (`POST
-   /api/workspaces/:id/archive` among them); the public rows that read the
+/api/workspaces/:id/archive` among them); the public rows that read the
    login (whoami, logout, sso, pair, OAuth consent); the two turn routes
    with a flag check first; `POST /api/dev-tools/queue-approval` (a flag
    check first); `GET /api/updates/check` (`getSessionUser`, the owner's
@@ -2156,20 +2156,23 @@ heartbeat's peer read. `tool-policy-snapshot.test.ts` holds the new set;
 `dispatch-parity.json` does not change (the mark is read only by a
 heartbeat fire).
 
-**Pick B (owner b): the assistant model sees only what the gate lets
-through.** `assembleResponderTurn`
-(`packages/runtime/src/assistant/assemble-turn.ts`) filters the tools a
-turn's grants resolve to with `turnListedTools`
+**Pick B (owner b): the model sees only what the gate lets through.**
+The one tool loop (`runToolLoopInScope`,
+`packages/runtime/src/agent/tool-loop.ts`) filters the tools it is handed
+with `loopToolRows`, which asks `turnListedTools`
 (`packages/tools/src/turn-listing.ts`): each by the ref dispatch calls it
-by, `gateLists` for the turn's own caller in the scope the turn runs in.
-A tool the gate would refuse there (an Admin-only or Admin-area tool, a
-create of an Admin-only kind or a shell tool in a workspace that does not
-hold Admin, a row with no policy) is not offered to the model, where
-before the model saw it and its call was refused. An owner turn (an Admin
-scope with every area) lists what it listed before; a turn outside any
-scope keeps the surface's own rules (`packages/tools/src/turn-listing.test.ts`).
-The list of an agent in a non-Admin scope changes once, so its prompt
-cache prefix resets once per agent, then holds. Every runner of the
-assembly follows (web, team, Telegram, the run workflows' turns,
-`ask_responder` and `ask_as_responder`, which now name the tools the
-responder would be offered in the caller's scope).
+by, `gateLists` for the loop's own caller (`turnCaller`, the one dispatch
+uses) in the agent's scope the loop runs in. A tool the gate would refuse
+there (an Admin-only or Admin-area tool, a create of an Admin-only kind
+or a shell tool in a workspace that does not hold Admin, a row with no
+policy) is not offered to the model, where before the model saw it and
+its call was refused. The filter sits in the loop, not in the assistant
+turn's assembly (fix round 1, M1), so every loop follows: an assistant
+turn (web, team, Telegram), a delegated child turn, a heartbeat fire and
+a run's worker turn (`tool-loop.listing.test.ts`). `responder_turn_input`
+lists through the same `loopToolRows`, and `ask_as_responder` names the
+tools the responder would be offered in its scope. An owner loop (an
+Admin scope with every area) lists what it listed before; the filter
+keeps the grant's order, so the list of an agent in a non-Admin scope
+changes once and its prompt cache prefix resets once per agent and
+scope, then holds.

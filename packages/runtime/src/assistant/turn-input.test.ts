@@ -84,7 +84,7 @@ vi.mock('../agent', () => ({
       { role: 'user', content: args.newUserText },
     ];
   }),
-  withReadResultTool: vi.fn(async (_owner: string, tools: Array<{ slug: string }>) => [
+  loopToolRows: vi.fn(async (_owner: string, tools: Array<{ slug: string }>) => [
     ...tools,
     { slug: 'read_result' },
   ]),

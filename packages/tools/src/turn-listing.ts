@@ -1,6 +1,9 @@
 /**
- * What an assistant turn lists (workspaces arch A5 step 5, owner pick B,
- * plan 23.5): only the tools the one gate lets the turn call. A tool its
+ * What a tool loop lists (workspaces arch A5 step 5, owner pick B,
+ * plan 23.5): only the tools the one gate lets the loop call. Asked in one
+ * place, the loop's own tool rows (loopToolRows in
+ * packages/runtime/src/agent/tool-loop.ts), so an assistant turn, a
+ * delegated child, a heartbeat fire and a run's worker turn all follow. A tool its
  * grants give but the gate refuses in this scope (an Admin-only tool or an
  * Admin-area tool in a workspace that does not hold Admin or the area, a
  * shell tool outside Admin, a create of an Admin-only kind outside Admin, a
@@ -45,7 +48,7 @@ function viewKey(policy: GatePolicy): string {
   return typeof s === 'object' ? `area:${String(s.area)}` : s;
 }
 
-/** The tools of `tools` an assistant turn in the current scope may call,
+/** The tools of `tools` a tool loop in the current scope may call,
  *  in their order. */
 export async function turnListedTools<T extends Tool>(tools: readonly T[]): Promise<T[]> {
   const callers = new Map<string, GateCaller>();
