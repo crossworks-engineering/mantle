@@ -2200,3 +2200,15 @@ scope, then holds.
   workspace heartbeat outside Admin could queue `telegram_send` (the
   connectors area) and the owner's approval sent it. A call the gate lets
   through still queues (`turn-listing.test.ts`, `tool-loop.test.ts`).
+- **M3: an ungated entry never hands a browser a database error's text.**
+  The app tool brokers answer dispatch's result as it is
+  (`server/web/app/s/[token]/tool-broker/route.ts`,
+  `server/web/lib/app-runner.ts`,
+  `server/web/app/api/apps/[id]/tool-broker/route.ts`), and an ungated
+  builtin answers a caught error with its text (`dispatchUngated`, the
+  table tools' `errorMessage`). Until step 3b removes the ungated path,
+  `dispatchTool` runs it under `maskToolDatabaseErrors` for every surface
+  but the owner's own web (the dev console, an app the Admin workspace
+  alone holds), so a member's or a contact's broker call says the one
+  mapper's words for a database error and keeps any other error's text
+  (`packages/tools/src/dispatch-ungated-mask.test.ts`).

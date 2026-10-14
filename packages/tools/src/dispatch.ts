@@ -114,7 +114,16 @@ export async function dispatchTool(
     // masking (tool-error-mask.ts). A turn masks in the tool loop.
     return mcpVia(caller) ? maskToolDatabaseErrors(`mcp ${tool.slug}`, run) : run();
   }
-  return dispatchUngated(tool, input, ctx, depth);
+  // The entries that name no caller yet (A5 step 3b moves them): an app
+  // tool broker answers the result to a browser as it is, so a database
+  // error's text (SQL, params) is masked in the one mapper's words, for
+  // every surface but the owner's own web (the dev console, an app the
+  // Admin workspace alone holds), which reads it as before (A5 step 5 fix
+  // round 1, M3).
+  const ungated = () => dispatchUngated(tool, input, ctx, depth);
+  return ctx.surface?.kind === 'web'
+    ? ungated()
+    : maskToolDatabaseErrors(`ungated ${tool.slug}`, ungated);
 }
 
 /** Whether `caller` is a key or a peer: it never confirms for the owner. */
