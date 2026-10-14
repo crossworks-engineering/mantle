@@ -88,19 +88,22 @@ describe('isBlockedIp', () => {
       '100.100.100.200',
       '192.0.0.192',
       'fd00:ec2::254',
+      'fd20:ce::254',
+      'fd20:00ce:0000:0000:0000:0000:0000:0254',
       '::ffff:100.100.100.200',
     ]) {
       expect(isBlockedIp(ip), ip).toBe(true);
       expect(isBlockedIp(ip, { allowLan: true }), ip).toBe(true);
     }
     // Their neighbours stay LAN space.
-    for (const ip of ['100.100.100.199', '192.0.0.191', 'fd00:ec2::253']) {
+    for (const ip of ['100.100.100.199', '192.0.0.191', 'fd00:ec2::253', 'fd20:ce::253']) {
       expect(isBlockedIp(ip, { allowLan: true }), ip).toBe(false);
     }
     for (const u of [
       'http://100.100.100.200/latest/meta-data/',
       'http://192.0.0.192/opc/v2/instance/',
       'http://[fd00:ec2::254]/latest/meta-data/',
+      'http://[fd20:ce::254]/computeMetadata/v1/',
     ]) {
       await expect(assertEgressUrl(u, { allowLan: true }), u).rejects.toBeInstanceOf(
         EgressRefusedError,

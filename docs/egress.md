@@ -51,8 +51,8 @@ stay free of node builtins). On top of the platform fetch:
   loopback, CGNAT (Tailscale) and unique local IPv6 through and still
   refuses link-local (the metadata address lives there), the cloud metadata
   addresses that sit inside the private ranges (Alibaba `100.100.100.200`,
-  Oracle `192.0.0.192`, AWS IPv6 `fd00:ec2::254`), "this network",
-  multicast and reserved space.
+  Oracle `192.0.0.192`, AWS IPv6 `fd00:ec2::254`, GCP IPv6
+  `fd20:ce::254`), "this network", multicast and reserved space.
 - **The connection is pinned to a checked address** (DNS rebinding). The
   check before a hop resolves the name for a clear refusal; the connection
   then goes through an undici `Agent` whose `connect.lookup` resolves again,

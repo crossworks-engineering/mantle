@@ -22,8 +22,8 @@
  * private ranges (RFC 1918, loopback, CGNAT, unique local IPv6) through and
  * still refuses link-local (the cloud metadata address lives there), the
  * cloud metadata addresses inside the private ranges (Alibaba's
- * 100.100.100.200, Oracle's 192.0.0.192, AWS's fd00:ec2::254), "this
- * network", multicast and reserved space.
+ * 100.100.100.200, Oracle's 192.0.0.192, AWS's fd00:ec2::254, GCP's
+ * fd20:ce::254), "this network", multicast and reserved space.
  *
  * DNS rebinding is closed by pinning: the name is resolved and checked
  * before each hop (for a clear refusal), and the connection itself goes
@@ -210,6 +210,11 @@ function zeroes(b: Uint8Array, from: number, to: number): boolean {
 /** The AWS IPv6 metadata address, fd00:ec2::254. */
 const AWS_METADATA_V6 = [0xfd, 0, 0x0e, 0xc2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02, 0x54];
 
+/** The GCP IPv6 metadata address, fd20:ce::254. Like AWS's, a pure IPv6
+ *  address inside fc00::/7: there is no IPv4-mapped or NAT64 form of it
+ *  (those wrap IPv4 addresses, and 169.254.169.254 is refused already). */
+const GCP_METADATA_V6 = [0xfd, 0x20, 0, 0xce, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02, 0x54];
+
 function isBlockedIpv6(ip: string, allowLan: boolean): boolean {
   const b = ipv6ToBytes(ip);
   if (!b) return true;
@@ -238,6 +243,7 @@ function isBlockedIpv6(ip: string, allowLan: boolean): boolean {
   if (b[0] === 0xfe && (b[1]! & 0xc0) === 0xc0) return true; // fec0::/10 site-local (deprecated)
   if (b[0] === 0xff) return true; // ff00::/8 multicast
   if (AWS_METADATA_V6.every((x, i) => b[i] === x)) return true; // fd00:ec2::254, inside fc00::/7
+  if (GCP_METADATA_V6.every((x, i) => b[i] === x)) return true; // fd20:ce::254, inside fc00::/7
   if ((b[0]! & 0xfe) === 0xfc) return !allowLan; // fc00::/7 unique-local
   return false;
 }
