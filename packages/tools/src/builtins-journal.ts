@@ -69,6 +69,7 @@ function compact(n: JournalRow) {
 
 const journal_list: BuiltinToolDef = {
   slug: 'journal_list',
+  autoGrant: true,
   // The owner's private corpus: a workspace user's turn only with
   // teamPrivateReads.
   policy: {
@@ -134,6 +135,7 @@ const journal_list: BuiltinToolDef = {
 
 const journal_get: BuiltinToolDef = {
   slug: 'journal_get',
+  autoGrant: true,
   // The owner's private corpus: a workspace user's turn only with
   // teamPrivateReads.
   policy: {
@@ -170,6 +172,7 @@ const journal_get: BuiltinToolDef = {
 
 const journal_create: BuiltinToolDef = {
   slug: 'journal_create',
+  autoGrant: true,
   policy: { effect: 'write', spends: 'none', scope: 'admin-kind', keyArea: 'journal' },
   name: 'Add a journal entry',
   description:
@@ -246,6 +249,7 @@ const journal_create: BuiltinToolDef = {
 
 const journal_update: BuiltinToolDef = {
   slug: 'journal_update',
+  autoGrant: true,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -308,6 +312,7 @@ const journal_update: BuiltinToolDef = {
 
 const journal_resolve_gap: BuiltinToolDef = {
   slug: 'journal_resolve_gap',
+  autoGrant: true,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -418,8 +423,8 @@ export const JOURNAL_TOOL_SLUGS: readonly string[] = JOURNAL_TOOLS.map((t) => t.
 
 /** Subset auto-granted to conversational agents (responder/assistant) at boot.
  *  Read + add/update/resolve — NOT delete (destructive ops are explicit grants):
- *  every journal tool but its delete, read off the definitions (A5 step 6a:
- *  no list of names). */
+ *  the journal tools whose definition says `autoGrant` (fix round 1, LOW-7:
+ *  each by name, so a new tool is not granted until it says so). */
 export const JOURNAL_AUTO_GRANT_SLUGS: readonly string[] = JOURNAL_TOOLS.filter(
-  (t) => t !== journal_delete,
+  (t) => t.autoGrant === true,
 ).map((t) => t.slug);

@@ -82,6 +82,7 @@ function compact(c: ContactRow) {
 
 const contact_find: BuiltinToolDef = {
   slug: 'contact_find',
+  autoGrant: true,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'contacts' },
   name: 'Find a contact',
   description:
@@ -115,6 +116,7 @@ const contact_find: BuiltinToolDef = {
 
 const contact_list: BuiltinToolDef = {
   slug: 'contact_list',
+  autoGrant: true,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'contacts' },
   name: 'List contacts',
   description:
@@ -148,6 +150,7 @@ const contact_list: BuiltinToolDef = {
 
 const contact_get: BuiltinToolDef = {
   slug: 'contact_get',
+  autoGrant: true,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'contacts' },
   preconditions: CONTACT_ID_PRE,
   name: 'Read a contact',
@@ -184,6 +187,7 @@ const ONLY_WHEN_ASKED =
 
 const contact_create: BuiltinToolDef = {
   slug: 'contact_create',
+  autoGrant: true,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -256,6 +260,7 @@ const contact_create: BuiltinToolDef = {
 
 const contact_update: BuiltinToolDef = {
   slug: 'contact_update',
+  autoGrant: true,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -391,8 +396,8 @@ export const CONTACT_TOOLS: BuiltinToolDef[] = [
 /** Subset auto-granted to conversational agents (responder/assistant) at boot.
  *  Reads + adds, NOT delete — destructive ops should be explicit grants in
  *  /settings/tools, not silently auto-added to every agent's allowlist.
- *  Every contact tool but its delete, read off the definitions (A5 step 6a:
- *  no list of names). */
+ *  The contact tools whose definition says `autoGrant` (fix round 1, LOW-7:
+ *  each by name, so a new tool is not granted until it says so). */
 export const CONTACT_AUTO_GRANT_SLUGS: readonly string[] = CONTACT_TOOLS.filter(
-  (t) => t !== contact_delete,
+  (t) => t.autoGrant === true,
 ).map((t) => t.slug);

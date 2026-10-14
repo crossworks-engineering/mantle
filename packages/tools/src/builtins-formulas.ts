@@ -73,6 +73,7 @@ function targetsOf(n: FormulaRow) {
 
 const formula_list: BuiltinToolDef = {
   slug: 'formula_list',
+  autoGrant: true,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'List formulas',
   description:
@@ -127,6 +128,7 @@ const formula_list: BuiltinToolDef = {
 
 const formula_get: BuiltinToolDef = {
   slug: 'formula_get',
+  autoGrant: true,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Read a formula',
   description:
@@ -164,6 +166,7 @@ const formula_get: BuiltinToolDef = {
 
 const formula_evaluate: BuiltinToolDef = {
   slug: 'formula_evaluate',
+  autoGrant: true,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Evaluate a formula',
   description:
@@ -237,6 +240,7 @@ const SPEC_PARAM_DESC =
 
 const formula_create: BuiltinToolDef = {
   slug: 'formula_create',
+  autoGrant: true,
   policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'formula' },
   name: 'Save a formula',
   description:
@@ -278,6 +282,7 @@ const formula_create: BuiltinToolDef = {
 
 const formula_update: BuiltinToolDef = {
   slug: 'formula_update',
+  autoGrant: true,
   policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')] },
   name: 'Update a formula',
   description:
@@ -358,8 +363,8 @@ export const FORMULA_TOOLS: BuiltinToolDef[] = [
 export const FORMULA_TOOL_SLUGS: readonly string[] = FORMULA_TOOLS.map((t) => t.slug);
 
 /** Read + evaluate + author, but NOT delete (destructive ops are explicit):
- *  every formula tool but its delete, read off the definitions (A5 step 6a:
- *  no list of names). */
+ *  the formula tools whose definition says `autoGrant` (fix round 1, LOW-7:
+ *  each by name, so a new tool is not granted until it says so). */
 export const FORMULA_AUTO_GRANT_SLUGS: readonly string[] = FORMULA_TOOLS.filter(
-  (t) => t !== formula_delete,
+  (t) => t.autoGrant === true,
 ).map((t) => t.slug);

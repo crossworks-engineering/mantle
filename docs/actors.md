@@ -3246,3 +3246,11 @@ marked. `packages/tools/src/third-party.test.ts`,
 `packages/runtime/src/agent/tool-loop.test.ts`,
 `server/api/src/workflows/runs-worker-turn.test.ts`,
 `server/web/lib/runs/execute-item.db.test.ts`.
+
+**LOW-7, auto-grant is named tool by tool.** Step 6a read the auto-grant
+lists as "every tool of the family but its delete", so a new contact,
+journal or formula tool would have been granted to every conversational
+agent silently. Each definition now says `autoGrant: true` itself (the
+fifteen of today: five contact, five journal, five formula tools), the
+lists read that field, and `packages/tools/src/destructive-coverage.test.ts`
+pins the set.

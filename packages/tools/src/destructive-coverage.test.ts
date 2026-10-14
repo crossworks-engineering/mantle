@@ -259,6 +259,59 @@ describe('no destructive or confirm-gated tool rides an auto-grant list', () => 
   }
 });
 
+// ---- the auto-grant set is named tool by tool (A5 step 6a fix round 1, LOW-7)
+
+describe("auto-grant is each tool's own `autoGrant`, and today's set is pinned", () => {
+  it('exactly these builtins say autoGrant', () => {
+    // A new tool joins only by setting `autoGrant: true` on its definition
+    // and adding it here: a review decision, never a family default.
+    const said = TOOLS.filter((t) => t.autoGrant === true).map((t) => t.slug);
+    expect(said.sort()).toEqual(
+      [
+        'contact_find',
+        'contact_list',
+        'contact_get',
+        'contact_create',
+        'contact_update',
+        'journal_list',
+        'journal_get',
+        'journal_create',
+        'journal_update',
+        'journal_resolve_gap',
+        'formula_list',
+        'formula_get',
+        'formula_evaluate',
+        'formula_create',
+        'formula_update',
+      ].sort(),
+    );
+  });
+
+  it('each family list is its tools that say autoGrant', () => {
+    expect([...CONTACT_AUTO_GRANT_SLUGS]).toEqual([
+      'contact_find',
+      'contact_list',
+      'contact_get',
+      'contact_create',
+      'contact_update',
+    ]);
+    expect([...JOURNAL_AUTO_GRANT_SLUGS]).toEqual([
+      'journal_list',
+      'journal_get',
+      'journal_create',
+      'journal_update',
+      'journal_resolve_gap',
+    ]);
+    expect([...FORMULA_AUTO_GRANT_SLUGS]).toEqual([
+      'formula_list',
+      'formula_get',
+      'formula_evaluate',
+      'formula_create',
+      'formula_update',
+    ]);
+  });
+});
+
 // ---- invariant 2: the destructive / confirm overlap is deliberate -----------
 
 describe('destructive vs confirm-gated: every one-sided tool is accounted for', () => {

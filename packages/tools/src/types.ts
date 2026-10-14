@@ -325,6 +325,13 @@ export type BuiltinToolDef = {
   inputSchema: Record<string, unknown>;
   /** Whether the tool-call loop should pause for operator approval. */
   requiresConfirm?: boolean;
+  /** Granted at boot to the conversational agents (responder, assistant)
+   *  of its family's auto-grant list (CONTACT_, JOURNAL_ and
+   *  FORMULA_AUTO_GRANT_SLUGS, read by the system manifest). Set on each
+   *  tool by name, never inferred (A5 step 6a fix round 1, LOW-7): a new
+   *  tool of the family is not granted to every agent until it says so.
+   *  Never on a delete. */
+  autoGrant?: true;
   /** What the tool is, for every check that asks (A5, tool-policy.ts):
    *  read or write, what it spends, its Admin step, what it creates, what
    *  it reaches outside the database. Required: a builtin with no policy
