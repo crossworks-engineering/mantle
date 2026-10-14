@@ -1814,7 +1814,10 @@ driven in a file of its own, as the owner decision of part 4 is:
    (`login:rw:<id>`, a read key's `login:ro:<id>`) and `out=user:false`,
    each now what its GET cell notes; status, headers and body are as
    recorded. The more credentials file did not change (every cell there is
-   a refusal).
+   a refusal). Since fix round 1 `a4-head-logins.db.test.ts` runs the real
+   handler bodies of the 17 rows on a scratch database and holds each HEAD
+   to its GET (the same status and headers, no body) for the owner, another
+   Admin user, a member and no login.
 
 Everything else is byte for byte: the two recorded files outside those
 cells, the owner decision's file and the guard writes baseline (every
