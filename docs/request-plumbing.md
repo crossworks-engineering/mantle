@@ -27,10 +27,17 @@ later with some other message, or was accepted as if no field was sent.
   (`server/web/lib/body-limit.ts`) at `bodyCeilingFor(path)`. `json()`,
   `text()`, `formData()`, `arrayBuffer()` and the stream all stop at the
   ceiling with `BodyTooLargeError` (413), and the source is cancelled
-  there. A handler that swallowed the error still answers 413
-  (`bodyWentOver`). Nothing is read until a reader asks. An upload path
-  (no ceiling: the multipart uploads, which stream to disk under their own
-  caps) gets its request as before.
+  there. A handler that swallowed the error, or wrapped it in its own and
+  threw, still answers 413 (`bodyWentOver`). Nothing is read until a
+  reader asks. The capped request is built from the request's parts (url,
+  method, headers, signal), never `new Request(req, init)`: behind
+  `serve()` the handler's request is @hono/node-server's lightweight
+  stand-in, which undici refuses as a Request input. The ceiling is the
+  one of the decoded path Hono matched (`c.req.path`), in the loader and in
+  the gate. A streamed upload path (no ceiling: the uploads that spool to
+  disk under their own caps) gets its request as before; a multipart route
+  that calls `formData()` has its file cap plus the framing as its ceiling
+  (`MULTIPART_CEILINGS`).
 - **One reader** (`server/web/lib/read-body.ts`):
   - `readBody(req, Schema)`: the parsed data, or `BadBodyError` with the
     first problem (`firstIssue`), answered 400 `{ error }` by
@@ -46,6 +53,12 @@ later with some other message, or was accepted as if no field was sent.
     cap) reads under the JSON ceiling, which the loader does not apply
     there.
   - NUL characters are kept as sent (no route used `readJsonNoNul`).
+  - `invalid`: what a body that is not JSON reads as, for the two routes
+    whose body is optional and that answer whatever was sent (sign-out,
+    the turn's Stop), and for `readJsonNoNul` (`server/web/lib/strip-nul.ts`,
+    the push login routes), which reads through `readJson` with
+    `empty: null, invalid: null` (it had a reader of its own,
+    `readJsonCapped`, now gone).
 - **The codemod**: 188 route files moved (43 onto `readBody`, where the
   route's own refusal was already `{ error: firstIssue(...) }` 400; the
   rest onto `readJson`, keeping the route's own schema check and its own
@@ -79,12 +92,12 @@ fails on a change no kind names.
 The named changes of fold 1 (418 of 2178 cells; fold 2 names 9 more, below;
 every other cell byte for byte):
 
-| Kind                                               | Cells | What                                                                                                                                                                           |
-| -------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| chunked-413                                        | 207   | a chunked body over the ceiling answers 413 `body-too-large` where the route read it in full and answered whatever `{}` gave it (a 400 field message, a 404, a 500)            |
-| bad-json-400 (malformed)                           | 200   | `{"a":` answers 400 `{"error":"invalid JSON"}` where the route read `{}` or null and failed later with another message, or refused it with a text of its own (`invalid body`)  |
-| bad-json-400 (malformed, accepted as `{}` on main) | 9     | the same, where `{}` passed and the route went on as if no field was sent: the turn cancel, sign-out, the docs collections (3), the embedding settings (3) and the network key |
-| bad-json-400 (empty)                               | 2     | `PATCH /api/mcp-settings` and `PATCH /api/team-admin/settings` refuse an empty body with the one text where they said `invalid body`                                           |
+| Kind                                               | Cells | What                                                                                                                                                                                                                    |
+| -------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| chunked-413                                        | 207   | a chunked body over the ceiling answers 413 `body-too-large` where the route read it in full and answered whatever `{}` gave it (a 400 field message, a 404, a 500)                                                     |
+| bad-json-400 (malformed)                           | 200   | `{"a":` answers 400 `{"error":"invalid JSON"}` where the route read `{}` or null and failed later with another message, or refused it with a text of its own (`invalid body`)                                           |
+| bad-json-400 (malformed, accepted as `{}` on main) | 7     | the same, where `{}` passed and the route went on as if no field was sent: the docs collections (3), the embedding settings (3) and the network key (the turn cancel and sign-out answer as on main again, fix round 1) |
+| bad-json-400 (empty)                               | 2     | `PATCH /api/mcp-settings` and `PATCH /api/team-admin/settings` refuse an empty body with the one text where they said `invalid body`                                                                                    |
 
 Fold 1 changes no valid, NUL or array cell. The A4 sweeps
 (`server/web/server/a4-guard-sweep.test.ts` and its recorded files, the
@@ -102,14 +115,18 @@ caller's answer, before any body is read.
   named files. `eslint-rules/arch-lints.test.ts` holds the count at 0 and
   the named list to the files that still read.
 
-### Left open
+### The multipart routes (closed in fix round 1)
 
 The multipart uploads that use `formData()` (`/api/assistant/turn`'s
 attachment, `/api/assistant/transcribe`, `/api/tables/:id/import`,
-`/api/profile/photo` and `/logo`) sit on upload paths with no loader
-ceiling, as before: `formData()` buffers the whole body before their own
-size checks run. A streamed cap per route (its file limit plus the
-framing) would close that; it is not in this change.
+`/api/profile/photo` and `/logo`) sat on upload paths with no loader
+ceiling, so `formData()` buffered a chunked body of any size before their
+own size checks ran (the chat routes are open to member logins). Each has
+a ceiling now (`MULTIPART_CEILINGS`, `server/web/lib/body-limit.ts`): the
+chat attachment and the spreadsheet import the buffered upload cap
+(64 MB) plus 1 MB of framing, a voice clip 25 MB plus the framing, the
+photo and the logo 1 MB (twice the image cap, the routes' own declared
+refusal). The body sweep names the cells that moved (`chunked-413`).
 
 ## Fold 2: one error answer
 
@@ -296,7 +313,8 @@ answered the opaque 500 (an `AppDbMissingError` on a restore, say).
 - Scoreboard: `routeErrorTextFiles`, route files putting a caught error's
   text in a reply outside the named list, pinned at 0;
   `routeErrorTextAllowed`, the named files, 86 on main, 72 after the first
-  tranche, pinned at 28.
+  tranche, 28 after fold 2, pinned at 31 since fix round 1 widened the
+  count (below).
 - ESLint (`eslint-rules/route-plumbing.mjs`, `no-error-text-replies`): such
   a catch is an error in a route file outside `ERROR_TEXT_ALLOW`.
   `eslint-rules/arch-lints.test.ts` holds the list to the files that still
@@ -305,10 +323,10 @@ answered the opaque 500 (an `AppDbMissingError` on a restore, say).
 
 ### What stays named
 
-28 route files keep the error's text in a reply, each with its reason in
+31 route files keep the error's text in a reply, each with its reason in
 `ERROR_TEXT_ALLOW`:
 
-- `PUBLIC` (23): the text is the answer of a service the owner set up and
+- `PUBLIC` (25): the text is the answer of a service the owner set up and
   came to test or fix. The model tests (`agents/[id]/test/chat`, the seven
   `ai-workers/[id]/test/*`, `studio/sandbox`, `embedding/test`); the
   connectors' own servers (`mcp-connectors/[slug]/sync`,
@@ -318,13 +336,19 @@ answered the opaque 500 (an `AppDbMissingError` on a restore, say).
   `dev-tools/proxy`); the MCP health check (`mcp-status`); the push relay
   (`push/reset`); the speech provider's 422 (`assistant/transcribe`);
   Prettier's syntax error (`apps/[id]/format`); the spreadsheet parser
-  (`tables/[id]/import`, its `parse failed: ` only).
-- `NOT_YET` (5 + 1): the route answers a dialog in a shape of its own,
+  (`tables/[id]/import`, its `parse failed: ` only); the authorization
+  server's answer on the page the browser lands on after an MCP sign-in
+  (`mcp-connectors/oauth/callback`); SQLite's text about the owner's own
+  schema script (`apps/import`). The speech provider's text and a failed
+  turn's text go to an Admin user only: a member hears a fixed sentence
+  and the text stays in the log (fix round 1).
+- `NOT_YET` (6 + 1): the route answers a dialog in a shape of its own,
   and the move needs the client (jackdaw) first. `/api/docs/collections`,
-  `/api/docs/collections/[id]`, `/api/docs/collections/all`, `embedding` and
-  `embedding/rebuild` answer `{ ok: false, message }` with status 200 to a
-  settings dialog; `assistant/turn` puts a failed turn's text (mostly the
-  provider's answer) in the chat. The recipe, once the client reads the
+  `/api/docs/collections/[id]`, `/api/docs/collections/all`, `embedding`,
+  `embedding/rebuild` and `network/key` answer `{ ok: false, message }`
+  with status 200 to a settings dialog; `assistant/turn` puts a failed
+  turn's text (mostly the provider's answer) in the chat of an Admin
+  user. The recipe, once the client reads the
   one error answer: give the domain checks `InputError` (or a class with a
   row), delete the catch, run both sweeps and name the changes, take the
   file off the list and lower the pin.
@@ -332,3 +356,77 @@ answered the opaque 500 (an `AppDbMissingError` on a restore, say).
 The tool surface reads the table through `publicErrorMessage`; the tools'
 `visibilityRefusal` (`packages/tools`) still words the visibility list for
 a model itself.
+
+## Fix round 1
+
+An independent audit of the branch found the following; each is fixed and
+tested here.
+
+- **The real listener (H1).** `capRequestBody` built its request with
+  `new Request(req, init)`, which undici refuses for the lightweight
+  request @hono/node-server hands the app, so every POST, PUT and PATCH
+  answered 500 behind `serve()` while every in-process test passed. It is
+  built from the request's parts now, and
+  `server/web/server/serve-listener.test.ts` drives the loader and the
+  whole app through a real `serve({ overrideGlobalObjects: false })`
+  listener on an ephemeral port: a JSON, an empty, a malformed and a form
+  POST, a multipart upload, and chunked bodies over their ceilings. (A
+  client still writing a large body when the 413 is sent may see the
+  socket reset before it reads the answer; that is the transport, the same
+  on main, and the test sends again on such a reset.)
+- **Refusals that had turned opaque (M2).** The Files refusals the folder
+  and file routes answered 400 with their text (the files root, a folder
+  Mantle makes, a name with nothing a folder can be called, a parent
+  outside the files root or not there, a folder of another kind, a folder
+  too deep, the indexing switch on a node not there or of another kind)
+  are `InputError`s, 400 with the same text. The run engine's refusal of a
+  Runners action (no such run, not in a state for it: DBOS's own error) is
+  `RunActionError` (`server/web/lib/runners.ts`), 500 with its text as the
+  route said it; a fault of the engine's database stays the opaque 500. A
+  formula id that is not a uuid is `FormulaNotFoundError` (404) where the
+  database's cast error said its SQL. The other routes fold 2 moved to the
+  opaque 500 throw nothing else a caller must read: their plain errors are
+  inserts that returned no row, a key the vault cannot encrypt without its
+  master key, and the database's own errors.
+- **Multipart ceilings (M3)**: above.
+- **Bodies sign-out and Stop take (L4).** `POST /api/auth/logout` and the
+  turn's cancel read a body that is not JSON as none (`invalid: null`), as
+  on main: sign-out clears the cookie and answers 200.
+- **The count of error-text replies (L5)** saw only `.json(` replies. It
+  sees a route's own `json()` and `bad()` helpers, an HTML page, a
+  `return` of anything, and an `error:` or `message:` field (an item of a
+  `failed` list) now, which found five more files: the model combos and the
+  formula seed put a fault's text in their `failed` lists, and say a domain
+  error's text or a fixed sentence now (`itemErrorText`, `@mantle/std`);
+  the other three are named above (the pin went 28 to 31).
+- **The chat for members (L6)**: above.
+- **The gateway lens (L7).** The hand status mappers are rows of the one
+  table now, each answering byte for byte what its mapper did
+  (`server/web/server/domain-error-rows.test.ts` compares the whole wire
+  answer): `WsError` and `GrantError` (`wsRoute`, `grantsRoute`, which keep
+  running the rule-in-query call and answering the result), `LinkRefusedError`,
+  `ShareInputError` and `TeamLinkRetiredError` (`linkRefusal`, deleted),
+  `MemberInviteError` (`inviteErrorResponse`, deleted), `RecallWriteError`
+  (`recallWriteFailure`, deleted; its status by code moved with the class),
+  `ChatArchiveBusyError` and `ChatThreadNotFoundError` (`archiveResponse`'s
+  catch). Eleven routes caught a unique violation by hand to say their own
+  409; they call `conflictOnUnique(message, fn)` (`@mantle/db`), which
+  throws a `ConflictError` with that message (409 by its row): agents,
+  ai-workers, files/files, files/folders, heartbeats, keys, model-pools,
+  settings/worker-groups, skills, tool-groups, tools.
+- **What stays named under the lens.** `POST /api/users` maps two unique
+  violations by constraint and answers any other fault with a fixed 500
+  sentence of its own ("Could not create the user."), which the one
+  answer would turn into the opaque `internal error`; the docs collections
+  answer the settings dialog `{ ok: false, message }` (`NOT_YET` above).
+  Both keep their catch.
+- **The decoded path (L8).** The loader and the gate looked the ceiling up
+  by the raw path, so `/api/%61uth/...` got the JSON ceiling where Hono
+  routed it to an auth route; both read `c.req.path` now.
+- **A wrapped ceiling error (L9).** A handler that caught the ceiling's
+  error and threw its own answered the opaque 500; the loader checks
+  `bodyWentOver` when the handler throws too, and answers 413.
+
+The body sweep names one more kind: `item-fault`, the formula seed's
+`failed` list saying the fixed sentence where it said the database stand-in's
+text (6 cells). Every other cell of both sweeps answers as before.
