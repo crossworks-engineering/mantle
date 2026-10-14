@@ -269,8 +269,9 @@ describe('a contact share (0214)', () => {
           ownerId: 'owner-1',
           surface: { kind: 'contact', contactId: CONTACT, shareId: 'share-2' },
           // Through the one gate as the share's broker (A5 step 3b): via
-          // the contact, a database error's text masked.
-          caller: { entry: 'app', via: 'contact', masks: true },
+          // the contact, a database error's text masked, judged at contact
+          // rules (its app-tool ref first, A5 step 6a).
+          caller: { entry: 'app', via: 'contact', masks: true, appRules: 'contact' },
         },
       },
     ]);
