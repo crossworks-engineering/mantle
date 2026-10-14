@@ -3020,3 +3020,163 @@ callers they stand for, so a read there runs read only; CI runs them.
   `GET /api/export/:id`, and is not a named read-path write
   (`READ_PATH_WRITES`). Name it (or move it to a worker) with the A8
   read-path matrix.
+
+## Delete the lists; the carried items (A5 step 6a)
+
+Plan section 23.3, step 6a: the derived views and the name-keyed
+functions are deleted, and each consumer reads the tool's policy. With it,
+the items carried to step 6 from the step 5 and step 3b audits, but the
+ones named below as left.
+
+**What was deleted.** In `@mantle/tools`: the view machinery of
+`packages/tools/src/tool-policy.ts` (`policySlugSet`, `policySlugMap`,
+`policySlugList`), `ADMIN_ONLY_TOOL_SLUGS`, `OWNER_ONLY_IN_SCOPE`,
+`isAdminOnlyTool`, `adminGateLists`, `TOOL_ADMIN_AREAS`, `toolAdminArea`,
+`AREA_SYSTEM_TOOLS` and `adminToolGate` (`admin-gate.ts`, which keeps the
+area docs as comments), `CREATE_TOOL_SLUGS` (its file is gone),
+`ITEM_WRITE_TARGETS` and `itemWriteTargetsOf`, `LOWERING_TOOL_SLUGS` and
+`isLoweringCall`, `RECIPE_FORBIDDEN_SLUGS`, `BANNED_ITEM_TOOLS`,
+`MEMBER_APP_REFUSED_SLUGS`, `UNTRUSTED_CONTENT_TOOL_SLUGS`, the app data
+lists and `HEARTBEAT_EGRESS_SLUGS`. In `@mantle/mcp-core`: `mcpPolicySet`,
+`mcpDefinitionSet`, `KEY_SHARED_CONTENT_TOOLS`,
+`ADMIN_KIND_CREATE_TOOL_SLUGS`, `MCP_CREATE_TOOL_SLUGS`,
+`PEER_RISKY_TOOL_SLUGS`, `MCP_HANDWRITTEN_READ_ONLY`,
+`OWNER_KEY_SPENDING_TOOLS`, `LIST_TOOLS`, `TOOLSMITH_WRITE_SLUGS`,
+`isPeerRiskyTool`, `ownerPeerAllows`, `isMcpToolReadOnly` and
+`spendsOwnerKeys`.
+
+**Which consumers moved, and what they read.** The policy table keeps one
+lookup by name, `namedToolPolicy` (a builtin's, else an MCP surface
+definition's), beside `builtinPolicy`; what a policy says is read with
+`policyAdminOnly`, `policyArea`, `policySystemWhole`, `policyLowers`,
+`policyMayLower`, `policyRecipeForbidden`, `policyRunItemBanned` and
+`policyUntrusted`.
+
+- The `tool` gate source (`builtinToolGatePolicy`) reads the policies of
+  the tools a row names (its slug and its handler ref, as the lists
+  matched both), the recipe envelope (`classifyRecipeStepTool`, the
+  Toolsmith's reserved slugs) `recipe.step`, the run item ban (`parsePlan`
+  and `server/web/lib/runs/execute-item.ts`) `recipe.runItem`, the
+  member-app rule `memberApp` (`memberAppRefusedName`, with the three
+  retired team tools that have no policy), the item pre-check
+  (`builtinItems`, and `toolItemWriteRefusal` takes the policy's `items`),
+  the untrusted fence (dispatch's recipe steps and the tool loop)
+  `outside.untrusted`, the heartbeat egress gate `outside.egress`, the
+  client-sourced gate the policy's `lowering` and effect through its
+  injected `policyOf`, and the key email guard `keyEmail`.
+- The team private-reads gate reads `privateCorpus` on the four mail and
+  Journal reads (`assembleResponderTurn`'s `excludePrivateCorpus`: the team
+  turn, a workspace run's resume, a workspace Telegram turn).
+  `TEAM_PRIVATE_READ_SLUGS` stays exported from
+  `packages/content-core/src/profile-projections.ts`, the published
+  contract, for one jackdaw pair release, and
+  `packages/runtime/src/tool-policy-snapshot.test.ts` pins it to the
+  policies.
+
+**The pins.** The tool list pins (`eslint-rules/no-policy-name-lists.mjs`,
+the scoreboard's tool policy lists) come down from 5 lists in 5 files, 39
+entries, to 1, 1 and 4: the contract list above. The three auto-grant lists
+are read off their family's definitions (every tool but its delete), and
+the deferred selection's core (`packages/tools/src/selection/deferred.ts`)
+is not swept (`eslint-rules/arch-counts.mjs` `toolPolicySwept`): it orders
+which granted tools a turn sends in full and never changes a grant, as the
+system manifest's lists are grants.
+
+**Proof, no behaviour change.** `tool-policy-snapshot.test.ts` derives
+every former list from the policies against its literals, unchanged since
+A5 step 1. `dispatch-parity.json`, the MCP snapshots (`tools-list.*.json`,
+`mcp-calls.json`, `surface-*.json`) and `app-broker-parity.json` are byte
+for byte. The MCP tests read the old names from a helper rebuilt over the
+policies (`packages/mcp-core/src/policy-views.test-helper.ts`), and
+`server/web/lib/auth/turn-gate-parity.test.ts` keeps `adminToolGate` as its
+own oracle over the policies.
+
+**Carried L1, closed: the owner-only and connector checks are narrowers.**
+Two narrowers join the one gate's order: `owner-only`, first (the `tool`
+source sets `fields.ownerOnly` by the handler ref; the caller says whether
+the call's surface is the owner's, `facts.ownerSurface`, from dispatch's
+call or the tool loop's own surface), and `connector`, last
+(`packages/tools/src/connector-scope.ts`: the connector must be a resource
+of the scope's workspace, a stale mark is refused, a write needs the Write
+tick and a Moderator, a link scope reaches no connector; `gateCallerFor`
+loads the resource rows for a connector row in a workspace scope). A tool
+loop lists through the same caller (`loopToolRows` passes its surface and
+owner) and the queue-time check reads them too. What stays at dispatch: a
+read-only mark's inputs (only the call's arguments show them), a group
+that is missing or disabled (its own words, first, as before), and for an
+owner MCP connection the whole connector rule after its own pre-run check,
+in the order that surface always answered.
+
+No call answer changed (the parity files above). The list cells that
+changed, all listings of a tool the call was refused:
+
+- An owner-only builtin (every builtin marked `ownerOnly`, `tree_folders`
+  among them: scope any, listed before and refused at dispatch) is not
+  listed on a loop whose surface is not the owner's (a team turn, a
+  heartbeat fire on a team surface, a loop with no surface).
+  `packages/tools/src/turn-listing.test.ts` and
+  `packages/runtime/src/agent/tool-loop.listing.test.ts` pin both sides;
+  a loop on the owner's web surface lists them as before.
+- A connector write is not listed for a scope where no workspace holds the
+  connector with its Write tick and the login as a Moderator (the listing
+  tests' member turn: `crm_lookup`); a stale mark and a connector the
+  scope does not hold are not listed either.
+- `responder_turn_input` and the persona description list through the
+  same function without a surface, so only the connector cells apply to
+  them.
+
+**Carried LOW-2 of step 3b, closed: an allowed app call meets its
+app-tool ref.** `appBrokerCaller` carries the rules its broker judged at
+(by the surface `appToolScope` gave it: the owner's web for admin rules, a
+contact share's, else team rules), and dispatch runs a broker's top-level
+call inside the gate on its `app-tool` ref first, with the verdict that
+allowed it and `facts.appRules`, then on its own ref as before. The
+brokers did not change. `packages/tools/src/dispatch-app-run.test.ts`.
+
+**Carried round-2 LOW-1 of step 5, closed: references by slug and by
+path at queue time.** The queue-time check's context says `queue`. A
+Recall map named by a slug that names nothing the queuing scope reads is
+refused in the item check's not-in-scope words (the `recallMap` resolver's
+unresolved set); a create's target folder named by its path (the new
+policy field `createsIn`: `file_create`, `file_upload`, `folder_create`,
+`file_copy`, `folder_copy`) that does not resolve in a queuing scope
+outside Admin is refused the same way (a kind's root is structure, not
+asked). A folder named by its id was already checked there (its
+`node_exists` precondition reads in the scope). A call that runs answers as
+before. `packages/tools/src/queue-time-refs.test.ts`.
+
+**Carried round-2 LOW-2 of step 5, closed: gateCallRefusal runs no
+side-effecting check.** It throws `PreRunSideEffectError` at a caller that
+names its own pre-run check (an MCP connector row's check writes its audit
+row); its two callers name none. The `GateCaller.preRun` comment no longer
+says only enterCall runs it. `packages/db/src/gate.test.ts`.
+
+**Carried L4, closed: a run item's third-party result.** The item's result
+is stored with `untrusted: true` when the tool loop would fence it (the
+policy's `outside.untrusted`, or dispatch's provenance flag), the compiled
+state carries it per item, and `runStateUntrusted` says whether a run holds
+any: `run_state` and `run_plan` answer `untrusted` (the loop fences the
+whole result), and the resume turn
+(`server/api/src/workflows/runs-resume-turn.ts`) fences the state it puts
+in its prompt. `packages/runs/src/state-untrusted.test.ts`.
+`telegram_pending`'s mark on the owner MCP surface stays unread, by design:
+MCP hands a tool result to the login's own client as a tool result, and
+the protocol has no place for a fence; the mark is read wherever a
+Mantle model reads the result (a recipe step, a run item).
+
+**What remains.**
+
+- **Step 6b, per release:** delete a tool's `policy.items` only when its
+  database check exists with a test and `mantle.edit_check` is on on
+  every box of the release.
+- **Step 6c, the approval re-check (M2 at approval):** re-check the
+  originating scope when a pending call is approved; the pending row must
+  carry the scope whole (its moderator set and Admin view), a migration.
+- **L5, an owner question:** the heartbeat egress gate covers builtins by
+  their policy only, never a runtime row, and a run ignores egress. Should
+  a run item (and an http or connector row) honour the egress gate?
+- **The `withViewer` fold** into `GateCaller.enterScope` (step 3b).
+- **Kept by design:** `TEAM_PRIVATE_READ_SLUGS` (the contract, one pair
+  release), the three retired team tool names `memberAppRefusedName`
+  refuses with no policy, `PEER_RISKY_TOOL_PREFIXES` (the family sweep's),
+  and the deferred selection's core.
