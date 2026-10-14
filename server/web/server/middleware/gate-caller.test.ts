@@ -929,6 +929,105 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(() => session.chatLoginCaller()).toThrow(/answered no chat login/);
   });
 
+  it('a workspace and a grants write: the any-login audit row as workspaceCaller() wrote it (part 5 fix round 1)', async () => {
+    // Real rows of the any-login list served twice: through the reader, and
+    // through workspaceCaller() (lib/workspaces.ts, behind wsRoute and
+    // grantsRoute), the guard path these rows run today: getLoginOr401 and
+    // the api.write row it writes by hand after it (auditLoginMutation),
+    // which /api/shell and the self-logged /api/access-keys cannot show. The
+    // reader's handler writes that row by hand too, until the 'login'
+    // answer step writes it (docs/actors.md part 5, the hand batch): then
+    // its line goes and these cells hold the step to the one row.
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const session = await import('../../lib/auth/session');
+    const { workspaceCaller } = await import('../../lib/workspaces');
+    const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
+    const rows = [
+      { pattern: '/api/workspaces', methods: ['POST'] },
+      { pattern: '/api/grants/move', methods: ['POST'] },
+    ];
+    // What workspaceCaller() answers, projected from the login the
+    // pipeline answered.
+    const wsCallerOf = (login: ReturnType<typeof session.loginCaller>) =>
+      login.kind === 'admin'
+        ? { kind: 'admin', loginId: login.loginId, anchorId: login.user.id, user: login.user }
+        : {
+            kind: 'member',
+            loginId: login.loginId,
+            anchorId: login.member.anchorId,
+            user: null,
+          };
+    const build = (reads: boolean) => {
+      const app = new Hono();
+      app.use('*', gate());
+      const handle = async () => {
+        counts.handled += 1;
+        if (reads) {
+          const login = session.loginCaller();
+          await session.auditLoginMutation(login);
+          return Response.json(seen(wsCallerOf(login)));
+        }
+        const caller = await workspaceCaller();
+        return caller instanceof Response ? caller : Response.json(seen(caller));
+      };
+      registerRoutes(
+        app,
+        rows.map((e) => ({
+          ...e,
+          catchAll: null,
+          catchAllOptional: false,
+          ...(reads
+            ? { reads: Object.fromEntries(e.methods.map((m) => [m, 'login' as const])) }
+            : {}),
+          load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
+        })),
+      );
+      app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
+      return app;
+    };
+    const [pipelineApp, guardedApp] = [build(true), build(false)];
+    const key = (token: string) => () => ({ authorization: `Bearer ${token}` });
+    const all = [
+      ...creds,
+      { name: 'none', headers: () => ({}) },
+      { name: 'write-key', headers: key(KEY_TOKENS.write) },
+      { name: 'member-key', headers: key(KEY_TOKENS.member) },
+    ];
+    const audited = new Set<string>();
+    const members = new Set<string>();
+    for (const row of rows) {
+      for (const cred of all) {
+        const a = await drive(pipelineApp, 'POST', row.pattern, cred.headers());
+        const b = await drive(guardedApp, 'POST', row.pattern, cred.headers());
+        const label = `POST ${row.pattern} ${cred.name}`;
+        if (a.status >= 400) expect(a.handled, label).toBe(0);
+        else expect(a.handled, label).toBe(1);
+        // The answer, the audit rows and the stamp, as the guard path's.
+        expect({ ...a, handled: 0 }, label).toEqual({ ...b, handled: 0 });
+        if (a.status !== 200) continue;
+        // An Admin user's write writes one api.write row; a member's own
+        // session none (no key reaches these rows: the gate refuses it).
+        const actor = { owner: ANCHOR, admin: ADMIN, limited: LIMITED }[
+          cred.name.split('-')[0] as 'owner' | 'admin' | 'limited'
+        ];
+        expect(a.audits, label).toEqual(
+          cred.name.startsWith('member') ? [] : [`api.write POST ${row.pattern} ${actor}`],
+        );
+        if (a.audits.length) audited.add(cred.name);
+        else members.add(cred.name);
+      }
+    }
+    expect([...audited].sort()).toEqual([
+      'admin-bearer',
+      'admin-cookie',
+      'limited-bearer',
+      'limited-cookie',
+      'owner-cookie',
+    ]);
+    expect([...members].sort()).toEqual(['member-bearer', 'member-cookie']);
+  });
+
   it('a device token is stamped once, by the pipeline', async () => {
     const res = await drive(pipeline, 'GET', '/api/profile', creds[5]!.headers());
     expect(res.status).toBe(200);
