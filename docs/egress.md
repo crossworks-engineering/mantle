@@ -190,6 +190,19 @@ turn's own blocks are byte for byte as before
 hygiene (`packages/tools/src/errors.ts`) uses the same defang instead of its
 own copy of the pattern.
 
+The defang reads a skeleton of the text, not its exact characters (fix
+round 1): each character NFKC-normalised (fullwidth and styled letters and
+brackets to plain ones), zero-width and other invisible characters and
+combining marks dropped, Cyrillic, Greek and small-capital look-alikes
+folded to Latin, case ignored, and any run of spaces, newlines,
+underscores, hyphens, dots or colons (or none) taken between the words. A
+marker counts with a bracket on either side, so a missing closing bracket
+is still caught and prose that names the words is left alone. Text without
+a marker comes back byte for byte, so the live turn's prompts are unchanged
+for normal text. A per-call nonce in the markers was not added: the live
+turn's markers stay byte-identical, and the skeleton match covers the
+disguises a nonce would.
+
 The background jobs that read outside text now fence it:
 
 | Job | File | What is fenced |
