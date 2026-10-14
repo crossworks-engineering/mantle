@@ -45,6 +45,9 @@ export type RouteEntry = {
   methods: string[];
   catchAll: string | null;
   catchAllOptional: boolean;
+  /** The methods whose handler reads the caller the pipeline answers
+   *  (ownerCaller(), arch A4 step 3b): their rows' `caller`. */
+  reads?: readonly string[];
   load: () => Promise<RouteModule>;
 };
 

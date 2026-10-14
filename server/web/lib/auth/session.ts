@@ -716,6 +716,9 @@ export class RequestLogins {
   #changed = false;
   /** The gate's failed find, kept for the first guard read (keepFailure). */
   #failure: Promise<FoundLogin> | null = null;
+  /** The owner guard's answer the pipeline gave before the handler
+   *  (answerRouteCaller, A4 step 3b), which ownerCaller() reads. */
+  #owned: OwnerRouteLogin | null = null;
 
   /** Whether the request changed a login since the gate resolved it
    *  (forget): the gate's Admin view of the row's area is then not read. */
@@ -743,6 +746,18 @@ export class RequestLogins {
    *  call did before step 3a. A read after that one asks again. */
   keepFailure(failed: Promise<FoundLogin>): void {
     this.#failure = failed;
+  }
+
+  /** Keep the owner guard's answer the pipeline gave (answerRouteCaller).
+   *  It is the request's answer, given once before the handler: forget
+   *  does not drop it (a handler reads it at its start). */
+  keepOwnerAnswer(answer: OwnerRouteLogin): void {
+    this.#owned = answer;
+  }
+
+  /** The owner guard's answer the pipeline gave, or null. */
+  get ownerAnswer(): OwnerRouteLogin | null {
+    return this.#owned;
   }
 
   login(): Promise<FoundLogin> {
@@ -913,6 +928,58 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
     admin,
     facts: Object.freeze({ [HTTP_LOGINS]: logins, ...(admin ? { [HTTP_ADMIN]: admin } : {}) }),
   };
+}
+
+// ── The caller the pipeline answers (arch A4 step 3b) ───────────────────────
+
+/**
+ * The gate's step for a row whose handler reads the caller the pipeline
+ * answers (`row.caller`, from the route file's code: the manifest's
+ * `reads`): it runs the owner guard's answer once, before the handler, in
+ * the request slot enterCall opened, and so does what the guard did on the
+ * side, from the row: the login's actor named (and a device token's stamp),
+ * the scope entered or the system reason noted (self, area, an Admin
+ * write, the rollback switch), the item a write names checked, the create
+ * home named, the audit row of a write. A refusal is the gate's answer (the
+ * handler does not run); otherwise the answer is kept on the request's
+ * logins for ownerCaller(). The same function the guard runs
+ * (getOwnerOr401WithLogin), so the two cannot answer differently; a route
+ * whose handler still calls a guard has no `caller` and is answered by it.
+ */
+export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | null> {
+  if (row.caller !== 'owner') return null;
+  const logins = boundLogins(currentCaller());
+  // The gate binds the request's logins on every routed request
+  // (resolveHttpLogin): without them nothing could read the answer.
+  if (!logins) throw new Error(`answerRouteCaller: ${row.key} has no logins bound`);
+  const got = await getOwnerOr401WithLogin();
+  if (got instanceof NextResponse) return got;
+  logins.keepOwnerAnswer(got);
+  return null;
+}
+
+/**
+ * The owner the pipeline answered for this request (answerRouteCaller):
+ * what getOwnerOr401 answers, read from the bound caller, with no lookup
+ * and no effect (the gate did both). A handler reads it in place of the
+ * guard:
+ *
+ *     const owner = ownerCaller();
+ *
+ * There is no refusal to return: the gate refused before the handler ran.
+ * It throws where the pipeline answered no owner: a row with no `caller`
+ * (its handler must call a guard), a call nested in the request with a
+ * caller of its own, outside a routed request (a test calling a handler
+ * goes through runRoute). Fail closed: never a login nobody checked.
+ */
+export function ownerCaller(): SessionUser {
+  const answer = boundLogins(currentCaller())?.ownerAnswer;
+  if (!answer) {
+    throw new Error(
+      'ownerCaller(): the pipeline answered no owner for this request (the row has no caller)',
+    );
+  }
+  return answer.user;
 }
 
 /** Whether `loginId` holds `area`: the Admin view the gate resolved for

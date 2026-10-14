@@ -101,6 +101,9 @@ export type RouteLogins = 'owner' | 'any' | 'chat' | 'telegram' | 'member';
  *  how the id names it, and the path segment the id is in. */
 export type RouteItem = Readonly<{ need: ItemWriteNeed; ref: ItemRef; seg: number }>;
 
+/** Whose answer the pipeline gives before a handler (RouteRow.caller). */
+export type RouteCaller = 'owner';
+
 /** One ROUTE_POLICY row: one method of one manifest pattern. */
 export type RouteRow = Readonly<{
   /** `METHOD pattern`, the pattern as the manifest writes it. */
@@ -153,6 +156,14 @@ export type RouteRow = Readonly<{
    *  http:no-login for a manifest route, http:share-page for the /s page,
    *  http:render for a render page. */
   startsAs: string;
+  /** Whose answer the pipeline gives before the handler (arch A4 step 3b):
+   *  'owner', the owner guard's (getOwnerOr401WithLogin), run once by the
+   *  gate from this row (session.ts answerRouteCaller) and refused with
+   *  there; the handler reads it (ownerCaller()) and calls no guard. Set
+   *  where the route file's handler for the method reads it (the manifest's
+   *  `reads`, from the code: scripts/route-callers.ts); a HEAD row has its
+   *  GET's. Null: the handler's own guard answers, as before. */
+  caller: RouteCaller | null;
   /** The system reason a public route that writes runs as (plan 7, 20.3),
    *  null on every other row (it runs as its caller). A4 step 3a names the
    *  actor each runs as today: the request slot's first actor,
@@ -218,7 +229,7 @@ export function buildRouteRow(
   method: string,
   pattern: string,
   served: (key: string) => boolean = () => false,
-  opts: { page?: PageClass } = {},
+  opts: { page?: PageClass; reads?: boolean } = {},
 ): RouteRow {
   const m = method.toUpperCase();
   const key = `${m} ${pattern}`;
@@ -275,6 +286,23 @@ export function buildRouteRow(
   if (cls === null) throw new Error(`ROUTE_POLICY: ${key} has no class`);
   const page = pageClass !== null;
   const v1 = v1Route(m, pattern);
+  // The pipeline answers the owner guard's caller only on a row that guard
+  // serves: a session route of the owner (self, content or area), open to
+  // Admin or to the owner lists (a member's open reads and writes are the
+  // owner guard's too). A public, link or render row judges its own
+  // credential, and the other login lists have guards of their own.
+  const caller: RouteCaller | null = opts.reads ? 'owner' : null;
+  if (
+    caller &&
+    (pageClass !== null ||
+      isPublic ||
+      scope === null ||
+      (classLogins !== null && classLogins !== 'owner'))
+  ) {
+    throw new Error(
+      `ROUTE_POLICY: ${key} reads the owner caller, but the owner guard does not serve its row`,
+    );
+  }
   const startsAs =
     pageClass === 'render'
       ? 'http:render'
@@ -304,13 +332,19 @@ export function buildRouteRow(
     cors: linkCors(pattern),
     renderCookie: m === 'GET' && (cls === 'render' || isRenderAssetPath(path)),
     page,
+    caller,
     startsAs,
     actor: isPublic && effect === 'write' ? startsAs : null,
   });
 }
 
-/** The manifest shape the table is built from. */
-export type RouteManifestEntry = Readonly<{ pattern: string; methods: readonly string[] }>;
+/** The manifest shape the table is built from: `reads`, the methods whose
+ *  handler reads the caller the pipeline answers (RouteRow.caller). */
+export type RouteManifestEntry = Readonly<{
+  pattern: string;
+  methods: readonly string[];
+  reads?: readonly string[];
+}>;
 
 /** The methods a manifest entry is called with: its own, and HEAD where
  *  it serves GET (Hono answers HEAD with the GET handler). */
@@ -329,8 +363,11 @@ export function buildRoutePolicy(
   const served = (key: string) => keys.has(key);
   const table = new Map<string, RouteRow>();
   for (const entry of manifest) {
+    const reads = new Set(entry.reads ?? []);
     for (const m of servedMethods(entry)) {
-      const row = buildRouteRow(m, entry.pattern, served, opts);
+      // HEAD is answered by the GET handler: it reads what GET reads.
+      const read = reads.has(m === 'HEAD' && !entry.methods.includes('HEAD') ? 'GET' : m);
+      const row = buildRouteRow(m, entry.pattern, served, { ...opts, reads: read });
       table.set(row.key, row);
     }
   }

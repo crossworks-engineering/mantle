@@ -16,6 +16,7 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handlerReads } from './route-callers';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(webRoot, 'app');
@@ -28,6 +29,9 @@ type Entry = {
   /** Hono pattern, e.g. /api/tables/:id/export */
   pattern: string;
   methods: string[];
+  /** The methods whose handler reads the caller the pipeline answers
+   *  (ownerCaller(), arch A4 step 3b; route-callers.ts). */
+  reads: string[];
   /** Name of the catch-all param when the pattern ends in /*, else null. */
   catchAll: string | null;
   /** Whether a catch-all also matches the bare prefix ([[...x]] optional form). */
@@ -91,6 +95,7 @@ function toEntry(absFile: string): Entry {
     file: relative(webRoot, absFile).split('\\').join('/'),
     pattern: '/' + segments.join('/'),
     methods: exportedMethods(src),
+    reads: handlerReads(src, relative(webRoot, absFile).split('\\').join('/')),
     catchAll,
     catchAllOptional,
     segments,
@@ -134,6 +139,7 @@ const lines = entries.map(
   (e) =>
     `  { pattern: ${JSON.stringify(e.pattern)}, methods: ${JSON.stringify(e.methods)}, ` +
     `catchAll: ${JSON.stringify(e.catchAll)}, catchAllOptional: ${e.catchAllOptional}, ` +
+    (e.reads.length > 0 ? `reads: ${JSON.stringify(e.reads)}, ` : '') +
     // Extensionless specifier: tsc (bundler resolution) rejects explicit .ts
     // imports without allowImportingTsExtensions; tsx resolves both fine.
     `load: () => import(${JSON.stringify('../' + e.file.replace(/\.tsx?$/, ''))}) },`,
@@ -147,6 +153,8 @@ export type ManifestEntry = {
   methods: string[];
   catchAll: string | null;
   catchAllOptional: boolean;
+  /** The methods whose handler reads the caller the pipeline answers. */
+  reads?: string[];
   load: () => Promise<RouteModule>;
 };
 

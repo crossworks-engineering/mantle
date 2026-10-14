@@ -30,7 +30,7 @@ import {
   type GateCaller,
   type WorkspaceScope,
 } from '@mantle/db';
-import { resolveHttpLogin, type HttpLogin } from '../../lib/auth/session';
+import { answerRouteCaller, resolveHttpLogin, type HttpLogin } from '../../lib/auth/session';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 
 /**
@@ -179,6 +179,9 @@ function bearerToken(req: Request): string | null {
  * named actor, the same) and the guard names the login on it when it
  * reads it, as before: a route that reads no guard runs as it did. Step 6
  * names no create home (createHome null): the guard does, on its rules.
+ * On a row whose handler reads the caller the pipeline answers (row.caller,
+ * A4 step 3b) the gate runs the owner guard's answer itself, before the
+ * handler (answerRouteCaller), with what it does on the side.
  */
 function httpCaller(
   row: RouteRow,
@@ -350,9 +353,18 @@ function gateHandler(): MiddlewareHandler {
           const out = await enterCall(
             httpCaller(row, via, login, memo, accessKey),
             routeRef(row),
-            () => next(),
+            async () => {
+              // A row whose handler reads the caller the pipeline answers
+              // (row.caller, A4 step 3b): the owner guard's answer, given
+              // here once in the request slot, its effects with it; a
+              // refusal is the gate's answer and the handler does not run.
+              const refused = await answerRouteCaller(row);
+              if (refused) return refused;
+              await next();
+              return null;
+            },
           );
-          if (out.ok) return null;
+          if (out.ok) return out.value;
           if (!out.refusal.http) throw out.error;
           return Response.json(out.refusal.http.body, { status: out.refusal.http.status });
         },
