@@ -11,7 +11,6 @@
  *
  *  - turnCaller: an assistant turn (the tool loop: the web and Telegram
  *    turns, heartbeats, invoke_agent's child, the run workflows' turns).
- *    Its Admin view is read once per turn scope (memo).
  *  - runCaller: a run item (lib/runs/execute-item.ts).
  *  - pendingCaller: an approved pending call (pending.ts).
  *  - ownerWebCaller: the owner's own web call of a tool (the dev console,
@@ -19,13 +18,17 @@
  *
  * What each call's gate caller holds:
  *
- *  - the actor bound now (A2a: every entry binds one; none is a bug, and
- *    the call runs as system(tool:no-actor), logged once);
+ *  - the actor bound now (A2a: every entry binds one; none is a bug, logged
+ *    once, and the call runs with no actor, as before step 3a, so the actor
+ *    check refuses its item writes: low round, LOW-2);
  *  - the Admin view the call's Admin step reads (adminToolGate's reads,
  *    unchanged): in a workspace scope, whether it holds Admin and the area
  *    asked; in the rollback switch's gate scope, the login's own; outside
  *    any, unscoped (null: the surface rules decide). Read only when the
- *    policy names an Admin step;
+ *    policy names an Admin step, and on every call, as adminToolGate read
+ *    it: an area turned off mid-turn refuses the turn's next call (low
+ *    round, LOW-1). Only whether the scope holds Admin is kept per scope,
+ *    by scopeHoldsAdmin itself, as before;
  *  - the create-home rule of an assistant scope that names its login (the
  *    turn rule, pinned against turnCreateHome by turn-gate-parity.test.ts),
  *    for a builtin only: a runtime row names no home (its recipe's steps
@@ -41,7 +44,6 @@ import {
   loginHasArea,
   scopeHasArea,
   scopeHoldsAdmin,
-  systemActor,
   withTurnScope,
   type AdminView,
   type CallerVia,
@@ -137,28 +139,6 @@ async function readAdminView(
   return null;
 }
 
-/** A turn's Admin views, once per turn scope and area. */
-const turnViews = new WeakMap<WorkspaceScope, Map<string, Promise<AdminView | null>>>();
-
-function memoView(
-  scope: WorkspaceScope,
-  area: ScopeArea | null,
-  read: () => Promise<AdminView | null>,
-): Promise<AdminView | null> {
-  let views = turnViews.get(scope);
-  if (!views) {
-    views = new Map();
-    turnViews.set(scope, views);
-  }
-  const key = area ?? '';
-  let view = views.get(key);
-  if (!view) {
-    view = read();
-    views.set(key, view);
-  }
-  return view;
-}
-
 let warnedNoActor = false;
 
 /**
@@ -173,21 +153,18 @@ export async function gateCallerFor(
 ): Promise<GateCaller> {
   const ws = currentWorkspaceScope();
   const gate = ws ? null : currentGateScope();
-  let actor = currentActor();
-  if (!actor) {
-    if (!warnedNoActor) {
-      warnedNoActor = true;
-      console.warn('[tools] a tool call with no actor bound runs as system(tool:no-actor)');
-    }
-    actor = systemActor('tool:no-actor');
+  // No actor bound is a bug at the entry: the call runs with none, as it
+  // did before step 3a (never a system actor that may write).
+  const actor = currentActor();
+  if (!actor && !warnedNoActor) {
+    warnedNoActor = true;
+    console.warn('[tools] a tool call with no actor bound runs with none');
   }
   const need = policy?.scope ?? 'any';
   let admin: AdminView | null | undefined;
   if (need !== 'any') {
     const area = typeof need === 'object' ? (need.area as ScopeArea) : null;
-    const read = () => readAdminView(ws, gate, area);
-    const at = ws ?? gate;
-    admin = caller.entry === 'turn' && at ? await memoView(at, area, read) : await read();
+    admin = await readAdminView(ws, gate, area);
   }
   const turnScope = ws?.kind === 'assistant' && ws.loginId ? ws : null;
   return {

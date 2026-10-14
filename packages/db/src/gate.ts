@@ -73,8 +73,11 @@ export type CallerVia =
 /** The caller, resolved once at step 1. */
 export type GateCaller = Readonly<{
   /** Who the caller runs as (actor.ts): a login's login(rw | ro | owner),
-   *  the link, the contact share, an assistant, system(reason). */
-  actor: Actor;
+   *  the link, the contact share, an assistant, system(reason). Null: no
+   *  actor was bound where the call came in (a bug: a tool call through
+   *  dispatch, A5 step 3a LOW-2); the call runs with none, as before, so
+   *  the actor check refuses its item writes. */
+  actor: Actor | null;
   via: CallerVia;
   /** The login acting, when there is one. */
   loginId?: string | null;
@@ -415,9 +418,11 @@ function readOnlyActor(actor: Actor): Actor {
 }
 
 /** The actor a call runs as (step 3): the policy's, else the caller's,
- *  either read only for a read. */
-export function callActor(caller: GateCaller, policy: GatePolicy): Actor {
+ *  either read only for a read. Null: the caller has none, and the policy
+ *  names none (the call runs with no actor). */
+export function callActor(caller: GateCaller, policy: GatePolicy): Actor | null {
   const actor = policy.actor ?? caller.actor;
+  if (!actor) return null;
   return policy.effect === 'write' ? actor : readOnlyActor(actor);
 }
 
@@ -459,7 +464,7 @@ export async function createHomeStep(
   const loginId = caller.loginId ?? null;
   if (!loginId || caller.createHome === null) return null;
   const actor = caller.actor;
-  if (actor.kind !== 'login' || actor.loginId !== loginId.toLowerCase()) return null;
+  if (actor?.kind !== 'login' || actor.loginId !== loginId.toLowerCase()) return null;
   if (currentCreateHome()) return null;
   const rule = caller.createHome ?? DEFAULT_HOME_RULE;
   const writes = policy.effect === 'write';
@@ -680,7 +685,12 @@ export async function enterCall<T>(
       const policy = lookupPolicy(ref);
       scopeStep(bound);
       const writes = policy.effect === 'write';
-      return runAsActor(callActor(bound, policy), () =>
+      const actor = callActor(bound, policy);
+      // No actor (a bug at the entry): none is bound here either, so the
+      // call runs as it came in, with none (A5 step 3a LOW-2).
+      const asActor = <R>(fn: () => Promise<R>): Promise<R> =>
+        actor ? runAsActor(actor, fn) : fn();
+      return asActor(() =>
         enterScope(bound, writes, async () => {
           // 4. Narrow by surface. 5. The Admin step.
           narrowStep(bound, policy, ref);

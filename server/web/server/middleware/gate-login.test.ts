@@ -135,7 +135,7 @@ function seen() {
     via: caller?.via ?? null,
     loginId: caller?.loginId ?? null,
     role: caller?.role ?? null,
-    callerActor: caller ? actorSetting(caller.actor) : null,
+    callerActor: caller?.actor ? actorSetting(caller.actor) : null,
     actor: actor ? actorSetting(actor) : null,
   };
 }
