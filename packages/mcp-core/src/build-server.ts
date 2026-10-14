@@ -99,12 +99,12 @@ import { ownerScopedServer } from './owner-scope';
 import { createHomeServer } from './create-home';
 import { policySlugSet } from '@mantle/tools';
 
-/** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
+/** Mutating Toolsmith tools, gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). A view of the builtins whose definition opts in by `toolsmithWrite`
  *  (A5 step 2: registration reads each definition's `optIn`; A5 step 3a,
  *  LOW-A: only a builtin declares one, so the builtin's definition is the
  *  one copy that decides). The env is read at module scope (process-stable)
- *  so the gate is evaluated once, not per build — for the HTTP transport a
+ *  so the gate is evaluated once, not per build: for the HTTP transport a
  *  server is built per request. */
 export const TOOLSMITH_WRITE_SLUGS: ReadonlySet<string> = policySlugSet(
   (_p, def) => def.optIn === 'toolsmithWrite',

@@ -431,10 +431,15 @@ export async function verifyInboundToken(token: string): Promise<MantlePeer | nu
   return row;
 }
 
-/** Mark that we just successfully called this peer. */
+/** Mark that we just successfully called this peer. A note for the peers
+ *  screen, as verifyInboundToken's last-seen stamp: on a database that
+ *  refuses the write (a read tool's read-only actor, a reader role) it is
+ *  skipped, never a failed peer call (A5 step 3a low round). */
 export async function markPeerContacted(ownerId: string, id: string): Promise<void> {
-  await db
-    .update(mantlePeers)
-    .set({ lastContactedAt: new Date() })
-    .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)));
+  await bestEffortWrite("a peer's last-contact stamp", () =>
+    db
+      .update(mantlePeers)
+      .set({ lastContactedAt: new Date() })
+      .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId))),
+  );
 }

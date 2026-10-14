@@ -4,6 +4,10 @@
  * owner on the `api` path. The route has already checked the caller
  * (getOwnerOr401) and the key's scope (the gate). Errors are the tool's own
  * teaching messages, answered as 400.
+ *
+ * It calls the handler directly, past dispatch and so the one gate, until
+ * A5 step 4 moves it there (packages/tools/src/dispatch-entries.test.ts
+ * lists it, so no other direct call is added unseen).
  */
 import { NextResponse } from '@/server/http-compat';
 import { checkToolPreconditions, getBuiltin } from '@mantle/tools';
