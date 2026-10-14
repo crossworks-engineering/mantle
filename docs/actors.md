@@ -2212,3 +2212,11 @@ scope, then holds.
   alone holds), so a member's or a contact's broker call says the one
   mapper's words for a database error and keeps any other error's text
   (`packages/tools/src/dispatch-ungated-mask.test.ts`).
+- **L2: a read-only connection keeps a marked connector tool to its marked
+  inputs.** Dispatch applies a read-only mark's inputs check
+  (`connectorMarkRefusal`) below the owner and in a workspace scope, not on
+  an owner surface outside one; since Q1 a read-only admin key or peer on
+  an unscoped connection reaches a marked tool there. The MCP connector
+  check (`connectorCheck`, `packages/mcp-core/src/login-surface.ts`, the
+  call's pre-run slot) now applies it for any connection whose `write` is
+  off (`packages/mcp-core/src/connector-check.test.ts`).

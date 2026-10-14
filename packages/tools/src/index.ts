@@ -185,6 +185,7 @@ export {
   resolveTool,
   resolveTools,
   dispatchTool,
+  connectorMarkRefusal,
   ADMIN_ONLY_ERROR,
   ADMIN_ONLY_TOOL_SLUGS,
 } from './dispatch';

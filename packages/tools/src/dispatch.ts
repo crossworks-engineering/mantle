@@ -402,9 +402,10 @@ export function undeclaredToolArgs(schema: unknown, input: Record<string, unknow
 }
 
 /** What a connector tool's read-only mark refuses (one copy for the scope
- *  rule and the rule below the owner, arch A3c): a stale mark, or a marked
- *  tool called with an input it was not marked with. Null for a write. */
-function connectorMarkRefusal(
+ *  rule, the rule below the owner, arch A3c, and an MCP connection that
+ *  only reads, A5 step 5 fix round 1 L2): a stale mark, or a marked tool
+ *  called with an input it was not marked with. Null for a write. */
+export function connectorMarkRefusal(
   mark: 'read' | 'write' | 'stale',
   tool: Tool,
   input: Record<string, unknown>,

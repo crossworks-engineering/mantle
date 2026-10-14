@@ -47,6 +47,7 @@ import {
   type WorkspaceScope,
 } from '@mantle/db';
 import {
+  connectorMarkRefusal,
   connectorToolPolicy,
   listLoginConnectorTools,
   loginConnectorRefused,
@@ -404,12 +405,22 @@ const CONNECTOR_LOG_INPUT_MAX = 2048;
  * narrower: a connector tool that writes is not listed for a read-only
  * connection.
  */
-function connectorCheck(caller: McpCaller) {
+export function connectorCheck(caller: McpCaller) {
   return async (row: Tool, args: Record<string, unknown>): Promise<string | null> => {
     // The connector tool's policy (arch A3c, runtime-policy.ts): a stale
     // (voided) mark counts as a write here; dispatch refuses it below the
     // owner anyway.
-    const write = connectorToolPolicy(row).effect === 'write';
+    const policy = connectorToolPolicy(row);
+    const write = policy.effect === 'write';
+    // A connection that only reads (a read-only key, peer or login) calls a
+    // tool an Admin marked read-only with only the inputs it was marked
+    // with, in any scope (A5 step 5 fix round 1, L2): dispatch applies the
+    // mark below the owner and in a workspace scope, not to an owner
+    // surface outside one, which a read-only admin key or peer can be.
+    if (!caller.write) {
+      const marked = connectorMarkRefusal(policy.fields.mark, row, args);
+      if (marked !== null) return marked;
+    }
     const refused = await loginConnectorRefused(
       caller.anchorId,
       caller.loginId,
