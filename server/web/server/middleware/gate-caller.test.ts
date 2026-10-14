@@ -199,6 +199,8 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         // A content read a member may make, and an area row (users).
         { pattern: '/api/notes', methods: ['GET', 'POST'] },
         { pattern: '/api/users', methods: ['GET'] },
+        // An area write (the assistants area).
+        { pattern: '/api/agents/:id', methods: ['PATCH'] },
         // Content writes (batch 3): an item write, a create, and the read
         // POST whose guard checks the item as a write.
         { pattern: '/api/notes/:id', methods: ['PATCH', 'DELETE'] },
@@ -267,14 +269,20 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
   }
 
   it('answers every credential as the guard does, on each row', async () => {
+    const AGENT = '/api/agents/11111111-1111-4111-8111-111111111111';
     const cells: Array<[string, string]> = [
       ['GET', '/api/profile'],
       ['HEAD', '/api/profile'],
       ['PUT', '/api/profile'],
       ['GET', '/api/notes'],
       ['GET', '/api/users'],
+      // An area write (part 4 fix round): its audit row is the gate's on
+      // one app and the guard's on the other; a doubled or missing row
+      // differs. (POST /api/users logs its own event: no api.write row.)
+      ['PATCH', AGENT],
     ];
     let refused = 0;
+    let areaWriteAudits = 0;
     for (const [method, path] of cells) {
       for (const cred of creds) {
         const a = await drive(pipeline, method, path, cred.headers());
@@ -290,10 +298,18 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
           expect(a.handled, label).toBe(1);
         }
         expect({ ...a, handled: 0 }, label).toEqual({ ...b, handled: 0 });
+        if (method === 'PATCH' && a.status < 400) {
+          const who = (JSON.parse(a.body) as { owner: { actor: { id: string } } }).owner.actor.id;
+          expect(a.audits, label).toEqual([`api.write PATCH ${AGENT} ${who}`]);
+          areaWriteAudits += 1;
+        }
       }
     }
     // Every kind of answer was met: refusals (401, 403) and owners.
     expect(refused).toBeGreaterThan(5);
+    // The area write let in (the owner and the Admin user with the area, by
+    // cookie and device token) wrote its one audit row on both apps.
+    expect(areaWriteAudits).toBeGreaterThanOrEqual(3);
   });
 
   it('a content write: the item check, the create home and the audit row as the guard gave', async () => {
