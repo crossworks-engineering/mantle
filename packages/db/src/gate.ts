@@ -118,7 +118,12 @@ export type GateCaller = Readonly<{
   facts?: Readonly<Record<string, unknown>>;
   /** The surface's own check of one call, first in the pre-run slot (A5
    *  step 4: the MCP key email guard, a connector row's workspace check).
-   *  Only enterCall runs it, never gateCheck: it reads the call. */
+   *  enterCall runs it, never gateCheck: it reads the call. It may have a
+   *  side effect (a connector row's check writes its `mcp.connector.*`
+   *  audit row once it lets the call through), so gateCallRefusal, which
+   *  judges a call without running it, refuses a caller that names one
+   *  (PreRunSideEffectError; A5 step 6a, carried round-2 LOW-2). Only an
+   *  MCP connection names one, and it never asks gateCallRefusal. */
   preRun?: PreRunCheck;
 }>;
 
@@ -720,6 +725,13 @@ export async function enterCall<T>(
  * arguments), this asks one call, so a call that waits for approval is
  * judged in its own scope, by the same rule, before it is queued. Any other
  * error is thrown, as enterCall throws it.
+ *
+ * Only for a caller whose pre-run checks have no side effect: the
+ * registered checks only read, and a caller that names its own check
+ * (`preRun`, which may write an audit row) is not judged here: it throws
+ * PreRunSideEffectError before any step (A5 step 6a, carried round-2
+ * LOW-2). Its callers: the tool loop's queue-time check (turnCallRefusal)
+ * and an app broker's refusal (appToolRefusal); neither names one.
  */
 export async function gateCallRefusal(
   caller: GateCaller | (() => Promise<GateCaller | null>),
@@ -728,6 +740,18 @@ export async function gateCallRefusal(
 ): Promise<AccessRefusal | null> {
   const res = await callSteps(caller, ref, null, input);
   return res.ok ? null : res.refusal;
+}
+
+/** Thrown by gateCallRefusal at a caller that names its own pre-run check
+ *  (A5 step 6a, carried round-2 LOW-2): such a check may write (a connector
+ *  row's audit row), and a judgement that runs nothing must not. */
+export class PreRunSideEffectError extends Error {
+  constructor() {
+    super(
+      'gateCallRefusal judges a call without running it, so it takes no caller that names its own pre-run check (it may write an audit row): run the call through enterCall instead',
+    );
+    this.name = 'PreRunSideEffectError';
+  }
 }
 
 /** enterCall's steps; with no `fn`, it stops after the pre-run checks. */
@@ -742,6 +766,7 @@ async function callSteps<T>(
     // 1. Resolve the caller.
     const resolved = typeof caller === 'function' ? await caller() : caller;
     if (!resolved) throw new AccessError('unauthorized');
+    if (!fn && resolved.preRun) throw new PreRunSideEffectError();
     // 2. Bind a frozen copy of the caller: nothing the call runs changes
     // who it is, and the surface's own object is left as it was.
     const bound = frozenCaller(resolved);

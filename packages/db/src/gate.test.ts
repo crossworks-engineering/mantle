@@ -37,6 +37,7 @@ import {
   currentCaller,
   enterCall,
   gateCallRefusal,
+  PreRunSideEffectError,
   gateCheck,
   gateLists,
   hasPolicySource,
@@ -855,6 +856,21 @@ describe('gateCallRefusal: one call judged without running it (A5 step 5 fix rou
       'no keys here',
     );
     expect((await gateCallRefusal(login(), ref('admin')))?.kind).toBe('admin');
+  });
+
+  it('takes no caller that names its own pre-run check: it may write (A5 step 6a, carried round-2 LOW-2)', async () => {
+    setup();
+    const preRun = vi.fn(async () => null);
+    await expect(gateCallRefusal(login({ preRun }), ref('read'), { args: {} })).rejects.toThrow(
+      PreRunSideEffectError,
+    );
+    await expect(
+      gateCallRefusal(async () => login({ preRun }), ref('read'), { args: {} }),
+    ).rejects.toThrow(PreRunSideEffectError);
+    expect(preRun).not.toHaveBeenCalled();
+    // enterCall runs it, as before.
+    expect((await enterCall(login({ preRun }), ref('read'), ok, { args: {} })).ok).toBe(true);
+    expect(preRun).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -153,6 +153,7 @@ export { ensureViewerRoles } from './viewer-roles';
 export {
   READ_ONLY_CALLER_ERROR,
   GateNotReadyError,
+  PreRunSideEffectError,
   assertGateReady,
   currentCaller,
   enterCall,
