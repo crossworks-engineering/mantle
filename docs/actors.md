@@ -3220,3 +3220,10 @@ which reads it with `surface.ts` `isOwnerSurface`, as `turnCallRefusal`
 reads the call's (the loop's masking reads the same function, from the new
 `@mantle/tools/surface` subpath). `packages/tools/src/turn-listing.test.ts`
 asks the listing and the refusal on the same surface.
+
+**LOW-4, the reported tool list is the sent one.** `loopToolRows` now
+requires the surface. `describeResponderTurnInput` lists on the surface its
+simulated turn runs on (the owner's web, with the login when it has one),
+and `describeResponderPersona` on the owner's web, as
+`runSimulatedResponderTurn` runs the responder; neither lists without a
+surface any more. `packages/runtime/src/assistant/turn-input.test.ts`.

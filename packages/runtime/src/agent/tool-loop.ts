@@ -535,13 +535,14 @@ export async function resolveAgentTools(ownerId: string, slugs: string[]): Promi
 export async function loopToolRows(
   ownerId: string,
   tools: readonly Tool[],
-  /** The loop's surface (the loop knows it; a caller describing a turn it
-   *  does not run leaves it out): an owner-only tool is not listed off the
-   *  owner's (A5 step 6a, carried L1), by the gate's one rule
-   *  (isOwnerSurface, fix round 1, LOW-3). */
-  opts: { surface?: ToolLoopArgs['surface'] } = {},
+  /** The loop's surface: an owner-only tool is not listed off the owner's
+   *  (A5 step 6a, carried L1), by the gate's one rule (isOwnerSurface, fix
+   *  round 1, LOW-3). Every caller names the surface of the turn it runs or
+   *  describes (LOW-4), so the list it reports is the list the model is
+   *  sent. */
+  opts: { surface: ToolLoopArgs['surface'] },
 ): Promise<Tool[]> {
-  const listed = await turnListedTools(tools, { ownerId, ...opts });
+  const listed = await turnListedTools(tools, { ownerId, surface: opts.surface });
   if (listed.length === 0 || listed.some((t) => t.slug === 'read_result')) return listed;
   const rr = await resolveReadResultTool(ownerId);
   return rr ? [...listed, rr] : listed;

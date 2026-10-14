@@ -204,6 +204,14 @@ describe('describeResponderTurnInput', () => {
     // The trace's tool_count is what the model is sent, not the grant
     // (A5 step 5 fix round 2).
     expect(h.traceData).toEqual([{ tool_count: 2 }]);
+    // Listed on the surface the simulated turn runs on, so an owner-only
+    // tool is listed exactly as that turn lists it (fix round 1, LOW-4).
+    const { loopToolRows } = await import('../agent');
+    expect(vi.mocked(loopToolRows).mock.calls.at(-1)?.[2]).toEqual({ surface: { kind: 'web' } });
+    await describeResponderTurnInput('owner-1', { message: 'hi', loginId: 'l1' });
+    expect(vi.mocked(loopToolRows).mock.calls.at(-1)?.[2]).toEqual({
+      surface: { kind: 'web', loginId: 'l1' },
+    });
   });
 
   it('(d) keeps the cache marks and reports the loop settings', async () => {

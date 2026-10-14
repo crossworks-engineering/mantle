@@ -107,8 +107,14 @@ export async function describeResponderPersona(
     skills: assembled.attachedSkills.map((s) => ({ slug: s.slug, name: s.name })),
     // What the real loop would list: the grant the gate lets the agent's
     // turn call in its own scope, plus read_result (loopToolRows, the list
-    // the loop sends).
-    toolSlugs: (await withAgentViewer(agent, () => loopToolRows(ownerId, assembled.allowedTools)))
+    // the loop sends), on the surface the responder's turn runs on: the
+    // owner's web, as runSimulatedResponderTurn runs it (fix round 1,
+    // LOW-4).
+    toolSlugs: (
+      await withAgentViewer(agent, () =>
+        loopToolRows(ownerId, assembled.allowedTools, { surface: { kind: 'web' } }),
+      )
+    )
       .map((t) => t.slug)
       .sort(),
     delegateTo: assembled.delegateTo,

@@ -199,7 +199,11 @@ export async function describeResponderTurnInput(
       const tools = await withAgentViewer(
         agent,
         async () => {
-          const rows = await loopToolRows(ownerId, assembled.allowedTools);
+          // The surface the simulated turn runs on (run-sim-turn.ts), so the
+          // list reported is the list that turn sends (fix round 1, LOW-4).
+          const rows = await loopToolRows(ownerId, assembled.allowedTools, {
+            surface: opts.loginId ? { kind: 'web', loginId: opts.loginId } : { kind: 'web' },
+          });
           setTraceData({ tool_count: rows.length });
           return buildToolsForModel(rows, { ownerId, delegateTo: assembled.delegateTo });
         },
