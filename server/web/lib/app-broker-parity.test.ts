@@ -31,7 +31,15 @@
  * The rules are the real ones (appToolLevel, appToolScope, the verdicts,
  * dispatch). The database is stubbed: the scope a request and withViewer
  * enter, the Admin view, the item rights, the tool rows, the tool groups and
- * the connector's workspaces. The handlers are recorders. One JSON file holds
+ * the connector's workspaces. The handlers are recorders, and the
+ * preconditions are stood in (none fails) but in one case (fix round 1):
+ * there the real checkToolPreconditions runs (its node lookup on the
+ * stubbed database finds no page), so its words, and its place before the
+ * item rights, are compared too. That case was recorded on the sources of
+ * the baseline commit (the brokers off the gate) and is equal after it.
+ * What a real handler does under the read-only rule, real preconditions
+ * on a real database included, is
+ * server/web/server/a5-read-tools-ro.db.test.ts. One JSON file holds
  * every case (__snapshots__/app-broker-parity.json); a change names the case.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -63,6 +71,8 @@ const h = vi.hoisted(() => ({
   login: 'admin' as 'admin' | 'member',
   /** The next handler or fetch throws a database error. */
   dbErr: false,
+  /** The next call checks the real preconditions (fix round 1). */
+  realPre: false,
   /** What one case recorded. */
   audit: [] as Array<[string, unknown]>,
   touches: [] as unknown[],
@@ -164,10 +174,17 @@ vi.mock('../../../packages/tools/src/resolve', () => ({
   resolveTool: async (_o: string, slug: string) => TOOLS.rows.get(slug) ?? null,
   resolveTools: async () => [],
 }));
-vi.mock('../../../packages/tools/src/preconditions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../packages/tools/src/preconditions')>()),
-  checkToolPreconditions: async () => null,
-}));
+vi.mock('../../../packages/tools/src/preconditions', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../packages/tools/src/preconditions')>();
+  return {
+    ...real,
+    // Stood in (null: none fails) but for the one case that checks the
+    // real ones (fix round 1): their words, and their place before the
+    // item rights.
+    checkToolPreconditions: (...args: Parameters<typeof real.checkToolPreconditions>) =>
+      h.realPre ? real.checkToolPreconditions(...args) : Promise.resolve(null),
+  };
+});
 vi.mock('../../../packages/tools/src/external-access', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../packages/tools/src/external-access')>();
   return {
@@ -426,7 +443,14 @@ for (const r of ROWS) TOOLS.rows.set(r.slug, r);
 /** What the app declares: every tool here but page_list. */
 const DECLARED = [...ROWS.map((r) => r.slug).filter((s) => s !== 'page_list'), 'no_such_tool'];
 
-type ToolCase = { name: string; slug: string; input?: Record<string, unknown>; dbErr?: boolean };
+type ToolCase = {
+  name: string;
+  slug: string;
+  input?: Record<string, unknown>;
+  dbErr?: boolean;
+  /** Check the real preconditions (checkToolPreconditions), not none. */
+  realPre?: boolean;
+};
 
 const CASES: readonly ToolCase[] = [
   { name: 'a read', slug: 'note_list' },
@@ -445,6 +469,17 @@ const CASES: readonly ToolCase[] = [
   { name: 'a handler that throws', slug: 'note_list', input: { __throw: true } },
   { name: 'a database error in a read', slug: 'note_list', dbErr: true },
   { name: 'a database error in an http tool', slug: 'api_thing', dbErr: true },
+  // Fix round 1: the real preconditions, so their words and order are
+  // compared. The id names an item the caller may not change, and the body
+  // a reference that is no id: the id's precondition answers first (the
+  // stubbed database finds no page), before the body's and the item
+  // rights, as dispatch asked them before step 3b.
+  {
+    name: 'a precondition refusal (the real preconditions)',
+    slug: 'page_update',
+    input: { id: REFUSED_ID, markdown: '![x](media:2153d1f2)' },
+    realPre: true,
+  },
 ];
 
 type Entry =
@@ -496,6 +531,7 @@ async function call(entry: Entry, c: ToolCase): Promise<unknown> {
   h.gated = [];
   h.viewers = [];
   h.dbErr = c.dbErr === true;
+  h.realPre = c.realPre === true;
   h.login = 'admin';
   h.toolRules = 'admin';
   h.authorLevel = 'admin';
@@ -547,6 +583,7 @@ async function call(entry: Entry, c: ToolCase): Promise<unknown> {
     reply = { ...(reply as object), durationMs: 0 };
   }
   h.dbErr = false;
+  h.realPre = false;
   return { status, body: reply, audit: h.audit, touches: h.touches, viewers: h.viewers };
 }
 
@@ -581,6 +618,16 @@ describe('app broker parity (A5 step 3b)', () => {
     expect(remote).toContain('"remote":"http"');
     const conn = JSON.stringify(await call('member app', CASES[10]!));
     expect(conn).toContain('"remote":"mcp"');
+    // The real preconditions ran, before the item rights (fix round 1).
+    const pre = JSON.stringify(
+      await call(
+        'dev console',
+        CASES.find((c) => c.realPre)!,
+      ),
+    );
+    expect(pre).toContain(`page ${REFUSED_ID} not found`);
+    expect(pre).not.toContain('item refused');
+    expect(pre).not.toContain('"ran":');
   });
 
   it('every run is bound to the gate, as its entry names it (A5 step 3b)', async () => {

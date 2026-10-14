@@ -676,6 +676,46 @@
      }
     }
    ]
+  },
+  "a precondition refusal (the real preconditions)": {
+   "status": 403,
+   "body": {
+    "ok": false,
+    "error": "The tool 'page_update' is built in, and a shared link runs no built-in tools (only an outside tool with External access)."
+   },
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "kind": "tool",
+      "detail": {
+       "via": "contact",
+       "contactId": "contact-7",
+       "slug": "page_update",
+       "refused": "The tool 'page_update' is built in, and a shared link runs no built-in tools (only an outside tool with External access)."
+      }
+     }
+    ],
+    [
+     "share-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "shareId": "share-2",
+      "contactId": "contact-7",
+      "kind": "refused",
+      "detail": {
+       "slug": "page_update",
+       "refused": "tools"
+      }
+     }
+    ]
+   ],
+   "touches": [],
+   "viewers": []
   }
  },
  "member app": {
@@ -1461,6 +1501,48 @@
      }
     }
    ]
+  },
+  "a precondition refusal (the real preconditions)": {
+   "status": 403,
+   "body": {
+    "ok": false,
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+   },
+   "audit": [
+    [
+     "app-access",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "66666666-6666-4666-8666-666666666666",
+      "kind": "tool",
+      "detail": {
+       "via": "member",
+       "slug": "page_update",
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+      }
+     }
+    ],
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "66666666-6666-4666-8666-666666666666",
+      "source": "tool",
+      "via": "member",
+      "slug": "page_update",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "status": 403
+     }
+    ]
+   ],
+   "touches": [],
+   "viewers": [
+    {
+     "login": "66666666-6666-4666-8666-666666666666"
+    }
+   ]
   }
  },
  "owner app, Admin only (admin rules)": {
@@ -1932,6 +2014,30 @@
      "mode": "ro"
     }
    ],
+   "viewers": []
+  },
+  "a precondition refusal (the real preconditions)": {
+   "status": 200,
+   "body": {
+    "ok": false,
+    "error": "page 44444444-4444-4444-8444-444444444444 not found — it may have been deleted or the id mistyped. Find the right id with page_list / search_nodes, then re-issue."
+   },
+   "audit": [
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "source": "tool",
+      "via": "owner",
+      "slug": "page_update",
+      "message": "page 44444444-4444-4444-8444-444444444444 not found — it may have been deleted or the id mistyped. Find the right id with page_list / search_nodes, then re-issue.",
+      "status": 200
+     }
+    ]
+   ],
+   "touches": [],
    "viewers": []
   }
  },
@@ -2565,6 +2671,30 @@
      }
     }
    ]
+  },
+  "a precondition refusal (the real preconditions)": {
+   "status": 403,
+   "body": {
+    "ok": false,
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are)."
+   },
+   "audit": [
+    [
+     "app-error",
+     {
+      "ownerId": "33333333-3333-4333-8333-333333333333",
+      "appNodeId": "77777777-7777-4777-8777-777777777777",
+      "actorId": "55555555-5555-4555-8555-555555555555",
+      "source": "tool",
+      "via": "owner",
+      "slug": "page_update",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it (only read-only built-in tools are).",
+      "status": 403
+     }
+    ]
+   ],
+   "touches": [],
+   "viewers": []
   }
  },
  "dev console": {
@@ -2995,6 +3125,17 @@
      "mode": "ro"
     }
    ],
+   "viewers": []
+  },
+  "a precondition refusal (the real preconditions)": {
+   "status": 200,
+   "body": {
+    "ok": false,
+    "error": "page 44444444-4444-4444-8444-444444444444 not found — it may have been deleted or the id mistyped. Find the right id with page_list / search_nodes, then re-issue.",
+    "durationMs": 0
+   },
+   "audit": [],
+   "touches": [],
    "viewers": []
   }
  }
