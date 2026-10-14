@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { buildStudioGraph } from '@/lib/studio/graph';
 
 /**
@@ -9,8 +9,7 @@ import { buildStudioGraph } from '@/lib/studio/graph';
  */
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const graph = await buildStudioGraph(user.id);
   return NextResponse.json({ graph });
 }

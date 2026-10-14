@@ -8,13 +8,12 @@
  */
 import type { RetiredClientLinkRow, SharedLinkRow } from '@mantle/client-types';
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listActiveShares } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [badges, active] = await Promise.all([teamAdminBadges(user.id), listActiveShares(user.id)]);
   return NextResponse.json({
     badges,

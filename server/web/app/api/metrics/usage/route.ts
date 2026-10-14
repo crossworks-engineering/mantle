@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { recentAgentContext, spendInRange, type SpendRange } from '@/lib/metrics';
 
 const VALID_RANGES: SpendRange[] = ['day', 'week', 'month'];
@@ -23,8 +23,7 @@ function readRange(value: string | null): SpendRange {
  * whoever signed in.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  const user = ownerCaller();
 
   const range = readRange(new URL(req.url).searchParams.get('range'));
   const [spend, contexts] = await Promise.all([

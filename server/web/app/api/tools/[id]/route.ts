@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { handlerCarriesSecretRefs } from '@mantle/tools';
 import { deleteTool, getToolById, keysAreaRefusal, toolMakerFor, updateTool } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
@@ -21,8 +21,7 @@ const PatchBody = z
   .partial();
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const tool = await getToolById(user.id, idParsed.data.id);
@@ -31,8 +30,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const raw = await req.json().catch(() => ({}));
@@ -61,8 +59,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   try {

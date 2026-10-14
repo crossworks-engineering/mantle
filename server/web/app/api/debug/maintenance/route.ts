@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listRecentRuns, reapStaleRuns } from '@/lib/maintenance/history';
 import { MAINTENANCE_TASKS, SESSION_ENV } from '@/lib/maintenance/registry';
 import { getRun } from '@/lib/maintenance/run-store';
@@ -15,8 +15,7 @@ import { envDynamic } from '@mantle/config';
 // Registry overview + current/last run. Read-only; runs start via ./run.
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
 
   const tasks: MaintenanceTaskInfo[] = MAINTENANCE_TASKS.map((t) => ({
     slug: t.slug,

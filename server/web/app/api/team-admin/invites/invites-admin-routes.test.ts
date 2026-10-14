@@ -35,7 +35,8 @@ const ROW = {
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => ({
+  // The route reads the caller the pipeline answers (A4 step 3b part 4).
+  ownerCaller: vi.fn(() => ({
     id: ANCHOR,
     email: 'admin@example.invalid',
     actor: { id: ACTOR, email: 'admin@example.invalid', displayName: null, isOwner: false },

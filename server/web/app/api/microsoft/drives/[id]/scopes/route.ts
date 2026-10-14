@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { listScopes, ownedDrive, setDriveScopes } from '@mantle/microsoft';
 import type { MsDriveScopeDTO } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
 /** Wire projection of a scope row (drops db id/timestamps). */
@@ -12,8 +12,7 @@ function toScopeDTO(s: Awaited<ReturnType<typeof listScopes>>[number]): MsDriveS
 
 /** The drive's current scope selections (empty = syncing everything). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   if (!(await ownedDrive(user.id, id))) {
     return NextResponse.json({ error: 'Drive not found.' }, { status: 404 });
@@ -38,8 +37,7 @@ const Body = z.object({
  *  Saving clears the delta cursor so the next sync re-walks against the new
  *  scope (ingesting newly-in-scope files, pruning out-of-scope ones). */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

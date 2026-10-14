@@ -8,7 +8,7 @@
  * the gate answers 401 as before.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { goneResponse } from '@/lib/gone';
 
 function gone(): NextResponse {
@@ -16,13 +16,11 @@ function gone(): NextResponse {
 }
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   return gone();
 }
 
 export async function PATCH() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   return gone();
 }

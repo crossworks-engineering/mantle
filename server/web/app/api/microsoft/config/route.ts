@@ -1,14 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { clearConfig, defaultRedirectUri, getConfigStatus, saveConfig } from '@mantle/microsoft';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 import { firstIssue } from '@/lib/zod-issue';
 
 /** Current Azure-app config status + the redirect URI to suggest (host-derived). */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const status = await getConfigStatus(user.id);
   return NextResponse.json({
     status,
@@ -26,8 +25,7 @@ const SaveBody = z.object({
 
 /** Save (or override) the brain's Azure AD app config from the UI. */
 export async function PUT(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = SaveBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
@@ -52,8 +50,7 @@ export async function PUT(req: Request) {
 
 /** Remove the UI config, reverting to environment variables (if any). */
 export async function DELETE() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   await clearConfig(user.id);
   return NextResponse.json({ status: await getConfigStatus(user.id) });
 }

@@ -1,14 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { testEmbeddingModel } from '@/lib/ai-worker-rpc';
 
 const Body = z.object({ model: z.string().min(1) });
 
 /** Embed a sentinel string and report the model's actual output dimension. */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: 'model required' }, { status: 400 });

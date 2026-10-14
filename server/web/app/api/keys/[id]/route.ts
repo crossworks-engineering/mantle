@@ -1,13 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { deleteApiKey } from '@/lib/api-keys';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = IdParams.safeParse(await ctx.params);
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });

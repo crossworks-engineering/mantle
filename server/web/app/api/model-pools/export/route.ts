@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { asc, eq } from 'drizzle-orm';
 import { db, curatedModels } from '@mantle/db';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import type { CuratedTemplateEntry } from '@mantle/client-types/model-pools-data';
 
 /**
@@ -18,8 +18,7 @@ import type { CuratedTemplateEntry } from '@mantle/client-types/model-pools-data
  * swap: save `json` over model-pools-data.json and commit.
  */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const rows = await db
     .select()
     .from(curatedModels)

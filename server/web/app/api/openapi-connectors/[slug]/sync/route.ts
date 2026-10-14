@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { syncOpenapiConnector } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -12,8 +12,7 @@ import { firstIssue } from '@/lib/zod-issue';
 const Body = z.object({ overwriteEdited: z.boolean().optional() });
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { slug } = await params;
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);

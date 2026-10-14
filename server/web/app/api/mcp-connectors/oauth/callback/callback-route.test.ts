@@ -14,7 +14,8 @@ const t = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => ({ id: 'anchor-1' })),
+  // The route reads the caller the pipeline answers (A4 step 3b part 4).
+  ownerCaller: vi.fn(() => ({ id: 'anchor-1' })),
 }));
 vi.mock('@mantle/tools', () => ({
   abandonMcpOAuth: vi.fn(async () => 'refused'),

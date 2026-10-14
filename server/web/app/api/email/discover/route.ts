@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { recentUnknownSenders, imap, type PeekProviderResolver } from '@mantle/email';
 import { graphMailProvider } from '@mantle/microsoft';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /** Peek IMAP accounts over IMAP and Microsoft companions over Graph. Lives
  *  here (not in @mantle/email) because only the app layer may depend on
@@ -21,8 +21,7 @@ const Query = z.object({
 /** Live-discover senders who recently emailed the owner but aren't yet contacts.
  *  Reads the provider on demand across enabled accounts; persists nothing. */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const sp = new URL(req.url).searchParams;
   const parsed = Query.safeParse({
     sinceDays: sp.get('sinceDays') ?? undefined,

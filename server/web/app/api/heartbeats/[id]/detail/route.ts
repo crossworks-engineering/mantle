@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { toolMakerFor } from '@/lib/tools';
 import { getHeartbeat, listHeartbeatFires } from '@/lib/heartbeats';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
@@ -13,8 +13,7 @@ import { formatInProfile, loadProfilePreferences } from '@mantle/content';
  * state is its maker's only (W7 integration fix 2).
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const [heartbeat, fires, prefs] = await Promise.all([
     getHeartbeat(user.id, id, toolMakerFor(user)),

@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { AGENT_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import {
   createAiWorker,
@@ -60,15 +60,13 @@ const CreateBody = z.object({
 
 /** All workers for the owner, ordered by kind then priority. */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const rows = await listAiWorkers(user.id);
   return NextResponse.json({ workers: rows.map(toAiWorkerDTO) });
 }
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

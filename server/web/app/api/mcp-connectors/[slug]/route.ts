@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { deleteMcpConnector } from '@mantle/tools';
 import {
   getMcpConnector,
@@ -12,8 +12,7 @@ import { firstIssue } from '@/lib/zod-issue';
 import { toolMakerFor } from '@/lib/tools';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { slug } = await params;
   const connector = await getMcpConnector(user.id, slug);
   if (!connector) {
@@ -38,8 +37,7 @@ const PatchBody = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { slug } = await params;
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
@@ -54,8 +52,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { slug } = await params;
   const deleted = await deleteMcpConnector(user.id, slug);
   if (!deleted) {

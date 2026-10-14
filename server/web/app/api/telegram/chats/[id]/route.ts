@@ -3,7 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, agents, telegramChats } from '@mantle/db';
 import { chatLoginRefusal, TELEGRAM_NOT_A_USER_CODE } from '@mantle/telegram';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -15,8 +15,7 @@ const PatchBody = z
   .partial();
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });

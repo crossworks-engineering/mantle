@@ -35,6 +35,8 @@ const h = vi.hoisted(() => ({ session: null as unknown }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => h.session),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => h.session),
 }));
 vi.mock('@mantle/api-keys', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

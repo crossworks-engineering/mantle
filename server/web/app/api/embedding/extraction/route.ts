@@ -8,7 +8,7 @@ import {
   EXTRACTION_CONCURRENCY_MAX,
   resolveExtractionConcurrency,
 } from '@mantle/embeddings';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { rowsOf } from '@/lib/integrity/sql-util';
 import { notifyProviderRecover } from '@/lib/embedding-config';
 
@@ -24,8 +24,7 @@ type QueueRow = {
  *  queue is doing now. The count is live: the extractor re-reads the saved
  *  value every 30s and grows or shrinks its pool, no restart. */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [row] = await db
     .select({ saved: embeddingConfig.extractionConcurrency })
     .from(embeddingConfig)
@@ -68,8 +67,7 @@ const Body = z.object({
 /** Set only the extractor count (null = back to the default). The rest of the
  *  embedder config is left alone. */
 export async function PATCH(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(

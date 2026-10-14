@@ -40,6 +40,8 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getChatLoginOr401: vi.fn(async () => h.login),
   getOwnerOr401: vi.fn(async () => h.session),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => h.session),
 }));
 // The route's per-login rate limit (10 a minute) is its own concern: the
 // pairing rules here make more calls than that for one login.

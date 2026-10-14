@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { adoptManifestItem, type AdoptKind } from '@/lib/system-manifest';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -12,8 +12,7 @@ const Body = z.object({
 /** Adopt one manifest item (skill / tool-group / specialist / persona / worker)
  *  into the brain — same semantics as the boot reconcile. */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

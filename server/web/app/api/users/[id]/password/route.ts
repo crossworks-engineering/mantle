@@ -4,9 +4,9 @@ import { db, authUsers, eq } from '@mantle/db';
 import type { PasswordResetRefused } from '@mantle/client-types';
 import {
   endLoginSessions,
-  getOwnerOr401WithSource,
   setSessionCookie,
   updatePassword,
+  ownerCallerWithSource,
 } from '@/lib/auth';
 import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -26,8 +26,7 @@ const Body = z.object({ newPassword: z.string().min(8).max(1024) });
  * bound to that token (access matrix T14), never a fresh year.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await getOwnerOr401WithSource();
-  if (auth instanceof NextResponse) return auth;
+  const auth = ownerCallerWithSource();
   const { user, source } = auth;
 
   // Throttle per acting login — bcrypt is deliberately slow.

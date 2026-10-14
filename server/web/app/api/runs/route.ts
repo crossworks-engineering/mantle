@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { agents, db, runItems, runs } from '@mantle/db';
 import { isRunsEnabled } from '@mantle/runs';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /**
  * GET /api/runs — the run surface's list payload (owner-scoped). Two shapes:
@@ -22,8 +22,7 @@ const PAGE_SIZE = 25;
 const ACTIVE_STATES = ['running', 'paused'] as const;
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
 
   // ── Active-runs strip (WP-A) ───────────────────────────────────────────────

@@ -7,14 +7,13 @@
  * one kind; `?limit=` up to 500.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listAppAccess, type AppAccessKind } from '@mantle/content';
 
 const KINDS: readonly AppAccessKind[] = ['auth', 'tool', 'db', 'error'];
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const q = new URL(req.url).searchParams;
   const kind = KINDS.find((k) => k === q.get('kind'));

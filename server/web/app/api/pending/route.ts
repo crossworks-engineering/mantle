@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { listPendingCalls } from '@mantle/tools';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 const ListQuery = z.object({
   status: z.enum(['pending', 'approved', 'rejected', 'expired']).optional(),
@@ -9,8 +9,7 @@ const ListQuery = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const parsed = ListQuery.safeParse(Object.fromEntries(url.searchParams));
   if (!parsed.success) {

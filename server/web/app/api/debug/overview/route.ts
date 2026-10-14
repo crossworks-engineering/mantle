@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { contentIndexCoverage, duplicateEdgeStats } from '@/lib/debug';
 import {
   duplicateSuppressionStats,
@@ -19,8 +19,7 @@ import {
  * derived percentages/totals from these raw aggregations.
  */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [
     traffic24h,
     spend7d,

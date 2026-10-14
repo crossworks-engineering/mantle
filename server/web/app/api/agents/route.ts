@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { AGENT_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { toolMakerFor } from '@/lib/tools';
 import { restampHeartbeatMakers } from '@mantle/tools';
@@ -13,8 +13,7 @@ import { isUniqueViolation } from '@mantle/db';
 import { AGENT_THINKING_EFFORTS } from '@mantle/content-core/thinking-tiers';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const rows = await listAgents(user.id, { withExperience: true });
   return NextResponse.json({ agents: rows.map((a) => agentForReader(user, a)) });
 }
@@ -89,8 +88,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

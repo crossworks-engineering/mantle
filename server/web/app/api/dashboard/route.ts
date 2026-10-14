@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { recentFailures, spendByDay, topErrors } from '@/lib/metrics';
 import {
   brainCounts,
@@ -33,8 +33,7 @@ type Bundle = Record<string, unknown>;
 const cache = new Map<string, { at: number; payload: Bundle }>();
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   const cached = cache.get(user.id);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {

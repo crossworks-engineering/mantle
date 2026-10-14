@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getTask } from '@/lib/maintenance/registry';
 import { planRun, runEnv } from '@/lib/maintenance/run-args';
 import { getRun, isRunning, startRun } from '@/lib/maintenance/run-store';
@@ -19,14 +19,12 @@ const Body = z.object({
 });
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   return NextResponse.json({ run: getRun() });
 }
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import { setAgentTelegramChat, TelegramTokenError } from '@/lib/agent-telegram';
 
@@ -23,8 +23,7 @@ const PAIR_WITH_CODE = 'pair_with_code';
  * Pairing is the chat's own user's, with its code: 'allowed' answers 403.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const agent = await getAgent(user.id, idParsed.data.id);

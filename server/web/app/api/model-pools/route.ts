@@ -2,14 +2,13 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
 import { isUniqueViolation, db, curatedModels } from '@mantle/db';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@/lib/model-pools';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const entries = await db
     .select()
     .from(curatedModels)
@@ -46,8 +45,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     const message = firstIssue(parsed.error, 'Invalid input.');

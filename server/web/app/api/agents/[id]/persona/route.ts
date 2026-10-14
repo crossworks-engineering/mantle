@@ -9,7 +9,7 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   addPersonaNote,
   editPersonaNote,
@@ -36,8 +36,7 @@ const Body = z.discriminatedUnion('action', [
 ]);
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   if (!isAnchorLogin(user)) {
     return NextResponse.json({ error: PERSONA_NOTES_ANCHOR_ONLY }, { status: 403 });
   }

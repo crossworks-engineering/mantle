@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq } from '@mantle/db';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
 import {
@@ -29,8 +29,7 @@ const PatchBody = z
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'Nothing to update.');
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  const user = ownerCaller();
 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
@@ -78,8 +77,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  const user = ownerCaller();
 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });

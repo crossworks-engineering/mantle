@@ -12,7 +12,8 @@ const h = vi.hoisted(() => ({ setError: null as unknown }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => ({ id: OWNER, actor: { id: OWNER } })),
+  // The route reads the caller the pipeline answers (A4 step 3b part 4).
+  ownerCaller: vi.fn(() => ({ id: OWNER, actor: { id: OWNER } })),
 }));
 
 vi.mock('@/lib/api-keys', () => ({

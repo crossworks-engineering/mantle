@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   WORKER_GROUP_SLUG_MAX,
   createWorkerGroup,
@@ -14,8 +14,7 @@ import { isUniqueViolation } from '@mantle/db';
 /** GET /api/settings/worker-groups — the owner's worker groups + the enabled
  *  worker agents available as members (so the picker needs no second call). */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [groups, workers] = await Promise.all([
     listWorkerGroups(user.id),
     listEnabledWorkerAgents(user.id),
@@ -36,8 +35,7 @@ const CreateBody = z.object({
  *  PATCH from the detail form, where the 1..10 rule is enforced (mirrors
  *  worker_group_ensure, which upserts name + members together). */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

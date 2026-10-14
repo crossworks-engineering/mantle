@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from '@/server/http-compat';
 import { buildAuthorizeUrl, createPkce, createState, resolveOAuthConfig } from '@mantle/microsoft';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { requestOrigin, secureCookies } from '@/lib/auth-constants';
 
 /**
@@ -21,8 +21,7 @@ const cookieOpts = (req: NextRequest) => ({
 });
 
 export async function GET(req: NextRequest) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   const cfg = await resolveOAuthConfig(user.id);
   if (!cfg) {

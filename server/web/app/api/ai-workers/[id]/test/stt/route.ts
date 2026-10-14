@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { testStt } from '@/lib/ai-worker-rpc';
 import { errorMessage } from '@mantle/std';
 
@@ -11,8 +11,7 @@ const Body = z.object({
 
 /** Transcribe a user-supplied audio sample (base64) via an stt worker. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'audioBase64 required' }, { status: 400 });

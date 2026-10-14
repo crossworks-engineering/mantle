@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listApiKeys, setApiKey } from '@/lib/api-keys';
 import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
 import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
@@ -10,8 +10,7 @@ import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   // Rows under the reserved 'mcp-' namespace are connector-sealed OAuth state
   // (tokens, registrations) written by the MCP connector flow, not keys the
   // owner typed in. They are hidden here — deleting one from the keys screen
@@ -40,8 +39,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

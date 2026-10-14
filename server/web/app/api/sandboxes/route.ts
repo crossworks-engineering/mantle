@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { listSandboxes } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { sandboxdEnabled, sandboxdList } from '@/lib/sandboxd';
 
 /**
@@ -11,8 +11,7 @@ import { sandboxdEnabled, sandboxdList } from '@/lib/sandboxd';
  * or absent → rows as-is, `disk: null`.
  */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   const rows = await listSandboxes(user.id);
   const live = await sandboxdList();

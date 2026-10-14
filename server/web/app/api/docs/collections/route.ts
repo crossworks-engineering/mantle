@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { collectionRoot, createDocCollection, listDocCollections } from '@mantle/files';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 import { getReaderNav } from '@/lib/docs-reader';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
@@ -12,8 +12,7 @@ import { isUniqueViolation } from '@mantle/db';
 /** Doc collections + their server-formatted "last synced" strings (tz/locale
  *  stable) + a first-doc link per collection, for the /docs management pane. */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [cols, prefs, nav] = await Promise.all([
     listDocCollections(user.id),
     loadProfilePreferences(user.id),
@@ -70,8 +69,7 @@ function rootsOverlap(a: string, b: string): boolean {
  * {ok,message} (200) so the dialog branches on it.
  */
 export async function POST(req: Request) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof Response) return owner;
+  const owner = ownerCaller();
   const parsed = createSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({

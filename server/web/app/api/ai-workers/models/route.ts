@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { discoverModels } from '@/lib/ai-worker-rpc';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -12,8 +12,7 @@ const Body = z.object({
 
 /** List the models a given api key can access — narrows the form's dropdown. */
 export async function POST(req: Request) {
-  const gate = await getOwnerOr401();
-  if (gate instanceof Response) return gate;
+  ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

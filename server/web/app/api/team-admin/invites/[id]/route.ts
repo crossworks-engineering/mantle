@@ -6,13 +6,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { revokeMemberInvite } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 const Params = z.object({ id: z.string().uuid() });
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const params = Params.safeParse(await ctx.params);
   if (!params.success || !(await revokeMemberInvite(user.id, params.data.id))) {
     return NextResponse.json({ error: 'Invite not found.' }, { status: 404 });

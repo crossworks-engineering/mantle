@@ -1,13 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listActivity } from '@/lib/journey';
 import { toolMakerFor } from '@/lib/tools';
 
 /** GET /api/debug/journey?cat=&done= — the activity feed (Activity → Reaction).
  *  `cat` filters by pipeline category; `done=1` hides no-op skips. */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const category = (['content', 'dialog', 'automation'] as const).find(
     (c) => c === url.searchParams.get('cat'),

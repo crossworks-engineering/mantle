@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   finishOnboarding,
   onboardingState,
@@ -29,8 +29,7 @@ import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 export type { SanityCheck } from '@/lib/onboarding-steps';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   return NextResponse.json(await onboardingState(user.id));
 }
 
@@ -47,8 +46,7 @@ const PROMPT_TEXT_ANCHOR_ONLY =
 
 /** Step dispatcher. Body is `{ action, ...payload }`. */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   // Writing a vault key, or pointing the model routes at an Azure endpoint

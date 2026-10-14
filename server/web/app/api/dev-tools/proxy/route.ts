@@ -27,7 +27,7 @@ import {
   scrubSecrets,
   type HttpHandler,
 } from '@mantle/tools';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { vaultPairRefusalFor } from '@/lib/tools';
 
@@ -85,8 +85,7 @@ async function readCapped(
 }
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

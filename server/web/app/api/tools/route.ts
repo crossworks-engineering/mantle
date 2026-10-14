@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   applyIntegrationInheritance,
   describeInheritance,
@@ -15,8 +15,7 @@ import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const rows = await listToolsForOwner(user.id);
   return NextResponse.json({ tools: rows });
 }
@@ -45,8 +44,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

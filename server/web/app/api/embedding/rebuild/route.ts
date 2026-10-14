@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { resolveEmbeddingModel, runReembed } from '@mantle/embeddings';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 
 const Body = z.object({ repopulate: z.boolean().optional() });
@@ -11,8 +11,7 @@ const Body = z.object({ repopulate: z.boolean().optional() });
  * embedding_cache, so re-running on an unchanged model is cheap.
  */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' });
   try {

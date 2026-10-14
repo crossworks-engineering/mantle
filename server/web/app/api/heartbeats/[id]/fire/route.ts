@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { FireRefused, fireOptsFor, getHeartbeatRow } from '@/lib/heartbeats';
 import { forceFire } from '@mantle/runtime/heartbeats';
 import { errorMessage } from '@mantle/std';
@@ -15,8 +15,7 @@ import { errorMessage } from '@mantle/std';
  * answers that login, never the anchor.
  */
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const row = await getHeartbeatRow(user.id, id);
   if (!row) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });

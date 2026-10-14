@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { resolveCapabilities } from '@/lib/integrity/capabilities';
 import { countLanded, listLanded } from '@/lib/integrity/landed';
 import type { LandedReport } from '@mantle/client-types/types/integrity';
@@ -9,8 +9,7 @@ import type { LandedReport } from '@mantle/client-types/types/integrity';
 // No writes, no fixtures — safe to poll and safe to leave mid-load.
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const limitRaw = url.searchParams.get('limit');
   const limitNum = limitRaw ? Number(limitRaw) : NaN;

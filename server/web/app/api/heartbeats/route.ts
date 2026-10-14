@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { createHeartbeat, listHeartbeats } from '@/lib/heartbeats';
 import { toolMakerFor } from '@/lib/tools';
 import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
@@ -10,8 +10,7 @@ import { isUniqueViolation } from '@mantle/db';
 /** List the owner's heartbeats (summaries). A heartbeat's state shows only
  *  to its maker (W7 integration fix 2). */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const heartbeats = await listHeartbeats(user.id, toolMakerFor(user));
   return NextResponse.json({ heartbeats });
 }
@@ -19,8 +18,7 @@ export async function GET() {
 /** Create a heartbeat. The lib computes the first next_fire_at and (when `state`
  *  is omitted) seeds from the bound skill's defaultState. */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = CreateHeartbeatBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(

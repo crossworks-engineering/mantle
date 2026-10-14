@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { deleteLandedNode } from '@/lib/integrity/landed';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -11,8 +11,7 @@ import { firstIssue } from '@/lib/zod-issue';
 const Body = z.object({ nodeId: z.string().uuid() });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

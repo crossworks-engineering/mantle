@@ -11,13 +11,12 @@ import {
   resolveBackupDir,
   saveBackupConfig,
 } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
 /** Backup settings + last-run status + dumps on disk for /settings/backups. */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [config, status, prefs] = await Promise.all([
     loadBackupConfig(user.id),
     loadBackupStatus(user.id),
@@ -44,8 +43,7 @@ const SaveBody = z.object({
 /** Persist the backup schedule config (normalized engine-side, same as the
  *  events worker uses). */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = SaveBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

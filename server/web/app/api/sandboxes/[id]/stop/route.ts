@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { setSandboxStatus } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { sandboxForLogin, sandboxdStop } from '@/lib/sandboxd';
 
 /**
@@ -11,8 +11,7 @@ import { sandboxForLogin, sandboxdStop } from '@/lib/sandboxd';
  * that is still running.
  */
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const row = await sandboxForLogin(user, id);
   if (!row) return NextResponse.json({ error: 'sandbox not found' }, { status: 404 });

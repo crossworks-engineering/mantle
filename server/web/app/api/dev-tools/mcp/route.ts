@@ -6,14 +6,13 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { callMcpTool, listMcpTools } from '@/lib/dev-tools/mcp-bridge';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
-  const gate = await getOwnerOr401();
-  if (gate instanceof Response) return gate;
+  ownerCaller();
   try {
     const tools = await listMcpTools();
     return NextResponse.json({ tools });
@@ -29,8 +28,7 @@ const CallBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const gate = await getOwnerOr401();
-  if (gate instanceof Response) return gate;
+  ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CallBody.safeParse(raw);
   if (!parsed.success) {

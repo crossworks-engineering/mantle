@@ -19,7 +19,7 @@ import {
   isFormerClientContact,
   isFormerClientEmail,
 } from '@mantle/content';
-import { getOwnerOr401, hashLoginPassword } from '@/lib/auth';
+import { hashLoginPassword, ownerCaller } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { insertLoginWithWorkspaces } from '@/lib/login-create';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -44,8 +44,7 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
  */
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  const user = ownerCaller();
 
   const rows = await db
     .select({
@@ -100,8 +99,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  const user = ownerCaller();
 
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

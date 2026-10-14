@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getToolById } from '@/lib/tools';
 import { setToolExternalAccess } from '@mantle/tools';
 import { firstIssue } from '@/lib/zod-issue';
@@ -21,8 +21,7 @@ const Body = z.object({
  * log gets a `tool.external_access.on` / `.off` row. Answers the tool as GET does.
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const parsed = Body.safeParse(await req.json().catch(() => ({})));

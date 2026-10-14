@@ -6,14 +6,13 @@ import {
   updaterAvailable,
 } from '@/lib/updates';
 import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@mantle/client-types/version';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /** Initial-load bundle for /settings/updates — the release check, whether the
  *  updater sidecar is present, the last updater status, and this build's
  *  identity. (The page polls /api/updates/status thereafter.) */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   const [check, available, status, compose] = await Promise.all([
     checkForUpdate(false),
     updaterAvailable(),

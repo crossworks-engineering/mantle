@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 import { APP_VERSION } from '@mantle/client-types/version';
-import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { loadProfilePreferences } from '@mantle/content';
 import { renderAvatarSvg, resolveAvatarTint } from '@mantle/share-ui/avatar';
 import { db, agents } from '@mantle/db';
@@ -35,8 +34,7 @@ import { UUID_RE } from '@mantle/std';
 const PALETTE = ['#666ed1', '#ae467f', '#ad5700', '#4b830f', '#00889b'];
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
   const { id: key } = await ctx.params;
   const size = Math.min(256, Math.max(16, Number(new URL(req.url).searchParams.get('size') ?? 96)));
 

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { testVision } from '@/lib/ai-worker-rpc';
 import { errorMessage } from '@mantle/std';
 
@@ -11,8 +11,7 @@ const Body = z.object({
 
 /** Extract text/description from a user-supplied image via a vision worker. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'imageBase64 required' }, { status: 400 });

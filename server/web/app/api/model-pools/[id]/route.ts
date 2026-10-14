@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { db, curatedModels } from '@mantle/db';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -40,8 +40,7 @@ const PatchBody = z.object({
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
@@ -70,8 +69,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const deleted = await db

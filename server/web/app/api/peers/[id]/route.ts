@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { deletePeer, setOutboundToken, setPeerAccess, setPeerEnabled } from '@mantle/content';
 import { firstIssue } from '@/lib/zod-issue';
 import {
@@ -21,8 +21,7 @@ const PatchBody = z
   .extend(PeerAccessBody.shape);
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -83,8 +82,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const ok = await deletePeer(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });

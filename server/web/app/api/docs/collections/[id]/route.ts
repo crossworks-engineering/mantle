@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { setCollectionEnabled } from '@mantle/files';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 
 const Body = z.object({ enabled: z.boolean() });
@@ -11,8 +11,7 @@ const Body = z.object({ enabled: z.boolean() });
  * indexed nodes. Returns {ok,message} (200) summarising what happened.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof Response) return owner;
+  const owner = ownerCaller();
   const { id } = await params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, message: 'invalid input' });

@@ -14,7 +14,7 @@
  * Session/bearer-gated: `/api/team-admin` is not in PUBLIC_PATHS.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   updateProfilePreferences,
   loadProfilePreferences,
@@ -23,8 +23,7 @@ import {
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [badges, prefs] = await Promise.all([
     teamAdminBadges(user.id),
     loadProfilePreferences(user.id),
@@ -44,8 +43,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   let body: unknown;
   try {
     body = await req.json();

@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { browseDrive, type GraphError } from '@mantle/microsoft';
 import type { MsDriveChildDTO } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /**
  * List a drive folder's children for the scope picker (`id` = drive db id;
@@ -9,8 +9,7 @@ import { getOwnerOr401 } from '@/lib/auth';
  * passthrough — nothing persisted. Owner-scoped.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const itemId = new URL(req.url).searchParams.get('item') ?? undefined;
   try {

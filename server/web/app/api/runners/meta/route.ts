@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getQueueHealth, listRunnerNames } from '@/lib/runners';
 
 /**
@@ -10,8 +10,7 @@ import { getQueueHealth, listRunnerNames } from '@/lib/runners';
  * name filter. Polled by the client for live queue health. Owner-gated.
  */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   const [queue, names] = await Promise.all([getQueueHealth(), listRunnerNames()]);
   return NextResponse.json({ queue, names });
 }

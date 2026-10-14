@@ -1,14 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { connectImapAccount, getAccount, redactAccount } from '@mantle/email';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { vaultPairRefusalFor } from '@/lib/tools';
 import { firstIssue } from '@/lib/zod-issue';
 
 /** One owner-scoped account (credential stripped). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const account = await getAccount(user.id, id);
   if (!account) return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
@@ -81,8 +80,7 @@ function mailDestinationMoved(
  * holds the keys area.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const parsed = EditBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

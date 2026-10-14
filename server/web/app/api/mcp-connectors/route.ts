@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   createMcpConnector,
   dbMcpOAuthStore,
@@ -24,8 +24,7 @@ import { toolMakerFor } from '@/lib/tools';
  *  its first sync. See docs/mcp-connectors.md. */
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const result = await listMcpConnectors(user.id, {
     oauthRedirectUri: connectorOAuthCallbackUrl(req),
   });
@@ -55,8 +54,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

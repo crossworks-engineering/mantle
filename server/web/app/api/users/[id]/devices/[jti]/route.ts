@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, mobileTokens, authUsers, and, eq } from '@mantle/db';
-import { forgetRequestLogins, getOwnerOr401 } from '@/lib/auth';
+import { forgetRequestLogins, ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import {
   deleteLegacySubscriptions,
@@ -23,8 +23,7 @@ const IdParams = z.object({ id: z.string().uuid(), jti: z.string().min(1) });
  * they all go and a phone still in use connects again.
  */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; jti: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  const user = ownerCaller();
 
   const parsed = IdParams.safeParse(await ctx.params);
   if (!parsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });

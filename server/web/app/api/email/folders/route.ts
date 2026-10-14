@@ -1,14 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { folderFacets } from '@mantle/email';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 const Query = z.object({ account: z.string().uuid() });
 
 /** Per-folder counts (ingested mail) for one owned account — drives the nav. */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Query.safeParse({
     account: new URL(req.url).searchParams.get('account') ?? undefined,
   });

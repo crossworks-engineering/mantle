@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
@@ -23,8 +23,7 @@ const Body = z.object({ prompt: z.string().default('') });
  * mirroring `/api/ai-workers/[id]/test/chat`.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });

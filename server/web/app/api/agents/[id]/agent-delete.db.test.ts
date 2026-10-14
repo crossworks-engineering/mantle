@@ -14,7 +14,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ owner: '' }));
 
-vi.mock('@/lib/auth', () => ({ getOwnerOr401: vi.fn(async () => ({ id: h.owner })) }));
+vi.mock('@/lib/auth', () => ({
+  getOwnerOr401: vi.fn(async () => ({ id: h.owner })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({ id: h.owner })),
+}));
 
 describe.skipIf(!URL)('DELETE /api/agents/:id conversation handling on Postgres', () => {
   type Db = typeof import('@mantle/db');

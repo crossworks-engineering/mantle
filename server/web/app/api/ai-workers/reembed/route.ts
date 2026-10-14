@@ -1,10 +1,9 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { reembedIndex } from '@/lib/ai-worker-rpc';
 
 /** Rebuild every stored vector against the currently-configured embedding model. */
 export async function POST() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   return NextResponse.json(await reembedIndex(user.id));
 }

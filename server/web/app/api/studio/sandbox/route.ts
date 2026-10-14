@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
@@ -29,8 +29,7 @@ const MAX_REPLY_TOKENS = 8192;
 type Msg = { role: 'user' | 'assistant'; content: string };
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   let payload: { agentId?: string; messages?: Msg[] };
   try {
     payload = await req.json();

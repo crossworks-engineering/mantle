@@ -7,7 +7,7 @@ import {
   setStarred,
 } from '@mantle/email';
 import type { MessageDetailDTO } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
 /**
@@ -19,8 +19,7 @@ import { firstIssue } from '@/lib/zod-issue';
  * compile error.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const result = await getMessageWithAttachments(user.id, id);
   if (!result) return NextResponse.json({ error: 'Message not found.' }, { status: 404 });
@@ -56,8 +55,7 @@ const PatchBody = z
 
 /** Flip read / starred flags on one message (owner-scoped, idempotent). */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

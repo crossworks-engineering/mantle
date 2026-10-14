@@ -9,12 +9,11 @@
  * live and correctly OAuth-gated). 404 means the connector is disabled.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
 
 export async function POST() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
 
   const url = connectorUrl();
   const initialize = JSON.stringify({

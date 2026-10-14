@@ -1,4 +1,4 @@
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   abandonMcpOAuth,
   clearConnectorExternalAccess,
@@ -33,8 +33,7 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
  * gets the normal 401 rather than leaking flow state.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const state = url.searchParams.get('state') ?? '';
   const code = url.searchParams.get('code') ?? '';

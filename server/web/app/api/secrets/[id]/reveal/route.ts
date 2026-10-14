@@ -6,12 +6,11 @@
  * No cache headers; never proxied.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { revealSecret } from '@/lib/secrets';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const result = await revealSecret(user.id, id);
   if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });

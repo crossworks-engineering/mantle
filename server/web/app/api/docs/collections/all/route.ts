@@ -1,15 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { listDocCollections, setCollectionEnabled } from '@mantle/files';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 
 const Body = z.object({ enabled: z.boolean() });
 
 /** Enable or disable every collection at once. */
 export async function POST(req: Request) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof Response) return owner;
+  const owner = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, message: 'invalid input' });
   const enabled = parsed.data.enabled;

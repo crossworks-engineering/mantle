@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { createOpenapiConnector, integrationPairing, vaultPairLoginRefusal } from '@mantle/tools';
 import { listOpenapiConnectors } from '@/lib/openapi-connectors';
 import { toolMakerFor } from '@/lib/tools';
@@ -14,8 +14,7 @@ import { firstIssue } from '@/lib/zod-issue';
  *  docs/openapi-connectors.md. */
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const result = await listOpenapiConnectors(user.id);
   return NextResponse.json(result);
 }
@@ -48,8 +47,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { requestProviderProbeNow } from '@mantle/db';
 import { loadProviderAlerts } from '@mantle/content';
 import { notifyProviderRecover } from '@/lib/embedding-config';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /**
  * GET: the provider outages an admin sees (docs/embeddings.md "Provider
@@ -11,8 +11,7 @@ import { getOwnerOr401 } from '@/lib/auth';
  * client login.
  */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   return NextResponse.json({ alerts: await loadProviderAlerts(user.id) });
 }
 
@@ -24,8 +23,7 @@ export async function GET() {
  * call per alert, and a recovery at most once per 2 min.
  */
 export async function POST() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const probing = await requestProviderProbeNow(user.id);
   await notifyProviderRecover(user.id);
   return NextResponse.json({ ok: true, probing });

@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import type { AiWorker, AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   deleteAiWorker,
   getAiWorker,
@@ -43,8 +43,7 @@ const PatchBody = z
   .refine((b) => Object.keys(b).length > 0, 'nothing to update');
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const worker = await getAiWorker(user.id, idParsed.data.id);
@@ -53,8 +52,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
@@ -102,8 +100,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   // Read the kind before deleting so we can drop the embedding cache if needed.

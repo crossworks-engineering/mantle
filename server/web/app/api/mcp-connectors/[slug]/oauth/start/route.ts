@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { connectorOAuthCallbackUrl } from '@/lib/mcp-connectors';
 import { dbMcpOAuthStore, startMcpOAuth } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
@@ -9,8 +9,7 @@ import { errorMessage } from '@mantle/std';
  *  response's `authorizeUrl` is opened in the OWNER'S browser; the provider
  *  redirects back to /api/mcp-connectors/oauth/callback. */
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { slug } = await params;
   const groupSlug = slug.startsWith('mcp-') ? slug : `mcp-${slug}`;
   try {

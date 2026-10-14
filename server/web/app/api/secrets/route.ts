@@ -7,7 +7,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { SECRET_KINDS, countSecrets, createSecret, listSecrets } from '@/lib/secrets';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -28,8 +28,7 @@ const CreateBody = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const query = url.searchParams.get('q') ?? undefined;
   const kindParam = url.searchParams.get('kind');
@@ -48,8 +47,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

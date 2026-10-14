@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
 import { ASK_HUMAN_FORM_LIMITS as L } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -27,8 +27,7 @@ const PatchBody = z.object({
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const row = await getPendingCall(user.id, idParsed.data.id);
@@ -37,8 +36,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const raw = await req.json().catch(() => ({}));

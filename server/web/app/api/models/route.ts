@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { isProviderId } from '@mantle/voice';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { fetchProviderModels } from '@/lib/model-explorer';
 
 /**
@@ -11,8 +11,7 @@ import { fetchProviderModels } from '@/lib/model-explorer';
  * key is resolved server-side and never leaves this route.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const provider = url.searchParams.get('provider') ?? '';
   if (!isProviderId(provider)) {

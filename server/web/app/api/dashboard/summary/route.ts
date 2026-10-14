@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { spendByDay } from '@/lib/metrics';
 import { brainCounts, vectorCounts, pendingToolCount } from '@/lib/dashboard';
 
@@ -11,8 +11,7 @@ import { brainCounts, vectorCounts, pendingToolCount } from '@/lib/dashboard';
  * works with a session cookie or a mobile bearer token.
  */
 export async function GET() {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
 
   const [brain, vectors, spend14, pendingCount] = await Promise.all([
     brainCounts(owner.id),

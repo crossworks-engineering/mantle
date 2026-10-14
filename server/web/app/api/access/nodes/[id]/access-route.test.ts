@@ -4,22 +4,15 @@
  * `gone` and point at Grant Access, and without a session they still answer
  * the gate's 401 (no leak of whether the item exists).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const OWNER = '33333333-3333-4333-8333-333333333333';
-const h = vi.hoisted(() => ({ signedIn: true }));
 
-vi.mock('@/lib/auth', () => ({
-  getOwnerOr401: vi.fn(async () =>
-    h.signedIn
-      ? { id: OWNER }
-      : new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }),
-  ),
+vi.mock('@/lib/auth', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  // The route reads the caller the pipeline answers (A4 step 3b part 4).
+  ownerCaller: vi.fn(() => ({ id: OWNER })),
 }));
-
-beforeEach(() => {
-  h.signedIn = true;
-});
 
 describe('/api/access/nodes/:id is gone', () => {
   it('answers 410 gone to the owner, GET and PATCH alike', async () => {
@@ -34,9 +27,10 @@ describe('/api/access/nodes/:id is gone', () => {
   });
 
   it('still answers 401 without a session', async () => {
-    h.signedIn = false;
-    const { GET, PATCH } = await import('./route');
-    expect((await GET()).status).toBe(401);
-    expect((await PATCH()).status).toBe(401);
+    // Through the full pipeline (runRoute): the refusal is the gate's since
+    // the route reads the caller it answers; the handler never runs.
+    const { runRoute } = await import('@/server/run-route');
+    expect((await runRoute(null, 'GET', `/api/access/nodes/${OWNER}`)).status).toBe(401);
+    expect((await runRoute(null, 'PATCH', `/api/access/nodes/${OWNER}`, {})).status).toBe(401);
   });
 });

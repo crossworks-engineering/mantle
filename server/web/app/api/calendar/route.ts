@@ -2,15 +2,14 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { addIcsFeed, listCalendarAccounts } from '@mantle/calendar';
 import type { CalendarAccountDTO } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
 /** Subscribed calendar feeds for /settings/calendar. Maps each row to the wire
  *  DTO — the sealed `feedUrlEnc` credential / `ownerId` / `syncState` never reach
  *  the browser, and the `CalendarAccountDTO` annotation makes drift a type error. */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const accounts: CalendarAccountDTO[] = (await listCalendarAccounts(user.id)).map((a) => ({
     id: a.id,
     provider: a.provider,
@@ -35,8 +34,7 @@ const FeedSchema = z.object({
 /** Subscribe to an iCalendar feed (Google secret iCal, Outlook published URL,
  *  Apple, CalDAV…). First sync runs within ~2 minutes. */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = FeedSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error, 'Invalid input') }, { status: 400 });

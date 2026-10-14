@@ -6,7 +6,7 @@ import {
   resolveOAuthConfig,
   upsertAccountFromTokens,
 } from '@mantle/microsoft';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 
 /**
@@ -41,8 +41,7 @@ function settingsRedirect(req: NextRequest, params: Record<string, string>): Nex
 }
 
 export async function GET(req: NextRequest) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   const url = new URL(req.url);
   const code = url.searchParams.get('code');

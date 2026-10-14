@@ -6,7 +6,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { SECRET_KINDS, deleteSecret, getSecretMetadata, updateSecret } from '@/lib/secrets';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -25,8 +25,7 @@ const PatchBody = z.object({
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const row = await getSecretMetadata(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -34,8 +33,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
@@ -48,8 +46,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const ok = await deleteSecret(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });

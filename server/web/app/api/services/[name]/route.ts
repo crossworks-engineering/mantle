@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { isOptionalService, requestServiceSwitch } from '@/lib/services';
 import { firstIssue } from '@/lib/zod-issue';
@@ -16,8 +16,7 @@ const Body = z.object({ enable: z.boolean() }).strict();
  * client can show it, like /api/updates/request.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ name: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { name } = await params;
   if (!isOptionalService(name)) {
     return NextResponse.json({ error: `unknown service '${name}'` }, { status: 404 });

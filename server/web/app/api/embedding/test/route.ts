@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { probeEmbeddingRoute } from '@mantle/embeddings';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getEmbeddingConfig } from '@/lib/embedding-config';
 import { modelRoutePairing } from '@/lib/model-route-pair';
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
@@ -16,8 +16,7 @@ const Body = z.object({
 
 /** Probe one route's live output dimension (bypasses resolver + cache). */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' });
   if (!parsed.data.model.trim()) return NextResponse.json({ ok: false, error: 'No model set' });

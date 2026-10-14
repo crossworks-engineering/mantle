@@ -15,12 +15,11 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { createMemberInvite, inviteLinkPath, listMemberInvites } from '@mantle/content';
 import type { MemberInviteCreated, MemberInviteList } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { inviteErrorResponse } from '@/lib/member-invites';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const body: MemberInviteList = { invites: await listMemberInvites(user.id) };
   return NextResponse.json(body);
 }
@@ -32,8 +31,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Choose a contact or enter an email.' }, { status: 400 });

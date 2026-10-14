@@ -4,14 +4,13 @@
  * box-level enable flag. Session-gated (not in PUBLIC_PATHS).
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { connectorUrl } from '@/lib/mcp-oauth';
 import { listConnectedClients } from '@/lib/mcp-clients';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [prefs, clients] = await Promise.all([
     loadProfilePreferences(user.id),
     listConnectedClients(user.id),
@@ -23,8 +22,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   let body: unknown;
   try {
     body = await req.json();

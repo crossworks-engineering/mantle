@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   refreshModelCatalog,
   contextLimitMap,
@@ -24,8 +24,7 @@ import {
  *       fetchedAt: epoch | null }
  */
 export async function GET() {
-  const gate = await getOwnerOr401();
-  if (gate instanceof Response) return gate;
+  ownerCaller();
   await refreshModelCatalog();
   return NextResponse.json({
     limits: contextLimitMap(),

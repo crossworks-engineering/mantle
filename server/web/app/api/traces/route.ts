@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { countTraces, listTraces } from '@/lib/traces';
 import { toolMakerFor } from '@/lib/tools';
 import type { TraceSort, TraceSortDir } from '@mantle/client-types/traces-format';
@@ -15,8 +15,7 @@ const PAGE_SIZE = 50;
 const DEFAULT_STATUSES = ['success', 'error'];
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
 
   const kinds = url.searchParams.getAll('kind');

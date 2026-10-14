@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { SUPPORTED_PROVIDERS, isProviderId, type ProviderId } from '@mantle/voice';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   fetchProviderModels,
   explorerCanFetch,
@@ -21,8 +21,7 @@ const PAGE_SIZE = 50;
 const SORTS: ModelSort[] = ['name', 'context', 'input', 'output', 'created'];
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
 
   const provider: ProviderId = isProviderId(url.searchParams.get('provider') ?? '')

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import type { WorkflowStatusString } from '@dbos-inc/dbos-sdk';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listRuns } from '@/lib/runners';
 import { RUNNER_STATUSES } from '@mantle/client-types/runners-types';
 
@@ -15,8 +15,7 @@ const PAGE_SIZE = 50;
 const VALID_STATUSES = new Set<string>(RUNNER_STATUSES);
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   const url = new URL(req.url);
 
   const statuses = url.searchParams

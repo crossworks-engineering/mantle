@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { cancelRun, forkRun, getRunDetail, resumeRun, restartRun } from '@/lib/runners';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -8,8 +8,7 @@ import { firstIssue } from '@/lib/zod-issue';
 /** GET /api/runners/[id] — one run with its steps + (truncated) input/output,
  *  or 404. Drives the detail pane. Owner-gated. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   const { id } = await params;
   const run = await getRunDetail(id);
   if (!run) return NextResponse.json({ error: 'Run not found.' }, { status: 404 });
@@ -32,8 +31,7 @@ const ActionBody = z.discriminatedUnion('action', [
  * Owner-gated. These act on the live runner system.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   const { id } = await params;
 
   const parsed = ActionBody.safeParse(await req.json().catch(() => ({})));

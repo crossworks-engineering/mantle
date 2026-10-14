@@ -1,14 +1,15 @@
 /**
  * GET /api/team-admin/shares without a database: the live links (no level
  * since W5b2), shaped for jackdaw. `retired` (the old client links) is always
- * [] since W5c. An admin route: members and clients are refused by
- * getOwnerOr401 (the sweeps drive every route).
+ * [] since W5c. An admin route: members and clients are refused by the
+ * gate's owner answer (the sweeps drive every route).
  */
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => ({
+  // The route reads the caller the pipeline answers (A4 step 3b part 4).
+  ownerCaller: vi.fn(() => ({
     id: 'owner-1',
     email: 'admin@example.invalid',
     actor: { id: 'admin-1', email: 'admin@example.invalid', displayName: null, isOwner: false },

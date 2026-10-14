@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { adoptManifestItem, type AdoptKind } from '@/lib/system-manifest';
 import { computeConfigDiff } from '@/lib/system-manifest/config-diff-db';
 
@@ -13,8 +13,7 @@ const KIND_ORDER: AdoptKind[] = ['tool-group', 'skill', 'agent', 'persona', 'wor
  * still created. Returns how many items were applied.
  */
 export async function POST() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   try {
     const report = await computeConfigDiff(user.id);
     const items = report.entities

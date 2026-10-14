@@ -1,13 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
 
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listProseVersions, saveProse, revertProse } from '@/lib/studio/prompt-versions';
 import { toolMakerFor } from '@/lib/tools';
 
 // GET /api/studio/prose?entityType=&entityId=&field= → { versions }
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { searchParams } = new URL(req.url);
   const entityType = searchParams.get('entityType') ?? '';
   const entityId = searchParams.get('entityId') ?? '';
@@ -24,8 +23,7 @@ export async function GET(req: Request) {
 //   save:   { entityType, entityId, field, body, note? }
 //   revert: { entityType, entityId, field, revertTo }
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   let payload: {
     entityType?: string;
     entityId?: string;

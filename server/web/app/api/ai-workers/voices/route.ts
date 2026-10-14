@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listVoices } from '@/lib/ai-worker-rpc';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -12,8 +12,7 @@ const Body = z.object({
 
 /** List the voices available for a tts provider + model (live for ElevenLabs). */
 export async function POST(req: Request) {
-  const gate = await getOwnerOr401();
-  if (gate instanceof Response) return gate;
+  ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { and, desc, sql } from 'drizzle-orm';
 import { db, traceSteps } from '@mantle/db';
 import { deleteSandboxRow } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { sandboxForLogin, sandboxdList, sandboxdRm } from '@/lib/sandboxd';
 
 /**
@@ -13,8 +13,7 @@ import { sandboxForLogin, sandboxdList, sandboxdRm } from '@/lib/sandboxd';
  * per-sandbox audit log (newest first, capped at 50).
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const row = await sandboxForLogin(user, id);
   if (!row) return NextResponse.json({ error: 'sandbox not found' }, { status: 404 });
@@ -77,8 +76,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
  * row stays, so a live container is never orphaned from its registry row.
  */
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const row = await sandboxForLogin(user, id);
   if (!row) return NextResponse.json({ error: 'sandbox not found' }, { status: 404 });

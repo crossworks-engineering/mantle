@@ -1,13 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { countTopics, listTopics } from '@/lib/debug';
 
 /** GET /api/debug/topics?page=&q= — conversation topics, paginated. */
 const PAGE_SIZE = 25;
 
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const url = new URL(req.url);
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
   const query = url.searchParams.get('q')?.trim() || undefined;

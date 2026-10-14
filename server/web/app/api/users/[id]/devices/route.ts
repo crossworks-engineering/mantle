@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, mobileTokens, authUsers, and, eq, isNull, gt, desc } from '@mantle/db';
-import { getOwnerOr401, mobileTokenJti } from '@/lib/auth';
+import { mobileTokenJti, ownerCaller } from '@/lib/auth';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -22,8 +22,7 @@ const IdParams = z.object({ id: z.string().uuid() });
  * a single screen's work.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  ownerCaller();
 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });

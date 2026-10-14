@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({ caller: null as unknown }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => h.caller),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => h.caller),
 }));
 
 vi.mock('@/lib/audit', () => ({

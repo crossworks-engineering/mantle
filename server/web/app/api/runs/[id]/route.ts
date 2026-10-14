@@ -1,12 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { db } from '@mantle/db';
 import { cancelRun, compileRunState } from '@mantle/runs';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /** GET /api/runs/:id — one run's compiled tree (the run view payload). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const compiled = await compileRunState(db, id);
   if (!compiled || compiled.run.ownerId !== user.id) {
@@ -21,8 +20,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
  *  janitor expires any orphaned pending questions). Stays live with MANTLE_RUNS
  *  off, matching run_cancel's always-on posture. */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const body = (await req.json().catch(() => ({}))) as { action?: string };
   if (body.action !== 'cancel') {

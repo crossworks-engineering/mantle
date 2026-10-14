@@ -4,7 +4,7 @@ import { EMBEDDING_DIMS, getEmbeddingConfig, upsertEmbeddingConfig } from '@/lib
 import { suggestBackupRoute } from '@/lib/embedding-backup';
 import { EXTRACTION_CONCURRENCY_MAX } from '@mantle/embeddings';
 import { loadProviderAlerts } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { EMBEDDING_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { errorMessage } from '@mantle/std';
 
@@ -13,8 +13,7 @@ import { errorMessage } from '@mantle/std';
  *  must act on (docs/embeddings.md "Provider outages"): the open provider
  *  alerts, and a same-model backup route to add when none is set. */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const [config, keys, alerts] = await Promise.all([
     getEmbeddingConfig(user.id),
     listApiKeys(user.id),
@@ -68,8 +67,7 @@ function nullableInt(v: unknown, min: number, max: number): number | null {
 /** Upsert the one embedder config row (primary + backup routes + perf knobs).
  *  Body carries the same snake_case fields the form posts. */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const model = str(body.model);
   if (!model) return NextResponse.json({ ok: false, error: 'A model is required' });

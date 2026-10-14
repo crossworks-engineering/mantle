@@ -27,5 +27,10 @@
  * such a route segment; it reads the caller now, so the pin holds) and the
  * 3 getOwnerOr401WithLogin calls of the app brokers and the frame ticket
  * (not counted here).
+ *
+ * 285 -> 43 (A4 step 3b part 4, batch 4, the Admin area rows): 243
+ * handlers in 172 route files became reads, 242 of them getOwnerOr401
+ * calls and POST /api/users/:id/password's getOwnerOr401WithSource (not
+ * counted here).
  */
-export const GUARD_CALL_PIN = 285;
+export const GUARD_CALL_PIN = 43;

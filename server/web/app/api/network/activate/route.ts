@@ -5,13 +5,12 @@ import {
   markTailscaleActivated,
 } from '@/lib/tailscale-config';
 import { tailnetUp } from '@/lib/tailscale';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 
 /** Decrypt the stored key and drive tailscaled login over the socket. The join
  *  is async — the UI polls /api/network for `Running` after this returns ok. */
 export async function POST() {
-  const owner = await getOwnerOr401();
-  if (owner instanceof Response) return owner;
+  const owner = ownerCaller();
   const key = await getTailscaleAuthKey(owner.id);
   if (!key)
     return NextResponse.json({ ok: false, message: 'No auth key saved yet — save one first.' });

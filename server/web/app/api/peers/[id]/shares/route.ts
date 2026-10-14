@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   grantPeerShare,
   grantPeerTypeShare,
@@ -19,8 +19,7 @@ import {
  * category-toggle rows.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const [shares, typeShares, typeCounts] = await Promise.all([
     listPeerShares(user.id, id),
@@ -37,8 +36,7 @@ const GrantBody = z.union([
 
 /** Grant this peer read access to a node, or to a whole category (`nodeType`). */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = GrantBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -59,8 +57,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
 /** Revoke a grant: `?nodeId=` (per-node) or `?nodeType=` (category). */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const params = new URL(req.url).searchParams;
   const nodeType = params.get('nodeType');

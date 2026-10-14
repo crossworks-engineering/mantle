@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { queryAuditLog } from '@/lib/audit-query';
 
 /**
@@ -9,8 +9,7 @@ import { queryAuditLog } from '@/lib/audit-query';
  * it's a trail, not a secret.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   const sp = new URL(req.url).searchParams;
   const result = await queryAuditLog({
     actor: sp.get('actor') ?? undefined,

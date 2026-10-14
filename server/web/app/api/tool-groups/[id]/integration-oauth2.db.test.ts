@@ -19,6 +19,12 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     email: 'admin@example.invalid',
     actor: { id: h.owner, email: 'admin@example.invalid', displayName: null, isOwner: true },
   })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({
+    id: h.owner,
+    email: 'admin@example.invalid',
+    actor: { id: h.owner, email: 'admin@example.invalid', displayName: null, isOwner: true },
+  })),
 }));
 
 type Route = (req: Request, ctx?: { params: Promise<unknown> }) => Promise<Response>;

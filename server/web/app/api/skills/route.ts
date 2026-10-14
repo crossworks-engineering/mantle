@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { createSkill, listSkills } from '@/lib/skills';
 import { toolMakerFor } from '@/lib/tools';
 import { errorMessage } from '@mantle/std';
@@ -8,8 +8,7 @@ import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const rows = await listSkills(user.id);
   return NextResponse.json({ skills: rows });
 }
@@ -31,8 +30,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

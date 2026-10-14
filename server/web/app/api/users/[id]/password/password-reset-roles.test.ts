@@ -27,7 +27,8 @@ vi.mock('@mantle/db', () => {
 });
 
 vi.mock('@/lib/auth', () => ({
-  getOwnerOr401WithSource: async () => ({
+  // The route reads the caller the pipeline answers (A4 step 3b part 4).
+  ownerCallerWithSource: () => ({
     user: {
       id: '33333333-3333-4333-8333-333333333333',
       email: 'anchor@example.invalid',

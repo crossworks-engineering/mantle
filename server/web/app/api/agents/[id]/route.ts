@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
 import { agentForReader, deleteAgent, updateAgent } from '@/lib/agents';
@@ -74,8 +74,7 @@ const PatchBody = z
   .partial();
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
@@ -132,8 +131,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 const ConversationParam = z.enum(['keep', 'delete']).default('keep');
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });

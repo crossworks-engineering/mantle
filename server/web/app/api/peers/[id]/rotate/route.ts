@@ -1,13 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { rotateInboundToken } from '@mantle/content';
 import { PEER_OWNER_ONLY, peerBoundToOwner, peerChangeNeedsOwner } from '@/lib/peer-access';
 
 /** Mint a fresh inbound token for this peer. Returns the plaintext ONCE — the
  *  old token stops working immediately, so the peer must be re-issued this. */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   // A new token for a peer that acts as the owner is an owner credential:
   // the owner's to mint (W6b fix round 3, M-1).

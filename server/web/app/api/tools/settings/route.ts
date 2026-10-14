@@ -2,14 +2,13 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import type { ToolSettings } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
 /** The two owner-level tool policy toggles (stored in profile preferences):
  *  agent-built-tool approval, and the unattended-heartbeat email/web egress gate. */
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const prefs = await loadProfilePreferences(user.id);
   const body: ToolSettings = {
     requireApproval: prefs.toolsmithRequireApproval === true,
@@ -26,8 +25,7 @@ const PatchBody = z
   );
 
 export async function PUT(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
