@@ -20,6 +20,7 @@ import {
 import {
   builtinPolicy,
   BUILTIN_TOOLS,
+  knownFlowForGroup,
   buildHttpRequest,
   collectParamNames,
   collectSecretRefs,
@@ -615,6 +616,19 @@ describe('system manifest integrity', () => {
  * KNOWN_TOOL_SLUGS is the set a manifest group may name, so filtering these out
  * of it makes a group that names one fail the drift test above rather than ship.
  */
+describe('every manifest tool group has a flow (A5 step 6d)', () => {
+  // The deferred catalog lists a granted tool under its group's flow
+  // (selection/flows.ts TOOL_FLOWS); a group no flow holds gets a line of
+  // its own, as an owner's connector does. A group the manifest ships is
+  // named in a flow, so a new one cannot land outside them unnoticed
+  // (gateway survey finding 14: app-data-mcp was missing).
+  it('names each manifest group in TOOL_FLOWS', () => {
+    expect(
+      MANIFEST_TOOL_GROUPS.filter((g) => knownFlowForGroup(g.slug) === null).map((g) => g.slug),
+    ).toEqual([]);
+  });
+});
+
 describe('mcpOnly builtins are not grantable', () => {
   const mcpOnly = BUILTIN_TOOLS.filter((t) => t.mcpOnly).map((t) => t.slug);
 

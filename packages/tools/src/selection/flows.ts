@@ -61,6 +61,7 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
       'formulas-admin',
       'calculator',
       'app-data',
+      'app-data-mcp',
     ],
   },
   {

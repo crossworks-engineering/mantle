@@ -86,6 +86,7 @@ export {
   type ToolSource,
 } from './selection/deferred';
 export { type GroupSource as ToolGroupSource } from './selection/rank';
+export { knownFlowForGroup } from './selection/flows';
 export {
   renderDelegateRoster,
   buildDelegateRoster,
