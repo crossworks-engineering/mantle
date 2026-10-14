@@ -141,8 +141,11 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       check(key, 'effect', row.effect, isReadRequest(m, p) ? 'read' : 'write');
       check(key, 'memberMayRead', memberOpenRead(row), memberMayRead(m, p));
       check(key, 'memberMayWrite', memberOpenWrite(row), memberMayWrite(m, p));
-      check(key, 'isAnyLoginRoute', anyLoginRow(row), isAnyLoginRoute(m, p));
-      check(key, 'isMemberRoute', row.logins === 'member', isMemberRoute(m, p));
+      // A HEAD row has its GET's logins (the owner's decision 2a): the
+      // lists name GET only.
+      const listed = m === 'HEAD' ? 'GET' : m;
+      check(key, 'isAnyLoginRoute', anyLoginRow(row), isAnyLoginRoute(listed, p));
+      check(key, 'isMemberRoute', row.logins === 'member', isMemberRoute(listed, p));
       check(key, 'open', row.open, row.logins ? 'login' : 'admin');
       check(key, 'creates', row.creates, CREATE_ROUTES.has(`${m} ${p}`));
       for (const path of pathsOf(p)) {
@@ -411,36 +414,28 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     expect(requestKeyRoute(null, '/api/v1/pages')).toBeNull();
   });
 
-  it('M3 (owner question for A4 step 4): HEAD of an any-login GET is open to Admin only', () => {
-    // Today's answer, pinned so a change is deliberate: HEAD has the GET's
-    // class; the owner routes a login outside Admin may read open their
-    // HEAD too (memberMayRead reads HEAD as GET), but the any-login, chat,
-    // Telegram and member lists name GET only, so such a HEAD row has
-    // logins null and is open to Admin only.
+  it("M3, the owner's decision 2a (2026-10-14): a HEAD row has its GET's logins", () => {
+    // HEAD is answered by the GET handler: it has the GET's class and the
+    // GET's logins, so a login outside Admin that may GET a row of the
+    // any-login, chat, Telegram or member lists may HEAD it under the same
+    // rule (before, such a HEAD row had logins null and was open to Admin
+    // only: the any-login guard ran it on the system pool, login-self).
     const byGet = new Map<string, number>();
     for (const row of table.values()) {
       if (row.method !== 'HEAD') continue;
       const get = table.get(`GET ${row.pattern}`)!;
       expect(row.class, row.key).toBe(get.class);
-      if (get.logins === null || get.logins === 'owner') {
-        expect(row.logins, row.key).toBe(get.logins);
-        continue;
-      }
-      expect(row.logins, row.key).toBeNull();
-      expect(row.open, row.key).toBe('admin');
-      byGet.set(get.logins, (byGet.get(get.logins) ?? 0) + 1);
+      expect(row.logins, row.key).toBe(get.logins);
+      expect(row.open, row.key).toBe(get.open);
+      expect(anyLoginRow(row), row.key).toBe(anyLoginRow(get));
+      if (get.logins) byGet.set(get.logins, (byGet.get(get.logins) ?? 0) + 1);
     }
-    expect(byGet.get('any')).toBeGreaterThan(0);
-    // The audit's case: an any-login GET of class 'self' whose HEAD is
-    // class 'self', logins null, open 'admin'.
-    const selfHeads = [...table.values()].filter(
-      (r) =>
-        r.method === 'HEAD' &&
-        r.class === 'self' &&
-        table.get(`GET ${r.pattern}`)?.logins === 'any',
-    );
-    expect(selfHeads.length).toBeGreaterThan(0);
-    for (const r of selfHeads) expect(r, r.key).toMatchObject({ logins: null, open: 'admin' });
+    for (const logins of ['owner', 'any', 'chat', 'telegram', 'member']) {
+      expect(byGet.get(logins), logins).toBeGreaterThan(0);
+    }
+    // The audit's case: an any-login GET of class 'self' and its HEAD.
+    const head = table.get('HEAD /api/access-keys')!;
+    expect(head).toMatchObject({ class: 'self', logins: 'any', open: 'login' });
   });
 });
 

@@ -399,6 +399,11 @@ import { SESSION_COOKIE_NAME, RENDER_COOKIE_NAME } from '../lib/auth-constants';
 import { KEY_TOKENS } from './a4-guard-sweep.keys';
 import { READER_ANSWERS, SESSION_GUARDS } from '../../../eslint-rules/session-guards.mjs';
 import { auditsAsWrite, isReadRequest } from '../lib/auth/route-scope';
+import {
+  ANY_LOGIN_ROUTES,
+  CHAT_LOGIN_ROUTES,
+  TELEGRAM_LOGIN_ROUTES,
+} from '../lib/auth/any-login-routes';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -483,6 +488,25 @@ const RULE_IN_QUERY_ROWS: ReadonlySet<string> = new Set([
 ]);
 const ruleInQueryCells = new Map<string, string>();
 /**
+ * The owner's decision of 2026-10-14, 2a (docs/actors.md, A4 hand batch A,
+ * the open question M3): a HEAD row has its GET row's logins. The HEADs of
+ * the any-login, chat and Telegram lists' GET rows ran the GET handler on
+ * the system pool (login-self) for every login; they run under the login's
+ * own rule now, as their GET does (its scope; an Admin user's read too, on
+ * a workspaces brain). Their cells in the recorded files changed in the
+ * actor and the request outcome the sweep notes after the login's answer,
+ * and only there; each is recorded as driven in a file of its own
+ * (`__snapshots__/a4-guard-sweep-head-logins.txt`). The member list's HEADs
+ * have its logins too, but the member guard reads the row's scope, not its
+ * logins: no cell of theirs changed.
+ */
+const HEAD_LOGIN_ROWS: ReadonlySet<string> = new Set(
+  [...ANY_LOGIN_ROUTES, ...CHAT_LOGIN_ROUTES, ...TELEGRAM_LOGIN_ROUTES]
+    .filter((k) => k.startsWith('GET '))
+    .map((k) => k.replace(/^GET /, 'HEAD ')),
+);
+const headLoginCells = new Map<string, string>();
+/**
  * The guard writes (A4 step 3b part 5 fix round 1): every cell of a write
  * (auditsAsWrite) a guard or the pipeline answered, keyed by the sweep, the
  * cell and the guard names its entries stand for (a moved entry under the
@@ -510,6 +534,7 @@ function noteMoved(sweep: string, cell: string, answer: string): string {
   const row = cell.split(' ').slice(0, 2).join(' ');
   if (OWNER_DECISION_ROWS.has(row)) ownerDecision.set(`${sweep} ${cell}`, answer);
   if (RULE_IN_QUERY_ROWS.has(row)) ruleInQueryCells.set(`${sweep} ${cell}`, legacy(answer));
+  if (HEAD_LOGIN_ROWS.has(row)) headLoginCells.set(`${sweep} ${cell}`, legacy(answer));
   if (answer.includes('[pipeline:')) {
     moved.set(`${sweep} ${cell}`, answer);
     const [method = '', pattern = ''] = cell.split(' ');
@@ -911,6 +936,40 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
         '',
       ].join('\n'),
     ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-rule-in-query.txt');
+  });
+
+  it("records the HEAD cells that take their GET's logins (the owner decision 2a, A4 hand batch A)", async () => {
+    // The HEAD of each GET row of the any-login, chat and Telegram lists:
+    // the login's answer runs under the login's own rule, as on its GET,
+    // where it ran on the system pool (login-self). The recorded files hold
+    // these cells as driven now; this file names them, one line each, as
+    // the recorded files spell them.
+    expect(headLoginCells.size).toBeGreaterThan(0);
+    const answers = new Map<string, string>();
+    const lines = [...headLoginCells].map(([cell, answer]) => {
+      let id = answers.get(answer);
+      if (!id) {
+        id = `h${answers.size + 1}`;
+        answers.set(answer, id);
+      }
+      return `${cell}=${id}`;
+    });
+    await expect(
+      [
+        "# the owner decision of 2026-10-14, 2a (open question M3): a HEAD row has its GET's",
+        '# logins. The HEADs of the any-login, chat and Telegram GET rows ran the GET handler',
+        '# on the system pool (login-self) for every login; they run under its own rule now,',
+        '# as the GET does. Only the actor and the request outcome noted after the',
+        "# login's answer changed; status, headers and body are as recorded. Every other",
+        '# cell is as recorded on main.',
+        '# answers',
+        ...[...answers].map(([answer, id]) => `${id} ${answer}`),
+        '',
+        `# cells: ${headLoginCells.size}`,
+        ...lines,
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-head-logins.txt');
   });
 
   it('records what each moved write did on the side (A4 step 3b part 4)', async () => {

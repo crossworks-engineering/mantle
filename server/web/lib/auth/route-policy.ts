@@ -289,9 +289,14 @@ export function buildRouteRow(
   // The gate's spelling test of the pattern, compiled here so a pattern it
   // cannot spell fails when the rows are built (at boot).
   compileSpelling(pattern);
-  const logins = loginsOf(m, pattern);
-  // HEAD is answered by the GET handler, so it has GET's class (below).
-  const classLogins = m === 'HEAD' ? loginsOf('GET', pattern) : logins;
+  // HEAD is answered by the GET handler, so it has GET's class and GET's
+  // logins (the owner's decision of 2026-10-14, 2a, the open question M3):
+  // a login outside Admin that may GET a row may HEAD it, under the same
+  // rule (the any-login, chat and Telegram lists: its own scope, not the
+  // system pool). The owner routes' HEAD always had it (memberMayRead
+  // reads HEAD as GET); the lists name GET only.
+  const logins = loginsOf(m === 'HEAD' ? 'GET' : m, pattern);
+  const classLogins = logins;
   const scope = rowScope(m, pattern, classLogins);
   const effect = isReadRequest(m, pattern) ? 'read' : 'write';
   if (memberMayRead(m, pattern) && effect !== 'read') {
@@ -309,14 +314,6 @@ export function buildRouteRow(
     item = Object.freeze({ need: target.need, ref: target.ref, seg });
   }
   const isPublic = isPublicPath(path);
-  // HEAD is answered by the GET handler, so it has GET's class. Its
-  // `logins` stay what the lists say of HEAD (none name it: an any-login
-  // GET's HEAD is not an any-login route today), so such a HEAD row is
-  // class 'self' with logins null and open 'admin': a login outside Admin
-  // gets the GET's answer refused on HEAD. OPEN OWNER QUESTION for A4 step
-  // 4 (fix round 1, M3): should HEAD take GET's logins too? Step 1 keeps
-  // today's answer; route-policy.test.ts pins it, so a change is
-  // deliberate.
   const listed: RoutePolicyClass | null = pattern.startsWith('/s/')
     ? 'link'
     : (scope?.kind ??
