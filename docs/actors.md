@@ -1708,8 +1708,12 @@ the Admin workspace: never a non-Admin workspace the call did not ask for.
 **Step 4 must-dos** (from the step 3a audit and its low round), done in
 step 4 (below): the app data reads' provisioning is a named read-path
 write; the direct handler entries and the connector rows dispatch through
-the gate (`DIRECT_HANDLER_YET` is empty). The database-backed guard of the
-read tools is still a source classification (`read-tool-writes.test.ts`).
+the gate (`DIRECT_HANDLER_YET` is empty). The one item table write a read
+tool makes is proven on a real database
+(`server/web/server/a5-app-data-read-only.db.test.ts`); the guard of every
+other read tool is still a source classification
+(`read-tool-writes.test.ts`): running each read builtin read only with the
+edit check on needs a fixture per tool, carried to the A8 matrix.
 
 ## MCP registers through the gate (A5 step 4)
 
@@ -1785,9 +1789,12 @@ the catch in `addTool`, `preparedAllows`, the connector filter of
   `app_data_query`: the registry row, its schema, the viewer salt in
   `app_databases`) is a named read-path write, `repair:app-db`
   (`packages/tools/src/builtins-app-data.readpath.test.ts` pins the actor
-  under a read-only login).
+  under a read-only login; `server/web/server/a5-app-data-read-only.db.test.ts`
+  runs both reads on a member's read-only OAuth connection with the actor
+  and edit checks on, an app nobody used yet, and the same provisioning
+  without the name refused `ro_actor`).
 - **Tests of the scope and the Admin step** call `runMcpCall(login, tool,
-  fn)` (gate-policy.ts), where they called `runInOwnerMcpScope`.
+fn)` (gate-policy.ts), where they called `runInOwnerMcpScope`.
 
 Proof: `packages/mcp-core/src/mcp-call-snapshot.test.ts`, committed before
 the change: over the real SDK, for stdio and each kind of connection (an

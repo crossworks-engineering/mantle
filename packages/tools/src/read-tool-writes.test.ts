@@ -13,9 +13,11 @@
  * without a look at its writes fails here (low round, LOW-4). The lists
  * come from the step 3a sweep (a read-only audit of every read builtin and
  * MCP definition, their handlers and what they call) and its audit slice;
- * this is a SOURCE classification, not proof. The database-backed guard,
- * each read builtin run read only with the edit check on, is an A5 step 4
- * item (docs/actors.md, "Step 4 must-dos").
+ * this is a SOURCE classification, not proof. The one item table write
+ * found (the app data reads' provisioning) runs on a real database in
+ * server/web/server/a5-app-data-read-only.db.test.ts; each other read
+ * builtin run read only with the edit check on is carried to the A8 matrix
+ * (docs/actors.md, "Step 4 must-dos").
  *
  * Found, and how each is handled:
  *
