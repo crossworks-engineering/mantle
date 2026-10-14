@@ -1704,6 +1704,136 @@ the guards it does not:
 
 Then `getOwnerOr401` goes and the count is 0 (A4 exit).
 
+**HTTP, A4 step 3b hand batch part A (no answer changed; two recorded
+changes the owner decided).** The owner's decisions of 2026-10-14 (plan
+section 27): 1a, the any-login rows move by restructuring, with no gate
+flag that runs a handler on the system pool; 2a, a HEAD row takes its GET
+row's logins (the open question M3). And the hand cases that call a guard
+the gate can answer: the gone stubs, the flag-first routes, the update
+banner.
+
+- **The any-login audit** (1a): `getLoginOr401` writes the generic
+  `api.write` row inside, once it lets the login through, when its caller
+  asks (`audit`), as the member and chat guards write theirs; the `login`
+  answer step asks. The hand calls after the guard went in the same
+  commit (`workspaceCaller()`, `POST /api/auth/pair`, which asks too);
+  `auditLoginMutation` is private to session.ts. The guard writes baseline
+  held every cell to the guard path's rows: one row per Admin user's
+  write, none for a member's own session, none doubled.
+- **The workspace and grants rows** (1a): 23 handlers in 17 route files
+  read `loginCaller()` first and pass the login to `wsRoute` and
+  `grantsRoute`; `workspaceCaller(login)` (lib/workspaces.ts) is a
+  projection with no guard, the one projection (GET /api/shell and
+  lib/login-workspaces.ts take it; `wsCallerOf` went). The exit stays
+  inside the two helpers, as narrow as before.
+- **The ruleInQuery files** (1a): the five any-login handlers of GET
+  /api/shell, GET /api/v1/whoami, GET and POST /api/access-keys and DELETE
+  /api/access-keys/:id read `loginCaller()` first and run only their body
+  in the exit: `return inRuleInQuery(() => handle(login))`
+  (lib/auth/rule-in-query.ts, `asSystem(body, 'rule-in-query')`, the one
+  exit site). `ruleInQuery` stays for GET /api/auth/whoami (part B).
+- **HEAD logins** (2a): a HEAD row has its GET row's logins
+  (route-policy.ts `buildRouteRow`). The HEAD of an any-login, chat or
+  Telegram GET row ran on the system pool (login-self) for every login; it
+  runs under the login's own rule now, as its GET does. The member list's
+  HEADs have its logins too; the member guard reads the row's scope, so
+  none of their answers changed.
+- **The gone stubs**: the 144 `gone()` handlers in 125 route files (62
+  owner, 47 member, 35 any) call no guard. The gateway lens chose one
+  mechanism over a reader in each stub: the generator reads `export const
+  GET = gone('owner', ...)` as a handler that reads the caller of the
+  stub's kind (`GONE_CALLERS`, scripts/route-callers.ts; `any` is the
+  any-login caller) and marks the method in the manifest (`gone`). Its
+  row is a gone row (`RouteRow.gone`) with that caller, so the gate's one
+  answer step runs the stub's guard before the handler: no second answer
+  path at the gate, and the 410 stays the one `goneResponse`. A gone row
+  takes the stub's kind whatever list it is in (the member guard on a
+  retired member route no member list names, the any-login guard on the
+  client portal's rows), the guard the stub called; the any-login answer
+  writes no audit row there, as the stub's call wrote none. The stub reads
+  the answer of its kind and throws where there is none (lib/gone.ts is
+  the one lib file the reader import rule lets read: the generator reads
+  its stubs). 212 rows are gone rows (the 144 and 68 HEADs).
+- **The flag-first routes**: POST /api/assistant/turn/:turnId/cancel and
+  GET /api/assistant/turn/:turnId/stream (MANTLE_TURN_STREAMING) and POST
+  /api/dev-tools/queue-approval (never in production) answered their 404
+  before their guard, so while the switch is off a member, a revoked token
+  or an Admin user without the dev tool's settings area got the 404, not a
+  refusal. Moving the flag after the read would change that, so the switch
+  is the row's (`ROUTE_SWITCHES`, `RouteRow.switch`, a HEAD takes its
+  GET's) and the gate answers its off answer first (`routeSwitchedOff`,
+  in the gate middleware, before the login's answer and the Admin step),
+  in the handler's words; the handlers read `ownerCaller()` first. POST
+  /api/assistant/turn declared a response helper (a closure with no
+  effect) before its guard: it moves after `chatLoginCaller()`.
+  `gate-caller.test.ts` proves it per credential, with the switch on and
+  off.
+- **The update banner**: GET /api/updates/check (the owner's carve-out,
+  `getSessionUser`: any Admin user, or null) reads `sessionUserCaller()`,
+  a fifth caller kind (`session`): the gate's answer step runs
+  `getSessionUser` once and refuses nothing; the handler answers a null
+  401 as before. Only a row of `ADMIN_OPEN_ROWS` may read it.
+
+**The two recorded changes**, each in its own commit and recorded as
+driven in a file of its own, as the owner decision of part 4 is:
+
+1. **1a, the ruleInQuery rows** (`__snapshots__/a4-guard-sweep-rule-in-query.txt`,
+   all 172 cells of the 8 rows: the 5 handlers and the 3 HEADs). The guard
+   ran inside the exit, so the actor the sweep notes after it was
+   `system:rule-in-query`; the gate answers outside it. In those rows'
+   cells of the two recorded files, and only there, the guard entry's
+   actor changed and nothing else (status, headers, body and the request
+   outcome are as recorded): a refusal to `system:http:no-login`, 48 cells
+   (8 in the first sweep, 40 more credentials); a login let through on
+   GET, POST and DELETE to the login's own actor (`login:rw:<id>`, a read
+   key's `login:ro:<id>` on /api/v1/whoami), 35 cells; a login let through
+   on the 3 HEADs to `system:http:login-self`, 23 cells (then the 2a
+   change below). The plan named only the refusals; the other two kinds
+   are the same change (the note moved out of the exit).
+2. **2a, HEAD logins** (`__snapshots__/a4-guard-sweep-head-logins.txt`,
+   all 340 cells of the 17 HEAD rows of the any-login, chat and Telegram
+   GET rows). 107 cells of the first sweep changed, each a HEAD cell of
+   those rows: the anchor, an Admin user, one with no area and a member by
+   cookie, an Admin user and a member by device token on each of the 17,
+   and the 5 keys on HEAD /api/v1/whoami. In each, the actor and the
+   request outcome noted after the login's answer changed from
+   `actor=system:http:login-self out=system:login-self` to the login's
+   (`login:rw:<id>`, a read key's `login:ro:<id>`) and `out=user:false`,
+   each now what its GET cell notes; status, headers and body are as
+   recorded. The more credentials file did not change (every cell there is
+   a refusal).
+
+Everything else is byte for byte: the two recorded files outside those
+cells, the owner decision's file and the guard writes baseline (every
+moved write cell held to the guard path's audit rows and create home). The
+moved snapshot holds 11863 cells (8777 after part 5) and 171 answers
+(117); the moved writes file 4951 cells (3775) and 881 answers (743).
+
+Rows carrying a caller: 742 owner, 90 login, 26 chat, 85 member, 2
+session (945 of 1043; 689 after part 5).
+
+Pins: guard calls 16 to 7, still a ceiling; files with a guard call 15 to
+7; reads of the caller 459 to 492, in 327 to 352 files; live routes
+calling no guard 60 to 43 (the 17 workspace and grants files read now).
+
+**Part B, what is left** (the hand batch; then `getOwnerOr401` goes and
+the count is 0, A4 exit):
+
+- the public rows that read the login: GET /api/auth/whoami (with
+  `ruleInQuery`), POST /api/auth/logout, POST /api/auth/change-password,
+  POST /api/auth/pair (`getLoginOr401` with `audit`) and GET
+  /api/auth/pair/:id, `oauth/authorize` (the consent), and POST
+  /api/auth/sso (`getCookieUpgradeLoginOr401`);
+- the asset guards (`getOwnerForAsset`, `getReaderForAsset`,
+  `getMemberForAsset`: the draw svg, the file bytes, the export of batch
+  2's rows, GET /api/attachments/:id, and the two member byte stubs,
+  `goneForMemberAsset`);
+- the frame documents (GET /api/apps/:id/frame, GET
+  /api/member/apps/:id/frame);
+- PATCH /api/pages/:id with its v1 wrapper, and GET
+  /api/v1/files/:id/download with its base;
+- then delete `getOwnerOr401`.
+
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):
 
