@@ -1,7 +1,9 @@
 # CI build-check — validate a change BEFORE it can reach a deploy.
 #
-# Runs typecheck + lint (ESLint) + format check (Prettier) + the full vitest
-# suite + the server/web PRODUCTION build (the edge-runtime / webpack gate that
+# Runs typecheck + lint (ESLint) + format check (Prettier) + the architecture
+# counts + the full vitest suite (and the write-path cells again with the
+# actor check off, on, and with the edit check on) + the server/web PRODUCTION
+# build (the edge-runtime / webpack gate that
 # tsc + vitest miss — see docs/deploy-preflight). This is the durable
 # replacement for building locally or on a worktree: the build runs OFF your
 # machine, on the right tree, before anything is merged or tagged.
@@ -90,6 +92,12 @@ jobs:
       - name: Docs paths
         run: pnpm docs:check
 
+      # The architecture scoreboard against its pins (workspaces arch plan
+      # v2, section 11): a count over its pin, or one that went down without
+      # its pin, fails. Static, a few seconds.
+      - name: Architecture counts
+        run: pnpm arch:check
+
       # Replay every migration from scratch. This is the only place the full
       # 0000→latest path runs (boxes only ever apply the increment), so a
       # migration that cannot replay, or is missing from the journal, fails
@@ -115,6 +123,24 @@ jobs:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test:actor-off
+
+      # The write-path cells with the actor check on (workspaces arch A2b2b),
+      # as on a box whose check is on: a scoped login write runs on the
+      # write role and the database refuses what its checks refuse.
+      - name: Test (actor check on)
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test:actor-on
+
+      # The same cells and the edit-check cells with both checks on
+      # (workspaces arch A3a), each scratch database switched as an operator
+      # switches a box.
+      - name: Test (edit check on)
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test:edit-on
 
       # The real edge/webpack gate. Runs without a DB, same as the image build.
       - name: Build (server/web)
