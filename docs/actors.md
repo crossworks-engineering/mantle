@@ -3343,10 +3343,16 @@ connection, path `/api/mcp` over HTTP), the login (its email; else the
 actor kind and entry), the request's ip and user agent in the web server,
 and `detail` with the tool, the builtin it runs, the row kind, the entry,
 the via, the surface, the item ids it named or made (at most 20), the
-writes nested in it (at most 50) and a peer or OAuth client id. Fire and
-forget (`callAuditsSettled` for tests); off until a process starts it
-(`startCallAudit` in every process entry, pinned by `gate-boot.test.ts`;
-off in detached dev).
+writes nested in it (at most 50), a peer or OAuth client id, and for an
+approved pending call its `approver` (fix round 1: the row's actor is whose
+rights the call ran with, its asker's, or for an elevated call its
+approver's; on MCP the row is `pending_approve`'s and names the approver
+too). Fire and forget (`callAuditsSettled` for tests), written once the
+transaction the call's writes joined commits (`afterOuterCommit`: a request's
+write transaction, a scope's), so a rolled-back call leaves no row; outside
+one (a turn's per-query transactions, a process's own call), at once. Off
+until a process starts it (`startCallAudit` in every process entry, pinned
+by `gate-boot.test.ts`; off in detached dev).
 
 - Reads, refusals and failed results leave none.
 - A write nested in another audited call (a recipe's step, a delegated
@@ -3354,15 +3360,26 @@ off in detached dev).
   in the outer call's `detail.nested`, never a row of its own: one call,
   one row. A recipe row writes only through its steps; a recipe of reads
   leaves none.
-- No surface writes twice. An API key's MCP call keeps the row its route
-  writes (`auditMcpKeyCall`, unchanged): the gate writes none for a key. A
-  login's MCP connector call keeps its `mcp.connector.*` row
-  (`markCallAudited`): the gate writes none for it. `tool.external_access`
+- A write whose policy says it is routine internal state
+  (`ToolPolicy.auditRow: false`, read off the policy, never a list:
+  `heartbeat_update_state`, a heartbeat's own scratch state, once per
+  fire) leaves none, so `audit_log` does not grow per heartbeat fire.
+- No surface writes twice. A surface that writes the call's row itself
+  says so in one place, the call's audit frame flag: set from inside the
+  call by `markCallAudited` (a login's MCP connector call, its
+  `mcp.connector.*` row) or by its caller (an API key's MCP call, whose
+  route writes the row before it runs, `auditMcpKeyCall`, unchanged: its
+  gate caller carries `facts.audit.byRoute`). The gate writes none for
+  either, nested writes and all (fix round 1: one mechanism where there were
+  two, `packages/db/src/call-audit.test.ts`,
+  `packages/mcp-core/src/connector-check.test.ts`). `tool.external_access`
   (opening or closing a tool) is not a call. An HTTP route's own
   `api.write` row (`auditMutation`, `auditsAsWrite`) is unchanged: it
   records the request (its method and path, no tool); the gate's row
-  records the tool write the request caused, so a dev console run or an app
-  broker write leaves the route's row and one tool row.
+  records the tool write the request caused, so a dev console run, an app
+  broker write and a `/api/v1` route's write (a key's) leave the route's
+  row and one tool row. The gate stays the one writer of tool rows; the
+  MCP key route's row is the one exception, kept as main had it.
 
 The table (tool-call rows, `api.write` naming a tool; a real note read with
 `note_get` and written with `note_update`, real handlers:
@@ -3370,64 +3387,126 @@ The table (tool-call rows, `api.write` naming a tool; a real note read with
 with the gate's row off; `packages/tools/src/call-audit.test.ts` runs every
 dispatch entry with a sink):
 
-| entry                | before: read | before: write | after: read | after: write                  |
-| -------------------- | ------------ | ------------- | ----------- | ----------------------------- |
-| web turn             | 0            | 0             | 0           | 1                             |
-| Telegram turn        | 0            | 0             | 0           | 1                             |
-| heartbeat (its turn) | 0            | 0             | 0           | 1                             |
-| run item             | 0            | 0             | 0           | 1                             |
-| recipe step          | 0            | 0             | 0           | 1 (the recipe's row names it) |
-| pending approval     | 0            | 0             | 0           | 1                             |
-| app broker           | 0            | 0             | 0           | 1                             |
-| dev console          | 0            | 0             | 0           | 1                             |
-| MCP OAuth login      | 0            | 0             | 0           | 1                             |
-| MCP stdio            | 0            | 0             | 0           | 1                             |
-| MCP key              | 0            | 1 (route)     | 0           | 1 (route, unchanged; gate 0)  |
+| entry                | before: read | before: write | after: read | after: write                       |
+| -------------------- | ------------ | ------------- | ----------- | ---------------------------------- |
+| web turn             | 0            | 0             | 0           | 1                                  |
+| Telegram turn        | 0            | 0             | 0           | 1                                  |
+| heartbeat (its turn) | 0            | 0             | 0           | 1                                  |
+| run item             | 0            | 0             | 0           | 1                                  |
+| recipe step          | 0            | 0             | 0           | 1 (the recipe's row names it)      |
+| pending approval     | 0            | 0             | 0           | 1                                  |
+| app broker           | 0            | 0             | 0           | 1                                  |
+| dev console          | 0            | 0             | 0           | 1                                  |
+| MCP OAuth login      | 0            | 0             | 0           | 1                                  |
+| MCP stdio            | 0            | 0             | 0           | 1                                  |
+| MCP key              | 0            | 1 (route)     | 0           | 1 (route, unchanged; gate 0)       |
+| `/api/v1` key route  | 0            | 0             | 0           | 1 (gate; beside the request's row) |
 
 Volume: one row per successful tool write, about half a kilobyte each (the
 detail is capped). A brain already wrote a row per mutating HTTP request;
 an agent that writes in a loop (`table_row_add` per row) now writes a row
-per call, where a batch tool (`table_rows_add`) writes one. Nothing prunes
-`audit_log`; a box that writes heavily should watch its size.
+per call, where a batch tool (`table_rows_add`) writes one. A heartbeat's
+own state write (`heartbeat_update_state`) writes none (fix round 1).
+Nothing prunes `audit_log`; a box that writes heavily should watch its size.
 
 **Owner decision 1a (plan section 30).** Since 6a a connector write the
 turn's scope may not make itself (the connector's Write tick off in its
 workspace, or the login not a Moderator there) was hidden. Now it is
 offered only when its call waits for approval anyway: a `requires_confirm`
 tool, or any write of a loop whose turn is client-sourced already when it
-lists (`queuesWrites`, from the loop's taint). Queued, the row carries
+lists (the loop's taint, `loopToolRows`' `taint`). Queued, the row carries
 `pending_tool_calls.elevated` (migration 0287, `{"elevated": true,
-"reason": ...}`, set by the server, never by the model) saying the
-approver runs it with Admin rights; the pending summary (`/api/pending`,
-`pending_list`, `pending_get`), the Telegram card and the model's queued
-message say so. A call that would run directly stays hidden and refused.
-Only the write rule is lifted (`elevatedConnectorFacts`): a link scope, a
-connector the scope does not hold and a stale mark are refused as before.
-The listing (`turnListedTools`) and the queue-time check
-(`turnCallRefusal`'s `queue`) read the same lifted caller, so a waiting call
-is offered exactly when it queues (`packages/tools/src/turn-listing.test.ts`,
-`packages/runtime/src/agent/tool-loop.test.ts`). The approved call meets
-the gate again in the approver's scope: an approver who may not make the
-write (the asking login itself, from its own Telegram card) is refused when
-it runs.
+"reason": ...}`, set by the server, never by the model). A call that would
+run directly stays hidden and refused. Only the write rule is lifted
+(`elevatedConnectorFacts`): a link scope, a connector the scope does not
+hold and a stale mark are refused as before. The listing
+(`turnListedTools`) and the queue-time check (`turnCallRefusal`'s `queue`)
+read the same lifted caller, so a waiting call is offered exactly when it
+queues (`packages/tools/src/turn-listing.test.ts`,
+`packages/runtime/src/agent/tool-loop.test.ts`). What describes a turn's
+tools (`responder_turn_input`, the responder persona) derives the turn's
+taint the way the turn does (`responderTurnTaint`) and lists with it, so a
+client-sourced turn is described with what it is offered (fix round 1).
+
+**Who approves an elevated call (fix round 1, the CEO's rule).** One place,
+`approvePendingCall` (`packages/tools/src/pending.ts`) through
+`elevatedApproval` (`packages/tools/src/pending-approval.ts`), so every
+path that approves gets it with no code of its own: the web's
+`PATCH /api/pending/:id`, MCP `pending_approve`, a Telegram card's tap
+(`server/web/lib/telegram-approval.ts`, from
+`packages/telegram/src/sync.ts`), and any batch that calls it.
+
+- Its asker (`login_id`) never approves it, on any path: refused
+  (`ELEVATED_SELF_APPROVAL_ERROR`; 403 on the web), and it stays pending.
+- The owner (the anchor login) approves it, and it runs with the owner's
+  rights: the connector's write rule passes; a link scope, a connector the
+  workspace the call was asked in does not hold and a stale mark are still
+  refused.
+- Any other login approves it only when its OWN scope passes the connector
+  rule in the workspace the call was asked in (a Moderator there, the
+  connector's Write on), read at approval time (`loginScopeFor`), and it
+  runs with that login's rights; else it is refused
+  (`ELEVATED_APPROVER_ERROR`) and stays pending.
+- The rule is judged before the row is claimed, by the gate's own steps
+  (`gateCallRefusal`) with the caller dispatch then runs the call as (a
+  `pendingCaller` whose `approval` names the scope its connector rule
+  reads, whatever scope the approving surface runs in: a Telegram tap runs
+  in none). Who decides is read one way everywhere (`deciderOf`: the
+  scope's login, else the login the path names, else the owner).
+- The row is read and claimed on the system pool
+  (`packages/db/src/pending-elevated.ts`): a scope's row rule shows a login
+  only its own calls, which by definition an elevated call is not.
+
+A call that is not elevated keeps main's rule exactly: a login other than
+the owner decides only the calls queued for it (`deciderFilter`), and the
+call runs as its asker; the owner decides every call. The tests: every path
+and approver on a real database
+(`server/web/server/a5-elevated-approval.db.test.ts`), the rule through the
+real gate (`packages/tools/src/pending-approval.test.ts`), the claim
+(`packages/tools/src/pending.test.ts`).
+
+What the approver is told: the pending summary (`/api/pending`,
+`pending_list`, `pending_get`) carries `elevated.reason`, which says an
+Admin user must approve it (the owner, or someone with write rights on this
+connector) and that the person asking cannot approve it themselves; the
+Telegram card says it and goes to the owner's chat, never the asker's
+(`pending-notify.ts`); the model's queued message says it. A call queued
+by a turn that read text a client wrote carries
+`pending_tool_calls.client_sourced` (0287, `{"via": ...}`): the summary,
+the card ("approve only if you asked for this yourself") and the trace say
+so, so an approver can spot a request a client's text led to.
 
 Snapshots: `dispatch-parity`, the MCP `tools-list` matrix and `mcp-calls`,
-`tool-policy-snapshot` and `app-broker-parity` are byte-identical. The 1a
+`tool-policy-snapshot` and `app-broker-parity` are byte-identical (fix round
+1 too: `auditRow`, on `heartbeat_update_state` only, is read by the audit
+alone and is in no snapshot). The 1a
 listing cells are new rows of the turn listing tests (a `requires_confirm`
 connector write: offered to a member turn that is no Moderator, or whose
 connector's Write tick is off); the existing cells (`crm_lookup`, no
 confirm: hidden) are unchanged.
 
-Jackdaw follow-up: the pending card should show `elevated.reason` (an
-Admin rights badge) and, for an approver who may not run it, say that an
-Admin user must approve.
+The data modules stay data (fix round 1): the system manifest reads the
+runtime's slugs and heartbeat tool definitions from leaf modules with no
+run-time imports (`@mantle/runtime/slugs`, `@mantle/runtime/heartbeats/specs`),
+not from the assistant or heartbeat runtime (pinned by
+`server/web/lib/system-manifest/manifest.test.ts`).
+
+Jackdaw follow-up: the pending card should show `elevated.reason` as a
+badge with its text (an Admin user must approve; the asker cannot), hide
+Approve for the asker, and show `client_sourced` as a warning.
 
 **What is left.**
 
 - **Step 6b, after W9, per release:** delete a tool's `policy.items` only
   when its database check exists with a test and `mantle.edit_check` is on
   on every box of the release.
-- **Step 6c, the approval re-check:** re-check the originating scope when
-  a pending call is approved; the pending row must carry the scope whole
-  (its moderator set and Admin view), a migration.
+- **Step 6c, the approval re-check:** an elevated call's connector rule is
+  re-checked at approval (fix round 1, above); every other call still runs
+  in its asker's current rights without its queued scope. Re-checking the
+  originating scope whole needs the row to carry it (its moderator set and
+  Admin view), a migration.
+- **Listing for approvers:** on a scoped surface (a login's own MCP)
+  `pending_list` shows a login only its own calls, so an Admin user with
+  write rights finds an elevated call by its id (the owner's card, the
+  web), not in that list.
 - **Egress as a gate concept** (owner decision 2b): not in this step.
