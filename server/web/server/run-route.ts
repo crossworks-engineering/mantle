@@ -56,7 +56,13 @@ export async function runRoute(
   method: string,
   path: string,
   body?: unknown,
-  opts: { headers?: Record<string, string>; signal?: AbortSignal } = {},
+  opts: {
+    headers?: Record<string, string>;
+    signal?: AbortSignal;
+    /** A body sent as is (a form), in place of `body` as JSON; its
+     *  content type goes in `headers`. */
+    rawBody?: string;
+  } = {},
 ): Promise<Response> {
   const secret = env(SECRET_NAME);
   // A test that set no signing secret gets one (a test process only).
@@ -70,7 +76,7 @@ export async function runRoute(
   return (await routeApp()).request(url, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: opts.rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
 }

@@ -2037,6 +2037,17 @@ caller) stand in nothing now; they are left as they are.
   download-query.test.ts drives the real route file with an Admin user's
   `?at=` beside a member's session: the handler gets the row's query, not
   the one sent.
+- **The consent step and the frame documents through the pipeline.**
+  authorize-pipeline.test.ts drives GET and POST /api/oauth/authorize
+  through runRoute with the remote MCP switch on (the guard sweep gives
+  every credential the switch's off answer, and authorize-route.test.ts
+  stands the reader in): an Admin user, a member with MCP off and on,
+  nobody and a revoked device token, the login read at the read from a
+  real cookie or token. frame-pipeline.test.ts drives the real frame route
+  files: a valid ticket opens what it names, a ticket for another app (or
+  an Admin user no longer active) is the handler's 401, an invalid ticket
+  or none is the gate's 401 before the handler. runRoute takes a raw body
+  (`rawBody`, a form) for the consent POST.
 
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):
