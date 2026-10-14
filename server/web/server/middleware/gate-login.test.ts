@@ -19,7 +19,13 @@
  *  - a request that ends a login's sessions, or changes its role or
  *    switch, finds the login afresh on its next guard read (audit L1);
  *  - a frame document's row finds no login, and a find that fails is
- *    answered to the first guard read, not asked again (audit L4).
+ *    answered to the first guard read, not asked again (audit L4);
+ *  - an Admin login whose area is taken away in the request (its role
+ *    stays admin) is refused the area on its next guard read: the gate's
+ *    Admin view is not read after the request forgot its logins (re-audit
+ *    L-a);
+ *  - a find the request forgot that fails after a fresh one was kept does
+ *    not drop the fresh one (re-audit L-c).
  *
  * No database: the login rows come from a stand-in that counts its reads.
  */
@@ -37,6 +43,8 @@ const MEMBER = '22222222-2222-4222-8222-222222222222';
 const LIMITED = '44444444-4444-4444-8444-444444444444';
 /** A login whose row cannot be read (the database is down). */
 const FAILING = '66666666-6666-4666-8666-666666666666';
+/** A login whose row reads answer what the test queues (counts.slow). */
+const SLOW = '77777777-7777-4777-8777-777777777777';
 
 const counts = vi.hoisted(() => ({
   loginRows: 0,
@@ -50,6 +58,10 @@ const counts = vi.hoisted(() => ({
   disabled: new Set<string>(),
   // The login endLoginSessions is ending, while the stand-in db runs it.
   ending: null as string | null,
+  // Logins whose Admin area was taken away (their role stays admin).
+  arealess: new Set<string>(),
+  // The answers of SLOW's next row reads, in order (then its row).
+  slow: [] as Array<() => Promise<unknown>>,
 }));
 
 vi.mock('../../lib/auth/login-row', () => {
@@ -67,6 +79,7 @@ vi.mock('../../lib/auth/login-row', () => {
     loadLoginRow: async (id: string) => {
       counts.loginRows += 1;
       if (id === FAILING) throw new Error('the database is down');
+      if (id === SLOW) return (await counts.slow.shift()?.()) ?? row(SLOW, 'admin');
       if (id === ANCHOR) return row(ANCHOR, 'admin', true);
       if (id === ADMIN || id === LIMITED) return row(id, 'admin');
       if (id === MEMBER) return row(MEMBER, 'member');
@@ -120,7 +133,7 @@ vi.mock('../../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/workspaces')>()),
   requireArea: async (caller: { loginId: string }) => {
     counts.areas += 1;
-    return caller.loginId !== LIMITED;
+    return caller.loginId !== LIMITED && !counts.arealess.has(caller.loginId);
   },
 }));
 
@@ -231,13 +244,33 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
         reason: b instanceof Response ? ((await b.json()) as { reason?: string }).reason : null,
       });
     };
+    // An Admin login whose area is taken away in the request (a workspace
+    // change, not a role change): the gate's Admin view of the area is not
+    // read again; holdsArea asks requireArea (re-audit L-a).
+    const unareas = async () => {
+      const a = await session.getOwnerOr401();
+      const first = a instanceof Response ? a.status : a.actor.id;
+      counts.arealess.add(ADMIN);
+      session.forgetRequestLogins();
+      const b = await session.getOwnerOr401();
+      return Response.json({
+        first,
+        second: b instanceof Response ? b.status : b.actor.id,
+        reason: b instanceof Response ? ((await b.json()) as { reason?: string }).reason : null,
+      });
+    };
     const routes: RouteEntry[] = [
       // Real manifest patterns: registerRoutes builds their real rows.
       { pattern: '/api/notes', methods: ['GET'], load: async () => ({ GET: twice }) },
       { pattern: '/api/tasks', methods: ['GET'], load: async () => ({ GET: unread }) },
       { pattern: '/api/changelog', methods: ['GET'], load: async () => ({ GET: nested }) },
       // An area row (users).
-      { pattern: '/api/users', methods: ['GET'], load: async () => ({ GET: area }) },
+      // POST: its handler takes its login's area away (re-audit L-a).
+      {
+        pattern: '/api/users',
+        methods: ['GET', 'POST'],
+        load: async () => ({ GET: area, POST: unareas }),
+      },
       // A public row that reads the session (sign out), and one that writes.
       { pattern: '/api/auth/whoami', methods: ['GET'], load: async () => ({ GET: twice }) },
       { pattern: '/api/auth/signup', methods: ['POST'], load: async () => ({ POST: unread }) },
@@ -265,6 +298,8 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
     counts.epochs.clear();
     counts.roles.clear();
     counts.disabled.clear();
+    counts.arealess.clear();
+    counts.slow.length = 0;
   });
 
   const json = async (res: Response) => (await res.json()) as Record<string, unknown>;
@@ -385,6 +420,46 @@ describe.skipIf(!hasManifest)('the gate resolves the login once (A4 step 3a)', (
       headers: { cookie: cookieFor(ADMIN) },
     });
     expect(await json(res)).toEqual({ first: ADMIN, second: 403, reason: 'member-login' });
+  });
+
+  it('an Admin login whose area is taken away, its role kept: the guard asks again (L-a)', async () => {
+    const res = await app.request('/api/users', {
+      method: 'POST',
+      headers: { cookie: cookieFor(ADMIN) },
+    });
+    // The role is still admin, so only the area answers: from the gate's
+    // view the second read would let the login in.
+    expect(await json(res)).toEqual({ first: ADMIN, second: 403, reason: 'area' });
+    // The gate's question, and the second read's own.
+    expect(counts.areas).toBe(2);
+  });
+
+  it('a forgotten find that fails after a fresh one was kept leaves the fresh one (L-c)', async () => {
+    const { RequestLogins } = await import('../../lib/auth/session');
+    const { runWithRequestContext } = await import('../request-context');
+    let fail: (err: Error) => void = () => undefined;
+    counts.slow.push(
+      () =>
+        new Promise((_ok, ko) => {
+          fail = ko;
+        }),
+    );
+    const req = new Request('http://brain.example.invalid/api/tasks', {
+      headers: { cookie: cookieFor(SLOW) },
+    });
+    await runWithRequestContext({ req, path: '/api/tasks', method: 'GET' }, async () => {
+      const logins = new RequestLogins();
+      const first = logins.login();
+      // The request changed a login while the first find was in flight.
+      logins.forget();
+      const fresh = logins.login();
+      expect((await fresh).resolved).not.toBeNull();
+      fail(new Error('the database is down'));
+      await expect(first).rejects.toThrow('the database is down');
+      // The fresh find is still the request's: no third read.
+      expect(logins.login()).toBe(fresh);
+    });
+    expect(counts.loginRows).toBe(2);
   });
 
   it('a frame document finds no login: its handler reads none (L4)', async () => {
