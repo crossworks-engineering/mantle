@@ -44,9 +44,10 @@
  * (`a4-guard-sweep-moved-writes.txt`, part 4), and since part 5 fix round 1
  * the guard path's too: every cell of a write a guard still answers, keyed
  * by the guard's name (`a4-guard-sweep-guard-writes.txt`), with the
- * any-login audit row its caller writes by hand after the guard
- * (workspaceCaller(), POST /api/auth/pair: the sweep stops those handlers
- * once that row is written). That file is the baseline: when a row moves,
+ * any-login audit row (since A4 hand batch A written inside getLoginOr401
+ * when its caller asks, as workspaceCaller() and POST /api/auth/pair do;
+ * before, they wrote it by hand after the guard and the sweep let that call
+ * run). That file is the baseline: when a row moves,
  * its cells stay in it under the guard its reader replaced, and the test
  * holds each to the guard path's record before it compares the file, so a
  * lost or a doubled audit row fails by cell.
@@ -86,10 +87,6 @@ const sweepState = vi.hoisted(() => ({
    *  guard's or the pipeline's): the guard writes' record (A4 step 3b part
    *  5 fix round 1), read alike on both paths. */
   noted: null as string | null,
-  /** A guard let a login through to a caller that writes the any-login
-   *  audit row by hand after it (auditLoginMutation): the handler stops
-   *  there, once the row is written. */
-  awaitingAudit: false,
 }));
 
 const loginRow = (
@@ -372,21 +369,9 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
       throw new SweepStop();
     };
   }
-  // The any-login audit its caller writes by hand (workspaceCaller(), POST
-  // /api/auth/pair): written, then the handler goes no further.
-  const auditLoginMutation = real.auditLoginMutation as (login: unknown) => Promise<void>;
-  wrapped.auditLoginMutation = async (login: unknown) => {
-    await auditLoginMutation(login);
-    if (!sweepState.awaitingAudit) return;
-    sweepState.awaitingAudit = false;
-    throw new SweepStop();
-  };
-  const { callerAuditsAfter } = await import('./a4-guard-sweep.readers');
   for (const name of GUARDS) {
     const fn = real[name] as (...a: unknown[]) => Promise<unknown>;
     wrapped[name] = async (...args: unknown[]) => {
-      // Who called, taken before the first await.
-      const stack = new Error().stack ?? '';
       let value: unknown;
       try {
         value = await fn(...args);
@@ -404,10 +389,6 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
       }
       sweepState.log.push(`${name} ok ${summarize(value)} ${after()}`);
       if (value === null) return value;
-      if (callerAuditsAfter(stack)) {
-        sweepState.awaitingAudit = true;
-        return value;
-      }
       throw new SweepStop();
     };
   }
@@ -482,9 +463,9 @@ const ownerDecision = new Map<string, string>();
  * (auditsAsWrite) a guard or the pipeline answered, keyed by the sweep, the
  * cell and the guard names its entries stand for (a moved entry under the
  * guard it replaced, as in the recorded files), to what the request wrote
- * on the side: its audit rows (a hand-written any-login row included:
- * workspaceCaller(), POST /api/auth/pair) and the create home the request
- * noted. `moved`: its entry is the pipeline's.
+ * on the side: its audit rows (the any-login row included: workspaceCaller(),
+ * POST /api/auth/pair, the any-login answer step) and the create home the
+ * request noted. `moved`: its entry is the pipeline's.
  */
 const guardWrites = new Map<string, { side: string; moved: boolean }>();
 const GUARD_NAMES: ReadonlySet<string> = new Set(SESSION_GUARDS);
@@ -657,7 +638,6 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
     sweepState.audits.length = 0;
     sweepState.home = null;
     sweepState.noted = null;
-    sweepState.awaitingAudit = false;
     const url = cred.query ? `${path}${path.includes('?') ? '&' : '?'}${cred.query}` : path;
     const res = await app.request(url, {
       method,
@@ -680,11 +660,6 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
       if (type.includes('json') && (sweepState.log.length > 0 || res.status >= 400)) {
         parts.push(text.slice(0, 300));
       }
-    }
-    if (sweepState.awaitingAudit) {
-      throw new Error(
-        `${method} ${path} ${cred.name}: the handler ran past its guard without the audit row`,
-      );
     }
     for (const line of sweepState.log) parts.push(`[${line}]`);
     return parts.join(' ');

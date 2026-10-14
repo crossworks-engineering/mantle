@@ -71,7 +71,7 @@ import type {
 } from '@mantle/client-types';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 import { workspaceHeldApp } from '@mantle/content';
-import { auditLoginMutation, getLoginOr401, type SessionUser } from '@/lib/auth';
+import { getLoginOr401, type SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
 import { rateLimit } from '@/lib/rate-limit';
@@ -102,11 +102,10 @@ export type WsCaller = {
 };
 
 export async function workspaceCaller(): Promise<WsCaller | Response> {
-  const res = await getLoginOr401();
-  if (res instanceof Response) return res;
-  // The generic api.write row, as the sibling admin and member gates
+  // With the generic api.write row, as the sibling admin and member gates
   // write it (an admin's write; any login's write with an API key).
-  await auditLoginMutation(res);
+  const res = await getLoginOr401({ audit: true });
+  if (res instanceof Response) return res;
   switch (res.kind) {
     case 'admin':
       return { kind: 'admin', loginId: res.loginId, anchorId: res.user.id, user: res.user };

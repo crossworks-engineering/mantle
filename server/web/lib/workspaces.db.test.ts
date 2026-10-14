@@ -47,9 +47,12 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getLoginOr401: vi.fn(async () => h.res),
-  auditLoginMutation: vi.fn(async (login: { kind: string }) => {
-    h.loginAudits.push(login.kind);
+  // The audit row the guard writes when asked (A4 hand batch A): noted by
+  // the login's kind.
+  getLoginOr401: vi.fn(async (opts?: { audit?: boolean }) => {
+    const kind = (h.res as { kind?: string } | null)?.kind;
+    if (opts?.audit && kind) h.loginAudits.push(kind);
+    return h.res;
   }),
 }));
 vi.mock('@/lib/audit', () => ({

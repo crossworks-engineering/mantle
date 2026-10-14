@@ -79,29 +79,3 @@ export function readerOfRow(key: string): string {
   }
   return reader;
 }
-
-const auditsAfter = new Map<string, boolean>();
-
-/**
- * Whether the code that called a guard writes the any-login audit row by
- * hand after it (A4 step 3b part 5 fix round 1): the file of the calling
- * frame (`stack`, taken as the guard is called) calls auditLoginMutation,
- * as lib/workspaces.ts workspaceCaller() and POST /api/auth/pair do. The
- * sweep then lets that call run before it stops the handler, so the guard
- * path's audit rows are on the record for the moved rows to meet.
- */
-export function callerAuditsAfter(stack: string): boolean {
-  for (const line of stack.split('\n').slice(1)) {
-    const m = /\(?((?:file:\/\/)?\/[^():]+\.tsx?)(?:\?[^:)]*)?:\d+:\d+\)?$/.exec(line.trim());
-    if (!m) continue;
-    const file = m[1]!.replace(/^file:\/\//, '');
-    if (file.endsWith('a4-guard-sweep.test.ts')) continue;
-    let calls = auditsAfter.get(file);
-    if (calls === undefined) {
-      calls = /(?<!function )\bauditLoginMutation\(/.test(readFileSync(file, 'utf8'));
-      auditsAfter.set(file, calls);
-    }
-    return calls;
-  }
-  throw new Error(`a4-guard-sweep.readers: no calling frame in\n${stack}`);
-}

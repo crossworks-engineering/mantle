@@ -798,7 +798,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // Each kind: its reader, and the guard it replaced.
     const kinds = {
       member: [session.memberCaller, session.getMemberOr401],
-      login: [session.loginCaller, session.getLoginOr401],
+      // The any-login guard as its rows ask it: with the audit row (A4 hand
+      // batch A, the answer step's).
+      login: [session.loginCaller, () => session.getLoginOr401({ audit: true })],
       chat: [session.chatLoginCaller, session.getChatLoginOr401],
     } as const;
     // Real manifest patterns of each list, so registerRoutes builds their
@@ -933,11 +935,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // Real rows of the any-login list served twice: through the reader, and
     // through workspaceCaller() (lib/workspaces.ts, behind wsRoute and
     // grantsRoute), the guard path these rows run today: getLoginOr401 and
-    // the api.write row it writes by hand after it (auditLoginMutation),
-    // which /api/shell and the self-logged /api/access-keys cannot show. The
-    // reader's handler writes that row by hand too, until the 'login'
-    // answer step writes it (docs/actors.md part 5, the hand batch): then
-    // its line goes and these cells hold the step to the one row.
+    // the api.write row it writes (`audit`, written by hand after it before
+    // A4 hand batch A), which /api/shell and the self-logged
+    // /api/access-keys cannot show. The 'login' answer step writes that row
+    // since hand batch A, and these cells hold it to the one row.
     const { gate } = await import('./gate');
     const { registerRoutes } = await import('../route-loader');
     const session = await import('../../lib/auth/session');
@@ -965,7 +966,6 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         counts.handled += 1;
         if (reads) {
           const login = session.loginCaller();
-          await session.auditLoginMutation(login);
           return Response.json(seen(wsCallerOf(login)));
         }
         const caller = await workspaceCaller();

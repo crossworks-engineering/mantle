@@ -33,7 +33,6 @@ const h = vi.hoisted(() => ({ res: null as unknown }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLoginOr401: vi.fn(async () => h.res),
-  auditLoginMutation: vi.fn(async () => undefined),
 }));
 vi.mock('@/lib/audit', () => ({
   auditFireAndForget: () => undefined,

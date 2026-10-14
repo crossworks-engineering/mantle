@@ -1061,7 +1061,9 @@ async function guardAnswer(caller: RouteCaller): Promise<PipelineAnswer | NextRe
       return member instanceof NextResponse ? member : { caller, member };
     }
     case 'login': {
-      const login = await getLoginOr401();
+      // The any-login answer writes the generic api.write row its rows
+      // wrote by hand after the guard before (A4 hand batch A).
+      const login = await getLoginOr401({ audit: true });
       return login instanceof NextResponse ? login : { caller, login };
     }
     case 'chat': {
@@ -1826,12 +1828,16 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
 }
 
 /**
- * The generic `api.write` row for a route any login may call (getLoginOr401;
- * the workspace routes, lib/auth/any-login-routes.ts), by the rule each role's
- * own gate follows: an admin's write always, a member's write when it was made with an API key. Reads are not logged, and
- * a path that logs its own richer event is skipped (auditMutation).
+ * The generic `api.write` row for a route any login may call
+ * (getLoginOr401 with `audit`: the any-login answer step, POST
+ * /api/auth/pair), by the rule each role's own gate follows: an admin's
+ * write always, a member's write when it was made with an API key. Reads
+ * are not logged, and a path that logs its own richer event is skipped
+ * (auditMutation). Written inside the guard, as the member and chat guards
+ * write theirs (A4 hand batch A: before, each caller wrote it by hand
+ * after the guard).
  */
-export async function auditLoginMutation(login: AnyLogin): Promise<void> {
+async function auditLoginMutation(login: AnyLogin): Promise<void> {
   switch (login.kind) {
     case 'admin':
       return auditMutation(login.user);
@@ -1855,8 +1861,12 @@ export type AnyLogin = Exclude<Awaited<ReturnType<typeof getLoginOr401>>, NextRe
  *  the login itself (change its password, sign out, who am I). Never for
  *  brain data. Each caller decides per kind.
  *  `sessionEpoch` is the epoch the credential was verified at, for work that
- *  must still be that session's when it lands (OAuth consent). */
-export async function getLoginOr401(): Promise<
+ *  must still be that session's when it lands (OAuth consent).
+ *  `audit`: write the generic api.write row of a write once the login is
+ *  let through (auditLoginMutation): the any-login rows (the answer step)
+ *  and POST /api/auth/pair ask for it; the routes about the login's own
+ *  session (sign out, change password, OAuth consent) never wrote one. */
+export async function getLoginOr401(opts: { audit?: boolean } = {}): Promise<
   | {
       kind: 'admin';
       loginId: string;
@@ -1879,26 +1889,26 @@ export async function getLoginOr401(): Promise<
   if (!res) return accessRefusal(new AccessError('unauthorized'));
   const refused = await anyLoginScope(res);
   if (refused) return refused;
-  switch (res.kind) {
-    case 'admin':
-      return {
-        kind: 'admin',
-        loginId: res.user.actor.id,
-        email: res.user.actor.email,
-        source: res.source,
-        sessionEpoch: res.epoch,
-        user: res.user,
-      };
-    case 'member':
-      return {
-        kind: 'member',
-        loginId: res.member.loginId,
-        email: res.member.email,
-        source: res.source,
-        sessionEpoch: res.epoch,
-        member: res.member,
-      };
-  }
+  const login: AnyLogin =
+    res.kind === 'admin'
+      ? {
+          kind: 'admin',
+          loginId: res.user.actor.id,
+          email: res.user.actor.email,
+          source: res.source,
+          sessionEpoch: res.epoch,
+          user: res.user,
+        }
+      : {
+          kind: 'member',
+          loginId: res.member.loginId,
+          email: res.member.email,
+          source: res.source,
+          sessionEpoch: res.epoch,
+          member: res.member,
+        };
+  if (opts.audit) await auditLoginMutation(login);
+  return login;
 }
 
 /**
