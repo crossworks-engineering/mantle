@@ -247,7 +247,6 @@ export type SurfaceToolDef = Readonly<{
   slug: string;
   policy: ToolPolicy;
   ownerOnly?: boolean;
-  optIn?: BuiltinToolDef['optIn'];
 }>;
 
 /** The MCP surface's own tools, by name and policy (mcp-surface-policies.ts),

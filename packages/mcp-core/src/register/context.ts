@@ -244,8 +244,6 @@ export function makeRegisterContext(
      *  round 1, M1). */
     loginId,
     transport,
-    exposeTerminal,
-    toolsmithWrite: optIns.toolsmithWrite,
     stripVectors,
     jsonReply,
     registerBuiltinTools,

@@ -265,7 +265,12 @@ describe("the gate's peer narrower reads the declared mark (A5 step 2)", () => {
  * A5 step 4), read here, not copied.
  */
 describe('every declared tool keeps its family (step 2 fix round 1, MEDIUM-1)', () => {
-  type Declared = { slug: string; policy: ToolPolicy; requiresConfirm?: boolean };
+  type Declared = {
+    slug: string;
+    policy: ToolPolicy;
+    requiresConfirm?: boolean;
+    optIn?: string;
+  };
 
   /** Why `t` is risky by the rules isPeerRiskyTool had before step 2
    *  (login-surface.ts at v0.300.27), the name list aside; null if none. */
@@ -283,6 +288,10 @@ describe('every declared tool keeps its family (step 2 fix round 1, MEDIUM-1)', 
     }
     if (t.policy.startsModelWork === true) return 'starts model work';
     if (t.requiresConfirm === true) return "waits for the owner's confirm";
+    // A registration opt-in (the Toolsmith writes, the server shell) marks a
+    // tool the box may hide from MCP: risky for a key or a peer too (A5 step
+    // 3a, LOW-B).
+    if (t.optIn !== undefined) return `opts in (${t.optIn})`;
     return null;
   }
 

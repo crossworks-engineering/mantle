@@ -83,7 +83,6 @@ function mcpTool<S extends z.ZodRawShape>(def: {
   group: McpToolGroup;
   description: string;
   shape: S;
-  optIn?: BuiltinToolDef['optIn'];
   /** The body: the handler for one connection. */
   handler: (ctx: McpRegisterContext) => ToolCallback<ShapeSchema<S>>;
 }): McpToolDef {
@@ -874,8 +873,6 @@ export function mcpDefinition(slug: string): McpToolDef | null {
 export function registerMcpTools(ctx: McpRegisterContext, group: McpToolGroup): void {
   for (const def of MCP_TOOL_DEFS) {
     if (def.group !== group) continue;
-    if (def.optIn === 'terminal' && !ctx.exposeTerminal) continue;
-    if (def.optIn === 'toolsmithWrite' && !ctx.toolsmithWrite) continue;
     def.register(ctx);
   }
 }

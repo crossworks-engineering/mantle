@@ -1126,8 +1126,10 @@ Each definition takes its policy by its name from
 `packages/tools/src/mcp-surface-policies.ts` (fix round 1, below), the
 surface table `@mantle/tools` loads in every process, where
 `ADMIN_ONLY_TOOL_SLUGS` reads the two responder writes. Registration
-opt-ins are a definition field, `optIn: 'toolsmithWrite' | 'terminal'`,
-on the Toolsmith writes and `run_terminal`.
+opt-ins are a builtin definition field, `optIn: 'toolsmithWrite' |
+'terminal'`, on the Toolsmith writes and `run_terminal`; a hand-written
+definition declares none (A5 step 3a, LOW-A: one copy decides), and the
+family sweep holds every tool that opts in to `peerRisky` (LOW-B).
 
 The owner MCP surface's lists are views of the builtin policy table and
 the definitions (`packages/mcp-core/src/mcp-policy.ts`, `mcpPolicySet`),
