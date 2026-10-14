@@ -25,6 +25,7 @@ import {
   type PolicyRef,
 } from '@mantle/db';
 import { registerPreRunChecks } from './gate-prerun';
+import { registerToolCallAudit } from './call-audit';
 import { connectorScopeRefusal, type ConnectorScopeFacts } from './connector-scope';
 import { OWNER_ONLY_ERROR } from './surface';
 // The `tool` source (a builtin called through dispatch, A5 step 3a) and the
@@ -218,13 +219,15 @@ export const GATE_NARROWERS: Readonly<Record<Exclude<NarrowerName, 'read-only'>,
     connector: connectorNarrower,
   });
 
-/** Register every narrower and the pre-run checks (gate-prerun.ts; the
- *  same functions again are a no-op). */
+/** Register every narrower, the pre-run checks (gate-prerun.ts) and how a
+ *  tool call is audited (call-audit.ts, A5 step 6d); the same functions
+ *  again are a no-op. */
 export function registerGateNarrowers(): void {
   for (const [name, narrower] of Object.entries(GATE_NARROWERS)) {
     registerNarrower(name as NarrowerName, narrower);
   }
   registerPreRunChecks();
+  registerToolCallAudit();
 }
 
 /** Boot: register every narrower and assert the gate is ready. Each process

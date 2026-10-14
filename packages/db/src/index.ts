@@ -151,6 +151,18 @@ export {
 } from './viewer';
 export { ensureViewerRoles } from './viewer-roles';
 export {
+  registerCallAudit,
+  startCallAudit,
+  stopCallAudit,
+  callAuditStarted,
+  callAuditsSettled,
+  markCallAudited,
+  type AuditedCall,
+  type AuditRowParts,
+  type CallAuditSpec,
+  type CallAuditRow,
+} from './call-audit';
+export {
   READ_ONLY_CALLER_ERROR,
   GateNotReadyError,
   PreRunSideEffectError,

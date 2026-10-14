@@ -44,6 +44,7 @@ import {
   type ScopeArea,
   type Tool,
   type WorkspaceScope,
+  markCallAudited,
 } from '@mantle/db';
 import {
   connectorMarkRefusal,
@@ -306,6 +307,9 @@ function logConnectorCall(
     }
   }
   const handler = row.handler as { kind: 'mcp'; group: string; toolName: string };
+  // This row is the call's audit row: the gate writes no `api.write` for it
+  // (A5 step 6d, one row per write).
+  markCallAudited();
   try {
     // As the system: the audit log is an admin table, and the caller runs
     // in its scope.

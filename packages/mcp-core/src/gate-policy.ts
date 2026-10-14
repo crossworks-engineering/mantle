@@ -109,6 +109,12 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller | null 
     facts: Object.freeze({
       keyAreas: caller.areas ?? null,
       riskyAllowed: caller.riskyAllowed ?? [],
+      // What a tool write's audit row names (A5 step 6d, call-audit.ts; a
+      // key's call is audited by its route, not the gate).
+      audit: Object.freeze({
+        peerId: caller.peerId ?? null,
+        oauthClientId: caller.oauthClientId ?? null,
+      }),
     }),
   });
 }

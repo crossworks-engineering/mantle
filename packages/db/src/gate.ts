@@ -23,7 +23,8 @@
  *      (createHomeIntent, create-home.ts: ?ws=, the workspace argument, the
  *      folder, the private fallback).
  *   7. Run. The database has the last word: row rules on reads, triggers on
- *      writes.
+ *      writes. A tool call that wrote leaves one audit row (call-audit.ts,
+ *      A5 step 6d).
  *   8. Map a refusal with the one mapper (mapAccessError, @mantle/std).
  *
  * Listing equals calling: what a caller may LIST is steps 3 to 5 of the
@@ -43,6 +44,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { AccessError, isAccessError, mapAccessError, type AccessRefusal } from '@mantle/std';
 import { runAsActor, systemActor, SYSTEM_REASON_RE, type Actor } from './actor';
 import { turnScopeProblem, withTurnScope } from './client';
+import { auditsKind, inCallAuditFrame, resetCallAudit } from './call-audit';
 import { createHomeIntent, type CreateAsk, type CreateFallback } from './create-home';
 import { currentCreateHome, withCreateHome, type CreateHome, type WorkspaceScope } from './viewer';
 
@@ -291,6 +293,7 @@ export function resetGateRegistry(): void {
   sources.clear();
   narrowers.clear();
   preRunChecks.clear();
+  resetCallAudit();
 }
 
 /** Thrown while a narrower of NARROWERS is not registered: the process did
@@ -785,19 +788,31 @@ async function callSteps<T>(
           // 4. Narrow by surface. 5. The Admin step.
           narrowStep(bound, policy, ref);
           adminStep(bound, policy);
-          // The pre-run checks, before the create home: a refused call
-          // never makes a private workspace. An entry whose home makes
-          // nothing at call time (`first`) names it before them. A check
-          // only (no `fn`) names none.
-          const first = fn !== null && bound.createHome?.first === true;
-          let home = first ? await createHomeStep(bound, policy, input.ask ?? null) : null;
-          await preRunStep(bound, policy, ref, input);
-          if (!fn) return { ok: true as const, value: null };
-          // 6. The create-home intent.
-          if (!first) home = await createHomeStep(bound, policy, input.ask ?? null);
-          // 7. Run.
-          const value = home ? await withCreateHome(home, fn) : await fn();
-          return { ok: true as const, value };
+          const steps = async () => {
+            // The pre-run checks, before the create home: a refused call
+            // never makes a private workspace. An entry whose home makes
+            // nothing at call time (`first`) names it before them. A
+            // check only (no `fn`) names none.
+            const first = fn !== null && bound.createHome?.first === true;
+            let home = first ? await createHomeStep(bound, policy, input.ask ?? null) : null;
+            await preRunStep(bound, policy, ref, input);
+            if (!fn) return { ok: true as const, value: null };
+            // 6. The create-home intent.
+            if (!first) home = await createHomeStep(bound, policy, input.ask ?? null);
+            // 7. Run.
+            const value = home ? await withCreateHome(home, fn) : await fn();
+            return { ok: true as const, value };
+          };
+          // A tool call (A5 step 6d): its write leaves one audit row
+          // (call-audit.ts), from here, after it ran.
+          if (!fn || !auditsKind(ref.kind)) return steps();
+          return inCallAuditFrame(steps, (res) => ({
+            caller: bound,
+            ref,
+            policy,
+            input,
+            value: res?.value ?? null,
+          }));
         }),
       );
     });
