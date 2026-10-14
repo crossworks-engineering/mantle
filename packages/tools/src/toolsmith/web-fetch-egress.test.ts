@@ -7,7 +7,7 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ToolContext } from '../types';
+import type { ToolHandlerContext } from '../types';
 import { web_fetch } from './web-fetch';
 
 let srv: http.Server;
@@ -27,7 +27,7 @@ afterAll(() => {
   srv.close();
 });
 
-const ctx = { ownerId: 'o' } as unknown as ToolContext;
+const ctx = { ownerId: 'o' } as unknown as ToolHandlerContext;
 
 describe('web_fetch and IPv6 forms of a private address', () => {
   it('refuses the mapped, compatible and translated forms of loopback', async () => {
