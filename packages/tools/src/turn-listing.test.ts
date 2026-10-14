@@ -29,7 +29,9 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
 }));
 
 import { loginActor, runAsActor, type Tool } from '@mantle/db';
-import { BUILTIN_TOOLS, ensureGateReady, turnListedTools } from './index';
+import { BUILTIN_TOOLS, ensureGateReady, turnCallRefusal, turnListedTools } from './index';
+import { NO_RUNTIME_POLICY_ERROR } from './runtime-policy';
+import { OWNER_ONLY_ERROR } from './surface';
 
 const OWNER = '99999999-9999-4999-8999-999999999999';
 const LOGIN = '55555555-5555-4555-8555-555555555555';
@@ -119,6 +121,77 @@ describe('the turn listing is the gate listing (A5 step 5, pick B)', () => {
     expect(listed.has('odd')).toBe(false);
     for (const slug of ['crm_lookup', 'api_get', 'a_recipe', 'note_create', 'search_nodes']) {
       expect(listed.has(slug), slug).toBe(true);
+    }
+  });
+});
+
+/** The refusal the gate gives a loop's queued call in `scope`. */
+async function refusalIn(
+  scope: Record<string, unknown>,
+  view: { holdsAdmin: boolean; areas: Set<string> },
+  tool: Tool,
+  surface: Parameters<typeof turnCallRefusal>[1] = { kind: 'web' },
+): Promise<string | null> {
+  h.scope = scope;
+  h.view = view;
+  try {
+    return await runAsActor(loginActor(LOGIN), () => turnCallRefusal(tool, surface));
+  } finally {
+    h.scope = null;
+  }
+}
+
+describe('a call that needs approval meets the gate before it is queued (A5 step 5 fix round 1, M2)', () => {
+  ensureGateReady();
+  const member = { kind: 'assistant', loginId: LOGIN, ws: [TEAM_WS], modWs: [] };
+  const memberView = () => ({ holdsAdmin: false, areas: new Set<string>() });
+  const owner = { kind: 'assistant', loginId: LOGIN, ws: [ADMIN_WS], modWs: [ADMIN_WS] };
+  const ownerView = () => ({ holdsAdmin: true, areas: new Set(AREAS) });
+  const shell = RUNTIME.find((r) => r.slug === 'shell_echo')!;
+
+  it('a workspace heartbeat outside Admin may not queue telegram_send (connectors area)', async () => {
+    const refused = await refusalIn(member, memberView(), builtinRow('telegram_send'), {
+      kind: 'team',
+      privateReads: false,
+    } as never);
+    expect(refused).toBeTruthy();
+    expect(refused).not.toBe(OWNER_ONLY_ERROR);
+  });
+
+  it('a member turn outside Admin may not queue a shell row', async () => {
+    expect(await refusalIn(member, memberView(), shell)).toBeTruthy();
+  });
+
+  it('a row with no policy is refused in the words dispatch uses', async () => {
+    expect(await refusalIn(owner, ownerView(), NO_POLICY)).toBe(NO_RUNTIME_POLICY_ERROR);
+  });
+
+  it('an owner-only tool is refused off an owner surface, in its own words', async () => {
+    const ownerOnly = BUILTIN_TOOLS.find((d) => d.ownerOnly)!;
+    expect(
+      await refusalIn(owner, ownerView(), builtinRow(ownerOnly.slug), {
+        kind: 'team',
+        privateReads: false,
+      } as never),
+    ).toBe(OWNER_ONLY_ERROR);
+  });
+
+  it("what the scope may call still queues: the owner's telegram_send and shell row, a member's note", async () => {
+    expect(await refusalIn(owner, ownerView(), builtinRow('telegram_send'))).toBeNull();
+    expect(await refusalIn(owner, ownerView(), shell)).toBeNull();
+    expect(await refusalIn(member, memberView(), builtinRow('note_create'))).toBeNull();
+  });
+
+  it('the refusal agrees with the listing for every tool, in both scopes', async () => {
+    for (const [scope, view] of [
+      [member, memberView],
+      [owner, ownerView],
+    ] as const) {
+      const listed = new Set(await listedIn(scope, view()));
+      for (const row of ROWS) {
+        const refused = await refusalIn(scope, view(), row);
+        expect(refused === null, row.slug).toBe(listed.has(row.slug));
+      }
     }
   });
 });

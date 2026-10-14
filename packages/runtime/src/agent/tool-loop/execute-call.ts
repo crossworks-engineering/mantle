@@ -15,6 +15,7 @@ import {
   isBuiltinReadOnly,
   sanitizeToolError,
   turnCaller,
+  turnCallRefusal,
   UNTRUSTED_CONTENT_TOOL_SLUGS,
   PRIVATE_OUTPUT_TOOL_SLUGS,
   type ValidateArgsResult,
@@ -126,6 +127,16 @@ export async function executeToolCall(p: {
             })
           : { gate: false };
       if (tool.requiresConfirm || verdict.gate) {
+        // The gate first (A5 step 5 fix round 1, M2): an approved call runs
+        // later in the approver's scope, so a call this loop's own scope may
+        // not make is refused now, in the gate's words, and never queued
+        // (a workspace heartbeat's telegram_send, a member turn's shell
+        // row). The same caller dispatch would use (turnCaller).
+        const refused = await turnCallRefusal(tool, args.surface);
+        if (refused !== null) {
+          handle.setError(refused);
+          return { ok: false as const, error: refused };
+        }
         const traceId = currentTrace()?.id ?? null;
         // Note: pendingToolCalls.args stores the UN-REDACTED input —
         // post-repair (the central validator's safe coercions applied),

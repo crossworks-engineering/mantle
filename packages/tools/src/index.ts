@@ -257,7 +257,7 @@ export {
   type ToolCallerEntry,
 } from './gate-callers';
 export { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool-gate-policy';
-export { turnListedTools } from './turn-listing';
+export { turnCallRefusal, turnListedTools } from './turn-listing';
 export { registerPreRunChecks } from './gate-prerun';
 export { contentToolTarget, keySharedContentRefusal, type KeyOrPeer } from './key-shared-content';
 export { othersCanRead } from './shared-item';

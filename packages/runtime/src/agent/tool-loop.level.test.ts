@@ -24,6 +24,7 @@ function where(): string {
 vi.mock('@mantle/tools', async () => ({
   // The gate's listing (A5 step 5, pick B): asked in the agent's scope,
   // where dispatch calls (loopToolRows).
+  turnCallRefusal: async () => null,
   turnListedTools: vi.fn(async <T>(rows: readonly T[]) => {
     h.levels.push(`list:${where()}`);
     return [...rows];

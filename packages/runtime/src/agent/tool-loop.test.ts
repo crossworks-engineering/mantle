@@ -39,10 +39,15 @@ let dispatchToolImpl: (
   | { ok: false; error: string } = () => ({ ok: true, output: { ok: 1 } });
 
 const insertedPendingArgs: Array<Record<string, unknown>> = [];
+/** What the gate refuses a queued call with (turnCallRefusal), by slug. */
+const gateRefuses = new Map<string, string>();
 
 vi.mock('@mantle/tools', async () => ({
   // The gate's listing (A5 step 5, pick B; loopToolRows): proven against
   // the real gate in tool-loop.listing.test.ts; here it lists the grant.
+  // The gate before the approval queue (A5 step 5 fix round 1, M2):
+  // proven against the real gate in packages/tools/src/turn-listing.test.ts.
+  turnCallRefusal: vi.fn(async (tool: { slug: string }) => gateRefuses.get(tool.slug) ?? null),
   turnListedTools: async <T>(rows: readonly T[]) => [...rows],
   // The validator + error sanitizer are pure (no DB/runtime deps), so the
   // loop tests exercise the REAL implementations — mocking them would let
@@ -259,6 +264,7 @@ function makeThrowingAdapter(status: number): { adapter: ChatDispatcher; calls: 
 beforeEach(() => {
   dispatchToolCalls.length = 0;
   insertedPendingArgs.length = 0;
+  gateRefuses.clear();
   markedCreated.length = 0;
   // Default dispatcher returns success with a small payload.
   dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
@@ -915,6 +921,42 @@ describe('runToolLoop — requires_confirm path', () => {
       status: 'skipped',
       error: 'queued_for_approval',
     });
+  });
+
+  it("refuses a call the gate refuses in its own scope, in the gate's words, and queues nothing (A5 step 5 fix round 1, M2)", async () => {
+    const tool = fakeTool({ slug: 'telegram_send', requiresConfirm: true });
+    gateRefuses.set('telegram_send', 'You cannot manage this part of the brain.');
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          {
+            id: 'call_tg',
+            type: 'function',
+            function: { name: 'telegram_send', arguments: '{"text":"hi"}' },
+          },
+        ],
+      },
+      { type: 'text', text: 'could not' },
+    ]);
+    const result = await runToolLoop({
+      agentRole: null,
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      initialMessages: [{ role: 'user', content: 'send it' }],
+      tools: [tool],
+    });
+    expect(insertedPendingArgs).toHaveLength(0);
+    expect(dispatchToolCalls).toHaveLength(0);
+    expect(result.pendingIds).toEqual([]);
+    const toolMsg = result.messages.find((m) => m.role === 'tool');
+    expect(toolMsg!.content).toContain('You cannot manage this part of the brain.');
+    expect(toolMsg!.content).not.toContain('queued_for_approval');
+    expect(result.toolCalls[0]).toMatchObject({ slug: 'telegram_send', status: 'error' });
   });
 });
 

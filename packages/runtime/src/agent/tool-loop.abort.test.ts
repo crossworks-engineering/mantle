@@ -39,6 +39,7 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
 vi.mock('@mantle/tools', async () => ({
   // The gate's listing (A5 step 5, pick B; loopToolRows): proven against
   // the real gate in tool-loop.listing.test.ts; here it lists the grant.
+  turnCallRefusal: async () => null,
   turnListedTools: async <T>(rows: readonly T[]) => [...rows],
   validateToolArgs: (
     await vi.importActual<typeof import('../../../tools/src/validate-args')>(

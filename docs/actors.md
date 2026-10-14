@@ -2176,3 +2176,18 @@ Admin scope with every area) lists what it listed before; the filter
 keeps the grant's order, so the list of an agent in a non-Admin scope
 changes once and its prompt cache prefix resets once per agent and
 scope, then holds.
+
+**Step 5 fix round 1.**
+
+- **M2: a call that needs approval meets the gate before it is queued.**
+  The approved call runs later in the approver's scope
+  (`approvePendingCall`, `pendingCaller`), so before the tool loop queues
+  a call (`requiresConfirm`, the client-sourced guard, a heartbeat's
+  egress gate) it asks `turnCallRefusal`
+  (`packages/tools/src/turn-listing.ts`): gate steps 3 to 5 and the
+  owner-only check, for the caller dispatch would use. A refusal answers
+  the model in the gate's words and no pending row is made
+  (`packages/runtime/src/agent/tool-loop/execute-call.ts`). Before, a
+  workspace heartbeat outside Admin could queue `telegram_send` (the
+  connectors area) and the owner's approval sent it. A call the gate lets
+  through still queues (`turn-listing.test.ts`, `tool-loop.test.ts`).
