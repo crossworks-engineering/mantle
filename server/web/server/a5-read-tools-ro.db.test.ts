@@ -500,21 +500,34 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
     return { readOnlyWrites, otherMisses, stuck, ran, recipes, control };
   };
 
-  /** What both passes assert. */
-  const check = (r: Awaited<ReturnType<typeof sweep>>) => {
+  /** What both passes assert: each soft, so one run reports them all. */
+  const check = (mode: string, r: Awaited<ReturnType<typeof sweep>>) => {
+    // What ran, for the log (CI is the proof: no database on the Mac).
+    console.info(
+      `[a5 read sweep, edit check ${mode}] ${reads.length} read builtins per entry; ` +
+        `answered ok: ${JSON.stringify(r.ran)}; ` +
+        `read-only writes: ${JSON.stringify(Object.keys(r.readOnlyWrites))}`,
+    );
+    // THE FINDING: no read builtin, and no nested read step, wrote as a
+    // read-only actor. A tool named here is a real read-path write.
+    expect.soft(r.readOnlyWrites, 'read tools that wrote as a read-only actor').toEqual({});
+    expect.soft(r.stuck, 'read tools that did not answer in time').toEqual([]);
+    expect.soft(r.otherMisses, 'actor misses that are not the read-only refusal').toEqual({});
     // The sweep is not vacuous: the policy table's reads, most of them
     // answered on the owner's web, and some in the team scope.
-    expect(reads.length).toBeGreaterThan(50);
-    expect(reads).not.toContain(PROBE);
-    expect(r.ran['dev console'], 'dev console calls that answered ok').toBeGreaterThan(20);
-    expect(r.ran['app broker, admin rules'], 'admin rules calls that answered ok').toBeGreaterThan(
-      20,
-    );
-    expect(r.ran['app broker, team rules'], 'team rules calls that answered ok').toBeGreaterThan(5);
+    expect.soft(reads.length).toBeGreaterThan(50);
+    expect.soft(reads).not.toContain(PROBE);
+    expect.soft(r.ran['dev console'], 'dev console calls that answered ok').toBeGreaterThan(20);
+    expect
+      .soft(r.ran['app broker, admin rules'], 'admin rules calls that answered ok')
+      .toBeGreaterThan(20);
+    expect
+      .soft(r.ran['app broker, team rules'], 'team rules calls that answered ok')
+      .toBeGreaterThan(5);
     // The recipe of reads answers on the owner's web, both steps run.
     for (const entry of ['dev console', 'app broker, admin rules'] as const) {
-      expect(r.recipes[entry].error, entry).toBe('');
-      expect(r.recipes[entry].ok, entry).toBe(true);
+      expect.soft(r.recipes[entry].error, entry).toBe('');
+      expect.soft(r.recipes[entry].ok, entry).toBe(true);
     }
     // The control is caught, directly and as a recipe's step, on the
     // owner's web (both entries) and directly in the team scope.
@@ -525,23 +538,17 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
       'app broker, admin rules: nested',
       'app broker, team rules: direct',
     ]) {
-      expect(
-        r.control[key]!.ro.length,
-        `${key}: ${JSON.stringify(r.control[key])}`,
-      ).toBeGreaterThan(0);
+      expect
+        .soft(r.control[key]!.ro.length, `${key}: ${JSON.stringify(r.control[key])}`)
+        .toBeGreaterThan(0);
     }
-    // THE FINDING: no read builtin, and no nested read step, wrote as a
-    // read-only actor. A tool named here is a real read-path write.
-    expect(r.readOnlyWrites, 'read tools that wrote as a read-only actor').toEqual({});
-    expect(r.stuck, 'read tools that did not answer in time').toEqual([]);
-    expect(r.otherMisses, 'actor misses that are not the read-only refusal').toEqual({});
   };
 
   it('edit check on: no read builtin is refused for writing as a read-only actor', async () => {
-    check(await sweep('on'));
+    check('on', await sweep('on'));
   }, 900_000);
 
   it('edit check warn: no read builtin writes as a read-only actor, even swallowed', async () => {
-    check(await sweep('warn'));
+    check('warn', await sweep('warn'));
   }, 900_000);
 });
