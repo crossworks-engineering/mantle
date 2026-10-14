@@ -101,6 +101,29 @@ export async function probeExtractionModel(ownerId: string): Promise<void> {
 // ─── Entity reconciliation ──────────────────────────────────────────────────
 
 /**
+ * The extractor's model input: its system prompt and the node's title, type
+ * and body (the first 8000 characters). Pure, so the prompt can be pinned
+ * (background-prompts.test.ts).
+ */
+export function buildExtractorInput(
+  workerSystemPrompt: string | null | undefined,
+  node: { title: string; type: string },
+  body: string,
+): { system: string; user: string } {
+  // Tables get a targeted L2 brief: the body is already profile + leading
+  // rows (built at commit), so steer the summary toward what the table
+  // contains, per-column meaning, and the questions it can answer.
+  const tableHint =
+    node.type === 'table'
+      ? 'This is a structured data table (its column profile and leading rows follow). Describe what the table contains, what each column means, and what questions it can answer.\n\n'
+      : '';
+  return {
+    system: workerSystemPrompt || DEFAULT_EXTRACTOR_PROMPT,
+    user: `Title: ${node.title}\nType: ${node.type}\n\n${tableHint}Body:\n${body.slice(0, 8000)}`,
+  };
+}
+
+/**
  * Run the extractor LLM over the node body and return the parsed output
  * (summary + facts + entities + relations). Two paths: a shape-unchanged table
  * REUSES its committed summary (no LLM spend), everything else calls the model.
@@ -115,15 +138,11 @@ export async function runExtractorModel(
   body: string,
   existingData: Record<string, unknown>,
 ): Promise<ExtractorOutput> {
-  const systemPrompt = worker.systemPrompt || DEFAULT_EXTRACTOR_PROMPT;
-  // Tables get a targeted L2 brief: the body is already profile + leading
-  // rows (built at commit), so steer the summary toward what the table
-  // contains, per-column meaning, and the questions it can answer.
-  const tableHint =
-    node.type === 'table'
-      ? 'This is a structured data table (its column profile and leading rows follow). Describe what the table contains, what each column means, and what questions it can answer.\n\n'
-      : '';
-  const userPayload = `Title: ${node.title}\nType: ${node.type}\n\n${tableHint}Body:\n${body.slice(0, 8000)}`;
+  const { system: systemPrompt, user: userPayload } = buildExtractorInput(
+    worker.systemPrompt,
+    node,
+    body,
+  );
 
   // Shape-hash gate (Tables v2 §6): commitTable KEEPS data.summary when
   // only cell values changed (schema fingerprint unchanged) and clears it

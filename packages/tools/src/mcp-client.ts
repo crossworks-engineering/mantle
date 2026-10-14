@@ -87,8 +87,9 @@ const SSE_GET_HEADERS_TIMEOUT_MS = 5_000;
 /** SSRF-guarded fetch: every request URL is re-checked (the transport may
  *  follow the server's session redirects/resumption URLs) and redirects are
  *  refused outright — an external MCP endpoint has no business redirecting,
- *  and following one could carry the auth header to an attacker's host. */
-const guardedFetch: typeof fetch = async (input, init) => {
+ *  and following one could carry the auth header to an attacker's host.
+ *  Exported for the egress proof table (builtins-egress-proof.test.ts). */
+export const mcpConnectorFetch: typeof fetch = async (input, init) => {
   const url =
     typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
   await assertFetchableUrl(url);
@@ -159,7 +160,7 @@ async function spawn(ownerId: string, groupSlug: string, mcp: ToolGroupMcpBindin
   }
   const transport = new StreamableHTTPClientTransport(new URL(mcp.url), {
     requestInit: { headers },
-    fetch: guardedFetch,
+    fetch: mcpConnectorFetch,
     ...(authProvider ? { authProvider } : {}),
   });
   const client = new Client({ name: 'mantle-mcp-connector', version: '1.0.0' });

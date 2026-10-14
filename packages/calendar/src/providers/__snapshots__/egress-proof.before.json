@@ -1,0 +1,50 @@
+{
+ "calendar ICS feed": {
+  "public host": {
+   "answer": "pulled, 0 events",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "pulled, 0 events",
+   "reached": [
+    "10.0.0.5"
+   ]
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "pulled, 0 events",
+   "reached": [
+    "inside.test"
+   ]
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "error: invalid line (no token \";\" or \":\") \"METADATA-SECRET\"",
+   "reached": [
+    "meta-redirect.test",
+    "169.254.169.254"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "pulled, 0 events",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "error: feed too large",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "whole body"
+  },
+  "slow server": {
+   "answer": "error: This operation was aborted (after 30 s)",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ }
+}

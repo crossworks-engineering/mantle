@@ -152,7 +152,7 @@ export { EMAIL_TOOLS } from './builtins-email';
 export { TERMINAL_TOOLS, TERMINAL_TOOL_SLUGS } from './builtins-terminal';
 export { SANDBOX_TOOLS, SANDBOX_TOOL_SLUGS } from './builtins-sandbox';
 export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';
-export { WORKER_DELEGATION_TOOLS } from './builtins-workers';
+export { WORKER_DELEGATION_TOOLS, buildSummarizeTextInput } from './builtins-workers';
 export { EXPORT_TOOLS } from './builtins-export';
 export { ACCESS_TOOLS } from './builtins-access';
 export { SHEET_TOOLS, SHEET_TOOL_SLUGS } from './builtins-sheets';

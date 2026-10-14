@@ -145,6 +145,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@opentelemetry/api@1.9.1)(pg@8.22.0)(postgres@3.4.9(patch_hash=c17df9a6a4d6e99f9752aec139d0019c1a908f62ab1c36e769a434bece84dbbe))

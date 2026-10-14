@@ -28,6 +28,10 @@ const RESULT_TEXT_CAP = 80_000;
  *  64 MB for an owner's file_upload). */
 const COPY_MAX_BYTES = 48 * 1024 * 1024;
 
+/** The fetch the peer's MCP transport runs on. Exported for the egress
+ *  proof table (builtins-egress-proof.test.ts). */
+export const peerMcpFetch: typeof fetch = (input, init) => fetch(input, init);
+
 type PeerSession = { client: Client; peerName: string; close: () => Promise<void> };
 
 async function openPeer(ownerId: string, ref: string): Promise<PeerSession | { error: string }> {
@@ -38,6 +42,7 @@ async function openPeer(ownerId: string, ref: string): Promise<PeerSession | { e
   const url = new URL(`${target.peer.baseUrl}/api/mcp`);
   const transport = new StreamableHTTPClientTransport(url, {
     requestInit: { headers: { Authorization: `Bearer ${target.token}` } },
+    fetch: peerMcpFetch,
   });
   const client = new Client({ name: 'mantle-peer', version: '1.0.0' });
   try {

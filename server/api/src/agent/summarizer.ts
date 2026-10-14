@@ -97,6 +97,34 @@ const CONVERSATION_DIGEST_PATH = NOTES_ASSISTANT_PATH;
  * (summarizeWebConversation) split. Driven from the debounced summarize handler
  * in main.ts.
  */
+
+/**
+ * The summarizer's model input: its system prompt and the batch's numbered
+ * transcript, oldest first. Pure, so the prompt can be pinned
+ * (background-prompts.test.ts).
+ */
+export function buildSummarizerMessages(
+  worker: { model: string; provider: string; systemPrompt: string | null },
+  batch: Array<{ direction: string; text: string; createdAt: Date }>,
+): ReturnType<typeof buildChatMessages> {
+  const transcript = batch
+    .map((t, i) => {
+      const who = t.direction === 'outbound' ? 'assistant' : 'user';
+      return `#${i + 1} [${t.createdAt.toISOString()}] ${who}: ${t.text}`;
+    })
+    .join('\n');
+  return buildChatMessages({
+    model: worker.model,
+    provider: worker.provider,
+    systemPrompt: worker.systemPrompt ?? DEFAULT_SUMMARIZER_PROMPT,
+    personaNotes: [],
+    facts: [],
+    digests: [],
+    contentHits: [],
+    history: [],
+    newUserText: transcript,
+  });
+}
 export async function summarizeAgentConversation(ownerId: string, agentId: string): Promise<void> {
   const worker = await resolveSummarizer(ownerId);
   if (!worker) {
@@ -305,24 +333,7 @@ async function summarizeThread(o: {
       );
       if (batch.length === 0) return;
 
-      const transcript = batch
-        .map((t, i) => {
-          const who = t.direction === 'outbound' ? 'assistant' : 'user';
-          return `#${i + 1} [${t.createdAt.toISOString()}] ${who}: ${t.text}`;
-        })
-        .join('\n');
-
-      const messages = buildChatMessages({
-        model: worker.model,
-        provider: worker.provider,
-        systemPrompt: worker.systemPrompt ?? DEFAULT_SUMMARIZER_PROMPT,
-        personaNotes: [],
-        facts: [],
-        digests: [],
-        contentHits: [],
-        history: [],
-        newUserText: transcript,
-      });
+      const messages = buildSummarizerMessages(worker, batch);
 
       const routes = resolveChatRoutes(worker);
       console.log(

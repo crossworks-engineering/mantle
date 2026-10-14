@@ -424,6 +424,24 @@ const extract_from_image: BuiltinToolDef = {
 
 // ─── summarize_text ────────────────────────────────────────────────
 
+/**
+ * summarize_text's model input: the worker's system prompt (or the default
+ * one) and the source text, then the focus the caller asked for. Pure, so
+ * the prompt can be pinned (server/api/src/agent/background-prompts.test.ts).
+ */
+export function buildSummarizeTextInput(
+  workerSystemPrompt: string | null | undefined,
+  source: string,
+  focus: string | undefined,
+  maxWords: number,
+): { system: string; user: string } {
+  const system =
+    workerSystemPrompt?.trim() ||
+    `You are a precise summarizer. Output a clean ${maxWords}-word summary in the same language as the source. No preamble, no closing remarks — just the summary.`;
+  const user = focus ? `${source}\n\n---\n\nFocus the summary on: ${focus}` : source;
+  return { system, user };
+}
+
 const summarize_text: BuiltinToolDef = {
   slug: 'summarize_text',
   policy: {
@@ -506,10 +524,12 @@ const summarize_text: BuiltinToolDef = {
 
     const focus = strOpt(input.focus);
     const maxWords = num(input.max_words, 200) ?? 200;
-    const systemPrompt =
-      worker.systemPrompt?.trim() ||
-      `You are a precise summarizer. Output a clean ${maxWords}-word summary in the same language as the source. No preamble, no closing remarks — just the summary.`;
-    const userPrompt = focus ? `${source}\n\n---\n\nFocus the summary on: ${focus}` : source;
+    const { system: systemPrompt, user: userPrompt } = buildSummarizeTextInput(
+      worker.systemPrompt,
+      source,
+      focus,
+      maxWords,
+    );
 
     const params = (worker.params ?? {}) as {
       temperature?: number;

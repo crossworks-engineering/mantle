@@ -1,0 +1,50 @@
+{
+ "federation client (peer_query)": {
+  "public host": {
+   "answer": "ok, 1 nodes",
+   "reached": [
+    "public.test"
+   ]
+  },
+  "private IP": {
+   "answer": "ok, 1 nodes",
+   "reached": [
+    "10.0.0.5"
+   ]
+  },
+  "name resolving to 127.0.0.1": {
+   "answer": "ok, 1 nodes",
+   "reached": [
+    "inside.test"
+   ]
+  },
+  "redirect to 169.254.169.254": {
+   "answer": "ok, 0 nodes",
+   "reached": [
+    "meta-redirect.test",
+    "169.254.169.254"
+   ]
+  },
+  "redirect to another host with Authorization": {
+   "answer": "ok, 1 nodes",
+   "reached": [
+    "cross-redirect.test",
+    "other.test"
+   ],
+   "authorizationAtOtherHost": "not sent"
+  },
+  "oversized body": {
+   "answer": "ok, 0 nodes",
+   "reached": [
+    "huge.test"
+   ],
+   "oversizedRead": "whole body"
+  },
+  "slow server": {
+   "answer": "error: Could not reach Linked brain (https://slow.test): This operation was aborted (after 15 s)",
+   "reached": [
+    "slow.test"
+   ]
+  }
+ }
+}

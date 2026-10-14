@@ -99,6 +99,18 @@ type TranscriptSource = `captions:${'manual' | 'auto'}` | `stt:${string}`;
 
 // ─── the tool ──────────────────────────────────────────────────────
 
+/** Vet a video link before the media sidecar sees it: null when it may go,
+ *  else the refusal. Exported for the egress proof table
+ *  (builtins-egress-proof.test.ts). */
+export async function vetVideoUrl(url: string): Promise<string | null> {
+  try {
+    await assertFetchableUrl(url);
+  } catch (err) {
+    return errorMessage(err);
+  }
+  return null;
+}
+
 const video_ingest: BuiltinToolDef = {
   slug: 'video_ingest',
   policy: {
@@ -187,11 +199,8 @@ const video_ingest: BuiltinToolDef = {
 
     if (url) {
       // ── URL path ────────────────────────────────────────────────
-      try {
-        await assertFetchableUrl(url);
-      } catch (err) {
-        return { ok: false, error: errorMessage(err) };
-      }
+      const refused = await vetVideoUrl(url);
+      if (refused) return { ok: false, error: refused };
 
       const probe = await step({ name: 'video_probe', kind: 'http', input: { url } }, async (h) => {
         const r = await mediaProbe(url);

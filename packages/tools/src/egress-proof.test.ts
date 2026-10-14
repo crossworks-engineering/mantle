@@ -1,0 +1,139 @@
+/**
+ * The egress proof table for the callers in @mantle/tools (A10 part 1,
+ * docs/egress.md): every caller that fetches a URL a user, a model or a
+ * remote server gave, over the same seven cells (a public host, a private
+ * IP, a name resolving to 127.0.0.1, a redirect to the cloud metadata
+ * address, a redirect to another host carrying Authorization, an oversized
+ * body, a slow server). DNS and the platform fetch are a fake network
+ * (@mantle/std/egress-test-net); everything above them is the real code.
+ *
+ * Recorded on the sources before the move (__snapshots__/egress-proof.before.json).
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock(
+  'node:dns/promises',
+  async () => (await import('@mantle/std/egress-test-net')).testNetDnsModule,
+);
+
+import { cellError, runEgressRow } from '@mantle/std/egress-test-net';
+import { web_fetch } from './toolsmith/web-fetch';
+import { safeFetch } from './safe-fetch';
+import { fetchSpecText } from './openapi-sync';
+import { mcpConnectorFetch } from './mcp-client';
+import { mcpOAuthFetch } from './mcp-oauth';
+import { peerMcpFetch } from './builtins-peer-mcp';
+import { vetVideoUrl } from './builtins-video';
+import type { ToolHandlerContext } from './types';
+
+const OK_TEXT = 'hello from the test net';
+const SECRET = 'tok-SECRET-123';
+
+afterEach(() => vi.unstubAllGlobals());
+
+const hooks = {
+  stubFetch: (f: typeof fetch) => vi.stubGlobal('fetch', f),
+  timers: {
+    useFakeTimers: () => vi.useFakeTimers(),
+    useRealTimers: () => vi.useRealTimers(),
+    advanceTimersByTimeAsync: (ms: number) => vi.advanceTimersByTimeAsync(ms),
+  },
+};
+
+async function bodyAnswer(res: Response): Promise<string> {
+  const text = await res.text();
+  return `status ${res.status}, ${text.length} bytes`;
+}
+
+/** Each caller, called the way its product code calls it. */
+const ROWS: Record<string, (base: string) => Promise<string>> = {
+  web_fetch: async (base) => {
+    const r = await web_fetch.handler({ url: `${base}/docs` }, {
+      ownerId: 'owner',
+    } as ToolHandlerContext);
+    if (!r.ok) return `error: ${r.error}`;
+    const o = r.output as { status: number; totalChars: number };
+    return `status ${o.status}, ${o.totalChars} chars`;
+  },
+  // dispatch.ts runs every http-kind API tool (and the dev console proxy,
+  // the OAuth2 token endpoint) through safeFetch with its own timeout.
+  'http API tool (safeFetch)': async (base) => {
+    try {
+      const res = await safeFetch(
+        `${base}/v1/items`,
+        {
+          method: 'GET',
+          headers: { authorization: `Bearer ${SECRET}` },
+          signal: AbortSignal.timeout(30_000),
+        },
+        [SECRET],
+      );
+      return await bodyAnswer(res);
+    } catch (err) {
+      return cellError(err);
+    }
+  },
+  'OpenAPI spec fetch': async (base) => {
+    try {
+      const { text } = await fetchSpecText(`${base}/openapi.json`);
+      return `${text.length} chars`;
+    } catch (err) {
+      return cellError(err);
+    }
+  },
+  'MCP connector': async (base) => {
+    try {
+      const res = await mcpConnectorFetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${SECRET}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: '{}',
+      });
+      return await bodyAnswer(res);
+    } catch (err) {
+      return cellError(err);
+    }
+  },
+  'MCP connector OAuth endpoints': async (base) => {
+    try {
+      const res = await mcpOAuthFetch(`${base}/.well-known/oauth-authorization-server`, {
+        method: 'GET',
+        headers: { authorization: `Basic ${SECRET}` },
+      });
+      return await bodyAnswer(res);
+    } catch (err) {
+      return cellError(err);
+    }
+  },
+  'peer MCP transport': async (base) => {
+    try {
+      const res = await peerMcpFetch(`${base}/api/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${SECRET}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      return await bodyAnswer(res);
+    } catch (err) {
+      return cellError(err);
+    }
+  },
+  'video_ingest link check': async (base) => {
+    const refused = await vetVideoUrl(`${base}/watch?v=1`);
+    return refused ? `error: ${refused}` : 'handed to the media sidecar';
+  },
+};
+
+describe('egress proof table: @mantle/tools callers', () => {
+  it('answers each cell as recorded', { timeout: 120_000 }, async () => {
+    const table: Record<string, unknown> = {};
+    for (const [name, call] of Object.entries(ROWS)) {
+      table[name] = await runEgressRow(OK_TEXT, 'text/plain', call, hooks);
+    }
+    await expect(JSON.stringify(table, null, 1) + '\n').toMatchFileSnapshot(
+      './__snapshots__/egress-proof.before.json',
+    );
+  });
+});

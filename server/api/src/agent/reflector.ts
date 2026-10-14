@@ -177,6 +177,34 @@ function flattenNote(body: string, max = 240): string {
 const JOURNAL_SCOPE_INSTRUCTION = `
 This agent keeps what it learns in the Journal. For EACH new note also give "scope": "general" when it applies to most conversations (tone, format, how to address the user, working habits), or "topic" when it only applies to one task, document, app, dataset or calculation. Example: {"kind": "style", "content": "…", "scope": "topic"}.`;
 
+/**
+ * The reflector's model input: its system prompt and the user message (the
+ * notes it already has, then the recent transcript, oldest first). `turns`
+ * come newest first, as loadReflectionTurns reads them. Pure, so the prompt
+ * can be pinned (background-prompts.test.ts).
+ */
+export function buildReflectorInput(args: {
+  systemPrompt: string | null | undefined;
+  target: 'journal' | 'persona';
+  known: string[];
+  turns: Array<{ direction: string; text: string; sentAt: Date }>;
+}): { system: string; user: string } {
+  const { target, known, turns } = args;
+  const transcript = turns
+    .slice()
+    .reverse()
+    .map((t) => {
+      const who = t.direction === 'outbound' ? 'assistant' : 'user';
+      return `[${t.sentAt.toISOString()}] ${who}: ${t.text}`;
+    })
+    .join('\n');
+  const existingNotesText = known.length === 0 ? '(no existing notes)' : known.join('\n');
+  const user =
+    `Existing ${target === 'journal' ? 'Journal entries' : 'persona_notes'}:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}` +
+    (target === 'journal' ? `\n${JOURNAL_SCOPE_INSTRUCTION}` : '');
+  return { system: args.systemPrompt || DEFAULT_REFLECTOR_PROMPT, user };
+}
+
 function parseReflectorOutput(raw: string): ReflectorOutput {
   const cleaned = raw
     .replace(/^```(?:json)?\s*/i, '')
@@ -343,16 +371,6 @@ async function reflectOnAgent(
       );
       if (turns.length === 0) return;
 
-      // Render chronologically (oldest first).
-      const transcript = turns
-        .slice()
-        .reverse()
-        .map((t) => {
-          const who = t.direction === 'outbound' ? 'assistant' : 'user';
-          return `[${t.sentAt.toISOString()}] ${who}: ${t.text}`;
-        })
-        .join('\n');
-
       // memory_config.notes_target = 'journal': the agent learns into the
       // Journal (its persona notes were moved there), so "already known" is
       // the Journal, and new notes become Journal entries below.
@@ -369,11 +387,12 @@ async function reflectOnAgent(
               (e) => `- (${e.kind}) ${flattenNote(e.body)}`,
             )
           : liveNotes.map((n) => `- (${n.kind}) ${n.content}`);
-      const existingNotesText = known.length === 0 ? '(no existing notes)' : known.join('\n');
-
-      const userPayload =
-        `Existing ${target === 'journal' ? 'Journal entries' : 'persona_notes'}:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}` +
-        (target === 'journal' ? `\n${JOURNAL_SCOPE_INSTRUCTION}` : '');
+      const input = buildReflectorInput({
+        systemPrompt: reflector.systemPrompt,
+        target,
+        known,
+        turns,
+      });
 
       const params = (reflector.params ?? {}) as ReflectorParams;
       const routes = resolveChatRoutes(reflector);
@@ -395,11 +414,8 @@ async function reflectOnAgent(
             routes,
             {
               messages: [
-                {
-                  role: 'system',
-                  content: reflector.systemPrompt || DEFAULT_REFLECTOR_PROMPT,
-                },
-                { role: 'user', content: userPayload },
+                { role: 'system', content: input.system },
+                { role: 'user', content: input.user },
               ],
               // The reflector fires on a ~10-minute timer; Anthropic's
               // cache TTL is 5min so most fires MISS cache and pay the
