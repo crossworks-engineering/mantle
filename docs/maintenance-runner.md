@@ -334,7 +334,8 @@ without a terminal:
   owner no longer show "needs env" in the tab. A value set on the box wins.
 - Routes: `GET /api/debug/maintenance` (registry + env status + current run),
   `POST/GET /api/debug/maintenance/run` (start / poll), `…/run/cancel`.
-  Owner-gated via `getOwnerOr401` like every debug route.
+  Rows of the settings area like every debug route: the gate answers the owner
+  caller (and the area) before the handler, which reads `ownerCaller()`.
 - The console pane polls ~1.2 s while a run is in flight and shows the exit
   state, including failures (e.g. DB unreachable) verbatim.
 

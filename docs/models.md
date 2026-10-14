@@ -65,7 +65,8 @@ columns are best-effort and the raw pane always shows everything.
   is what makes the non-chat buckets appear at all — the bare call returns the
   text-out slice, and it also made the separate `/v1/embeddings/models` fetch
   (and its hardcoded kind override) unnecessary: `all` is a superset.
-- **Security:** the route is owner-scoped (`requireOwner`); stored API keys are
+- **Security:** the route is owner-scoped (the gate answers its owner caller,
+  `ownerCaller()`); stored API keys are
   resolved server-side and never reach the client.
 - Adding a provider with a list API is one entry in `FETCHERS` + a pure parser
   (unit-tested in [`server/web/lib/model-explorer.test.ts`](../server/web/lib/model-explorer.test.ts)).

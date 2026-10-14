@@ -549,9 +549,11 @@ One user, one row in `auth.users`. Auth is a **bespoke signed-cookie session**:
   Zod-validated, single-purpose endpoints. Login sets HttpOnly + Secure
   (in prod) + SameSite=Lax cookies with 1-year `maxAge`.
 
-`requireOwner()` is the page-level gate (`server/web/lib/auth.ts:84`):
-redirects to `/login` if there's no session, returns `{id, email}` otherwise.
-Every protected page calls it at the top of its server component.
+Each API route's handler reads the caller the gate answered for its
+ROUTE_POLICY row (`ownerCaller()` and the other readers of
+`server/web/lib/auth/session.ts`; docs/actors.md): the gate runs the guard and
+refuses before the handler. The UI pages live in the jackdaw repo; the server's
+own render pages call `requireOwnerForRender()`, which redirects to `/login`.
 
 `ALLOWED_USER_ID` (an env var, not a DB-derived constant) is what the MCP
 server and the workers use to scope queries. It's the same UUID as the one

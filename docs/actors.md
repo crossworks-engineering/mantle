@@ -2056,6 +2056,12 @@ caller) stand in nothing now; they are left as they are.
   could swallow its thrown refusal and run the handler with no owner. POST
   /api/auth/sso hands `handleOwnerSso` an `async () => await
 cookieUpgradeCaller()`.
+- **Nits.** The docs that still gave `getOwnerOr401` or `requireOwner` as
+  the recipe now give the reader (`ownerCaller()`, the caller the gate
+  answered); the archive, the changelog and the plans keep their history.
+  The stand-ins of `getOwnerOr401` in test module mocks are still left as
+  they are (about 30 files, half of them database tests, several stood in
+  over many lines): removing them is no mechanical change.
 
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):

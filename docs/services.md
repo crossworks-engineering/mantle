@@ -44,8 +44,9 @@ already ingested stays in the brain.
 
 ## Who can switch
 
-Admin logins only: `POST /api/services/:name` uses the same gate as an
-update request (`getOwnerOr401`). Members, clients, MCP tokens and agents have
+Admin logins only: `POST /api/services/:name` is a row of the settings area,
+like the forced update check: the gate answers its owner caller and refuses
+any login without that area before the handler, which reads `ownerCaller()`. Members, clients, MCP tokens and agents have
 no path to it, and there is no agent tool for it (an agent must not be able
 to give itself a sandbox). Each request writes a `service.toggle` row to the
 audit log with the service, the switch and whether the updater took it.

@@ -135,4 +135,5 @@ Not holes; an endpoint *is* the boundary. Listed so they aren't re-flagged:
   after the type-relocation cleanup).
 - Every screen's data is reachable through `/api/**`.
 - New endpoints follow the house convention: Zod validate → `@mantle/*` package
-  fn → JSON, gated by `requireOwner()` (already bearer-aware, see audit).
+  fn → JSON, reading the caller the gate answered (`ownerCaller()`, bearer-aware;
+  `requireOwner()` until A4 exit).

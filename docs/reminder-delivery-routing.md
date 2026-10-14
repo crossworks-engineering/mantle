@@ -188,7 +188,8 @@ semantics (where the reminder genuinely is a message in the thread).
   `isReminderChannel` so only valid values are written.
 - Mobile API: `GET/PUT /api/profile/reminder-channel`
   ([route.ts](../server/web/app/api/profile/reminder-channel/route.ts)),
-  owner-gated with a JSON 401 (`getOwnerOr401`, like `/api/push/*`) and a zod
+  owner-gated with a JSON 401 (the gate answers the owner caller and the handler
+  reads `ownerCaller()`, like `/api/push/*`) and a zod
   `enum(['telegram','mobile'])` body. GET returns the current effective channel.
   The Edge middleware already admits any matched route to a valid mobile bearer,
   so no allowlist change was needed.

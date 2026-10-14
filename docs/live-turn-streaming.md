@@ -64,8 +64,9 @@ substrate. Incorporated here:
 - **Event contract is a typed DTO in `@mantle/client-types` with compile-time drift checks, no
   runtime zod** (matches the split's #3b decision: first-party producers + DTO drift-as-compile-error
   instead of blanket response validation).
-- **Endpoint follows the proven route recipe**: `const user = await getOwnerOr401(); if (user
-  instanceof Response) return user;` (global `Response`, no `NextResponse` import).
+- **Endpoint follows the route recipe**: the handler reads the owner the gate answered for its
+  row, `const user = ownerCaller();` (the gate refuses before the handler; docs/actors.md, A4
+  exit; it was `await getOwnerOr401()` until that guard went).
 - **⚠️ The in-process `EventEmitter` bus is INVALID, corrected to Postgres `NOTIFY` from day one.**
   An earlier draft of §2 assumed a single instance could bridge the producer and the SSE socket
   with an in-process emitter. It can't: **`server/api` (the DBOS runner, no HTTP) and `server/web` (which
@@ -132,7 +133,7 @@ Use **Server-Sent Events**: unidirectional (server→client is all we need), sur
 trivially parsed by both the web client and Flutter. The web client consumes it through
 **`apiEventStream`** ([`jackdaw/lib/api-fetch.ts`](../jackdaw/lib/api-fetch.ts), split item #5),
 NOT raw browser `EventSource`, so it carries the bearer + base-URL and is detached/Electron-ready.
-The endpoint is **bearer-authed from day one** (`getOwnerOr401`), unlike the legacy same-origin-only
+The endpoint is **bearer-authed from day one** (the owner the gate answers, `ownerCaller()`), unlike the legacy same-origin-only
 `assistant/turn/stream`; see §0.1.
 
 Cross-process delivery (runner executes on one process, the client's socket lives on another)

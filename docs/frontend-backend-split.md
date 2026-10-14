@@ -102,8 +102,9 @@ assistant-runtime and heartbeats packages),
 - **Mobile bearer tokens** already exist (`getBearerUser`, `buildMobileToken`,
   `Authorization: Bearer …`), the companion app uses them. **This is the auth
   path Electron and DB-less dev should reuse.**
-- `requireOwner()` / `requireOwnerWithSource()` gate routes/pages; single-owner
-  system (`resolveSingleOwnerId`).
+- Then `requireOwner()` / `requireOwnerWithSource()` gated routes/pages; single-owner
+  system (`resolveSingleOwnerId`). Since A4 exit the gate answers each route's
+  caller and the handler reads it (`ownerCaller()`, docs/actors.md).
 
 **Realtime:** Postgres `LISTEN` → SSE. `/api/realtime` and
 `/api/assistant/stream` emit `conversation_changed` etc. The chat client already
@@ -264,7 +265,7 @@ the `agent` service, the `api` service already exists.
 
 - Auth + bearer tokens: `server/web/lib/auth.ts`, `server/web/lib/auth-constants.ts`.
 - API route conventions: any `server/web/app/api/**/route.ts` (Zod → package fn →
-  JSON); `requireOwner()`.
+  JSON); the handler reads the caller the gate answered (`ownerCaller()`).
 - List/detail screen reference (URL-driven SSR, the conversion template):
   `jackdaw/app/(app)/pages/`.
 - Realtime client + SSE: `jackdaw/components/realtime/use-realtime.ts`,

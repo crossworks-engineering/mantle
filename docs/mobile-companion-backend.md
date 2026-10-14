@@ -8,15 +8,17 @@ _Last updated: 2026-10-02 (contract v1.1: every push names its brain and its log
 
 API + schema added to Mantle to support the **Mantle Companion** mobile app
 (Flutter; repo `~/Projects/mantle-companion`). Single-user/self-hosted, so the
-only auth scope is the owner. Everything here is **owner-gated via
-`requireOwner()`**, which accepts the session cookie _or_ a mobile bearer token,
-so each route works unchanged from web and mobile.
+only auth scope is the owner. Everything here is **owner-gated**: the gate
+answers the route's caller (the owner guard, which accepts the session cookie
+_or_ a mobile bearer token) and the handler reads it (`ownerCaller()`), so each
+route works unchanged from web and mobile.
 
 > Status: **DEPLOYED TO PROD (2026-06-14, v0.24.0).** Migrations 0089/0090/0091
 > applied on prod (drizzle count 89 → 92) via the gated `migrate` one-shot; data
 > intact (nodes unchanged). All routes live behind the owner-gate: a no-token
 > request 307s to /login (edge middleware), an invalid-bearer request gets a clean
-> **401** from `getOwnerOr401`, and `mobile-login` 401s bad creds. Pre-migration
+> **401** from the owner guard (then `getOwnerOr401`; the gate answers it since A4
+> exit), and `mobile-login` 401s bad creds. Pre-migration
 > brain dump taken first (`backups/mantle-20260614-172127.dump`).
 >
 > Previously: smoke-tested end-to-end on local dev (2026-06-13), all four route
@@ -52,7 +54,7 @@ url, expiresAt, ttlSeconds}` and shows `url` (`<brain>/pair#v=1&code=…`,
 - **Client contract:** a revoked/expired token still passes the stateless Edge
   gate (revocation is enforced in the Node layer). The JSON API routes below gate
   with the owner guard, which returns a clean **401 `{error:'unauthorized'}`**
-  in that case, not a redirect. (HTML _page_ routes still use `requireOwner()` →
+  in that case, not a redirect. (The render pages use `requireOwnerForRender()` →
   **307 → /login**.) The app treats **401 OR 3xx→/login** as "session invalid".
 - The owner guard (`getOwnerOr401WithLogin`, `lib/auth/session.ts`) is the gate for
   programmatic JSON routes. Since A4 exit the gate runs it for the route's row before
@@ -90,7 +92,7 @@ avatar, lastMessage: {text, direction, createdAt} | null, unreadCount }] }`.
   per-owner Server-Sent Events stream. Each turn (any channel) emits
   `data: {agentSlug, direction}`; the client refetches that thread + the inbox on
   receipt (the same "ping-to-refetch" model as `/api/realtime`). Heartbeat
-  comment every 25s. Owner-gated with `getOwnerOr401` → clean 401 before the
+  comment every 25s. The gate answers the route's caller → clean 401 before the
   stream opens. Mirrors `/api/realtime` exactly (verified byte-identical
   `: connected` framing).
 - **Migration `0091_conversation_changed_notify.sql`**: an `AFTER INSERT` trigger
@@ -236,8 +238,8 @@ The one backend addition of the v1.7–v1.11 companion cycle: an owner-facing
 HTTP twin of the `search_nodes` / `search_chunks` MCP tools, so the app can
 offer a real search screen without routing queries through a chat turn.
 
-- **Route:** `server/web/app/api/search/route.ts`, gated by `getOwnerOr401`
-  (mobile bearer works unchanged). Param parsing is pure and unit-tested in
+- **Route:** `server/web/app/api/search/route.ts`, reading the owner the gate
+  answered (`ownerCaller()`; mobile bearer works unchanged). Param parsing is pure and unit-tested in
   `packages/client-types/src/search-query.ts`.
 - **Params:** `q` (required, ≤500 chars) · `mode=nodes|chunks` (default
   `nodes`) · `type` (node-type filter; same enum the `search_nodes` tool

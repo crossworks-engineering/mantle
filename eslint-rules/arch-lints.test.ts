@@ -35,7 +35,6 @@ import {
   rule as storeBrokersRule,
 } from './store-brokers.mjs';
 // @ts-expect-error: plain-JS module, no types shipped.
-// @ts-expect-error: plain-JS module, no types shipped.
 import { ACTOR_SETTER_PATTERN, rule as actorSettersRule } from './actor-setters.mjs';
 import { AS_SYSTEM_OTHER_REASONS, AS_SYSTEM_TURN_REASONS } from '../packages/db/src/viewer';
 

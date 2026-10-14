@@ -143,7 +143,7 @@ them through without a session cookie.
 
 ## 4. Security
 
-- Public routes **never call `requireOwner`**: they resolve strictly by an
+- Public routes **never read an owner caller**: they resolve strictly by an
   active token and only ever return the **one** shared node + its scoped assets.
   No traversal to siblings, no owner data beyond that item.
 - Tokens are CSPRNG (~128-bit), revocable, optionally expiring.
@@ -414,7 +414,7 @@ could not, since committing means capturing the snapshot in the editor), so the
 link serves the last **committed** content. That is what `/s` renders in either
 case; the "Draft · uncommitted" badge beside the title is what tells the owner
 their newer edits aren't in it yet.
-API (owner-scoped via `requireOwner`):
+API (owner-scoped: the handler reads the owner the gate answered, `ownerCaller()`):
 
 - `POST /api/shares` `{ nodeId }` → `{ token, url }`
 - `DELETE /api/shares/[id]` → revoke

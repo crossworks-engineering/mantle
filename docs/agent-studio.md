@@ -92,7 +92,7 @@ can hide.
   skills → delegates. Worker node = kind → model (→ its prose: system_prompt /
   extraction_prompt). Two node types, two inspectors, don't force one onto the
   other.
-- **Owner-only** (`requireOwner`), like `/debug`.
+- **Owner-only** (the gate answers the owner caller, `ownerCaller()`), like `/debug`.
 - **Coexists, additive**: no migration of the existing settings pages.
 
 ---

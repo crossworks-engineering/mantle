@@ -122,7 +122,8 @@ confirmation.
   MCP server (`server/web/lib/dev-tools/mcp-bridge.ts`; override the
   location with `MANTLE_MCP_DIR` if your layout is exotic).
 
-Security posture: every route sits behind `requireOwner()`. The proxy
+Security posture: every route reads the owner the gate answered
+(`ownerCaller()`). The proxy
 is an intentional SSRF-by-design for the single owner, the same power
 their `http` tools already have. Nothing new is network-exposed; the
 MCP bridge stays stdio.
