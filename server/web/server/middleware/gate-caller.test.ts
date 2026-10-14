@@ -1275,6 +1275,384 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(ran).toBe(false);
   });
 
+  it('the byte routes and the frame documents answer every credential as their guards did (hand batch B)', async () => {
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const session = await import('../../lib/auth/session');
+    const tokens = await import('../../lib/auth/tokens');
+    const { RENDER_COOKIE_NAME } = await import('../../lib/auth-constants');
+    const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
+    const ID = '11111111-1111-4111-8111-111111111111';
+    /** The request a route file hands its handler: the v1 download sends
+     *  the bytes handler `?raw=1` and nothing else (its route file). */
+    const handed = (req: Request, pattern: string) => {
+      if (pattern !== '/api/v1/files/:id/download') return req;
+      const url = new URL(req.url);
+      url.search = '?raw=1';
+      return new Request(url, { method: 'GET', headers: req.headers });
+    };
+    type Row = {
+      pattern: string;
+      caller: RouteCaller;
+      gone?: boolean;
+      read: () => unknown;
+      guard: (req: Request) => Promise<unknown>;
+    };
+    const rows: Row[] = [
+      {
+        pattern: '/api/attachments/:id',
+        caller: 'ownerAsset',
+        read: () => session.ownerAssetCaller(),
+        guard: (req) => session.getOwnerForAsset(req),
+      },
+      {
+        pattern: '/api/profile/photo',
+        caller: 'ownerAsset',
+        read: () => session.ownerAssetCaller(),
+        guard: (req) => session.getOwnerForAsset(req),
+      },
+      {
+        pattern: '/api/draws/:id/svg',
+        caller: 'readerAsset',
+        read: () => session.readerAssetCaller(),
+        guard: (req) => session.getReaderForAsset(req),
+      },
+      {
+        pattern: '/api/files/files/:id',
+        caller: 'readerAsset',
+        read: () => session.readerAssetCaller(),
+        guard: (req) => session.getReaderForAsset(req),
+      },
+      {
+        pattern: '/api/v1/files/:id/download',
+        caller: 'readerAsset',
+        read: () => session.readerAssetCaller(),
+        guard: (req) => session.getReaderForAsset(req),
+      },
+      {
+        pattern: '/api/member/files/:id',
+        caller: 'memberAsset',
+        gone: true,
+        read: () => session.memberAssetCaller(),
+        guard: (req) => session.getMemberForAsset(req),
+      },
+      {
+        // The frame ticket: no guard before; the handler verified it.
+        pattern: '/api/apps/:id/frame',
+        caller: 'frame',
+        read: () => ({ ticket: session.frameTicketCaller() }),
+        guard: async (req) => {
+          const t = new URL(req.url).searchParams.get('t');
+          return { ticket: t ? tokens.verifyAppFrameTicket(t) : null };
+        },
+      },
+    ];
+    const build = (reads: boolean) => {
+      const app = new Hono();
+      app.use('*', gate());
+      registerRoutes(
+        app,
+        rows.map((r) => {
+          const handle = async (req: Request) => {
+            counts.handled += 1;
+            if (reads) return Response.json(seen(r.read()));
+            const got = await r.guard(handed(req, r.pattern));
+            return got instanceof Response ? got : Response.json(seen(got));
+          };
+          return {
+            pattern: r.pattern,
+            methods: ['GET'],
+            catchAll: null,
+            catchAllOptional: false,
+            ...(reads ? { reads: { GET: r.caller } } : {}),
+            ...(reads && r.gone ? { gone: ['GET'] } : {}),
+            load: async () => ({ GET: handle }),
+          };
+        }),
+      );
+      app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
+      return app;
+    };
+    const [pipelineApp, guardedApp] = [build(true), build(false)];
+    const key = (token: string) => () => ({ authorization: `Bearer ${token}` });
+    const at = (actor: string) => `at=${encodeURIComponent(tokens.buildAssetToken(ANCHOR, actor))}`;
+    const render = () => ({
+      cookie: `${RENDER_COOKIE_NAME}=${tokens.buildRenderToken({ ownerId: ANCHOR, actorId: ADMIN, nodeId: ID })}`,
+    });
+    const frame = (o: Partial<Parameters<typeof tokens.buildAppFrameTicket>[0]>) =>
+      `t=${encodeURIComponent(tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: ID, ...o }))}`;
+    // Every credential, alone and with a `?at=` token beside it (a session
+    // wins; a member's session, a revoked device or no login fall back to
+    // the token, where the route reads one), the render cookie, the frame
+    // tickets.
+    const all: Array<{ name: string; headers: () => Record<string, string>; query?: string }> = [
+      ...creds,
+      { name: 'none', headers: () => ({}) },
+      { name: 'write-key', headers: key(KEY_TOKENS.write) },
+      { name: 'member-key', headers: key(KEY_TOKENS.member) },
+      { name: 'asset-admin', headers: () => ({}), query: at(ADMIN) },
+      { name: 'asset-member', headers: () => ({}), query: at(MEMBER) },
+      { name: 'member-cookie+asset-admin', headers: creds[3]!.headers, query: at(ADMIN) },
+      { name: 'revoked+asset-admin', headers: creds[7]!.headers, query: at(ADMIN) },
+      { name: 'admin-cookie+asset-member', headers: creds[1]!.headers, query: at(MEMBER) },
+      { name: 'render', headers: render },
+      { name: 'frame-admin', headers: () => ({}), query: frame({ actorId: ADMIN }) },
+      { name: 'frame-member', headers: () => ({}), query: frame({ loginId: MEMBER }) },
+      { name: 'frame-bogus', headers: () => ({}), query: 't=not-a-ticket' },
+    ];
+    const met = new Set<string>();
+    for (const row of rows) {
+      const base = row.pattern.replace(':id', ID);
+      for (const method of ['GET', 'HEAD']) {
+        for (const cred of all) {
+          const path = cred.query ? `${base}?${cred.query}` : base;
+          const a = await drive(pipelineApp, method, path, cred.headers());
+          const b = await drive(guardedApp, method, path, cred.headers());
+          const label = `${row.caller} ${method} ${row.pattern} ${cred.name}`;
+          // An asset refusal is the gate's: the handler never runs. The
+          // frame answer refuses nothing (no guard was there).
+          if (a.status >= 400 && row.caller !== 'frame') expect(a.handled, label).toBe(0);
+          expect({ ...a, handled: 0 }, label).toEqual({ ...b, handled: 0 });
+          met.add(`${row.caller} ${a.status}`);
+        }
+      }
+    }
+    for (const answer of [
+      'ownerAsset 200',
+      'ownerAsset 401',
+      'ownerAsset 403',
+      'readerAsset 200',
+      'readerAsset 401',
+      'memberAsset 200',
+      'memberAsset 401',
+      'frame 200',
+      'frame 401',
+    ]) {
+      expect(met, answer).toContain(answer);
+    }
+    // The v1 download never honoured a `?at=` (its route file hands the
+    // bytes handler `?raw=1` alone): a member's session with an Admin
+    // user's token is the member there (refused: no member reads that
+    // row), and the Admin user on the bytes route itself, through both
+    // paths alike (the cells above).
+    const v1 = await drive(
+      pipelineApp,
+      'GET',
+      `/api/v1/files/${ID}/download?${at(ADMIN)}`,
+      creds[3]!.headers(),
+    );
+    expect(v1.status).toBe(403);
+    expect(v1.body).toContain('member-login');
+    const bytes = await drive(
+      pipelineApp,
+      'GET',
+      `/api/files/files/${ID}?${at(ADMIN)}`,
+      creds[3]!.headers(),
+    );
+    expect(bytes.status).toBe(200);
+    expect((JSON.parse(bytes.body) as { owner: { member: unknown } }).owner.member).toBeNull();
+    // A device token is stamped once on a byte route.
+    const res = await drive(pipelineApp, 'GET', `/api/attachments/${ID}`, creds[5]!.headers());
+    expect(res.status).toBe(200);
+    expect(res.touches).toBe(1);
+    // Each reader throws where the pipeline gave no answer of its kind.
+    expect(() => session.ownerAssetCaller()).toThrow(/answered no asset owner/);
+    expect(() => session.readerAssetCaller()).toThrow(/answered no asset reader/);
+    expect(() => session.memberAssetCaller()).toThrow(/answered no asset member/);
+    expect(() => session.frameTicketCaller()).toThrow(/answered no frame ticket/);
+  });
+
+  it('the answers taken at the read: what the handler does first stays first (hand batch B)', async () => {
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const { answerAppError } = await import('../app-error');
+    const session = await import('../../lib/auth/session');
+    const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
+    const ID = '11111111-1111-4111-8111-111111111111';
+    type Row = {
+      pattern: string;
+      method: string;
+      caller: RouteCaller;
+      read: () => Promise<unknown>;
+      guard: () => Promise<unknown>;
+    };
+    const rows: Row[] = [
+      {
+        pattern: '/api/auth/whoami',
+        method: 'GET',
+        caller: 'publicLogin',
+        read: () => session.publicLoginCaller(),
+        guard: () => session.getLoginOr401(),
+      },
+      {
+        pattern: '/api/auth/logout',
+        method: 'POST',
+        caller: 'publicLogin',
+        read: () => session.publicLoginCaller(),
+        guard: () => session.getLoginOr401(),
+      },
+      {
+        // The generic api.write row, as the guard's `audit` wrote it.
+        pattern: '/api/auth/pair',
+        method: 'POST',
+        caller: 'publicLogin',
+        read: () => session.publicLoginCaller({ audit: true }),
+        guard: () => session.getLoginOr401({ audit: true }),
+      },
+      {
+        pattern: '/api/auth/sso',
+        method: 'POST',
+        caller: 'cookieUpgrade',
+        read: () => session.cookieUpgradeCaller(),
+        guard: () => session.getCookieUpgradeLoginOr401(),
+      },
+      {
+        // The owner, its item check and its audit row, at the read; a
+        // refusal thrown and answered by the app as the guard's was
+        // returned.
+        pattern: '/api/pages/:id',
+        method: 'PATCH',
+        caller: 'ownerAtRead',
+        read: () => session.ownerCallerAtRead(),
+        guard: async () => {
+          const got = await session.getOwnerOr401WithLogin();
+          return got instanceof Response ? got : got.user;
+        },
+      },
+    ];
+    const build = (reads: boolean) => {
+      const app = new Hono();
+      app.use('*', gate());
+      registerRoutes(
+        app,
+        rows.map((r) => {
+          const handle = async (req: Request) => {
+            counts.handled += 1;
+            // What the handler answers before it reads (a cross-site
+            // refusal, a throttle, a key's rule): no lookup, no stamp, no
+            // audit row, through both paths.
+            if (req.headers.get('x-first') === 'refuse') {
+              return Response.json({ error: 'first' }, { status: 403 });
+            }
+            if (reads) {
+              const got = await r.read();
+              return got === null ? session.unauthorizedRefusal() : Response.json(seen(got));
+            }
+            const got = await r.guard();
+            return got instanceof Response ? got : Response.json(seen(got));
+          };
+          return {
+            pattern: r.pattern,
+            methods: [r.method],
+            catchAll: null,
+            catchAllOptional: false,
+            ...(reads ? { reads: { [r.method]: r.caller } } : {}),
+            load: async () => ({ [r.method]: handle }),
+          };
+        }),
+      );
+      app.onError(answerAppError);
+      return app;
+    };
+    const [pipelineApp, guardedApp] = [build(true), build(false)];
+    const key = (token: string) => () => ({ authorization: `Bearer ${token}` });
+    const all = [
+      ...creds,
+      { name: 'none', headers: () => ({}) },
+      { name: 'write-key', headers: key(KEY_TOKENS.write) },
+      { name: 'member-key', headers: key(KEY_TOKENS.member) },
+    ];
+    const may = [[{ edit: true, manage: true, copy: false }]];
+    const met = new Set<string>();
+    for (const row of rows) {
+      const path = row.pattern.replace(':id', ID);
+      const methods = row.method === 'GET' ? ['GET', 'HEAD'] : [row.method];
+      for (const method of methods) {
+        for (const first of [false, true]) {
+          for (const cred of all) {
+            const headers = { ...cred.headers(), ...(first ? { 'x-first': 'refuse' } : {}) };
+            const answers = [];
+            for (const app of [pipelineApp, guardedApp]) {
+              counts.exec = may.map((r) => [...r]);
+              answers.push(await drive(app, method, path, headers));
+            }
+            const [a, b] = answers;
+            const label = `${row.caller} ${method} ${row.pattern} ${cred.name}${first ? ' first' : ''}`;
+            // The handler runs as it did (the answer is taken at its read):
+            // only the gate's own refusals (a key off /api/v1) come first.
+            expect(a!.handled, label).toBe(b!.handled);
+            expect({ ...a, handled: 0 }, label).toEqual({ ...b, handled: 0 });
+            if (first && a!.handled === 1) {
+              expect(a!.status, label).toBe(403);
+              expect(a!.touches, label).toBe(0);
+              expect(a!.audits, label).toEqual([]);
+            }
+            if (!first) met.add(`${row.caller} ${a!.status}`);
+          }
+        }
+      }
+    }
+    counts.exec = [];
+    for (const answer of [
+      'publicLogin 200',
+      'publicLogin 401',
+      'cookieUpgrade 200',
+      'cookieUpgrade 401',
+      'ownerAtRead 200',
+      'ownerAtRead 401',
+    ]) {
+      expect(met, answer).toContain(answer);
+    }
+    // The device token is stamped once, at the read.
+    const res = await drive(pipelineApp, 'GET', '/api/auth/whoami', creds[5]!.headers());
+    expect(res.status).toBe(200);
+    expect(res.touches).toBe(1);
+    // An Admin user's pair writes its one api.write row, at the read.
+    const pair = await drive(pipelineApp, 'POST', '/api/auth/pair', creds[1]!.headers());
+    expect(pair.audits).toEqual([`api.write POST /api/auth/pair ${ADMIN}`]);
+    // Each reader throws where the pipeline gave no answer of its kind.
+    await expect(session.publicLoginCaller()).rejects.toThrow(/answered no public login/);
+    await expect(session.cookieUpgradeCaller()).rejects.toThrow(/answered no cookie upgrade/);
+    await expect(session.ownerCallerAtRead()).rejects.toThrow(/answered no owner at the read/);
+  });
+
+  it('a public row reads only a public kind, and a public kind only a public row (hand batch B)', async () => {
+    const { buildRoutePolicy } = await import('../../lib/auth/route-policy');
+    const reads = (pattern: string, method: string, caller: RouteCaller, gone = false) =>
+      buildRoutePolicy([
+        {
+          pattern,
+          methods: [method],
+          reads: { [method]: caller },
+          ...(gone ? { gone: [method] } : {}),
+        },
+      ]).get(`${method} ${pattern}`)?.caller;
+    expect(reads('/api/auth/whoami', 'GET', 'publicLogin')).toBe('publicLogin');
+    expect(reads('/api/auth/sso', 'POST', 'cookieUpgrade')).toBe('cookieUpgrade');
+    expect(reads('/api/attachments/:id', 'GET', 'ownerAsset')).toBe('ownerAsset');
+    expect(reads('/api/files/files/:id', 'GET', 'readerAsset')).toBe('readerAsset');
+    expect(reads('/api/member/files/:id', 'GET', 'memberAsset', true)).toBe('memberAsset');
+    expect(reads('/api/apps/:id/frame', 'GET', 'frame')).toBe('frame');
+    expect(reads('/api/pages/:id', 'PATCH', 'ownerAtRead')).toBe('ownerAtRead');
+    for (const [pattern, method, caller] of [
+      ['/api/profile', 'GET', 'publicLogin'],
+      ['/api/shell', 'GET', 'publicLogin'],
+      ['/api/auth/whoami', 'GET', 'owner'],
+      ['/api/auth/whoami', 'GET', 'ownerAsset'],
+      ['/api/auth/sso', 'POST', 'ownerAtRead'],
+      ['/api/shell', 'GET', 'readerAsset'],
+      ['/api/member/files/:id', 'GET', 'memberAsset'],
+      ['/api/profile', 'GET', 'frame'],
+      // The answer taken at the read comes after the gate's Admin step: no
+      // area row reads it.
+      ['/api/users', 'GET', 'ownerAtRead'],
+    ] as const) {
+      expect(() => reads(pattern, method, caller), `${method} ${pattern} ${caller}`).toThrow(
+        new RegExp(`the ${caller} guard does not serve its row`),
+      );
+    }
+  });
+
   it('ownerCaller() where the pipeline answered no owner throws: fail closed', async () => {
     const session = await import('../../lib/auth/session');
     expect(() => session.ownerCaller()).toThrow(/answered no owner/);

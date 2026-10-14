@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CALLER_READERS, READER_ANSWERS, SESSION_GUARDS } from './session-guards.mjs';
+import {
+  CALLER_READERS,
+  READER_ANSWERS,
+  RETIRED_GUARDS,
+  SESSION_GUARDS,
+} from './session-guards.mjs';
 
 /**
  * The one list of the guard names (session-guards.mjs) is session.ts's: the
@@ -26,16 +31,48 @@ describe('session-guards', () => {
   it("names each reader's guard, its caller kind and a sweep entry of its own", () => {
     const entries = new Set<string>();
     for (const [reader, { caller, guard, entry }] of Object.entries(READER_ANSWERS)) {
-      expect(SESSION_GUARDS, reader).toContain(guard);
-      expect(['owner', 'member', 'login', 'chat', 'session'], reader).toContain(caller);
+      // The guard it replaced: one session.ts has, or one it no longer has
+      // whose name the sweep's recorded files spell (RETIRED_GUARDS). The
+      // frame ticket replaced none.
+      if (guard !== null) expect([...SESSION_GUARDS, ...RETIRED_GUARDS], reader).toContain(guard);
+      else expect(reader).toBe('frameTicketCaller');
       expect(entry, reader).toMatch(new RegExp(`^pipeline:${caller}[A-Za-z]*$`));
       entries.add(entry);
     }
     expect(entries.size).toBe(CALLER_READERS.length);
+    // A retired guard is gone from session.ts.
+    for (const g of RETIRED_GUARDS) expect(exported, g).not.toContain(g);
     // The readers of A4 step 3b part 5, one per guard they replaced.
     expect(READER_ANSWERS.memberCaller?.guard).toBe('getMemberOr401');
     expect(READER_ANSWERS.loginCaller?.guard).toBe('getLoginOr401');
     expect(READER_ANSWERS.chatLoginCaller?.guard).toBe('getChatLoginOr401');
     expect(READER_ANSWERS.sessionUserCaller?.guard).toBe('getSessionUser');
+    // A4 hand batch B: the asset guards, the frame ticket, and the answers
+    // taken at the read.
+    expect(READER_ANSWERS.ownerAssetCaller?.guard).toBe('getOwnerForAsset');
+    expect(READER_ANSWERS.readerAssetCaller?.guard).toBe('getReaderForAsset');
+    expect(READER_ANSWERS.memberAssetCaller?.guard).toBe('getMemberForAsset');
+    expect(READER_ANSWERS.publicLoginCaller).toMatchObject({
+      guard: 'getLoginOr401',
+      atRead: true,
+    });
+    expect(READER_ANSWERS.cookieUpgradeCaller).toMatchObject({
+      guard: 'getCookieUpgradeLoginOr401',
+      atRead: true,
+    });
+    expect(READER_ANSWERS.ownerCallerAtRead).toMatchObject({
+      guard: 'getOwnerOr401',
+      atRead: true,
+    });
+  });
+
+  it("the kinds answered at the read are the policy table's (route-policy.ts ANSWERED_AT_READ)", () => {
+    const policy = readFileSync(join(ROOT, 'server/web/lib/auth/route-policy.ts'), 'utf8');
+    const block = /export const ANSWERED_AT_READ[^\n]*\n([\s\S]*?)\]\);/.exec(policy)?.[1] ?? '';
+    const listed = [...block.matchAll(/'(\w+)'/g)].map((m) => m[1]!);
+    const atRead = Object.values(READER_ANSWERS)
+      .filter((r) => r.atRead === true)
+      .map((r) => r.caller);
+    expect(listed.sort()).toEqual([...new Set(atRead)].sort());
   });
 });

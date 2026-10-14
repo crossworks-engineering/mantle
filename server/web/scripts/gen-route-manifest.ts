@@ -24,6 +24,11 @@ import {
   type RouteFileReads,
 } from './route-callers';
 import { ROUTE_SWITCH_NAMES } from '../lib/auth/route-switches';
+import { READER_ANSWERS } from '../../../eslint-rules/session-guards.mjs';
+
+/** Every caller kind a reader reads (the one list, session-guards.mjs), in
+ *  its order: the manifest's `reads` type. */
+const CALLER_KINDS = [...new Set(Object.values(READER_ANSWERS).map((r) => r.caller))];
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(webRoot, 'app');
@@ -221,7 +226,7 @@ export type ManifestEntry = {
   catchAllOptional: boolean;
   /** Each method whose handler reads the caller the pipeline answers, to
    *  the caller kind its reader reads. */
-  reads?: Record<string, 'owner' | 'member' | 'login' | 'chat' | 'session'>;
+  reads?: Record<string, ${CALLER_KINDS.map((k) => `'${k}'`).join(' | ')}>;
   /** Each method exported as a retired route's 410 stub (lib/gone.ts). */
   gone?: string[];
   /** Each method to the switch its route file declares

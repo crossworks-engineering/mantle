@@ -313,6 +313,11 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
   wrapped.answerRouteCaller = async (row: Row) => {
     if (!row.caller) return answer(row);
     const reader = readerOfRow(row.key);
+    // A4 hand batch B: an answer taken at the read is logged by its reader,
+    // where the handler reads it (below), as the guard's was; the frame
+    // ticket replaced no guard (the frame documents read none) and logs
+    // nothing, as nothing was logged there.
+    if (ENTRIES[reader]!.atRead || ENTRIES[reader]!.guard === null) return answer(row);
     const name = ENTRIES[reader]!.entry;
     const project = real[reader] as () => unknown;
     let value: unknown;
@@ -363,8 +368,53 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
   // goes no further, as after a guard that let a login through. A read of
   // no login (sessionUserCaller(): getSessionUser's null, A4 hand batch A)
   // goes on, as after a guard that answered null.
+  //
+  // A4 hand batch B: the frame ticket is no login (the frame documents
+  // called no guard): read as it is. An answer taken at the read
+  // (publicLoginCaller(), cookieUpgradeCaller(), ownerCallerAtRead()) is
+  // logged here, where its guard was called and logged, under its entry,
+  // as the guard's: a login let through stops the handler, a public row's
+  // null goes on (its guard's refusal was handed back, logged with the 401
+  // the handler answers it with, unauthorizedRefusal()), an owner's refusal
+  // is thrown on (the app answers it).
   const { CALLER_READERS: READERS } = await import('../../../eslint-rules/session-guards.mjs');
   for (const name of READERS) {
+    const spec = ENTRIES[name]!;
+    if (spec.guard === null) continue;
+    if (spec.atRead) {
+      const take = real[name] as (...a: unknown[]) => Promise<unknown>;
+      const Refusal = real.RouteRefusal as new (...a: unknown[]) => { response: Response };
+      const unauthorized = real.unauthorizedRefusal as () => Response;
+      wrapped[name] = async (...args: unknown[]) => {
+        let value: unknown;
+        try {
+          value = await take(...args);
+        } catch (err) {
+          if (err instanceof Refusal) {
+            const body = await err.response.clone().text();
+            sweepState.log.push(
+              `${spec.entry} R${err.response.status} ${body.slice(0, 300)} ${after()}`,
+            );
+            throw err;
+          }
+          const e = err as { name?: string; location?: string; message?: string };
+          sweepState.log.push(
+            `${spec.entry} threw ${e.name ?? '?'} ${e.location ?? (e.message ?? '').split('\n')[0]!.slice(0, 80)} ${after()}`,
+          );
+          throw err;
+        }
+        if (value === null) {
+          const refusal = unauthorized();
+          sweepState.log.push(
+            `${spec.entry} R${refusal.status} ${(await refusal.text()).slice(0, 300)} ${after()}`,
+          );
+          return value;
+        }
+        sweepState.log.push(`${spec.entry} ok ${summarize(value)} ${after()}`);
+        throw new SweepStop();
+      };
+      continue;
+    }
     const read = real[name] as () => unknown;
     wrapped[name] = () => {
       const value = read();
@@ -432,7 +482,7 @@ type Cred = { name: string; headers: Record<string, string>; query?: string; get
  *  chatLoginCaller(): getChatLoginOr401, batch 5). Each entry logs the
  *  projection its reader reads. */
 const LEGACY_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
-  Object.values(READER_ANSWERS).map((r) => [r.entry, r.guard]),
+  Object.values(READER_ANSWERS).flatMap((r) => (r.guard === null ? [] : [[r.entry, r.guard]])),
 );
 
 /** An answer as the recorded files spell it: a moved entry under the name

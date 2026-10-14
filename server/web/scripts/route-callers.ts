@@ -31,7 +31,8 @@
  *    ...)`, `C.GET`), is declared with let or var, or is a default export;
  *  - a handler that runs code before it reads (the gate answers before the
  *    handler, so whatever the handler answered before its guard would come
- *    after the gate's refusal), a parameter's default value included, and
+ *    after the gate's refusal), a parameter's default value included, but
+ *    for a kind answered at the read (KINDS_AT_READ, A4 hand batch B), and
  *    a handler that wraps a reading handler (another route file's, or one
  *    of its own file: POST's `return GET(req)`, which reads as GET does)
  *    with code before the call (the /api/v1 files: a key's 404 before the
@@ -119,6 +120,19 @@ export const GONE_CALLERS: Readonly<Record<GoneGuard, RouteCaller>> = Object.fre
 /** The mark of a reading handler whose order was checked by hand: it may
  *  run code before its read or its wrapped call. */
 export const HAND_CASE_MARK = 'route-callers: hand case';
+
+/**
+ * The caller kinds answered at the read (READER_ANSWERS `atRead`; A4 hand
+ * batch B, route-policy.ts ANSWERED_AT_READ): the gate binds the answer and
+ * the handler's first read runs it, where the handler called its guard, so
+ * code before that read keeps its place (a public row's own checks, an
+ * /api/v1 key rule) and needs no hand-case mark.
+ */
+export const KINDS_AT_READ: ReadonlySet<RouteCaller> = new Set(
+  Object.values(READER_ANSWERS as Record<string, { caller: RouteCaller; atRead?: true }>)
+    .filter((r) => r.atRead === true)
+    .map((r) => r.caller),
+);
 
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
 const READERS = new Set(CALLER_READERS);
@@ -577,7 +591,8 @@ export function analyzeRouteFile(src: string, file: string, follow?: FollowReads
         `${file}: ${method} reads the pipeline's caller and also calls ${[...new Set(guards)].join(', ')}: one or the other`,
       );
     }
-    if (!isHandCase(h.statement, sf) && !readsFirst(h.fn!, readsIn, wrapsIn)) {
+    const atRead = [...(readingLocal.get(h) ?? [])].every((k) => KINDS_AT_READ.has(k));
+    if (!atRead && !isHandCase(h.statement, sf) && !readsFirst(h.fn!, readsIn, wrapsIn)) {
       fail(
         at,
         `${method} runs code before it reads the caller the pipeline answers (the gate answers before ` +

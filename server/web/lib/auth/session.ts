@@ -70,6 +70,8 @@ import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
   anyLoginRow,
+  FRAME_ROWS,
+  assetQueryAsHanded,
   currentRoute,
   keyOnRow,
   memberOpenRead,
@@ -84,10 +86,12 @@ import {
   buildAssetToken,
   buildSessionCookie,
   decodeUnverifiedClaims,
+  verifyAppFrameTicket,
   verifyAssetToken,
   verifyMobileToken,
   verifyRenderToken,
   verifySessionCookie,
+  type AppFrameTicket,
 } from './tokens';
 import { env } from '@mantle/config';
 
@@ -283,9 +287,7 @@ export async function getMemberForAsset(req: Request): Promise<MemberCaller | Ne
  * request scope (`member` set). An item the login does not read is the
  * route's own 404.
  */
-export async function getReaderForAsset(
-  req: Request,
-): Promise<{ user: SessionUser; member: MemberCaller | null } | NextResponse> {
+export async function getReaderForAsset(req: Request): Promise<AssetReader | NextResponse> {
   const owner = await getOwnerForAsset(req);
   if (!(owner instanceof NextResponse)) return { user: owner, member: null };
   if (owner.status !== 401) return owner;
@@ -866,15 +868,13 @@ export function forgetRequestLogins(): void {
 }
 
 /**
- * The rows whose handler reads no session guard: the sandbox frame
- * documents, opened by the `?t=` frame ticket the gate admitted (the
- * route re-verifies it and reads the login it names). The gate finds no
- * login for them (A4 step 3a audit L4): nothing would read it.
+ * The rows whose handler reads no login: the sandbox frame documents
+ * (route-policy.ts FRAME_ROWS), opened by the `?t=` frame ticket the gate
+ * admitted (their caller is the ticket, frameTicketCaller(); the route
+ * reads the login it names). The gate finds no login for them (A4 step 3a
+ * audit L4): nothing would read it.
  */
-const NO_LOGIN_LOOKUP_ROWS: ReadonlySet<string> = new Set([
-  '/api/apps/:id/frame',
-  '/api/member/apps/:id/frame',
-]);
+const NO_LOGIN_LOOKUP_ROWS: ReadonlySet<string> = FRAME_ROWS;
 
 /** The logins bound on `caller` by the gate, or null. */
 function boundLogins(caller: GateCaller | null): RequestLogins | null {
@@ -1009,14 +1009,70 @@ export async function enterRouteLogin<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * The guard's answer the pipeline gave for a row, by the row's caller kind
  * (RouteRow.caller): what that kind's guard answers when it lets a login
- * through. Kept on the request's logins for the row's reader.
+ * through. Kept on the request's logins for the row's reader. A kind
+ * answered at the read (route-policy.ts ANSWERED_AT_READ) keeps the answer
+ * to take (AtRead), run by the handler's first read.
  */
 type PipelineAnswer =
   | Readonly<{ caller: 'owner'; owner: OwnerRouteLogin }>
   | Readonly<{ caller: 'member'; member: MemberCaller }>
   | Readonly<{ caller: 'login'; login: AnyLogin }>
   | Readonly<{ caller: 'chat'; chat: ChatLogin }>
-  | Readonly<{ caller: 'session'; user: SessionUser | null }>;
+  | Readonly<{ caller: 'session'; user: SessionUser | null }>
+  | Readonly<{ caller: 'ownerAsset'; user: SessionUser }>
+  | Readonly<{ caller: 'readerAsset'; reader: AssetReader }>
+  | Readonly<{ caller: 'memberAsset'; member: MemberCaller }>
+  | Readonly<{ caller: 'frame'; ticket: AppFrameTicket | null }>
+  | Readonly<{ caller: 'publicLogin'; atRead: AtRead<AnyLogin | NextResponse, { audit: boolean }> }>
+  | Readonly<{ caller: 'cookieUpgrade'; atRead: AtRead<CookieUpgradeLogin | NextResponse, null> }>
+  | Readonly<{ caller: 'ownerAtRead'; atRead: AtRead<SessionUser | NextResponse, null> }>;
+
+/** What getReaderForAsset answers when it lets a login through: the Admin
+ *  user (or the member's view of the anchor), and the member, null for an
+ *  Admin user. */
+export type AssetReader = { user: SessionUser; member: MemberCaller | null };
+
+/**
+ * An answer the gate binds for the handler's first read to run (A4 hand
+ * batch B, route-policy.ts ANSWERED_AT_READ): the guard of the row's kind,
+ * run once, in the handler's own place, where the handler called it before,
+ * so whatever the handler did first still comes first and the effects of
+ * the answer (a device token's stamp, the actor named, an audit row) fall
+ * where they fell. Every later read is the same answer. A read with other
+ * options than the first throws: a row has one answer.
+ */
+class AtRead<T, O> {
+  #taken: Promise<T> | null = null;
+  #asked: string | null = null;
+  constructor(private readonly run: (opts: O) => Promise<T>) {}
+
+  take(opts: O): Promise<T> {
+    const asked = JSON.stringify(opts);
+    if (this.#taken) {
+      if (asked !== this.#asked) {
+        throw new Error(`the answer of this request was read with ${this.#asked}, not ${asked}`);
+      }
+      return this.#taken;
+    }
+    this.#asked = asked;
+    this.#taken = this.run(opts);
+    return this.#taken;
+  }
+}
+
+/**
+ * The refusal of an answer taken at the read (ownerCallerAtRead, A4 hand
+ * batch B): thrown out of the handler, where the guard's refusal was
+ * returned before, and answered by the app's onError as it is
+ * (server/app-error.ts), with the gate's CORS headers. The handler cannot
+ * answer anything else in its place.
+ */
+export class RouteRefusal extends Error {
+  constructor(readonly response: NextResponse) {
+    super('the request was refused');
+    this.name = 'RouteRefusal';
+  }
+}
 
 /**
  * The gate's step for a row whose handler reads the caller the pipeline
@@ -1032,11 +1088,12 @@ type PipelineAnswer =
  * or its own rule noted, a key's write audited. The any-login guard
  * (getLoginOr401) and the chat guard (getChatLoginOr401): the login named,
  * its scope entered or the system reason noted (anyLoginScope), the audit
- * row each role's own gate writes. A refusal is the gate's answer (the
- * handler does not run); otherwise the answer is kept on the request's
- * logins for the row's reader. The same function the guard runs, so the
- * two cannot answer differently; a route whose handler still calls a guard
- * has no `caller` and is answered by it.
+ * row each role's own gate writes. The asset guards (A4 hand batch B) on
+ * the request as the handler is handed it. A refusal is the gate's answer
+ * (the handler does not run); otherwise the answer is kept on the
+ * request's logins for the row's reader. A kind answered at the read
+ * (ANSWERED_AT_READ) keeps its guard for the handler's first read to run.
+ * The same function the guard runs, so the two cannot answer differently.
  */
 export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | null> {
   if (!row.caller) return null;
@@ -1044,19 +1101,38 @@ export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | n
   // The gate binds the request's logins on every routed request
   // (resolveHttpLogin): without them nothing could read the answer.
   if (!logins) throw new Error(`answerRouteCaller: ${row.key} has no logins bound`);
-  const got = await guardAnswer(row.caller, row.gone);
+  const got = await guardAnswer(row);
   if (got instanceof NextResponse) return got;
   logins.keepAnswer(got);
   return null;
 }
 
-/** The answer of the guard of a caller kind (the guard itself, run once).
- *  `gone`: the row is a retired route's 410 stub (RouteRow.gone), answered
- *  as its stub's guard answered: the any-login one with no audit row. */
-async function guardAnswer(
-  caller: RouteCaller,
-  gone: boolean,
-): Promise<PipelineAnswer | NextResponse> {
+/** The request a byte route's handler is handed (the asset guards read its
+ *  `?at=` token, its path and its method): the request as sent, or as the
+ *  route file hands it on (route-policy.ts ASSET_QUERY_AS_HANDED). */
+function assetRequest(row: RouteRow): Request {
+  const req = getRequestContext()?.req;
+  if (!req) throw new Error(`answerRouteCaller: ${row.key} has no request`);
+  const query = assetQueryAsHanded(row);
+  if (query === null) return req;
+  const url = new URL(req.url);
+  url.search = query;
+  return new Request(url, { method: 'GET', headers: req.headers });
+}
+
+/** The frame ticket a frame document's `?t=` carries, verified, or null
+ *  (pure: the signature and the claims, no lookup). */
+function frameTicketOf(req: Request): AppFrameTicket | null {
+  const t = new URL(req.url).searchParams.get('t');
+  return t ? verifyAppFrameTicket(t) : null;
+}
+
+/** The answer of the guard of the row's caller kind (the guard itself, run
+ *  once). A gone row (RouteRow.gone, a retired route's 410 stub) is
+ *  answered as its stub's guard answered: the any-login one with no audit
+ *  row. */
+async function guardAnswer(row: RouteRow): Promise<PipelineAnswer | NextResponse> {
+  const caller = row.caller!;
   switch (caller) {
     case 'owner': {
       const owner = await getOwnerOr401WithLogin();
@@ -1070,7 +1146,7 @@ async function guardAnswer(
       // The any-login answer writes the generic api.write row its rows
       // wrote by hand after the guard before (A4 hand batch A); a gone stub
       // never wrote one.
-      const login = await getLoginOr401({ audit: !gone });
+      const login = await getLoginOr401({ audit: !row.gone });
       return login instanceof NextResponse ? login : { caller, login };
     }
     case 'chat': {
@@ -1082,6 +1158,37 @@ async function guardAnswer(
       // handler answers a null as it did (the rows open to every Admin
       // user, ADMIN_OPEN_ROWS).
       return { caller, user: await getSessionUser() };
+    case 'ownerAsset': {
+      const user = await getOwnerForAsset(assetRequest(row));
+      return user instanceof NextResponse ? user : { caller, user };
+    }
+    case 'readerAsset': {
+      const reader = await getReaderForAsset(assetRequest(row));
+      return reader instanceof NextResponse ? reader : { caller, reader };
+    }
+    case 'memberAsset': {
+      const member = await getMemberForAsset(assetRequest(row));
+      return member instanceof NextResponse ? member : { caller, member };
+    }
+    case 'frame': {
+      // The ticket only (A4 hand batch B): the handler checks it names this
+      // app and that its login is still active, as it did.
+      const req = getRequestContext()?.req;
+      if (!req) throw new Error(`answerRouteCaller: ${row.key} has no request`);
+      return { caller, ticket: frameTicketOf(req) };
+    }
+    case 'publicLogin':
+      return { caller, atRead: new AtRead((opts) => getLoginOr401(opts)) };
+    case 'cookieUpgrade':
+      return { caller, atRead: new AtRead(() => getCookieUpgradeLoginOr401()) };
+    case 'ownerAtRead':
+      return {
+        caller,
+        atRead: new AtRead(async () => {
+          const got = await getOwnerOr401WithLogin();
+          return got instanceof NextResponse ? got : got.user;
+        }),
+      };
   }
 }
 
@@ -1179,6 +1286,104 @@ export function sessionUserCaller(): SessionUser | null {
   return pipelineAnswer('sessionUserCaller', 'session').user;
 }
 
+/**
+ * The Admin user (or a member's view) the pipeline answered for a byte
+ * route (A4 hand batch B): what getOwnerForAsset answers, its session, a
+ * `?at=` asset token or the render cookie, read from the pipeline's answer
+ * as ownerCaller() reads the owner: no lookup, no effect, and a throw where
+ * the pipeline answered none.
+ */
+export function ownerAssetCaller(): SessionUser {
+  return pipelineAnswer('ownerAssetCaller', 'ownerAsset').user;
+}
+
+/**
+ * Who reads a byte route of brain items (A4 hand batch B): what
+ * getReaderForAsset answers, an Admin user (`member` null) or a member on a
+ * read open to it, read from the pipeline's answer as ownerCaller() reads
+ * the owner.
+ */
+export function readerAssetCaller(): AssetReader {
+  return { ...pipelineAnswer('readerAssetCaller', 'readerAsset').reader };
+}
+
+/**
+ * The member a retired member byte route's stub was answered for (A4 hand
+ * batch B, lib/gone.ts `gone('member-asset')`): what getMemberForAsset
+ * answers, read from the pipeline's answer.
+ */
+export function memberAssetCaller(): MemberCaller {
+  return { ...pipelineAnswer('memberAssetCaller', 'memberAsset').member };
+}
+
+/**
+ * The frame ticket a sandbox frame document was opened with (A4 hand batch
+ * B): the `?t=` the gate admitted, verified (verifyAppFrameTicket), or null.
+ * No login is resolved for these rows; the handler checks the ticket names
+ * its app and that its login is still active.
+ */
+export function frameTicketCaller(): AppFrameTicket | null {
+  return pipelineAnswer('frameTicketCaller', 'frame').ticket;
+}
+
+/**
+ * The login a public row reads (A4 hand batch B): what getLoginOr401
+ * answers, taken at this read, where the handler called the guard before
+ * (its own checks come first: the cross-site refusal, the body, the remote
+ * MCP switch and the client's validation). Never a refusal: no login is
+ * null, and the handler answers it as it did (unauthorizedRefusal(), its
+ * own words, or carrying on). `audit`: the generic api.write row of a
+ * write, as the guard's `audit` (POST /api/auth/pair). The first read runs
+ * the answer; a later one is the same answer.
+ *
+ *     const login = await publicLoginCaller();
+ *     if (!login) return unauthorizedRefusal();
+ */
+export async function publicLoginCaller(opts: { audit?: boolean } = {}): Promise<AnyLogin | null> {
+  const atRead = pipelineAnswer('publicLoginCaller', 'publicLogin').atRead;
+  const got = await atRead.take({ audit: opts.audit === true });
+  return got instanceof NextResponse ? null : { ...got };
+}
+
+/** What getCookieUpgradeLoginOr401 answers when it lets a login through. */
+export type CookieUpgradeLogin = Exclude<
+  Awaited<ReturnType<typeof getCookieUpgradeLoginOr401>>,
+  NextResponse
+>;
+
+/**
+ * The login POST /api/auth/sso turns into a session cookie (A4 hand batch
+ * B): what getCookieUpgradeLoginOr401 answers (the device token only),
+ * taken at this read, after the route's throttle and origin check, as the
+ * guard was called. Null where it refused (no device token).
+ */
+export async function cookieUpgradeCaller(): Promise<CookieUpgradeLogin | null> {
+  const got = await pipelineAnswer('cookieUpgradeCaller', 'cookieUpgrade').atRead.take(null);
+  return got instanceof NextResponse ? null : { ...got };
+}
+
+/**
+ * The owner of a row whose handler runs checks of its own before it reads
+ * the owner (A4 hand batch B: PATCH /api/pages/:id, whose /api/v1 wrapper
+ * holds an API key to its rules first): what getOwnerOr401 answered, taken
+ * at this read, with its effects (the item a write names checked, the
+ * audit row) where the guard had them. A refusal is thrown (RouteRefusal)
+ * and answered by the app as the guard's was returned: the handler goes no
+ * further and cannot answer in its place.
+ */
+export async function ownerCallerAtRead(): Promise<SessionUser> {
+  const got = await pipelineAnswer('ownerCallerAtRead', 'ownerAtRead').atRead.take(null);
+  if (got instanceof NextResponse) throw new RouteRefusal(got);
+  return got;
+}
+
+/** The 401 a session guard answers no login with (`unauthorized`, the one
+ *  mapper): what a handler answers a null public login with, as its guard's
+ *  refusal was. */
+export function unauthorizedRefusal(): NextResponse {
+  return accessRefusal(new AccessError('unauthorized'));
+}
+
 /** What the pipeline answers for each caller kind, in a reader's refusal. */
 const ANSWERED: Readonly<Record<RouteCaller, string>> = {
   owner: 'owner',
@@ -1186,6 +1391,13 @@ const ANSWERED: Readonly<Record<RouteCaller, string>> = {
   login: 'login',
   chat: 'chat login',
   session: 'session user',
+  ownerAsset: 'asset owner',
+  readerAsset: 'asset reader',
+  memberAsset: 'asset member',
+  frame: 'frame ticket',
+  publicLogin: 'public login',
+  cookieUpgrade: 'cookie upgrade login',
+  ownerAtRead: 'owner at the read',
 };
 
 /** The guard's answer the pipeline gave (answerRouteCaller) for a row of

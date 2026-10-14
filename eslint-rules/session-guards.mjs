@@ -47,8 +47,19 @@ export const SESSION_GUARDS = Object.freeze([
  *    guard the chat and Telegram lists (A4 step 3b part 5); the session
  *    user's guard (getSessionUser: any Admin user, or null) the rows open to
  *    every Admin user (route-policy.ts ADMIN_OPEN_ROWS, A4 hand batch A).
- *  - `guard`: the guard the reader replaced, whose answer it projects.
+ *    A4 hand batch B: the asset guards (getOwnerForAsset,
+ *    getReaderForAsset, getMemberForAsset) the byte routes; the frame
+ *    ticket the frame documents; and, answered at the read (`atRead`), the
+ *    login a public row reads (getLoginOr401, getCookieUpgradeLoginOr401)
+ *    and the owner of a row whose handler runs a key's checks first.
+ *  - `guard`: the guard the reader replaced, whose answer it projects, as
+ *    the guard sweep's recorded files name it (getOwnerOr401 since it went:
+ *    RETIRED_GUARDS); null for the frame ticket, which replaced no guard
+ *    (the frame documents read none: the sweep logs no entry for it).
  *  - `entry`: the name the guard sweep logs the pipeline's answer under.
+ *  - `atRead`: the gate binds the answer and the handler's first read runs
+ *    it, where the handler called its guard (route-policy.ts
+ *    ANSWERED_AT_READ): such a read may follow code, and is awaited.
  */
 export const READER_ANSWERS = Object.freeze({
   ownerCaller: Object.freeze({ caller: 'owner', guard: 'getOwnerOr401', entry: 'pipeline:owner' }),
@@ -78,7 +89,49 @@ export const READER_ANSWERS = Object.freeze({
     guard: 'getSessionUser',
     entry: 'pipeline:session',
   }),
+  ownerAssetCaller: Object.freeze({
+    caller: 'ownerAsset',
+    guard: 'getOwnerForAsset',
+    entry: 'pipeline:ownerAsset',
+  }),
+  readerAssetCaller: Object.freeze({
+    caller: 'readerAsset',
+    guard: 'getReaderForAsset',
+    entry: 'pipeline:readerAsset',
+  }),
+  memberAssetCaller: Object.freeze({
+    caller: 'memberAsset',
+    guard: 'getMemberForAsset',
+    entry: 'pipeline:memberAsset',
+  }),
+  frameTicketCaller: Object.freeze({ caller: 'frame', guard: null, entry: 'pipeline:frame' }),
+  publicLoginCaller: Object.freeze({
+    caller: 'publicLogin',
+    guard: 'getLoginOr401',
+    entry: 'pipeline:publicLogin',
+    atRead: true,
+  }),
+  cookieUpgradeCaller: Object.freeze({
+    caller: 'cookieUpgrade',
+    guard: 'getCookieUpgradeLoginOr401',
+    entry: 'pipeline:cookieUpgrade',
+    atRead: true,
+  }),
+  ownerCallerAtRead: Object.freeze({
+    caller: 'ownerAtRead',
+    guard: 'getOwnerOr401',
+    entry: 'pipeline:ownerAtRead',
+    atRead: true,
+  }),
 });
+
+/**
+ * The guards session.ts no longer has, which a reader still names
+ * (READER_ANSWERS `guard`): the guard sweep's recorded files spell the
+ * answers of their rows under that name. getOwnerOr401 went at A4 exit
+ * (A4 hand batch B): every route reads the caller the pipeline answers.
+ */
+export const RETIRED_GUARDS = Object.freeze([]);
 
 /** The readers' names (READER_ANSWERS). */
 export const CALLER_READERS = Object.freeze(Object.keys(READER_ANSWERS));

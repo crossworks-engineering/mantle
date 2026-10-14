@@ -112,8 +112,61 @@ export type RouteItem = Readonly<{ need: ItemWriteNeed; ref: ItemRef; seg: numbe
  *  'chat': the chat guard's (getChatLoginOr401), on the chat and Telegram
  *  lists (A4 step 3b part 5); 'session': the session user's
  *  (getSessionUser: any Admin user, or null, never a refusal), on the rows
- *  open to every Admin user (ADMIN_OPEN_ROWS, A4 hand batch A). */
-export type RouteCaller = 'owner' | 'member' | 'login' | 'chat' | 'session';
+ *  open to every Admin user (ADMIN_OPEN_ROWS, A4 hand batch A).
+ *
+ *  A4 hand batch B:
+ *  - the asset answers, on the byte routes a browser-native src opens
+ *    (a `?at=` asset token, the render cookie): 'ownerAsset'
+ *    (getOwnerForAsset) and 'readerAsset' (getReaderForAsset) on owner rows,
+ *    'memberAsset' (getMemberForAsset) on the retired member byte routes'
+ *    stubs only (gone rows);
+ *  - 'frame': the `?t=` frame ticket of a sandbox frame document, verified
+ *    (FRAME_ROWS), no login and never a refusal;
+ *  - the answers taken at the read (ANSWERED_AT_READ): the gate binds the
+ *    kind's answer and the handler's first read runs it, once, where the
+ *    handler read its guard before, so what the handler does first (a public
+ *    row's own checks, an /api/v1 key rule) still comes first: 'publicLogin'
+ *    (getLoginOr401) and 'cookieUpgrade' (getCookieUpgradeLoginOr401) on a
+ *    public row that reads the login, which never refuse (a public row
+ *    judges its own credential: no login reads as null), and 'ownerAtRead'
+ *    (the owner guard) on an owner row whose handler runs a key's checks
+ *    before it, whose refusal the gate answers at the read. */
+export type RouteCaller =
+  | 'owner'
+  | 'member'
+  | 'login'
+  | 'chat'
+  | 'session'
+  | 'ownerAsset'
+  | 'readerAsset'
+  | 'memberAsset'
+  | 'frame'
+  | 'publicLogin'
+  | 'cookieUpgrade'
+  | 'ownerAtRead';
+
+/** The caller kinds whose answer the gate binds and the handler's first
+ *  read runs (A4 hand batch B): the handler runs code that answers before
+ *  it reads (a public row's checks, an /api/v1 key rule), and that order
+ *  stays. Every other kind is answered before the handler. */
+export const ANSWERED_AT_READ: ReadonlySet<RouteCaller> = new Set([
+  'publicLogin',
+  'cookieUpgrade',
+  'ownerAtRead',
+]);
+
+/** The kinds a public row may read (and no other row): the login a public
+ *  row reads judging its own credential, never refused at the gate. */
+const PUBLIC_CALLERS: ReadonlySet<RouteCaller> = new Set(['publicLogin', 'cookieUpgrade']);
+
+/** The kinds answered by the owner guard or its asset forms: they serve an
+ *  owner row only where its prefix classes it (a scope). */
+const OWNER_GUARDED: ReadonlySet<RouteCaller> = new Set([
+  'owner',
+  'ownerAsset',
+  'readerAsset',
+  'ownerAtRead',
+]);
 
 /** The login lists whose rows each caller kind's guard serves (null: the
  *  owner rows open to Admin only). The owner guard serves the owner rows
@@ -127,7 +180,51 @@ const CALLER_LOGINS: Readonly<Record<RouteCaller, ReadonlyArray<RouteLogins | nu
   // The session user's guard serves only the named carve-outs open to
   // every Admin user (ADMIN_OPEN_ROWS, checked in buildRouteRow).
   session: [],
+  // The asset guards serve the owner rows a byte src opens (an Admin user,
+  // and a member on the reads open to it: getReaderForAsset); the member
+  // asset guard only the retired member byte routes (gone rows).
+  ownerAsset: [null, 'owner'],
+  readerAsset: [null, 'owner'],
+  memberAsset: [],
+  // The frame documents (FRAME_ROWS, checked in buildRouteRow).
+  frame: [],
+  // Public rows only (PUBLIC_CALLERS, checked in buildRouteRow).
+  publicLogin: [],
+  cookieUpgrade: [],
+  ownerAtRead: [null, 'owner'],
 };
+
+/**
+ * The sandbox frame documents (A4 hand batch B): opened by the `?t=` frame
+ * ticket the gate admitted, with no other credential (a sandboxed iframe's
+ * navigation carries none). Their caller is the ticket ('frame'); the gate
+ * finds no login for them (session.ts NO_LOGIN_LOOKUP_ROWS).
+ */
+export const FRAME_ROWS: ReadonlySet<string> = new Set([
+  '/api/apps/:id/frame',
+  '/api/member/apps/:id/frame',
+]);
+
+/**
+ * The asset rows whose handler is handed a request with another query than
+ * the one sent (A4 hand batch B): each to the query its route file sets.
+ * GET /api/v1/files/:id/download runs the bytes handler of
+ * /api/files/files/:id with `?raw=1` and nothing else (its route file), so
+ * on main the asset guard never saw a `?at=` sent to it. The gate answers
+ * the asset caller from the request as the handler is handed it, so the
+ * answer stays (route-policy.test.ts pins the route file's query).
+ */
+export const ASSET_QUERY_AS_HANDED: ReadonlyMap<string, string> = new Map([
+  ['GET /api/v1/files/:id/download', '?raw=1'],
+]);
+
+/** The query an asset row's handler is handed in place of the one sent
+ *  (ASSET_QUERY_AS_HANDED; a HEAD the GET handler answers takes its GET's),
+ *  or null: the request as sent. */
+export function assetQueryAsHanded(row: Pick<RouteRow, 'method' | 'pattern'>): string | null {
+  const m = row.method === 'HEAD' ? 'GET' : row.method;
+  return ASSET_QUERY_AS_HANDED.get(`${m} ${row.pattern}`) ?? null;
+}
 
 /** One ROUTE_POLICY row: one method of one manifest pattern. */
 export type RouteRow = Readonly<{
@@ -338,6 +435,36 @@ export function routeSwitchedOff(
 }
 
 /**
+ * Whether the guard of `caller` serves a row (buildRouteRow): a public row
+ * reads only a public kind (PUBLIC_CALLERS) and no other row does; a gone
+ * row takes its stub's kind whatever list it is in; the session user's
+ * guard serves the named carve-outs (ADMIN_OPEN_ROWS), the frame answer the
+ * frame documents (FRAME_ROWS); the owner guard and its asset and at-read
+ * forms a row its prefix classes (a scope), the at-read form none that
+ * manages an Admin area (the gate's Admin step comes before the handler);
+ * every other kind the rows of its own lists (CALLER_LOGINS).
+ */
+function callerServes(
+  caller: RouteCaller,
+  row: Readonly<{
+    key: string;
+    pattern: string;
+    isPublic: boolean;
+    scope: RouteClass | null;
+    classLogins: RouteLogins | null;
+    gone: boolean;
+  }>,
+): boolean {
+  if (PUBLIC_CALLERS.has(caller)) return row.isPublic && !row.gone;
+  if (row.isPublic) return false;
+  if (OWNER_GUARDED.has(caller) && row.scope === null) return false;
+  if (caller === 'ownerAtRead' && row.scope?.kind === 'area') return false;
+  if (caller === 'session') return ADMIN_OPEN_ROWS.has(row.key);
+  if (caller === 'frame') return FRAME_ROWS.has(row.pattern);
+  return row.gone || CALLER_LOGINS[caller].includes(row.classLogins);
+}
+
+/**
  * The row of `method pattern`, from the lists (step 1). `served` says
  * which `METHOD pattern` keys the manifest serves (the v1 aliases).
  */
@@ -420,9 +547,10 @@ export function buildRouteRow(
   // (self, content or area), open to Admin or to the owner lists (a
   // member's open reads and writes are the owner guard's too); the member,
   // any-login and chat guards the rows of their own lists (A4 step 3b part
-  // 5). A public, link or render row judges its own credential. The owner
-  // guard serves only a row its prefix classes (scope); the others read no
-  // scope of the row.
+  // 5). A link or render row judges its own credential, and so does a
+  // public row, which reads at most the login its own checks ask for at the
+  // read (A4 hand batch B: callerServes). The owner guard serves only a row
+  // its prefix classes (scope); the others read no scope of the row.
   const caller: RouteCaller | null = opts.reads ?? null;
   // A gone row (a retired route's stub) is answered by the guard its stub
   // called, whatever list the row is in now (RouteRow.gone).
@@ -435,11 +563,14 @@ export function buildRouteRow(
   if (
     caller &&
     (pageClass !== null ||
-      isPublic ||
-      (caller === 'owner' && scope === null) ||
-      (caller === 'session'
-        ? !ADMIN_OPEN_ROWS.has(`${answeredAs} ${pattern}`)
-        : !gone && !CALLER_LOGINS[caller].includes(classLogins)))
+      !callerServes(caller, {
+        key: `${answeredAs} ${pattern}`,
+        pattern,
+        isPublic,
+        scope,
+        classLogins,
+        gone,
+      }))
   ) {
     throw new Error(
       `ROUTE_POLICY: ${key} reads the ${caller} caller, but the ${caller} guard does not serve its row`,

@@ -12,12 +12,17 @@ import type { Context } from 'hono';
 import { BUSY_MESSAGE, BusyError, isBusy } from '@mantle/db';
 import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
 import { RedirectError } from './http-compat/redirect-error';
+import { RouteRefusal } from '../lib/auth/session';
 import { scopeRefusalResponse } from './scope-refusal';
 
 export function answerAppError(err: Error, c: Context): Response {
   if (err instanceof RedirectError) {
     return c.redirect(err.location, err.status);
   }
+  // The refusal of an answer taken at the read (A4 hand batch B,
+  // ownerCallerAtRead): the guard's own response, as the handler returned
+  // it before.
+  if (err instanceof RouteRefusal) return err.response;
   const path = new URL(c.req.url).pathname;
   // A refusal, never a crash, read by the one mapper (arch A3c): the
   // database refused a write of an item the caller may not change (W6a
