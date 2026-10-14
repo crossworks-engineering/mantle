@@ -1,37 +1,52 @@
 /**
  * The admin side of review and Team admin, removed in workspaces W5c, without
  * a database: every removed route is a stub that answers an admin 410
- * `{ error, code: 'gone' }` and still answers 401 without a session (the
- * gate answers the owner guard first, so nothing leaks; since A4 hand batch
- * A the gate, so a stub called with no answer throws). The stubs stay routed so an old
- * client gets the 410 instead of a vague 404; the role sweeps drive them
- * through the real app.
+ * `{ error, code: 'gone' }` and still answers 401 without a session. Since
+ * A4 hand batch A the gate answers the stub's guard (its row is a gone row
+ * of the stub's kind), so each request runs through the FULL pipeline
+ * (runRoute, as reader-tree-routes.test.ts does): the gate, the row, the
+ * caller the gate answered and the stub reading it. The login rows are
+ * stood in (run-route-stand-ins.ts); nothing of the auth library is mocked.
+ * The stubs stay routed so an old client gets the 410 instead of a vague
+ * 404; the role sweeps drive them through the real app too.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { runRoute } from '@/server/run-route';
+import { standInLogin } from '@/server/run-route-stand-ins';
 
-const OWNER = '33333333-3333-4333-8333-333333333333';
-const h = vi.hoisted(() => ({ signedIn: true }));
+const ANCHOR = '33333333-3333-4333-8333-333333333333';
+const MEMBER = '22222222-2222-4222-8222-222222222222';
+const ID = '11111111-1111-4111-8111-111111111111';
 
-vi.mock('@/lib/auth', () => {
-  const owner = async () =>
-    h.signedIn
-      ? { id: OWNER }
-      : new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
-  // The readers a stub reads (lib/gone.ts, A4 hand batch A): the gate
-  // answered the stub's guard before the handler; with no session it
-  // refused, so a stub called anyway finds no answer and throws.
-  const read = () => {
-    if (!h.signedIn) throw new Error('ownerCaller(): the pipeline answered no owner');
-    return { id: OWNER };
-  };
-  return {
-    getOwnerOr401: vi.fn(owner),
-    getMemberOr401: vi.fn(owner),
-    getLoginOr401: vi.fn(owner),
-    ownerCaller: vi.fn(read),
-    memberCaller: vi.fn(read),
-    loginCaller: vi.fn(read),
-  };
+vi.mock(
+  '@/lib/auth/login-row',
+  async () => (await import('@/server/run-route-stand-ins')).loginRowStandIn,
+);
+const h = vi.hoisted(() => ({ onWorkspaces: true }));
+
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
+  // On a write row an Admin user's answer reads the database (the create
+  // home, the item write check of the retired app rows): there the brain
+  // is off workspaces (the rollback switch), where those reads stand
+  // aside; the stub's guard is the gate's either way.
+  brainOnWorkspacesNow: async () => h.onWorkspaces,
+}));
+// The brain's owner holds every Admin area (no database to read them from).
+vi.mock('@/lib/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/workspaces')>()),
+  requireArea: async () => true,
+}));
+// The api.write row an Admin user's write writes, kept off the database.
+vi.mock('@/lib/audit', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/audit')>()),
+  auditFireAndForget: vi.fn(),
+}));
+
+beforeAll(() => {
+  standInLogin({ id: ANCHOR, role: 'admin', isOwner: true });
+  standInLogin({ id: MEMBER, role: 'member' });
 });
 
 type Handler = () => Promise<Response>;
@@ -140,10 +155,6 @@ const GONE: Array<[string, string[], () => Promise<RouteModule>]> = [
   ['/api/apps/members/:id/unshare', ['POST'], () => import('../apps/members/[id]/unshare/route')],
 ];
 
-beforeEach(() => {
-  h.signedIn = true;
-});
-
 describe('the admin review and Team admin routes are gone (W5c)', () => {
   it('each route exports exactly its old methods, nothing more', async () => {
     for (const [path, methods, load] of GONE) {
@@ -152,26 +163,51 @@ describe('the admin review and Team admin routes are gone (W5c)', () => {
     }
   });
 
-  it("answers an admin 410 with code 'gone'", async () => {
-    for (const [path, methods, load] of GONE) {
-      const mod = await load();
-      for (const method of methods) {
-        const res = await mod[method]!();
-        expect(res.status, `${method} ${path}`).toBe(410);
-        const body = (await res.json()) as { error?: unknown; code?: unknown };
-        expect(body.code, `${method} ${path}`).toBe('gone');
-        expect(typeof body.error, `${method} ${path}`).toBe('string');
-      }
+  /** Each removed route and method, as a request: its path with real ids,
+   *  and whether its row is a write (the gate reads the database there). */
+  let writeRows: ReadonlySet<string> = new Set();
+  beforeAll(async () => {
+    const { routeManifest } = await import('@/server/route-manifest.gen');
+    const { buildRoutePolicy } = await import('@/lib/auth/route-policy');
+    writeRows = new Set(
+      [...buildRoutePolicy(routeManifest).values()]
+        .filter((r) => r.effect === 'write' || r.item !== null)
+        .map((r) => r.key),
+    );
+  });
+  const requests = () =>
+    GONE.flatMap(([pattern, methods]) =>
+      methods.map((method) => [method, pattern.replace(/:[A-Za-z]+/g, ID), pattern] as const),
+    );
+  /** One request as `login`, on a brain off workspaces where the row is a
+   *  write (the stand-in above). */
+  const call = async (login: string | null, method: string, path: string, pattern: string) => {
+    h.onWorkspaces = !writeRows.has(`${method} ${pattern}`);
+    try {
+      return await runRoute(login, method, path, method === 'GET' ? undefined : {});
+    } finally {
+      h.onWorkspaces = true;
+    }
+  };
+
+  it("answers an admin 410 with code 'gone', through the pipeline", async () => {
+    expect(writeRows.size).toBeGreaterThan(0);
+    for (const [method, path, pattern] of requests()) {
+      const res = await call(ANCHOR, method, path, pattern);
+      expect(res.status, `${method} ${path}`).toBe(410);
+      const body = (await res.json()) as { error?: unknown; code?: unknown };
+      expect(body.code, `${method} ${path}`).toBe('gone');
+      expect(typeof body.error, `${method} ${path}`).toBe('string');
     }
   });
 
-  it("never answers 410 without the gate's answer (no session: the gate's 401)", async () => {
-    h.signedIn = false;
-    for (const [path, methods, load] of GONE) {
-      const mod = await load();
-      for (const method of methods) {
-        await expect(mod[method]!(), `${method} ${path}`).rejects.toThrow(/answered no/);
-      }
+  it("never answers 410 without the gate's answer: no session 401, a member the gate's refusal", async () => {
+    for (const [method, path, pattern] of requests()) {
+      const none = await call(null, method, path, pattern);
+      expect(none.status, `${method} ${path}`).toBe(401);
+      const member = await call(MEMBER, method, path, pattern);
+      expect(member.status, `${method} ${path}`).toBe(403);
+      expect(await member.json(), `${method} ${path}`).not.toMatchObject({ code: 'gone' });
     }
   });
 });

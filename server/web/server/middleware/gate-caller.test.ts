@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { actorSetting, currentActor, currentCreateHome, currentRequestOutcome } from '@mantle/db';
+import { NextResponse } from '../http-compat';
 import type { RouteEntry } from '../route-loader';
 import type { RouteCaller } from '../../lib/auth/route-policy';
 
@@ -1094,14 +1095,20 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
           const now = await drive(readsApp, method, path, cred.headers());
           expect(now.handled, label).toBe(0);
           if (reached.status === MARK) {
-            // The handler's off answer, as its first statement gave it.
-            const body = name === 'NODE_ENV' ? 'not available in production' : 'not found';
-            expect(now, label).toMatchObject({
-              status: 404,
-              type: 'application/json',
-              body: method === 'HEAD' ? '' : JSON.stringify({ error: body }),
+            // The handler's off answer, as its first statement gave it
+            // (NextResponse.json, the handler's words), compared whole:
+            // status, type, cache header and body, nothing touched, no
+            // audit row, no handler run.
+            const error = name === 'NODE_ENV' ? 'not available in production' : 'not found';
+            const was = NextResponse.json({ error }, { status: 404 });
+            expect(now, label).toEqual({
+              status: was.status,
+              type: was.headers.get('content-type'),
+              cache: was.headers.get('cache-control'),
+              body: method === 'HEAD' ? '' : await was.text(),
               touches: 0,
               audits: [],
+              handled: 0,
             });
             offAnswered.add(cred.name);
           } else {
