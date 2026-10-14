@@ -322,9 +322,9 @@ const GATE_CODES: Record<AccessKind, string> = {
 
 /** The words of the database's refusals that name a reason (the HTTP
  *  body's message, and since A5 step 5 a tool's text too). */
-const READ_ONLY_APP_MESSAGE = 'This app is Informational: its data is read only.';
+export const READ_ONLY_APP_MESSAGE = 'This app is Informational: its data is read only.';
 const RO_ACTOR_MESSAGE = 'This caller only reads: it cannot change anything.';
-const ITEM_WORKSPACE_MESSAGE = 'You cannot change this item in your workspaces.';
+export const ITEM_WORKSPACE_MESSAGE = 'You cannot change this item in your workspaces.';
 
 /** What a tool says for a CREATE the workspace checks refused (A5 step 5
  *  fix round 1, L6), by the database's message: the HTTP answer stays the
@@ -348,6 +348,14 @@ const CREATE_REFUSAL_TOOL_TEXT: ReadonlyArray<readonly [RegExp, string]> = [
     'This would put the item outside what your workspaces may change, so it was not saved.',
   ],
 ];
+
+/** Every text a tool says for an item-workspace refusal of the database:
+ *  ITEM_WORKSPACE_MESSAGE, and a create's own words (A5 step 5 fix round
+ *  2: for a reader that names them, the .db sweeps). */
+export const ITEM_WORKSPACE_TOOL_TEXTS: readonly string[] = Object.freeze([
+  ITEM_WORKSPACE_MESSAGE,
+  ...CREATE_REFUSAL_TOOL_TEXT.map(([, text]) => text),
+]);
 
 /** The tool text of an item-workspace refusal: a create's own words, else
  *  ITEM_WORKSPACE_MESSAGE. */

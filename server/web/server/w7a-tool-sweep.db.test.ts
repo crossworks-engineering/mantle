@@ -37,6 +37,7 @@ import path from 'node:path';
 import { inspect } from 'node:util';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { ITEM_WORKSPACE_TOOL_TEXTS, READ_ONLY_APP_MESSAGE } from '@mantle/std';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -84,10 +85,23 @@ const ITEM_WS =
  *  that runs this long fails the sweep (W7a fix round 1). */
 const CALL_TIMEOUT_MS = 30_000;
 
+/** `text` as a literal in a pattern. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 /** The refusals of a write to an item the scope may not change (W7a fix
- *  round 1, M2: @mantle/db item-rights.ts). */
-const ITEM_RIGHTS =
-  /You cannot change this item in your workspaces|read-only copy of an accepted item|is not in your workspaces: it is in a workspace you are not in/;
+ *  round 1, M2: @mantle/db item-rights.ts), and since A5 step 5 the one
+ *  mapper's tool text for the database's: an item-workspace refusal, a
+ *  create's own words (fix round 1, L6) and an Informational app's data
+ *  (A5 step 5 fix round 2, LOW-2). */
+const ITEM_RIGHTS = new RegExp(
+  [
+    'You cannot change this item in your workspaces',
+    'read-only copy of an accepted item',
+    'is not in your workspaces: it is in a workspace you are not in',
+    ...[...ITEM_WORKSPACE_TOOL_TEXTS, READ_ONLY_APP_MESSAGE].map(escapeRegExp),
+  ].join('|'),
+);
 
 /**
  * Why a sweep call may fail (W7a fix round 1: no catch-all). Each class

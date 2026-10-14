@@ -38,6 +38,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { ITEM_WORKSPACE_TOOL_TEXTS, READ_ONLY_APP_MESSAGE } from '@mantle/std';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -58,9 +59,22 @@ const BAD =
 /** The database's item-workspace refusals (the scope says no). */
 const ITEM_WS =
   /not allowed to (add items to that folder|delete this item|move this item)|placing this app adds a workspace you do not moderate|a node's login can only be your own/i;
-/** The refusals of a write to an item the scope may not change. */
-const ITEM_RIGHTS =
-  /You cannot change this item in your workspaces|read-only copy of an accepted item|is not in your workspaces: it is in a workspace you are not in/;
+/** `text` as a literal in a pattern. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+/** The refusals of a write to an item the scope may not change, and
+ *  since A5 step 5 the one mapper's tool text for the database's: an
+ *  item-workspace refusal, a create's own words (fix round 1, L6) and an
+ *  Informational app's data (A5 step 5 fix round 2, LOW-2). */
+const ITEM_RIGHTS = new RegExp(
+  [
+    'You cannot change this item in your workspaces',
+    'read-only copy of an accepted item',
+    'is not in your workspaces: it is in a workspace you are not in',
+    ...[...ITEM_WORKSPACE_TOOL_TEXTS, READ_ONLY_APP_MESSAGE].map(escapeRegExp),
+  ].join('|'),
+);
 
 /** Why a sweep call may fail (as the W7a sweep): what the made-up
  *  arguments lacked, an item the member does not reach, a service that is
