@@ -1343,6 +1343,142 @@ after each, its moved entries recorded):
    v1 wrapper and `GET /api/v1/files/:id/download` with its base. Then
    `getOwnerOr401` goes and the count is 0 (A4 exit).
 
+**HTTP, A4 step 3b part 4 (no answer changed but the owner's decision).**
+The part 3 audit's low findings, the two step 3b must-dos, the codemod's
+fourth batch with the gate's Admin step, and the owner's decision on the
+update routes.
+
+- **The counts** (`eslint-rules/arch-counts.mjs`) skip an archive, build,
+  public or dist folder only outside `server/web/app/`, where such a
+  folder is a route segment: `POST /api/apps/:id/build` (it reads the
+  caller) and `POST /api/workspaces/:id/archive` (it calls no guard) are
+  counted now.
+- **The write parity test** (`gate-caller.test.ts`) also serves an API
+  key's create on `POST /api/v1/notes` (a key with every area, a read-only
+  key, one without the notes area, a member's; with and without `?ws=`), an
+  item the login may edit but not manage, `POST /api/pages/:id/move`,
+  `DELETE /api/shares/:id` (a page's and an app's link), `POST
+  /api/recall/revisions/:id/restore`, `DELETE /api/apps/deleted/:id` (no
+  home stored, a home managed or not, deleted by someone other than the
+  owner, no snapshot) and an app's data write (`POST
+  /api/apps/:id/db-broker`: the gate's part is the app read; D6's
+  Informational switch is the database's, after it), each with the encoded
+  id and the ids that are no item id.
+- **The moved writes** are pinned per cell: the sweep keeps the audit rows
+  a request writes and the create home the pipeline's answer named, and
+  records them for every moved cell of a write in
+  `__snapshots__/a4-guard-sweep-moved-writes.txt` (3559 cells).
+- **The connector OAuth callbacks** (`GET /api/mcp-connectors/oauth/callback`,
+  `GET /api/microsoft/oauth/callback`, and their HEADs) are writes
+  (`WRITE_GETS`, route-scope.ts): they store the tokens they are given.
+  They are not public and run as the login their guard names.
+- **The Telegram chat rows** (`TELEGRAM_LOGIN_ROUTES` and the HEADs their
+  GET handler answers) are class `self`, in no area (`rowScope`,
+  route-policy.ts), like the assistant chat rows: their own gate
+  (`getChatLoginOr401`) never asks an area, and the gate's area check
+  would refuse an Admin user without the connectors area while letting a
+  member in. The owner routes under `/api/telegram` (`PATCH
+  /api/telegram/chats/:id`) stay connectors rows. Their answers are
+  unchanged; batch 5 gives them a reader.
+
+**The gate's Admin step.** On a row whose handler reads the pipeline's
+caller and that manages an Admin area, the HTTP caller carries the Admin
+login's view of the area the login lookup resolved (`admin`, from
+`resolveHttpLogin`), and the gate's step 5 refuses a login without it, in
+the guard's words (403 `area`, the one mapper). Elsewhere the caller stays
+unscoped (`admin: null`) and the guard decides, as before; so are a member,
+a credential with no login and a failed lookup, whose answer is the
+pipeline's (403 `member-login`, the 401, the failure in the handler's
+place). Before step 5 the login's effects are applied in the request slot
+(`enterRouteLogin`, session.ts): a device token's stamp and the login named
+as the request's actor, as the guard applied them before its area check; the
+pipeline's answer takes them as applied (`RequestLogins.takeApplied`), so a
+token is stamped once. A stamp that fails there is thrown in the handler's
+place (`RouteLoginError`), so onError answers it with the CORS headers, as
+the guard's failure was. The guard's own area check (`adminRouteGate`)
+stays for the rows that still call it.
+
+Batch 4, the Admin area rows: the handlers of the area rows (class area,
+open to Admin users only: the settings, users, assistants, connectors and
+keys routes), each with the standard two lines of an owner guard as its
+first statement and no parameter with a default value: 243 handlers in 172
+route files. 242 called `getOwnerOr401` and read `ownerCaller()`; `POST
+/api/users/:id/password` called `getOwnerOr401WithSource` and reads
+`ownerCallerWithSource()`. Each file was checked on main: nothing runs
+before the guard. With their HEADs, 352 rows gain `caller: 'owner'` (646
+rows carry it); no /api/v1 row re-exports one.
+
+**The owner's decision (2026-10-14).** `GET` and `HEAD
+/api/updates/status` and `POST /api/updates/check` need the settings area
+their rows name: their handlers read `ownerCaller()`. An Admin user
+without the area gets 403 `area` (it got 200), a member 403 `member-login`
+(the handler's 401), no login 401 (as before); an Admin user with it runs
+on the system pool as every settings route does, and its forced check
+writes the `api.write` audit row. `GET` and `HEAD /api/updates/check`, the
+cached update banner, stay open to every Admin user: a named carve-out
+(`ADMIN_OPEN_ROWS`, route-policy.ts) makes their rows the login's own
+(`self`), in no area, and the handler keeps `getSessionUser` (the hand
+batch). `app/api/updates/updates-owner-decision.test.ts` drives it through
+the full pipeline.
+
+The proof is the guard sweep. The two recorded files are byte for byte
+except the lines of the three rows the owner decided, each now the answer
+every settings row gives (answers already in the files); those 64 cells are
+recorded as driven in `__snapshots__/a4-guard-sweep-owner-decision.txt`,
+with a note. The moved snapshot holds 8297 cells (4037 after part 3) and
+79 answers (56 after part 3). A step 5 refusal is logged as the pipeline's
+entry, in the request slot, by the row's reader. The 23 new ones:
+
+- an Admin user with the area let through (the anchor and an Admin user
+  by cookie, an Admin user by device token, stamped once), on the system
+  pool with the system reason `area` noted, for GET and for HEAD (no body);
+- an Admin user without the area refused by step 5, 403 `area`, running as
+  its login, no scope: one per area (users, assistants, settings,
+  connectors, keys), for GET and for HEAD;
+- `pipeline:ownerWithSource` on `POST /api/users/:id/password`: the anchor
+  and an Admin user by cookie and by device token let through, an Admin
+  user without the area refused, a member's 403 `member-login` by cookie
+  and by device token, the 401.
+
+A member on an area row gets the gate's 403 `member-login` and a credential
+with no login its 401, answers part 1 already recorded. Each has the
+status, headers, body, owner, actor and scope the guard gave.
+`gate-caller.test.ts` pins the view on the caller, the refusal, the one
+stamp, a failing stamp with CORS, and every credential's headers and CORS
+on an area row through both paths.
+
+Pins: guard calls 285 to 43, still a ceiling; files with a guard call 210
+to 39; reads of the caller 186 to 432, in 128 to 303 files (187 and 129
+once the counts saw the build route); live routes calling no guard 62 to
+60 (the archive route counted, +1; the password route and the two update
+route files, which called only guards the counts do not see, now read,
+-3).
+
+**Step 3b, what is left** (the sweep held equal after each, its moved
+entries recorded):
+
+5. Member, any-login, chat and Telegram routes: answer steps and readers
+   of their own (`getMemberOr401`, `getLoginOr401`, `getChatLoginOr401`).
+   The Telegram chat rows have their class (above); the OAuth callbacks
+   their effect.
+6. Hand cases: `oauth/authorize`, `auth/logout`, `auth/change-password`;
+   the asset guards (`getOwnerForAsset`, `getReaderForAsset`,
+   `getMemberForAsset`: among them the draw svg, the file bytes, the export
+   of batch 2's rows and `GET /api/attachments/:id`);
+   `getCookieUpgradeLoginOr401`; `lib/gone.ts` (the `/api/apps/members`
+   and `/api/admin/space` 410 stubs, and the 37 of the area rows: the
+   `/api/access/agents`, `client-report`, its ack and `tool-groups` level
+   stubs, `/api/mcp-logins` and its tokens, the `/api/team-admin` clients,
+   hub app, member chats, member items, needs-you, notify, requests and
+   submissions stubs); `lib/workspaces.ts` (`POST
+   /api/workspaces/:id/archive` among them); the public rows that read the
+   login (whoami, logout, sso, pair, OAuth consent); the two turn routes
+   with a flag check first; `POST /api/dev-tools/queue-approval` (a flag
+   check first); `GET /api/updates/check` (`getSessionUser`, the owner's
+   carve-out); `GET /api/apps/:id/frame`; `PATCH /api/pages/:id` with its
+   v1 wrapper and `GET /api/v1/files/:id/download` with its base. Then
+   `getOwnerOr401` goes and the count is 0 (A4 exit).
+
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):
 
