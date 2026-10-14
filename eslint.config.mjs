@@ -21,6 +21,7 @@ import mantleAsSystemPlugin from './eslint-rules/as-system-allowlist.mjs';
 import mantleStoreBrokersPlugin from './eslint-rules/store-brokers.mjs';
 import mantleActorSettersPlugin from './eslint-rules/actor-setters.mjs';
 import mantleNoModelInTxPlugin from './eslint-rules/no-model-in-transaction.mjs';
+import mantleOwnerCallerPlugin from './eslint-rules/owner-caller-imports.mjs';
 
 export default tseslint.config(
   {
@@ -226,6 +227,16 @@ export default tseslint.config(
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
     plugins: { 'mantle-tx': mantleNoModelInTxPlugin },
     rules: { 'mantle-tx/no-model-in-transaction': 'error' },
+  },
+  {
+    // The caller the HTTP pipeline answers (ownerCaller(), workspaces arch A4
+    // step 3b) is imported only in an app/api route file, by its own name:
+    // the manifest generator reads the route files to learn which rows the
+    // gate answers.
+    files: ['server/web/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    plugins: { 'mantle-caller': mantleOwnerCallerPlugin },
+    rules: { 'mantle-caller/owner-caller-imports': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.
