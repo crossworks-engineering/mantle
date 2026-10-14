@@ -21,7 +21,12 @@ import {
   isFormerClientLogin,
   settleSpaceOnPromotion,
 } from '@mantle/content';
-import { auditKeysEnded, endLoginSessions, type SessionUser } from '@/lib/auth';
+import {
+  auditKeysEnded,
+  endLoginSessions,
+  forgetRequestLogins,
+  type SessionUser,
+} from '@/lib/auth';
 import { auditPeersUnbound } from '@/lib/peer-unbind';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
@@ -279,6 +284,9 @@ export async function applyLoginChange(
     }
     throw err;
   }
+  // The login changed: a later guard read in this request finds it afresh
+  // (A4 step 3a audit L1), now that the change is committed.
+  forgetRequestLogins();
   // After the commit, as the single unpair route does: tell the relay.
   await forgetRelayDevices(pushTokens);
   // And record the API keys the end revoked (one row), now that it held.

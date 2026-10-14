@@ -13,7 +13,7 @@ import { NextResponse } from '@/server/http-compat';
 import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { accessKeys, db } from '@mantle/db';
-import { getLoginOr401 } from '@/lib/auth';
+import { forgetRequestLogins, getLoginOr401 } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { ruleInQuery } from '@/lib/auth/rule-in-query';
 
@@ -41,6 +41,9 @@ async function handleDELETE(_req: Request, ctx: { params: Promise<{ id: string }
       loginId: accessKeys.loginId,
     });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // The request may have come in on this key: a later guard read finds it
+  // afresh (A4 step 3a audit L1).
+  forgetRequestLogins();
   auditFireAndForget({
     actorId: login.loginId,
     actorEmail: login.email,

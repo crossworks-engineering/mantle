@@ -707,8 +707,44 @@ export class RequestLogins {
   #render: Promise<{ user: SessionUser; nodeId: string } | null> | null = null;
   readonly #owner = new Map<string, Promise<SessionUser | 'refused' | null>>();
   readonly #member = new Map<string, Promise<MemberCaller | null>>();
+  #changed = false;
+  /** The gate's failed find, kept for the first guard read (keepFailure). */
+  #failure: Promise<FoundLogin> | null = null;
+
+  /** Whether the request changed a login since the gate resolved it
+   *  (forget): the gate's Admin view of the row's area is then not read. */
+  get changed(): boolean {
+    return this.#changed;
+  }
+
+  /** Drop every login found so far (A4 step 3a audit L1): the request
+   *  ended a login's sessions or changed its role or switch, so the next
+   *  guard read finds each credential afresh, as every guard call did
+   *  before step 3a. Already-applied effects stay applied. */
+  forget(): void {
+    this.#login = null;
+    this.#bearer = null;
+    this.#render = null;
+    this.#owner.clear();
+    this.#member.clear();
+    this.#failure = null;
+    this.#changed = true;
+  }
+
+  /** The gate's find of the login failed (the database, A4 step 3a audit
+   *  L4): the first guard read is answered with that failure instead of
+   *  asking again, so a request looks the login up once, as each guard
+   *  call did before step 3a. A read after that one asks again. */
+  keepFailure(failed: Promise<FoundLogin>): void {
+    this.#failure = failed;
+  }
 
   login(): Promise<FoundLogin> {
+    const failed = this.#failure;
+    if (failed) {
+      this.#failure = null;
+      return failed;
+    }
     return (this.#login ??= keepUntilFailed(
       findLogin(() => this.bearer()),
       () => (this.#login = null),
@@ -755,6 +791,32 @@ function requestLogins(): RequestLogins {
   return boundLogins(currentCaller()) ?? new RequestLogins();
 }
 
+/**
+ * The request changed a login (A4 step 3a audit L1): its sessions ended
+ * (endLoginSessions), its role or disabled switch changed (updateLogin), or
+ * a key or device token it may have come in on was revoked. The request's
+ * logins forget what they found, so a later guard read in the same request,
+ * or work it started and did not await, finds the login afresh and sees the
+ * change, as each guard call did when it looked the login up itself. Any
+ * login, not only the request's own: finding again is what a guard did
+ * before, and costs one read on these rare paths. No-op outside a routed
+ * request.
+ */
+export function forgetRequestLogins(): void {
+  boundLogins(currentCaller())?.forget();
+}
+
+/**
+ * The rows whose handler reads no session guard: the sandbox frame
+ * documents, opened by the `?t=` frame ticket the gate admitted (the
+ * route re-verifies it and reads the login it names). The gate finds no
+ * login for them (A4 step 3a audit L4): nothing would read it.
+ */
+const NO_LOGIN_LOOKUP_ROWS: ReadonlySet<string> = new Set([
+  '/api/apps/:id/frame',
+  '/api/member/apps/:id/frame',
+]);
+
 /** The logins bound on `caller` by the gate, or null. */
 function boundLogins(caller: GateCaller | null): RequestLogins | null {
   const bound = caller?.facts?.[HTTP_LOGINS];
@@ -786,8 +848,9 @@ export type HttpLogin = Readonly<{
  * public), the login found once now, with what it holds of the row's Admin
  * area. The same functions the guards read, so the two cannot drift. A
  * public row judges its own credential: its login is found on the first
- * guard read, once. A find that fails (the database) is left for the guard
- * to ask again, as before.
+ * guard read, once. A frame document's row finds none (its handler reads
+ * no guard). A find that fails (the database) is not kept: the first guard
+ * read answers with that failure, a later one asks again.
  */
 export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
   const logins = new RequestLogins();
@@ -799,11 +862,14 @@ export async function resolveHttpLogin(row: RouteRow): Promise<HttpLogin> {
     admin: null,
     facts: Object.freeze({ [HTTP_LOGINS]: logins }),
   } as const;
-  if (row.public) return none;
+  if (row.public || NO_LOGIN_LOOKUP_ROWS.has(row.pattern)) return none;
   let found: FoundLogin;
+  const finding = logins.login();
   try {
-    found = await logins.login();
+    found = await finding;
   } catch {
+    // The guard's first read answers with this failure (keepFailure).
+    logins.keepFailure(finding);
     return none;
   }
   const res = found.resolved;
@@ -840,7 +906,10 @@ async function holdsArea(
   area: import('@mantle/client-types').WorkspaceArea,
 ): Promise<boolean> {
   const caller = currentCaller();
-  const view = boundLogins(caller) ? (caller?.facts?.[HTTP_ADMIN] as AdminView | undefined) : null;
+  const logins = boundLogins(caller);
+  // The gate's view, unless the request has changed a login since (forget).
+  const view =
+    logins && !logins.changed ? (caller?.facts?.[HTTP_ADMIN] as AdminView | undefined) : null;
   if (view && caller?.loginId === loginId) return view.areas.has(area);
   return loginHoldsArea(loginId, area);
 }
@@ -1903,6 +1972,9 @@ export async function endLoginSessions(
   };
   if (opts.tx) {
     const epoch = await run(opts.tx);
+    // The caller forgets again after its commit (updateLogin): a guard read
+    // inside the transaction still sees the committed row.
+    forgetRequestLogins();
     opts.revokedKeyIds?.push(...ended);
     opts.unboundPeerIds?.push(...unbound);
     return epoch;
@@ -1920,6 +1992,8 @@ export async function endLoginSessions(
     unbound.length = 0;
     epoch = await db.transaction((tx) => run(tx));
   }
+  // The request's logins are found afresh on the next guard read (L1).
+  forgetRequestLogins();
   // After the commit, so a rolled-back end leaves no row (final audit).
   auditKeysEnded(loginId, opts.actorId ?? loginId, ended);
   auditPeersUnbound(loginId, opts.actorId ?? loginId, unbound, 'sessions-ended');
