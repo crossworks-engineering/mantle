@@ -314,6 +314,7 @@ const app_update: BuiltinToolDef = {
 
 const app_get: BuiltinToolDef = {
   slug: 'app_get',
+  usageTier: 6,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   preconditions: APP_ID_PRE,
   name: 'Get a mini app',
@@ -353,6 +354,7 @@ const app_get: BuiltinToolDef = {
 
 const app_file_write: BuiltinToolDef = {
   slug: 'app_file_write',
+  usageTier: 6,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -538,6 +540,7 @@ const app_source_set: BuiltinToolDef = {
 
 const app_build: BuiltinToolDef = {
   slug: 'app_build',
+  usageTier: 5,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -671,6 +674,7 @@ const app_tools_set: BuiltinToolDef = {
 
 const app_db_schema_set: BuiltinToolDef = {
   slug: 'app_db_schema_set',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -751,6 +755,7 @@ const app_db_schema_set: BuiltinToolDef = {
 
 const app_db_seed: BuiltinToolDef = {
   slug: 'app_db_seed',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -880,6 +885,7 @@ const app_list: BuiltinToolDef = {
 
 const app_publish: BuiltinToolDef = {
   slug: 'app_publish',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -1021,6 +1027,7 @@ async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) 
 
 const app_db_list: BuiltinToolDef = {
   slug: 'app_db_list',
+  usageTier: 6,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   name: 'List app databases',
   description:
@@ -1058,6 +1065,7 @@ const app_db_list: BuiltinToolDef = {
 
 const app_db_query: BuiltinToolDef = {
   slug: 'app_db_query',
+  usageTier: 6,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'apps' },
   preconditions: APP_DB_ID_PRE,
   name: 'Query an app database',

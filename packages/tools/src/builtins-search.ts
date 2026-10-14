@@ -33,6 +33,7 @@ import { ownerKeysOff } from './surface';
 
 export const search_nodes: BuiltinToolDef = {
   slug: 'search_nodes',
+  usageTier: 10,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Search nodes',
   description:
@@ -172,6 +173,7 @@ export const search_nodes: BuiltinToolDef = {
 
 export const search_chunks: BuiltinToolDef = {
   slug: 'search_chunks',
+  usageTier: 10,
   policy: {
     effect: 'read',
     spends: 'model',
@@ -349,6 +351,7 @@ function chunkKey(h: { nodeId: string; ordinal: number }): string {
 
 export const read_section: BuiltinToolDef = {
   slug: 'read_section',
+  usageTier: 9,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Read a document section',
   description:
@@ -416,6 +419,7 @@ export const read_section: BuiltinToolDef = {
 
 export const tree_list: BuiltinToolDef = {
   slug: 'tree_list',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'List tree children',
   description:

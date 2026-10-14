@@ -206,6 +206,7 @@ export const sandbox_create: BuiltinToolDef = {
 
 export const sandbox_exec: BuiltinToolDef = {
   slug: 'sandbox_exec',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',

@@ -289,6 +289,7 @@ const synthesize_speech: BuiltinToolDef = {
 
 const extract_from_image: BuiltinToolDef = {
   slug: 'extract_from_image',
+  usageTier: 3,
   policy: {
     effect: 'read',
     spends: 'ownerKey',
@@ -609,6 +610,7 @@ function ensureGeneratedImagesDateFolder(ownerId: string): Promise<string> {
 
 const generate_image: BuiltinToolDef = {
   slug: 'generate_image',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'ownerKey',

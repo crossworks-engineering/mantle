@@ -40,6 +40,7 @@ import {
 
 export const table_list: BuiltinToolDef = {
   slug: 'table_list',
+  usageTier: 6,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables', keyEmail: true },
   name: 'List tables',
   description:
@@ -82,6 +83,7 @@ export const table_list: BuiltinToolDef = {
 
 export const table_get: BuiltinToolDef = {
   slug: 'table_get',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Get a table',
@@ -199,6 +201,7 @@ const SCHEMA_TABLES_MAX = 20;
 
 export const table_schema: BuiltinToolDef = {
   slug: 'table_schema',
+  usageTier: 7,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   name: 'Table schemas (data dictionary)',
   description:
@@ -274,6 +277,7 @@ export const table_schema: BuiltinToolDef = {
 
 export const table_sql: BuiltinToolDef = {
   slug: 'table_sql',
+  usageTier: 9,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   preconditions: TABLE_ID_PRE,
   name: 'Query a table with SQL',
@@ -343,6 +347,7 @@ export const table_sql: BuiltinToolDef = {
 
 export const table_rows_list: BuiltinToolDef = {
   slug: 'table_rows_list',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   preconditions: TABLE_ID_PRE,
   name: 'List rows in a table',
@@ -440,6 +445,7 @@ export const table_rows_list: BuiltinToolDef = {
 
 export const table_row_get: BuiltinToolDef = {
   slug: 'table_row_get',
+  usageTier: 4,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables' },
   preconditions: TABLE_ID_PRE,
   name: 'Get one row',

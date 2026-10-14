@@ -30,6 +30,7 @@ export function childSurface(
 
 export const invoke_agent: BuiltinToolDef = {
   slug: 'invoke_agent',
+  usageTier: 7,
   policy: {
     effect: 'write',
     spends: 'ownerKey',

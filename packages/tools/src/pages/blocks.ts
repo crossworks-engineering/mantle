@@ -35,6 +35,7 @@ import { CS } from '../client-sourced-rule';
 
 export const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
+  usageTier: 8,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
   preconditions: PAGE_ID_PRE,
   name: 'List the blocks in a page',
@@ -122,6 +123,7 @@ export const page_blocks_list: BuiltinToolDef = {
 
 export const page_block_get: BuiltinToolDef = {
   slug: 'page_block_get',
+  usageTier: 9,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
   preconditions: PAGE_ID_PRE,
   name: 'Get one block from a page',
@@ -170,6 +172,7 @@ export const page_block_get: BuiltinToolDef = {
 
 export const page_block_update: BuiltinToolDef = {
   slug: 'page_block_update',
+  usageTier: 8,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -264,6 +267,7 @@ export const page_block_update: BuiltinToolDef = {
 
 export const page_block_insert_after: BuiltinToolDef = {
   slug: 'page_block_insert_after',
+  usageTier: 6,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -350,6 +354,7 @@ export const page_block_insert_after: BuiltinToolDef = {
 
 export const page_block_insert_before: BuiltinToolDef = {
   slug: 'page_block_insert_before',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -437,6 +442,7 @@ export const page_block_insert_before: BuiltinToolDef = {
 
 export const page_block_append: BuiltinToolDef = {
   slug: 'page_block_append',
+  usageTier: 4,
   policy: {
     effect: 'write',
     spends: 'none',

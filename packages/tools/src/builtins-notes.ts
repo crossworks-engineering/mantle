@@ -43,6 +43,7 @@ const PAGE_ID_PRE: readonly ToolPrecondition[] = [
 
 const note_create: BuiltinToolDef = {
   slug: 'note_create',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -113,6 +114,7 @@ const note_create: BuiltinToolDef = {
 
 const note_list: BuiltinToolDef = {
   slug: 'note_list',
+  usageTier: 4,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'notes', keyEmail: true },
   name: 'List notes',
   description:
@@ -145,6 +147,7 @@ const note_list: BuiltinToolDef = {
 
 const note_get: BuiltinToolDef = {
   slug: 'note_get',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'notes' },
   name: 'Get one note by id',
   description:
@@ -183,6 +186,7 @@ const note_get: BuiltinToolDef = {
 // log-style flow in one call without re-emitting the whole body.
 const note_update: BuiltinToolDef = {
   slug: 'note_update',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',

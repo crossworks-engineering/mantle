@@ -42,6 +42,7 @@ export const brain_capacity: BuiltinToolDef = {
 
 export const node_read: BuiltinToolDef = {
   slug: 'node_read',
+  usageTier: 6,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Read a node',
   description:

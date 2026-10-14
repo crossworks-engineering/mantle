@@ -188,6 +188,7 @@ export async function vetVideoUrl(url: string): Promise<string | null> {
 
 const video_ingest: BuiltinToolDef = {
   slug: 'video_ingest',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'ownerKey',

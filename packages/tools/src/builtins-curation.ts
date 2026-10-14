@@ -207,6 +207,7 @@ async function loadCatalog(): Promise<
 
 const openrouter_rankings: BuiltinToolDef = {
   slug: 'openrouter_rankings',
+  usageTier: 2,
   policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
   ownerOnly: true,
   name: 'OpenRouter usage rankings',
@@ -290,6 +291,7 @@ const openrouter_rankings: BuiltinToolDef = {
 
 const openrouter_benchmarks: BuiltinToolDef = {
   slug: 'openrouter_benchmarks',
+  usageTier: 2,
   policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
   ownerOnly: true,
   name: 'OpenRouter benchmarks',
@@ -343,6 +345,7 @@ const openrouter_benchmarks: BuiltinToolDef = {
 
 const openrouter_task_classes: BuiltinToolDef = {
   slug: 'openrouter_task_classes',
+  usageTier: 2,
   policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
   ownerOnly: true,
   name: 'OpenRouter task classifications',
@@ -362,6 +365,7 @@ const openrouter_task_classes: BuiltinToolDef = {
 
 const model_catalog: BuiltinToolDef = {
   slug: 'model_catalog',
+  usageTier: 6,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -430,6 +434,7 @@ const POOL_HINT = `valid pools: ${MODEL_POOLS.map((p) => p.id).join(', ')}`;
 
 const model_pool_list: BuiltinToolDef = {
   slug: 'model_pool_list',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -503,6 +508,7 @@ async function poolFitIssue(pool: string, routes: CuratedRoute[]): Promise<strin
 
 const model_pool_set: BuiltinToolDef = {
   slug: 'model_pool_set',
+  usageTier: 7,
   policy: {
     effect: 'write',
     spends: 'none',

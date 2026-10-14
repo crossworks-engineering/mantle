@@ -149,6 +149,7 @@ export const tree_folders: BuiltinToolDef = {
 
 export const tree_folder_create: BuiltinToolDef = {
   slug: 'tree_folder_create',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -272,6 +273,7 @@ export const tree_folder_update: BuiltinToolDef = {
 
 export const tree_item_move: BuiltinToolDef = {
   slug: 'tree_item_move',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'none',

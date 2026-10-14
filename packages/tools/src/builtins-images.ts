@@ -53,6 +53,7 @@ const MAX_INLINE_IMAGE_BYTES = 6_000_000;
 
 const show_image: BuiltinToolDef = {
   slug: 'show_image',
+  usageTier: 5,
   policy: {
     effect: 'write',
     spends: 'none',

@@ -22,6 +22,7 @@ import { FILE_ID_PRE } from '../builtins-common';
 
 export const folder_list: BuiltinToolDef = {
   slug: 'folder_list',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files', keyEmail: true },
   name: 'List folders',
   description:
@@ -57,6 +58,7 @@ export const folder_list: BuiltinToolDef = {
 
 export const file_list: BuiltinToolDef = {
   slug: 'file_list',
+  usageTier: 6,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files', keyEmail: true },
   name: 'List files in a folder',
   description:
@@ -94,6 +96,7 @@ const FILE_HEAD_CHARS = 4000;
 
 export const file_read: BuiltinToolDef = {
   slug: 'file_read',
+  usageTier: 7,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   name: 'Read a file',
   description:
@@ -199,6 +202,7 @@ export const file_read: BuiltinToolDef = {
 
 export const file_get: BuiltinToolDef = {
   slug: 'file_get',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   name: 'Fetch file metadata',
   description:
@@ -231,6 +235,7 @@ export const file_get: BuiltinToolDef = {
 
 export const folder_get_by_path: BuiltinToolDef = {
   slug: 'folder_get_by_path',
+  usageTier: 4,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   name: 'Look up folder by path',
   description:

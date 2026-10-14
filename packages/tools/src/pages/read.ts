@@ -13,6 +13,7 @@ import { PAGE_NODE_ID_PRE } from './common';
 
 export const page_list: BuiltinToolDef = {
   slug: 'page_list',
+  usageTier: 7,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages', keyEmail: true },
   name: 'List pages',
   description:
@@ -52,6 +53,7 @@ export const page_list: BuiltinToolDef = {
 
 export const page_get: BuiltinToolDef = {
   slug: 'page_get',
+  usageTier: 8,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages' },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Get a page',

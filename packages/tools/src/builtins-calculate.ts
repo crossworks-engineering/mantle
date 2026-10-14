@@ -17,6 +17,7 @@ import { str } from './coerce';
 
 const calculate_tool: BuiltinToolDef = {
   slug: 'calculate',
+  usageTier: 4,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Calculate',
   description:

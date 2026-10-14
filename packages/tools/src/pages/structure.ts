@@ -155,6 +155,7 @@ export const page_extract_section: BuiltinToolDef = {
 
 export const page_move: BuiltinToolDef = {
   slug: 'page_move',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',

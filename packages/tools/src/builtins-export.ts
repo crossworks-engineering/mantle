@@ -29,6 +29,7 @@ const NODE_ID_PRE: readonly ToolPrecondition[] = [
 
 const export_node: BuiltinToolDef = {
   slug: 'export_node',
+  usageTier: 2,
   policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.creates() },
   name: 'Export to Word / Excel',
   description:

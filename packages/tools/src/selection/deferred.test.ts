@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+// tool_search ranks with each builtin's usageTier (A5 step 6d): the registry.
+import '../registry';
 import {
   buildDeferredToolset,
   toolSourceOf,

@@ -32,6 +32,7 @@ export function resultBindingFor(ctx: ToolHandlerContext): ResultBinding | undef
 
 const read_result: BuiltinToolDef = {
   slug: 'read_result',
+  usageTier: 9,
   policy: { effect: 'read', spends: 'none', scope: 'any', memberApp: 'refused' },
   name: 'Read a stored (large) tool result',
   description:

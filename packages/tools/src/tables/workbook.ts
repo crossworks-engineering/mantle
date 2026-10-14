@@ -28,6 +28,7 @@ import { CS } from '../client-sourced-rule';
 
 export const table_create: BuiltinToolDef = {
   slug: 'table_create',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -111,6 +112,7 @@ export const table_create: BuiltinToolDef = {
 
 export const table_from_file: BuiltinToolDef = {
   slug: 'table_from_file',
+  usageTier: 5,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -217,6 +219,7 @@ export const table_from_file: BuiltinToolDef = {
 
 export const table_from_text: BuiltinToolDef = {
   slug: 'table_from_text',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'none',

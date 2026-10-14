@@ -37,6 +37,7 @@ function crudeHtmlToText(html: string): string {
 
 export const web_fetch: BuiltinToolDef = {
   slug: 'web_fetch',
+  usageTier: 5,
   policy: {
     effect: 'write',
     spends: 'none',

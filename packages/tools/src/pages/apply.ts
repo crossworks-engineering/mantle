@@ -39,6 +39,7 @@ const MAX_APPLY_OPS = 50;
 
 export const page_blocks_apply: BuiltinToolDef = {
   slug: 'page_blocks_apply',
+  usageTier: 5,
   policy: {
     effect: 'write',
     spends: 'none',

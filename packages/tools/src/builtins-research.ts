@@ -211,6 +211,7 @@ async function runWebSearch(
 
 const web_search: BuiltinToolDef = {
   slug: 'web_search',
+  usageTier: 7,
   policy: {
     effect: 'write',
     spends: 'ownerKey',
@@ -229,6 +230,7 @@ const web_search: BuiltinToolDef = {
 
 const web_search_pro: BuiltinToolDef = {
   slug: 'web_search_pro',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'ownerKey',

@@ -26,6 +26,7 @@ import { CS } from '../client-sourced-rule';
 
 export const file_create: BuiltinToolDef = {
   slug: 'file_create',
+  usageTier: 4,
   policy: {
     effect: 'write',
     spends: 'none',

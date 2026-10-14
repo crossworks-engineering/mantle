@@ -26,6 +26,7 @@ import { isOwnerSurface } from '../surface';
 
 export const tool_group_list: BuiltinToolDef = {
   slug: 'tool_group_list',
+  usageTier: 2,
   policy: {
     effect: 'read',
     spends: 'none',
@@ -94,6 +95,7 @@ function oauth2Summary(o: ToolGroupIntegration['oauth2']) {
 
 export const tool_group_ensure: BuiltinToolDef = {
   slug: 'tool_group_ensure',
+  usageTier: 2,
   optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
@@ -445,6 +447,7 @@ export const tool_group_ensure: BuiltinToolDef = {
 
 export const agent_list: BuiltinToolDef = {
   slug: 'agent_list',
+  usageTier: 2,
   policy: {
     effect: 'read',
     spends: 'none',

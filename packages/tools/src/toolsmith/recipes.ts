@@ -23,6 +23,7 @@ import { CS } from '../client-sourced-rule';
 
 export const tool_catalog: BuiltinToolDef = {
   slug: 'tool_catalog',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any', recipe: { step: 'forbidden' } },
   name: 'Browse composable tools',
   description:
@@ -84,6 +85,7 @@ const RECIPE_DOC =
 
 export const recipe_tool_create: BuiltinToolDef = {
   slug: 'recipe_tool_create',
+  usageTier: 3,
   optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
@@ -244,6 +246,7 @@ export const recipe_tool_create: BuiltinToolDef = {
 
 export const recipe_tool_test: BuiltinToolDef = {
   slug: 'recipe_tool_test',
+  usageTier: 4,
   policy: {
     effect: 'write',
     spends: 'none',

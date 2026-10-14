@@ -70,6 +70,7 @@ function compact(n: JournalRow) {
 
 const journal_list: BuiltinToolDef = {
   slug: 'journal_list',
+  usageTier: 3,
   autoGrant: true,
   // The owner's private corpus: a workspace user's turn only with
   // teamPrivateReads.
@@ -173,6 +174,7 @@ const journal_get: BuiltinToolDef = {
 
 const journal_create: BuiltinToolDef = {
   slug: 'journal_create',
+  usageTier: 4,
   autoGrant: true,
   policy: {
     effect: 'write',

@@ -15,6 +15,7 @@ import { CS } from '../client-sourced-rule';
 
 export const table_tab_add: BuiltinToolDef = {
   slug: 'table_tab_add',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'none',

@@ -475,6 +475,7 @@ const email_page: BuiltinToolDef = {
 
 const email_list: BuiltinToolDef = {
   slug: 'email_list',
+  usageTier: 3,
   // Mail from outside the brain: fenced as data (A5 step 5). The owner's
   // private corpus: a workspace user's turn only with teamPrivateReads.
   policy: {
@@ -586,6 +587,7 @@ export function htmlToPlainText(html: string): string {
 
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
+  usageTier: 3,
   // Mail from outside the brain: fenced as data (A5 step 5). The owner's
   // private corpus: a workspace user's turn only with teamPrivateReads.
   policy: {

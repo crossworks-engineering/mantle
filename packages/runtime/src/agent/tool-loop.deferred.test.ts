@@ -11,6 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const dispatched: Array<{ slug: string; input: Record<string, unknown> }> = [];
 
 vi.mock('@mantle/tools', async () => {
+  // tool_search ranks with each builtin's usageTier (A5 step 6d), read from
+  // the policy table: loaded empty here (no usage prior), as the mocked
+  // database cannot load the registry. The ranking is the selection's own
+  // tests' (deferred.usage.test.ts).
+  (
+    await vi.importActual<typeof import('../../../tools/src/tool-policy')>(
+      '../../../tools/src/tool-policy',
+    )
+  ).loadPolicyTable([]);
   const deferred = await vi.importActual<typeof import('../../../tools/src/selection/deferred')>(
     '../../../tools/src/selection/deferred',
   );

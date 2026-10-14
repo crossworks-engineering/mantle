@@ -26,6 +26,7 @@ import { CS } from '../client-sourced-rule';
 
 export const table_row_add: BuiltinToolDef = {
   slug: 'table_row_add',
+  usageTier: 9,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -102,6 +103,7 @@ const ROWS_ADD_MAX = 200;
 
 export const table_rows_add: BuiltinToolDef = {
   slug: 'table_rows_add',
+  usageTier: 4,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -410,6 +412,7 @@ export const table_rows_upsert: BuiltinToolDef = {
 
 export const table_row_update: BuiltinToolDef = {
   slug: 'table_row_update',
+  usageTier: 4,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -477,6 +480,7 @@ export const table_row_update: BuiltinToolDef = {
 
 export const table_row_delete: BuiltinToolDef = {
   slug: 'table_row_delete',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -534,6 +538,7 @@ export const table_row_delete: BuiltinToolDef = {
 
 export const table_cell_set: BuiltinToolDef = {
   slug: 'table_cell_set',
+  usageTier: 6,
   policy: {
     effect: 'write',
     spends: 'none',

@@ -50,6 +50,7 @@ const TEMPLATE_DOC =
 
 export const api_tool_list: BuiltinToolDef = {
   slug: 'api_tool_list',
+  usageTier: 2,
   policy: {
     effect: 'read',
     spends: 'none',
@@ -131,6 +132,7 @@ export const api_tool_get: BuiltinToolDef = {
 
 export const api_tool_create: BuiltinToolDef = {
   slug: 'api_tool_create',
+  usageTier: 3,
   optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
@@ -583,6 +585,7 @@ export const api_tool_update: BuiltinToolDef = {
 
 export const api_tool_delete: BuiltinToolDef = {
   slug: 'api_tool_delete',
+  usageTier: 3,
   optIn: 'toolsmithWrite',
   policy: {
     effect: 'write',
@@ -619,6 +622,7 @@ export const api_tool_delete: BuiltinToolDef = {
 
 export const api_tool_test: BuiltinToolDef = {
   slug: 'api_tool_test',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -676,6 +680,7 @@ export const api_tool_test: BuiltinToolDef = {
 
 export const api_key_refs: BuiltinToolDef = {
   slug: 'api_key_refs',
+  usageTier: 3,
   policy: {
     effect: 'read',
     spends: 'none',

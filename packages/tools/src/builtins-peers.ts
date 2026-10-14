@@ -14,6 +14,7 @@ import { PEER_MCP_TOOLS } from './builtins-peer-mcp';
 
 const peer_list: BuiltinToolDef = {
   slug: 'peer_list',
+  usageTier: 3,
   policy: {
     effect: 'read',
     spends: 'none',
@@ -44,6 +45,7 @@ const peer_list: BuiltinToolDef = {
 
 const peer_query: BuiltinToolDef = {
   slug: 'peer_query',
+  usageTier: 4,
   policy: {
     effect: 'read',
     spends: 'none',
@@ -92,6 +94,7 @@ const peer_query: BuiltinToolDef = {
 
 const peer_search_chunks: BuiltinToolDef = {
   slug: 'peer_search_chunks',
+  usageTier: 3,
   policy: {
     effect: 'read',
     spends: 'none',
@@ -135,6 +138,7 @@ const peer_search_chunks: BuiltinToolDef = {
 
 const peer_node_get: BuiltinToolDef = {
   slug: 'peer_node_get',
+  usageTier: 2,
   policy: {
     effect: 'read',
     spends: 'none',

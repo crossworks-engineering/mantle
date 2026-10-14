@@ -83,6 +83,7 @@ function compact(c: ContactRow) {
 
 const contact_find: BuiltinToolDef = {
   slug: 'contact_find',
+  usageTier: 3,
   autoGrant: true,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'contacts' },
   name: 'Find a contact',

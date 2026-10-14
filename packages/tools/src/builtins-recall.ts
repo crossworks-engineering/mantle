@@ -179,6 +179,7 @@ async function nodePayload(ownerId: string, map: MapRow, row: typeof recallNodes
 
 const recall_index: BuiltinToolDef = {
   slug: 'recall_index',
+  usageTier: 2,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'List the Recall maps',
   description:
@@ -371,6 +372,7 @@ const recall_go: BuiltinToolDef = {
 
 const recall_match: BuiltinToolDef = {
   slug: 'recall_match',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Match a Recall prompt',
   description:

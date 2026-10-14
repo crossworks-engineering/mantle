@@ -92,6 +92,7 @@ const TODOS_SCHEMA = {
 
 const task_list: BuiltinToolDef = {
   slug: 'task_list',
+  usageTier: 3,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tasks' },
   name: 'List tasks',
   description:
@@ -160,6 +161,7 @@ const task_list: BuiltinToolDef = {
 
 const task_get: BuiltinToolDef = {
   slug: 'task_get',
+  usageTier: 2,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tasks' },
   name: 'Get a task',
   description:
@@ -189,6 +191,7 @@ const task_get: BuiltinToolDef = {
 
 const task_create: BuiltinToolDef = {
   slug: 'task_create',
+  usageTier: 4,
   policy: {
     effect: 'write',
     spends: 'none',

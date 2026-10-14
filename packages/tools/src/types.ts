@@ -387,6 +387,12 @@ export type BuiltinToolDef = {
    *  `terminal`: the brain's own shell, over stdio, or over HTTP with
    *  MANTLE_MCP_TERMINAL on. */
   optIn?: 'toolsmithWrite' | 'terminal';
+  /** How often the fleet calls it, coarse: round(log2(calls)) over 90 days
+   *  to 2026-10-05 on four brains (A5 step 6d moved it here from the
+   *  deferred selection's USAGE_TIERS). A tie-break prior of `tool_search`
+   *  only (pseudo-usage 2^tier, selection/deferred.ts); never access.
+   *  Unset: none. Refresh from traces when the tool set moves. */
+  usageTier?: number;
   /** Handler implementation. */
   handler: BuiltinToolHandler;
   /** Input fields that contain sensitive data and MUST be replaced with

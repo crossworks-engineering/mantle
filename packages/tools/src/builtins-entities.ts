@@ -19,6 +19,7 @@ import { surfaceHiddenNodeTypes } from './team-visibility';
 
 export const entity_search: BuiltinToolDef = {
   slug: 'entity_search',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'search' },
   name: 'Search entities',
   description:
@@ -183,6 +184,7 @@ export const graph_path: BuiltinToolDef = {
 
 export const entity_facts: BuiltinToolDef = {
   slug: 'entity_facts',
+  usageTier: 2,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'search' },
   name: 'List entity facts',
   description:

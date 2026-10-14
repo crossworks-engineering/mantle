@@ -54,6 +54,7 @@ function recurOpt(v: unknown): RecurFreq | undefined {
 
 const event_list: BuiltinToolDef = {
   slug: 'event_list',
+  usageTier: 5,
   policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'calendar' },
   name: 'List calendar events',
   description:

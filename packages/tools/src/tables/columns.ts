@@ -25,6 +25,7 @@ import { CS } from '../client-sourced-rule';
 
 export const table_column_add: BuiltinToolDef = {
   slug: 'table_column_add',
+  usageTier: 3,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -116,6 +117,7 @@ export const table_column_add: BuiltinToolDef = {
 
 export const table_column_update: BuiltinToolDef = {
   slug: 'table_column_update',
+  usageTier: 2,
   policy: {
     effect: 'write',
     spends: 'none',

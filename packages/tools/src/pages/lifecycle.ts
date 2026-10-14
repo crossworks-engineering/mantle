@@ -43,6 +43,7 @@ import { CS } from '../client-sourced-rule';
 
 export const page_create: BuiltinToolDef = {
   slug: 'page_create',
+  usageTier: 5,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -301,6 +302,7 @@ export const page_update: BuiltinToolDef = {
 
 export const page_update_draft: BuiltinToolDef = {
   slug: 'page_update_draft',
+  usageTier: 4,
   policy: {
     effect: 'write',
     spends: 'none',
@@ -514,6 +516,7 @@ export const page_discard_draft: BuiltinToolDef = {
 
 export const page_delete: BuiltinToolDef = {
   slug: 'page_delete',
+  usageTier: 4,
   policy: {
     effect: 'write',
     spends: 'none',
