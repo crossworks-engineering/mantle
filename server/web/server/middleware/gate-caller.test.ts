@@ -833,6 +833,36 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect((await app.request('/api/users')).status).toBe(401);
   });
 
+  it("an area row answers every credential with the guard's CORS headers (part 4)", async () => {
+    process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example';
+    try {
+      for (const method of ['GET', 'HEAD']) {
+        for (const cred of [{ name: 'none', headers: () => ({}) }, ...creds]) {
+          const answers = [];
+          for (const app of [pipeline, guarded]) {
+            const res = await app.request('/api/users', {
+              method,
+              headers: { ...cred.headers(), origin: 'https://client.example' },
+            });
+            answers.push({
+              status: res.status,
+              body: await res.text(),
+              headers: [...res.headers.entries()].sort(),
+            });
+          }
+          const [a, b] = answers;
+          expect(a, `${method} ${cred.name}`).toEqual(b);
+          expect(a!.headers, `${method} ${cred.name}`).toContainEqual([
+            'access-control-allow-origin',
+            'https://client.example',
+          ]);
+        }
+      }
+    } finally {
+      delete process.env.MANTLE_API_CORS_ORIGINS;
+    }
+  });
+
   it('a stamp that fails before the Admin step is answered as the guard answered it, with CORS', async () => {
     process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example';
     const busy = Object.assign(new Error('could not obtain lock'), { code: '55P03' });
