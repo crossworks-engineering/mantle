@@ -3233,3 +3233,16 @@ connector group than the row's used to let the call through; they are now
 refused (`CONNECTOR_FACTS_MISMATCH_ERROR`). The facts are loaded per row
 (by the row's own group slug), so no call that ran before meets it.
 `packages/tools/src/gate-narrowers-l1.test.ts`.
+
+**LOW-6, a run marks every third-party text it stores.** One rule,
+`outcomeIsThirdParty` (`packages/tools/src/third-party.ts`): a result the
+tool loop fences, and a failure of an http, connector or recipe row (or of
+a tool whose policy says `outside.untrusted`), whose error quotes the
+remote answer. A tool_call item's failure is stored marked as its result
+is, so the state's outcome line and the resume prompt read it fenced; a
+tool loop's call record says `untrusted` when the model read such text,
+and a run worker's reply (or its empty-output failure) after one is stored
+marked. `packages/tools/src/third-party.test.ts`,
+`packages/runtime/src/agent/tool-loop.test.ts`,
+`server/api/src/workflows/runs-worker-turn.test.ts`,
+`server/web/lib/runs/execute-item.db.test.ts`.

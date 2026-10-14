@@ -33,6 +33,7 @@ import {
   runCaller,
   loadAgentGrant,
   NO_AGENT_RUN_SLUG,
+  outcomeIsThirdParty,
   resolveTool,
   validateToolArgs,
 } from '@mantle/tools';
@@ -301,7 +302,11 @@ async function runResolved(
     // provenance flag on an http, connector or recipe result) is stored
     // with the mark, so a model that later reads the run state reads it
     // fenced (runStateUntrusted).
-    const untrusted = result.untrusted === true || policyUntrusted(builtinPolicy(slug));
+    const untrusted = outcomeIsThirdParty(
+      policyUntrusted(builtinPolicy(slug)),
+      (tool.handler as { kind?: unknown } | null)?.kind,
+      result,
+    );
     const { actions } = await completeItem(db, {
       itemId: item.id,
       state: 'done',
@@ -317,10 +322,19 @@ async function runResolved(
     const retry = await requeueForRetry(db, item.id);
     if (retry) return { claimed: true, actions: [retry] };
   }
+  // A failure that quotes a remote answer (an http or connector row's, a
+  // recipe's: fix round 1, LOW-6) reaches the state's outcome line and the
+  // resume prompt: stored marked, as a third-party result is.
+  const failureUntrusted = outcomeIsThirdParty(
+    policyUntrusted(builtinPolicy(slug)),
+    (tool.handler as { kind?: unknown } | null)?.kind,
+    result,
+  );
   const { actions } = await completeItem(db, {
     itemId: item.id,
     state: 'failed',
     failure: { type: 'tool_error', message: result.error, itemId: item.id },
+    ...(failureUntrusted ? { result: { untrusted: true } } : {}),
     ...accounting,
   });
   return { claimed: true, actions };

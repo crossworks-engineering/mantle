@@ -93,8 +93,13 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
       update run_items set state = 'ready'
       where run_id = ${runId} and kind = 'tool_call' returning id`);
     await exec.executeRunItem(item!.id);
-    const [after] = await rows<{ state: string; failure: { type?: string } | null }>(sqlTag`
-      select state, result->'failure' as failure from run_items where id = ${item!.id}`);
+    const [after] = await rows<{
+      state: string;
+      failure: { type?: string } | null;
+      untrusted: boolean | null;
+    }>(sqlTag`
+      select state, result->'failure' as failure, (result->>'untrusted')::boolean as untrusted
+        from run_items where id = ${item!.id}`);
     return after!;
   }
 
@@ -176,6 +181,25 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     const after = await runWorker(randomUUID());
     expect(after.state).toBe('failed');
     expect(after.failure?.type).toBe('agent_missing');
+  });
+
+  it("an http row's failure is stored marked: it quotes the remote answer (fix round 1, LOW-6)", async () => {
+    await q(sqlTag`
+      insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration)
+      values (${anchor}, 'g-http', 'g', ARRAY['xi_http'], 'admin', true, null)
+      on conflict do nothing`);
+    const [a] = await rows<{ id: string }>(sqlTag`
+      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs)
+      values (${anchor}, 'http-persona', 'h', 'm', 'p', ARRAY['g-http']) returning id`);
+    // example.invalid never answers: the http row fails, in its own words.
+    const item = await runOne('xi_http', {}, a!.id);
+    expect(item.state).toBe('failed');
+    expect(item.failure?.type).toBe('tool_error');
+    expect(item.untrusted).toBe(true);
+    // A builtin's failure is not third-party text.
+    const own = await runOne('note_list', {}, agentId);
+    expect(own.state).toBe('failed');
+    expect(own.untrusted).toBeNull();
   });
 
   it('a run with no agent fails closed: the opening change still waits', async () => {

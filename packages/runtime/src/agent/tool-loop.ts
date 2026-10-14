@@ -27,6 +27,8 @@
 
 import { step, currentTurnAbortSignal, setTraceData } from '@mantle/tracing';
 import {
+  builtinPolicy,
+  policyUntrusted,
   resolveTool,
   resolveTools,
   resolveResultHandling,
@@ -54,6 +56,7 @@ import { toolCreatesNodes } from '@mantle/tools/client-sourced-rules';
 // The gate's one rule for the owner's surfaces, from its own subpath so the
 // loop's tests that fake @mantle/tools still read it (fix round 1, LOW-3).
 import { isOwnerSurface } from '@mantle/tools/surface';
+import { outcomeIsThirdParty } from '@mantle/tools/third-party';
 import { type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact, ToolModelImage } from '@mantle/tools';
 import {
@@ -1091,6 +1094,16 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         status: queuedForApproval ? 'skipped' : outcome.ok ? 'success' : 'error',
         error: queuedForApproval ? 'queued_for_approval' : outcome.ok ? undefined : outcome.error,
         ...(writeTarget ? { target: writeTarget } : {}),
+        // Third-party text the model read (fix round 1, LOW-6): a run
+        // worker's reply after it is stored marked (runs-worker-turn.ts).
+        ...(!queuedForApproval &&
+        outcomeIsThirdParty(
+          policyUntrusted(builtinPolicy(slug)),
+          (tool?.handler as { kind?: unknown } | null | undefined)?.kind,
+          outcome,
+        )
+          ? { untrusted: true as const }
+          : {}),
       });
 
       // Harvest any sidecar artifacts the tool emitted (audio bytes,

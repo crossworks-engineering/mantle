@@ -321,6 +321,7 @@ export {
   OWNER_ONLY_ERROR,
   type ToolSurface,
 } from './surface';
+export { outcomeIsThirdParty } from './third-party';
 export type { LoginMcpChannel, OwnerSurfaceVia } from './types';
 export { safeFetch } from './safe-fetch';
 export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';

@@ -414,4 +414,7 @@ export type ToolCallRecord = {
    *  this turn actually did — the reply prose alone often doesn't (context-
    *  transfer audit, dev-brain task 64170cb0). Absent for reads and failures. */
   target?: { id: string; title?: string };
+  /** The call's outcome carried third-party text (outcomeIsThirdParty,
+   *  A5 step 6a fix round 1, LOW-6): a reply written after it is marked. */
+  untrusted?: true;
 };

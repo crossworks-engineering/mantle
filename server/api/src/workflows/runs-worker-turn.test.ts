@@ -258,6 +258,34 @@ describe('runs worker turn — execution', () => {
       { tool: 'search', ok: true },
       { tool: 'fetch', ok: false, error: 'HTTP 500 upstream' },
     ]);
+    // No call read third-party text: the reply is not marked.
+    expect((opts.result as Record<string, unknown>).untrusted).toBeUndefined();
+  });
+
+  it('marks a reply written after the worker read third-party text (fix round 1, LOW-6)', async () => {
+    h.loopResult = {
+      reply: 'done',
+      toolCalls: [
+        { slug: 'search', error: null },
+        { slug: 'web_fetch', error: null, untrusted: true },
+      ],
+    };
+    seed();
+    await runsWorkerTurnImpl({ itemId: ITEM_ID });
+    const opts = h.completeItem.mock.calls[0]![1] as { result: Record<string, unknown> };
+    expect(opts.result).toMatchObject({ proposal: 'done', untrusted: true });
+  });
+
+  it('marks an empty reply after third-party text too (fix round 1, LOW-6)', async () => {
+    h.loopResult = {
+      reply: '',
+      toolCalls: [{ slug: 'api_get', error: 'HTTP 500', untrusted: true }],
+    };
+    fake.queue('run_items', [{ ...RUNNING_ITEM, attempt: 1, retryPolicy: { maxAttempts: 2 } }]);
+    fake.queue('runs', [{ id: 'run-1', ownerId: 'owner-1', agentId: 'responder-1' }]);
+    await runsWorkerTurnImpl({ itemId: ITEM_ID });
+    const opts = h.completeItem.mock.calls[0]![1] as { result: Record<string, unknown> };
+    expect(opts.result).toMatchObject({ untrusted: true });
   });
 
   it('inherits the responder route when the worker says inherit', async () => {

@@ -418,11 +418,18 @@ export async function runsWorkerTurnImpl(
           ok: !tc.error,
           ...(tc.error ? { error: tc.error.slice(0, 200) } : {}),
         }));
+        // A reply written after the worker read third-party text (a tool
+        // result or failure outcomeIsThirdParty marks, fix round 1, LOW-6)
+        // is stored marked, as a tool_call item's result is: a model that
+        // reads the run state (run_state, run_plan, the resume turn) reads
+        // it fenced as data.
+        const readUntrusted = outcome.toolCalls.some((tc) => tc.untrusted === true);
+        const mark = readUntrusted ? { untrusted: true as const } : {};
 
         if (!reply) {
           return retryOrFail(
             { type: 'empty_output', message: 'worker turn produced no proposal', itemId: item.id },
-            { evidence },
+            { evidence, ...mark },
           );
         }
 
@@ -452,6 +459,7 @@ export async function runsWorkerTurnImpl(
             worker: worker.slug,
             ...(outputHandle ? { output_handle: outputHandle } : {}),
             ...(reply.length > PROPOSAL_CAP_CHARS ? { proposal_truncated: true } : {}),
+            ...mark,
           },
           ...accounting,
         });
