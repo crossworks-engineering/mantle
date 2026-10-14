@@ -437,7 +437,7 @@ export function buildSummarizeTextInput(
 ): { system: string; user: string } {
   const system =
     workerSystemPrompt?.trim() ||
-    `You are a precise summarizer. Output a clean ${maxWords}-word summary in the same language as the source. No preamble, no closing remarks — just the summary.`;
+    `You are a precise summarizer. Output a clean ${maxWords}-word summary in the same language as the source. No preamble, no closing remarks \u2014 just the summary.`;
   // The source may be anyone's text (an email, a page, a document): fenced,
   // its forged markers defanged; the focus is the caller's own ask and stays
   // outside (A10 part 1).

@@ -197,7 +197,7 @@ export async function assertEgressUrl(
   for (const a of addrs) {
     if (isBlockedIp(a.address, opts)) {
       throw new EgressRefusedError(
-        `refusing to fetch ${host} — it resolves to a private/internal address`,
+        `refusing to fetch ${host} \u2014 it resolves to a private/internal address`,
       );
     }
   }

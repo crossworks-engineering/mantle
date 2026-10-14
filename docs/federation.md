@@ -113,6 +113,11 @@ Her Mantle (asking)                         Your Mantle (answering)
 - **Phase 4, outbound tools (DONE, 2026-05-29).** Shared outbound client
   `@mantle/content/peers-client` (`queryPeer` / `getPeerNode`, resolve peer by
   name/id, sign with the sealed outbound token, fetch with a 15s timeout).
+  Since A10 part 1 the fetch is the one egress fetch with `allowLan`
+  ([egress.md](egress.md)): a peer on a private, loopback or tailnet address
+  keeps working, a redirect to link-local space (the cloud metadata address)
+  is refused, the token is dropped on a hop to another origin, and a reply
+  over 32 MB is not read. The peer MCP tools' transport runs on the same.
   Surfaced as three builtins (`peer_list` / `peer_query` / `peer_node_get`, in
   `@mantle/tools`) for Saskia AND three MCP tools (same names) for Claude
   Desktop/Code; both thin wrappers over the one client. Verified live via a

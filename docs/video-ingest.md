@@ -75,8 +75,12 @@ policy, both scoped to this one container:
    health panel, and the integrity readiness panel — a stale or failed update
    is visible, not silent.
 2. **It fetches arbitrary URLs by design.** The app SSRF-checks every URL
-   (`assertFetchableUrl`) before the sidecar sees it, and the sidecar's
-   isolation bounds what a hostile page could reach.
+   (`assertFetchableUrl`) before the sidecar sees it, then walks its
+   redirects through the one egress fetch (every hop checked, no body read,
+   at most 10 s): a link that redirects into private or metadata space is
+   refused before yt-dlp, which follows redirects itself, ever sees it
+   ([egress.md](egress.md)). The sidecar's isolation bounds what a hostile
+   page could reach.
 
 **From Settings:** an admin switches Media on or off in **Settings >
 Services**; the box's updater writes the token, adds the profile,

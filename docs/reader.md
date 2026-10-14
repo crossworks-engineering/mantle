@@ -48,10 +48,12 @@ excerpts). Saskia orchestrates and decides whether to keep the result.
 How it reads and extracts a page, end to end:
 
 1. **Plain HTTP GET** via `guardedFetch`
-   ([`ssrf-guard.ts`](../packages/tools/src/ssrf-guard.ts)), 25 s timeout, 5 MB
-   body cap, UA `mantle-toolsmith/1.0`. The SSRF guard re-checks every redirect
-   hop and blocks private / loopback / link-local / cloud-metadata targets, so a
-   malicious page can't turn `web_fetch` into a probe of internal services.
+   ([`ssrf-guard.ts`](../packages/tools/src/ssrf-guard.ts), over the one
+   egress fetch, [egress.md](egress.md)), 25 s timeout, 5 MB body cap applied
+   while the body streams (the rest is never read), UA `mantle-toolsmith/1.0`.
+   The SSRF guard re-checks every redirect hop and blocks private / loopback /
+   link-local / cloud-metadata targets, so a malicious page can't turn
+   `web_fetch` into a probe of internal services.
 2. **Content-type routing:**
    - **HTML** → [Apache Tika](../packages/files/src/tika.ts) (`PUT /tika`,
      `Accept: text/plain`) strips markup to readable plain text; if Tika is down

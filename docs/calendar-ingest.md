@@ -52,6 +52,12 @@ packages/calendar/src/
   manage.ts           ← addIcsFeed / list / enable / delete (owner-scoped)
 ```
 
+The feed is fetched through the one egress fetch ([egress.md](egress.md),
+since A10 part 1): a feed URL, or a redirect, that points at a private,
+loopback, link-local or metadata address is refused, and the body is read up
+to 12 MB and no further. A feed served from a host on the box's own network
+(a LAN CalDAV server) is refused too; it needs a public address.
+
 A provider returns either the **full set** (ICS, the orchestrator deletes
 stored events whose uid is absent) or a **delta** (API providers, removals come
 as `status:'cancelled'`). That one flag lets one orchestrator serve both models.

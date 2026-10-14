@@ -3267,3 +3267,17 @@ lives alone in `packages/tools/src/selection/core.ts` (deferred.ts
 re-exports it), and only that file is left out (`toolPolicySwept`), so a
 future access list in deferred.ts is counted.
 `eslint-rules/arch-lints.test.ts`.
+
+## One egress fetch and the background fence (A10 part 1)
+
+Folds 3 and 4 of the gateway survey, written up in [egress.md](egress.md):
+every fetch of a URL a user, a model, a remote server or a linked peer gave
+goes through `egressFetch` (`packages/std/src/egress.ts`: the address check
+on every redirect hop, secret headers dropped across origins, a deadline, a
+streamed byte cap, `allowLan` per caller config), and the background jobs
+that read outside text (the extractor, the reflector, the conversation
+summarizer, `summarize_text`) fence it as the live turn does
+(`packages/std/src/fence.ts`). Proven the way this file proves a move:
+the egress tables and the background prompts recorded before, compared
+after, every changed cell named. Pins: `mantle-egress/no-bare-fetch` and
+the scoreboard's `bareFetchSites` (12 to 5).
