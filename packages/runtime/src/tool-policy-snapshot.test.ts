@@ -255,7 +255,7 @@ const LISTS: Record<string, readonly string[]> = {
   APP_DATA_READ_TOOL_SLUGS: ['app_data_list', 'app_data_query', 'app_data_schema'],
   APP_DATA_WRITE_TOOL_SLUGS: ['app_data_write'],
   // A5 step 5 (plan section 25) added email_page, peer_call, telegram_send,
-  // web_crawl and web_search_pro.
+  // web_crawl and web_search_pro; fix round 1 (owner decision 1a) web_map.
   HEARTBEAT_EGRESS_SLUGS: [
     'email_page',
     'email_send',
@@ -263,6 +263,7 @@ const LISTS: Record<string, readonly string[]> = {
     'telegram_send',
     'web_crawl',
     'web_fetch',
+    'web_map',
     'web_search',
     'web_search_pro',
   ],

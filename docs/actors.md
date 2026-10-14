@@ -2154,7 +2154,11 @@ call chooses, so the gate's case (injected content picking where data
 goes) does not arise; marking them would park every unattended
 heartbeat's peer read. `tool-policy-snapshot.test.ts` holds the new set;
 `dispatch-parity.json` does not change (the mark is read only by a
-heartbeat fire).
+heartbeat fire). Fix round 1 (owner decision 1a) marks `web_map` too: it
+sends a URL the model chose to the crawler, as `web_crawl` does. Release
+note: on a box with the heartbeat egress gate on, an unattended heartbeat
+fire that calls `web_map` now parks it for approval instead of running it
+inline.
 
 **Pick B (owner b): the model sees only what the gate lets through.**
 The one tool loop (`runToolLoopInScope`,
