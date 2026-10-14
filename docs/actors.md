@@ -921,7 +921,10 @@ everywhere, a password change or reset, a stolen token presented again),
 of a key or a device token the request may have come in on. A later guard
 read in the same request, or work it started and did not await, finds the
 login afresh and sees the change, as each guard call did before; the gate's
-Admin view of the row's area is not read again. The scope the request
+Admin view of the row's area is not read again. A revoked key is the
+exception, as on main: the login lookup (`findKeyLogin`) reads the gate's
+grant and never checks the key again, so a request that came in on the key
+it revokes keeps the key's login (re-audit L-b). The scope the request
 entered stays (a second guard enters the same one, as before). Outside a
 routed request (a test calling a handler, a script) and inside a call
 nested in one with a caller of its own, each read finds the login afresh:

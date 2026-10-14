@@ -41,8 +41,10 @@ async function handleDELETE(_req: Request, ctx: { params: Promise<{ id: string }
       loginId: accessKeys.loginId,
     });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  // The request may have come in on this key: a later guard read finds it
-  // afresh (A4 step 3a audit L1).
+  // A later guard read in this request finds the login row afresh (A4 step
+  // 3a audit L1), not the key: findKeyLogin reads the gate's grant and never
+  // checks the key again, so a request that came in on the key it revokes
+  // keeps the key's login for the rest of the request, as on main.
   forgetRequestLogins();
   auditFireAndForget({
     actorId: login.loginId,
