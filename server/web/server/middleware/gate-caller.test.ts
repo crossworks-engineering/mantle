@@ -278,6 +278,10 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         /the owner guard does not serve its row/,
       );
     }
+    // A catch-all route keeps its guard.
+    expect(() =>
+      buildRoutePolicy([{ pattern: '/api/docs/:collection/*', methods: ['GET'], reads: ['GET'] }]),
+    ).toThrow(/is a catch-all/);
     // A HEAD row reads what its GET reads.
     const rows = buildRoutePolicy([{ pattern: '/api/profile', methods: ['GET'], reads: ['GET'] }]);
     expect(rows.get('GET /api/profile')?.caller).toBe('owner');

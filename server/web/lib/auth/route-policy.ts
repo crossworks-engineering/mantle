@@ -303,6 +303,12 @@ export function buildRouteRow(
       `ROUTE_POLICY: ${key} reads the owner caller, but the owner guard does not serve its row`,
     );
   }
+  // A catch-all route also matches its bare prefix, where the loader may
+  // answer 404 before the handler (route-loader.ts): the gate's answer
+  // would come first there. Such a route keeps its guard (the hand batch).
+  if (caller && pattern.endsWith('*')) {
+    throw new Error(`ROUTE_POLICY: ${key} is a catch-all: it keeps its guard (hand batch)`);
+  }
   const startsAs =
     pageClass === 'render'
       ? 'http:render'
