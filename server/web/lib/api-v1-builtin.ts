@@ -6,7 +6,12 @@
  * already checked the caller (getOwnerOr401) and the key's scope (the HTTP
  * gate, A4), so the call names the process caller of a route
  * (apiV1Caller): no key or peer narrowing past what the request's own gate
- * judged. Errors are the tool's own teaching messages, answered as 400.
+ * judged. A refusal (the tool's, or a gate step's) is the tool's own
+ * teaching message, answered as 400. An error the handler or a check
+ * throws is thrown on, to app.onError, which answers it as before the route
+ * ran through dispatch (A5 step 4 fix round 1, M1): an edit check refusal
+ * its 403 or 404, a database or any other error the opaque 500, never its
+ * text (api-v1-builtin.test.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { apiV1Caller, dispatchTool, getBuiltin } from '@mantle/tools';

@@ -32,6 +32,9 @@ import type { ToolHandlerContext } from './types';
 export type PreRunContext = Readonly<{
   ownerId: string;
   surface?: ToolHandlerContext['surface'];
+  /** The entry answers a thrown error itself (a /api/v1 route: app.onError,
+   *  A5 step 4 fix round 1, M1): a check that throws throws on. */
+  throws?: boolean;
 }>;
 
 function contextOf(context: Readonly<Record<string, unknown>> | undefined): PreRunContext | null {
@@ -72,8 +75,10 @@ export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
     });
   } catch (err) {
     // An MCP call's surface answers a thrown error itself, as it always
-    // has (A5 step 4); every other entry reads it as the check's words.
-    if (mcpVia(caller)) throw err;
+    // has (A5 step 4), and so does a /api/v1 route (its app.onError, as
+    // before it ran through dispatch: never a 400 with a database error's
+    // text); every other entry reads it as the check's words.
+    if (mcpVia(caller) || ctx.throws === true) throw err;
     return errorMessage(err);
   }
 };

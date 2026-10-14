@@ -140,6 +140,10 @@ async function dispatchGated(
   // the surface, which answers it as it always has (a database error in
   // the one mapper's words, any other as the SDK says it), never as text.
   const mcp = caller.entry === 'mcp';
+  // So does a /api/v1 route's (A5 step 4 fix round 1, M1): app.onError
+  // answers it as before the route ran through here (an edit check refusal
+  // its 403 or 404, any other the opaque 500), never a 400 with its text.
+  const rethrows = mcp || caller.entry === 'api-v1';
   // A key or a peer acting as the owner never confirms for the owner: a
   // level change a builtin would cause is refused instead of confirmed by
   // its own flag (the owner MCP surface's rule; a connector's row takes
@@ -183,7 +187,7 @@ async function dispatchGated(
             const whole = policy?.fields?.systemWhole === true && !!currentWorkspaceScope();
             return await runGated({ system: whole }, run);
           } catch (err) {
-            if (!mcp) return { ok: false, error: errorMessage(err) };
+            if (!rethrows) return { ok: false, error: errorMessage(err) };
             thrown = { err };
             return null;
           }
@@ -191,14 +195,18 @@ async function dispatchGated(
         {
           args,
           ...(mcp ? { ask: caller.ask ?? null } : {}),
-          context: { ownerId: ctx.ownerId, ...(ctx.surface ? { surface: ctx.surface } : {}) },
+          context: {
+            ownerId: ctx.ownerId,
+            ...(ctx.surface ? { surface: ctx.surface } : {}),
+            ...(rethrows ? { throws: true } : {}),
+          },
         },
       );
       if (thrown) throw (thrown as { err: unknown }).err;
       if (!res.ok) return { ok: false, error: res.refusal.toolText };
       return res.value ?? { ok: false, error: 'the tool gave no result' };
     } catch (err) {
-      if (mcp) throw err;
+      if (rethrows) throw err;
       return { ok: false, error: errorMessage(err) };
     }
   }
