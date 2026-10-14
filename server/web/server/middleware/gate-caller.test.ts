@@ -790,6 +790,145 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(() => session.ownerCallerWithLogin()).toThrow(/answered no owner/);
   });
 
+  it('the member, any-login and chat rows answer every credential as their guards do (part 5)', async () => {
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const session = await import('../../lib/auth/session');
+    const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
+    // Each kind: its reader, and the guard it replaced.
+    const kinds = {
+      member: [session.memberCaller, session.getMemberOr401],
+      login: [session.loginCaller, session.getLoginOr401],
+      chat: [session.chatLoginCaller, session.getChatLoginOr401],
+    } as const;
+    // Real manifest patterns of each list, so registerRoutes builds their
+    // real rows: a member read about the login's own things (self) and one
+    // that reads team items (content), a member write; an any-login read
+    // and write; a chat read and write, and a Telegram chat read and write.
+    const rows: Array<{ pattern: string; methods: string[]; kind: keyof typeof kinds }> = [
+      { pattern: '/api/member/mcp', methods: ['GET'], kind: 'member' },
+      { pattern: '/api/member/home', methods: ['GET'], kind: 'member' },
+      { pattern: '/api/member/push/subscriptions', methods: ['GET', 'POST'], kind: 'member' },
+      { pattern: '/api/member/mcp/clients/:id', methods: ['DELETE'], kind: 'member' },
+      { pattern: '/api/shell', methods: ['GET'], kind: 'login' },
+      { pattern: '/api/access-keys', methods: ['GET', 'POST'], kind: 'login' },
+      { pattern: '/api/assistant/thread', methods: ['GET'], kind: 'chat' },
+      { pattern: '/api/assistant/read', methods: ['POST'], kind: 'chat' },
+      { pattern: '/api/telegram/my-chats', methods: ['GET'], kind: 'chat' },
+      { pattern: '/api/telegram/pair', methods: ['POST'], kind: 'chat' },
+    ];
+    const onError = () => Response.json({ error: 'internal error' }, { status: 500 });
+    const build = (reads: boolean) => {
+      const app = new Hono();
+      app.use('*', gate());
+      registerRoutes(
+        app,
+        rows.map(({ kind, ...e }) => {
+          const [read, guard] = kinds[kind];
+          const handle = async () => {
+            counts.handled += 1;
+            if (reads) return Response.json(seen(read()));
+            const got = await guard();
+            return got instanceof Response ? got : Response.json(seen(got));
+          };
+          return {
+            ...e,
+            catchAll: null,
+            catchAllOptional: false,
+            ...(reads ? { reads: Object.fromEntries(e.methods.map((m) => [m, kind])) } : {}),
+            load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
+          };
+        }),
+      );
+      app.onError(onError);
+      return app;
+    };
+    const [pipelineApp, guardedApp] = [build(true), build(false)];
+    const key = (token: string) => () => ({ authorization: `Bearer ${token}` });
+    const all = [
+      ...creds,
+      { name: 'none', headers: () => ({}) },
+      { name: 'write-key', headers: key(KEY_TOKENS.write) },
+      { name: 'member-key', headers: key(KEY_TOKENS.member) },
+    ];
+    const ID = '11111111-1111-4111-8111-111111111111';
+    const met = new Set<string>();
+    let writesLetIn = 0;
+    for (const row of rows) {
+      const path = row.pattern.replace(':id', ID);
+      const methods = row.methods.includes('GET') ? [...row.methods, 'HEAD'] : row.methods;
+      for (const method of methods) {
+        for (const cred of all) {
+          const a = await drive(pipelineApp, method, path, cred.headers());
+          const b = await drive(guardedApp, method, path, cred.headers());
+          const label = `${row.kind} ${method} ${row.pattern} ${cred.name}`;
+          // A refusal is the gate's: the pipeline's handler never runs.
+          if (a.status >= 400) expect(a.handled, label).toBe(0);
+          else expect(a.handled, label).toBe(1);
+          // The status, headers and body (the login, the actor, the scope
+          // entered or the rule noted), the audit rows, the stamp.
+          expect({ ...a, handled: 0 }, label).toEqual({ ...b, handled: 0 });
+          met.add(`${row.kind} ${a.status}`);
+          if (a.status === 200 && method !== 'GET' && method !== 'HEAD') {
+            writesLetIn += 1;
+            // An Admin user's chat write is on the audit trail, once.
+            if (row.kind === 'chat' && cred.name.startsWith('admin')) {
+              expect(a.audits, label).toEqual([`api.write ${method} ${path} ${ADMIN}`]);
+            }
+          }
+        }
+      }
+    }
+    // Each kind let a login through, and refused: a member route refuses
+    // an Admin user (403 admin-login), every kind refuses no login (401).
+    for (const answer of ['member 200', 'member 403', 'member 401', 'login 200', 'login 401']) {
+      expect(met, answer).toContain(answer);
+    }
+    expect(met).toContain('chat 200');
+    expect(met).toContain('chat 401');
+    expect(writesLetIn).toBeGreaterThan(10);
+    // A device token is stamped once on each kind's row.
+    for (const [path, cred] of [
+      ['/api/member/mcp', creds[6]!],
+      ['/api/shell', creds[5]!],
+      ['/api/assistant/thread', creds[6]!],
+    ] as const) {
+      const res = await drive(pipelineApp, 'GET', path, cred.headers());
+      expect(res.status, path).toBe(200);
+      expect(res.touches, path).toBe(1);
+    }
+    // An error the chat answer throws (the audit row of an Admin user's
+    // write) is answered in the handler's place with the CORS headers, as
+    // the guard's was.
+    process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example';
+    counts.auditThrows = new Error('database down');
+    try {
+      const headers = { ...creds[1]!.headers(), origin: 'https://client.example' };
+      const answers = [];
+      for (const app of [pipelineApp, guardedApp]) {
+        const res = await app.request('/api/assistant/read', { method: 'POST', headers });
+        answers.push({
+          status: res.status,
+          body: await res.text(),
+          cors: [...res.headers.entries()].filter(([k]) => k.startsWith('access-control-')),
+        });
+      }
+      expect(answers[0]).toEqual(answers[1]);
+      expect(answers[0]!.status).toBe(500);
+      expect(answers[0]!.cors).toContainEqual([
+        'access-control-allow-origin',
+        'https://client.example',
+      ]);
+    } finally {
+      counts.auditThrows = null;
+      delete process.env.MANTLE_API_CORS_ORIGINS;
+    }
+    // Each reader throws where the pipeline gave no answer of its kind.
+    expect(() => session.memberCaller()).toThrow(/answered no member/);
+    expect(() => session.loginCaller()).toThrow(/answered no login/);
+    expect(() => session.chatLoginCaller()).toThrow(/answered no chat login/);
+  });
+
   it('a device token is stamped once, by the pipeline', async () => {
     const res = await drive(pipeline, 'GET', '/api/profile', creds[5]!.headers());
     expect(res.status).toBe(200);
