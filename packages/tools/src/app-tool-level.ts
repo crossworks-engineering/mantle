@@ -119,6 +119,14 @@ export type AppCallRules = AppToolLevel | 'contact';
  * the broker's: the actor bound at its entry (currentActor()), via `app` or
  * `contact`, and the rules it judged at. The same status and body as the
  * verdict's, for every refusal (app-broker-parity.test.ts in server/web).
+ *
+ * It can throw (fix round 1, LOW-3), and a broker does not catch it, so the
+ * request answers 500: gateCallRefusal throws GateNotReadyError while a
+ * narrower or pre-run check is not registered (a process that did not load
+ * @mantle/tools' gate-narrowers at boot), and any error that is not an
+ * access refusal (a lost database connection under a step's read). Both
+ * mean a misconfigured or failing process, never a caller's call: a
+ * refusal is always answered, never thrown.
  */
 export async function appToolRefusal(
   rules: AppCallRules,
