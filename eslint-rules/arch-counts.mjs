@@ -241,12 +241,13 @@ export function rawAclSwept(path) {
 // ── policy lists ────────────────────────────────────────────────────────────
 
 /** Every builtin tool slug with an underscore (`slug: 'note_create'` in
- *  packages/tools/src): a one-word slug ('search') is too common a word to
- *  say a list is about tools. */
+ *  packages/tools/src, and the heartbeat tools of packages/runtime/src: A5
+ *  step 6d, a list of those was not seen): a one-word slug ('search') is
+ *  too common a word to say a list is about tools. */
 export function builtinSlugs(root, files = countedFiles(root)) {
   const slugs = new Set();
   for (const f of files) {
-    if (!f.startsWith('packages/tools/src/')) continue;
+    if (!f.startsWith('packages/tools/src/') && !f.startsWith('packages/runtime/src/')) continue;
     const text = readRepoFile(root, f);
     if (!text) continue;
     for (const m of text.matchAll(/\bslug:\s*'([a-z][a-z0-9]*_[a-z0-9_]+)'/g)) slugs.add(m[1]);

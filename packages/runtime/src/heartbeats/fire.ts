@@ -65,6 +65,8 @@ import { computeNextFireAt } from './schedule';
 import { withHeartbeatContext } from './context';
 import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
+// A cycle (tools.ts imports forceFire from here): read at call time only.
+import { heartbeatControlSlugs } from './tools';
 import { errorMessage } from '@mantle/std';
 import {
   AgentWorkspaceError,
@@ -73,14 +75,6 @@ import {
   withAgentScope,
   type ScopedAgent,
 } from '../agent/agent-viewer';
-
-const HEARTBEAT_CONTROL_TOOLS = [
-  'heartbeat_complete',
-  'heartbeat_snooze',
-  'heartbeat_update_state',
-  'heartbeat_list',
-  'heartbeat_fire',
-];
 
 export type FireResult = {
   /** See HeartbeatFireDisposition in @mantle/db for the canonical
@@ -394,10 +388,7 @@ async function fireAs(hb: Heartbeat, opts: FireOpts & { skipGates: boolean }): P
   // In a workspace scope the heartbeat's own control tools are the ones
   // that change the firing heartbeat; list and fire reach every heartbeat
   // and are adminOnly (dispatch refuses them there anyway).
-  const controlTools =
-    scoped && !adminAssistant
-      ? HEARTBEAT_CONTROL_TOOLS.filter((s) => s !== 'heartbeat_list' && s !== 'heartbeat_fire')
-      : HEARTBEAT_CONTROL_TOOLS;
+  const controlTools = heartbeatControlSlugs(scoped && !adminAssistant);
   const resolveTools = async () => {
     const agentGroupTools = await resolveAgentToolGroups(hb.ownerId, agent.toolGroupSlugs ?? []);
     const allSlugs = new Set<string>([...effectiveToolSlugs(agentGroupTools), ...controlTools]);

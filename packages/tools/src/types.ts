@@ -393,6 +393,14 @@ export type BuiltinToolDef = {
    *  only (pseudo-usage 2^tier, selection/deferred.ts); never access.
    *  Unset: none. Refresh from traces when the tool set moves. */
   usageTier?: number;
+  /** A heartbeat control tool (@mantle/runtime heartbeats/tools.ts; A5 step
+   *  6d: one source for the lists that named them). `firing`: it changes
+   *  the firing heartbeat, so a heartbeat turn in any scope is granted it
+   *  and a responder turn on a surface with active heartbeats is offered
+   *  it, in `responderOrder`; `every`: it reaches every heartbeat (an
+   *  operator's tool), granted on a heartbeat turn outside a workspace
+   *  scope or in the Admin assistant's. */
+  heartbeat?: Readonly<{ reaches: 'firing'; responderOrder: number } | { reaches: 'every' }>;
   /** Handler implementation. */
   handler: BuiltinToolHandler;
   /** Input fields that contain sensitive data and MUST be replaced with

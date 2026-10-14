@@ -302,6 +302,16 @@ describe('the counters', () => {
     expect(countedFiles(ROOT).length).toBeGreaterThan(500);
     expect(readRepoFile(ROOT, 'no/such/file.ts')).toBeNull();
     expect(builtinSlugs(ROOT).has('note_create')).toBe(true);
+    // The heartbeat tools are defined in packages/runtime (A5 step 6d): a
+    // list of their names counts too.
+    const slugs = builtinSlugs(ROOT);
+    expect(slugs.has('heartbeat_complete')).toBe(true);
+    expect(
+      toolPolicyLists(
+        "const X = ['heartbeat_complete', 'heartbeat_snooze', 'heartbeat_list'];",
+        slugs,
+      ),
+    ).toEqual([3]);
   });
 });
 

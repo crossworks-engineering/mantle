@@ -15,7 +15,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { HEARTBEAT_TOOLS, HEARTBEAT_RESPONDER_TOOLS, registerHeartbeatTools } from './tools';
+import {
+  HEARTBEAT_TOOLS,
+  HEARTBEAT_RESPONDER_TOOLS,
+  heartbeatControlSlugs,
+  registerHeartbeatTools,
+} from './tools';
 import { withHeartbeatContext } from './context';
 import { getBuiltinHandler } from '@mantle/tools';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from '@mantle/tools';
@@ -251,6 +256,31 @@ describe('HEARTBEAT_RESPONDER_TOOLS (auto-exclusion canonical list)', () => {
     // Add/remove here is a deliberate decision — operators + the
     // seed script + the responder filter all read this constant.
     expect([...HEARTBEAT_RESPONDER_TOOLS].sort()).toEqual([
+      'heartbeat_complete',
+      'heartbeat_snooze',
+      'heartbeat_update_state',
+    ]);
+  });
+
+  it("is read off the definitions in main's order (A5 step 6d)", () => {
+    // The order a responder turn appends them to its tool list: as the
+    // hand-written list had it, so the sent list is byte for byte.
+    expect(HEARTBEAT_RESPONDER_TOOLS).toEqual([
+      'heartbeat_update_state',
+      'heartbeat_complete',
+      'heartbeat_snooze',
+    ]);
+  });
+
+  it("a heartbeat turn's control tools are main's, in main's order (A5 step 6d)", () => {
+    expect(heartbeatControlSlugs(false)).toEqual([
+      'heartbeat_complete',
+      'heartbeat_snooze',
+      'heartbeat_update_state',
+      'heartbeat_list',
+      'heartbeat_fire',
+    ]);
+    expect(heartbeatControlSlugs(true)).toEqual([
       'heartbeat_complete',
       'heartbeat_snooze',
       'heartbeat_update_state',

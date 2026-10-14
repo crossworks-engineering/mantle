@@ -176,6 +176,7 @@ async function resolveTargetHeartbeat(
 
 const heartbeat_complete: BuiltinToolDef = {
   slug: 'heartbeat_complete',
+  heartbeat: { reaches: 'firing', responderOrder: 1 },
   policy: { effect: 'write', spends: 'none', scope: 'any' },
   name: 'Mark a heartbeat complete',
   description:
@@ -223,6 +224,7 @@ const heartbeat_complete: BuiltinToolDef = {
 
 const heartbeat_snooze: BuiltinToolDef = {
   slug: 'heartbeat_snooze',
+  heartbeat: { reaches: 'firing', responderOrder: 2 },
   policy: { effect: 'write', spends: 'none', scope: 'any' },
   name: 'Snooze a heartbeat',
   description:
@@ -286,6 +288,7 @@ const heartbeat_snooze: BuiltinToolDef = {
 
 const heartbeat_update_state: BuiltinToolDef = {
   slug: 'heartbeat_update_state',
+  heartbeat: { reaches: 'firing', responderOrder: 0 },
   policy: { effect: 'write', spends: 'none', scope: 'any' },
   name: "Update a heartbeat's state",
   description:
@@ -375,6 +378,7 @@ const HEARTBEAT_LIST_MAX_LIMIT = 100;
 
 const heartbeat_list: BuiltinToolDef = {
   slug: 'heartbeat_list',
+  heartbeat: { reaches: 'every' },
   policy: {
     effect: 'write',
     spends: 'none',
@@ -479,6 +483,7 @@ export const HEARTBEAT_FIRE_MAKER_ONLY =
 
 const heartbeat_fire: BuiltinToolDef = {
   slug: 'heartbeat_fire',
+  heartbeat: { reaches: 'every' },
   policy: { effect: 'write', spends: 'none', scope: { area: 'assistants', adminOnly: true } },
   name: 'Force-fire a heartbeat now',
   description:
@@ -585,15 +590,28 @@ export const HEARTBEAT_TOOLS: readonly BuiltinToolDef[] = [
  * `hasActiveHeartbeatsOnSurface` returns true, and never grant them as
  * stored tools (see server/web/lib/assistant.ts + server/api/src/main.ts).
  *
- * Explicitly excludes:
- *  - `heartbeat_list`  — operator/skill tool, useful any time
- *  - `heartbeat_fire`  — operator/skill tool, useful any time
+ * Read off the definitions (A5 step 6d): the tools that change the firing
+ * heartbeat (`heartbeat.reaches: 'firing'`), in their `responderOrder`.
+ * Not `heartbeat_list` or `heartbeat_fire`: operator/skill tools, useful
+ * any time (`reaches: 'every'`).
  */
-export const HEARTBEAT_RESPONDER_TOOLS: readonly string[] = [
-  'heartbeat_update_state',
-  'heartbeat_complete',
-  'heartbeat_snooze',
-];
+export const HEARTBEAT_RESPONDER_TOOLS: readonly string[] = HEARTBEAT_TOOLS.flatMap((d) =>
+  d.heartbeat?.reaches === 'firing' ? [{ slug: d.slug, order: d.heartbeat.responderOrder }] : [],
+)
+  .sort((a, b) => a.order - b.order)
+  .map((d) => d.slug);
+
+/** The heartbeat control tools a heartbeat turn is granted, in
+ *  HEARTBEAT_TOOLS' order (A5 step 6d: read off the definitions, where
+ *  fire.ts named them): in a workspace scope that is not the Admin
+ *  assistant's, only those that change the firing heartbeat; list and fire
+ *  reach every heartbeat and are adminOnly (dispatch refuses them there
+ *  anyway). */
+export function heartbeatControlSlugs(firingOnly: boolean): string[] {
+  return HEARTBEAT_TOOLS.filter((d) => !firingOnly || d.heartbeat?.reaches === 'firing').map(
+    (d) => d.slug,
+  );
+}
 
 /** Register the heartbeat-control tools with the @mantle/tools registry.
  *  Call once at boot from server/api (and any other process that
