@@ -122,7 +122,7 @@
    "oversizedRead": "stopped at 5 MB"
   },
   "slow server": {
-   "answer": "error: fetching the spec timed out after 30 s — check the spec URL answers (after 30 s)",
+   "answer": "error: fetching the spec timed out after 30 s, check the spec URL answers (after 30 s)",
    "reached": [
     "slow.test"
    ]

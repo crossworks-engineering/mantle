@@ -172,7 +172,7 @@ const NAMED: NamedChanges = {
   'OpenAPI spec fetch': {
     'slow server': {
       answer:
-        'error: fetching the spec timed out after 30 s — check the spec URL answers (after 30 s)',
+        'error: fetching the spec timed out after 30 s, check the spec URL answers (after 30 s)',
     },
   },
   // The redirect walk before the sidecar: it reaches the link itself (no

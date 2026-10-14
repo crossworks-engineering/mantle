@@ -237,7 +237,7 @@ const OPENAPI_SPEC_TIMEOUT_MS = 30_000;
 
 function specTimedOut(): Error {
   return new Error(
-    `fetching the spec timed out after ${OPENAPI_SPEC_TIMEOUT_MS / 1000} s — check the spec URL answers`,
+    `fetching the spec timed out after ${OPENAPI_SPEC_TIMEOUT_MS / 1000} s, check the spec URL answers`,
   );
 }
 
