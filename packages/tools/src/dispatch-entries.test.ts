@@ -7,6 +7,13 @@
  * entries listed below, each with the step that moves it, and the list
  * only shrinks.
  *
+ * A builtin's handler called directly (`def.handler(...)`, or the function
+ * getBuiltinHandler gives) skips dispatch and so the gate. The second sweep
+ * finds each such call in the product code: dispatch's own, a definition's
+ * wrapper that runs inside the dispatch of its own call, and the entries
+ * that bypass dispatch until a later step (listed, and the list only
+ * shrinks). A new direct call fails here (A5 step 3a low round, LOW-3).
+ *
  * A SOURCE check, as gate-boot.test.ts's entry half is.
  */
 import { readdirSync, readFileSync } from 'node:fs';
@@ -23,6 +30,21 @@ const NO_CALLER_YET: Readonly<Record<string, string>> = {
   'server/web/app/s/[token]/tool-broker/route.ts': 'A5 step 3b: the shared app tool broker',
   'server/web/app/api/dev-tools/execute-tool/route.ts': 'A5 step 3b: the dev console',
   'packages/mcp-core/src/login-surface.ts': "A5 step 4: the owner MCP surface's connector rows",
+};
+
+/** The direct handler calls that are no entry: dispatch itself, and a
+ *  definition's wrapper that calls the definition it wraps. */
+const DIRECT_HANDLER_OK: Readonly<Record<string, string>> = {
+  'packages/tools/src/dispatch.ts': 'dispatch itself: the handler it gates (getBuiltinHandler)',
+  'packages/tools/src/builtins-apps.ts':
+    "withAuthorCeiling: the app tools' wrapper, inside the dispatch of its own call",
+};
+
+/** The entries that call a builtin's handler directly, past dispatch and
+ *  the gate, and the step that moves each. */
+const DIRECT_HANDLER_YET: Readonly<Record<string, string>> = {
+  'server/web/lib/api-v1-builtin.ts': 'A5 step 4: the /api/v1 builtin routes (runBuiltinForApi)',
+  'packages/mcp-core/src/register/context.ts': "A5 step 4: the owner MCP surface's builtins",
 };
 
 /** Product source files (no tests, no build output). */
@@ -93,6 +115,35 @@ function sweep(): { file: string; args: string; caller: boolean }[] {
   return sites;
 }
 
+/** Comments out, so a mention in prose is no call. */
+function code(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
+/** A builtin handler called directly: `.handler(` (and `?.handler(`,
+ *  `['handler'](`), and any use of getBuiltinHandler but its definition. */
+const DIRECT_HANDLER = new RegExp(
+  [
+    String.raw`\??\.handler\s*\(`,
+    String.raw`\[\s*['"]handler['"]\s*\]\s*\(`,
+    String.raw`(?<!function\s+)\bgetBuiltinHandler\b(?!\s*,|\s*\})`,
+  ].join('|'),
+  'g',
+);
+
+/** Every file with a direct handler call, and how many. */
+function directSweep(): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const root of ['packages', 'server']) {
+    for (const path of sourceFiles(join(repoRoot, root))) {
+      const file = relative(repoRoot, path);
+      const hits = code(readFileSync(path, 'utf8')).match(DIRECT_HANDLER)?.length ?? 0;
+      if (hits > 0) out.set(file, hits);
+    }
+  }
+  return out;
+}
+
 describe('every dispatch entry names its caller (A5 step 3a)', () => {
   const sites = sweep();
 
@@ -127,5 +178,28 @@ describe('every dispatch entry names its caller (A5 step 3a)', () => {
         `${file} names its caller now: take it off NO_CALLER_YET`,
       ).toBe(true);
     }
+  });
+
+  describe('no entry calls a builtin handler past dispatch (low round, LOW-3)', () => {
+    const direct = directSweep();
+
+    it('finds the direct calls (not vacuous)', () => {
+      for (const file of [...Object.keys(DIRECT_HANDLER_OK), ...Object.keys(DIRECT_HANDLER_YET)]) {
+        expect(direct.has(file), file).toBe(true);
+      }
+    });
+
+    it('calls a handler directly only where listed', () => {
+      const unlisted = [...direct.keys()].filter(
+        (f) => !(f in DIRECT_HANDLER_OK) && !(f in DIRECT_HANDLER_YET),
+      );
+      expect(unlisted, 'a direct handler call skips the gate: dispatch it').toEqual([]);
+    });
+
+    it('the not-yet-gated direct entries are no dispatch entries too', () => {
+      for (const file of Object.keys(DIRECT_HANDLER_YET)) {
+        expect(file in NO_CALLER_YET, file).toBe(false);
+      }
+    });
   });
 });

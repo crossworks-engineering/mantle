@@ -8,28 +8,33 @@
  * write (READ_PATH_WRITES: it runs as its own system actor) or touches a
  * table that is no item table.
  *
- * The sweep (a read-only audit of every read builtin and MCP definition,
- * their handlers and what they call) found the writes below. Each is pinned
- * here with its table; a write to an item table must be named or fixed
- * before an entry that reaches it runs through the gate.
+ * The tool set is the policy table's: every builtin whose policy says
+ * `effect: 'read'` must be classified below, so a read builtin added
+ * without a look at its writes fails here (low round, LOW-4). The lists
+ * come from the step 3a sweep (a read-only audit of every read builtin and
+ * MCP definition, their handlers and what they call) and its audit slice;
+ * this is a SOURCE classification, not proof. The database-backed guard,
+ * each read builtin run read only with the edit check on, is an A5 step 4
+ * item (docs/actors.md, "Step 4 must-dos").
  *
  * Found, and how each is handled:
  *
- *  - The three app data reads (app_data_schema, app_data_query) provision
- *    the app's registry row, apply a newer schema and set the viewer salt
- *    (app_databases, an item table). They run only on a login's own MCP
- *    connection (appDataCaller), which reaches the gate in A5 step 4, not
- *    on a turn, a run or a pending call: step 4 must name or move them
- *    (MCP_ONLY_ITEM_WRITES).
+ *  - The app data reads app_data_schema and app_data_query provision the
+ *    app's registry row, apply a newer schema and set the viewer salt
+ *    (app_databases, an item table) under a read-only asSystem. They run
+ *    only on a login's own MCP connection (appDataCaller), which reaches
+ *    the gate in A5 step 4, not on a turn, a run or a pending call. They
+ *    WILL FAIL once MCP runs through the gate: step 4 must name them as
+ *    read-path writes or move the provisioning (MCP_ONLY_ITEM_WRITES).
  *  - Every other write is to a table that is no item table, so it runs as
- *    before (SIDE_WRITES): sandbox_mcp_tools's last-used touch (sandboxes;
- *    prerequisite 0a: nothing breaks, so the tool stays a read and the touch
- *    stays as it is), the app access log, a peer's last contact, the
- *    embedding cache and its failover stamp, a worker's usage, an API key's
- *    last use, a tool result's chunks, and every call's trace.
+ *    before (SIDE_WRITES). Two are uncaught: a failure fails the call
+ *    (read_result's chunking). The peer reads' last-contact stamp is
+ *    best-effort since the low round (a refused write is skipped, as
+ *    verifyInboundToken's last-seen stamp).
  *  - The page reads' block ids and recall_match's prompt embeddings are
- *    named read-path writes already (backfill:page-block-ids,
- *    backfill:recall-prompt-embeddings).
+ *    named read-path writes already (NAMED_READ_PATH).
+ *  - Every other read builtin: the sweep found no write but the call's
+ *    trace (NO_WRITE_FOUND).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -52,9 +57,21 @@ function itemTables(): Set<string> {
   return tables;
 }
 
-/** Writes of read tools to tables that are no item table: they run as
- *  before under a read-only actor. */
-const SIDE_WRITES: readonly { tools: readonly string[]; table: string; where: string }[] = [
+/** The read builtins that embed a query (embed, @mantle/embeddings). */
+const EMBEDDING_READS = [
+  'search_nodes',
+  'search_chunks',
+  'recall_match',
+  'find_window',
+  'read_result',
+] as const;
+
+/** A write of read tools to a table that is no item table: it runs as
+ *  before under a read-only actor. `uncaught`: a failure fails the call. */
+type SideWrite = { tools: readonly string[]; table: string; where: string; uncaught?: true };
+
+/** Writes of read tools to tables that are no item table. */
+const SIDE_WRITES: readonly SideWrite[] = [
   {
     tools: ['sandbox_mcp_tools'],
     table: 'sandboxes',
@@ -66,14 +83,30 @@ const SIDE_WRITES: readonly { tools: readonly string[]; table: string; where: st
     where: 'packages/content/src/app-access-log.ts (recordAppAccess, recordAppError)',
   },
   {
+    // Best-effort since the low round: a refused write is skipped.
     tools: ['peer_query', 'peer_search_chunks', 'peer_node_get', 'peer_tools'],
     table: 'mantle_peers',
     where: 'packages/content/src/peers/registry.ts (markPeerContacted)',
   },
   {
-    tools: ['search_nodes', 'search_chunks', 'recall_match', 'find_window', 'read_result'],
+    tools: EMBEDDING_READS,
     table: 'embedding_cache',
-    where: 'packages/embeddings/src/index.ts (embed: the cache, the failover stamp)',
+    where: 'packages/embeddings/src/index.ts (embed: the cache)',
+  },
+  {
+    tools: EMBEDDING_READS,
+    table: 'embedding_config',
+    where: 'packages/embeddings/src/index.ts (embed: the failover stamp)',
+  },
+  {
+    tools: EMBEDDING_READS,
+    table: 'provider_alerts',
+    where: 'packages/embeddings/src/provider-outage.ts (recordProviderFailure)',
+  },
+  {
+    tools: [...EMBEDDING_READS, 'extract_from_image', 'summarize_text'],
+    table: 'api_keys',
+    where: 'packages/api-keys/src/index.ts (getApiKey: last_used)',
   },
   {
     tools: ['search_chunks'],
@@ -81,14 +114,16 @@ const SIDE_WRITES: readonly { tools: readonly string[]; table: string; where: st
     where: 'packages/decisions/src/decide.ts (bumpWorkerUsage)',
   },
   {
-    tools: ['extract_from_image', 'summarize_text'],
-    table: 'api_keys',
-    where: 'packages/api-keys/src/index.ts (last_used)',
+    tools: ['read_result'],
+    table: 'tool_results',
+    where: 'packages/tools/src/tool-results.ts (ensureResultChunked: the chunked flag)',
+    uncaught: true,
   },
   {
     tools: ['read_result'],
     table: 'tool_result_chunks',
     where: 'packages/tools/src/tool-results.ts (ensureResultChunked)',
+    uncaught: true,
   },
 ];
 
@@ -104,6 +139,108 @@ const MCP_ONLY_ITEM_WRITES: readonly { tools: readonly string[]; table: string; 
     },
   ];
 
+/** Read builtins whose write is a named read-path write (READ_PATH_WRITES):
+ *  it runs as its own system actor, whoever reads. */
+const NAMED_READ_PATH: readonly { tools: readonly string[]; name: string }[] = [
+  {
+    tools: ['page_get', 'page_blocks_list', 'page_block_get'],
+    name: 'backfill:page-block-ids',
+  },
+  { tools: ['recall_match'], name: 'backfill:recall-prompt-embeddings' },
+];
+
+/** Read builtins where the sweep found no write but the call's trace. */
+const NO_WRITE_FOUND: readonly string[] = [
+  'access_get',
+  'agent_list',
+  'api_docs_get',
+  'api_key_refs',
+  'api_tool_get',
+  'api_tool_list',
+  'app_authoring_guide',
+  'app_db_list',
+  'app_db_query',
+  'app_deleted_list',
+  'app_errors',
+  'app_get',
+  'app_list',
+  'app_snapshot_list',
+  'brain_capacity',
+  'calculate',
+  'contact_find',
+  'contact_get',
+  'contact_list',
+  'draw_get',
+  'draw_list',
+  'email_get',
+  'email_list',
+  'entity_facts',
+  'entity_mentions',
+  'entity_neighbors',
+  'entity_search',
+  'event_get',
+  'event_list',
+  'file_get',
+  'file_list',
+  'file_read',
+  'folder_get_by_path',
+  'folder_list',
+  'formula_evaluate',
+  'formula_get',
+  'formula_list',
+  'graph_path',
+  'journal_get',
+  'journal_list',
+  'location_distance',
+  'location_nearby',
+  'node_read',
+  'note_get',
+  'note_list',
+  'page_list',
+  'peer_list',
+  'pending_get',
+  'pending_list',
+  'read_section',
+  'recall_go',
+  'recall_index',
+  'recall_map_get',
+  'recall_open',
+  'recall_pending',
+  'recall_revisions',
+  'replay_window',
+  'run_state',
+  'sandbox_list',
+  'sandbox_ls',
+  'table_aggregate',
+  'table_get',
+  'table_history',
+  'table_list',
+  'table_query',
+  'table_row_get',
+  'table_rows_list',
+  'table_schema',
+  'table_sql',
+  'task_get',
+  'task_list',
+  'telegram_pending',
+  'tool_catalog',
+  'tool_group_list',
+  'tree_folders',
+  'tree_list',
+  'worker_group_list',
+  'workspaces_list',
+];
+
+/** Every read builtin the lists above classify. */
+function classified(): Set<string> {
+  return new Set([
+    ...SIDE_WRITES.flatMap((w) => w.tools),
+    ...MCP_ONLY_ITEM_WRITES.flatMap((w) => w.tools),
+    ...NAMED_READ_PATH.flatMap((w) => w.tools),
+    ...NO_WRITE_FOUND,
+  ]);
+}
+
 describe('the writes inside read tools (A5 step 3a)', () => {
   const items = itemTables();
   const byName = new Map(BUILTIN_TOOLS.map((d) => [d.slug, d]));
@@ -115,11 +252,23 @@ describe('the writes inside read tools (A5 step 3a)', () => {
   });
 
   it('every listed tool is a read builtin', () => {
-    for (const w of [...SIDE_WRITES, ...MCP_ONLY_ITEM_WRITES]) {
-      for (const slug of w.tools) {
-        expect(byName.get(slug)?.policy.effect, slug).toBe('read');
-      }
+    for (const slug of classified()) {
+      expect(byName.get(slug)?.policy.effect, slug).toBe('read');
     }
+  });
+
+  it('classifies every read builtin of the policy table (a new one fails here)', () => {
+    const known = classified();
+    const reads = BUILTIN_TOOLS.filter((d) => d.policy.effect === 'read').map((d) => d.slug);
+    expect(reads.length).toBeGreaterThan(50);
+    const unclassified = reads.filter((slug) => !known.has(slug));
+    expect(
+      unclassified,
+      'a read builtin with no look at its writes: add it to a list above',
+    ).toEqual([]);
+    // No write found means no write listed for it.
+    const listed = new Set([...known].filter((s) => !NO_WRITE_FOUND.includes(s)));
+    for (const slug of NO_WRITE_FOUND) expect(listed.has(slug), slug).toBe(false);
   });
 
   it('a side write touches no item table: it runs as before under a read-only actor', () => {
@@ -148,8 +297,14 @@ describe('the writes inside read tools (A5 step 3a)', () => {
   });
 
   it('the named read-path writes stay named', () => {
-    for (const name of ['backfill:page-block-ids', 'backfill:recall-prompt-embeddings']) {
+    for (const { name } of NAMED_READ_PATH) {
       expect(name in READ_PATH_WRITES, name).toBe(true);
     }
+  });
+
+  it('the uncaught side writes are to no item table (a failure fails only the call)', () => {
+    const uncaught = SIDE_WRITES.filter((w) => w.uncaught);
+    expect(uncaught.map((w) => w.table).sort()).toEqual(['tool_result_chunks', 'tool_results']);
+    for (const w of uncaught) expect(items.has(w.table), w.table).toBe(false);
   });
 });
