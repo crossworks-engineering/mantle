@@ -3254,3 +3254,10 @@ agent silently. Each definition now says `autoGrant: true` itself (the
 fifteen of today: five contact, five journal, five formula tools), the
 lists read that field, and `packages/tools/src/destructive-coverage.test.ts`
 pins the set.
+
+**LOW-9, the architecture count leaves out only the deferred core.** The
+count left out the whole of `selection/deferred.ts`. `CORE_TOOL_SLUGS` now
+lives alone in `packages/tools/src/selection/core.ts` (deferred.ts
+re-exports it), and only that file is left out (`toolPolicySwept`), so a
+future access list in deferred.ts is counted.
+`eslint-rules/arch-lints.test.ts`.

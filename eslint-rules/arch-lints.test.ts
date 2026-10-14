@@ -18,6 +18,7 @@ import {
   routePolicyLists,
   stripComments,
   toolPolicyLists,
+  toolPolicySwept,
   isDefinitionList,
   // @ts-expect-error: plain-JS module, no types shipped.
 } from './arch-counts.mjs';
@@ -238,6 +239,13 @@ describe('the counters', () => {
     expect(isDefinitionList("['note_create', { slug: 'x' }]")).toBe(false);
     expect(routePolicyLists("const R = ['GET /api/a', 'POST /api/b', '/api/c'];")).toEqual([3]);
     expect(routePolicyLists("const R = ['GET /api/a', 'x'];")).toEqual([]);
+  });
+
+  it('leave out only the deferred core list, never the rest of the selection (fix round 1, LOW-9)', () => {
+    expect(toolPolicySwept('packages/tools/src/selection/core.ts')).toBe(false);
+    expect(toolPolicySwept('packages/tools/src/selection/deferred.ts')).toBe(true);
+    expect(toolPolicySwept('server/web/lib/system-manifest/manifest.ts')).toBe(false);
+    expect(toolPolicySwept('packages/tools/src/turn-listing.ts')).toBe(true);
   });
 
   it('count guard calls and know a route file', () => {

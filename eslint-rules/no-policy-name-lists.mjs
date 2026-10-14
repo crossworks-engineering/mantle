@@ -15,7 +15,7 @@
  *  table and the MCP definitions (mcp-defs.ts), none left there.
  *  A5 step 6a: the views are deleted (each consumer reads the tool's
  *  policy), the three auto-grant lists are read off their definitions, and
- *  the deferred selection's core is no access list (arch-counts.mjs
+ *  the deferred selection's core (selection/core.ts) is no access list (arch-counts.mjs
  *  toolPolicySwept). One pin is left: TEAM_PRIVATE_READ_SLUGS, kept in the
  *  published content-core contract for one jackdaw pair release (its
  *  consumers here read the policy's `privateCorpus`). */
