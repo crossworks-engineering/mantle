@@ -21,7 +21,7 @@ import {
 } from '@modelcontextprotocol/client';
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
-import { egressFetch } from '@mantle/std/egress';
+import { capEventStream, egressFetch } from '@mantle/std/egress';
 import { assertFetchableUrl, isSandboxProxyUrl } from './ssrf-guard';
 import { scrubSecrets } from './http-template';
 import { dbMcpOAuthStore, loadMcpOAuthTokens, runtimeMcpOAuthProvider } from './mcp-oauth';
@@ -87,7 +87,8 @@ const SSE_GET_HEADERS_TIMEOUT_MS = 5_000;
 
 /** The most a connector's reply body may carry (a JSON answer or the SSE
  *  stream answering one POST). The standing GET event stream is long-lived
- *  and stays uncapped: its size grows with the session, not one answer. */
+ *  and takes no total cap (its size grows with the session, not one
+ *  answer); each event on it is capped instead (SSE_MAX_EVENT_BYTES). */
 export const MCP_REPLY_MAX_BYTES = 32 * 1024 * 1024;
 
 /** SSRF-guarded fetch: every request URL is re-checked (the transport may
@@ -124,7 +125,9 @@ export const mcpConnectorFetch: typeof fetch = async (input, init) => {
   if (upstream?.aborted) ctrl.abort(upstream.reason);
   else upstream?.addEventListener('abort', () => ctrl.abort(upstream.reason), { once: true });
   try {
-    return await egressFetch(input, { ...init, signal: ctrl.signal }, egress);
+    // One endless line or event would grow the parser's memory without
+    // bound: each event is capped, the stream itself is not.
+    return capEventStream(await egressFetch(input, { ...init, signal: ctrl.signal }, egress));
   } finally {
     clearTimeout(timer);
   }

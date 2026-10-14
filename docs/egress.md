@@ -46,6 +46,12 @@ stay free of node builtins). On top of the platform fetch:
 - **A streamed byte cap** (`maxBytes`): reading stops at the cap, either as
   an error (`EgressTooLargeError`) or, with `overflow: 'truncate'`, by ending
   the body there. An oversized body is never held whole.
+- **A per-event cap on a long-lived event stream** (`capEventStream`). The
+  MCP standing GET stream lives for the session, so it takes no total cap,
+  but its parser holds the current line and event in memory until the
+  event ends. One event (from blank line to blank line, comment lines not
+  counted) or one line may carry at most `SSE_MAX_EVENT_BYTES` (4 MB); past
+  that the read fails. A healthy stream runs on, whatever its total.
 - **`allowLan`, per caller config.** A linked peer brain or a local model on
   a private or tailnet address is legitimate. `allowLan` lets RFC 1918,
   loopback, CGNAT (Tailscale) and unique local IPv6 through and still
@@ -79,9 +85,9 @@ the platform's own connect.
 | `web_fetch` | `packages/tools/src/toolsmith/web-fetch.ts` | `guardedFetch`, 5 MB streamed cap, `truncate` |
 | http API tools, OAuth2 token endpoint, dev console proxy | `packages/tools/src/safe-fetch.ts` | `safeFetch` over `egressFetch` with the resolved secrets |
 | OpenAPI spec fetch | `packages/tools/src/openapi-sync.ts` | `safeFetch` with a 30 s deadline (its own 5 MB reader, unchanged) |
-| MCP connector | `packages/tools/src/mcp-client.ts` | `redirect: 'error'`, the SSE headers timeout kept, a reply capped at 32 MB (the standing GET event stream uncapped) |
+| MCP connector | `packages/tools/src/mcp-client.ts` | `redirect: 'error'`, the SSE headers timeout kept, a reply capped at 32 MB (the standing GET event stream: 4 MB per event, no total cap) |
 | MCP connector OAuth endpoints | `packages/tools/src/mcp-oauth.ts` | `redirect: 'error'`, 30 s, 1 MB |
-| peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan`, 20 redirects, a reply capped at 32 MB (the standing GET event stream uncapped) |
+| peer MCP transport | `packages/tools/src/builtins-peer-mcp.ts` | `allowLan`, 20 redirects, a reply capped at 32 MB (the standing GET event stream: 4 MB per event, no total cap) |
 | federation client (`peer_query`, `peer_node_get`, `peer_search_chunks`) | `packages/content/src/peers-client.ts` | `allowLan`, the token as a secret, 15 s, 32 MB, 20 redirects |
 | calendar ICS feed | `packages/calendar/src/providers/ics.ts` | 30 s, 12 MB, 20 redirects |
 | `video_ingest` link | `packages/tools/src/builtins-video.ts` | a redirect walk before the sidecar, 10 s, no body read; a timeout or too many redirects refuses the link |

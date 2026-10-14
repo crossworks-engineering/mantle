@@ -153,7 +153,7 @@ const NAMED: NamedChanges = {
   },
   // Fix round 1: deadlines and byte caps where there were none. A
   // connector's reply is capped at 32 MB (the standing GET event stream
-  // stays uncapped); the OAuth endpoints, parsed whole with res.json(), at
+  // takes a per-event cap instead, fix round 2); the OAuth endpoints, parsed whole with res.json(), at
   // 1 MB and 30 s; the spec fetch has a 30 s deadline; a peer MCP reply is
   // capped at 32 MB, as the federation client's.
   'MCP connector': {

@@ -16,7 +16,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { markPeerContacted, peerCallTarget } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import { errorMessage } from '@mantle/std';
-import { PLATFORM_MAX_REDIRECTS, egressFetch } from '@mantle/std/egress';
+import { PLATFORM_MAX_REDIRECTS, capEventStream, egressFetch } from '@mantle/std/egress';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { boolOpt, str, strOpt } from './coerce';
 import { FILE_ID_PRE } from './builtins-common';
@@ -36,20 +36,19 @@ const COPY_MAX_BYTES = 48 * 1024 * 1024;
  *  dropped on a hop to another origin. Up to 20 redirects, the platform's
  *  limit it followed before the fold. Exported for the egress proof table
  *  (egress-proof.test.ts). */
-export const peerMcpFetch: typeof fetch = (input, init) => {
+export const peerMcpFetch: typeof fetch = async (input, init) => {
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
   const accept =
     new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get(
       'accept',
     ) ?? '';
-  // A reply (JSON, or the SSE stream answering one POST) is capped; the
-  // standing GET event stream is long-lived and is not.
+  // A reply (JSON, or the SSE stream answering one POST) is capped whole;
+  // the standing GET event stream is long-lived, so each event on it is
+  // capped instead (one endless line would grow the parser's memory).
   const isSseGet = method === 'GET' && accept.includes('text/event-stream');
-  return egressFetch(input, init, {
-    allowLan: true,
-    maxRedirects: PLATFORM_MAX_REDIRECTS,
-    ...(isSseGet ? {} : { maxBytes: PEER_MCP_REPLY_MAX_BYTES }),
-  });
+  const egress = { allowLan: true, maxRedirects: PLATFORM_MAX_REDIRECTS } as const;
+  if (isSseGet) return capEventStream(await egressFetch(input, init, egress));
+  return egressFetch(input, init, { ...egress, maxBytes: PEER_MCP_REPLY_MAX_BYTES });
 };
 
 /** The most one peer MCP reply may carry, as the federation client's cap. */

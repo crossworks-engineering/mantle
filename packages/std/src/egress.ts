@@ -438,6 +438,78 @@ function capBody(
   return out;
 }
 
+/** The most one server-sent event may carry on a long-lived event stream
+ *  (the MCP standing GET stream): 4 MB. A stream that lives for the whole
+ *  session cannot take a total byte cap, but its parser holds the current
+ *  line and the current event's data in memory until the event ends, so a
+ *  hostile server sending one endless line (or one endless event) grows
+ *  memory without bound. 4 MB is far above any notification an MCP server
+ *  pushes (they are small JSON-RPC messages) and still a bounded hold. */
+export const SSE_MAX_EVENT_BYTES = 4 * 1024 * 1024;
+
+/**
+ * `res` with its body read as an event stream under a per-event cap: the
+ * read fails (EgressTooLargeError) when one event, counted from the blank
+ * line that ended the last one, carries more than `maxEventBytes` of
+ * non-comment line bytes, or when any one line (a comment included) is
+ * longer than that. The stream itself may run forever; only the part the
+ * parser must hold at once is bounded.
+ */
+export function capEventStream(
+  res: Response,
+  maxEventBytes: number = SSE_MAX_EVENT_BYTES,
+): Response {
+  if (!res.body || NULL_BODY.has(res.status)) return res;
+  const reader = res.body.getReader();
+  let lineLen = 0; // bytes in the current line
+  let eventLen = 0; // non-comment line bytes since the last blank line
+  let comment = false; // the current line starts with ':'
+  let afterCr = false; // the last byte was CR (a CRLF is one terminator)
+  const body = new ReadableStream<Uint8Array>({
+    async pull(ctrl) {
+      const { done, value } = await reader.read();
+      if (done) {
+        ctrl.close();
+        return;
+      }
+      for (let i = 0; i < value.length; i++) {
+        const c = value[i]!;
+        if (c === 0x0a || c === 0x0d) {
+          const second = c === 0x0a && afterCr;
+          afterCr = c === 0x0d;
+          if (second) continue;
+          if (lineLen === 0) eventLen = 0; // a blank line ends the event
+          lineLen = 0;
+          comment = false;
+          continue;
+        }
+        afterCr = false;
+        if (lineLen === 0 && c === 0x3a) comment = true;
+        lineLen++;
+        if (!comment) eventLen++;
+        if (lineLen > maxEventBytes || eventLen > maxEventBytes) {
+          await reader.cancel().catch(() => {});
+          ctrl.error(
+            new EgressTooLargeError(`an event-stream event is over the ${maxEventBytes}-byte cap`),
+          );
+          return;
+        }
+      }
+      ctrl.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  const out = new Response(body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
+  Object.defineProperty(out, 'url', { value: res.url });
+  return out;
+}
+
 /**
  * fetch a URL that came from outside, with the address check on every hop,
  * secret headers dropped across origins, an optional deadline and an

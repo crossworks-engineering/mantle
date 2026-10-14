@@ -11,6 +11,7 @@ vi.mock('node:dns/promises', async () => (await import('./egress-test-net')).tes
 
 import {
   assertEgressUrl,
+  capEventStream,
   egressFetch,
   EgressRefusedError,
   EgressTooLargeError,
@@ -587,5 +588,43 @@ describe('redirects on a real loopback pair: which statuses follow, which bodies
       { method: 'PATCH', body: 'token=SEKRET' },
       { method: 'POST', body: 'token=SEKRET' },
     ]);
+  });
+});
+
+describe('capEventStream', () => {
+  const stream = (...parts: string[]) =>
+    capEventStream(
+      new Response(
+        new ReadableStream({
+          start(c) {
+            for (const p of parts) c.enqueue(new TextEncoder().encode(p));
+            c.close();
+          },
+        }),
+      ),
+      10,
+    );
+
+  it('counts one event from blank line to blank line, across chunks and line endings', async () => {
+    // Each event carries 10 bytes or fewer; the stream carries far more.
+    const ok = ['data: 1234\n\n', 'data:', ' 123\r\n\r\n', 'id: 9\r\r', 'data: 12', '34\n\n'];
+    await expect(stream(...ok, ...ok, ...ok).text()).resolves.toBe(ok.join('').repeat(3));
+    // Two lines with no blank line between them are one event.
+    await expect(stream('data: 12\n', 'data: 34\n\n').text()).rejects.toBeInstanceOf(
+      EgressTooLargeError,
+    );
+    // CRLF is one terminator, not a blank line.
+    await expect(stream('data: 12\r\ndata: 34\r\n\r\n').text()).rejects.toBeInstanceOf(
+      EgressTooLargeError,
+    );
+  });
+
+  it('lets comment lines through without growing the event, but caps a long one', async () => {
+    await expect(stream(':keepalive\n', ':keepalive\n', 'data: 1\n\n').text()).resolves.toMatch(
+      /data: 1/,
+    );
+    await expect(stream(':keepalive-too-long\n').text()).rejects.toBeInstanceOf(
+      EgressTooLargeError,
+    );
   });
 });
