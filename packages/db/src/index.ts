@@ -344,6 +344,7 @@ export {
   scopeReadsNodes,
 } from './scope-readable';
 export {
+  foldersReadOf,
   itemWriteRefusal,
   itemWriteRefusalOf,
   itemNotInScopeError,

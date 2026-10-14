@@ -110,3 +110,25 @@ export async function itemWriteRefusalOf(
   }
   return null;
 }
+
+/**
+ * Which of `paths` the current scope reads as a folder of `ownerId`'s brain
+ * (the queue-time create check, A5 step 6a fix round 1, M1). Asked in the
+ * scope, as the rest of this module: a folder it does not read is not
+ * returned, whether it exists or not.
+ */
+export async function foldersReadOf(
+  ownerId: string,
+  paths: readonly string[],
+): Promise<Set<string>> {
+  const list = [...new Set(paths.filter((p) => p.length > 0))];
+  if (list.length === 0) return new Set();
+  const rows = (await db.execute(sql`
+    select n.path::text as path from nodes n
+     where n.owner_id = ${ownerId} and n.type = 'branch'
+       and n.path::text in (${sql.join(
+         list.map((p) => sql`${p}`),
+         sql`, `,
+       )})`)) as unknown as { path: string }[];
+  return new Set(rows.map((r) => r.path));
+}

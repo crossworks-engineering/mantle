@@ -91,10 +91,12 @@ export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
       ...(ctx.queue ? { queue: true } : {}),
     });
     if (!refused && ctx.queue) {
+      const policy = tableBuiltin(builtin.handler)?.policy;
       const folder = await createFolderRefusal(
-        tableBuiltin(builtin.handler)?.policy.createsIn,
+        policy?.createsIn,
         input,
         ctx.ownerId,
+        policy?.makesFolders === true,
       );
       if (folder) return folder;
     }

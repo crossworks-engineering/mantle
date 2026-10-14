@@ -3180,3 +3180,25 @@ Mantle model reads the result (a recipe step, a run item).
   release), the three retired team tool names `memberAppRefusedName`
   refuses with no policy, `PEER_RISKY_TOOL_PREFIXES` (the family sweep's),
   and the deferred selection's core.
+
+### Step 6a fix round 1
+
+**M1, the queue-time create check reads what the handler makes.** A
+create that makes the missing folders of its path itself (the new policy
+field `makesFolders`: `file_create`, whose handler runs `ensureFolderPath`)
+is asked of the deepest folder of its path, cut to the depth the handler
+cuts it to (`clampFilesFolderPath`), that the queuing scope reads: a new
+subfolder under a folder of the scope's queues (and a `folder_create` then
+a `file_create` into the new folder, both queued); a path with no folder
+the scope reads is refused. Every other `createsIn` tool still needs the
+folder itself. A Recall map the queuing scope does not find is not refused
+in a scope that holds Admin (as the folder check skips it): a
+`recall_map_create` then a `recall_card_put`, both queued, both queue. The
+refusals say what to name instead and never send the model to look for a
+folder or map that may not exist. The folders are read in the scope
+(`foldersReadOf`, `@mantle/db` item-rights.ts), so one the scope does not
+read is never told apart from one that does not exist: a subfolder hidden
+from the scope under a folder it reads looks new, and the approver sees the
+path. `packages/tools/src/queue-time-refs.test.ts`, and end to end through
+`turnCallRefusal`, the gate's item pre-check and the folder check:
+`packages/tools/src/queue-folder-e2e.test.ts`.

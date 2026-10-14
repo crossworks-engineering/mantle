@@ -271,7 +271,7 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
         map: 'secret',
       },
     );
-    expect(refused).toMatch(/^Recall map 'secret' is not in your workspaces/);
+    expect(refused).toMatch(/^Recall map 'secret' is not one in your workspaces/);
   });
 
   it('the refusal agrees with the listing for every tool, in both scopes and on both surfaces', async () => {

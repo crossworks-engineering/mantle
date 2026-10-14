@@ -112,6 +112,11 @@ export type ToolPolicy = Readonly<{
    *  folder must resolve in the queuing turn's scope (A5 step 6a, carried
    *  round-2 LOW-1: the approver's scope runs the create). */
   createsIn?: string;
+  /** The create makes the missing folders of its `createsIn` path itself
+   *  (file_create: ensureFolderPath, cut to FILES_MAX_FOLDER_DEPTH), so
+   *  the queue-time check asks the deepest folder of the path the scope
+   *  reads, not the path (A5 step 6a fix round 1, M1). */
+  makesFolders?: true;
   /** Transitional (plan 8, 23.3 step 6b): the items its write names and
    *  what it needs of each, checked before it runs (builtinItems).
    *  Deleted per tool once the database's own edit check is on everywhere. */

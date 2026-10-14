@@ -15,13 +15,13 @@
  * A create names no item (its folder's create check is the database's).
  * Outside a workspace scope nothing is checked: the surface rules decide.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   apps,
   currentGateScope,
   db,
+  foldersReadOf,
   itemWriteRefusalOf,
-  nodes,
   scopeHoldsAdmin,
   withTurnScope,
   recallMaps,
@@ -30,6 +30,7 @@ import {
   type ItemWriteRefusal,
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { clampFilesFolderPath } from '@mantle/files';
 import { callerHasArea, callerScope } from './admin-gate';
 import {
   builtinPolicy,
@@ -75,11 +76,13 @@ export const closeLinkTargets: Resolver = async (input, _ownerId, ctx) => {
   return id ? [{ ids: [id], need: 'edit' }] : [];
 };
 
-/** The refusal of a reference (a Recall map by its slug, a create's
- *  target folder by its path) that names nothing the queuing scope reads
- *  (A5 step 6a, carried round-2 LOW-1), in the item check's words. */
+/** The refusal, before a call is queued for approval, of a reference (a
+ *  Recall map by its slug, a create's target folder by its path) the
+ *  queuing scope does not read (A5 step 6a, carried round-2 LOW-1; worded
+ *  in fix round 1, M1): it says what to name instead, never that the thing
+ *  exists or where to look for it. */
 export function refNotInScopeError(what: string, lookup: string): string {
-  return `${what} is not in your workspaces: it is in a workspace you are not in (add yourself to it first), or there is no such one (find it with ${lookup}).`;
+  return `${what} is not one in your workspaces, so this call is not queued for approval: name one of yours (${lookup} lists them).`;
 }
 
 /** A recall map, by slug, former slug or id, as the recall tools take it. */
@@ -96,7 +99,11 @@ export function recallMap(need: ItemNeed): Resolver {
     // Before a call is queued for approval (A5 step 6a, carried round-2
     // LOW-1): the approver's scope may read the map this scope does not, so
     // a reference that names nothing here is refused now, never queued.
-    if (ctx?.queue) {
+    // Not in a scope that holds the Admin workspace (fix round 1, M1): it
+    // queues for an approver of the same workspace, as the folder check
+    // skips it, and a map it does not find is one a recall_map_create
+    // queued in the same plan may make; dispatch asks again when it runs.
+    if (ctx?.queue && !(await scopeHoldsAdmin())) {
       return [
         { ids: [], need, unresolved: refNotInScopeError(`Recall map '${ref}'`, 'recall_index') },
       ];
@@ -105,42 +112,62 @@ export function recallMap(need: ItemNeed): Resolver {
   };
 }
 
+/** The ltree paths of the folders on `path` below its kind's root, the
+ *  shortest first: files.a.b gives files.a and files.a.b. */
+function folderPrefixes(path: string): string[] {
+  const parts = path.split('.');
+  const out: string[] = [];
+  for (let n = 2; n <= parts.length; n += 1) out.push(parts.slice(0, n).join('.'));
+  return out;
+}
+
 /**
  * Before a call is queued for approval (A5 step 6a, carried round-2 LOW-1):
  * a create whose target folder is named by its path (the policy's
- * `createsIn`) and does not resolve in the queuing scope is refused, in the
- * item check's words. The approved call runs in the approver's scope, which
- * may read (and create in) a folder this scope does not. A path that names
- * no folder at all is refused too: queued, it would be made wherever the
- * approver's scope puts it. A kind's root (`files`: one label, structure,
- * not content, read whatever the scope holds as upsertFile reads it) and a
+ * `createsIn`) is asked of the queuing scope, in the item check's words.
+ * The approved call runs in the approver's scope, which may read (and
+ * create in) a folder this scope does not.
+ *
+ *  - A create that makes the missing folders of its path itself
+ *    (`makesFolders`: file_create, fix round 1, M1) is asked of the
+ *    deepest folder of the path, cut to the depth its handler cuts it to
+ *    (clampFilesFolderPath), that the scope reads: one there, the create
+ *    queues (a new subfolder of a folder of the scope's lands inside it,
+ *    and dispatch asks the create again). None at all (only the kind's
+ *    root, or folders it does not read), it is refused.
+ *  - Any other create needs the folder itself, read by the scope.
+ *
+ * A path that is only a kind's root (`files`: one label, structure, not
+ * content, read whatever the scope holds as upsertFile reads it) and a
  * scope that holds the Admin workspace (it queues for an approver of the
  * same workspace) are not asked. Outside a workspace scope nothing is
- * checked.
+ * checked. Asked in the scope only (foldersReadOf): a folder it does not
+ * read is never told apart from one that does not exist.
  */
 export async function createFolderRefusal(
   param: string | undefined,
   input: Record<string, unknown>,
   ownerId: string,
+  makesFolders = false,
 ): Promise<string | null> {
   if (!param) return null;
-  const path = typeof input[param] === 'string' ? input[param].trim() : '';
-  if (!path || !path.includes('.')) return null;
+  const raw = typeof input[param] === 'string' ? input[param].trim() : '';
+  if (!raw || !raw.includes('.')) return null;
   if (!currentWorkspaceScope()) {
     const g = currentGateScope();
     if (!g) return null;
-    return withTurnScope(g, () => createFolderRefusal(param, input, ownerId));
+    return withTurnScope(g, () => createFolderRefusal(param, input, ownerId, makesFolders));
   }
   if (await scopeHoldsAdmin()) return null;
-  // Read in the scope: its row rules decide what it sees.
-  const [seen] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), sql`${nodes.path}::text = ${path}`),
-    )
-    .limit(1);
-  return seen ? null : refNotInScopeError(`Folder ${path}`, 'folder_list / tree_list');
+  const lookup = 'folder_list / tree_list';
+  if (makesFolders && raw.startsWith('files.')) {
+    const path = clampFilesFolderPath(raw);
+    const read = await foldersReadOf(ownerId, folderPrefixes(path));
+    if (read.size > 0) return null;
+    return `No folder on the path ${path} is one in your workspaces, so this call is not queued for approval: put it in a folder of yours (${lookup} lists them).`;
+  }
+  const read = await foldersReadOf(ownerId, [raw]);
+  return read.has(raw) ? null : refNotInScopeError(`Folder ${raw}`, lookup);
 }
 
 /**

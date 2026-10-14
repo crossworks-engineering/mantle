@@ -32,6 +32,7 @@ export const file_create: BuiltinToolDef = {
     creates: 'file',
     keyArea: 'files',
     createsIn: 'parent_path',
+    makesFolders: true,
   },
   name: 'Create / overwrite a file',
   description:
