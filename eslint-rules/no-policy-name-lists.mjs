@@ -21,12 +21,17 @@ export const TOOL_LIST_PINS = {
   'packages/tools/src/selection/deferred.ts': { lists: 1, entries: 20 },
 };
 
-/** @type {Record<string, number>} route lists per file, A0 baseline */
+/** @type {Record<string, number>} route lists per file, A0 baseline.
+ *  A4 hand batch B fix round 1 (M2), up one in route-policy.ts, reviewed:
+ *  PUBLIC_LOGIN_ROWS names the public rows that read a login, so a public
+ *  login kind is read on those rows only, not on every public row (the
+ *  audit's ask; ROUTE_POLICY's own check, not a policy beside it). */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/api-v1.ts': 1,
   'server/web/lib/auth-constants.ts': 2,
   'server/web/lib/auth/any-login-routes.ts': 3,
   'server/web/lib/auth/member-routes.ts': 1,
+  'server/web/lib/auth/route-policy.ts': 1,
   'server/web/lib/auth/route-scope.ts': 6,
   'server/web/lib/body-limit.ts': 1,
   'server/web/server/public-session-routes.ts': 1,

@@ -2015,6 +2015,21 @@ caller) stand in nothing now; they are left as they are.
   holds the word to the two files that define it, and pins the rows row by
   row (980 of 1043 carry a caller, and no row that is not public and not a
   page is without one), beside the file-level count above.
+- **The kinds of part B are read on named rows.** As the frame answer
+  (`FRAME_ROWS`) and the session user's (`ADMIN_OPEN_ROWS`) were, each
+  kind is now read only on the rows named for it, and `buildRouteRow`
+  refuses it anywhere else (`callerServes`, route-policy.ts): the owner
+  taken at the read on the two page PATCH rows (`OWNER_AT_READ_ROWS`);
+  `publicLogin` and `cookieUpgrade` on the public rows that read a login,
+  each to its kind (`PUBLIC_LOGIN_ROWS`: never an /s link route, the
+  remote MCP, federation or a sign-in route); the asset kinds on a GET or
+  HEAD of a byte route the gate takes an asset token on (`isAssetPath`,
+  moved to auth-constants.ts so the gate and the rows read one list) and
+  the two /api/v1 file rows that run one, so a token minted for a byte src
+  can never answer a write. `gate-caller.test.ts` builds a refused row of
+  each kind and holds the app's rows of each kind to their names. The
+  route list pin of route-policy.ts went up by one (`PUBLIC_LOGIN_ROWS`,
+  reviewed: the rows' own check, not a policy beside them).
 
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):

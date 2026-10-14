@@ -1679,6 +1679,85 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
   });
 
+  it('the kinds of hand batch B are read only on the rows named for them (fix round 1, M2)', async () => {
+    const { buildRoutePolicy, OWNER_AT_READ_ROWS, PUBLIC_LOGIN_ROWS } =
+      await import('../../lib/auth/route-policy');
+    const reads = (pattern: string, method: string, caller: RouteCaller, gone = false) =>
+      buildRoutePolicy([
+        {
+          pattern,
+          methods: [method],
+          reads: { [method]: caller },
+          ...(gone ? { gone: [method] } : {}),
+        },
+      ]);
+    // Served: each named row, its HEAD with its GET, the v1 asset rows.
+    expect(
+      reads('/api/auth/whoami', 'GET', 'publicLogin').get('HEAD /api/auth/whoami')?.caller,
+    ).toBe('publicLogin');
+    expect(reads('/api/oauth/authorize', 'POST', 'publicLogin').size).toBe(1);
+    expect(reads('/api/pages/:id', 'PATCH', 'ownerAtRead').size).toBe(1);
+    expect(reads('/api/v1/pages/:id', 'PATCH', 'ownerAtRead').size).toBe(1);
+    expect(reads('/api/v1/files/:id', 'GET', 'readerAsset').size).toBe(2);
+    expect(reads('/api/v1/files/:id/download', 'GET', 'readerAsset').size).toBe(2);
+    expect(reads('/api/export/:id', 'GET', 'ownerAsset').get('HEAD /api/export/:id')?.caller).toBe(
+      'ownerAsset',
+    );
+    for (const [pattern, method, caller, gone] of [
+      // The owner at the read: any other owner row, self or content.
+      ['/api/profile', 'GET', 'ownerAtRead'],
+      ['/api/profile', 'PUT', 'ownerAtRead'],
+      ['/api/notes/:id', 'PATCH', 'ownerAtRead'],
+      ['/api/pages/:id', 'DELETE', 'ownerAtRead'],
+      ['/api/v1/pages/:id', 'GET', 'ownerAtRead'],
+      // An asset kind: a write row of a byte route, a non-asset path, an
+      // /api/v1 row that runs no byte handler.
+      ['/api/files/files/:id', 'POST', 'readerAsset'],
+      ['/api/files/files/:id', 'PATCH', 'ownerAsset'],
+      ['/api/attachments/:id', 'DELETE', 'ownerAsset'],
+      ['/api/profile/photo', 'POST', 'ownerAsset'],
+      ['/api/profile', 'GET', 'ownerAsset'],
+      ['/api/notes', 'GET', 'readerAsset'],
+      ['/api/v1/pages', 'GET', 'readerAsset'],
+      ['/api/v1/files/:id', 'DELETE', 'readerAsset'],
+      ['/api/member/mcp', 'GET', 'memberAsset', true],
+      ['/api/member/files/:id', 'POST', 'memberAsset', true],
+      // A public login kind: a public row that reads no login (sign-in, the
+      // /s link routes, the remote MCP, federation), or the other kind's row.
+      ['/api/auth/login', 'POST', 'publicLogin'],
+      ['/s/:token/view', 'GET', 'publicLogin'],
+      ['/s/:token/frame-ticket', 'POST', 'cookieUpgrade'],
+      ['/api/mcp', 'POST', 'publicLogin'],
+      ['/api/mcp', 'GET', 'cookieUpgrade'],
+      ['/api/federation/query', 'POST', 'publicLogin'],
+      ['/api/oauth/token', 'POST', 'publicLogin'],
+      ['/api/auth/whoami', 'GET', 'cookieUpgrade'],
+      ['/api/auth/sso', 'POST', 'publicLogin'],
+      ['/api/auth/pair/:id', 'DELETE', 'publicLogin'],
+    ] as const) {
+      expect(
+        () => reads(pattern, method, caller, gone === true),
+        `${method} ${pattern} ${caller}`,
+      ).toThrow(new RegExp(`the ${caller} guard does not serve its row`));
+    }
+    // The app's rows of each kind are its named rows.
+    const { routeManifest } = await import('../route-manifest.gen');
+    const table = [...buildRoutePolicy(routeManifest).values()];
+    const keysOf = (...kinds: RouteCaller[]) =>
+      table
+        .filter((r) => r.caller && kinds.includes(r.caller))
+        .map((r) => r.key)
+        .sort();
+    const asHandled = (key: string) => key.replace(/^HEAD /, 'GET ');
+    expect(new Set(keysOf('publicLogin', 'cookieUpgrade').map(asHandled))).toEqual(
+      new Set(PUBLIC_LOGIN_ROWS.keys()),
+    );
+    expect(keysOf('ownerAtRead')).toEqual([...OWNER_AT_READ_ROWS].sort());
+    for (const r of table.filter((r) => /Asset$/.test(r.caller ?? ''))) {
+      expect(['GET', 'HEAD'], r.key).toContain(r.method);
+    }
+  });
+
   it('ownerCaller() where the pipeline answered no owner throws: fail closed', async () => {
     const session = await import('../../lib/auth/session');
     expect(() => session.ownerCaller()).toThrow(/answered no owner/);

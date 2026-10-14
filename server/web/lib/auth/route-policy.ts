@@ -44,7 +44,7 @@ import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
 import type { RouteSwitch } from './route-switches';
 import { getRequestContext } from '../../server/request-context';
-import { isPublicPath, isRenderAssetPath } from '../auth-constants';
+import { isAssetPath, isPublicPath, isRenderAssetPath } from '../auth-constants';
 import { ANY_LOGIN_ROUTES, CHAT_LOGIN_ROUTES, TELEGRAM_LOGIN_ROUTES } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
 import {
@@ -204,6 +204,62 @@ export const FRAME_ROWS: ReadonlySet<string> = new Set([
   '/api/apps/:id/frame',
   '/api/member/apps/:id/frame',
 ]);
+
+/**
+ * The public rows that read the login (A4 hand batch B), each to the kind it
+ * reads (`METHOD pattern`, a HEAD the GET handler answers under its GET's):
+ * the public login kinds are read only here (callerServes). A public row
+ * judges its own credential, and most read no login at all (the /s link
+ * routes, /api/mcp, federation, sign-in): a public kind read on one of them
+ * would find a login its handler never looked for.
+ */
+export const PUBLIC_LOGIN_ROWS: ReadonlyMap<string, RouteCaller> = new Map([
+  ['GET /api/auth/whoami', 'publicLogin'],
+  ['POST /api/auth/logout', 'publicLogin'],
+  ['POST /api/auth/change-password', 'publicLogin'],
+  ['POST /api/auth/pair', 'publicLogin'],
+  ['GET /api/auth/pair/:id', 'publicLogin'],
+  ['GET /api/oauth/authorize', 'publicLogin'],
+  ['POST /api/oauth/authorize', 'publicLogin'],
+  ['POST /api/auth/sso', 'cookieUpgrade'],
+]);
+
+/**
+ * The owner rows whose handler runs a key's checks before it reads the
+ * owner (A4 hand batch B): the page route's PATCH and its /api/v1 wrapper.
+ * The owner taken at the read ('ownerAtRead') is read only here
+ * (callerServes): its refusal comes after the handler's first code, so on
+ * any other row the gate's answer would no longer come first.
+ */
+export const OWNER_AT_READ_ROWS: ReadonlySet<string> = new Set([
+  'PATCH /api/pages/:id',
+  'PATCH /api/v1/pages/:id',
+]);
+
+/** The asset caller kinds: answered from a `?at=` asset token or the render
+ *  cookie as well as a login, read only on an asset row (assetRow). */
+const ASSET_CALLERS: ReadonlySet<RouteCaller> = new Set([
+  'ownerAsset',
+  'readerAsset',
+  'memberAsset',
+]);
+
+/** The /api/v1 rows that run an asset row's handler: the alias of the file
+ *  bytes and the download wrapper (A4 hand batch B). */
+const ASSET_V1_PATTERNS: ReadonlySet<string> = new Set([
+  '/api/v1/files/:id',
+  '/api/v1/files/:id/download',
+]);
+
+/** Whether a row is an asset row (A4 hand batch B fix round 1, M2): a GET,
+ *  or a HEAD, of a byte route the gate takes an asset token on
+ *  (isAssetPath, auth-constants.ts), or an /api/v1 row that runs one
+ *  (ASSET_V1_PATTERNS). An asset caller is read nowhere else, so a token
+ *  minted for a byte src can never answer a write or another read. */
+function assetRow(method: string, pattern: string, path: string): boolean {
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  return isAssetPath(path) || ASSET_V1_PATTERNS.has(pattern);
+}
 
 /**
  * The asset rows whose handler is handed a request with another query than
@@ -436,13 +492,18 @@ export function routeSwitchedOff(
 
 /**
  * Whether the guard of `caller` serves a row (buildRouteRow): a public row
- * reads only a public kind (PUBLIC_CALLERS) and no other row does; a gone
- * row takes its stub's kind whatever list it is in; the session user's
- * guard serves the named carve-outs (ADMIN_OPEN_ROWS), the frame answer the
- * frame documents (FRAME_ROWS); the owner guard and its asset and at-read
- * forms a row its prefix classes (a scope), the at-read form none that
- * manages an Admin area (the gate's Admin step comes before the handler);
- * every other kind the rows of its own lists (CALLER_LOGINS).
+ * reads only a public kind and no other row does, each kind only on the
+ * public rows named for it (PUBLIC_LOGIN_ROWS); an asset kind only an
+ * asset row (assetRow: a GET or HEAD of a byte route); the owner taken at
+ * the read only its named rows (OWNER_AT_READ_ROWS); a gone row takes its
+ * stub's kind whatever list it is in; the session user's guard serves the
+ * named carve-outs (ADMIN_OPEN_ROWS), the frame answer the frame documents
+ * (FRAME_ROWS); the owner guard and its asset and at-read forms a row its
+ * prefix classes (a scope), the at-read form none that manages an Admin
+ * area (the gate's Admin step comes before the handler); every other kind
+ * the rows of its own lists (CALLER_LOGINS). The kinds of A4 hand batch B
+ * are each read on rows named for them (fix round 1, M2), as the frame
+ * answer and the session user's are: a class of rows is never enough.
  */
 function callerServes(
   caller: RouteCaller,
@@ -450,13 +511,18 @@ function callerServes(
     key: string;
     pattern: string;
     isPublic: boolean;
+    asset: boolean;
     scope: RouteClass | null;
     classLogins: RouteLogins | null;
     gone: boolean;
   }>,
 ): boolean {
-  if (PUBLIC_CALLERS.has(caller)) return row.isPublic && !row.gone;
+  if (PUBLIC_CALLERS.has(caller)) {
+    return row.isPublic && !row.gone && PUBLIC_LOGIN_ROWS.get(row.key) === caller;
+  }
   if (row.isPublic) return false;
+  if (ASSET_CALLERS.has(caller) && !row.asset) return false;
+  if (caller === 'ownerAtRead' && !OWNER_AT_READ_ROWS.has(row.key)) return false;
   if (OWNER_GUARDED.has(caller) && row.scope === null) return false;
   if (caller === 'ownerAtRead' && row.scope?.kind === 'area') return false;
   if (caller === 'session') return ADMIN_OPEN_ROWS.has(row.key);
@@ -572,6 +638,7 @@ export function buildRouteRow(
         key: `${answeredAs} ${pattern}`,
         pattern,
         isPublic,
+        asset: assetRow(answeredAs, pattern, path),
         scope,
         classLogins,
         gone,
