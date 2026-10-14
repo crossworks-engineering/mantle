@@ -6,26 +6,16 @@
  * answer the same. The read never fails the route: a failed read is logged
  * and answers no workspaces and no areas (shellPart).
  */
-import type { NextResponse } from '@/server/http-compat';
 import type { ShellWorkspace, WorkspaceArea } from '@mantle/client-types';
-import type { getLoginOr401 } from '@/lib/auth';
+import type { AnyLogin } from '@/lib/auth';
 import { shellPart } from '@/lib/shell-part';
-import { shellWorkspaces, type WsCaller } from '@/lib/workspaces';
-
-type Login = Exclude<Awaited<ReturnType<typeof getLoginOr401>>, NextResponse>;
-
-/** The caller shape lib/workspaces.ts takes, for a resolved login. */
-export function wsCallerOf(login: Login): WsCaller {
-  return login.kind === 'admin'
-    ? { kind: 'admin', loginId: login.loginId, anchorId: login.user.id, user: login.user }
-    : { kind: 'member', loginId: login.loginId, anchorId: login.member.anchorId, user: null };
-}
+import { shellWorkspaces, workspaceCaller } from '@/lib/workspaces';
 
 export async function loginWorkspaces(
   route: string,
-  login: Login,
+  login: AnyLogin,
 ): Promise<{ workspaces: ShellWorkspace[]; areas: WorkspaceArea[]; isOwner: boolean }> {
-  const caller = wsCallerOf(login);
+  const caller = workspaceCaller(login);
   const ws = await shellPart(route, 'workspaces', () => shellWorkspaces(caller), {
     workspaces: [],
     areas: [],

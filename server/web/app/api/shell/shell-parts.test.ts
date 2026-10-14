@@ -98,6 +98,17 @@ const WS = {
   moderator: true,
 };
 vi.mock('@/lib/workspaces', () => ({
+  // The caller projection (lib/workspaces.ts workspaceCaller, A4 hand batch
+  // A), as it answers.
+  workspaceCaller: (login: {
+    kind: string;
+    loginId: string;
+    user?: { id: string };
+    member?: { anchorId: string };
+  }) =>
+    login.kind === 'admin'
+      ? { kind: 'admin', loginId: login.loginId, anchorId: login.user!.id, user: login.user }
+      : { kind: 'member', loginId: login.loginId, anchorId: login.member!.anchorId, user: null },
   shellWorkspaces: async () => {
     boom('workspaces');
     return { workspaces: [WS], areas: ['users'] };

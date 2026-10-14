@@ -1,3 +1,4 @@
+import { loginCaller } from '@/lib/auth';
 import { z } from 'zod';
 import { createWorkspace, listWorkspaces, wsBody, wsRoute } from '@/lib/workspaces';
 
@@ -9,7 +10,8 @@ import { createWorkspace, listWorkspaces, wsBody, wsRoute } from '@/lib/workspac
  * the query.
  */
 export async function GET() {
-  return wsRoute((caller) => listWorkspaces(caller));
+  const login = loginCaller();
+  return wsRoute(login, (caller) => listWorkspaces(caller));
 }
 
 const CreateBody = z.object({
@@ -18,5 +20,10 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  return wsRoute(async (caller) => createWorkspace(caller, await wsBody(req, CreateBody)), 201);
+  const login = loginCaller();
+  return wsRoute(
+    login,
+    async (caller) => createWorkspace(caller, await wsBody(req, CreateBody)),
+    201,
+  );
 }

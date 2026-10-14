@@ -933,12 +933,13 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
 
   it('a workspace and a grants write: the any-login audit row as workspaceCaller() wrote it (part 5 fix round 1)', async () => {
     // Real rows of the any-login list served twice: through the reader, and
-    // through workspaceCaller() (lib/workspaces.ts, behind wsRoute and
-    // grantsRoute), the guard path these rows run today: getLoginOr401 and
-    // the api.write row it writes (`audit`, written by hand after it before
-    // A4 hand batch A), which /api/shell and the self-logged
+    // through the guard path these rows ran before A4 hand batch A
+    // (workspaceCaller() behind wsRoute and grantsRoute: getLoginOr401 and
+    // the api.write row, written by hand after it until the hand batch, then
+    // asked of the guard), which /api/shell and the self-logged
     // /api/access-keys cannot show. The 'login' answer step writes that row
-    // since hand batch A, and these cells hold it to the one row.
+    // now, and these cells hold it to the one row. workspaceCaller() is the
+    // projection both paths answer with.
     const { gate } = await import('./gate');
     const { registerRoutes } = await import('../route-loader');
     const session = await import('../../lib/auth/session');
@@ -948,28 +949,14 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
       { pattern: '/api/workspaces', methods: ['POST'] },
       { pattern: '/api/grants/move', methods: ['POST'] },
     ];
-    // What workspaceCaller() answers, projected from the login the
-    // pipeline answered.
-    const wsCallerOf = (login: ReturnType<typeof session.loginCaller>) =>
-      login.kind === 'admin'
-        ? { kind: 'admin', loginId: login.loginId, anchorId: login.user.id, user: login.user }
-        : {
-            kind: 'member',
-            loginId: login.loginId,
-            anchorId: login.member.anchorId,
-            user: null,
-          };
     const build = (reads: boolean) => {
       const app = new Hono();
       app.use('*', gate());
       const handle = async () => {
         counts.handled += 1;
-        if (reads) {
-          const login = session.loginCaller();
-          return Response.json(seen(wsCallerOf(login)));
-        }
-        const caller = await workspaceCaller();
-        return caller instanceof Response ? caller : Response.json(seen(caller));
+        if (reads) return Response.json(seen(workspaceCaller(session.loginCaller())));
+        const login = await session.getLoginOr401({ audit: true });
+        return login instanceof Response ? login : Response.json(seen(workspaceCaller(login)));
       };
       registerRoutes(
         app,

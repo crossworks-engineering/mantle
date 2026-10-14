@@ -9,7 +9,8 @@ import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
 import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
-import { loginWorkspaces, wsCallerOf } from '@/lib/login-workspaces';
+import { loginWorkspaces } from '@/lib/login-workspaces';
+import { workspaceCaller } from '@/lib/workspaces';
 import { ruleInQuery } from '@/lib/auth/rule-in-query';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
@@ -37,7 +38,7 @@ type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 async function handleGET() {
   const login = await getLoginOr401();
   if (login instanceof Response) return login;
-  const caller = wsCallerOf(login);
+  const caller = workspaceCaller(login);
   const admin = login.kind === 'admin' ? login.user : null;
   const anchorId = caller.anchorId;
   const loginId = caller.loginId;

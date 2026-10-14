@@ -42,18 +42,15 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({
   res: null as unknown,
   audits: [] as Array<Record<string, unknown>>,
-  loginAudits: [] as string[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  // The audit row the guard writes when asked (A4 hand batch A): noted by
-  // the login's kind.
-  getLoginOr401: vi.fn(async (opts?: { audit?: boolean }) => {
-    const kind = (h.res as { kind?: string } | null)?.kind;
-    if (opts?.audit && kind) h.loginAudits.push(kind);
-    return h.res;
-  }),
+  getLoginOr401: vi.fn(async () => h.res),
+  // The reader the workspace routes call (A4 hand batch A): the same
+  // stand-in. The api.write row is the gate's any-login answer step's now
+  // (pinned by the guard sweep's guard writes and gate-caller.test.ts).
+  loginCaller: vi.fn(() => h.res),
 }));
 vi.mock('@/lib/audit', () => ({
   auditFireAndForget: (row: Record<string, unknown>) => h.audits.push(row),
@@ -566,8 +563,6 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(anchor.body.code).toBe('owner_stays_admin');
     expect(await roleOf(owner)).toBe('admin');
     expect(h.audits).toEqual([]);
-    // Every route call of an admin login goes through the api.write hook.
-    expect(h.loginAudits).toContain('admin');
   });
 
   it('the Admin workspace: its checks run inside the role change, before the bridge (audit L2)', async () => {

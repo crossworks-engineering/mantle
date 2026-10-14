@@ -71,7 +71,7 @@ import type {
 } from '@mantle/client-types';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 import { workspaceHeldApp } from '@mantle/content';
-import { getLoginOr401, type SessionUser } from '@/lib/auth';
+import type { AnyLogin, SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
 import { rateLimit } from '@/lib/rate-limit';
@@ -101,30 +101,31 @@ export type WsCaller = {
   user: SessionUser | null;
 };
 
-export async function workspaceCaller(): Promise<WsCaller | Response> {
-  // With the generic api.write row, as the sibling admin and member gates
-  // write it (an admin's write; any login's write with an API key).
-  const res = await getLoginOr401({ audit: true });
-  if (res instanceof Response) return res;
-  switch (res.kind) {
-    case 'admin':
-      return { kind: 'admin', loginId: res.loginId, anchorId: res.user.id, user: res.user };
-    case 'member':
-      return { kind: 'member', loginId: res.loginId, anchorId: res.member.anchorId, user: null };
-  }
+/**
+ * The caller lib/workspaces.ts and lib/grants.ts take, projected from the
+ * login the pipeline answered (A4 hand batch A): the route handler reads
+ * it first (loginCaller()) and passes it in. No guard and no effect: the
+ * gate's any-login answer step resolved the login, entered its scope (an
+ * Admin user's write: the system pool) and wrote the api.write row.
+ */
+export function workspaceCaller(login: AnyLogin): WsCaller {
+  return login.kind === 'admin'
+    ? { kind: 'admin', loginId: login.loginId, anchorId: login.user.id, user: login.user }
+    : { kind: 'member', loginId: login.loginId, anchorId: login.member.anchorId, user: null };
 }
 
-/** Run a workspace route: resolve the caller, answer the result as JSON or
- *  a WsError as `{ error, code }`. Anything else throws (opaque 500). */
+/** Run a workspace route for the login the handler read (loginCaller()):
+ *  answer the result as JSON or a WsError as `{ error, code }`. Anything
+ *  else throws (opaque 500). */
 export async function wsRoute(
+  login: AnyLogin,
   fn: (caller: WsCaller) => Promise<unknown>,
   okStatus = 200,
 ): Promise<Response> {
-  const caller = await workspaceCaller();
-  if (caller instanceof Response) return caller;
+  const caller = workspaceCaller(login);
   try {
     // The rule is in this library's own SQL on the system pool: it leaves
-    // the request scope the guard entered by name (W6a).
+    // the request scope the gate entered by name (W6a).
     const out = await asSystem(() => fn(caller), 'rule-in-query');
     return NextResponse.json(out, { status: okStatus });
   } catch (err) {

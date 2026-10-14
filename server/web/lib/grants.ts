@@ -66,6 +66,7 @@ import { appDbTableDetails } from '@mantle/content/app-broker';
 import { refoldPageTexts } from '@mantle/content/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { publicErrorMessage } from '@mantle/std';
+import type { AnyLogin } from '@/lib/auth';
 import { areasFor, workspaceCaller, WsError, type WsCaller } from '@/lib/workspaces';
 
 // ── Errors and the route wrapper ─────────────────────────────────────────────
@@ -89,17 +90,18 @@ const WS_NOT_FOUND = () => new GrantError(404, 'not_found', 'Workspace not found
  *  test can lower it. */
 export const FOLDER_GRANT_LIMIT = { max: 50_000 };
 
-/** Run a grants route: resolve the caller, answer the result as JSON or a
- *  refusal as `{ error, code }`. Anything else throws (opaque 500). */
+/** Run a grants route for the login the handler read (loginCaller()):
+ *  answer the result as JSON or a refusal as `{ error, code }`. Anything
+ *  else throws (opaque 500). */
 export async function grantsRoute(
+  login: AnyLogin,
   fn: (caller: WsCaller) => Promise<unknown>,
   okStatus = 200,
 ): Promise<Response> {
-  const caller = await workspaceCaller();
-  if (caller instanceof Response) return caller;
+  const caller = workspaceCaller(login);
   try {
     // The rule is in this library's own SQL on the system pool: it leaves
-    // the request scope the guard entered by name (W6a).
+    // the request scope the gate entered by name (W6a).
     const out = await asSystem(() => fn(caller), 'rule-in-query');
     return NextResponse.json(out, { status: okStatus });
   } catch (err) {
