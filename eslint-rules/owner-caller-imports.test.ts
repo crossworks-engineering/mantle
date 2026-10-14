@@ -81,7 +81,44 @@ describe('owner-caller-imports', () => {
           filename: lib,
           errors: [{ messageId: 'member' }],
         },
+        // A template literal key with no expression is a literal (re-audit).
+        {
+          code: "import * as auth from '@/lib/auth';\nauth[`ownerCaller`]();",
+          filename: route,
+          errors: [{ messageId: 'member' }],
+        },
+        {
+          code: "const { [`ownerCaller`]: f } = await import('@/lib/auth');",
+          filename: lib,
+          errors: [{ messageId: 'member' }],
+        },
+        // A .mts or .js file under server/web is not a route file.
+        {
+          code: "import { ownerCaller } from '@/lib/auth';",
+          filename: '/r/server/web/lib/who.mts',
+          errors: [{ messageId: 'notRoute' }],
+        },
+        {
+          code: "import { ownerCaller } from '@/lib/auth';",
+          filename: '/r/server/web/scripts/who.js',
+          errors: [{ messageId: 'notRoute' }],
+        },
       ],
     });
+    // A template literal with an expression in it names nothing plainly.
+    tester.run('owner-caller-imports', rule, {
+      valid: [{ code: 'auth[`owner${x}`]();', filename: lib }],
+      invalid: [],
+    });
+  });
+
+  it('runs on every script file under server/web, tests aside (eslint.config.mjs)', async () => {
+    const { ESLint } = await import('eslint');
+    const eslint = new ESLint({ cwd: new URL('..', import.meta.url).pathname });
+    for (const ext of ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs']) {
+      const config = await eslint.calculateConfigForFile(`server/web/lib/who.${ext}`);
+      expect(config?.rules?.['mantle-caller/owner-caller-imports'], ext).toBeDefined();
+      expect(isExempt(`/r/server/web/lib/who.test.${ext}`), ext).toBe(true);
+    }
   });
 });

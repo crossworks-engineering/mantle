@@ -233,8 +233,10 @@ export default tseslint.config(
     // step 3b) is imported only in an app/api route file, by its own name:
     // the manifest generator reads the route files to learn which rows the
     // gate answers.
-    files: ['server/web/**/*.{ts,tsx}'],
-    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    // Every script file under server/web, not only .ts and .tsx: a helper
+    // in a .mts or .js file would read it unseen too.
+    files: ['server/web/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    ignores: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
     plugins: { 'mantle-caller': mantleOwnerCallerPlugin },
     rules: { 'mantle-caller/owner-caller-imports': 'error' },
   },

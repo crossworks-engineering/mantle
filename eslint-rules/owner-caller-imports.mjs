@@ -11,8 +11,11 @@
  *    file under server/web/app/api, from @/lib/auth (or
  *    @/lib/auth/session), and never renamed;
  *  - it is never re-exported, read off an object (`auth.ownerCaller`,
- *    `auth['ownerCaller']`) or destructured (`const { ownerCaller } =
- *    await import(...)`).
+ *    `auth['ownerCaller']`, a template literal key with no expression) or
+ *    destructured (`const { ownerCaller } = await import(...)`).
+ *
+ * It runs on every script file under server/web (.ts, .tsx, .mts, .cts,
+ * .js, .jsx, .mjs, .cjs; eslint.config.mjs), tests aside.
  *
  * The generator refuses the rest inside a route file (a reference other
  * than a plain call, a read outside a handler).
@@ -31,18 +34,20 @@ export function isApiRouteFile(filename) {
 /** Whether `filename` is exempt: the definition, and tests. */
 export function isExempt(filename) {
   const f = filename.replace(/\\/g, '/');
-  if (/\.test\.tsx?$/.test(f)) return true;
+  if (/\.test\.[cm]?[jt]sx?$/.test(f)) return true;
   return /(^|\/)server\/web\/lib\/auth\/session\.ts$/.test(f);
 }
 
-const nameOf = (node) =>
-  node
-    ? node.type === 'Identifier'
-      ? node.name
-      : typeof node.value === 'string'
-        ? node.value
-        : null
-    : null;
+/** The name a key spells: an identifier, a string literal, or a template
+ *  literal with no expression in it (`auth[\`ownerCaller\`]`). */
+const nameOf = (node) => {
+  if (!node) return null;
+  if (node.type === 'Identifier') return node.name;
+  if (node.type === 'TemplateLiteral') {
+    return node.expressions.length === 0 ? (node.quasis[0]?.value.cooked ?? null) : null;
+  }
+  return typeof node.value === 'string' ? node.value : null;
+};
 
 export const rule = {
   meta: {
@@ -84,7 +89,13 @@ export const rule = {
         if (name) context.report({ node, messageId: 'reexport', data: { name } });
       },
       MemberExpression(node) {
-        if (node.computed && node.property.type !== 'Literal') return;
+        if (
+          node.computed &&
+          node.property.type !== 'Literal' &&
+          node.property.type !== 'TemplateLiteral'
+        ) {
+          return;
+        }
         const name = nameOf(node.property);
         if (READERS.has(name)) context.report({ node, messageId: 'member', data: { name } });
       },
