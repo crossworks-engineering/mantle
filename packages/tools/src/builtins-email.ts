@@ -316,6 +316,7 @@ const email_page: BuiltinToolDef = {
     scope: { area: 'connectors' },
     // Mail out under the owner's address.
     peerRisky: true,
+    outside: { egress: true },
     lowering: lowersEmailPage,
   },
   name: 'Email a page',

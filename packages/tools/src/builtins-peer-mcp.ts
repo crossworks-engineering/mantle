@@ -176,6 +176,9 @@ const peer_call: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
+    // Its arguments go out to the linked brain, and it may change it there
+    // (A5 step 5).
+    outside: { egress: true },
     peerRisky: true,
   },
   name: 'Call a tool on a peer',

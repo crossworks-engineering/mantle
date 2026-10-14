@@ -254,7 +254,18 @@ const LISTS: Record<string, readonly string[]> = {
   ],
   APP_DATA_READ_TOOL_SLUGS: ['app_data_list', 'app_data_query', 'app_data_schema'],
   APP_DATA_WRITE_TOOL_SLUGS: ['app_data_write'],
-  HEARTBEAT_EGRESS_SLUGS: ['email_send', 'web_fetch', 'web_search'],
+  // A5 step 5 (plan section 25) added email_page, peer_call, telegram_send,
+  // web_crawl and web_search_pro.
+  HEARTBEAT_EGRESS_SLUGS: [
+    'email_page',
+    'email_send',
+    'peer_call',
+    'telegram_send',
+    'web_crawl',
+    'web_fetch',
+    'web_search',
+    'web_search_pro',
+  ],
 };
 
 /** TOOL_ADMIN_AREAS: the Admin area of each tool, sorted by slug. */

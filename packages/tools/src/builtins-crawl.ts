@@ -206,12 +206,13 @@ const web_map: BuiltinToolDef = {
 
 const web_crawl: BuiltinToolDef = {
   slug: 'web_crawl',
-  // Its reply names the site's own paths: fenced as data (A5 step 5).
+  // Its reply names the site's own paths: fenced as data; the url goes out
+  // to the crawler (A5 step 5).
   policy: {
     effect: 'write',
     spends: 'ownerKey',
     scope: 'admin',
-    outside: { untrusted: true },
+    outside: { untrusted: true, egress: true },
     peerRisky: true,
   },
   ownerOnly: true,

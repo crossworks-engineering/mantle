@@ -2136,3 +2136,22 @@ mark; the MCP surface fences no result. Of `dispatch-parity.json` only
 those six tools changed, each in its recipe step's cases (the result now
 carries `untrusted: true`); `tool-policy-snapshot.untrusted.json` holds the
 new set.
+
+**Egress coverage (plan section 25).** `outside.egress` is declared on
+`web_search_pro` (the query goes to the search provider, as
+`web_search`'s), `web_crawl` (the URL goes to the crawler and it fetches
+the site), `telegram_send` (a message out), `email_page` (mail out under
+the owner's address) and `peer_call` (its arguments go to a linked brain,
+which it may change). When the owner turns the heartbeat egress gate on,
+an unattended heartbeat fire forces each to confirm, so it parks for
+approval instead of running inline (`HEARTBEAT_EGRESS_SLUGS`,
+`packages/runtime/src/heartbeats/fire.ts`). `telegram_send` and
+`email_page` already ask a confirm by default; the mark holds when an
+owner turned a row's confirm off. `peer_query` and `peer_search_chunks`
+are not marked: they read, and the one thing they send, the search text,
+goes only to a brain the owner linked and named, never to an address the
+call chooses, so the gate's case (injected content picking where data
+goes) does not arise; marking them would park every unattended
+heartbeat's peer read. `tool-policy-snapshot.test.ts` holds the new set;
+`dispatch-parity.json` does not change (the mark is read only by a
+heartbeat fire).

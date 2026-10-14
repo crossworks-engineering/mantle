@@ -103,6 +103,8 @@ export const telegram_send: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
+    // A message out of the brain (A5 step 5).
+    outside: { egress: true },
     peerRisky: true,
   },
   name: 'Send a Telegram message',

@@ -66,11 +66,11 @@ export type ToolOutside = Readonly<{
    *  ToolHandlerResult `untrusted` flag (untrusted.ts). */
   untrusted?: true;
   /** It is in the heartbeat egress set (heartbeats/fire.ts
-   *  HEARTBEAT_EGRESS_SLUGS: email_send, web_fetch, web_search): an
-   *  unattended heartbeat fire parks it for approval when the egress gate is
-   *  on. Not every tool that reaches out of the brain carries it; marking
-   *  another one changes what a heartbeat fire does, a behaviour change for
-   *  A5 step 5. */
+   *  HEARTBEAT_EGRESS_SLUGS): an unattended heartbeat fire parks it for
+   *  approval when the egress gate is on. Since A5 step 5: the mail, web,
+   *  Telegram and linked-brain sends (docs/actors.md says which and why the
+   *  peer reads are not). Marking another one changes what a heartbeat fire
+   *  does. */
   egress?: true;
   /** It changes what a mini app's code or tools do (builtins-apps.ts
    *  withAuthorCeiling: the author ceiling). */

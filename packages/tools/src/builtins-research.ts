@@ -232,8 +232,9 @@ const web_search_pro: BuiltinToolDef = {
     spends: 'ownerKey',
     startsModelWork: true,
     scope: 'any',
-    // As web_search: the public web's answer, fenced as data (A5 step 5).
-    outside: { untrusted: true },
+    // As web_search: the public web's answer, fenced as data, and the query
+    // goes out to the search provider (A5 step 5).
+    outside: { untrusted: true, egress: true },
     peerRisky: true,
   },
   name: 'Deep web search',
