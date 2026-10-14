@@ -8,13 +8,12 @@
  * Only the signed-in login's own turn counts (W7 integration fix 3, F3).
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { currentTurnStageLabel } from '@/lib/assistant/turn-stage';
 import { toolMakerFor } from '@/lib/tools';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const label = await currentTurnStageLabel(user.id, toolMakerFor(user));
   return NextResponse.json({ label });
 }

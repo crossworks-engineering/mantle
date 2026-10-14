@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { loadPreferencesFor, savePreferencesFor } from '@mantle/content';
 import { putContent, deleteContent } from '@mantle/storage/write';
@@ -48,8 +48,7 @@ function isDark(req: Request): boolean {
 }
 
 export async function PUT(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const refused = await brandSettingsRefusal(user);
   if (refused) return refused;
 
@@ -104,8 +103,7 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const refused = await brandSettingsRefusal(user);
   if (refused) return refused;
   const dark = isDark(req);

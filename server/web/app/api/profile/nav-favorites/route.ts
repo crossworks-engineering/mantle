@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { NAV_FAVORITES_MAX } from '@mantle/client-types/app-nav';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { savePreferencesFor } from '@mantle/content';
 
 /**
@@ -13,8 +13,7 @@ import { savePreferencesFor } from '@mantle/content';
 const Body = z.object({ navFavorites: z.array(z.string().max(400)).max(NAV_FAVORITES_MAX * 2) });
 
 export async function PUT(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'navFavorites (array of hrefs) required' }, { status: 400 });

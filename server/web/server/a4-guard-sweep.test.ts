@@ -24,6 +24,18 @@
  * device token, an unknown and a revoked key), and the cells of the first
  * sweep where a guard threw for want of a database, driven again with the
  * stand-ins that answer the guard's item and scope queries (READS).
+ *
+ * Step 3b moves guard calls to the pipeline, batch by batch (docs/actors.md):
+ * a converted handler reads the caller the gate answered (ownerCaller())
+ * and the gate runs the owner guard's answer itself, before the handler
+ * (answerRouteCaller). Its entry in the guard log moves with it: the
+ * pipeline's answer is logged as `pipeline:owner`, with the same answer,
+ * actor and scope after it, at the gate. Every handler a batch converts
+ * called getOwnerOr401 (the codemod converts that call only), so the two
+ * recorded files compare a moved entry under that name (LEGACY_NAMES):
+ * they stay byte for byte. The moved entries, as logged, are recorded in a
+ * third file (`__snapshots__/a4-guard-sweep-moved.txt`), one line per cell
+ * whose entry moved, so each move is on the record and reviewed.
  */
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -253,6 +265,38 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
     );
   };
   const wrapped: Record<string, unknown> = { ...real, endLoginSessions: async () => 1 };
+  // The pipeline's answer of the owner caller (A4 step 3b): logged at the
+  // gate as the guard's answer was in the handler. Rows with no caller
+  // are answered by their guard (no entry).
+  const answer = real.answerRouteCaller as (row: { caller: string | null }) => Promise<unknown>;
+  const ownerCaller = real.ownerCaller as () => unknown;
+  wrapped.answerRouteCaller = async (row: { caller: string | null }) => {
+    if (!row.caller) return answer(row);
+    const name = `pipeline:${row.caller}`;
+    let value: unknown;
+    try {
+      value = await answer(row);
+    } catch (err) {
+      const e = err as { name?: string; location?: string; message?: string };
+      sweepState.log.push(
+        `${name} threw ${e.name ?? '?'} ${e.location ?? (e.message ?? '').split('\n')[0]!.slice(0, 80)} ${after()}`,
+      );
+      throw err;
+    }
+    if (value instanceof NextResponse) {
+      const body = await value.clone().text();
+      sweepState.log.push(`${name} R${value.status} ${body.slice(0, 300)} ${after()}`);
+      return value;
+    }
+    sweepState.log.push(`${name} ok ${summarize(ownerCaller())} ${after()}`);
+    return value;
+  };
+  // The handler's read of it: the handler goes no further, as after a
+  // guard that let a login through.
+  wrapped.ownerCaller = () => {
+    ownerCaller();
+    throw new SweepStop();
+  };
   for (const name of GUARDS) {
     const fn = real[name] as (...a: unknown[]) => Promise<unknown>;
     wrapped[name] = async (...args: unknown[]) => {
@@ -295,6 +339,27 @@ function concretePath(pattern: string): string {
 /** One credential: its headers, and a query string it adds. GET only for
  *  the URL-borne ones (a GET is all they ever open). */
 type Cred = { name: string; headers: Record<string, string>; query?: string; getOnly?: boolean };
+
+/** The guard each pipeline entry stands for in the two recorded files: the
+ *  guard every handler a batch converted called (step 3b batch 1: the self
+ *  rows, getOwnerOr401 each). */
+const LEGACY_NAMES: Readonly<Record<string, string>> = { 'pipeline:owner': 'getOwnerOr401' };
+
+/** An answer as the recorded files spell it: a moved entry under the name
+ *  of the guard it replaced. Everything else is the answer as driven. */
+function legacy(answer: string): string {
+  return answer.replace(/\[(pipeline:[a-z]+) /g, (whole, name: string) =>
+    LEGACY_NAMES[name] ? `[${LEGACY_NAMES[name]} ` : whole,
+  );
+}
+
+/** The cells whose guard entry moved to the pipeline, as driven: sweep and
+ *  cell to its answer. */
+const moved = new Map<string, string>();
+function noteMoved(sweep: string, cell: string, answer: string): string {
+  if (answer.includes('[pipeline:')) moved.set(`${sweep} ${cell}`, answer);
+  return legacy(answer);
+}
 
 /** The headers a client reads. */
 const HEADERS = [
@@ -474,7 +539,11 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
           const cells: string[] = [];
           for (const cred of creds) {
             if (cred.getOnly && method !== 'GET') continue;
-            const answer = await drive(method, path, cred);
+            const answer = noteMoved(
+              'first',
+              `${method} ${row.pattern} ${cred.name}`,
+              await drive(method, path, cred),
+            );
             driven += 1;
             let id = answers.get(answer);
             if (!id) {
@@ -539,7 +608,7 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
     try {
       sweepState.reads = true;
       for (const { line, method, path, cred } of cellsOf(moreCreds)) {
-        const answer = await drive(method, path, cred);
+        const answer = noteMoved('more', `${line} ${cred.name}`, await drive(method, path, cred));
         if (answer.includes(NO_DB)) noDbAfter += 1;
         more.set(line, [...(more.get(line) ?? []), `${cred.name}=${idOf(answer)}`]);
       }
@@ -551,7 +620,7 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
         if (!before.includes(NO_DB)) continue;
         noDbBefore += 1;
         sweepState.reads = true;
-        const answer = await drive(method, path, cred);
+        const answer = noteMoved('again', `${line} ${cred.name}`, await drive(method, path, cred));
         if (answer.includes(NO_DB)) noDbAfter += 1;
         again.set(line, [...(again.get(line) ?? []), `${cred.name}=${idOf(answer)}`]);
       }
@@ -581,4 +650,31 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
       ].join('\n'),
     ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-more.txt');
   }, 1_200_000);
+
+  it('records every guard entry that moved to the pipeline (A4 step 3b)', async () => {
+    // After both sweeps (the tests of this file run in order). Each line is
+    // a cell whose handler reads the caller the gate answered: its answer as
+    // driven, the entry logged at the gate (pipeline:owner) where the guard's
+    // was. The recorded files hold the same answer under the guard's name.
+    expect(moved.size).toBeGreaterThan(0);
+    const answers = new Map<string, string>();
+    const lines = [...moved].map(([cell, answer]) => {
+      let id = answers.get(answer);
+      if (!id) {
+        id = `m${answers.size + 1}`;
+        answers.set(answer, id);
+      }
+      return `${cell}=${id}`;
+    });
+    await expect(
+      [
+        '# answers',
+        ...[...answers].map(([answer, id]) => `${id} ${answer}`),
+        '',
+        `# cells whose guard entry moved to the pipeline: ${moved.size}`,
+        ...lines,
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-moved.txt');
+  });
 });

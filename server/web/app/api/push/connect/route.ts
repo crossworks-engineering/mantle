@@ -5,13 +5,12 @@
 // /enroll, then posts the routing token back to /api/push/subscriptions.
 
 import { type NextRequest, NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { connectDevice, parseConnectBody } from '@/lib/push/connect';
 import { pushEnrolLimited } from '@/lib/push/login-routes';
 
 export async function POST(req: NextRequest) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
   const limited = pushEnrolLimited(owner.actor.id);
   if (limited) return limited;
 

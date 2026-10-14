@@ -9,7 +9,8 @@
  *  - tool policy lists keyed by name (a list literal holding 3 or more
  *    builtin tool slugs) and their entries;
  *  - route policy lists (a list literal holding 3 or more route patterns);
- *  - route files, 410 stubs, guard calls;
+ *  - route files, 410 stubs, guard calls, and reads of the caller the
+ *    pipeline answers (ownerCaller(), A4 step 3b);
  *  - TS kind lists (a list literal holding 5 or more node_type values);
  *  - switch-over code (brainOnWorkspacesNow calls, MANTLE_ADMIN_READS);
  *  - store write API importers (the disk stores of plan section 6).
@@ -307,6 +308,15 @@ export function guardCalls(text) {
   return (stripComments(text).match(GUARD_CALL) ?? []).length;
 }
 
+const CALLER_READ = /\bownerCaller\s*\(/g;
+
+/** A route file's reads of the caller the pipeline answers (A4 step 3b:
+ *  ownerCaller(), where a guard call was). The gate answered the caller
+ *  before the handler ran, so a file that reads it is guarded. */
+export function callerReads(text) {
+  return (stripComments(text).match(CALLER_READ) ?? []).length;
+}
+
 /** Whether a route file is a retired route's 410 stub: it answers through
  *  lib/gone.ts (gone(), goneResponse(), goneForMemberAsset()), which logs
  *  each hit. A raw 410 for a missing resource is not a stub (A0 fix round
@@ -438,6 +448,8 @@ export function measure(root) {
   let guards = 0;
   let guardFiles = 0;
   let liveUnguarded = 0;
+  let reads = 0;
+  let readFiles = 0;
   let bowCalls = 0;
   let bowFiles = 0;
   let adminReadsFiles = 0;
@@ -466,8 +478,11 @@ export function measure(root) {
       if (gone) goneStubs += 1;
       const g = guardCalls(text);
       guards += g;
+      const r = callerReads(text);
+      reads += r;
+      if (r) readFiles += 1;
       if (g) guardFiles += 1;
-      else if (!gone && f.startsWith('server/web/app/api/')) liveUnguarded += 1;
+      else if (!r && !gone && f.startsWith('server/web/app/api/')) liveUnguarded += 1;
     }
     const b = brainOnWorkspacesCalls(text);
     if (b) {
@@ -495,6 +510,8 @@ export function measure(root) {
       guardCalls: guards,
       guardCallFiles: guardFiles,
       liveRoutesWithoutGuard: liveUnguarded,
+      callerReads: reads,
+      callerReadFiles: readFiles,
       kindLists: sum(kinds),
       brainOnWorkspacesCalls: bowCalls,
       brainOnWorkspacesFiles: bowFiles,

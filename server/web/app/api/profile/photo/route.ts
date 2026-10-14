@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
+import { ownerCaller, getOwnerForAsset } from '@/lib/auth';
 import { loadPreferencesFor, savePreferencesFor, projectAvatarPhotoType } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 import { putContent } from '@mantle/storage/write';
@@ -40,8 +40,7 @@ import { sniffType, LOGO_MAX_BYTES } from '@/lib/logo-validation';
  */
 
 export async function PUT(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   // Cheap refusal BEFORE formData() buffers the body: a Content-Length far
   // over the cap never gets materialized. (A lying client still hits the
@@ -86,8 +85,7 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   // '' is the jsonb-merge "clear" write (projects to undefined on read).
   await savePreferencesFor(user.actor.id, { avatarPhotoKey: '', avatarPhotoType: '' });
   return NextResponse.json({ ok: true });

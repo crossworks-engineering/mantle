@@ -18,7 +18,7 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { toolMakerFor } from '@/lib/tools';
 import { loginHasArea } from '@mantle/db';
 import { AvatarPartsSchema } from '@/lib/avatar-schema';
@@ -37,8 +37,7 @@ import { errorMessage } from '@mantle/std';
 import { PURPOSE_MAX_CHARS, purposeTooLongError } from '@mantle/client-types/purpose-limits';
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   // Personal preferences are the ACTOR's own (per-login avatar/photo/timezone);
   // loadPreferencesFor routes the brain-level keys to the anchor row either
   // way. Agents stay owner-scoped (they belong to the brain, not a login).
@@ -96,8 +95,7 @@ const Body = z.object({
 });
 
 export async function PUT(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });

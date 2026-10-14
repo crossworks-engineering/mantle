@@ -15,12 +15,11 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 
 export async function GET() {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
   const prefs = await loadProfilePreferences(owner.id);
   return NextResponse.json({ reminderChannel: prefs.reminderChannel ?? 'telegram' });
 }
@@ -28,8 +27,7 @@ export async function GET() {
 const Body = z.object({ reminderChannel: z.enum(['telegram', 'mobile']) });
 
 export async function PUT(req: Request) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });

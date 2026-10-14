@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, assistantMessages } from '@mantle/db';
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { suggestionPayload } from '@/lib/turn-suggestion-read';
 
 /**
@@ -25,8 +25,7 @@ export async function GET(
   _req: Request,
   ctx: { params: Promise<{ turnId: string }> },
 ): Promise<Response> {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
 
   const { turnId } = await ctx.params;
   // uuid-shape gate: the id column is uuid, and Postgres errors (22P02) on a

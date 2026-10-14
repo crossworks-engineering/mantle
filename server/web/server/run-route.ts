@@ -56,7 +56,7 @@ export async function runRoute(
   method: string,
   path: string,
   body?: unknown,
-  opts: { headers?: Record<string, string> } = {},
+  opts: { headers?: Record<string, string>; signal?: AbortSignal } = {},
 ): Promise<Response> {
   const secret = env(SECRET_NAME);
   // A test that set no signing secret gets one (a test process only).
@@ -71,5 +71,6 @@ export async function runRoute(
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    ...(opts.signal ? { signal: opts.signal } : {}),
   });
 }

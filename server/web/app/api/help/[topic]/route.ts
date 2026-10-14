@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { listToolGroupBackrefs } from '@/lib/tool-groups';
 import { loadHelpTopic } from '@/lib/help';
 
@@ -13,8 +13,7 @@ import { loadHelpTopic } from '@/lib/help';
  * groups rather than the client deriving them.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ topic: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   const { topic } = await ctx.params;
   // Which groups any agent actually holds — gates the Assistant section.

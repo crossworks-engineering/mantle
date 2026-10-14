@@ -6,13 +6,12 @@
 //          (/api/member/push, /api/client/push) and is not listed here.
 
 import { type NextRequest, NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { callerTokenId, pushEnrolLimited } from '@/lib/push/login-routes';
 import { forgetRelayDevices, insertSubscription, listAdminDeviceList } from '@/lib/push/store';
 
 export async function POST(req: NextRequest) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
   const limited = pushEnrolLimited(owner.actor.id);
   if (limited) return limited;
   // The phone app always signs in with a device token, and a device is
@@ -63,8 +62,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
   const devices = await listAdminDeviceList(owner.id);
   // Don't leak routing tokens / public keys to the list view.
   return NextResponse.json({

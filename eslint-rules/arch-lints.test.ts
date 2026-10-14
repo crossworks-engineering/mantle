@@ -6,6 +6,7 @@ import {
   builtinSlugs,
   countedFiles,
   guardCalls,
+  callerReads,
   isCounted,
   isRouteFile,
   keptNotes,
@@ -140,9 +141,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     expect(found).toEqual({});
   });
 
-  it('no-guard-calls (count only until A4): the guard calls in route files', () => {
-    // A new route is guarded until A4 (M-2): the count may grow, never drop.
-    expect(got.numbers.guardCalls).toBeGreaterThanOrEqual(GUARD_CALL_PIN);
+  it('no-guard-calls (a ceiling since A4 step 3b): the guard calls in route files', () => {
+    // The codemod takes them down batch by batch; a new owner route reads
+    // the caller the pipeline answers. Lower the pin with each batch.
+    expect(got.numbers.guardCalls).toBeLessThanOrEqual(GUARD_CALL_PIN);
   });
 });
 
@@ -201,6 +203,7 @@ describe('the counters', () => {
     expect(
       guardCalls('const u = await getOwnerOr401();\n// getMemberOr401()\ngetLoginOr401();'),
     ).toBe(2);
+    expect(callerReads('const u = ownerCaller();\n// ownerCaller()\ngetOwnerOr401();')).toBe(1);
     expect(isRouteFile('server/web/app/api/pages/route.ts')).toBe(true);
     expect(isRouteFile('server/web/lib/pages.ts')).toBe(false);
   });

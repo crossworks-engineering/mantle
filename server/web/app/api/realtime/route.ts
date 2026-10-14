@@ -1,4 +1,4 @@
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { subscribeRealtime, type RealtimeChange } from '@/lib/realtime';
 import { sseResponse } from '@/lib/sse';
 
@@ -12,8 +12,7 @@ import { sseResponse } from '@/lib/sse';
  */
 
 export async function GET(req: Request): Promise<Response> {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const typesParam = new URL(req.url).searchParams.get('types');
   const types = typesParam
     ? new Set(

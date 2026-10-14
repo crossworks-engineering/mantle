@@ -5,7 +5,7 @@
 // device rows become unreachable (no one holds the old instance token).
 
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { generateInstanceToken } from '@/lib/push/tokens';
 import { registerInstance } from '@/lib/push/relay-client';
 import { deleteAllSubscriptions, getPushInstance, savePushInstance } from '@/lib/push/store';
@@ -13,8 +13,7 @@ import { DEFAULT_RELAY_URL } from '@/lib/push/connect';
 import { env } from '@mantle/config';
 
 export async function POST() {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
 
   const existing = await getPushInstance();
   const relayUrl = existing?.relayUrl ?? env('MANTLE_PUSH_RELAY_URL') ?? DEFAULT_RELAY_URL;

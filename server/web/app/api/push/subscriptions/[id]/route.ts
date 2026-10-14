@@ -2,12 +2,11 @@
 // and (best-effort) tells the relay to drop its device row too.
 
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { deleteSubscription, forgetRelayDevices } from '@/lib/push/store';
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
 
   const { id } = await params;
   const routingToken = await deleteSubscription(owner.id, id);

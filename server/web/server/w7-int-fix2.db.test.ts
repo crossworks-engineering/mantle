@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runRoute } from './run-route';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -537,14 +538,17 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
   // settings-area login included, and no save restamps a heartbeat.
   it("M2: the brain's house style changes only by the anchor, and restamps nothing", async () => {
     const hb = await newHeartbeat(`${tag}-hb-style`, agent.slug, null);
-    const profile = await import('@/app/api/profile/route');
+    // Through the full pipeline (runRoute, A4 step 3b): the gate answers
+    // the login from its session cookie, the handler reads it.
+    let who = maker;
     const put = (body: Record<string, unknown>) =>
-      profile.PUT(json({ timezone: 'UTC', ...body }, 'PUT'));
+      runRoute(who, 'PUT', '/api/profile', { timezone: 'UTC', ...body });
     await setAreas(maker, { settings: false });
-    as(maker);
     // An unchanged brain key is no change: a profile save goes through.
     const current = (
-      (await (await profile.GET()).json()) as { preferences: { houseStyle?: string } }
+      (await (await runRoute(who, 'GET', '/api/profile')).json()) as {
+        preferences: { houseStyle?: string };
+      }
     ).preferences.houseStyle;
     const same = await put({ houseStyle: current ?? '' });
     expect(same.status, await same.clone().text()).toBe(200);
@@ -557,7 +561,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
     expect(before!.by).toBeNull();
     await setAreas(maker, {});
     expect((await put({ houseStyle: `${tag} style` })).status).toBe(403);
-    as(owner);
+    who = owner;
     expect((await put({ houseStyle: `${tag} style` })).status).toBe(200);
     const [after] = await x<{ by: string | null }>(
       sql`select created_by::text as by from heartbeats where id = ${hb.id}`,

@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runRoute } from './run-route';
 import { teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -232,12 +233,13 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
 
   it("F1: the house style and the purpose are the anchor's only, the brand needs the settings area, nothing restamps", async () => {
     const hb = await newHeartbeat(`${tag}-hb-prefs`, agent.slug, null);
-    const profile = await import('@/app/api/profile/route');
+    // Through the full pipeline (runRoute, A4 step 3b): the gate answers
+    // the login from its session cookie, the handler reads it.
+    let who = maker;
     const put = (body: Record<string, unknown>) =>
-      profile.PUT(json({ timezone: 'UTC', ...body }, 'PUT'));
-    as(maker);
+      runRoute(who, 'PUT', '/api/profile', { timezone: 'UTC', ...body });
     const current = (
-      (await (await profile.GET()).json()) as {
+      (await (await runRoute(who, 'GET', '/api/profile')).json()) as {
         preferences: { houseStyle?: string; purpose?: string };
       }
     ).preferences;
@@ -258,7 +260,7 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
     await setAreas(maker, { settings: false });
     expect((await put({ siteName: `${tag} other` })).status).toBe(403);
     // The anchor changes the house style.
-    as(owner);
+    who = owner;
     expect((await put({ houseStyle: `${tag} style` })).status).toBe(200);
     // No save made any heartbeat another login's.
     expect((await row(hb.id)).by).toBeNull();
@@ -365,11 +367,13 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
     await x(sql`insert into trace_steps (trace_id, ordinal, name, kind, status) values
       (${ownTrace}, 0, 'spill_result:x', 'compute', 'running'),
       (${makersTrace}, 0, 'openrouter_chat', 'llm_call', 'running')`);
-    const route = await import('@/app/api/assistant/turn/stage/route');
-    const label = async (login: string) => {
-      as(login);
-      return ((await (await route.GET()).json()) as { label: string | null }).label;
-    };
+    // Through the full pipeline (runRoute, A4 step 3b).
+    const label = async (login: string) =>
+      (
+        (await (await runRoute(login, 'GET', '/api/assistant/turn/stage')).json()) as {
+          label: string | null;
+        }
+      ).label;
     try {
       expect(await label(owner)).toBe('Reading more results…');
       expect(await label(maker)).toBe('Thinking…');
@@ -486,22 +490,9 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
       ['default-mode', 'PUT'],
       ['share-neat', 'PUT'],
     ];
-    type Route = Record<string, (req: Request) => Promise<Response>>;
-    const routes: Record<string, () => Promise<unknown>> = {
-      'color-theme': () => import('@/app/api/profile/color-theme/route'),
-      fonts: () => import('@/app/api/profile/fonts/route'),
-      logo: () => import('@/app/api/profile/logo/route'),
-      avatar: () => import('@/app/api/profile/avatar/route'),
-      backgrounds: () => import('@/app/api/profile/backgrounds/route'),
-      'neat-background': () => import('@/app/api/profile/neat-background/route'),
-      'default-mode': () => import('@/app/api/profile/default-mode/route'),
-      'share-neat': () => import('@/app/api/profile/share-neat/route'),
-    };
-    const callAs = async (login: string, name: string, method: 'PUT' | 'DELETE', body = {}) => {
-      as(login);
-      const route = (await routes[name]!()) as Route;
-      return route[method]!(json(body, method));
-    };
+    // Through the full pipeline (runRoute, A4 step 3b): /api/profile/<name>.
+    const callAs = (login: string, name: string, method: 'PUT' | 'DELETE', body = {}) =>
+      runRoute(login, method, `/api/profile/${name}`, body);
     await setAreas(maker, { settings: false });
     for (const [name, method] of writers) {
       const res = await callAs(maker, name, method);

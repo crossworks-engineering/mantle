@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import {
   getChangelogMarkdown,
   getLatestChangelogVersion,
@@ -12,8 +12,8 @@ import {
  * the latest entry + the full version list.
  */
 export async function GET(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  // Owner only: the gate answered the caller and refused anyone else.
+  ownerCaller();
   const requested = new URL(req.url).searchParams.get('version');
 
   const [versions, latest] = await Promise.all([

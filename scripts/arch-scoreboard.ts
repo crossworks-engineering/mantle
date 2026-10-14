@@ -38,6 +38,8 @@ const LABELS: Record<string, string> = {
   guardCalls: 'guard calls in route files',
   guardCallFiles: 'route files with a guard call',
   liveRoutesWithoutGuard: 'live /api routes calling no guard',
+  callerReads: 'reads of the caller the pipeline answers (A4 step 3b)',
+  callerReadFiles: 'route files reading the caller the pipeline answers',
   kindLists: 'TS kind lists',
   brainOnWorkspacesCalls: 'brainOnWorkspacesNow calls',
   brainOnWorkspacesFiles: 'files calling brainOnWorkspacesNow',
@@ -49,15 +51,17 @@ const LABELS: Record<string, string> = {
 };
 
 /** Numbers that may go up without failing: the route counts grow with
- *  every new feature; a new route is guarded until A4 makes the guards go
- *  (guard calls and the files holding them); retiring a route to a 410
- *  stub is fine (A0 fix round 2, M-2). */
+ *  every new feature; retiring a route to a 410 stub is fine (A0 fix round
+ *  2, M-2); the reads of the caller the pipeline answers grow with every
+ *  batch of the A4 step 3b codemod. The guard calls and the files holding
+ *  them may not grow since step 3b: the codemod takes them down batch by
+ *  batch, and a new owner route reads the pipeline's caller (ownerCaller()). */
 const MAY_GROW = new Set([
   'routeFiles',
   'apiRouteFiles',
-  'guardCalls',
-  'guardCallFiles',
   'goneStubs',
+  'callerReads',
+  'callerReadFiles',
 ]);
 
 const mode = process.argv[2] ?? '';

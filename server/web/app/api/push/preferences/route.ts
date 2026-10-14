@@ -3,19 +3,19 @@
 // docs/reminder-delivery-routing.md §C.)
 
 import { type NextRequest, NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getPushPrefs, updatePushPrefs } from '@/lib/push/store';
 import { sanitizePushPrefs } from '@/lib/push/preferences-sanitize';
 
 export async function GET() {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  // Owner only: the gate answered the caller and refused anyone else.
+  ownerCaller();
   return NextResponse.json(await getPushPrefs());
 }
 
 export async function PUT(req: NextRequest) {
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  // Owner only: the gate answered the caller and refused anyone else.
+  ownerCaller();
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body || typeof body !== 'object')
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });

@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getSystemHealth } from '@/lib/system-health';
 
 /**
@@ -9,8 +9,7 @@ import { getSystemHealth } from '@/lib/system-health';
  */
 
 export async function GET() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const health = await getSystemHealth(user.id);
   return NextResponse.json(health, {
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
