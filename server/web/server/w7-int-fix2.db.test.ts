@@ -40,19 +40,15 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>();
   const ownerCaller = real.ownerCaller as () => unknown;
+  const { getRequestContext } = await import('@/server/request-context');
   return {
     ...real,
     getOwnerOr401: vi.fn(async () => h.session),
-    // The reader a converted handler calls (A4 step 3b): the pipeline's
-    // answer through runRoute; the same stand-in for a handler called
-    // directly (outside a routed request the real reader throws).
-    ownerCaller: vi.fn(() => {
-      try {
-        return ownerCaller();
-      } catch {
-        return h.session;
-      }
-    }),
+    // The reader a converted handler calls (A4 step 3b): inside a routed
+    // request (runRoute) the real reader, its fail-closed throw included;
+    // the test's session only for a handler called directly (no request,
+    // where the real reader would throw).
+    ownerCaller: vi.fn(() => (getRequestContext() ? ownerCaller() : h.session)),
   };
 });
 vi.mock('@mantle/api-keys', async (importOriginal) => ({
