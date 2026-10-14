@@ -58,8 +58,9 @@ import {
 } from '@/lib/app-db-broker-body';
 import { renderAppFrame } from '@/lib/app-frame';
 import { memberAppOr404, memberName } from '@/lib/member-apps';
-import { readJsonCapped } from '@/lib/body-limit';
 import { rateLimit } from '@/lib/rate-limit';
+import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
+import { readJson } from '@/lib/read-body';
 
 function tooMany(retryAfterSec: number): NextResponse {
   return NextResponse.json(
@@ -148,7 +149,9 @@ export async function memberDbBroker(
   // Generous (a running app is query-chatty) but bounded.
   const gate = rateLimit(`member-db-broker:${member.loginId}`, { max: 300, windowMs: 60_000 });
   if (!gate.ok) return tooMany(gate.retryAfterSec);
-  const parsed = AppDbBody.safeParse((await readJsonCapped(req)) ?? {});
+  const parsed = AppDbBody.safeParse(
+    (await readJson(req, { empty: null, maxBytes: JSON_BODY_CEILING_BYTES })) ?? {},
+  );
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
   }
@@ -228,7 +231,9 @@ export async function memberToolBroker(
 ): Promise<Response> {
   const gate = rateLimit(`member-tool-broker:${member.loginId}`, { max: 60, windowMs: 60_000 });
   if (!gate.ok) return tooMany(gate.retryAfterSec);
-  const parsed = ToolBody.safeParse((await readJsonCapped(req)) ?? {});
+  const parsed = ToolBody.safeParse(
+    (await readJson(req, { empty: null, maxBytes: JSON_BODY_CEILING_BYTES })) ?? {},
+  );
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
   }

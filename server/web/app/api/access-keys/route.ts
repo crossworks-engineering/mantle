@@ -50,9 +50,9 @@ import { listAccessKeys } from '@/lib/access-keys-admin';
 import { notifyKeyMade } from '@/lib/access-keys-notify';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
-import { firstIssue } from '@/lib/zod-issue';
 import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
 import { inRuleInQuery } from '@/lib/auth/rule-in-query';
+import { readBody } from '@/lib/read-body';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 /** Keys a login may make an hour (final audit F6): a make-and-revoke loop
@@ -109,11 +109,8 @@ async function handleGET(login: AnyLogin) {
 }
 
 async function handlePOST(login: AnyLogin, req: Request) {
-  const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const body = parsed.data;
+  const input = await readBody(req, Body, { empty: null });
+  const body = input;
   const riskyTools = body.riskyTools ?? [];
   const keysArea = await holdsKeysArea(login);
   if (riskyTools.length > 0 && !keysArea) {

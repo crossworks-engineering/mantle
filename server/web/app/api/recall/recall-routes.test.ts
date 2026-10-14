@@ -110,8 +110,9 @@ describe('PUT /api/recall/maps/:id/cards/:card', () => {
   });
 
   it('refuses a write without a version', async () => {
-    const res = await put({ title: 'Box', bodyMd: 'x' });
-    expect(res.status).toBe(400);
+    // readBody throws the one 400 (app.onError answers it, A10 part 2).
+    const { BadBodyError } = await import('@/lib/read-body');
+    await expect(put({ title: 'Box', bodyMd: 'x' })).rejects.toBeInstanceOf(BadBodyError);
     expect(h.calls).toHaveLength(0);
   });
 });

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { connectImapAccount, getAccount, redactAccount } from '@mantle/email';
 import { ownerCaller } from '@/lib/auth';
 import { vaultPairRefusalFor } from '@/lib/tools';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 /** One owner-scoped account (credential stripped). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -82,11 +82,8 @@ function mailDestinationMoved(
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const parsed = EditBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { intent, ...input } = parsed.data;
+  const body = await readBody(req, EditBody);
+  const { intent, ...input } = body;
   if (!input.password) {
     const stored = await getAccount(user.id, id);
     if (stored && mailDestinationMoved(stored, input) && (await vaultPairRefusalFor(user))) {

@@ -10,6 +10,7 @@ import {
   LAST_ADMIN_MESSAGE,
   loadLoginTarget,
 } from '@/lib/login-update';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -33,7 +34,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = PatchBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 });
   }

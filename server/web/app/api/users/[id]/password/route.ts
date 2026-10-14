@@ -11,6 +11,7 @@ import {
 import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Body = z.object({ newPassword: z.string().min(8).max(1024) });
@@ -43,7 +44,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
   }

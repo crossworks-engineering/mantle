@@ -30,7 +30,7 @@ import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
-import { SHARE_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { readJson } from '@/lib/read-body';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
@@ -58,7 +58,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
   // Capped (apps audit S2): a chunked body declares no length for the gate
   // to refuse, so the read itself stops at the ceiling (413).
-  const parsed = AppDbBody.safeParse(await readJsonCapped(req, SHARE_BODY_CEILING_BYTES));
+  const parsed = AppDbBody.safeParse(await readJson(req, { empty: null }));
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
   const { op } = parsed.data;

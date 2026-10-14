@@ -4,6 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { applyTableOps } from '@/lib/tables';
 import type { TableOp } from '@mantle/tabledb';
 import { TableOpsSchema } from '@/lib/table-ops-schema';
+import { readJson } from '@/lib/read-body';
 
 /**
  * Apply an op batch to the table's DRAFT (P3). The batch is atomic on the
@@ -22,7 +23,7 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'invalid input: expected { ops: [...], if_rev? }' },

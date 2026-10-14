@@ -15,6 +15,7 @@ import { firstIssue } from '@/lib/zod-issue';
 import { TreeVisibilityError, guardFolderCopyTo, guardFolderTo } from '@mantle/content/tree';
 import { treeErrorResponse } from '@/lib/tree-route';
 import { isBusy, isScopeWriteRefusal } from '@mantle/db';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -60,7 +61,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
@@ -130,7 +131,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const body = z
     .object({
       copy_to: z.string().min(1).max(500),

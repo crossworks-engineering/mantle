@@ -3,7 +3,7 @@ import { SESSION_COOKIE_NAME, endLoginSessions, publicLoginCaller } from '@/lib/
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
-import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { readJson } from '@/lib/read-body';
 
 /**
  * POST /api/auth/logout: clear this browser's session cookie. With a body of
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   // Origin only: the body is optional (a plain sign-out sends none).
   const refused = refuseCrossSiteAuthPost(req, { json: false });
   if (refused) return refused;
-  const body = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) as {
+  const body = (await readJson(req, { empty: null })) as {
     everywhere?: unknown;
   } | null;
   const everywhere = body?.everywhere === true;

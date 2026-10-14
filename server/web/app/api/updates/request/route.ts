@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requestUpdate } from '@/lib/updates';
 import { serviceRunBusy } from '@/lib/services';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const Body = z
   .object({
@@ -19,10 +19,7 @@ const Body = z
  *  state isn't an HTTP error). */
 export async function POST(req: Request) {
   ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, Body);
   // One change to the box at a time: a service switch recreates containers too.
   if (await serviceRunBusy()) {
     return NextResponse.json({
@@ -30,7 +27,5 @@ export async function POST(req: Request) {
       error: 'A service is being switched on or off. Try again when it has finished.',
     });
   }
-  return NextResponse.json(
-    await requestUpdate(parsed.data.target ?? null, parsed.data.clientTarget ?? null),
-  );
+  return NextResponse.json(await requestUpdate(body.target ?? null, body.clientTarget ?? null));
 }

@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { saveDrawDraft, sceneWithinLimits } from '@/lib/draws';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({
   // Bounded: this is the hot path (every ~1.5 s while drawing) into an
@@ -25,7 +26,7 @@ const Body = z.object({
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     const tooLarge = parsed.error.issues.some((i) => i.message === 'scene too large');
     return NextResponse.json(

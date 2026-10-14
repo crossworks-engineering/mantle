@@ -5,6 +5,7 @@ import { ownerCaller, ownerCallerAtRead } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import { deletePage, getPage, updatePage } from '@/lib/pages';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 const DocSchema = z.record(z.string(), z.unknown());
 
@@ -47,7 +48,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if ((await hiddenFromKey(user.id, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

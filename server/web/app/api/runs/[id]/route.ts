@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { db } from '@mantle/db';
 import { cancelRun, compileRunState } from '@mantle/runs';
 import { ownerCaller } from '@/lib/auth';
+import { readJson } from '@/lib/read-body';
 
 /** GET /api/runs/:id — one run's compiled tree (the run view payload). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +23,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const body = (await req.json().catch(() => ({}))) as { action?: string };
+  const body = (await readJson(req)) as { action?: string };
   if (body.action !== 'cancel') {
     return NextResponse.json({ error: "expected { action: 'cancel' }" }, { status: 400 });
   }

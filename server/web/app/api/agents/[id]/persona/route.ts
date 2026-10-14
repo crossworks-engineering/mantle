@@ -19,6 +19,7 @@ import {
   retirePersonaNote,
 } from '@/lib/agents';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Kind = z.enum(['style', 'relationship', 'correction']);
@@ -44,7 +45,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!idParsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   }
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: firstIssue(parsed.error, 'Invalid input.') },

@@ -5,6 +5,7 @@ import { getAgent } from '@/lib/agents';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({ prompt: z.string().default('') });
 
@@ -25,7 +26,7 @@ const Body = z.object({ prompt: z.string().default('') });
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
 
   try {

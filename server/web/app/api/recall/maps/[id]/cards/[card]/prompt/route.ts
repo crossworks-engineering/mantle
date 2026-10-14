@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { confirmRecallPrompt } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { recallActorOf, recallWriteFailure } from '@/lib/recall';
-import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
+import { readBody } from '@/lib/read-body';
 
 /**
  * Confirm (or drop) a prompt.
@@ -23,18 +23,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; ca
   const user = ownerCaller();
   const { id, card } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, Body);
   try {
     const res = await confirmRecallPrompt(
       user.id,
       id,
       card,
-      parsed.data.confirm,
+      body.confirm,
       await recallActorOf(user),
-      parsed.data.version,
+      body.version,
     );
     return NextResponse.json(res);
   } catch (err) {

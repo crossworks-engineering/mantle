@@ -8,13 +8,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
 import {
   TableSnapshotRefusedError,
   createTableSnapshot,
   listTableSnapshots,
   tableTitle,
 } from '@mantle/content/table-snapshots';
+import { readBody } from '@/lib/read-body';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
@@ -34,12 +34,10 @@ const CreateBody = z.object({ note: z.string().max(500).nullable().optional() })
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success)
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  const body = await readBody(req, CreateBody);
   try {
     const snapshot = await createTableSnapshot(user.id, id, {
-      note: parsed.data.note ?? null,
+      note: body.note ?? null,
       actor: 'owner',
     });
     if (!snapshot) return NextResponse.json({ error: 'table not found' }, { status: 404 });

@@ -4,6 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { cancelRun, forkRun, getRunDetail, resumeRun, restartRun } from '@/lib/runners';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 /** GET /api/runners/[id] — one run with its steps + (truncated) input/output,
  *  or 404. Drives the detail pane. Owner-gated. */
@@ -34,7 +35,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   ownerCaller();
   const { id } = await params;
 
-  const parsed = ActionBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = ActionBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: firstIssue(parsed.error, 'invalid action') },

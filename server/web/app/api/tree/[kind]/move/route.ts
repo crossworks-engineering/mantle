@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { movedAppToolWarnings } from '@mantle/tools';
-import { firstIssue } from '@/lib/zod-issue';
 import { treeErrorResponse, treeKindOr404 } from '@/lib/tree-route';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
   ids: z.array(z.string().uuid()).min(1).max(200),
@@ -23,13 +23,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
   const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
   if (kind instanceof Response) return kind;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success)
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  const body = await readBody(req, Body);
   try {
-    const result = await moveTreeItems(user.id, kind, parsed.data.ids, parsed.data.folderId, {
-      confirm: parsed.data.confirm,
-      seen: parsed.data.seen,
+    const result = await moveTreeItems(user.id, kind, body.ids, body.folderId, {
+      confirm: body.confirm,
+      seen: body.seen,
     });
     if (result.moved) await notifyTreeChanged(user.id, kind);
     // An app's folder can set the level it is used at (a client-shared
@@ -38,7 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
       const failed = new Set(result.failed.map((f) => f.id));
       const warnings = await movedAppToolWarnings(
         user.id,
-        [...new Set(parsed.data.ids)].filter((id) => !failed.has(id)),
+        [...new Set(body.ids)].filter((id) => !failed.has(id)),
       );
       if (warnings.length) return NextResponse.json({ ...result, warnings });
     }

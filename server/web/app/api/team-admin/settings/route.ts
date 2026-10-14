@@ -21,6 +21,7 @@ import {
   isTeamPrivateReadsEnabled,
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
+import { readJson } from '@/lib/read-body';
 
 export async function GET() {
   const user = ownerCaller();
@@ -44,12 +45,7 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   const user = ownerCaller();
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'invalid body' }, { status: 400 });
-  }
+  const body = await readJson(req, { refuseEmpty: true });
   const teamPrivateReads = (body as { teamPrivateReads?: unknown }).teamPrivateReads;
   if (typeof teamPrivateReads !== 'boolean') {
     return NextResponse.json({ error: 'teamPrivateReads must be a boolean' }, { status: 400 });

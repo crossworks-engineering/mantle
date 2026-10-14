@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { createPdfPassword, listPdfPasswords } from '@mantle/content';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 export async function GET() {
   const user = ownerCaller();
@@ -16,12 +16,9 @@ const CreateBody = z.object({
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, CreateBody);
   try {
-    const row = await createPdfPassword(user.id, parsed.data);
+    const row = await createPdfPassword(user.id, body);
     return NextResponse.json({ password: row }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });

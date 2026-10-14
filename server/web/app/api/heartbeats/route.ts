@@ -6,6 +6,7 @@ import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
+import { readJson } from '@/lib/read-body';
 
 /** List the owner's heartbeats (summaries). A heartbeat's state shows only
  *  to its maker (W7 integration fix 2). */
@@ -19,7 +20,7 @@ export async function GET() {
  *  is omitted) seeds from the bound skill's defaultState. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = CreateHeartbeatBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = CreateHeartbeatBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: firstIssue(parsed.error, 'Invalid input.') },

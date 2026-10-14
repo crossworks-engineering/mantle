@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getMailAccount, setMailEnabled } from '@mantle/microsoft';
 import { ownerCaller } from '@/lib/auth';
+import { readJson } from '@/lib/read-body';
 
 /** Whether Outlook mail sync is enabled for this account. Both helpers are
  *  owner-scoped, so a non-owned id reads as `{ enabled: false }`. */
@@ -18,7 +19,7 @@ const Body = z.object({ enabled: z.boolean() });
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
   const ok = await setMailEnabled(user.id, id, parsed.data.enabled);
   if (!ok) return NextResponse.json({ error: 'Account not found.' }, { status: 404 });

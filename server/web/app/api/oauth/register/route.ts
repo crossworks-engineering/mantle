@@ -7,6 +7,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { isAllowedRedirectUri, isRemoteMcpEnabled, registerClient } from '@/lib/mcp-oauth';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
+import { readJson } from '@/lib/read-body';
 
 function error(status: number, error: string, description?: string) {
   return NextResponse.json(
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
 
   let body: unknown;
   try {
-    body = await req.json();
+    body = await readJson(req, { refuseEmpty: true });
   } catch {
     return error(400, 'invalid_client_metadata', 'body must be JSON');
   }

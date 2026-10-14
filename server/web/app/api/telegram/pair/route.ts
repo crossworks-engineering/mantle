@@ -32,6 +32,7 @@ import {
   previewMyTelegramChat,
 } from '@/lib/agent-telegram';
 import { rateLimit } from '@/lib/rate-limit';
+import { readJson } from '@/lib/read-body';
 
 const Body = z
   .object({
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
       { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
     );
   }
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       {

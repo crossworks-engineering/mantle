@@ -10,8 +10,8 @@ import {
 } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { getRecallCardDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
-import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
+import { readBody } from '@/lib/read-body';
 
 /**
  * One card of a native Recall map. `card` in the path is the card's SLUG, not
@@ -55,11 +55,8 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string; car
   const user = ownerCaller();
   const { id, card } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const parsed = Card.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { version, ...input } = parsed.data;
+  const body = await readBody(req, Card);
+  const { version, ...input } = body;
   try {
     const res = await putRecallCard(user.id, id, card, input, await recallActorOf(user), version);
     return NextResponse.json(res);

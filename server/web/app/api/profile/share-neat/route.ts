@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { savePreferencesFor } from '@mantle/content';
+import { readJson } from '@/lib/read-body';
 
 /**
  * PUT /api/profile/share-neat { shareNeat }, persist whether shared surfaces
@@ -24,7 +25,7 @@ export async function PUT(req: Request) {
   const user = ownerCaller();
   const refused = await brandSettingsRefusal(user);
   if (refused) return refused;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'shareNeat required' }, { status: 400 });
   }

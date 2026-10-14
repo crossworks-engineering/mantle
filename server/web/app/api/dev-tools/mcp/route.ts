@@ -10,6 +10,7 @@ import { ownerCaller } from '@/lib/auth';
 import { callMcpTool, listMcpTools } from '@/lib/dev-tools/mcp-bridge';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 export async function GET() {
   ownerCaller();
@@ -29,7 +30,7 @@ const CallBody = z.object({
 
 export async function POST(req: Request) {
   ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = CallBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

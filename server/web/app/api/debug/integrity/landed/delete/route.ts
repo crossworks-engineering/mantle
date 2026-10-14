@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { deleteLandedNode } from '@/lib/integrity/landed';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 // Delete one real node + its brain footprint via the canonical cascade/reaper
 // path. Owner-scoped; the destructive confirm lives in the client.
@@ -12,7 +13,7 @@ const Body = z.object({ nodeId: z.string().uuid() });
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

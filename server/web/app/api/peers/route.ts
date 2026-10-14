@@ -2,13 +2,13 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { createPeer, listPeers, setPeerAccess } from '@mantle/content';
-import { firstIssue } from '@/lib/zod-issue';
 import {
   PEER_OWNER_ONLY,
   PeerAccessBody,
   peerChangeNeedsOwner,
   resolvePeerActsAs,
 } from '@/lib/peer-access';
+import { readBody } from '@/lib/read-body';
 
 export async function GET() {
   const user = ownerCaller();
@@ -28,11 +28,8 @@ const CreateBody = z
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { actsAs, writeEnabled, allowedRiskyTools, ...input } = parsed.data;
+  const body = await readBody(req, CreateBody);
+  const { actsAs, writeEnabled, allowedRiskyTools, ...input } = body;
   // A brain that acts as the owner, or one with risky owner tools, is the
   // owner's to link (W6b fix round 3, M-1).
   if (!user.actor.isOwner && peerChangeNeedsOwner({ actsAs, allowedRiskyTools })) {

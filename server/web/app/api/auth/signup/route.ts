@@ -8,7 +8,7 @@ import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { createFirstOwner } from '@/lib/auth/first-owner';
 import { setupCodeConfigured, setupCodeMatches } from '@/lib/auth/setup-code';
-import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { readJson } from '@/lib/read-body';
 
 /**
  * First-run account creation — the signup that replaces the old manual
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) ?? {};
+  const raw = (await readJson(req)) ?? {};
   const parsed = SignupBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(

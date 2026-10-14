@@ -76,6 +76,7 @@ import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
 import { rateLimit } from '@/lib/rate-limit';
 import { lookOfRow, WS_LOOK_COLUMNS, type LookRow } from '@/lib/workspace-look';
+import { readJson } from '@/lib/read-body';
 
 // ── Errors and the caller ────────────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ export async function wsBody<T>(
         };
   },
 ): Promise<T> {
-  const parsed = schema.safeParse(await req.json().catch(() => undefined));
+  const parsed = schema.safeParse(await readJson(req, { empty: undefined }));
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const where = issue?.path?.filter((p) => typeof p !== 'symbol').join('.');

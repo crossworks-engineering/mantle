@@ -9,6 +9,7 @@ import { z } from 'zod';
 import prettier from 'prettier';
 import { ownerCaller } from '@/lib/auth';
 import { MAX_APP_FILE_BYTES, MAX_APP_PATH_LEN } from '@mantle/content';
+import { readJson } from '@/lib/read-body';
 
 // ext → Prettier parser. Mirrors what the editor highlights; anything else is
 // refused (the button is hidden for those, but defend the endpoint too).
@@ -36,7 +37,7 @@ const Body = z.object({
 
 export async function POST(req: Request) {
   ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
 
   const ext = parsed.data.path.slice(parsed.data.path.lastIndexOf('.') + 1).toLowerCase();

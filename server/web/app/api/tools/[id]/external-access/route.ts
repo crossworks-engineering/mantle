@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { getToolById } from '@/lib/tools';
 import { setToolExternalAccess } from '@mantle/tools';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -24,13 +24,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, Body);
   const res = await setToolExternalAccess(user.id, idParsed.data.id, {
-    allow: parsed.data.allow,
-    readOnlyConfirmed: parsed.data.readOnlyConfirmed,
+    allow: body.allow,
+    readOnlyConfirmed: body.readOnlyConfirmed,
     by: { via: 'web', actorId: user.actor.id, actorEmail: user.actor.email },
   });
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status });

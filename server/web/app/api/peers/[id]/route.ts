@@ -2,7 +2,6 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { deletePeer, setOutboundToken, setPeerAccess, setPeerEnabled } from '@mantle/content';
-import { firstIssue } from '@/lib/zod-issue';
 import {
   PEER_OWNER_ONLY,
   PeerAccessBody,
@@ -10,6 +9,7 @@ import {
   peerChangeNeedsOwner,
   resolvePeerActsAs,
 } from '@/lib/peer-access';
+import { readBody } from '@/lib/read-body';
 
 const PatchBody = z
   .object({
@@ -23,11 +23,8 @@ const PatchBody = z
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { actsAs, writeEnabled, allowedRiskyTools } = parsed.data;
+  const input = await readBody(req, PatchBody);
+  const { actsAs, writeEnabled, allowedRiskyTools } = input;
   const change = { actsAs, writeEnabled, allowedRiskyTools };
   // Checked before anything changes: a brain that acts as the owner is the
   // owner's to bind, arm and keep armed (W6b fix round 3, M-1).
@@ -66,13 +63,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     inboundToken = res.inboundToken;
     touched = true;
   }
-  if (parsed.data.enabled !== undefined) {
-    const ok = await setPeerEnabled(user.id, id, parsed.data.enabled);
+  if (input.enabled !== undefined) {
+    const ok = await setPeerEnabled(user.id, id, input.enabled);
     if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
     touched = true;
   }
-  if (parsed.data.outboundToken !== undefined) {
-    const ok = await setOutboundToken(user.id, id, parsed.data.outboundToken);
+  if (input.outboundToken !== undefined) {
+    const ok = await setOutboundToken(user.id, id, input.outboundToken);
     if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
     touched = true;
   }

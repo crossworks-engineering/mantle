@@ -9,9 +9,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
 import { AppDbMissingError } from '@mantle/content/app-broker';
 import { duplicateApp } from '@mantle/content/app-package';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -21,11 +21,9 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success)
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  const body = await readBody(req, Body);
   try {
-    const app = await duplicateApp(user.id, id, { ...parsed.data, actor: 'owner' });
+    const app = await duplicateApp(user.id, id, { ...body, actor: 'owner' });
     if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
     return NextResponse.json({ app }, { status: 201 });
   } catch (err) {

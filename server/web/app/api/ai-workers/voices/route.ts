@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { listVoices } from '@/lib/ai-worker-rpc';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
   apiKeyId: z.string(),
@@ -13,10 +13,7 @@ const Body = z.object({
 /** List the voices available for a tts provider + model (live for ElevenLabs). */
 export async function POST(req: Request) {
   ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { apiKeyId, providerId, modelId } = parsed.data;
+  const body = await readBody(req, Body);
+  const { apiKeyId, providerId, modelId } = body;
   return NextResponse.json(await listVoices(apiKeyId, providerId, modelId));
 }

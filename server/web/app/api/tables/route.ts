@@ -13,7 +13,7 @@ import {
   type TableSort,
 } from '@/lib/tables';
 import { recordIngest } from '@mantle/tracing';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const SORTS: TableSort[] = ['edited', 'newest', 'oldest', 'title'];
 const PAGE_SIZE = 50;
@@ -72,11 +72,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { data, ...rest } = parsed.data;
+  const body = await readBody(req, CreateBody);
+  const { data, ...rest } = body;
   const row = await createTable(user.id, { ...rest, ...(data ? { data: data as never } : {}) });
   const snippet = tableToText(row.data, { title: row.title });
   void recordIngest({

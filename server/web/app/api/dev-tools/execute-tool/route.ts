@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { dispatchTool, ownerWebCaller, resolveTool } from '@mantle/tools';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({
   slug: z
@@ -27,7 +28,7 @@ const Body = z.object({
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

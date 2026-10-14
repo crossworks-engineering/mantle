@@ -4,6 +4,7 @@ import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/t
 import { ASK_HUMAN_FORM_LIMITS as L } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.object({
@@ -39,7 +40,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
     // Name the field that ACTUALLY failed. A blanket "expected { decision }"

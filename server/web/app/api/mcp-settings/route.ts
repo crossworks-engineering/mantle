@@ -8,6 +8,7 @@ import { ownerCaller } from '@/lib/auth';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { connectorUrl } from '@/lib/mcp-oauth';
 import { listConnectedClients } from '@/lib/mcp-clients';
+import { readJson } from '@/lib/read-body';
 
 export async function GET() {
   const user = ownerCaller();
@@ -23,12 +24,7 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   const user = ownerCaller();
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'invalid body' }, { status: 400 });
-  }
+  const body = await readJson(req, { refuseEmpty: true });
   const enabled = (body as { enabled?: unknown }).enabled;
   if (typeof enabled !== 'boolean') {
     return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 });

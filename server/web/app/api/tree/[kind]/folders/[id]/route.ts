@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { TREE_FOLDER_NAME_MAX, TREE_SHARE_LEVELS } from '@mantle/client-types/tree';
 import { deleteTreeFolder, notifyTreeChanged, updateTreeFolder } from '@mantle/content/tree';
-import { firstIssue } from '@/lib/zod-issue';
 import { LookColorBody, LookIconBody } from '@/lib/look-body';
 import { treeErrorResponse, treeKindOr404 } from '@/lib/tree-route';
+import { readBody } from '@/lib/read-body';
 
 type Ctx = { params: Promise<{ kind: string; id: string }> };
 
@@ -43,11 +43,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (kind instanceof Response) return kind;
   const id = Id.safeParse((await ctx.params).id);
   if (!id.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const parsed = Patch.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success)
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  const body = await readBody(req, Patch);
   try {
-    const { confirm, seen, ...patch } = parsed.data;
+    const { confirm, seen, ...patch } = body;
     const folder = await updateTreeFolder(user.id, kind, id.data, patch, { confirm, seen });
     await notifyTreeChanged(user.id, kind);
     return NextResponse.json({ folder });

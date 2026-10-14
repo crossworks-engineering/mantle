@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { TREE_FOLDER_NAME_MAX } from '@mantle/client-types/tree';
 import { createTreeFolder, notifyTreeChanged } from '@mantle/content/tree';
-import { firstIssue } from '@/lib/zod-issue';
 import { LookColorBody, LookIconBody } from '@/lib/look-body';
 import { ensureTreeRoot, treeErrorResponse, treeKindOr404 } from '@/lib/tree-route';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
   /** The folder to create it in; null = the top level. */
@@ -23,12 +23,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
   const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
   if (kind instanceof Response) return kind;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success)
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  const body = await readBody(req, Body);
   await ensureTreeRoot(user.id, kind);
   try {
-    const folder = await createTreeFolder(user.id, kind, parsed.data);
+    const folder = await createTreeFolder(user.id, kind, body);
     await notifyTreeChanged(user.id, kind);
     return NextResponse.json({ folder }, { status: 201 });
   } catch (err) {

@@ -4,7 +4,7 @@ import { RECALL_LINE_MAX, RECALL_TITLE_MAX, createRecallMap } from '@mantle/cont
 import { ownerCaller } from '@/lib/auth';
 import { parseWsFilter } from '@/lib/list-workspaces';
 import { countRecallMaps, listRecallMaps, recallActorOf, recallWriteFailure } from '@/lib/recall';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const PAGE_SIZE = 20;
 
@@ -39,12 +39,9 @@ const NewMap = z.object({
  *  agent proposes. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = NewMap.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, NewMap);
   try {
-    const made = await createRecallMap(user.id, parsed.data, await recallActorOf(user));
+    const made = await createRecallMap(user.id, body, await recallActorOf(user));
     return NextResponse.json(made, { status: 201 });
   } catch (err) {
     return recallWriteFailure(err);

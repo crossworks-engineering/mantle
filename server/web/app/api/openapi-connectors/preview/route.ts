@@ -4,6 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { previewOpenapiSpec } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 /** The pick step: fetch + parse a spec WITHOUT creating anything and return
  *  its inventory (title, servers, security schemes, tags with counts, and
@@ -14,7 +15,7 @@ const Body = z.object({ specUrl: z.string().min(1).max(2000) });
 
 export async function POST(req: Request) {
   ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

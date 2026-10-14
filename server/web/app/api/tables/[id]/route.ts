@@ -4,7 +4,7 @@ import { cappedOne } from '@/lib/list-workspaces';
 import { ownerCaller } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import { deleteTable, getTable, updateTable } from '@/lib/tables';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const PatchBody = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -37,11 +37,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if ((await hiddenFromKey(user.id, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const row = await updateTable(user.id, id, parsed.data);
+  const body = await readBody(req, PatchBody);
+  const row = await updateTable(user.id, id, body);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ table: row });
 }

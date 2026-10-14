@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { isOptionalService, requestServiceSwitch } from '@/lib/services';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({ enable: z.boolean() }).strict();
 
@@ -21,11 +21,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ name: s
   if (!isOptionalService(name)) {
     return NextResponse.json({ error: `unknown service '${name}'` }, { status: 404 });
   }
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const result = await requestServiceSwitch(name, parsed.data.enable);
+  const body = await readBody(req, Body);
+  const result = await requestServiceSwitch(name, body.enable);
   auditFireAndForget({
     actorId: user.actor.id,
     actorEmail: user.actor.email,
@@ -34,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ name: s
     path: `/api/services/${name}`,
     detail: {
       service: name,
-      enable: parsed.data.enable,
+      enable: body.enable,
       accepted: result.ok,
       ...(result.ok ? {} : { refused: result.error }),
     },

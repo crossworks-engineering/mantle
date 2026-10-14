@@ -17,7 +17,7 @@ import { ContactShareRefusedError, createContactShares } from '@mantle/content';
 import type { CreateContactSharesResponse } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
   nodeId: z.string().uuid(),
@@ -27,16 +27,13 @@ const Body = z.object({
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, Body);
   try {
     const shares = await createContactShares(
       user.id,
-      parsed.data.nodeId,
-      parsed.data.contactIds,
-      parsed.data.canWrite === true,
+      body.nodeId,
+      body.contactIds,
+      body.canWrite === true,
     );
     auditFireAndForget({
       actorId: user.actor.id,
@@ -45,9 +42,9 @@ export async function POST(req: Request) {
       method: 'POST',
       path: '/api/shares/contacts',
       detail: {
-        nodeId: parsed.data.nodeId,
+        nodeId: body.nodeId,
         contactIds: shares.map((s) => s.contactId),
-        canWrite: parsed.data.canWrite === true,
+        canWrite: body.canWrite === true,
       },
       ...requestMetaFrom(req),
     });

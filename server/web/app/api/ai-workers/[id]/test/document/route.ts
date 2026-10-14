@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { testDocument } from '@/lib/ai-worker-rpc';
 import { errorMessage } from '@mantle/std';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({ pdfBase64: z.string().min(1) });
 
@@ -10,7 +11,7 @@ const Body = z.object({ pdfBase64: z.string().min(1) });
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'pdfBase64 required' }, { status: 400 });
   try {
     return NextResponse.json(await testDocument(user.id, id, parsed.data.pdfBase64));

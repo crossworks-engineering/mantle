@@ -9,8 +9,8 @@ import {
 } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { recallActorOf, recallWriteFailure } from '@/lib/recall';
-import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
+import { readBody } from '@/lib/read-body';
 
 /** Add a card. The slug comes from the title; `after` places it. Replacing an
  *  existing card is PUT on the card itself. */
@@ -38,11 +38,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const parsed = NewCard.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { version, ...input } = parsed.data;
+  const body = await readBody(req, NewCard);
+  const { version, ...input } = body;
   try {
     const res = await putRecallCard(user.id, id, null, input, await recallActorOf(user), version);
     return NextResponse.json(res, { status: 201 });

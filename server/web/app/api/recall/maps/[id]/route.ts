@@ -8,8 +8,8 @@ import {
 } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { getRecallMapDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
-import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
+import { readBody } from '@/lib/read-body';
 
 /** One map: its cards (without bodies) and options. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -36,12 +36,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const parsed = Patch.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, Patch);
   try {
-    const res = await updateRecallMap(user.id, id, parsed.data, await recallActorOf(user));
+    const res = await updateRecallMap(user.id, id, body, await recallActorOf(user));
     return NextResponse.json(res);
   } catch (err) {
     return recallWriteFailure(err);

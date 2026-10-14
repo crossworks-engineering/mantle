@@ -4,6 +4,7 @@ import { publishTurnCancel } from '@mantle/turn-stream';
 import { markTurnSuperseded } from '@mantle/runtime/agent';
 import { UUID_RE } from '@mantle/std';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
+import { readJson } from '@/lib/read-body';
 
 /**
  * POST /api/assistant/turn/[turnId]/cancel — stop an in-flight streamed turn.
@@ -55,7 +56,7 @@ export async function POST(
 
   // Optional supersede payload. The body is absent on a plain Stop; tolerate
   // (and ignore) anything unparseable rather than failing the cancel.
-  const body = (await req.json().catch(() => null)) as CancelBody | null;
+  const body = (await readJson(req, { empty: null })) as CancelBody | null;
   const s = body?.supersede;
   let superseded = 0;
   if (s) {

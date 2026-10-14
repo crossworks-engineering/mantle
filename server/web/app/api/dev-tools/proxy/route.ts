@@ -30,6 +30,7 @@ import {
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { vaultPairRefusalFor } from '@/lib/tools';
+import { readJson } from '@/lib/read-body';
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
@@ -86,7 +87,7 @@ async function readCapped(
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

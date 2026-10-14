@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import type { ToolSettings } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 /** The two owner-level tool policy toggles (stored in profile preferences):
  *  agent-built-tool approval, and the unattended-heartbeat email/web egress gate. */
@@ -26,17 +26,12 @@ const PatchBody = z
 
 export async function PUT(req: Request) {
   const user = ownerCaller();
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const input = await readBody(req, PatchBody);
   await updateProfilePreferences(user.id, {
-    ...(parsed.data.requireApproval !== undefined
-      ? { toolsmithRequireApproval: parsed.data.requireApproval }
+    ...(input.requireApproval !== undefined
+      ? { toolsmithRequireApproval: input.requireApproval }
       : {}),
-    ...(parsed.data.egressGate !== undefined
-      ? { heartbeatEgressGate: parsed.data.egressGate }
-      : {}),
+    ...(input.egressGate !== undefined ? { heartbeatEgressGate: input.egressGate } : {}),
   });
   const prefs = await loadProfilePreferences(user.id);
   const body: ToolSettings = {

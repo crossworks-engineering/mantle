@@ -9,7 +9,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { runBuiltinForApi } from '@/lib/api-v1-builtin';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const Params = z.object({ id: z.string().uuid(), rowId: z.string().min(1).max(100) });
 const Body = z.object({
@@ -21,17 +21,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; r
   const user = ownerCaller();
   const params = Params.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, Body, { empty: null });
   return runBuiltinForApi(
     'table_row_update',
     {
       table_id: params.data.id,
       row_id: params.data.rowId,
-      cells: parsed.data.cells,
-      tab: parsed.data.tab,
+      cells: body.cells,
+      tab: body.tab,
     },
     user.id,
   );

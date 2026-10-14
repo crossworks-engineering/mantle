@@ -18,6 +18,7 @@ import {
   setShareServed,
 } from '@/lib/shares';
 import { requireArea, type WsCaller } from '@/lib/workspaces';
+import { readJson } from '@/lib/read-body';
 
 /** DELETE /api/shares/[id] → `{ ok }`: revoke the link or the contact share
  *  (owner-scoped; `ok` false when it was already gone). Who may: a user who
@@ -70,7 +71,7 @@ const PatchBody = z.union([
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = PatchBody.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid mode' }, { status: 400 });
   if ('serve' in parsed.data) {
     const share = await getLiveShare(user.id, id);

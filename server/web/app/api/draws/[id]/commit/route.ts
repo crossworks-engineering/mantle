@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { commitDraw, sceneToText, sceneWithinLimits, SCENE_SVG_MAX_BYTES } from '@/lib/draws';
 import { recordIngest } from '@mantle/tracing';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({
   scene: z
@@ -33,7 +34,7 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     const tooLarge = parsed.error.issues.some((i) => i.message.endsWith('too large'));
     return NextResponse.json(

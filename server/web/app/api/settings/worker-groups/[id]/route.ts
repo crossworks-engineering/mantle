@@ -10,6 +10,7 @@ import {
   WORKER_GROUP_MAX_MEMBERS,
 } from '@/lib/worker-groups';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -25,7 +26,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

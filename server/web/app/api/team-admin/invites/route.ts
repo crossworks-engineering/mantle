@@ -17,6 +17,7 @@ import { createMemberInvite, inviteLinkPath, listMemberInvites } from '@mantle/c
 import type { MemberInviteCreated, MemberInviteList } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { inviteErrorResponse } from '@/lib/member-invites';
+import { readJson } from '@/lib/read-body';
 
 export async function GET() {
   const user = ownerCaller();
@@ -32,7 +33,7 @@ const CreateBody = z.object({
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = CreateBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Choose a contact or enter an email.' }, { status: 400 });
   }

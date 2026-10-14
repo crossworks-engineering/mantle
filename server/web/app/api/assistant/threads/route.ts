@@ -4,6 +4,7 @@ import { resolveChatAgent } from '@/lib/assistant-chat';
 import { chatThreadRows } from '@/lib/chat-threads';
 import { archiveResponse } from '@/lib/chat-archive-http';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
+import { readJson } from '@/lib/read-body';
 
 /**
  * GET  /api/assistant/threads[?agent=<slug>]: the login's OWN threads with
@@ -28,7 +29,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const login = chatLoginCaller();
-  const body = (await req.json().catch(() => null)) as { agent?: unknown } | null;
+  const body = (await readJson(req, { empty: null })) as { agent?: unknown } | null;
   const slug = typeof body?.agent === 'string' && body.agent ? body.agent : undefined;
   const agent = await resolveChatAgent(login, slug);
   if (!agent) return NextResponse.json({ error: 'no chat agent' }, { status: 404 });

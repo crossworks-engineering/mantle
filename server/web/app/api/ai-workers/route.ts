@@ -11,8 +11,8 @@ import {
   toAiWorkerDTO,
 } from '@/lib/ai-workers';
 import { errorMessage } from '@mantle/std';
-import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
+import { readBody } from '@/lib/read-body';
 
 const KIND = z.enum([
   'reflector',
@@ -67,31 +67,28 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, CreateBody);
   // A key with a base URL of the writer's choosing is the keys area's (W7a
   // fix round 4, lib/model-route-pair.ts).
-  const keysRefused = await modelRoutesRefusal(user, null, parsed.data, AGENT_ROUTES);
+  const keysRefused = await modelRoutesRefusal(user, null, body, AGENT_ROUTES);
   if (keysRefused) return NextResponse.json({ error: keysRefused }, { status: 403 });
   // Save-time catalog check: a bad OpenRouter id fails SILENTLY at call time
   // (the 2026-08-31 vision incident), so the save is where it must be caught.
   // Fail-open when the catalog is unreachable.
   for (const [provider, model] of [
-    [parsed.data.provider, parsed.data.model],
-    [parsed.data.backupProvider, parsed.data.backupModel],
+    [body.provider, body.model],
+    [body.backupProvider, body.backupModel],
   ] as const) {
-    const issue = await openRouterModelIssue({ kind: parsed.data.kind, provider, model });
+    const issue = await openRouterModelIssue({ kind: body.kind, provider, model });
     if (issue) return NextResponse.json({ error: issue }, { status: 400 });
   }
   try {
-    const { params, ...rest } = parsed.data;
+    const { params, ...rest } = body;
     // createAiWorker honours isDefault atomically in its own transaction.
     const worker = await createAiWorker({
       ownerId: user.id,
       ...rest,
-      ...modelRoutesStamp(user, null, parsed.data, AGENT_ROUTES),
+      ...modelRoutesStamp(user, null, body, AGENT_ROUTES),
       ...(params !== undefined ? { params: params as AiWorkerParams } : {}),
     });
     // Embedding model changes must drop the resolver cache NOW (next ingest/recall

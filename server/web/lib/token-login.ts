@@ -5,9 +5,10 @@ import { db, authUsers, mobileTokens, eq, sql } from '@mantle/db';
 import { buildMobileToken, loginWithPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
-import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { brainIdField } from '@/lib/brain-identity';
 import { updateTheAppResponse } from '@/lib/mobile-build';
+import { readJson } from '@/lib/read-body';
 
 /**
  * Shared credentials→bearer flow behind BOTH token-login routes:
@@ -71,7 +72,7 @@ export async function handleTokenLogin(
     );
   }
 
-  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) ?? {};
+  const raw = (await readJson(req, { maxBytes: AUTH_BODY_CEILING_BYTES })) ?? {};
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });

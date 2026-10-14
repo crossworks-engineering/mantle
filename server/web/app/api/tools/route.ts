@@ -13,6 +13,7 @@ import { createTool, keysAreaRefusal, listToolsForOwner, toolMakerFor } from '@/
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 export async function GET() {
   const user = ownerCaller();
@@ -45,7 +46,7 @@ const CreateBody = z.object({
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

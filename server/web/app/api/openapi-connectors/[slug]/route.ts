@@ -5,6 +5,7 @@ import { deleteOpenapiConnector } from '@mantle/tools';
 import { getOpenapiConnector, updateOpenapiConnector } from '@/lib/openapi-connectors';
 import { firstIssue } from '@/lib/zod-issue';
 import { toolMakerFor } from '@/lib/tools';
+import { readJson } from '@/lib/read-body';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const user = ownerCaller();
@@ -43,7 +44,7 @@ const PatchBody = z.object({
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const user = ownerCaller();
   const { slug } = await params;
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

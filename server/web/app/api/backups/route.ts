@@ -12,7 +12,7 @@ import {
   saveBackupConfig,
 } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 /** Backup settings + last-run status + dumps on disk for /settings/backups. */
 export async function GET() {
@@ -44,11 +44,8 @@ const SaveBody = z.object({
  *  events worker uses). */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = SaveBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const cfg = normalizeBackupConfig({ ...parsed.data, location: parsed.data.location.trim() });
+  const body = await readBody(req, SaveBody);
+  const cfg = normalizeBackupConfig({ ...body, location: body.location.trim() });
   // Reject an ephemeral location at SAVE time (not at 2am when the scheduled run
   // fails): a custom folder outside the persistent bind-mounts lands in the
   // container's overlay and every dump is lost on the next recreate. No-op on

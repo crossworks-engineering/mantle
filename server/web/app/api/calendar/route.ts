@@ -4,6 +4,7 @@ import { addIcsFeed, listCalendarAccounts } from '@mantle/calendar';
 import type { CalendarAccountDTO } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 /** Subscribed calendar feeds for /settings/calendar. Maps each row to the wire
  *  DTO — the sealed `feedUrlEnc` credential / `ownerId` / `syncState` never reach
@@ -35,7 +36,7 @@ const FeedSchema = z.object({
  *  Apple, CalDAV…). First sync runs within ~2 minutes. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = FeedSchema.safeParse(await req.json().catch(() => ({})));
+  const parsed = FeedSchema.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error, 'Invalid input') }, { status: 400 });
   }

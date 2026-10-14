@@ -4,6 +4,7 @@ import { ownerCaller } from '@/lib/auth';
 import { syncOpenapiConnector } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 /** Re-fetch the spec and reconcile the connector's mirrored tools. Explicit
  *  only — sync never runs on a schedule (cost-safety rule). Pass
@@ -14,7 +15,7 @@ const Body = z.object({ overwriteEdited: z.boolean().optional() });
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const user = ownerCaller();
   const { slug } = await params;
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

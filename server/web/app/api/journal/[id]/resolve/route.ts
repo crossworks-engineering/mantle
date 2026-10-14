@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { resolveGapEntry } from '@/lib/journal';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 const ResolveBody = z.object({
   answer: z.string().max(20_000),
@@ -17,7 +18,7 @@ const ResolveBody = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = ResolveBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

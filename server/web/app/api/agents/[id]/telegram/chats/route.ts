@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import { setAgentTelegramChat, TelegramTokenError } from '@/lib/agent-telegram';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Body = z.object({
@@ -29,7 +30,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const agent = await getAgent(user.id, idParsed.data.id);
   if (!agent) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
 
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   if (parsed.data.status === 'allowed') {
     return NextResponse.json(

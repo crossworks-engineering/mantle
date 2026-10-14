@@ -5,8 +5,8 @@ import { db, nodes } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { getPage } from '@/lib/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
-import { firstIssue } from '@/lib/zod-issue';
 import { treeErrorResponse } from '@/lib/tree-route';
+import { readBody } from '@/lib/read-body';
 
 /**
  * POST /api/pages/:id/move — file a page in a folder of the pages tree
@@ -43,11 +43,8 @@ async function folderOfPage(ownerId: string, pageId: string): Promise<string | n
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const body = parsed.data;
+  const input = await readBody(req, Body);
+  const body = input;
   if (body.folderId === undefined && body.parentId === undefined) {
     return NextResponse.json({ error: 'folderId required' }, { status: 400 });
   }

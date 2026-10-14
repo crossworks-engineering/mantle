@@ -61,6 +61,8 @@ import type { ToolArtifact } from '@mantle/tools';
 import { recordIngest, startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
+import { readJson } from '@/lib/read-body';
 
 /** Human-readable over-limit error — zod's default ("Too big: expected string
  *  to have <=20000 characters") reaches real users through clients without the
@@ -292,9 +294,14 @@ async function runTurn(
     status: 404,
     body: { error: 'no assistant to chat with here', reason: 'no-chat-agent' },
   };
+  const multipart = contentType.includes('multipart/form-data');
+  // The JSON body: this upload path has no loader ceiling (its multipart
+  // attachment has its own cap), so the read takes the JSON one (A10 part
+  // 2). Read before the try below, whose catch answers the turn's errors.
+  const raw = multipart ? null : await readJson(req, { maxBytes: JSON_BODY_CEILING_BYTES });
 
   try {
-    if (contentType.includes('multipart/form-data')) {
+    if (multipart) {
       const form = await req.formData().catch(() => null);
       if (!form) return { status: 400, body: { error: 'invalid multipart body' } };
       userText = ((form.get('text') as string | null) ?? '').trim();
@@ -363,7 +370,6 @@ async function runTurn(
             : "I've attached a file — take a look and tell me what's in it.";
       }
     } else {
-      const raw = await req.json().catch(() => ({}));
       const parsed = Body.safeParse(raw);
       if (!parsed.success) {
         return { status: 400, body: { error: firstIssue(parsed.error) } };

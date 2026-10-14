@@ -11,6 +11,7 @@ import {
 import { ownerCaller } from '@/lib/auth';
 import { rowsOf } from '@/lib/integrity/sql-util';
 import { notifyProviderRecover } from '@/lib/embedding-config';
+import { readJson } from '@/lib/read-body';
 
 type QueueRow = {
   running: number;
@@ -68,7 +69,7 @@ const Body = z.object({
  *  embedder config is left alone. */
 export async function PATCH(req: Request) {
   const user = ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { ok: false, error: `concurrency must be 1 to ${EXTRACTION_CONCURRENCY_MAX}, or null` },

@@ -48,6 +48,7 @@ import {
   dispatchTool,
   outsideCallLogDetail,
 } from '@mantle/tools';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),
@@ -62,7 +63,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // A member's run (W7e): the team rules, never a confirmation.
   if (got.kind === 'member') return memberToolBroker(req, got.member, id);
   const user = got.user;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
 

@@ -25,6 +25,8 @@ import { firstIssue } from '@/lib/zod-issue';
 import { isBusy, isScopeWriteRefusal, isUniqueViolation } from '@mantle/db';
 import { TreeVisibilityError, guardNewFileIn } from '@mantle/content/tree';
 import { treeErrorResponse } from '@/lib/tree-route';
+import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
+import { readJson } from '@/lib/read-body';
 
 const ListQuery = z.union([
   z.object({ parent: z.string().min(1).max(500) }),
@@ -111,9 +113,15 @@ export async function POST(req: Request) {
   const user = ownerCaller();
   await ensureFilesRootBranch(user.id);
   const contentType = req.headers.get('content-type') ?? '';
+  const multipart = contentType.includes('multipart/form-data');
+  // The JSON body (an inline text file): this upload path has no loader
+  // ceiling (its multipart upload streams under its own cap), so the read
+  // takes the JSON one (A10 part 2). Read before the try below, whose catch
+  // answers the write's errors, not the body's.
+  const raw = multipart ? null : await readJson(req, { maxBytes: JSON_BODY_CEILING_BYTES });
 
   try {
-    if (contentType.includes('multipart/form-data')) {
+    if (multipart) {
       // Streamed: the body spools to disk as it arrives (see lib/upload-stream),
       // so the cap here is a disk/UX number, not a memory one: the old
       // `req.formData()` path buffered the whole file (and a copy) before it
@@ -195,7 +203,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ file: row });
     }
 
-    const raw = await req.json().catch(() => ({}));
     const TextBody = z.object({
       parentPath: z.string().min(1).max(500),
       filename: z.string().min(1).max(200),
@@ -306,7 +313,8 @@ const BulkDeleteBody = z.object({
 
 export async function DELETE(req: Request) {
   const user = ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  // No loader ceiling on this path (the upload's): the JSON one (A10 part 2).
+  const raw = await readJson(req, { maxBytes: JSON_BODY_CEILING_BYTES });
   const parsed = BulkDeleteBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

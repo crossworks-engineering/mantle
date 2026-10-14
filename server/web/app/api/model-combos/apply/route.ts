@@ -8,6 +8,7 @@ import { buildComboDiff, COMBO_DEFS } from '@/lib/model-combos';
 import { loadComboContext } from '@/lib/model-combos-context';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({
   combo: z.enum(['best-advanced', 'cost-aware', 'cheapest', 'free']),
@@ -25,7 +26,7 @@ const Body = z.object({
  */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: firstIssue(parsed.error, 'Invalid input.') },

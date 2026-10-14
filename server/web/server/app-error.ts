@@ -11,6 +11,7 @@
 import type { Context } from 'hono';
 import { BUSY_MESSAGE, BusyError, isBusy } from '@mantle/db';
 import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
+import { BadBodyError } from '../lib/read-body';
 import { RedirectError } from './http-compat/redirect-error';
 import { RouteRefusal } from '../lib/auth/session';
 import { scopeRefusalResponse } from './scope-refusal';
@@ -32,6 +33,9 @@ export function answerAppError(err: Error, c: Context): Response {
   if (refusal) return refusal;
   // A JSON body over its route's ceiling, found while reading (I4).
   if (err instanceof BodyTooLargeError) return bodyTooLargeResponse(err.maxBytes);
+  // A body the route cannot use (A10 part 2, readJson and readBody): not
+  // JSON, or the first problem its schema found. The message is public.
+  if (err instanceof BadBodyError) return Response.json({ error: err.message }, { status: 400 });
   // Another write held the same rows (a deadlock broken, a lock timeout):
   // "busy, try again" for a person, never the SQL (folder audit review F7).
   if (isBusy(err)) {

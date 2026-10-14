@@ -11,6 +11,7 @@ import { firstIssue } from '@/lib/zod-issue';
 import { AGENT_ROUTES, modelRoutesRepaired, modelRoutesTouched } from '@/lib/model-route-pair';
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { restampHeartbeatMakers } from '@mantle/tools';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -79,7 +80,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!idParsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   }
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
     const message = firstIssue(parsed.error, 'Invalid input.');

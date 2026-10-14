@@ -9,6 +9,7 @@ import {
   listAgentTelegramChats,
   TelegramTokenError,
 } from '@/lib/agent-telegram';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const ConnectBody = z.object({ token: z.string().min(10).max(200) });
@@ -35,7 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const { agent, error } = await resolveAgent(user.id, await ctx.params);
   if (error) return error;
-  const parsed = ConnectBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = ConnectBody.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'Paste a bot token.' }, { status: 400 });
   try {
     const binding = await connectAgentTelegram(user.id, agent.id, parsed.data.token);

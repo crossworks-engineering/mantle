@@ -11,6 +11,7 @@ import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
 import { AGENT_THINKING_EFFORTS } from '@mantle/content-core/thinking-tiers';
+import { readJson } from '@/lib/read-body';
 
 export async function GET() {
   const user = ownerCaller();
@@ -89,7 +90,7 @@ const CreateBody = z.object({
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
     const message = firstIssue(parsed.error, 'Invalid input.');

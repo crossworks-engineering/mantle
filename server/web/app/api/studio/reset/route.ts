@@ -2,18 +2,14 @@ import { NextResponse } from '@/server/http-compat';
 
 import { ownerCaller } from '@/lib/auth';
 import { applyManifest, MANIFEST_AGENTS } from '@/lib/system-manifest';
+import { readJson } from '@/lib/read-body';
 
 // POST /api/studio/reset  { slug }
 // Resets a manifest agent to its canonical default (overwrite mode) — system
 // prompt, model, params, skills, delegation. Only manifest slugs are resettable.
 export async function POST(req: Request) {
   const user = ownerCaller();
-  let payload: { slug?: string };
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'invalid JSON' }, { status: 400 });
-  }
+  const payload = (await readJson(req, { refuseEmpty: true })) as { slug?: string };
   const slug = payload.slug ?? '';
   if (!MANIFEST_AGENTS.some((a) => a.slug === slug)) {
     return NextResponse.json(

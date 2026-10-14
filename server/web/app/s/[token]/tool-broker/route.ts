@@ -22,7 +22,6 @@ import { z } from 'zod';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
-import { SHARE_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 import { withViewer } from '@mantle/db';
 import { liveServedIds } from '@/lib/shares';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
@@ -33,6 +32,7 @@ import {
   dispatchTool,
   outsideCallLogDetail,
 } from '@mantle/tools';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),
@@ -72,7 +72,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const parsed = Body.safeParse((await readJsonCapped(req, SHARE_BODY_CEILING_BYTES)) ?? {});
+  const parsed = Body.safeParse((await readJson(req, { empty: null })) ?? {});
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
   }

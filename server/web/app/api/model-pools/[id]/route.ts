@@ -5,6 +5,7 @@ import { db, curatedModels } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -43,7 +44,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = PatchBody.safeParse(await readJson(req));
   if (!parsed.success) {
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });

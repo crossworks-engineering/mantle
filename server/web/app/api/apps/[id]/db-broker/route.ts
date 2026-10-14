@@ -24,6 +24,7 @@ import { getAppRuntime } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
+import { readJson } from '@/lib/read-body';
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const got = ownerCallerWithLogin();
@@ -31,7 +32,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // A member's run (W7e): the app's holders decide, its data rules apply.
   if (got.kind === 'member') return memberDbBroker(req, got.member, id);
   const user = got.user;
-  const parsed = AppDbBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = AppDbBody.safeParse(await readJson(req));
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
 

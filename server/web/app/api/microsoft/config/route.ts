@@ -4,6 +4,7 @@ import { clearConfig, defaultRedirectUri, getConfigStatus, saveConfig } from '@m
 import { ownerCaller } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 /** Current Azure-app config status + the redirect URI to suggest (host-derived). */
 export async function GET(req: Request) {
@@ -26,7 +27,7 @@ const SaveBody = z.object({
 /** Save (or override) the brain's Azure AD app config from the UI. */
 export async function PUT(req: Request) {
   const user = ownerCaller();
-  const parsed = SaveBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = SaveBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: firstIssue(parsed.error, 'Invalid input.') },

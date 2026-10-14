@@ -6,13 +6,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
 import {
   AppSnapshotRefusedError,
   deleteAppSnapshot,
   getAppSnapshot,
   setAppSnapshotNote,
 } from '@mantle/content/app-snapshots';
+import { readBody } from '@/lib/read-body';
 
 type Ctx = { params: Promise<{ id: string; sid: string }> };
 
@@ -30,10 +30,8 @@ const PatchBody = z.object({ note: z.string().max(500).nullable() });
 export async function PATCH(req: Request, ctx: Ctx) {
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success)
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  const ok = await setAppSnapshotNote(user.id, id, sid, parsed.data.note);
+  const body = await readBody(req, PatchBody);
+  const ok = await setAppSnapshotNote(user.id, id, sid, body.note);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

@@ -21,6 +21,7 @@ import { TreeVisibilityError, guardFileCopyTo, guardFileTo } from '@mantle/conte
 import { treeErrorResponse } from '@/lib/tree-route';
 import { isBusy, isScopeWriteRefusal } from '@mantle/db';
 import { callerMayReadEmail } from '@/lib/api-v1';
+import { readJson } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 /** A file's raw bytes are read in the login's scope (W7e): never stored. */
@@ -139,7 +140,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
@@ -234,7 +235,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const body = z
     .object({
       copy_to: z.string().min(1).max(500),

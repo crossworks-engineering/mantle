@@ -7,6 +7,7 @@ import { loadProviderAlerts } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { EMBEDDING_ROUTES, modelRoutesRefusal, modelRoutesStamp } from '@/lib/model-route-pair';
 import { errorMessage } from '@mantle/std';
+import { readJson } from '@/lib/read-body';
 
 /** The single embedder config + the vector-column dim + the owner's API keys
  *  (for the route key pickers), for /settings/embedding. Also what an admin
@@ -68,7 +69,7 @@ function nullableInt(v: unknown, min: number, max: number): number | null {
  *  Body carries the same snake_case fields the form posts. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await readJson(req)) as Record<string, unknown>;
   const model = str(body.model);
   if (!model) return NextResponse.json({ ok: false, error: 'A model is required' });
   const primaryProvider = str(body.primary_provider) || 'local';

@@ -35,6 +35,7 @@ import {
 import { listReminderCapableAgents } from '@/lib/agents';
 import { errorMessage } from '@mantle/std';
 import { PURPOSE_MAX_CHARS, purposeTooLongError } from '@mantle/client-types/purpose-limits';
+import { readJson } from '@/lib/read-body';
 
 export async function GET() {
   const user = ownerCaller();
@@ -96,7 +97,7 @@ const Body = z.object({
 
 export async function PUT(req: Request) {
   const user = ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
   }

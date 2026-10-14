@@ -7,6 +7,7 @@
  * packages/content/src/tree/tree.db.test.ts and tree-kinds.db.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BadBodyError } from '@/lib/read-body';
 
 const OWNER = '00000000-0000-4000-8000-000000000001';
 const FOLDER = '00000000-0000-4000-8000-0000000000f0';
@@ -108,8 +109,8 @@ describe('POST /api/tree/:kind/folders', () => {
       { parentId: null, name: 'A', icon: 'lucide:' },
       { parentId: null, name: 'A', icon: 'x'.repeat(49) },
     ]) {
-      const res = await post(body);
-      expect(res.status, JSON.stringify(body)).toBe(400);
+      // readBody throws the one 400 (app.onError answers it, A10 part 2).
+      await expect(post(body), JSON.stringify(body)).rejects.toBeInstanceOf(BadBodyError);
     }
     expect(h.calls).toEqual([]);
   });
@@ -146,8 +147,8 @@ describe('PATCH /api/tree/:kind/folders/:id', () => {
   });
 
   it('refuses the same bad looks as the create', async () => {
-    expect((await patch({ color: 'magenta' })).status).toBe(400);
-    expect((await patch({ icon: 'briefcase' })).status).toBe(400);
+    await expect(patch({ color: 'magenta' })).rejects.toBeInstanceOf(BadBodyError);
+    await expect(patch({ icon: 'briefcase' })).rejects.toBeInstanceOf(BadBodyError);
     expect(h.calls).toEqual([]);
   });
 });

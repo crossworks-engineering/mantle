@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { assertMayLink, checkServeList } from '@mantle/content';
 import { ownerCaller } from '@/lib/auth';
 import { createShare, getActiveShareForNode, linkRefusal, SERVE_MAX } from '@/lib/shares';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 /** GET /api/shares?nodeId=… → the node's active link (or null), with its
  *  served list (`served`, node ids, plan 8.1). `childCount` is always 0
@@ -51,11 +51,8 @@ const CreateBody = z.object({
  */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { nodeId, serve } = parsed.data;
+  const body = await readBody(req, CreateBody);
+  const { nodeId, serve } = body;
   try {
     const item = await assertMayLink(user.id, user.actor.id, nodeId);
     const current = await getActiveShareForNode(user.id, nodeId);

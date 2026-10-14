@@ -5,6 +5,7 @@ import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isScopeWriteRefusal, isUniqueViolation } from '@mantle/db';
+import { readJson } from '@/lib/read-body';
 
 const ListQuery = z.object({
   parent: z.string().optional(),
@@ -37,7 +38,7 @@ const CreateBody = z.object({
 export async function POST(req: Request) {
   const user = ownerCaller();
   await ensureFilesRootBranch(user.id);
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

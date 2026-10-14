@@ -11,6 +11,7 @@ import {
   CloneAgentError,
 } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
+import { readJson } from '@/lib/read-body';
 
 /**
  * A login's personal assistant (migration 0143).
@@ -47,7 +48,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
-  const parsed = PutBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = PutBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Enter a name for the assistant.' }, { status: 400 });
   }

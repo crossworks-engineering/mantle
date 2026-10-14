@@ -21,6 +21,7 @@ import {
   MAX_APP_FILE_BYTES,
   MAX_APP_PATH_LEN,
 } from '@mantle/content';
+import { readJson } from '@/lib/read-body';
 
 // Shares the content layer's source-tree limits (single source of truth); the
 // content layer re-checks and is the real authority (covers the agent path too).
@@ -33,7 +34,7 @@ const Body = z.object({
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   if (Object.keys(parsed.data.files).length > MAX_APP_FILES) {
     return NextResponse.json({ error: `too many files (max ${MAX_APP_FILES})` }, { status: 400 });

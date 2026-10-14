@@ -10,7 +10,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { runBuiltinForApi } from '@/lib/api-v1-builtin';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 export { GET } from '../../../../tables/[id]/rows/route';
 
@@ -24,13 +24,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = ownerCaller();
   const params = Params.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, Body, { empty: null });
   return runBuiltinForApi(
     'table_rows_add',
-    { table_id: params.data.id, rows: parsed.data.rows, tab: parsed.data.tab },
+    { table_id: params.data.id, rows: body.rows, tab: body.tab },
     user.id,
     201,
   );

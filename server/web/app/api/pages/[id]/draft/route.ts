@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { saveDraft } from '@/lib/pages';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({
   doc: z.record(z.string(), z.unknown()),
@@ -18,7 +19,7 @@ const Body = z.object({
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   }

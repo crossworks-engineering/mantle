@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { deleteJournal, getJournal, updateJournal } from '@/lib/journal';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 const PatchBody = z.object({
   body: z.string().max(20_000).optional(),
@@ -25,7 +26,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

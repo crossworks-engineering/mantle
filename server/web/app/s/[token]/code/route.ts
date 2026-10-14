@@ -24,8 +24,9 @@ import { checkContactShareCode, resolveActiveShareRowByToken } from '@mantle/con
 import { setContactVisitorCookie } from '@/lib/contact-share-gate';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimited, refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
-import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { AUTH_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({ code: z.string().max(64) });
 
@@ -51,7 +52,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   );
   if (denied) return denied;
 
-  const parsed = Body.safeParse(await readJsonCapped(req, AUTH_BODY_CEILING_BYTES));
+  const parsed = Body.safeParse(
+    await readJson(req, { empty: null, maxBytes: AUTH_BODY_CEILING_BYTES }),
+  );
   const share = await resolveActiveShareRowByToken(token);
   // The same check runs for every case: an open link and a missing share
   // check against no contact, so the work does not tell them apart.

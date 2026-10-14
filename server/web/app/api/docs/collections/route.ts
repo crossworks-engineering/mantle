@@ -8,6 +8,7 @@ import { ownerCaller } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
+import { readJson } from '@/lib/read-body';
 
 /** Doc collections + their server-formatted "last synced" strings (tz/locale
  *  stable) + a first-doc link per collection, for the /docs management pane. */
@@ -70,7 +71,7 @@ function rootsOverlap(a: string, b: string): boolean {
  */
 export async function POST(req: Request) {
   const owner = ownerCaller();
-  const parsed = createSchema.safeParse(await req.json().catch(() => ({})));
+  const parsed = createSchema.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({
       ok: false,

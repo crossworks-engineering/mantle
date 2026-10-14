@@ -5,6 +5,7 @@ import { embed } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import { authenticatePeer } from '@/lib/federation-auth';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 /**
  * Inbound federation PASSAGE search — a peer asking for the most relevant
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   if (!peer) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = ChunksBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

@@ -5,6 +5,7 @@ import { toolMakerFor } from '@/lib/tools';
 import { UpdateHeartbeatBody, toUpdateInput } from '@/lib/heartbeat-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { readJson } from '@/lib/read-body';
 
 /** One owner-scoped heartbeat (summary), or 404. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -20,7 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const parsed = UpdateHeartbeatBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = UpdateHeartbeatBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: firstIssue(parsed.error, 'Invalid input.') },

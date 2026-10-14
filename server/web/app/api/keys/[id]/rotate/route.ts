@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { rotateApiKey } from '@/lib/api-keys';
 import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
+import { readJson } from '@/lib/read-body';
 
 const RotateBody = z.object({
   plaintext: z.string().min(1).max(8192),
@@ -15,7 +16,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!idParse.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   }
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const body = RotateBody.safeParse(raw);
   if (!body.success) {
     return NextResponse.json({ error: 'Plaintext required.' }, { status: 400 });

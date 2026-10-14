@@ -17,6 +17,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
+import { readJson } from '@/lib/read-body';
 
 export async function GET() {
   const owner = ownerCaller();
@@ -28,7 +29,7 @@ const Body = z.object({ reminderChannel: z.enum(['telegram', 'mobile']) });
 
 export async function PUT(req: Request) {
   const owner = ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   }

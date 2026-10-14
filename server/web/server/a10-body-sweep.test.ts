@@ -227,10 +227,16 @@ const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
  *  - chunked-413: a chunked body over the route's ceiling is refused at
  *    the ceiling (the loader's capRequestBody), where the route read it in
  *    full and answered whatever `{}` gave it;
- *  - bad-json-400: a body that is not JSON answers the one 400 (readBody),
- *    where the route read it as `{}` or null and answered later.
+ *  - bad-json-400 (malformed): a body that is not JSON answers the one 400
+ *    (readJson), where the route read it as `{}` or null and failed later
+ *    with another answer, or refused it with a text of its own;
+ *    `accepted as {} on main`: where `{}` passed and the route went on as
+ *    if no field was sent;
+ *  - bad-json-400 (empty): an empty body on a route that refuses one
+ *    (readJson `refuseEmpty`) answers the one 400, where the route refused
+ *    it with a text of its own.
  */
-function changeKind(cell: string, now: string): string | null {
+function changeKind(cell: string, main: string, now: string): string | null {
   const variant = cell.slice(cell.lastIndexOf(' ') + 1);
   if (
     variant === 'chunked' &&
@@ -238,7 +244,11 @@ function changeKind(cell: string, now: string): string | null {
   ) {
     return 'chunked-413';
   }
-  if (variant === 'malformed' && now === BAD_JSON) return 'bad-json-400';
+  if ((variant === 'malformed' || variant === 'empty') && now === BAD_JSON) {
+    return Number(main.slice(0, 3)) >= 400
+      ? `bad-json-400 (${variant})`
+      : `bad-json-400 (${variant}, accepted as {} on main)`;
+  }
   return null;
 }
 
@@ -431,12 +441,12 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
     expect([...now.keys()].sort()).toEqual([...before.keys()].sort());
     const changed = [...now].filter(([cell, answer]) => before.get(cell) !== answer);
     const unnamed = changed
-      .filter(([cell, answer]) => changeKind(cell, answer) === null)
+      .filter(([cell, answer]) => changeKind(cell, before.get(cell)!, answer) === null)
       .map(([cell, answer]) => `${cell}: main ${before.get(cell)}; now ${answer}`);
     expect(unnamed).toEqual([]);
     const kinds = new Map<string, number>();
     for (const [cell, answer] of changed) {
-      const k = changeKind(cell, answer)!;
+      const k = changeKind(cell, before.get(cell)!, answer)!;
       kinds.set(k, (kinds.get(k) ?? 0) + 1);
     }
     await expect(
@@ -446,7 +456,7 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
         '# Every other cell of a10-body-sweep.txt answers byte for byte as recorded.',
         ...[...kinds].map(([k, n]) => `# ${k}: ${n} cells`),
         ...changed.flatMap(([cell, answer]) => [
-          `${cell} [${changeKind(cell, answer)}]`,
+          `${cell} [${changeKind(cell, before.get(cell)!, answer)}]`,
           `  main ${before.get(cell)}`,
           `  now  ${answer}`,
         ]),

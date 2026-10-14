@@ -17,6 +17,7 @@ import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
 import { treeErrorResponse } from '@/lib/tree-route';
 import { chipped, parseWsFilter } from '@/lib/list-workspaces';
+import { readJson } from '@/lib/read-body';
 
 const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
 const PAGE_SIZE = 50;
@@ -144,7 +145,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

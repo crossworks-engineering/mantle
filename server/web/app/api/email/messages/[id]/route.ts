@@ -8,7 +8,7 @@ import {
 } from '@mantle/email';
 import type { MessageDetailDTO } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 /**
  * One owner-scoped message with its attachments. Mapped to the wire DTO: the raw
@@ -57,11 +57,8 @@ const PatchBody = z
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  if (parsed.data.read !== undefined) await setReadStatus(user.id, id, parsed.data.read);
-  if (parsed.data.starred !== undefined) await setStarred(user.id, id, parsed.data.starred);
+  const body = await readBody(req, PatchBody);
+  if (body.read !== undefined) await setReadStatus(user.id, id, body.read);
+  if (body.starred !== undefined) await setStarred(user.id, id, body.starred);
   return NextResponse.json({ ok: true });
 }

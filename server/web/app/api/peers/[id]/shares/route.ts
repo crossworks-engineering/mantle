@@ -11,6 +11,7 @@ import {
   revokePeerTypeShare,
   PEER_SHAREABLE_TYPES,
 } from '@mantle/content';
+import { readJson } from '@/lib/read-body';
 
 /**
  * A peer's grants, both kinds: `shares` (explicit per-node), `typeShares`
@@ -38,7 +39,7 @@ const GrantBody = z.union([
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const parsed = GrantBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = GrantBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'nodeId (uuid) or nodeType (shareable category) required' },

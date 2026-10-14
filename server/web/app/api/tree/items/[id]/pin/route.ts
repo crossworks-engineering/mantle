@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { TREE_PINS_MAX } from '@mantle/client-types/tree';
 import { setItemPinned } from '@mantle/content/tree';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({ pinned: z.boolean() });
 
@@ -15,7 +16,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     .uuid()
     .safeParse((await ctx.params).id);
   if (!id.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const body = Body.safeParse(await req.json().catch(() => ({})));
+  const body = Body.safeParse(await readJson(req));
   if (!body.success) return NextResponse.json({ error: 'pinned is required' }, { status: 400 });
   const res = await setItemPinned(user.id, user.actor.id, id.data, body.data.pinned);
   if (res.ok) return NextResponse.json({ ok: true });

@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { mergeEntities } from '@mantle/content';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({ canonicalId: z.string().uuid(), dupId: z.string().uuid() });
 
@@ -9,7 +10,7 @@ const Body = z.object({ canonicalId: z.string().uuid(), dupId: z.string().uuid()
  *  in as an alias, deletes the dup. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'canonicalId + dupId (uuid) required' }, { status: 400 });
   }

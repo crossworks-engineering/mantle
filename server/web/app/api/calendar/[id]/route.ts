@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { deleteCalendarAccount, setCalendarEnabled } from '@mantle/calendar';
 import { ownerCaller } from '@/lib/auth';
+import { readJson } from '@/lib/read-body';
 
 const PatchBody = z.object({ enabled: z.boolean() });
 
@@ -9,7 +10,7 @@ const PatchBody = z.object({ enabled: z.boolean() });
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = PatchBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   }

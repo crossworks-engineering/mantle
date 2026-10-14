@@ -10,6 +10,7 @@ import {
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
+import { readJson } from '@/lib/read-body';
 
 /** GET /api/settings/worker-groups — the owner's worker groups + the enabled
  *  worker agents available as members (so the picker needs no second call). */
@@ -36,7 +37,7 @@ const CreateBody = z.object({
  *  worker_group_ensure, which upserts name + members together). */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const raw = await req.json().catch(() => ({}));
+  const raw = await readJson(req);
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

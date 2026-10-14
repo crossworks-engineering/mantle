@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { NEAT_BACKGROUND_MAX, savePreferencesFor } from '@mantle/content';
+import { readJson } from '@/lib/read-body';
 
 /**
  * PUT /api/profile/neat-background { neatBackground }, persist the generated
@@ -27,7 +28,7 @@ export async function PUT(req: Request) {
   const user = ownerCaller();
   const refused = await brandSettingsRefusal(user);
   if (refused) return refused;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'neatBackground required' }, { status: 400 });
   }

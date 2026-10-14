@@ -3,6 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { listProseVersions, saveProse, revertProse } from '@/lib/studio/prompt-versions';
 import { toolMakerFor } from '@/lib/tools';
+import { readJson } from '@/lib/read-body';
 
 // GET /api/studio/prose?entityType=&entityId=&field= → { versions }
 export async function GET(req: Request) {
@@ -24,7 +25,7 @@ export async function GET(req: Request) {
 //   revert: { entityType, entityId, field, revertTo }
 export async function POST(req: Request) {
   const user = ownerCaller();
-  let payload: {
+  const payload = (await readJson(req, { refuseEmpty: true })) as {
     entityType?: string;
     entityId?: string;
     field?: string;
@@ -32,11 +33,6 @@ export async function POST(req: Request) {
     note?: string | null;
     revertTo?: number;
   };
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'invalid JSON' }, { status: 400 });
-  }
   const { entityType = '', entityId = '', field = '' } = payload;
   if (!entityType || !entityId || !field) {
     return NextResponse.json({ error: 'entityType, entityId, field required' }, { status: 400 });

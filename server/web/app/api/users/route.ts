@@ -23,6 +23,7 @@ import { hashLoginPassword, ownerCaller } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { insertLoginWithWorkspaces } from '@/lib/login-create';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
+import { readJson } from '@/lib/read-body';
 
 /**
  * Co-admin login management (Settings → Logins). Logins are NOT tenants: every
@@ -101,7 +102,7 @@ const CreateBody = z.object({
 export async function POST(req: Request) {
   const user = ownerCaller();
 
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = CreateBody.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Enter a valid email and a password of at least 8 characters.' },

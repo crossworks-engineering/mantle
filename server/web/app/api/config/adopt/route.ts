@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
 import { adoptManifestItem, type AdoptKind } from '@/lib/system-manifest';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
   kind: z.enum(['persona', 'agent', 'skill', 'tool-group', 'worker']),
@@ -13,12 +13,9 @@ const Body = z.object({
  *  into the brain — same semantics as the boot reconcile. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, Body);
   try {
-    await adoptManifestItem(user.id, parsed.data.kind as AdoptKind, parsed.data.slug);
+    await adoptManifestItem(user.id, body.kind as AdoptKind, body.slug);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(

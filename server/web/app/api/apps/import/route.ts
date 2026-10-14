@@ -39,6 +39,7 @@ import { createAppSnapshot } from '@mantle/content/app-snapshots';
 import { buildAndStageApp, resolveTool } from '@mantle/tools';
 import { recordIngest } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
+import { readJson } from '@/lib/read-body';
 
 const Body = AppMetaFields.partial({ name: true }).extend({
   /** Update this app if given; otherwise create a new one (then `name` is required). */
@@ -63,7 +64,7 @@ function bad(error: string, status = 400) {
 export async function POST(req: Request) {
   const user = ownerCaller();
 
-  const parsed = Body.safeParse(await req.json().catch(() => null));
+  const parsed = Body.safeParse(await readJson(req, { empty: null }));
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'invalid input', detail: parsed.error.flatten() },

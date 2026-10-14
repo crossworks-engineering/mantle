@@ -10,9 +10,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
 import { AppRestoreDraftError } from '@mantle/content';
 import { AppSnapshotRefusedError, restoreAppSnapshot } from '@mantle/content/app-snapshots';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
   mode: z.enum(['code', 'data', 'full']),
@@ -22,13 +22,11 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; sid: string }> }) {
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success)
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  const body = await readBody(req, Body);
   try {
     const result = await restoreAppSnapshot(user.id, id, sid, {
-      mode: parsed.data.mode,
-      discardDraft: parsed.data.discardDraft === true,
+      mode: body.mode,
+      discardDraft: body.discardDraft === true,
       actor: 'owner',
     });
     if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });

@@ -6,6 +6,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/runtime/agent';
 import { loadProfilePreferences } from '@mantle/content';
+import { readJson } from '@/lib/read-body';
 
 /**
  * Agent Studio Phase 4 — the no-persist sandbox (docs/agent-studio.md).
@@ -30,12 +31,10 @@ type Msg = { role: 'user' | 'assistant'; content: string };
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  let payload: { agentId?: string; messages?: Msg[] };
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'invalid JSON' }, { status: 400 });
-  }
+  const payload = (await readJson(req, { refuseEmpty: true })) as {
+    agentId?: string;
+    messages?: Msg[];
+  };
   const agentId = payload.agentId ?? '';
   const messages = Array.isArray(payload.messages) ? payload.messages : [];
   if (!agentId) return NextResponse.json({ error: 'agentId required' }, { status: 400 });

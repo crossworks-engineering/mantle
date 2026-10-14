@@ -8,9 +8,9 @@ import { loginIsAdmin, ownerCaller } from '@/lib/auth';
 import { AppMetaFields } from '@/lib/app-meta';
 import { createApp, listApps, countApps, notifyAppNavChanged, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
-import { firstIssue } from '@/lib/zod-issue';
 import { parseWsFilter, workspaceChips } from '@/lib/list-workspaces';
 import type { AppListResponse, AppListRow } from '@mantle/client-types';
+import { readBody } from '@/lib/read-body';
 
 const PAGE_SIZE = 50;
 
@@ -50,16 +50,13 @@ const CreateBody = AppMetaFields.extend({
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
+  const body = await readBody(req, CreateBody);
   // A member's or a client's app (W6b fix round 1, M2): at team rules (the
   // author ceiling) and its author named, as the member app tools make it.
   const admin = await loginIsAdmin(user.actor.id);
   const app = await createApp(user.id, {
-    title: parsed.data.name,
-    ...parsed.data,
+    title: body.name,
+    ...body,
     ...(admin ? {} : { authorLevel: 'team' as const, authorLoginId: user.actor.id }),
   });
   void recordIngest({

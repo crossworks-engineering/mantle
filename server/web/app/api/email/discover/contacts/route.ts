@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { addContactFromSender } from '@mantle/email';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 const Body = z.object({
   address: z.string().email(),
@@ -12,10 +12,7 @@ const Body = z.object({
 /** Promote a discovered sender to a contact + trigger their 90-day backfill. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const result = await addContactFromSender(user.id, parsed.data.address, parsed.data.displayName);
+  const body = await readBody(req, Body);
+  const result = await addContactFromSender(user.id, body.address, body.displayName);
   return NextResponse.json(result, { status: result.ok ? 200 : 400 });
 }

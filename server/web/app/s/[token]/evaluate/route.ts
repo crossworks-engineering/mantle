@@ -4,7 +4,7 @@ import { evaluateSpec, parseFormulaSpec, type FormulaValue } from '@mantle/conte
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
-import { readJsonCapped } from '@/lib/body-limit';
+import { readJson } from '@/lib/read-body';
 
 /**
  * Evaluate one target of a SHARED formula — the public counterpart of
@@ -70,7 +70,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const raw = (await readJsonCapped(req, MAX_BODY_BYTES)) as {
+  const raw = (await readJson(req, { empty: null, maxBytes: MAX_BODY_BYTES })) as {
     target?: unknown;
     inputs?: unknown;
   } | null;

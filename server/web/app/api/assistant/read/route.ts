@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { chatLoginCaller } from '@/lib/auth';
 import { resolveChatAgent } from '@/lib/assistant-chat';
 import { markAssistantRead } from '@/lib/assistant-inbox';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({
   agentSlug: z.string().min(1).optional(),
@@ -19,7 +20,7 @@ const Body = z.object({
 export async function POST(req: Request) {
   const login = chatLoginCaller();
 
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }

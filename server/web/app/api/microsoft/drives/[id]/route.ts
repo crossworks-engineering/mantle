@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { setDriveEnabled } from '@mantle/microsoft';
 import { ownerCaller } from '@/lib/auth';
+import { readJson } from '@/lib/read-body';
 
 const Body = z.object({ enabled: z.boolean() });
 
@@ -9,7 +10,7 @@ const Body = z.object({ enabled: z.boolean() });
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await params;
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
   const ok = await setDriveEnabled(user.id, id, parsed.data.enabled);
   if (!ok) return NextResponse.json({ error: 'Drive not found.' }, { status: 404 });

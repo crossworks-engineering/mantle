@@ -10,13 +10,13 @@ import {
   toAiWorkerDTO,
   updateAiWorker,
 } from '@/lib/ai-workers';
-import { firstIssue } from '@/lib/zod-issue';
 import {
   AGENT_ROUTES,
   modelRoutesRefusal,
   modelRoutesStamp,
   modelRoutesTouched,
 } from '@/lib/model-route-pair';
+import { readBody } from '@/lib/read-body';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -55,11 +55,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { params, ...rest } = parsed.data;
+  const body = await readBody(req, PatchBody);
+  const { params, ...rest } = body;
   // A vault key (the key id, or the provider's key a route without one falls
   // back to) with a base URL of the writer's choosing is the keys area's,
   // and the row records who paired them (W7a fix rounds 4 and 5,

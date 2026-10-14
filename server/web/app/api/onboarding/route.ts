@@ -17,6 +17,7 @@ import {
 } from '@/lib/onboarding-steps';
 import { loadProfilePreferences } from '@mantle/content';
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
+import { readJson } from '@/lib/read-body';
 
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's
@@ -47,7 +48,7 @@ const PROMPT_TEXT_ANCHOR_ONLY =
 /** Step dispatcher. Body is `{ action, ...payload }`. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await readJson(req)) as Record<string, unknown>;
 
   // Writing a vault key, or pointing the model routes at an Azure endpoint
   // with the vault's 'custom' key, is the keys area's, not the settings

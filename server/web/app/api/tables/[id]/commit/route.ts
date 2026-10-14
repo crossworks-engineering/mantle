@@ -5,6 +5,7 @@ import { hiddenFromKey } from '@/lib/api-v1';
 import { commitTable, tableToText } from '@/lib/tables';
 import type { TableDoc } from '@mantle/content-core/table-model';
 import { recordIngest } from '@mantle/tracing';
+import { readJson } from '@/lib/read-body';
 
 // `data` is the LEGACY whole-doc shape (pre-P3 clients / small tables). The
 // op-based client posts an empty body and the SERVER draft is promoted — the
@@ -24,7 +25,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if ((await hiddenFromKey(user.id, [id])).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse(await readJson(req));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   }

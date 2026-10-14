@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { connectImapAccount, latestSyncRuns, listAccounts, redactAccount } from '@mantle/email';
 import { ownerCaller } from '@/lib/auth';
-import { firstIssue } from '@/lib/zod-issue';
+import { readBody } from '@/lib/read-body';
 
 /** List the owner's email accounts plus the latest sync run per account. The
  *  sealed IMAP credential is stripped before it leaves the process. */
@@ -32,11 +32,8 @@ const ConnectBody = z.object({
 /** Connect a new IMAP account. `intent: 'test'` probes only; `'save'` persists. */
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const parsed = ConnectBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  }
-  const { intent, ...input } = parsed.data;
+  const body = await readBody(req, ConnectBody);
+  const { intent, ...input } = body;
   const result = await connectImapAccount(user.id, intent, input);
   if (!result.ok) return NextResponse.json(result, { status: 400 });
   return NextResponse.json(result);
