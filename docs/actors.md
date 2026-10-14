@@ -1946,8 +1946,9 @@ gate runs them before the handler on the request as the handler is handed
 it: the request as sent, except `GET /api/v1/files/:id/download`, whose
 route file hands the bytes handler `?raw=1` alone, so a `?at=` sent there
 was never read and still is not (`ASSET_QUERY_AS_HANDED`, route-policy.ts;
-gate-caller.test.ts drives a member's session with an Admin user's token on
-both rows). Their refusal is the gate's, before the handler, as on every
+the route file reads its query from the same constant, `V1_DOWNLOAD_QUERY`,
+and download-query.test.ts drives it; gate-caller.test.ts drives a member's
+session with an Admin user's token on both rows). Their refusal is the gate's, before the handler, as on every
 eager row. The two credentials only these rows take, the asset token and
 the render cookie, are in the sweep and in the parity cells. A share
 link's visitor reads bytes through the /s routes, which judge the token
@@ -2030,6 +2031,12 @@ caller) stand in nothing now; they are left as they are.
   each kind and holds the app's rows of each kind to their names. The
   route list pin of route-policy.ts went up by one (`PUBLIC_LOGIN_ROWS`,
   reviewed: the rows' own check, not a policy beside them).
+- **The v1 download's query has one source.** Its route file sets the
+  query it hands the bytes handler from `V1_DOWNLOAD_QUERY`
+  (route-policy.ts), the constant `ASSET_QUERY_AS_HANDED` reads, and
+  download-query.test.ts drives the real route file with an Admin user's
+  `?at=` beside a member's session: the handler gets the row's query, not
+  the one sent.
 
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):

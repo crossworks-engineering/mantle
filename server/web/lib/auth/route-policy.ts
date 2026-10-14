@@ -262,16 +262,25 @@ function assetRow(method: string, pattern: string, path: string): boolean {
 }
 
 /**
+ * The query GET /api/v1/files/:id/download hands the bytes handler of
+ * /api/files/files/:id: `?raw=1` and nothing else. Its route file sets it
+ * from here, and the gate answers the asset reader from it
+ * (ASSET_QUERY_AS_HANDED): one source, so the two cannot drift (fix round
+ * 1, L1; the route's own test drives it).
+ */
+export const V1_DOWNLOAD_QUERY = '?raw=1';
+
+/**
  * The asset rows whose handler is handed a request with another query than
- * the one sent (A4 hand batch B): each to the query its route file sets.
- * GET /api/v1/files/:id/download runs the bytes handler of
- * /api/files/files/:id with `?raw=1` and nothing else (its route file), so
- * on main the asset guard never saw a `?at=` sent to it. The gate answers
- * the asset caller from the request as the handler is handed it, so the
- * answer stays (route-policy.test.ts pins the route file's query).
+ * the one sent (A4 hand batch B): each to the query its route file sets,
+ * read from the same constant. GET /api/v1/files/:id/download runs the
+ * bytes handler of /api/files/files/:id with V1_DOWNLOAD_QUERY alone, so on
+ * main the asset guard never saw a `?at=` sent to it. The gate answers the
+ * asset caller from the request as the handler is handed it, so the answer
+ * stays.
  */
 export const ASSET_QUERY_AS_HANDED: ReadonlyMap<string, string> = new Map([
-  ['GET /api/v1/files/:id/download', '?raw=1'],
+  ['GET /api/v1/files/:id/download', V1_DOWNLOAD_QUERY],
 ]);
 
 /** The query an asset row's handler is handed in place of the one sent

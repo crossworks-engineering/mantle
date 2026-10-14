@@ -1307,12 +1307,15 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const { RENDER_COOKIE_NAME } = await import('../../lib/auth-constants');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
     const ID = '11111111-1111-4111-8111-111111111111';
+    const { assetQueryAsHanded } = await import('../../lib/auth/route-policy');
     /** The request a route file hands its handler: the v1 download sends
-     *  the bytes handler `?raw=1` and nothing else (its route file). */
+     *  the bytes handler `?raw=1` and nothing else (its route file reads it
+     *  from the same constant: download-query.test.ts). */
     const handed = (req: Request, pattern: string) => {
-      if (pattern !== '/api/v1/files/:id/download') return req;
+      const query = assetQueryAsHanded({ method: 'GET', pattern });
+      if (query === null) return req;
       const url = new URL(req.url);
-      url.search = '?raw=1';
+      url.search = query;
       return new Request(url, { method: 'GET', headers: req.headers });
     };
     type Row = {
