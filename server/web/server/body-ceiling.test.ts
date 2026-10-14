@@ -22,6 +22,8 @@ import {
   OWNER_DOCUMENT_CEILING_BYTES,
   SHARE_BODY_CEILING_BYTES,
   bodyCeilingFor,
+  bodyWentOver,
+  capRequestBody,
   readBodyCapped,
 } from '../lib/body-limit';
 import { readJsonNoNul } from '../lib/strip-nul';
@@ -130,6 +132,37 @@ describe('the body ceiling: reading', () => {
     });
     await expect(readBodyCapped(declared, MB)).rejects.toBeInstanceOf(BodyTooLargeError);
     expect(await readBodyCapped(streamReq('http://x/', 128 * 1024), MB)).toHaveLength(128 * 1024);
+  });
+
+  it('capRequestBody: every reader stops at the ceiling; under it, the body is as sent (A10 part 2)', async () => {
+    for (const read of [
+      (r: Request) => r.json(),
+      (r: Request) => r.text(),
+      (r: Request) => r.arrayBuffer(),
+      (r: Request) => new Response(r.body).text(),
+    ]) {
+      const capped = capRequestBody(streamReq('http://x/', 2 * MB), MB);
+      await expect(read(capped)).rejects.toBeInstanceOf(BodyTooLargeError);
+      expect(bodyWentOver(capped)).toBe(true);
+    }
+    // A swallowed error still marks the request (the loader answers 413).
+    const swallowed = capRequestBody(streamReq('http://x/', 2 * MB), MB);
+    expect(await swallowed.json().catch(() => ({}))).toEqual({});
+    expect(bodyWentOver(swallowed)).toBe(true);
+    const ok = capRequestBody(
+      new Request('http://x/', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{"a":1}',
+      }),
+      MB,
+    );
+    expect(ok.method).toBe('POST');
+    expect(ok.headers.get('content-type')).toBe('application/json');
+    expect(await ok.json()).toEqual({ a: 1 });
+    expect(bodyWentOver(ok)).toBe(false);
+    const none = new Request('http://x/', { method: 'DELETE' });
+    expect(capRequestBody(none, MB)).toBe(none);
   });
 
   it('readJsonNoNul reads at most the JSON ceiling; under it, it is JSON as before', async () => {

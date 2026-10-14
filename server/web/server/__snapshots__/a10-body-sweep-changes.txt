@@ -1,0 +1,598 @@
+# A10 part 2 fold 1: the cells that answer otherwise than on main, each with its
+# named kind (changeKind, a10-body-sweep.test.ts), its answer on main and now.
+# Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
+# chunked-413: 198 cells
+POST /api/access-keys owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received null"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/access-keys member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received null"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/agents owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/agents/:id/persona owner chunked [chunked-413]
+  main 400 application/json {"error":"action: Invalid discriminator value. Expected 'add' | 'edit' | 'retire' | 'restore'"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/agents/:id/test/chat owner chunked [chunked-413]
+  main 400 application/json {"error":"agent not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers owner chunked [chunked-413]
+  main 400 application/json {"error":"kind: Invalid option: expected one of \"reflector\"|\"extractor\"|\"summarizer\"|\"tts\"|\"stt\"|\"vision\"|\"document\"|\"image_gen\"|\"embedding\"|\"search\"|\"search_advanced\"|\"narrator\"|\"suggester\"|\"decider\""}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/ai-workers/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"nothing to update"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/:id/test/chat owner chunked [chunked-413]
+  main 400 application/json {"error":"worker not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/:id/test/decision owner chunked [chunked-413]
+  main 400 application/json {"error":"worker not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/:id/test/document owner chunked [chunked-413]
+  main 400 application/json {"error":"pdfBase64 required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/:id/test/image owner chunked [chunked-413]
+  main 400 application/json {"error":"worker not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/:id/test/stt owner chunked [chunked-413]
+  main 400 application/json {"error":"audioBase64 required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/:id/test/tts owner chunked [chunked-413]
+  main 400 application/json {"error":"worker not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/:id/test/vision owner chunked [chunked-413]
+  main 400 application/json {"error":"imageBase64 required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/models owner chunked [chunked-413]
+  main 400 application/json {"error":"apiKeyId: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/test-embedding owner chunked [chunked-413]
+  main 400 application/json {"ok":false,"error":"model required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/ai-workers/voices owner chunked [chunked-413]
+  main 400 application/json {"error":"apiKeyId: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/app-nav/pins owner chunked [chunked-413]
+  main 400 application/json {"error":"pins (array of app ids) required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/apps owner chunked [chunked-413]
+  main 400 application/json {"error":"name: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/apps/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"app not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/:id/db-broker owner chunked [chunked-413]
+  main 400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\""}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PUT /api/apps/:id/draft owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/:id/duplicate owner chunked [chunked-413]
+  main 404 application/json {"error":"app not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/:id/format owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/:id/snapshots owner chunked [chunked-413]
+  main 404 application/json {"error":"app not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/apps/:id/snapshots/:sid owner chunked [chunked-413]
+  main 400 application/json {"error":"note: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/:id/snapshots/:sid/restore owner chunked [chunked-413]
+  main 400 application/json {"error":"mode: Invalid option: expected one of \"code\"|\"data\"|\"full\""}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/:id/tool-broker owner chunked [chunked-413]
+  main 400 application/json {"ok":false,"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/apps/import owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input","detail":{"formErrors":["Invalid input: expected object, received null"],"fieldErrors":{}}}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/assistant/read owner chunked [chunked-413]
+  main 404 application/json {"error":"no_agent"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/assistant/read member chunked [chunked-413]
+  main 404 application/json {"error":"no_agent"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/assistant/threads owner chunked [chunked-413]
+  main 404 application/json {"error":"no chat agent"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/assistant/threads member chunked [chunked-413]
+  main 404 application/json {"error":"no chat agent"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/assistant/turn/:turnId/cancel owner chunked [chunked-413]
+  main 200 application/json {"ok":true,"superseded":0}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/backups owner chunked [chunked-413]
+  main 400 application/json {"error":"enabled: Invalid input: expected boolean, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/calendar owner chunked [chunked-413]
+  main 400 application/json {"error":"displayName: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/calendar/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/config/adopt owner chunked [chunked-413]
+  main 400 application/json {"error":"kind: Invalid option: expected one of \"persona\"|\"agent\"|\"skill\"|\"tool-group\"|\"worker\""}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/contacts owner chunked [chunked-413]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/contacts/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/contacts/:id/sharing owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid action"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/debug/integrity/landed/delete owner chunked [chunked-413]
+  main 400 application/json {"error":"nodeId: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/debug/maintenance/run owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/dev-tools/execute-tool owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/dev-tools/mcp owner chunked [chunked-413]
+  main 400 application/json {"error":"name: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/dev-tools/proxy owner chunked [chunked-413]
+  main 400 application/json {"error":"url: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/docs/collections owner chunked [chunked-413]
+  main 200 application/json {"ok":false,"message":"label: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/docs/collections/:id owner chunked [chunked-413]
+  main 200 application/json {"ok":false,"message":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/docs/collections/all owner chunked [chunked-413]
+  main 200 application/json {"ok":false,"message":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/draws owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/draws/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/draws/:id/commit owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PUT /api/draws/:id/draft owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/email/accounts owner chunked [chunked-413]
+  main 400 application/json {"error":"address: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/email/accounts/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"host: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/email/accounts/:id/folders owner chunked [chunked-413]
+  main 404 application/json {"error":"Account not found."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/email/discover/contacts owner chunked [chunked-413]
+  main 400 application/json {"error":"address: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/email/messages/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"nothing to update"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/embedding owner chunked [chunked-413]
+  main 200 application/json {"ok":false,"error":"A model is required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/embedding/extraction owner chunked [chunked-413]
+  main 400 application/json {"ok":false,"error":"concurrency must be 1 to 16, or null"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/embedding/rebuild owner chunked [chunked-413]
+  main 200 application/json {"ok":false,"error":"DATABASE_URL must be set"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/embedding/test owner chunked [chunked-413]
+  main 200 application/json {"ok":false,"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/entities/dismiss owner chunked [chunked-413]
+  main 400 application/json {"error":"idA + idB (uuid) required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/entities/merge owner chunked [chunked-413]
+  main 400 application/json {"error":"canonicalId + dupId (uuid) required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/events owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/events/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/files/files/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"copy_to: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/files/files/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/files/folders/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"copy_to: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/files/folders/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/formulas owner chunked [chunked-413]
+  main 400 application/json {"error":"spec: Invalid input: expected record, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/formulas/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/formulas/:id/evaluate owner chunked [chunked-413]
+  main 400 application/json {"error":"target: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/grants/:nodeId owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/grants/:nodeId member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/grants/:nodeId/:wsId owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/grants/:nodeId/:wsId member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/grants/:nodeId/embeds owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/grants/:nodeId/embeds member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/grants/move owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/grants/move member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/grants/move/preview owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/grants/move/preview member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/heartbeats owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/heartbeats/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"DATABASE_URL must be set"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/journal owner chunked [chunked-413]
+  main 400 application/json {"error":"body: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/journal/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/journal/:id/resolve owner chunked [chunked-413]
+  main 400 application/json {"error":"answer: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/keys owner chunked [chunked-413]
+  main 400 application/json {"error":"service: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/keys/:id/rotate owner chunked [chunked-413]
+  main 400 application/json {"error":"Plaintext required."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/keys/test owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/mcp-connectors owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/mcp-connectors/:slug owner chunked [chunked-413]
+  main 404 application/json {"error":"MCP connector '11111111-1111-4111-8111-111111111111' not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/mcp-settings owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid body"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/microsoft/accounts/:id/mail owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/microsoft/config owner chunked [chunked-413]
+  main 400 application/json {"error":"clientId: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/microsoft/drives/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/microsoft/drives/:id/scopes owner chunked [chunked-413]
+  main 400 application/json {"error":"scopes: Invalid input: expected array, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/model-combos/apply owner chunked [chunked-413]
+  main 400 application/json {"error":"combo: Invalid option: expected one of \"best-advanced\"|\"cost-aware\"|\"cheapest\"|\"free\""}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/model-pools owner chunked [chunked-413]
+  main 400 application/json {"error":"pool: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/network/key owner chunked [chunked-413]
+  main 200 application/json {"ok":false,"message":"Invalid input."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/notes owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/notes/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/oauth/authorize none chunked [chunked-413]
+  main 500 application/json {"error":"internal error"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/oauth/register none chunked [chunked-413]
+  main 400 application/json {"error":"invalid_client_metadata","error_description":"body must be JSON"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/oauth/token none chunked [chunked-413]
+  main 400 application/json {"error":"invalid_request","error_description":"expected application/x-www-form-urlencoded"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/onboarding owner chunked [chunked-413]
+  main 400 application/json {"error":"unknown action"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/openapi-connectors owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/openapi-connectors/:slug owner chunked [chunked-413]
+  main 404 application/json {"error":"OpenAPI connector '11111111-1111-4111-8111-111111111111' not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/openapi-connectors/:slug/sync owner chunked [chunked-413]
+  main 404 application/json {"error":"'11111111-1111-4111-8111-111111111111' is not an OpenAPI connector group — list connectors via the openapi-connectors API, or create one first"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/openapi-connectors/preview owner chunked [chunked-413]
+  main 400 application/json {"error":"specUrl: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/pages owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/pages/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/pages/:id/commit owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PUT /api/pages/:id/draft owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/pages/:id/move owner chunked [chunked-413]
+  main 400 application/json {"error":"folderId required"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/pdf-passwords owner chunked [chunked-413]
+  main 400 application/json {"error":"password: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/peers owner chunked [chunked-413]
+  main 400 application/json {"error":"displayName: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/peers/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"nothing to update"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/peers/:id/shares owner chunked [chunked-413]
+  main 400 application/json {"error":"nodeId (uuid) or nodeType (shareable category) required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/pending/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"decision: Invalid option: expected one of \"approve\"|\"reject\" (expected { decision: approve|reject, answer?, answers? })"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile owner chunked [chunked-413]
+  main 400 application/json {"error":"Set timezone or locale (or both) before saving."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/avatar owner chunked [chunked-413]
+  main 400 application/json {"error":"avatarStyle and/or avatarTint required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/backgrounds owner chunked [chunked-413]
+  main 400 application/json {"error":"backgrounds required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/color-theme owner chunked [chunked-413]
+  main 400 application/json {"error":"colorTheme (string) required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/default-mode owner chunked [chunked-413]
+  main 400 application/json {"error":"defaultMode required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/nav-favorites owner chunked [chunked-413]
+  main 400 application/json {"error":"navFavorites (array of hrefs) required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/neat-background owner chunked [chunked-413]
+  main 400 application/json {"error":"neatBackground required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/reminder-channel owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/share-neat owner chunked [chunked-413]
+  main 400 application/json {"error":"shareNeat required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/push/connect owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid_body"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/push/preferences owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid_body"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/recall/maps owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/recall/maps/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"version: Invalid input: expected number, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/recall/maps/:id/cards owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/recall/maps/:id/cards/:card owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/recall/maps/:id/cards/:card/prompt owner chunked [chunked-413]
+  main 400 application/json {"error":"confirm: Invalid input: expected boolean, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/recall/maps/:id/cards/reorder owner chunked [chunked-413]
+  main 400 application/json {"error":"slugs: Invalid input: expected array, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/runners/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"action: Invalid discriminator value. Expected 'cancel' | 'resume' | 'restart' | 'fork'"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/runs/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"expected { action: 'cancel' }"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/secrets owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/secrets/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/settings/worker-groups owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/shares owner chunked [chunked-413]
+  main 400 application/json {"error":"nodeId: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/shares/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid mode"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/shares/contacts owner chunked [chunked-413]
+  main 400 application/json {"error":"nodeId: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/skills owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/studio/prose owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid JSON"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/studio/reset owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid JSON"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/studio/sandbox owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid JSON"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/tables owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PATCH /api/tables/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/tables/:id/commit owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+PUT /api/tables/:id/draft owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/tables/:id/draft-ops owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid input: expected { ops: [...], if_rev? }"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/tables/:id/history owner chunked [chunked-413]
+  main 404 application/json {"error":"table not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/tables/:id/history/:sid/restore owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}
+POST /api/tasks owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/tasks/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/team-admin/invites owner chunked [chunked-413]
+  main 400 application/json {"error":"Enter an email address for the invite.","reason":"no-email"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/team-admin/settings owner chunked [chunked-413]
+  main 400 application/json {"error":"invalid body"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/telegram/chats/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"Not found."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/telegram/pair owner chunked [chunked-413]
+  main 400 application/json {"error":"code must be six hex digits, and a confirm needs the previewToken the preview gave."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/telegram/pair member chunked [chunked-413]
+  main 400 application/json {"error":"code must be six hex digits, and a confirm needs the previewToken the preview gave."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/tool-groups owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/tool-groups/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/tools owner chunked [chunked-413]
+  main 400 application/json {"error":"slug: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/tools/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/tools/:id/external-access owner chunked [chunked-413]
+  main 400 application/json {"error":"allow: Invalid input: expected boolean, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/tools/settings owner chunked [chunked-413]
+  main 400 application/json {"error":"nothing to update"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/tree/items/:id/pin owner chunked [chunked-413]
+  main 400 application/json {"error":"pinned is required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/updates/request owner chunked [chunked-413]
+  main 400 application/json {"error":"target or clientTarget required"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/users owner chunked [chunked-413]
+  main 400 application/json {"error":"Enter a valid email and a password of at least 8 characters."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/users/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"Nothing to update."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/users/:id/agent owner chunked [chunked-413]
+  main 400 application/json {"error":"Enter a name for the assistant."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/users/:id/password owner chunked [chunked-413]
+  main 400 application/json {"error":"Password must be at least 8 characters."}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/events owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/journal owner chunked [chunked-413]
+  main 400 application/json {"error":"body: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/notes owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/pages owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/v1/pages/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/tables/:id/commit owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/tables/:id/rows owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received null"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/v1/tables/:id/rows/:rowId owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received null"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/v1/tasks owner chunked [chunked-413]
+  main 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/v1/tasks/:id owner chunked [chunked-413]
+  main 404 application/json {"error":"not found"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/workspaces owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/workspaces member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/workspaces/:id owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/workspaces/:id member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/workspaces/:id/resources owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/workspaces/:id/resources member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/workspaces/:id/resources/:kind/:refId owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/workspaces/:id/resources/:kind/:refId member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/workspaces/:id/users owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/workspaces/:id/users member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/workspaces/:id/users/:loginId owner chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PATCH /api/workspaces/:id/users/:loginId member chunked [chunked-413]
+  main 400 application/json {"error":"Invalid input: expected object, received undefined","code":"invalid"}
+  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}

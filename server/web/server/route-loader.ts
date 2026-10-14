@@ -10,6 +10,12 @@ import {
   type RouteRow,
   type RouteSwitch,
 } from '../lib/auth/route-policy';
+import {
+  bodyCeilingFor,
+  bodyTooLargeResponse,
+  bodyWentOver,
+  capRequestBody,
+} from '../lib/body-limit';
 import { getRequestContext } from './request-context';
 
 /**
@@ -174,9 +180,20 @@ export function registerRoutes(
           return Response.json({ error: 'method not allowed' }, { status: 405 });
         }
         if (pending) throw pending.error;
+        // The one body reader (A10 part 2, fold 1): the handler's request
+        // reads its body through the route's ceiling, whichever reader it
+        // calls, so a chunked body that declares no length is refused at the
+        // ceiling (413) instead of read in full. An upload route (no
+        // ceiling) streams under its own cap, as before.
+        const ceiling = bodyCeilingFor(new URL(c.req.raw.url).pathname);
+        const req = ceiling === null ? c.req.raw : capRequestBody(c.req.raw, ceiling);
         // The gate opened the request slot (workspaces W6a) through enterCall;
         // the session guard fills it with the login's scope.
-        return handler(c.req.raw, { params: Promise.resolve(params) });
+        const res = await handler(req, { params: Promise.resolve(params) });
+        // A handler that caught the ceiling's error (a `.catch(() => ({}))`
+        // read) still answers 413: the body was never read in full.
+        if (ceiling !== null && bodyWentOver(req)) return bodyTooLargeResponse(ceiling);
+        return res;
       };
 
       // HEAD is answered by the GET handler (Hono), with its own row.

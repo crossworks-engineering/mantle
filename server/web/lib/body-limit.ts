@@ -6,12 +6,17 @@
  *
  *  - the gate refuses a declared Content-Length over the route's ceiling
  *    before any handler runs (server/middleware/gate.ts);
- *  - `readBodyCapped` (lib/strip-nul.ts `readJsonNoNul` reads through it)
- *    stops reading at the ceiling, for a chunked body that declares nothing.
+ *  - the route loader hands every handler a request whose body reads
+ *    through the ceiling (capRequestBody, A10 part 2): json(), text(),
+ *    formData(), arrayBuffer() and the body stream itself stop at the
+ *    ceiling, for a chunked body that declares nothing. Before, only the
+ *    routes that called `readBodyCapped` stopped; the others read any
+ *    chunked body in full.
  *
  * Both answer 413 `{ reason: 'body-too-large', error }` (the thrown
- * `BodyTooLargeError` is mapped by app.onError). Uploads are not JSON: their
- * routes stream to disk under their own caps (upload-stream.ts) and have no
+ * `BodyTooLargeError` is mapped by app.onError; a handler that swallowed it
+ * gets the same 413 from the loader). Uploads are not JSON: their routes
+ * stream to disk under their own caps (upload-stream.ts) and have no
  * ceiling here.
  */
 
@@ -77,6 +82,52 @@ export class BodyTooLargeError extends Error {
     super(`request body over ${maxBytes} bytes`);
     this.name = 'BodyTooLargeError';
   }
+}
+
+/** The requests capRequestBody made whose body went over the ceiling. */
+const wentOver = new WeakSet<Request>();
+
+/**
+ * `req` with its body read through `maxBytes` (A10 part 2, fold 1): every
+ * reader of the body (json(), text(), formData(), arrayBuffer(), the
+ * stream) gets the bytes up to the ceiling and then BodyTooLargeError, and
+ * the source is cancelled there. Nothing is read until a reader asks. A
+ * request with no body is handed back as it is.
+ */
+export function capRequestBody(req: Request, maxBytes: number): Request {
+  const source = req.body;
+  if (!source) return req;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let total = 0;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      async pull(ctrl) {
+        reader ??= source.getReader();
+        const { done, value } = await reader.read();
+        if (done) return ctrl.close();
+        total += value.byteLength;
+        if (total > maxBytes) {
+          wentOver.add(capped);
+          await reader.cancel().catch(() => {});
+          ctrl.error(new BodyTooLargeError(maxBytes));
+          return;
+        }
+        ctrl.enqueue(value);
+      },
+      cancel(reason) {
+        return (reader ?? source).cancel(reason);
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  const capped = new Request(req, { body, duplex: 'half' } as RequestInit);
+  return capped;
+}
+
+/** Whether a body capRequestBody capped went over its ceiling (a handler
+ *  that caught the error still answers 413). */
+export function bodyWentOver(req: Request): boolean {
+  return wentOver.has(req);
 }
 
 /** The 413 for a body over `maxBytes`. */

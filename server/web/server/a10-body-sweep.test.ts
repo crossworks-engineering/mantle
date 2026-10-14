@@ -217,6 +217,31 @@ function chunked(bytes: number): ReadableStream<Uint8Array> {
   });
 }
 
+/** The one 400 a body that is not JSON answers (lib/read-body.ts). */
+const BAD_JSON = '400 application/json {"error":"invalid JSON"}';
+
+/**
+ * The named changes of fold 1, by cell and its answer now (null: none
+ * names it, and the test fails):
+ *
+ *  - chunked-413: a chunked body over the route's ceiling is refused at
+ *    the ceiling (the loader's capRequestBody), where the route read it in
+ *    full and answered whatever `{}` gave it;
+ *  - bad-json-400: a body that is not JSON answers the one 400 (readBody),
+ *    where the route read it as `{}` or null and answered later.
+ */
+function changeKind(cell: string, now: string): string | null {
+  const variant = cell.slice(cell.lastIndexOf(' ') + 1);
+  if (
+    variant === 'chunked' &&
+    now.startsWith('413 application/json {"error":"This request is too large')
+  ) {
+    return 'chunked-413';
+  }
+  if (variant === 'malformed' && now === BAD_JSON) return 'bad-json-400';
+  return null;
+}
+
 type Cell = { row: string; method: string; pattern: string; cred: string };
 
 describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its body', () => {
@@ -405,8 +430,28 @@ describe.skipIf(!hasManifest)('A10 part 2 fold 1: every write route reads its bo
     const before = readBaseline();
     expect([...now.keys()].sort()).toEqual([...before.keys()].sort());
     const changed = [...now].filter(([cell, answer]) => before.get(cell) !== answer);
-    expect(
-      changed.map(([cell, answer]) => `${cell}: main ${before.get(cell)}; now ${answer}`),
-    ).toEqual([]);
+    const unnamed = changed
+      .filter(([cell, answer]) => changeKind(cell, answer) === null)
+      .map(([cell, answer]) => `${cell}: main ${before.get(cell)}; now ${answer}`);
+    expect(unnamed).toEqual([]);
+    const kinds = new Map<string, number>();
+    for (const [cell, answer] of changed) {
+      const k = changeKind(cell, answer)!;
+      kinds.set(k, (kinds.get(k) ?? 0) + 1);
+    }
+    await expect(
+      [
+        '# A10 part 2 fold 1: the cells that answer otherwise than on main, each with its',
+        '# named kind (changeKind, a10-body-sweep.test.ts), its answer on main and now.',
+        '# Every other cell of a10-body-sweep.txt answers byte for byte as recorded.',
+        ...[...kinds].map(([k, n]) => `# ${k}: ${n} cells`),
+        ...changed.flatMap(([cell, answer]) => [
+          `${cell} [${changeKind(cell, answer)}]`,
+          `  main ${before.get(cell)}`,
+          `  now  ${answer}`,
+        ]),
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a10-body-sweep-changes.txt');
   }, 1_800_000);
 });
