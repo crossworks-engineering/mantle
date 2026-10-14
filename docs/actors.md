@@ -2235,3 +2235,13 @@ scope, then holds.
   (`ADMIN_KIND_CREATE_ERROR` for the first); the HTTP answer stays the
   item-workspace 403, its body byte for byte
   (`packages/std/src/access-error.test.ts`).
+- **L7: listing equals calling, proven per caller.** For the owner, an
+  Admin user, a member who is a user of Admin with no area and a member
+  outside Admin, `turn-listing.calling.test.ts` lists the builtins and
+  runtime rows, names exactly what each hides (nothing but the row with no
+  policy for the first two; the Admin-area tools for the third; the
+  Admin-only, admin-kind and Admin-area tools and the shell row for the
+  last), calls every tool through `dispatchTool` for the same caller, and
+  asserts a listed builtin reaches its handler and a hidden tool is refused
+  by the gate in its words. `turn-listing.test.ts` names the member's
+  hidden classes exactly too.

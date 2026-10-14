@@ -95,33 +95,33 @@ describe('the turn listing is the gate listing (A5 step 5, pick B)', () => {
     expect(listed).toEqual(ROWS.filter((r) => r !== NO_POLICY).map((r) => r.slug));
   });
 
-  it('a member turn in a workspace that is not Admin lists no Admin-only tool', async () => {
+  it('a member turn in a workspace that is not Admin hides exactly the Admin-only, admin-kind, Admin-area and shell tools', async () => {
     const listed = new Set(
       await listedIn(
         { kind: 'assistant', loginId: LOGIN, ws: [TEAM_WS], modWs: [] },
         { holdsAdmin: false, areas: new Set() },
       ),
     );
-    let hidden = 0;
-    for (const def of BUILTIN_TOOLS) {
-      const scope = def.policy.scope;
-      const adminOnly =
-        scope === 'admin' || scope === 'admin-kind' || typeof scope === 'object' || !!def.ownerOnly;
-      if (adminOnly) {
-        if (!listed.has(def.slug)) hidden += 1;
-        continue;
-      }
-      expect(listed.has(def.slug), def.slug).toBe(true);
+    const scopeOf = (s: (typeof BUILTIN_TOOLS)[number]['policy']['scope']) =>
+      typeof s === 'object' ? 'area' : s;
+    const hiddenBuiltins = BUILTIN_TOOLS.filter((d) => !listed.has(d.slug));
+    // Every hidden builtin is of one of the three Admin classes, and every
+    // builtin of those classes is hidden. (An ownerOnly tool of scope `any`
+    // is listed: its owner-surface check sits at dispatch, outside the gate,
+    // carried to step 6 as L1.)
+    expect(new Set(hiddenBuiltins.map((d) => scopeOf(d.policy.scope)))).toEqual(
+      new Set(['admin', 'admin-kind', 'area']),
+    );
+    for (const d of BUILTIN_TOOLS) {
+      const adminClass = scopeOf(d.policy.scope) !== 'any';
+      expect(listed.has(d.slug), d.slug).toBe(!adminClass);
     }
-    expect(hidden).toBeGreaterThan(20);
     for (const slug of ['model_pool_list', 'contact_create', 'journal_create', 'location_save']) {
       expect(listed.has(slug), slug).toBe(false);
     }
-    expect(listed.has('shell_echo')).toBe(false);
+    // Of the runtime rows: the shell row (Q2) and the row with no policy.
+    expect(RUNTIME.filter((r) => !listed.has(r.slug)).map((r) => r.slug)).toEqual(['shell_echo']);
     expect(listed.has('odd')).toBe(false);
-    for (const slug of ['crm_lookup', 'api_get', 'a_recipe', 'note_create', 'search_nodes']) {
-      expect(listed.has(slug), slug).toBe(true);
-    }
   });
 });
 
