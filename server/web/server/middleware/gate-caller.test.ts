@@ -327,6 +327,94 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
   });
 
+  it('a catch-all whose bare prefix is the loader 404: the 404 with CORS stands, as the guard gave', async () => {
+    // A catch-all row cannot carry the caller (buildRoutePolicy refuses
+    // it); here one does, by a hand-built policy, to pin the loader: the
+    // owner answer threw at the gate, but on the bare prefix no handler
+    // runs, so no guard ran before either. The loader's 404 stands, with
+    // the gate's CORS headers, the same as with the guard.
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const { buildRoutePolicy } = await import('../../lib/auth/route-policy');
+    const session = await import('../../lib/auth/session');
+    const pattern = '/api/profile/*';
+    const base = buildRoutePolicy([{ pattern: '/api/profile', methods: ['PUT'], reads: ['PUT'] }]);
+    const apps = [true, false].map((read) => {
+      const row = base.get('PUT /api/profile')!;
+      const policy = new Map([
+        [
+          `PUT ${pattern}`,
+          { ...row, key: `PUT ${pattern}`, pattern, caller: read ? row.caller : null },
+        ],
+      ]);
+      expect(policy.get(`PUT ${pattern}`)!.caller).toBe(read ? 'owner' : null);
+      const app = new Hono();
+      app.use('*', gate());
+      registerRoutes(
+        app,
+        [
+          {
+            pattern,
+            methods: ['PUT'],
+            catchAll: 'rest',
+            catchAllOptional: false,
+            ...(read ? { reads: ['PUT'] } : {}),
+            load: async () => ({
+              PUT: async () => {
+                counts.handled++;
+                if (read) return Response.json(session.ownerCaller());
+                const owner = await session.getOwnerOr401();
+                return owner instanceof Response ? owner : Response.json(owner);
+              },
+            }),
+          },
+        ],
+        policy,
+      );
+      app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
+      return app;
+    });
+    process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example';
+    counts.auditThrows = new Error('database down');
+    const handled = counts.handled;
+    try {
+      const headers = { ...creds[1]!.headers(), origin: 'https://client.example' };
+      const answers = [];
+      for (const app of apps) {
+        const res = await app.request('/api/profile', { method: 'PUT', headers });
+        answers.push({
+          status: res.status,
+          body: await res.text(),
+          cors: [...res.headers.entries()].filter(([k]) => k.startsWith('access-control-')),
+        });
+      }
+      const [a, b] = answers;
+      expect(a).toEqual(b);
+      expect(a!.status).toBe(404);
+      expect(a!.cors).toContainEqual(['access-control-allow-origin', 'https://client.example']);
+      expect(counts.handled).toBe(handled);
+      // Below the prefix the handler runs: the pipeline throws the answer
+      // in its place, where the guard threw it (500 with CORS, both).
+      const below = [];
+      for (const app of apps) {
+        const res = await app.request('/api/profile/x', { method: 'PUT', headers });
+        below.push({
+          status: res.status,
+          cors: [...res.headers.entries()].filter(([k]) => k.startsWith('access-control-')),
+        });
+      }
+      expect(below[0]).toEqual(below[1]);
+      expect(below[0]!.status).toBe(500);
+      expect(below[0]!.cors).toContainEqual([
+        'access-control-allow-origin',
+        'https://client.example',
+      ]);
+    } finally {
+      counts.auditThrows = null;
+      delete process.env.MANTLE_API_CORS_ORIGINS;
+    }
+  });
+
   it('ownerCallerWithSource and ownerCallerWithLogin read what their guards answer', async () => {
     const { gate } = await import('./gate');
     const { registerRoutes } = await import('../route-loader');
