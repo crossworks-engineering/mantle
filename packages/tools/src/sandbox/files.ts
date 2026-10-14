@@ -34,10 +34,17 @@ import {
   sandboxdUpload,
   sandboxRefusal,
 } from './common';
+import { CS } from '../client-sourced-rule';
 
 export const sandbox_export: BuiltinToolDef = {
   slug: 'sandbox_export',
-  policy: { effect: 'write', spends: 'none', scope: { area: 'settings' }, peerRisky: true },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    clientSourced: CS.creates(),
+  },
   name: 'Export sandbox files',
   description:
     "Snapshot a path under a sandbox's /files into the brain as a .tgz in the Files workspace " +
@@ -132,7 +139,13 @@ export const sandbox_export: BuiltinToolDef = {
 
 export const sandbox_import: BuiltinToolDef = {
   slug: 'sandbox_import',
-  policy: { effect: 'write', spends: 'none', scope: { area: 'settings' }, peerRisky: true },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    clientSourced: CS.free('copies a brain file into a sandbox'),
+  },
   name: 'Import a file into a sandbox',
   description:
     "Copy a file from the Files workspace into a sandbox's /files, byte for byte. The mirror of " +
@@ -259,6 +272,7 @@ export const sandbox_publish: BuiltinToolDef = {
     scope: { area: 'settings', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: { kind: 'write', groups: ['group_slug'] },
   },
   name: 'Publish sandbox service',
   description:

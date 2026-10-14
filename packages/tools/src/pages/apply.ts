@@ -23,6 +23,7 @@ import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, draftConflict, pickEditingBaseline } from './common';
 import { edit } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 /** Upper bound on ops per batch — big enough for real jobs (the 47-quote
  *  wrap, a 40-block renumber), small enough that a runaway payload is
@@ -45,6 +46,7 @@ export const page_blocks_apply: BuiltinToolDef = {
     items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('page_id'),
   },
   preconditions: [...PAGE_ID_PRE, { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' }],
   name: 'Apply a batch of block edits to a page (atomic)',

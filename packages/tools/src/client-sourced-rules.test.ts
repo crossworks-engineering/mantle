@@ -22,7 +22,6 @@ import { builtinPolicy } from './tool-policy';
 import {
   clientSourcedGate,
   toolCreatesNodes,
-  WRITE_RULES,
   writeRuleFor,
   type GateTool,
 } from './client-sourced-rules';
@@ -34,16 +33,24 @@ const verdict = (slug: string, input: Record<string, unknown>, tool = builtin(sl
   clientSourcedGate({ ownerId: 'o', tool, input, policyOf: builtinPolicy });
 
 describe('every built-in write tool is classified (the sweep)', () => {
-  it('no builtin that is not readOnly is missing from WRITE_RULES', () => {
+  it('no builtin that is not readOnly is missing its rule (policy.clientSourced or lowering)', () => {
     const missing = TOOLS.filter((t) => t.readOnly !== true && !writeRuleFor(t.slug)).map(
       (t) => t.slug,
     );
     expect(missing).toEqual([]);
   });
 
-  it('every rule names a registered builtin (no stale entries)', () => {
-    const known = new Set(TOOLS.map((t) => t.slug));
-    expect(Object.keys(WRITE_RULES).filter((s) => !known.has(s))).toEqual([]);
+  it('a read declares no rule (the guard runs a read whatever it says)', () => {
+    expect(
+      TOOLS.filter((t) => t.readOnly === true && t.policy.clientSourced).map((t) => t.slug),
+    ).toEqual([]);
+  });
+
+  it('a lowering tool declares no rule of its own (its lowering decides)', () => {
+    const both = TOOLS.filter(
+      (t) => t.policy.lowering !== undefined && t.policy.lowering !== 'never',
+    ).filter((t) => t.policy.clientSourced);
+    expect(both.map((t) => t.slug)).toEqual([]);
   });
 
   it('every field a rule reads is a field of the tool (no typo leaves a target unchecked)', () => {

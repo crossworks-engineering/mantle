@@ -20,6 +20,7 @@ import { notFound } from '../errors';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
 import { TABLE_NODE_ID_PRE } from './common';
 import { edit } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 const ID = { type: 'string', description: "The table's id (UUID) — from `table_list`." };
 const SNAPSHOT_ID = {
@@ -83,7 +84,14 @@ export const table_history: BuiltinToolDef = {
 
 export const table_snapshot_create: BuiltinToolDef = {
   slug: 'table_snapshot_create',
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')], keyArea: 'tables' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'tables',
+    clientSourced: CS.onNodes('id'),
+  },
   ownerOnly: true,
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Snapshot a table',
@@ -129,6 +137,7 @@ export const table_snapshot_restore: BuiltinToolDef = {
     items: [edit('id')],
     peerRisky: true,
     keyArea: 'tables',
+    clientSourced: CS.onNodes('id'),
   },
   ownerOnly: true,
   requiresConfirm: true,
@@ -206,6 +215,7 @@ export const table_snapshot_delete: BuiltinToolDef = {
     items: [edit('id')],
     peerRisky: true,
     keyArea: 'tables',
+    clientSourced: CS.onNodes('id'),
   },
   ownerOnly: true,
   requiresConfirm: true,

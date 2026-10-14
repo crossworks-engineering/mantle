@@ -40,6 +40,7 @@ import {
   summarizeHandler,
   toolRowBySlug,
 } from './common';
+import { CS } from '../client-sourced-rule';
 
 const TEMPLATE_DOC =
   'Templating: {param} placeholders in url/query/headers/body fill from the tool-call input ' +
@@ -137,6 +138,7 @@ export const api_tool_create: BuiltinToolDef = {
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: { kind: 'write', groups: ['group_slug'] },
   },
   name: 'Create an HTTP API tool',
   description:
@@ -299,6 +301,7 @@ export const api_tool_update: BuiltinToolDef = {
     scope: { area: 'connectors' },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: { kind: 'write', groups: ['group_slug'], tools: ['slug'] },
   },
   name: 'Update an HTTP API tool',
   description:
@@ -587,6 +590,7 @@ export const api_tool_delete: BuiltinToolDef = {
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.free('removes a tool; hands nothing out'),
   },
   name: 'Delete a user-defined tool',
   description:
@@ -621,6 +625,7 @@ export const api_tool_test: BuiltinToolDef = {
     scope: { area: 'connectors' },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.always(CS.UNSEEN),
   },
   name: 'Test an HTTP API tool',
   description:

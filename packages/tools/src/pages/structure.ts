@@ -16,6 +16,7 @@ import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, PAGE_NODE_ID_PRE } from './common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
 import { edit, manage } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const page_split: BuiltinToolDef = {
   slug: 'page_split',
@@ -27,6 +28,7 @@ export const page_split: BuiltinToolDef = {
     items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.creates('page_id'),
   },
   preconditions: PAGE_ID_PRE,
   name: 'Split a page into pages',
@@ -100,6 +102,7 @@ export const page_extract_section: BuiltinToolDef = {
     items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.creates('page_id'),
   },
   preconditions: PAGE_ID_PRE,
   name: 'Lift a section into its own page',
@@ -158,6 +161,7 @@ export const page_move: BuiltinToolDef = {
     scope: 'any',
     items: [manage('id')],
     keyArea: 'pages',
+    clientSourced: CS.onNodes('id', 'folder_id', 'parent_id'),
   },
   // Like tree_item_move: a member or client organises through its own tree.
   ownerOnly: true,
@@ -262,6 +266,7 @@ export const page_mention: BuiltinToolDef = {
     items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('page_id'),
   },
   preconditions: PAGE_ID_PRE,
   name: 'Mention another doc/entity in a page',

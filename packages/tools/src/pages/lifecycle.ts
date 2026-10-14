@@ -39,10 +39,18 @@ import {
   placementRefusal,
 } from './common';
 import { edit, manage } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const page_create: BuiltinToolDef = {
   slug: 'page_create',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'page', keyArea: 'pages' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'page',
+    keyArea: 'pages',
+    clientSourced: CS.creates('folder_id', 'parent_id'),
+  },
   preconditions: [...MARKDOWN_REFS_PRE, ...FOLDER_ID_PRE],
   name: 'Create a page',
   description:
@@ -127,6 +135,7 @@ export const page_replace_from_file: BuiltinToolDef = {
     scope: 'any',
     items: [edit('page_id')],
     keySharedContent: true,
+    clientSourced: CS.onNodes('page_id'),
   },
   preconditions: [...PAGE_ID_PRE, ...FILE_ID_PRE],
   name: 'Replace an existing page from a file',
@@ -240,6 +249,7 @@ export const page_update: BuiltinToolDef = {
     items: [edit('id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('id'),
   },
   name: 'Update a page',
   preconditions: [...PAGE_NODE_ID_PRE, ...MARKDOWN_REFS_PRE],
@@ -298,6 +308,7 @@ export const page_update_draft: BuiltinToolDef = {
     items: [edit('id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('id'),
   },
   preconditions: [...PAGE_NODE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Update a page (draft-only)',
@@ -403,6 +414,7 @@ export const page_commit: BuiltinToolDef = {
     items: [edit('id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('id'),
   },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Commit a page draft',
@@ -467,7 +479,14 @@ export const page_commit: BuiltinToolDef = {
 
 export const page_discard_draft: BuiltinToolDef = {
   slug: 'page_discard_draft',
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')], keyArea: 'pages' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'pages',
+    clientSourced: CS.onNodes('id'),
+  },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Discard a page draft',
   description:
@@ -502,6 +521,7 @@ export const page_delete: BuiltinToolDef = {
     items: [manage('id')],
     peerRisky: true,
     keyArea: 'pages',
+    clientSourced: CS.onNodes('id'),
   },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Delete a page',

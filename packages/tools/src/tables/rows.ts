@@ -22,6 +22,7 @@ import {
   windowFile,
 } from './common';
 import { edit } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const table_row_add: BuiltinToolDef = {
   slug: 'table_row_add',
@@ -31,6 +32,7 @@ export const table_row_add: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Add a row',
@@ -106,6 +108,7 @@ export const table_rows_add: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Add many rows',
@@ -190,6 +193,7 @@ export const table_rows_upsert: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Upsert many rows by key',
@@ -412,6 +416,7 @@ export const table_row_update: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Update a row',
@@ -478,6 +483,7 @@ export const table_row_delete: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Delete a row',
@@ -534,6 +540,7 @@ export const table_cell_set: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Set one cell',

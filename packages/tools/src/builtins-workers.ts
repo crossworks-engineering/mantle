@@ -41,6 +41,7 @@ import { notFound } from './errors';
 import { str, strOpt, numOpt as num } from './coerce';
 import { resolveImageParams } from './image-params';
 import { backgroundFence, errorMessage, withFenceNote } from '@mantle/std';
+import { CS } from './client-sourced-rule';
 
 // ─── shared helpers ────────────────────────────────────────────────
 
@@ -102,6 +103,7 @@ const synthesize_speech: BuiltinToolDef = {
     startsModelWork: true,
     scope: 'any',
     peerRisky: true,
+    clientSourced: CS.free('speaks in this chat'),
   },
   name: 'Send a voice reply',
   description:
@@ -614,6 +616,7 @@ const generate_image: BuiltinToolDef = {
     scope: 'any',
     creates: 'file',
     peerRisky: true,
+    clientSourced: CS.creates(),
   },
   name: 'Generate an image',
   description:

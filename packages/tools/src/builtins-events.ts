@@ -35,6 +35,7 @@ import { str, strArrOpt, strOpt, numOpt as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
 import { edit, manage } from './item-write-gate';
+import { CS } from './client-sourced-rule';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING event the owner holds.
@@ -125,7 +126,14 @@ const event_get: BuiltinToolDef = {
 
 const event_create: BuiltinToolDef = {
   slug: 'event_create',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'event', keyArea: 'calendar' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'event',
+    keyArea: 'calendar',
+    clientSourced: CS.creates(),
+  },
   name: 'Schedule a calendar event',
   description:
     "Create a calendar event. `startsAt` MUST be a UTC ISO 8601 instant (e.g. '2026-05-20T15:00:00Z') — convert from the user's natural-language reference using the timezone from the system-prompt time context. `remindMinutesBefore` controls when a Telegram reminder fires (default 0 = right at start; set higher for advance notice). `timezone` defaults to the user's profile timezone — only override when the event is in a DIFFERENT timezone (e.g. a travel meeting).",
@@ -231,6 +239,7 @@ const event_update: BuiltinToolDef = {
     scope: 'any',
     items: [edit('id')],
     keyArea: 'calendar',
+    clientSourced: CS.onNodes('id'),
   },
   name: 'Update a calendar event',
   description:
@@ -318,6 +327,7 @@ const event_delete: BuiltinToolDef = {
     scope: 'any',
     items: [manage('id')],
     keyArea: 'calendar',
+    clientSourced: CS.onNodes('id'),
   },
   name: 'Delete a calendar event',
   description:

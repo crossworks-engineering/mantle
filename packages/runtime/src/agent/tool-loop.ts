@@ -1074,7 +1074,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         outcome.ok &&
         !queuedForApproval &&
         tool &&
-        toolCreatesNodes(tool)
+        toolCreatesNodes(tool, builtinPolicy)
       ) {
         await markCreatedClientSourced(
           args.ownerId,

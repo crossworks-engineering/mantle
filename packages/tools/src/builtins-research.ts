@@ -35,6 +35,7 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { str, strOpt } from './coerce';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { CS } from './client-sourced-rule';
 
 /** Last-resort model when NO search worker is configured (fresh brain before the
  *  0087 backfill / onboarding provision runs). The worker is the real source of
@@ -217,6 +218,7 @@ const web_search: BuiltinToolDef = {
     scope: 'any',
     outside: { untrusted: true, egress: true },
     peerRisky: true,
+    clientSourced: CS.free(CS.WEB),
   },
   name: 'Search the web',
   description:
@@ -236,6 +238,7 @@ const web_search_pro: BuiltinToolDef = {
     // goes out to the search provider (A5 step 5).
     outside: { untrusted: true, egress: true },
     peerRisky: true,
+    clientSourced: CS.free(CS.WEB),
   },
   name: 'Deep web search',
   description:

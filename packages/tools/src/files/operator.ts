@@ -24,6 +24,7 @@ import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { manage } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const folder_create: BuiltinToolDef = {
   slug: 'folder_create',
@@ -34,6 +35,7 @@ export const folder_create: BuiltinToolDef = {
     creates: 'branch',
     keyArea: 'files',
     createsIn: 'parent_path',
+    clientSourced: CS.creates(),
   },
   mcpOnly: true,
   name: 'Create a folder',
@@ -104,6 +106,7 @@ export const folder_delete: BuiltinToolDef = {
     scope: 'any',
     items: [manage('folder_id')],
     keyArea: 'files',
+    clientSourced: CS.onNodes('folder_id'),
   },
   mcpOnly: true,
   preconditions: FOLDER_ID_PRE,
@@ -135,6 +138,7 @@ export const file_upload: BuiltinToolDef = {
     creates: 'file',
     keyArea: 'files',
     createsIn: 'parent_path',
+    clientSourced: { ...CS.creates(), alwaysWhen: CS.overwrites },
   },
   mcpOnly: true,
   name: 'Create or overwrite a file',
@@ -246,6 +250,7 @@ export const file_delete: BuiltinToolDef = {
     scope: 'any',
     items: [manage('file_id')],
     keyArea: 'files',
+    clientSourced: CS.onNodes('file_id'),
   },
   mcpOnly: true,
   preconditions: FILE_ID_PRE,

@@ -34,6 +34,7 @@ import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
 import { edit, manage } from './item-write-gate';
+import { CS } from './client-sourced-rule';
 
 const FORMULA_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'formula', lookup: 'formula_list / search_nodes' },
@@ -241,7 +242,13 @@ const SPEC_PARAM_DESC =
 const formula_create: BuiltinToolDef = {
   slug: 'formula_create',
   autoGrant: true,
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'formula' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'formula',
+    clientSourced: CS.creates(),
+  },
   name: 'Save a formula',
   description:
     'Store a calculation model transcribed from a standard, so it can be evaluated and cited later. The spec is validated on the way in and **every** problem is returned at once — fix them together and re-issue. Store lookup tables as rows, never as a nested `IF()` chain in an expression. Where the source is ambiguous or self-contradictory, record that in `notes` rather than silently correcting it. Use `formula_update` to revise one already stored.',
@@ -283,7 +290,13 @@ const formula_create: BuiltinToolDef = {
 const formula_update: BuiltinToolDef = {
   slug: 'formula_update',
   autoGrant: true,
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')] },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    clientSourced: CS.onNodes('id'),
+  },
   name: 'Update a formula',
   description:
     'Patch a stored formula — only the fields you pass change. `spec` replaces the whole model (there is no partial-spec merge), so read it with `formula_get` first, amend, and pass it back whole. A changed spec re-summarises and re-embeds the formula.',
@@ -327,7 +340,13 @@ const formula_update: BuiltinToolDef = {
 
 const formula_delete: BuiltinToolDef = {
   slug: 'formula_delete',
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: [manage('id')] },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [manage('id')],
+    clientSourced: CS.onNodes('id'),
+  },
   name: 'Delete a formula',
   description:
     'Permanently delete a stored formula and its brain index. Not reversible. Anything that cited it keeps only the text of the citation.',

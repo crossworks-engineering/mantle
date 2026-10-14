@@ -25,6 +25,7 @@ import { isOwnerSurface, keyOrPeerVia, ownerSurfaceLoginId } from './surface';
 import { errorMessage } from '@mantle/std';
 import { callerHasArea, callerScope } from './admin-gate';
 import { closeLinkTargets, edit } from './item-write-gate';
+import { CS } from './client-sourced-rule';
 
 /** The `serve` input both share tools take. */
 export const SERVE_INPUT = {
@@ -223,7 +224,13 @@ export async function closeLink(
 
 const node_unshare: BuiltinToolDef = {
   slug: 'node_unshare',
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: closeLinkTargets },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: closeLinkTargets,
+    clientSourced: CS.free('takes a link away'),
+  },
   name: 'Stop sharing an item',
   description:
     "Revoke an item's share link: the existing URL stops working immediately. No-op (still succeeds) if it wasn't shared. Changes no one's access in the brain. Works for any shareable item; `page_unshare` is the same for pages.",

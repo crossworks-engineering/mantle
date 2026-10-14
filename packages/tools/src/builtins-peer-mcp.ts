@@ -22,6 +22,7 @@ import { boolOpt, str, strOpt } from './coerce';
 import { FILE_ID_PRE } from './builtins-common';
 import { areaSystem } from './admin-gate';
 import { peerToolPolicy } from './runtime-policy';
+import { CS } from './client-sourced-rule';
 
 const CALL_TIMEOUT_MS = 120_000;
 const RESULT_TEXT_CAP = 80_000;
@@ -207,6 +208,7 @@ const peer_call: BuiltinToolDef = {
     // (A5 step 5).
     outside: { egress: true },
     peerRisky: true,
+    clientSourced: CS.always(CS.OUTWARD),
   },
   name: 'Call a tool on a peer',
   description:
@@ -252,7 +254,13 @@ const peer_call: BuiltinToolDef = {
 
 const peer_file_copy: BuiltinToolDef = {
   slug: 'peer_file_copy',
-  policy: { effect: 'write', spends: 'none', scope: { area: 'connectors' }, peerRisky: true },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    peerRisky: true,
+    clientSourced: CS.always(CS.OUTWARD),
+  },
   name: 'Copy one of our files to a peer',
   preconditions: FILE_ID_PRE,
   description:

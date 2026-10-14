@@ -19,6 +19,7 @@ import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
 import { manage } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const file_move: BuiltinToolDef = {
   slug: 'file_move',
@@ -28,6 +29,7 @@ export const file_move: BuiltinToolDef = {
     scope: 'any',
     items: [manage('file_id')],
     keyArea: 'files',
+    clientSourced: { ...CS.onNodes('file_id'), paths: ['dest_path'] },
   },
   name: 'Move a file',
   description:
@@ -73,6 +75,7 @@ export const file_copy: BuiltinToolDef = {
     creates: 'file',
     keyArea: 'files',
     createsIn: 'dest_path',
+    clientSourced: CS.creates(),
   },
   name: 'Copy a file',
   description:
@@ -122,6 +125,7 @@ export const folder_move: BuiltinToolDef = {
     scope: 'any',
     items: [manage('folder_id')],
     keyArea: 'files',
+    clientSourced: { ...CS.onNodes('folder_id'), paths: ['dest_parent_path'] },
   },
   name: 'Move a folder',
   description:
@@ -174,6 +178,7 @@ export const folder_copy: BuiltinToolDef = {
     creates: 'branch',
     keyArea: 'files',
     createsIn: 'dest_parent_path',
+    clientSourced: CS.creates(),
   },
   name: 'Copy a folder',
   description:

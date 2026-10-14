@@ -38,6 +38,7 @@ import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
 import { edit, manage } from './item-write-gate';
+import { CS } from './client-sourced-rule';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING journal entry the owner holds.
@@ -173,7 +174,13 @@ const journal_get: BuiltinToolDef = {
 const journal_create: BuiltinToolDef = {
   slug: 'journal_create',
   autoGrant: true,
-  policy: { effect: 'write', spends: 'none', scope: 'admin-kind', keyArea: 'journal' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin-kind',
+    keyArea: 'journal',
+    clientSourced: CS.creates(),
+  },
   name: 'Add a journal entry',
   description:
     'Record one short journal entry. User lane (kinds identity/context/preference/goal): durable self-knowledge, written in the user\'s voice, when the user shares something about themselves and wants it remembered ("I lead the ops team", "always answer me in short sentences"). Agent lane, YOUR working log: `lesson` when an approach clearly worked or failed, `expectation` when the user corrects you or sets a standard, `gap` when you could not do your job because knowledge is missing (write it as one answerable question — it will be shown to the user). ' +
@@ -256,6 +263,7 @@ const journal_update: BuiltinToolDef = {
     scope: 'any',
     items: [edit('id')],
     keyArea: 'journal',
+    clientSourced: CS.onNodes('id'),
   },
   name: 'Update a journal entry',
   description:
@@ -319,6 +327,7 @@ const journal_resolve_gap: BuiltinToolDef = {
     scope: 'any',
     items: [edit('id')],
     keyArea: 'journal',
+    clientSourced: CS.onNodes('id'),
   },
   name: 'Resolve an open question',
   description:
@@ -383,6 +392,7 @@ const journal_delete: BuiltinToolDef = {
     items: [manage('id')],
     peerRisky: true,
     keyArea: 'journal',
+    clientSourced: CS.onNodes('id'),
   },
   name: 'Delete a journal entry',
   description:

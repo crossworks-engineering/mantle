@@ -53,7 +53,13 @@ async function groupForIntegrationWrite(
 export const api_docs_set: BuiltinToolDef = {
   slug: 'api_docs_set',
   optIn: 'toolsmithWrite',
-  policy: { effect: 'write', spends: 'none', scope: { area: 'connectors' }, peerRisky: true },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    peerRisky: true,
+    clientSourced: { kind: 'write', groups: ['group_slug'] },
+  },
   name: "Store an integration's API docs",
   description:
     "Store (or REPLACE) an integration group's API documentation as a markdown file on this brain and point the group at it. Returns the stored size. Do this right after `web_fetch`ing a service's docs, before authoring: the next pass — any agent, months later — then reads `api_docs_get` instead of re-fetching a page that may have moved or gone behind auth. The stored copy is indexed, so every agent's `search_nodes` can find it. Keep the endpoint reference, auth scheme, parameters, and an example response; drop the marketing pages. Pass source_url so provenance is recorded.",
@@ -258,6 +264,7 @@ export const api_skill_set: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
+    clientSourced: { kind: 'write', groups: ['group_slug'] },
   },
   name: "Write an integration's usage skill",
   description:

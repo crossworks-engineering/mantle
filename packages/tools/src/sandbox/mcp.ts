@@ -10,6 +10,7 @@ import { capOutput } from '../output-cap';
 import { sandboxMcpToolPolicy } from '../runtime-policy';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
 import { DEFAULT_TIMEOUT_S, MAX_TIMEOUT_S, sandboxd, sandboxRefusal } from './common';
+import { CS } from '../client-sourced-rule';
 
 export const sandbox_mcp_tools: BuiltinToolDef = {
   slug: 'sandbox_mcp_tools',
@@ -82,6 +83,7 @@ export const sandbox_mcp_call: BuiltinToolDef = {
     scope: { area: 'settings', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.always(CS.UNSEEN),
   },
   name: 'Call sandbox toolbelt',
   description:

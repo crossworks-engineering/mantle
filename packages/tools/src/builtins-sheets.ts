@@ -19,10 +19,17 @@ import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { CS } from './client-sourced-rule';
 
 const sheet_build: BuiltinToolDef = {
   slug: 'sheet_build',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'file' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'file',
+    clientSourced: CS.creates(),
+  },
   name: 'Build a spreadsheet',
   description:
     "Compose a formatted Excel (.xlsx) workbook from data you already hold and save it under /files; returns the file id, name and path. For a spreadsheet that IS the deliverable: a quote, a costing, a report pack. Header, column widths, number formats and totals are styled for you.\n\n**Sheet or table?** A table is data the user keeps querying and adding rows to; for that use `table_create`, or `table_from_file` to import one. Use this when they asked to be SENT a spreadsheet. Past a few thousand rows, build a table instead.\n\nRows are objects keyed by each column's `key`; a positional array is rejected, because one omitted value shifts every column after it.",

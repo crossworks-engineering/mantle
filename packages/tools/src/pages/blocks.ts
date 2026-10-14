@@ -31,6 +31,7 @@ import {
   pickEditingBaseline,
 } from './common';
 import { edit } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
@@ -176,6 +177,7 @@ export const page_block_update: BuiltinToolDef = {
     items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('page_id'),
   },
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Replace one block in a page',
@@ -269,6 +271,7 @@ export const page_block_insert_after: BuiltinToolDef = {
     items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('page_id'),
   },
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Insert blocks after a target block',
@@ -354,6 +357,7 @@ export const page_block_insert_before: BuiltinToolDef = {
     items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('page_id'),
   },
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Insert blocks before a target block',
@@ -440,6 +444,7 @@ export const page_block_append: BuiltinToolDef = {
     items: [edit('page_id')],
     keyArea: 'pages',
     keySharedContent: true,
+    clientSourced: CS.onNodes('page_id'),
   },
   preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Add blocks at the start or end of a page',
@@ -523,6 +528,7 @@ export const page_block_delete: BuiltinToolDef = {
     scope: 'any',
     items: [edit('page_id')],
     keyArea: 'pages',
+    clientSourced: CS.onNodes('page_id'),
   },
   preconditions: PAGE_ID_PRE,
   name: 'Delete one block from a page',

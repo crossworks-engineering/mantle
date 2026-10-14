@@ -29,6 +29,7 @@ const POLICIES = {
     scope: 'any',
     items: [{ param: 'folder_id', need: 'edit' }],
     keyArea: 'files',
+    clientSourced: { kind: 'write', nodes: ['folder_id'] },
   },
   folder_rename: {
     effect: 'write',
@@ -36,6 +37,7 @@ const POLICIES = {
     scope: 'any',
     items: [{ param: 'folder_id', need: 'edit' }],
     keyArea: 'files',
+    clientSourced: { kind: 'write', nodes: ['folder_id'] },
   },
   file_read: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   file_get: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
@@ -45,6 +47,7 @@ const POLICIES = {
     scope: 'any',
     items: [{ param: 'file_id', need: 'edit' }],
     keyArea: 'files',
+    clientSourced: { kind: 'write', nodes: ['file_id'] },
   },
   // ── pages ──
   page_list: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages', keyEmail: true },

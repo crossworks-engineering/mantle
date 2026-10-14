@@ -36,6 +36,7 @@ import { str, strArr, strArrOpt, strOpt } from './coerce';
 import { notFound } from './errors';
 import { errorMessage } from '@mantle/std';
 import { edit, manage } from './item-write-gate';
+import { CS } from './client-sourced-rule';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING task the owner holds.
@@ -188,7 +189,14 @@ const task_get: BuiltinToolDef = {
 
 const task_create: BuiltinToolDef = {
   slug: 'task_create',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'task', keyArea: 'tasks' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'task',
+    keyArea: 'tasks',
+    clientSourced: CS.creates(),
+  },
   name: 'Create a task',
   description:
     "Create a task. `title` is a short imperative ('Renew passport'). `body` holds any detail; `todos` breaks the work into checklist steps. `priority` defaults to 'normal'. `dueAt`, if given, MUST be a UTC ISO 8601 instant — convert from the user's natural-language date using the system-prompt time context. Use this whenever the user asks you to remember to do something, add a task, or put something on their list.",
@@ -254,7 +262,14 @@ const task_create: BuiltinToolDef = {
 
 const task_update: BuiltinToolDef = {
   slug: 'task_update',
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: [edit('id')], keyArea: 'tasks' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: [edit('id')],
+    keyArea: 'tasks',
+    clientSourced: CS.onNodes('id'),
+  },
   name: 'Update a task',
   description:
     "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. To undo a completion, send `reopen: true` with no status: the task goes back to the status it had before it was marked done. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details. Tasks have no comments: record progress or a note in `body` (read it first and append).",
@@ -353,6 +368,7 @@ const task_delete: BuiltinToolDef = {
     scope: 'any',
     items: [manage('id')],
     keyArea: 'tasks',
+    clientSourced: CS.onNodes('id'),
   },
   name: 'Delete a task',
   description:

@@ -21,6 +21,7 @@ import type { BuiltinToolDef } from '../types';
 import { str, strArr } from '../coerce';
 import { TABLE_ID_PRE, TAB_HINT, editViaOps, resolveColumn, resolveRefTarget } from './common';
 import { edit } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const table_column_add: BuiltinToolDef = {
   slug: 'table_column_add',
@@ -30,6 +31,7 @@ export const table_column_add: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Add a column',
@@ -120,6 +122,7 @@ export const table_column_update: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Update a column',
@@ -224,6 +227,7 @@ export const table_column_delete: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Delete a column',
@@ -262,6 +266,7 @@ export const table_set_aggregate: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Set a column total',
@@ -317,6 +322,7 @@ export const table_set_view: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Save a filter/sort view',

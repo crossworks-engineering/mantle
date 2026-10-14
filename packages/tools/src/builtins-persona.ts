@@ -37,6 +37,7 @@ import { toolMaker } from './secret-ref-gate';
 import { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 import type { BuiltinToolDef } from './types';
 import { replayAsker } from './builtins-replay';
+import { CS } from './client-sourced-rule';
 
 /** update_persona outside the anchor's own thread. */
 export const UPDATE_PERSONA_ANCHOR_ONLY =
@@ -56,6 +57,7 @@ const update_persona: BuiltinToolDef = {
     scope: { area: 'assistants' },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.free("the owner's persona notes; team and client turns load none"),
   },
   name: 'Update persona',
   description:

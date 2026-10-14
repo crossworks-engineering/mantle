@@ -194,6 +194,7 @@ const video_ingest: BuiltinToolDef = {
     startsModelWork: true,
     scope: 'admin',
     peerRisky: true,
+    clientSourced: { kind: 'write', nodes: [], creates: true },
   },
   ownerOnly: true,
   name: 'Ingest a video into the brain',

@@ -22,6 +22,7 @@ import {
   serveInput,
 } from '../builtins-share';
 import { closeLinkTargets, edit } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const page_share: BuiltinToolDef = {
   slug: 'page_share',
@@ -91,6 +92,7 @@ export const page_unshare: BuiltinToolDef = {
     scope: 'any',
     items: closeLinkTargets,
     keyArea: 'pages',
+    clientSourced: CS.free('takes a link away'),
   },
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Stop sharing a page',

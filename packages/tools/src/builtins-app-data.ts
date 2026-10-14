@@ -406,7 +406,13 @@ export const app_data_query: BuiltinToolDef = {
 
 export const app_data_write: BuiltinToolDef = {
   slug: 'app_data_write',
-  policy: { effect: 'write', spends: 'none', scope: 'any', keyArea: 'app_data' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'app_data',
+    clientSourced: { kind: 'write', apps: ['app_id'] },
+  },
   name: "Change an app's data",
   description:
     "Run ONE INSERT, UPDATE, DELETE or REPLACE on one app's database (a WITH before it is fine). Use ? placeholders with params for values; write `:host_me_id` / `:host_me_name` to record who did it, the server fills them. Rows only: CREATE, DROP, ALTER and every other schema change are refused (the schema is the app author's). Only on an app app_data_list shows as read_write. The first write to an app in an hour saves a snapshot first, so an admin can undo it.",

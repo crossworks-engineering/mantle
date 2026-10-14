@@ -35,6 +35,7 @@ import { notFound } from './errors';
 import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { edit, manage } from './item-write-gate';
+import { CS } from './client-sourced-rule';
 
 const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'contact', lookup: 'contact_find / contact_list' },
@@ -195,6 +196,7 @@ const contact_create: BuiltinToolDef = {
     // The allowlist that gates mail out (a new contact also starts a paid inbound backfill).
     peerRisky: true,
     keyArea: 'contacts',
+    clientSourced: CS.creates(),
   },
   name: 'Add a contact',
   description:
@@ -269,6 +271,7 @@ const contact_update: BuiltinToolDef = {
     // The allowlist that gates mail out.
     peerRisky: true,
     keyArea: 'contacts',
+    clientSourced: CS.onNodes('id'),
   },
   preconditions: CONTACT_ID_PRE,
   name: 'Update a contact',
@@ -352,6 +355,7 @@ const contact_delete: BuiltinToolDef = {
     items: [manage('id')],
     peerRisky: true,
     keyArea: 'contacts',
+    clientSourced: CS.onNodes('id'),
   },
   preconditions: CONTACT_ID_PRE,
   name: 'Delete a contact',

@@ -19,6 +19,7 @@ import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { SLUG_RE, rec, reservedSlugError, toolRowBySlug } from './common';
+import { CS } from '../client-sourced-rule';
 
 export const tool_catalog: BuiltinToolDef = {
   slug: 'tool_catalog',
@@ -90,6 +91,7 @@ export const recipe_tool_create: BuiltinToolDef = {
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.free('a new tool in no group; adding it to a group is checked there'),
   },
   name: 'Create a recipe tool',
   description:
@@ -248,6 +250,7 @@ export const recipe_tool_test: BuiltinToolDef = {
     scope: { area: 'connectors' },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.always(CS.UNSEEN),
   },
   name: 'Test a recipe tool',
   description:

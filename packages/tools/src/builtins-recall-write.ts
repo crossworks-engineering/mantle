@@ -49,6 +49,7 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { str } from './coerce';
 import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
 import { recallMap } from './item-write-gate';
+import { CS } from './client-sourced-rule';
 
 /** The caller, for the revision log: the agent's slug in the app, 'mcp' for an
  *  external MCP client (it runs as the owner's token, not as a named agent). */
@@ -169,7 +170,13 @@ const OPTIONS_PROP = {
 
 const recall_map_create: BuiltinToolDef = {
   slug: 'recall_map_create',
-  policy: { effect: 'write', spends: 'none', scope: 'any', creates: 'recall' },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    creates: 'recall',
+    clientSourced: CS.always(CS.RECALL_GUIDANCE),
+  },
   name: 'Start a Recall map',
   description:
     'Start a new Recall map with its entry card, and return its slug. The map is NOT served to agents until the owner publishes it in the Recall editor, so recall_index and recall_match will not show it yet — tell the owner it is ready. To add to a map that already exists use `recall_card_put` instead, which serves immediately.',
@@ -225,7 +232,13 @@ const recall_map_create: BuiltinToolDef = {
 
 const recall_card_put: BuiltinToolDef = {
   slug: 'recall_card_put',
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: recallMap('edit') },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: recallMap('edit'),
+    clientSourced: CS.always(CS.RECALL_GUIDANCE),
+  },
   name: 'Write a Recall card',
   description:
     'Create or replace one card in an existing Recall map; it serves to every agent at once. To replace, read the card with `recall_go` first and send its `version`: a card changed since your read is refused, not overwritten. `title` and `body` replace; `use_when`, `options` and `prompt` keep their value when omitted, and `options` when sent replaces the whole list. A body over budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status, and changing the text of a confirmed prompt sends it back to the owner to confirm. To remove a card use `recall_card_delete`.',
@@ -314,7 +327,13 @@ const recall_card_put: BuiltinToolDef = {
 
 const recall_card_delete: BuiltinToolDef = {
   slug: 'recall_card_delete',
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: recallMap('edit') },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: recallMap('edit'),
+    clientSourced: CS.always(CS.RECALL_GUIDANCE),
+  },
   name: 'Delete a Recall card',
   description:
     "Remove one card from a Recall map. Options on other cards that pointed at it are removed in the same write and listed back, so the map cannot be left offering a route to something gone. The map's entry card cannot be deleted. Send the map's `version` from your last read, so a card changed since is not deleted blind.",
@@ -361,7 +380,13 @@ const recall_card_delete: BuiltinToolDef = {
 
 const recall_map_update: BuiltinToolDef = {
   slug: 'recall_map_update',
-  policy: { effect: 'write', spends: 'none', scope: 'any', items: recallMap('edit') },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    items: recallMap('edit'),
+    clientSourced: CS.always(CS.RECALL_GUIDANCE),
+  },
   name: 'Update a Recall map',
   description:
     "Change a Recall map's title or its `enter_when` line. A rename does NOT change the map's slug, because agents and skills remember slugs. Publishing, unpublishing and deleting a map are the owner's, not available here.",

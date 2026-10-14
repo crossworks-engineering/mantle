@@ -85,15 +85,28 @@ vi.mock('@mantle/tools', async () => ({
   // client-sourced gate meets here (as isBuiltinReadOnly below), and the
   // lowering of the four lowering tools, their policies' own rules (the
   // snapshot pins which tools lower and how).
-  builtinPolicy: ((untrusted: Set<string>, lowering: Record<string, unknown>) => (slug: string) => {
-    const read = ['task_get', 'page_get'].includes(slug);
-    if (!read && !untrusted.has(slug) && !(slug in lowering)) return null;
-    return {
-      ...(read ? { effect: 'read' } : {}),
-      ...(untrusted.has(slug) ? { outside: { untrusted: true } } : {}),
-      ...(slug in lowering ? { lowering: lowering[slug] } : {}),
-    };
-  })(
+  // The client-sourced rules (A5 step 6d: on the policies) of the writes
+  // the cases call, as their definitions declare them
+  // (client-sourced-rules.oracle.test.ts pins every definition's).
+  builtinPolicy: (
+    (
+      untrusted: Set<string>,
+      lowering: Record<string, unknown>,
+      clientSourced: Record<string, unknown>,
+    ) =>
+    (slug: string) => {
+      const read = ['task_get', 'page_get'].includes(slug);
+      if (!read && !untrusted.has(slug) && !(slug in lowering) && !(slug in clientSourced)) {
+        return null;
+      }
+      return {
+        ...(read ? { effect: 'read' } : {}),
+        ...(untrusted.has(slug) ? { outside: { untrusted: true } } : {}),
+        ...(slug in lowering ? { lowering: lowering[slug] } : {}),
+        ...(slug in clientSourced ? { clientSourced: clientSourced[slug] } : {}),
+      };
+    }
+  )(
     new Set(
       (await import('../tool-policy-snapshot.untrusted.json', { with: { type: 'json' } })).default,
     ),
@@ -106,6 +119,18 @@ vi.mock('@mantle/tools', async () => ({
         email_page: cs.lowersEmailPage,
         node_share: 'always',
         page_share: 'always',
+      };
+    })(),
+    await (async () => {
+      const { CS } = await vi.importActual<typeof import('../../../tools/src/client-sourced-rule')>(
+        '../../../tools/src/client-sourced-rule',
+      );
+      return {
+        page_create: CS.creates('folder_id', 'parent_id'),
+        note_create: CS.creates(),
+        page_update: CS.onNodes('id'),
+        page_unshare: CS.free('takes a link away'),
+        run_plan: CS.always(CS.LATER),
       };
     })(),
   ),

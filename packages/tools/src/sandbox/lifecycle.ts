@@ -35,6 +35,7 @@ import {
   sandboxd,
   sandboxRefusal,
 } from './common';
+import { CS } from '../client-sourced-rule';
 
 export const sandbox_create: BuiltinToolDef = {
   slug: 'sandbox_create',
@@ -44,6 +45,7 @@ export const sandbox_create: BuiltinToolDef = {
     scope: { area: 'settings' },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.free('an empty container'),
   },
   name: 'Create sandbox',
   description:
@@ -210,6 +212,7 @@ export const sandbox_exec: BuiltinToolDef = {
     scope: { area: 'settings', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.always(CS.UNSEEN),
   },
   name: 'Run command in sandbox',
   description:
@@ -344,6 +347,7 @@ export const sandbox_stop: BuiltinToolDef = {
     scope: { area: 'settings', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.free('stops a container'),
   },
   name: 'Stop sandbox',
   description:
@@ -379,6 +383,7 @@ export const sandbox_rm: BuiltinToolDef = {
     scope: { area: 'settings', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.free('removes a container (confirm-gated)'),
   },
   name: 'Remove sandbox',
   description:
@@ -429,6 +434,7 @@ export const sandbox_autostart: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'settings', systemWhole: true },
     peerRisky: true,
+    clientSourced: CS.always(CS.UNSEEN),
   },
   name: 'Set a sandbox wake command',
   description:

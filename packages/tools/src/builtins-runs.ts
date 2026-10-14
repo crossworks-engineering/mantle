@@ -48,6 +48,7 @@ import { loadAgentGrant } from './agent-grants';
 import { notFound } from './errors';
 import { ownerSurfaceLoginId } from './surface';
 import { builtinPolicy, policyRunItemBanned } from './tool-policy';
+import { CS } from './client-sourced-rule';
 
 /* A tool may never run as a queue item when its builtin's policy says
  * `recipe.runItem: 'banned'` (policyRunItemBanned; A5 step 6a deleted the
@@ -643,6 +644,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       // A run queues tool calls and workers that execute later as the owner, outside a key's or peer's narrowing (audit H1).
       peerRisky: true,
       recipe: { runItem: 'banned' },
+      clientSourced: CS.always(CS.LATER),
     },
     name: 'Plan a durable run',
     description:
@@ -767,6 +769,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       // A run queues tool calls and workers that execute later as the owner, outside a key's or peer's narrowing (audit H1).
       peerRisky: true,
       recipe: { runItem: 'banned' },
+      clientSourced: CS.always(CS.LATER),
     },
     name: 'Append items to a run',
     description:
@@ -923,7 +926,13 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   },
   {
     slug: 'run_cancel',
-    policy: { effect: 'write', spends: 'none', scope: 'admin', recipe: { runItem: 'banned' } },
+    policy: {
+      effect: 'write',
+      spends: 'none',
+      scope: 'admin',
+      recipe: { runItem: 'banned' },
+      clientSourced: CS.free('stops work'),
+    },
     name: 'Cancel a run',
     description:
       'Cancel a run: every queued/ready/running item in its tree is marked cancelled and no resume fires. Idempotent — cancelling a finished or already-cancelled run reports cancelled=false. In-flight tool executions are not interrupted mid-call; their late results are discarded.',
@@ -947,7 +956,13 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   },
   {
     slug: 'run_audit',
-    policy: { effect: 'write', spends: 'none', scope: 'admin', recipe: { runItem: 'banned' } },
+    policy: {
+      effect: 'write',
+      spends: 'none',
+      scope: 'admin',
+      recipe: { runItem: 'banned' },
+      clientSourced: CS.always(CS.LATER),
+    },
     name: 'Record an audit verdict',
     description:
       "Record your verdict on a pending audit item: 'pass' (advisory findings allowed) advances the run; 'redo' requires at least one blocking finding and supersedes the audited worker step with a fresh attempt carrying your findings (one redo max — a second blocking audit fails the step for human decision). Judge the worker's recorded tool ledger against its claims, not its confidence. Use during a resume turn that presents a pending audit; `run_state` shows which item is waiting.",

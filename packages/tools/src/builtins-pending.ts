@@ -24,6 +24,7 @@ import {
   rejectPendingCall,
   type ListPendingOptions,
 } from './pending';
+import { CS } from './client-sourced-rule';
 
 const PENDING_STATUSES = ['pending', 'approved', 'rejected', 'expired'] as const;
 
@@ -76,7 +77,13 @@ export const pending_get: BuiltinToolDef = {
 
 export const pending_approve: BuiltinToolDef = {
   slug: 'pending_approve',
-  policy: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin',
+    peerRisky: true,
+    clientSourced: CS.always('it runs a queued call (MCP only)'),
+  },
   mcpOnly: true,
   name: 'Approve a pending tool call',
   description:
@@ -144,7 +151,13 @@ export const pending_approve: BuiltinToolDef = {
 
 export const pending_reject: BuiltinToolDef = {
   slug: 'pending_reject',
-  policy: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin',
+    peerRisky: true,
+    clientSourced: CS.free('drops a queued call'),
+  },
   mcpOnly: true,
   name: 'Reject a pending tool call',
   description:
@@ -180,7 +193,12 @@ export const worker_group_list: BuiltinToolDef = {
 
 export const worker_group_ensure: BuiltinToolDef = {
   slug: 'worker_group_ensure',
-  policy: { effect: 'write', spends: 'none', scope: { area: 'assistants', systemWhole: true } },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'assistants', systemWhole: true },
+    clientSourced: CS.free('worker routing (MCP only)'),
+  },
   mcpOnly: true,
   name: 'Create or update a worker group',
   description:

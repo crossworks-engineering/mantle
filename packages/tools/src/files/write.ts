@@ -22,6 +22,7 @@ import { str, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
 import { edit } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const file_create: BuiltinToolDef = {
   slug: 'file_create',
@@ -33,6 +34,7 @@ export const file_create: BuiltinToolDef = {
     keyArea: 'files',
     createsIn: 'parent_path',
     makesFolders: true,
+    clientSourced: { ...CS.creates(), alwaysWhen: CS.overwrites },
   },
   name: 'Create / overwrite a file',
   description:
@@ -117,6 +119,7 @@ export const file_rename: BuiltinToolDef = {
     scope: 'any',
     items: [edit('file_id')],
     keyArea: 'files',
+    clientSourced: CS.onNodes('file_id'),
   },
   name: 'Rename a file',
   description:
@@ -161,6 +164,7 @@ export const folder_rename: BuiltinToolDef = {
     scope: 'any',
     items: [edit('folder_id')],
     keyArea: 'files',
+    clientSourced: CS.onNodes('folder_id'),
   },
   name: 'Rename a folder',
   description:
@@ -210,6 +214,7 @@ export const folder_describe: BuiltinToolDef = {
     scope: 'any',
     items: [edit('folder_id')],
     keyArea: 'files',
+    clientSourced: CS.onNodes('folder_id'),
   },
   name: 'Update a folder description',
   description:
@@ -266,6 +271,7 @@ export const file_set_indexing: BuiltinToolDef = {
     scope: 'any',
     items: [edit('file_id')],
     keyArea: 'files',
+    clientSourced: CS.onNodes('file_id'),
   },
   name: 'Set file indexing mode',
   description:
@@ -316,6 +322,7 @@ export const folder_set_indexing: BuiltinToolDef = {
     scope: 'any',
     items: [edit('folder_id')],
     keyArea: 'files',
+    clientSourced: CS.onNodes('folder_id'),
   },
   name: 'Set folder indexing mode',
   description:

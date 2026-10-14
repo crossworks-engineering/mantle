@@ -32,6 +32,7 @@ import {
 } from '@mantle/decisions';
 import type { BuiltinToolDef } from './types';
 import { errorMessage } from '@mantle/std';
+import { CS } from './client-sourced-rule';
 
 const CASES_TAG = 'recall-eval-cases';
 const RUN_TAG = 'recall-eval-run';
@@ -132,6 +133,7 @@ const recall_eval: BuiltinToolDef = {
     startsModelWork: true,
     scope: 'admin',
     peerRisky: true,
+    clientSourced: CS.free('scores retrieval; writes nothing a client reads'),
   },
   name: 'Run the retrieval-quality eval',
   description:

@@ -10,6 +10,7 @@ import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { URL_RE } from './common';
+import { CS } from '../client-sourced-rule';
 
 const FETCH_TIMEOUT_MS = 25_000;
 
@@ -43,6 +44,7 @@ export const web_fetch: BuiltinToolDef = {
     outside: { untrusted: true, egress: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.free(CS.WEB),
   },
   name: 'Fetch a web page',
   description:

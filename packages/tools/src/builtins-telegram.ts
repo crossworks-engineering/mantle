@@ -43,6 +43,7 @@ import {
   type PairedChat,
 } from '@mantle/telegram';
 import { errorMessage } from '@mantle/std';
+import { CS } from './client-sourced-rule';
 
 /**
  * The login this call acts for (workspaces W7d): the login its surface
@@ -106,6 +107,7 @@ export const telegram_send: BuiltinToolDef = {
     // A message out of the brain (A5 step 5).
     outside: { egress: true },
     peerRisky: true,
+    clientSourced: CS.always(CS.OUTWARD),
   },
   name: 'Send a Telegram message',
   description:
@@ -215,6 +217,7 @@ export const telegram_react: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
+    clientSourced: CS.free('a reaction on a message (MCP only)'),
   },
   mcpOnly: true,
   name: 'React to a Telegram message',
@@ -254,6 +257,7 @@ export const telegram_edit: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
+    clientSourced: CS.always(CS.OUTWARD),
   },
   mcpOnly: true,
   name: 'Edit a sent Telegram message',
@@ -298,6 +302,7 @@ export const telegram_mark_processed: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
+    clientSourced: CS.free('marks an inbound message done (MCP only)'),
   },
   mcpOnly: true,
   name: 'Mark a Telegram message answered',
@@ -351,7 +356,13 @@ export const telegram_mark_processed: BuiltinToolDef = {
 
 export const telegram_pair: BuiltinToolDef = {
   slug: 'telegram_pair',
-  policy: { effect: 'write', spends: 'none', scope: 'any', peerRisky: true },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    peerRisky: true,
+    clientSourced: CS.always('it gives a chat access to an agent (MCP only)'),
+  },
   mcpOnly: true,
   name: 'Pair your Telegram chat',
   description:

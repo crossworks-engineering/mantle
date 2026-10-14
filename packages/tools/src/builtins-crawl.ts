@@ -34,6 +34,7 @@ import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { assertFetchableUrl } from './ssrf-guard';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { CS } from './client-sourced-rule';
 
 const KEY_HINT =
   'no firecrawl API key configured — add one at /settings/keys (service `firecrawl`; keys at https://www.firecrawl.dev). The free tier covers ~1,000 pages/month.';
@@ -146,6 +147,7 @@ const web_map: BuiltinToolDef = {
     scope: 'admin',
     outside: { untrusted: true, egress: true },
     peerRisky: true,
+    clientSourced: CS.free(CS.WEB),
   },
   ownerOnly: true,
   name: 'Map a website',
@@ -216,6 +218,7 @@ const web_crawl: BuiltinToolDef = {
     scope: 'admin',
     outside: { untrusted: true, egress: true },
     peerRisky: true,
+    clientSourced: CS.free(CS.WEB),
   },
   ownerOnly: true,
   name: 'Crawl a website into the brain',

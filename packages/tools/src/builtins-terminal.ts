@@ -31,6 +31,7 @@ import { sanitizedEnv } from './sanitized-env';
 import { capOutput } from './output-cap';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { env } from '@mantle/config';
+import { CS } from './client-sourced-rule';
 
 const DEFAULT_TIMEOUT_S = 120;
 const MAX_TIMEOUT_S = 1800;
@@ -52,6 +53,7 @@ const run_terminal: BuiltinToolDef = {
     scope: { area: 'settings', adminOnly: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.always(CS.UNSEEN),
   },
   name: 'Run terminal command',
   description:

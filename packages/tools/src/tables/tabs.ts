@@ -11,6 +11,7 @@ import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, TABLE_ID_PRE, loadTab } from './common';
 import { edit } from '../item-write-gate';
+import { CS } from '../client-sourced-rule';
 
 export const table_tab_add: BuiltinToolDef = {
   slug: 'table_tab_add',
@@ -20,6 +21,7 @@ export const table_tab_add: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Add a tab',
@@ -76,6 +78,7 @@ export const table_tab_rename: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Rename a tab',
@@ -129,6 +132,7 @@ export const table_tab_delete: BuiltinToolDef = {
     scope: 'any',
     items: [edit('table_id')],
     keyArea: 'tables',
+    clientSourced: CS.onNodes('table_id'),
   },
   preconditions: TABLE_ID_PRE,
   name: 'Delete a tab',

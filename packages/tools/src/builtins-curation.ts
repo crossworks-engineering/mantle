@@ -43,6 +43,7 @@ import { refuseNonOwner } from './builtins-crawl';
 import { resolveOpenRouterKey } from './builtins-research';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { CS } from './client-sourced-rule';
 
 const OR_BASE = 'https://openrouter.ai/api/v1';
 const DATA_TIMEOUT_MS = 25_000;
@@ -206,7 +207,7 @@ async function loadCatalog(): Promise<
 
 const openrouter_rankings: BuiltinToolDef = {
   slug: 'openrouter_rankings',
-  policy: { effect: 'write', spends: 'none', scope: 'admin' },
+  policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
   ownerOnly: true,
   name: 'OpenRouter usage rankings',
   description:
@@ -289,7 +290,7 @@ const openrouter_rankings: BuiltinToolDef = {
 
 const openrouter_benchmarks: BuiltinToolDef = {
   slug: 'openrouter_benchmarks',
-  policy: { effect: 'write', spends: 'none', scope: 'admin' },
+  policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
   ownerOnly: true,
   name: 'OpenRouter benchmarks',
   description:
@@ -342,7 +343,7 @@ const openrouter_benchmarks: BuiltinToolDef = {
 
 const openrouter_task_classes: BuiltinToolDef = {
   slug: 'openrouter_task_classes',
-  policy: { effect: 'write', spends: 'none', scope: 'admin' },
+  policy: { effect: 'write', spends: 'none', scope: 'admin', clientSourced: CS.free(CS.READS) },
   ownerOnly: true,
   name: 'OpenRouter task classifications',
   description:
@@ -365,6 +366,7 @@ const model_catalog: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings', systemWhole: true, adminOnly: true },
+    clientSourced: CS.free(CS.READS),
   },
   ownerOnly: true,
   name: 'Model catalog with pricing',
@@ -428,7 +430,12 @@ const POOL_HINT = `valid pools: ${MODEL_POOLS.map((p) => p.id).join(', ')}`;
 
 const model_pool_list: BuiltinToolDef = {
   slug: 'model_pool_list',
-  policy: { effect: 'write', spends: 'none', scope: { area: 'settings', systemWhole: true } },
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings', systemWhole: true },
+    clientSourced: CS.free(CS.READS),
+  },
   name: 'List curated model pools',
   description:
     'The curated pools and their current entries (name, vendor, per-provider routes, pricing snapshot, rating, note, order) plus each pool’s purpose. Read this FIRST when curating — pools the owner already filled reflect their judgment; say so before replacing entries. The owner sees the same data at /models/pools.',
@@ -502,6 +509,7 @@ const model_pool_set: BuiltinToolDef = {
     scope: { area: 'settings', systemWhole: true, adminOnly: true },
     // Model routing for every agent.
     peerRisky: true,
+    clientSourced: CS.free('model routing'),
   },
   ownerOnly: true,
   name: 'Add or update a curated pool entry',
@@ -634,6 +642,7 @@ const model_pool_remove: BuiltinToolDef = {
     scope: { area: 'settings', systemWhole: true, adminOnly: true },
     // Model routing for every agent.
     peerRisky: true,
+    clientSourced: CS.free('model routing'),
   },
   ownerOnly: true,
   name: 'Remove a curated pool entry',

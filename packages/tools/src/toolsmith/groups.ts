@@ -101,6 +101,7 @@ export const tool_group_ensure: BuiltinToolDef = {
     scope: { area: 'assistants', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: { kind: 'write', groups: ['slug'] },
   },
   name: 'Create or update a tool group',
   description:
@@ -494,6 +495,7 @@ export const agent_grant_tool_group: BuiltinToolDef = {
     scope: { area: 'assistants', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: { kind: 'write', agents: ['agent_slug'], groups: ['group_slug'] },
   },
   name: 'Grant a tool group to an agent',
   description:
@@ -646,6 +648,7 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
     scope: { area: 'assistants', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: { kind: 'write', agents: ['agent_slug'] },
   },
   name: "Set an agent's thinking effort",
   description:

@@ -47,6 +47,7 @@ import { str, strOptTrim as strOpt } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { areaSystem } from './admin-gate';
 import { lowersEmailPage } from './client-sourced';
+import { CS } from './client-sourced-rule';
 
 /**
  * The email tools run in the caller's scope (W7a fix round 1, H1): the
@@ -228,6 +229,7 @@ const email_send: BuiltinToolDef = {
     scope: { area: 'connectors' },
     outside: { egress: true },
     peerRisky: true,
+    clientSourced: CS.always(CS.OUTWARD),
   },
   name: 'Send an email',
   description:

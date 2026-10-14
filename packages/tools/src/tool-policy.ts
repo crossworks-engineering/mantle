@@ -26,6 +26,7 @@
 import type { ItemKind } from '@mantle/client-types/kinds';
 import type { GatePolicy, ItemNeed, ScopeArea } from '@mantle/db';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
+import type { ClientSourcedRule } from './client-sourced-rule';
 import { MCP_SURFACE_POLICIES } from './mcp-surface-policies';
 
 /** The Admin step of a tool (gate step 5). */
@@ -139,6 +140,13 @@ export type ToolPolicy = Readonly<{
   /** Whether a call hands content to clients or the public: a tainted turn
    *  queues it (client-sourced.ts). Default never. */
   lowering?: 'never' | 'always' | ((input: Record<string, unknown>) => boolean);
+  /** What a client-sourced turn may do with a call of this write: run it,
+   *  or queue it for the owner (client-sourced-rules.ts; the rule shapes in
+   *  client-sourced-rule.ts). Every builtin write declares one, unless its
+   *  `lowering` decides; `createsIn` is read as a destination too (A5 step
+   *  6d: it replaced WRITE_RULES, the registry keyed by name). Unset on a
+   *  write: the call waits. */
+  clientSourced?: ClientSourcedRule;
   /** A team app may call it (default, by its other rules) or never
    *  (member-app-tools.ts memberAppRefusedName). */
   memberApp?: 'ok' | 'refused';

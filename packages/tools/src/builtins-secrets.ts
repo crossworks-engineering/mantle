@@ -12,6 +12,7 @@ import { nodeUrl } from '@mantle/content';
 import { areaSystem } from './admin-gate';
 import { type BuiltinToolDef } from './types';
 import { str } from './coerce';
+import { CS } from './client-sourced-rule';
 
 const SECRET_KIND_VALUES = ['password', 'token', 'server', 'card', 'note', 'other'] as const;
 
@@ -25,6 +26,7 @@ export const secret_create: BuiltinToolDef = {
     scope: { area: 'keys' },
     peerRisky: true,
     recipe: { step: 'forbidden' },
+    clientSourced: CS.creates(),
   },
   name: 'Capture a secret',
   description:

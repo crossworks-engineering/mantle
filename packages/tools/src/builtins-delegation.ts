@@ -10,6 +10,7 @@ import { agents, db } from '@mantle/db';
 import { type BuiltinToolDef, type ToolHandlerContext } from './types';
 import { isOwnerSurface, ownerSurfaceLoginId } from './surface';
 import { str } from './coerce';
+import { CS } from './client-sourced-rule';
 
 /** The surface a delegated child runs on. A non-owner parent (team, client,
  *  none) passes its own surface down unchanged. An owner parent's child is
@@ -36,6 +37,7 @@ export const invoke_agent: BuiltinToolDef = {
     scope: 'any',
     peerRisky: true,
     recipe: { step: 'forbidden', runItem: 'banned' },
+    clientSourced: CS.free("the child shares this turn's mark, so its own calls are checked"),
   },
   name: 'Delegate to another agent',
   description:

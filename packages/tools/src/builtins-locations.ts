@@ -31,6 +31,7 @@ import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { str, strOptTrim as strOpt } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { CS } from './client-sourced-rule';
 
 function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -50,7 +51,7 @@ function compactNearby(n: NearbyLocation) {
 
 const location_save: BuiltinToolDef = {
   slug: 'location_save',
-  policy: { effect: 'write', spends: 'none', scope: 'admin-kind' },
+  policy: { effect: 'write', spends: 'none', scope: 'admin-kind', clientSourced: CS.creates() },
   name: 'Save a resolved place',
   description:
     "Persist a place (coordinates + reverse-geocoded address) as a `location` node so future turns near the same spot can reuse it without re-calling the geocoding API. Call this AFTER mapbox_reverse_geocode resolves an address for coordinates you don't already have saved (check location_nearby first). The place is indexed into the brain (searchable via search_nodes). `title` defaults to the address; pass a friendly label (e.g. 'home', 'the office') and `tags` when you know them.",
@@ -216,7 +217,7 @@ function coord(lon: number, lat: number): string {
 
 const route_map: BuiltinToolDef = {
   slug: 'route_map',
-  policy: { effect: 'write', spends: 'ownerKey', scope: 'any' },
+  policy: { effect: 'write', spends: 'ownerKey', scope: 'any', clientSourced: CS.creates() },
   name: 'Plot a route on a map',
   description:
     "Render an overview map PNG of a route and show it inline in the chat. Pass the `polyline` returned by mapbox_directions (its `geometry`, an encoded polyline) plus the origin (`from_longitude`/`from_latitude`) and destination (`to_longitude`/`to_latitude`) for the start/end pins. The path is auto-fitted to the image. Optionally pass `from_label`/`to_label`, `distance_meters`, `duration_seconds`, `profile` to caption it. Call this AFTER mapbox_directions to show the user where a place is and the way there — it's a static overview, not live navigation. Requires a Mapbox key (Settings → API keys, service 'mapbox'); returns the map as an image the user sees inline.",
