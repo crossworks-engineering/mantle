@@ -20,11 +20,12 @@ import {
   apps,
   currentGateScope,
   db,
-  itemWriteRefusal,
+  itemWriteRefusalOf,
   withTurnScope,
   recallMaps,
   recallRevisions,
   type ItemNeed,
+  type ItemWriteRefusal,
 } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { callerHasArea, callerScope } from './admin-gate';
@@ -182,12 +183,24 @@ export async function toolItemWriteRefusal(
   ref?: string,
   ctx?: Pick<ToolHandlerContext, 'surface'>,
 ): Promise<string | null> {
+  return (await toolItemWriteRefusalOf(slug, input, ownerId, ref, ctx))?.message ?? null;
+}
+
+/** toolItemWriteRefusal, with the edit check's detail of the refusal (A5
+ *  step 4 fix round 2: a /api/v1 route answers it as the database's). */
+export async function toolItemWriteRefusalOf(
+  slug: string,
+  input: Record<string, unknown>,
+  ownerId: string,
+  ref?: string,
+  ctx?: Pick<ToolHandlerContext, 'surface'>,
+): Promise<ItemWriteRefusal | null> {
   if (!currentWorkspaceScope()) {
     // Under the rollback switch the login's own scope answers the check
     // (W7 integration fix 2, M6): the switch restores only the read path.
     const g = currentGateScope();
     if (!g) return null;
-    return withTurnScope(g, () => toolItemWriteRefusal(slug, input, ownerId, ref, ctx));
+    return withTurnScope(g, () => toolItemWriteRefusalOf(slug, input, ownerId, ref, ctx));
   }
   const targets = itemWriteTargetsOf(slug, ref);
   if (!targets) return null;
@@ -196,7 +209,7 @@ export async function toolItemWriteRefusal(
       ? await targets(input, ownerId, ctx)
       : targets.map((t) => ({ ids: idsOf(input[t.param]), need: t.need }));
   for (const set of sets) {
-    const refused = await itemWriteRefusal(set.ids, set.need);
+    const refused = await itemWriteRefusalOf(set.ids, set.need);
     if (refused) return refused;
   }
   return null;

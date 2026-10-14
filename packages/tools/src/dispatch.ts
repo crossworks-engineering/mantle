@@ -199,11 +199,21 @@ async function dispatchGated(
             ownerId: ctx.ownerId,
             ...(ctx.surface ? { surface: ctx.surface } : {}),
             ...(rethrows ? { throws: true } : {}),
+            // A /api/v1 route answers an item refusal as the database's
+            // (gate-prerun.ts, A5 step 4 fix round 2).
+            ...(caller.entry === 'api-v1' ? { entry: 'api-v1' } : {}),
           },
         },
       );
       if (thrown) throw (thrown as { err: unknown }).err;
-      if (!res.ok) return { ok: false, error: res.refusal.toolText };
+      if (!res.ok) {
+        // A /api/v1 route: a refusal the database raised, or the item
+        // pre-check raised as the database's (gate-prerun.ts), goes on to
+        // app.onError, which answers it as before the route ran through
+        // dispatch: 403 item-workspace, or 404 (A5 step 4 fix round 2).
+        if (caller.entry === 'api-v1' && res.refusal.kind === 'database') throw res.error;
+        return { ok: false, error: res.refusal.toolText };
+      }
       return res.value ?? { ok: false, error: 'the tool gave no result' };
     } catch (err) {
       if (rethrows) throw err;

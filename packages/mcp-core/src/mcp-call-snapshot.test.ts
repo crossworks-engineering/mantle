@@ -195,6 +195,13 @@ vi.mock('../../tools/src/item-write-gate', async (importOriginal) => {
       Object.values(input).includes(ids.REFUSED)
         ? 'You cannot change this item in your workspaces.'
         : null,
+    // The same refusal with its edit check detail (A5 step 4 fix round 2:
+    // the item pre-check asks this one; only a /api/v1 route reads the
+    // detail, so every MCP answer here is the words above).
+    toolItemWriteRefusalOf: async (_slug: string, input: Record<string, unknown>) =>
+      Object.values(input).includes(ids.REFUSED)
+        ? { message: 'You cannot change this item in your workspaces.', detail: 'no_edit' }
+        : null,
   };
 });
 

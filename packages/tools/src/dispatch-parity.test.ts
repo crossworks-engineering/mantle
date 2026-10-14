@@ -88,6 +88,10 @@ vi.mock('../../db/src/item-rights', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../db/src/item-rights')>()),
   itemWriteRefusal: async (ids: string[], need: string) =>
     ids.includes(REFUSED_ID) ? `item refused (${need})` : null,
+  // The same refusal with its edit check detail (A5 step 4 fix round 2:
+  // the item pre-check asks this one; a /api/v1 route reads the detail).
+  itemWriteRefusalOf: async (ids: string[], need: string) =>
+    ids.includes(REFUSED_ID) ? { message: `item refused (${need})`, detail: 'no_edit' } : null,
 }));
 vi.mock('@mantle/db', async (importOriginal) => {
   const chain = {

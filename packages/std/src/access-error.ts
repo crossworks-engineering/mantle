@@ -213,6 +213,22 @@ export function editRefusalDetail(err: unknown): EditRefusalDetail | null {
   return EDIT_REFUSAL_DETAILS.has(pg.detail) ? (pg.detail as EditRefusalDetail) : null;
 }
 
+/**
+ * The edit check's refusal of a write to an item, raised in process as the
+ * database raises it (mantle_edit_refuse, 0280: 42501, the detail, the
+ * check's own words), so the one mapper reads it as the database's: no_read
+ * a 404, no_edit a 403 item-workspace. For an entry whose answer to that
+ * write was the database's refusal before the gate asked first (a /api/v1
+ * route, whose app.onError maps it: A5 step 4 fix round 2).
+ */
+export function editCheckRefusalError(detail: 'no_read' | 'no_edit'): Error {
+  return Object.assign(new Error('not allowed to edit this item'), {
+    code: '42501',
+    severity: 'ERROR',
+    detail,
+  });
+}
+
 /** A folder move or delete refused because the folder holds rows the
  *  caller cannot read (mantle_subtree_refuse_hidden, 0282): a 409. */
 export function isHiddenRowsRefusal(err: unknown): boolean {

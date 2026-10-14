@@ -10,7 +10,8 @@
  *    then the items its write names (toolItemWriteRefusal: the item
  *    routes' rule), in that order, as dispatch asked them before step 3a.
  *    A check that throws refuses in the error's words, as dispatch's catch
- *    answered.
+ *    answered. On a /api/v1 route an item the edit check refuses is
+ *    thrown as the database's refusal (A5 step 4 fix round 2).
  *  - `key-shared-content`: an API key or a linked brain never changes the
  *    content of an item others can read (key-shared-content.ts), on the
  *    owner MCP surface (A5 step 4).
@@ -19,11 +20,16 @@
  * surface's `mcp-tool`: for the item pre-check only one that runs a
  * builtin) and lets every other through.
  */
-import { registerPreRunCheck, type PolicyRef, type PreRunCheck } from '@mantle/db';
+import {
+  registerPreRunCheck,
+  type ItemWriteRefusal,
+  type PolicyRef,
+  type PreRunCheck,
+} from '@mantle/db';
 import { mcpVia } from './gate-callers';
-import { errorMessage } from '@mantle/std';
+import { editCheckRefusalError, errorMessage } from '@mantle/std';
 import { checkToolPreconditions } from './preconditions';
-import { toolItemWriteRefusal } from './item-write-gate';
+import { toolItemWriteRefusalOf } from './item-write-gate';
 import { keySharedContentRefusal } from './key-shared-content';
 import { tableBuiltin } from './tool-policy';
 import type { ToolHandlerContext } from './types';
@@ -35,6 +41,10 @@ export type PreRunContext = Readonly<{
   /** The entry answers a thrown error itself (a /api/v1 route: app.onError,
    *  A5 step 4 fix round 1, M1): a check that throws throws on. */
   throws?: boolean;
+  /** A /api/v1 route (A5 step 4 fix round 2): its answer to a write the
+   *  edit check refuses is the database's, as before it ran through
+   *  dispatch, never the pre-check's words as a 400. */
+  entry?: 'api-v1';
 }>;
 
 function contextOf(context: Readonly<Record<string, unknown>> | undefined): PreRunContext | null {
@@ -64,13 +74,14 @@ export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
   // No owner, no check: dispatch always names one.
   if (!ctx) return null;
   const input = call.args ?? {};
+  let refused: ItemWriteRefusal | null;
   try {
     const pre = tableBuiltin(builtin.handler)?.preconditions;
     if (pre && pre.length > 0) {
       const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
       if (failure && !failure.ok) return failure.error;
     }
-    return await toolItemWriteRefusal(builtin.slug, input, ctx.ownerId, builtin.handler, {
+    refused = await toolItemWriteRefusalOf(builtin.slug, input, ctx.ownerId, builtin.handler, {
       ...(ctx.surface ? { surface: ctx.surface } : {}),
     });
   } catch (err) {
@@ -81,6 +92,13 @@ export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
     if (mcpVia(caller) || ctx.throws === true) throw err;
     return errorMessage(err);
   }
+  if (!refused) return null;
+  // A /api/v1 route: before it ran through dispatch the handler's write met
+  // the database's edit check, which app.onError answers (403
+  // item-workspace, or 404 for an item the scope does not read). The same
+  // refusal, thrown, gets the same status and body from the one mapper.
+  if (ctx.entry === 'api-v1' && refused.detail) throw editCheckRefusalError(refused.detail);
+  return refused.message;
 };
 
 /** A key's or a peer's change to content others read. */

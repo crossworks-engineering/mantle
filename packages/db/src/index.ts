@@ -343,10 +343,12 @@ export {
 } from './scope-readable';
 export {
   itemWriteRefusal,
+  itemWriteRefusalOf,
   itemNotInScopeError,
   itemNoRightError,
   READ_ONLY_COPY_ERROR,
   type ItemNeed,
+  type ItemWriteRefusal,
 } from './item-rights';
 export { VAULT_PAIR_MAKER_NO_KEYS, vaultPairRunRefusal } from './vault-pair';
 export { refuseHiddenRows } from './hidden-rows';

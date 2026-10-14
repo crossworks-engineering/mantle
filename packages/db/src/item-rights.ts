@@ -61,10 +61,29 @@ export async function itemWriteRefusal(
   ids: readonly string[],
   need: ItemNeed,
 ): Promise<string | null> {
+  return (await itemWriteRefusalOf(ids, need))?.message ?? null;
+}
+
+/** One refusal of itemWriteRefusalOf: its words, and the edit check's
+ *  detail the database raises for the same write (no_read: the scope does
+ *  not read the item; no_edit: it reads it but may not make the write, a
+ *  read-only copy too), or null for an id the check cannot match (not
+ *  canonical), which only its words answer. */
+export type ItemWriteRefusal = Readonly<{
+  message: string;
+  detail: 'no_read' | 'no_edit' | null;
+}>;
+
+/** itemWriteRefusal, with the edit check's detail (A5 step 4 fix round 2:
+ *  a /api/v1 route answers the refusal as the database's, by its detail). */
+export async function itemWriteRefusalOf(
+  ids: readonly string[],
+  need: ItemNeed,
+): Promise<ItemWriteRefusal | null> {
   if (!currentWorkspaceScope()) return null;
   const trimmed = ids.map((i) => i.trim().toLowerCase());
   const loose = trimmed.find((i) => !UUID_RE.test(i) && LOOSE_UUID_RE.test(i));
-  if (loose !== undefined) return itemIdNotCanonicalError(loose);
+  if (loose !== undefined) return { message: itemIdNotCanonicalError(loose), detail: null };
   const list = [...new Set(trimmed.filter((i) => UUID_RE.test(i)))];
   if (list.length === 0) return null;
   const arr = `{${list.join(',')}}`;
@@ -82,10 +101,12 @@ export async function itemWriteRefusal(
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const id of list) {
     const r = byId.get(id);
-    if (!r) return itemNotInScopeError(id);
+    if (!r) return { message: itemNotInScopeError(id), detail: 'no_read' };
     if (need === 'read') continue;
-    if (need === 'edit' && r.copy) return READ_ONLY_COPY_ERROR;
-    if (need === 'edit' ? !r.edit : !r.manage) return itemNoRightError(id, need);
+    if (need === 'edit' && r.copy) return { message: READ_ONLY_COPY_ERROR, detail: 'no_edit' };
+    if (need === 'edit' ? !r.edit : !r.manage) {
+      return { message: itemNoRightError(id, need), detail: 'no_edit' };
+    }
   }
   return null;
 }
