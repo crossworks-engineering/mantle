@@ -35,8 +35,13 @@ What is here:
   the route loader caps every read at the route's ceiling
   (`docs/request-plumbing.md`). Report a problem of your own with
   `firstIssue()` (`lib/zod-issue.ts`).
-  Errors: throw and let `app.onError` answer an opaque 500, or return a
-  4xx with `{ error }`; never echo `err.message` to the client.
+  Errors: throw, and `app.onError` (`server/web/server/app-error.ts`) answers: a
+  domain error by the one table (`@mantle/std` `DOMAIN_ERRORS`: throw
+  `InputError` or `ConflictError` for what the caller should hear), a
+  refusal by the one mapper, anything else the opaque 500; or return a
+  4xx with `{ error }` and a fixed text. Never put a caught error's text
+  in a reply (a lint error outside the named files,
+  `eslint-rules/route-plumbing.mjs`; `docs/request-plumbing.md`).
 - **`lib/**`** — the HTTP-side domain adapters (agents, heartbeats, runs,
   shares, model pools, onboarding, integrity, maintenance …). Business logic
   belongs in `packages/*`; a `lib/` module is the thin layer between a route

@@ -76,7 +76,8 @@ or is a named change, listed cell by cell with its answer on main and now
 in `server/web/server/__snapshots__/a10-body-sweep-changes.txt`; the test
 fails on a change no kind names.
 
-The named changes (418 of 2178 cells; every other cell byte for byte):
+The named changes of fold 1 (418 of 2178 cells; fold 2 names 9 more, below;
+every other cell byte for byte):
 
 | Kind                                               | Cells | What                                                                                                                                                                           |
 | -------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -85,7 +86,7 @@ The named changes (418 of 2178 cells; every other cell byte for byte):
 | bad-json-400 (malformed, accepted as `{}` on main) | 9     | the same, where `{}` passed and the route went on as if no field was sent: the turn cancel, sign-out, the docs collections (3), the embedding settings (3) and the network key |
 | bad-json-400 (empty)                               | 2     | `PATCH /api/mcp-settings` and `PATCH /api/team-admin/settings` refuse an empty body with the one text where they said `invalid body`                                           |
 
-Every valid, NUL and array cell is unchanged. The A4 sweeps
+Fold 1 changes no valid, NUL or array cell. The A4 sweeps
 (`server/web/server/a4-guard-sweep.test.ts` and its recorded files, the
 auth, member, role and link sweeps) are byte for byte: they stop at the
 caller's answer, before any body is read.
@@ -109,3 +110,123 @@ attachment, `/api/assistant/transcribe`, `/api/tables/:id/import`,
 ceiling, as before: `formData()` buffers the whole body before their own
 size checks run. A streamed cap per route (its file limit plus the
 framing) would close that; it is not in this change.
+
+## Fold 2: one error answer
+
+### Before
+
+116 route files had their own catch. 86 of them put a caught error's text
+in the reply (`errorTextReplies`, `eslint-rules/route-plumbing.mjs`),
+mostly as a 400: a database error's SQL, a provider's text, a plain fault
+(`server/web/app/api/contacts/route.ts`, `journal`, `events`,
+`tables/[id]/commit`), and once in a redirect URL (the Microsoft sign-in
+callback). 15 catches re-threw the workspace refusal by hand
+(`if (isScopeWriteRefusal(err)) throw err;`), and `treeErrorResponse`
+mapped the folder errors in 8 routes while the tools mapped them again.
+A domain function told the caller what was wrong with a plain `Error`, so
+nothing could tell a refusal the caller should hear from a fault.
+
+### After
+
+- **One table** (`packages/std/src/domain-errors.ts`, `DOMAIN_ERRORS`):
+  error class to HTTP status, public text and the reason it is public.
+  Each class registers its row where it is defined (`defineDomainError`),
+  so the table needs no package above `@mantle/std`. A class is matched on
+  the error or up to three causes below it, by its own row or a parent's.
+  Rows today:
+
+  | Class                                          | Status                                                              | Says                                      | Reason                                                 |
+  | ---------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------ |
+  | `InputError` (std)                             | 400                                                                 | its message                               | the caller sent a value the domain refuses             |
+  | `ConflictError` (std)                          | 409                                                                 | its message                               | the write meets something already there (a name taken) |
+  | `BadBodyError` (`server/web/lib/read-body.ts`) | 400                                                                 | its message                               | the body is not JSON, or not what the route reads      |
+  | `TreeError` (content tree)                     | 404 not-found, 409 conflict, 410 gone (`code: 'gone'`), 400 invalid | its message                               | a folder write cannot be done as asked                 |
+  | `TreeVisibilityError` (content tree)           | 409                                                                 | `{ error: 'visibility', changes, total }` | the write changes who can see items: confirm first     |
+  | `FormulaSpecError` (content formulas)          | 400                                                                 | `{ error, errors }`                       | the spec has problems; the list says which             |
+  | `TableTooLargeError` (tabledb)                 | 400                                                                 | its message                               | more rows than a whole read or an import may take      |
+
+- **One answer** (`server/web/server/app-error.ts`, `answerAppError`): a
+  redirect, a refusal taken at the read, a refusal by the one mapper
+  (`mapAccessError`), a body over its ceiling, then the table, then busy
+  (409), and anything else the one opaque 500 `{ "error": "internal error" }`
+  with a log line. The tool surface's public text (`publicErrorMessage`,
+  `@mantle/std`) reads the same table, so a route and a tool say the same
+  words. The access mapper (`packages/std/src/access-error.ts`) is not
+  duplicated: refusals stay its own.
+- **Domain refusals got their class.** The checks the moved routes'
+  callers hear were plain `Error`s; they are `InputError` now, same text:
+  the contact checks (an email or domain, a country code, a name), the
+  journal date and gap answer, the event dates, and the file and folder
+  move and copy refusals (`packages/files/src/move-copy.ts`). A name
+  already taken is a `ConflictError` (409, as the routes answered it by
+  matching `already exists` in the text): `writeFile`, `renameFile`,
+  `moveFile`, `renameFolder`, `moveFileById`, `moveFolderById`. The copy
+  and the folder rename keep their 400 (`InputError`), as before.
+- **The first tranche moved** (19 route files): the catches that only
+  mapped errors are gone (the try unwrapped where nothing else was left),
+  the 15 `isScopeWriteRefusal` re-throws and every `treeErrorResponse`
+  catch with them (`treeErrorResponse` itself is deleted from
+  `server/web/lib/tree-route.ts`). Files: `contacts`, `contacts/[id]`,
+  `journal`, `journal/[id]`, `journal/[id]/resolve`, `events`,
+  `events/[id]`, `formulas`, `formulas/[id]`, `files/files`,
+  `files/files/[id]`, `files/folders`, `files/folders/[id]`,
+  `tree/[kind]/move`, `tree/[kind]/folders`, `tree/[kind]/folders/[id]`,
+  `pages`, `pages/[id]/move`, `tables/[id]/commit`. A catch that maps a
+  case of its own without the error's text stays (a unique violation's
+  fixed 409, an upload over its cap).
+- **The Microsoft callback**
+  (`server/web/app/api/microsoft/oauth/callback/route.ts`): a failed token
+  exchange or account write redirects to `/settings/microsoft?error=` with
+  the fixed sentence "Connecting your Microsoft account failed. The details
+  are in the server log." where it carried the error's text (cut at 200
+  characters); the error is logged
+  (`server/web/app/api/microsoft/oauth/callback/callback-error.test.ts`).
+
+### The proof
+
+`server/web/server/a10-error-sweep.test.ts` drives every route of the 91
+files fold 2 moves (the 86, plus the re-throw and `treeErrorResponse`
+files; `server/web/server/__snapshots__/a10-error-sweep.files.json`), every
+method, as the owner with its valid body, and a forced failure: once the
+handler has read its caller, every use of the database throws the cell's
+fault (a plain error, a drizzle query error over a Postgres error, the
+workspace refusal, `BusyError`, the four `TreeError` codes and
+`TreeVisibilityError`). 1314 cells, recorded before the move
+(`server/web/server/__snapshots__/a10-error-sweep.txt`). After: every cell
+as recorded, or a named change
+(`server/web/server/__snapshots__/a10-error-sweep-changes.txt`):
+
+| Kind            | Cells | What                                                                                                                                                                                                                                                                                                                                                |
+| --------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| opaque-500      | 26    | a plain or a database error, whose text the route put in a 400, answers the opaque 500: POST and PATCH of `contacts`, `events`, `journal` (and `journal/:id/resolve`), PATCH `formulas/:id`, PATCH and POST `files/files/:id` and `files/folders/:id`, POST `tables/:id/commit` (each for both faults)                                              |
+| domain-by-table | 418   | a domain error answers as the table says where a hand catch gave it another status: the folder errors and the visibility list where a route put their text in a 400 or mapped none (the opaque 500), busy 409 where 14 cells said it in a 400, and the workspace refusal 403 on `POST /api/tables/:id/commit` (it said the refusal's text in a 400) |
+
+Most domain-by-table cells are forced: a route that never meets a
+`TreeError` answers one by the table now, where it answered the opaque 500. The 9 body sweep cells that change in fold 2 are the same move seen
+from there (`opaque-500 (fold 2)`: the sweep's database stand-in throws a
+plain error, whose text was the reply). Every other cell of both sweeps is
+byte for byte, and the A4 sweeps are unchanged.
+
+### The pins
+
+- Scoreboard: `routeErrorTextFiles`, route files putting a caught error's
+  text in a reply outside the named list, pinned at 0;
+  `routeErrorTextAllowed`, the named files, 86 on main, pinned at 72.
+- ESLint (`eslint-rules/route-plumbing.mjs`, `no-error-text-replies`): such
+  a catch is an error in a route file outside `ERROR_TEXT_ALLOW`.
+  `eslint-rules/arch-lints.test.ts` holds the list to the files that still
+  do it, so it only shrinks.
+
+### Left open (fold 2 continues)
+
+The 72 named files, each `not yet moved` in `ERROR_TEXT_ALLOW`. The same
+recipe for each: find the domain checks its callers hear (a plain `Error`
+with a message for a person) and give them `InputError` or
+`ConflictError` (or a class of their own with a row); delete the catch;
+run both sweeps, name the changes; take the file off the list and lower
+the pin. Some may be deliberately public (an AI worker's test routes show
+the owner the provider's own error, the dev console shows the upstream's):
+those keep their text with a reason of their own in the list. The tool
+surface reads the table through `publicErrorMessage`; the tools'
+`visibilityRefusal` (`packages/tools`) still words the visibility list for
+a model itself.
