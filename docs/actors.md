@@ -1015,10 +1015,11 @@ a required `ToolPolicy`, a group (its place in the surface's order) and
 its body, moved as it was. `register/*.ts` register a group from the
 table, and the builtin bridge skips a builtin a definition names, so the
 page and table skip lists are gone. Eleven share a builtin's name and
-carry that builtin's policy (`packages/mcp-core/src/mcp-defs.test.ts`);
-the table loads into `@mantle/tools` as the surface table
-(`loadSurfaceTools`), where `ADMIN_ONLY_TOOL_SLUGS` reads the two
-responder writes from it in every process that serves MCP. Registration
+carry that builtin's policy (`packages/mcp-core/src/mcp-defs.test.ts`).
+Each definition takes its policy by its name from
+`packages/tools/src/mcp-surface-policies.ts` (fix round 1, below), the
+surface table `@mantle/tools` loads in every process, where
+`ADMIN_ONLY_TOOL_SLUGS` reads the two responder writes. Registration
 opt-ins are a definition field, `optIn: 'toolsmithWrite' | 'terminal'`,
 on the Toolsmith writes and `run_terminal`.
 
@@ -1058,3 +1059,58 @@ and the exported list values; the change left every file under
 `packages/mcp-core/src/tool-policy-sweep.test.ts` pins the new `peer`
 narrower against `ownerPeerAllows` for every registered tool, two
 connector rows and every key and peer caller.
+
+### Fix round 1 (audit 8.5)
+
+- **The family safety net (MEDIUM-1).** Before step 2 a tool was risky
+  for a key or a peer by its family whatever it declared (a `web_`,
+  `telegram_`, `sandbox_` or `peer_` name, an `app_` write, a tool that
+  starts model work or waits for the owner's confirm), and a `_from_`
+  tool had no key area whatever it declared (M2 audit F2). Since step 2
+  the policy decides, so a tool that forgot `peerRisky` would be open to
+  keys and peers with Write on. `packages/mcp-core/src/tool-policy-sweep.test.ts`
+  ("every declared tool keeps its family") holds every builtin and every
+  MCP definition to its family: risky by those rules means `peerRisky`;
+  a family of `AREA_PREFIXES` means that area (an `app_data_` tool its
+  own, `app_data`); a `_from_` tool means no area. It reads the kept
+  `PEER_RISKY_TOOL_PREFIXES` and `AREA_PREFIXES` (now exported from
+  `key-scope.ts`), not a copy, and a case in it fails when one tool's
+  `peerRisky` flips or a conversion declares an area.
+- **The responder policies in every process (LOW-1).** The sixteen
+  policies moved to the leaf `packages/tools/src/mcp-surface-policies.ts`
+  (type imports only); `tool-policy.ts` loads it as the surface table at
+  module load, and `mcp-defs.ts` takes each definition's policy from it
+  by name (a name with no policy does not type-check). So
+  `ADMIN_ONLY_TOOL_SLUGS` holds `responder_turn_input` and
+  `responder_turn_record` in server/api too, as before A5:
+  `packages/runtime/src/tool-policy-snapshot.test.ts` is back to its
+  literal from before step 2, and `packages/tools/src/gate-boot.test.ts`
+  pins it with no mcp-core loaded. `loadSurfaceTools`,
+  `surfaceToolsLoaded`, `surfaceTool` and `SurfaceTableNotLoadedError`
+  are gone (the nit: the two exports only tests used).
+- **Views of the definitions are read only (LOW-2).** `mcpDefinitionSet`
+  returns `@mantle/db`'s `readOnlySetView` (the bound caller's view,
+  LOW-3 above), not a frozen Set, so `Set.prototype.add.call` throws
+  (`packages/mcp-core/src/mcp-defs.test.ts`).
+- **A sweep case renamed (LOW-3).** "toGatePolicy equals today's gate
+  policy" compared `toGatePolicy` with itself since step 2. It is now
+  "the gate's mcp-tool source reads each builtin's and definition's
+  declared policy": the wiring only; the values from before step 2 are
+  the snapshot's.
+
+**Owner decisions.** `PEER_RISKY_TOOL_PREFIXES` and `AREA_PREFIXES` stay
+until A5 step 4, with the family sweep above. The responder-names gap is
+closed by LOW-1.
+
+**Must do in A5 step 3a or 4 (LOW-4).** In a process without mcp-core a
+connector's tool is now declared not risky (`connectorToolPolicy`); before
+step 2 the peer narrower there refused it for a key or a peer unless the
+owner named it (fail closed). Not live today: no tool ref reaches the gate
+in such a process yet. Before one does, either declare a connector risky
+on its row or keep the old fail closed answer there, with a test in
+`packages/tools/src/gate-boot.test.ts`.
+
+**Noted, not changed.** The `@mantle/tools` views (`PolicySlugSet`,
+`PolicySlugMap` in `tool-policy.ts`) extend Set and Map, so
+`Set.prototype.add.call` reaches their storage until the table next
+changes; the same fix as LOW-2 fits them in step 4.
