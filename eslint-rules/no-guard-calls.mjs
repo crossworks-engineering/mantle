@@ -23,7 +23,9 @@
  * 382 -> 285 (A4 step 3b part 3, batch 3, the content writes): 101 write
  * handlers in 81 route files became reads, 98 of them getOwnerOr401 calls
  * (97 counted: server/web/app/api/apps/[id]/build/route.ts sits under a
- * `build/` folder the counts skip) and the 3 getOwnerOr401WithLogin calls
- * of the app brokers and the frame ticket (not counted here).
+ * `build/` folder the counts skipped until A4 step 3b part 4, which counts
+ * such a route segment; it reads the caller now, so the pin holds) and the
+ * 3 getOwnerOr401WithLogin calls of the app brokers and the frame ticket
+ * (not counted here).
  */
 export const GUARD_CALL_PIN = 285;

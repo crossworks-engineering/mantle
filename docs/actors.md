@@ -1297,7 +1297,8 @@ and a create whose `?ws=` the create-home intent refuses (403 `workspace`,
 
 Pins: guard calls 382 to 285, still a ceiling (97 counted: the 98th
 `getOwnerOr401` is in `server/web/app/api/apps/[id]/build/route.ts`, under a
-`build/` folder the counts skip; `getOwnerOr401WithLogin` is not counted);
+`build/` folder the counts skipped until part 4, which counts route
+segments of that name; `getOwnerOr401WithLogin` is not counted);
 files with a guard call 286 to 210; reads of the caller 86 to 186, in 80
 to 128 files; live routes calling no guard 65 to 62 (the three runner
 files called only `getOwnerOr401WithLogin`, which the counts do not see,

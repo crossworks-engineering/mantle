@@ -16,7 +16,8 @@
  *  - store write API importers (the disk stores of plan section 6).
  *
  * Comment lines never count. Product files only: packages/, server/,
- * scripts/; no tests, migrations, archive folders or generated manifests.
+ * scripts/; no tests, migrations, archive or build folders (a route segment
+ * of server/web/app/ is not one) or generated manifests.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -29,7 +30,14 @@ export function isCounted(path) {
   if (/\.test\.tsx?$/.test(path) || path.endsWith('.d.ts')) return false;
   if (!/^(packages|server|scripts)\//.test(path)) return false;
   if (path.startsWith('packages/db/migrations/')) return false;
-  if (/(^|\/)(archive|node_modules|dist|build|public|\.next)\//.test(path)) return false;
+  if (/(^|\/)(node_modules|\.next)\//.test(path)) return false;
+  // Archive, build, public and dist folders are not product code, except
+  // under server/web/app/, where such a folder is a route segment
+  // (/api/apps/:id/build, /api/workspaces/:id/archive): those route files
+  // count (A4 step 3b part 4).
+  if (!path.startsWith('server/web/app/') && /(^|\/)(archive|dist|build|public)\//.test(path)) {
+    return false;
+  }
   if (path.endsWith('.gen.ts')) return false;
   // The scoreboard names what it counts.
   if (path.startsWith('scripts/arch-scoreboard')) return false;

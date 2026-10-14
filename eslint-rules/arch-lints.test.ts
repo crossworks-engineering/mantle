@@ -214,6 +214,14 @@ describe('the counters', () => {
     expect(isCounted('packages/db/migrations/0001_x.sql')).toBe(false);
     expect(isCounted('server/web/server/route-manifest.gen.ts')).toBe(false);
     expect(isCounted('scripts/arch-scoreboard.ts')).toBe(false);
+    // A build, archive, public or dist folder is skipped, but not a route
+    // segment of that name under server/web/app/ (A4 step 3b part 4).
+    expect(isCounted('packages/x/build/y.ts')).toBe(false);
+    expect(isCounted('server/web/public/sw.js')).toBe(false);
+    expect(isCounted('server/archive/old.ts')).toBe(false);
+    expect(isCounted('server/web/app/api/apps/[id]/build/route.ts')).toBe(true);
+    expect(isCounted('server/web/app/api/workspaces/[id]/archive/route.ts')).toBe(true);
+    expect(isCounted('server/web/app/node_modules/x/route.ts')).toBe(false);
     expect(countedFiles(ROOT).length).toBeGreaterThan(500);
     expect(readRepoFile(ROOT, 'no/such/file.ts')).toBeNull();
     expect(builtinSlugs(ROOT).has('note_create')).toBe(true);
