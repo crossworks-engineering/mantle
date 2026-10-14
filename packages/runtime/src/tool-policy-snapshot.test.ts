@@ -88,6 +88,27 @@ const CURRENT: Record<string, () => Iterable<string>> = {
   HEARTBEAT_EGRESS_SLUGS: () => where((p) => p.outside?.egress === true),
 };
 
+/**
+ * A literal copy of the name-keyed switch the policies replaced (main at
+ * v0.300.39, packages/tools/src/client-sourced.ts isLoweringCall and its
+ * two input rules), kept here as the fixed reference the policies are
+ * compared with (A5 step 6a fix round 1, LOW-2): never derived from them.
+ */
+function mainIsLoweringCall(slug: string, input: Record<string, unknown>): boolean {
+  const level = typeof input.level === 'string' ? input.level.trim().toLowerCase() : '';
+  switch (slug) {
+    case 'access_set':
+      return level === 'client' || level === 'public';
+    case 'node_share':
+    case 'page_share':
+      return true;
+    case 'email_page':
+      return input.includeLink === true || input.includeLink === 'true';
+    default:
+      return false;
+  }
+}
+
 /** Whether a call lowers to client or public: the tool's policy. */
 const isLoweringCall = (slug: string, input: Record<string, unknown>) => {
   const policy = builtinPolicy(slug);
@@ -623,7 +644,7 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     expect(isLoweringCall('no_such_tool', {})).toBe(false);
   });
 
-  it("a lowering call is what each builtin's policy.lowering says", () => {
+  it("each builtin's policy.lowering says what main's lowering switch said", () => {
     const probes = [
       {},
       { level: 'client' },
@@ -636,7 +657,7 @@ describe('every @mantle/tools access list equals its literal (A5 step 1)', () =>
     for (const d of listBuiltins()) {
       for (const input of probes) {
         expect(policyLowers(d.policy, input), `${d.slug} ${JSON.stringify(input)}`).toBe(
-          isLoweringCall(d.slug, input),
+          mainIsLoweringCall(d.slug, input),
         );
       }
     }
