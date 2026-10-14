@@ -18,7 +18,13 @@ What is here:
   `resolveActiveShareByToken()` (an open share link, `/s/<token>`). Since
   A4 step 3b an owner route reads the caller the gate answered instead,
   `const owner = ownerCaller()`, and calls no guard; the guard calls are
-  pinned as a ceiling (`docs/actors.md`, A4 step 3b). `server/web/server/auth-sweep.test.ts` drives
+  pinned as a ceiling (`docs/actors.md`, A4 step 3b). Which rows the gate
+  answers is read from the route files when the manifest is generated
+  (`pnpm -C server/web route-manifest`; `predev`, `build`, `typecheck` and
+  vitest run it). `pnpm dev` (`tsx watch`) does not: after converting a
+  handler to `ownerCaller()`, or back, regenerate and restart, or its row
+  keeps the old answer (a read the gate did not answer throws; a guard on
+  a row it answered runs twice). `server/web/server/auth-sweep.test.ts` drives
   every route credential-less and pins that contract. Bodies are validated
   with zod; report the first problem with `firstIssue()` (`lib/zod-issue.ts`).
   Errors: throw and let `app.onError` answer an opaque 500, or return a
