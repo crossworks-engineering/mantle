@@ -37,6 +37,8 @@
  * the member lists are generated from ITEM_KINDS.
  */
 import type { WorkspaceArea } from '@mantle/client-types';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
+import { env } from '@mantle/config';
 import { registerPolicySource, systemActor, type GatePolicy, type PolicyRef } from '@mantle/db';
 import type { AccessKeyArea, AccessKeyGrant } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, type KeyRoute } from '../api-v1';
@@ -191,6 +193,10 @@ export type RouteRow = Readonly<{
    *  stub's as before; the any-login answer writes no audit row on a stub
    *  (none was written: getLoginOr401 without `audit`). */
   gone: boolean;
+  /** The switch the route is served under (ROUTE_SWITCHES, A4 hand batch
+   *  A): while it is off the gate answers the route's own off answer
+   *  before the login's (routeSwitchedOff). Null: always served. */
+  switch: RouteSwitch | null;
   /** The system reason a public route that writes runs as (plan 7, 20.3),
    *  null on every other row (it runs as its caller). A4 step 3a names the
    *  actor each runs as today: the request slot's first actor,
@@ -281,6 +287,47 @@ function rowScope(
   if (classLogins === 'telegram') return SELF_SCOPE;
   if (ADMIN_OPEN_ROWS.has(`${method === 'HEAD' ? 'GET' : method} ${pattern}`)) return SELF_SCOPE;
   return routeClass(pattern);
+}
+
+/**
+ * The switches a route is served under (A4 hand batch A): its handler
+ * checked the switch FIRST, before its guard, so while the switch is off
+ * every credential that reached the handler got the route's off answer,
+ * whatever its guard would have said. The gate answers it at the same
+ * point now (routeSwitchedOff, the gate middleware, before the login's
+ * answer and the Admin step), so the handler can read the caller first
+ * and every answer stays: a member, a revoked token or an Admin user
+ * without the row's area still gets the off answer while the switch is
+ * off. Each to its check and its off answer, the handler's words.
+ */
+export type RouteSwitch = 'turn-streaming' | 'not-production';
+const SWITCHES: Readonly<
+  Record<RouteSwitch, Readonly<{ on: () => boolean; status: 404; error: string }>>
+> = {
+  // MANTLE_TURN_STREAMING (on unless set off): the streamed turn's stream
+  // and its cancel do not exist while it is off.
+  'turn-streaming': { on: isTurnStreamingEnabled, status: 404, error: 'not found' },
+  // A dev tool: never in production.
+  'not-production': {
+    on: () => env('NODE_ENV') !== 'production',
+    status: 404,
+    error: 'not available in production',
+  },
+};
+/** `METHOD pattern` to its switch (a HEAD row takes its GET's). */
+const ROUTE_SWITCHES: Readonly<Record<string, RouteSwitch>> = {
+  'POST /api/assistant/turn/:turnId/cancel': 'turn-streaming',
+  'GET /api/assistant/turn/:turnId/stream': 'turn-streaming',
+  'POST /api/dev-tools/queue-approval': 'not-production',
+};
+
+/** The off answer of a row whose switch is off now, else null. */
+export function routeSwitchedOff(
+  row: Pick<RouteRow, 'switch'>,
+): Readonly<{ status: number; body: { error: string } }> | null {
+  if (!row.switch) return null;
+  const s = SWITCHES[row.switch];
+  return s.on() ? null : { status: s.status, body: { error: s.error } };
 }
 
 /**
@@ -407,6 +454,7 @@ export function buildRouteRow(
     page,
     caller,
     gone,
+    switch: ROUTE_SWITCHES[`${m === 'HEAD' ? 'GET' : m} ${pattern}`] ?? null,
     startsAs,
     actor: isPublic && effect === 'write' ? startsAs : null,
   });

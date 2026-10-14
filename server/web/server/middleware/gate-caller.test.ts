@@ -1015,6 +1015,106 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect([...members].sort()).toEqual(['member-bearer', 'member-cookie']);
   });
 
+  it('the switched rows answer every credential as their flag-first handlers did (hand batch A)', async () => {
+    // The turn stream and cancel (MANTLE_TURN_STREAMING) and the dev tool
+    // (never in production) checked their switch before their guard. The
+    // gate answers the switch now, before the caller (ROUTE_SWITCHES), and
+    // the handlers read ownerCaller() first. Proof per credential: with the
+    // switch on, the reader and the guard answer alike; with it off, every
+    // credential the gate let reach the handler (the marker app, a handler
+    // that reads nothing) gets the handler's off answer, and the others the
+    // gate's refusal, as before.
+    const { gate } = await import('./gate');
+    const { registerRoutes } = await import('../route-loader');
+    const session = await import('../../lib/auth/session');
+    const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
+    const rows = [
+      { pattern: '/api/assistant/turn/:turnId/cancel', methods: ['POST'] },
+      { pattern: '/api/assistant/turn/:turnId/stream', methods: ['GET'] },
+      { pattern: '/api/dev-tools/queue-approval', methods: ['POST'] },
+    ];
+    const MARK = 299;
+    const build = (kind: 'reads' | 'guard' | 'mark') => {
+      const app = new Hono();
+      app.use('*', gate());
+      const handle = async () => {
+        counts.handled += 1;
+        if (kind === 'mark') return new Response(null, { status: MARK });
+        if (kind === 'reads') return Response.json(seen(session.ownerCaller()));
+        const owner = await session.getOwnerOr401();
+        return owner instanceof Response ? owner : Response.json(seen(owner));
+      };
+      registerRoutes(
+        app,
+        rows.map((e) => ({
+          ...e,
+          catchAll: null,
+          catchAllOptional: false,
+          ...(kind === 'reads' ? { reads: ownerReads(e.methods) } : {}),
+          load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
+        })),
+      );
+      app.onError(() => Response.json({ error: 'internal error' }, { status: 500 }));
+      return app;
+    };
+    const [readsApp, guardApp, markApp] = [build('reads'), build('guard'), build('mark')];
+    const key = (token: string) => () => ({ authorization: `Bearer ${token}` });
+    const all = [
+      ...creds,
+      { name: 'none', headers: () => ({}) },
+      { name: 'write-key', headers: key(KEY_TOKENS.write) },
+      { name: 'member-key', headers: key(KEY_TOKENS.member) },
+    ];
+    const ID = '11111111-1111-4111-8111-111111111111';
+    const cells: Array<[string, string, string, string]> = [
+      ['POST', `/api/assistant/turn/${ID}/cancel`, 'MANTLE_TURN_STREAMING', '0'],
+      ['GET', `/api/assistant/turn/${ID}/stream`, 'MANTLE_TURN_STREAMING', '0'],
+      ['HEAD', `/api/assistant/turn/${ID}/stream`, 'MANTLE_TURN_STREAMING', '0'],
+      ['POST', '/api/dev-tools/queue-approval', 'NODE_ENV', 'production'],
+    ];
+    const offAnswered = new Set<string>();
+    for (const [method, path, name, off] of cells) {
+      const before = process.env[name];
+      for (const cred of all) {
+        const label = `${method} ${path} ${cred.name}`;
+        // The switch on: the reader answers as the guard did.
+        const a = await drive(readsApp, method, path, cred.headers());
+        const b = await drive(guardApp, method, path, cred.headers());
+        expect({ ...a, handled: 0 }, label).toEqual({ ...b, handled: 0 });
+        const reached = await drive(markApp, method, path, cred.headers());
+        process.env[name] = off;
+        try {
+          const now = await drive(readsApp, method, path, cred.headers());
+          expect(now.handled, label).toBe(0);
+          if (reached.status === MARK) {
+            // The handler's off answer, as its first statement gave it.
+            const body = name === 'NODE_ENV' ? 'not available in production' : 'not found';
+            expect(now, label).toMatchObject({
+              status: 404,
+              type: 'application/json',
+              body: method === 'HEAD' ? '' : JSON.stringify({ error: body }),
+              touches: 0,
+              audits: [],
+            });
+            offAnswered.add(cred.name);
+          } else {
+            // Refused by the gate before any handler, switch or not.
+            expect({ ...now, handled: 0 }, label).toEqual({ ...reached, handled: 0 });
+          }
+        } finally {
+          if (before === undefined) delete process.env[name];
+          else process.env[name] = before;
+        }
+      }
+    }
+    // A member, a revoked token and an Admin user without the settings
+    // area (the dev tool is a settings row) got the off answer, not their
+    // guard's refusal.
+    for (const name of ['member-cookie', 'revoked-bearer', 'limited-cookie', 'owner-cookie']) {
+      expect(offAnswered, name).toContain(name);
+    }
+  });
+
   it('a device token is stamped once, by the pipeline', async () => {
     const res = await drive(pipeline, 'GET', '/api/profile', creds[5]!.headers());
     expect(res.status).toBe(200);

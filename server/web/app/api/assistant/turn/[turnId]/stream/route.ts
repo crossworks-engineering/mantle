@@ -1,8 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
-import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content';
 
 /**
@@ -35,15 +34,13 @@ export async function GET(
   req: Request,
   ctx: { params: Promise<{ turnId: string }> },
 ): Promise<Response> {
-  // Flag gate first: while off, the endpoint simply doesn't exist.
-  if (!isTurnStreamingEnabled()) {
-    return NextResponse.json({ error: 'not found' }, { status: 404 });
-  }
-
-  // Owner-gate before opening the stream so a revoked/expired bearer gets a
-  // clean 401 (not an HTML redirect) rather than an empty event stream.
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  // The owner the gate answered, before the stream opens, so a revoked or
+  // expired bearer gets a clean 401 (not an HTML redirect) rather than an
+  // empty event stream. The flag is the row's switch: while
+  // MANTLE_TURN_STREAMING is off the gate answers 404 first, before the
+  // caller, and the endpoint simply doesn't exist (route-policy.ts
+  // ROUTE_SWITCHES; A4 hand batch A).
+  const owner = ownerCaller();
 
   // Per-brain gate: if this owner turned live thinking off in Settings → Profile,
   // the route 404s just like the env-off case. The client treats that as a clean

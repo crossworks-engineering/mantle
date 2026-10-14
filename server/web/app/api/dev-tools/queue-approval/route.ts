@@ -7,7 +7,9 @@
  * hook the agent tool-loop uses, so the path under test is the real one.
  *
  * Gated to non-production: in prod this would let any authenticated request
- * queue an arbitrary tool approval, so it 404s there. The genuine prod check
+ * queue an arbitrary tool approval, so it 404s there, to every credential:
+ * the gate answers it first, before the caller (the row's switch,
+ * route-policy.ts ROUTE_SWITCHES; A4 hand batch A). The genuine prod check
  * is a real chat turn / heartbeat fire against the live bot.
  */
 
@@ -15,8 +17,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, pendingToolCalls } from '@mantle/db';
 import { notifyPendingCreated } from '@mantle/tools';
-import { getOwnerOr401 } from '@/lib/auth';
-import { env } from '@mantle/config';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({
@@ -32,11 +33,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  if (env('NODE_ENV') === 'production') {
-    return NextResponse.json({ error: 'not available in production' }, { status: 404 });
-  }
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

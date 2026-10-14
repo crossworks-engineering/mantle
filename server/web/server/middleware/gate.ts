@@ -11,6 +11,7 @@ import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/bo
 import {
   registerRouteSource,
   routeRef,
+  routeSwitchedOff,
   spellsPattern,
   type RouteRow,
 } from '../../lib/auth/route-policy';
@@ -358,6 +359,11 @@ function gateHandler(): MiddlewareHandler {
           await next();
           return null;
         }
+        // A row served under a switch that is off (A4 hand batch A): the
+        // route's own off answer, where its handler gave it, first, before
+        // any guard (ROUTE_SWITCHES, route-policy.ts).
+        const off = routeSwitchedOff(row);
+        if (off) return Response.json(off.body, { status: off.status });
         // Step 1: the login, found once for the request (A4 step 3a),
         // its read seeding the memo the request slot is opened with.
         const memo = new Map<string, Promise<WorkspaceScope>>();

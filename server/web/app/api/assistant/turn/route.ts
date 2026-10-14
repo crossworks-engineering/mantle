@@ -29,7 +29,7 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getChatLoginOr401, type ChatLogin } from '@/lib/auth';
+import { chatLoginCaller, type ChatLogin } from '@/lib/auth';
 import { resolveChatAgent, type ChatAgent } from '@/lib/assistant-chat';
 import { queueWorkspaceTurn } from '@/lib/workspace-turn';
 import { getDbosClient } from '@/lib/dbos-client';
@@ -240,14 +240,13 @@ function pruneRecentTurns() {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
+  // The login the gate answered, before the dedup cache is read, so a
+  // failure surfaces as a clean 401 (not a swallowed 500, and not an HTML
+  // login redirect: a programmatic client needs a status). `source` tags
+  // the turn 'web' (browser) vs 'mobile' (companion).
+  const login = chatLoginCaller();
   const toResponse = (r: TurnResult) =>
     NextResponse.json(r.body, { status: r.status, ...(r.headers ? { headers: r.headers } : {}) });
-  // Auth first, before the dedup cache is read, so a failure surfaces as a
-  // clean 401 (not a swallowed 500, and not an HTML login redirect: a
-  // programmatic client needs a status). The route is also gated by
-  // middleware. `source` tags the turn 'web' (browser) vs 'mobile' (companion).
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
   const key = req.headers.get('idempotency-key');
   if (!key) return toResponse(await runTurn(req, login, null));
 

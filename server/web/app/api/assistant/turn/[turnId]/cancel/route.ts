@@ -1,7 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { publishTurnCancel } from '@mantle/turn-stream';
-import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import { markTurnSuperseded } from '@mantle/runtime/agent';
 import { UUID_RE } from '@mantle/std';
 
@@ -28,8 +27,11 @@ import { UUID_RE } from '@mantle/std';
  * the (owner, turnId) match inside `abortTurn` on the runner — a turnId guessed
  * from another owner won't abort their turn.
  *
- * **Flagged:** 404s until `MANTLE_TURN_STREAMING` is set (cancellation only
- * matters when the non-blocking streaming path is on).
+ * **Flagged:** 404s while `MANTLE_TURN_STREAMING` is off (cancellation only
+ * matters when the non-blocking streaming path is on). The gate answers it,
+ * before the caller (the row's switch, route-policy.ts ROUTE_SWITCHES; A4
+ * hand batch A): every credential gets the 404 while it is off, as when
+ * this handler checked it first.
  */
 
 type CancelBody = {
@@ -44,11 +46,7 @@ export async function POST(
   req: Request,
   ctx: { params: Promise<{ turnId: string }> },
 ): Promise<Response> {
-  if (!isTurnStreamingEnabled()) {
-    return NextResponse.json({ error: 'not found' }, { status: 404 });
-  }
-  const owner = await getOwnerOr401();
-  if (owner instanceof NextResponse) return owner;
+  const owner = ownerCaller();
 
   const { turnId } = await ctx.params;
   if (!turnId) return NextResponse.json({ error: 'turnId required' }, { status: 400 });
