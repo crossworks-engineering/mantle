@@ -71,11 +71,11 @@ export async function createFolder(args: {
   color?: string | null;
 }): Promise<FolderRow> {
   if (!isFilesPath(args.parentPath)) {
-    throw new Error(`createFolder: parent '${args.parentPath}' is outside the files root`);
+    throw new InputError(`createFolder: parent '${args.parentPath}' is outside the files root`);
   }
   const slug = folderSlugOf(args.slug);
   if (!slug) {
-    throw new Error(`createFolder: invalid slug '${args.slug}'`);
+    throw new InputError(`createFolder: invalid slug '${args.slug}'`);
   }
   const childLabel = dashToLtree(slug);
   const childPath = `${args.parentPath}.${childLabel}`;
@@ -95,7 +95,7 @@ export async function createFolder(args: {
     )
     .limit(1);
   if (!parent) {
-    throw new Error(`createFolder: parent folder '${args.parentPath}' not found`);
+    throw new InputError(`createFolder: parent folder '${args.parentPath}' not found`);
   }
 
   // DB first — if the unique index trips, we don't want a leftover dir
@@ -428,15 +428,15 @@ export async function renameFolderById(args: {
     .limit(1);
   if (!node || node.type !== 'branch') return null;
   if (node.path === FILES_ROOT_LABEL) {
-    throw new Error('renameFolderById: cannot rename the files root');
+    throw new InputError('renameFolderById: cannot rename the files root');
   }
   if (!isFilesPath(node.path)) throw notAFilesFolder('renameFolderById', node.path);
   if ((node.data as Record<string, unknown> | null)?.system === true) {
-    throw new Error('renameFolderById: this folder is made by Mantle; its name is fixed');
+    throw new InputError('renameFolderById: this folder is made by Mantle; its name is fixed');
   }
   const slug = folderSlugOf(args.newSlug);
   const name = folderDisplayName(args.newSlug);
-  if (!slug || !name) throw new Error(`renameFolderById: invalid name '${args.newSlug}'`);
+  if (!slug || !name) throw new InputError(`renameFolderById: invalid name '${args.newSlug}'`);
   const newLabel = dashToLtree(slug);
   const oldPath = node.path;
   const newPath = renamedFolderPath(oldPath, newLabel);

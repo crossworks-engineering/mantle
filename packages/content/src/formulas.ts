@@ -33,7 +33,7 @@ import {
 } from '@mantle/db';
 import { parseFormulaSpec, type FormulaSpec } from '@mantle/content-core/formula-spec';
 import { asKindRootRepair } from './kind-root';
-import { defineDomainError } from '@mantle/std';
+import { defineDomainError, isUuid } from '@mantle/std';
 
 export const FORMULA_ROOT_LABEL = 'formulas';
 
@@ -280,6 +280,9 @@ export async function getFormula(ownerId: string, id: string): Promise<FormulaRo
  * with a list of problems rather than half-evaluate.
  */
 export async function readFormulaSpec(ownerId: string, id: string): Promise<FormulaSpec> {
+  // An id that is not a uuid names no formula: 404, not the database's cast
+  // error (A10 part 2 fix round 1, M2).
+  if (!isUuid(id)) throw new FormulaNotFoundError(id);
   const row = await getFormula(ownerId, id);
   if (!row) throw new FormulaNotFoundError(id);
   return validate(row.spec);

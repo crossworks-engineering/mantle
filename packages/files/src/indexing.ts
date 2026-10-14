@@ -23,6 +23,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import { InputError } from '@mantle/std';
 
 export type IndexingMode = 'full' | 'metadata';
 
@@ -127,9 +128,9 @@ export async function setIndexingMode(args: {
     .from(nodes)
     .where(and(eq(nodes.id, args.nodeId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
-  if (!target) throw new Error(`setIndexingMode: node ${args.nodeId} not found`);
+  if (!target) throw new InputError(`setIndexingMode: node ${args.nodeId} not found`);
   if (target.type !== 'file' && target.type !== 'branch') {
-    throw new Error(
+    throw new InputError(
       `setIndexingMode: '${target.type}' nodes don't carry an indexing flag — only files and folders do`,
     );
   }

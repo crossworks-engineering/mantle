@@ -11,6 +11,7 @@
 import path from 'node:path';
 import { ltreeToDash } from './slug';
 import { env } from '@mantle/config';
+import { InputError } from '@mantle/std';
 
 /** The single ltree label that marks the host-filesystem root branch. */
 export const FILES_ROOT_LABEL = 'files';
@@ -64,7 +65,7 @@ export function clampFilesFolderPath(ltreePath: string): string {
 /** Throw a readable error when a folder at `ltreePath` would sit too deep. */
 export function assertFilesFolderDepth(ltreePath: string, op: string): void {
   if (filesFolderDepth(ltreePath) > FILES_MAX_FOLDER_DEPTH) {
-    throw new Error(
+    throw new InputError(
       `${op}: '${ltreePath}' is deeper than ${FILES_MAX_FOLDER_DEPTH} folder levels; folders nest folder, subfolder, sub-subfolder`,
     );
   }
@@ -156,8 +157,8 @@ export function ltreeForDiskPath(absPath: string): { parentPath: string; filenam
  * alone, so a Files delete would leave them behind (and any share they
  * inherited through it), and a move would carry them across kinds.
  */
-export function notAFilesFolder(op: string, path: string): Error {
-  return new Error(
+export function notAFilesFolder(op: string, path: string): InputError {
+  return new InputError(
     `${op}: '${path}' is not a Files folder; organise another kind's folders with ` +
       'tree_folder_update and tree_folder_delete (or its own screen)',
   );

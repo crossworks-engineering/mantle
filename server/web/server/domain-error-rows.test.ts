@@ -5,7 +5,7 @@
  * byte for byte), and a tool still says the message. The error sweep forces
  * the database's faults, not these classes, so this is their proof.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { domainErrorAnswer, InputError, publicErrorMessage } from '@mantle/std';
 import {
   AppDraftConflictError,
@@ -25,6 +25,19 @@ import { TelegramTokenError } from '../lib/agent-telegram';
 import { FireRefused } from '../lib/heartbeats';
 import { PdfRendererUnavailableError } from '../lib/render-pdf';
 import { CloneAgentError } from '../lib/agents';
+import { cancelRun, forkRun, RunActionError } from '../lib/runners';
+import { FormulaNotFoundError, readFormulaSpec } from '@mantle/content/formulas';
+
+// The run engine's client, stood in: each action throws `dbos.error`.
+const dbos = vi.hoisted(() => ({ error: null as Error | null }));
+vi.mock('../lib/dbos-client', () => ({
+  getDbosClient: async () => {
+    const fail = async () => {
+      throw dbos.error;
+    };
+    return { cancelWorkflow: fail, resumeWorkflow: fail, forkWorkflow: fail };
+  },
+}));
 
 const answer = (err: Error) => {
   const a = domainErrorAnswer(err);
@@ -126,5 +139,42 @@ describe('the later tranches of fold 2: each class answers as its route did', ()
     expect(publicErrorMessage(new AppTrashRefusedError('app x is not deleted'), 'test')).toBe(
       'app x is not deleted',
     );
+  });
+});
+
+describe('fix round 1 (M2): refusals fold 2 had turned into the opaque 500', () => {
+  it("the run engine's refusal of an action answers 500 with its text, as the route did", async () => {
+    // DBOS's own error (DBOSNonExistentWorkflowError, code 16): the route said
+    // `500 { error: message }`, and still does.
+    dbos.error = Object.assign(new Error('Workflow w1 does not exist'), { dbosErrorCode: 16 });
+    const thrown = await cancelRun('w1').catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(RunActionError);
+    expect(answer(thrown as Error)).toEqual({
+      status: 500,
+      body: { error: 'Workflow w1 does not exist' },
+    });
+    dbos.error = Object.assign(new Error('Cannot rewind w1 (PENDING): cancel it first'), {
+      dbosErrorCode: 1,
+    });
+    expect(answer((await forkRun('w1', 2).catch((e: unknown) => e)) as Error)).toEqual({
+      status: 500,
+      body: { error: 'Cannot rewind w1 (PENDING): cancel it first' },
+    });
+    // A fault of the engine's database is no DBOS error: no row, the opaque 500.
+    dbos.error = new Error('connect ECONNREFUSED 10.0.0.1:5432');
+    const fault = await cancelRun('w1').catch((e: unknown) => e);
+    expect(fault).not.toBeInstanceOf(RunActionError);
+    expect(answer(fault as Error)).toBeNull();
+  });
+
+  it('a formula id that is not a uuid is not found (404), not a database cast error', async () => {
+    const thrown = await readFormulaSpec('11111111-1111-4111-8111-111111111111', 'nope').catch(
+      (e: unknown) => e,
+    );
+    expect(thrown).toBeInstanceOf(FormulaNotFoundError);
+    expect(answer(thrown as Error)).toEqual({
+      status: 404,
+      body: { error: "formula 'nope' not found" },
+    });
   });
 });

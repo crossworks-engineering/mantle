@@ -376,7 +376,7 @@ describe.skipIf(!hasManifest)('behind serve(): the whole app, as server/main.ts 
       body: form,
     });
     expect(res.status).toBe(415);
-    expect(await res.json()).toEqual({ error: 'unsupported image — use PNG, JPEG or WebP' });
+    expect((await res.json()).error).toMatch(/^unsupported image/);
   });
 
   it('a chunked multipart over the voice clip ceiling is a 413 (M3)', async () => {

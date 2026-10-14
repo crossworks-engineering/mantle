@@ -43,7 +43,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const body = parsed.data;
 
-  // A failed action is a fault: the opaque 500, logged (A10 part 2).
+  // The engine's refusal of the action (no such run, not in a state for it)
+  // answers 500 with its message by its row (RunActionError, lib/runners.ts),
+  // as the route said it; any other failure is a fault: the opaque 500.
   switch (body.action) {
     case 'cancel':
       await cancelRun(id);

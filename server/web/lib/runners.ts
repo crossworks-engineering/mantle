@@ -12,6 +12,7 @@
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
 import { RUNNER_QUEUE } from '@mantle/runtime/assistant';
 import { getDbosClient } from '@/lib/dbos-client';
+import { defineDomainError } from '@mantle/std';
 import { isRunnerEngineAbsent } from './runners-engine';
 import type {
   RunnerListPage,
@@ -211,28 +212,59 @@ async function queueHealthUnguarded(name: string): Promise<RunnerQueueHealth> {
   };
 }
 
+/**
+ * The run engine refused an action on a run: the run is not there, or not in
+ * a state for it (DBOS's own error, `dbosErrorCode` set, with a message about
+ * the workflow, never SQL). The Runners screen shows that message; the route
+ * said it as a 500, and still does (A10 part 2 fix round 1, M2). A fault of
+ * the engine's database is no DBOSError and answers the opaque 500.
+ */
+export class RunActionError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'RunActionError';
+  }
+}
+
+defineDomainError(RunActionError, {
+  reason: "the run engine refused the action on this run; its message says why (the route's 500)",
+  status: 500,
+});
+
+/** `fn`, with the engine's refusal of the action as a RunActionError. */
+async function runAction<T>(fn: (client: DBOSClient) => Promise<T>): Promise<T> {
+  const client = await getDbosClient();
+  try {
+    return await fn(client);
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      typeof (err as { dbosErrorCode?: unknown }).dbosErrorCode === 'number'
+    ) {
+      throw new RunActionError(err.message, { cause: err });
+    }
+    throw err;
+  }
+}
+
 /** Cancel an in-flight run (sets status CANCELLED; children cancelled too). */
 export async function cancelRun(workflowID: string): Promise<void> {
-  const client = await getDbosClient();
-  await client.cancelWorkflow(workflowID, { cancelChildren: true });
+  await runAction((client) => client.cancelWorkflow(workflowID, { cancelChildren: true }));
 }
 
 /** Resume a halted run from its last completed step (same workflow id). */
 export async function resumeRun(workflowID: string): Promise<void> {
-  const client = await getDbosClient();
-  await client.resumeWorkflow(workflowID);
+  await runAction((client) => client.resumeWorkflow(workflowID));
 }
 
 /** Restart = fork from step 0 → a brand-new run from scratch. Returns the new
  *  workflow id. */
 export async function restartRun(workflowID: string): Promise<string> {
-  const client = await getDbosClient();
-  return client.forkWorkflow(workflowID, 0);
+  return runAction((client) => client.forkWorkflow(workflowID, 0));
 }
 
 /** Fork from a chosen step → a new run reusing prior steps' results. Returns the
  *  new workflow id. */
 export async function forkRun(workflowID: string, startStep: number): Promise<string> {
-  const client = await getDbosClient();
-  return client.forkWorkflow(workflowID, startStep);
+  return runAction((client) => client.forkWorkflow(workflowID, startStep));
 }
