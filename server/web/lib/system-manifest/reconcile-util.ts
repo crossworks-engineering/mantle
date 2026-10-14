@@ -3,6 +3,7 @@
  * (the vitest setup loads pure-logic modules only, not @/-aliased / DB code).
  */
 import { createHash } from 'node:crypto';
+import { TEAM_RESPONDER_SLUG } from '@mantle/runtime/assistant';
 
 /**
  * The shipped prompt an agent should move to on upgrade, or null to leave its
@@ -38,8 +39,9 @@ export function missingPersonaGroups(
 
 /** The team responder's slug (manifest.ts): the Team workspace's assistant
  *  on a brain switched before 0286 (the 0251 attach rule). A newer brain has
- *  no Team: no workspace holds it until an Admin user attaches it. */
-export const TEAM_RESPONDER_SLUG = 'team-responder';
+ *  no Team: no workspace holds it until an Admin user attaches it. One
+ *  source, the runtime's (A5 step 6d: it was defined twice). */
+export { TEAM_RESPONDER_SLUG };
 
 /**
  * Of the groups reconcile would add, keep only those the agent may use
