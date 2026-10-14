@@ -985,11 +985,18 @@ export class RouteLoginError extends Error {
  * so nothing is done twice. Runs `fn` (the gate's steps 4 to 7) after.
  */
 export async function enterRouteLogin<T>(fn: () => Promise<T>): Promise<T> {
-  const logins = boundLogins(currentCaller());
-  if (!logins) throw new Error('enterRouteLogin: the request has no logins bound');
+  // The login's effects are applied here, before the gate's steps 4 and 5:
+  // a pre-run check or narrower on such a row must read the bound caller
+  // (currentCaller(), its facts), never a session guard.
   try {
+    // Inside the wrap, so even this failure is answered in the handler's
+    // place with the gate's CORS headers (RouteLoginError).
+    const logins = boundLogins(currentCaller());
+    if (!logins) throw new Error('enterRouteLogin: the request has no logins bound');
     const found = await logins.login();
     await applyLogin(found);
+    // TODO(A4 exit): the markApplied/takeApplied handshake folds into the
+    // gate when the last guard goes (the gate applies the effects, once).
     logins.markApplied(found);
   } catch (error) {
     throw new RouteLoginError(error);
@@ -1375,6 +1382,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     // On a row whose handler reads the pipeline's caller the gate's step 5
     // refused a login without the area already (A4 step 3b part 4); this
     // is the guard's own check, for the rows that still call it.
+    // TODO(A4 exit): folds into the gate's step 5 when the last guard goes.
     if (!(await holdsArea(loginId, cls.area))) {
       return accessRefusal(new AccessError('area', undefined, { area: cls.area }));
     }

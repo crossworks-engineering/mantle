@@ -911,6 +911,24 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
   });
 
+  it('enterRouteLogin with no logins bound fails as a RouteLoginError (answered with CORS)', async () => {
+    const session = await import('../../lib/auth/session');
+    let ran = false;
+    const failed = await session
+      .enterRouteLogin(async () => {
+        ran = true;
+      })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(failed).toBeInstanceOf(session.RouteLoginError);
+    expect(String((failed as InstanceType<typeof session.RouteLoginError>).error)).toMatch(
+      /no logins bound/,
+    );
+    expect(ran).toBe(false);
+  });
+
   it('ownerCaller() where the pipeline answered no owner throws: fail closed', async () => {
     const session = await import('../../lib/auth/session');
     expect(() => session.ownerCaller()).toThrow(/answered no owner/);
