@@ -57,6 +57,7 @@ import {
   registerRouteSource,
   requestKeyRoute,
   routeItemTarget,
+  ADMIN_OPEN_ROWS,
   routeGatePolicy,
   routeRef,
   rowKeyRoute,
@@ -123,10 +124,13 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     for (const row of table.values()) {
       const { method: m, pattern: p, key } = row;
       // The Telegram chat rows (and the HEADs their GET handler answers)
-      // are the login's own chats, whatever their prefix (A4 step 3b).
-      const scope = TELEGRAM_LOGIN_ROUTES.includes(`${m === 'HEAD' ? 'GET' : m} ${p}`)
-        ? { kind: 'self' }
-        : routeClass(p);
+      // are the login's own chats, whatever their prefix (A4 step 3b), and
+      // so is the update banner, the owner's carve-out (ADMIN_OPEN_ROWS).
+      const asGet = `${m === 'HEAD' ? 'GET' : m} ${p}`;
+      const scope =
+        TELEGRAM_LOGIN_ROUTES.includes(asGet) || asGet === 'GET /api/updates/check'
+          ? { kind: 'self' }
+          : routeClass(p);
       check(key, 'scope', row.scope, scope);
       check(
         key,
@@ -231,6 +235,30 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
       expect(routeClass(row.pattern), key).toEqual({ kind: 'area', area: 'connectors' });
     }
     expect(table.get('PATCH /api/telegram/chats/:id')!.area).toBe('connectors');
+  });
+
+  it('A4 step 3b: the owner decision of 2026-10-14 on the update routes', () => {
+    // The cached update banner is open to every Admin user, a named
+    // carve-out: the login's own, in no area.
+    expect([...ADMIN_OPEN_ROWS]).toEqual(['GET /api/updates/check']);
+    for (const key of ['GET /api/updates/check', 'HEAD /api/updates/check']) {
+      const row = table.get(key)!;
+      expect(row.class, key).toBe('self');
+      expect(row.area, key).toBeNull();
+      expect(row.caller, key).toBeNull();
+    }
+    // The status poll and the forced check need the settings area, and the
+    // gate answers it (their handlers read the caller).
+    for (const key of [
+      'GET /api/updates/status',
+      'HEAD /api/updates/status',
+      'POST /api/updates/check',
+    ]) {
+      const row = table.get(key)!;
+      expect(row.class, key).toBe('area');
+      expect(row.area, key).toBe('settings');
+      expect(row.caller, key).toBe('owner');
+    }
   });
 
   it('A4 step 3b: a connector OAuth callback is a write, run as the login its guard names', () => {

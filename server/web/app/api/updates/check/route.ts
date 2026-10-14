@@ -4,9 +4,12 @@
  * mount never hammers the GitHub API.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getSessionUser } from '@/lib/auth';
+import { getSessionUser, ownerCaller } from '@/lib/auth';
 import { checkForUpdate } from '@/lib/updates';
 
+/** The cached release check: open to every Admin user, whatever its areas
+ *  (the owner's carve-out, 2026-10-14: its row is the login's own,
+ *  route-policy.ts ADMIN_OPEN_ROWS). */
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -14,9 +17,9 @@ export async function GET() {
 }
 
 /** Force-refresh the release check (bypasses the 6h cache) for the
- *  /settings/updates "Check now" button. */
+ *  /settings/updates "Check now" button. Needs the settings area (the
+ *  owner's decision, 2026-10-14): the gate answers before it. */
 export async function POST() {
-  const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  ownerCaller();
   return NextResponse.json(await checkForUpdate(true));
 }

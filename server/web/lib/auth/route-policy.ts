@@ -225,6 +225,16 @@ function aliasOf(method: string, pattern: string, served: (key: string) => boole
 const SELF_SCOPE: RouteClass = Object.freeze({ kind: 'self' });
 
 /**
+ * Rows open to every Admin user though their prefix names an Admin area: a
+ * named carve-out, the login's own (`self`). The owner's decision of
+ * 2026-10-14 (docs/actors.md, A4 step 3b part 4): the cached update banner,
+ * GET /api/updates/check (and its HEAD), stays open to every Admin user,
+ * while GET /api/updates/status and POST /api/updates/check need the
+ * settings area their rows name.
+ */
+export const ADMIN_OPEN_ROWS: ReadonlySet<string> = new Set(['GET /api/updates/check']);
+
+/**
  * What the row serves (its scope): its pattern's prefix (routeClass), but
  * the Telegram chat rows (TELEGRAM_LOGIN_ROUTES, and the HEAD their GET
  * handler answers) are the login's own chats, `self`, whatever their prefix
@@ -232,11 +242,17 @@ const SELF_SCOPE: RouteClass = Object.freeze({ kind: 'self' });
  * login and served by their own gate (getChatLoginOr401), which never asks
  * an Admin area, like the assistant chat rows: classed in the connectors
  * area, the gate's area check would refuse an Admin user without that area
- * while letting a member in. `classLogins` is the login list of the row's
+ * while letting a member in. And the named carve-outs open to every Admin
+ * user (ADMIN_OPEN_ROWS). `classLogins` is the login list of the row's
  * class (GET's for a HEAD).
  */
-function rowScope(pattern: string, classLogins: RouteLogins | null): RouteClass | null {
+function rowScope(
+  method: string,
+  pattern: string,
+  classLogins: RouteLogins | null,
+): RouteClass | null {
   if (classLogins === 'telegram') return SELF_SCOPE;
+  if (ADMIN_OPEN_ROWS.has(`${method === 'HEAD' ? 'GET' : method} ${pattern}`)) return SELF_SCOPE;
   return routeClass(pattern);
 }
 
@@ -258,7 +274,7 @@ export function buildRouteRow(
   const logins = loginsOf(m, pattern);
   // HEAD is answered by the GET handler, so it has GET's class (below).
   const classLogins = m === 'HEAD' ? loginsOf('GET', pattern) : logins;
-  const scope = rowScope(pattern, classLogins);
+  const scope = rowScope(m, pattern, classLogins);
   const effect = isReadRequest(m, pattern) ? 'read' : 'write';
   if (memberMayRead(m, pattern) && effect !== 'read') {
     throw new Error(`ROUTE_POLICY: ${key} is a member read that writes`);

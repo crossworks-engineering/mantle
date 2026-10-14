@@ -1,0 +1,87 @@
+# the owner decision of 2026-10-14: GET and HEAD /api/updates/status and POST
+# /api/updates/check need the settings area (before: any Admin user; a member
+# and no login got the handler's 401). GET /api/updates/check stays open to
+# every Admin user (a carve-out). Every other cell is as recorded on main.
+# answers
+d1 401 content-type=application/json cache-control=no-store {"error":"unauthorized"}
+d2 500 content-type=application/json {"error":"internal error"} [pipeline:owner ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+d3 500 content-type=application/json {"error":"internal error"} [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+d4 403 content-type=application/json {"error":"forbidden","reason":"area","area":"settings","message":"You cannot manage this part of the brain."} [pipeline:owner R403 {"error":"forbidden","reason":"area","area":"settings","message":"You cannot manage this part of the brain."} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
+d5 403 content-type=application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} [pipeline:owner R403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+d6 500 content-type=application/json {"error":"internal error"} [touch 00000001] [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+d7 403 content-type=application/json {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} [touch 00000002] [pipeline:owner R403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+d8 401 content-type=application/json {"error":"unauthorized"} [pipeline:owner R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+d9 401 content-type=application/json cache-control=no-store 
+d10 500 content-type=application/json  [pipeline:owner ok {"actor.displayName":"admin 3333","actor.email":"admin-3333@example.invalid","actor.id":"33333333-3333-4333-8333-333333333333","actor.isOwner":true,"email":"admin-3333@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+d11 500 content-type=application/json  [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+d12 403 content-type=application/json  [pipeline:owner R403 {"error":"forbidden","reason":"area","area":"settings","message":"You cannot manage this part of the brain."} actor=login:rw:44444444-4444-4444-8444-444444444444 out=-]
+d13 403 content-type=application/json  [pipeline:owner R403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+d14 500 content-type=application/json  [touch 00000001] [pipeline:owner ok {"actor.displayName":"admin 5555","actor.email":"admin-5555@example.invalid","actor.id":"55555555-5555-4555-8555-555555555555","actor.isOwner":false,"email":"admin-5555@example.invalid","id":"33333333-3333-4333-8333-333333333333"} actor=system:http:admin-area out=system:area]
+d15 403 content-type=application/json  [touch 00000002] [pipeline:owner R403 {"error":"forbidden","reason":"member-login","message":"Not available to member logins."} actor=login:rw:22222222-2222-4222-8222-222222222222 out=-]
+d16 401 content-type=application/json  [pipeline:owner R401 {"error":"unauthorized"} actor=system:http:no-login out=-]
+
+# cells: 64
+first POST /api/updates/check none=d1
+first POST /api/updates/check owner-cookie=d2
+first POST /api/updates/check admin-cookie=d3
+first POST /api/updates/check limited-cookie=d4
+first POST /api/updates/check member-cookie=d5
+first POST /api/updates/check admin-bearer=d6
+first POST /api/updates/check member-bearer=d7
+first POST /api/updates/check revoked-bearer=d8
+first POST /api/updates/check key-read=d1
+first POST /api/updates/check key-write=d1
+first POST /api/updates/check key-read-area=d1
+first POST /api/updates/check key-write-area=d1
+first POST /api/updates/check key-member=d1
+first GET /api/updates/status none=d1
+first GET /api/updates/status owner-cookie=d2
+first GET /api/updates/status admin-cookie=d3
+first GET /api/updates/status limited-cookie=d4
+first GET /api/updates/status member-cookie=d5
+first GET /api/updates/status admin-bearer=d6
+first GET /api/updates/status member-bearer=d7
+first GET /api/updates/status revoked-bearer=d8
+first GET /api/updates/status key-read=d1
+first GET /api/updates/status key-write=d1
+first GET /api/updates/status key-read-area=d1
+first GET /api/updates/status key-write-area=d1
+first GET /api/updates/status key-member=d1
+first GET /api/updates/status asset-admin=d1
+first GET /api/updates/status asset-member=d1
+first GET /api/updates/status render=d1
+first GET /api/updates/status frame-ticket=d1
+first HEAD /api/updates/status none=d9
+first HEAD /api/updates/status owner-cookie=d10
+first HEAD /api/updates/status admin-cookie=d11
+first HEAD /api/updates/status limited-cookie=d12
+first HEAD /api/updates/status member-cookie=d13
+first HEAD /api/updates/status admin-bearer=d14
+first HEAD /api/updates/status member-bearer=d15
+first HEAD /api/updates/status revoked-bearer=d16
+first HEAD /api/updates/status key-read=d9
+first HEAD /api/updates/status key-write=d9
+first HEAD /api/updates/status key-read-area=d9
+first HEAD /api/updates/status key-write-area=d9
+first HEAD /api/updates/status key-member=d9
+more POST /api/updates/check disabled-cookie=d8
+more POST /api/updates/check bumped-cookie=d8
+more POST /api/updates/check gone-cookie=d8
+more POST /api/updates/check rotated-bearer=d8
+more POST /api/updates/check expired-bearer=d8
+more POST /api/updates/check key-unknown=d1
+more POST /api/updates/check key-revoked=d1
+more GET /api/updates/status disabled-cookie=d8
+more GET /api/updates/status bumped-cookie=d8
+more GET /api/updates/status gone-cookie=d8
+more GET /api/updates/status rotated-bearer=d8
+more GET /api/updates/status expired-bearer=d8
+more GET /api/updates/status key-unknown=d1
+more GET /api/updates/status key-revoked=d1
+more HEAD /api/updates/status disabled-cookie=d16
+more HEAD /api/updates/status bumped-cookie=d16
+more HEAD /api/updates/status gone-cookie=d16
+more HEAD /api/updates/status rotated-bearer=d16
+more HEAD /api/updates/status expired-bearer=d16
+more HEAD /api/updates/status key-unknown=d9
+more HEAD /api/updates/status key-revoked=d9

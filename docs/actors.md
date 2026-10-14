@@ -996,6 +996,18 @@ still does.
   and keeping `GET /api/updates/check` open to any Admin user as a
   carve-out; the builder suggested a class of their own for all three. The
   owner decides before step 3b enforces the area.
+- **Owner decision (2026-10-14), landed in A4 step 3b part 4:** `GET` and
+  `HEAD /api/updates/status` and `POST /api/updates/check` need the
+  settings area: their handlers read the caller the pipeline answers, so
+  an Admin user without the area gets the gate's 403 `area`, a member the
+  403 `member-login` (it got the handler's 401), no login the 401; an Admin
+  user's forced check writes the `api.write` audit row, as every settings
+  write does. `GET` and `HEAD /api/updates/check`, the cached update
+  banner, stay open to every Admin user as a named carve-out
+  (`ADMIN_OPEN_ROWS`, route-policy.ts: their rows are the login's own,
+  `self`); the handler still reads `getSessionUser` (the hand batch). The
+  cells are recorded in `__snapshots__/a4-guard-sweep-owner-decision.txt`
+  and pinned by `app/api/updates/updates-owner-decision.test.ts`.
 
 **HTTP, A4 step 3b part 1 (no answer changed).** The codemod's
 prerequisite and its first batch. A route file reads the caller the

@@ -5,13 +5,14 @@
  * the "we're on the new build" signal to reload.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getSessionUser } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { readUpdaterLog, readUpdaterStatus, updaterAvailable } from '@/lib/updates';
 import { APP_VERSION } from '@mantle/client-types/version';
 
+/** Needs the settings area (the owner's decision, 2026-10-14): the gate
+ *  answers before it. */
 export async function GET() {
-  const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  ownerCaller();
   const [available, status, log] = await Promise.all([
     updaterAvailable(),
     readUpdaterStatus(),

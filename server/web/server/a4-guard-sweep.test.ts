@@ -416,7 +416,24 @@ const moved = new Map<string, string>();
  *  the request wrote on the side: its audit rows, and the create home the
  *  pipeline's answer named (A4 step 3b part 4). */
 const movedWrites = new Map<string, string>();
+/**
+ * The owner's decision of 2026-10-14 (docs/actors.md, A4 step 3b part 4):
+ * GET and HEAD /api/updates/status and POST /api/updates/check need the
+ * settings area their rows name (before: any Admin user; a member and no
+ * login the handler's 401). Their cells in the recorded files changed on
+ * purpose, and only theirs; each is recorded as driven in a file of its
+ * own (`__snapshots__/a4-guard-sweep-owner-decision.txt`).
+ */
+const OWNER_DECISION_ROWS: ReadonlySet<string> = new Set([
+  'GET /api/updates/status',
+  'HEAD /api/updates/status',
+  'POST /api/updates/check',
+]);
+const ownerDecision = new Map<string, string>();
 function noteMoved(sweep: string, cell: string, answer: string): string {
+  if (OWNER_DECISION_ROWS.has(cell.split(' ').slice(0, 2).join(' '))) {
+    ownerDecision.set(`${sweep} ${cell}`, answer);
+  }
   if (answer.includes('[pipeline:')) {
     moved.set(`${sweep} ${cell}`, answer);
     if (!/^(GET|HEAD) /.test(cell)) {
@@ -746,6 +763,39 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
         '',
       ].join('\n'),
     ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-moved.txt');
+  });
+
+  it('records the cells the owner decided on 2026-10-14 (A4 step 3b part 4)', async () => {
+    // GET and HEAD /api/updates/status and POST /api/updates/check need the
+    // settings area since the owner's decision: an Admin user without it is
+    // refused (403 area), a member gets the gate's 403 member-login and no
+    // login its 401, where the handler answered any Admin user and a 401
+    // to the rest. The recorded files hold these cells as driven now; this
+    // file names them, one line each, so the change is on the record.
+    expect(ownerDecision.size).toBeGreaterThan(0);
+    const answers = new Map<string, string>();
+    const lines = [...ownerDecision].map(([cell, answer]) => {
+      let id = answers.get(answer);
+      if (!id) {
+        id = `d${answers.size + 1}`;
+        answers.set(answer, id);
+      }
+      return `${cell}=${id}`;
+    });
+    await expect(
+      [
+        '# the owner decision of 2026-10-14: GET and HEAD /api/updates/status and POST',
+        '# /api/updates/check need the settings area (before: any Admin user; a member',
+        "# and no login got the handler's 401). GET /api/updates/check stays open to",
+        '# every Admin user (a carve-out). Every other cell is as recorded on main.',
+        '# answers',
+        ...[...answers].map(([answer, id]) => `${id} ${answer}`),
+        '',
+        `# cells: ${ownerDecision.size}`,
+        ...lines,
+        '',
+      ].join('\n'),
+    ).toMatchFileSnapshot('./__snapshots__/a4-guard-sweep-owner-decision.txt');
   });
 
   it('records what each moved write did on the side (A4 step 3b part 4)', async () => {
