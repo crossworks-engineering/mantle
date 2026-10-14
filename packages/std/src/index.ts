@@ -178,10 +178,12 @@ export function truncate(s: string, max: number): string {
 }
 
 export {
-  BACKGROUND_FENCE_NOTE,
+  backgroundFence,
   FENCE_CLOSE,
   FENCE_OPEN,
   fenceRetrieved,
+  newFenceNonce,
   stripFenceMarkers,
   withFenceNote,
 } from './fence';
+export type { Fence } from './fence';

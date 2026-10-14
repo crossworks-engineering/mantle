@@ -38,7 +38,7 @@ import {
   type ReflectorParams,
 } from '@mantle/db';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { fenceRetrieved, withFenceNote } from '@mantle/std';
+import { backgroundFence, withFenceNote, type Fence } from '@mantle/std';
 import {
   chatWithFailover,
   recordChatUsage,
@@ -189,8 +189,10 @@ export function buildReflectorInput(args: {
   target: 'journal' | 'persona';
   known: string[];
   turns: Array<{ direction: string; text: string; sentAt: Date }>;
+  /** The fence (a per-call nonce); tests pass a fixed one. */
+  fence?: Fence;
 }): { system: string; user: string } {
-  const { target, known, turns } = args;
+  const { target, known, turns, fence = backgroundFence() } = args;
   const transcript = turns
     .slice()
     .reverse()
@@ -201,12 +203,13 @@ export function buildReflectorInput(args: {
     .join('\n');
   const existingNotesText = known.length === 0 ? '(no existing notes)' : known.join('\n');
   // The transcript carries other people's words and tool output (an email
-  // quoted in a reply, a fetched page): fenced, its forged markers defanged,
-  // and the system prompt says what the fence means (A10 part 1).
+  // quoted in a reply, a fetched page): fenced (markers carrying a per-call
+  // nonce), its forged markers defanged, and the system prompt says what the
+  // fence means (A10 part 1).
   const user =
-    `Existing ${target === 'journal' ? 'Journal entries' : 'persona_notes'}:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${fenceRetrieved(transcript)}` +
+    `Existing ${target === 'journal' ? 'Journal entries' : 'persona_notes'}:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${fence.wrap(transcript)}` +
     (target === 'journal' ? `\n${JOURNAL_SCOPE_INSTRUCTION}` : '');
-  return { system: withFenceNote(args.systemPrompt || DEFAULT_REFLECTOR_PROMPT), user };
+  return { system: withFenceNote(args.systemPrompt || DEFAULT_REFLECTOR_PROMPT, fence), user };
 }
 
 function parseReflectorOutput(raw: string): ReflectorOutput {

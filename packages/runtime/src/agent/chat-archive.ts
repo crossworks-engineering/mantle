@@ -38,7 +38,8 @@ import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/conten
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import { chatWithFailover, resolveChatKey, resolveChatRoutes } from './chat-failover';
-import { buildChatMessages, fenceRetrieved, flattenChatMessagesForAdapter } from './messages';
+import { backgroundFence } from '@mantle/std';
+import { buildChatMessages, flattenChatMessagesForAdapter } from './messages';
 import { recordChatUsage } from './llm-usage';
 
 /** A reply is still running in this chat: archiving now would split it. */
@@ -446,12 +447,14 @@ export function fallbackThreadTitle(firstInbound: string | null, startedAt: Date
 
 /** The summary call's messages. The thread carries other people's words
  *  and tool output, and the summary re-enters later prompts: the input is
- *  fenced, its forged markers defanged (A10 part 1 fix round 1), and
- *  buildChatMessages' standing data-boundary rule explains the fence, as
- *  for the conversation summarizer. */
+ *  fenced, its forged markers defanged (A10 part 1 fix round 1), its markers
+ *  carrying a per-call nonce (fix round 2), and buildChatMessages' standing
+ *  data-boundary rule explains the fence, as for the conversation
+ *  summarizer. */
 export function buildArchiveSummaryMessages(
   worker: { model: string; provider: string },
   input: string,
+  fence = backgroundFence(),
 ): ReturnType<typeof buildChatMessages> {
   return buildChatMessages({
     model: worker.model,
@@ -462,7 +465,8 @@ export function buildArchiveSummaryMessages(
     digests: [],
     contentHits: [],
     history: [],
-    newUserText: fenceRetrieved(input),
+    newUserText: fence.wrap(input),
+    fence,
   });
 }
 

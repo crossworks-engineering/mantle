@@ -39,7 +39,7 @@ import {
   type SummarizerParams,
 } from '@mantle/db';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { fenceRetrieved } from '@mantle/std';
+import { backgroundFence } from '@mantle/std';
 import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/content/tree';
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import {
@@ -107,6 +107,7 @@ const CONVERSATION_DIGEST_PATH = NOTES_ASSISTANT_PATH;
 export function buildSummarizerMessages(
   worker: { model: string; provider: string; systemPrompt: string | null },
   batch: Array<{ direction: string; text: string; createdAt: Date }>,
+  fence = backgroundFence(),
 ): ReturnType<typeof buildChatMessages> {
   const transcript = batch
     .map((t, i) => {
@@ -114,10 +115,11 @@ export function buildSummarizerMessages(
       return `#${i + 1} [${t.createdAt.toISOString()}] ${who}: ${t.text}`;
     })
     .join('\n');
-  // The transcript carries other people's words and tool output: fenced,
-  // its forged markers defanged (A10 part 1). buildChatMessages already ends
-  // the system prompt with the standing data-boundary rule that explains the
-  // fence (renderPersonaPrompt), so no note is added here.
+  // The transcript carries other people's words and tool output: fenced
+  // (markers carrying a per-call nonce), its forged markers defanged (A10
+  // part 1). buildChatMessages ends the system prompt with the standing
+  // data-boundary rule, told this fence's markers and nonce, so no note is
+  // added here.
   return buildChatMessages({
     model: worker.model,
     provider: worker.provider,
@@ -127,7 +129,8 @@ export function buildSummarizerMessages(
     digests: [],
     contentHits: [],
     history: [],
-    newUserText: fenceRetrieved(transcript),
+    newUserText: fence.wrap(transcript),
+    fence,
   });
 }
 export async function summarizeAgentConversation(ownerId: string, agentId: string): Promise<void> {

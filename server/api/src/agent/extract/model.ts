@@ -7,7 +7,7 @@
 
 import { getDefaultWorker, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
 import { step } from '@mantle/tracing';
-import { fenceRetrieved, withFenceNote } from '@mantle/std';
+import { backgroundFence, withFenceNote } from '@mantle/std';
 import {
   chatWithFailover,
   recordChatUsage,
@@ -110,6 +110,7 @@ export function buildExtractorInput(
   workerSystemPrompt: string | null | undefined,
   node: { title: string; type: string },
   body: string,
+  fence = backgroundFence(),
 ): { system: string; user: string } {
   // Tables get a targeted L2 brief: the body is already profile + leading
   // rows (built at commit), so steer the summary toward what the table
@@ -120,12 +121,12 @@ export function buildExtractorInput(
       : '';
   // The node's title and text came from outside (an email subject and body,
   // a fetched page, an upload's filename, other people's words): both are
-  // fenced, their forged markers defanged, and the system prompt says what
-  // the fence means (A10 part 1). The type and the table hint are ours and
-  // stay outside.
+  // fenced (markers carrying a per-call nonce), their forged markers
+  // defanged, and the system prompt says what the fence means (A10 part 1).
+  // The type and the table hint are ours and stay outside.
   return {
-    system: withFenceNote(workerSystemPrompt || DEFAULT_EXTRACTOR_PROMPT),
-    user: `Type: ${node.type}\n\n${tableHint}${fenceRetrieved(`Title: ${node.title}\n\nBody:\n${body.slice(0, 8000)}`)}`,
+    system: withFenceNote(workerSystemPrompt || DEFAULT_EXTRACTOR_PROMPT, fence),
+    user: `Type: ${node.type}\n\n${tableHint}${fence.wrap(`Title: ${node.title}\n\nBody:\n${body.slice(0, 8000)}`)}`,
   };
 }
 
