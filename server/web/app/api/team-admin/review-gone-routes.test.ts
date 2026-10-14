@@ -2,7 +2,8 @@
  * The admin side of review and Team admin, removed in workspaces W5c, without
  * a database: every removed route is a stub that answers an admin 410
  * `{ error, code: 'gone' }` and still answers 401 without a session (the
- * owner gate runs first, so nothing leaks). The stubs stay routed so an old
+ * gate answers the owner guard first, so nothing leaks; since A4 hand batch
+ * A the gate, so a stub called with no answer throws). The stubs stay routed so an old
  * client gets the 410 instead of a vague 404; the role sweeps drive them
  * through the real app.
  */
@@ -16,10 +17,20 @@ vi.mock('@/lib/auth', () => {
     h.signedIn
       ? { id: OWNER }
       : new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 });
+  // The readers a stub reads (lib/gone.ts, A4 hand batch A): the gate
+  // answered the stub's guard before the handler; with no session it
+  // refused, so a stub called anyway finds no answer and throws.
+  const read = () => {
+    if (!h.signedIn) throw new Error('ownerCaller(): the pipeline answered no owner');
+    return { id: OWNER };
+  };
   return {
     getOwnerOr401: vi.fn(owner),
     getMemberOr401: vi.fn(owner),
     getLoginOr401: vi.fn(owner),
+    ownerCaller: vi.fn(read),
+    memberCaller: vi.fn(read),
+    loginCaller: vi.fn(read),
   };
 });
 
@@ -154,12 +165,12 @@ describe('the admin review and Team admin routes are gone (W5c)', () => {
     }
   });
 
-  it('still answers 401 without a session', async () => {
+  it("never answers 410 without the gate's answer (no session: the gate's 401)", async () => {
     h.signedIn = false;
     for (const [path, methods, load] of GONE) {
       const mod = await load();
       for (const method of methods) {
-        expect((await mod[method]!()).status, `${method} ${path}`).toBe(401);
+        await expect(mod[method]!(), `${method} ${path}`).rejects.toThrow(/answered no/);
       }
     }
   });

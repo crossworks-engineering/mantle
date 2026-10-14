@@ -4,18 +4,46 @@
  * `{ error, code: 'gone' }`, so an old UI or an old phone app can tell the
  * person to update instead of showing a vague error.
  *
- * A stub still runs the guard its route had: without a session the gate and
- * the guard answer 401 as before, a login of another kind is refused as
+ * A stub still answers the guard its route had: without a session the gate
+ * and the guard answer 401 as before, a login of another kind is refused as
  * before, and the role sweeps keep proving who reaches what. Only a caller
  * the old route served gets the 410. The client portal's stubs answer any
  * login (there is no client login since workspaces W8a).
+ *
+ * Since A4 hand batch A the gate answers that guard, not the stub: the
+ * route manifest generator reads `export const GET = gone('owner')` as a
+ * handler that reads the caller of the stub's kind (GONE_CALLERS,
+ * scripts/route-callers.ts), so the stub's row is a gone row (`gone`,
+ * route-policy.ts) whose caller is that kind, and the gate's answer step
+ * runs the kind's guard once, before the handler, as on every row a handler
+ * reads (the one answer step: no second path at the gate). The stub then
+ * reads the answer (fail closed: no answer of its kind, no 410) and answers
+ * the 410. One line per stub, as before; no stub calls a guard.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getRequestContext } from '@/server/request-context';
-import { getLoginOr401, getMemberForAsset, getMemberOr401, getOwnerOr401 } from '@/lib/auth';
+import { getMemberForAsset, loginCaller, memberCaller, ownerCaller } from '@/lib/auth';
 
 /** Who the removed route served. */
 export type GoneGuard = 'owner' | 'member' | 'any';
+
+/** The caller kind the gate answers for a stub of each guard (route-policy.ts
+ *  RouteCaller): the client portal's 'any' is the any-login guard's. The
+ *  generator holds the same map (scripts/route-callers.ts GONE_CALLERS). */
+export const GONE_CALLERS = Object.freeze({
+  owner: 'owner',
+  member: 'member',
+  any: 'login',
+} as const satisfies Record<GoneGuard, string>);
+
+/** The reader of each stub's kind: it throws where the pipeline answered
+ *  no caller of that kind (outside a routed request, a row not read as a
+ *  gone row), so a stub never answers 410 to a caller nobody checked. */
+const READ: Readonly<Record<GoneGuard, () => unknown>> = {
+  owner: () => ownerCaller(),
+  member: () => memberCaller(),
+  any: () => loginCaller(),
+};
 
 export const GONE_MESSAGE = 'This feature was removed. Update the app.';
 
@@ -56,24 +84,20 @@ export function goneResponse(error: string = GONE_MESSAGE): NextResponse {
   return NextResponse.json({ error, code: 'gone' }, { status: 410 });
 }
 
-async function guard(kind: GoneGuard): Promise<Response | null> {
-  const got =
-    kind === 'owner'
-      ? await getOwnerOr401()
-      : kind === 'member'
-        ? await getMemberOr401()
-        : await getLoginOr401();
-  return got instanceof Response ? got : null;
-}
-
 /**
- * A handler for a removed route: the old guard first, then 410.
+ * A handler for a removed route: the gate answered the old guard (its row's
+ * caller is the stub's kind), then 410. Write it as the method's export, so
+ * the generator reads it:
  *
  *   export const GET = gone('member');
  *   export const POST = gone('owner', 'Review is gone. Share items with Grant Access.');
  */
 export function gone(kind: GoneGuard, error?: string): () => Promise<Response> {
-  return async () => (await guard(kind)) ?? goneResponse(error);
+  const read = READ[kind];
+  return async () => {
+    read();
+    return goneResponse(error);
+  };
 }
 
 /**

@@ -17,6 +17,9 @@ describe('owner-caller-imports', () => {
     expect(isExempt('/r/server/web/lib/auth/session.ts')).toBe(true);
     expect(isExempt('/r/server/web/server/middleware/gate-caller.test.ts')).toBe(true);
     expect(isExempt('/r/server/web/lib/auth.ts')).toBe(false);
+    // The gone stubs' handler: the generator reads its stubs (A4 hand batch A).
+    expect(isExempt('/r/server/web/lib/gone.ts')).toBe(true);
+    expect(isExempt('/r/server/web/lib/gone-more.ts')).toBe(false);
   });
 
   const tester = new RuleTester({ languageOptions: { ecmaVersion: 2022, sourceType: 'module' } });

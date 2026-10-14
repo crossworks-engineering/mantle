@@ -42,8 +42,23 @@ function routeFile(base: string): string {
   return file;
 }
 
+/** The reader a retired route's stub reads, by its kind (lib/gone.ts
+ *  `gone(kind)`, A4 hand batch A: it reads the answer of its kind). */
+const GONE_READERS: Readonly<Record<string, string>> = {
+  owner: 'ownerCaller',
+  member: 'memberCaller',
+  any: 'loginCaller',
+};
+
 function readerOf(file: string, method: string): string {
   const text = readFileSync(file, 'utf8');
+  const stub = new RegExp(`export const ${method} = gone\\(\\s*'(\\w+)'`).exec(text);
+  if (stub) {
+    const reader = GONE_READERS[stub[1]!];
+    if (!reader)
+      throw new Error(`a4-guard-sweep.readers: ${file} ${method} is a gone stub of no kind`);
+    return reader;
+  }
   const called = CALLER_READERS.filter((r) => new RegExp(`\\b${r}\\(`).test(text));
   if (called.length === 1) return called[0]!;
   if (called.length > 1) {

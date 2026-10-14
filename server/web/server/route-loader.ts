@@ -52,6 +52,9 @@ export type RouteEntry = {
    *  loginCaller(), chatLoginCaller(); arch A4 step 3b): their rows'
    *  `caller`. */
   reads?: Readonly<Record<string, RouteCaller>>;
+  /** Each method exported as a retired route's 410 stub (`gone(kind)`,
+   *  lib/gone.ts; A4 hand batch A): their rows are gone rows. */
+  gone?: readonly string[];
   load: () => Promise<RouteModule>;
 };
 

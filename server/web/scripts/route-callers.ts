@@ -73,6 +73,21 @@ export type HandlerCallers = Readonly<Record<string, RouteCaller>>;
  *  lib/auth/session.ts). */
 export const READER_MODULES: readonly string[] = ['@/lib/auth', '@/lib/auth/session'];
 
+/**
+ * A retired route's 410 stub (A4 hand batch A): `export const GET =
+ * gone('owner', ...)`, `gone` imported from GONE_MODULE. Its handler reads
+ * the caller of the stub's kind (lib/gone.ts reads it, then answers 410),
+ * so the method reads that kind and its row is a gone row: the gate
+ * answers the stub's guard, as for any reading handler. Each kind to the
+ * caller the gate answers (lib/gone.ts GONE_CALLERS, the same map).
+ */
+export const GONE_MODULE = '@/lib/gone';
+export const GONE_CALLERS: Readonly<Record<string, RouteCaller>> = Object.freeze({
+  owner: 'owner',
+  member: 'member',
+  any: 'login',
+});
+
 /** The mark of a reading handler whose order was checked by hand: it may
  *  run code before its read or its wrapped call. */
 export const HAND_CASE_MARK = 'route-callers: hand case';
@@ -264,6 +279,9 @@ export function handlerCallers(src: string, file: string, follow?: FollowReads):
       resolveName(method, b.text);
     }
   }
+  // The gone stubs (GONE_CALLERS): a method exported as `gone('<kind>', ...)`
+  // reads the caller of that kind.
+  const gone = goneOf(methods, imported, fail);
   // A handler taken from another route file that reads: it may be
   // re-exported, exported as a method, or called first in a handler.
   const readingImports = new Set(
@@ -418,7 +436,7 @@ export function handlerCallers(src: string, file: string, follow?: FollowReads):
   }
 
   // ── Each method ──────────────────────────────────────────────────────────
-  const out: Record<string, RouteCaller> = {};
+  const out: Record<string, RouteCaller> = { ...gone };
   for (const [method, { spec, name }] of elsewhere) {
     const kind = kindOf(spec, name);
     if (kind) out[method] = kind;
@@ -500,6 +518,77 @@ export function handlerCallers(src: string, file: string, follow?: FollowReads):
     }
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+/**
+ * The gone stubs of a route file (GONE_CALLERS): each method exported as
+ * `gone('<kind>', ...)`, `gone` imported by its own name from GONE_MODULE,
+ * to the caller kind the gate answers for it. A call of it that is not a
+ * method's export, or names no kind in a string literal, is refused: the
+ * generator could not say whose answer the stub reads.
+ */
+function goneOf(
+  methods: Map<string, Handler>,
+  imported: Map<string, { spec: string; name: string; node: ts.Node }>,
+  fail: (node: ts.Node, msg: string) => never,
+): Record<string, RouteCaller> {
+  const out: Record<string, RouteCaller> = {};
+  const isGone = (e: ts.Expression) => {
+    const b = bare(e);
+    if (!ts.isIdentifier(b)) return false;
+    const from = imported.get(b.text);
+    if (!from || from.spec !== GONE_MODULE || from.name !== 'gone') return false;
+    if (b.text !== 'gone') fail(b, `imports gone as ${b.text}: import gone by its own name`);
+    return true;
+  };
+  for (const [method, h] of methods) {
+    const init = ts.isVariableDeclaration(h.decl) ? h.decl.initializer : undefined;
+    const call = init ? bare(init) : undefined;
+    if (!call || !ts.isCallExpression(call) || !isGone(call.expression)) continue;
+    const kind = call.arguments[0];
+    const caller = kind && ts.isStringLiteralLike(kind) ? GONE_CALLERS[kind.text] : undefined;
+    if (!caller)
+      fail(
+        call,
+        `${method} = gone(...) names no stub kind (${Object.keys(GONE_CALLERS).join(', ')})`,
+      );
+    if (h.mutable)
+      fail(call, `${method} = gone(...) is declared with let or var: declare it with const`);
+    out[method] = caller!;
+  }
+  return out;
+}
+
+/** The methods of `src` (a route file's text) exported as a gone stub
+ *  (GONE_CALLERS), sorted: their rows are gone rows (route-policy.ts). */
+export function handlerGone(src: string, file: string): string[] {
+  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
+  const imported = new Map<string, { spec: string; name: string; node: ts.Node }>();
+  const methods = new Map<string, Handler>();
+  for (const st of sf.statements) {
+    if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
+      const bindings = st.importClause?.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const el of bindings.elements) {
+          const name = (el.propertyName ?? el.name).text;
+          imported.set(el.name.text, { spec: st.moduleSpecifier.text, name, node: el });
+        }
+      }
+    } else if (ts.isVariableStatement(st) && hasModifier(st, ts.SyntaxKind.ExportKeyword)) {
+      const mutable = (st.declarationList.flags & ts.NodeFlags.Const) === 0;
+      for (const d of st.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && HTTP_METHODS.has(d.name.text)) {
+          methods.set(d.name.text, { fn: null, decl: d, statement: st, mutable });
+        }
+      }
+    }
+  }
+  const fail = (node: ts.Node, msg: string): never => {
+    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+    throw new Error(`${file}:${line + 1}: ${msg}`);
+  };
+  return Object.keys(goneOf(methods, imported, fail)).sort();
 }
 
 /**

@@ -182,6 +182,15 @@ export type RouteRow = Readonly<{
    *  code: scripts/route-callers.ts); a HEAD row has its GET's. Null: the
    *  handler's own guard answers, as before. */
   caller: RouteCaller | null;
+  /** A retired route's 410 stub (lib/gone.ts `gone(kind)`, A4 hand batch
+   *  A): its handler reads the caller of the stub's kind and answers 410.
+   *  The gate answers that kind's guard on it, whatever list the row is in:
+   *  the guard the stub called before (the member guard on a retired member
+   *  route no member list names any more, the any-login guard on the
+   *  client portal's). The answer is the guard's own function, so it is the
+   *  stub's as before; the any-login answer writes no audit row on a stub
+   *  (none was written: getLoginOr401 without `audit`). */
+  gone: boolean;
   /** The system reason a public route that writes runs as (plan 7, 20.3),
    *  null on every other row (it runs as its caller). A4 step 3a names the
    *  actor each runs as today: the request slot's first actor,
@@ -282,7 +291,7 @@ export function buildRouteRow(
   method: string,
   pattern: string,
   served: (key: string) => boolean = () => false,
-  opts: { page?: PageClass; reads?: RouteCaller | null } = {},
+  opts: { page?: PageClass; reads?: RouteCaller | null; gone?: boolean } = {},
 ): RouteRow {
   const m = method.toUpperCase();
   const key = `${m} ${pattern}`;
@@ -346,12 +355,16 @@ export function buildRouteRow(
   // guard serves only a row its prefix classes (scope); the others read no
   // scope of the row.
   const caller: RouteCaller | null = opts.reads ?? null;
+  // A gone row (a retired route's stub) is answered by the guard its stub
+  // called, whatever list the row is in now (RouteRow.gone).
+  const gone = opts.gone === true;
+  if (gone && !caller) throw new Error(`ROUTE_POLICY: ${key} is a gone stub with no caller kind`);
   if (
     caller &&
     (pageClass !== null ||
       isPublic ||
       (caller === 'owner' && scope === null) ||
-      !CALLER_LOGINS[caller].includes(classLogins))
+      (!gone && !CALLER_LOGINS[caller].includes(classLogins)))
   ) {
     throw new Error(
       `ROUTE_POLICY: ${key} reads the ${caller} caller, but the ${caller} guard does not serve its row`,
@@ -393,6 +406,7 @@ export function buildRouteRow(
     renderCookie: m === 'GET' && (cls === 'render' || isRenderAssetPath(path)),
     page,
     caller,
+    gone,
     startsAs,
     actor: isPublic && effect === 'write' ? startsAs : null,
   });
@@ -405,6 +419,8 @@ export type RouteManifestEntry = Readonly<{
   pattern: string;
   methods: readonly string[];
   reads?: Readonly<Record<string, RouteCaller>>;
+  /** Each method exported as a retired route's 410 stub (gone rows). */
+  gone?: readonly string[];
 }>;
 
 /** The methods a manifest entry is called with: its own, and HEAD where
@@ -425,10 +441,16 @@ export function buildRoutePolicy(
   const table = new Map<string, RouteRow>();
   for (const entry of manifest) {
     const reads = entry.reads ?? {};
+    const gone = new Set(entry.gone ?? []);
     for (const m of servedMethods(entry)) {
       // HEAD is answered by the GET handler: it reads what GET reads.
-      const read = reads[m === 'HEAD' && !entry.methods.includes('HEAD') ? 'GET' : m] ?? null;
-      const row = buildRouteRow(m, entry.pattern, served, { ...opts, reads: read });
+      const as = m === 'HEAD' && !entry.methods.includes('HEAD') ? 'GET' : m;
+      const read = reads[as] ?? null;
+      const row = buildRouteRow(m, entry.pattern, served, {
+        ...opts,
+        reads: read,
+        gone: gone.has(as),
+      });
       table.set(row.key, row);
     }
   }

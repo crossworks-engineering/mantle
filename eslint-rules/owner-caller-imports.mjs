@@ -38,11 +38,15 @@ export function isApiRouteFile(filename) {
   return /(^|\/)server\/web\/app\/api\/(.+\/)?route\.tsx?$/.test(f);
 }
 
-/** Whether `filename` is exempt: the definition, and tests. */
+/** Whether `filename` is exempt: the definition, tests, and the gone stubs'
+ *  handler (server/web/lib/gone.ts `gone()`, A4 hand batch A): the
+ *  generator reads `export const GET = gone('owner')` in the route file as
+ *  a read of the stub's kind (route-callers.ts GONE_CALLERS), so the read
+ *  it makes is one the generator sees. */
 export function isExempt(filename) {
   const f = filename.replace(/\\/g, '/');
   if (/\.test\.[cm]?[jt]sx?$/.test(f)) return true;
-  return /(^|\/)server\/web\/lib\/auth\/session\.ts$/.test(f);
+  return /(^|\/)server\/web\/lib\/(auth\/session|gone)\.ts$/.test(f);
 }
 
 /** The name a key spells: an identifier, a string literal, or a template

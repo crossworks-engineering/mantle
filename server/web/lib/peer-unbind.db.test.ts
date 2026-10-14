@@ -26,6 +26,8 @@ const who = vi.hoisted(() => ({ anchor: '', admin: '' }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => ({ id: who.anchor, actor: { id: who.admin, email: 'a' } })),
+  // The reader a gone stub reads (lib/gone.ts, A4 hand batch A).
+  ownerCaller: vi.fn(() => ({ id: who.anchor, actor: { id: who.admin, email: 'a' } })),
 }));
 
 type Peer = {

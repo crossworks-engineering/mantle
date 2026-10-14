@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({ prefs: [] as Array<Record<string, unknown>> }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => ({ id: ANCHOR, email: 'admin@example.invalid' })),
+  // The reader a stub reads (lib/gone.ts, A4 hand batch A).
+  ownerCaller: vi.fn(() => ({ id: ANCHOR, email: 'admin@example.invalid' })),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({

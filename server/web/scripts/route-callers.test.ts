@@ -1,6 +1,12 @@
 /** Which handlers read the caller the pipeline answers (arch A4 step 3b). */
 import { describe, expect, it } from 'vitest';
-import { handlerCallers, handlerReads, type HandlerCallers } from './route-callers';
+import {
+  GONE_CALLERS,
+  handlerCallers,
+  handlerGone,
+  handlerReads,
+  type HandlerCallers,
+} from './route-callers';
 
 const IMPORT = `import { ownerCaller } from '@/lib/auth';`;
 /** The base route a v1 file wraps: its GET reads the caller. */
@@ -522,5 +528,66 @@ describe('handlerCallers (A4 step 3b part 5): the caller kind each method reads'
         'a/route.ts',
       ),
     ).toThrow(/calls getMemberOr401 outside an exported handler/);
+  });
+});
+
+describe('the gone stubs (A4 hand batch A)', () => {
+  it("reads a stub's kind as the caller the gate answers for it", () => {
+    const src = `
+      import { gone, LEVELS_GONE_MESSAGE } from '@/lib/gone';
+      export const GET = gone('member');
+      export const POST = gone('owner', 'Review is gone.');
+      export const PATCH = gone('any', LEVELS_GONE_MESSAGE);
+    `;
+    expect(handlerCallers(src, 'a/route.ts')).toEqual({
+      GET: 'member',
+      PATCH: 'login',
+      POST: 'owner',
+    });
+    expect(handlerGone(src, 'a/route.ts')).toEqual(['GET', 'PATCH', 'POST']);
+  });
+
+  it('a gone stub beside a handler that reads', () => {
+    const src = `
+      import { ownerCaller } from '@/lib/auth';
+      import { gone } from '@/lib/gone';
+      export async function GET() { const o = ownerCaller(); return Response.json(o); }
+      export const PUT = gone('owner');
+    `;
+    expect(handlerCallers(src, 'a/route.ts')).toEqual({ GET: 'owner', PUT: 'owner' });
+    expect(handlerGone(src, 'a/route.ts')).toEqual(['PUT']);
+  });
+
+  it('refuses a stub whose kind it cannot say, a renamed one, and one of another module', () => {
+    expect(() =>
+      handlerCallers(
+        `import { gone } from '@/lib/gone'; export const GET = gone('client');`,
+        'a/route.ts',
+      ),
+    ).toThrow(/names no stub kind/);
+    expect(() =>
+      handlerCallers(
+        `import { gone } from '@/lib/gone'; const k = 'owner'; export const GET = gone(k);`,
+        'a/route.ts',
+      ),
+    ).toThrow(/names no stub kind/);
+    expect(() =>
+      handlerGone(
+        `import { gone as retired } from '@/lib/gone'; export const GET = retired('owner');`,
+        'a/route.ts',
+      ),
+    ).toThrow(/import gone by its own name/);
+    // Another module's gone() is no stub: the method reads nothing.
+    expect(
+      handlerCallers(
+        `import { gone } from './elsewhere'; export const GET = gone('owner');`,
+        'a/route.ts',
+      ),
+    ).toEqual({});
+  });
+
+  it('holds the same kinds as lib/gone.ts', async () => {
+    const { GONE_CALLERS: lib } = await import('../lib/gone');
+    expect({ ...GONE_CALLERS }).toEqual({ ...lib });
   });
 });

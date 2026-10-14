@@ -1043,14 +1043,19 @@ export async function answerRouteCaller(row: RouteRow): Promise<NextResponse | n
   // The gate binds the request's logins on every routed request
   // (resolveHttpLogin): without them nothing could read the answer.
   if (!logins) throw new Error(`answerRouteCaller: ${row.key} has no logins bound`);
-  const got = await guardAnswer(row.caller);
+  const got = await guardAnswer(row.caller, row.gone);
   if (got instanceof NextResponse) return got;
   logins.keepAnswer(got);
   return null;
 }
 
-/** The answer of the guard of a caller kind (the guard itself, run once). */
-async function guardAnswer(caller: RouteCaller): Promise<PipelineAnswer | NextResponse> {
+/** The answer of the guard of a caller kind (the guard itself, run once).
+ *  `gone`: the row is a retired route's 410 stub (RouteRow.gone), answered
+ *  as its stub's guard answered: the any-login one with no audit row. */
+async function guardAnswer(
+  caller: RouteCaller,
+  gone: boolean,
+): Promise<PipelineAnswer | NextResponse> {
   switch (caller) {
     case 'owner': {
       const owner = await getOwnerOr401WithLogin();
@@ -1062,8 +1067,9 @@ async function guardAnswer(caller: RouteCaller): Promise<PipelineAnswer | NextRe
     }
     case 'login': {
       // The any-login answer writes the generic api.write row its rows
-      // wrote by hand after the guard before (A4 hand batch A).
-      const login = await getLoginOr401({ audit: true });
+      // wrote by hand after the guard before (A4 hand batch A); a gone stub
+      // never wrote one.
+      const login = await getLoginOr401({ audit: !gone });
       return login instanceof NextResponse ? login : { caller, login };
     }
     case 'chat': {

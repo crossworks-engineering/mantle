@@ -36,6 +36,8 @@ vi.mock('@/lib/auth', async (importOriginal) => {
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     getOwnerOr401: vi.fn(async () => ({ id: h.owner })),
+    // The reader a gone stub reads (lib/gone.ts, A4 hand batch A).
+    ownerCaller: vi.fn(() => ({ id: h.owner })),
     getMemberOr401: vi.fn(async () => caller('member')),
     getClientOr401: vi.fn(async () => caller('client')),
   };

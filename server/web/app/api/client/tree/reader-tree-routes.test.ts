@@ -1,6 +1,8 @@
 /**
  * The retired member and client tree routes without a database: the login
- * rows are stood in, the gate is the real one. The member tree routes
+ * rows are stood in, the gate is the real one: each request runs through the
+ * full pipeline (runRoute), since A4 hand batch A the gate answers a stub's
+ * guard. The member tree routes
  * answer 410 since W6b. The client tree routes
  * were removed in workspaces W5c: they answer 410 code gone to any login,
  * and a row still marked client is no login at all since W8a (401). Every
@@ -27,68 +29,60 @@ const row = (id: string, role: string) => ({
 });
 
 vi.mock('@/lib/auth/login-row', () => ({
-  loadLoginRow: async (id: string) =>
-    id === CLIENT
-      ? row(CLIENT, 'client')
-      : id === MEMBER
-        ? row(MEMBER, 'member')
-        : id === ADMIN
-          ? row(ADMIN, 'admin')
-          : null,
+  loadLoginRow: async (id: string) => {
+    const found =
+      id === CLIENT
+        ? row(CLIENT, 'client')
+        : id === MEMBER
+          ? row(MEMBER, 'member')
+          : id === ADMIN
+            ? row(ADMIN, 'admin')
+            : null;
+    // The login's scope, in no workspace (run-route-stand-ins.ts does the
+    // same): the pipeline enters it with no database.
+    if (found) (await import('@mantle/db')).seedLoginScope(id, [], []);
+    return found;
+  },
   loadAnchorId: async () => ANCHOR,
   loadPersonalSpaceId: async () => SPACE,
 }));
+vi.mock('@mantle/db', async (orig) => ({
+  ...(await orig<typeof import('@mantle/db')>()),
+  ...(await import('@/server/run-route-stand-ins')).dbStandIns,
+}));
 
-type Tokens = typeof import('@/lib/auth/tokens');
-let tokens: Tokens;
-let runWith: typeof import('@/server/request-context').runWithRequestContext;
 const saved = process.env.SESSION_SECRET;
+let runRoute: typeof import('@/server/run-route').runRoute;
 
 beforeAll(async () => {
   process.env.SESSION_SECRET = 'reader-tree-routes-secret-at-least-32-chars';
-  tokens = await import('@/lib/auth/tokens');
-  runWith = (await import('@/server/request-context')).runWithRequestContext;
+  runRoute = (await import('@/server/run-route')).runRoute;
 });
 afterAll(() => {
   process.env.SESSION_SECRET = saved;
 });
 
-type Handler = (r: Request, c: { params: Promise<{ kind: string }> }) => Promise<Response>;
-
-async function call(login: string, url: string, handler: Handler, kind: string) {
-  const { value } = tokens.buildSessionCookie(login, { epoch: 3, ttlSeconds: 3600 });
-  const headers = new Headers({ cookie: `${tokens.SESSION_COOKIE_NAME}=${value}` });
-  const req = new Request(`http://x${url}`, { headers });
-  return runWith({ req, path: new URL(req.url).pathname, method: 'GET' }, () =>
-    handler(req, { params: Promise.resolve({ kind }) }),
-  );
+/** GET `url` as `login` (a cookie at the rows' epoch) through the pipeline. */
+function call(login: string, url: string) {
+  return runRoute({ id: login, epoch: 3 }, 'GET', url);
 }
 
 describe('the member tree routes, and the retired client tree', () => {
   it('answers a member 410 since W6b: its items are read through the normal tree', async () => {
-    const tree = (await import('../../member/tree/[kind]/route')).GET;
-    const search = (await import('../../member/tree/[kind]/search/route')).GET;
-    expect((await call(MEMBER, '/api/member/tree/notes', tree, 'notes')).status).toBe(410);
-    expect((await call(MEMBER, '/api/member/tree/notes/search', search, 'notes')).status).toBe(410);
+    expect((await call(MEMBER, '/api/member/tree/notes')).status).toBe(410);
+    expect((await call(MEMBER, '/api/member/tree/notes/search')).status).toBe(410);
   });
 
   it('the client tree is gone (W5c): 410 to any login, 401 to a row still marked client, no read', async () => {
-    const client = (await import('./[kind]/route')).GET as unknown as Handler;
-    const search = (await import('./[kind]/search/route')).GET as unknown as Handler;
     for (const login of [ADMIN, MEMBER]) {
-      const res = await call(login, `/api/client/tree/notes`, client, 'notes');
+      const res = await call(login, `/api/client/tree/notes`);
       expect(res.status).toBe(410);
       expect(await res.json()).toMatchObject({ code: 'gone' });
-      expect((await call(login, '/api/client/tree/notes/search?q=a', search, 'notes')).status).toBe(
-        410,
-      );
+      expect((await call(login, '/api/client/tree/notes/search?q=a')).status).toBe(410);
     }
     // A login row still marked client resolves to no login (W8a).
-    expect((await call(CLIENT, '/api/client/tree/notes', client, 'notes')).status).toBe(401);
-    expect((await call(CLIENT, '/api/client/tree/notes/search?q=a', search, 'notes')).status).toBe(
-      401,
-    );
-    const member = (await import('../../member/tree/[kind]/route')).GET;
-    expect((await call(CLIENT, '/api/member/tree/notes', member, 'notes')).status).toBe(401);
+    expect((await call(CLIENT, '/api/client/tree/notes')).status).toBe(401);
+    expect((await call(CLIENT, '/api/client/tree/notes/search?q=a')).status).toBe(401);
+    expect((await call(CLIENT, '/api/member/tree/notes')).status).toBe(401);
   });
 });

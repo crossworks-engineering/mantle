@@ -51,6 +51,7 @@ import {
 import {
   anyLoginRow,
   buildRoutePolicy,
+  buildRouteRow,
   currentRoute,
   memberOpenRead,
   memberOpenWrite,
@@ -412,6 +413,28 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     // Most v1 rows were let in on a plain spelling: not null against null.
     expect(keyed).toBeGreaterThan(API_V1_ROUTES.length);
     expect(requestKeyRoute(null, '/api/v1/pages')).toBeNull();
+  });
+
+  it("a gone row (A4 hand batch A): the stub's guard answers it, whatever list the row is in", () => {
+    const gone = [...table.values()].filter((r) => r.gone);
+    expect(gone.length).toBeGreaterThan(200);
+    for (const r of gone) expect(r.caller, r.key).not.toBeNull();
+    // The client portal's stubs: the any-login guard on rows no login list
+    // names, which a reader of the any-login caller could not read.
+    const client = gone.filter((r) => r.pattern.startsWith('/api/client/'));
+    expect(client.length).toBeGreaterThan(0);
+    for (const r of client) {
+      expect(r, r.key).toMatchObject({ caller: 'login', logins: null });
+      expect(() => buildRouteRow(r.method, r.pattern, () => false, { reads: 'login' })).toThrow(
+        /does not serve its row/,
+      );
+    }
+    // A gone row names its kind.
+    expect(() => buildRouteRow('GET', '/api/shell', () => false, { gone: true })).toThrow(
+      /gone stub with no caller kind/,
+    );
+    // Every other row is no gone row.
+    expect(table.get('GET /api/shell')?.gone).toBe(false);
   });
 
   it("M3, the owner's decision 2a (2026-10-14): a HEAD row has its GET's logins", () => {

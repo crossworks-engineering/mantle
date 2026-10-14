@@ -34,6 +34,9 @@ const member = {
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getMemberOr401: vi.fn(async () => member),
+  // The reader a stub reads (lib/gone.ts, A4 hand batch A): the gate
+  // answered the member guard.
+  memberCaller: vi.fn(() => member),
   getMemberForAsset: vi.fn(async () => member),
 }));
 

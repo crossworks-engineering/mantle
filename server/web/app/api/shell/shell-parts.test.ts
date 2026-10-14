@@ -63,6 +63,14 @@ vi.mock('@/lib/auth', async () => {
       h.gate === 'refuse' ? refused() : h.role === 'admin' ? admin : wrongRole(),
     getMemberOr401: async () =>
       h.gate === 'refuse' ? refused() : h.role === 'member' ? member : wrongRole(),
+    // The member reader a gone stub reads (lib/gone.ts, A4 hand batch A):
+    // the gate refused anyone but a member before the handler.
+    memberCaller: () => {
+      if (h.gate === 'refuse' || h.role !== 'member') {
+        throw new Error('memberCaller(): the pipeline answered no member');
+      }
+      return member;
+    },
     mintAssetToken: async (anchorId: string, loginId: string, opts?: { ttlSeconds?: number }) => {
       boom('asset token');
       h.minted.push({ anchorId, loginId, ttlSeconds: opts?.ttlSeconds });
@@ -262,13 +270,14 @@ describe('shell chrome reads never fail the shell', () => {
     const memberShell = () => import('../member/shell/route');
     const clientShell = () => import('../client/shell/route');
 
-    it('/api/member/shell answers a member 410 code gone, an admin 403', async () => {
+    it('/api/member/shell answers a member 410 code gone, an admin no 410', async () => {
       h.role = 'member';
       const { status, body } = await get(memberShell());
       expect(status).toBe(410);
       expect(body).toMatchObject({ code: 'gone' });
+      // An Admin user: the gate's 403 admin-login, before the stub.
       h.role = 'admin';
-      expect((await get(memberShell())).status).toBe(403);
+      await expect(get(memberShell())).rejects.toThrow(/answered no member/);
     });
 
     it.each(['admin', 'member'] as const)(
@@ -281,9 +290,9 @@ describe('shell chrome reads never fail the shell', () => {
       },
     );
 
-    it('/api/client/shell still refuses without a login', async () => {
+    it('/api/client/shell never answers 410 without a login (the gate refuses first)', async () => {
       h.gate = 'refuse';
-      expect((await get(clientShell())).status).toBe(401);
+      await expect(get(clientShell())).rejects.toThrow(/answered no login/);
     });
   });
 });

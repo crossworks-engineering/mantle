@@ -16,7 +16,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handlerCallers, type HandlerCallers } from './route-callers';
+import { handlerCallers, handlerGone, type HandlerCallers } from './route-callers';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(webRoot, 'app');
@@ -32,6 +32,9 @@ type Entry = {
   /** Each method whose handler reads the caller the pipeline answers, to
    *  the caller kind its reader reads (arch A4 step 3b; route-callers.ts). */
   reads: HandlerCallers;
+  /** Each method exported as a retired route's 410 stub (`gone(kind)`,
+   *  lib/gone.ts; A4 hand batch A): its row is a gone row. */
+  gone: string[];
   /** Name of the catch-all param when the pattern ends in /*, else null. */
   catchAll: string | null;
   /** Whether a catch-all also matches the bare prefix ([[...x]] optional form). */
@@ -120,6 +123,7 @@ function toEntry(absFile: string): Entry {
     pattern: '/' + segments.join('/'),
     methods: exportedMethods(src),
     reads: readsOf(absFile),
+    gone: handlerGone(src, relative(webRoot, absFile).split('\\').join('/')),
     catchAll,
     catchAllOptional,
     segments,
@@ -164,6 +168,7 @@ const lines = entries.map(
     `  { pattern: ${JSON.stringify(e.pattern)}, methods: ${JSON.stringify(e.methods)}, ` +
     `catchAll: ${JSON.stringify(e.catchAll)}, catchAllOptional: ${e.catchAllOptional}, ` +
     (Object.keys(e.reads).length > 0 ? `reads: ${JSON.stringify(e.reads)}, ` : '') +
+    (e.gone.length > 0 ? `gone: ${JSON.stringify(e.gone)}, ` : '') +
     // Extensionless specifier: tsc (bundler resolution) rejects explicit .ts
     // imports without allowImportingTsExtensions; tsx resolves both fine.
     `load: () => import(${JSON.stringify('../' + e.file.replace(/\.tsx?$/, ''))}) },`,
@@ -180,6 +185,8 @@ export type ManifestEntry = {
   /** Each method whose handler reads the caller the pipeline answers, to
    *  the caller kind its reader reads. */
   reads?: Record<string, 'owner' | 'member' | 'login' | 'chat'>;
+  /** Each method exported as a retired route's 410 stub (lib/gone.ts). */
+  gone?: string[];
   load: () => Promise<RouteModule>;
 };
 
