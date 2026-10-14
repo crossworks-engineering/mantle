@@ -1,13 +1,17 @@
 /**
  * owner-caller-imports (workspaces arch A4 step 3b): the caller the HTTP
- * pipeline answers is read only in a route handler, by its own name. The
+ * pipeline answers is read only in a route handler, by its reader's own
+ * name: every reader of the one list (session-guards.mjs CALLER_READERS),
+ * the owner's (ownerCaller and its two projections) and, since part 5, the
+ * member's (memberCaller), the any-login's (loginCaller) and the chat
+ * login's (chatLoginCaller). The
  * route manifest generator reads each route file to learn which handlers
  * read it (server/web/scripts/route-callers.ts) and the gate answers only
  * those rows; a read it cannot see (a helper of lib, a renamed import, a
  * read off an object) would run on a row the gate did not answer and
  * throw. So, outside session.ts (which defines it) and tests:
  *
- *  - a reader (ownerCaller, session-guards.mjs) is imported only in a route
+ *  - a reader (ownerCaller, memberCaller, ...) is imported only in a route
  *    file under server/web/app/api, from @/lib/auth (or
  *    @/lib/auth/session), and never renamed;
  *  - it is never re-exported, read off an object (`auth.ownerCaller`,
@@ -18,7 +22,10 @@
  * .js, .jsx, .mjs, .cjs; eslint.config.mjs), tests aside.
  *
  * The generator refuses the rest inside a route file (a reference other
- * than a plain call, a read outside a handler).
+ * than a plain call, a read outside a handler, a handler that reads two
+ * kinds), and a row whose list no guard of the reader's kind serves fails
+ * to build (route-policy.ts buildRouteRow): the reader is read only where
+ * the gate answered its kind.
  */
 import { CALLER_READERS } from './session-guards.mjs';
 
@@ -54,11 +61,11 @@ export const rule = {
     type: 'problem',
     docs: {
       description:
-        'ownerCaller is imported by its own name, only in an app/api route file (A4 step 3b).',
+        'A reader of the caller the pipeline answers (ownerCaller, memberCaller, loginCaller, chatLoginCaller) is imported by its own name, only in an app/api route file (A4 step 3b).',
     },
     messages: {
       notRoute:
-        '{{name}} is read only in a route handler under server/web/app/api: the manifest generator reads the route files to learn which rows the gate answers (A4 step 3b). Pass the owner in from the handler.',
+        '{{name}} is read only in a route handler under server/web/app/api: the manifest generator reads the route files to learn which rows the gate answers (A4 step 3b). Pass what it reads in from the handler.',
       renamed:
         'Import {{name}} by its own name: the manifest generator reads the route files by it (A4 step 3b).',
       module: 'Import {{name}} from @/lib/auth.',

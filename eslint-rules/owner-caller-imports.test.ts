@@ -112,6 +112,50 @@ describe('owner-caller-imports', () => {
     });
   });
 
+  it('holds the member, any-login and chat readers to the same rule (A4 step 3b part 5)', () => {
+    const member = '/r/server/web/app/api/member/mcp/route.ts';
+    const chat = '/r/server/web/app/api/assistant/thread/route.ts';
+    tester.run('owner-caller-imports', rule, {
+      valid: [
+        { code: "import { memberCaller } from '@/lib/auth';\nmemberCaller();", filename: member },
+        { code: "import { chatLoginCaller } from '@/lib/auth/session';", filename: chat },
+        { code: "import { loginCaller } from '@/lib/auth';", filename: route },
+      ],
+      invalid: [
+        {
+          code: "import { memberCaller } from '@/lib/auth';\nexport const m = () => memberCaller();",
+          filename: lib,
+          errors: [{ messageId: 'notRoute' }],
+        },
+        {
+          code: "import { chatLoginCaller as who } from '@/lib/auth';",
+          filename: chat,
+          errors: [{ messageId: 'renamed' }],
+        },
+        {
+          code: "import { loginCaller } from '@/lib/login-workspaces';",
+          filename: route,
+          errors: [{ messageId: 'module' }],
+        },
+        {
+          code: "export { memberCaller } from '@/lib/auth/session';",
+          filename: lib,
+          errors: [{ messageId: 'reexport' }],
+        },
+        {
+          code: "import * as auth from '@/lib/auth';\nauth.chatLoginCaller();",
+          filename: chat,
+          errors: [{ messageId: 'member' }],
+        },
+        {
+          code: "const { loginCaller } = await import('@/lib/auth');",
+          filename: lib,
+          errors: [{ messageId: 'member' }],
+        },
+      ],
+    });
+  });
+
   it('runs on every script file under server/web, tests aside (eslint.config.mjs)', async () => {
     const { ESLint } = await import('eslint');
     const eslint = new ESLint({ cwd: new URL('..', import.meta.url).pathname });
