@@ -26,6 +26,14 @@ export function builtinToolRef(ref: string, slug: string): PolicyRef {
   return Object.freeze({ kind: 'tool', name: ref, slug });
 }
 
+/** A builtin called on the owner MCP surface (A5 step 4): the `mcp-tool`
+ *  ref it is listed under (@mantle/mcp-core gate-policy.ts), by its name
+ *  there, with the builtin it runs (`builtin`, its handler ref), which the
+ *  item pre-check reads. */
+export function mcpBuiltinToolRef(name: string, ref: string): PolicyRef {
+  return Object.freeze({ kind: 'mcp-tool', name, builtin: ref });
+}
+
 /** The policy of `ref` (kind `tool`), or null: no builtin of that ref. */
 export function builtinToolGatePolicy(ref: PolicyRef): GatePolicy | null {
   const def = tableBuiltin(ref.name);

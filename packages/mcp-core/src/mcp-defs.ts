@@ -56,9 +56,7 @@ import {
   runSimulatedResponderTurn,
 } from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
-import type { ToolCallback } from '@modelcontextprotocol/server';
 import type { McpRegisterContext } from './register/context';
-import { addTool, type ShapeSchema } from './register/tool-input';
 
 /** Where in the surface's order a definition registers (build-server.ts
  *  calls each group's registrar at its place). */
@@ -83,15 +81,23 @@ function mcpTool<S extends z.ZodRawShape>(def: {
   group: McpToolGroup;
   description: string;
   shape: S;
-  /** The body: the handler for one connection. */
-  handler: (ctx: McpRegisterContext) => ToolCallback<ShapeSchema<S>>;
+  /** The body: the handler for one connection (its validated arguments;
+   *  the reply). */
+  handler: (ctx: McpRegisterContext) => (args: z.output<z.ZodObject<S>>) => Promise<unknown>;
 }): McpToolDef {
   const { handler, ...rest } = def;
   return Object.freeze({
     ...rest,
     policy: MCP_SURFACE_POLICIES[def.slug],
+    // Registered through the one gate (gated-tools.ts, A5 step 4): listed
+    // as the gate lists it, each call its body inside enterCall.
     register: (ctx: McpRegisterContext) =>
-      addTool(ctx.server, def.slug, def.description, def.shape, handler(ctx)),
+      ctx.registerDefinition(
+        def.slug,
+        def.description,
+        def.shape,
+        handler(ctx) as (args: Record<string, unknown>) => Promise<unknown>,
+      ),
   });
 }
 
@@ -150,8 +156,8 @@ function searchNodesBuiltin(): BuiltinToolDef {
  *   · a thrown error instead of an `isError` reply
  *   · `journal` missing from its type filter
  *
- * It now runs the builtin, through the same `callBuiltin` path every bridged
- * tool uses. The MCP-facing NAME, description and argument names are kept
+ * It now runs the builtin, through `callBuiltin`: dispatch and the one gate,
+ * nested in its own call (A5 step 4). The MCP-facing NAME, description and argument names are kept
  * exactly, because connectors depend on them; the reply gains `url` and
  * `superseded_by`, which is additive.
  */

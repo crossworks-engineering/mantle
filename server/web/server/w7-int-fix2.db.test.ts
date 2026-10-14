@@ -403,9 +403,9 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
 
       // The Admin tool gate and the areas, over MCP.
       await setAreas(maker, { settings: false });
-      const { runInOwnerMcpScope } = await import('@mantle/mcp-core');
+      const { runMcpCall } = await import('@mantle/mcp-core');
       let ran = false;
-      const refused = (await runInOwnerMcpScope(maker, 'run_terminal', async () => {
+      const refused = (await runMcpCall(maker, 'run_terminal', async () => {
         ran = true;
         return 'ran';
       })) as { isError?: boolean };
@@ -418,7 +418,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
                   values (${page}, ${owner}, 'page', ${`${tag} page`}, 'pages')`);
       await x(sql`insert into item_grants (node_id, workspace_id, write, is_home)
                   values (${page}, ${adminWs}, false, true) on conflict do nothing`);
-      const write = await runInOwnerMcpScope(maker, 'page_update', () =>
+      const write = await runMcpCall(maker, 'page_update', () =>
         t.toolItemWriteRefusal('page_update', { id: page }, owner),
       );
       expect(typeof write === 'string' ? write : JSON.stringify(write)).toMatch(/\S/);

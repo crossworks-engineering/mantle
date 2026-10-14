@@ -13,7 +13,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-// The owner surface enters the login's scope per call (W7a, owner-scope.ts):
+// The owner surface enters the login's scope per call (W7a, mcp-scope.ts):
 // no database here, so the brain reads as not on workspaces and the call
 // runs as is.
 vi.mock('@mantle/db', async (importOriginal) => ({

@@ -49,6 +49,8 @@ function searchHandler() {
   const handlers = new Map<string, (a: Record<string, unknown>) => Promise<Reply>>();
   const ctx = {
     server: { registerTool: (n: string, _c: unknown, fn: never) => handlers.set(n, fn) },
+    // The definition's body as the gate runs it (gated-tools.ts, A5 step 4).
+    registerDefinition: (n: string, _d: string, _s: unknown, fn: never) => handlers.set(n, fn),
     ownerId: 'owner-1',
     jsonReply: (v: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(v) }] }),
     callBuiltin: async (

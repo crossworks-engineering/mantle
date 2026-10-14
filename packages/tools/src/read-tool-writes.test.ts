@@ -21,11 +21,11 @@
  *
  *  - The app data reads app_data_schema and app_data_query provision the
  *    app's registry row, apply a newer schema and set the viewer salt
- *    (app_databases, an item table) under a read-only asSystem. They run
- *    only on a login's own MCP connection (appDataCaller), which reaches
- *    the gate in A5 step 4, not on a turn, a run or a pending call. They
- *    WILL FAIL once MCP runs through the gate: step 4 must name them as
- *    read-path writes or move the provisioning (MCP_ONLY_ITEM_WRITES).
+ *    (app_databases, an item table). They run only on a login's own MCP
+ *    connection (appDataCaller), which runs through the gate since A5
+ *    step 4: the provisioning is a named read-path write there
+ *    ('repair:app-db', NAMED_READ_PATH; builtins-app-data.readpath.test.ts
+ *    pins the actor it runs as under a read-only login).
  *  - Every other write is to a table that is no item table, so it runs as
  *    before (SIDE_WRITES). Two are uncaught: a failure fails the call
  *    (read_result's chunking). The peer reads' last-contact stamp is
@@ -127,18 +127,6 @@ const SIDE_WRITES: readonly SideWrite[] = [
   },
 ];
 
-/** Writes of read tools to an item table, on an entry that reaches the
- *  gate only in A5 step 4 (the login's own MCP connection). */
-const MCP_ONLY_ITEM_WRITES: readonly { tools: readonly string[]; table: string; where: string }[] =
-  [
-    {
-      tools: ['app_data_schema', 'app_data_query'],
-      table: 'app_databases',
-      where:
-        'packages/content/src/app-broker.ts (ensureRegistry, applySchema) and app-viewer.ts (appViewerSalt)',
-    },
-  ];
-
 /** Read builtins whose write is a named read-path write (READ_PATH_WRITES):
  *  it runs as its own system actor, whoever reads. */
 const NAMED_READ_PATH: readonly { tools: readonly string[]; name: string }[] = [
@@ -147,6 +135,8 @@ const NAMED_READ_PATH: readonly { tools: readonly string[]; name: string }[] = [
     name: 'backfill:page-block-ids',
   },
   { tools: ['recall_match'], name: 'backfill:recall-prompt-embeddings' },
+  // A5 step 4: the app data reads' provisioning (app_databases).
+  { tools: ['app_data_schema', 'app_data_query'], name: 'repair:app-db' },
 ];
 
 /** Read builtins where the sweep found no write but the call's trace. */
@@ -235,7 +225,6 @@ const NO_WRITE_FOUND: readonly string[] = [
 function classified(): Set<string> {
   return new Set([
     ...SIDE_WRITES.flatMap((w) => w.tools),
-    ...MCP_ONLY_ITEM_WRITES.flatMap((w) => w.tools),
     ...NAMED_READ_PATH.flatMap((w) => w.tools),
     ...NO_WRITE_FOUND,
   ]);
@@ -275,16 +264,10 @@ describe('the writes inside read tools (A5 step 3a)', () => {
     for (const w of SIDE_WRITES) expect(items.has(w.table), w.table).toBe(false);
   });
 
-  it('an item table write is reached only over MCP, which the gate takes in step 4', () => {
-    for (const w of MCP_ONLY_ITEM_WRITES) {
-      expect(items.has(w.table), w.table).toBe(true);
-      for (const slug of w.tools) {
-        expect(slug.startsWith('app_data_'), slug).toBe(true);
-      }
-    }
+  it('the app data reads that provision name it, on the only entry that reaches them', () => {
     // The gated entries of step 3a name no MCP channel: a turn, a run item,
     // a pending approval (their surfaces), so the tools answer before any
-    // write.
+    // write; on the login's own MCP (A5 step 4) the provisioning is named.
     const surfaces: NonNullable<ToolHandlerContext['surface']>[] = [
       { kind: 'web', loginId: '55555555-5555-4555-8555-555555555555' },
       { kind: 'team', loginId: '55555555-5555-4555-8555-555555555555' },
@@ -294,6 +277,9 @@ describe('the writes inside read tools (A5 step 3a)', () => {
     for (const surface of surfaces) {
       expect(appDataCaller({ ownerId: 'o', surface }), JSON.stringify(surface)).toBeNull();
     }
+    expect(items.has('app_databases')).toBe(true);
+    const named = NAMED_READ_PATH.find((w) => w.name === 'repair:app-db');
+    expect(named?.tools).toEqual(['app_data_schema', 'app_data_query']);
   });
 
   it('the named read-path writes stay named', () => {

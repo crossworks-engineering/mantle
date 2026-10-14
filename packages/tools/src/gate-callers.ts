@@ -15,6 +15,14 @@
  *  - pendingCaller: an approved pending call (pending.ts).
  *  - ownerWebCaller: the owner's own web call of a tool (the dev console,
  *    A5 step 3b).
+ *  - mcpToolCaller: a call on the owner MCP surface (A5 step 4): the
+ *    connection names its whole gate caller (@mantle/mcp-core
+ *    gate-policy.ts), and dispatch runs the call as it, with the
+ *    workspace a create asks for.
+ *  - apiV1Caller: a /api/v1 route that runs a builtin (A5 step 4): the
+ *    request's own gate judged the caller (the key's areas and access, A4),
+ *    so the call is a process's on the request's behalf, as a run item or a
+ *    pending approval is.
  *
  * What each call's gate caller holds:
  *
@@ -47,6 +55,7 @@ import {
   withTurnScope,
   type AdminView,
   type CallerVia,
+  type CreateAsk,
   type CreateHomeRule,
   type GateCaller,
   type GatePolicy,
@@ -56,13 +65,19 @@ import {
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 
 /** The dispatch entries. */
-export type ToolCallerEntry = 'turn' | 'run' | 'pending' | 'owner-web';
+export type ToolCallerEntry = 'turn' | 'run' | 'pending' | 'owner-web' | 'mcp' | 'api-v1';
 
 /** An entry's caller, as ToolHandlerContext carries it. */
 export type ToolCaller = Readonly<{
   entry: ToolCallerEntry;
   /** How it came in, as the gate's narrowers read it. */
   via: CallerVia;
+  /** An MCP call (entry `mcp`): the connection's gate caller, resolved
+   *  for this call. Every other entry's is built per call (gateCallerFor). */
+  gate?: GateCaller;
+  /** An MCP call: the workspace its create asks for (its `workspace`
+   *  argument). The call's own: a call nested in it asks none. */
+  ask?: CreateAsk | null;
 }>;
 
 const TURN: ToolCaller = Object.freeze({ entry: 'turn', via: 'turn' });
@@ -88,6 +103,52 @@ export function pendingCaller(): ToolCaller {
 /** The owner's own web call of a tool. */
 export function ownerWebCaller(): ToolCaller {
   return OWNER_WEB;
+}
+
+const API_V1: ToolCaller = Object.freeze({ entry: 'api-v1', via: 'process' });
+
+/** A /api/v1 route's call of a builtin. */
+export function apiV1Caller(): ToolCaller {
+  return API_V1;
+}
+
+/** The MCP vias (the login's own OAuth, a key, a peer, and stdio). */
+const MCP_VIAS: ReadonlySet<CallerVia> = new Set<CallerVia>(['oauth', 'key', 'peer', 'stdio']);
+
+/** One call on the owner MCP surface: its connection's gate caller, and
+ *  the workspace a create asks for. */
+export function mcpToolCaller(gate: GateCaller, ask: CreateAsk | null = null): ToolCaller {
+  if (!MCP_VIAS.has(gate.via)) throw new Error(`mcpToolCaller: not an MCP via: ${gate.via}`);
+  return Object.freeze({ entry: 'mcp', via: gate.via, gate, ask });
+}
+
+/** Whether `caller` came in over MCP: the MCP-only steps run for it only
+ *  (confirm stripping and the key shared content check for a key or a
+ *  peer, the one masking of database errors, errors thrown to the surface). */
+export function mcpVia(caller: { via: CallerVia }): boolean {
+  return MCP_VIAS.has(caller.via);
+}
+
+/**
+ * The caller a call nested in `caller`'s call reuses (a recipe's steps, the
+ * Toolsmith's tests). An MCP call's nested calls are the connection's, less
+ * the call's own parts: its workspace argument, its pre-run check (the key
+ * email guard, a connector's own check) and the refusal of its creates (the
+ * database decides a nested create, as before).
+ */
+export function nestedToolCaller(caller: ToolCaller): ToolCaller {
+  if (caller.entry !== 'mcp' || !caller.gate) return caller;
+  const { preRun: _preRun, ...gate } = caller.gate;
+  const rule = gate.createHome;
+  return Object.freeze({
+    entry: caller.entry,
+    via: caller.via,
+    gate: Object.freeze({
+      ...gate,
+      ...(rule ? { createHome: Object.freeze({ ...rule, refuseCreates: undefined }) } : {}),
+    }),
+    ask: null,
+  });
 }
 
 const callerStore = new AsyncLocalStorage<ToolCaller>();
@@ -151,6 +212,12 @@ export async function gateCallerFor(
   policy: GatePolicy | null,
   builtin: boolean,
 ): Promise<GateCaller> {
+  // An MCP call: the connection named its whole caller (its actor, its
+  // scope and how it enters it, its Admin view, its create home rule).
+  if (caller.entry === 'mcp') {
+    if (!caller.gate) throw new Error('an MCP tool caller names its gate caller');
+    return caller.gate;
+  }
   const ws = currentWorkspaceScope();
   const gate = ws ? null : currentGateScope();
   // No actor bound is a bug at the entry: the call runs with none, as it

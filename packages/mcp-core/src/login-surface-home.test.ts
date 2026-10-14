@@ -1,35 +1,66 @@
 /**
  * The one MCP surface (W7b fix round 2), driven through registerPreparedTools
- * against a capturing fake server. The scope wrapper is a pass-through here
- * (it needs a database); what is pinned is what sits under it:
+ * against a capturing fake server, every call through the one gate and the
+ * real dispatch (A5 step 4). The scope entry is a pass-through here (it
+ * needs a database); what is pinned is what runs inside it:
  *
  *  - L-a: a connector tool registers on the same server as every builtin,
  *    so a member's connector call runs under its create home;
  *  - M-a: a connection outside an Admin scope carries `ownerKeysOff` to the
  *    builtins and the connectors (no spending on the owner's keys), an
  *    Admin's does not;
- *  - a user outside Admin in no workspace (no private workspace) has its
- *    creates refused with a reply that says why, not by the database.
+ *  - a user outside Admin with no private workspace has its creates
+ *    refused with a reply that says why, not by the database.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./owner-scope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./owner-scope')>()),
-  ownerScopedServer: (server: unknown) => server,
-}));
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/db')>()),
-  // The connector audit row: best effort, no database here.
-  asSystem: vi.fn(async () => undefined),
-}));
-vi.mock('@mantle/tools', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/tools')>()),
-  loginConnectorRefused: vi.fn(async () => null),
-  dispatchTool: vi.fn(),
+const h = vi.hoisted(() => ({
+  seen: null as { home: unknown; mcp: unknown } | null,
+  surface: undefined as unknown,
 }));
 
-import { currentCreateHome, type Tool } from '@mantle/db';
-import { dispatchTool } from '@mantle/tools';
+vi.mock('./mcp-scope', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  mcpScopeEntry:
+    () =>
+    <T>(_writes: boolean, fn: () => Promise<T>) =>
+      fn(),
+}));
+vi.mock('../../db/src/viewer', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  // The connector's binding, and the audit row (best effort): no database.
+  asSystem: async (fn: () => Promise<unknown>, reason: string) =>
+    reason === 'connector-binding'
+      ? [{ slug: 'crm', enabled: true, configuredBy: null, integration: { mcp: { url: 'x' } } }]
+      : reason === 'audit-log'
+        ? undefined
+        : fn(),
+}));
+vi.mock('../../tools/src/external-access', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  loginConnectorRefused: async () => null,
+}));
+vi.mock('../../tools/src/mcp-client', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  mcpCallRemoteTool: async () => {
+    const { currentCreateHome } = await import('@mantle/db');
+    h.seen = { home: currentCreateHome(), mcp: (h.surface as { mcp?: unknown } | undefined)?.mcp };
+    return { text: JSON.stringify({ found: 1 }), isError: false, secrets: [] };
+  },
+}));
+vi.mock('@mantle/tools', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/tools')>();
+  return {
+    ...real,
+    // The real dispatch, with the surface it was handed noted.
+    dispatchTool: (...args: Parameters<typeof real.dispatchTool>) => {
+      h.surface = args[2].surface;
+      return real.dispatchTool(...args);
+    },
+  };
+});
+
+import type { Tool } from '@mantle/db';
 import { NO_WORKSPACE_CREATE_ERROR, MCP_CREATE_TOOL_SLUGS } from './create-home';
 import {
   preparedKeysOff,
@@ -55,10 +86,14 @@ const CONNECTOR = {
   requiresConfirm: false,
 } as unknown as Tool;
 
+const MEMBER = '00000000-0000-4000-8000-0000000000b1';
+const ADMIN = '00000000-0000-4000-8000-0000000000a1';
+const PRIVATE_WS = '10000000-0000-4000-8000-000000000003';
+
 const member: McpCaller = {
   role: 'member',
   anchorId: 'anchor-1',
-  loginId: 'member-1',
+  loginId: MEMBER,
   via: 'oauth',
   write: true,
 };
@@ -86,28 +121,20 @@ function register(p: PreparedCallerTools): Map<string, Cb> {
   return cbs;
 }
 
-let seen: { home: unknown; mcp: unknown } | null = null;
 beforeEach(() => {
-  seen = null;
-  vi.mocked(dispatchTool).mockReset();
-  vi.mocked(dispatchTool).mockImplementation(async (_row, _args, ctx) => {
-    seen = {
-      home: currentCreateHome(),
-      mcp: (ctx.surface as { mcp?: unknown } | undefined)?.mcp,
-    };
-    return { ok: true, output: { found: 1 } } as never;
-  });
+  h.seen = null;
+  h.surface = undefined;
 });
 
 describe('connector tools share the builtins’ server (L-a)', () => {
   it('a member’s connector call runs under its create home, keys off', async () => {
-    const cbs = register(prepared(member, false, 'ws-private-1'));
+    const cbs = register(prepared(member, false, PRIVATE_WS));
     const call = cbs.get(CONNECTOR.slug);
     expect(call).toBeTypeOf('function');
     const r = await call!({ q: 'acme' }, {});
     expect(r.isError).toBeFalsy();
-    expect(seen?.home).toEqual({ createWs: null, privateWs: 'ws-private-1' });
-    expect(seen?.mcp).toMatchObject({
+    expect(h.seen?.home).toEqual({ createWs: null, privateWs: PRIVATE_WS });
+    expect(h.seen?.mcp).toMatchObject({
       via: 'oauth',
       write: true,
       ownerKeysOff: true,
@@ -116,19 +143,19 @@ describe('connector tools share the builtins’ server (L-a)', () => {
   });
 
   it('an Admin’s connector call: no private home, keys on', async () => {
-    const admin = { ...member, role: 'admin' as const, loginId: 'admin-1' };
+    const admin = { ...member, role: 'admin' as const, loginId: ADMIN };
     const p = prepared(admin, true, null);
     expect(preparedKeysOff(p)).toBe(false);
     const cbs = register(p);
     await cbs.get(CONNECTOR.slug)!({ q: 'acme' }, {});
-    expect(seen?.home).toBeNull();
-    expect((seen?.mcp as { ownerKeysOff?: boolean }).ownerKeysOff).toBeUndefined();
+    expect(h.seen?.home).toBeNull();
+    expect((h.seen?.mcp as { ownerKeysOff?: boolean }).ownerKeysOff).toBeUndefined();
     // The app data tools fill :host_me_kind from it (W8 integration).
-    expect((seen?.mcp as { role?: string }).role).toBe('admin');
+    expect((h.seen?.mcp as { role?: string }).role).toBe('admin');
   });
 });
 
-describe('a user outside Admin in no workspace (W7b fix round 2)', () => {
+describe('a user outside Admin with no private workspace (W7b fix round 2)', () => {
   it('each create is refused with a reply that says why, before the tool runs', async () => {
     const p = prepared(member, false, null);
     expect(preparedKeysOff(p)).toBe(true);

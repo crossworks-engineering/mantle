@@ -12,13 +12,15 @@
  *    A check that throws refuses in the error's words, as dispatch's catch
  *    answered.
  *  - `key-shared-content`: an API key or a linked brain never changes the
- *    content of an item others can read (key-shared-content.ts). Dormant
- *    until A5 step 4: no key or peer calls a tool through the gate yet.
+ *    content of an item others can read (key-shared-content.ts), on the
+ *    owner MCP surface (A5 step 4).
  *
- * Each answers only the ref kinds it knows (`tool` here; the owner MCP
- * surface's `mcp-tool` in step 4) and lets every other through.
+ * Each answers only the ref kinds it knows (`tool`, and the owner MCP
+ * surface's `mcp-tool`: for the item pre-check only one that runs a
+ * builtin) and lets every other through.
  */
-import { registerPreRunCheck, type PreRunCheck } from '@mantle/db';
+import { registerPreRunCheck, type PolicyRef, type PreRunCheck } from '@mantle/db';
+import { mcpVia } from './gate-callers';
 import { errorMessage } from '@mantle/std';
 import { checkToolPreconditions } from './preconditions';
 import { toolItemWriteRefusal } from './item-write-gate';
@@ -37,24 +39,41 @@ function contextOf(context: Readonly<Record<string, unknown>> | undefined): PreR
   return typeof ownerId === 'string' ? (context as PreRunContext) : null;
 }
 
+/** The builtin a ref runs, and the slug the item lists match: a `tool`
+ *  ref's (its handler ref, the row's slug), or a builtin called on the
+ *  owner MCP surface (an `mcp-tool` ref that names the builtin it runs;
+ *  a hand-written MCP tool names none and checks its own items). */
+function builtinOf(ref: PolicyRef): { handler: string; slug: string } | null {
+  if (ref.kind === 'tool') {
+    return { handler: ref.name, slug: typeof ref.slug === 'string' ? ref.slug : ref.name };
+  }
+  if (ref.kind === 'mcp-tool' && typeof ref.builtin === 'string') {
+    return { handler: ref.builtin, slug: ref.builtin };
+  }
+  return null;
+}
+
 /** A builtin's preconditions, then the items its write names. */
-export const itemPrecheck: PreRunCheck = async (_caller, _policy, ref, call) => {
-  if (ref.kind !== 'tool') return null;
+export const itemPrecheck: PreRunCheck = async (caller, _policy, ref, call) => {
+  const builtin = builtinOf(ref);
+  if (!builtin) return null;
   const ctx = contextOf(call.context);
   // No owner, no check: dispatch always names one.
   if (!ctx) return null;
   const input = call.args ?? {};
-  const slug = typeof ref.slug === 'string' ? ref.slug : ref.name;
   try {
-    const pre = tableBuiltin(ref.name)?.preconditions;
+    const pre = tableBuiltin(builtin.handler)?.preconditions;
     if (pre && pre.length > 0) {
       const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
       if (failure && !failure.ok) return failure.error;
     }
-    return await toolItemWriteRefusal(slug, input, ctx.ownerId, ref.name, {
+    return await toolItemWriteRefusal(builtin.slug, input, ctx.ownerId, builtin.handler, {
       ...(ctx.surface ? { surface: ctx.surface } : {}),
     });
   } catch (err) {
+    // An MCP call's surface answers a thrown error itself, as it always
+    // has (A5 step 4); every other entry reads it as the check's words.
+    if (mcpVia(caller)) throw err;
     return errorMessage(err);
   }
 };

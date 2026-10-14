@@ -10,7 +10,7 @@
  * no workspace scope (system work) there is no member to ask about, so
  * nothing is reached (fail closed; it read the built-in Team workspace's
  * grant until 0286 made Team a normal workspace). Every member path holds
- * the login's scope (session.ts, loginToolServer, the turn scopes). The rule is written in every query here,
+ * the login's scope (session.ts, the MCP scope entry mcp-core mcp-scope.ts, the turn scopes). The rule is written in every query here,
  * not left to row security alone: the db broker runs the app's SQLite on the
  * admin pool (the registry rows it writes are admin), and row security does
  * not reach SQLite.
@@ -85,7 +85,7 @@ export function memberWritesSql(): SQL<boolean> {
   // No workspace scope means no login to ask "Moderator of the home" of:
   // nothing writes (it kept the old Team grant's Write until 0286). No
   // member path reaches it: a member's app run and its MCP app_data_* calls
-  // always hold the login's scope (session.ts, loginToolServer).
+  // always hold the login's scope (session.ts, mcp-core mcp-scope.ts).
   return sql<boolean>`false`;
 }
 

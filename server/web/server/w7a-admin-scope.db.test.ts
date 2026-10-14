@@ -365,7 +365,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
   it('an MCP call that runs the Admin assistant (ask_responder) narrows to its scope', async () => {
     const mcp = await import('@mantle/mcp-core');
     const seen = await m.runInRequestSlot(() =>
-      mcp.runInOwnerMcpScope(owner, 'ask_responder', async () => {
+      mcp.runMcpCall(owner, 'ask_responder', async () => {
         const outer = m.currentScope();
         const inner = await rt.withAgentScope(
           { id: agent.id, workspaceId: adminWs },
@@ -481,7 +481,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
   it('M1: ask_responder’s nested Admin turn answers the calling login, with its areas', async () => {
     const mcp = await import('@mantle/mcp-core');
     const seen = await m.runInRequestSlot(() =>
-      mcp.runInOwnerMcpScope(second, 'ask_responder', () =>
+      mcp.runMcpCall(second, 'ask_responder', () =>
         // As run-sim-turn calls it: a web surface that names no login.
         rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, async () => {
           const s = m.currentScope();
@@ -509,7 +509,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
     // Naming another login inside L's scope is refused (never widened).
     await expect(
       m.runInRequestSlot(() =>
-        mcp.runInOwnerMcpScope(second, 'ask_responder', () =>
+        mcp.runMcpCall(second, 'ask_responder', () =>
           rt.withAgentScope({ id: agent.id, workspaceId: adminWs }, async () => m.currentScope(), {
             loginId: owner,
           }),
@@ -569,7 +569,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       expect(res.isError, res.text).toBe(true);
       expect(res.text).toMatch(/manages the brain's settings|Tool run_terminal not found/);
       const ls = await import('@mantle/mcp-core');
-      const gated = (await ls.runInOwnerMcpScope(
+      const gated = (await ls.runMcpCall(
         second,
         'run_terminal',
         async () => ({ content: [{ type: 'text' as const, text: 'ran' }] }),
@@ -610,7 +610,7 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP read in their 
       on conflict (user_id) do update set preferences = excluded.preferences`);
     const mcp = await import('@mantle/mcp-core');
     const prefs = await m.runInRequestSlot(() =>
-      mcp.runInOwnerMcpScope(second, 'set_timezone', async () => ({
+      mcp.runMcpCall(second, 'set_timezone', async () => ({
         owner: (await c.loadProfilePreferences(owner)).timezone,
         member: (await c.loadProfilePreferences(mem)).timezone,
       })),

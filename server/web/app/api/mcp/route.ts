@@ -11,9 +11,10 @@
  * gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata=…` (RFC 9728)
  * so a fresh claude.ai connector discovers the AS and runs sign-in + consent. A
  * valid bearer resolves to a LOGIN (lib/mcp-auth.ts, MCP as a login): every
- * login gets the one owner surface, each call in that login's workspaces
- * (W7a, W7b; @mantle/mcp-core owner-scope.ts and login-surface.ts); a key
- * or a peer token acts as the login it is bound to and only narrows it. A
+ * login gets the one owner surface, each tool listed and called through the
+ * one gate in that login's workspaces (W7a, W7b, arch A5 step 4;
+ * @mantle/mcp-core gated-tools.ts and login-surface.ts); a key or a peer
+ * token acts as the login it is bound to and only narrows it. A
  * second rate limit holds each login to its own
  * budget.
  *
@@ -25,7 +26,7 @@
  */
 import {
   mcpInstructionsFor,
-  preparedAllows,
+  preparedLists,
   prepareCallerTools,
   registerPreparedTools,
 } from '@mantle/mcp-core';
@@ -100,8 +101,8 @@ async function handler(req: Request): Promise<Response> {
   // synchronously.
   const prepared = await prepareCallerTools(caller);
   // A write tool an API key calls leaves an audit row (lib/mcp-auth.ts),
-  // once the call is one this caller was given.
-  if (caller.keyId) await auditMcpKeyCall(req, caller, (slug) => preparedAllows(prepared, slug));
+  // once the call is one this caller was given (the one gate lists it).
+  if (caller.keyId) await auditMcpKeyCall(req, caller, (slug) => preparedLists(prepared, slug));
   // A refused login (a member on a brain not on workspaces): say so, rather than serve an MCP server with nothing on it.
   if (prepared.kind === 'refused') {
     return new Response(JSON.stringify({ error: 'no_tools', message: prepared.message }), {

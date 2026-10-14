@@ -1,14 +1,23 @@
 /**
  * The MCP server runs every bridged builtin for the OWNER, and says so
- * (client logins C4, plan section 8). It calls `def.handler` directly, not
- * dispatchTool, so the handler's own owner check is what applies here; since
+ * (client logins C4, plan section 8). Through dispatch and the one gate
+ * since A5 step 4 (ownerOnly refuses anyone but the owner there too); since
  * C4 a missing surface is not the owner, and an MCP call that forgot its
  * surface would be refused by every owner-only tool.
  */
 import { describe, expect, it, vi } from 'vitest';
+
+// No database: the brain reads as not on workspaces, so the anchor's call
+// runs as is (mcp-scope.ts).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  brainOnWorkspacesNow: async () => false,
+}));
+
 import {
   isOwnerSurface,
   ownerKeysOff,
+  registerBuiltin,
   type BuiltinToolDef,
   type ToolHandlerContext,
 } from '@mantle/tools';
@@ -29,10 +38,14 @@ describe('MCP builtin calls carry the owner surface', () => {
       ownerOnly: true,
       handler,
     } as BuiltinToolDef;
+    registerBuiltin(def);
     const ctx = makeRegisterContext({} as never, 'owner-1', 'http');
     await ctx.callBuiltin(def, {});
     const got = handler.mock.calls[0]![1];
-    expect(got).toEqual({ ownerId: 'owner-1', surface: { kind: 'owner', via: 'mcp' } });
+    expect({ ownerId: got.ownerId, surface: got.surface }).toEqual({
+      ownerId: 'owner-1',
+      surface: { kind: 'owner', via: 'mcp' },
+    });
     expect(isOwnerSurface(got.surface)).toBe(true);
     expect(MCP_OWNER_SURFACE).toEqual({ kind: 'owner', via: 'mcp' });
   });
@@ -53,6 +66,7 @@ describe('MCP builtin calls carry the owner surface', () => {
       policy: { effect: 'write', spends: 'none', scope: 'any' },
       handler,
     } as BuiltinToolDef;
+    registerBuiltin(def);
     const mcp = { via: 'peer' as const, write: true, peerId: 'peer-1', ownerKeysOff: true };
     const ctx = makeRegisterContext({} as never, 'owner-1', 'http', 'federation', undefined, mcp);
     await ctx.callBuiltin(def, {});

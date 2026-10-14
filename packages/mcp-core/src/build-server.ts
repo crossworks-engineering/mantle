@@ -95,9 +95,9 @@ import { registerFileTools } from './register/files';
 import { registerPageTools } from './register/pages';
 import { registerTableTools } from './register/tables';
 import { registerResponderTools } from './register/responder';
-import { ownerScopedServer } from './owner-scope';
-import { createHomeServer } from './create-home';
 import { policySlugSet } from '@mantle/tools';
+import { defaultMcpGate } from './gate-policy';
+import type { McpGate } from './gated-tools';
 
 /** Mutating Toolsmith tools, gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). A view of the builtins whose definition opts in by `toolsmithWrite`
@@ -117,142 +117,57 @@ if (!toolsmithWriteEnabled) {
   );
 }
 
-/**
- * The server with a gate on registration: `registerTool` skips any
- * name `allow` refuses, so a tool the caller may not have is never listed
- * and cannot be called. Every registrar goes through the context's
- * `server`, so this one wrapper covers the bridged builtins and the
- * hand-written tools alike.
- */
-export function filteredServer(
-  server: McpServer,
-  allow: (slug: string) => boolean,
-  guard?: ToolCallGuard,
-): McpServer {
-  return new Proxy(server, {
-    get(target, prop) {
-      if (prop === 'registerTool') {
-        const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
-        return (name: unknown, config: unknown, cb: unknown) => {
-          if (typeof name !== 'string' || !allow(name)) return undefined;
-          if (!guard || typeof cb !== 'function') return fn.call(target, name, config, cb);
-          const handler = cb as (args: unknown, extra: unknown) => unknown;
-          return fn.call(target, name, config, async (args: unknown, extra: unknown) => {
-            const input = (args ?? {}) as Record<string, unknown>;
-            const refusal = await guard.before?.(name, input);
-            if (refusal) {
-              return {
-                content: [{ type: 'text' as const, text: `Error: ${refusal}` }],
-                isError: true,
-              };
-            }
-            const result = (await handler(args, extra)) as ToolCallResult;
-            return guard.after ? guard.after(name, input, result) : result;
-          });
-        };
-      }
-      const v = Reflect.get(target, prop, target) as unknown;
-      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
-    },
-  });
-}
-
-/** What a registered tool's handler answers (the parts a guard reads). */
-export type ToolCallResult = {
-  content?: Array<{ type: string; text?: string }>;
-  isError?: boolean;
-  [k: string]: unknown;
-};
-
-/** Checks around a registered tool's handler. `before`: a string refuses
- *  the call with that message, null lets it run. `after`: what the caller
- *  gets back instead of the handler's answer (a list with rows dropped). */
-export type ToolCallGuard = {
-  before?: (slug: string, args: Record<string, unknown>) => Promise<string | null>;
-  after?: (
-    slug: string,
-    args: Record<string, unknown>,
-    result: ToolCallResult,
-  ) => Promise<ToolCallResult>;
-};
+/** The guard and reply types of the one registration (gated-tools.ts). */
+export type { ToolCallGuard, ToolCallResult } from './gated-tools';
 
 /** Which transport is registering. Only `run_terminal` reads it (see the file
  *  header); everything else is identical on both. */
 export type MantleMcpTransport = 'stdio' | 'http';
 
-/**
- * The server every MCP tool of a login registers on: each call in the
- * login's scope, gated (owner-scope.ts), then under its create home
- * (create-home.ts: creates take `workspace` and say where they landed; a
- * user outside Admin runs every call under its private workspace). The
- * builtins and the connector tools (login-surface.ts) share it (W7b fix
- * round 2, L-a).
- */
-export function loginToolServer(
-  server: McpServer,
-  scopeLogin: string,
-  opts: { adminLogin: boolean; privateWs: string | null; noCreateHome?: boolean },
-): McpServer {
-  const scoped = ownerScopedServer(server, scopeLogin, { adminLogin: opts.adminLogin });
-  return createHomeServer(scoped, {
-    loginId: scopeLogin,
-    privateWs: opts.privateWs,
-    ...(opts.noCreateHome ? { noHome: true } : {}),
-  });
-}
-
 /** Register every Mantle MCP tool onto `server`, scoped to `ownerId`. Both the
  *  stdio entry and the HTTP route call this; `ownerId` is already authenticated
  *  by the caller. `transport` defaults to the SAFER of the two: a caller that
- *  forgets to say gets the network posture, never the trusted-local one. */
+ *  forgets to say gets the network posture, never the trusted-local one.
+ *
+ *  Every tool registers through the one gate (gated-tools.ts, A5 step 4):
+ *  listed when the connection's gate lists it, each call through enterCall.
+ *  Without `gate`, the anchor's own (stdio: login(owner), every call in the
+ *  anchor's scope). */
 export function registerMantleTools(
   server: McpServer,
   ownerId: string,
   opts: {
     transport?: MantleMcpTransport;
-    /** Register only the tools this answers true for (a peer acting as the
-     *  owner, plan page e5b854dd). Absent = every tool, as before. */
-    allow?: (slug: string) => boolean;
     /** Which owner path the bridged builtins name (default 'mcp'). */
     via?: OwnerSurfaceVia;
-    /** Checked before every call (an API key without the Search area,
-     *  key-email-guard.ts). Needs `allow`. */
-    guard?: ToolCallGuard;
     /** The login of this connection, handed to the builtins on their owner
      *  surface (W6b fix round 2, M-2). Absent on stdio. */
     loginId?: string;
-    /** The login whose scope every call runs in (W7a, owner-scope.ts): the
-     *  connection's login (a peer's bound login too, even when it names
-     *  none to the builtins). Default: `loginId`, else the anchor (stdio
-     *  runs as the anchor login). */
-    scopeLoginId?: string;
-    /** Whether the scope login is an Admin user (W7b; default yes, the
-     *  stdio anchor): only then may the rollback switch or a brain not on
-     *  workspaces put its calls on the system pool (owner-scope.ts). */
-    adminLogin?: boolean;
-    /** The scope login's private workspace when it is not an Admin user:
-     *  where a create without `workspace` lands outside a folder it may
-     *  edit (create-home.ts). */
-    privateWs?: string | null;
-    /** The scope login is outside Admin and in no workspace, so it has no
-     *  private workspace: its creates are refused (create-home.ts). */
-    noCreateHome?: boolean;
     /** The login's own MCP connection, stamped on the builtins' surface
      *  (the app_data_* tools read it). */
     mcp?: LoginMcpChannel;
+    /** The connection's side of the gate: what it lists and who each call
+     *  runs as (login-surface.ts builds it from the prepared connection). */
+    gate?: McpGate;
   } = {},
 ): void {
   const transport = opts.transport ?? 'http';
-  const scopeLogin = opts.scopeLoginId ?? opts.loginId ?? ownerId;
-  const homed = loginToolServer(server, scopeLogin, {
-    adminLogin: opts.adminLogin !== false,
-    privateWs: opts.privateWs ?? null,
-    noCreateHome: opts.noCreateHome === true,
-  });
-  const target = opts.allow ? filteredServer(homed, opts.allow, opts.guard) : homed;
-  const ctx = makeRegisterContext(target, ownerId, transport, opts.via, opts.loginId, opts.mcp, {
-    toolsmithWrite: toolsmithWriteEnabled,
-  });
+  const gate =
+    opts.gate ??
+    defaultMcpGate(opts.loginId ?? ownerId, {
+      transport,
+      ...(opts.via ? { via: opts.via } : {}),
+    });
+  const ctx = makeRegisterContext(
+    server,
+    ownerId,
+    transport,
+    opts.via,
+    opts.loginId,
+    opts.mcp,
+    { toolsmithWrite: toolsmithWriteEnabled },
+    gate,
+  );
   const { registerBuiltinTools } = ctx;
 
   registerSearchTools(ctx);

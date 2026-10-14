@@ -66,6 +66,8 @@ export type CallerVia =
   | 'turn'
   | 'app'
   | 'process'
+  /** The stdio MCP server: the owner login's own process (A5 step 4). */
+  | 'stdio'
   | 'token'
   | 'public'
   | 'unjudged';
@@ -111,6 +113,10 @@ export type GateCaller = Readonly<{
   /** What the surface narrowers read (a key's areas, the risky tools a
    *  peer may call, an app run's rules). Opaque here. */
   facts?: Readonly<Record<string, unknown>>;
+  /** The surface's own check of one call, first in the pre-run slot (A5
+   *  step 4: the MCP key email guard, a connector row's workspace check).
+   *  Only enterCall runs it, never gateCheck: it reads the call. */
+  preRun?: PreRunCheck;
 }>;
 
 /** How an entry names a create home (step 6, createHomeStep). */
@@ -130,6 +136,19 @@ export type CreateHomeRule = Readonly<{
   /** Keep the home for the life of this object once final (an assistant
    *  turn: its scope; the private workspace is made at most once). */
   memo?: object;
+  /** Step 6 runs before the pre-run checks (A5 step 4): the entry's
+   *  fallback was resolved when it connected (`createFallback`), so the
+   *  step makes nothing at call time, and it refuses in the order that
+   *  surface always had (an MCP connection: a create's workspace argument
+   *  before the item it names). */
+  first?: boolean;
+  /** A home that names no place (no asked workspace, no private one) is
+   *  not set: the database's own default decides, as if none was named. */
+  namedOnly?: boolean;
+  /** The entry has no home for a new item (a login outside Admin with no
+   *  private workspace): a call whose policy creates is refused in these
+   *  words. */
+  refuseCreates?: string;
 }>;
 
 /** The Admin step of a policy (step 5). */
@@ -318,7 +337,7 @@ export function lookupPolicy(ref: PolicyRef): GatePolicy {
  *  (`enterScope`) answers for its own: it throws an AccessError, mapped. */
 export function scopeStep(caller: GateCaller): void {
   // TODO(A5): the owner MCP surface LISTS its tools for a login in no
-  // workspace today and refuses each call (owner-scope.ts); the gate
+  // workspace today and refuses each call (mcp-scope.ts); the gate
   // refuses the listing too. A5 decides which, when MCP lists through it.
   if (caller.enterScope || !caller.scope) return;
   const problem = turnScopeProblem(caller.scope);
@@ -361,15 +380,20 @@ export function adminStep(caller: GateCaller, policy: GatePolicy): void {
   if (!view.areas.has(need.area)) throw new AccessError('area', undefined, { area: need.area });
 }
 
-/** The pre-run slot (A5 step 3a), between steps 5 and 6: each check of
- *  PRE_RUN_CHECKS in order; the first refusal refuses the call (`item`, in
- *  the check's own words). */
+/** The pre-run slot (A5 step 3a), between steps 5 and 6: the caller's own
+ *  check (`preRun`, A5 step 4), then each check of PRE_RUN_CHECKS in
+ *  order; the first refusal refuses the call (`item`, in the check's own
+ *  words). */
 export async function preRunStep(
   caller: GateCaller,
   policy: GatePolicy,
   ref: PolicyRef,
   call: CallInput,
 ): Promise<void> {
+  if (caller.preRun) {
+    const refused = await caller.preRun(caller, policy, ref, call);
+    if (refused !== null) throw new AccessError('item', refused);
+  }
   for (const name of PRE_RUN_CHECKS) {
     const check = preRunChecks.get(name);
     if (!check) throw new GateNotReadyError([name]);
@@ -452,9 +476,12 @@ const DEFAULT_HOME_RULE: CreateHomeRule = Object.freeze({ ownWork: 'auto' as con
  *    database's own create checks to decide;
  *  - kept for the entry (memo) once final.
  *
- * Today's two entries, pinned by tests: the HTTP guard (createHomeFor:
- * ownWork by the login, refusal hard) and the assistant turn
- * (turnCreateHome: askEvery, reads, soft, memo per turn scope).
+ * The entries, pinned by tests: the HTTP guard (createHomeFor: ownWork by
+ * the login, refusal hard), the assistant turn (turnCreateHome: askEvery,
+ * reads, soft, memo per turn scope) and an MCP connection (A5 step 4,
+ * @mantle/mcp-core gate-policy.ts: the fallback it resolved when it
+ * connected, `first`, `namedOnly`, reads named too when it has a private
+ * workspace, and its creates refused when it has none).
  */
 export async function createHomeStep(
   caller: GateCaller,
@@ -467,6 +494,7 @@ export async function createHomeStep(
   if (actor?.kind !== 'login' || actor.loginId !== loginId.toLowerCase()) return null;
   if (currentCreateHome()) return null;
   const rule = caller.createHome ?? DEFAULT_HOME_RULE;
+  if (rule.refuseCreates && policy.creates) throw new AccessError('workspace', rule.refuseCreates);
   const writes = policy.effect === 'write';
   if (!writes && !policy.creates && !rule.reads) return null;
   const makePrivate = writes && policy.makesItems !== false;
@@ -495,6 +523,7 @@ export async function createHomeStep(
       final: makePrivate || home.createWs !== null || home.privateWs !== null,
     });
   }
+  if (rule.namedOnly && home.createWs === null && home.privateWs === null) return null;
   return home;
 }
 
@@ -696,10 +725,13 @@ export async function enterCall<T>(
           narrowStep(bound, policy, ref);
           adminStep(bound, policy);
           // The pre-run checks, before the create home: a refused call
-          // never makes a private workspace.
+          // never makes a private workspace. An entry whose home makes
+          // nothing at call time (`first`) names it before them.
+          const first = bound.createHome?.first === true;
+          let home = first ? await createHomeStep(bound, policy, input.ask ?? null) : null;
           await preRunStep(bound, policy, ref, input);
           // 6. The create-home intent.
-          const home = await createHomeStep(bound, policy, input.ask ?? null);
+          if (!first) home = await createHomeStep(bound, policy, input.ask ?? null);
           // 7. Run.
           const value = home ? await withCreateHome(home, fn) : await fn();
           return { ok: true as const, value };

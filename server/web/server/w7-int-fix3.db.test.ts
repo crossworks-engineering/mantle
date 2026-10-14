@@ -388,9 +388,9 @@ describe.skipIf(!URL)('W7 integration fix 3', () => {
   it('L1: under the rollback switch only a login that holds Admin reads on the system pool', async () => {
     process.env.MANTLE_ADMIN_READS = 'system';
     try {
-      const { runInOwnerMcpScope } = await import('@mantle/mcp-core');
+      const { runMcpCall } = await import('@mantle/mcp-core');
       const seen = (login: string) =>
-        runInOwnerMcpScope(login, 'search_nodes', async () => ({
+        runMcpCall(login, 'search_nodes', async () => ({
           scope: m.currentWorkspaceScope(),
           gate: m.currentGateScope(),
         }));

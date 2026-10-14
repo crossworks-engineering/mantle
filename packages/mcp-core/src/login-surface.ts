@@ -3,18 +3,22 @@
  * login since workspaces W7b (plan 7.4).
  *
  * `/api/mcp` serves any LOGIN the same owner surface (build-server.ts), each
- * call in that login's own scope (owner-scope.ts: the union of its
- * workspaces, Moderator where it is one), gated per call (admin-gate.ts):
+ * tool listed and called through the one gate (gated-tools.ts, arch A5
+ * step 4) as the connection's caller (gate-policy.ts mcpGateCaller): each
+ * call in that login's own scope (mcp-scope.ts: the union of its
+ * workspaces, Moderator where it is one):
  *
  *  - LISTED by the scope: an adminOnly (or ownerOnly, outside
  *    OWNER_ONLY_IN_SCOPE) tool only where the scope holds the Admin
- *    workspace, an Admin-area tool only where that area is on;
+ *    workspace, an Admin-area tool only where that area is on (the gate's
+ *    Admin step);
  *  - an API key or a peer is narrowed further by its write switch and the
- *    risky-tool rule (`ownerPeerAllows`), a key by its areas too (plan 7.5
- *    and 7.6: a key or a peer acts as its login and only narrows it). The
- *    login's own OAuth consent is not;
+ *    risky-tool rule (the gate's narrowers; `ownerPeerAllows` here says the
+ *    same for a name), a key by its areas too (plan 7.5 and 7.6: a key or a
+ *    peer acts as its login and only narrows it). The login's own OAuth
+ *    consent is not;
  *  - a create takes an optional `workspace` and names where it landed
- *    (create-home.ts).
+ *    (create-home.ts; the gate's step 6 names the home).
  *
  * The member and client tool sets, the per-login MCP switch and the
  * my_app_* tools went (W7b), the client login and the static login tokens
@@ -32,33 +36,31 @@ import {
   brainOnWorkspacesNow,
   db,
   createHomeIntent,
+  gateLists,
   loginScopeFor,
   scopeHasArea,
   scopeHoldsAdmin,
   withTurnScope,
+  type PolicyRef,
   type ScopeArea,
   type Tool,
 } from '@mantle/db';
 import {
-  adminGateLists,
   connectorToolPolicy,
-  dispatchTool,
-  getBuiltin,
   listLoginConnectorTools,
   loginConnectorRefused,
+  mcpBuiltinToolRef,
   type AdminGateView,
   type LoginMcpChannel,
+  type ToolSurface,
 } from '@mantle/tools';
-import { publicErrorMessage, publicToolError } from '@mantle/std';
-import { watchDatabaseErrors } from '@mantle/std/db-watch';
-import { MANTLE_MCP_INSTRUCTIONS, loginToolServer, registerMantleTools } from './build-server';
-import { zodShapeFromJsonSchema } from './register/zod-schema';
-import { addTool } from './register/tool-input';
-import { withModelImages } from './register/model-images';
+import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from './build-server';
 import { keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
-import { ADMIN_KIND_CREATE_TOOL_SLUGS } from './create-home';
 import { keyAreasAllowTool, mcpDefinitionSet, mcpPolicySet, mcpToolPolicyOf } from './mcp-policy';
+import { mcpDefinition } from './mcp-defs';
+import { mcpGateCaller } from './gate-policy';
+import { registerGatedTool, type McpGate } from './gated-tools';
 
 export type McpLoginRole = 'admin' | 'member';
 
@@ -191,13 +193,6 @@ function mcpChannel(caller: McpCaller, keysOff: boolean): LoginMcpChannel {
   };
 }
 
-/** Whether the caller is narrowed like a peer: an API key, a peer, or an
- *  old static login token (made by an admin for the login, never by it).
- *  OAuth (the login's own consent) is not. */
-function narrowed(caller: McpCaller): boolean {
-  return caller.via !== 'oauth';
-}
-
 /**
  * What the route prepares before the server registers (the MCP adapter
  * registers synchronously): refused (a login that is not an Admin user on
@@ -216,7 +211,7 @@ export type PreparedCallerTools =
       /** The login's private workspace when its scope does not hold Admin. */
       privateWs: string | null;
       /** The connector tools of the login's workspaces (team apps Phase 2),
-       *  narrowed like any tool. */
+       *  listed as the gate lists them (gateLists, like any tool). */
       connectors: Tool[];
     };
 
@@ -268,13 +263,14 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
   }
   // Connector tools (team apps Phase 2; W5b2): the connector a resource of
   // one of the login's workspaces (the call's scope checks it again, and a
-  // write tool's Write tick and Moderator there, in dispatch). A tool with
-  // the admin's read-only mark reads; one without writes, so it needs the
-  // connection's write. A connector tool is in no key area: only an
+  // write tool's Write tick and Moderator there, in dispatch). Listed as
+  // the gate lists them (A5 step 4, registerPreparedTools): a tool with the
+  // admin's read-only mark reads, one without writes and needs the
+  // connection's write; a connector tool is in no key area, so only an
   // all-areas key reaches it.
-  const connectors = (await listLoginConnectorTools(caller.anchorId, caller.loginId))
-    .filter((c) => (c.readOnly || caller.write) && callerAreasAllow(c.tool.slug, caller))
-    .map((c) => c.tool);
+  const connectors = (await listLoginConnectorTools(caller.anchorId, caller.loginId)).map(
+    (c) => c.tool,
+  );
   return { kind: 'owner', caller, view, privateWs, connectors };
 }
 
@@ -316,37 +312,24 @@ export function preparedKeysOff(prepared: PreparedCallerTools): boolean {
   return prepared.kind === 'owner' && prepared.view !== null && !prepared.view.holdsAdmin;
 }
 
-/** Whether the prepared surface LISTS `slug` for this caller: the scope's
- *  listing (adminOnly and Admin-area tools only where the scope holds
- *  them; outside Admin, no Admin-only kind's create and nothing that
- *  spends on the owner's keys), then a key's, a peer's or a static
- *  token's narrowing. A tool not listed is not registered: a call of it
- *  is refused as an unknown tool. */
-export function preparedAllows(
-  prepared: PreparedCallerTools,
-  slug: string,
-  /** A connector row (W7 integration fix 2): prepareCallerTools kept it
-   *  only when it reads or the connection writes, by the admin's read-only
-   *  mark on the row, which the builtin registry does not know. */
-  opts: { connector?: boolean } = {},
-): boolean {
+/** The ref a prepared connection lists `name` by: one of its connector
+ *  rows, a hand-written MCP tool, else a builtin. */
+function listedRef(prepared: PreparedCallerTools & { kind: 'owner' }, name: string): PolicyRef {
+  const row = prepared.connectors.find((c) => c.slug === name);
+  if (row) return { kind: 'runtime-tool', name, row };
+  if (mcpDefinition(name)) return { kind: 'mcp-tool', name };
+  return mcpBuiltinToolRef(name, name);
+}
+
+/** Whether the prepared connection lists the tool `name` (the one gate's
+ *  listing, gateLists, by the ref the surface registers it under): what
+ *  the route's audit of a key's write calls reads (`the tools this caller
+ *  was given`). A refused connection lists nothing. Registration opt-ins
+ *  (the terminal, the Toolsmith writes) are not read here. */
+export function preparedLists(prepared: PreparedCallerTools, name: string): boolean {
   if (prepared.kind === 'refused') return false;
-  const { caller, view } = prepared;
-  if (view && !adminGateLists(slug, view, { ownerOnly: getBuiltin(slug)?.ownerOnly })) {
-    return false;
-  }
-  if (
-    view &&
-    !view.holdsAdmin &&
-    (ADMIN_KIND_CREATE_TOOL_SLUGS.has(slug) || spendsOwnerKeys(slug))
-  ) {
-    return false;
-  }
-  // A read-only connection (a key or a peer with Write off, an OAuth grant
-  // narrowed by 0268) lists only the tools that read.
-  if (!caller.write && !opts.connector && !isMcpToolReadOnly(slug)) return false;
-  if (!narrowed(caller)) return true;
-  return ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller);
+  const caller = mcpGateCaller(prepared);
+  return caller !== null && gateLists(caller, listedRef(prepared, name));
 }
 
 /** One audit row per connector call a login makes over its own MCP (team
@@ -402,128 +385,64 @@ function logConnectorCall(
 /** The longest input a connector write's audit row keeps. */
 const CONNECTOR_LOG_INPUT_MAX = 2048;
 
-/** Run one connector tool for the caller (already in its scope, through
- *  the scope wrapper): a write needs the connection's write, dispatchTool
- *  checks the connector against the scope, and the call is logged. */
-async function callConnectorTool(
-  caller: McpCaller,
-  row: Tool,
-  args: Record<string, unknown>,
-  keysOff: boolean,
-) {
-  // The connector tool's policy (arch A3c, runtime-policy.ts): a stale
-  // (voided) mark counts as a write here; dispatch refuses it below the
-  // owner anyway.
-  const write = connectorToolPolicy(row).effect === 'write';
-  if (write && !caller.write) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: 'Error: This connector tool writes, and your MCP connection is read-only.',
-        },
-      ],
-      isError: true,
-    };
-  }
-  // The connector as a workspace resource (W4b fix round 1, M3), checked
-  // here too: it must be one of the login's workspaces' resources, and a
-  // write needs that resource's Write tick in a workspace the login
-  // moderates. Dispatch checks the call's scope again.
-  const refused = await loginConnectorRefused(
-    caller.anchorId,
-    caller.loginId,
-    (row.handler as { group: string }).group,
-    write,
-  );
-  if (refused) {
-    return { content: [{ type: 'text' as const, text: `Error: ${refused}` }], isError: true };
-  }
-  logConnectorCall(caller, row, args, write);
-  try {
-    const {
-      value: result,
-      texts,
-      errors,
-    } = await watchDatabaseErrors(() =>
-      dispatchTool(row, args ?? {}, {
-        ownerId: caller.anchorId,
-        surface: {
-          kind: 'owner',
-          via: caller.via === 'key' ? 'api' : caller.via === 'peer' ? 'federation' : 'mcp',
-          loginId: caller.loginId,
-          mcp: mcpChannel(caller, keysOff),
-        },
-      }),
+/**
+ * A connector row's own check, in its call's pre-run slot (A5 step 4): the
+ * connector as a workspace resource (W4b fix round 1, M3), checked here
+ * too: it must be one of the login's workspaces' resources, and a write
+ * needs that resource's Write tick in a workspace the login moderates
+ * (dispatch checks the call's scope again). Then the call's audit row.
+ * Whether the connection may write at all is the gate's read-only
+ * narrower: a connector tool that writes is not listed for a read-only
+ * connection.
+ */
+function connectorCheck(caller: McpCaller) {
+  return async (row: Tool, args: Record<string, unknown>): Promise<string | null> => {
+    // The connector tool's policy (arch A3c, runtime-policy.ts): a stale
+    // (voided) mark counts as a write here; dispatch refuses it below the
+    // owner anyway.
+    const write = connectorToolPolicy(row).effect === 'write';
+    const refused = await loginConnectorRefused(
+      caller.anchorId,
+      caller.loginId,
+      (row.handler as { group: string }).group,
+      write,
     );
-    if (!result.ok) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Error: ${publicToolError(result.error, texts, `mcp ${row.slug}`, errors)}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-    return withModelImages(
-      {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(stripVectors(result.output), null, 2) },
-        ],
-      },
-      result.modelImages,
-    );
-  } catch (err) {
-    return {
-      content: [
-        { type: 'text' as const, text: `Error: ${publicErrorMessage(err, `mcp ${row.slug}`)}` },
-      ],
-      isError: true,
-    };
-  }
-}
-
-const STRIP_KEYS = new Set(['embedding', 'searchTsv', 'search_tsv']);
-function stripVectors<T>(value: T): T {
-  if (Array.isArray(value)) return value.map((v) => stripVectors(v)) as unknown as T;
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (!STRIP_KEYS.has(k)) out[k] = stripVectors(v);
-    }
-    return out as T;
-  }
-  return value;
+    if (refused) return refused;
+    logConnectorCall(caller, row, args, write);
+    return null;
+  };
 }
 
 /**
- * Register the one surface for this caller (W7b): the owner tools in the
- * login's scope (owner-scope.ts: every call gated again), listed as the
- * scope may (preparedAllows), plus the connector tools of its workspaces.
- * A refused caller gets nothing (the route answers 403 first).
+ * Register the one surface for this caller (W7b): the owner tools and the
+ * connector tools of its workspaces, each listed when the one gate lists
+ * it for the connection and called through it (gated-tools.ts, A5 step 4;
+ * the caller: gate-policy.ts mcpGateCaller). A refused caller gets nothing
+ * (the route answers 403 first).
  */
 export function registerPreparedTools(
   server: McpServer,
   prepared: PreparedCallerTools,
   opts: { transport?: 'stdio' | 'http' } = {},
 ): void {
-  if (prepared.kind === 'refused') return;
+  const gateCaller = mcpGateCaller(prepared);
+  if (prepared.kind === 'refused' || !gateCaller) return;
   const { caller } = prepared;
-  // An Admin user: an admin role that holds the Admin workspace now (W7
-  // integration fix 3, L1; view null is a brain not on workspaces, where the
-  // role decides). Only it may go to the system pool under the rollback
-  // switch (owner-scope.ts); an admin role taken out of Admin stays in its
-  // scope.
   const adminRole = caller.role === 'admin';
-  const adminLogin = adminRole && (prepared.view === null || prepared.view.holdsAdmin);
-  const allow = (slug: string) => preparedAllows(prepared, slug);
-  // Outside an Admin scope: nothing spends on the owner's keys (M-a), and
-  // a login in no workspace has no private one, so its creates are refused
-  // with a reply that says why (create-home.ts).
+  // Outside an Admin scope: nothing spends on the owner's keys (M-a).
   const keysOff = preparedKeysOff(prepared);
-  const noCreateHome = keysOff && !prepared.privateWs;
+  const gate: McpGate = Object.freeze({
+    lists: gateCaller,
+    // One request: each call runs as the listing read it.
+    callerFor: async () => gateCaller,
+    // A key without Search does not reach email through Files (M4).
+    ...(caller.via === 'key' && !keyAreasReachEmail(caller.areas ?? null)
+      ? { guard: keyEmailGuard(caller.anchorId) }
+      : {}),
+    connector: connectorCheck(caller),
+  });
+  const channel = mcpChannel(caller, keysOff);
+  const via = caller.via === 'key' ? 'api' : caller.via === 'peer' ? 'federation' : 'mcp';
   registerMantleTools(server, caller.anchorId, {
     transport: opts.transport ?? 'http',
     // A peer an admin did not register for the anchor names no login to the
@@ -531,37 +450,16 @@ export function registerPreparedTools(
     ...(caller.via === 'peer' && adminRole && !caller.peerByOwner
       ? {}
       : { loginId: caller.loginId }),
-    // Every call runs in the login's scope (W7a; every login since W7b).
-    scopeLoginId: caller.loginId,
-    adminLogin,
-    privateWs: prepared.privateWs,
-    noCreateHome,
-    mcp: mcpChannel(caller, keysOff),
-    ...(caller.via === 'key' ? { via: 'api' as const } : {}),
-    ...(caller.via === 'peer' ? { via: 'federation' as const } : {}),
-    allow,
-    // A key without Search does not reach email through Files (M4).
-    ...(caller.via === 'key' && !keyAreasReachEmail(caller.areas ?? null)
-      ? { guard: keyEmailGuard(caller.anchorId) }
-      : {}),
+    mcp: channel,
+    ...(via !== 'mcp' ? { via } : {}),
+    gate,
   });
   // The connectors, on the same server as every other tool: in the
   // login's scope and gate, and under its create home (W7b fix round 2,
   // L-a).
-  const scoped = loginToolServer(server, caller.loginId, {
-    adminLogin,
-    privateWs: prepared.privateWs,
-    noCreateHome,
-  });
+  const surface: ToolSurface = { kind: 'owner', via, loginId: caller.loginId, mcp: channel };
   for (const row of prepared.connectors) {
-    if (!preparedAllows(prepared, row.slug, { connector: true })) continue;
-    addTool(
-      scoped,
-      row.slug,
-      row.description,
-      zodShapeFromJsonSchema((row.inputSchema as Record<string, unknown>) ?? {}),
-      (args) => callConnectorTool(caller, row, args as Record<string, unknown>, keysOff),
-    );
+    registerGatedTool(server, gate, caller.anchorId, { kind: 'connector', row, surface });
   }
 }
 

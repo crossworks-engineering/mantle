@@ -41,21 +41,16 @@ const INHERIT_CTX = /\.\.\.\(ctx\.surface \? \{ surface: ctx\.surface \} : \{\}\
 
 const SITES: Record<string, Site> = {
   // ── owner paths: an explicit owner surface ──
-  'packages/mcp-core/src/register/context.ts': {
-    calls: 1,
-    // `surface` is MCP_OWNER_SURFACE (owner/mcp), or owner/federation for a
-    // peer bound to the owner (MCP as a login): built before the call.
-    surface:
-      /const surface: ToolSurface = via === 'mcp' \? MCP_OWNER_SURFACE : \{ kind: 'owner', via \}/,
-    scope: 'file',
-    why: 'MCP holds the owner credential (owner/mcp, or owner/federation for a peer)',
-  },
-  // ── a member's or client's own MCP login ──
-  'packages/mcp-core/src/login-surface.ts': {
-    calls: 1,
-    surface: /surface: \{\s+kind: 'owner',/,
+  // ── the owner MCP surface (every login's since W7b) ──
+  'packages/mcp-core/src/gated-tools.ts': {
+    calls: 2,
+    // The surface its connection built: register/context.ts (owner/mcp,
+    // owner/federation for a peer, owner/api for a key, the login and its
+    // channel stamped) and login-surface.ts (a connector row on its login's
+    // surface). Pinned by mcp-call-snapshot.test.ts call by call.
+    surface: /surface: (opts|entry)\.surface,/,
     scope: 'call',
-    why: "a connector call on a login's own MCP (W7b: every login's) runs on the owner surface, in that login's scope, its login and connection stamped",
+    why: 'the one MCP registration (A5 step 4) runs every builtin and connector row on the surface its connection built',
   },
   'packages/tools/src/pending.ts': {
     calls: 1,

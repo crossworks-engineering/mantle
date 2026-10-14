@@ -814,3 +814,109 @@ describe('hasPolicySource (A5 step 3a, LOW-4)', () => {
     expect(hasPolicySource('mcp-tool')).toBe(false);
   });
 });
+
+describe('an MCP connection (A5 step 4)', () => {
+  it("the caller's own pre-run check runs first in the slot, after the Admin step", async () => {
+    const order: string[] = [];
+    setup(
+      {},
+      {
+        'item-precheck': async () => {
+          order.push('item-precheck');
+          return null;
+        },
+      },
+    );
+    const guard = vi.fn(async (_c: GateCaller, _p: GatePolicy, _r: PolicyRef, call) => {
+      order.push('caller');
+      return call.args?.mail === true ? 'this is an email attachment' : null;
+    });
+    const caller = login({ preRun: guard });
+    const refused = await enterCall(caller, ref('write'), ok, { args: { mail: true } });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.refusal.kind).toBe('item');
+      expect(refused.refusal.toolText).toBe('this is an email attachment');
+    }
+    expect(order).toEqual(['caller']);
+    order.length = 0;
+    expect((await enterCall(caller, ref('write'), ok, { args: {} })).ok).toBe(true);
+    expect(order).toEqual(['caller', 'item-precheck']);
+    // A listing never runs it.
+    guard.mockClear();
+    expect(gateCheck(caller, ref('write'))).toBeNull();
+    expect(guard).not.toHaveBeenCalled();
+    // An Admin step refusal comes first.
+    guard.mockClear();
+    expect((await enterCall(caller, ref('admin'), ok)).ok).toBe(false);
+    expect(guard).not.toHaveBeenCalled();
+  });
+
+  it('`first`: the create home is named before the pre-run checks, so its refusal comes first', async () => {
+    setup({}, { 'item-precheck': async () => 'This item is not yours to change.' });
+    vi.mocked(createHomeIntent).mockImplementationOnce(async () => {
+      h.log.push('home');
+      return { refused: 'unknown', message: 'You are not in a workspace "nope".' };
+    });
+    const mcp = login({
+      createHome: { ownWork: false, first: true },
+      createFallback: { privateWs: null },
+    });
+    const r = await enterCall(mcp, ref('create'), ok, {
+      ask: { from: 'argument', workspace: 'nope' },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.refusal.toolText).toBe('You are not in a workspace "nope".');
+    expect(h.log).toEqual(['home']);
+    // Without `first` the item pre-check refuses before the home is named.
+    h.log = [];
+    const generic = await enterCall(login(), ref('create'), ok, { ask: null });
+    expect(generic.ok).toBe(false);
+    if (!generic.ok) expect(generic.refusal.toolText).toBe('This item is not yours to change.');
+    expect(h.log).toEqual([]);
+  });
+
+  it('`namedOnly`: a home that names no place is not set', async () => {
+    vi.mocked(createHomeIntent).mockImplementationOnce(async () => {
+      h.log.push('home');
+      return { createWs: null, privateWs: null };
+    });
+    const mcp = login({
+      createHome: { ownWork: false, first: true, namedOnly: true },
+      createFallback: { privateWs: null },
+    });
+    const r = await enterCall(mcp, ref('write'), async () => currentCreateHome());
+    expect(r.ok && r.value).toBeNull();
+    expect(h.log).toEqual(['home']);
+  });
+
+  it('`refuseCreates`: a create is refused in those words, before it runs; any other call runs', async () => {
+    const words = 'You are not in any workspace yet, so there is nowhere to put a new item.';
+    const mcp = login({
+      createHome: { ownWork: false, first: true, namedOnly: true, refuseCreates: words },
+      createFallback: { privateWs: null },
+    });
+    const created = await enterCall(mcp, ref('create'), ok);
+    expect(created.ok).toBe(false);
+    if (!created.ok) {
+      expect(created.refusal.kind).toBe('workspace');
+      expect(created.refusal.toolText).toBe(words);
+    }
+    expect(h.log).toEqual([]);
+    expect((await enterCall(mcp, ref('write'), ok)).ok).toBe(true);
+  });
+
+  it('a surface that enters its own scope runs every call in it, writing as the policy says', async () => {
+    const entered: boolean[] = [];
+    const mcp = login({
+      enterScope: async (writes, fn) => {
+        entered.push(writes);
+        return fn();
+      },
+    });
+    await enterCall(mcp, ref('read'), ok);
+    await enterCall(mcp, ref('write'), ok);
+    expect(entered).toEqual([false, true]);
+    expect(withTurnScope).not.toHaveBeenCalled();
+  });
+});

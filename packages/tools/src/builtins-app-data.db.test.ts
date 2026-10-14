@@ -61,7 +61,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     surface: { kind: 'team', loginId: member, contactName: 'Pat Member', mcp: mcp(write) },
   });
   // A member's call runs in its login's scope, as its MCP connection runs
-  // every call (loginToolServer): its workspaces are Team (a user, no
+  // every call (mcp-core mcp-scope.ts): its workspaces are Team (a user, no
   // Moderator). With no scope a member reaches nothing (0286: it reached
   // the built-in Team workspace's apps until then).
   const call = (slug: string, input: Record<string, unknown>, ctx: ToolHandlerContext) => {

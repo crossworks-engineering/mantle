@@ -409,6 +409,8 @@ export const READ_PATH_WRITES = {
     'GET /s/:token: count a public link’s view (content shares.ts, recordShareView); a link writes nothing itself (arch A3a)',
   'backfill:recall-prompt-embeddings':
     'recall_match and every Recall write: embed the brain’s prompt cards that have no vector yet (content recall.ts)',
+  'repair:app-db':
+    'app_data_schema and app_data_query on a login’s MCP (A5 step 4): make an app’s database registry row, bring it to its declared schema and set its viewer salt, once (content app-broker.ts, app-viewer.ts)',
 } as const;
 
 export type ReadPathWrite = keyof typeof READ_PATH_WRITES;

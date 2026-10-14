@@ -1705,16 +1705,105 @@ the private one (`mantle.private_ws`), the folder the item is made in, or
 the Admin workspace: never a non-Admin workspace the call did not ask for.
 `packages/tools/src/gate-callers.test.ts` pins both.
 
-**Step 4 must-dos** (from the step 3a audit and its low round):
+**Step 4 must-dos** (from the step 3a audit and its low round), done in
+step 4 (below): the app data reads' provisioning is a named read-path
+write; the direct handler entries and the connector rows dispatch through
+the gate (`DIRECT_HANDLER_YET` is empty). The database-backed guard of the
+read tools is still a source classification (`read-tool-writes.test.ts`).
 
-- The app data reads `app_data_schema` and `app_data_query` provision
-  `app_databases` (an item table) under a read-only `asSystem`: once the
-  owner MCP surface runs through the gate they fail. Name them as
-  read-path writes, or move the provisioning out of the read.
-- The guard behind `read-tool-writes.test.ts`, which is a source
-  classification: run each read builtin read only, with the edit check
-  on, against a database.
-- Move the direct handler entries onto dispatch: the /api/v1 builtin
-  routes and the owner MCP surface's builtins (`DIRECT_HANDLER_YET` in
-  `dispatch-entries.test.ts`), and the owner MCP surface's connector rows
-  (`NO_CALLER_YET`).
+## MCP registers through the gate (A5 step 4)
+
+Plan section 23.3, step 4. One function registers every tool of the owner
+MCP surface, `registerGatedTool` (`packages/mcp-core/src/gated-tools.ts`):
+a builtin, a hand-written definition (`mcp-defs.ts`) and a connector row
+of the login's workspaces. A tool is listed only when
+`gateLists(caller, ref)` is true, by the ref it is called by: a builtin's
+`mcp-tool` ref names the builtin it runs (`mcpBuiltinToolRef`), a
+definition's its own name, a connector's `runtime-tool` ref its row. A call
+runs through `enterCall`: a builtin and a connector row through
+dispatch's gated path with the MCP caller (`mcpToolCaller`,
+`packages/tools/src/gate-callers.ts`), a definition's body directly. It
+replaces `filteredServer`, `ownerScopedServer` and `runInOwnerMcpScope`
+(owner-scope.ts is gone), `createHomeServer`, `callBuiltin`'s own checks,
+the catch in `addTool`, `preparedAllows`, the connector filter of
+`prepareCallerTools` and the write check of `callConnectorTool`.
+
+- **The caller.** An HTTP connection's is `mcpGateCaller(prepared)`
+  (`packages/mcp-core/src/gate-policy.ts`): login(rw), or login(ro) for a
+  read-only connection, the Admin view the listing read, the key's areas
+  and the risky tools named, its scope entry and its create home rule. One
+  request lists and calls, so each call runs as the listing read it. stdio
+  is `defaultMcpGate`: login(owner), via `stdio` (no narrower applies; the
+  one masking does), every tool listed as before, and each call's Admin
+  view read in the scope at the call (`mcpAdminView`, the reads
+  adminToolGate made).
+- **The scope entry** is the caller's `enterScope`
+  (`packages/mcp-core/src/mcp-scope.ts`): the login's scope per call, as a
+  turn scope that writes; refused on a brain not on workspaces unless an
+  Admin user; refused for a login in no workspace; the rollback switch's
+  gate scope for an Admin user that holds Admin now. Inside it the actor
+  is the gate's: a read tool runs as login(ro), so its system work stays
+  read only. On the rollback switch a call now runs as the login (it ran
+  as the request's system(http:no-login) on the system pool before).
+- **The create home** is gate step 6 with the MCP rule
+  (`mcpCreateHomeRule`): the fallback the connection resolved
+  (`createFallback`), `first` (step 6 runs before the pre-run checks: it
+  makes nothing at call time, and a create's `workspace` argument is
+  refused before the item it names, as before: page_split,
+  page_extract_section and app_duplicate answer in today's order),
+  `namedOnly` (a home that names no place is not set), `reads` for a login
+  with a private workspace (every call under it) and `refuseCreates`
+  (`NO_WORKSPACE_CREATE_ERROR`) for one outside Admin with none, whose
+  creates advertise no `workspace` argument, as before.
+- **The pre-run slot** takes the caller's own check first
+  (`GateCaller.preRun`, `packages/db/src/gate.ts`): the key email guard's
+  `before` for a key without Search, a connector row's workspace check and
+  its `mcp.connector.*` audit row. Then the item pre-check (a builtin's
+  preconditions and item targets; an `mcp-tool` ref that names a builtin
+  reads them, a hand-written tool checks its own) and the key shared
+  content check. The guard's list filter and the create's `landedIn` run
+  after the call, in the call's scope.
+- **The MCP-only steps are live** for an MCP via (oauth, key, peer,
+  stdio): confirm stripping for a key or a peer (a builtin only: a
+  connector row takes the arguments its schema lists), the key shared
+  content check, the one masking of a database error's text
+  (`maskToolDatabaseErrors`) and, for an error the call throws, the
+  surface's own answer: a database error in the one mapper's words
+  (`thrownToolDatabaseError`), any other by the SDK, a connector row's own
+  error as its reply text. Dispatch throws on for an MCP call
+  (`itemPrecheck` too) instead of reading the error as the call's text.
+- **Nested calls** (a recipe's steps, the Toolsmith's tests, `search`
+  running search_nodes) reuse the connection's caller less the call's own
+  parts (`nestedToolCaller`: its ask, its pre-run check, the refusal of
+  its creates). Before step 4 a call nested in an MCP call ran dispatch's
+  own checks.
+- **The /api/v1 builtin routes** (`server/web/lib/api-v1-builtin.ts`) run
+  their builtin through dispatch as `apiV1Caller()` (via `process`: the
+  request's own gate judged the key), so the gate's item pre-check runs
+  for them too.
+- **The app data reads' provisioning** (`app_data_schema`,
+  `app_data_query`: the registry row, its schema, the viewer salt in
+  `app_databases`) is a named read-path write, `repair:app-db`
+  (`packages/tools/src/builtins-app-data.readpath.test.ts` pins the actor
+  under a read-only login).
+- **Tests of the scope and the Admin step** call `runMcpCall(login, tool,
+  fn)` (gate-policy.ts), where they called `runInOwnerMcpScope`.
+
+Proof: `packages/mcp-core/src/mcp-call-snapshot.test.ts`, committed before
+the change: over the real SDK, for stdio and each kind of connection (an
+Admin user, the rollback switch, a brain not on workspaces, a member with
+and without a private workspace, read only, a key without Search, peers, a
+login in no workspace), the instructions, tools/list and per call the
+reply (each block, isError, the `Error: ` prefix), what the handler saw
+(its input, surface and create home), `landedIn`, the image blocks, the
+connector's remote call and the audit rows. The change left it and every
+step 2 snapshot (`tools-list.*.json`, `surface-*.json`) as they were.
+`gate-policy.test.ts` pins that the registered list is exactly the gate's
+listing for every tool and connection, `packages/db/src/gate.test.ts` the
+new rule fields and `preRun`, `packages/tools/src/dispatch-mcp.test.ts` the
+MCP caller in dispatch.
+
+Two answers changed on purpose, outside a refusal's text: a key's
+`api.write` audit row is written only for a tool its connection lists
+(`preparedLists`), where a name the surface never had could leave one; and
+the actor of a call, as above.

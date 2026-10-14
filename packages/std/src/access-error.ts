@@ -61,7 +61,7 @@ export const ADMIN_KIND_CREATE_ERROR =
   'This kind of item (a contact, a journal entry, a saved place) lives in the Admin workspace only, and you are not a user of it. Make a note or a page instead.';
 
 /** The refusal of a caller whose scope reads no workspace: one constant,
- *  in the words the owner MCP surface says today (owner-scope.ts,
+ *  in the words the owner MCP surface says today (@mantle/mcp-core mcp-scope.ts,
  *  NO_WORKSPACE_ERROR). It names MCP; a subject-neutral wording for the
  *  other surfaces is A5's (a text change users see). */
 export const NO_SCOPE_ERROR =

@@ -8,26 +8,16 @@
  * the folder's workspace else Admin, as before. Every create reply then
  * names the workspace the item landed in (`landedIn`).
  *
- * The wrapper sits between the scope (owner-scope.ts: each call already runs
- * in the login's scope, gated) and the tool: it reads `workspace`, asks THE
- * create-home intent (@mantle/db createHomeIntent, arch A3c: the one
- * function the web routes and assistant turns ask too) where the create
- * lands (refused unless the caller moderates the workspace it names), and
- * runs the tool under withCreateHome, which the system transactions of the
- * create set as mantle.create_ws / mantle.private_ws. Nothing here grants:
- * it only names a place, and the database's create checks still run.
+ * Since A5 step 4 the one gate names the home (step 6, THE create-home
+ * intent @mantle/db createHomeIntent, by the connection's rule:
+ * gate-policy.ts mcpCreateHomeRule). What is here is the surface's own
+ * shape: the `workspace` argument a create advertises and takes
+ * (withWorkspaceArg), and the line a create's reply gains (withLanding,
+ * run in the call's scope by gated-tools.ts). Nothing here grants: it only
+ * names a place, and the database's create checks still run.
  */
-import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
-import {
-  createHomeIntent,
-  db,
-  nodes,
-  withCreateHome,
-  workspaces,
-  type CreateHome,
-} from '@mantle/db';
-import { ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
+import { db, nodes, workspaces } from '@mantle/db';
 import { CREATE_TOOL_SLUGS } from '@mantle/tools';
 import { mcpPolicySet } from './mcp-policy';
 
@@ -41,22 +31,23 @@ export const MCP_CREATE_TOOL_SLUGS: ReadonlySet<string> = CREATE_TOOL_SLUGS;
 /**
  * The create tools whose kind lives in the Admin workspace only (a contact,
  * a journal entry, a saved place: mantle_kind_class 'admin_only'). A user
- * outside Admin is refused them (W7b fix round 1, H2): not listed, refused
- * here before the tool runs, and the database's create home refuses the row
- * (every call of such a user runs under its private workspace). A view of
- * the policy tables (A5 step 2): the tools whose scope is `admin-kind`.
+ * outside Admin is refused them (W7b fix round 1, H2): not listed (gate step
+ * 5, the policy's `admin-kind`), and the database's create home refuses the
+ * row (every call of such a user runs under its private workspace). A view
+ * of the policy tables (A5 step 2): the tools whose scope is `admin-kind`.
  */
 export const ADMIN_KIND_CREATE_TOOL_SLUGS: ReadonlySet<string> = mcpPolicySet(
   (p) => p.scope === 'admin-kind',
 );
 
 /** The refusal of an Admin-only kind's create outside Admin: the one
- *  mapper's words (@mantle/std access-error.ts, arch A3c). */
+ *  mapper's words (@mantle/std access-error.ts, arch A3c), gate step 5. */
 export { ADMIN_KIND_CREATE_ERROR } from '@mantle/std';
 
-/** The refusal of a create by a user outside Admin who is in no workspace
- *  (W7b fix round 2): it has no private workspace, so an item it made would
- *  have no home. Said here rather than left to the database's refusal. */
+/** The refusal of a create by a user outside Admin who has no private
+ *  workspace (W7b fix round 2): an item it made would have no home. Said by
+ *  the gate's step 6 (mcpCreateHomeRule) rather than left to the
+ *  database's refusal. */
 export const NO_WORKSPACE_CREATE_ERROR =
   'You are not in any workspace yet, so there is nowhere to put a new item. Ask an admin of this brain to add you to a workspace, then try again.';
 
@@ -120,11 +111,6 @@ export function withWorkspaceArg(schema: unknown): unknown {
   };
 }
 
-/** A refusal reply. */
-function refusal(text: string) {
-  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
-}
-
 /** The item ids a create's reply names: an `…id` / `…Id` field at the top
  *  or one level down (an object or a list of objects), UUIDs only. */
 export function replyItemIds(value: unknown): string[] {
@@ -169,7 +155,7 @@ type Reply = { content?: Array<{ type: string; text?: string }>; isError?: boole
 
 /** `reply` with the landing workspace named: in the JSON object it carries
  *  (`landedIn`), or as one more line. */
-async function withLanding(reply: unknown, since: Date): Promise<unknown> {
+export async function withLanding(reply: unknown, since: Date): Promise<unknown> {
   const r = reply as Reply | null;
   if (!r || r.isError || !Array.isArray(r.content)) return reply;
   const first = r.content[0];
@@ -202,99 +188,4 @@ async function withLanding(reply: unknown, since: Date): Promise<unknown> {
   }
   const names = homes.map((h) => h.name).join(', ');
   return { ...r, content: [...r.content, { type: 'text', text: `Landed in workspace: ${names}` }] };
-}
-
-/** Whether a create home names a place (a workspace asked, or the private
- *  fallback): one that names neither leaves the database's own default. */
-function homeNamed(home: CreateHome): boolean {
-  return home.createWs !== null || home.privateWs !== null;
-}
-
-/** What the wrapper needs of the connection. */
-export type CreateHomeOpts = {
-  /** The login of the connection. */
-  loginId: string;
-  /** The login's private workspace when its scope does not hold Admin (the
-   *  route rule's fallback), else null: an Admin user's create without a
-   *  `workspace` lands as before (the folder's, else Admin). */
-  privateWs: string | null;
-  /** The login is outside Admin and in no workspace (so `privateWs` is
-   *  null): every create tool is refused with NO_WORKSPACE_CREATE_ERROR. */
-  noHome?: boolean;
-};
-
-/**
- * `server`, with every create tool registered on it from here on taking
- * `workspace` and naming where its item landed (see the module comment).
- * Registered UNDER the scope wrapper (owner-scope.ts), so each call runs in
- * the login's scope, already gated.
- *
- * For a user outside Admin (`privateWs` set) EVERY call runs under its
- * private workspace (W7b fix round 1, H2), not only the listed creates: an
- * item any tool makes lands by the route rule, never in Admin, and the
- * database refuses an Admin-only kind outright. Its Admin-only creates are
- * refused here first, with a reply that says why. A user outside Admin in
- * no workspace (`noHome`) has no private workspace: each of its creates is
- * refused here, with a reply that says what to do.
- */
-export function createHomeServer(server: McpServer, opts: CreateHomeOpts): McpServer {
-  const privateWs = opts.privateWs;
-  const noHome = opts.noHome === true && !privateWs;
-  return new Proxy(server, {
-    get(target, prop) {
-      if (prop === 'registerTool') {
-        const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
-        return (name: unknown, config: unknown, cb: unknown) => {
-          if (typeof name !== 'string' || typeof cb !== 'function') {
-            return fn.call(target, name, config, cb);
-          }
-          if (
-            noHome &&
-            (MCP_CREATE_TOOL_SLUGS.has(name) || ADMIN_KIND_CREATE_TOOL_SLUGS.has(name))
-          ) {
-            return fn.call(target, name, config, async () =>
-              refusal(
-                ADMIN_KIND_CREATE_TOOL_SLUGS.has(name)
-                  ? ADMIN_KIND_CREATE_ERROR
-                  : NO_WORKSPACE_CREATE_ERROR,
-              ),
-            );
-          }
-          if (!MCP_CREATE_TOOL_SLUGS.has(name)) {
-            if (!privateWs) return fn.call(target, name, config, cb);
-            const plain = cb as (args: unknown, extra: unknown) => Promise<unknown>;
-            return fn.call(target, name, config, async (args: unknown, extra: unknown) => {
-              if (ADMIN_KIND_CREATE_TOOL_SLUGS.has(name)) return refusal(ADMIN_KIND_CREATE_ERROR);
-              // The same intent, nothing asked: the private fallback.
-              const home = await createHomeIntent(opts.loginId, null, { privateWs });
-              if ('refused' in home) return refusal(home.message);
-              return withCreateHome(home, () => plain(args, extra));
-            });
-          }
-          const handler = cb as (args: unknown, extra: unknown) => Promise<unknown>;
-          const cfg = (config ?? {}) as { inputSchema?: unknown };
-          const wrapped = { ...cfg, inputSchema: withWorkspaceArg(cfg.inputSchema) };
-          return fn.call(target, name, wrapped, async (args: unknown, extra: unknown) => {
-            const input = { ...((args ?? {}) as Record<string, unknown>) };
-            const asked = input[WORKSPACE_ARG];
-            delete input[WORKSPACE_ARG];
-            // THE create-home intent (arch A3c), with the fallback this
-            // connection resolved when it connected.
-            const home = await createHomeIntent(
-              opts.loginId,
-              { from: 'argument', workspace: asked },
-              { privateWs },
-            );
-            if ('refused' in home) return refusal(home.message);
-            const since = new Date(Date.now() - 1000);
-            const run = () => handler(input, extra);
-            const reply = homeNamed(home) ? await withCreateHome(home, run) : await run();
-            return withLanding(reply, since);
-          });
-        };
-      }
-      const v = Reflect.get(target, prop, target) as unknown;
-      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
-    },
-  });
 }

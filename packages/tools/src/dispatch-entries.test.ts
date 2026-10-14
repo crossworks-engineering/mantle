@@ -29,7 +29,6 @@ const NO_CALLER_YET: Readonly<Record<string, string>> = {
   'server/web/app/api/apps/[id]/tool-broker/route.ts': 'A5 step 3b: the app tool broker',
   'server/web/app/s/[token]/tool-broker/route.ts': 'A5 step 3b: the shared app tool broker',
   'server/web/app/api/dev-tools/execute-tool/route.ts': 'A5 step 3b: the dev console',
-  'packages/mcp-core/src/login-surface.ts': "A5 step 4: the owner MCP surface's connector rows",
 };
 
 /** The direct handler calls that are no entry: dispatch itself, and a
@@ -42,10 +41,7 @@ const DIRECT_HANDLER_OK: Readonly<Record<string, string>> = {
 
 /** The entries that call a builtin's handler directly, past dispatch and
  *  the gate, and the step that moves each. */
-const DIRECT_HANDLER_YET: Readonly<Record<string, string>> = {
-  'server/web/lib/api-v1-builtin.ts': 'A5 step 4: the /api/v1 builtin routes (runBuiltinForApi)',
-  'packages/mcp-core/src/register/context.ts': "A5 step 4: the owner MCP surface's builtins",
-};
+const DIRECT_HANDLER_YET: Readonly<Record<string, string>> = {};
 
 /** Product source files (no tests, no build output). */
 function sourceFiles(dir: string): string[] {
@@ -156,6 +152,9 @@ describe('every dispatch entry names its caller (A5 step 3a)', () => {
       'packages/tools/src/dispatch.ts',
       'packages/tools/src/toolsmith/recipes.ts',
       'packages/tools/src/toolsmith/api-tools.ts',
+      // A5 step 4: the owner MCP surface and the /api/v1 builtin routes.
+      'packages/mcp-core/src/gated-tools.ts',
+      'server/web/lib/api-v1-builtin.ts',
       ...Object.keys(NO_CALLER_YET),
     ]) {
       expect(files.has(file), file).toBe(true);
@@ -194,6 +193,10 @@ describe('every dispatch entry names its caller (A5 step 3a)', () => {
         (f) => !(f in DIRECT_HANDLER_OK) && !(f in DIRECT_HANDLER_YET),
       );
       expect(unlisted, 'a direct handler call skips the gate: dispatch it').toEqual([]);
+    });
+
+    it('no entry calls a builtin handler directly any more (A5 step 4)', () => {
+      expect(Object.keys(DIRECT_HANDLER_YET)).toEqual([]);
     });
 
     it('the not-yet-gated direct entries are no dispatch entries too', () => {

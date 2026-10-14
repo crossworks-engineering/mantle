@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_TOOLS, OWNER_ONLY_IN_SCOPE } from '@mantle/tools';
+import type { Tool, ToolHandler } from '@mantle/db';
+import { externalAccessToolSig } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS, MCP_CREATE_TOOL_SLUGS } from './create-home';
 import {
@@ -17,18 +19,34 @@ import {
   isMcpToolReadOnly,
   isPeerRiskyTool,
   mcpInstructionsFor,
-  ownerPeerAllows,
-  preparedAllows,
+  preparedLists,
+  registerPreparedTools,
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
 
-function registered(allow?: (slug: string) => boolean): string[] {
+/** What the surface registers: the anchor's own (no connection), or a
+ *  peer's, listed through the one gate (A5 step 4). */
+function registered(peer?: { write: boolean; riskyAllowed?: readonly string[] }): string[] {
   const out: string[] = [];
   const fakeServer = { registerTool: (name: string) => void out.push(name) };
-  registerMantleTools(fakeServer as never, 'owner-1', {
-    transport: 'http',
-    ...(allow ? { allow } : {}),
+  if (!peer) {
+    registerMantleTools(fakeServer as never, 'owner-1', { transport: 'http' });
+    return out;
+  }
+  registerPreparedTools(fakeServer as never, {
+    kind: 'owner',
+    caller: {
+      role: 'admin',
+      anchorId: 'owner-1',
+      loginId: 'login-1',
+      via: 'peer',
+      write: peer.write,
+      riskyAllowed: peer.riskyAllowed ?? [],
+    },
+    view: null,
+    privateWs: null,
+    connectors: [],
   });
   return out;
 }
@@ -44,7 +62,7 @@ describe('owner surface for a peer', () => {
   });
 
   it('write off: registers only read-only tools, and no risky one', () => {
-    const tools = registered((s) => ownerPeerAllows(s, { write: false }));
+    const tools = registered({ write: false });
     expect(tools.length).toBeGreaterThan(20);
     for (const s of tools) {
       expect(isMcpToolReadOnly(s), s).toBe(true);
@@ -57,7 +75,7 @@ describe('owner surface for a peer', () => {
   });
 
   it('write on: adds the write tools but keeps the risky ones out', () => {
-    const tools = registered((s) => ownerPeerAllows(s, { write: true }));
+    const tools = registered({ write: true });
     for (const s of ['file_upload', 'note_create', 'event_create', 'folder_create']) {
       expect(tools).toContain(s);
     }
@@ -91,9 +109,7 @@ describe('owner surface for a peer', () => {
   });
 
   it('a risky tool comes back only when the owner names it', () => {
-    const tools = registered((s) =>
-      ownerPeerAllows(s, { write: true, riskyAllowed: ['email_send'] }),
-    );
+    const tools = registered({ write: true, riskyAllowed: ['email_send'] });
     expect(tools).toContain('email_send');
     expect(tools).not.toContain('telegram_send');
   });
@@ -105,7 +121,7 @@ describe('owner surface for a peer', () => {
   });
 
   it('write off: no peer egress either', () => {
-    const tools = registered((s) => ownerPeerAllows(s, { write: false }));
+    const tools = registered({ write: false });
     expect(tools.filter((s) => s.startsWith('peer_'))).toEqual([]);
   });
 });
@@ -158,43 +174,43 @@ describe('one surface for every login (W7b): what a scope lists', () => {
 
   it('a scope without Admin: item tools listed, adminOnly and Admin-area tools not', () => {
     const p = prep(member, { holdsAdmin: false, areas: [] });
-    for (const s of ITEM_TOOLS) expect(preparedAllows(p, s), s).toBe(true);
-    for (const s of [...ADMIN_ONLY, ...AREA]) expect(preparedAllows(p, s), s).toBe(false);
+    for (const s of ITEM_TOOLS) expect(preparedLists(p, s), s).toBe(true);
+    for (const s of [...ADMIN_ONLY, ...AREA]) expect(preparedLists(p, s), s).toBe(false);
   });
 
   it('a scope holding Admin: adminOnly tools listed, an area tool only with its area on', () => {
     const full = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
     for (const s of [...ITEM_TOOLS, ...ADMIN_ONLY, ...AREA]) {
-      expect(preparedAllows(full, s), s).toBe(true);
+      expect(preparedLists(full, s), s).toBe(true);
     }
     const noAreas = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: [] });
-    for (const s of ADMIN_ONLY) expect(preparedAllows(noAreas, s), s).toBe(true);
-    for (const s of AREA) expect(preparedAllows(noAreas, s), s).toBe(false);
+    for (const s of ADMIN_ONLY) expect(preparedLists(noAreas, s), s).toBe(true);
+    for (const s of AREA) expect(preparedLists(noAreas, s), s).toBe(false);
   });
 
   it('every ownerOnly builtin is adminOnly unless it is an item tool that runs in scope', () => {
     const p = prep(member, { holdsAdmin: false, areas: [] });
     for (const d of BUILTIN_TOOLS) {
       if (!d.ownerOnly) continue;
-      expect(preparedAllows(p, d.slug), d.slug).toBe(OWNER_ONLY_IN_SCOPE.has(d.slug));
+      expect(preparedLists(p, d.slug), d.slug).toBe(OWNER_ONLY_IN_SCOPE.has(d.slug));
     }
   });
 
   it('a member key or peer is narrowed like an admin one: write switch and risky tools', () => {
     const view = { holdsAdmin: false, areas: [] };
     const key = prep({ ...member, via: 'key', write: false, areas: null }, view);
-    expect(preparedAllows(key, 'search')).toBe(true);
-    expect(preparedAllows(key, 'note_create')).toBe(false);
+    expect(preparedLists(key, 'search')).toBe(true);
+    expect(preparedLists(key, 'note_create')).toBe(false);
     const peerRw = prep({ ...member, via: 'peer', write: true, riskyAllowed: [] }, view);
-    expect(preparedAllows(peerRw, 'note_create')).toBe(true);
+    expect(preparedLists(peerRw, 'note_create')).toBe(true);
     // App code changes are risky for a peer or a key (a published app runs them).
-    expect(preparedAllows(peerRw, 'app_file_write')).toBe(false);
-    expect(preparedAllows(peerRw, 'replay_window')).toBe(false);
+    expect(preparedLists(peerRw, 'app_file_write')).toBe(false);
+    expect(preparedLists(peerRw, 'replay_window')).toBe(false);
   });
 
   it('a refused caller lists nothing', () => {
     const refused: PreparedCallerTools = { kind: 'refused', caller: member, message: 'x' };
-    expect(preparedAllows(refused, 'search')).toBe(false);
+    expect(preparedLists(refused, 'search')).toBe(false);
   });
 
   it('every login is told about its workspaces and where a create lands', () => {
@@ -222,51 +238,52 @@ describe('one surface for every login (W7b): what a scope lists', () => {
     const p = prep(member, { holdsAdmin: false, areas: [] });
     for (const s of SPENDING) {
       expect(spendsOwnerKeys(s), s).toBe(true);
-      expect(preparedAllows(p, s), s).toBe(false);
+      expect(preparedLists(p, s), s).toBe(false);
     }
     for (const d of BUILTIN_TOOLS.filter((x) => x.spends && x.slug !== 'search_chunks')) {
-      expect(preparedAllows(p, d.slug), d.slug).toBe(false);
+      expect(preparedLists(p, d.slug), d.slug).toBe(false);
     }
     // The query embedding of a passage search is not a paid turn.
-    expect(preparedAllows(p, 'search_chunks')).toBe(true);
+    expect(preparedLists(p, 'search_chunks')).toBe(true);
     // A scope holding Admin keeps them (subject to its areas).
     const admin = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
     for (const s of ['web_search_pro', 'generate_image', 'summarize_text', 'invoke_agent']) {
-      expect(preparedAllows(admin, s), s).toBe(true);
+      expect(preparedLists(admin, s), s).toBe(true);
     }
     for (const s of OWNER_KEY_SPENDING_TOOLS) expect(spendsOwnerKeys(s), s).toBe(true);
     // The owner's Mapbox key (W7 integration fix 2, M4).
     expect(spendsOwnerKeys('route_map')).toBe(true);
-    expect(preparedAllows(p, 'route_map')).toBe(false);
-    expect(preparedAllows(admin, 'route_map')).toBe(true);
+    expect(preparedLists(p, 'route_map')).toBe(false);
+    expect(preparedLists(admin, 'route_map')).toBe(true);
   });
 
   it('H2: outside Admin no Admin-only kind is created; task, event and map creates land by the rule', () => {
     const p = prep(member, { holdsAdmin: false, areas: [] });
-    for (const s of ADMIN_KIND_CREATE_TOOL_SLUGS) expect(preparedAllows(p, s), s).toBe(false);
+    for (const s of ADMIN_KIND_CREATE_TOOL_SLUGS) expect(preparedLists(p, s), s).toBe(false);
     for (const s of ['contact_create', 'journal_create', 'location_save']) {
       expect(ADMIN_KIND_CREATE_TOOL_SLUGS.has(s), s).toBe(true);
     }
     for (const s of ['task_create', 'event_create', 'recall_map_create']) {
       expect(MCP_CREATE_TOOL_SLUGS.has(s), s).toBe(true);
-      expect(preparedAllows(p, s), s).toBe(true);
+      expect(preparedLists(p, s), s).toBe(true);
     }
     const admin = prep({ ...member, role: 'admin' }, { holdsAdmin: true, areas: ALL_AREAS });
-    for (const s of ADMIN_KIND_CREATE_TOOL_SLUGS) expect(preparedAllows(admin, s), s).toBe(true);
+    for (const s of ADMIN_KIND_CREATE_TOOL_SLUGS) expect(preparedLists(admin, s), s).toBe(true);
   });
 
   it('H1: run_terminal is listed for no scope without Admin and the settings area', () => {
     expect(
-      preparedAllows(prep(member, { holdsAdmin: false, areas: ALL_AREAS }), 'run_terminal'),
+      preparedLists(prep(member, { holdsAdmin: false, areas: ALL_AREAS }), 'run_terminal'),
     ).toBe(false);
-    expect(preparedAllows(prep(member, { holdsAdmin: true, areas: [] }), 'run_terminal')).toBe(
+    expect(preparedLists(prep(member, { holdsAdmin: true, areas: [] }), 'run_terminal')).toBe(
       false,
     );
   });
 
   it('M3: a read-only OAuth grant lists only the tools that read', () => {
     const p = prep({ ...member, write: false }, { holdsAdmin: false, areas: [] });
-    const listed = registered((s) => preparedAllows(p, s));
+    const listed: string[] = [];
+    registerPreparedTools({ registerTool: (n: string) => void listed.push(n) } as never, p);
     expect(listed.length).toBeGreaterThan(20);
     for (const s of listed) expect(isMcpToolReadOnly(s), s).toBe(true);
     expect(listed).not.toContain('note_create');
@@ -289,14 +306,37 @@ describe('one surface for every login (W7b): what a scope lists', () => {
   });
 
   it('a read-only connection keeps the read-only connector tools it was given (W7 integration fix 2)', () => {
-    // prepareCallerTools keeps a connector row only when the admin marked it
-    // read-only or the connection writes; the registry knows no connector
-    // slug, so its own read-only check must not drop it again.
-    const p = prep({ ...member, write: false }, { holdsAdmin: false, areas: [] });
-    expect(preparedAllows(p, 'mcp_crm_contacts_list', { connector: true })).toBe(true);
-    expect(preparedAllows(p, 'mcp_crm_contacts_list')).toBe(false);
+    // A connector row is listed by its own policy (the gate, A5 step 4): one
+    // the admin marked read-only reads, one unmarked writes; the registry
+    // knows no connector slug, so a name no row of the connection carries
+    // is listed for no one.
+    const row = (toolName: string) =>
+      ({
+        slug: `mcp_crm_${toolName}`,
+        description: 'crm',
+        inputSchema: { type: 'object', properties: {} },
+        handler: { kind: 'mcp', group: 'crm', toolName } satisfies ToolHandler,
+        requiresConfirm: false,
+        externalAccess: null,
+      }) as unknown as Tool;
+    const list = row('contacts_list');
+    const marked = {
+      ...list,
+      externalAccess: {
+        confirmedReadOnlyAt: new Date(0).toISOString(),
+        by: { via: 'web' },
+        handlerSig: externalAccessToolSig(list),
+      },
+    } as Tool;
+    const p = {
+      ...prep({ ...member, write: false }, { holdsAdmin: false, areas: [] }),
+      connectors: [marked, row('contacts_update')],
+    } as PreparedCallerTools;
+    expect(preparedLists(p, 'mcp_crm_contacts_list')).toBe(true);
+    expect(preparedLists(p, 'mcp_crm_contacts_update')).toBe(false);
+    expect(preparedLists(p, 'mcp_crm_other')).toBe(false);
     // Builtins still read only.
-    expect(preparedAllows(p, 'note_create')).toBe(false);
-    expect(preparedAllows(p, 'note_list')).toBe(true);
+    expect(preparedLists(p, 'note_create')).toBe(false);
+    expect(preparedLists(p, 'note_list')).toBe(true);
   });
 });

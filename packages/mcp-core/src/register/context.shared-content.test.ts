@@ -6,29 +6,44 @@
  * connection is not touched by this rule.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BuiltinToolDef, OwnerSurfaceVia, ToolHandlerContext } from '@mantle/tools';
 
 const shared = vi.hoisted(() => ({ othersCanRead: vi.fn(async () => true) }));
-// The one copy of the rule reads @mantle/tools shared-item.ts (A5 step 3a).
+// The one copy of the rule reads @mantle/tools shared-item.ts (A5 step 3a),
+// run by the gate's pre-run slot since A5 step 4.
 vi.mock('../../../tools/src/shared-item', () => shared);
+// No database: the brain reads as not on workspaces, so the call runs as
+// is (mcp-scope.ts).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  brainOnWorkspacesNow: async () => false,
+}));
+
+import {
+  getBuiltin,
+  registerBuiltin,
+  type BuiltinToolDef,
+  type OwnerSurfaceVia,
+  type ToolHandlerContext,
+} from '@mantle/tools';
 
 import { makeRegisterContext } from './context';
 
 const PAGE = '11111111-2222-4333-8444-555555555555';
+const REAL_PAGE_UPDATE = getBuiltin('page_update')!;
 
 function pageUpdate() {
   const handler = vi.fn(async (_i: Record<string, unknown>, _c: ToolHandlerContext) => ({
     ok: true as const,
     output: 'updated',
   }));
+  // page_update's own policy (a key or a peer may not change shared
+  // content), its handler stubbed and no preconditions (no database).
   const def = {
-    slug: 'page_update',
-    name: 'page_update',
-    description: 'probe',
-    inputSchema: { type: 'object', properties: {} },
-    policy: { effect: 'write', spends: 'none', scope: 'any' },
+    ...REAL_PAGE_UPDATE,
+    preconditions: undefined,
     handler,
   } as BuiltinToolDef;
+  registerBuiltin(def);
   return { def, handler };
 }
 

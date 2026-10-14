@@ -2,21 +2,41 @@
  * A tool that throws a database error never hands its text to the MCP client
  * (workspaces W3, defence in depth): a Postgres or drizzle error can carry
  * SQL, parameters, or with a row rule in force something about a row the
- * caller may not read. Any other error is left to the SDK, as before.
+ * caller may not read. Any other error is left to the SDK, as before. Since
+ * A5 step 4 the one registration answers it (gated-tools.ts: step 8 of the
+ * gate, @mantle/tools thrownToolDatabaseError), where addTool's catch did.
  */
 import { describe, expect, it, vi } from 'vitest';
+
+// No database: the brain reads as not on workspaces, so the anchor's call
+// runs as is (mcp-scope.ts).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  brainOnWorkspacesNow: async () => false,
+}));
+
 import { z } from 'zod';
 import { DATABASE_ERROR_PUBLIC, errorMessage } from '@mantle/std';
-import type { BuiltinToolDef } from '@mantle/tools';
-import { addTool, toolDatabaseError } from './tool-input';
+import { registerBuiltin, type BuiltinToolDef } from '@mantle/tools';
+import { toolDatabaseError } from './tool-input';
 import { makeRegisterContext } from './context';
+import { registerGatedTool } from '../gated-tools';
+import { defaultMcpGate } from '../gate-policy';
 
 type Handler = (args: unknown, extra: unknown) => Promise<unknown>;
 
+/** A tool registered through the one registration (a hand-written one,
+ *  `search`), its body `handler`. */
 function registered(handler: Handler): Handler {
   let cb: Handler | undefined;
   const fake = { registerTool: (_n: string, _c: unknown, h: Handler) => (cb = h) };
-  addTool(fake as never, 'search', 'd', { q: z.string() }, handler as never);
+  registerGatedTool(fake as never, defaultMcpGate('owner-1'), 'owner-1', {
+    kind: 'definition',
+    name: 'search',
+    description: 'd',
+    shape: { q: z.string() },
+    run: handler as never,
+  });
   return cb!;
 }
 
@@ -77,10 +97,13 @@ describe('MCP tool errors from the database', () => {
       }) as BuiltinToolDef;
     const ctx = makeRegisterContext({} as never, 'owner-1', 'http');
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const call = (d: BuiltinToolDef) => {
+      registerBuiltin(d);
+      return ctx.callBuiltin(d, {});
+    };
     // The 134 builtins that answer { ok: false, error: errorMessage(err) }.
-    const asIs = (await ctx.callBuiltin(
+    const asIs = (await call(
       def(async () => ({ ok: false, error: `could not save: ${errorMessage(pg)}` })),
-      {},
     )) as { content: Array<{ text: string }> };
     expect(asIs.content[0]!.text).toBe(`Error: ${DATABASE_ERROR_PUBLIC}`);
     // A friendly error of our own over a database cause keeps its words.
@@ -90,16 +113,14 @@ describe('MCP tool errors from the database', () => {
         severity: 'ERROR',
       }),
     });
-    const friendly = (await ctx.callBuiltin(
-      def(async () => ({ ok: false, error: errorMessage(busy) })),
-      {},
-    )) as { content: Array<{ text: string }> };
+    const friendly = (await call(def(async () => ({ ok: false, error: errorMessage(busy) })))) as {
+      content: Array<{ text: string }>;
+    };
     expect(friendly.content[0]!.text).toBe(`Error: ${busy.message}`);
     // A plain tool error is unchanged.
-    const plain = (await ctx.callBuiltin(
-      def(async () => ({ ok: false, error: 'q is required' })),
-      {},
-    )) as { content: Array<{ text: string }> };
+    const plain = (await call(def(async () => ({ ok: false, error: 'q is required' })))) as {
+      content: Array<{ text: string }>;
+    };
     expect(plain.content[0]!.text).toBe('Error: q is required');
     spy.mockRestore();
   });
@@ -121,7 +142,7 @@ describe('the one mapper on every tool exit (arch A3a fix round 3, N4)', () => {
     expect(toolDatabaseError(refused('no_edit'))).toBe(DATABASE_ERROR_PUBLIC);
   });
 
-  it('a thrown refusal (addTool) answers the mapped words', async () => {
+  it('a thrown refusal (the one registration) answers the mapped words', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     for (const [err, words] of [
       [wrapped(hidden()), 'This folder holds items you cannot move.'],
@@ -147,18 +168,20 @@ describe('the one mapper on every tool exit (arch A3a fix round 3, N4)', () => {
       }) as BuiltinToolDef;
     const ctx = makeRegisterContext({} as never, 'owner-1', 'http');
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const call = (d: BuiltinToolDef) => {
+      registerBuiltin(d);
+      return ctx.callBuiltin(d, {});
+    };
     // tree_folder_delete, folder_move, folder_rename: catch and reply.
-    const moved = (await ctx.callBuiltin(
+    const moved = (await call(
       def(async () => ({ ok: false, error: errorMessage(wrapped(hidden())) })),
-      {},
     )) as { content: Array<{ text: string }> };
     expect(moved.content[0]!.text).toBe('Error: This folder holds items you cannot move.');
-    const unread = (await ctx.callBuiltin(
+    const unread = (await call(
       def(async () => ({
         ok: false,
         error: `could not move: ${errorMessage(refused('no_read'))}`,
       })),
-      {},
     )) as { content: Array<{ text: string }> };
     expect(unread.content[0]!.text).toBe('Error: not found');
     spy.mockRestore();

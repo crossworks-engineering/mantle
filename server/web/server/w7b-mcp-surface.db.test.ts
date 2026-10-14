@@ -534,7 +534,7 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       // The keys area is off for this user: not listed, and refused if called.
       expect(listed.has('secret_create')).toBe(false);
       expect(listed.has('api_key_refs')).toBe(false);
-      const refused = await ls.runInOwnerMcpScope(
+      const refused = await ls.runMcpCall(
         admin2,
         'api_key_refs',
         async () => ({ content: [{ type: 'text' as const, text: 'ran' }] }),
@@ -687,15 +687,20 @@ describe.skipIf(!URL)('W7b: one MCP surface for every login', () => {
       await c.close();
     }
     // The database refuses it too: every call of the member runs under its
-    // private workspace, and an Admin-only kind has no home there.
+    // private workspace, and an Admin-only kind has no home there. (Called
+    // by name the gate's Admin step refuses it first, A5 step 4: the handler
+    // runs here inside a write the member may make, note_create's gate, so
+    // the database's own refusal is what is pinned.)
     for (const [slug, args] of [
       ['contact_create', { first_name: `${tag} contact 2`, emails: ['other@example.invalid'] }],
       ['journal_create', { body: `${tag} entry 2`, kind: 'identity' }],
     ] as const) {
       const def = t.getBuiltin(slug)!;
-      const res = (await ls.runInOwnerMcpScope(
+      const gated = await ls.runMcpCall(mem, slug, async () => 'ran', { adminLogin: false });
+      expect(gated, slug).not.toBe('ran');
+      const res = (await ls.runMcpCall(
         mem,
-        slug,
+        'note_create',
         () =>
           m.withCreateHome({ createWs: null, privateWs: memPrivate }, () =>
             def.handler(

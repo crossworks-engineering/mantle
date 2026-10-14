@@ -46,15 +46,16 @@ no grant is used or renewed; it revokes nothing (access matrix T10).
 ## Every call runs in the login's workspaces (W7a, W7b)
 
 No login reads the whole brain. Every call runs in the calling login's
-workspaces, as its own screens do (`packages/mcp-core/src/owner-scope.ts`):
+workspaces, as its own screens do (`packages/mcp-core/src/mcp-scope.ts`):
 an item that lives only in a workspace the login is not in is not found.
-Before a tool runs, its gate (`packages/tools/src/admin-gate.ts`) asks the
-same scope: an Admin-only tool needs a login that is a user of the Admin
-workspace, and a tool that manages the brain (model pools, assistants and
-tool groups, connectors, Telegram, mail, peers, sandboxes, secrets) needs
-that login's matching area switched on. The same rules decide what is
-LISTED (`preparedAllows`): a tool the scope may not call is not on the
-list, and the call is refused anyway.
+Every tool is listed and called through the one gate
+(`packages/mcp-core/src/gated-tools.ts`, the gate's caller in
+`packages/mcp-core/src/gate-policy.ts`), which asks the same scope: an
+Admin-only tool needs a login that is a user of the Admin workspace, and a
+tool that manages the brain (model pools, assistants and tool groups,
+connectors, Telegram, mail, peers, sandboxes, secrets) needs that login's
+matching area switched on. Listing equals calling: a tool the scope may
+not call is not on the list, and the call is refused anyway.
 
 Admin-only: the `ADMIN_ONLY_TOOL_SLUGS` (replay, runs, heartbeats, export,
 the owner's approvals queue, the owner's clock, writing into the owner's
@@ -205,9 +206,9 @@ of its workspaces (`listLoginConnectorTools`). A tool with the admin's
 read-only mark is a read; one without is a write and is offered only with
 the connection's write. A tool that needs a confirmation is never offered.
 A connector tool is in no key area, so only an all-areas key reaches it.
-The call runs in the login's scope and under its create home, on the same
-server as every builtin (`loginToolServer` in
-`packages/mcp-core/src/build-server.ts`), and dispatch checks the connector again
+The call runs in the login's scope and under its create home, registered
+and called through the one gate as every builtin is
+(`packages/mcp-core/src/gated-tools.ts`), and dispatch checks the connector again
 (`connectorScopeRefused`): a resource of the scope's workspaces, and for a
 write that resource's Write on where the login is a Moderator. Every call
 lands an `audit_log` row (`mcp.connector.read` / `mcp.connector.write`)

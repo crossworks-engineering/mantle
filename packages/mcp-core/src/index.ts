@@ -1,24 +1,27 @@
-export {
-  MANTLE_MCP_INSTRUCTIONS,
-  buildMantleMcpServer,
-  filteredServer,
-  registerMantleTools,
-} from './build-server';
+export { MANTLE_MCP_INSTRUCTIONS, buildMantleMcpServer, registerMantleTools } from './build-server';
 export {
   NOT_ON_WORKSPACES_ERROR,
   NO_WORKSPACE_ERROR,
-  ownerScopedServer,
-  runInOwnerMcpScope,
-} from './owner-scope';
+  mcpAdminView,
+  mcpScopeEntry,
+} from './mcp-scope';
 export {
   ADMIN_KIND_CREATE_ERROR,
   ADMIN_KIND_CREATE_TOOL_SLUGS,
   MCP_CREATE_TOOL_SLUGS,
+  NO_WORKSPACE_CREATE_ERROR,
   WORKSPACE_ARG,
-  createHomeServer,
   replyItemIds,
+  withLanding,
   withWorkspaceArg,
 } from './create-home';
+export {
+  registerGatedTool,
+  type McpGate,
+  type McpToolEntry,
+  type ToolCallGuard,
+  type ToolCallResult,
+} from './gated-tools';
 export {
   MCP_HANDWRITTEN_READ_ONLY,
   MCP_WORKSPACE_INSTRUCTIONS,
@@ -31,7 +34,8 @@ export {
   mcpInstructionsFor,
   ownerPeerAllows,
   prepareCallerTools,
-  preparedAllows,
+  preparedKeysOff,
+  preparedLists,
   registerPreparedTools,
   spendsOwnerKeys,
   type McpCaller,
@@ -42,8 +46,11 @@ export {
   KEY_AREA_ERROR,
   OWNER_KEYS_ERROR,
   RISKY_TOOL_ERROR,
+  defaultMcpGate,
+  mcpCreateHomeRule,
   mcpGateCaller,
   mcpToolPolicy,
+  runMcpCall,
 } from './gate-policy';
 export { MCP_TOOL_DEFS, mcpDefinition, type McpToolDef, type McpToolGroup } from './mcp-defs';
 export {

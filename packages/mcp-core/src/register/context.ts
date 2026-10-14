@@ -1,6 +1,7 @@
 /**
  * The closure every registrar shares: the server handle, the owner id, the
- * response-hygiene helpers, and the builtin bridge.
+ * response-hygiene helpers, and the registration of builtins and
+ * hand-written tools through the one gate (gated-tools.ts, A5 step 4).
  *
  * registerMantleTools was one 921-line function whose helpers were captured
  * lexically by every registration in it. Each registrar now destructures this
@@ -13,20 +14,19 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/server';
-import {
-  checkToolPreconditions,
-  keySharedContentRefusal,
-  toolItemWriteRefusal,
-} from '@mantle/tools';
+import type { z } from 'zod';
 import type { BuiltinToolDef, LoginMcpChannel, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
-import { publicToolError } from '@mantle/std';
-import { watchDatabaseErrors } from '@mantle/std/db-watch';
-import { zodShapeFromJsonSchema } from './zod-schema';
-import { addTool } from './tool-input';
 import { mcpDefinition } from '../mcp-defs';
-import { KEY_SHARED_CONTENT_TOOLS } from '../mcp-policy';
-import { withModelImages } from './model-images';
+import {
+  builtinCallerOn,
+  dispatchMcpBuiltin,
+  jsonReply,
+  registerGatedTool,
+  stripVectors,
+  type McpGate,
+} from '../gated-tools';
+import { defaultMcpGate } from '../gate-policy';
 import type { MantleMcpTransport } from '../build-server';
 
 /** The surface every bridged builtin runs under on the MCP server. */
@@ -50,6 +50,9 @@ export function makeRegisterContext(
    *  definition's `optIn`): the Toolsmith writes (build-server.ts reads
    *  MANTLE_MCP_TOOLSMITH_WRITE once). Default on, as the env's default. */
   optIns: { toolsmithWrite: boolean } = { toolsmithWrite: true },
+  /** The connection's side of the gate (registerPreparedTools builds it
+   *  from the prepared connection). Absent: the anchor's own. */
+  gate?: McpGate,
 ) {
   const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
   // The handlers get the connection's login with it: who deletes an app
@@ -70,137 +73,24 @@ export function makeRegisterContext(
     : /^(0|false|off|no)$/i.test(terminalEnv)
       ? false
       : transport === 'stdio';
-  // ─── response hygiene ───────────────────────────────────────────────────────
-  // MCP tool results are serialised straight into the model's context, so they
-  // must NOT leak raw DB internals. A `select()` row carries `embedding` (768
-  // floats ≈ 9 KB) and `searchTsv` (the full tsvector ≈ 50 KB on a big doc) —
-  // pure noise to a reader that blows the context budget (a single `search` hit
-  // measured 125 KB, an `entity_search` for one name 76 KB, ~98% vectors). Strip
-  // those keys from every row before it goes out. See docs/recall-eval.md and the
-  // audit that motivated this.
-  const STRIP_KEYS = new Set(['embedding', 'searchTsv', 'search_tsv']);
-  function stripVectors<T>(value: T): T {
-    if (Array.isArray(value)) return value.map((v) => stripVectors(v)) as unknown as T;
-    if (value && typeof value === 'object') {
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        if (STRIP_KEYS.has(k)) continue;
-        out[k] = stripVectors(v);
-      }
-      return out as T;
-    }
-    return value;
-  }
+  // The connection's side of the gate (gated-tools.ts): what it lists,
+  // who each call runs as. Absent: the anchor's own (stdio, the tests).
+  const callGate: McpGate =
+    gate ?? defaultMcpGate(loginId ?? ownerId, { transport, via, loginNamed: loginId });
 
-  /** Standard JSON tool reply, with vectors/tsvector stripped. */
-  function jsonReply(value: unknown) {
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify(stripVectors(value), null, 2) }],
-    };
-  }
-
-  // `leanNode` lived here: a hand-rolled node projection whose own comment said
-  // it "mirrors the in-process search_nodes builtin so the two tool surfaces
-  // don't drift". They drifted anyway — it never grew the `url` permalink or
-  // the supersession annotation the builtin gained. Its only caller was the
-  // `search` fork; `search` runs the builtin now, so the projection that was
-  // supposed to track it is gone rather than left to rot again.
-
-  /** Bridge a set of in-app `BuiltinToolDef`s onto the MCP server, reusing the
-   *  exact same handlers the in-app agent runs so the two surfaces never drift.
-   *  Handlers get the minimal context `{ ownerId, surface: owner/mcp }`; the
-   *  other `ctx` fields (`step`, `agent`) are optional and the handler degrades
-   *  on its own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
-   *  Binary `artifacts` are dropped (MCP results are text/JSON); tools that also
-   *  persist their output to a node — e.g. `generate_image` → /files — still
-   *  surface the node id in `output`.
-   *
-   *  `opts.skip` gates a def out; `opts.only` restricts to an explicit slug set,
-   *  which is how a group is bridged for DEDUPLICATION without also widening the
-   *  MCP surface with its other members. */
-  /** Run one builtin and shape its result as an MCP reply. Factored out of
-   *  registerBuiltinTools so a tool registered under a DIFFERENT MCP name can
-   *  still run the builtin through the identical path — preconditions, error
-   *  mapping and response hygiene included. `search` is the case: the MCP
-   *  surface has always called it `search`, the builtin is `search_nodes`, and
-   *  the name mismatch is exactly why a hand-written fork of it survived every
-   *  duplicate check we had. */
+  /** Run one builtin for this connection, through dispatch and the one
+   *  gate (A5 step 4): the call of a hand-written tool that runs a builtin
+   *  (`search` runs search_nodes), nested in that tool's own call. */
   async function callBuiltin(def: BuiltinToolDef, args: Record<string, unknown>) {
-    const input = { ...(args ?? {}) };
-    // Declared referential preconditions run first, exactly as
-    // dispatch.ts does for the in-app agent. Without this the MCP surface
-    // is the only one where an id pointing at a missing — or wrong-type —
-    // node reaches the handler and comes back as a bare "not found",
-    // hiding the actual mistake.
-    if (def.preconditions?.length) {
-      const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
-      if (failure && !failure.ok) {
-        return {
-          content: [{ type: 'text' as const, text: `Error: ${failure.error}` }],
-          isError: true,
-        };
-      }
-    }
-    // A write to an item: the scope may make it (W7a fix round 1, M2), as
-    // dispatch.ts asks for the in-app agent.
-    const refused = await toolItemWriteRefusal(def.slug, input, ownerId, undefined, {
-      surface: callSurface,
-    });
-    if (refused) {
-      return { content: [{ type: 'text' as const, text: `Error: ${refused}` }], isError: true };
-    }
-    // The MCP caller holds the owner's credential: it names itself as the
-    // owner (client logins C4), since a missing surface is not the owner.
-    // A peer acting as the owner never confirms for the owner: a level
-    // change it would cause (a move into a shared folder, a page filed in
-    // one) is refused instead of confirmed by the caller's own flag.
-    // An API key acting as the owner (via 'api') holds the same rule.
-    if ((via === 'federation' || via === 'api') && 'confirm' in input) delete input.confirm;
-    // And a key or a peer never changes the content of an item others can
-    // read: what it embeds would become readable to them with no confirm
-    // (M2 audit N3; the peer path is access matrix M3).
-    // The handler gets the very id that was checked (trimmed): a padded id
-    // must not pass the check as "not found" and then reach the item (final
-    // audit F1). A field that is not a UUID is refused outright. The one
-    // rule (@mantle/tools key-shared-content.ts) the gate's pre-run slot
-    // runs too (A5 step 3a).
-    if ((via === 'api' || via === 'federation') && KEY_SHARED_CONTENT_TOOLS.has(def.slug)) {
-      const refusedShared = await keySharedContentRefusal(
+    return dispatchMcpBuiltin(
+      def,
+      { ...(args ?? {}) },
+      {
         ownerId,
-        input,
-        via === 'api' ? 'key' : 'peer',
-      );
-      if (refusedShared) {
-        return {
-          content: [{ type: 'text' as const, text: `Error: ${refusedShared}` }],
-          isError: true,
-        };
-      }
-    }
-    // A tool that turned a database error into its reply text never hands
-    // that text to the client (workspaces W3): the texts errorMessage gave
-    // for database errors during the call are collected and matched.
-    const {
-      value: result,
-      texts,
-      errors,
-    } = await watchDatabaseErrors(() =>
-      def.handler(input, { ownerId: ownerId, surface: callSurface }),
+        surface: callSurface,
+        caller: await builtinCallerOn(callGate, def),
+      },
     );
-    if (!result.ok) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Error: ${publicToolError(result.error, texts, `mcp ${def.slug}`, errors)}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-    // A picture the tool made for the caller (draw_get with image) goes out
-    // as an MCP image block after the JSON.
-    return withModelImages(jsonReply(result.output), result.modelImages);
   }
 
   /** Whether a definition's registration opt-in holds on this box. */
@@ -221,10 +111,24 @@ export function makeRegisterContext(
       // MCP tool, mcp-defs.ts: its own schema and reply) is that definition's.
       if (mcpDefinition(def.slug)) continue;
       if (!optedIn(def)) continue;
-      addTool(server, def.slug, def.description, zodShapeFromJsonSchema(def.inputSchema), (args) =>
-        callBuiltin(def, args),
-      );
+      registerGatedTool(server, callGate, ownerId, { kind: 'builtin', def, surface: callSurface });
     }
+  }
+
+  /** Register one hand-written MCP tool (mcp-defs.ts) through the gate. */
+  function registerDefinition(
+    name: string,
+    description: string,
+    shape: z.ZodRawShape,
+    run: (args: Record<string, unknown>, extra: unknown) => Promise<unknown>,
+  ) {
+    registerGatedTool(server, callGate, ownerId, {
+      kind: 'definition',
+      name,
+      description,
+      shape,
+      run,
+    });
   }
 
   return {
@@ -235,9 +139,11 @@ export function makeRegisterContext(
      *  round 1, M1). */
     loginId,
     transport,
+    gate: callGate,
     stripVectors,
     jsonReply,
     registerBuiltinTools,
+    registerDefinition,
     callBuiltin,
   };
 }

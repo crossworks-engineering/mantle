@@ -18,7 +18,7 @@
  * (packages/files/src/email-attachments.ts).
  */
 import { emailAttachmentFolders, emailAttachmentIds, reachesEmailAttachment } from '@mantle/files';
-import type { ToolCallGuard, ToolCallResult } from './build-server';
+import type { ToolCallGuard, ToolCallResult } from './gated-tools';
 import { mcpPolicySet, toolKeyArea } from './mcp-policy';
 
 const ID_FIELDS = [

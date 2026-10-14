@@ -1,16 +1,16 @@
 /**
- * Run one builtin tool for a /api/v1 route (lib/api-v1.ts), the way MCP
- * runs it: the declared preconditions first, then the handler, as the
- * owner on the `api` path. The route has already checked the caller
- * (getOwnerOr401) and the key's scope (the gate). Errors are the tool's own
- * teaching messages, answered as 400.
- *
- * It calls the handler directly, past dispatch and so the one gate, until
- * A5 step 4 moves it there (packages/tools/src/dispatch-entries.test.ts
- * lists it, so no other direct call is added unseen).
+ * Run one builtin tool for a /api/v1 route (lib/api-v1.ts) through dispatch
+ * and the one gate (workspaces arch A5 step 4), as the owner on the `api`
+ * path: the tool's declared policy, its preconditions and the items its
+ * write names (the gate's item pre-check), then the handler. The route has
+ * already checked the caller (getOwnerOr401) and the key's scope (the HTTP
+ * gate, A4), so the call names the process caller of a route
+ * (apiV1Caller): no key or peer narrowing past what the request's own gate
+ * judged. Errors are the tool's own teaching messages, answered as 400.
  */
 import { NextResponse } from '@/server/http-compat';
-import { checkToolPreconditions, getBuiltin } from '@mantle/tools';
+import { apiV1Caller, dispatchTool, getBuiltin } from '@mantle/tools';
+import type { Tool } from '@mantle/db';
 import { hiddenFromKey } from './api-v1';
 
 /** The id arguments a v1 route passes a builtin: each must be an item the
@@ -30,13 +30,12 @@ export async function runBuiltinForApi(
   if ((await hiddenFromKey(ownerId, ids)).size > 0) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  if (def.preconditions?.length) {
-    const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
-    if (failure && !failure.ok) {
-      return NextResponse.json({ error: failure.error }, { status: 400 });
-    }
-  }
-  const result = await def.handler(input, { ownerId, surface: { kind: 'owner', via: 'api' } });
+  const row = { slug: def.slug, handler: { kind: 'builtin', ref: def.slug } } as unknown as Tool;
+  const result = await dispatchTool(row, input, {
+    ownerId,
+    surface: { kind: 'owner', via: 'api' },
+    caller: apiV1Caller(),
+  });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result.output, { status });
 }

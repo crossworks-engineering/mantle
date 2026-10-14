@@ -159,6 +159,7 @@ export {
   gateCheck,
   gateLists,
   hasPolicySource,
+  lookupPolicy,
   registerNarrower,
   registerPolicySource,
   registerPreRunCheck,

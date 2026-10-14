@@ -1,6 +1,7 @@
 /**
- * How every Mantle tool goes onto an `McpServer`: a zod raw shape, wrapped so
- * the JSON Schema `tools/list` advertises is the one SDK 1.x advertised.
+ * The input schema every Mantle tool goes onto an `McpServer` with (the one
+ * registration, gated-tools.ts): a zod raw shape, wrapped so the JSON
+ * Schema `tools/list` advertises is the one SDK 1.x advertised.
  *
  * SDK 2.x converts a tool's input schema itself, with zod's draft-2020-12
  * output, so a plain `z.object(shape)` would change every schema the
@@ -12,8 +13,8 @@
  */
 
 import { z } from 'zod';
-import { databaseErrorPublic, isDatabaseError } from '@mantle/std';
-import type { McpServer, StandardSchemaWithJSON, ToolCallback } from '@modelcontextprotocol/server';
+import { databaseErrorPublic } from '@mantle/std';
+import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 
 export type ShapeSchema<S extends z.ZodRawShape> = StandardSchemaWithJSON<
   z.input<z.ZodObject<S>>,
@@ -36,36 +37,10 @@ export function toolInputSchema<S extends z.ZodRawShape>(shape: S): ShapeSchema<
   };
 }
 
-/** Register one tool: the SDK 1.x `server.tool(name, description, shape,
- *  handler)` call, on the 2.x `registerTool`. */
-export function addTool<S extends z.ZodRawShape>(
-  server: McpServer,
-  name: string,
-  description: string,
-  shape: S,
-  handler: ToolCallback<ShapeSchema<S>>,
-): void {
-  // A tool that throws a database error never hands its text to the client
-  // (SQL, parameters, or with a row rule in force something about a row the
-  // caller may not read: workspaces W3). Logged in full; any other error is
-  // left to the SDK as before.
-  const guarded = (async (args: never, extra: never) => {
-    try {
-      return await (handler as (a: never, e: never) => unknown)(args, extra);
-    } catch (err) {
-      if (!isDatabaseError(err)) throw err;
-      console.error(`[mcp ${name}] database error:`, err);
-      return {
-        content: [{ type: 'text' as const, text: `Error: ${toolDatabaseError(err)}` }],
-        isError: true,
-      };
-    }
-  }) as unknown as ToolCallback<ShapeSchema<S>>;
-  server.registerTool(name, { description, inputSchema: toolInputSchema(shape) }, guarded);
-}
-
 /** What a tool says for a database error: the one mapper
- *  (databaseErrorPublic, @mantle/std), the same on every exit. */
+ *  (databaseErrorPublic, @mantle/std), the same on every exit. A thrown one
+ *  is answered by the one registration (gated-tools.ts, through
+ *  @mantle/tools thrownToolDatabaseError) since A5 step 4. */
 export function toolDatabaseError(err: unknown): string {
   return databaseErrorPublic(err);
 }

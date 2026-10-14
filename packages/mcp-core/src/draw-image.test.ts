@@ -45,32 +45,23 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   readableDrawSvg: h.readableDrawSvg,
 }));
 
-vi.mock('@mantle/tools', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@mantle/tools')>();
-  return {
-    ...real,
-    // No database here: the id precondition is the dispatcher's concern.
-    checkToolPreconditions: vi.fn(async () => null),
-    // The login path's dispatcher, minus the DB-backed preconditions: the
-    // real builtin with the context the login path built.
-    dispatchTool: vi.fn(
-      async (row: { slug: string }, args: Record<string, unknown>, ctx: unknown) =>
-        real.getBuiltin(row.slug)!.handler(args, ctx as never),
-    ),
-  };
-});
+// No database here: the id precondition is the gate's item pre-check's
+// concern (the real dispatch and gate run every call, A5 step 4).
+vi.mock('../../tools/src/preconditions', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  checkToolPreconditions: vi.fn(async () => null),
+}));
 
 import { registerMantleTools } from './build-server';
 import { keyAreasAllowTool } from './mcp-policy';
-import { keyEmailGuard } from './key-email-guard';
 import {
   ownerPeerAllows,
-  preparedAllows,
+  preparedLists,
   registerPreparedTools,
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
-import { NOT_ON_WORKSPACES_ERROR } from './owner-scope';
+import { NOT_ON_WORKSPACES_ERROR } from './mcp-scope';
 
 const prepared = (caller: McpCaller): PreparedCallerTools => ({
   kind: 'owner',
@@ -89,12 +80,22 @@ const SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200">' +
   '<rect x="10" y="10" width="100" height="50" fill="#1971c2"/></svg>';
 
-function ownerSurface(opts: Parameters<typeof registerMantleTools>[2] = {}): Map<string, Handler> {
+function ownerSurface(): Map<string, Handler> {
   const out = new Map<string, Handler>();
   const fake = {
     registerTool: (name: string, _c: unknown, handler: Handler) => void out.set(name, handler),
   };
-  registerMantleTools(fake as never, 'anchor', { transport: 'http', ...opts });
+  registerMantleTools(fake as never, 'anchor', { transport: 'http' });
+  return out;
+}
+
+/** The surface a connection gets (registerPreparedTools). */
+function connectionSurface(caller: McpCaller): Map<string, Handler> {
+  const out = new Map<string, Handler>();
+  const fake = {
+    registerTool: (name: string, _c: unknown, handler: Handler) => void out.set(name, handler),
+  };
+  registerPreparedTools(fake as never, prepared(caller));
   return out;
 }
 
@@ -130,21 +131,23 @@ describe('draw_get picture on MCP', () => {
       write: false,
       areas,
     });
-    expect(preparedAllows(prepared(key(null)), 'draw_get')).toBe(true);
-    expect(preparedAllows(prepared(key(['files', 'search'])), 'draw_get')).toBe(false);
-    const limited = ownerSurface({
-      via: 'api',
-      allow: (s) => keyAreasAllowTool(s, ['files']),
-      guard: keyEmailGuard('anchor'),
-    });
+    expect(preparedLists(prepared(key(null)), 'draw_get')).toBe(true);
+    expect(preparedLists(prepared(key(['files', 'search'])), 'draw_get')).toBe(false);
+    // A key with Files only: the email guard on, and no draw_get.
+    const limited = connectionSurface(key(['files']));
+    expect(limited.has('file_list')).toBe(true);
     expect(limited.has('draw_get')).toBe(false);
   });
 
   it('peer bound to the owner: draw_get with its picture, read-only', async () => {
     expect(ownerPeerAllows('draw_get', { write: false })).toBe(true);
-    const peer = ownerSurface({
-      via: 'federation',
-      allow: (s) => ownerPeerAllows(s, { write: false }),
+    const peer = connectionSurface({
+      role: 'admin',
+      anchorId: 'anchor',
+      loginId: 'anchor',
+      via: 'peer',
+      write: false,
+      riskyAllowed: [],
     });
     const reply = await peer.get('draw_get')!({ id: ID, image: true });
     expect(reply.content.map((c) => c.type)).toEqual(['text', 'image']);

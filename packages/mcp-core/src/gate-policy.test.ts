@@ -1,12 +1,28 @@
 /**
- * The owner MCP surface through the one gate (arch A3c): for every tool the
- * surface registers and every kind of caller, the gate's listing (steps 3
- * to 5, with the policies gate-policy.ts registers and the narrowers of
- * @mantle/tools gate-narrowers.ts) is what preparedAllows lists today, and
- * the call runs exactly when the listing shows it. The contract A5 moves MCP registration onto. No database: each
+ * The owner MCP surface through the one gate (arch A3c; since A5 step 4 the
+ * surface registers through it, gated-tools.ts): for every tool the surface
+ * has and every kind of caller, what registerPreparedTools registers is
+ * exactly what the gate lists (steps 3 to 5, with the policies
+ * gate-policy.ts registers and the narrowers of @mantle/tools
+ * gate-narrowers.ts), and the call runs exactly when the listing shows it.
+ * That the listing is the one before A5 step 4 is the snapshot's
+ * (mcp-surface-snapshot.test.ts, tools-list.matrix.json). No database: each
  * caller carries the create-home fallback its connection resolved.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Each call enters the login's scope (mcp-scope.ts): one workspace, no
+// database (the scope entry is the gate's step 3, pinned elsewhere).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  brainOnWorkspacesNow: async () => true,
+  loginScopeFor: async (loginId: string) => ({
+    kind: 'user',
+    loginId,
+    ws: ['10000000-0000-4000-8000-000000000001'],
+    modWs: [],
+  }),
+}));
 import {
   enterCall,
   gateCheck,
@@ -16,12 +32,19 @@ import {
   type Tool,
   type ToolHandler,
 } from '@mantle/db';
-import { BUILTIN_TOOLS, externalAccessToolSig, type AdminGateView } from '@mantle/tools';
+import {
+  BUILTIN_TOOLS,
+  externalAccessToolSig,
+  mcpBuiltinToolRef,
+  type AdminGateView,
+} from '@mantle/tools';
+import { mcpDefinition } from './mcp-defs';
+import { NO_WORKSPACE_CREATE_ERROR } from './create-home';
 import { registerMantleTools } from './build-server';
 import { mcpGateCaller, mcpToolPolicy } from './gate-policy';
 import {
-  callerAreasAllow,
-  preparedAllows,
+  preparedLists,
+  registerPreparedTools,
   type McpCaller,
   type PreparedCallerTools,
 } from './login-surface';
@@ -104,24 +127,37 @@ describe('the MCP tool policy', () => {
   });
 });
 
-describe('listing through the gate equals the listing today (preparedAllows)', () => {
+describe('what the surface registers is what the gate lists (A5 step 4)', () => {
   const names = registered();
-  const refOf = (slug: string): PolicyRef => ({ kind: 'mcp-tool', name: slug });
+  /** The ref the surface lists a tool by: a hand-written definition's, a
+   *  builtin's (the builtin it runs). */
+  const refOf = (slug: string): PolicyRef =>
+    mcpDefinition(slug) ? { kind: 'mcp-tool', name: slug } : mcpBuiltinToolRef(slug, slug);
+  const registeredFor = (p: PreparedCallerTools): string[] => {
+    const out: string[] = [];
+    registerPreparedTools({ registerTool: (n: string) => void out.push(n) } as never, p, {
+      transport: 'stdio',
+    });
+    return out;
+  };
 
   it('for every registered tool and every connection', () => {
     expect(names.length).toBeGreaterThan(200);
     let cells = 0;
     for (const p of preparedMatrix()) {
       const caller = mcpGateCaller(p)!;
+      const listed = new Set(registeredFor(p));
       for (const slug of names) {
-        expect(gateLists(caller, refOf(slug)), `${label(p)} ${slug}`).toBe(preparedAllows(p, slug));
+        const lists = gateLists(caller, refOf(slug));
+        expect(listed.has(slug), `${label(p)} ${slug}`).toBe(lists);
+        expect(preparedLists(p, slug), `${label(p)} ${slug}`).toBe(lists);
         cells += 1;
       }
     }
     expect(cells).toBeGreaterThan(10_000);
   });
 
-  it('for the connector tools a connection was given (marked, or the connection writes)', () => {
+  it('for the connector tools of the login: marked, or the connection writes', () => {
     const handler: ToolHandler = { kind: 'mcp', group: 'crm', toolName: 'contacts_list' };
     const base = {
       slug: 'mcp_crm_contacts_list',
@@ -141,20 +177,23 @@ describe('listing through the gate equals the listing today (preparedAllows)', (
     } as Tool;
     for (const p of preparedMatrix()) {
       if (p.kind !== 'owner') continue;
-      const caller = mcpGateCaller(p)!;
       for (const [row, readOnly] of [
         [base, false],
         [marked, true],
       ] as const) {
-        // What prepareCallerTools keeps, then what registerPreparedTools lists.
-        const today =
+        const withRow = { ...p, connectors: [row] };
+        const caller = mcpGateCaller(withRow)!;
+        // What prepareCallerTools kept, then registerPreparedTools listed,
+        // before A5 step 4: the row when it reads or the connection writes,
+        // and only for an all-areas key (a connector is in no key area).
+        const before =
           (readOnly || p.caller.write) &&
-          callerAreasAllow(row.slug, p.caller) &&
-          preparedAllows(p, row.slug, { connector: true });
+          (p.caller.areas ?? null) === null &&
+          (p.caller.via === 'oauth' || p.caller.write);
         const ref: PolicyRef = { kind: 'runtime-tool', name: row.slug, row };
-        expect(gateLists(caller, ref), `${label(p)} ${readOnly ? 'marked' : 'unmarked'}`).toBe(
-          today,
-        );
+        const lists = gateLists(caller, ref);
+        expect(lists, `${label(p)} ${readOnly ? 'marked' : 'unmarked'}`).toBe(before);
+        expect(registeredFor(withRow).includes(row.slug)).toBe(lists);
       }
     }
   });
@@ -169,7 +208,14 @@ describe('calling through the gate equals listing', () => {
         const ref: PolicyRef = { kind: 'mcp-tool', name: slug };
         const listed = gateCheck(caller, ref);
         const called = await enterCall(caller, ref, async () => 'ran');
-        if (listed === null) {
+        // A connection with no home for an item lists its creates and
+        // refuses each at step 6, with a reply that says why (W7b fix round
+        // 2): the one call the listing does not foresee.
+        const noHome = !!caller.createHome?.refuseCreates && !!mcpToolPolicy(ref)?.creates;
+        if (listed === null && noHome) {
+          expect(called.ok, `${label(p)} ${slug}`).toBe(false);
+          if (!called.ok) expect(called.refusal.toolText).toBe(NO_WORKSPACE_CREATE_ERROR);
+        } else if (listed === null) {
           expect(called, `${label(p)} ${slug}`).toEqual({ ok: true, value: 'ran' });
         } else {
           expect(called.ok, `${label(p)} ${slug}`).toBe(false);
@@ -183,7 +229,7 @@ describe('calling through the gate equals listing', () => {
 describe('one no-workspace refusal (fix round 2, L-a)', () => {
   it("the gate's no-scope refusal is the owner MCP surface's, in today's words", async () => {
     const { NO_SCOPE_ERROR } = await import('@mantle/std');
-    const { NO_WORKSPACE_ERROR } = await import('./owner-scope');
+    const { NO_WORKSPACE_ERROR } = await import('./mcp-scope');
     expect(NO_WORKSPACE_ERROR).toBe(NO_SCOPE_ERROR);
     expect(NO_WORKSPACE_ERROR).toBe(
       'This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one.',

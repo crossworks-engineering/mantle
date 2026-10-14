@@ -20,13 +20,13 @@
   "brainOnWorkspacesCalls": 12,
   "brainOnWorkspacesFiles": 7,
   "adminReadsFiles": 2,
-  "readPathWrites": 9,
+  "readPathWrites": 10,
   "store_tabledb_files": 1,
   "store_objectstore_files": 4,
   "store_appdb_files": 5,
   "_notes": {
     "brainOnWorkspacesCalls": "raised 11 to 12 (files 6 to 7) in A1: listDueReminders (packages/content/src/events.ts) must read in the owner scope on a workspaces brain even when that scope is empty, and keep the old rule only off workspaces. A7 removes the call with the switch-over code.",
-    "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now.",
+    "readPathWrites": "raised 7 to 9 in A3a: a public link's view counter (content shares.ts) and the Recall prompt embeddings a reader's recall_match heals (content recall.ts) were writes inside read paths the A2a inventory did not name; the read-only refusal would refuse both, so each is named and pinned now. Raised 9 to 10 in A5 step 4: app_data_schema and app_data_query provision the app's database registry row, its schema and its viewer salt (app_databases, an item table) on a login's own MCP, which runs a read read-only since step 4; the provisioning is named (repair:app-db) rather than moved, so the reads answer as before.",
     "store_appdb_files": "A3b counts the app database WRITE API (the SQL runner's writing functions) as well as APP_DB_DIR: 3 to 5 is the measure widening (app-package.ts adopts into a temp file; history-files.ts copied snapshots; A3b part 2 moved that copy into the snapshot broker, snapshot-broker.ts), not a new writer.",
     "store_tabledb_files": "A3b: the tables write API moved to @mantle/tabledb/write, which only the tables broker imports (29 importers of the whole package before).",
     "store_objectstore_files": "A3b: the object store write API moved to @mantle/storage/write (17 importers of the whole package before, readers included). A3b part 2: 5 to 4, email attachments and drive files through the files broker (file-broker.ts)."

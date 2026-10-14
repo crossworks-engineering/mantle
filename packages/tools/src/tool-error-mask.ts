@@ -9,10 +9,12 @@
  * the detail.
  *
  * The tool loop masks a member's, a client's or any scoped turn's calls
- * with it; dispatch masks an MCP connection's (dormant until the owner MCP
- * surface dispatches, A5 step 4).
+ * with it; dispatch masks an MCP connection's (A5 step 4). An error an MCP
+ * call throws is answered by thrownToolDatabaseError, step 8 of the gate
+ * for the throws the gate's mapper does not read (the one place the owner
+ * MCP surface's registration catch, once tool-input.ts's, now asks).
  */
-import { publicToolError } from '@mantle/std';
+import { databaseErrorPublic, isDatabaseError, publicToolError } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
 import type { ToolHandlerResult } from './types';
 
@@ -31,4 +33,16 @@ export async function maskToolDatabaseErrors(
     };
   }
   return outcome;
+}
+
+/**
+ * What an MCP call says for an error thrown to its surface (A5 step 4): a
+ * database error in the one mapper's words (databaseErrorPublic; logged in
+ * full under `where`), or null: any other error goes on to the SDK, which
+ * answers its message, as the surface always has.
+ */
+export function thrownToolDatabaseError(where: string, err: unknown): string | null {
+  if (!isDatabaseError(err)) return null;
+  console.error(`[${where}] database error:`, err);
+  return databaseErrorPublic(err);
 }

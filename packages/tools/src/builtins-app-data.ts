@@ -28,7 +28,7 @@
  * `pre_mcp_write` snapshot first: one restore undoes it. If that snapshot
  * cannot be taken, the write is refused.
  */
-import { asSystem } from '@mantle/db';
+import { asSystem, runReadPathWrite } from '@mantle/db';
 import {
   getMcpDataApp,
   listMcpDataApps,
@@ -276,13 +276,18 @@ export const app_data_schema: BuiltinToolDef = {
     try {
       const app = await reach(ctx, who, appId);
       if (!app) return { ok: false, error: NOT_FOUND };
-      const details = await asSystem(
-        () =>
-          appDbTableDetails(ctx.ownerId, app.id, {
-            callerKey: callerKey(who),
-            schema: app.manifest.sqlite,
-          }),
-        'app-data',
+      // A read that provisions the app's database (its registry row, its
+      // declared schema): a named read-path write (A5 step 4), so a read
+      // on a read-only actor still brings the app up.
+      const details = await runReadPathWrite('repair:app-db', () =>
+        asSystem(
+          () =>
+            appDbTableDetails(ctx.ownerId, app.id, {
+              callerKey: callerKey(who),
+              schema: app.manifest.sqlite,
+            }),
+          'app-data',
+        ),
       );
       recordAppAccess({
         ownerId: ctx.ownerId,
@@ -356,13 +361,17 @@ export const app_data_query: BuiltinToolDef = {
         detail: { ...logDetail(who), op: 'query' },
       });
       try {
-        const rows = await asSystem(
-          () =>
-            appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
-              callerKey: callerKey(who),
-              viewer: viewerOf(who),
-            }),
-          'app-data',
+        // The query provisions the app's database and its viewer salt
+        // first: a named read-path write (A5 step 4), as app_data_schema.
+        const rows = await runReadPathWrite('repair:app-db', () =>
+          asSystem(
+            () =>
+              appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
+                callerKey: callerKey(who),
+                viewer: viewerOf(who),
+              }),
+            'app-data',
+          ),
         );
         ctx.step?.setOutput({ rows: rows.length });
         return { ok: true, output: { rows, row_count: rows.length, note: DATA_NOTE } };
