@@ -252,11 +252,12 @@ export default tseslint.config(
     rules: { 'mantle-guards/no-guard-calls': 'error' },
   },
   {
-    // One egress fetch (A10 part 1, docs/egress.md): the packages that fetch
-    // outside URLs (tools, calendar, content) call no bare fetch( outside
-    // the fixed-host files the rule file lists with their reasons.
-    files: ['packages/**/*.{ts,tsx}'],
-    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    // One egress fetch (A10 part 1, docs/egress.md): product code under
+    // packages/ and server/{web,api}/ uses the platform fetch only in the
+    // files the rule file lists (the inventory), each with its kind of host
+    // and reason; every other fetch goes through the egress fetch.
+    files: ['packages/**/*.{ts,tsx,mts,mjs,js}', 'server/{web,api}/**/*.{ts,tsx,mts,mjs,js}'],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/scripts/**'],
     plugins: { 'mantle-egress': mantleEgressPlugin },
     rules: { 'mantle-egress/no-bare-fetch': 'error' },
   },

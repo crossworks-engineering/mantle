@@ -170,14 +170,48 @@ over 32 MB on one federation call errors instead of reading as empty.
 
 ### The pins
 
-- `eslint-rules/no-bare-fetch.mjs` (`mantle-egress/no-bare-fetch`): no bare
-  `fetch(` or `globalThis.fetch(` in `@mantle/tools`, `@mantle/calendar` and
-  `@mantle/content` outside three fixed-host files, each listed with its
-  reason (Mapbox, the OpenRouter Data API, sandboxd).
-  `eslint-rules/no-bare-fetch.test.ts` holds the list to what the repo
-  has.
+- `eslint-rules/no-bare-fetch.mjs` (`mantle-egress/no-bare-fetch`): all
+  product code under `packages/` and `server/{web,api}/` (not tests, not
+  scripts) uses the platform fetch only in the files the rule lists, its
+  inventory (`BARE_FETCH_ALLOWED`, 32 files). Each entry names the kind of
+  host it reaches (a fixed provider host, owner config, same-origin
+  internal, a URL a fixed provider returned, or the fetch layer itself) and
+  why. The rule flags a bare `fetch(`, `fetch` kept or passed as a value (an
+  alias), and `globalThis.fetch`, `window.fetch`, `self.fetch` or
+  `globalThis['fetch']`, called or not; `typeof fetch` in a type is not a
+  use. `eslint-rules/no-bare-fetch.test.ts` holds the inventory to exactly
+  the files that use the platform fetch.
 - The scoreboard (`scripts/arch-scoreboard.ts`) counts the bare fetch sites
-  in those packages, `bareFetchSites`: 12 before the move, pinned at 5.
+  in tools, calendar and content, `bareFetchSites`: 12 before the move,
+  pinned at 5.
+
+### Config URLs: trust levels
+
+The inventory's "owner config" and "provider-returned" entries, and the
+config-URL fetches that run through the provider pool (`providerFetch`),
+are not on the egress fetch. Each fetches a URL the owner or an admin set,
+or one a fixed provider returned, never one a user message, a model or a
+remote document chose:
+
+| Fetch | Where | Trust |
+| --- | --- | --- |
+| custom chat, agent and AI worker base URLs | `packages/voice` (provider pool) | owner config: a local model on a LAN or tailnet address on purpose |
+| `/api/embedding/test` (`probeEmbeddingRoute`), the embedder probes | `packages/embeddings`, `server/web/lib/integrity/capabilities.ts`, `system-health.ts`, `services.ts` | owner config: the embedding base URL (a LAN or tailnet embedder on purpose) |
+| onboarding Azure probe | `server/web/lib/onboarding-steps.ts` | owner config: the Azure base URL the owner types in during onboarding |
+| IMAP and SMTP | `packages/email` (sockets, not fetch) | owner config: the mail host the owner set; not an HTTP fetch, so outside this layer |
+| Microsoft Graph download URL | `packages/microsoft/src/drives/sync.ts` | provider-returned: the pre-authenticated URL in Graph's own answer |
+| xAI returned image URL | `packages/voice/src/adapters/xai-image.ts` | moved onto the egress fetch (fix round 1): any URL in the answer, so it is checked, with 60 s and 32 MB |
+
+### Calendar feeds on the LAN
+
+A calendar feed served from the box's own network (a LAN CalDAV server, a
+feed on a private IP) is refused: the ICS fetch does not take `allowLan`,
+because the feed URL can come from a shared link or an invite, not only
+from the owner. When a real need appears, the planned answer is an operator
+allow-list read by the egress layer (an environment variable such as
+`MANTLE_EGRESS_LAN_ALLOW` naming the hosts or ranges a box may reach), not
+`allowLan` per caller. Link-local and the cloud metadata addresses stay
+refused whatever that list says.
 
 ## The background fence (fold 4)
 
@@ -238,9 +272,19 @@ the fenced text more cautiously). No paid model eval was run for this
 change; `pnpm -C server/web eval:recall` and `pnpm -C server/api bench:memory` are the checks to run
 on the dev box before rolling it wider.
 
+The chat archive summary (`packages/runtime/src/agent/chat-archive.ts`,
+`buildArchiveSummaryMessages`) fences the thread since fix round 1: the
+summary it writes re-enters later prompts. Like the conversation
+summarizer, its prompt is built by `buildChatMessages`, whose standing
+data-boundary rule explains the fence.
+
 **Not fenced here**, for a later pass: the fact classifier
 (`server/api/src/agent/extract/facts.ts`) reads candidate facts (the
 extractor's own output, already from fenced input) and the existing facts;
-the chat archive summary (`packages/runtime/src/agent/chat-archive.ts`) and
-the worker RPC (`server/web/lib/ai-worker-rpc.ts`) also build model input
-from stored text and are the next candidates.
+the worker RPC (`server/web/lib/ai-worker-rpc.ts`) builds model input from
+stored text; the follow-up suggester (`server/api/src/turn-suggestion.ts`)
+reads the turn's user text and reply, and the status narrator
+(`server/api/src/turn-narration.ts`) reads a status line that can carry a
+search term or a tool's topic. Both write only a short line for the live
+UI (a chip, a thought-trail line), nothing that is stored as memory or
+read by a later prompt, so they are the next candidates, not urgent.

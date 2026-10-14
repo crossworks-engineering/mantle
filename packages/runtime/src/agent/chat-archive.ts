@@ -38,7 +38,7 @@ import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/conten
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import { chatWithFailover, resolveChatKey, resolveChatRoutes } from './chat-failover';
-import { buildChatMessages, flattenChatMessagesForAdapter } from './messages';
+import { buildChatMessages, fenceRetrieved, flattenChatMessagesForAdapter } from './messages';
 import { recordChatUsage } from './llm-usage';
 
 /** A reply is still running in this chat: archiving now would split it. */
@@ -332,17 +332,7 @@ export async function summarizeChatThread(
     },
     async () => {
       const routes = resolveChatRoutes(worker);
-      const messages = buildChatMessages({
-        model: worker.model,
-        provider: worker.provider,
-        systemPrompt: ARCHIVE_SUMMARY_PROMPT,
-        personaNotes: [],
-        facts: [],
-        digests: [],
-        contentHits: [],
-        history: [],
-        newUserText: input,
-      });
+      const messages = buildArchiveSummaryMessages(worker, input);
       const reply = await step(
         {
           name: 'llm_archive_summary',
@@ -452,6 +442,28 @@ export function fallbackThreadTitle(firstInbound: string | null, startedAt: Date
   const line = (firstInbound ?? '').replace(/\s+/g, ' ').trim();
   if (line) return line.length > 60 ? `${line.slice(0, 57).trimEnd()}...` : line;
   return `Chat of ${startedAt.toISOString().slice(0, 10)}`;
+}
+
+/** The summary call's messages. The thread carries other people's words
+ *  and tool output, and the summary re-enters later prompts: the input is
+ *  fenced, its forged markers defanged (A10 part 1 fix round 1), and
+ *  buildChatMessages' standing data-boundary rule explains the fence, as
+ *  for the conversation summarizer. */
+export function buildArchiveSummaryMessages(
+  worker: { model: string; provider: string },
+  input: string,
+): ReturnType<typeof buildChatMessages> {
+  return buildChatMessages({
+    model: worker.model,
+    provider: worker.provider,
+    systemPrompt: ARCHIVE_SUMMARY_PROMPT,
+    personaNotes: [],
+    facts: [],
+    digests: [],
+    contentHits: [],
+    history: [],
+    newUserText: fenceRetrieved(input),
+  });
 }
 
 /** The summary call's input: the thread's digests, then its undigested last

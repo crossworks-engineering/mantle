@@ -25,7 +25,13 @@ import {
   XAI_IMAGE_DEPRECATED_MODELS,
   XAI_IMAGE_MODELS,
 } from '../catalogs/xai';
+import { egressFetch } from '@mantle/std/egress';
 import { providerFetch } from './provider-fetch';
+
+/** A returned image URL: how long its fetch may take and how much it may
+ *  read. */
+const RETURNED_IMAGE_TIMEOUT_MS = 60_000;
+const RETURNED_IMAGE_MAX_BYTES = 32 * 1024 * 1024;
 
 type XaiImageResponse = {
   data?: Array<{
@@ -89,7 +95,15 @@ export const xaiImageAdapter: ImageGenDispatcher = {
     const first = parsed.data?.[0];
     if (!first?.b64_json) {
       if (first?.url) {
-        const imgRes = await providerFetch(first.url);
+        // A URL in the provider's answer, not a fixed host: it goes through
+        // the one egress fetch (A10 part 1 fix round 1), so a URL that points
+        // into private or metadata space is refused, and the read has a
+        // deadline and a cap.
+        const imgRes = await egressFetch(
+          first.url,
+          {},
+          { timeoutMs: RETURNED_IMAGE_TIMEOUT_MS, maxBytes: RETURNED_IMAGE_MAX_BYTES },
+        );
         if (!imgRes.ok) {
           throw new Error(`xai-image: failed to fetch returned URL (${imgRes.status})`);
         }
