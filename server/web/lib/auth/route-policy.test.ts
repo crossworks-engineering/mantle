@@ -38,7 +38,7 @@ import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { ACCESS_KEY_AREAS, type AccessKeyArea } from '../access-keys';
 import { API_V1_ROUTES, keyMayCall, matchApiV1Route } from '../api-v1';
 import { isPublicPath } from '../auth-constants';
-import { isAnyLoginRoute } from './any-login-routes';
+import { TELEGRAM_LOGIN_ROUTES, isAnyLoginRoute } from './any-login-routes';
 import { isMemberRoute } from './member-routes';
 import {
   CREATE_ROUTES,
@@ -122,12 +122,17 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
     };
     for (const row of table.values()) {
       const { method: m, pattern: p, key } = row;
-      check(key, 'scope', row.scope, routeClass(p));
+      // The Telegram chat rows (and the HEADs their GET handler answers)
+      // are the login's own chats, whatever their prefix (A4 step 3b).
+      const scope = TELEGRAM_LOGIN_ROUTES.includes(`${m === 'HEAD' ? 'GET' : m} ${p}`)
+        ? { kind: 'self' }
+        : routeClass(p);
+      check(key, 'scope', row.scope, scope);
       check(
         key,
         'area',
         row.area,
-        routeClass(p)?.kind === 'area' ? (routeClass(p) as { area: string }).area : null,
+        scope?.kind === 'area' ? (scope as { area: string }).area : null,
       );
       check(key, 'effect', row.effect, isReadRequest(m, p) ? 'read' : 'write');
       check(key, 'memberMayRead', memberOpenRead(row), memberMayRead(m, p));
@@ -208,6 +213,24 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: same answers as the lists', () => {
         expect(gateCheck(caller, routeRef(row)), `${via} ${row.key}`).toBeNull();
       }
     }
+  });
+
+  it("A4 step 3b: the Telegram chat rows are the login's own, in no Admin area", () => {
+    const keys = TELEGRAM_LOGIN_ROUTES.flatMap((k) =>
+      k.startsWith('GET ') ? [k, k.replace(/^GET /, 'HEAD ')] : [k],
+    );
+    expect(keys).toHaveLength(8);
+    for (const key of keys) {
+      const row = table.get(key)!;
+      expect(row.class, key).toBe('self');
+      expect(row.scope, key).toEqual({ kind: 'self' });
+      expect(row.area, key).toBeNull();
+      expect(routeGatePolicy(row).scope, key).toBe('any');
+      // Their prefix still names the connectors area: the owner routes
+      // under it (PATCH /api/telegram/chats/:id) stay area rows.
+      expect(routeClass(row.pattern), key).toEqual({ kind: 'area', area: 'connectors' });
+    }
+    expect(table.get('PATCH /api/telegram/chats/:id')!.area).toBe('connectors');
   });
 
   it('A4 step 3b: a connector OAuth callback is a write, run as the login its guard names', () => {

@@ -221,6 +221,25 @@ function aliasOf(method: string, pattern: string, served: (key: string) => boole
   return served(key) ? key : null;
 }
 
+/** The class of the login's own things (route-scope.ts `self`). */
+const SELF_SCOPE: RouteClass = Object.freeze({ kind: 'self' });
+
+/**
+ * What the row serves (its scope): its pattern's prefix (routeClass), but
+ * the Telegram chat rows (TELEGRAM_LOGIN_ROUTES, and the HEAD their GET
+ * handler answers) are the login's own chats, `self`, whatever their prefix
+ * says (A4 step 3b must-do, the 3a audit's L5). They are open to every
+ * login and served by their own gate (getChatLoginOr401), which never asks
+ * an Admin area, like the assistant chat rows: classed in the connectors
+ * area, the gate's area check would refuse an Admin user without that area
+ * while letting a member in. `classLogins` is the login list of the row's
+ * class (GET's for a HEAD).
+ */
+function rowScope(pattern: string, classLogins: RouteLogins | null): RouteClass | null {
+  if (classLogins === 'telegram') return SELF_SCOPE;
+  return routeClass(pattern);
+}
+
 /**
  * The row of `method pattern`, from the lists (step 1). `served` says
  * which `METHOD pattern` keys the manifest serves (the v1 aliases).
@@ -236,8 +255,10 @@ export function buildRouteRow(
   // The gate's spelling test of the pattern, compiled here so a pattern it
   // cannot spell fails when the rows are built (at boot).
   compileSpelling(pattern);
-  const scope = routeClass(pattern);
   const logins = loginsOf(m, pattern);
+  // HEAD is answered by the GET handler, so it has GET's class (below).
+  const classLogins = m === 'HEAD' ? loginsOf('GET', pattern) : logins;
+  const scope = rowScope(pattern, classLogins);
   const effect = isReadRequest(m, pattern) ? 'read' : 'write';
   if (memberMayRead(m, pattern) && effect !== 'read') {
     throw new Error(`ROUTE_POLICY: ${key} is a member read that writes`);
@@ -262,7 +283,6 @@ export function buildRouteRow(
   // 4 (fix round 1, M3): should HEAD take GET's logins too? Step 1 keeps
   // today's answer; route-policy.test.ts pins it, so a change is
   // deliberate.
-  const classLogins = m === 'HEAD' ? loginsOf('GET', pattern) : logins;
   const listed: RoutePolicyClass | null = pattern.startsWith('/s/')
     ? 'link'
     : (scope?.kind ??
