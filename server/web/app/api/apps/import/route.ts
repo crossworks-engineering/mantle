@@ -18,7 +18,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { AppMetaFields } from '@/lib/app-meta';
 import {
   createApp,
@@ -61,8 +61,7 @@ function bad(error: string, status = 400) {
 }
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {

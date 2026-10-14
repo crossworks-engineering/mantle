@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { assertMayLink, checkServeList } from '@mantle/content';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { createShare, getActiveShareForNode, linkRefusal, SERVE_MAX } from '@/lib/shares';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -50,8 +50,7 @@ const CreateBody = z.object({
  * link, or a `serve` id it may not add), 400 `not_shareable`.
  */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

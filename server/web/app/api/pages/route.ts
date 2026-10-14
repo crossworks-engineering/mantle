@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { callerMayConfirm, callerMayReadEmail } from '@/lib/api-v1';
 import { allPrivateRows, listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
@@ -143,8 +143,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

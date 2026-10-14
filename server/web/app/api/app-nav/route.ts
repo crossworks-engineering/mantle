@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { goneResponse } from '@/lib/gone';
 import { APP_NAV_LAYOUT_RETIRED, loadAppNavView } from '@mantle/content';
 
@@ -22,7 +22,6 @@ export async function GET() {
 }
 
 export async function PUT() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  ownerCaller();
   return goneResponse(APP_NAV_LAYOUT_RETIRED);
 }

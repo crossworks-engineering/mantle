@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { deleteEvent, getEvent, updateEvent } from '@/lib/events';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -32,8 +32,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
@@ -52,8 +51,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const ok = await deleteEvent(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });

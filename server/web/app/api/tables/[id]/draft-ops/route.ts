@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { applyTableOps } from '@/lib/tables';
 import type { TableOp } from '@mantle/tabledb';
 import { TableOpsSchema } from '@/lib/table-ops-schema';
@@ -20,8 +20,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

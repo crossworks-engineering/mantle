@@ -5,12 +5,11 @@
  * in the trash; 409 when the app is not deleted. Owner only.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { AppTrashRefusedError, restoreDeletedApp } from '@mantle/content/app-trash';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   try {
     const app = await restoreDeletedApp(user.id, id, { actor: 'owner' });

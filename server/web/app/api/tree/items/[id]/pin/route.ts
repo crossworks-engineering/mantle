@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { TREE_PINS_MAX } from '@mantle/client-types/tree';
 import { setItemPinned } from '@mantle/content/tree';
 
@@ -9,8 +9,7 @@ const Body = z.object({ pinned: z.boolean() });
 /** PUT /api/tree/items/:id/pin — pin or unpin an item for this login; at most
  *  TREE_PINS_MAX per kind (409 beyond). */
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const id = z
     .string()
     .uuid()

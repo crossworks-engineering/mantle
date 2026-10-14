@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import {
   assertMayLink,
@@ -28,8 +28,7 @@ import { requireArea, type WsCaller } from '@/lib/workspaces';
  *  grant, so removing one changes none either (the item's share dialog
  *  Remove and the contact's "Shared" tab Revoke both call this). */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const share = await getLiveShare(user.id, id);
   if (!share) return NextResponse.json({ ok: false });
@@ -69,8 +68,7 @@ const PatchBody = z.union([
  *  'team' is refused with 400 `team-links-retired`: team links are retired
  *  (member logins Phase 6 stage 6), members use their own logins. */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid mode' }, { status: 400 });

@@ -17,6 +17,11 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     id: '00000000-0000-4000-8000-000000000001',
     actor: { id: '00000000-0000-4000-8000-000000000002', displayName: 'Admin' },
   })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({
+    id: '00000000-0000-4000-8000-000000000001',
+    actor: { id: '00000000-0000-4000-8000-000000000002', displayName: 'Admin' },
+  })),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => {

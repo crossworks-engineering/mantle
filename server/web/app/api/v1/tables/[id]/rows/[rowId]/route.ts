@@ -7,7 +7,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { runBuiltinForApi } from '@/lib/api-v1-builtin';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -18,8 +18,7 @@ const Body = z.object({
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; rowId: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const params = Params.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const parsed = Body.safeParse(await req.json().catch(() => null));

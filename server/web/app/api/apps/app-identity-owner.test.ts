@@ -15,8 +15,6 @@ const APP = '33333333-3333-4333-8333-333333333333';
 const h = vi.hoisted(() => ({
   callers: [] as unknown[],
   frameViewers: [] as unknown[],
-  /** Whether the session guard refuses the caller (no login: 401). */
-  refuse: false,
   /** Whether the frame ticket's actor is still an active Admin user. */
   adminActive: true,
   actorsChecked: [] as string[],
@@ -34,27 +32,25 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
       isOwner: false,
     },
   })),
-  // The owner runner routes take every login since W7e: here an Admin user,
-  // or no login at all (a row still marked client resolves to none, W8a).
-  getOwnerOr401WithLogin: vi.fn(async () =>
-    h.refuse
-      ? new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })
-      : {
-          kind: 'admin' as const,
-          user: {
-            id: OWNER,
-            email: 'admin@example.invalid',
-            actor: {
-              id: ADMIN_LOGIN,
-              email: 'admin@example.invalid',
-              displayName: 'Robin',
-              isOwner: false,
-            },
-          },
-          source: 'web',
-          member: null,
-        },
-  ),
+  // The owner runner routes take every login since W7e: here an Admin user.
+  // They read the caller the pipeline answers (A4 step 3b part 3); no login
+  // at all (a row still marked client resolves to none, W8a) is refused at
+  // the gate, before them (below).
+  ownerCallerWithLogin: vi.fn(() => ({
+    kind: 'admin' as const,
+    user: {
+      id: OWNER,
+      email: 'admin@example.invalid',
+      actor: {
+        id: ADMIN_LOGIN,
+        email: 'admin@example.invalid',
+        displayName: 'Robin',
+        isOwner: false,
+      },
+    },
+    source: 'web',
+    member: null,
+  })),
   adminLoginActive: vi.fn(async (id: string) => (h.actorsChecked.push(id), h.adminActive)),
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
@@ -89,7 +85,6 @@ beforeAll(() => {
 beforeEach(() => {
   h.callers.length = 0;
   h.frameViewers.length = 0;
-  h.refuse = false;
   h.adminActive = true;
   h.actorsChecked.length = 0;
 });
@@ -139,17 +134,15 @@ describe('owner frame: host.me()', () => {
 
 describe('a caller with no login on the owner runner routes (W8a: no client branch)', () => {
   it('is refused 401 on the frame ticket, the db broker and the tool broker', async () => {
-    h.refuse = true;
+    // Through the full pipeline (runRoute): the refusal is the gate's since
+    // the three read the caller it answers (A4 step 3b part 3); the
+    // handler never runs.
+    const { runRoute } = await import('@/server/run-route');
     const { getAppRuntime } = await import('@mantle/content');
     vi.mocked(getAppRuntime).mockClear();
-    const routes = {
-      'frame-ticket': (await import('./[id]/frame-ticket/route')).POST,
-      'db-broker': (await import('./[id]/db-broker/route')).POST,
-      'tool-broker': (await import('./[id]/tool-broker/route')).POST,
-    };
-    for (const [name, POST] of Object.entries(routes)) {
+    for (const name of ['frame-ticket', 'db-broker', 'tool-broker']) {
       const body = name === 'db-broker' ? { op: 'query', sql: 'select 1' } : { slug: 'x' };
-      const res = await POST(post(body), params());
+      const res = await runRoute(null, 'POST', `/api/apps/${APP}/${name}`, body);
       expect(res.status, name).toBe(401);
     }
     // Never the admin path: no app was looked up, no SQL ran.

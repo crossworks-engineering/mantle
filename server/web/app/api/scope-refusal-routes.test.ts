@@ -19,6 +19,11 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     id: OWNER,
     actor: { id: OWNER, displayName: 'Admin' },
   })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({
+    id: OWNER,
+    actor: { id: OWNER, displayName: 'Admin' },
+  })),
 }));
 
 vi.mock('@/lib/api-v1', async (importOriginal) => ({

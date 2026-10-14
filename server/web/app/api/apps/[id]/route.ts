@@ -10,7 +10,7 @@ import { NextResponse } from '@/server/http-compat';
 import { cappedOne } from '@/lib/list-workspaces';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
-import { getOwnerOr401, loginIsAdmin, ownerCaller } from '@/lib/auth';
+import { loginIsAdmin, ownerCaller } from '@/lib/auth';
 import { APP_DESCRIPTION_MAX } from '@/lib/app-meta';
 import {
   getApp,
@@ -56,8 +56,7 @@ const PatchBody = z.object({
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -92,8 +91,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   // A delete by a login other than the brain's owner stays in the trash
   // until the owner purges it (CEO decision 1, W6b fix round 1).

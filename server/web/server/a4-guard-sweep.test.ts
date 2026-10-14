@@ -29,11 +29,13 @@
  * a converted handler reads the caller the gate answered (ownerCaller())
  * and the gate runs the owner guard's answer itself, before the handler
  * (answerRouteCaller). Its entry in the guard log moves with it: the
- * pipeline's answer is logged as `pipeline:owner`, with the same answer,
- * actor and scope after it, at the gate. Every handler a batch converts
- * called getOwnerOr401 (the codemod converts that call only), so the two
- * recorded files compare a moved entry under that name (LEGACY_NAMES):
- * they stay byte for byte. The moved entries, as logged, are recorded in a
+ * pipeline's answer is logged at the gate, with the same answer, actor and
+ * scope after it, named by the reader the handler reads (`pipeline:owner`
+ * for ownerCaller(), `pipeline:ownerWithSource`, `pipeline:ownerWithLogin`;
+ * a4-guard-sweep.readers.ts reads it from the route file) and logging the
+ * projection that reader reads. The two recorded files compare a moved
+ * entry under the guard that reader replaced (LEGACY_NAMES): they stay
+ * byte for byte. The moved entries, as logged, are recorded in a
  * third file (`__snapshots__/a4-guard-sweep-moved.txt`), one line per cell
  * whose entry moved, so each move is on the record and reviewed.
  */
@@ -252,11 +254,21 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
   // The pipeline's answer of the owner caller (A4 step 3b): logged at the
   // gate as the guard's answer was in the handler. Rows with no caller
   // are answered by their guard (no entry).
-  const answer = real.answerRouteCaller as (row: { caller: string | null }) => Promise<unknown>;
-  const ownerCaller = real.ownerCaller as () => unknown;
-  wrapped.answerRouteCaller = async (row: { caller: string | null }) => {
+  //
+  // Its entry is named by the reader the row's handler reads, and logs the
+  // projection that reader reads (A4 step 3b part 3): `pipeline:owner`
+  // for ownerCaller() (getOwnerOr401's answer), `pipeline:ownerWithSource`
+  // and `pipeline:ownerWithLogin` for the other two. The reader comes from
+  // the route file's own code (the one reader of the one list it calls),
+  // following an /api/v1 file's re-export to its base route.
+  type Row = { key: string; caller: string | null };
+  const answer = real.answerRouteCaller as (row: Row) => Promise<unknown>;
+  const { readerOfRow } = await import('./a4-guard-sweep.readers');
+  wrapped.answerRouteCaller = async (row: Row) => {
     if (!row.caller) return answer(row);
-    const name = `pipeline:${row.caller}`;
+    const reader = readerOfRow(row.key);
+    const name = `pipeline:${row.caller}${reader.slice('ownerCaller'.length)}`;
+    const project = real[reader] as () => unknown;
     let value: unknown;
     try {
       value = await answer(row);
@@ -272,7 +284,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
       sweepState.log.push(`${name} R${value.status} ${body.slice(0, 300)} ${after()}`);
       return value;
     }
-    sweepState.log.push(`${name} ok ${summarize(ownerCaller())} ${after()}`);
+    sweepState.log.push(`${name} ok ${summarize(project())} ${after()}`);
     return value;
   };
   // The handler's read of it (any reader of the one list): the handler
@@ -329,17 +341,21 @@ function concretePath(pattern: string): string {
 type Cred = { name: string; headers: Record<string, string>; query?: string; getOnly?: boolean };
 
 /** The guard each pipeline entry stands for in the two recorded files: the
- *  guard every handler a batch converted called (step 3b batch 1, the self
- *  rows, and batch 2, the content reads: getOwnerOr401 each). A batch that
- *  converts a getOwnerOr401WithSource or getOwnerOr401WithLogin call
- *  (ownerCallerWithSource(), ownerCallerWithLogin()) names its rows' entries
- *  by the guard each replaced, and logs the projection its reader reads. */
-const LEGACY_NAMES: Readonly<Record<string, string>> = { 'pipeline:owner': 'getOwnerOr401' };
+ *  guard the converted handler called, named by the reader that replaced
+ *  it (ownerCaller(): getOwnerOr401, batches 1 to 3;
+ *  ownerCallerWithSource(): getOwnerOr401WithSource;
+ *  ownerCallerWithLogin(): getOwnerOr401WithLogin, batch 3's app brokers
+ *  and frame ticket). Each entry logs the projection its reader reads. */
+const LEGACY_NAMES: Readonly<Record<string, string>> = {
+  'pipeline:owner': 'getOwnerOr401',
+  'pipeline:ownerWithSource': 'getOwnerOr401WithSource',
+  'pipeline:ownerWithLogin': 'getOwnerOr401WithLogin',
+};
 
 /** An answer as the recorded files spell it: a moved entry under the name
  *  of the guard it replaced. Everything else is the answer as driven. */
 function legacy(answer: string): string {
-  return answer.replace(/\[(pipeline:[a-z]+) /g, (whole, name: string) =>
+  return answer.replace(/\[(pipeline:[A-Za-z]+) /g, (whole, name: string) =>
     LEGACY_NAMES[name] ? `[${LEGACY_NAMES[name]} ` : whole,
   );
 }

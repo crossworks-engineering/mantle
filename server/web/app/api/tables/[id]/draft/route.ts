@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { saveTableDraft } from '@/lib/tables';
 import type { TableDoc } from '@mantle/content-core/table-model';
 
@@ -17,8 +17,7 @@ const Body = z.object({
  * without desyncing the client's etag (audit).
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

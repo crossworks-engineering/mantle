@@ -7,7 +7,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import prettier from 'prettier';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { MAX_APP_FILE_BYTES, MAX_APP_PATH_LEN } from '@mantle/content';
 
 // ext → Prettier parser. Mirrors what the editor highlights; anything else is
@@ -35,8 +35,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const gate = await getOwnerOr401();
-  if (gate instanceof Response) return gate;
+  ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
 

@@ -45,7 +45,8 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => ownerSession()),
   // The runner routes take every login since W7e: the owner or a member.
-  getOwnerOr401WithLogin: vi.fn(async () =>
+  // They read the caller the pipeline answers (A4 step 3b part 3).
+  ownerCallerWithLogin: vi.fn(() =>
     h.as === 'admin'
       ? { kind: 'admin', user: ownerSession(), source: 'web', member: null }
       : {

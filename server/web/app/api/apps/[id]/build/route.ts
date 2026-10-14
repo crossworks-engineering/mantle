@@ -5,12 +5,11 @@
  * preview.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { buildAndStageApp } from '@mantle/tools';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const outcome = await buildAndStageApp(user.id, id);
   if (!outcome) return NextResponse.json({ error: 'app not found' }, { status: 404 });

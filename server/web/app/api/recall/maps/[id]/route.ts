@@ -6,7 +6,7 @@ import {
   deleteRecallMap,
   updateRecallMap,
 } from '@mantle/content';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getRecallMapDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
@@ -33,8 +33,7 @@ const Patch = z.object({
 /** Retitle, re-slug, or publish a native map. A rename does NOT move the
  *  slug: `slug` is its own field because agents and skills remember slugs. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const parsed = Patch.safeParse(await req.json().catch(() => ({})));
@@ -52,8 +51,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 /** Retire a map. The item goes and the cascades take its cards, its map row
  *  and its revisions (migration 0203). */
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   try {

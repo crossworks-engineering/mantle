@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { resolveGapEntry } from '@/lib/journal';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -15,8 +15,7 @@ const ResolveBody = z.object({
  *  journal entry — the same two-write resolution the `journal_resolve_gap`
  *  tool performs from chat. 404 when the id isn't an owner-held gap entry. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const raw = await req.json().catch(() => ({}));
   const parsed = ResolveBody.safeParse(raw);

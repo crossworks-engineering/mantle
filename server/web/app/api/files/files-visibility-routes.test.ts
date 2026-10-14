@@ -16,6 +16,8 @@ const h = vi.hoisted(() => ({ refuse: false }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => ({ id: OWNER })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({ id: OWNER })),
   getOwnerForAsset: vi.fn(async () => ({ id: OWNER })),
 }));
 

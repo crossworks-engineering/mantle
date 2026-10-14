@@ -1,14 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { dismissMergeCandidate } from '@mantle/content';
 
 const Body = z.object({ idA: z.string().uuid(), idB: z.string().uuid() });
 
 /** Record that two entities are NOT duplicates — never suggest the pair again. */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'idA + idB (uuid) required' }, { status: 400 });

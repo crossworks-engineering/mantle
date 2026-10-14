@@ -13,13 +13,12 @@
  * not run brain apps, and it must never reach the owner ticket below.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401WithLogin, buildAppFrameTicket } from '@/lib/auth';
+import { buildAppFrameTicket, ownerCallerWithLogin } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
 import { memberFrameTicket } from '@/lib/app-runner';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const got = await getOwnerOr401WithLogin();
-  if (got instanceof Response) return got;
+  const got = ownerCallerWithLogin();
   const { id } = await ctx.params;
   if (got.kind === 'member') return memberFrameTicket(got.member, id);
   const user = got.user;

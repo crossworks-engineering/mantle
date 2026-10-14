@@ -17,7 +17,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeWebStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { BodyTooLargeError } from '@/lib/body-limit';
 import {
   AppPackageError,
@@ -28,8 +28,7 @@ import { spoolUpload, UploadTooLargeError } from '@mantle/files';
 import { importAppPackage } from '@mantle/tools';
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const release = takeAppImportSlot();
   if (!release) {
     return NextResponse.json(

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import { commitTable, tableToText } from '@/lib/tables';
 import type { TableDoc } from '@mantle/content-core/table-model';
@@ -18,8 +18,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   // An email attachment's table is not found for a key without Search (T4).
   if ((await hiddenFromKey(user.id, [id])).size > 0) {

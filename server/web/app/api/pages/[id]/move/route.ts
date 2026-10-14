@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getPage } from '@/lib/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { firstIssue } from '@/lib/zod-issue';
@@ -41,8 +41,7 @@ async function folderOfPage(ownerId: string, pageId: string): Promise<string | n
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

@@ -5,7 +5,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import {
   AppSnapshotRefusedError,
@@ -28,8 +28,7 @@ export async function GET(_req: Request, ctx: Ctx) {
 const PatchBody = z.object({ note: z.string().max(500).nullable() });
 
 export async function PATCH(req: Request, ctx: Ctx) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id, sid } = await ctx.params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success)
@@ -40,8 +39,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
 }
 
 export async function DELETE(_req: Request, ctx: Ctx) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id, sid } = await ctx.params;
   try {
     const ok = await deleteAppSnapshot(user.id, id, sid);

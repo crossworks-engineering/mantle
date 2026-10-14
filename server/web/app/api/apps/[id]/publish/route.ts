@@ -15,13 +15,12 @@
  * loop: agents want the compile errors as their own feedback step.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getApp, publishApp, NoGreenBuildError } from '@mantle/content';
 import { buildAndStageApp } from '@mantle/tools';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
 
   const existing = await getApp(user.id, id);

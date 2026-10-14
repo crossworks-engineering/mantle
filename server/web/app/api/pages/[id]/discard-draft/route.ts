@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { discardDraft } from '@/lib/pages';
 
 /**
@@ -9,8 +9,7 @@ import { discardDraft } from '@/lib/pages';
  * effect if there was no draft to begin with.
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const ok = await discardDraft(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });

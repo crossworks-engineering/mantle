@@ -7,7 +7,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { AppBoundTableError } from '@mantle/content';
 import { commitTable } from '@/lib/tables';
@@ -23,8 +23,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; sid: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id, sid } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success)

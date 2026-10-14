@@ -5,12 +5,11 @@
  * deleted, the brain's owner only (403, CEO decision 1).
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { AppTrashRefusedError, purgeDeletedApp } from '@mantle/content/app-trash';
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   let ok: boolean;
   try {

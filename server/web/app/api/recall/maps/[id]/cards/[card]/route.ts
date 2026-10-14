@@ -8,7 +8,7 @@ import {
   deleteRecallCard,
   putRecallCard,
 } from '@mantle/content';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { getRecallCardDetail, recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
@@ -52,8 +52,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string; ca
 /** Replace the card. `options` replaces the whole list, so the editor sends
  *  it back edited rather than patching one edge. */
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string; card: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id, card } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const parsed = Card.safeParse(await req.json().catch(() => ({})));
@@ -72,8 +71,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string; car
 /** Remove the card. Options pointing at it go in the same write and come back
  *  in `optionsDropped`, so the editor can say what else changed. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; card: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id, card } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   // `Number(null)` is 0, which would pass as a (stale) version and answer 409

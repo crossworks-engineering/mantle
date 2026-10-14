@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { movedAppToolWarnings } from '@mantle/tools';
 import { firstIssue } from '@/lib/zod-issue';
@@ -20,8 +20,7 @@ const Body = z.object({
 /** POST /api/tree/:kind/move — move items into a folder. Each item moves on
  *  its own; `failed` lists the ones that could not (TreeMoveResult). */
 export async function POST(req: Request, ctx: { params: Promise<{ kind: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
   if (kind instanceof Response) return kind;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));

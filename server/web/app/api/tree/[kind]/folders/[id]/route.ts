@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { TREE_FOLDER_NAME_MAX, TREE_SHARE_LEVELS } from '@mantle/client-types/tree';
 import { deleteTreeFolder, notifyTreeChanged, updateTreeFolder } from '@mantle/content/tree';
 import { firstIssue } from '@/lib/zod-issue';
@@ -38,8 +38,7 @@ const Patch = z
  *  that changes who can see items answers 409 `{ error: 'visibility',
  *  changes, total }` until it is repeated with `confirm: true`. */
 export async function PATCH(req: Request, ctx: Ctx) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
   if (kind instanceof Response) return kind;
   const id = Id.safeParse((await ctx.params).id);
@@ -62,8 +61,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
  *  clash, or with the visibility changes when leaving a shared folder
  *  changes who can see them and `confirm` is not set). */
 export async function DELETE(req: Request, ctx: Ctx) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const kind = await treeKindOr404(ctx);
   if (kind instanceof Response) return kind;
   const id = Id.safeParse((await ctx.params).id);

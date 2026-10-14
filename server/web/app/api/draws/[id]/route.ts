@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { deleteDraw, getDraw, updateDraw } from '@/lib/draws';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -26,8 +26,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 /** Metadata only (title/tags/visibility — live saves, never indexed).
  *  Scene writes go exclusively through .../draft and .../commit. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
@@ -40,8 +39,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const ok = await deleteDraw(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });

@@ -19,6 +19,12 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     email: 'admin@example.invalid',
     actor: { id: ANCHOR, email: 'admin@example.invalid' },
   })),
+  // The reader a converted handler calls (A4 step 3b): the same stand-in.
+  ownerCaller: vi.fn(() => ({
+    id: ANCHOR,
+    email: 'admin@example.invalid',
+    actor: { id: ANCHOR, email: 'admin@example.invalid' },
+  })),
 }));
 
 vi.mock('@/lib/shares', async (importOriginal) => ({

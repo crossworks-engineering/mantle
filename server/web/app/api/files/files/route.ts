@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { capped } from '@/lib/list-workspaces';
 import { callerMayConfirm, callerMayReadEmail } from '@/lib/api-v1';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
@@ -108,8 +108,7 @@ async function mailFolderRefusal(ownerId: string, parentPath: string): Promise<R
  * so links and history hold; its old index is dropped and rebuilt).
  */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   await ensureFilesRootBranch(user.id);
   const contentType = req.headers.get('content-type') ?? '';
 
@@ -306,8 +305,7 @@ const BulkDeleteBody = z.object({
 });
 
 export async function DELETE(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = BulkDeleteBody.safeParse(raw);
   if (!parsed.success) {

@@ -7,7 +7,7 @@ import {
   RECALL_TITLE_MAX,
   putRecallCard,
 } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
@@ -35,8 +35,7 @@ const NewCard = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const parsed = NewCard.safeParse(await req.json().catch(() => ({})));

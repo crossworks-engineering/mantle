@@ -19,5 +19,11 @@
  *
  * 439 -> 382 (A4 step 3b part 2, batch 2, the content reads): 57 GET
  * handlers' getOwnerOr401 calls in 57 route files became reads.
+ *
+ * 382 -> 285 (A4 step 3b part 3, batch 3, the content writes): 101 write
+ * handlers in 81 route files became reads, 98 of them getOwnerOr401 calls
+ * (97 counted: server/web/app/api/apps/[id]/build/route.ts sits under a
+ * `build/` folder the counts skip) and the 3 getOwnerOr401WithLogin calls
+ * of the app brokers and the frame ticket (not counted here).
  */
-export const GUARD_CALL_PIN = 382;
+export const GUARD_CALL_PIN = 285;

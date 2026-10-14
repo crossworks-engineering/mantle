@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
 import { ContactShareRefusedError, createContactShares } from '@mantle/content';
 import type { CreateContactSharesResponse } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -26,8 +26,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

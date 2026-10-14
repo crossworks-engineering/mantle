@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { restoreRecallRevision } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { UUID_RE } from '@mantle/std';
 
@@ -13,8 +13,7 @@ import { UUID_RE } from '@mantle/std';
  * reinstating a map that no longer holds together.
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   try {

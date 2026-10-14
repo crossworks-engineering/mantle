@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { isScopeWriteRefusal } from '@mantle/db';
 import { z } from 'zod';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { countJournals, createJournal, listJournalTags, listJournals } from '@/lib/journal';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
@@ -44,8 +44,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

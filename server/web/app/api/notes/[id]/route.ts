@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { hiddenFromKey } from '@/lib/api-v1';
 import { deleteNote, getNote, updateNote } from '@/lib/notes';
 import { firstIssue } from '@/lib/zod-issue';
@@ -26,8 +26,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   // An item made from an email attachment is not found for a key without
   // Search, its writes too (access matrix T4, audit B1).
@@ -45,8 +44,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   // An item made from an email attachment is not found for a key without
   // Search, its writes too (access matrix T4, audit B1).

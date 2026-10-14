@@ -20,15 +20,14 @@ import {
   regenerateContactCode,
 } from '@mantle/content';
 import type { ContactSharingResponse } from '@mantle/client-types';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { getContact } from '@/lib/contacts';
 
 const Body = z.object({ action: z.enum(['enable', 'regenerate', 'disable']) });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid action' }, { status: 400 });

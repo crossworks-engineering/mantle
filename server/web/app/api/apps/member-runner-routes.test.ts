@@ -94,8 +94,9 @@ vi.mock('@/lib/auth', async (importOriginal) => {
   });
   return {
     ...(await importOriginal<Record<string, unknown>>()),
-    // The shared runner's guard: this caller is a member login.
-    getOwnerOr401WithLogin: vi.fn(async () => ({
+    // The shared runner's caller, as the pipeline answers it (A4 step 3b
+    // part 3): a member login.
+    ownerCallerWithLogin: vi.fn(() => ({
       kind: 'member',
       user: { id: ANCHOR, email: 'pat@example.invalid', actor: { id: LOGIN } },
       source: 'web',

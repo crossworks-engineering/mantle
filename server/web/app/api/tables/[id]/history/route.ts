@@ -7,7 +7,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import {
   TableSnapshotRefusedError,
@@ -32,8 +32,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 const CreateBody = z.object({ note: z.string().max(500).nullable().optional() });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const { id } = await ctx.params;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success)

@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { cappedOne } from '@/lib/list-workspaces';
-import { getOwnerOr401, getReaderForAsset } from '@/lib/auth';
+import { getReaderForAsset, ownerCaller } from '@/lib/auth';
 import { memberBytesGate } from '@/lib/member-space';
 import {
   deleteFileById,
@@ -133,8 +133,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
@@ -231,8 +230,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 /** Copy this file into another folder — a new node with its own bytes and
  *  its own extraction under the destination's indexing mode. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const raw = await req.json().catch(() => ({}));
@@ -272,8 +270,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });

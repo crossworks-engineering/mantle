@@ -52,7 +52,8 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     actor: { id: ACTOR, email: 'jo@example.invalid', displayName: 'Jo', isOwner: true },
   })),
   // The owner runner routes take every login since W7e: here an Admin user.
-  getOwnerOr401WithLogin: vi.fn(async () => ({
+  // The broker reads the caller the pipeline answers (A4 step 3b part 3).
+  ownerCallerWithLogin: vi.fn(() => ({
     kind: 'admin',
     user: {
       id: ANCHOR,

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from '@/lib/files';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -35,8 +35,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   await ensureFilesRootBranch(user.id);
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);

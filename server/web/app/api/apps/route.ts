@@ -4,7 +4,7 @@
  * `?ws=<id>` keeps the apps that workspace holds (lib/list-workspaces.ts).
  */
 import { NextResponse } from '@/server/http-compat';
-import { getOwnerOr401, loginIsAdmin, ownerCaller } from '@/lib/auth';
+import { loginIsAdmin, ownerCaller } from '@/lib/auth';
 import { AppMetaFields } from '@/lib/app-meta';
 import { createApp, listApps, countApps, notifyAppNavChanged, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
@@ -49,8 +49,7 @@ const CreateBody = AppMetaFields.extend({
 });
 
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });

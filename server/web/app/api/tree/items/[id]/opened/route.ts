@@ -1,13 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { recordItemOpened } from '@mantle/content/tree';
 
 /** POST /api/tree/items/:id/opened — count one open of an item by this login
  *  (Recent and Most used). 404 when it is not one of the brain's tree items. */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const id = z
     .string()
     .uuid()

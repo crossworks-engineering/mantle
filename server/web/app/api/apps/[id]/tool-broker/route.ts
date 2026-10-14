@@ -34,9 +34,9 @@ import { withViewer } from '@mantle/db';
 import { memberToolBroker } from '@/lib/app-runner';
 import {
   buildAppToolConfirmToken,
-  getOwnerOr401WithLogin,
   verifyAppToolConfirmToken,
   type AppToolConfirmClaims,
+  ownerCallerWithLogin,
 } from '@/lib/auth';
 import { getAppRuntime, recordAppAccess, recordAppError } from '@mantle/content';
 import {
@@ -55,8 +55,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const got = await getOwnerOr401WithLogin();
-  if (got instanceof Response) return got;
+  const got = ownerCallerWithLogin();
   const { id } = await ctx.params;
   // A member's run (W7e): the team rules, never a confirmation.
   if (got.kind === 'member') return memberToolBroker(req, got.member, id);

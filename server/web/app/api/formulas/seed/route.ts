@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { FORMULA_SEED, SEED_TAG } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { createFormula, listFormulaSpecIds } from '@/lib/formulas';
 
 /**
@@ -15,8 +15,7 @@ import { createFormula, listFormulaSpecIds } from '@/lib/formulas';
  * defaults" rule stops — and it stops here on purpose.
  */
 export async function POST() {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
 
   // Uncapped: presence is a question about ALL formulas, and the earlier
   // list-based check silently ran on the first 500 only.

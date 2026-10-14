@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { RECALL_LINE_MAX, RECALL_TITLE_MAX, createRecallMap } from '@mantle/content';
-import { getOwnerOr401, ownerCaller } from '@/lib/auth';
+import { ownerCaller } from '@/lib/auth';
 import { parseWsFilter } from '@/lib/list-workspaces';
 import { countRecallMaps, listRecallMaps, recallActorOf, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
@@ -38,8 +38,7 @@ const NewMap = z.object({
  *  is the owner's own surface, and the unpublished state exists for maps an
  *  agent proposes. */
 export async function POST(req: Request) {
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user;
+  const user = ownerCaller();
   const parsed = NewMap.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
