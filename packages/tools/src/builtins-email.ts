@@ -472,7 +472,13 @@ const email_page: BuiltinToolDef = {
 
 const email_list: BuiltinToolDef = {
   slug: 'email_list',
-  policy: { effect: 'read', spends: 'none', scope: { area: 'connectors' } },
+  // Mail from outside the brain: fenced as data (A5 step 5).
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    outside: { untrusted: true },
+  },
   name: 'List recent emails',
   description:
     'Recent emails newest-first (sorted by `internal_date` desc, NOT by ingest time). ' +
@@ -575,7 +581,13 @@ export function htmlToPlainText(html: string): string {
 
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
-  policy: { effect: 'read', spends: 'none', scope: { area: 'connectors' } },
+  // Mail from outside the brain: fenced as data (A5 step 5).
+  policy: {
+    effect: 'read',
+    spends: 'none',
+    scope: { area: 'connectors' },
+    outside: { untrusted: true },
+  },
   name: 'Get one email by id',
   description:
     'Fetch a single email by id — headers (from/to/cc, subject, date, folder, flags) plus the ' +

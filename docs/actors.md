@@ -2123,3 +2123,16 @@ row it wrote. Of `dispatch-parity.json` only those three tools changed, and
 of their cases only the member turn's
 (`server/web/lib/auth/turn-gate-parity.test.ts` pins the text, the parity
 test's non-vacuous case the order).
+
+**Untrusted coverage (plan section 25).** `outside.untrusted` is declared
+on `web_search_pro` (the same public-web answer as `web_search`),
+`web_map` (a site's own links and titles), `web_crawl` (its reply names the
+site's paths), `email_list` and `email_get` (mail from outside the brain)
+and `telegram_pending` (inbound messages). A turn fences each result as
+data before the model reads it (`UNTRUSTED_CONTENT_TOOL_SLUGS`), and a
+recipe that runs one marks its whole result untrusted.
+`telegram_pending` is MCP only, so today only a recipe step reads the
+mark; the MCP surface fences no result. Of `dispatch-parity.json` only
+those six tools changed, each in its recipe step's cases (the result now
+carries `untrusted: true`); `tool-policy-snapshot.untrusted.json` holds the
+new set.

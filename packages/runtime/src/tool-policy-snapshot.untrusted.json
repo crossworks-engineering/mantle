@@ -1,1 +1,12 @@
-["app_data_query", "app_errors", "web_fetch", "web_search"]
+[
+  "app_data_query",
+  "app_errors",
+  "email_get",
+  "email_list",
+  "telegram_pending",
+  "web_crawl",
+  "web_fetch",
+  "web_map",
+  "web_search",
+  "web_search_pro"
+]

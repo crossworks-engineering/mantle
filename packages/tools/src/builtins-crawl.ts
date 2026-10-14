@@ -137,7 +137,14 @@ type CrawledDoc = {
 
 const web_map: BuiltinToolDef = {
   slug: 'web_map',
-  policy: { effect: 'write', spends: 'none', scope: 'admin', peerRisky: true },
+  // A site's own links and titles: fenced as data (A5 step 5).
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: 'admin',
+    outside: { untrusted: true },
+    peerRisky: true,
+  },
   ownerOnly: true,
   name: 'Map a website',
   description:
@@ -199,7 +206,14 @@ const web_map: BuiltinToolDef = {
 
 const web_crawl: BuiltinToolDef = {
   slug: 'web_crawl',
-  policy: { effect: 'write', spends: 'ownerKey', scope: 'admin', peerRisky: true },
+  // Its reply names the site's own paths: fenced as data (A5 step 5).
+  policy: {
+    effect: 'write',
+    spends: 'ownerKey',
+    scope: 'admin',
+    outside: { untrusted: true },
+    peerRisky: true,
+  },
   ownerOnly: true,
   name: 'Crawl a website into the brain',
   description:

@@ -152,6 +152,8 @@ export const telegram_pending: BuiltinToolDef = {
     effect: 'read',
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
+    // Inbound messages from outside the brain: fenced as data (A5 step 5).
+    outside: { untrusted: true },
     peerRisky: true,
   },
   mcpOnly: true,
