@@ -37,12 +37,24 @@ const h = vi.hoisted(() => ({
   scope: null as unknown,
 }));
 
-vi.mock('@/lib/auth', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => h.session),
-  // The reader a converted handler calls (A4 step 3b): the same stand-in.
-  ownerCaller: vi.fn(() => h.session),
-}));
+vi.mock('@/lib/auth', async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>();
+  const ownerCaller = real.ownerCaller as () => unknown;
+  return {
+    ...real,
+    getOwnerOr401: vi.fn(async () => h.session),
+    // The reader a converted handler calls (A4 step 3b): the pipeline's
+    // answer through runRoute; the same stand-in for a handler called
+    // directly (outside a routed request the real reader throws).
+    ownerCaller: vi.fn(() => {
+      try {
+        return ownerCaller();
+      } catch {
+        return h.session;
+      }
+    }),
+  };
+});
 vi.mock('@mantle/api-keys', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getApiKeyById: vi.fn(async () => 'sk-fake'),
