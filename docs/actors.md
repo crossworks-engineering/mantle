@@ -1484,6 +1484,171 @@ entries recorded):
    v1 wrapper and `GET /api/v1/files/:id/download` with its base. Then
    `getOwnerOr401` goes and the count is 0 (A4 exit).
 
+**HTTP, A4 step 3b part 5 (no answer changed).** The member, any-login
+and chat answer steps, their readers, and the codemod's fifth batch.
+
+- **The answer step** (`answerRouteCaller`, `server/web/lib/auth/session.ts`)
+  runs the guard of the row's caller kind, once, in the request slot,
+  before the handler: the owner guard (`getOwnerOr401WithLogin`) as
+  before, and now the member guard (`getMemberOr401`), the any-login guard
+  (`getLoginOr401`) and the chat guard (`getChatLoginOr401`). It is each
+  guard's own function, so the two paths answer alike: the login named, a
+  device token stamped once, the scope entered or the rule or system
+  reason noted, the audit row each guard writes. A refusal is the gate's
+  answer and the handler does not run; an error it throws is thrown in
+  the handler's place, so onError answers it with the CORS headers, as
+  before.
+- **The readers**: `memberCaller()` (what `getMemberOr401` answers),
+  `loginCaller()` (what `getLoginOr401` answers, the type `AnyLogin`) and
+  `chatLoginCaller()` (what `getChatLoginOr401` answers, `ChatLogin`). Each
+  projects the one answer the gate gave, with no lookup and no effect,
+  and throws where the pipeline gave no answer of its kind (a row with no
+  caller or another kind's, a nested call, outside a routed request), as
+  `ownerCaller()` does.
+- **The row** (`server/web/lib/auth/route-policy.ts`): `RouteCaller` is
+  `owner`, `member`, `login` or `chat`, and a row carries a kind only
+  where that kind's guard serves it (`CALLER_LOGINS`): the owner rows
+  (self, content, area, open to Admin or to the owner lists), the member
+  list, the any-login list, the chat and Telegram chat lists. Any other
+  row fails to build, as do a public, link or render row, a page and a
+  catch-all. The gate's Admin step stays the owner rows' (no other kind's
+  row names an Admin area).
+- **The generator** (`server/web/scripts/route-callers.ts`
+  `handlerCallers`): the manifest's `reads` maps each method to the kind
+  its reader reads, from the code, following the kind through a handler
+  the file runs and a route file it re-exports or wraps; a handler that
+  reads two kinds is refused, with every rule of part 1 to 3 (code before
+  the read, a renamed or object read, a guard beside a read).
+- **The one list** (`eslint-rules/session-guards.mjs` `READER_ANSWERS`)
+  maps each reader to its kind, the guard it replaced and its sweep entry
+  name; the import rule (`eslint-rules/owner-caller-imports.mjs`) holds
+  the new readers as it holds `ownerCaller`: imported only in an app/api
+  route file, by their own names, from `@/lib/auth`.
+
+Batch 5, the member and chat rows: the handlers whose guard was the
+standard two lines as their first statement on main, with no parameter
+with a default value (a parser script over every route file: 29 such
+handlers; the two of `/api/auth/pair` are public rows, which no kind may
+read): 27 handlers in 24 route files.
+
+- **Member** (`memberCaller()`): 10 handlers in 8 files: `GET
+  /api/member/home`, `GET /api/member/mcp`, `DELETE
+  /api/member/mcp/clients/:id`, `POST /api/member/push/connect`, `GET` and
+  `PUT /api/member/push/preferences`, `GET` and `POST
+  /api/member/push/subscriptions`, `DELETE
+  /api/member/push/subscriptions/:id`, `GET /api/member/realtime`. With
+  their HEADs, 15 rows carry `caller: 'member'`.
+- **Chat** (`chatLoginCaller()`): 17 handlers in 16 files: the assistant
+  chat rows (`conversations`, `messages`, `read`, `stream`, `thread`,
+  `threads` GET and POST, `threads/:id`, its `continue` and `summarize`,
+  `transcribe`) and the Telegram chat rows part 4 classed `self` (`pair`,
+  `my-chats` and one, `moderated-chats`, a chat's `block` and `unpair`).
+  With their HEADs, 25 rows carry `caller: 'chat'`.
+- **Any login**: none. Every any-login handler reads its guard inside a
+  wrapper, not as its first statement: `ruleInQuery(handleGET)` (`GET
+  /api/shell`, `GET /api/v1/whoami`, `GET` and `POST /api/access-keys`,
+  `DELETE /api/access-keys/:id`) and the workspace and grants helpers
+  (`workspaceCaller()` in `server/web/lib/workspaces.ts`, behind `wsRoute`
+  and `grantsRoute`, 17 route files). The answer step and `loginCaller()`
+  are in place and pinned by the parity cells below; the rows wait for the
+  hand batch.
+
+Rows carrying a caller: 649 owner, 15 member, 25 chat (689 of 1043).
+
+The proof is the guard sweep. The two recorded files and the owner
+decision's file are byte for byte; a moved entry is named by its reader
+(`pipeline:member`, `pipeline:chat`; `pipeline:login` when one reads it)
+and the recorded files compare it under the guard it replaced. The moved
+snapshot holds 8777 cells (8297 after part 4: 180 member cells, 300 chat
+cells, no old cell changed) and 117 answers (79 after part 4). The 38 new
+ones, each for GET and HEAD (a HEAD has no body):
+
+- `pipeline:member`: a member let through by cookie and by device token
+  (stamped once), in its own rule (self rows) or its scope (the member
+  home); an Admin user's 403 `admin-login` (the anchor, an Admin user and
+  one with no area by cookie, an Admin user by device token, stamped
+  once); the 401;
+- `pipeline:chat`: the anchor, an Admin user and one with no area by
+  cookie, an Admin user by device token (stamped once), and a member by
+  cookie and by device token, let through: a read in the login's scope (a
+  HEAD, whose row is in no login list, on the system pool as `login-self`,
+  as before), an Admin user's write on the system pool (`admin-write`), a
+  member's write in its scope; the 401.
+
+The moved writes file holds 3775 cells (3607 after part 4; 60 member, 108
+chat) and 743 answers (716): a member's own session writes no audit row,
+as before; each of the 27 new answers is an Admin user's one `api.write`
+row of a chat or Telegram write.
+
+`server/web/server/middleware/gate-caller.test.ts` serves real rows of
+each list twice, through the reader and through the guard: a member read
+(self and content), a member write and delete, an any-login read and write
+(`/api/shell`, `/api/access-keys`), a chat read and write and a Telegram
+chat read and write, for every credential (the anchor, an Admin user, one
+with no area, a member, a gone login, by cookie and by device token, a
+revoked token, no login, a write key, a member key) and HEAD, comparing
+the status, headers, body (the login, the actor, the scope), the audit
+rows and the device token's stamp; a device token stamped once on each
+kind's row; an error the chat answer throws answered with CORS; each
+reader's throw; and each kind refused on a row its guard does not serve.
+
+Pins: guard calls 43 to 16, still a ceiling; files with a guard call 39
+to 15; reads of the caller 432 to 459, in 303 to 327 files; live routes
+calling no guard stays 60.
+
+**The gateway lens.** Two checks repeat across the handlers left, and the
+gate could do each once:
+
+- **The rule-in-query exit.** The any-login handlers leave the request
+  scope the guard entered by name (`asSystem(..., 'rule-in-query')`): five
+  route files through `ruleInQuery` (`server/web/lib/auth/rule-in-query.ts`)
+  and the 17 workspace and grants files through `wsRoute` and
+  `grantsRoute`. Their guard runs inside that exit, so its refusal is
+  logged as `system:rule-in-query`; at the gate it would be logged as
+  `system:http:no-login` (the sweep's recorded files would change, though
+  nothing on the wire does). A row flag the gate reads (the handler runs
+  in the rule-in-query exit after the answer) would fold the wrapper and
+  let those rows read `loginCaller()`; the logged actor of a refusal is
+  the one change to record.
+- **The any-login audit.** `getLoginOr401` writes no audit row; its
+  callers write it by hand after it (`auditLoginMutation`:
+  `workspaceCaller()`, `POST /api/auth/pair`), where the member and chat
+  guards write theirs inside. The any-login answer step can write it, once,
+  when those rows convert.
+
+**Step 3b, what is left** (the hand batch; the sweep held equal after
+each, its moved entries recorded). The 16 guard calls the count sees, and
+the guards it does not:
+
+- the any-login rows (`getLoginOr401` in a wrapper): `GET /api/shell`,
+  `GET /api/v1/whoami`, `GET` and `POST /api/access-keys`, `DELETE
+  /api/access-keys/:id` (`ruleInQuery`), and `server/web/lib/workspaces.ts`
+  `workspaceCaller()` (the workspace and grants rows, `POST
+  /api/workspaces/:id/archive` among them): the gateway lens above;
+- `POST /api/assistant/turn` (`getChatLoginOr401` after a response helper
+  it declares first);
+- the public rows that read the login (`getLoginOr401`): `GET
+  /api/auth/whoami`, `POST /api/auth/logout`, `POST
+  /api/auth/change-password`, `POST /api/auth/pair` and `GET
+  /api/auth/pair/:id`, `oauth/authorize` (the consent), and `POST
+  /api/auth/sso` (`getCookieUpgradeLoginOr401`);
+- the asset guards (`getOwnerForAsset`, `getReaderForAsset`,
+  `getMemberForAsset`: the draw svg, the file bytes, the export of batch
+  2's rows and `GET /api/attachments/:id`);
+- `server/web/lib/gone.ts` (the 410 stubs: `/api/apps/members`,
+  `/api/admin/space`, the 37 of the area rows of part 4's list, and the
+  member list's: every member row left but the frame document);
+- the two turn routes with a flag check first (`/api/assistant/turn/:turnId`
+  cancel and stream) and `POST /api/dev-tools/queue-approval` (a flag
+  check first);
+- `GET /api/updates/check` (`getSessionUser`, the owner's carve-out);
+- `GET /api/apps/:id/frame` and `GET /api/member/apps/:id/frame` (the
+  frame documents, which read no guard);
+- `PATCH /api/pages/:id` with its v1 wrapper, and `GET
+  /api/v1/files/:id/download` with its base.
+
+Then `getOwnerOr401` goes and the count is 0 (A4 exit).
+
 **The eight steps** of `enterCall`, in order (the pre-run slot between
 steps 5 and 6):
 
