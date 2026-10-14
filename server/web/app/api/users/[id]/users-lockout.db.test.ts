@@ -25,10 +25,15 @@ const h = vi.hoisted(() => ({
   relayDeleted: [] as string[],
 }));
 
+// The admin session, stood in: a route that calls the owner guard gets
+// h.caller, and so does one that reads the caller the pipeline answers
+// (ownerCaller(), A4 step 3b; this test calls the handler directly, with
+// no gate, and its logins have no anchor for the gate to answer).
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => h.caller),
   getOwnerOr401WithSource: vi.fn(async () => ({ user: h.caller, source: 'web' })),
+  ownerCaller: vi.fn(() => h.caller),
 }));
 
 vi.mock('@/lib/audit', () => ({
