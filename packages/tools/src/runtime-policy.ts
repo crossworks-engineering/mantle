@@ -91,14 +91,17 @@ export function recipeToolPolicy(row: Row): RuntimeToolPolicy {
 
 /**
  * A shell tool: an operator-authored command on the brain's own host, a
- * write. Agents cannot author or edit one (recipe.ts AGENT_GRANTABLE_KINDS);
- * today any agent a group grants it to runs it, behind its confirm.
+ * write. Agents cannot author or edit one (recipe.ts AGENT_GRANTABLE_KINDS).
+ * It runs only for a user of the Admin workspace (A5 step 5, owner
+ * decision Q2 b): the gate's Admin step refuses it in a scope that does
+ * not hold Admin (a member's turn), in ADMIN_ONLY_ERROR's words; an agent
+ * a group grants it to runs it there behind its confirm.
  */
 export function shellToolPolicy(row: Row): RuntimeToolPolicy {
   return Object.freeze({
     rowType: 'shell' as const,
     effect: 'write' as const,
-    scope: 'any' as const,
+    scope: 'admin' as const,
     spends: 'none' as const,
     fields: Object.freeze({ outside: 'shell', requiresConfirm: row.requiresConfirm === true }),
   });

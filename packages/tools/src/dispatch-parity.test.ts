@@ -441,6 +441,12 @@ describe('dispatch parity with main (A5 step 3a)', () => {
     expect(JSON.stringify(whole)).toContain('admin-area');
     const odd = await call('owner-turn', RUNTIME_ROWS.unknown!, {});
     expect(JSON.stringify(odd)).toContain('no access policy');
+    // A5 step 5 (owner decision Q2 b): a shell tool runs only for a user of
+    // the Admin workspace; the member turn's cell is the one that changed.
+    const shell = await call('member-turn', RUNTIME_ROWS.shell!, { q: 'x' });
+    expect(JSON.stringify(shell)).toContain('it does not run in this workspace');
+    const ownShell = await call('owner-turn', RUNTIME_ROWS.shell!, { q: 'x' });
+    expect(JSON.stringify(ownShell)).toContain('"ok":true');
   });
 
   it('runs every builtin through the gate, a read read only (A5 step 3a)', async () => {

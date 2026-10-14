@@ -2081,3 +2081,18 @@ Write off, every area and a marked connector changed
 `mcp_crm_contacts_list` to the 30 such cells, and `mcp-calls.json`'s
 "member key ro, every area" lists it and its call runs, with its
 `mcp.connector.read` audit row).
+
+**Q2 (owner b): shell tools only for users of the Admin workspace.**
+`shellToolPolicy` (`packages/tools/src/runtime-policy.ts`) declares scope
+`admin`, so the gate's Admin step refuses a shell row in a scope that does
+not hold Admin (a member's turn), in `ADMIN_ONLY_ERROR`'s words, before it
+runs. An Admin turn, a run and a pending approval in the Admin workspace
+run it as before (behind its confirm); a call outside any scope keeps the
+surface's own rules. The app tool brokers and the dev console still
+dispatch ungated until step 3b (no member app reaches a shell row: only
+connectors and External access rows are outside tools there, and a shell
+tool can never get External access: `externalAccessIneligible`). Of
+`packages/tools/src/__snapshots__/dispatch-parity.json` only
+`runtime:shell` changed, and of its cases only the member turn's (it ran;
+now the Admin refusal); `runtime-policy.test.ts` and the parity test's
+non-vacuous case pin both.

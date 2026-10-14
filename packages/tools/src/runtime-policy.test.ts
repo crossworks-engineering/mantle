@@ -18,6 +18,7 @@ import {
   type Tool,
   type ToolHandler,
 } from '@mantle/db';
+import { ADMIN_ONLY_ERROR } from '@mantle/std';
 import { externalAccessToolSig } from './external-access';
 import { MEMBER_APP_REFUSED_SLUGS } from './member-app-tools';
 import {
@@ -140,6 +141,10 @@ describe('one function per runtime row type', () => {
     });
   });
 
+  it('a shell tool runs only for a user of the Admin workspace (A5 step 5, Q2 b)', () => {
+    expect(shellToolPolicy(row(SHELL)).scope).toBe('admin');
+  });
+
   it('a sandbox toolbelt tool and a peer tool: the area of the builtin that calls them', () => {
     expect(sandboxMcpToolPolicy('')).toBeNull();
     expect(sandboxMcpToolPolicy('Bash')).toMatchObject({
@@ -260,6 +265,18 @@ describe('through the gate', () => {
       ...over,
     };
   }
+
+  it('a shell tool: refused in a turn of a workspace that is not Admin (A5 step 5, Q2 b)', () => {
+    const shell = runtime(row(SHELL));
+    const turn = (holdsAdmin: boolean): GateCaller =>
+      caller({ via: 'turn', admin: { holdsAdmin, areas: new Set() } });
+    const refused = gateCheck(turn(false), shell);
+    expect(refused?.kind).toBe('admin');
+    expect(refused?.message).toBe(ADMIN_ONLY_ERROR);
+    expect(gateCheck(turn(true), shell)).toBeNull();
+    // Unscoped (a process outside any workspace): the surface's own rules.
+    expect(gateCheck(caller({ via: 'turn', admin: null }), shell)).toBeNull();
+  });
 
   it('listing equals calling, for every runtime row and caller', async () => {
     const refs: PolicyRef[] = [
