@@ -253,10 +253,15 @@ export default tseslint.config(
   },
   {
     // One egress fetch (A10 part 1, docs/egress.md): product code under
-    // packages/ and server/{web,api}/ uses the platform fetch only in the
-    // files the rule file lists (the inventory), each with its kind of host
-    // and reason; every other fetch goes through the egress fetch.
-    files: ['packages/**/*.{ts,tsx,mts,mjs,js}', 'server/{web,api}/**/*.{ts,tsx,mts,mjs,js}'],
+    // packages/ and server/{web,api,mcp,sandboxd}/ uses the platform fetch,
+    // or loads a raw HTTP client (undici, node:http(s), axios, got,
+    // node-fetch), only in the files the rule file lists (the inventories),
+    // each with its kind of host and reason; every other fetch goes through
+    // the egress fetch.
+    files: [
+      'packages/**/*.{ts,tsx,mts,mjs,js}',
+      'server/{web,api,mcp,sandboxd}/**/*.{ts,tsx,mts,mjs,js}',
+    ],
     ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/scripts/**'],
     plugins: { 'mantle-egress': mantleEgressPlugin },
     rules: { 'mantle-egress/no-bare-fetch': 'error' },

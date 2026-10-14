@@ -188,16 +188,25 @@ over 32 MB on one federation call errors instead of reading as empty.
 ### The pins
 
 - `eslint-rules/no-bare-fetch.mjs` (`mantle-egress/no-bare-fetch`): all
-  product code under `packages/` and `server/{web,api}/` (not tests, not
-  scripts) uses the platform fetch only in the files the rule lists, its
-  inventory (`BARE_FETCH_ALLOWED`, 32 files). Each entry names the kind of
-  host it reaches (a fixed provider host, owner config, same-origin
-  internal, a URL a fixed provider returned, or the fetch layer itself) and
-  why. The rule flags a bare `fetch(`, `fetch` kept or passed as a value (an
-  alias), and `globalThis.fetch`, `window.fetch`, `self.fetch` or
-  `globalThis['fetch']`, called or not; `typeof fetch` in a type is not a
-  use. `eslint-rules/no-bare-fetch.test.ts` holds the inventory to exactly
-  the files that use the platform fetch.
+  product code under `packages/` and `server/{web,api,mcp,sandboxd}/` (not
+  tests, not scripts) uses the platform fetch only in the files the rule
+  lists, its inventory (`BARE_FETCH_ALLOWED`, 32 files). Each entry names
+  the kind of host it reaches (a fixed provider host, owner config,
+  same-origin internal, a URL a fixed provider returned, or the fetch layer
+  itself) and why. The rule flags a bare `fetch(`, `fetch` kept or passed
+  as a value (an alias), and a global object's `fetch` (`globalThis`,
+  `global`, `window`, `self`; by name, by `['fetch']`, through
+  `(0, globalThis)`, by `Reflect.get(globalThis, 'fetch')` or destructured
+  out of it), called or not; `typeof fetch` in a type is not a use.
+- The same rule flags a raw HTTP client (fix round 2): an import, export,
+  `require`, dynamic import or `createRequire` load of `undici`,
+  `node:http`, `node:https`, `http`, `https`, `axios`, `got` or
+  `node-fetch` (a type-only import is not a load). Its inventory is
+  `RAW_HTTP_ALLOWED` (6 files: the egress fetch and the provider pool,
+  which load undici; the tailscaled LocalAPI client and sandboxd's Docker
+  client over local sockets; sandboxd's egress proxy and its own listener).
+  `eslint-rules/no-bare-fetch.test.ts` holds both inventories to exactly the
+  files that use them.
 - The scoreboard (`scripts/arch-scoreboard.ts`) counts the bare fetch sites
   in tools, calendar and content, `bareFetchSites`: 12 before the move,
   pinned at 5.
