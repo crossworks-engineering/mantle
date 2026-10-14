@@ -57,6 +57,11 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     id: OWNER,
     actor: { id: OWNER, displayName: 'Admin' },
   })),
+  // The v1 rows routes read the caller the pipeline answers (A4 step 3b).
+  ownerCaller: vi.fn(() => ({
+    id: OWNER,
+    actor: { id: OWNER, displayName: 'Admin' },
+  })),
 }));
 
 vi.mock('@/lib/api-v1', async (importOriginal) => ({
