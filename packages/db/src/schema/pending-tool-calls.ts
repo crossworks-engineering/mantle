@@ -48,6 +48,10 @@ export const pendingToolCalls = pgTable(
      *  scope may not make itself), set by the server at queue time; NULL
      *  for every other call. */
     elevated: jsonb('elevated').$type<{ elevated: true; reason: string } | null>(),
+    /** The turn that queued the call had read text a client wrote (0287,
+     *  A5 step 6d fix round 1): what marked it, for the approver; NULL for
+     *  a turn that read none. */
+    clientSourced: jsonb('client_sourced').$type<{ via: string } | null>(),
   },
   (t) => [
     index('pending_tool_calls_owner_status_idx').on(t.ownerId, t.status),
