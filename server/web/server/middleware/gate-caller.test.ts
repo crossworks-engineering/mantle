@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { actorSetting, currentActor, currentRequestOutcome } from '@mantle/db';
+import { actorSetting, currentActor, currentCreateHome, currentRequestOutcome } from '@mantle/db';
 import type { RouteEntry } from '../route-loader';
 
 const ADMIN = '55555555-5555-4555-8555-555555555555';
@@ -35,6 +35,11 @@ const counts = vi.hoisted(() => ({
   /** An error the audit row throws (the owner answer failing). */
   auditThrows: null as Error | null,
   bearers: new Map<string, { userId: string; revokedAt: Date | null; expiresAt: Date }>(),
+  /** What each db.execute of the item-write check finds, in order (none:
+   *  no row). */
+  exec: [] as unknown[][],
+  /** What the create-home intent answers. */
+  home: { createWs: null, privateWs: null } as Record<string, unknown>,
 }));
 
 vi.mock('../../lib/auth/login-row', () => {
@@ -65,11 +70,23 @@ vi.mock('../../lib/auth/login-row', () => {
     },
   };
 });
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@mantle/db')>()),
-  loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
-  brainOnWorkspacesNow: async () => true,
-}));
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  // The item-write check's statements (the item a write names, what the
+  // login may do to it) answer from counts.exec; withViewer runs its
+  // function; the create-home intent answers counts.home.
+  const db = new Proxy(real.db, {
+    get: (t, k) => (k === 'execute' ? async () => counts.exec.shift() ?? [] : Reflect.get(t, k)),
+  });
+  return {
+    ...real,
+    db,
+    withViewer: ((_actsFor, fn) => fn()) as typeof real.withViewer,
+    createHomeIntent: (async () => counts.home) as unknown as typeof real.createHomeIntent,
+    loginScopeFor: async (loginId: string) => ({ kind: 'user', loginId, ws: [], modWs: [] }),
+    brainOnWorkspacesNow: async () => true,
+  };
+});
 vi.mock('../../lib/workspaces', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/workspaces')>()),
   requireArea: async (caller: { loginId: string }) => caller.loginId !== LIMITED,
@@ -93,6 +110,7 @@ function seen(owner: unknown) {
     owner,
     actor: actor ? actorSetting(actor) : null,
     out: out ? JSON.stringify(out) : null,
+    home: currentCreateHome(),
   };
 }
 
@@ -152,8 +170,12 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         // Self rows (batch 1): a read and a write.
         { pattern: '/api/profile', methods: ['GET', 'PUT'] },
         // A content read a member may make, and an area row (users).
-        { pattern: '/api/notes', methods: ['GET'] },
+        { pattern: '/api/notes', methods: ['GET', 'POST'] },
         { pattern: '/api/users', methods: ['GET'] },
+        // Content writes (batch 3): an item write, a create, and the read
+        // POST whose guard checks the item as a write.
+        { pattern: '/api/notes/:id', methods: ['PATCH', 'DELETE'] },
+        { pattern: '/api/formulas/:id/evaluate', methods: ['POST'] },
       ].map((e) => ({
         ...e,
         catchAll: null,
@@ -233,6 +255,95 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     }
     // Every kind of answer was met: refusals (401, 403) and owners.
     expect(refused).toBeGreaterThan(5);
+  });
+
+  it('a content write: the item check, the create home and the audit row as the guard gave', async () => {
+    const ID = '11111111-1111-4111-8111-111111111111';
+    const may = (edit: boolean, manage = edit) => [{ edit, manage, copy: false }];
+    // What the item-write check finds, each case: the statements' answers
+    // in order. No row: not in the login's scope; then whether it exists.
+    const items: Record<string, unknown[][]> = {
+      'may-edit': [may(true)],
+      'may-not': [may(false)],
+      'read-only-copy': [[{ edit: true, manage: true, copy: true }]],
+      'not-in-scope': [[], [{ one: 1 }]],
+      'no-such-item': [[], []],
+    };
+    const homes: Record<string, Record<string, unknown>> = {
+      lands: { createWs: '66666666-6666-4666-8666-666666666666', privateWs: null },
+      'refused-workspace': { refused: 'workspace', message: 'You are not in that workspace.' },
+      'refused-invalid': { refused: 'invalid', message: 'ws is not a workspace id.' },
+    };
+    const paths = [
+      ['PATCH', `/api/notes/${ID}`],
+      ['DELETE', `/api/notes/${ID}`],
+      ['POST', `/api/formulas/${ID}/evaluate`],
+      // The id the handler gets is the decoded segment: an encoded item id
+      // is checked as that id; one that decodes to no item id, or not at
+      // all, is the not-found answer (the security fix), for every login.
+      ['PATCH', `/api/notes/${encodeURIComponent(ID).replace(/1/g, '%31')}`],
+      ['PATCH', '/api/notes/not-an-item'],
+      ['PATCH', '/api/notes/%E0%A4%A'],
+    ] as const;
+    const seenAnswers = new Set<string>();
+    const run = async (label: string, method: string, path: string, setup: () => void) => {
+      for (const cred of creds) {
+        const answers = [];
+        for (const app of [pipeline, guarded]) {
+          setup();
+          answers.push(await drive(app, method, path, cred.headers()));
+        }
+        const [a, b] = answers;
+        const cell = `${label} ${method} ${path} ${cred.name}`;
+        if (a!.status >= 400) {
+          expect(a!.handled, cell).toBe(0);
+          expect(b!.handled, cell).toBe(1);
+        }
+        expect({ ...a, handled: 0 }, cell).toEqual({ ...b, handled: 0 });
+        seenAnswers.add(`${a!.status} ${a!.status >= 400 ? a!.body : ''}`);
+      }
+    };
+    try {
+      for (const [item, exec] of Object.entries(items)) {
+        for (const [method, path] of paths) {
+          await run(item, method, path, () => {
+            counts.exec = exec.map((r) => [...r]);
+          });
+        }
+      }
+      for (const [home, answer] of Object.entries(homes)) {
+        await run(home, 'POST', '/api/notes?ws=66666666-6666-4666-8666-666666666666', () => {
+          counts.home = answer;
+        });
+      }
+    } finally {
+      counts.exec = [];
+      counts.home = { createWs: null, privateWs: null };
+    }
+    const met = [...seenAnswers].join('\n');
+    // Every answer of the write path was met, the same through both.
+    expect(met).toContain('You cannot change this item in your workspaces.');
+    expect(met).toContain('This item is in a workspace you are not in. Add yourself to it first.');
+    expect(met).toContain('read-only copy');
+    expect(met).toMatch(/^404 \{"ok":false,"error":"not found"\}$/m);
+    expect(met).toMatch(/^403 .*"reason":"workspace"/m);
+    expect(met).toMatch(/^400 /m);
+    expect(met).toMatch(/^200 $/m);
+  });
+
+  it('a create lands where the guard put it, and the audit row names the login', async () => {
+    counts.home = { createWs: '66666666-6666-4666-8666-666666666666', privateWs: null };
+    try {
+      for (const cred of [creds[1]!, creds[3]!]) {
+        const a = await drive(pipeline, 'POST', '/api/notes', cred.headers());
+        expect(a.status).toBe(200);
+        expect(JSON.parse(a.body).home).toEqual(counts.home);
+        expect(a.audits).toHaveLength(1);
+        expect(a.audits[0]).toMatch(/^api\.write POST \/api\/notes /);
+      }
+    } finally {
+      counts.home = { createWs: null, privateWs: null };
+    }
   });
 
   it('the pipeline names the actor, notes the self row and writes the audit row', async () => {
