@@ -120,7 +120,16 @@ export async function POST(req: Request) {
     // 422 for "we got the audio but couldn't make sense of it" — the
     // client can surface the exact provider message ("audio too
     // short", quota exceeded, etc.) without having to special-case
-    // its own enumeration of failure modes.
-    return NextResponse.json({ error: msg }, { status: 422 });
+    // its own enumeration of failure modes. That is for an Admin user,
+    // who set the provider up; a member or a client hears a fixed
+    // sentence and the detail stays in the log (fix round 1, L6).
+    return NextResponse.json(
+      { error: login.kind === 'admin' ? msg : VOICE_FAILED_MESSAGE },
+      { status: 422 },
+    );
   }
 }
+
+/** What a member or a client hears when the speech provider fails (the
+ *  detail is in the server log). */
+const VOICE_FAILED_MESSAGE = 'The voice service failed. Try again.';

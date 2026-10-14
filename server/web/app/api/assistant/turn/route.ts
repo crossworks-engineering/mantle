@@ -518,6 +518,13 @@ async function runTurn(
   } catch (err) {
     const msg = errorMessage(err);
     console.error('[assistant/turn]', msg);
-    return { status: 500, body: { error: msg } };
+    // The failed turn's text is mostly the provider's answer: an Admin user
+    // reads it (it set the provider up), a member or a client gets a fixed
+    // sentence and the detail stays in the log (fix round 1, L6).
+    return { status: 500, body: { error: login.kind === 'admin' ? msg : TURN_FAILED_MESSAGE } };
   }
 }
+
+/** What a member or a client hears when a turn fails (the detail is in the
+ *  server log). */
+const TURN_FAILED_MESSAGE = 'The assistant could not answer. Try again.';

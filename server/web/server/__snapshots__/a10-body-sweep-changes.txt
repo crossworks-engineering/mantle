@@ -2,10 +2,10 @@
 # named kind (changeKind, a10-body-sweep.test.ts), its answer on main and now.
 # Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
 # bad-json-400 (malformed): 200 cells
-# chunked-413: 207 cells
+# chunked-413: 211 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
-# bad-json-400 (malformed, accepted as {} on main): 9 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
+# bad-json-400 (malformed, accepted as {} on main): 7 cells
 # bad-json-400 (empty): 2 cells
 POST /api/access-keys owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -217,6 +217,12 @@ POST /api/assistant/threads member malformed [bad-json-400 (malformed)]
 POST /api/assistant/threads member chunked [chunked-413]
   main 404 application/json {"error":"no chat agent"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/assistant/transcribe owner chunked [chunked-413]
+  main 400 application/json {"error":"expected multipart/form-data"}
+  now  413 application/json {"error":"This request is too large (at most 26 MB).","reason":"body-too-large"}
+POST /api/assistant/transcribe member chunked [chunked-413]
+  main 400 application/json {"error":"expected multipart/form-data"}
+  now  413 application/json {"error":"This request is too large (at most 26 MB).","reason":"body-too-large"}
 POST /api/assistant/turn owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"text: Invalid input: expected string, received undefined"}
   now  400 application/json {"error":"invalid JSON"}
@@ -229,9 +235,6 @@ POST /api/assistant/turn member malformed [bad-json-400 (malformed)]
 POST /api/assistant/turn member chunked [chunked-413]
   main 400 application/json {"error":"text: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /api/assistant/turn/:turnId/cancel owner malformed [bad-json-400 (malformed, accepted as {} on main)]
-  main 200 application/json {"ok":true,"superseded":0}
-  now  400 application/json {"error":"invalid JSON"}
 POST /api/assistant/turn/:turnId/cancel owner chunked [chunked-413]
   main 200 application/json {"ok":true,"superseded":0}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
@@ -243,9 +246,6 @@ POST /api/auth/invite/accept none malformed [bad-json-400 (malformed)]
   now  400 application/json {"error":"invalid JSON"}
 POST /api/auth/login none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"Invalid email or password."}
-  now  400 application/json {"error":"invalid JSON"}
-POST /api/auth/logout none malformed [bad-json-400 (malformed, accepted as {} on main)]
-  main 200 application/json {"ok":true}
   now  400 application/json {"error":"invalid JSON"}
 POST /api/auth/mobile-login none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"Invalid email or password."}
@@ -886,6 +886,9 @@ PUT /api/profile/fonts owner malformed [bad-json-400 (malformed)]
 PUT /api/profile/fonts owner chunked [chunked-413]
   main 500 application/json {"error":"internal error"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/logo owner chunked [chunked-413]
+  main 400 application/json {"error":"multipart field `file` required"}
+  now  413 application/json {"error":"This request is too large (at most 1 MB).","reason":"body-too-large"}
 PUT /api/profile/nav-favorites owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"navFavorites (array of hrefs) required"}
   now  400 application/json {"error":"invalid JSON"}
@@ -898,6 +901,9 @@ PUT /api/profile/neat-background owner malformed [bad-json-400 (malformed)]
 PUT /api/profile/neat-background owner chunked [chunked-413]
   main 400 application/json {"error":"neatBackground required"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/photo owner chunked [chunked-413]
+  main 400 application/json {"error":"multipart field `file` required"}
+  now  413 application/json {"error":"This request is too large (at most 1 MB).","reason":"body-too-large"}
 PUT /api/profile/reminder-channel owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"error":"invalid input"}
   now  400 application/json {"error":"invalid JSON"}

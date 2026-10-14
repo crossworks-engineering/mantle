@@ -15,9 +15,11 @@
  *
  * Both answer 413 `{ reason: 'body-too-large', error }` (the thrown
  * `BodyTooLargeError` is mapped by app.onError; a handler that swallowed it
- * gets the same 413 from the loader). Uploads are not JSON: their routes
- * stream to disk under their own caps (upload-stream.ts) and have no
- * ceiling here.
+ * gets the same 413 from the loader). The streamed uploads are not JSON:
+ * their routes spool to disk under their own caps (upload-stream.ts) and
+ * have no ceiling here. The multipart routes that call formData(), which
+ * buffers the whole body, have one: their file cap plus room for the
+ * framing (MULTIPART_CEILINGS, fix round 1, M3).
  */
 
 const MB = 1024 * 1024;
@@ -39,16 +41,39 @@ export const AUTH_BODY_CEILING_BYTES = 64 * 1024;
  *  20 KB statement with up to 999 parameters (apps audit S2). */
 export const SHARE_BODY_CEILING_BYTES = 1 * MB;
 
-/** Routes that stream an upload (multipart or raw) under their own cap. */
+/** Routes that stream an upload (multipart or raw) to disk under their own
+ *  cap, never buffering it: no ceiling here. */
 const UPLOAD_PATHS: readonly RegExp[] = [
   /^\/api\/files\/files$/,
-  /^\/api\/assistant\/turn$/,
-  /^\/api\/assistant\/transcribe$/,
-  /^\/api\/tables\/[^/]+\/import$/,
   /^\/api\/apps\/import-package$/,
-  /^\/api\/profile\/(photo|logo)$/,
   /^\/api\/member\/space-files$/,
   /^\/api\/admin\/space-files$/,
+];
+
+/** Room for the multipart framing (boundaries, part headers, the text
+ *  fields) above a route's file cap. */
+export const MULTIPART_FRAMING_BYTES = 1 * MB;
+
+/** The buffered upload cap (MAX_UPLOAD_BYTES, @mantle/files limits.ts): a
+ *  chat attachment, a spreadsheet import. Pinned equal by body-ceiling.test.ts. */
+export const BUFFERED_UPLOAD_BYTES = 64 * MB;
+
+/** A voice clip: the speech-to-text providers take at most 25 MB. */
+export const VOICE_CLIP_BYTES = 25 * MB;
+
+/** A profile photo or brand logo: the routes refuse a declared body over
+ *  twice LOGO_MAX_BYTES (512 KB) before formData(); pinned by the test. */
+export const PROFILE_IMAGE_BODY_BYTES = 1 * MB;
+
+/** The multipart routes that read their body with formData(), which buffers
+ *  it whole: each is held to its file cap plus the framing, so a chunked
+ *  body that declares nothing stops there (the chat routes are open to
+ *  member and client logins). */
+const MULTIPART_CEILINGS: readonly (readonly [RegExp, number])[] = [
+  [/^\/api\/assistant\/turn$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
+  [/^\/api\/assistant\/transcribe$/, VOICE_CLIP_BYTES + MULTIPART_FRAMING_BYTES],
+  [/^\/api\/tables\/[^/]+\/import$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
+  [/^\/api\/profile\/(photo|logo)$/, PROFILE_IMAGE_BODY_BYTES],
 ];
 
 /** Owner document and tool surfaces (prefixes). */
@@ -64,10 +89,12 @@ const OWNER_DOCUMENT_PREFIXES: readonly string[] = [
   '/api/admin/space',
 ];
 
-/** The body ceiling of `path` in bytes; null for an upload route (its own
- *  streamed cap applies). */
+/** The body ceiling of `path` (the decoded path the route matched) in
+ *  bytes; null for a streamed upload route (its own streamed cap applies). */
 export function bodyCeilingFor(path: string): number | null {
   if (UPLOAD_PATHS.some((re) => re.test(path))) return null;
+  const multipart = MULTIPART_CEILINGS.find(([re]) => re.test(path));
+  if (multipart) return multipart[1];
   if (path === '/api/auth' || path.startsWith('/api/auth/')) return AUTH_BODY_CEILING_BYTES;
   if (path.startsWith('/s/')) return SHARE_BODY_CEILING_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
@@ -96,7 +123,7 @@ const wentOver = new WeakSet<Request>();
  */
 export function capRequestBody(req: Request, maxBytes: number): Request {
   const source = req.body;
-  if (!source) return req;
+  if (!source || req.method === 'GET' || req.method === 'HEAD') return req;
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   let total = 0;
   const body = new ReadableStream<Uint8Array>(
@@ -120,7 +147,18 @@ export function capRequestBody(req: Request, maxBytes: number): Request {
     },
     { highWaterMark: 0 },
   );
-  const capped = new Request(req, { body, duplex: 'half' } as RequestInit);
+  // Built from the request's parts, never `new Request(req, init)`: under
+  // @hono/node-server the handler's request is a lightweight stand-in that
+  // undici's brand check refuses as a Request input (it threw on every
+  // POST behind serve(); A10 part 2 fix round 1, H1). Only a method that
+  // carries a body gets one (a GET or HEAD has none here).
+  const capped = new Request(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body,
+    duplex: 'half',
+    signal: req.signal,
+  } as RequestInit);
   return capped;
 }
 
@@ -178,19 +216,4 @@ export async function readBytesCapped(req: Request, maxBytes: number): Promise<B
     chunks.push(value);
   }
   return Buffer.concat(chunks);
-}
-
-/** A request's JSON body read under `maxBytes` (the route's ceiling), or
- *  null when it is not JSON. Throws BodyTooLargeError past the ceiling. */
-export async function readJsonCapped(
-  req: Request,
-  maxBytes: number = JSON_BODY_CEILING_BYTES,
-): Promise<unknown> {
-  const text = await readBodyCapped(req, maxBytes);
-  try {
-    // A UTF-8 byte order mark is not JSON; req.json() skipped it too.
-    return JSON.parse(text.replace(/^\uFEFF/, '')) as unknown;
-  } catch {
-    return null;
-  }
 }

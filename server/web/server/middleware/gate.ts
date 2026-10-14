@@ -389,12 +389,23 @@ function gateHandler(): MiddlewareHandler {
 
     // The body ceiling (client logins C5 audit, I4): a declared body over
     // the route's ceiling is refused before any handler buffers it, public
-    // routes included. Uploads stream under their own caps (null here); a
-    // chunked body is capped while it is read (readJsonNoNul).
+    // routes included. Streamed uploads spool under their own caps (null
+    // here); a chunked body is capped while it is read (the route loader,
+    // capRequestBody).
     // The public share routes too (apps audit S2): their db-broker read any
     // body an anonymous caller sent.
-    if ((isApi || path.startsWith('/s/')) && req.method !== 'GET' && req.method !== 'HEAD') {
-      const ceiling = bodyCeilingFor(path);
+    // The decoded path Hono matched (c.req.path), as the loader reads it:
+    // `/api/%61uth/...` is held to the ceiling of the route that answers it
+    // (fix round 1, L8).
+    const matchedPath = c.req.path;
+    if (
+      (matchedPath === '/api' ||
+        matchedPath.startsWith('/api/') ||
+        matchedPath.startsWith('/s/')) &&
+      req.method !== 'GET' &&
+      req.method !== 'HEAD'
+    ) {
+      const ceiling = bodyCeilingFor(matchedPath);
       if (ceiling !== null && declaredOver(req.headers, ceiling)) {
         return withCors(bodyTooLargeResponse(ceiling));
       }

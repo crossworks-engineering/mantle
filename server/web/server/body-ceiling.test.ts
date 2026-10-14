@@ -21,12 +21,18 @@ import {
   JSON_BODY_CEILING_BYTES,
   OWNER_DOCUMENT_CEILING_BYTES,
   SHARE_BODY_CEILING_BYTES,
+  BUFFERED_UPLOAD_BYTES,
+  MULTIPART_FRAMING_BYTES,
+  PROFILE_IMAGE_BODY_BYTES,
+  VOICE_CLIP_BYTES,
   bodyCeilingFor,
   bodyWentOver,
   capRequestBody,
   readBodyCapped,
 } from '../lib/body-limit';
 import { readJsonNoNul } from '../lib/strip-nul';
+import { LOGO_MAX_BYTES } from '../lib/logo-validation';
+import { MAX_UPLOAD_BYTES } from '@mantle/files';
 
 // W6a: the session guard reads the login's workspaces (loginScopeFor) and,
 // on a management route, its area (requireArea) from the database. This
@@ -85,15 +91,12 @@ const streamReq = (url: string, bytes: number, headers: Record<string, string> =
   } as RequestInit);
 
 describe('the body ceiling: which route gets which', () => {
-  it('uploads have none; auth is small; owner documents are larger; the rest 8 MB', () => {
+  it('streamed uploads have none; auth is small; owner documents are larger; the rest 8 MB', () => {
     for (const p of [
       '/api/files/files',
       '/api/member/space-files',
       '/api/admin/space-files',
-      '/api/assistant/turn',
-      '/api/tables/t1/import',
       '/api/apps/import-package',
-      '/api/profile/photo',
     ]) {
       expect(bodyCeilingFor(p), p).toBeNull();
     }
@@ -117,6 +120,32 @@ describe('the body ceiling: which route gets which', () => {
       expect(bodyCeilingFor(p), p).toBe(JSON_BODY_CEILING_BYTES);
     }
     expect(JSON_BODY_CEILING_BYTES).toBe(8 * MB);
+  });
+});
+
+describe('the body ceiling: the multipart routes (A10 part 2 fix round 1, M3)', () => {
+  it('each formData() route is held to its file cap plus the framing', () => {
+    expect(bodyCeilingFor('/api/assistant/turn')).toBe(
+      BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES,
+    );
+    expect(bodyCeilingFor('/api/tables/t1/import')).toBe(
+      BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES,
+    );
+    expect(bodyCeilingFor('/api/assistant/transcribe')).toBe(
+      VOICE_CLIP_BYTES + MULTIPART_FRAMING_BYTES,
+    );
+    for (const p of ['/api/profile/photo', '/api/profile/logo']) {
+      expect(bodyCeilingFor(p), p).toBe(PROFILE_IMAGE_BODY_BYTES);
+    }
+  });
+
+  it('the numbers are the caps they stand for', () => {
+    // The buffered upload cap (a chat attachment, a spreadsheet import).
+    expect(BUFFERED_UPLOAD_BYTES).toBe(MAX_UPLOAD_BYTES);
+    // The photo and logo routes refuse a declared body over twice the image cap.
+    expect(PROFILE_IMAGE_BODY_BYTES).toBe(LOGO_MAX_BYTES * 2);
+    // The JSON branch of the turn reads under the JSON ceiling, well inside.
+    expect(JSON_BODY_CEILING_BYTES).toBeLessThan(BUFFERED_UPLOAD_BYTES);
   });
 });
 

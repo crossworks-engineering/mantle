@@ -19,7 +19,9 @@ export async function POST(req: Request) {
   // Origin only: the body is optional (a plain sign-out sends none).
   const refused = refuseCrossSiteAuthPost(req, { json: false });
   if (refused) return refused;
-  const body = (await readJson(req, { empty: null })) as {
+  // A body that is not JSON (a form post, a stray byte) reads as none, as
+  // on main: sign-out still clears the cookie (fix round 1, L4).
+  const body = (await readJson(req, { empty: null, invalid: null })) as {
     everywhere?: unknown;
   } | null;
   const everywhere = body?.everywhere === true;

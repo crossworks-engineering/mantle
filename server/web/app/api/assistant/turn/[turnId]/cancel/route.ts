@@ -56,7 +56,7 @@ export async function POST(
 
   // Optional supersede payload. The body is absent on a plain Stop; tolerate
   // (and ignore) anything unparseable rather than failing the cancel.
-  const body = (await readJson(req, { empty: null })) as CancelBody | null;
+  const body = (await readJson(req, { empty: null, invalid: null })) as CancelBody | null;
   const s = body?.supersede;
   let superseded = 0;
   if (s) {

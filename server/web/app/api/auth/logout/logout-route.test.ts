@@ -69,4 +69,26 @@ describe('POST /api/auth/logout', () => {
     expect(res.headers.get('set-cookie')).toMatch(/mantle_session=;/);
     expect(h.ended).toEqual([]);
   });
+
+  // A10 part 2 fix round 1, L4: a body that is not JSON reads as none, as on
+  // main; sign-out still clears the cookie and answers 200.
+  it.each([
+    ['malformed JSON', 'application/json', '{"everywhere":'],
+    ['a form post', 'application/x-www-form-urlencoded', 'everywhere=true'],
+    ['plain text', 'text/plain', 'bye'],
+  ])('%s still signs out (200, cookie cleared, nothing else ended)', async (_n, type, body) => {
+    h.login = { kind: 'admin', loginId: 'admin-id', email: 'admin@example.invalid' };
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('https://brain.example.invalid/api/auth/logout', {
+        method: 'POST',
+        headers: { 'content-type': type },
+        body,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(res.headers.get('set-cookie')).toMatch(/mantle_session=;/);
+    expect(h.ended).toEqual([]);
+  });
 });

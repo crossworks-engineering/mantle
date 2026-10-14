@@ -20,15 +20,15 @@
 /** The route files that read their body another way, each with why. */
 export const BODY_READ_ALLOW = Object.freeze({
   'server/web/app/api/assistant/turn/route.ts':
-    'a multipart attachment (formData) on an upload path with its own cap; the JSON body goes through readJson',
+    'a multipart attachment (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS); the JSON body goes through readJson',
   'server/web/app/api/assistant/transcribe/route.ts':
-    'a multipart audio upload (formData) on an upload path with its own cap',
+    'a multipart audio upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
   'server/web/app/api/tables/[id]/import/route.ts':
-    'a multipart spreadsheet upload (formData) on an upload path with its own cap',
+    'a multipart spreadsheet upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
   'server/web/app/api/profile/photo/route.ts':
-    'a multipart image upload (formData) on an upload path with its own cap',
+    'a multipart image upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
   'server/web/app/api/profile/logo/route.ts':
-    'a multipart image upload (formData) on an upload path with its own cap',
+    'a multipart image upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
   'server/web/app/api/apps/import-package/route.ts':
     'streams the package (req.body) to disk under its own cap (spoolUpload)',
   'server/web/app/api/oauth/token/route.ts':

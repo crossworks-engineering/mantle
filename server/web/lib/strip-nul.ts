@@ -1,4 +1,5 @@
-import { JSON_BODY_CEILING_BYTES, readJsonCapped } from './body-limit';
+import { JSON_BODY_CEILING_BYTES } from './body-limit';
+import { readJson } from './read-body';
 
 /**
  * Remove NUL (U+0000) from every string in a parsed JSON body: values and
@@ -45,13 +46,14 @@ function strip(value: unknown): unknown {
 }
 
 /**
- * A request's JSON body with NUL stripped, or null when it is not JSON. At
- * most `maxBytes` are read (the route's ceiling, lib/body-limit.ts): a
+ * A request's JSON body with NUL stripped, or null when it is empty or not
+ * JSON. Read by the one reader (readJson, lib/read-body.ts; fix round 1,
+ * L7): at most `maxBytes` (the route's ceiling, lib/body-limit.ts), so a
  * longer body throws BodyTooLargeError, which the app answers 413.
  */
 export async function readJsonNoNul(
   req: Request,
   maxBytes: number = JSON_BODY_CEILING_BYTES,
 ): Promise<unknown> {
-  return stripNul(await readJsonCapped(req, maxBytes));
+  return stripNul(await readJson(req, { maxBytes, empty: null, invalid: null }));
 }

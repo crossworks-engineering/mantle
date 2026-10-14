@@ -52,6 +52,12 @@ export type ReadBodyOptions = {
   /** An empty body is not JSON either (BadBodyError), for a route whose
    *  every call sends one. */
   refuseEmpty?: boolean;
+  /** What a body that is not JSON reads as, instead of BadBodyError: for a
+   *  route whose body is optional and that must answer whatever the client
+   *  sent (sign-out clears the cookie, Stop cancels the turn; fix round 1,
+   *  L4), and for readJsonNoNul's null. A body over the ceiling still
+   *  throws BodyTooLargeError. */
+  invalid?: unknown;
   /** Read at most this many bytes (BodyTooLargeError past it): the JSON
    *  branch of an upload route, which the loader does not cap (no
    *  ceiling; its upload streams under its own). */
@@ -70,12 +76,16 @@ export async function readJson(req: Request, opts: ReadBodyOptions = {}): Promis
       ? await req.text()
       : (await readBodyCapped(req, opts.maxBytes)).replace(/^\uFEFF/, '');
   if (text.trim() === '') {
-    if (opts.refuseEmpty) throw new BadBodyError(BAD_JSON_MESSAGE);
+    if (opts.refuseEmpty) {
+      if ('invalid' in opts) return opts.invalid;
+      throw new BadBodyError(BAD_JSON_MESSAGE);
+    }
     return 'empty' in opts ? opts.empty : {};
   }
   try {
     return JSON.parse(text) as unknown;
   } catch {
+    if ('invalid' in opts) return opts.invalid;
     throw new BadBodyError(BAD_JSON_MESSAGE);
   }
 }
