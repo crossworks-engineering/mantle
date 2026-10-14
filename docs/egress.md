@@ -183,7 +183,7 @@ The background jobs that read outside text now fence it:
 
 | Job | File | What is fenced |
 | --- | --- | --- |
-| extractor (summary, facts, entities) | `server/api/src/agent/extract/model.ts` | the node's body (an email, a fetched page, an upload); the title stays outside, defanged |
+| extractor (summary, facts, entities) | `server/api/src/agent/extract/model.ts` | the node's title and body (an email's subject and text, a fetched page, an upload's filename and text); the type stays outside |
 | reflector | `server/api/src/agent/reflector.ts` | the recent transcript (the notes it already has stay outside) |
 | conversation summarizer | `server/api/src/agent/summarizer.ts` | the batch's transcript |
 | `summarize_text` | `packages/tools/src/builtins-workers.ts` | the source text (the caller's focus stays outside) |
@@ -200,7 +200,11 @@ with a fixture that carries an injection attempt and two forged markers:
 each job's input after the fence wraps the outside text and strips the
 forged markers, and equals the recorded input but for the two fence lines,
 the defanged markers and the one note line (the after file is
-`background-prompts.after.json` beside it).
+`background-prompts.after.json` beside it). One named change since (fix
+round 1): the extractor's `Title:` line moved inside the fence, at the head
+of the fenced text, since a subject, filename or page title is outside text
+too; a separate case puts an injection and a forged marker in a title and
+requires them inside the fence.
 
 **Eval and recall quality.** A fenced block adds about 20 tokens (the two
 marker lines), the note about 40 on a system prompt that is cached per
