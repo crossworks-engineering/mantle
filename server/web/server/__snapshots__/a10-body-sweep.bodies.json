@@ -1,0 +1,702 @@
+{
+  "POST /api/access-keys": {
+    "name": "sweep",
+    "access": "read",
+    "areas": ["search"]
+  },
+  "DELETE /api/access-keys/:id": null,
+  "PATCH /api/access/nodes/:id": null,
+  "POST /api/agents": {
+    "slug": "sweep",
+    "name": "sweep",
+    "role": "assistant",
+    "model": "sweep",
+    "apiKeyId": "11111111-1111-4111-8111-111111111111",
+    "systemPrompt": "sweep"
+  },
+  "PATCH /api/agents/:id": {},
+  "DELETE /api/agents/:id": null,
+  "POST /api/agents/:id/persona": {
+    "action": "add",
+    "kind": "style",
+    "content": "sweep"
+  },
+  "POST /api/agents/:id/telegram": null,
+  "DELETE /api/agents/:id/telegram": null,
+  "POST /api/agents/:id/telegram/chats": null,
+  "POST /api/agents/:id/test/chat": {},
+  "POST /api/ai-workers": {
+    "kind": "reflector",
+    "name": "sweep",
+    "provider": "sweep",
+    "model": "sweep"
+  },
+  "PATCH /api/ai-workers/:id": {
+    "name": "sweep",
+    "provider": "sweep",
+    "model": "sweep",
+    "apiKeyId": "11111111-1111-4111-8111-111111111111",
+    "systemPrompt": "sweep",
+    "params": {},
+    "enabled": true,
+    "priority": 1,
+    "backupProvider": "sweep",
+    "backupModel": "sweep",
+    "backupApiKeyId": "11111111-1111-4111-8111-111111111111",
+    "backupEnabled": true,
+    "baseUrl": "sweep",
+    "viaTailnet": true,
+    "backupBaseUrl": "sweep",
+    "backupViaTailnet": true
+  },
+  "DELETE /api/ai-workers/:id": null,
+  "POST /api/ai-workers/:id/default": null,
+  "POST /api/ai-workers/:id/test/chat": {},
+  "POST /api/ai-workers/:id/test/decision": {},
+  "POST /api/ai-workers/:id/test/document": {
+    "pdfBase64": "sweep"
+  },
+  "POST /api/ai-workers/:id/test/image": {},
+  "POST /api/ai-workers/:id/test/stt": {
+    "audioBase64": "sweep"
+  },
+  "POST /api/ai-workers/:id/test/tts": {},
+  "POST /api/ai-workers/:id/test/vision": {
+    "imageBase64": "sweep"
+  },
+  "POST /api/ai-workers/models": {
+    "apiKeyId": "sweep",
+    "kind": "tts",
+    "providerId": "sweep"
+  },
+  "POST /api/ai-workers/reembed": null,
+  "POST /api/ai-workers/test-embedding": {
+    "model": "sweep"
+  },
+  "POST /api/ai-workers/voices": {
+    "apiKeyId": "sweep",
+    "providerId": "sweep",
+    "modelId": "sweep"
+  },
+  "PUT /api/app-nav": null,
+  "PUT /api/app-nav/pins": {
+    "pins": []
+  },
+  "POST /api/apps": {
+    "name": "sweep"
+  },
+  "PATCH /api/apps/:id": {},
+  "DELETE /api/apps/:id": null,
+  "POST /api/apps/:id/build": null,
+  "POST /api/apps/:id/db-broker": {
+    "op": "query",
+    "sql": "sweep"
+  },
+  "PUT /api/apps/:id/draft": {
+    "entry": "sweep",
+    "files": {}
+  },
+  "DELETE /api/apps/:id/draft": null,
+  "POST /api/apps/:id/duplicate": {},
+  "POST /api/apps/:id/format": {
+    "path": "sweep",
+    "content": "sweep"
+  },
+  "POST /api/apps/:id/frame-ticket": null,
+  "POST /api/apps/:id/opened": null,
+  "POST /api/apps/:id/publish": null,
+  "POST /api/apps/:id/snapshots": {},
+  "PATCH /api/apps/:id/snapshots/:sid": {
+    "note": "sweep"
+  },
+  "DELETE /api/apps/:id/snapshots/:sid": null,
+  "POST /api/apps/:id/snapshots/:sid/restore": {
+    "mode": "code"
+  },
+  "POST /api/apps/:id/tool-broker": {
+    "slug": "sweep"
+  },
+  "DELETE /api/apps/deleted/:id": null,
+  "POST /api/apps/deleted/:id/restore": null,
+  "POST /api/apps/import": {
+    "entry": "sweep",
+    "files": {}
+  },
+  "POST /api/apps/import-package": null,
+  "POST /api/assistant/read": {},
+  "POST /api/assistant/threads": null,
+  "POST /api/assistant/threads/:id/continue": null,
+  "POST /api/assistant/threads/:id/summarize": null,
+  "POST /api/assistant/transcribe": null,
+  "POST /api/assistant/turn": {
+    "text": "sweep"
+  },
+  "POST /api/assistant/turn/:turnId/cancel": null,
+  "POST /api/auth/change-password": null,
+  "POST /api/auth/client-code": null,
+  "POST /api/auth/client-code/verify": null,
+  "POST /api/auth/client-link": null,
+  "POST /api/auth/device-login": {
+    "email": "sweep@example.invalid",
+    "password": "sweep"
+  },
+  "POST /api/auth/invite/accept": {
+    "code": "sweep",
+    "password": "sweep"
+  },
+  "POST /api/auth/login": {
+    "email": "sweep@example.invalid",
+    "password": "sweep"
+  },
+  "POST /api/auth/logout": null,
+  "POST /api/auth/mobile-login": {
+    "email": "sweep@example.invalid",
+    "password": "sweep"
+  },
+  "POST /api/auth/mobile-logout": null,
+  "POST /api/auth/pair": null,
+  "POST /api/auth/pair/claim": {
+    "code": "sweepxxxxxxxxxxx"
+  },
+  "POST /api/auth/signup": null,
+  "POST /api/auth/sso": null,
+  "POST /api/auth/token": {
+    "email": "sweep@example.invalid",
+    "password": "sweep"
+  },
+  "POST /api/auth/token/refresh": null,
+  "POST /api/backups": {
+    "enabled": true,
+    "frequency": "sweep",
+    "hour": 1,
+    "keep": 1,
+    "location": "sweep"
+  },
+  "POST /api/backups/run": null,
+  "POST /api/calendar": null,
+  "PATCH /api/calendar/:id": {
+    "enabled": true
+  },
+  "DELETE /api/calendar/:id": null,
+  "POST /api/config/adopt": {
+    "kind": "persona",
+    "slug": "sweep"
+  },
+  "POST /api/config/adopt-all": null,
+  "POST /api/contacts": {},
+  "PATCH /api/contacts/:id": {},
+  "DELETE /api/contacts/:id": null,
+  "DELETE /api/contacts/:id/shares": null,
+  "POST /api/contacts/:id/sharing": {
+    "action": "enable"
+  },
+  "POST /api/debug/integrity/landed/delete": {
+    "nodeId": "11111111-1111-4111-8111-111111111111"
+  },
+  "POST /api/debug/maintenance/run": {
+    "slug": "sweep",
+    "apply": true
+  },
+  "POST /api/debug/maintenance/run/cancel": null,
+  "POST /api/dev-tools/execute-tool": {
+    "slug": "sweep"
+  },
+  "POST /api/dev-tools/mcp": {
+    "name": "sweep"
+  },
+  "POST /api/dev-tools/proxy": null,
+  "POST /api/dev-tools/queue-approval": {},
+  "POST /api/docs/collections": {
+    "label": "sweep",
+    "key": "sweep",
+    "rootPath": "sweep",
+    "brainDepth": "retrieval"
+  },
+  "PATCH /api/docs/collections/:id": {
+    "enabled": true
+  },
+  "POST /api/docs/collections/all": {
+    "enabled": true
+  },
+  "POST /api/draws": {
+    "title": "sweep"
+  },
+  "PATCH /api/draws/:id": {},
+  "DELETE /api/draws/:id": null,
+  "POST /api/draws/:id/commit": {
+    "scene": {}
+  },
+  "POST /api/draws/:id/discard-draft": null,
+  "PUT /api/draws/:id/draft": {
+    "scene": {}
+  },
+  "POST /api/email/accounts": {
+    "address": "sweep@example.invalid",
+    "host": "sweep"
+  },
+  "PATCH /api/email/accounts/:id": {
+    "host": "sweep"
+  },
+  "PUT /api/email/accounts/:id/folders": {},
+  "POST /api/email/discover/contacts": {
+    "address": "sweep@example.invalid"
+  },
+  "PATCH /api/email/messages/:id": {
+    "read": true,
+    "starred": true
+  },
+  "POST /api/embedding": null,
+  "PATCH /api/embedding/extraction": {
+    "concurrency": 1
+  },
+  "POST /api/embedding/rebuild": {},
+  "POST /api/embedding/recover": null,
+  "POST /api/embedding/test": {
+    "provider": "sweep",
+    "model": "sweep",
+    "baseUrl": "sweep",
+    "apiKeyId": "sweep"
+  },
+  "POST /api/entities/dismiss": {
+    "idA": "11111111-1111-4111-8111-111111111111",
+    "idB": "11111111-1111-4111-8111-111111111111"
+  },
+  "POST /api/entities/merge": {
+    "canonicalId": "11111111-1111-4111-8111-111111111111",
+    "dupId": "11111111-1111-4111-8111-111111111111"
+  },
+  "POST /api/events": {
+    "title": "sweep",
+    "startsAt": "2026-10-01T00:00:00.000Z"
+  },
+  "PATCH /api/events/:id": {},
+  "DELETE /api/events/:id": null,
+  "POST /api/federation/chunks": null,
+  "POST /api/federation/query": null,
+  "POST /api/files/files": null,
+  "DELETE /api/files/files": {
+    "ids": ["11111111-1111-4111-8111-111111111111"]
+  },
+  "POST /api/files/files/:id": {
+    "copy_to": "sweep"
+  },
+  "PATCH /api/files/files/:id": {
+    "content": "sweep"
+  },
+  "DELETE /api/files/files/:id": null,
+  "POST /api/files/folders": null,
+  "POST /api/files/folders/:id": {
+    "copy_to": "sweep"
+  },
+  "PATCH /api/files/folders/:id": {
+    "description": "sweep"
+  },
+  "DELETE /api/files/folders/:id": null,
+  "POST /api/formulas": {
+    "spec": {}
+  },
+  "PATCH /api/formulas/:id": {},
+  "DELETE /api/formulas/:id": null,
+  "POST /api/formulas/:id/evaluate": {
+    "target": "sweep"
+  },
+  "POST /api/formulas/seed": null,
+  "POST /api/grants/:nodeId": {
+    "wsId": "11111111-1111-4111-8111-111111111111"
+  },
+  "PATCH /api/grants/:nodeId/:wsId": {
+    "write": true
+  },
+  "DELETE /api/grants/:nodeId/:wsId": null,
+  "POST /api/grants/:nodeId/:wsId/hand": null,
+  "POST /api/grants/:nodeId/:wsId/restore": null,
+  "POST /api/grants/:nodeId/embeds": {
+    "wsIds": ["11111111-1111-4111-8111-111111111111"]
+  },
+  "POST /api/grants/move": {
+    "nodeIds": ["11111111-1111-4111-8111-111111111111"]
+  },
+  "POST /api/grants/move/preview": {
+    "nodeIds": ["11111111-1111-4111-8111-111111111111"]
+  },
+  "POST /api/heartbeats": {
+    "slug": "sweep",
+    "name": "sweep",
+    "agentSlug": "sweep",
+    "skillSlug": "sweep",
+    "schedule": {
+      "kind": "once",
+      "at": "sweep"
+    },
+    "surface": {
+      "kind": "telegram",
+      "chat_id": "sweep"
+    }
+  },
+  "PATCH /api/heartbeats/:id": {},
+  "DELETE /api/heartbeats/:id": null,
+  "POST /api/heartbeats/:id/fire": null,
+  "POST /api/journal": {
+    "body": "sweep"
+  },
+  "PATCH /api/journal/:id": {},
+  "DELETE /api/journal/:id": null,
+  "POST /api/journal/:id/resolve": {
+    "answer": "sweep"
+  },
+  "POST /api/keys": {
+    "service": "sweep",
+    "plaintext": "sweep"
+  },
+  "DELETE /api/keys/:id": null,
+  "POST /api/keys/:id/rotate": {
+    "plaintext": "sweep"
+  },
+  "POST /api/keys/test": {
+    "keyId": "sweep",
+    "service": "sweep"
+  },
+  "POST /api/mcp": null,
+  "DELETE /api/mcp": null,
+  "DELETE /api/mcp-clients/:id": null,
+  "POST /api/mcp-connectors": {
+    "slug": "sweep",
+    "url": "sweep"
+  },
+  "PATCH /api/mcp-connectors/:slug": {},
+  "DELETE /api/mcp-connectors/:slug": null,
+  "POST /api/mcp-connectors/:slug/oauth/start": null,
+  "POST /api/mcp-connectors/:slug/sync": null,
+  "PATCH /api/mcp-settings": null,
+  "POST /api/mcp-status": null,
+  "DELETE /api/member/mcp/clients/:id": null,
+  "POST /api/member/push/connect": null,
+  "PUT /api/member/push/preferences": null,
+  "POST /api/member/push/subscriptions": null,
+  "DELETE /api/member/push/subscriptions/:id": null,
+  "DELETE /api/microsoft/accounts/:id": null,
+  "POST /api/microsoft/accounts/:id/drives": null,
+  "PATCH /api/microsoft/accounts/:id/mail": {
+    "enabled": true
+  },
+  "PUT /api/microsoft/config": {
+    "clientId": "sweep",
+    "redirectUri": "https://example.invalid/a"
+  },
+  "DELETE /api/microsoft/config": null,
+  "PATCH /api/microsoft/drives/:id": {
+    "enabled": true
+  },
+  "PUT /api/microsoft/drives/:id/scopes": {
+    "scopes": []
+  },
+  "POST /api/model-combos/apply": {
+    "combo": "best-advanced"
+  },
+  "POST /api/model-pools": null,
+  "PATCH /api/model-pools/:id": {},
+  "DELETE /api/model-pools/:id": null,
+  "POST /api/network/activate": null,
+  "POST /api/network/deactivate": null,
+  "POST /api/network/key": {
+    "authKey": "sweep",
+    "hostname": "sweep"
+  },
+  "DELETE /api/network/key": null,
+  "POST /api/notes": {
+    "title": "sweep"
+  },
+  "PATCH /api/notes/:id": {},
+  "DELETE /api/notes/:id": null,
+  "POST /api/oauth/authorize": null,
+  "POST /api/oauth/register": null,
+  "POST /api/oauth/token": null,
+  "POST /api/onboarding": null,
+  "POST /api/openapi-connectors": {
+    "slug": "sweep",
+    "specUrl": "sweep"
+  },
+  "PATCH /api/openapi-connectors/:slug": {},
+  "DELETE /api/openapi-connectors/:slug": null,
+  "POST /api/openapi-connectors/:slug/sync": {},
+  "POST /api/openapi-connectors/preview": {
+    "specUrl": "sweep"
+  },
+  "POST /api/pages": {
+    "title": "sweep"
+  },
+  "PATCH /api/pages/:id": {},
+  "DELETE /api/pages/:id": null,
+  "POST /api/pages/:id/commit": {
+    "doc": {}
+  },
+  "POST /api/pages/:id/discard-draft": null,
+  "PUT /api/pages/:id/draft": {
+    "doc": {}
+  },
+  "POST /api/pages/:id/move": {},
+  "POST /api/pdf-passwords": {
+    "password": "sweep"
+  },
+  "DELETE /api/pdf-passwords/:id": null,
+  "POST /api/peers": {
+    "displayName": "sweep",
+    "baseUrl": "sweep"
+  },
+  "PATCH /api/peers/:id": {},
+  "DELETE /api/peers/:id": null,
+  "POST /api/peers/:id/rotate": null,
+  "POST /api/peers/:id/shares": {
+    "nodeId": "11111111-1111-4111-8111-111111111111"
+  },
+  "DELETE /api/peers/:id/shares": null,
+  "PATCH /api/pending/:id": {
+    "decision": "approve"
+  },
+  "PUT /api/profile": {},
+  "PUT /api/profile/avatar": {},
+  "PUT /api/profile/backgrounds": {
+    "backgrounds": "sweep"
+  },
+  "PUT /api/profile/color-theme": {
+    "colorTheme": "sweep"
+  },
+  "PUT /api/profile/default-mode": {
+    "defaultMode": "light"
+  },
+  "PUT /api/profile/fonts": {},
+  "PUT /api/profile/logo": null,
+  "DELETE /api/profile/logo": null,
+  "PUT /api/profile/nav-favorites": {
+    "navFavorites": []
+  },
+  "PUT /api/profile/neat-background": {
+    "neatBackground": "sweep"
+  },
+  "PUT /api/profile/photo": null,
+  "DELETE /api/profile/photo": null,
+  "PUT /api/profile/reminder-channel": {
+    "reminderChannel": "telegram"
+  },
+  "PUT /api/profile/share-neat": {
+    "shareNeat": true
+  },
+  "POST /api/push/connect": null,
+  "PUT /api/push/preferences": null,
+  "POST /api/push/reset": null,
+  "POST /api/push/subscriptions": null,
+  "DELETE /api/push/subscriptions/:id": null,
+  "POST /api/recall/maps": {
+    "title": "sweep",
+    "enterWhen": "sweep"
+  },
+  "PATCH /api/recall/maps/:id": {
+    "version": 1
+  },
+  "DELETE /api/recall/maps/:id": null,
+  "POST /api/recall/maps/:id/cards": {
+    "title": "sweep",
+    "bodyMd": "sweep",
+    "version": 1
+  },
+  "PUT /api/recall/maps/:id/cards/:card": {
+    "title": "sweep",
+    "bodyMd": "sweep",
+    "version": 1
+  },
+  "DELETE /api/recall/maps/:id/cards/:card": null,
+  "POST /api/recall/maps/:id/cards/:card/prompt": {
+    "confirm": true,
+    "version": 1
+  },
+  "POST /api/recall/maps/:id/cards/reorder": {
+    "slugs": ["sweep"],
+    "version": 1
+  },
+  "POST /api/recall/revisions/:id/restore": null,
+  "POST /api/runners/:id": {
+    "action": "cancel"
+  },
+  "POST /api/runs/:id": null,
+  "DELETE /api/sandboxes/:id": null,
+  "POST /api/sandboxes/:id/stop": null,
+  "POST /api/secrets": {
+    "title": "sweep",
+    "kind": "password"
+  },
+  "PATCH /api/secrets/:id": {},
+  "DELETE /api/secrets/:id": null,
+  "POST /api/secrets/:id/reveal": null,
+  "POST /api/services/:name": null,
+  "POST /api/settings/worker-groups": {
+    "slug": "sweep",
+    "name": "sweep"
+  },
+  "PATCH /api/settings/worker-groups/:id": {},
+  "DELETE /api/settings/worker-groups/:id": null,
+  "POST /api/shares": {
+    "nodeId": "11111111-1111-4111-8111-111111111111"
+  },
+  "PATCH /api/shares/:id": {
+    "mode": "sweep"
+  },
+  "DELETE /api/shares/:id": null,
+  "POST /api/shares/contacts": {
+    "nodeId": "11111111-1111-4111-8111-111111111111",
+    "contactIds": ["11111111-1111-4111-8111-111111111111"]
+  },
+  "POST /api/skills": {
+    "slug": "sweep",
+    "name": "sweep",
+    "description": "sweep"
+  },
+  "PATCH /api/skills/:id": {},
+  "DELETE /api/skills/:id": null,
+  "POST /api/studio/prose": null,
+  "POST /api/studio/reset": null,
+  "POST /api/studio/sandbox": null,
+  "POST /api/tables": {
+    "title": "sweep"
+  },
+  "PATCH /api/tables/:id": {},
+  "DELETE /api/tables/:id": null,
+  "POST /api/tables/:id/commit": {},
+  "POST /api/tables/:id/discard-draft": null,
+  "PUT /api/tables/:id/draft": {
+    "data": {}
+  },
+  "POST /api/tables/:id/draft-ops": {
+    "ops": [
+      {
+        "op": "row_add"
+      }
+    ]
+  },
+  "POST /api/tables/:id/history": {},
+  "DELETE /api/tables/:id/history/:sid": null,
+  "POST /api/tables/:id/history/:sid/restore": {},
+  "POST /api/tables/:id/import": null,
+  "POST /api/tasks": {
+    "title": "sweep"
+  },
+  "PATCH /api/tasks/:id": {},
+  "DELETE /api/tasks/:id": null,
+  "POST /api/team-admin/invites": {},
+  "DELETE /api/team-admin/invites/:id": null,
+  "PATCH /api/team-admin/settings": null,
+  "PATCH /api/telegram/chats/:id": {},
+  "POST /api/telegram/chats/:id/block": null,
+  "POST /api/telegram/chats/:id/unpair": null,
+  "DELETE /api/telegram/my-chats/:id": null,
+  "POST /api/telegram/pair": null,
+  "POST /api/tool-groups": {
+    "slug": "sweep",
+    "name": "sweep"
+  },
+  "PATCH /api/tool-groups/:id": {},
+  "DELETE /api/tool-groups/:id": null,
+  "POST /api/tools": {
+    "slug": "sweep",
+    "name": "sweep",
+    "description": "sweep",
+    "handler": {
+      "kind": "builtin",
+      "ref": "sweep"
+    }
+  },
+  "PATCH /api/tools/:id": {},
+  "DELETE /api/tools/:id": null,
+  "PUT /api/tools/:id/external-access": {
+    "allow": true
+  },
+  "PUT /api/tools/settings": {
+    "requireApproval": true,
+    "egressGate": true
+  },
+  "POST /api/tree/:kind/folders": null,
+  "PATCH /api/tree/:kind/folders/:id": null,
+  "DELETE /api/tree/:kind/folders/:id": null,
+  "POST /api/tree/:kind/move": null,
+  "POST /api/tree/items/:id/opened": null,
+  "PUT /api/tree/items/:id/pin": {
+    "pinned": true
+  },
+  "POST /api/updates/check": null,
+  "POST /api/updates/request": {
+    "target": "sweep",
+    "clientTarget": "sweep"
+  },
+  "POST /api/users": {
+    "email": "sweep@example.invalid",
+    "password": "sweepxxx"
+  },
+  "PATCH /api/users/:id": {
+    "displayName": "sweep",
+    "role": "admin",
+    "disabled": true,
+    "contactId": "11111111-1111-4111-8111-111111111111",
+    "signOut": true
+  },
+  "DELETE /api/users/:id": null,
+  "PUT /api/users/:id/agent": {
+    "name": "sweep"
+  },
+  "DELETE /api/users/:id/agent": null,
+  "DELETE /api/users/:id/devices/:jti": null,
+  "POST /api/users/:id/password": {
+    "newPassword": "sweepxxx"
+  },
+  "POST /api/v1/events": {
+    "title": "sweep",
+    "startsAt": "2026-10-01T00:00:00.000Z"
+  },
+  "POST /api/v1/files": null,
+  "POST /api/v1/journal": {
+    "body": "sweep"
+  },
+  "POST /api/v1/notes": {
+    "title": "sweep"
+  },
+  "POST /api/v1/pages": {
+    "title": "sweep"
+  },
+  "PATCH /api/v1/pages/:id": {},
+  "POST /api/v1/tables/:id/commit": {},
+  "POST /api/v1/tables/:id/rows": {
+    "rows": [{}]
+  },
+  "PATCH /api/v1/tables/:id/rows/:rowId": {
+    "cells": {}
+  },
+  "POST /api/v1/tasks": {
+    "title": "sweep"
+  },
+  "PATCH /api/v1/tasks/:id": {},
+  "POST /api/workspaces": {
+    "name": "sweep"
+  },
+  "PATCH /api/workspaces/:id": null,
+  "POST /api/workspaces/:id/archive": null,
+  "POST /api/workspaces/:id/resources": {
+    "kind": "assistant",
+    "id": "sweep"
+  },
+  "PATCH /api/workspaces/:id/resources/:kind/:refId": {
+    "write": true
+  },
+  "DELETE /api/workspaces/:id/resources/:kind/:refId": null,
+  "POST /api/workspaces/:id/users": {
+    "loginId": "11111111-1111-4111-8111-111111111111"
+  },
+  "PATCH /api/workspaces/:id/users/:loginId": {
+    "moderator": true
+  },
+  "DELETE /api/workspaces/:id/users/:loginId": null,
+  "POST /s/:token/code": {
+    "code": "sweep"
+  },
+  "POST /s/:token/db-broker": null,
+  "POST /s/:token/evaluate": null,
+  "POST /s/:token/frame-ticket": null,
+  "POST /s/:token/tool-broker": null
+}
