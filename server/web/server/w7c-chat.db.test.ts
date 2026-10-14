@@ -46,6 +46,9 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getChatLoginOr401: vi.fn(async () => h.login),
+  // The reader a converted chat handler calls (A4 step 3b part 5): the
+  // same stand-in.
+  chatLoginCaller: vi.fn(() => h.login),
 }));
 vi.mock('@/lib/dbos-client', () => ({
   getDbosClient: async () => ({

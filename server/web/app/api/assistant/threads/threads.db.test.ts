@@ -16,22 +16,27 @@ import type { ChatArchiveResponse, ChatThreadRow } from '@mantle/client-types';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ owner: '' }));
 
+// The chat routes (W7c): the owner, an Admin user, for its own threads.
+const chatLogin = vi.hoisted(() => () => ({
+  kind: 'admin',
+  ownerId: h.owner,
+  loginId: h.owner,
+  source: 'web',
+  user: {
+    id: h.owner,
+    email: 'x',
+    actor: { id: h.owner, email: 'x', displayName: null, isOwner: true },
+  },
+  displayName: null,
+  email: 'x',
+}));
+
 vi.mock('@/lib/auth', () => ({
   getOwnerOr401: vi.fn(async () => ({ id: h.owner, email: 'x', actor: { id: h.owner } })),
-  // The chat routes (W7c): the owner, an Admin user, for its own threads.
-  getChatLoginOr401: vi.fn(async () => ({
-    kind: 'admin',
-    ownerId: h.owner,
-    loginId: h.owner,
-    source: 'web',
-    user: {
-      id: h.owner,
-      email: 'x',
-      actor: { id: h.owner, email: 'x', displayName: null, isOwner: true },
-    },
-    displayName: null,
-    email: 'x',
-  })),
+  getChatLoginOr401: vi.fn(async () => chatLogin()),
+  // The reader the converted chat handlers call (A4 step 3b part 5): the
+  // same stand-in.
+  chatLoginCaller: vi.fn(() => chatLogin()),
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

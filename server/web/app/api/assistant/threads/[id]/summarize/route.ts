@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { asSystem, getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { summarizeChatThread } from '@mantle/runtime/agent';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { resolveChatAgentById } from '@/lib/assistant-chat';
 import { chatThreadRow } from '@/lib/chat-threads';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
@@ -14,8 +14,7 @@ import { claimMemberChatWork } from '@/lib/workspace-turn';
  * unchanged, so it never re-bills (chat archive, docs/conversation.md §6c).
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const login = await getChatLoginOr401();
-  if (login instanceof Response) return login;
+  const login = chatLoginCaller();
   const { id } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   // The login's own thread (W7c): another login's thread is not found, nor

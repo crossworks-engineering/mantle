@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getChatLoginOr401, type ChatLogin } from '@/lib/auth';
+import { chatLoginCaller, type ChatLogin } from '@/lib/auth';
 import { recentAssistantMessages } from '@/lib/assistant';
 import { listChatAgents, messagesForReader, resolveChatAgent } from '@/lib/assistant-chat';
 import { asSystem, openChatThread } from '@mantle/db';
@@ -19,8 +19,7 @@ import { getAgentExperience } from '@/lib/agent-experience';
  * not chat with answers as none (`agent: null`).
  */
 export async function GET(req: Request) {
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
+  const login = chatLoginCaller();
   const params = new URL(req.url).searchParams;
   const slug = params.get('agent') ?? undefined;
   // Opt-OUT, so an absent/garbled param keeps the full bundle every existing

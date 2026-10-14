@@ -7,12 +7,11 @@
  * never pair them. Empty for anyone else, a client included.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { listModeratedTelegramChats } from '@/lib/agent-telegram';
 
 export async function GET() {
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
+  const login = chatLoginCaller();
   const chats = await listModeratedTelegramChats(login.ownerId, login.loginId);
   return NextResponse.json({ chats });
 }

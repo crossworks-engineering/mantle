@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { resolveChatAgent } from '@/lib/assistant-chat';
 import { markAssistantRead } from '@/lib/assistant-inbox';
 
@@ -17,8 +17,7 @@ const Body = z.object({
  * Owner-gated → works with a mobile bearer token.
  */
 export async function POST(req: Request) {
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
+  const login = chatLoginCaller();
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

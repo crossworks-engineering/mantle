@@ -20,7 +20,7 @@
  */
 
 import { NextResponse } from '@/server/http-compat';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { claimMemberChatWork } from '@/lib/workspace-turn';
 import { asSystem, getDefaultWorker } from '@mantle/db';
@@ -29,8 +29,7 @@ import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 
 export async function POST(req: Request) {
-  const login = await getChatLoginOr401();
-  if (login instanceof Response) return login;
+  const login = chatLoginCaller();
   if (login.kind !== 'admin') {
     const gate = rateLimit(`chat-transcribe:${login.loginId}`, { max: 6, windowMs: 60_000 });
     if (!gate.ok) {

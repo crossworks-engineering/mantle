@@ -25,7 +25,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import {
   pairMyTelegramChat,
   pairingRefusalStatus,
@@ -49,8 +49,7 @@ const Body = z
   });
 
 export async function POST(req: Request) {
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
+  const login = chatLoginCaller();
   const gate = rateLimit(`telegram-pair:${login.loginId}`, { max: 10, windowMs: 60_000 });
   if (!gate.ok) {
     return NextResponse.json(

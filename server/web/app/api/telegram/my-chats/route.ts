@@ -4,12 +4,11 @@
  * none.
  */
 import { NextResponse } from '@/server/http-compat';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { listMyTelegramChats } from '@/lib/agent-telegram';
 
 export async function GET() {
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
+  const login = chatLoginCaller();
   const chats = await listMyTelegramChats(login.ownerId, login.loginId);
   return NextResponse.json({ chats });
 }

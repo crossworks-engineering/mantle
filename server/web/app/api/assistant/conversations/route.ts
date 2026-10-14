@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { assistantConversations } from '@/lib/assistant-inbox';
 import { chatAgentIds } from '@/lib/assistant-chat';
 
@@ -10,8 +10,7 @@ import { chatAgentIds } from '@/lib/assistant-chat';
  * threads; a member or a client lists the assistants of its workspaces.
  */
 export async function GET() {
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
+  const login = chatLoginCaller();
   const conversations = await assistantConversations(
     login.ownerId,
     login.loginId,

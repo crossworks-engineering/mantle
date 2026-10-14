@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from '@/server/http-compat';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { getChatThread, openChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { assistantMessagesBefore } from '@/lib/assistant';
@@ -10,8 +10,9 @@ import { threadRange } from '@/lib/chat-threads';
  * Older page of assistant messages for scroll-up lazy loading. Returns up
  * to `limit` (default 100) messages before the `before` ISO cursor, scoped
  * to the login's OWN thread with the selected agent (any login since W7c;
- * each user reads only their own threads). getChatLoginOr401 401s an
- * unauthenticated/expired client rather than redirecting to /login.
+ * each user reads only their own threads). The gate answers the chat
+ * login (chatLoginCaller()) and 401s an unauthenticated/expired client
+ * rather than redirecting to /login.
  *
  * Chat archive (docs/conversation.md §6c): without `?thread=` the page stays
  * inside the agent's OPEN thread, so an archived chat never pages back into
@@ -22,8 +23,7 @@ import { threadRange } from '@/lib/chat-threads';
 const PAGE = 100;
 
 export async function GET(req: NextRequest) {
-  const login = await getChatLoginOr401();
-  if (login instanceof Response) return login;
+  const login = chatLoginCaller();
   const { searchParams } = new URL(req.url);
 
   // `before` is the load-older pagination cursor. Absent means "the latest page"

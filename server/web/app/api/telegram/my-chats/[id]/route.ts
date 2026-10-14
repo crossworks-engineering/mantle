@@ -6,14 +6,13 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { unpairMyTelegramChat } from '@/lib/agent-telegram';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
+  const login = chatLoginCaller();
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const ok = await unpairMyTelegramChat(login.ownerId, login.loginId, idParsed.data.id);

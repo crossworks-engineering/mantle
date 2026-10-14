@@ -1,5 +1,4 @@
-import { NextResponse } from '@/server/http-compat';
-import { getChatLoginOr401 } from '@/lib/auth';
+import { chatLoginCaller } from '@/lib/auth';
 import { subscribeConversations, type ConversationChange } from '@/lib/realtime';
 
 /**
@@ -19,8 +18,7 @@ import { subscribeConversations, type ConversationChange } from '@/lib/realtime'
  */
 
 export async function GET(req: Request): Promise<Response> {
-  const login = await getChatLoginOr401();
-  if (login instanceof NextResponse) return login;
+  const login = chatLoginCaller();
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
