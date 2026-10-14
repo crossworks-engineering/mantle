@@ -103,6 +103,8 @@ vi.mock('@/lib/auth', async (importOriginal) => {
       member: member(),
     })),
     getMemberOr401: vi.fn(async () => member()),
+    // The member route's reader (A4 step 3b part 5): the same stand-in.
+    memberCaller: vi.fn(() => member()),
     getMemberForAsset: vi.fn(async () => member()),
     memberLoginActive: vi.fn(async () => h.loginActive),
   };

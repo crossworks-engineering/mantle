@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { getMemberOr401, memberLoginActive, sessionCookieExpiryMs } from '@/lib/auth';
+import { memberCaller, memberLoginActive, sessionCookieExpiryMs } from '@/lib/auth';
 import { sseResponse } from '@/lib/sse';
 import { memberStreamLifetimeMs, takeMemberStream } from '@/lib/member-streams';
 
@@ -16,8 +16,7 @@ import { memberStreamLifetimeMs, takeMemberStream } from '@/lib/member-streams';
  * MEMBER_STREAMS_PER_LOGIN at once (429 beyond, lib/member-streams.ts).
  */
 export async function GET(req: Request): Promise<Response> {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
 
   const maxLifetimeMs = memberStreamLifetimeMs(await sessionCookieExpiryMs());
   const release = takeMemberStream(member.loginId);

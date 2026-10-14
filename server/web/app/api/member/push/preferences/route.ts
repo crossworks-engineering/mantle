@@ -1,4 +1,4 @@
-import { getMemberOr401 } from '@/lib/auth';
+import { memberCaller } from '@/lib/auth';
 import { loginPushPrefs, loginPushPrefsUpdate } from '@/lib/push/login-routes';
 
 /**
@@ -7,13 +7,11 @@ import { loginPushPrefs, loginPushPrefsUpdate } from '@/lib/push/login-routes';
  * takes a partial patch; unknown or mistyped fields are ignored.
  */
 export async function GET() {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   return loginPushPrefs(member);
 }
 
 export async function PUT(req: Request) {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   return loginPushPrefsUpdate(req, member);
 }

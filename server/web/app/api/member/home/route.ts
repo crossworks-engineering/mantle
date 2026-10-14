@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import type { MemberHomeData } from '@mantle/client-types';
 import type { HubData } from '@mantle/share-ui/app-bridge-protocol';
-import { getMemberOr401 } from '@/lib/auth';
+import { memberCaller } from '@/lib/auth';
 import { firstSharedWorkspaceOf, landingName, workspaceHome } from '@/lib/landing';
 
 /**
@@ -20,8 +20,7 @@ import { firstSharedWorkspaceOf, landingName, workspaceHome } from '@/lib/landin
  * (route-scope classes it 'content', W7e fix round 1, L1).
  */
 export async function GET() {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   const who = {
     anchorId: member.anchorId,
     loginId: member.loginId,

@@ -15,14 +15,19 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const h = vi.hoisted(() => ({ anchor: '', member: '' }));
 
+const member = vi.hoisted(() => () => ({
+  anchorId: h.anchor,
+  loginId: h.member,
+  email: 'member@example.invalid',
+  displayName: 'Member',
+}));
+
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getMemberOr401: vi.fn(async () => ({
-    anchorId: h.anchor,
-    loginId: h.member,
-    email: 'member@example.invalid',
-    displayName: 'Member',
-  })),
+  getMemberOr401: vi.fn(async () => member()),
+  // The reader the converted handler calls (A4 step 3b part 5): the same
+  // stand-in.
+  memberCaller: vi.fn(() => member()),
 }));
 
 describe.skipIf(!URL)("the member MCP screen's connectors", () => {

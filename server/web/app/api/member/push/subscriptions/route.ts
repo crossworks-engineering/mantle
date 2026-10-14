@@ -1,4 +1,4 @@
-import { getMemberOr401 } from '@/lib/auth';
+import { memberCaller } from '@/lib/auth';
 import { loginPushDevices, loginPushSubscribe } from '@/lib/push/login-routes';
 
 /**
@@ -11,13 +11,11 @@ import { loginPushDevices, loginPushSubscribe } from '@/lib/push/login-routes';
  *        devices, metadata only.
  */
 export async function POST(req: Request) {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   return loginPushSubscribe(req, member);
 }
 
 export async function GET(req: Request) {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   return loginPushDevices(req, member);
 }

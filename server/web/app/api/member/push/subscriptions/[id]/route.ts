@@ -1,4 +1,4 @@
-import { getMemberOr401 } from '@/lib/auth';
+import { memberCaller } from '@/lib/auth';
 import { loginPushUnpair } from '@/lib/push/login-routes';
 
 /**
@@ -6,7 +6,6 @@ import { loginPushUnpair } from '@/lib/push/login-routes';
  * devices (mobile_roles_push). Another login's device, or an unknown id, is a 404.
  */
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   return loginPushUnpair(member, (await ctx.params).id);
 }

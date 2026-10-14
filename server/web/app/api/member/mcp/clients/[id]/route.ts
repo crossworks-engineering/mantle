@@ -7,12 +7,11 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { isUuid } from '@mantle/std';
-import { getMemberOr401 } from '@/lib/auth';
+import { memberCaller } from '@/lib/auth';
 import { disconnectLoginClient } from '@/lib/mcp-clients';
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   const { id } = await ctx.params;
   if (!isUuid(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const removed = await disconnectLoginClient(member.anchorId, member.loginId, id.toLowerCase());

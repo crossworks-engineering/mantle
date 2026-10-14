@@ -1,4 +1,4 @@
-import { getMemberOr401 } from '@/lib/auth';
+import { memberCaller } from '@/lib/auth';
 import { loginPushConnect } from '@/lib/push/login-routes';
 
 /**
@@ -10,7 +10,6 @@ import { loginPushConnect } from '@/lib/push/login-routes';
  * be the one who registers this brain with the relay (the first Connect).
  */
 export async function POST(req: Request) {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   return loginPushConnect(req, member);
 }

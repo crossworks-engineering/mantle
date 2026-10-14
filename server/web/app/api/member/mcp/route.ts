@@ -22,13 +22,12 @@ import { NextResponse } from '@/server/http-compat';
 import { loadProfilePreferences } from '@mantle/content';
 import { listLoginConnectorTools } from '@mantle/tools';
 import type { MemberMcpConnector, MemberMcpView } from '@mantle/client-types';
-import { getMemberOr401 } from '@/lib/auth';
+import { memberCaller } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
 import { listLoginClients } from '@/lib/mcp-clients';
 
 export async function GET() {
-  const member = await getMemberOr401();
-  if (member instanceof Response) return member;
+  const member = memberCaller();
   const [prefs, clients, tools] = await Promise.all([
     loadProfilePreferences(member.anchorId),
     listLoginClients(member.anchorId, member.loginId),
