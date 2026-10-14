@@ -63,6 +63,7 @@ import {
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
 import { isSystemScope } from '@mantle/db/viewer';
+import { ConflictError } from '@mantle/std';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
 
@@ -255,7 +256,7 @@ export async function upsertFile(args: {
       ));
     if (there) {
       if (args.spooled) await discardSpooled(args.spooled);
-      throw new Error(`writeFile: '${filename}' already exists in this folder`);
+      throw new ConflictError(`writeFile: '${filename}' already exists in this folder`);
     }
   }
   const staged: StagedFile = args.spooled
@@ -1197,7 +1198,7 @@ export async function renameFileById(args: {
   // file does not take a folded file's name either.
   const taken = await fileNameTaken(args.ownerId, node.path, newFilename);
   if (taken && taken.id !== node.id && (taken.folded || foldedFilePath(node))) {
-    throw new Error(`renameFile: '${newFilename}' already exists in this folder`);
+    throw new ConflictError(`renameFile: '${newFilename}' already exists in this folder`);
   }
   // A3b part 2 (store-broker.ts flipThenPlace): the row first, the checked
   // statement (exactly one row, else a refusal with the disk untouched),

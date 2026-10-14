@@ -194,6 +194,7 @@ import {
 } from './events-time';
 import type { EventRow } from '@mantle/client-types';
 import { asKindRootRepair } from './kind-root';
+import { InputError } from '@mantle/std';
 export type { EventRow };
 
 export async function createEvent(ownerId: string, input: CreateEventInput): Promise<EventRow> {
@@ -201,7 +202,7 @@ export async function createEvent(ownerId: string, input: CreateEventInput): Pro
   // Validate ISO. `new Date('garbage')` is invalid; we want to fail clearly
   // rather than write nonsense into the JSON.
   const startsAt = new Date(input.startsAt);
-  if (Number.isNaN(startsAt.getTime())) throw new Error('invalid starts_at');
+  if (Number.isNaN(startsAt.getTime())) throw new InputError('invalid starts_at');
   const remindMinutes = Math.max(0, Math.floor(input.remindMinutesBefore ?? 0));
   const recur = sanitiseRecur(input.recur);
   const data: Record<string, unknown> = {
@@ -215,12 +216,12 @@ export async function createEvent(ownerId: string, input: CreateEventInput): Pro
   // recur_until is only meaningful for a repeating event.
   if (recur !== 'none' && input.recurUntil) {
     const until = new Date(input.recurUntil);
-    if (Number.isNaN(until.getTime())) throw new Error('invalid recur_until');
+    if (Number.isNaN(until.getTime())) throw new InputError('invalid recur_until');
     data.recur_until = until.toISOString();
   }
   if (input.endsAt) {
     const endsAt = new Date(input.endsAt);
-    if (Number.isNaN(endsAt.getTime())) throw new Error('invalid ends_at');
+    if (Number.isNaN(endsAt.getTime())) throw new InputError('invalid ends_at');
     data.ends_at = endsAt.toISOString();
   }
   if (input.location) data.location = input.location.slice(0, 200);
@@ -261,14 +262,14 @@ export async function updateEvent(
   let startsAtChanged = false;
   if (input.startsAt !== undefined) {
     const d = new Date(input.startsAt);
-    if (Number.isNaN(d.getTime())) throw new Error('invalid starts_at');
+    if (Number.isNaN(d.getTime())) throw new InputError('invalid starts_at');
     newData.starts_at = d.toISOString();
     startsAtChanged = true;
   }
   if (input.endsAt !== undefined) {
     if (input.endsAt) {
       const d = new Date(input.endsAt);
-      if (Number.isNaN(d.getTime())) throw new Error('invalid ends_at');
+      if (Number.isNaN(d.getTime())) throw new InputError('invalid ends_at');
       newData.ends_at = d.toISOString();
     } else {
       delete newData.ends_at;
@@ -294,7 +295,7 @@ export async function updateEvent(
     const stillRecurs = sanitiseRecur(newData.recur) !== 'none';
     if (input.recurUntil && stillRecurs) {
       const until = new Date(input.recurUntil);
-      if (Number.isNaN(until.getTime())) throw new Error('invalid recur_until');
+      if (Number.isNaN(until.getTime())) throw new InputError('invalid recur_until');
       newData.recur_until = until.toISOString();
     } else {
       delete newData.recur_until;

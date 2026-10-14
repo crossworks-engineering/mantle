@@ -18,6 +18,7 @@ import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, sqlQuote, type SqliteDb } from './sqlite';
 import { env } from '@mantle/config';
+import { defineDomainError } from '@mantle/std';
 
 /**
  * Workbook-file engine (Tables v2 P1). The file IS the workbook: one Table
@@ -68,6 +69,15 @@ export class TableTooLargeError extends Error {
     this.name = 'TableTooLargeError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): the
+// caller asked for more rows than a table loads whole, as the commit route
+// answered by hand.
+defineDomainError(TableTooLargeError, {
+  reason:
+    'the table is over the rows a whole read or an import may take; the message says what to do',
+  status: 400,
+});
 
 export type TabStats = { tabId: string; name: string; rows: number; columns: number };
 export type WorkbookStats = { tabs: TabStats[]; totalRows: number };

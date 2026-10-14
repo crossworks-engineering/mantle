@@ -38,6 +38,7 @@ import {
 } from '@mantle/db';
 import { folderCounts, folderRowFromNode, rowNow, type FolderRow } from './shared';
 import { folderById } from './queries';
+import { InputError } from '@mantle/std';
 
 /** Longest folder name people see (TREE_FOLDER_NAME_MAX in
  *  @mantle/client-types/tree). */
@@ -465,7 +466,7 @@ export async function renameFolderById(args: {
     )
     .limit(1);
   if (clash) {
-    throw new Error(`renameFolderById: a folder named '${slug}' already exists here`);
+    throw new InputError(`renameFolderById: a folder named '${slug}' already exists here`);
   }
 
   // A3b part 2 (store-broker.ts flipThenPlace): the DB cascade first, in one

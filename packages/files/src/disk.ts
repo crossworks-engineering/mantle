@@ -13,6 +13,7 @@ import { Transform, type Readable } from 'node:stream';
 import { once } from 'node:events';
 import { pipeline } from 'node:stream/promises';
 import { diskPathForFile, diskPathForLtree, filesRoot, isFilesPath } from './paths';
+import { ConflictError } from '@mantle/std';
 
 /** Ensure the root + an arbitrary descendant directory exist. mkdir -p. */
 export async function ensureDir(ltreePath: string): Promise<string> {
@@ -309,7 +310,7 @@ export async function renameFile(
   if (from === to) return { path: from };
   try {
     await fs.access(to);
-    throw new Error(`renameFile: '${toName}' already exists in this folder`);
+    throw new ConflictError(`renameFile: '${toName}' already exists in this folder`);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       if (err instanceof Error && err.message.includes('already exists')) throw err;
@@ -333,7 +334,7 @@ export async function moveFile(
   if (from === to) return { path: from };
   try {
     await fs.access(to);
-    throw new Error(`moveFile: '${filename}' already exists in the destination folder`);
+    throw new ConflictError(`moveFile: '${filename}' already exists in the destination folder`);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
@@ -373,7 +374,7 @@ export async function renameFolder(fromLtree: string, toLtree: string): Promise<
   }
   try {
     await fs.access(to);
-    throw new Error(`renameFolder: '${toLtree}' already exists`);
+    throw new ConflictError(`renameFolder: '${toLtree}' already exists`);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       if (err instanceof Error && err.message.includes('already exists')) throw err;

@@ -23,6 +23,7 @@
  * `req.json()` skipped it.
  */
 import type { z } from 'zod';
+import { defineDomainError } from '@mantle/std';
 import { readBodyCapped } from './body-limit';
 import { firstIssue } from './zod-issue';
 
@@ -30,7 +31,7 @@ import { firstIssue } from './zod-issue';
 export const BAD_JSON_MESSAGE = 'invalid JSON';
 
 /** A request body the route cannot use: answered 400 `{ error: message }`
- *  by app.onError (answerAppError). The message is public: the reader's
+ *  by app.onError (answerAppError, from the domain error table). The message is public: the reader's
  *  own text, or the first problem the route's schema found. */
 export class BadBodyError extends Error {
   constructor(message: string) {
@@ -38,6 +39,11 @@ export class BadBodyError extends Error {
     this.name = 'BadBodyError';
   }
 }
+
+defineDomainError(BadBodyError, {
+  reason: 'the body is not JSON, or not what the route reads; the message says which',
+  status: 400,
+});
 
 /** How a route reads its body (readJson, readBody). */
 export type ReadBodyOptions = {

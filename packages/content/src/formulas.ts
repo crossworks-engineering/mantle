@@ -33,6 +33,7 @@ import {
 } from '@mantle/db';
 import { parseFormulaSpec, type FormulaSpec } from '@mantle/content-core/formula-spec';
 import { asKindRootRepair } from './kind-root';
+import { defineDomainError } from '@mantle/std';
 
 export const FORMULA_ROOT_LABEL = 'formulas';
 
@@ -98,6 +99,14 @@ export class FormulaSpecError extends Error {
     this.name = 'FormulaSpecError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): every
+// problem at once, so the editor shows them together.
+defineDomainError(FormulaSpecError, {
+  reason: 'the formula spec the caller sent has problems; the list says which',
+  status: 400,
+  body: (e) => ({ error: e.message, errors: e.errors }),
+});
 
 /**
  * Structural check rather than `instanceof`, because callers live in other

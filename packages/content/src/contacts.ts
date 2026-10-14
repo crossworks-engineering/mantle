@@ -77,6 +77,7 @@ export {
   type UpdateContactInput,
 } from '@mantle/content-core/contacts-format';
 import { asKindRootRepair } from './kind-root';
+import { InputError } from '@mantle/std';
 
 // ─── row + CRUD ────────────────────────────────────────────────────────────
 
@@ -407,7 +408,7 @@ function normalizeContactInput(input: CreateContactInput) {
     const trimmed = (raw ?? '').trim();
     if (!trimmed) continue;
     if (!isPlausibleEmailOrDomain(trimmed)) {
-      throw new Error(
+      throw new InputError(
         `'${trimmed}' isn't a valid email address or @domain (use @example.com to allow a whole domain).`,
       );
     }
@@ -419,10 +420,10 @@ function normalizeContactInput(input: CreateContactInput) {
   }
 
   if (input.countryCode && !countryCode) {
-    throw new Error(`'${input.countryCode}' is not a recognised country code (e.g. +27).`);
+    throw new InputError(`'${input.countryCode}' is not a recognised country code (e.g. +27).`);
   }
   if (cell && !countryCode) {
-    throw new Error('Country code is required when a cell number is set.');
+    throw new InputError('Country code is required when a cell number is set.');
   }
   return { firstName, lastName, company, emails, countryCode, cell, description };
 }
@@ -515,7 +516,7 @@ export async function updateContact(
   // CREATE path stays permissive so the `+` button can still spawn a blank
   // draft; the user is required to fill in identity on first save.)
   if (!hasIdentity(fields)) {
-    throw new Error('A contact needs at least a first name, last name, or company.');
+    throw new InputError('A contact needs at least a first name, last name, or company.');
   }
 
   // Did any extractor-visible field change? If so the prior summary/embedding

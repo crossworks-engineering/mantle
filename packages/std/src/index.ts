@@ -15,6 +15,7 @@
  * the surface (publicToolError) without touching every tool.
  */
 import { DATABASE_ERROR_PUBLIC, mapAccessError } from './access-error';
+import { domainErrorAnswer } from './domain-errors';
 
 let dbErrorWatch: () => { texts: string[]; errors: unknown[] } | undefined = () => undefined;
 
@@ -104,14 +105,28 @@ export {
   type EditRefusalDetail,
 } from './access-error';
 
+export {
+  ConflictError,
+  DOMAIN_ERRORS,
+  InputError,
+  defineDomainError,
+  domainErrorAnswer,
+  type DomainAnswer,
+  type DomainErrorRow,
+} from './domain-errors';
+
 /**
  * The message of `err` for a caller outside the server (a tool reply, an MCP
  * client): a database error never goes out as its own text, which can carry
  * SQL, parameters or (with a row rule in force) something about a row the
  * caller may not read (workspaces W3, defence in depth). Logged in full
- * under `where`. Anything else keeps its message.
+ * under `where`. A domain error says its row's text (the table the HTTP
+ * answer reads, domain-errors.ts, A10 part 2). Anything else keeps its
+ * message.
  */
 export function publicErrorMessage(err: unknown, where: string): string {
+  const domain = domainErrorAnswer(err);
+  if (domain) return domain.toolText;
   if (!isDatabaseError(err)) return err instanceof Error ? err.message : String(err);
   console.error(`[${where}] database error:`, err);
   return databaseErrorPublic(err);

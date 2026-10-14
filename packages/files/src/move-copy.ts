@@ -60,6 +60,7 @@ import {
   type FileRow,
   type FolderRow,
 } from './ops';
+import { ConflictError, InputError } from '@mantle/std';
 
 /** Recursive folder copies refuse above this many files. Big enough for a
  *  real folder of documents, small enough that the re-extraction bill is a
@@ -135,7 +136,9 @@ export async function moveFileById(args: {
     .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
   if (!node || node.type !== 'file') {
-    throw new Error('moveFileById: file not found — find the id with file_list / search_nodes');
+    throw new InputError(
+      'moveFileById: file not found — find the id with file_list / search_nodes',
+    );
   }
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
@@ -146,7 +149,7 @@ export async function moveFileById(args: {
   }
   const dest = await branchAt(args.ownerId, args.destPath);
   if (!dest) {
-    throw new Error(
+    throw new InputError(
       `moveFileById: no folder at '${args.destPath}' — create it with folder_create, or find the right path with folder_list`,
     );
   }
@@ -156,7 +159,7 @@ export async function moveFileById(args: {
       ? node
       : null);
   if (clash) {
-    throw new Error(
+    throw new ConflictError(
       `moveFileById: '${filename}' already exists in '${args.destPath}' — rename one of them first (file_rename)`,
     );
   }
@@ -234,7 +237,7 @@ async function assertSubtreeFits(
     );
   const span = (row?.deepest ?? 0) - folderPath.split('.').length + 1;
   if (filesFolderDepth(destParentPath) + Math.max(span, 1) > FILES_MAX_FOLDER_DEPTH) {
-    throw new Error(
+    throw new InputError(
       `${op}: '${folderPath}' would sit deeper than ${FILES_MAX_FOLDER_DEPTH} folder levels under '${destParentPath}'; move it higher up`,
     );
   }
@@ -256,23 +259,23 @@ export async function moveFolderById(args: {
     .where(and(eq(nodes.id, args.folderId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
   if (!node || node.type !== 'branch') {
-    throw new Error('moveFolderById: folder not found — find the id with folder_list');
+    throw new InputError('moveFolderById: folder not found — find the id with folder_list');
   }
   if (node.path === FILES_ROOT_LABEL) {
-    throw new Error('moveFolderById: cannot move the files root');
+    throw new InputError('moveFolderById: cannot move the files root');
   }
   if (!isFilesPath(node.path)) throw notAFilesFolder('moveFolderById', node.path);
   if (!isFilesPath(args.destParentPath)) {
     throw notAFilesFolder('moveFolderById', args.destParentPath);
   }
   if ((node.data as Record<string, unknown> | null)?.system === true) {
-    throw new Error(
+    throw new InputError(
       'moveFolderById: this folder is made by Mantle and found by its path; it cannot be moved',
     );
   }
   const destParent = await branchAt(args.ownerId, args.destParentPath);
   if (!destParent) {
-    throw new Error(
+    throw new InputError(
       `moveFolderById: no folder at '${args.destParentPath}' — create it with folder_create first`,
     );
   }
@@ -286,13 +289,13 @@ export async function moveFolderById(args: {
   // Into itself or a descendant would orphan the subtree ('files.a' →
   // 'files.a.b.a' rewrites the destination while rewriting the source).
   if (args.destParentPath === oldPath || args.destParentPath.startsWith(`${oldPath}.`)) {
-    throw new Error(
+    throw new InputError(
       `moveFolderById: cannot move '${oldPath}' into its own subtree ('${args.destParentPath}')`,
     );
   }
   await assertSubtreeFits(args.ownerId, oldPath, args.destParentPath, 'moveFolderById');
   if (await branchAt(args.ownerId, newPath)) {
-    throw new Error(
+    throw new ConflictError(
       `moveFolderById: a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`,
     );
   }
@@ -376,7 +379,9 @@ export async function copyFileById(args: {
 }): Promise<FileRow> {
   const src = await readFileById({ ownerId: args.ownerId, fileId: args.fileId });
   if (!src) {
-    throw new Error('copyFileById: file not found — find the id with file_list / search_nodes');
+    throw new InputError(
+      'copyFileById: file not found — find the id with file_list / search_nodes',
+    );
   }
   // The raw node, for what FileRow doesn't carry: tags and the file's OWN
   // indexing flag. A copy of a name-only file must stay name-only wherever
@@ -393,7 +398,7 @@ export async function copyFileById(args: {
   const srcTags = (srcNode?.tags ?? []).filter((t) => t !== 'file');
   const dest = await branchAt(args.ownerId, args.destPath);
   if (!dest) {
-    throw new Error(
+    throw new InputError(
       `copyFileById: no folder at '${args.destPath}' — create it with folder_create first`,
     );
   }
@@ -401,7 +406,7 @@ export async function copyFileById(args: {
   // upsertFile(overwrite:false) also refuses collisions; checking first gives
   // the specific teaching error rather than a generic write failure.
   if (await fileInFolder(args.ownerId, args.destPath, filename)) {
-    throw new Error(
+    throw new InputError(
       `copyFileById: '${filename}' already exists in '${args.destPath}' — pass new_filename to copy under another name`,
     );
   }
@@ -433,28 +438,29 @@ export async function copyFolderById(args: {
     .where(and(eq(nodes.id, args.folderId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
   if (!node || node.type !== 'branch') {
-    throw new Error('copyFolderById: folder not found — find the id with folder_list');
+    throw new InputError('copyFolderById: folder not found — find the id with folder_list');
   }
-  if (node.path === FILES_ROOT_LABEL) throw new Error('copyFolderById: cannot copy the files root');
+  if (node.path === FILES_ROOT_LABEL)
+    throw new InputError('copyFolderById: cannot copy the files root');
   if (!isFilesPath(node.path)) throw notAFilesFolder('copyFolderById', node.path);
   if (!isFilesPath(args.destParentPath)) {
     throw notAFilesFolder('copyFolderById', args.destParentPath);
   }
   const destParent = await branchAt(args.ownerId, args.destParentPath);
   if (!destParent) {
-    throw new Error(
+    throw new InputError(
       `copyFolderById: no folder at '${args.destParentPath}' — create it with folder_create first`,
     );
   }
   if (args.destParentPath === node.path || args.destParentPath.startsWith(`${node.path}.`)) {
-    throw new Error(
+    throw new InputError(
       `copyFolderById: cannot copy '${node.path}' into its own subtree ('${args.destParentPath}')`,
     );
   }
   await assertSubtreeFits(args.ownerId, node.path, args.destParentPath, 'copyFolderById');
   const label = node.path.split('.').at(-1)!;
   if (await branchAt(args.ownerId, `${args.destParentPath}.${label}`)) {
-    throw new Error(
+    throw new InputError(
       `copyFolderById: a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`,
     );
   }
@@ -471,7 +477,7 @@ export async function copyFolderById(args: {
     .orderBy(sql`nlevel(${nodes.path}) asc`, sql`${nodes.type} asc`);
   const fileCount = subtree.filter((n) => n.type === 'file').length;
   if (fileCount > COPY_MAX_FILES) {
-    throw new Error(
+    throw new InputError(
       `copyFolderById: '${node.path}' holds ${fileCount} files (cap ${COPY_MAX_FILES}) — copy subfolders individually, or flag the destination name-only first if you don't need the copies content-indexed`,
     );
   }

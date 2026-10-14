@@ -9,7 +9,7 @@
  * order are plain row data for every kind.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { publicErrorMessage } from '@mantle/std';
+import { defineDomainError, publicErrorMessage } from '@mantle/std';
 import { BUSY_MESSAGE, db, isBusy, isScopeWriteRefusal, nodes, executeWrite } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
@@ -83,6 +83,15 @@ export class TreeError extends Error {
     this.name = 'TreeError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): what
+// treeErrorResponse answered by hand in each route.
+defineDomainError(TreeError, {
+  reason: 'a folder write the caller asked for cannot be done as asked; the message says why',
+  status: (e) =>
+    e.code === 'not-found' ? 404 : e.code === 'conflict' ? 409 : e.code === 'gone' ? 410 : 400,
+  body: (e) => (e.code === 'gone' ? { error: e.message, code: 'gone' } : { error: e.message }),
+});
 
 /** The per-kind half of a write. Paths are ltree strings. */
 type TreeKindOps = {

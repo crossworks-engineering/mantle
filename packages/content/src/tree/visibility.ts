@@ -19,6 +19,7 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { currentCreateHome, db, itemWriteRefusal, scopeReadsItem } from '@mantle/db';
+import { defineDomainError } from '@mantle/std';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -54,6 +55,15 @@ export class TreeVisibilityError extends Error {
     this.name = 'TreeVisibilityError';
   }
 }
+
+// The one error answer (A10 part 2, @mantle/std domain-errors.ts): the
+// list, so the caller can ask and repeat with confirm (what
+// treeErrorResponse answered by hand).
+defineDomainError(TreeVisibilityError, {
+  reason: 'the write changes who can see items: the caller confirms first',
+  status: 409,
+  body: (e) => ({ error: 'visibility', changes: e.diff.changes, total: e.diff.total }),
+});
 
 export const NO_CHANGE: VisibilityDiff = { changes: [], total: 0 };
 

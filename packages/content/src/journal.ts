@@ -60,6 +60,7 @@ export {
 } from '@mantle/content-core/journal-options';
 import type { JournalRow } from '@mantle/client-types';
 import { asKindRootRepair } from './kind-root';
+import { InputError } from '@mantle/std';
 export type { JournalRow };
 
 /**
@@ -317,7 +318,7 @@ export async function createJournal(
   if (input.entryDate?.trim()) {
     // Validate before storing — a non-date string would poison the sort cast.
     const iso = normalizeEntryDate(input.entryDate);
-    if (!iso) throw new Error('entry_date must be a valid date (ISO 8601)');
+    if (!iso) throw new InputError('entry_date must be a valid date (ISO 8601)');
     data.entry_date = iso;
   }
   const title = input.title?.trim() || deriveTitle(body);
@@ -377,7 +378,7 @@ export async function updateJournal(
     const e = input.entryDate.trim();
     if (e) {
       const iso = normalizeEntryDate(e);
-      if (!iso) throw new Error('entry_date must be a valid date (ISO 8601)');
+      if (!iso) throw new InputError('entry_date must be a valid date (ISO 8601)');
       newData.entry_date = iso;
     } else {
       delete newData.entry_date;
@@ -448,7 +449,7 @@ export async function resolveGapEntry(
   const d = (node.data ?? {}) as Record<string, unknown>;
   if (d.kind !== 'gap') return null;
   const answerBody = (input.answer ?? '').trim();
-  if (!answerBody) throw new Error('answer is required to resolve a gap');
+  if (!answerBody) throw new InputError('answer is required to resolve a gap');
   const answerKind = input.answerKind?.trim() || 'context';
 
   // Write the answer FIRST. If marking the gap resolved then fails, the gap
