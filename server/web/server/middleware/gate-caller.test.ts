@@ -32,6 +32,8 @@ const counts = vi.hoisted(() => ({
   touches: 0,
   handled: 0,
   audits: [] as string[],
+  /** An error the audit row throws (the owner answer failing). */
+  auditThrows: null as Error | null,
   bearers: new Map<string, { userId: string; revokedAt: Date | null; expiresAt: Date }>(),
 }));
 
@@ -75,6 +77,7 @@ vi.mock('../../lib/workspaces', async (importOriginal) => ({
 vi.mock('../../lib/audit', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/audit')>()),
   auditFireAndForget: (e: { action: string; method?: string; path?: string; actorId: string }) => {
+    if (counts.auditThrows) throw counts.auditThrows;
     counts.audits.push(`${e.action} ${e.method ?? ''} ${e.path ?? ''} ${e.actorId}`);
   },
 }));
@@ -158,12 +161,21 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
         ...(read ? { reads: e.methods } : {}),
         load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
       }));
+    // The app's error path (server/app.ts onError): busy is a 409, the
+    // rest an opaque 500.
+    const { BUSY_MESSAGE, isBusy } = await import('@mantle/db');
+    const onError = (err: Error) =>
+      isBusy(err)
+        ? Response.json({ error: BUSY_MESSAGE }, { status: 409 })
+        : Response.json({ error: 'internal error' }, { status: 500 });
     pipeline = new Hono();
     pipeline.use('*', gate());
     registerRoutes(pipeline, entries(reads, true));
+    pipeline.onError(onError);
     guarded = new Hono();
     guarded.use('*', gate());
     registerRoutes(guarded, entries(guards, false));
+    guarded.onError(onError);
   });
 
   afterAll(() => {
@@ -239,6 +251,34 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     expect(res.status).toBe(403);
     expect(JSON.parse(res.body)).toMatchObject({ reason: 'member-login' });
     expect(res.handled).toBe(0);
+  });
+
+  it('an error the owner answer throws keeps the CORS headers, as the guard did', async () => {
+    process.env.MANTLE_API_CORS_ORIGINS = 'https://client.example';
+    const busy = Object.assign(new Error('could not obtain lock'), { code: '55P03' });
+    try {
+      for (const error of [busy, new Error('database down')]) {
+        counts.auditThrows = error;
+        const headers = { ...creds[1]!.headers(), origin: 'https://client.example' };
+        const answers = [];
+        for (const app of [pipeline, guarded]) {
+          const res = await app.request('/api/profile', { method: 'PUT', headers });
+          answers.push({
+            status: res.status,
+            body: await res.text(),
+            cors: [...res.headers.entries()].filter(([k]) => k.startsWith('access-control-')),
+            vary: res.headers.get('vary'),
+          });
+        }
+        const [a, b] = answers;
+        expect(a, error.message).toEqual(b);
+        expect(a!.status).toBe(error === busy ? 409 : 500);
+        expect(a!.cors).toContainEqual(['access-control-allow-origin', 'https://client.example']);
+      }
+    } finally {
+      counts.auditThrows = null;
+      delete process.env.MANTLE_API_CORS_ORIGINS;
+    }
   });
 
   it('a device token is stamped once, by the pipeline', async () => {
