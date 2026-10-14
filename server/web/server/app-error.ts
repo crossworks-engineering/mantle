@@ -55,3 +55,20 @@ export function answerAppError(err: Error, c: Context): Response {
   }
   return c.text('Internal server error', 500);
 }
+
+/** A route handler's answer as the app gives it: its Response, or
+ *  answerAppError's answer to what it threw. For a test that calls a
+ *  handler directly, with no app around it (a domain error answers by its
+ *  row, as behind app.onError). */
+export async function appAnswerOf(
+  res: Response | Promise<Response>,
+  url = 'http://localhost/api/',
+  method = 'POST',
+): Promise<Response> {
+  try {
+    return await res;
+  } catch (err) {
+    if (!(err instanceof Error)) throw err;
+    return answerAppError(err, { req: { url, method } } as unknown as Context);
+  }
+}

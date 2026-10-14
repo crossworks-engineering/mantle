@@ -40,6 +40,20 @@ vi.mock('@mantle/content', async (importOriginal) => {
   };
 });
 
+/** The handler's answer, or the app's to what it threw (app.onError,
+ *  answerAppError: a RecallWriteError answers by its row, fix round 1, L7). */
+async function answered(res: Promise<Response>): Promise<Response> {
+  try {
+    return await res;
+  } catch (err) {
+    const { answerAppError } = await import('@/server/app-error');
+    return answerAppError(
+      err as Error,
+      { req: { url: 'http://brain.example/api/recall', method: 'DELETE' } } as never,
+    );
+  }
+}
+
 const MAP = '00000000-0000-4000-8000-0000000000aa';
 const ctx = { params: Promise.resolve({ id: MAP, card: 'box' }) };
 const url = (q = '') => `http://brain.example/api/recall/maps/${MAP}/cards/box${q}`;
@@ -74,7 +88,7 @@ describe('DELETE /api/recall/maps/:id/cards/:card', () => {
   ])('answers %s with %i', async (code, status) => {
     h.fail = { code };
     const { DELETE } = await import('./maps/[id]/cards/[card]/route');
-    const res = await DELETE(new Request(url('?version=3'), { method: 'DELETE' }), ctx);
+    const res = await answered(DELETE(new Request(url('?version=3'), { method: 'DELETE' }), ctx));
     expect(res.status).toBe(status);
     expect(await res.json()).toMatchObject({ code, error: `refused: ${code}` });
   });

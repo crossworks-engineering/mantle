@@ -37,6 +37,20 @@ function drizzleError(code: string, constraint?: string): Error {
   );
 }
 
+/** The handler's answer, or the app's to what it threw (app.onError,
+ *  answerAppError: a ConflictError is 409 by its row, fix round 1, L7). */
+async function answered(res: Promise<Response>): Promise<Response> {
+  try {
+    return await res;
+  } catch (err) {
+    const { answerAppError } = await import('@/server/app-error');
+    return answerAppError(
+      err as Error,
+      { req: { url: 'http://localhost/api/keys', method: 'POST' } } as never,
+    );
+  }
+}
+
 function post(): Request {
   return new Request('http://localhost/api/keys', {
     method: 'POST',
@@ -59,7 +73,7 @@ describe('POST /api/keys', () => {
   it('answers 409 when the service and label are taken', async () => {
     h.setError = drizzleError('23505', 'api_keys_user_service_label_uq');
     const { POST } = await import('./route');
-    const res = await POST(post());
+    const res = await answered(POST(post()));
     expect(res.status).toBe(409);
     expect(((await res.json()) as { error: string }).error).toMatch(/Rotate it instead/);
   });

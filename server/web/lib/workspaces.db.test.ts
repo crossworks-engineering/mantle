@@ -36,6 +36,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { appAnswerOf } from '@/server/app-error';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -109,8 +110,10 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       headers: { 'content-type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  // The app's answer: a WsError or GrantError thrown by the route answers
+  // by its row in the one table (A10 part 2 fix round 1, L7).
   const call = async (res: Response | Promise<Response>) => {
-    const r = await res;
+    const r = await appAnswerOf(res);
     return { status: r.status, body: (await r.json()) as Json };
   };
   const p = <T extends Json>(v: T) => ({ params: Promise.resolve(v) });

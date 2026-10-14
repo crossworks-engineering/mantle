@@ -72,15 +72,27 @@ beforeEach(() => {
   h.revokeResult = true;
 });
 
+/** The handler's answer, or the app's to what it threw (app.onError,
+ *  answerAppError: a MemberInviteError answers by its row, fix round 1, L7). */
 const create = async (body: unknown) => {
   const { POST } = await import('./route');
-  return POST(
-    new Request('https://brain.example.invalid/api/team-admin/invites', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
-  );
+  try {
+    return await POST(
+      new Request('https://brain.example.invalid/api/team-admin/invites', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+  } catch (err) {
+    const { answerAppError } = await import('@/server/app-error');
+    return answerAppError(
+      err as Error,
+      {
+        req: { url: 'https://brain.example.invalid/api/team-admin/invites', method: 'POST' },
+      } as never,
+    );
+  }
 };
 
 describe('/api/team-admin/invites', () => {
