@@ -43,6 +43,11 @@ export type PendingSummary = {
   createdAt: string;
   decidedAt: string | null;
   executedAt: string | null;
+  /** The call runs with more rights than the turn that queued it (owner
+   *  decision 1a, A5 step 6d, 0287): a connector write the asking scope
+   *  may not make itself, which an Admin user's approval runs. Set by the
+   *  server at queue time; null for every other call. */
+  elevated: { elevated: true; reason: string } | null;
 };
 
 function toSummary(row: PendingToolCall): PendingSummary {
@@ -58,6 +63,7 @@ function toSummary(row: PendingToolCall): PendingSummary {
     createdAt: row.createdAt.toISOString(),
     decidedAt: row.decidedAt?.toISOString() ?? null,
     executedAt: row.executedAt?.toISOString() ?? null,
+    elevated: row.elevated ?? null,
   };
 }
 

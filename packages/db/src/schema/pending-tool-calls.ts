@@ -43,6 +43,11 @@ export const pendingToolCalls = pgTable(
      *  was for. The foreign key lives in the migration. */
     workspaceId: uuid('workspace_id'),
     loginId: uuid('login_id'),
+    /** Workspaces arch A5 step 6d (0287, owner decision 1a): the call runs
+     *  with more rights than the turn that queued it (a connector write its
+     *  scope may not make itself), set by the server at queue time; NULL
+     *  for every other call. */
+    elevated: jsonb('elevated').$type<{ elevated: true; reason: string } | null>(),
   },
   (t) => [
     index('pending_tool_calls_owner_status_idx').on(t.ownerId, t.status),

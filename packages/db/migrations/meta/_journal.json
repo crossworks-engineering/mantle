@@ -2003,6 +2003,13 @@
       "when": 1790196420000,
       "tag": "0286_workspaces_team_normal",
       "breakpoints": true
+    },
+    {
+      "idx": 287,
+      "version": "7",
+      "when": 1790196480000,
+      "tag": "0287_pending_elevated",
+      "breakpoints": true
     }
   ]
 }
