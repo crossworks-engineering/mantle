@@ -38,7 +38,6 @@ import {
   withDeadlockRetry,
   withHeads,
   withSubtreeHeads,
-  asSystem,
 } from '@mantle/db';
 import type {
   GrantContactShare,
@@ -66,6 +65,7 @@ import { appDbTableDetails } from '@mantle/content/app-broker';
 import { refoldPageTexts } from '@mantle/content/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { publicErrorMessage } from '@mantle/std';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import type { AnyLogin } from '@/lib/auth';
 import { areasFor, workspaceCaller, WsError, type WsCaller } from '@/lib/workspaces';
 
@@ -101,8 +101,9 @@ export async function grantsRoute(
   const caller = workspaceCaller(login);
   try {
     // The rule is in this library's own SQL on the system pool: it leaves
-    // the request scope the gate entered by name (W6a).
-    const out = await asSystem(() => fn(caller), 'rule-in-query');
+    // the request scope the gate entered by name (W6a), at the one exit
+    // site (lib/auth/rule-in-query.ts).
+    const out = await inRuleInQuery(() => fn(caller));
     return NextResponse.json(out, { status: okStatus });
   } catch (err) {
     if (err instanceof GrantError || err instanceof WsError) {

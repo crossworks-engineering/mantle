@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   GONE_CALLERS,
   handlerCallers,
+  goneStubs,
   handlerGone,
   handlerReads,
   handlerSwitches,
@@ -587,9 +588,35 @@ describe('the gone stubs (A4 hand batch A)', () => {
     ).toEqual({});
   });
 
-  it('holds the same kinds as lib/gone.ts', async () => {
-    const { GONE_CALLERS: lib } = await import('../lib/gone');
-    expect({ ...GONE_CALLERS }).toEqual({ ...lib });
+  it('reads the one table of stub kinds (lib/gone-kinds.ts), as lib/gone.ts and the sweep do', async () => {
+    const { GONE_KINDS } = await import('../lib/gone-kinds');
+    const lib = await import('../lib/gone');
+    expect(lib.GONE_KINDS).toBe(GONE_KINDS);
+    expect({ ...GONE_CALLERS }).toEqual(
+      Object.fromEntries(Object.entries(GONE_KINDS).map(([k, v]) => [k, v.caller])),
+    );
+    // Each kind's reader answers its caller kind (the one list).
+    const { READER_ANSWERS } = await import('../../../eslint-rules/session-guards.mjs');
+    for (const { caller, reader } of Object.values(GONE_KINDS)) {
+      expect((READER_ANSWERS as Record<string, { caller: string }>)[reader]?.caller).toBe(caller);
+    }
+  });
+
+  it('reads a stub in every form the generator takes: any string literal, parentheses, an alias', () => {
+    const src = `
+      import { gone } from '@/lib/gone';
+      export const GET = gone("member");
+      export const POST = (gone(\`owner\`, 'Review is gone.') as () => Promise<Response>);
+      const retired = gone('any');
+      export { retired as DELETE };
+    `;
+    expect(goneStubs(src, 'a/route.ts')).toEqual({ DELETE: 'any', GET: 'member', POST: 'owner' });
+    expect(handlerGone(src, 'a/route.ts')).toEqual(['DELETE', 'GET', 'POST']);
+    expect(handlerCallers(src, 'a/route.ts')).toEqual({
+      DELETE: 'login',
+      GET: 'member',
+      POST: 'owner',
+    });
   });
 });
 

@@ -11,8 +11,9 @@ import { asSystem } from '@mantle/db';
  *     const login = loginCaller();
  *     return inRuleInQuery(() => handle(login));
  *
- * For the shell, the access keys and /api/v1/whoami; lib/workspaces.ts and
- * lib/grants.ts do the same in wsRoute and grantsRoute.
+ * For the shell, the access keys and /api/v1/whoami; lib/workspaces.ts
+ * wsRoute and lib/grants.ts grantsRoute run their body through it too: the
+ * one exit site of the any-login handlers.
  */
 export function inRuleInQuery<R>(body: () => Promise<R>): Promise<R> {
   return asSystem(body, 'rule-in-query');

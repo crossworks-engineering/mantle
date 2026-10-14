@@ -12,8 +12,8 @@
  *
  * Since A4 hand batch A the gate answers that guard, not the stub: the
  * route manifest generator reads `export const GET = gone('owner')` as a
- * handler that reads the caller of the stub's kind (GONE_CALLERS,
- * scripts/route-callers.ts), so the stub's row is a gone row (`gone`,
+ * handler that reads the caller of the stub's kind (GONE_KINDS,
+ * lib/gone-kinds.ts, the one table), so the stub's row is a gone row (`gone`,
  * route-policy.ts) whose caller is that kind, and the gate's answer step
  * runs the kind's guard once, before the handler, as on every row a handler
  * reads (the one answer step: no second path at the gate). The stub then
@@ -23,27 +23,18 @@
 import { NextResponse } from '@/server/http-compat';
 import { getRequestContext } from '@/server/request-context';
 import { getMemberForAsset, loginCaller, memberCaller, ownerCaller } from '@/lib/auth';
+import { GONE_KINDS, type GoneGuard } from './gone-kinds';
 
-/** Who the removed route served. */
-export type GoneGuard = 'owner' | 'member' | 'any';
+export { GONE_KINDS, type GoneGuard } from './gone-kinds';
 
-/** The caller kind the gate answers for a stub of each guard (route-policy.ts
- *  RouteCaller): the client portal's 'any' is the any-login guard's. The
- *  generator holds the same map (scripts/route-callers.ts GONE_CALLERS). */
-export const GONE_CALLERS = Object.freeze({
-  owner: 'owner',
-  member: 'member',
-  any: 'login',
-} as const satisfies Record<GoneGuard, string>);
-
-/** The reader of each stub's kind: it throws where the pipeline answered
- *  no caller of that kind (outside a routed request, a row not read as a
- *  gone row), so a stub never answers 410 to a caller nobody checked. */
-const READ: Readonly<Record<GoneGuard, () => unknown>> = {
-  owner: () => ownerCaller(),
-  member: () => memberCaller(),
-  any: () => loginCaller(),
-};
+/** The reader of each stub's kind (GONE_KINDS): it throws where the
+ *  pipeline answered no caller of that kind (outside a routed request, a
+ *  row not read as a gone row), so a stub never answers 410 to a caller
+ *  nobody checked. */
+const READERS = Object.freeze({ ownerCaller, memberCaller, loginCaller } satisfies Record<
+  (typeof GONE_KINDS)[GoneGuard]['reader'],
+  () => unknown
+>);
 
 export const GONE_MESSAGE = 'This feature was removed. Update the app.';
 
@@ -93,7 +84,7 @@ export function goneResponse(error: string = GONE_MESSAGE): NextResponse {
  *   export const POST = gone('owner', 'Review is gone. Share items with Grant Access.');
  */
 export function gone(kind: GoneGuard, error?: string): () => Promise<Response> {
-  const read = READ[kind];
+  const read = READERS[GONE_KINDS[kind].reader];
   return async () => {
     read();
     return goneResponse(error);

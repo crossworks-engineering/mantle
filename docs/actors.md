@@ -1725,7 +1725,8 @@ banner.
   `grantsRoute`; `workspaceCaller(login)` (lib/workspaces.ts) is a
   projection with no guard, the one projection (GET /api/shell and
   lib/login-workspaces.ts take it; `wsCallerOf` went). The exit stays
-  inside the two helpers, as narrow as before.
+  inside the two helpers, as narrow as before, through `inRuleInQuery`
+  since fix round 1 (the one exit site).
 - **The ruleInQuery files** (1a): the five any-login handlers of GET
   /api/shell, GET /api/v1/whoami, GET and POST /api/access-keys and DELETE
   /api/access-keys/:id read `loginCaller()` first and run only their body
@@ -1745,8 +1746,10 @@ banner.
   owner, 47 member, 35 any) call no guard. The gateway lens chose one
   mechanism over a reader in each stub: the generator reads `export const
 GET = gone('owner', ...)` as a handler that reads the caller of the
-  stub's kind (`GONE_CALLERS`, scripts/route-callers.ts; `any` is the
-  any-login caller) and marks the method in the manifest (`gone`). Its
+  stub's kind (`GONE_KINDS`, lib/gone-kinds.ts, the one table of stub
+  kinds that lib/gone.ts, the generator and the guard sweep read since fix
+  round 1; `any` is the any-login caller) and marks the method in the
+  manifest (`gone`). Its
   row is a gone row (`RouteRow.gone`) with that caller, so the gate's one
   answer step runs the stub's guard before the handler: no second answer
   path at the gate, and the 410 stays the one `goneResponse`. A gone row

@@ -41,7 +41,7 @@ export function isApiRouteFile(filename) {
 /** Whether `filename` is exempt: the definition, tests, and the gone stubs'
  *  handler (server/web/lib/gone.ts `gone()`, A4 hand batch A): the
  *  generator reads `export const GET = gone('owner')` in the route file as
- *  a read of the stub's kind (route-callers.ts GONE_CALLERS), so the read
+ *  a read of the stub's kind (lib/gone-kinds.ts GONE_KINDS), so the read
  *  it makes is one the generator sees. */
 export function isExempt(filename) {
   const f = filename.replace(/\\/g, '/');

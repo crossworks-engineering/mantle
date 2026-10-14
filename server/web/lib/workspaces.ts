@@ -53,7 +53,6 @@ import {
   withDeadlockRetry,
   withHeads,
   lockMoreHeads,
-  asSystem,
 } from '@mantle/db';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import type {
@@ -71,6 +70,7 @@ import type {
 } from '@mantle/client-types';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
 import { workspaceHeldApp } from '@mantle/content';
+import { inRuleInQuery } from '@/lib/auth/rule-in-query';
 import type { AnyLogin, SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
@@ -125,8 +125,9 @@ export async function wsRoute(
   const caller = workspaceCaller(login);
   try {
     // The rule is in this library's own SQL on the system pool: it leaves
-    // the request scope the gate entered by name (W6a).
-    const out = await asSystem(() => fn(caller), 'rule-in-query');
+    // the request scope the gate entered by name (W6a), at the one exit
+    // site (lib/auth/rule-in-query.ts).
+    const out = await inRuleInQuery(() => fn(caller));
     return NextResponse.json(out, { status: okStatus });
   } catch (err) {
     if (err instanceof WsError) {

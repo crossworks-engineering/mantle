@@ -17,11 +17,11 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  handlerCallers,
-  handlerGone,
+  analyzeRouteFile,
   handlerSwitches,
   type HandlerCallers,
   type HandlerSwitches,
+  type RouteFileReads,
 } from './route-callers';
 import { ROUTE_SWITCH_NAMES } from '../lib/auth/route-switches';
 
@@ -81,25 +81,23 @@ function exportedMethods(src: string): string[] {
   return [...found];
 }
 
-/** Each method whose handler reads the caller the pipeline answers, to its
- *  caller kind, per route file (route-callers.ts), following the handlers
- *  a file imports or re-exports from another route file (the /api/v1
- *  aliases). */
-const readsMemo = new Map<string, HandlerCallers>();
-function readsOf(absFile: string, seen: Set<string> = new Set()): HandlerCallers {
+/** What the generator reads of each route file (route-callers.ts
+ *  analyzeRouteFile): each method whose handler reads the caller the
+ *  pipeline answers, to its caller kind, and each gone stub, to its kind;
+ *  following the handlers a file imports or re-exports from another route
+ *  file (the /api/v1 aliases). */
+const readsMemo = new Map<string, RouteFileReads>();
+function analysisOf(absFile: string, seen: Set<string> = new Set()): RouteFileReads {
   const memo = readsMemo.get(absFile);
   if (memo) return memo;
   if (seen.has(absFile)) throw new Error(`[gen-route-manifest] import cycle at ${absFile}`);
   seen.add(absFile);
   const rel = relative(webRoot, absFile).split('\\').join('/');
-  const reads = handlerCallers(readFileSync(absFile, 'utf8'), rel, (spec) => {
-    // A relative route file only: what a handler from elsewhere reads is
-    // not known here (it would throw when called: fail closed).
-    if (!spec.startsWith('.')) return null;
-    const base = resolve(dirname(absFile), spec);
-    const target = ['.ts', '.tsx'].map((x) => base + x).find((f) => existsSync(f));
-    if (!target || !/\/route\.tsx?$/.test(target)) return null;
-    return readsOf(target, seen);
+  // A relative route file only: what a handler from elsewhere reads is not
+  // known here (it would throw when called: fail closed).
+  const reads = analyzeRouteFile(readFileSync(absFile, 'utf8'), rel, (spec) => {
+    const target = routeFileAt(absFile, spec);
+    return target ? analysisOf(target, seen).callers : null;
   });
   readsMemo.set(absFile, reads);
   return reads;
@@ -159,8 +157,8 @@ function toEntry(absFile: string): Entry {
     file: relative(webRoot, absFile).split('\\').join('/'),
     pattern: '/' + segments.join('/'),
     methods: exportedMethods(src),
-    reads: readsOf(absFile),
-    gone: handlerGone(src, relative(webRoot, absFile).split('\\').join('/')),
+    reads: analysisOf(absFile).callers,
+    gone: Object.keys(analysisOf(absFile).gone),
     switches: switchesOf(absFile),
     catchAll,
     catchAllOptional,

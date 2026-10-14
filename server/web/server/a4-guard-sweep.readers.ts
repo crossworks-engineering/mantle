@@ -15,9 +15,11 @@
  * the entry wrong.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CALLER_READERS } from '../../../eslint-rules/session-guards.mjs';
+import { GONE_KINDS } from '../lib/gone-kinds';
+import { goneStubs } from '../scripts/route-callers';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -42,23 +44,14 @@ function routeFile(base: string): string {
   return file;
 }
 
-/** The reader a retired route's stub reads, by its kind (lib/gone.ts
- *  `gone(kind)`, A4 hand batch A: it reads the answer of its kind). */
-const GONE_READERS: Readonly<Record<string, string>> = {
-  owner: 'ownerCaller',
-  member: 'memberCaller',
-  any: 'loginCaller',
-};
-
 function readerOf(file: string, method: string): string {
   const text = readFileSync(file, 'utf8');
-  const stub = new RegExp(`export const ${method} = gone\\(\\s*'(\\w+)'`).exec(text);
-  if (stub) {
-    const reader = GONE_READERS[stub[1]!];
-    if (!reader)
-      throw new Error(`a4-guard-sweep.readers: ${file} ${method} is a gone stub of no kind`);
-    return reader;
-  }
+  // A retired route's stub (lib/gone.ts `gone(kind)`, A4 hand batch A): it
+  // reads the answer of its kind, by the reader the one table names
+  // (lib/gone-kinds.ts GONE_KINDS), as the generator reads the stub (the
+  // generator's own reading of the file, so the two cannot disagree).
+  const stub = goneStubs(text, relative(webRoot, file))[method];
+  if (stub) return GONE_KINDS[stub].reader;
   const calls = (src: string) => CALLER_READERS.filter((r) => new RegExp(`\\b${r}\\(`).test(src));
   // The method's own handler first (a file whose handlers read two kinds:
   // GET /api/updates/check's session user beside its POST's owner, A4
@@ -95,12 +88,18 @@ function readerOf(file: string, method: string): string {
 const memo = new Map<string, string>();
 
 /** The reader the handler of the row `key` (`METHOD pattern`) reads; a
- *  HEAD row's is its GET's. */
+ *  HEAD row's is its GET's where the GET handler answers it (the route
+ *  exports no HEAD of its own, route-policy.ts `ownHead`). */
 export function readerOfRow(key: string): string {
   let reader = memo.get(key);
   if (!reader) {
     const [method, pattern] = key.split(' ') as [string, string];
-    reader = readerOf(fileOf(pattern), method === 'HEAD' ? 'GET' : method);
+    const file = fileOf(pattern);
+    const ownHead =
+      /export\s+(?:async\s+)?function\s+HEAD\b|export\s+const\s+HEAD\s*=|\bas\s+HEAD\b/.test(
+        readFileSync(file, 'utf8'),
+      );
+    reader = readerOf(file, method === 'HEAD' && !ownHead ? 'GET' : method);
     memo.set(key, reader);
   }
   return reader;

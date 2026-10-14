@@ -60,6 +60,7 @@ import {
   SESSION_GUARDS,
 } from '../../../eslint-rules/session-guards.mjs';
 import type { RouteCaller } from '../lib/auth/route-policy';
+import { GONE_KINDS, isGoneGuard, type GoneGuard } from '../lib/gone-kinds';
 import {
   ROUTE_SWITCH_NAMES,
   ROUTE_SWITCHES_EXPORT,
@@ -85,14 +86,23 @@ export const READER_MODULES: readonly string[] = ['@/lib/auth', '@/lib/auth/sess
  * the caller of the stub's kind (lib/gone.ts reads it, then answers 410),
  * so the method reads that kind and its row is a gone row: the gate
  * answers the stub's guard, as for any reading handler. Each kind to the
- * caller the gate answers (lib/gone.ts GONE_CALLERS, the same map).
+ * caller the gate answers: the one table (lib/gone-kinds.ts GONE_KINDS),
+ * held here to the reader each kind reads (READER_ANSWERS).
  */
 export const GONE_MODULE = '@/lib/gone';
-export const GONE_CALLERS: Readonly<Record<string, RouteCaller>> = Object.freeze({
-  owner: 'owner',
-  member: 'member',
-  any: 'login',
-});
+export const GONE_CALLERS: Readonly<Record<GoneGuard, RouteCaller>> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(GONE_KINDS).map(([kind, { caller, reader }]) => {
+      const answers = (READER_ANSWERS as Record<string, { caller: string } | undefined>)[reader];
+      if (answers?.caller !== caller) {
+        throw new Error(
+          `route-callers: the gone kind ${kind} reads ${reader}, which answers no ${caller} caller`,
+        );
+      }
+      return [kind, caller];
+    }),
+  ) as Record<GoneGuard, RouteCaller>,
+);
 
 /** The mark of a reading handler whose order was checked by hand: it may
  *  run code before its read or its wrapped call. */
@@ -167,6 +177,19 @@ export function handlerReads(src: string, file: string, follow?: FollowReads): s
  * on a file it cannot answer for (see above).
  */
 export function handlerCallers(src: string, file: string, follow?: FollowReads): HandlerCallers {
+  return analyzeRouteFile(src, file, follow).callers;
+}
+
+/** What the generator reads of a route file: each method that reads the
+ *  pipeline's answer, to its caller kind (handlerCallers), and each method
+ *  exported as a gone stub, to the stub's kind (goneStubs). One reading of
+ *  the file for both, so they cannot disagree. */
+export type RouteFileReads = Readonly<{
+  callers: HandlerCallers;
+  gone: Readonly<Record<string, GoneGuard>>;
+}>;
+
+export function analyzeRouteFile(src: string, file: string, follow?: FollowReads): RouteFileReads {
   const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
   const fail = (node: ts.Node, msg: string): never => {
@@ -285,7 +308,7 @@ export function handlerCallers(src: string, file: string, follow?: FollowReads):
       resolveName(method, b.text);
     }
   }
-  // The gone stubs (GONE_CALLERS): a method exported as `gone('<kind>', ...)`
+  // The gone stubs (GONE_KINDS): a method exported as `gone('<kind>', ...)`
   // reads the caller of that kind.
   const gone = goneOf(methods, imported, fail);
   // A handler taken from another route file that reads: it may be
@@ -442,7 +465,9 @@ export function handlerCallers(src: string, file: string, follow?: FollowReads):
   }
 
   // ── Each method ──────────────────────────────────────────────────────────
-  const out: Record<string, RouteCaller> = { ...gone };
+  const out: Record<string, RouteCaller> = Object.fromEntries(
+    Object.entries(gone).map(([method, k]) => [method, GONE_CALLERS[k]]),
+  );
   for (const [method, { spec, name }] of elsewhere) {
     const kind = kindOf(spec, name);
     if (kind) out[method] = kind;
@@ -523,22 +548,25 @@ export function handlerCallers(src: string, file: string, follow?: FollowReads):
       }
     }
   }
-  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
+  return {
+    callers: Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1))),
+    gone,
+  };
 }
 
 /**
- * The gone stubs of a route file (GONE_CALLERS): each method exported as
+ * The gone stubs of a route file (GONE_KINDS): each method exported as
  * `gone('<kind>', ...)`, `gone` imported by its own name from GONE_MODULE,
- * to the caller kind the gate answers for it. A call of it that is not a
- * method's export, or names no kind in a string literal, is refused: the
- * generator could not say whose answer the stub reads.
+ * to the stub's kind. A call of it that is not a method's export, or names
+ * no kind in a string literal, is refused: the generator could not say
+ * whose answer the stub reads.
  */
 function goneOf(
   methods: Map<string, Handler>,
   imported: Map<string, { spec: string; name: string; node: ts.Node }>,
   fail: (node: ts.Node, msg: string) => never,
-): Record<string, RouteCaller> {
-  const out: Record<string, RouteCaller> = {};
+): Record<string, GoneGuard> {
+  const out: Record<string, GoneGuard> = {};
   const isGone = (e: ts.Expression) => {
     const b = bare(e);
     if (!ts.isIdentifier(b)) return false;
@@ -551,50 +579,35 @@ function goneOf(
     const init = ts.isVariableDeclaration(h.decl) ? h.decl.initializer : undefined;
     const call = init ? bare(init) : undefined;
     if (!call || !ts.isCallExpression(call) || !isGone(call.expression)) continue;
-    const kind = call.arguments[0];
-    const caller = kind && ts.isStringLiteralLike(kind) ? GONE_CALLERS[kind.text] : undefined;
-    if (!caller)
+    const arg = call.arguments[0];
+    const kind = arg && ts.isStringLiteralLike(arg) && isGoneGuard(arg.text) ? arg.text : undefined;
+    if (!kind)
       fail(
         call,
-        `${method} = gone(...) names no stub kind (${Object.keys(GONE_CALLERS).join(', ')})`,
+        `${method} = gone(...) names no stub kind (${Object.keys(GONE_KINDS).join(', ')})`,
       );
     if (h.mutable)
       fail(call, `${method} = gone(...) is declared with let or var: declare it with const`);
-    out[method] = caller!;
+    out[method] = kind!;
   }
-  return out;
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
 /** The methods of `src` (a route file's text) exported as a gone stub
- *  (GONE_CALLERS), sorted: their rows are gone rows (route-policy.ts). */
-export function handlerGone(src: string, file: string): string[] {
-  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, kind);
-  const imported = new Map<string, { spec: string; name: string; node: ts.Node }>();
-  const methods = new Map<string, Handler>();
-  for (const st of sf.statements) {
-    if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
-      const bindings = st.importClause?.namedBindings;
-      if (bindings && ts.isNamedImports(bindings)) {
-        for (const el of bindings.elements) {
-          const name = (el.propertyName ?? el.name).text;
-          imported.set(el.name.text, { spec: st.moduleSpecifier.text, name, node: el });
-        }
-      }
-    } else if (ts.isVariableStatement(st) && hasModifier(st, ts.SyntaxKind.ExportKeyword)) {
-      const mutable = (st.declarationList.flags & ts.NodeFlags.Const) === 0;
-      for (const d of st.declarationList.declarations) {
-        if (ts.isIdentifier(d.name) && HTTP_METHODS.has(d.name.text)) {
-          methods.set(d.name.text, { fn: null, decl: d, statement: st, mutable });
-        }
-      }
-    }
-  }
-  const fail = (node: ts.Node, msg: string): never => {
-    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-    throw new Error(`${file}:${line + 1}: ${msg}`);
-  };
-  return Object.keys(goneOf(methods, imported, fail)).sort();
+ *  (GONE_KINDS), sorted: their rows are gone rows (route-policy.ts). */
+export function handlerGone(src: string, file: string, follow?: FollowReads): string[] {
+  return Object.keys(goneStubs(src, file, follow));
+}
+
+/** Each method of `src` exported as a gone stub, to the stub's kind
+ *  (GONE_KINDS): the generator's reading (analyzeRouteFile), which the
+ *  guard sweep names a stub's entry by too. */
+export function goneStubs(
+  src: string,
+  file: string,
+  follow?: FollowReads,
+): Readonly<Record<string, GoneGuard>> {
+  return analyzeRouteFile(src, file, follow).gone;
 }
 
 /** Each method of a route file to the switch it is served under
