@@ -640,6 +640,24 @@ function logErr(scope: string, err: unknown): void {
 }
 
 /**
+ * Merge `patch` into the current trace's `data` (a no-op outside a trace):
+ * a fact known only once the trace's work is under way (the tools a loop
+ * lists in its scope, A5 step 5 fix round 2). Fire-and-forget, like every
+ * trace write; startTrace awaited the row's insert before its work began,
+ * so the row is there.
+ */
+export function setTraceData(patch: Record<string, unknown>): void {
+  const ctx = currentTrace();
+  if (!ctx) return;
+  const json = JSON.stringify(truncateJson(patch));
+  systemDb
+    .update(traces)
+    .set({ data: sql`coalesce(${traces.data}, '{}'::jsonb) || ${json}::jsonb` })
+    .where(eq(traces.id, ctx.id))
+    .catch((err) => logErr('set trace data', err));
+}
+
+/**
  * Open a new trace, run `fn` inside it, finish on success/failure.
  * Errors thrown by `fn` are recorded on the trace and re-thrown.
  */

@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   getApiKeyById: vi.fn(),
   getChatAdapter: vi.fn(),
   loopOverrides: {} as Record<string, number>,
+  traceData: [] as Record<string, unknown>[],
 }));
 
 vi.mock('./run-turn', () => ({ resolveAssistantAgent: vi.fn(async () => h.agent) }));
@@ -44,6 +45,7 @@ vi.mock('@mantle/decisions', () => ({ delegationHintTraceData: vi.fn(() => null)
 vi.mock('@mantle/tracing', () => ({
   startTrace: vi.fn(async (_init: unknown, fn: () => Promise<unknown>) => fn()),
   currentTrace: vi.fn(() => ({ id: 'trace-in' })),
+  setTraceData: vi.fn((patch: Record<string, unknown>) => h.traceData.push(patch)),
   createTracePrelude: vi.fn(() => ({ steps: [] })),
   withTracePrelude: vi.fn(async (_p: unknown, fn: () => Promise<unknown>) => fn()),
 }));
@@ -136,6 +138,7 @@ beforeEach(() => {
   h.loadArgs = null;
   h.stepCalls = [];
   h.toolCalls = [];
+  h.traceData = [];
   h.viewerAgents = [];
   h.loopOverrides = {};
   h.recordTurn.mockClear();
@@ -198,6 +201,9 @@ describe('describeResponderTurnInput', () => {
     });
     expect(h.toolCalls).toEqual([{ ownerId: 'owner-1', delegateTo: ['researcher'] }]);
     expect(h.viewerAgents).toEqual([AGENT]);
+    // The trace's tool_count is what the model is sent, not the grant
+    // (A5 step 5 fix round 2).
+    expect(h.traceData).toEqual([{ tool_count: 2 }]);
   });
 
   it('(d) keeps the cache marks and reports the loop settings', async () => {

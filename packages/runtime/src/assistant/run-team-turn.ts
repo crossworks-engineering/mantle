@@ -451,7 +451,7 @@ async function runTeamTurnSteps(
           excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
         }),
       );
-      const { volatileContext, allowedTools } = assembled;
+      const { volatileContext } = assembled;
 
       const adapter = getChatAdapter(agent.provider);
       if (!adapter) {
@@ -497,7 +497,8 @@ async function runTeamTurnSteps(
               channel,
               model: agent.model,
               agent_slug: agent.slug,
-              tool_count: allowedTools.length,
+              // tool_count: what the model is sent, recorded by the loop
+              // (recordToolCount).
             },
           },
           async () => {
@@ -509,6 +510,7 @@ async function runTeamTurnSteps(
               apiKey,
               prefs,
               logPrefix: '[team-turn]',
+              recordToolCount: true,
               // Fail closed: the team responder never delegates (assembly ran
               // with allowDelegation:false / withThinking:false). `assembled` also
               // carries loopOverrides (spread by runResponderLoop): since the

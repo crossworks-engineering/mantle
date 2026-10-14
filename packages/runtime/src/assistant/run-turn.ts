@@ -416,13 +416,7 @@ export async function runAssistantTurn(
       previousUserText: [...filteredHistory].reverse().find((h) => h.role === 'user')?.text ?? null,
     }),
   );
-  const {
-    effectiveSystemPrompt,
-    journalBlock,
-    volatileContext,
-    relatedHeartbeatSlugs,
-    allowedTools,
-  } = assembled;
+  const { effectiveSystemPrompt, journalBlock, volatileContext, relatedHeartbeatSlugs } = assembled;
 
   // Image routing — transcript-default vision gating via the shared
   // `decideImageRouting` (catalog warm + vision + per-provider size check).
@@ -490,7 +484,8 @@ export async function runAssistantTurn(
           surface: 'web',
           model: agent.model,
           agent_slug: agent.slug,
-          tool_count: allowedTools.length,
+          // tool_count: what the model is sent, recorded by the loop once it
+          // lists its tools in the turn's scope (recordToolCount).
           // Empty array when no heartbeats were open. Stored either
           // way so a query for "traces influenced by heartbeats"
           // works against the same shape on every row.
@@ -509,6 +504,7 @@ export async function runAssistantTurn(
           apiKey,
           prefs,
           logPrefix: '[assistant]',
+          recordToolCount: true,
           assembled,
           // Context was loaded BEFORE the trace opened (step 1 above: history
           // must not contain the new turn) — the core's load_context step

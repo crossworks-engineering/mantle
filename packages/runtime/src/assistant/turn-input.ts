@@ -32,7 +32,7 @@
 
 import type { AgentParams } from '@mantle/db';
 import { delegationHintTraceData } from '@mantle/decisions';
-import { startTrace, currentTrace } from '@mantle/tracing';
+import { startTrace, currentTrace, setTraceData } from '@mantle/tracing';
 import {
   DEFAULT_MAX_ITERATIONS,
   buildToolsForModel,
@@ -184,7 +184,8 @@ export async function describeResponderTurnInput(
         surface: 'mcp_turn_input',
         model: agent.model,
         agent_slug: agent.slug,
-        tool_count: assembled.allowedTools.length,
+        // tool_count: what the model is sent, set below once the tools are
+        // listed in the turn's scope.
         read_only: opts.readOnly === true,
         delegation_hint: delegationHintTraceData(assembled.delegationHint),
       },
@@ -197,11 +198,11 @@ export async function describeResponderTurnInput(
       // (a dynamic-schema hook reads the brain).
       const tools = await withAgentViewer(
         agent,
-        async () =>
-          buildToolsForModel(await loopToolRows(ownerId, assembled.allowedTools), {
-            ownerId,
-            delegateTo: assembled.delegateTo,
-          }),
+        async () => {
+          const rows = await loopToolRows(ownerId, assembled.allowedTools);
+          setTraceData({ tool_count: rows.length });
+          return buildToolsForModel(rows, { ownerId, delegateTo: assembled.delegateTo });
+        },
         { ownerLoginId: opts.loginId ?? null },
       );
       return { messages, tools };

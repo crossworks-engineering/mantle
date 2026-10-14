@@ -1,5 +1,6 @@
 export {
   startTrace,
+  setTraceData,
   step,
   recordSkippedTrace,
   recordIngest,

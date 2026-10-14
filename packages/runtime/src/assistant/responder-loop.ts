@@ -168,6 +168,9 @@ export type RunResponderLoopOptions = {
   /** Threaded into every tool handler's ctx.surface (delivery targeting +
    *  provenance). */
   surface: ToolLoopArgs['surface'];
+  /** Record what the loop lists as the trace's `tool_count` (the turns
+   *  whose trace carries it: web, team, the MCP simulation). */
+  recordToolCount?: boolean;
   /** The per-turn abort signal, when the surface supports Stop. An aborted
    *  turn keeps its partial reply — no fallback substitution. */
   abortSignal?: AbortSignal | null;
@@ -286,6 +289,7 @@ async function runResponderLoopAtLevel(
     tools: assembled.allowedTools,
     surface: opts.surface,
     taint,
+    ...(opts.recordToolCount ? { recordToolCount: true } : {}),
   });
 
   // A user Stop ends the turn with whatever partial reply streamed (often

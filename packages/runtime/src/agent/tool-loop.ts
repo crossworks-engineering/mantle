@@ -25,7 +25,7 @@
  * providers (Anthropic, OR-via-Anthropic).
  */
 
-import { step, currentTurnAbortSignal } from '@mantle/tracing';
+import { step, currentTurnAbortSignal, setTraceData } from '@mantle/tracing';
 import {
   resolveTool,
   resolveTools,
@@ -489,6 +489,10 @@ export type ToolLoopArgs = {
    *  absent. The canonical union lives on ToolHandlerContext
    *  (@mantle/tools) — this mirrors it so the two can't drift. */
   surface?: NonNullable<import('@mantle/tools').ToolHandlerContext['surface']>;
+  /** Record the number of tools this loop lists (what the model is sent,
+   *  loopToolRows) as the current trace's `tool_count` (A5 step 5 fix round
+   *  2): set by a turn whose trace carries that field. */
+  recordToolCount?: boolean;
   /** Whether this turn has read text a client wrote (client logins C4, plan
    *  N18). Shared by reference: the responder loop marks it from the
    *  retrieval context, every tool call's input and output marks it, and a
@@ -639,6 +643,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // (oversized) result is never a dead end — even if the operator didn't add
   // it to the agent's allowlist. It's a read-only system capability.
   const loopTools = await loopToolRows(args.ownerId, args.tools);
+  if (args.recordToolCount) setTraceData({ tool_count: loopTools.length });
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
   const allToolDefs = await buildToolsForModel(loopTools, {
     ownerId: args.ownerId,
@@ -646,10 +651,13 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   });
   // Deferred tool loading (params.tool_loading = 'deferred'): send a stable
   // core + tool_search + use_tool, list the rest by name in tool_search's
-  // catalog. `toolsByName` keeps the WHOLE grant, so a deferred tool called by
-  // its own name (or through use_tool) dispatches and validates exactly as a
-  // sent one; an ungranted name is still refused. The sent array is fixed for
-  // the turn (and for the grant), so the cached prefix does not move.
+  // catalog. `toolsByName` holds every tool the gate lists for this loop
+  // (loopTools: the grant less what the gate refuses here, plus
+  // read_result), deferred or sent, so a deferred tool called by its own
+  // name (or through use_tool) dispatches and validates exactly as a sent
+  // one; a name the grant does not give, or the gate does not list here, is
+  // refused. The sent array is fixed for the turn (and for the grant and
+  // scope), so the cached prefix does not move.
   const deferred: DeferredToolset | null =
     args.params.tool_loading === 'deferred' && allToolDefs.length > 0
       ? buildDeferredToolset(

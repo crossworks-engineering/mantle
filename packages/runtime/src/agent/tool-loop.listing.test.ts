@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   scope: null as null | Record<string, unknown>,
   view: { holdsAdmin: false, areas: new Set<string>() },
+  traceData: [] as Record<string, unknown>[],
 }));
 
 vi.mock('../../../db/src/viewer', async (importOriginal) => {
@@ -32,6 +33,10 @@ vi.mock('../../../db/src/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../db/src/client')>()),
   scopeHoldsAdmin: async () => h.view.holdsAdmin,
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
+}));
+vi.mock('@mantle/tracing', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/tracing')>()),
+  setTraceData: (patch: Record<string, unknown>) => h.traceData.push(patch),
 }));
 vi.mock('@mantle/tools', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/tools')>()),
@@ -163,6 +168,7 @@ const ADMIN_ONLY = BUILTIN_TOOLS.filter((d) => {
 
 beforeEach(() => {
   h.scope = null;
+  h.traceData = [];
   sent = [];
 });
 
@@ -198,5 +204,23 @@ describe('every tool loop lists only what the gate lets it call (A5 step 5 fix r
     const a = await sentIn(MEMBER, MEMBER_VIEW(), LOOPS['a heartbeat fire']);
     const b = await sentIn(MEMBER, MEMBER_VIEW(), LOOPS['a heartbeat fire']);
     expect(b).toEqual(a);
+  });
+});
+
+describe("a turn's trace counts the tools the model is sent (A5 step 5 fix round 2, LOW-1)", () => {
+  ensureGateReady();
+
+  it('records tool_count as the listed tools, not the grant, when the turn asks for it', async () => {
+    const tools = await sentIn(MEMBER, MEMBER_VIEW(), {
+      ...LOOPS['a heartbeat fire'],
+      recordToolCount: true,
+    });
+    expect(tools.length).toBeLessThan(ROWS.length);
+    expect(h.traceData).toEqual([{ tool_count: tools.length }]);
+  });
+
+  it('records nothing for a loop that does not ask', async () => {
+    await sentIn(MEMBER, MEMBER_VIEW(), LOOPS['a delegated child turn']);
+    expect(h.traceData).toEqual([]);
   });
 });

@@ -187,7 +187,8 @@ export async function runSimulatedResponderTurn(
         surface: 'mcp_sim',
         model: agent.model,
         agent_slug: agent.slug,
-        tool_count: assembled.allowedTools.length,
+        // tool_count: what the model is sent, recorded by the loop
+        // (recordToolCount).
         read_only: opts.readOnly === true,
         delegation_hint: delegationHintTraceData(assembled.delegationHint),
       },
@@ -204,6 +205,7 @@ export async function runSimulatedResponderTurn(
         apiKey,
         prefs,
         logPrefix: '[mcp-sim]',
+        recordToolCount: true,
         assembled,
         // Context was loaded before the trace opened; the core's load_context
         // step just records the snapshot for /debug/context.
