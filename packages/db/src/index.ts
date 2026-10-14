@@ -156,6 +156,7 @@ export {
   assertGateReady,
   currentCaller,
   enterCall,
+  gateCallRefusal,
   gateCheck,
   gateLists,
   hasPolicySource,

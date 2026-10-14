@@ -219,7 +219,8 @@ export type PreRunCheck = (
 
 /** The pre-run checks, in their fixed order: the item pre-check (a tool's
  *  preconditions and the items its write names), then a key's or a peer's
- *  change to content others read. Only enterCall runs them, never
+ *  change to content others read. Only a call runs them (enterCall, and
+ *  gateCallRefusal, which judges one call without running it), never
  *  gateCheck: they read the call's arguments, which a listing has none of. */
 export const PRE_RUN_CHECKS = ['item-precheck', 'key-shared-content'] as const;
 export type PreRunCheckName = (typeof PRE_RUN_CHECKS)[number];
@@ -702,6 +703,35 @@ export async function enterCall<T>(
   fn: () => Promise<T>,
   input: CallInput = {},
 ): Promise<GateResult<T>> {
+  return callSteps(caller, ref, fn, input) as Promise<GateResult<T>>;
+}
+
+/**
+ * Steps 1 to 5 and the pre-run checks for one call of `ref` with its
+ * arguments, as enterCall runs them (the caller bound, its actor and its
+ * scope entered), without naming a create home or running anything (A5
+ * step 5 fix round 2): the refusal enterCall would meet before step 6,
+ * mapped, or null. Where gateCheck asks what a caller may list (no
+ * arguments), this asks one call, so a call that waits for approval is
+ * judged in its own scope, by the same rule, before it is queued. Any other
+ * error is thrown, as enterCall throws it.
+ */
+export async function gateCallRefusal(
+  caller: GateCaller | (() => Promise<GateCaller | null>),
+  ref: PolicyRef,
+  input: CallInput = {},
+): Promise<AccessRefusal | null> {
+  const res = await callSteps(caller, ref, null, input);
+  return res.ok ? null : res.refusal;
+}
+
+/** enterCall's steps; with no `fn`, it stops after the pre-run checks. */
+async function callSteps<T>(
+  caller: GateCaller | (() => Promise<GateCaller | null>),
+  ref: PolicyRef,
+  fn: (() => Promise<T>) | null,
+  input: CallInput,
+): Promise<GateResult<T | null>> {
   assertGateReady();
   try {
     // 1. Resolve the caller.
@@ -727,10 +757,12 @@ export async function enterCall<T>(
           adminStep(bound, policy);
           // The pre-run checks, before the create home: a refused call
           // never makes a private workspace. An entry whose home makes
-          // nothing at call time (`first`) names it before them.
-          const first = bound.createHome?.first === true;
+          // nothing at call time (`first`) names it before them. A check
+          // only (no `fn`) names none.
+          const first = fn !== null && bound.createHome?.first === true;
           let home = first ? await createHomeStep(bound, policy, input.ask ?? null) : null;
           await preRunStep(bound, policy, ref, input);
+          if (!fn) return { ok: true as const, value: null };
           // 6. The create-home intent.
           if (!first) home = await createHomeStep(bound, policy, input.ask ?? null);
           // 7. Run.

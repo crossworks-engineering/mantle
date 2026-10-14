@@ -127,12 +127,17 @@ export async function executeToolCall(p: {
             })
           : { gate: false };
       if (tool.requiresConfirm || verdict.gate) {
-        // The gate first (A5 step 5 fix round 1, M2): an approved call runs
-        // later in the approver's scope, so a call this loop's own scope may
-        // not make is refused now, in the gate's words, and never queued
-        // (a workspace heartbeat's telegram_send, a member turn's shell
-        // row). The same caller dispatch would use (turnCaller).
-        const refused = await turnCallRefusal(tool, args.surface);
+        // The gate first (A5 step 5 fix rounds 1 and 2, M2 and the item
+        // pre-check): an approved call runs later in the approver's scope,
+        // so a call this loop's own scope may not make, on the items its
+        // arguments name too, is refused now, in the gate's words, and
+        // never queued (a workspace heartbeat's telegram_send, a member
+        // turn's shell row, a page_delete of an Admin-only page). The same
+        // caller dispatch would use (turnCaller).
+        const refused = await turnCallRefusal(tool, input, {
+          ownerId: args.ownerId,
+          ...(args.surface ? { surface: args.surface } : {}),
+        });
         if (refused !== null) {
           handle.setError(refused);
           return { ok: false as const, error: refused };

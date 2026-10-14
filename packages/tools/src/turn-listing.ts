@@ -18,7 +18,7 @@
  * was before this step: the cache resets once, then holds.
  */
 import {
-  gateCheck,
+  gateCallRefusal,
   gateLists,
   type GateCaller,
   type GatePolicy,
@@ -26,6 +26,7 @@ import {
   type Tool,
   type ToolHandler,
 } from '@mantle/db';
+import { errorMessage } from '@mantle/std';
 import { gateCallerFor, turnCaller } from './gate-callers';
 import { getBuiltin } from './registry';
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
@@ -72,33 +73,47 @@ export async function turnListedTools<T extends Tool>(tools: readonly T[]): Prom
 }
 
 /**
- * The refusal the one gate gives a tool loop's call of `tool` in the current
- * scope before it binds anything (steps 3 to 5, and dispatch's owner-only
- * check), in the words dispatch would answer; null when it lets the call
- * through. Asked before a call that needs approval is queued (A5 step 5 fix
- * round 1, M2): the approved call runs later in the approver's scope, so a
- * call the loop's own scope may not make (a workspace heartbeat's
- * `telegram_send`, a member turn's shell row) is refused here, in the
- * gate's words, and never queued. For the caller dispatch uses (turnCaller).
- * The item pre-check and a connector's own argument checks read the call
- * and run at dispatch, after approval.
+ * The refusal the one gate gives a tool loop's call of `tool` with `input`
+ * in the current scope before it runs anything (dispatch's owner-only
+ * check, steps 3 to 5, and the gate's pre-run checks: the item pre-check
+ * reads the call's arguments), in the words dispatch would answer; null
+ * when it lets the call through. Asked before a call that needs approval is
+ * queued (A5 step 5 fix rounds 1 and 2): the approved call runs later in
+ * the approver's scope, so a call the loop's own scope may not make (a
+ * workspace heartbeat's `telegram_send`, a member turn's shell row, a
+ * `page_delete` of an item only Admin may change) is refused here, in the
+ * gate's words, and never queued. For the caller dispatch uses
+ * (turnCaller), through the gate's own steps (gateCallRefusal), so queue
+ * time and dispatch read one rule. A connector's own argument checks run
+ * at dispatch, after approval.
  */
 export async function turnCallRefusal(
   tool: Tool,
-  surface: ToolHandlerContext['surface'],
+  input: Record<string, unknown>,
+  ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>,
 ): Promise<string | null> {
   const h = tool.handler as ToolHandler | null;
-  if (h?.kind === 'builtin' && getBuiltin(h.ref)?.ownerOnly && !isOwnerSurface(surface)) {
+  if (h?.kind === 'builtin' && getBuiltin(h.ref)?.ownerOnly && !isOwnerSurface(ctx.surface)) {
     return OWNER_ONLY_ERROR;
   }
-  if (h?.kind === 'builtin') {
-    // A builtin with no policy meets the gate's step 3, as at dispatch.
-    const ref = builtinToolRef(h.ref, tool.slug);
-    const caller = await gateCallerFor(turnCaller(), builtinToolGatePolicy(ref), true);
-    return gateCheck(caller, ref)?.message ?? null;
+  const call = {
+    args: input,
+    context: { ownerId: ctx.ownerId, ...(ctx.surface ? { surface: ctx.surface } : {}) },
+  };
+  try {
+    if (h?.kind === 'builtin') {
+      // A builtin with no policy meets the gate's step 3, as at dispatch.
+      const ref = builtinToolRef(h.ref, tool.slug);
+      const caller = await gateCallerFor(turnCaller(), builtinToolGatePolicy(ref), true);
+      return (await gateCallRefusal(caller, ref, call))?.toolText ?? null;
+    }
+    const asked = gateRefOf(tool);
+    if (!asked) return NO_RUNTIME_POLICY_ERROR;
+    const caller = await gateCallerFor(turnCaller(), asked.policy, false);
+    return (await gateCallRefusal(caller, asked.ref, call))?.toolText ?? null;
+  } catch (err) {
+    // Fail closed: a check that could not run queues nothing (dispatch
+    // answers the same error as the call's text).
+    return errorMessage(err);
   }
-  const asked = gateRefOf(tool);
-  if (!asked) return NO_RUNTIME_POLICY_ERROR;
-  const caller = await gateCallerFor(turnCaller(), asked.policy, false);
-  return gateCheck(caller, asked.ref)?.message ?? null;
 }

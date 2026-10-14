@@ -36,6 +36,7 @@ import {
   assertGateReady,
   currentCaller,
   enterCall,
+  gateCallRefusal,
   gateCheck,
   gateLists,
   hasPolicySource,
@@ -799,6 +800,51 @@ describe('the pre-run slot (A5 step 3a)', () => {
       /has a check already/,
     );
     expect(() => registerPreRunCheck('nope' as never, NOOP_CHECK)).toThrow();
+  });
+});
+
+describe('gateCallRefusal: one call judged without running it (A5 step 5 fix round 2)', () => {
+  it("meets steps 3 to 5 and the pre-run checks with the call's arguments, as enterCall, and names no home and runs nothing", async () => {
+    const seen: unknown[] = [];
+    setup(
+      {},
+      {
+        'item-precheck': async (c, _p, r, call) => {
+          seen.push([c.via, r.name, call.args, call.context]);
+          return call.args?.refuse === true ? 'This item is not yours to change.' : null;
+        },
+      },
+    );
+    const call = { args: { refuse: true }, context: { ownerId: 'o' } };
+    const refused = await gateCallRefusal(login(), ref('create'), call);
+    expect(refused?.kind).toBe('item');
+    expect(refused?.toolText).toBe('This item is not yours to change.');
+    // The same words enterCall answers the same call with.
+    const entered = await enterCall(login(), ref('create'), ok, call);
+    expect(!entered.ok && entered.refusal.toolText).toBe(refused?.toolText);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toEqual(['oauth', 'create', { refuse: true }, { ownerId: 'o' }]);
+    // Let through: null, and no home named (a `first` one neither), nothing run.
+    h.log = [];
+    vi.mocked(createHomeIntent).mockClear();
+    expect(await gateCallRefusal(login(), ref('create'), { args: {} })).toBeNull();
+    expect(
+      await gateCallRefusal(login({ createHome: { ownWork: false, first: true } }), ref('create'), {
+        args: {},
+      }),
+    ).toBeNull();
+    expect(createHomeIntent).not.toHaveBeenCalled();
+    expect(h.log).toEqual([]);
+  });
+
+  it('refuses in the earlier steps first, as enterCall: no caller, no policy, a narrower, the Admin step', async () => {
+    setup({ key: (c) => (c.via === 'key' ? 'no keys here' : null) });
+    expect((await gateCallRefusal(async () => null, ref('read')))?.kind).toBe('unauthorized');
+    expect((await gateCallRefusal(login(), ref('nope')))?.kind).toBe('unclassified');
+    expect((await gateCallRefusal(login({ via: 'key' }), ref('read')))?.toolText).toBe(
+      'no keys here',
+    );
+    expect((await gateCallRefusal(login(), ref('admin')))?.kind).toBe('admin');
   });
 });
 

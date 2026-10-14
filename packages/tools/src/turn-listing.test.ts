@@ -5,13 +5,19 @@
  * runtime row with a policy, as before; a member turn in a workspace that
  * is not Admin no longer lists an Admin-only tool, an Admin-area tool, a
  * create of an Admin-only kind or a shell tool, and still lists the rest.
- * The scope and the Admin view are stubbed (no database).
+ * The scope and the Admin view are stubbed (no database), and so are the
+ * item rights the item pre-check reads (an item only an Admin scope may
+ * change) and the preconditions' node lookups.
  */
 import { describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   scope: null as null | Record<string, unknown>,
   view: { holdsAdmin: false, areas: new Set<string>() },
+  /** The item only a scope that holds the Admin workspace may change. */
+  adminItem: '33333333-3333-4333-8333-333333333333',
+  /** The scopes the item rights were asked in. */
+  itemAsked: [] as Array<Record<string, unknown> | null>,
 }));
 
 vi.mock('../../db/src/viewer', async (importOriginal) => {
@@ -28,7 +34,30 @@ vi.mock('../../db/src/client', async (importOriginal) => ({
   scopeHasArea: async (a: string) => h.view.holdsAdmin && h.view.areas.has(a),
 }));
 
-import { loginActor, runAsActor, type Tool } from '@mantle/db';
+// The item rights (the database's mantle_may_edit / mantle_may_manage), as
+// the scope reads them: the Admin item is changed only from a scope that
+// holds Admin; any other item, by anyone.
+vi.mock('../../db/src/item-rights', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../db/src/item-rights')>();
+  return {
+    ...real,
+    itemWriteRefusalOf: async (ids: readonly string[], need: 'read' | 'edit' | 'manage') => {
+      h.itemAsked.push(h.scope);
+      if (!h.scope || need === 'read') return null;
+      const id = ids.find((i) => i === h.adminItem);
+      if (!id || h.view.holdsAdmin) return null;
+      return { message: real.itemNoRightError(id, need), detail: 'no_edit' as const };
+    },
+  };
+});
+// A precondition's node lookup reads the database: every id names a node
+// of the kind the tool asks for.
+vi.mock('./preconditions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./preconditions')>()),
+  checkToolPreconditions: async () => null,
+}));
+
+import { itemNoRightError, loginActor, runAsActor, type Tool } from '@mantle/db';
 import { BUILTIN_TOOLS, ensureGateReady, turnCallRefusal, turnListedTools } from './index';
 import { NO_RUNTIME_POLICY_ERROR } from './runtime-policy';
 import { OWNER_ONLY_ERROR } from './surface';
@@ -130,12 +159,15 @@ async function refusalIn(
   scope: Record<string, unknown>,
   view: { holdsAdmin: boolean; areas: Set<string> },
   tool: Tool,
-  surface: Parameters<typeof turnCallRefusal>[1] = { kind: 'web' },
+  surface: Parameters<typeof turnCallRefusal>[2]['surface'] = { kind: 'web' },
+  input: Record<string, unknown> = {},
 ): Promise<string | null> {
   h.scope = scope;
   h.view = view;
   try {
-    return await runAsActor(loginActor(LOGIN), () => turnCallRefusal(tool, surface));
+    return await runAsActor(loginActor(LOGIN), () =>
+      turnCallRefusal(tool, input, { ownerId: OWNER, surface }),
+    );
   } finally {
     h.scope = null;
   }
@@ -193,5 +225,64 @@ describe('a call that needs approval meets the gate before it is queued (A5 step
         expect(refused === null, row.slug).toBe(listed.has(row.slug));
       }
     }
+  });
+});
+
+describe("a call that needs approval meets the gate's item pre-check before it is queued (A5 step 5 fix round 2)", () => {
+  ensureGateReady();
+  const team = { kind: 'assistant', loginId: null, ws: [TEAM_WS], modWs: [TEAM_WS] };
+  const teamView = () => ({ holdsAdmin: false, areas: new Set<string>() });
+  const owner = { kind: 'assistant', loginId: LOGIN, ws: [ADMIN_WS], modWs: [ADMIN_WS] };
+  const ownerView = () => ({ holdsAdmin: true, areas: new Set(AREAS) });
+  const teamSurface = { kind: 'team', privateReads: false } as never;
+  const MINE = '44444444-4444-4444-8444-444444444444';
+
+  it('a workspace heartbeat outside Admin may not queue a delete or a share of an item only Admin may change', async () => {
+    for (const [slug, args] of [
+      ['page_delete', { id: h.adminItem }],
+      ['table_delete', { id: h.adminItem }],
+      ['node_share', { id: h.adminItem, level: 'public' }],
+    ] as const) {
+      h.itemAsked = [];
+      const refused = await refusalIn(team, teamView(), builtinRow(slug), teamSurface, args);
+      // The words dispatch answers (the item pre-check's own), asked in the
+      // turn's own scope, never the approver's.
+      expect(refused, slug).toBe(
+        itemNoRightError(h.adminItem, slug === 'node_share' ? 'edit' : 'manage'),
+      );
+      expect(h.itemAsked, slug).toEqual([team]);
+    }
+  });
+
+  it('an item the turn may change still queues', async () => {
+    expect(
+      await refusalIn(team, teamView(), builtinRow('page_delete'), teamSurface, { id: MINE }),
+    ).toBeNull();
+  });
+
+  it('an owner (Admin) heartbeat still queues a delete of the Admin item, as before', async () => {
+    expect(
+      await refusalIn(
+        owner,
+        ownerView(),
+        builtinRow('page_delete'),
+        { kind: 'web' },
+        {
+          id: h.adminItem,
+        },
+      ),
+    ).toBeNull();
+    expect(
+      await refusalIn(
+        owner,
+        ownerView(),
+        builtinRow('node_share'),
+        { kind: 'web' },
+        {
+          id: h.adminItem,
+          level: 'public',
+        },
+      ),
+    ).toBeNull();
   });
 });

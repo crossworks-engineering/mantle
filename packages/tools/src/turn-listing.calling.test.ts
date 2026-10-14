@@ -193,7 +193,9 @@ describe('listing equals calling for a tool loop (A5 step 5 fix round 1, L7)', (
       let ranBuiltins = 0;
       for (const row of ROWS) {
         // The gate's own verdict for the call dispatch would make.
-        const refused = await inCaller(caller, () => turnCallRefusal(row, { kind: 'web' }));
+        const refused = await inCaller(caller, () =>
+          turnCallRefusal(row, {}, { ownerId: OWNER, surface: { kind: 'web' } }),
+        );
         expect(refused === null, `${row.slug}: listed ${listed.has(row.slug)}`).toBe(
           listed.has(row.slug),
         );

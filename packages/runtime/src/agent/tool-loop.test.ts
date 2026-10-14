@@ -41,13 +41,20 @@ let dispatchToolImpl: (
 const insertedPendingArgs: Array<Record<string, unknown>> = [];
 /** What the gate refuses a queued call with (turnCallRefusal), by slug. */
 const gateRefuses = new Map<string, string>();
+/** What the gate's item pre-check refuses a queued call with, by item id. */
+const gateRefusesItem = new Map<string, string>();
 
 vi.mock('@mantle/tools', async () => ({
   // The gate's listing (A5 step 5, pick B; loopToolRows): proven against
   // the real gate in tool-loop.listing.test.ts; here it lists the grant.
   // The gate before the approval queue (A5 step 5 fix round 1, M2):
   // proven against the real gate in packages/tools/src/turn-listing.test.ts.
-  turnCallRefusal: vi.fn(async (tool: { slug: string }) => gateRefuses.get(tool.slug) ?? null),
+  // Fix round 2: its item pre-check reads the call's arguments (an item
+  // the turn's scope may not change, by id).
+  turnCallRefusal: vi.fn(
+    async (tool: { slug: string }, input: Record<string, unknown>) =>
+      gateRefuses.get(tool.slug) ?? gateRefusesItem.get(String(input.id)) ?? null,
+  ),
   turnListedTools: async <T>(rows: readonly T[]) => [...rows],
   // The validator + error sanitizer are pure (no DB/runtime deps), so the
   // loop tests exercise the REAL implementations — mocking them would let
@@ -265,6 +272,7 @@ beforeEach(() => {
   dispatchToolCalls.length = 0;
   insertedPendingArgs.length = 0;
   gateRefuses.clear();
+  gateRefusesItem.clear();
   markedCreated.length = 0;
   // Default dispatcher returns success with a small payload.
   dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
@@ -957,6 +965,54 @@ describe('runToolLoop — requires_confirm path', () => {
     expect(toolMsg!.content).toContain('You cannot manage this part of the brain.');
     expect(toolMsg!.content).not.toContain('queued_for_approval');
     expect(result.toolCalls[0]).toMatchObject({ slug: 'telegram_send', status: 'error' });
+  });
+
+  it("refuses a delete of an item the turn's own scope may not change before anything is queued, and queues one it may (A5 step 5 fix round 2)", async () => {
+    const tool = fakeTool({ slug: 'page_delete', requiresConfirm: true });
+    const ADMIN_PAGE = '33333333-3333-4333-8333-333333333333';
+    const MINE = '44444444-4444-4444-8444-444444444444';
+    const words = `You cannot change this item in your workspaces (${ADMIN_PAGE}): deleting or moving it is for a Moderator of its workspace.`;
+    gateRefusesItem.set(ADMIN_PAGE, words);
+    const call = (id: string, page: string) => ({
+      id,
+      type: 'function' as const,
+      function: { name: 'page_delete', arguments: JSON.stringify({ id: page }) },
+    });
+    const { adapter } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls: [call('call_a', ADMIN_PAGE)] },
+      { type: 'toolCalls', toolCalls: [call('call_b', MINE)] },
+      { type: 'text', text: 'done' },
+    ]);
+    const result = await runToolLoop({
+      agentRole: null,
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      initialMessages: [{ role: 'user', content: 'delete both' }],
+      tools: [tool],
+      surface: { kind: 'team', privateReads: false } as never,
+    });
+    // The gate was asked with the call's own arguments, for the turn's
+    // owner and surface.
+    const { turnCallRefusal } = await import('@mantle/tools');
+    expect(turnCallRefusal).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'page_delete' }),
+      { id: ADMIN_PAGE },
+      { ownerId: 'owner-1', surface: { kind: 'team', privateReads: false } },
+    );
+    // The Admin page: refused in the gate's words, no pending row.
+    const [first, second] = result.messages.filter((m) => m.role === 'tool');
+    expect(first!.content).toContain(words);
+    expect(first!.content).not.toContain('queued_for_approval');
+    expect(result.toolCalls[0]).toMatchObject({ slug: 'page_delete', status: 'error' });
+    // The turn's own page: queued, as before.
+    expect(second!.content).toContain('queued_for_approval');
+    expect(insertedPendingArgs).toHaveLength(1);
+    expect(insertedPendingArgs[0]).toMatchObject({ toolSlug: 'page_delete', args: { id: MINE } });
+    expect(dispatchToolCalls).toHaveLength(0);
   });
 });
 

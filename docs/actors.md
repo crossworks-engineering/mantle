@@ -2263,8 +2263,14 @@ scope, then holds.
   `web_map`) parks that tool on an unattended heartbeat fire on a box with
   `heartbeatEgressGate` on.
 - **M2, at approval.** The gate now refuses a call before it is queued,
-  in the queuing loop's scope; the approval itself still runs in the
-  approver's scope (`approvePendingCall`, `pendingCaller`). Re-checking
-  the originating scope there needs the row to carry it whole (its
-  workspace and login are stamped, 0250, but not the scope's moderator
-  set or its Admin view); no migration was added in this round.
+  in the queuing loop's scope: steps 3 to 5 and, since fix round 2, the
+  pre-run checks with the call's own arguments (`turnCallRefusal` runs the
+  gate's `gateCallRefusal`, the item pre-check included), so a call that
+  names an item the loop's scope may not change (a workspace heartbeat's
+  `page_delete` of an Admin-only page) is refused before any pending row
+  exists. What remains: the approval itself still runs in the approver's
+  scope (`approvePendingCall`, `pendingCaller`), so the originating scope
+  is not re-checked at approval (an item whose rights changed while the
+  call waited). Re-checking it there needs the row to carry the scope
+  whole (its workspace and login are stamped, 0250, but not the scope's
+  moderator set or its Admin view), which is a migration.
