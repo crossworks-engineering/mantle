@@ -232,25 +232,6 @@ class SweepStop extends Error {
   }
 }
 
-/** The session guards, each wrapped to record its answer. */
-const GUARDS = [
-  'getOwnerForAsset',
-  'getMemberForAsset',
-  'getReaderForAsset',
-  'getSessionUserWithSource',
-  'getSessionUser',
-  'requireOwner',
-  'requireOwnerForRender',
-  'requireOwnerWithSource',
-  'getOwnerOr401',
-  'getOwnerOr401WithSource',
-  'getOwnerOr401WithLogin',
-  'getMemberOr401',
-  'getLoginOr401',
-  'getChatLoginOr401',
-  'getCookieUpgradeLoginOr401',
-] as const;
-
 vi.mock('../lib/auth/session', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>();
   const db = await import('@mantle/db');
@@ -264,6 +245,9 @@ vi.mock('../lib/auth/session', async (importOriginal) => {
       ` out=${out ? `${out.kind}:${'why' in out ? out.why : 'writes' in out ? out.writes : ''}` : '-'}`
     );
   };
+  // The session guards, each wrapped to record its answer: the one list
+  // (eslint-rules/session-guards.mjs), read here (the factory is hoisted).
+  const { SESSION_GUARDS: GUARDS } = await import('../../../eslint-rules/session-guards.mjs');
   const wrapped: Record<string, unknown> = { ...real, endLoginSessions: async () => 1 };
   // The pipeline's answer of the owner caller (A4 step 3b): logged at the
   // gate as the guard's answer was in the handler. Rows with no caller

@@ -21,6 +21,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CALLER_READERS, SESSION_GUARDS } from './session-guards.mjs';
 
 /** Whether the counts read `path` (repo-relative). */
 export function isCounted(path) {
@@ -294,9 +295,18 @@ export function kindLists(text, types) {
     .filter((n) => n >= 5);
 }
 
+/** A regex that finds calls of any of `names`: `name(`. */
+function callRegex(names) {
+  return new RegExp(`\\b(?:${names.join('|')})\\s*\\(`, 'g');
+}
+
 // ── routes ──────────────────────────────────────────────────────────────────
 
-const GUARD_CALL = /\bget[A-Za-z]*Or401\s*\(/g;
+/** The guard calls counted: the Or401 guards of the one list
+ *  (session-guards.mjs), getOwnerOr401 and its variants that answer a
+ *  refusal (not the WithSource and WithLogin forms, nor the asset and
+ *  require guards: the count has always been these). */
+const GUARD_CALL = callRegex(SESSION_GUARDS.filter((n) => /^get[A-Za-z]*Or401$/.test(n)));
 
 /** Whether `path` is a route file of the HTTP tier. */
 export function isRouteFile(path) {
@@ -308,7 +318,7 @@ export function guardCalls(text) {
   return (stripComments(text).match(GUARD_CALL) ?? []).length;
 }
 
-const CALLER_READ = /\bownerCaller\s*\(/g;
+const CALLER_READ = callRegex(CALLER_READERS);
 
 /** A route file's reads of the caller the pipeline answers (A4 step 3b:
  *  ownerCaller(), where a guard call was). The gate answered the caller
