@@ -90,7 +90,14 @@ describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
     r.tabGet = shares.GET as unknown as Route;
     r.tabDelete = shares.DELETE as unknown as Route;
     r.contact = (await import('./[id]/route')).GET as unknown as Route;
-    r.create = (await import('../shares/contacts/route')).POST as unknown as Route;
+    const create = (await import('../shares/contacts/route')).POST as unknown as Route;
+    // A refused share throws ContactShareRefusedError; the app answers it
+    // by the one domain error table (A10 part 2, fold 2).
+    const { answerAppError } = await import('@/server/app-error');
+    r.create = (req, ctx) =>
+      create(req, ctx).catch((err: Error) =>
+        answerAppError(err, { req: { url: req.url, method: req.method } } as never),
+      );
     const one = await import('../shares/[id]/route');
     r.patch = one.PATCH as unknown as Route;
     r.remove = one.DELETE as unknown as Route;

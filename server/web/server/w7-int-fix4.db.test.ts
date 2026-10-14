@@ -130,7 +130,14 @@ describe.skipIf(!URL)('W7 integration fix 4', () => {
   const fireNow = async (login: string, hbId: string) => {
     as(login);
     const route = await import('@/app/api/heartbeats/[id]/fire/route');
-    return route.POST(new Request('http://x/'), params(hbId));
+    // A refusal throws FireRefused; the app answers it 403 by the one domain
+    // error table (A10 part 2, fold 2).
+    const { answerAppError } = await import('@/server/app-error');
+    return route
+      .POST(new Request('http://x/'), params(hbId))
+      .catch((err: Error) =>
+        answerAppError(err, { req: { url: 'http://x/', method: 'POST' } } as never),
+      );
   };
   const fireTool = async (login: string, slug: string) => {
     const tool = hbs.HEARTBEAT_TOOLS.find((d) => d.slug === 'heartbeat_fire')!;

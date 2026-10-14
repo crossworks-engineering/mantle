@@ -299,10 +299,14 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
   it("1: Fire now by L runs the turn as L; the anchor's heartbeat is not L's to fire", async () => {
     as(second);
     const route = await import('@/app/api/heartbeats/[id]/fire/route');
-    const refused = await route.POST(
-      new Request('http://x/'),
-      params(await heartbeat(`${tag}-hb`)),
-    );
+    // A refusal throws FireRefused; the app answers it 403 by the one domain
+    // error table (A10 part 2, fold 2).
+    const { answerAppError } = await import('@/server/app-error');
+    const refused = await route
+      .POST(new Request('http://x/'), params(await heartbeat(`${tag}-hb`)))
+      .catch((err: Error) =>
+        answerAppError(err, { req: { url: 'http://x/', method: 'POST' } } as never),
+      );
     expect(refused.status).toBe(403);
     expect(h.scope).toBeNull();
     const res = await route.POST(new Request('http://x/'), params(await heartbeat(`${tag}-hb-l`)));
