@@ -9,6 +9,8 @@ import { getValidAccessToken } from './token-store';
 import { sleep } from '@mantle/std';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
+/** Every call that carries the token goes to this origin only. */
+const GRAPH_ORIGIN = 'https://graph.microsoft.com';
 const MAX_429_RETRIES = 4;
 
 export interface GraphError extends Error {
@@ -23,12 +25,24 @@ function graphError(status: number, message: string): GraphError {
 
 /** Low-level call against an absolute Graph URL with an already-resolved token.
  *  Honours 429 `Retry-After`; throws a `GraphError` (carrying the status) on
- *  any non-2xx so callers can branch on auth (401) vs throttling vs the rest. */
+ *  any non-2xx so callers can branch on auth (401) vs throttling vs the rest.
+ *  The URL must be on graph.microsoft.com: an absolute URL can come from
+ *  Graph's own answer (`@odata.nextLink`, a stored `@odata.deltaLink`), and
+ *  the bearer token goes nowhere else (A10 part 1 fix round 2). */
 export async function graphFetchRaw(
   url: string,
   accessToken: string,
   init?: RequestInit,
 ): Promise<Response> {
+  let origin: string | null = null;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    // not a URL: refused below
+  }
+  if (origin !== GRAPH_ORIGIN) {
+    throw graphError(400, `refusing a Graph call off ${GRAPH_ORIGIN}: ${url}`.slice(0, 500));
+  }
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, {
       ...init,

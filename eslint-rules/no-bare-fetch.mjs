@@ -92,7 +92,7 @@ export const BARE_FETCH_ALLOWED = {
   },
   'packages/microsoft/src/client.ts': {
     kind: 'fixed provider host',
-    why: 'Microsoft Graph: the host is a constant',
+    why: "Microsoft Graph: the host is a constant, and an absolute URL from Graph's own answer (@odata.nextLink, a stored @odata.deltaLink) is followed only on that host (graphFetchRaw refuses any other origin)",
   },
   'packages/microsoft/src/oauth.ts': {
     kind: 'fixed provider host',

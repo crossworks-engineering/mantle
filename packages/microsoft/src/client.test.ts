@@ -20,7 +20,7 @@ vi.mock('./token-store', () => ({
 }));
 
 import { getValidAccessToken } from './token-store';
-import { graphFetchRaw, graphGetAll, type GraphError } from './client';
+import { graphFetchRaw, graphGet, graphGetAll, type GraphError } from './client';
 
 const tokenMock = vi.mocked(getValidAccessToken);
 
@@ -64,14 +64,20 @@ describe('graphGetAll', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           value: [{ id: 'a' }, { id: 'b' }],
-          '@odata.nextLink': 'https://graph/next-1',
+          '@odata.nextLink': 'https://graph.microsoft.com/v1.0/next-1',
         }),
       )
       .mockResolvedValueOnce(
-        jsonResponse({ value: [{ id: 'c' }], '@odata.nextLink': 'https://graph/next-2' }),
+        jsonResponse({
+          value: [{ id: 'c' }],
+          '@odata.nextLink': 'https://graph.microsoft.com/v1.0/next-2',
+        }),
       )
       .mockResolvedValueOnce(
-        jsonResponse({ value: [{ id: 'd' }], '@odata.deltaLink': 'https://graph/delta-final' }),
+        jsonResponse({
+          value: [{ id: 'd' }],
+          '@odata.deltaLink': 'https://graph.microsoft.com/v1.0/delta-final',
+        }),
       );
 
     const { items, deltaLink } = await graphGetAll<{ id: string }>(
@@ -81,7 +87,7 @@ describe('graphGetAll', () => {
     );
 
     expect(items.map((i) => i.id)).toEqual(['a', 'b', 'c', 'd']);
-    expect(deltaLink).toBe('https://graph/delta-final');
+    expect(deltaLink).toBe('https://graph.microsoft.com/v1.0/delta-final');
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -94,7 +100,10 @@ describe('graphGetAll', () => {
         }),
       )
       .mockResolvedValueOnce(
-        jsonResponse({ value: [{ id: 'b' }], '@odata.deltaLink': 'https://graph/delta' }),
+        jsonResponse({
+          value: [{ id: 'b' }],
+          '@odata.deltaLink': 'https://graph.microsoft.com/v1.0/delta',
+        }),
       );
 
     await graphGetAll('u1', 'acc1', '/drives/d1/root/delta');
@@ -113,10 +122,12 @@ describe('graphGetAll', () => {
   });
 
   it('tolerates a page with no value array (treats it as empty, not a crash)', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ '@odata.deltaLink': 'https://graph/delta' }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ '@odata.deltaLink': 'https://graph.microsoft.com/v1.0/delta' }),
+    );
     const { items, deltaLink } = await graphGetAll('u1', 'acc1', '/drives/d1/root/delta');
     expect(items).toEqual([]);
-    expect(deltaLink).toBe('https://graph/delta');
+    expect(deltaLink).toBe('https://graph.microsoft.com/v1.0/delta');
   });
 
   it('throws (does not swallow) when the account has no valid token', async () => {
@@ -136,7 +147,7 @@ describe('graphFetchRaw', () => {
         )
         .mockResolvedValueOnce(jsonResponse({ ok: true }, { status: 200 }));
 
-      const p = graphFetchRaw('https://graph/x', 'tok');
+      const p = graphFetchRaw('https://graph.microsoft.com/v1.0/x', 'tok');
       await vi.runAllTimersAsync();
       const res = await p;
 
@@ -153,7 +164,7 @@ describe('graphFetchRaw', () => {
       fetchMock.mockResolvedValue(
         jsonResponse('nope', { status: 429, headers: { 'retry-after': '1' } }),
       );
-      const p = graphFetchRaw('https://graph/x', 'tok');
+      const p = graphFetchRaw('https://graph.microsoft.com/v1.0/x', 'tok');
       const assertion = expect(p).rejects.toMatchObject({ status: 429 });
       await vi.runAllTimersAsync();
       await assertion;
@@ -168,7 +179,7 @@ describe('graphFetchRaw', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse('unauthorized', { status: 401 }));
     let caught: GraphError | undefined;
     try {
-      await graphFetchRaw('https://graph/x', 'tok');
+      await graphFetchRaw('https://graph.microsoft.com/v1.0/x', 'tok');
     } catch (e) {
       caught = e as GraphError;
     }
@@ -178,10 +189,34 @@ describe('graphFetchRaw', () => {
 
   it('sends the bearer token and merges caller headers', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
-    await graphFetchRaw('https://graph/x', 'tok', { headers: { Accept: 'application/json' } });
+    await graphFetchRaw('https://graph.microsoft.com/v1.0/x', 'tok', {
+      headers: { Accept: 'application/json' },
+    });
     const init = nth(nth(fetchMock.mock.calls, 0), 1) as RequestInit;
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer tok');
     expect(headers.Accept).toBe('application/json');
+  });
+});
+
+describe('the Graph host pin', () => {
+  it('refuses a nextLink or any URL off graph.microsoft.com, before any request', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ value: [{ id: 'a' }], '@odata.nextLink': 'https://evil.example/steal' }),
+    );
+    await expect(graphGetAll('u1', 'acc1', '/me/messages')).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/refusing a Graph call off https:\/\/graph\.microsoft\.com/),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    for (const u of [
+      'https://graph.microsoft.com.evil.example/v1.0/x',
+      'http://graph.microsoft.com/v1.0/x',
+      'https://evil.example@graph.microsoft.com.evil.example/x',
+    ]) {
+      await expect(graphGet('u1', 'acc1', u), u).rejects.toMatchObject({ status: 400 });
+    }
+    await expect(graphFetchRaw('not a url', 'tok')).rejects.toMatchObject({ status: 400 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

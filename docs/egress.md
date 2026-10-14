@@ -207,6 +207,11 @@ over 32 MB on one federation call errors instead of reading as empty.
   client over local sockets; sandboxd's egress proxy and its own listener).
   `eslint-rules/no-bare-fetch.test.ts` holds both inventories to exactly the
   files that use them.
+- The Microsoft Graph client (`packages/microsoft/src/client.ts`) follows
+  `@odata.nextLink` and a stored `@odata.deltaLink`, absolute URLs from
+  Graph's own answer: every call that carries the token is pinned to
+  `https://graph.microsoft.com` (fix round 2), so a link to another host is
+  refused before any request.
 - The scoreboard (`scripts/arch-scoreboard.ts`) counts the bare fetch sites
   in tools, calendar and content, `bareFetchSites`: 12 before the move,
   pinned at 5.
