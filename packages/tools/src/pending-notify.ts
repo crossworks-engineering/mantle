@@ -145,6 +145,9 @@ export async function notifyPendingCreated(input: {
   toolSlug: string;
   args: Record<string, unknown>;
   via?: string;
+  /** The call runs with Admin rights once approved (pending_tool_calls
+   *  .elevated, owner decision 1a, A5 step 6d). */
+  elevated?: { elevated: true; reason: string };
 }): Promise<void> {
   // In-app badge first — cheapest, always relevant. (This also wakes the
   // push-notify worker, which sends a device push when the operator's
@@ -184,6 +187,7 @@ export async function notifyPendingCreated(input: {
       toolSlug: input.toolSlug,
       argsPreview: previewArgs(input.args),
       via: input.via,
+      ...(input.elevated ? { elevated: input.elevated.reason } : {}),
       ...(question ? { question } : {}),
     });
   } catch (err) {

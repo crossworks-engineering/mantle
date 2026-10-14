@@ -250,6 +250,7 @@ export {
 } from './gate-callers';
 export { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool-gate-policy';
 export { turnCallRefusal, turnListedTools } from './turn-listing';
+export { CONNECTOR_ELEVATED_REASON, type ElevatedApproval } from './connector-scope';
 export { registerPreRunChecks } from './gate-prerun';
 export { contentToolTarget, keySharedContentRefusal, type KeyOrPeer } from './key-shared-content';
 export { othersCanRead } from './shared-item';

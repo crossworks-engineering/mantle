@@ -90,3 +90,31 @@ export function connectorScopeRefusal(
   const mod = new Set(facts.modWs);
   return facts.held.some((r) => r.write && mod.has(r.workspaceId)) ? null : CONNECTOR_WRITE_ERROR;
 }
+
+/** What an approval of a connector write the asking scope may not make
+ *  itself says (owner decision 1a, A5 step 6d): it runs with the rights of
+ *  whoever approves it, an Admin user's. */
+export const CONNECTOR_ELEVATED_REASON =
+  'The person asking cannot make this connector write themselves (the connector’s Write is off in their workspace, or they are not a Moderator there): approved, it runs with Admin rights.';
+
+/** What a call queued for approval carries when it would run with more
+ *  rights than its scope has (pending_tool_calls.elevated, 0287). */
+export type ElevatedApproval = Readonly<{ elevated: true; reason: string }>;
+
+/**
+ * The facts of `facts` with the connector write's own rule lifted (owner
+ * decision 1a, A5 step 6d): every workspace of the scope that holds the
+ * connector holds it with its Write tick, the login a Moderator there. The
+ * rest of the rule stands: a link, a connector the scope does not hold, a
+ * stale mark. Read only for a call that waits for an approver (a
+ * requires_confirm tool, or a turn whose writes wait: client-sourced), whose
+ * approval runs it with the approver's rights; a call that would run
+ * directly never reads it.
+ */
+export function elevatedConnectorFacts(facts: ConnectorScopeFacts): ConnectorScopeFacts {
+  return Object.freeze({
+    ...facts,
+    held: Object.freeze(facts.held.map((r) => Object.freeze({ ...r, write: true }))),
+    modWs: Object.freeze([...new Set([...facts.modWs, ...facts.held.map((r) => r.workspaceId)])]),
+  });
+}

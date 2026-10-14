@@ -43,6 +43,9 @@ const insertedPendingArgs: Array<Record<string, unknown>> = [];
 const gateRefuses = new Map<string, string>();
 /** What the gate's item pre-check refuses a queued call with, by item id. */
 const gateRefusesItem = new Map<string, string>();
+/** The slugs whose queued call the gate lets through with Admin rights
+ *  (owner decision 1a, A5 step 6d: turnCallRefusal's `queue`). */
+const gateElevates = new Set<string>();
 
 vi.mock('@mantle/tools', async () => ({
   // The gate's listing (A5 step 5, pick B; loopToolRows): proven against
@@ -52,8 +55,18 @@ vi.mock('@mantle/tools', async () => ({
   // Fix round 2: its item pre-check reads the call's arguments (an item
   // the turn's scope may not change, by id).
   turnCallRefusal: vi.fn(
-    async (tool: { slug: string }, input: Record<string, unknown>) =>
-      gateRefuses.get(tool.slug) ?? gateRefusesItem.get(String(input.id)) ?? null,
+    async (
+      tool: { slug: string },
+      input: Record<string, unknown>,
+      _ctx: unknown,
+      queue?: { elevated: unknown },
+    ) => {
+      if (queue && gateElevates.has(tool.slug)) {
+        queue.elevated = { elevated: true, reason: 'runs with Admin rights' };
+        return null;
+      }
+      return gateRefuses.get(tool.slug) ?? gateRefusesItem.get(String(input.id)) ?? null;
+    },
   ),
   turnListedTools: async <T>(rows: readonly T[]) => [...rows],
   // The validator + error sanitizer are pure (no DB/runtime deps), so the
@@ -323,6 +336,7 @@ beforeEach(() => {
   dispatchToolCalls.length = 0;
   insertedPendingArgs.length = 0;
   gateRefuses.clear();
+  gateElevates.clear();
   gateRefusesItem.clear();
   markedCreated.length = 0;
   // Default dispatcher returns success with a small payload.
@@ -1093,6 +1107,7 @@ describe('runToolLoop — requires_confirm path', () => {
       expect.objectContaining({ slug: 'page_delete' }),
       { id: ADMIN_PAGE },
       { ownerId: 'owner-1', surface: { kind: 'team', privateReads: false } },
+      { elevated: null },
     );
     // The Admin page: refused in the gate's words, no pending row.
     const [first, second] = result.messages.filter((m) => m.role === 'tool');
@@ -1104,6 +1119,83 @@ describe('runToolLoop — requires_confirm path', () => {
     expect(insertedPendingArgs).toHaveLength(1);
     expect(insertedPendingArgs[0]).toMatchObject({ toolSlug: 'page_delete', args: { id: MINE } });
     expect(dispatchToolCalls).toHaveLength(0);
+  });
+});
+
+describe('runToolLoop: a queued call that runs with Admin rights (owner decision 1a, A5 step 6d)', () => {
+  it('queues the call with the elevated field on its pending row, its card and its trace, and tells the model', async () => {
+    const tool = fakeTool({ slug: 'crm_update', requiresConfirm: true });
+    gateElevates.add('crm_update');
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'crm_update', arguments: JSON.stringify({ id: 7 }) },
+          },
+        ],
+      },
+      { type: 'text', text: 'queued' },
+    ]);
+    const result = await runToolLoop({
+      agentRole: null,
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      initialMessages: [{ role: 'user', content: 'update it' }],
+      tools: [tool],
+      surface: { kind: 'team', privateReads: false } as never,
+    });
+    expect(dispatchToolCalls).toHaveLength(0);
+    expect(insertedPendingArgs).toHaveLength(1);
+    expect(insertedPendingArgs[0]).toMatchObject({
+      toolSlug: 'crm_update',
+      args: { id: 7 },
+      elevated: { elevated: true, reason: 'runs with Admin rights' },
+    });
+    const { notifyPendingCreated } = await import('@mantle/tools');
+    expect(notifyPendingCreated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolSlug: 'crm_update',
+        elevated: { elevated: true, reason: 'runs with Admin rights' },
+      }),
+    );
+    const toolMsg = result.messages.find((m) => m.role === 'tool');
+    expect(toolMsg!.content).toContain('queued_for_approval');
+    expect(toolMsg!.content).toContain("an Admin user's rights run it");
+  });
+
+  it('a call queued with its own rights carries no elevated field', async () => {
+    const tool = fakeTool({ slug: 'crm_update', requiresConfirm: true });
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          { id: 'call_1', type: 'function', function: { name: 'crm_update', arguments: '{}' } },
+        ],
+      },
+      { type: 'text', text: 'queued' },
+    ]);
+    const result = await runToolLoop({
+      agentRole: null,
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      initialMessages: [{ role: 'user', content: 'update it' }],
+      tools: [tool],
+    });
+    expect(insertedPendingArgs).toHaveLength(1);
+    expect(insertedPendingArgs[0]).not.toHaveProperty('elevated');
+    const toolMsg = result.messages.find((m) => m.role === 'tool');
+    expect(toolMsg!.content).not.toContain('Admin user');
   });
 });
 

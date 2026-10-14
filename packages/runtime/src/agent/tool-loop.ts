@@ -543,9 +543,19 @@ export async function loopToolRows(
    *  round 1, LOW-3). Every caller names the surface of the turn it runs or
    *  describes (LOW-4), so the list it reports is the list the model is
    *  sent. */
-  opts: { surface: ToolLoopArgs['surface'] },
+  opts: {
+    surface: ToolLoopArgs['surface'];
+    /** Every write of the loop waits for approval (its turn is
+     *  client-sourced already): a connector write it may not make itself
+     *  is offered too (owner decision 1a, A5 step 6d). */
+    queuesWrites?: boolean;
+  },
 ): Promise<Tool[]> {
-  const listed = await turnListedTools(tools, { ownerId, surface: opts.surface });
+  const listed = await turnListedTools(tools, {
+    ownerId,
+    surface: opts.surface,
+    ...(opts.queuesWrites ? { queuesWrites: true } : {}),
+  });
   if (listed.length === 0 || listed.some((t) => t.slug === 'read_result')) return listed;
   const rr = await resolveReadResultTool(ownerId);
   return rr ? [...listed, rr] : listed;
@@ -652,7 +662,10 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // always `read_result` when the agent has any tools, so a spilled
   // (oversized) result is never a dead end — even if the operator didn't add
   // it to the agent's allowlist. It's a read-only system capability.
-  const loopTools = await loopToolRows(args.ownerId, args.tools, { surface: args.surface });
+  const loopTools = await loopToolRows(args.ownerId, args.tools, {
+    surface: args.surface,
+    queuesWrites: taint.clientSourced === true,
+  });
   if (args.recordToolCount) setTraceData({ tool_count: loopTools.length });
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
   const allToolDefs = await buildToolsForModel(loopTools, {

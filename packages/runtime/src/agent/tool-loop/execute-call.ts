@@ -18,6 +18,7 @@ import {
   builtinPolicy,
   policyUntrusted,
   PRIVATE_OUTPUT_TOOL_SLUGS,
+  type ElevatedApproval,
   type ValidateArgsResult,
   type ToolHandlerResult,
 } from '@mantle/tools';
@@ -134,10 +135,20 @@ export async function executeToolCall(p: {
         // never queued (a workspace heartbeat's telegram_send, a member
         // turn's shell row, a page_delete of an Admin-only page). The same
         // caller dispatch would use (turnCaller).
-        const refused = await turnCallRefusal(tool, input, {
-          ownerId: args.ownerId,
-          ...(args.surface ? { surface: args.surface } : {}),
-        });
+        // Owner decision 1a (A5 step 6d): a connector write this scope may
+        // not make itself (no Write tick, or not a Moderator) queues all the
+        // same, its row saying the approver runs it with Admin rights
+        // (`queue.elevated`); a call that would run directly never gets here.
+        const queue: { elevated: ElevatedApproval | null } = { elevated: null };
+        const refused = await turnCallRefusal(
+          tool,
+          input,
+          {
+            ownerId: args.ownerId,
+            ...(args.surface ? { surface: args.surface } : {}),
+          },
+          queue,
+        );
         if (refused !== null) {
           handle.setError(refused);
           return { ok: false as const, error: refused };
@@ -160,6 +171,7 @@ export async function executeToolCall(p: {
             toolSlug: slug,
             args: input,
             traceId,
+            ...(queue.elevated ? { elevated: queue.elevated } : {}),
           })
           .returning({ id: pendingToolCalls.id });
         const pendingId = pending?.id ?? null;
@@ -174,12 +186,14 @@ export async function executeToolCall(p: {
             toolSlug: slug,
             args: input,
             via: args.agentSlug ? `agent ${args.agentSlug}` : undefined,
+            ...(queue.elevated ? { elevated: queue.elevated } : {}),
           });
         }
         handle.setSkipped('requires_confirm');
         handle.setMeta({
           pendingId,
           requiresConfirm: true,
+          ...(queue.elevated ? { elevated: true } : {}),
           ...(verdict.gate
             ? { clientSourcedGate: true, taintedBy: p.taint?.via, gateReason: verdict.why }
             : {}),
@@ -194,6 +208,10 @@ export async function executeToolCall(p: {
                 ? `This turn read text a client wrote, so '${slug}' (${verdict.why}) ` +
                   `needs the owner's approval. `
                 : `The tool '${slug}' requires operator approval. `) +
+              (queue.elevated
+                ? `This turn cannot make this connector write itself: once approved, ` +
+                  `an Admin user's rights run it. `
+                : '') +
               `A pending entry was queued at /pending. Tell the user what's queued ` +
               `and that it'll run once approved. Do not call the same tool again ` +
               `in this turn.`,

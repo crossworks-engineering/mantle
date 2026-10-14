@@ -29,6 +29,12 @@ import {
   type ToolHandler,
 } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
+import {
+  elevatedConnectorFacts,
+  type ConnectorScopeFacts,
+  type ElevatedApproval,
+  CONNECTOR_ELEVATED_REASON,
+} from './connector-scope';
 import { gateCallerFor, turnCaller } from './gate-callers';
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
 import { isOwnerSurface } from './surface';
@@ -67,7 +73,35 @@ function callerKey(tool: Tool, policy: GatePolicy): string {
 export type TurnListingFacts = Readonly<{
   ownerId?: string;
   surface?: ToolHandlerContext['surface'];
+  /** Every write of the loop waits for approval (its turn is
+   *  client-sourced already: plan N18, client-sourced-rules.ts), so a
+   *  connector write it may not make itself is offered (owner decision 1a,
+   *  A5 step 6d), as a requires_confirm one is. */
+  queuesWrites?: boolean;
 }>;
+
+/** `caller` with the connector write's own rule lifted (owner decision 1a,
+ *  A5 step 6d: elevatedConnectorFacts), or null when it carries no
+ *  connector facts (not a connector row, or no workspace scope). */
+function elevatedCaller(caller: GateCaller): GateCaller | null {
+  const connector = caller.facts?.connector as ConnectorScopeFacts | undefined;
+  if (!connector) return null;
+  return { ...caller, facts: { ...caller.facts, connector: elevatedConnectorFacts(connector) } };
+}
+
+/** Whether a call of `tool` from this loop waits for approval whatever its
+ *  input: a requires_confirm tool, or any write of a loop whose writes
+ *  wait. Only such a call may be offered with more rights than the scope
+ *  has; one that would run directly never is. */
+function waitsForApproval(tool: Tool, facts: TurnListingFacts): boolean {
+  return tool.requiresConfirm === true || facts.queuesWrites === true;
+}
+
+/** What a queued call that runs with Admin rights carries. */
+const ELEVATED: ElevatedApproval = Object.freeze({
+  elevated: true,
+  reason: CONNECTOR_ELEVATED_REASON,
+});
 
 /** The tools of `tools` a tool loop in the current scope may call,
  *  in their order. */
@@ -90,7 +124,16 @@ export async function turnListedTools<T extends Tool>(
       caller = await gateCallerFor(turnCaller(), asked.policy, false, { ...known, row: tool });
       callers.set(key, caller);
     }
-    if (gateLists(caller, asked.ref)) out.push(tool);
+    if (gateLists(caller, asked.ref)) {
+      out.push(tool);
+      continue;
+    }
+    // Owner decision 1a (A5 step 6d): a connector write the scope may not
+    // make itself (no Write tick, or not a Moderator) is offered when its
+    // call waits for an approver anyway, who runs it with Admin rights
+    // (turnCallRefusal's `queue`). Only that rule is lifted.
+    const up = waitsForApproval(tool, facts) ? elevatedCaller(caller) : null;
+    if (up && gateLists(up, asked.ref)) out.push(tool);
   }
   return out;
 }
@@ -109,11 +152,19 @@ export async function turnListedTools<T extends Tool>(
  * queued. For the caller dispatch uses (turnCaller), through the gate's own
  * steps (gateCallRefusal), so queue time and dispatch read one rule. A
  * connector's marked inputs are checked at dispatch, after approval.
+ *
+ * `queue` (owner decision 1a, A5 step 6d): the call is being queued for
+ * approval. A connector write the scope may not make itself (no Write
+ * tick, or not a Moderator) that the rest of the gate lets through is not
+ * refused then: `queue.elevated` is set, and the pending row says the call
+ * runs with Admin rights. The approved call meets the gate again in the
+ * approver's scope, so only an approver who may make it runs it.
  */
 export async function turnCallRefusal(
   tool: Tool,
   input: Record<string, unknown>,
   ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>,
+  queue?: { elevated: ElevatedApproval | null },
 ): Promise<string | null> {
   const h = tool.handler as ToolHandler | null;
   const call = {
@@ -137,7 +188,14 @@ export async function turnCallRefusal(
     const asked = gateRefOf(tool);
     if (!asked) return NO_RUNTIME_POLICY_ERROR;
     const caller = await gateCallerFor(turnCaller(), asked.policy, false, { ...facts, row: tool });
-    return (await gateCallRefusal(caller, asked.ref, call))?.toolText ?? null;
+    const refusal = await gateCallRefusal(caller, asked.ref, call);
+    if (refusal === null) return null;
+    const up = queue ? elevatedCaller(caller) : null;
+    if (queue && up && (await gateCallRefusal(up, asked.ref, call)) === null) {
+      queue.elevated = ELEVATED;
+      return null;
+    }
+    return refusal.toolText;
   } catch (err) {
     // Fail closed: a check that could not run queues nothing (dispatch
     // answers the same error as the call's text).

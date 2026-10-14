@@ -18,6 +18,9 @@ const h = vi.hoisted(() => ({
   adminItem: '33333333-3333-4333-8333-333333333333',
   /** The scopes the item rights were asked in. */
   itemAsked: [] as Array<Record<string, unknown> | null>,
+  /** The connector's resource rows: held by every workspace of the scope
+   *  (`held`), with its Write tick (`write`). */
+  connector: { held: true, write: true },
 }));
 
 vi.mock('../../db/src/viewer', async (importOriginal) => {
@@ -63,7 +66,7 @@ vi.mock('./external-access', async (importOriginal) => ({
     usable: true,
   }),
   connectorResources: async (_owner: string, _group: string, ws: readonly string[]) =>
-    ws.map((workspaceId) => ({ workspaceId, write: true })),
+    h.connector.held ? ws.map((workspaceId) => ({ workspaceId, write: h.connector.write })) : [],
 }));
 // A Recall map by its slug (A5 step 6a, carried round-2 LOW-1): only
 // `known` names a map the scope reads.
@@ -79,6 +82,12 @@ vi.mock('./preconditions', async (importOriginal) => ({
 
 import { itemNoRightError, loginActor, runAsActor, type Tool } from '@mantle/db';
 import { BUILTIN_TOOLS, ensureGateReady, turnCallRefusal, turnListedTools } from './index';
+import {
+  CONNECTOR_ELEVATED_REASON,
+  CONNECTOR_NOT_HELD_ERROR,
+  CONNECTOR_WRITE_ERROR,
+  type ElevatedApproval,
+} from './connector-scope';
 import { NO_RUNTIME_POLICY_ERROR } from './runtime-policy';
 import { OWNER_ONLY_ERROR } from './surface';
 import type { TurnListingFacts } from './turn-listing';
@@ -355,5 +364,126 @@ describe("a call that needs approval meets the gate's item pre-check before it i
         },
       ),
     ).toBeNull();
+  });
+});
+
+describe('a connector write the scope may not make itself, when its call waits for approval (owner decision 1a, A5 step 6d)', () => {
+  ensureGateReady();
+  const member = { kind: 'assistant', loginId: LOGIN, ws: [TEAM_WS], modWs: [] };
+  const moderator = { kind: 'assistant', loginId: LOGIN, ws: [TEAM_WS], modWs: [TEAM_WS] };
+  const view = () => ({ holdsAdmin: false, areas: new Set<string>() });
+  const lookup = RUNTIME.find((r) => r.slug === 'crm_lookup')!;
+  const confirmed = {
+    ...runtime('crm_update', { kind: 'mcp', group: 'crm', toolName: 'update' }),
+    requiresConfirm: true,
+  } as Tool;
+  const rows = [lookup, confirmed];
+
+  const listed = async (
+    scope: Record<string, unknown>,
+    facts: { queuesWrites?: boolean } = {},
+  ): Promise<string[]> => {
+    h.scope = scope;
+    h.view = view();
+    try {
+      return (
+        await runAsActor(loginActor(LOGIN), () =>
+          turnListedTools(rows, { ownerId: OWNER, surface: { kind: 'web' }, ...facts }),
+        )
+      ).map((t) => t.slug);
+    } finally {
+      h.scope = null;
+    }
+  };
+
+  const queued = async (scope: Record<string, unknown>, tool: Tool) => {
+    h.scope = scope;
+    h.view = view();
+    const queue: { elevated: ElevatedApproval | null } = { elevated: null };
+    try {
+      const refused = await runAsActor(loginActor(LOGIN), () =>
+        turnCallRefusal(tool, {}, { ownerId: OWNER, surface: { kind: 'web' } }, queue),
+      );
+      return { refused, elevated: queue.elevated };
+    } finally {
+      h.scope = null;
+    }
+  };
+
+  const reset = () => {
+    h.connector = { held: true, write: true };
+  };
+
+  it('not a Moderator: the requires_confirm write is offered, the one that would run directly stays hidden', async () => {
+    reset();
+    expect(await listed(member)).toEqual(['crm_update']);
+  });
+
+  it('the Write tick off: the same, even for a Moderator', async () => {
+    h.connector = { held: true, write: false };
+    try {
+      expect(await listed(moderator)).toEqual(['crm_update']);
+    } finally {
+      reset();
+    }
+  });
+
+  it('a loop whose writes all wait (client-sourced) is offered both', async () => {
+    reset();
+    expect(await listed(member, { queuesWrites: true })).toEqual(['crm_lookup', 'crm_update']);
+  });
+
+  it('queued, the call is let through with the elevated field; asked without the queue it is refused as before', async () => {
+    reset();
+    expect(await queued(member, confirmed)).toEqual({
+      refused: null,
+      elevated: { elevated: true, reason: CONNECTOR_ELEVATED_REASON },
+    });
+    h.scope = member;
+    h.view = view();
+    try {
+      expect(
+        await runAsActor(loginActor(LOGIN), () =>
+          turnCallRefusal(confirmed, {}, { ownerId: OWNER, surface: { kind: 'web' } }),
+        ),
+      ).toBe(CONNECTOR_WRITE_ERROR);
+    } finally {
+      h.scope = null;
+    }
+  });
+
+  it('a scope that may make the write queues it with its own rights: no elevated field', async () => {
+    reset();
+    expect(await queued(moderator, confirmed)).toEqual({ refused: null, elevated: null });
+    expect(await listed(moderator)).toEqual(['crm_lookup', 'crm_update']);
+  });
+
+  it('only the write rule is lifted: a connector the scope does not hold is neither offered nor queued', async () => {
+    h.connector = { held: false, write: true };
+    try {
+      expect(await listed(member, { queuesWrites: true })).toEqual([]);
+      expect(await queued(member, confirmed)).toEqual({
+        refused: CONNECTOR_NOT_HELD_ERROR,
+        elevated: null,
+      });
+    } finally {
+      reset();
+    }
+  });
+
+  it('listing equals queuing: a waiting call is offered exactly when it queues', async () => {
+    for (const write of [true, false]) {
+      h.connector = { held: true, write };
+      for (const scope of [member, moderator]) {
+        const offered = new Set(await listed(scope));
+        for (const row of rows.filter((r) => r.requiresConfirm)) {
+          const { refused } = await queued(scope, row);
+          expect(refused === null, `${row.slug} write=${String(write)}`).toBe(
+            offered.has(row.slug),
+          );
+        }
+      }
+    }
+    reset();
   });
 });

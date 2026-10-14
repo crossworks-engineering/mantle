@@ -73,6 +73,9 @@ export async function sendApprovalCard(
     via?: string;
     /** A runner question (`ask_human`): NOTIFY ONLY — see below. */
     question?: string;
+    /** The call runs with Admin rights once approved (owner decision 1a,
+     *  A5 step 6d: pending_tool_calls.elevated): why, in a line. */
+    elevated?: string;
   },
 ): Promise<number> {
   const bot = await botFor(account);
@@ -101,6 +104,7 @@ export async function sendApprovalCard(
     '🔐 *Approval needed*',
     `Tool: \`${card.toolSlug}\``,
     card.via ? `From: ${card.via}` : null,
+    card.elevated ?? null,
     card.argsPreview ? `\n${card.argsPreview}` : null,
   ].filter(Boolean) as string[];
   const keyboard = new InlineKeyboard()
