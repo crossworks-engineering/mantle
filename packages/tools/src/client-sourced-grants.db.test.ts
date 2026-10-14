@@ -17,6 +17,9 @@ describe.skipIf(!URL)('client-sourced holds read the grants', () => {
   let m: Db;
   let admin: Parameters<Db['ensureViewerRoles']>[0];
   let rules: typeof import('./client-sourced-rules');
+  /** The builtins' own policies: each write declares its client-sourced
+   *  rule there (A5 step 6d), as the tool loop reads it. */
+  let policies: typeof import('./tool-policy');
   let sqlTag: typeof import('drizzle-orm').sql;
   const owner = randomUUID();
   const tag = `csg-${owner.slice(0, 8)}`;
@@ -32,7 +35,7 @@ describe.skipIf(!URL)('client-sourced holds read the grants', () => {
       ownerId: owner,
       tool: builtin(slug),
       input,
-      policyOf: () => null,
+      policyOf: (s) => policies.builtinPolicy(s),
     });
   const grant = (node: string, wsId: string) =>
     m.withHeads([node], 'update', async (tx) => {
@@ -48,6 +51,8 @@ describe.skipIf(!URL)('client-sourced holds read the grants', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     rules = await import('./client-sourced-rules');
+    await import('./registry');
+    policies = await import('./tool-policy');
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})

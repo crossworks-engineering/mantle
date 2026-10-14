@@ -148,6 +148,7 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
       expires_at timestamptz,
       workspace_id uuid,
       login_id uuid,
+      elevated jsonb,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`);
