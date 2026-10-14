@@ -123,10 +123,16 @@ describe('MCP `search` delegates to the search_nodes builtin', () => {
   it('runs no query of its own — the builtin is the only implementation', async () => {
     // A second implementation is what this change removed. If `search` ever
     // grows its own searchNodes/embed call again, it stops being a delegation.
+    // Its body is the `search` definition (mcp-defs.ts, A5 step 2).
     const src = await import('node:fs').then((fs) =>
-      fs.readFileSync(new URL('./search.ts', import.meta.url), 'utf8'),
+      fs.readFileSync(new URL('../mcp-defs.ts', import.meta.url), 'utf8'),
     );
-    const body = src.slice(src.indexOf("addTool(\n    server,\n    'search'"));
+    const start = src.indexOf("const SEARCH = mcpTool({\n  slug: 'search',");
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf('\n});\n', start);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).toContain('callBuiltin(search_nodes,');
     expect(body).not.toContain('searchNodes(');
     expect(body).not.toContain('embed(');
   });

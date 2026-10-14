@@ -53,8 +53,9 @@ const KNOWN_UNBRIDGED = [
 
 /**
  * The hand-written slugs: every definition of the table (mcp-defs.ts), and
- * any literal `addTool(server, '…')` call anywhere in the package, so a
- * tool hand-written outside the table cannot slip past this test.
+ * any literal `addTool(server, '…')` or `registerTool('…')` call anywhere in
+ * the package, so a tool hand-written outside the table cannot slip past
+ * this test.
  *
  * The directory is SWEPT rather than listed, so a new module cannot carry a
  * hand-written twin past this test by not being named here.
@@ -68,6 +69,9 @@ function literalAddToolSlugs(): string[] {
       } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
         const src = readFileSync(new URL(entry.name, dir), 'utf8');
         for (const m of src.matchAll(/addTool\(\s*\w+,\s*'([a-z0-9_]+)'/g)) out.push(m[1]!);
+        // The SDK's own call with a literal name (A5 step 4: the one
+        // registration, gated-tools.ts, names none).
+        for (const m of src.matchAll(/registerTool\(\s*'([a-z0-9_]+)'/g)) out.push(m[1]!);
       }
     }
   };
