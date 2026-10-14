@@ -557,7 +557,7 @@ async function session(conn: Conn) {
     await connectAs(loginActor(ids.OWNER, 'owner'), server, serverSide);
   } else {
     const prepared = await prepareCallerTools(conn.caller);
-    instructions = mcpInstructionsFor(conn.caller);
+    instructions = mcpInstructionsFor(conn.caller, prepared);
     // As the HTTP route builds it (server/web lib/mcp-http.ts): it answers
     // tools/list and tools/call whatever it registers.
     const server = new McpServer(

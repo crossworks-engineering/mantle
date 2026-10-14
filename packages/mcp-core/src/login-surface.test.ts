@@ -14,6 +14,7 @@ import { registerMantleTools } from './build-server';
 import { ADMIN_KIND_CREATE_TOOL_SLUGS, MCP_CREATE_TOOL_SLUGS } from './create-home';
 import {
   MCP_HANDWRITTEN_READ_ONLY,
+  MCP_NO_WORKSPACE_INSTRUCTIONS,
   OWNER_KEY_SPENDING_TOOLS,
   spendsOwnerKeys,
   isMcpToolReadOnly,
@@ -338,5 +339,54 @@ describe('one surface for every login (W7b): what a scope lists', () => {
     // Builtins still read only.
     expect(preparedLists(p, 'note_create')).toBe(false);
     expect(preparedLists(p, 'note_list')).toBe(true);
+  });
+});
+
+describe('a login in no workspace lists no tools (A5 step 4, owner decision A)', () => {
+  const LONE = '00000000-0000-4000-8000-0000000000d1';
+  const W = '10000000-0000-4000-8000-000000000002';
+  const caller: McpCaller = {
+    role: 'member',
+    anchorId: 'a',
+    loginId: LONE,
+    via: 'oauth',
+    write: true,
+  };
+  const prepared = (ws: string[]): PreparedCallerTools => ({
+    kind: 'owner',
+    caller,
+    view: { holdsAdmin: false, areas: new Set() },
+    privateWs: null,
+    connectors: [],
+    scope: { kind: 'user', loginId: LONE, ws, modWs: [] },
+  });
+  const listed = (p: PreparedCallerTools) => {
+    const out: string[] = [];
+    registerPreparedTools({ registerTool: (n: string) => void out.push(n) } as never, p);
+    return out;
+  };
+
+  it('lists nothing, and the server instructions say why', () => {
+    const none = prepared([]);
+    expect(listed(none)).toEqual([]);
+    for (const s of ['search', 'note_list', 'workspaces_list']) {
+      expect(preparedLists(none, s), s).toBe(false);
+    }
+    const text = mcpInstructionsFor(caller, none);
+    expect(text).toBe(MCP_NO_WORKSPACE_INSTRUCTIONS);
+    expect(text).toMatch(/user of no workspace/);
+    expect(text).toMatch(/lists no tools/);
+    expect(text).not.toContain('recall_match');
+  });
+
+  it('the same login in a workspace lists its tools and is told about its workspaces', () => {
+    const one = prepared([W]);
+    expect(listed(one).length).toBeGreaterThan(100);
+    expect(preparedLists(one, 'search')).toBe(true);
+    expect(mcpInstructionsFor(caller, one)).toContain('workspaces_list');
+    // A connection prepared before its scope was read (absent) lists as before.
+    const { scope: _scope, ...unread } = one as PreparedCallerTools & { scope?: unknown };
+    expect(listed(unread as PreparedCallerTools).length).toBe(listed(one).length);
+    expect(mcpInstructionsFor(caller)).toContain('workspaces_list');
   });
 });

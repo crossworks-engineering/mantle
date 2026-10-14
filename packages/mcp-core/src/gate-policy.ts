@@ -100,6 +100,8 @@ export function mcpGateCaller(prepared: PreparedCallerTools): GateCaller | null 
     role: caller.role,
     write: caller.write,
     admin: view,
+    // The scope the listing read (owner decision A: none, nothing listed).
+    ...(prepared.scope ? { scope: prepared.scope } : {}),
     enterScope: mcpScopeEntry(caller.loginId, adminLogin),
     createFallback: { privateWs: prepared.privateWs },
     createHome: mcpCreateHomeRule(prepared.privateWs, noHome),

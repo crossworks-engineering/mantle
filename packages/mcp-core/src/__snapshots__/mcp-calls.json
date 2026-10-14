@@ -7881,22 +7881,16 @@
   ]
  },
  "member in no workspace": {
-  "instructions": "This brain carries Recall: owner-authored memory maps and prompts for agents. Before starting a distinct task, call recall_match with one line describing it and apply a strong match. When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind. Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it. Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules. You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).",
+  "instructions": "This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one. Until then this connection lists no tools.",
   "tools": {
-   "count": 182,
-   "sha256": "85e95b52fa6a29c3d978bf97805451ca50f76c1110c48586f32731242a5d0d02"
+   "count": 0,
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
   },
   "calls": [
    {
     "call": "note_list {}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_list not found"
     },
     "handler": [],
     "remote": [],
@@ -7905,13 +7899,7 @@
    {
     "call": "note_get {\"id\":\"20000000-0000-4000-8000-000000000001\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_get not found"
     },
     "handler": [],
     "remote": [],
@@ -7920,13 +7908,7 @@
    {
     "call": "note_get {\"id\":\"plain-error\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_get not found"
     },
     "handler": [],
     "remote": [],
@@ -7935,13 +7917,7 @@
    {
     "call": "note_get {\"id\":\"db-text\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_get not found"
     },
     "handler": [],
     "remote": [],
@@ -7950,13 +7926,7 @@
    {
     "call": "note_get {\"id\":\"db-throw\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_get not found"
     },
     "handler": [],
     "remote": [],
@@ -7965,13 +7935,7 @@
    {
     "call": "note_get {\"id\":\"plain-throw\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_get not found"
     },
     "handler": [],
     "remote": [],
@@ -7980,13 +7944,7 @@
    {
     "call": "note_get {\"id\":\"20000000-0000-4000-8000-000000000003\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_get not found"
     },
     "handler": [],
     "remote": [],
@@ -7995,13 +7953,7 @@
    {
     "call": "note_create {\"title\":\"New\",\"content\":\"body\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_create not found"
     },
     "handler": [],
     "remote": [],
@@ -8010,13 +7962,7 @@
    {
     "call": "note_create {\"title\":\"New\",\"content\":\"body\",\"workspace\":\"Team\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_create not found"
     },
     "handler": [],
     "remote": [],
@@ -8025,13 +7971,7 @@
    {
     "call": "note_create {\"title\":\"New\",\"content\":\"body\",\"workspace\":\"nope\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool note_create not found"
     },
     "handler": [],
     "remote": [],
@@ -8040,13 +7980,7 @@
    {
     "call": "page_split {\"page_id\":\"20000000-0000-4000-8000-000000000006\",\"by\":\"h1\",\"workspace\":\"nope\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_split not found"
     },
     "handler": [],
     "remote": [],
@@ -8055,13 +7989,7 @@
    {
     "call": "page_split {\"page_id\":\"20000000-0000-4000-8000-000000000006\",\"by\":\"h1\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_split not found"
     },
     "handler": [],
     "remote": [],
@@ -8070,13 +7998,7 @@
    {
     "call": "page_split {\"page_id\":\"20000000-0000-4000-8000-000000000007\",\"by\":\"h1\",\"workspace\":\"nope\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_split not found"
     },
     "handler": [],
     "remote": [],
@@ -8085,13 +8007,7 @@
    {
     "call": "page_split {\"page_id\":\"20000000-0000-4000-8000-000000000004\",\"by\":\"h2\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_split not found"
     },
     "handler": [],
     "remote": [],
@@ -8100,13 +8016,7 @@
    {
     "call": "page_split {\"page_id\":\"20000000-0000-4000-8000-000000000005\",\"by\":\"h2\",\"workspace\":\"nope\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_split not found"
     },
     "handler": [],
     "remote": [],
@@ -8115,13 +8025,7 @@
    {
     "call": "page_extract_section {\"page_id\":\"20000000-0000-4000-8000-000000000006\",\"heading_block_id\":\"b1\",\"workspace\":\"nope\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_extract_section not found"
     },
     "handler": [],
     "remote": [],
@@ -8130,13 +8034,7 @@
    {
     "call": "page_extract_section {\"page_id\":\"20000000-0000-4000-8000-000000000006\",\"heading_block_id\":\"b1\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_extract_section not found"
     },
     "handler": [],
     "remote": [],
@@ -8145,13 +8043,7 @@
    {
     "call": "app_duplicate {\"id\":\"20000000-0000-4000-8000-000000000006\",\"workspace\":\"nope\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool app_duplicate not found"
     },
     "handler": [],
     "remote": [],
@@ -8160,13 +8052,7 @@
    {
     "call": "app_duplicate {\"id\":\"20000000-0000-4000-8000-000000000006\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool app_duplicate not found"
     },
     "handler": [],
     "remote": [],
@@ -8175,13 +8061,7 @@
    {
     "call": "page_update {\"id\":\"20000000-0000-4000-8000-000000000005\",\"markdown\":\"x\",\"confirm\":true}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_update not found"
     },
     "handler": [],
     "remote": [],
@@ -8190,13 +8070,7 @@
    {
     "call": "page_update {\"id\":\"20000000-0000-4000-8000-000000000004\",\"markdown\":\"x\",\"confirm\":true}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_update not found"
     },
     "handler": [],
     "remote": [],
@@ -8205,13 +8079,7 @@
    {
     "call": "page_update {\"id\":\"20000000-0000-4000-8000-000000000007\",\"markdown\":\"x\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_update not found"
     },
     "handler": [],
     "remote": [],
@@ -8220,13 +8088,7 @@
    {
     "call": "page_update {\"id\":\"20000000-0000-4000-8000-000000000006\",\"markdown\":\"x\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool page_update not found"
     },
     "handler": [],
     "remote": [],
@@ -8235,13 +8097,7 @@
    {
     "call": "draw_get {\"id\":\"20000000-0000-4000-8000-000000000008\",\"image\":true}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool draw_get not found"
     },
     "handler": [],
     "remote": [],
@@ -8250,13 +8106,7 @@
    {
     "call": "search {\"q\":\"invoice\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool search not found"
     },
     "handler": [],
     "remote": [],
@@ -8265,13 +8115,7 @@
    {
     "call": "file_rename {\"file_id\":\"20000000-0000-4000-8000-000000000006\",\"new_stem\":\"x\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool file_rename not found"
     },
     "handler": [],
     "remote": [],
@@ -8289,13 +8133,7 @@
    {
     "call": "mcp_crm_contacts_list {\"q\":\"acme\"}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool mcp_crm_contacts_list not found"
     },
     "handler": [],
     "remote": [],
@@ -8304,13 +8142,7 @@
    {
     "call": "mcp_crm_contacts_update {\"q\":\"acme\",\"confirm\":true}",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool mcp_crm_contacts_update not found"
     },
     "handler": [],
     "remote": [],
@@ -8319,13 +8151,7 @@
    {
     "call": "mcp_crm_contacts_update {\"q\":\"acme\"} (connector refused)",
     "reply": {
-     "content": [
-      {
-       "type": "text",
-       "text": "Error: This login is a user of no workspace on this brain, so its MCP reads nothing. Ask an admin to add it to one."
-      }
-     ],
-     "isError": true
+     "protocolError": "Tool mcp_crm_contacts_update not found"
     },
     "handler": [],
     "remote": [],

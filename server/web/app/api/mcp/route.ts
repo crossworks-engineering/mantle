@@ -113,12 +113,13 @@ async function handler(req: Request): Promise<Response> {
 
   // Recall's tier-1 hook rides the owner's server instructions, the one
   // surface a client auto-loads besides the tool list (docs/recall.md); a
-  // login is told who it acts as. Network transport: `run_terminal` stays off
-  // unless the operator sets MANTLE_MCP_TERMINAL=1 on the box (see
+  // login is told who it acts as, and a login in no workspace why it lists
+  // no tools. Network transport: `run_terminal` stays off unless the
+  // operator sets MANTLE_MCP_TERMINAL=1 on the box (see
   // packages/mcp-core/src/build-server.ts).
   const mcpHandler = mcpHttpHandler(
     (server) => registerPreparedTools(server, prepared, { transport: 'http' }),
-    mcpInstructionsFor(caller),
+    mcpInstructionsFor(caller, prepared),
   );
   return mcpHandler.fetch(req);
 }

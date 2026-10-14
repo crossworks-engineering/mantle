@@ -55,7 +55,9 @@ Admin-only tool needs a login that is a user of the Admin workspace, and a
 tool that manages the brain (model pools, assistants and tool groups,
 connectors, Telegram, mail, peers, sandboxes, secrets) needs that login's
 matching area switched on. Listing equals calling: a tool the scope may
-not call is not on the list, and the call is refused anyway.
+not call is not on the list, and the call is refused anyway. A login that
+is a user of no workspace lists no tools at all, and the server
+instructions say why (A5 step 4).
 
 Admin-only: the `ADMIN_ONLY_TOOL_SLUGS` (replay, runs, heartbeats, export,
 the owner's approvals queue, the owner's clock, writing into the owner's

@@ -638,9 +638,15 @@ describe('a scope no call can run in (fix round 1, L7)', () => {
     expect(gateCheck(empty, ref('read'))?.message).toMatch(/user of no workspace/);
     expect(withTurnScope).not.toHaveBeenCalled();
     expect(h.log).not.toContain('run');
-    // A surface that enters its own scope answers for it.
-    const own = login({ scope: { ...SCOPE, ws: [] }, enterScope: (_w, fn) => fn() });
+    // A surface that enters its own scope and names none answers for it;
+    // one that names its scope too is held to it (A5 step 4: an MCP
+    // connection in no workspace lists nothing, owner decision A).
+    const own = login({ enterScope: (_w, fn) => fn() });
     expect(gateCheck(own, ref('read'))).toBeNull();
+    const named = login({ scope: { ...SCOPE, ws: [] }, enterScope: (_w, fn) => fn() });
+    expect(gateCheck(named, ref('read'))?.kind).toBe('no-scope');
+    const calledNamed = await enterCall(named, ref('read'), ok);
+    expect(calledNamed.ok).toBe(false);
   });
 });
 

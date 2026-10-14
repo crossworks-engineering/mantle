@@ -44,6 +44,7 @@ import {
   type PolicyRef,
   type ScopeArea,
   type Tool,
+  type WorkspaceScope,
 } from '@mantle/db';
 import {
   connectorToolPolicy,
@@ -54,6 +55,7 @@ import {
   type LoginMcpChannel,
   type ToolSurface,
 } from '@mantle/tools';
+import { NO_SCOPE_ERROR } from '@mantle/std';
 import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from './build-server';
 import { keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
@@ -213,6 +215,11 @@ export type PreparedCallerTools =
       /** The connector tools of the login's workspaces (team apps Phase 2),
        *  listed as the gate lists them (gateLists, like any tool). */
       connectors: Tool[];
+      /** The login's scope (A5 step 4): a login in no workspace lists no
+       *  tools at all (owner decision A). Null: unscoped (an Admin login on
+       *  a brain not on workspaces). Absent: not read (a test's prepared
+       *  connection; each call still enters the scope it reads). */
+      scope?: WorkspaceScope | null;
     };
 
 /** The refusal for a non-Admin login on a brain not on workspaces. */
@@ -245,11 +252,13 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
   const unscoped = admin && !onWorkspaces;
   let view: AdminGateView | null = null;
   let privateWs: string | null = null;
+  let scope: WorkspaceScope | null = null;
   if (!unscoped) {
     view = await gateViewFor(caller.loginId);
+    scope = await loginScopeFor(caller.loginId);
     // The create rule's fallback for a user outside Admin (the W6b route
     // rule): made with the login, so only once it is in a workspace.
-    if (!view.holdsAdmin && (await loginScopeFor(caller.loginId)).ws.length > 0) {
+    if (!view.holdsAdmin && scope.ws.length > 0) {
       // THE create-home intent's fallback (@mantle/db createHomeIntent, arch
       // A3c), once per connection: it makes the private workspace when
       // there is none, and the login write gateway knows the pair from it
@@ -271,7 +280,7 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
   const connectors = (await listLoginConnectorTools(caller.anchorId, caller.loginId)).map(
     (c) => c.tool,
   );
-  return { kind: 'owner', caller, view, privateWs, connectors };
+  return { kind: 'owner', caller, view, privateWs, connectors, scope };
 }
 
 /**
@@ -418,7 +427,8 @@ function connectorCheck(caller: McpCaller) {
  * connector tools of its workspaces, each listed when the one gate lists
  * it for the connection and called through it (gated-tools.ts, A5 step 4;
  * the caller: gate-policy.ts mcpGateCaller). A refused caller gets nothing
- * (the route answers 403 first).
+ * (the route answers 403 first); a login in no workspace lists nothing
+ * (owner decision A: the server instructions say why).
  */
 export function registerPreparedTools(
   server: McpServer,
@@ -463,11 +473,24 @@ export function registerPreparedTools(
   }
 }
 
-/** The server instructions: Recall's hook, plus where creates land. */
-export function mcpInstructionsFor(_caller: McpCaller): string {
+/** Whether a prepared connection is a login's in no workspace on a brain
+ *  on workspaces: it lists no tools (owner decision A). */
+function inNoWorkspace(prepared: PreparedCallerTools | undefined): boolean {
+  return prepared?.kind === 'owner' && !!prepared.scope && prepared.scope.ws.length === 0;
+}
+
+/** The server instructions: Recall's hook, plus where creates land; for a
+ *  login in no workspace, why it has no tools (A5 step 4, owner decision
+ *  A). */
+export function mcpInstructionsFor(_caller: McpCaller, prepared?: PreparedCallerTools): string {
+  if (inNoWorkspace(prepared)) return MCP_NO_WORKSPACE_INSTRUCTIONS;
   return `${MANTLE_MCP_INSTRUCTIONS} ${MCP_WORKSPACE_INSTRUCTIONS}`;
 }
 
 /** What every login is told about its workspaces (W7b). */
 export const MCP_WORKSPACE_INSTRUCTIONS =
   'You act as the signed-in user and read what their workspaces hold: workspaces_list shows them and where you are a Moderator. A create takes an optional workspace (one you moderate); without it the item lands in its folder’s workspace, else the user’s own private one (Admin for a user of the Admin workspace), and every create reply names where it landed (landedIn).';
+
+/** What a login in no workspace is told (A5 step 4, owner decision A): it
+ *  lists no tools, and why: the gate's no-scope words, then what follows. */
+export const MCP_NO_WORKSPACE_INSTRUCTIONS = `${NO_SCOPE_ERROR} Until then this connection lists no tools.`;

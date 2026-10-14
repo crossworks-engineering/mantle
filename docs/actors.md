@@ -1803,6 +1803,16 @@ listing for every tool and connection, `packages/db/src/gate.test.ts` the
 new rule fields and `preRun`, `packages/tools/src/dispatch-mcp.test.ts` the
 MCP caller in dispatch.
 
+**A login in no workspace lists no tools** (owner decision A, plan 23.5;
+its own commit): the connection's caller names the scope it read
+(`prepared.scope`), and the gate's scope step holds a caller that names
+its scope to it even when the caller enters its own (`scopeStep`), so
+tools/list is empty and every call is an unknown tool. The server
+instructions say why (`MCP_NO_WORKSPACE_INSTRUCTIONS`: the no-scope words,
+then that the connection lists no tools). Before, such a login listed
+every tool and each call was refused with the same words. Only those cells
+of the snapshot changed (`login-surface.test.ts` pins it).
+
 Two answers changed on purpose, outside a refusal's text: a key's
 `api.write` audit row is written only for a tool its connection lists
 (`preparedLists`), where a name the surface never had could leave one; and

@@ -334,12 +334,13 @@ export function lookupPolicy(ref: PolicyRef): GatePolicy {
 /** Step 3: the caller's scope can be entered (turnScopeProblem, the check
  *  withTurnScope runs): asked before listing as before calling, so a scope
  *  no call can run in lists nothing. A surface that enters its own scope
- *  (`enterScope`) answers for its own: it throws an AccessError, mapped. */
+ *  (`enterScope`) and names none answers for its own: it throws an
+ *  AccessError, mapped. */
 export function scopeStep(caller: GateCaller): void {
-  // TODO(A5): the owner MCP surface LISTS its tools for a login in no
-  // workspace today and refuses each call (mcp-scope.ts); the gate
-  // refuses the listing too. A5 decides which, when MCP lists through it.
-  if (caller.enterScope || !caller.scope) return;
+  // A caller that enters its own scope and names it too (an MCP
+  // connection, A5 step 4) is held to it here: a login in no workspace
+  // lists nothing and calls nothing (owner decision A, plan 23.5).
+  if (!caller.scope) return;
   const problem = turnScopeProblem(caller.scope);
   if (problem) {
     throw new AccessError(
