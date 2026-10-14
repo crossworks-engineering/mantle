@@ -17,7 +17,7 @@ import {
   type ConnectorScopeFacts,
 } from './connector-scope';
 import { LINK_NO_CONNECTORS } from './external-access';
-import { GATE_NARROWERS } from './gate-narrowers';
+import { CONNECTOR_FACTS_MISMATCH_ERROR, GATE_NARROWERS } from './gate-narrowers';
 import { OWNER_ONLY_ERROR } from './surface';
 
 const caller = (facts?: Record<string, unknown>): GateCaller =>
@@ -88,10 +88,17 @@ describe('the connector narrower', () => {
       CONNECTOR_WRITE_ERROR,
     );
     expect(connector(caller({ connector: facts() }), mark('write'), ref)).toBeNull();
-    // Facts of another group, a ref that is no runtime row, a policy with
-    // no mark, or no facts (an MCP connection, outside a scope): not judged.
-    const other = facts({ group: 'erp', held: [] });
-    expect(connector(caller({ connector: other }), mark('read'), ref)).toBeNull();
+    // Facts of another group: refused, fail closed (fix round 1, LOW-5),
+    // even where they would allow it.
+    for (const other of [facts({ group: 'erp', held: [] }), facts({ group: 'erp' })]) {
+      for (const m of ['read', 'write', 'stale']) {
+        expect(connector(caller({ connector: other }), mark(m), ref)).toBe(
+          CONNECTOR_FACTS_MISMATCH_ERROR,
+        );
+      }
+    }
+    // A ref that is no runtime row, a policy with no mark, or no facts (an
+    // MCP connection, outside a scope): not judged.
     expect(connector(caller({ connector: facts({ held: [] }) }), mark('read'), toolRef)).toBeNull();
     expect(connector(caller({ connector: facts({ held: [] }) }), policy({}), ref)).toBeNull();
     expect(connector(caller(), mark('write'), ref)).toBeNull();

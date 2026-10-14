@@ -3227,3 +3227,9 @@ simulated turn runs on (the owner's web, with the login when it has one),
 and `describeResponderPersona` on the owner's web, as
 `runSimulatedResponderTurn` runs the responder; neither lists without a
 surface any more. `packages/runtime/src/assistant/turn-input.test.ts`.
+
+**LOW-5, the connector narrower fails closed.** Facts loaded for another
+connector group than the row's used to let the call through; they are now
+refused (`CONNECTOR_FACTS_MISMATCH_ERROR`). The facts are loaded per row
+(by the row's own group slug), so no call that ran before meets it.
+`packages/tools/src/gate-narrowers-l1.test.ts`.

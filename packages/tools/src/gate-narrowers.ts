@@ -34,6 +34,10 @@ import './runtime-policy';
 
 /** The refusal of a tool outside a key's areas. */
 export const KEY_AREA_ERROR = 'This API key is limited to areas this tool is not in.';
+/** A connector row judged against the facts loaded for another connector
+ *  group (A5 step 6a fix round 1, LOW-5): never judged, refused. */
+export const CONNECTOR_FACTS_MISMATCH_ERROR =
+  "This connector call was checked against another connector's rules, so it doesn't run.";
 
 /** The refusal of a risky tool the owner did not name on a key or a peer. */
 export const RISKY_TOOL_ERROR =
@@ -181,7 +185,9 @@ const ownerOnlyNarrower: Narrower = (caller, policy) =>
  * rows for its group, its Moderator workspaces). Last in the order: before
  * step 6a dispatch judged it after the gate. A caller with no such facts (an
  * MCP connection: its own pre-run check and dispatch judge it; outside a
- * workspace scope) is not narrowed here.
+ * workspace scope) is not narrowed here. Facts loaded for another group
+ * than the row's are refused (fail closed, fix round 1, LOW-5): they say
+ * nothing about this row's workspaces.
  */
 const connectorNarrower: Narrower = (caller, policy, ref) => {
   const facts = caller.facts?.connector as ConnectorScopeFacts | undefined;
@@ -189,7 +195,7 @@ const connectorNarrower: Narrower = (caller, policy, ref) => {
   if (!facts || ref.kind !== 'runtime-tool') return null;
   if (mark !== 'read' && mark !== 'write' && mark !== 'stale') return null;
   const row = ref.row as { handler?: { group?: unknown } } | undefined;
-  if (row?.handler?.group !== facts.group) return null;
+  if (row?.handler?.group !== facts.group) return CONNECTOR_FACTS_MISMATCH_ERROR;
   return connectorScopeRefusal(facts, mark);
 };
 
