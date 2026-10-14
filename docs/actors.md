@@ -3108,7 +3108,9 @@ owner MCP connection the whole connector rule after its own pre-run check,
 in the order that surface always answered.
 
 No call answer changed (the parity files above). The list cells that
-changed, all listings of a tool the call was refused:
+changed are listings of a tool whose call was refused, but for one: a
+connector write a turn used to list and queue for the owner's approval
+(the connector bullet below):
 
 - An owner-only builtin (every builtin marked `ownerOnly`, `tree_folders`
   among them: scope any, listed before and refused at dispatch) is not
@@ -3120,10 +3122,14 @@ changed, all listings of a tool the call was refused:
 - A connector write is not listed for a scope where no workspace holds the
   connector with its Write tick and the login as a Moderator (the listing
   tests' member turn: `crm_lookup`); a stale mark and a connector the
-  scope does not hold are not listed either.
+  scope does not hold are not listed either. **A behaviour change pending
+  the owner's decision (fix round 1, LOW-1):** such a write used to be
+  listed to a member turn and, when the model called it, queued for the
+  owner's approval; it is now hidden from that turn, so it is never
+  queued.
 - `responder_turn_input` and the persona description list through the
-  same function without a surface, so only the connector cells apply to
-  them.
+  same function, on the owner's web surface since fix round 1 (LOW-4), so
+  only the connector cells apply to them.
 
 **Carried LOW-2 of step 3b, closed: an allowed app call meets its
 app-tool ref.** `appBrokerCaller` carries the rules its broker judged at
