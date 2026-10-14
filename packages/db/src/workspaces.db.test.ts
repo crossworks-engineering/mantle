@@ -301,6 +301,14 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
 
   it('test 17: a chunk written without its head: warn counts it, on fails with 40001', async () => {
     const id = await node('page', 'chunk', root);
+    // mantle_heads_miss records at most 100 misses of a check an hour. The
+    // suites share one test database (CI runs pnpm test, then the actor-off,
+    // actor-on and edit-on cells against it within the hour), so the window
+    // can be full before this test: move the earlier misses of this check
+    // out of it, so this miss is recorded (A5 step 6a fix round 1, the CI
+    // gap: the edit-on run met a full window).
+    await admin`update heads_check_misses set at = at - interval '2 hours'
+      where check_name = 'content_chunks_write' and at > now() - interval '1 hour'`;
     const before = await admin<{ n: number }[]>`
       select count(*)::int as n from heads_check_misses where check_name = 'content_chunks_write' and node_id = ${id}`;
     await admin`insert into content_chunks (owner_id, node_id, ordinal, text) values (${owner}, ${id}, 0, 'x')`;
